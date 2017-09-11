@@ -14,15 +14,19 @@ import numpy as np
 from preprocessing.feature_extraction_python_speech_features import wav2feature
 
 
-def np2var(inputs, is_chainer=False):
+def np2var(inputs, is_chainer=False, return_list=False):
     """Convert form np.ndarray to Variable.
     Args:
         inputs (np.ndarray):
         is_chainer (bool, optional): if True, return chainer.Variable
+        return_list(bool, optional): if True, return list of chainer.Variable
     Returns:
 
     """
     if is_chainer:
+        if not return_list:
+            return chainer.Variable(inputs, requires_grad=False)
+
         var_list = []
         for i in range(inputs.shape[0]):
             if len(inputs.shape) != 1:
@@ -76,14 +80,16 @@ def generate_data(model, batch_size=1, splice=1):
     # Make transcripts
     if model == 'ctc':
         transcript = _read_text('./sample/LDC93S1.txt').replace('.', '')
-        labels = np.array([alpha2idx(transcript)] * batch_size)
+        labels = np.array([alpha2idx(transcript)] * batch_size, np.int32)
+        labels_seq_len = np.array([len(labels[0])] * batch_size)
         return inputs, labels, inputs_seq_len
+        # return inputs, labels, inputs_seq_len, labels_seq_len
 
     elif model == 'attention':
         transcript = _read_text('./sample/LDC93S1.txt').replace('.', '')
         transcript = '<' + transcript + '>'
-        labels = [alpha2idx(transcript)] * batch_size
-        labels_seq_len = [len(labels[0])] * batch_size
+        labels = np.array([alpha2idx(transcript)] * batch_size, np.int32)
+        labels_seq_len = np.array([len(labels[0])] * batch_size)
         return inputs, labels, inputs_seq_len, labels_seq_len
 
 

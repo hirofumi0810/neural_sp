@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Test encoders in pytorch."""
+"""Test encoders in chainer."""
 
 from __future__ import absolute_import
 from __future__ import division

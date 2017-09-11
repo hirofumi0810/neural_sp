@@ -160,8 +160,9 @@ class RNN_Encoder(Chain):
             h_n, outputs = self.rnn(hx=hidden, xs=inputs)
 
         logits = [self.fc(outputs[i]) for i in range(len(outputs))]
-        for i in range(len(logits)):
-            logits[i] = logits[i].reshape(1, logits[i].shape[0], logits[i].shape[1])
-        logits = F.concat(logits, axis=0)
+
+        # for i in range(len(logits)):
+        #     logits[i] = logits[i].reshape(1, logits[i].shape[0], logits[i].shape[1])
+        # logits = F.concat(logits, axis=0)
 
         return logits, h_n

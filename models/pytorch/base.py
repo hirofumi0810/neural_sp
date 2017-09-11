@@ -42,11 +42,11 @@ class ModelBase(nn.Module):
     def total_parameters(self):
         return self.num_params
 
-    def set_optimizer(self, optimizer_name, learning_rate_init, weight_decay,
+    def set_optimizer(self, optimizer, learning_rate_init, weight_decay,
                       lr_schedule=True, factor=0.1, patience_epoch=5):
         """
         Args:
-            optimizer_name (string):
+            optimizer (string):
             learning_rate_init (float): An initial learning rate
             weight_decay (float):
             lr_schedule (bool, optional): if True, wrap optimizer with
@@ -57,18 +57,19 @@ class ModelBase(nn.Module):
             optimizer (Optimizer):
             scheduler:
         """
-        if optimizer_name not in OPTIMIZER_CLS_NAMES:
+        optimizer = optimizer.lower()
+        if optimizer not in OPTIMIZER_CLS_NAMES:
             raise ValueError(
                 "Optimizer name should be one of [%s], you provided %s." %
-                (", ".join(OPTIMIZER_CLS_NAMES), optimizer_name))
+                (", ".join(OPTIMIZER_CLS_NAMES), optimizer))
 
-        if optimizer_name == 'sgd':
-            optimizer = optim.SGD(self.parameters(),
-                                  lr=learning_rate_init,
-                                  weight_decay=weight_decay,
-                                  nesterov=False)
+        if optimizer == 'sgd':
+            self.optimizer = optim.SGD(self.parameters(),
+                                       lr=learning_rate_init,
+                                       weight_decay=weight_decay,
+                                       nesterov=False)
         else:
-            optimizer = OPTIMIZER_CLS_NAMES[optimizer_name](
+            self.optimizer = OPTIMIZER_CLS_NAMES[optimizer](
                 self.parameters(),
                 lr=learning_rate_init,
                 weight_decay=weight_decay)
@@ -76,7 +77,7 @@ class ModelBase(nn.Module):
         if lr_schedule:
             # scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             scheduler = ReduceLROnPlateau(
-                optimizer,
+                self.optimizer,
                 mode='min',
                 factor=factor,
                 patience=patience_epoch,
@@ -87,13 +88,14 @@ class ModelBase(nn.Module):
                 min_lr=0,
                 eps=1e-08)
 
-        return optimizer, scheduler
+        return self.optimizer, scheduler
 
     def update(self, clip_grad=5.):
         """Update parameters.
         Args:
             clip_grad (float, optional):
         """
+        # Backprop gradients
         self.loss.backward()
 
         # Clip norm of gradients
@@ -104,6 +106,7 @@ class ModelBase(nn.Module):
         # ex.) encoder-decoder models
         # TODO: remove optimizer.step()
 
+        # Update parameters
         self.optimizer.step()
 
     def compute_loss(self, loss_fn, logits, labels):

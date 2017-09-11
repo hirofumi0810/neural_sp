@@ -7,7 +7,7 @@ from __future__ import print_function
 
 
 from models.pytorch.base import ModelBase
-from models.pytorch.layers.encoders.load_encoder import load as load_encoder
+from models.pytorch.layers.encoders.load_encoder import load
 
 
 class CTC(ModelBase):
@@ -66,15 +66,15 @@ class CTC(ModelBase):
         # self.bottleneck_dim = bottleneck_dim
 
         # Load encoder
-        self.encoder = load_encoder(encoder_type=encoder_type)
+        encoder = load(encoder_type=encoder_type)
         if encoder_type in ['lstm', 'gru', 'rnn']:
-            self.encoder = self.encoder(input_size=input_size,
-                                        num_units=num_units,
-                                        num_layers=num_layers,
-                                        num_classes=self.num_classes,
-                                        rnn_type=encoder_type,
-                                        bidirectional=bidirectional,
-                                        parameter_init=parameter_init)
+            self.encoder = encoder(input_size=input_size,
+                                   num_units=num_units,
+                                   num_layers=num_layers,
+                                   num_classes=self.num_classes,
+                                   rnn_type=encoder_type,
+                                   bidirectional=bidirectional,
+                                   parameter_init=parameter_init)
 
         elif encoder_type in ['vgg_lstm', 'conv_lstm']:
             raise ValueError
@@ -84,7 +84,11 @@ class CTC(ModelBase):
             raise NotImplementedError
 
     def forward(self, inputs):
-
-        logits = self.encoder(inputs)
-
+        """
+        Args:
+            inputs ():
+        Returns:
+            logits ():
+        """
+        logits, final_state = self.encoder(inputs)
         return logits
