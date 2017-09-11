@@ -7,16 +7,17 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from models.pytorch.layers.encoders.rnn import RNN_Encoder
-# from models.pytorch.layers.encoders import vgg
-# from models.pytorch.layers.encoders import resnet
-# from models.pytorch.layers.encoders import hierarchical
+from models.chainer.layers.encoders.rnn import RNN_Encoder
+# from models.chainer.layers.encoders import vgg
+# from models.chainer.layers.encoders import resnet
+# from models.chainer.layers.encoders import hierarchical
 
 
 ENCODERS = {
     "lstm": RNN_Encoder,
     "gru": RNN_Encoder,
-    "rnn": RNN_Encoder
+    "rnn_tanh": RNN_Encoder,
+    "rnn_relu": RNN_Encoder
 }
 
 
@@ -25,7 +26,7 @@ def load(encoder_type):
     Args:
         encoder_type (string): name of the encoder in the key of ENCODERS
     Returns:
-        model (nn.Module): An encoder class
+        model (chianer.Chain): An encoder class
     """
     if encoder_type not in ENCODERS:
         raise ValueError(

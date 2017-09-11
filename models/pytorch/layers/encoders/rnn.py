@@ -12,6 +12,21 @@ import torch.nn.functional as F
 
 
 class RNN_Encoder(nn.Module):
+    """Bidirectional LSTM encoder.
+    Args:
+        num_units (int): the number of units in each layer
+        num_layers (int): the number of layers
+        num_classes (int): the number of classes of target labels
+            (except for a blank label in the CTC model)
+        rnn_type (string): lstm or gru or rnn
+        bidirectional (bool): if True, use the bidirectional model
+        use_peephole (bool): if True, use peephole connections
+        parameter_init (float): Range of uniform distribution to initialize
+            weight parameters
+        clip_activation (float): Range of activation clipping (> 0)
+        num_proj (int): the number of nodes in recurrent projection layer
+        bottleneck_dim (int): the dimensions of the bottleneck layer
+    """
 
     def __init__(self,
                  input_size,
@@ -43,47 +58,40 @@ class RNN_Encoder(nn.Module):
         # self.clip_activation = clip_activation
 
         if rnn_type == 'lstm':
-            self.rnn = nn.LSTM(self.input_size, self.num_units,
-                               num_layers=self.num_layers,
+            self.rnn = nn.LSTM(input_size, num_units,
+                               num_layers=num_layers,
                                bias=True,
                                batch_first=False,
                                dropout=0,
-                               bidirectional=self.bidirectional)
-
+                               bidirectional=bidirectional)
         elif rnn_type == 'gru':
-            self.rnn = nn.GRU(self.input_size, self.num_units,
-                              num_layers=self.num_layers,
+            self.rnn = nn.GRU(input_size, num_units,
+                              num_layers=num_layers,
                               bias=True,
                               batch_first=False,
                               dropout=0,
-                              bidirectional=self.bidirectional)
-
+                              bidirectional=bidirectional)
         elif rnn_type == 'rnn':
-            self.rnn = nn.RNN(self.input_size, self.num_units,
-                              num_layers=self.num_layers,
+            self.rnn = nn.RNN(input_size, num_units,
+                              num_layers=num_layers,
                               bias=True,
                               batch_first=False,
                               dropout=0,
-                              bidirectional=self.bidirectional)
-
+                              bidirectional=bidirectional)
         else:
-            raise ValueError
+            raise ValueError('rnn_type must be lstm or gru or rnn.')
 
-        self.output = nn.Linear(
-            self.num_units * self.num_directions, self.num_classes)
+        self.fc = nn.Linear(
+            num_units * self.num_directions, num_classes)
 
-        # Initialize hidden states (and memory cells)
-        self.hidden = self.init_hidden(batch_size=2)
-        # TODO: fix it
-
-    def init_hidden(self, batch_size):
+    def _init_hidden(self, batch_size):
         """Initialize hidden states.
+        Args:
+            batch_size (int): the size of mini-batch
         Returns:
             if rnn_type is 'lstm', return a tuple of tensors (h_0, c_0),
             otherwise return a tensor h_0.
         """
-
-        # `(num_layers * num_directions, batch_size, num_units)`
         h_0 = autograd.Variable(torch.zeros(
             self.num_layers * self.num_directions, batch_size, self.num_units))
 
@@ -99,22 +107,29 @@ class RNN_Encoder(nn.Module):
     def forward(self, inputs):
         """Forward computation.
         Args:
-            inputs: A tensor of size `(time, batch_size, input_size)`
+            inputs: A tensor of size `(batch_size, time, input_size)`
         Returns:
             logits: A tensor of size `(time, batch_size, num_classes)`
-            final_state: if rnn_type is 'lstm', return a tuple of tensors
-                (h_n, c_n), otherwise return a tensor h_n.
+            final_state: A tensor of size
+                `(num_layers * num_directions, batch_size, num_units)`
         """
         assert isinstance(inputs, autograd.Variable), "inputs must be autograd.Variable."
-        assert len(inputs.size()) == 3, "inputs must be a tensor of size `(time, batch_size, num_classes)`."
+        assert len(inputs.size()) == 3, "inputs must be a tensor of size `(time, batch_size, input_size)`."
+
+        # TODO: Reshape inputs to time-major in advance
+
+        # Initialize hidden states (and memory cells) per mini-batch
+        hidden_0 = self._init_hidden(batch_size=inputs.size(0))
 
         # Reshape to the batct-major
         inputs = inputs.transpose(0, 1)
 
-        outputs, self.hidden = self.rnn(inputs, self.hidden)
+        if self.rnn_type == 'lstm':
+            outputs, h_n, c_n = self.rnn(inputs, hidden_0)
+        else:  # gru or rnn
+            outputs, h_n = self.rnn(inputs, hidden_0)
         # NOTE: outputs: `(time, batch_size, num_units * num_directions)`
 
-        outputs = self.output(outputs)
-        logits = F.softmax(outputs)
+        logits = self.fc(outputs)
 
-        return logits, self.hidden
+        return logits, h_n

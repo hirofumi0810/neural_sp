@@ -89,15 +89,6 @@ class ModelBase(nn.Module):
 
         return optimizer, scheduler
 
-    def reset(self):
-        # Clear gradients before
-        self.zoro_grad()
-
-        # Reset initial state per step
-        # TODO: リカレントの場合は上書きする
-
-        raise NotImplementedError
-
     def update(self, clip_grad=5.):
         """Update parameters.
         Args:

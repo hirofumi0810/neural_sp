@@ -14,7 +14,7 @@ import torch
 
 sys.path.append('../../')
 from models.pytorch.ctc.ctc import CTC
-from models.test.data import generate_data
+from models.test.data import generate_data, np2var
 from models.test.util import measure_time
 
 torch.manual_seed(1)
@@ -53,6 +53,11 @@ class TestCTC(unittest.TestCase):
         inputs, labels, inputs_seq_len = generate_data(
             model='ctc',
             batch_size=batch_size)
+
+        # Wrap by Variable
+        inputs = np2var(inputs)
+        labels = np2var(labels)
+        inputs_seq_len = np2var(inputs_seq_len)
 
         # load model
         model = CTC(input_size=inputs.size(-1),
