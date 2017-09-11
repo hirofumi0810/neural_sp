@@ -1,0 +1,6 @@
+*.pyc
+*.log
+
+pytorch_ctc
+tools
+chainer
