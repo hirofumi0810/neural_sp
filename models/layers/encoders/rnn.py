@@ -125,7 +125,7 @@ class RNN_Encoder(nn.Module):
         inputs = inputs.transpose(0, 1)
 
         if self.rnn_type == 'lstm':
-            outputs, h_n, c_n = self.rnn(inputs, hidden_0)
+            outputs, (h_n, c_n) = self.rnn(inputs, hidden_0)
         else:  # gru or rnn
             outputs, h_n = self.rnn(inputs, hidden_0)
         # NOTE: outputs: `(time, batch_size, num_units * num_directions)`

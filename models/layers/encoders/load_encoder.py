@@ -7,10 +7,10 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from models.pytorch.layers.encoders.rnn import RNN_Encoder
-# from models.pytorch.layers.encoders import vgg
-# from models.pytorch.layers.encoders import resnet
-# from models.pytorch.layers.encoders import hierarchical
+from models.layers.encoders.rnn import RNN_Encoder
+# from models.layers.encoders import vgg
+# from models.layers.encoders import resnet
+# from models.layers.encoders import hierarchical
 
 
 ENCODERS = {

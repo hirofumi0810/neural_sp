@@ -8,7 +8,7 @@ from __future__ import print_function
 # import abc
 import torch.nn as nn
 import torch.optim as optim
-from models.pytorch.tmp.lr_scheduler import ReduceLROnPlateau
+from models.tmp.lr_scheduler import ReduceLROnPlateau
 
 OPTIMIZER_CLS_NAMES = {
     "sgd": optim.SGD,

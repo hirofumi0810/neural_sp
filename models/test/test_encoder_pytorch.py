@@ -11,7 +11,7 @@ import sys
 import unittest
 
 sys.path.append('../../')
-from models.pytorch.layers.encoders.load_encoder import load
+from models.layers.encoders.load_encoder import load
 from models.test.data import generate_data, np2var
 from models.test.util import measure_time
 

@@ -6,8 +6,8 @@ from __future__ import division
 from __future__ import print_function
 
 
-from models.pytorch.base import ModelBase
-from models.pytorch.layers.encoders.load_encoder import load
+from models.base import ModelBase
+from models.layers.encoders.load_encoder import load
 
 
 class CTC(ModelBase):

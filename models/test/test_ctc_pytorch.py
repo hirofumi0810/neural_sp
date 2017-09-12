@@ -13,7 +13,7 @@ import unittest
 import torch
 
 sys.path.append('../../')
-from models.pytorch.ctc.ctc import CTC
+from models.ctc.ctc import CTC
 from models.test.data import generate_data, np2var
 from models.test.util import measure_time
 
@@ -107,6 +107,7 @@ class TestCTC(unittest.TestCase):
             model.update()
 
             if (step + 1) % 10 == 0:
+                pass
                 # Change to evaluation mode
 
                 # Compute accuracy

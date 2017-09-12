@@ -21,7 +21,7 @@ def np2var(inputs, is_chainer=False, return_list=False):
         is_chainer (bool, optional): if True, return chainer.Variable
         return_list(bool, optional): if True, return list of chainer.Variable
     Returns:
-
+        
     """
     if is_chainer:
         if not return_list:
