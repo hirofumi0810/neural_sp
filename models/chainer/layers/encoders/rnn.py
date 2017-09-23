@@ -20,7 +20,9 @@ class RNN_Encoder(Chain):
         num_units (int): the number of units in each layer
         num_layers (int): the number of layers
         num_classes (int): the number of classes of target labels
-            (except for a blank label in the CTC model)
+        num_classes (int): the number of classes of target labels
+            (except for a blank label). if 0, return hidden states before
+            passing through the softmax layer
         rnn_type (string): lstm or gru or rnn_tanh or rnn_relu
         bidirectional (bool): if True, use the bidirectional model
         use_peephole (bool): if True, use peephole connections
@@ -99,7 +101,9 @@ class RNN_Encoder(Chain):
             else:
                 raise ValueError
 
-            self.fc = L.Linear(num_units * self.num_directions, num_classes)
+            if self.num_classes != 0:
+                self.fc = L.Linear(
+                    num_units * self.num_directions, num_classes)
 
         # Initialize parameters
         for param in self.params():
@@ -136,15 +140,18 @@ class RNN_Encoder(Chain):
     def __call__(self, inputs):
         """
         Args:
-            inputs (list): list of a tensor of size `(time, input_size)`
+            inputs (list): list of tensors of size `(batch_size, input_size)`.
+                Note that len(inputs) == max_time.
         Returns:
-            logits: A tensor of size `(, , num_classes)`
+            logits (list): list of tensors of size `(batch_size, num_classes)`.
+                Note that len(logits) == max_time.
             final_state: A tensor of size
                 `(num_layers * num_directions, batch_size, num_units)`
         """
-        assert isinstance(inputs, list), "inputs must be a list of chainer.Variable."
+        assert isinstance(
+            inputs, list), "inputs must be a list of chainer.Variable."
         assert len(
-            inputs[0].shape) == 2, "each inputs must be a list of tensor of size `(time, input_size)`."
+            inputs[0].shape) == 2, "each inputs must be a list of tensors of size `(batch_size, input_size)`."
 
         # Initialize hidden states (and memory cells) per mini-batch
         hidden = self._init_hidden(
@@ -159,7 +166,11 @@ class RNN_Encoder(Chain):
         else:  # gru or rnn
             h_n, outputs = self.rnn(hx=hidden, xs=inputs)
 
-        logits = [self.fc(outputs[i]) for i in range(len(outputs))]
+        # For attention-based models
+        if self.num_classes == 0:
+            return outputs, h_n
+
+        logits = [self.fc(outputs[t]) for t in range(len(outputs))]
 
         # for i in range(len(logits)):
         #     logits[i] = logits[i].reshape(1, logits[i].shape[0], logits[i].shape[1])

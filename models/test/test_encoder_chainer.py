@@ -12,7 +12,7 @@ import unittest
 
 sys.path.append('../../')
 from models.chainer.layers.encoders.load_encoder import load
-from models.test.data import generate_data, np2var
+from models.test.data import generate_data, np2var_chainer, np2varlist_chainer
 from models.test.util import measure_time
 
 
@@ -48,14 +48,13 @@ class TestEncoders(unittest.TestCase):
 
         # Load batch data
         batch_size = 2
-        inputs, labels, inputs_seq_len = generate_data(
-            model='ctc',
-            batch_size=batch_size)
+        inputs, labels, inputs_seq_len, labels_seq_len = generate_data(
+            model='ctc', batch_size=batch_size)
 
         # Wrap by Variable
-        inputs = np2var(inputs, is_chainer=True)
-        labels = np2var(labels, is_chainer=True)
-        inputs_seq_len = np2var(inputs_seq_len, is_chainer=True)
+        inputs = np2varlist_chainer(inputs)
+        labels = np2var_chainer(labels)
+        inputs_seq_len = np2var_chainer(inputs_seq_len)
 
         # Load encoder
         encoder = load(encoder_type=encoder_type)
@@ -64,8 +63,8 @@ class TestEncoders(unittest.TestCase):
         if encoder_type in ['lstm', 'gru', 'rnn_tanh', 'rnn_relu']:
             encoder = encoder(input_size=inputs[0].shape[-1],
                               num_units=256,
-                              num_layers=2,
-                              num_classes=27,
+                              num_layers=5,
+                              num_classes=0,
                               rnn_type=encoder_type,
                               bidirectional=bidirectional,
                               parameter_init=0.1)
@@ -73,14 +72,21 @@ class TestEncoders(unittest.TestCase):
             raise NotImplementedError
 
         outputs, final_state = encoder(inputs)
+
+        assert isinstance(outputs, list)
+
         print('----- final state -----')
         print(final_state.shape)
         self.assertEqual((encoder.num_layers * encoder.num_directions,
                           batch_size, encoder.num_units), final_state.shape)
 
         print('----- outputs -----')
-        print(outputs.shape)
-        self.assertEqual((len(inputs), inputs[0].shape[0], 27), outputs.shape)
+        # Expected list of Variable of size `(T, num_units * num_directions]`
+        print((len(outputs), outputs[0].shape[0], outputs[0].shape[1]))
+        self.assertEqual(
+            (len(inputs), inputs[0].shape[0],
+             encoder.num_units * encoder.num_directions),
+            (len(outputs), outputs[0].shape[0], outputs[0].shape[1]))
 
 
 if __name__ == '__main__':
