@@ -11,8 +11,8 @@ import sys
 import unittest
 
 sys.path.append('../../')
-from models.layers.encoders.load_encoder import load
-from models.test.data import generate_data, np2var
+from models.pytorch.encoders.load_encoder import load
+from models.test.data import generate_data, np2var_pytorch
 from models.test.util import measure_time
 
 
@@ -46,14 +46,15 @@ class TestEncoders(unittest.TestCase):
 
         # Load batch data
         batch_size = 2
-        inputs, labels, inputs_seq_len = generate_data(
+        inputs, labels, inputs_seq_len, labels_seq_len = generate_data(
             model='ctc',
-            batch_size=batch_size)
+            batch_size=batch_size,
+            splice=1)
 
         # Wrap by Variable
-        inputs = np2var(inputs)
-        labels = np2var(labels)
-        inputs_seq_len = np2var(inputs_seq_len)
+        inputs = np2var_pytorch(inputs)
+        labels = np2var_pytorch(labels)
+        inputs_seq_len = np2var_pytorch(inputs_seq_len)
 
         # Load encoder
         encoder = load(encoder_type=encoder_type)
@@ -63,9 +64,10 @@ class TestEncoders(unittest.TestCase):
             encoder = encoder(input_size=inputs.size(-1),
                               num_units=256,
                               num_layers=2,
-                              num_classes=27,
+                              num_classes=0,
                               rnn_type=encoder_type,
                               bidirectional=bidirectional,
+                              dropout=0.8,
                               parameter_init=0.1)
         else:
             raise NotImplementedError
@@ -79,7 +81,8 @@ class TestEncoders(unittest.TestCase):
 
         print('----- outputs -----')
         print(outputs.size())
-        self.assertEqual((inputs.size(1), inputs.size(0), 27), outputs.size())
+        num_directions = 2 if bidirectional else 1
+        self.assertEqual((inputs.size(1), inputs.size(0), 256 * num_directions), outputs.size())
 
 
 if __name__ == '__main__':
