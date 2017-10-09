@@ -7,16 +7,16 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from models.pytorch.encoders.rnn import RNN_Encoder
+from models.pytorch.encoders.rnn import RNNEncoder
 # from models.pytorch.encoders import vgg
 # from models.pytorch.encoders import resnet
-# from models.pytorch.encoders import hierarchical
+# from models.pytorch.encoders import hierarchical_rnn
 
 
 ENCODERS = {
-    "lstm": RNN_Encoder,
-    "gru": RNN_Encoder,
-    "rnn": RNN_Encoder
+    "lstm": RNNEncoder,
+    "gru": RNNEncoder,
+    "rnn": RNNEncoder
 }
 
 

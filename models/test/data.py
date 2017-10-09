@@ -47,17 +47,28 @@ def np2varlist_chainer(inputs):
     return var_list
 
 
-def np2var_pytorch(inputs, is_chainer=False, return_list=False):
+def np2var_pytorch(inputs, dtype='float', use_cuda=False):
     """Convert form np.ndarray to Variable.
     Args:
         inputs (np.ndarray): A tensor of size `[B, T, input_size]`
-        is_chainer (bool, optional): if True, return chainer.Variable
-        return_list (bool, optional): if True, return list of chainer.Variable
+        type (string, optional):
+        use_cuda (bool, optional): set True when use GPU
     Returns:
-
+        inputs (torch.Variable): A tensor of size `[B, T, input_size]`
     """
-    return Variable(torch.from_numpy(inputs).float(), requires_grad=False)
-    # NOTE: which are better, 32-bit or 64-bit?
+    inputs = torch.from_numpy(inputs)
+    if dtype == 'float':
+        inputs = inputs.float()
+    elif dtype == 'long':
+        inputs = inputs.long()
+
+    inputs = Variable(inputs, requires_grad=False)
+    # NOTE: which is better, 32-bit or 64-bit?
+
+    if use_cuda:
+        inputs.cuda()
+
+    return inputs
 
 
 def _read_text(trans_path):
@@ -65,7 +76,7 @@ def _read_text(trans_path):
     Args:
         trans_path (string): path to a transcript text file
     Returns:
-        transcript (strig): a text of transcript
+        transcript (string): a text of transcript
     """
     # Read ground truth labels
     with open(trans_path, 'r') as f:
@@ -140,17 +151,17 @@ def idx2alpha(indices):
     # 0 is reserved to space
     first_index = ord('a') - 1
     char_list = []
-    for var in indices:
-        if var.data == 0:
+    for index in indices:
+        if index == 0:
             char_list.append(' ')
-        elif var.data == BLANK_INDEX:
+        elif index == BLANK_INDEX:
             continue
             # TODO: fix this
-        elif var.data == SOS_INDEX:
+        elif index == SOS_INDEX:
             char_list.append('<')
-        elif var.data == EOS_INDEX:
+        elif index == EOS_INDEX:
             char_list.append('>')
         else:
-            char_list.append(chr(var.data + first_index))
+            char_list.append(chr(index + first_index))
     transcript = ''.join(char_list)
     return transcript
