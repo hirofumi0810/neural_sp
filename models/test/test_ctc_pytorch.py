@@ -8,40 +8,43 @@ from __future__ import division
 from __future__ import print_function
 
 import sys
+import time
 import unittest
 
 import torch
+import torch.nn as nn
 
 sys.path.append('../../')
-from models.ctc.ctc import CTC
-from models.test.data import generate_data, np2var
+from models.pytorch.ctc.ctc import CTC
+from models.test.data import generate_data, np2var_pytorch, idx2alpha
 from models.test.util import measure_time
+from utils.io.tensor import to_np
 
 torch.manual_seed(1)
 
 
 class TestCTC(unittest.TestCase):
 
-    def test_ctc(self):
+    def test(self):
         print("CTC Working check.")
 
         # RNNs
-        self.check_training(encoder_type='lstm', bidirectional=False)
-        self.check_training(encoder_type='lstm', bidirectional=True)
-        self.check_training(encoder_type='gru', bidirectional=False)
-        self.check_training(encoder_type='gru', bidirectional=True)
-        self.check_training(encoder_type='rnn', bidirectional=False)
-        self.check_training(encoder_type='rnn', bidirectional=True)
+        # self.check(encoder_type='lstm', bidirectional=False)
+        # self.check(encoder_type='lstm', bidirectional=True)
+        self.check(encoder_type='gru', bidirectional=False)
+        self.check(encoder_type='gru', bidirectional=True)
+        self.check(encoder_type='rnn', bidirectional=False)
+        self.check(encoder_type='rnn', bidirectional=True)
 
-        # self.check_encode(encoder_type='conv_lstm')
-        # self.check_encode('vgg_lstm')
+        # self.check(encoder_type='conv_lstm')
+        # self.check('vgg_lstm')
 
         # CNNs
-        # self.check_encode(encoder_type='resnet')
-        # self.check_encode(encoder_type='vgg')
+        # self.check(encoder_type='resnet')
+        # self.check(encoder_type='vgg')
 
     @measure_time
-    def check_training(self, encoder_type, bidirectional=False):
+    def check(self, encoder_type, bidirectional=False):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
@@ -49,31 +52,34 @@ class TestCTC(unittest.TestCase):
         print('==================================================')
 
         # Load batch data
-        batch_size = 2
-        inputs, labels, inputs_seq_len = generate_data(
+        batch_size = 4
+        inputs, labels, inputs_seq_len, labels_seq_len = generate_data(
             model='ctc',
             batch_size=batch_size)
 
         # Wrap by Variable
-        inputs = np2var(inputs)
-        labels = np2var(labels)
-        inputs_seq_len = np2var(inputs_seq_len)
+        inputs = np2var_pytorch(inputs)
+        labels = np2var_pytorch(labels, dtype='long')
+        # inputs_seq_len = np2var_pytorch(inputs_seq_len, dtype='long')
+        # labels_seq_len = np2var_pytorch(labels_seq_len, dtype='long')
+        inputs_seq_len = np2var_pytorch(inputs_seq_len, dtype='int')
+        labels_seq_len = np2var_pytorch(labels_seq_len, dtype='int')
+        print(inputs_seq_len)
+        print(labels_seq_len)
 
-        # load model
-        model = CTC(input_size=inputs.size(-1),
-                    num_units=256,
-                    num_layers=2,
-                    num_classes=27,  # alphabets + space (excluding a blank)
-                    encoder_type=encoder_type,
-                    bidirectional=bidirectional,
-                    use_peephole=True,
-                    splice=1,
-                    parameter_init=0.1,
-                    clip_grad=None,
-                    clip_activation=None,
-                    num_proj=None,
-                    weight_decay=0.0,
-                    bottleneck_dim=None)
+        # Load model
+        model = CTC(
+            input_size=inputs.size(-1),
+            encoder_type=encoder_type,
+            bidirectional=bidirectional,
+            num_units=256,
+            # num_proj=None,
+            num_layers=2,
+            dropout=0,
+            num_classes=27,  # alphabets + space (excluding a blank class)
+            splice=1,
+            parameter_init=0.1,
+            bottleneck_dim=None)
 
         # Initialize parameters
         model.init_weights()
@@ -82,42 +88,85 @@ class TestCTC(unittest.TestCase):
         print("Total %s M parameters" %
               ("{:,}".format(model.total_parameters / 1000000)))
 
-        # Define loss function
-        # loss_fn = CTC_loss()
-        # TODO: implement this
-
         # Define optimizer
         optimizer, scheduler = model.set_optimizer(
             'adam', learning_rate_init=1e-3, weight_decay=0,
-            lr_schedule=True, factor=0.1, patience_epoch=5)
-        # TODO: remove optimizer
+            lr_schedule=False, factor=0.1, patience_epoch=5)
 
-        return 0
+        # GPU setting
+        use_cuda = torch.cuda.is_available()
+        deterministic = False
+        if use_cuda and deterministic:
+            print('GPU deterministic mode (no cudnn)')
+            torch.backends.cudnn.enabled = False
+        elif use_cuda:
+            print('GPU mode (faster than the deterministic mode)')
+        else:
+            print('CPU mode')
+        if use_cuda:
+            model = model.cuda()
+            inputs = inputs.cuda()
+            # labels = labels.cuda()
+            # inputs_seq_len = inputs_seq_len.cuda()
+            # labels_seq_len = labels_seq_len.cuda()
+            # print(inputs_seq_len)
+            # print(labels_seq_len)
 
-        for step in range(500):
+        # Train model
+        max_step = 1000
+        start_time_global = time.time()
+        start_time_step = time.time()
+        ler_train_pre = 1
+        not_improved_count = 0
+        for step in range(max_step):
+
             # Clear gradients before
-            model.zoro_grad()
-            # TODO: update()の中に移動する
+            optimizer.zero_grad()
 
             # Make prediction
             logits = model(inputs)
 
-            # Compute the loss, gradients, and update parameters
-            model.compute_loss(loss_fn, logits, labels)
-            model.update()
+            # Compute loss
+            loss = model.loss(logits, labels, inputs_seq_len, labels_seq_len)
+
+            # Compute gradient
+            optimizer.zero_grad()
+            loss.backward()
+
+            # Clip gradient norm
+            nn.utils.clip_grad_norm(model.parameters(), 10)
+
+            ######
+            loss_sum = loss.data.sum()
+            inf = float("inf")
+            if loss_sum == inf or loss_sum == -inf:
+                print("WARNING: received an inf loss, setting loss value to 0")
+                loss_value = 0
+            else:
+                loss_value = loss.data[0]
 
             if (step + 1) % 10 == 0:
-                pass
                 # Change to evaluation mode
 
+                # Decode
+                # outputs_infer, _ = model.decode_infer(inputs, labels,
+                #                                       beam_width=1)
+
                 # Compute accuracy
-                # ler_train =
+
+                duration_step = time.time() - start_time_step
+                print('Step %d: loss = %.3f / ler = %.3f (%.3f sec) / lr = %.5f' %
+                      (step + 1, to_np(loss), 1, duration_step, 1e-3))
+                start_time_step = time.time()
 
                 # Visualize
+                # print('Ref: %s' % idx2alpha(to_np(labels)[0][1:-1]))
+                # print('Hyp: %s' % idx2alpha(outputs_infer[0][0:-1]))
 
-                # Update learning rate
-                # scheduler.step(ler_train)
-                # TODO: confirm learning rate
+                # if to_np(loss) <1.:
+                #     print('Modle is Converged.')
+                #     break
+                # ler_train_pre = ler_train
 
 
 if __name__ == "__main__":

@@ -47,12 +47,11 @@ def np2varlist_chainer(inputs):
     return var_list
 
 
-def np2var_pytorch(inputs, dtype='float', use_cuda=False):
+def np2var_pytorch(inputs, dtype='float'):
     """Convert form np.ndarray to Variable.
     Args:
         inputs (np.ndarray): A tensor of size `[B, T, input_size]`
-        type (string, optional):
-        use_cuda (bool, optional): set True when use GPU
+        type (string, optional): float or long or int
     Returns:
         inputs (torch.Variable): A tensor of size `[B, T, input_size]`
     """
@@ -61,12 +60,11 @@ def np2var_pytorch(inputs, dtype='float', use_cuda=False):
         inputs = inputs.float()
     elif dtype == 'long':
         inputs = inputs.long()
+    elif dtype == 'int':
+        inputs = inputs.int()
 
     inputs = Variable(inputs, requires_grad=False)
     # NOTE: which is better, 32-bit or 64-bit?
-
-    if use_cuda:
-        inputs.cuda()
 
     return inputs
 

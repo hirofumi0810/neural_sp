@@ -22,15 +22,15 @@ class AttentionSeq2seq(ModelBase):
         encoder_type (string): the type of the encoder. Set lstm or gru or rnn.
         encoder_bidirectional (bool): if True, create a bidirectional encoder
         encoder_num_units (int): the number of units in each layer
-        encoder_num_proj (int, optional): the number of nodes in recurrent
+        # encoder_num_proj (int): the number of nodes in recurrent
             projection layer of the encoder
         encoder_num_layers (int): the number of layers of the encoder
-        encoder_dropout (float, optional): the probability to drop nodes
+        encoder_dropout (float): the probability to drop nodes
 
         attention_type (string):
         attention_dim (int):
 
-        decoder_type (string): lstm or gru or rnn
+        decoder_type (string): lstm or gru
         decoder_num_units (int):
         # decdoder_num_layers (int):
         embedding_dim (int):
@@ -107,10 +107,10 @@ class AttentionSeq2seq(ModelBase):
         encoder = load(encoder_type=encoder_type)
         if encoder_type in ['lstm', 'gru', 'rnn']:
             self.encoder = encoder(input_size=input_size,
-                                   num_units=encoder_num_units,
-                                   num_layers=encoder_num_layers,
                                    rnn_type=encoder_type,
                                    bidirectional=encoder_bidirectional,
+                                   num_units=encoder_num_units,
+                                   num_layers=encoder_num_layers,
                                    dropout=encoder_dropout,
                                    parameter_init=parameter_init,
                                    use_cuda=self.use_cuda,
@@ -161,7 +161,7 @@ class AttentionSeq2seq(ModelBase):
             self.encoder = self.encoder.cuda()
             self.attend = self.attend.cuda()
             self.decoder = self.decoder.cuda()
-            # TODO: Remove this
+            # TODO: Remove this??
 
     def forward(self, inputs, labels):
         """

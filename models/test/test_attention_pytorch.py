@@ -36,27 +36,27 @@ class TestAttention(unittest.TestCase):
         self.check(encoder_type='gru', bidirectional=True,
                    decoder_type='gru', attention_type='content')
         self.check(encoder_type='gru', bidirectional=False,
-                   decoder_type='gru', attention='content')
+                   decoder_type='gru', attention_type='content')
         # self.check(encoder_type='gru', bidirectional=True,
         #            decoder_type='gru', attention_type='location')
         # self.check(encoder_type='gru', bidirectional=False,
-        #            decoder_type='gru', attention='location')
+        #            decoder_type='gru', attention_type='location')
         # self.check(encoder_type='gru', bidirectional=True,
         #            decoder_type='gru', attention_type='hybrid')
         # self.check(encoder_type='gru', bidirectional=False,
-        #            decoder_type='gru', attention='hybrid')
+        #            decoder_type='gru', attention_type='hybrid')
         self.check(encoder_type='gru', bidirectional=True,
                    decoder_type='gru', attention_type='luong_dot')
         self.check(encoder_type='gru', bidirectional=False,
-                   decoder_type='gru', attention='luong_dot')
+                   decoder_type='gru', attention_type='luong_dot')
         self.check(encoder_type='gru', bidirectional=True,
                    decoder_type='gru', attention_type='luong_general')
         self.check(encoder_type='gru', bidirectional=False,
-                   decoder_type='gru', attention='luong_general')
+                   decoder_type='gru', attention_type='luong_general')
         # self.check(encoder_type='gru', bidirectional=True,
         #            decoder_type='gru', attention_type='luong_concat')
         # self.check(encoder_type='gru', bidirectional=False,
-        #            decoder_type='gru', attention='luong_concat')
+        #            decoder_type='gru', attention_type='luong_concat')
 
     @measure_time
     def check(self, encoder_type, bidirectional, decoder_type, attention_type):
@@ -85,7 +85,7 @@ class TestAttention(unittest.TestCase):
             input_size=inputs.size(-1),
             encoder_type=encoder_type,
             encoder_bidirectional=bidirectional,
-            encoder_num_units=128,
+            encoder_num_units=128 if bidirectional else 256,
             #  encoder_num_proj,
             encoder_num_layers=2,
             encoder_dropout=0,
@@ -96,7 +96,7 @@ class TestAttention(unittest.TestCase):
             #   decdoder_num_layers,
             decoder_dropout=0,
             embedding_dim=64,
-            num_classes=27,
+            num_classes=27,  # alphabets + space (excluding <SOS> and <EOS>)
             eos_index=28,
             max_decode_length=100,
             splice=1,
@@ -116,8 +116,16 @@ class TestAttention(unittest.TestCase):
             'adam', learning_rate_init=1e-3, weight_decay=0,
             lr_schedule=False, factor=0.1, patience_epoch=5)
 
+        # GPU setting
         use_cuda = torch.cuda.is_available()
-
+        deterministic = False
+        if use_cuda and deterministic:
+            print('GPU deterministic mode (no cudnn)')
+            torch.backends.cudnn.enabled = False
+        elif use_cuda:
+            print('GPU mode (faster than the deterministic mode)')
+        else:
+            print('CPU mode')
         if use_cuda:
             model = model.cuda()
             inputs = inputs.cuda()
@@ -128,7 +136,6 @@ class TestAttention(unittest.TestCase):
         start_time_global = time.time()
         start_time_step = time.time()
         ler_train_pre = 1
-        not_improved_count = 0
         for step in range(max_step):
 
             # Clear gradients before
@@ -168,26 +175,12 @@ class TestAttention(unittest.TestCase):
                 start_time_step = time.time()
 
                 # Visualize
-                # try:
                 print('Ref: %s' % idx2alpha(to_np(labels)[0][1:-1]))
                 print('Hyp: %s' % idx2alpha(outputs_infer[0][0:-1]))
 
-                # except IndexError:
-                #     if label_type == 'character':
-                #         print('Ref: %s' % idx2alpha(labels_true[0]))
-                #         print('Hyp: %s' % '')
-                #     else:
-                #         print('Ref: %s' % idx2phone(labels_true[0]))
-                #         print('Hyp: %s' % '')
-                #     # NOTE: This is for no prediction
-
-                # if ler_train >= ler_train_pre:
-                #     not_improved_count += 1
-                # else:
-                #     not_improved_count = 0
-                # if ler_train < 0.05:
-                #     print('Modle is Converged.')
-                #     break
+                if to_np(loss) < 1.:
+                    print('Modle is Converged.')
+                    break
                 # ler_train_pre = ler_train
 
 
