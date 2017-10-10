@@ -54,6 +54,9 @@ class AttentionMechanism(nn.Module):
             self.v_a = nn.Parameter(torch.FloatTensor(1, attention_dim))
             # self.v_a = nn.Parameter(torch.FloatTensor(attention_dim))
 
+        elif self.attention_type == 'dot_product':
+            raise NotImplementedError
+
         elif self.attention_type == 'location':
             raise NotImplementedError
 
@@ -65,28 +68,25 @@ class AttentionMechanism(nn.Module):
             #     stride=1, padding=0, dilation=1, groups=1, bias=True)
             raise NotImplementedError
 
-        elif self.attention_type == 'general':
+        elif self.attention_type == 'luong_general':
             self.W_a = nn.Linear(decoder_num_units, decoder_num_units)
 
-        elif self.attention_type == 'concat':
+        elif self.attention_type == 'luong_concat':
             self.W_a = nn.Linear(decoder_num_units * 2, attention_dim)
             self.v_a = nn.Parameter(torch.FloatTensor(1, attention_dim))
 
-    def forward(self, encoder_outputs, decoder_outputs_step,
-                attention_weights_step):
+    def forward(self, encoder_outputs, dec_output, att_weight_vec):
         """
         Args:
-            encoder_outputs (torch.FloatTensor): A tensor of size
-                `[B, T (encoder), encoder_num_units]`
-            decoder_outputs_step (torch.FloatTensor): A tensor of size
+            encoder_outputs (FloatTensor): A tensor of size
+                `[B, T_in, encoder_num_units]`
+            dec_output (FloatTensor): A tensor of size
                 `[B, 1, decoder_num_units]`
-            attention_weights_step (torch.FloatTensor): A tensor of size
-                `[B, 1, T (encoder)]`
+            att_weight_vec (FloatTensor): A tensor of size `[B, T_in]`
         Returns:
-            content_vector (torch.FloatTensor): A tensor of size
+            content_vector (FloatTensor): A tensor of size
                 `[B, 1, encoder_num_units]`
-            attention_weights_step (torch.FloatTensor): A tensor of size
-                `[B, T (encoder)]`
+            att_weight_vec (FloatTensor): A tensor of size `[B, T_in]`
         """
         # TODO: Add the bridge layer
 
@@ -95,7 +95,7 @@ class AttentionMechanism(nn.Module):
         ###################################
         if self.attention_type == 'content':
             energy = self.W_encoder(encoder_outputs)
-            energy += self.W_decoder(decoder_outputs_step).expand_as(energy)
+            energy += self.W_decoder(dec_output).expand_as(energy)
             energy = torch.mean(self.v_a * energy, dim=2)
 
         elif self.attention_type == 'location':
@@ -107,36 +107,34 @@ class AttentionMechanism(nn.Module):
         ###################################
         # ↓ Luong's impementation
         ###################################
-        elif self.attention_type == 'dot_product':
-            energy = torch.bmm(decoder_outputs_step,
-                               encoder_outputs.transpose(1, 2)).squeeze(1)
+        elif self.attention_type == 'luong_dot':
+            energy = torch.bmm(dec_output,
+                               encoder_outputs.transpose(1, 2)).squeeze(dim=1)
 
-        elif self.attention_type == 'general':
+        elif self.attention_type == 'luong_general':
             energy = self.W_a(encoder_outputs).transpose(1, 2)
-            energy = torch.bmm(decoder_outputs_step, energy).squeeze(1)
+            energy = torch.bmm(dec_output, energy).squeeze(dim=1)
 
-        elif self.attention_type == 'concat':
+        elif self.attention_type == 'luong_concat':
             raise NotImplementedError
 
         else:
             raise TypeError
-        # NOTE: energy: `[B, T (encoder)]`
+        # NOTE: energy: `[B, T_in]`
 
-        # if attention_weights_step is not None:
-        #     attention_weights_step = attention_weights_step.unsqueeze(dim=1)
-        #     attention_weights_step = self.conv(
-        #         attention_weights_step).squeeze(dim=1)
-        #     pax = pax + attention_weights_step
+        # if att_weight_vec is not None:
+        #     att_weight_vec = att_weight_vec.unsqueeze(dim=1)
+        #     att_weight_vec = self.conv(
+        #         att_weight_vec).squeeze(dim=1)
+        #     pax = pax + att_weight_vec
 
         # Compute attention weights (including smoothing)
-        attention_weights_step = F.softmax(
+        att_weight_vec = F.softmax(
             energy / self.att_softmax_temperature)
-        # NOTE: attention_weights_step: `[B, T (encoder)]`
 
         # Compute context vector (weighted sum of encoder outputs)
         context_vector = torch.sum(
-            encoder_outputs * attention_weights_step.unsqueeze(2),
+            encoder_outputs * att_weight_vec.unsqueeze(dim=2),
             dim=1, keepdim=True)
-        # NOTE: context_vector: `[B, T (encoder) ,1]`
 
-        return context_vector, attention_weights_step
+        return context_vector, att_weight_vec

@@ -93,5 +93,8 @@ class ModelBase(nn.Module):
                 cooldown=0,
                 min_lr=0,
                 eps=1e-08)
+            # TODO: fix bug
+        else:
+            scheduler = None
 
         return self.optimizer, scheduler

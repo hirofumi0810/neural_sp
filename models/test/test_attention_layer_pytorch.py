@@ -26,9 +26,9 @@ class TestAttentionLayer(unittest.TestCase):
         print("Attention layer Working check.")
 
         # Luong's implementation
-        self.check(attention_type='dot_product')
-        self.check(attention_type='general')
-        # self.check(attention_type='concat')
+        self.check(attention_type='luong_dot')
+        self.check(attention_type='luong_general')
+        # self.check(attention_type='luong_concat')
 
         # Baudanau's implementation
         self.check(attention_type='content')

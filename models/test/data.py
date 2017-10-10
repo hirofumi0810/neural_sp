@@ -148,12 +148,13 @@ def idx2alpha(indices):
     Returns:
         transcript (string): a sequence of character
     """
-    # 0 is reserved to space
+    # NOTE: 0 is reserved to space
+
     first_index = ord('a') - 1
     char_list = []
     for index in indices:
         if index == 0:
-            char_list.append(' ')
+            char_list.append('_')
         elif index == BLANK_INDEX:
             continue
             # TODO: fix this
