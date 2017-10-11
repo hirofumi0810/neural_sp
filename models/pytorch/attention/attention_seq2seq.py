@@ -33,16 +33,20 @@ class AttentionSeq2seq(ModelBase):
         decoder_type (string): lstm or gru
         decoder_num_units (int):
         # decdoder_num_layers (int):
+        decoder_dropout (float, optional):
         embedding_dim (int):
+        # embedding_dropout (int):
         num_classes (int): the number of classes of target labels
             (except for a blank label)
-        decoder_dropout (float, optional):
+
 
         max_decode_length (int):
         splice (int, optional): frames to splice. Default is 1 frame.
         parameter_init (float, optional): Range of uniform distribution to
             initialize weight parameters
-        att_softmax_temperature (float):
+        downsample_list (list, optional):
+        init_dec_state_with_enc_state (bool, optional):
+        sharpening_factor (float):
         logits_softmax_temperature (float):
         clip_grad (float, optional): Range of gradient clipping (> 0)
     """
@@ -59,15 +63,19 @@ class AttentionSeq2seq(ModelBase):
                  attention_dim,
                  decoder_type,
                  decoder_num_units,
+                 decoder_num_proj,
                  #   decdoder_num_layers,
                  decoder_dropout,
                  embedding_dim,
+                 #  embedding_dropout,
                  num_classes,
                  eos_index,
                  max_decode_length=100,
                  splice=1,
                  parameter_init=0.1,
-                 att_softmax_temperature=1.,
+                 downsample_list=[],
+                 init_dec_state_with_enc_state=True,
+                 sharpening_factor=1.,
                  logits_softmax_temperature=1):
 
         super(ModelBase, self).__init__()
@@ -81,6 +89,7 @@ class AttentionSeq2seq(ModelBase):
         self.encoder_num_units = encoder_num_units
         # self.encoder_num_proj = encoder_num_proj
         self.encoder_num_layers = encoder_num_layers
+        self.downsample_list = downsample_list
         self.encoder_dropout = encoder_dropout
 
         # Setting for the decoder
@@ -88,14 +97,17 @@ class AttentionSeq2seq(ModelBase):
         self.attention_dim = attention_dim
         self.decoder_type = decoder_type
         self.decoder_num_units = decoder_num_units
+        self.decoder_num_proj = decoder_num_proj
         # self.decdoder_num_layers = decdoder_num_layers
         self.decoder_dropout = decoder_dropout
         self.embedding_dim = embedding_dim
+        # self.embedding_dropout = embedding_dropout
         self.num_classes = num_classes + 2
         # NOTE: add <SOS> and <EOS>
         self.eos_index = eos_index
         self.max_decode_length = max_decode_length
-        self.att_softmax_temperature = att_softmax_temperature
+        self.init_dec_state_with_enc_state = init_dec_state_with_enc_state
+        self.sharpening_factor = sharpening_factor
         self.logits_softmax_temperature = logits_softmax_temperature
 
         # Common setting
@@ -104,17 +116,34 @@ class AttentionSeq2seq(ModelBase):
         ####################
         # Encoder
         ####################
-        encoder = load(encoder_type=encoder_type)
+        if len(downsample_list) == 0:
+            encoder = load(encoder_type=encoder_type)
+        else:
+            encoder = load(encoder_type='p' + encoder_type)
         if encoder_type in ['lstm', 'gru', 'rnn']:
-            self.encoder = encoder(input_size=input_size,
-                                   rnn_type=encoder_type,
-                                   bidirectional=encoder_bidirectional,
-                                   num_units=encoder_num_units,
-                                   num_layers=encoder_num_layers,
-                                   dropout=encoder_dropout,
-                                   parameter_init=parameter_init,
-                                   use_cuda=self.use_cuda,
-                                   batch_first=True)
+            if len(downsample_list) == 0:
+                self.encoder = encoder(input_size=input_size,
+                                       rnn_type=encoder_type,
+                                       bidirectional=encoder_bidirectional,
+                                       num_units=encoder_num_units,
+                                       num_layers=encoder_num_layers,
+                                       dropout=encoder_dropout,
+                                       parameter_init=parameter_init,
+                                       use_cuda=self.use_cuda,
+                                       batch_first=True)
+
+            else:
+                self.encoder = encoder(input_size=input_size,
+                                       rnn_type=encoder_type,
+                                       bidirectional=encoder_bidirectional,
+                                       num_units=encoder_num_units,
+                                       num_layers=encoder_num_layers,
+                                       downsample_list=downsample_list,
+                                       dropout=encoder_dropout,
+                                       parameter_init=parameter_init,
+                                       use_cuda=self.use_cuda,
+                                       batch_first=True)
+
         else:
             raise NotImplementedError
 
@@ -149,11 +178,15 @@ class AttentionSeq2seq(ModelBase):
             decoder_num_units=decoder_num_units,
             attention_type=attention_type,
             attention_dim=attention_dim,
-            att_softmax_temperature=att_softmax_temperature)
+            sharpening_factor=sharpening_factor)
 
         self.embedding = nn.Embedding(num_classes + 2, embedding_dim)
         # self.embedding_dropout = nn.Dropout(decoder_dropout)
-        self.fc = nn.Linear(decoder_num_units, num_classes + 2)
+        self.dec_proj_dec_state = nn.Linear(
+            decoder_num_units, decoder_num_proj)
+        self.dec_proj_context = nn.Linear(
+            encoder_num_units * self.encoder_num_directions, decoder_num_proj)
+        self.fc = nn.Linear(decoder_num_proj, num_classes + 2)
         # NOTE: <SOS> is removed because the decoder never predict <SOS> class
 
         # GPU setting
@@ -170,17 +203,22 @@ class AttentionSeq2seq(ModelBase):
         Returns:
             outputs (FloatTensor): A tensor of size
                 `[T_out, B, num_classes (including <SOS> and <EOS>)]`
+            att_weights (FloatTensor): A tensor of size `[B, T_out, T_in]`
         """
         encoder_outputs, encoder_final_state = self.encoder(inputs)
         # TODO: start decoder state from encoder final state
-        outputs, _ = self.decode_train(encoder_outputs, labels)
-        return outputs
+        outputs, att_weights = self.decode_train(
+            encoder_outputs, labels, encoder_final_state)
+        return outputs, att_weights
 
-    def compute_loss(self, outputs, labels):
+    def compute_loss(self, outputs, labels,
+                     att_weights=None, coverage_weight=0):
         """
         Args:
             outputs (FloatTensor):
             labels (LongTensor):
+            att_weights (FloatTensor): A tensor of size `[B, T_out, T_in]`
+            coverage_weight (float, optional):
         Returns:
             loss ():
         """
@@ -190,20 +228,30 @@ class AttentionSeq2seq(ModelBase):
         loss = F.cross_entropy(outputs, labels,
                                size_average=False)
         loss /= batch_size
+
+        if coverage_weight != 0:
+            pass
+            # coverage = self.compute_coverage(att_weights)
+            # loss += coverage_weight * coverage
+            # raise NotImplementedError
+
         return loss
 
-    def compute_coverage(self):
+    def compute_coverage(self, att_weights):
+        batch_size, max_time_outputs, max_time_inputs = att_weights.size()
         raise NotImplementedError
 
-    def decode_train(self, encoder_outputs, labels):
-        """
+    def decode_train(self, encoder_outputs, labels, encoder_final_state):
+        """Decoding when training.
         Args:
             encoder_outputs (FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
             labels (LongTensor): A tensor of size `[B, T_out]`
+            encoder_final_state (FloatTensor): A tensor of size
+                `[]`
         Returns:
-            outputs (FloatTensor):
-            att_weights (np.ndarray):
+            outputs (FloatTensor): A tensor of size `[B,]`
+            att_weights (FloatTensor): A tensor of size `[B, T_out, T_in]`
         """
         ys = self.embedding(labels[:, :-1])
         # ys = self.embedding_dropout(ys)
@@ -212,7 +260,19 @@ class AttentionSeq2seq(ModelBase):
         outputs = []
         att_weights = []
         att_weight_vec = None
-        dec_state = None if self.decoder_type == 'gru' else (None, None)
+
+        if self.init_dec_state_with_enc_state:
+            # Initialize decoder state with the final state of the top layer of the encoder
+            if self.encoder_bidirectional:
+                final_enc_state_fw = encoder_final_state[-2]
+                final_enc_state_bw = encoder_final_state[-1]
+                dec_state = torch.cat(
+                    (final_enc_state_fw, final_enc_state_bw), dim=1).unsqueeze(0)
+            else:
+                dec_state = encoder_final_state[-1].unsqueeze(0)
+        else:
+            dec_state = None if self.decoder_type == 'gru' else (None, None)
+
         for t in range(labels_max_seq_len - 1):
             y = ys[:, t:t + 1, :]
 
@@ -222,16 +282,18 @@ class AttentionSeq2seq(ModelBase):
                 dec_state,
                 att_weight_vec)
 
-            output = dec_output + context_vec
+            # Map to the projection layer
+            output = self.dec_proj_dec_state(
+                dec_output) + self.dec_proj_context(context_vec)
 
             att_weights.append(att_weight_vec)
             outputs.append(output)
 
         outputs = torch.cat(outputs, dim=1)
-        outputs = self.fc(outputs)
-        # TODO: add additional MLP
+        outputs = self.fc(F.tanh(outputs))
         att_weights = torch.stack(att_weights, dim=1)
-        att_weights = att_weights.cpu().data.numpy()
+        # NOTE; att_weights in the training stage may be used for computing the
+        # coverage, so do not convert to numpy yet.
 
         return outputs, att_weights
 
@@ -284,13 +346,13 @@ class AttentionSeq2seq(ModelBase):
             return self._decode_infer_beam_search(inputs, labels, beam_width)
 
     def _decode_infer_greedy(self, inputs, labels):
-        """
+        """Greedy decoding when inference.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
             labels (LongTensor): A tensor of size `[B, T_out]`
         Returns:
-            outputs (np.ndarray):
-            att_weights (np.ndarray):
+            outputs (np.ndarray): A tensor of size `[]`
+            att_weights (np.ndarray): A tensor of size `[]`
         """
         encoder_outputs, encoder_final_state = self.encoder(inputs)
 
@@ -300,7 +362,19 @@ class AttentionSeq2seq(ModelBase):
         outputs = []
         att_weights = []
         att_weight_vec = None
-        dec_state = None if self.decoder_type == 'gru' else (None, None)
+
+        if self.init_dec_state_with_enc_state:
+            # Initialize decoder state with the final state of the top layer of the encoder
+            if self.encoder_bidirectional:
+                final_enc_state_fw = encoder_final_state[-2]
+                final_enc_state_bw = encoder_final_state[-1]
+                dec_state = torch.cat(
+                    (final_enc_state_fw, final_enc_state_bw), dim=1).unsqueeze(0)
+            else:
+                dec_state = encoder_final_state[-1].unsqueeze(0)
+        else:
+            dec_state = None if self.decoder_type == 'gru' else (None, None)
+
         for _ in range(self.max_decode_length):
 
             y = self.embedding(y)
@@ -312,9 +386,12 @@ class AttentionSeq2seq(ModelBase):
                 dec_state,
                 att_weight_vec)
 
-            output = dec_output + context_vec
-            output = self.fc(output.squeeze(dim=1))
-            # TODO: add additional MLP
+            # Map to the projection layer
+            output = self.dec_proj_dec_state(
+                dec_output) + self.dec_proj_context(context_vec)
+
+            # Map to the outpu layer
+            output = self.fc(F.tanh(output.squeeze(dim=1)))
 
             # Pick up 1-best
             y = torch.max(output, dim=1)[1]
@@ -332,7 +409,7 @@ class AttentionSeq2seq(ModelBase):
         return outputs, att_weights
 
     def _decode_infer_beam_search(self, inputs, labels, beam_width):
-        """
+        """Beam search decoding when inference.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
             labels (LongTensor): A tensor of size `[B, T_out]`
@@ -347,6 +424,17 @@ class AttentionSeq2seq(ModelBase):
         outputs = []
         att_weights = []
         att_weight_vec = None
-        dec_state = None if self.decoder_type == 'gru' else (None, None)
+
+        if self.init_dec_state_with_enc_state:
+            # Initialize decoder state with the final state of the top layer of the encoder
+            if self.encoder_bidirectional:
+                final_enc_state_fw = encoder_final_state[-2]
+                final_enc_state_bw = encoder_final_state[-1]
+                dec_state = torch.cat(
+                    (final_enc_state_fw, final_enc_state_bw), dim=1).unsqueeze(0)
+            else:
+                dec_state = encoder_final_state[-1].unsqueeze(0)
+        else:
+            dec_state = None if self.decoder_type == 'gru' else (None, None)
 
         raise NotImplementedError

@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Test Attention-besed models in pytorch."""
+"""Test loading Attention-besed models in pytorch."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -14,7 +14,7 @@ import unittest
 import torch
 import torch.nn as nn
 
-sys.path.append('../../')
+sys.path.append('../../../')
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 from models.test.data import generate_data, np2var_pytorch, idx2alpha
 from models.test.util import measure_time
@@ -23,50 +23,15 @@ from utils.io.tensor import to_np
 torch.manual_seed(1)
 
 
-class TestAttention(unittest.TestCase):
+class TestLoadAttention(unittest.TestCase):
 
     def test(self):
-        print("Attention Working check.")
+        print("Attention Loading check.")
 
-        # self.check(encoder_type='lstm', bidirectional=False,
-        #            decoder_type='lstm')
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            decoder_type='lstm')
-
-        self.check(encoder_type='gru', bidirectional=True,
-                   decoder_type='gru', attention_type='content')
-        self.check(encoder_type='gru', bidirectional=False,
-                   decoder_type='gru', attention_type='content')
-        # self.check(encoder_type='gru', bidirectional=True,
-        #            decoder_type='gru', attention_type='location')
-        # self.check(encoder_type='gru', bidirectional=False,
-        #            decoder_type='gru', attention_type='location')
-        # self.check(encoder_type='gru', bidirectional=True,
-        #            decoder_type='gru', attention_type='hybrid')
-        # self.check(encoder_type='gru', bidirectional=False,
-        #            decoder_type='gru', attention_type='hybrid')
-        self.check(encoder_type='gru', bidirectional=True,
-                   decoder_type='gru', attention_type='luong_dot')
-        self.check(encoder_type='gru', bidirectional=False,
-                   decoder_type='gru', attention_type='luong_dot')
-        self.check(encoder_type='gru', bidirectional=True,
-                   decoder_type='gru', attention_type='luong_general')
-        self.check(encoder_type='gru', bidirectional=False,
-                   decoder_type='gru', attention_type='luong_general')
-        # self.check(encoder_type='gru', bidirectional=True,
-        #            decoder_type='gru', attention_type='luong_concat')
-        # self.check(encoder_type='gru', bidirectional=False,
-        #            decoder_type='gru', attention_type='luong_concat')
+        self.check()
 
     @measure_time
-    def check(self, encoder_type, bidirectional, decoder_type, attention_type):
-
-        print('==================================================')
-        print('  encoder_type: %s' % encoder_type)
-        print('  bidirectional: %s' % str(bidirectional))
-        print('  decoder_type: %s' % decoder_type)
-        print('  attention_type: %s' % attention_type)
-        print('==================================================')
+    def check(self):
 
         # Load batch data
         batch_size = 4
@@ -83,16 +48,17 @@ class TestAttention(unittest.TestCase):
         # Load model
         model = AttentionSeq2seq(
             input_size=inputs.size(-1),
-            encoder_type=encoder_type,
-            encoder_bidirectional=bidirectional,
-            encoder_num_units=128 if bidirectional else 256,
+            encoder_type='gru',
+            encoder_bidirectional=True,
+            encoder_num_units=128,
             #  encoder_num_proj,
             encoder_num_layers=2,
-            encoder_dropout=0,
-            attention_type=attention_type,
+            encoder_dropout=0.1,
+            attention_type='content',
             attention_dim=128,
-            decoder_type=decoder_type,
+            decoder_type='gru',
             decoder_num_units=256,
+            decoder_num_proj=128,
             #   decdoder_num_layers,
             decoder_dropout=0,
             embedding_dim=64,
@@ -101,20 +67,24 @@ class TestAttention(unittest.TestCase):
             max_decode_length=100,
             splice=1,
             parameter_init=0.1,
-            att_softmax_temperature=1.,
+            init_dec_state_with_enc_state=True,
+            downsample_list=[],
+            sharpening_factor=2,
             logits_softmax_temperature=1)
-
-        # Initialize parameters
-        model.init_weights()
-
-        # Count total parameters
-        print("Total %s M parameters" %
-              ("{:,}".format(model.total_parameters / 1000000)))
+        model.name = 'att_pytorch'
 
         # Define optimizer
         optimizer, scheduler = model.set_optimizer(
             'adam', learning_rate_init=1e-3, weight_decay=0,
             lr_schedule=False, factor=0.1, patience_epoch=5)
+
+        # Load the saved model
+        checkpoint = model.load_checkpoint(save_path='./', epoch=1)
+        model.load_state_dict(checkpoint['state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
+
+        # Count total parameters
+        print("Total %.3f M parameters" % (model.total_parameters / 1000000))
 
         # GPU setting
         use_cuda = torch.cuda.is_available()
@@ -131,9 +101,8 @@ class TestAttention(unittest.TestCase):
             inputs = inputs.cuda()
             labels = labels.cuda()
 
-        # Train model
+        # Retrain model
         max_step = 1000
-        start_time_global = time.time()
         start_time_step = time.time()
         ler_train_pre = 1
         for step in range(max_step):
@@ -142,10 +111,11 @@ class TestAttention(unittest.TestCase):
             optimizer.zero_grad()
 
             # Make prediction
-            outputs_train = model(inputs, labels)
+            outputs_train, att_weights = model(inputs, labels)
 
             # Compute loss
-            loss = model.compute_loss(outputs_train, labels)
+            loss = model.compute_loss(outputs_train, labels,
+                                      att_weights, coverage_weight=0.5)
 
             # Compute gradient
             optimizer.zero_grad()

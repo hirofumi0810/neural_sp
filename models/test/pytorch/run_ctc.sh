@@ -1,9 +1,9 @@
-#!/bin/zsh
+#!/bin/bash
 
 # Select GPU
 if [ $# -ne 1 ]; then
   echo "Error: set GPU index." 1>&2
-  echo "Usage: ./run_attention_pytorch.sh gpu_index" 1>&2
+  echo "Usage: ./run_ctc_pytorch.sh gpu_index" 1>&2
   exit 1
 fi
 
@@ -17,4 +17,4 @@ PYTHON=/home/lab5/inaguma/.pyenv/versions/anaconda3-4.1.1/bin/python
 gpu_index=$1
 
 # Background job version
-CUDA_VISIBLE_DEVICES=$gpu_index $PYTHON test_attention_pytorch.py
+CUDA_VISIBLE_DEVICES=$gpu_index $PYTHON test_ctc_pytorch.py

@@ -8,9 +8,11 @@ from __future__ import division
 from __future__ import print_function
 
 import torch
+import torch.nn as nn
+from torch.autograd import Variable
 
 
-class RNNEncoder(torch.nn.Module):
+class RNNEncoder(nn.Module):
     """RNN encoder.
     Args:
         input_size (int): the dimension of input features
@@ -55,29 +57,29 @@ class RNNEncoder(torch.nn.Module):
         self.batch_first = batch_first
 
         if rnn_type == 'lstm':
-            self.rnn = torch.nn.LSTM(input_size,
-                                     hidden_size=num_units,
-                                     num_layers=num_layers,
-                                     bias=True,
-                                     batch_first=batch_first,
-                                     dropout=dropout,
-                                     bidirectional=bidirectional)
+            self.rnn = nn.LSTM(input_size,
+                               hidden_size=num_units,
+                               num_layers=num_layers,
+                               bias=True,
+                               batch_first=batch_first,
+                               dropout=dropout,
+                               bidirectional=bidirectional)
         elif rnn_type == 'gru':
-            self.rnn = torch.nn.GRU(input_size,
-                                    hidden_size=num_units,
-                                    num_layers=num_layers,
-                                    bias=True,
-                                    batch_first=batch_first,
-                                    dropout=dropout,
-                                    bidirectional=bidirectional)
+            self.rnn = nn.GRU(input_size,
+                              hidden_size=num_units,
+                              num_layers=num_layers,
+                              bias=True,
+                              batch_first=batch_first,
+                              dropout=dropout,
+                              bidirectional=bidirectional)
         elif rnn_type == 'rnn':
-            self.rnn = torch.nn.RNN(input_size,
-                                    hidden_size=num_units,
-                                    num_layers=num_layers,
-                                    bias=True,
-                                    batch_first=batch_first,
-                                    dropout=dropout,
-                                    bidirectional=bidirectional)
+            self.rnn = nn.RNN(input_size,
+                              hidden_size=num_units,
+                              num_layers=num_layers,
+                              bias=True,
+                              batch_first=batch_first,
+                              dropout=dropout,
+                              bidirectional=bidirectional)
         else:
             raise ValueError('rnn_type must be "lstm" or "gru" or "rnn".')
 
@@ -89,14 +91,14 @@ class RNNEncoder(torch.nn.Module):
             if rnn_type is 'lstm', return a tuple of tensors (h_0, c_0),
             otherwise return a tensor h_0.
         """
-        h_0 = torch.autograd.Variable(torch.zeros(
+        h_0 = Variable(torch.zeros(
             self.num_layers * self.num_directions, batch_size, self.num_units))
 
         if self.use_cuda:
             h_0 = h_0.cuda()
 
         if self.rnn_type == 'lstm':
-            c_0 = torch.autograd.Variable(torch.zeros(
+            c_0 = Variable(torch.zeros(
                 self.num_layers * self.num_directions, batch_size, self.num_units))
 
             if self.use_cuda:
@@ -113,11 +115,11 @@ class RNNEncoder(torch.nn.Module):
             inputs: A tensor of size `[B, T, input_size]`
         Returns:
             if batch_first is True,
-                outputs: A tensor of size `[T, B, num_classes]`
+                outputs: A tensor of size `[T, B, num_units * num_directions]`
                 final_state: A tensor of size
                     `[num_layers * num_directions, B, num_units]`
             else
-                outputs: A tensor of size `[B, T, num_classes]`
+                outputs: A tensor of size `[B, T, num_units * num_directions]`
                 final_state: A tensor of size
                     `[B, num_layers * num_directions, num_units]`
         """
@@ -132,10 +134,12 @@ class RNNEncoder(torch.nn.Module):
 
         if self.rnn_type == 'lstm':
             outputs, (h_n, c_n) = self.rnn(inputs, hx=h_0)
-        else:  # gru or rnn
+        else:
+            # gru or rnn
             outputs, h_n = self.rnn(inputs, hx=h_0)
+
         # NOTE: outputs:
-        # `[B, T, num_units * num_directions]` (batch_first is True)
-        # `[T, B, num_units * num_directions]` (batch_first is False)
+        # `[B, T, num_units * num_directions]` (batch_first: True)
+        # `[T, B, num_units * num_directions]` (batch_first: False)
 
         return outputs, h_n

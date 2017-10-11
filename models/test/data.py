@@ -97,7 +97,7 @@ def generate_data(model, batch_size=1, splice=1):
     """
     # Make input data
     inputs, inputs_seq_len = wav2feature(
-        ['./sample/LDC93S1.wav'] * batch_size,
+        ['../sample/LDC93S1.wav'] * batch_size,
         feature_type='logfbank', feature_dim=40,
         energy=True, delta1=True, delta2=True, dtype=np.float32)
 
@@ -105,7 +105,7 @@ def generate_data(model, batch_size=1, splice=1):
     # inputs = do_splice(inputs, splice=splice)
 
     # Make transcripts
-    transcript = _read_text('./sample/LDC93S1.txt').replace('.', '')
+    transcript = _read_text('../sample/LDC93S1.txt').replace('.', '')
     if model == 'attention':
         transcript = '<' + transcript + '>'
     labels = np.array([alpha2idx(transcript)] * batch_size, np.int32)

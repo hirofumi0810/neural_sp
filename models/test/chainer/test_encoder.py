@@ -11,35 +11,35 @@ import sys
 import unittest
 
 sys.path.append('../../')
-from models.chainer.layers.encoders.load_encoder import load
+from models.chainer.encoders.load_encoder import load
 from models.test.data import generate_data, np2var_chainer, np2varlist_chainer
 from models.test.util import measure_time
 
 
 class TestEncoders(unittest.TestCase):
 
-    def test_encoders(self):
+    def test(self):
         print("Encoders Working check.")
 
         # RNNs
-        self.check_encode(encoder_type='lstm')
-        self.check_encode(encoder_type='lstm', bidirectional=True)
-        self.check_encode(encoder_type='gru')
-        self.check_encode(encoder_type='gru', bidirectional=True)
-        self.check_encode(encoder_type='rnn_tanh')
-        self.check_encode(encoder_type='rnn_tanh', bidirectional=True)
-        self.check_encode(encoder_type='rnn_relu')
-        self.check_encode(encoder_type='rnn_relu', bidirectional=True)
+        self.check(encoder_type='lstm')
+        self.check(encoder_type='lstm', bidirectional=True)
+        self.check(encoder_type='gru')
+        self.check(encoder_type='gru', bidirectional=True)
+        self.check(encoder_type='rnn_tanh')
+        self.check(encoder_type='rnn_tanh', bidirectional=True)
+        self.check(encoder_type='rnn_relu')
+        self.check(encoder_type='rnn_relu', bidirectional=True)
 
-        # self.check_encode(encoder_type='conv_lstm')
-        # self.check_encode('vgg_lstm')
+        # self.check(encoder_type='conv_lstm')
+        # self.check('vgg_lstm')
 
         # CNNs
-        # self.check_encode(encoder_type='resnet')
-        # self.check_encode(encoder_type='vgg')
+        # self.check(encoder_type='resnet')
+        # self.check(encoder_type='vgg')
 
     @measure_time
-    def check_encode(self, encoder_type, bidirectional=False):
+    def check(self, encoder_type, bidirectional=False):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
@@ -49,7 +49,9 @@ class TestEncoders(unittest.TestCase):
         # Load batch data
         batch_size = 2
         inputs, labels, inputs_seq_len, labels_seq_len = generate_data(
-            model='ctc', batch_size=batch_size)
+            model='ctc',
+            batch_size=batch_size,
+            splice=1)
 
         # Wrap by Variable
         inputs = np2varlist_chainer(inputs)

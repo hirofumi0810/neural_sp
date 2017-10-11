@@ -14,7 +14,7 @@ import unittest
 import torch
 import torch.nn as nn
 
-sys.path.append('../../')
+sys.path.append('../../../')
 from models.pytorch.ctc.ctc import CTC
 from models.test.data import generate_data, np2var_pytorch, idx2alpha
 from models.test.util import measure_time

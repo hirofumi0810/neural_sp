@@ -8,7 +8,7 @@ from __future__ import print_function
 import numpy as np
 
 import chainer
-from chainer import functions as F
+# from chainer import functions as F
 from chainer import links as L
 from chainer import Chain
 from chainer import Variable
@@ -26,9 +26,9 @@ class RNN_Encoder(Chain):
         rnn_type (string): lstm or gru or rnn_tanh or rnn_relu
         bidirectional (bool): if True, use the bidirectional model
         use_peephole (bool): if True, use peephole connections
-        parameter_init (float): Range of uniform distribution to initialize
+        parameter_init (float): the range of uniform distribution to initialize
             weight parameters
-        clip_activation (float): Range of activation clipping (> 0)
+        clip_activation (float): the range of activation clipping (> 0)
         num_proj (int): the number of nodes in recurrent projection layer
         bottleneck_dim (int): the dimensions of the bottleneck layer
     """
@@ -118,62 +118,56 @@ class RNN_Encoder(Chain):
             batch_size (int): the size of mini-batch
             xp:
         Returns:
-            if rnn_type is 'lstm', return a tuple of tensors (h_0, c_0),
-            otherwise return a tensor h_0.
+            if rnn_type is 'lstm', return a tuple of
+                (initial_hidden_state, initial_memory_cell),
+            otherwise return a tensor initial_hidden_state.
         """
-        h_0 = Variable(xp.zeros(
+        initial_hidden_state = Variable(xp.zeros(
             (self.num_layers * self.num_directions, batch_size, self.num_units),
             dtype=xp.float32))
         # volatile??
 
         if self.rnn_type == 'lstm':
             # hidden states & memory cells
-            c_0 = Variable(xp.zeros(
+            initial_memory_cell = Variable(xp.zeros(
                 (self.num_layers * self.num_directions, batch_size, self.num_units),
                 dtype=xp.float32))
             # volatile??
-            return (h_0, c_0)
+            return (initial_hidden_state, initial_memory_cell)
         else:  # gru or rnn
             # hidden states
-            return h_0
+            return initial_hidden_state
 
     def __call__(self, inputs):
         """
         Args:
-            inputs (list): list of tensors of size `(batch_size, input_size)`.
+            inputs (list): list of tensors of size `[B, input_size]`.
                 Note that len(inputs) == max_time.
         Returns:
-            logits (list): list of tensors of size `(batch_size, num_classes)`.
+            logits (list): list of tensors of size `[B, num_classes]`.
                 Note that len(logits) == max_time.
             final_state: A tensor of size
-                `(num_layers * num_directions, batch_size, num_units)`
+                `[num_layers * num_directions, B, num_units]`
         """
-        assert isinstance(
-            inputs, list), "inputs must be a list of chainer.Variable."
-        assert len(
-            inputs[0].shape) == 2, "each inputs must be a list of tensors of size `(batch_size, input_size)`."
-
         # Initialize hidden states (and memory cells) per mini-batch
-        hidden = self._init_hidden(
+        initial_state = self._init_hidden(
             batch_size=len(inputs), xp=chainer.cuda.get_array_module(inputs))
         # TODO:Noneを渡すとゼロベクトルを用意
         # Encoder-DecoderのDecoderの時は初期ベクトルhxを渡す
         # h_0, c_0 = None, None
 
         if self.rnn_type == 'lstm':
-            h_n, c_n, outputs = self.rnn(hx=hidden[0], cx=hidden[1], xs=inputs)
+            final_state, c_n, outputs = self.rnn(
+                hx=initial_state[0], cx=initial_state[1], xs=inputs)
 
-        else:  # gru or rnn
-            h_n, outputs = self.rnn(hx=hidden, xs=inputs)
+        else:
+            # gru or rnn
+            final_state, outputs = self.rnn(hx=initial_state, xs=inputs)
 
         # For attention-based models
         if self.num_classes == 0:
-            return outputs, h_n
+            return outputs, final_state
 
         logits = [self.fc(outputs[t]) for t in range(len(outputs))]
 
-        # for i in range(len(logits)):
-        #     logits[i] = logits[i].reshape(1, logits[i].shape[0], logits[i].shape[1])
-        # logits = F.concat(logits, axis=0)
-
-        return logits, h_n
+        return logits, final_state

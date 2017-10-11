@@ -1,5 +1,8 @@
 *.pyc
 *.log
+__pycache__
+.dropbox.attr
+.ftpconfig
 
 pytorch_ctc
 tools

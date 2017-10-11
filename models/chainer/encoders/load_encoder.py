@@ -7,10 +7,10 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from models.chainer.layers.encoders.rnn import RNN_Encoder
-# from models.chainer.layers.encoders import vgg
-# from models.chainer.layers.encoders import resnet
-# from models.chainer.layers.encoders import hierarchical
+from models.chainer.encoders.rnn import RNN_Encoder
+# from models.chainer.encoders import vgg
+# from models.chainer.encoders import resnet
+# from models.chainer.encoders import hierarchical
 
 
 ENCODERS = {
