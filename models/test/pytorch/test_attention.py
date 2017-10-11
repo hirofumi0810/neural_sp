@@ -34,12 +34,12 @@ class TestAttention(unittest.TestCase):
         #            decoder_type='lstm')
 
         # Pyramidal encoder
-        # self.check(encoder_type='gru', bidirectional=True,
-        #            decoder_type='gru', attention_type='content',
-        #            downsample=True)
-        # self.check(encoder_type='gru', bidirectional=False,
-        #            decoder_type='gru', attention_type='content',
-        #            downsample=True)
+        self.check(encoder_type='gru', bidirectional=True,
+                   decoder_type='gru', attention_type='content',
+                   downsample=True)
+        self.check(encoder_type='gru', bidirectional=False,
+                   decoder_type='gru', attention_type='content',
+                   downsample=True)
         # NOTE: Pyramidal encoder does not work on GPU
 
         # Attention type

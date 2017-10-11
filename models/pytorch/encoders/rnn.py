@@ -116,11 +116,11 @@ class RNNEncoder(nn.Module):
         Returns:
             if batch_first is True,
                 outputs: A tensor of size `[T, B, num_units * num_directions]`
-                final_state: A tensor of size
+                h_n: A tensor of size
                     `[num_layers * num_directions, B, num_units]`
             else
                 outputs: A tensor of size `[B, T, num_units * num_directions]`
-                final_state: A tensor of size
+                h_n: A tensor of size
                     `[B, num_layers * num_directions, num_units]`
         """
         batch_size, max_time = inputs.size()[:2]

@@ -102,16 +102,16 @@ class CTC(ModelBase):
         Returns:
             logits (FloatTensor): A tensor of size `[T, B, num_classes + 1]`
         """
-        encoder_outputs, final_state = self.encoder(inputs)
-        batch_size, max_time = encoder_outputs.size()[:2]
-        encoder_outputs = encoder_outputs.contiguous()
-        encoder_outputs = encoder_outputs.view(batch_size * max_time, -1)
+        encoder_states, final_state = self.encoder(inputs)
+        batch_size, max_time = encoder_states.size()[:2]
+        encoder_states = encoder_states.contiguous()
+        encoder_states = encoder_states.view(batch_size * max_time, -1)
 
         if self.bottleneck_dim is not None:
-            logits = self.bottleneck(encoder_outputs)
+            logits = self.bottleneck(encoder_states)
             logits = self.fc(logits)
         else:
-            logits = self.fc(encoder_outputs)
+            logits = self.fc(encoder_states)
 
         logits = logits.view(batch_size, max_time, -1)
         return logits
@@ -120,14 +120,19 @@ class CTC(ModelBase):
         """
         Args:
             logits (FloatTensor): A tensor of size `[B, T, num_classes]`
-            labels (LongTensor): A tensor of size `[]`
-            inputs_seq_len (LongTensor): A tensor of size `[B, ]`
-            labels_seq_len (LongTensor): A tensor of size `[B, ]`
+            labels (LongTensor): A tensor of size `[B, U]`
+            inputs_seq_len (LongTensor): A tensor of size `[B]`
+            labels_seq_len (LongTensor): A tensor of size `[B]`
         Returns:
-
+            ctc_loss ():
         """
         batch_size, max_time, num_classes = logits.size()
         ctc_loss_fn = CTCLoss()
+
+        print(logits)
+        print(labels)
+        print(inputs_seq_len)
+        print(labels_seq_len)
         ctc_loss = ctc_loss_fn(logits, labels, inputs_seq_len, labels_seq_len)
         ctc_loss /= batch_size
         return ctc_loss

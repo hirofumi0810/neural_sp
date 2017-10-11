@@ -1,9 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Pyramid RNN encoders.
-    This implementation is bases on
-"""
+"""Multi-task RNN encodrs."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -14,10 +12,21 @@ import torch.nn as nn
 from torch.autograd import Variable
 
 
-class PyramidRNNEncoder(nn.Module):
-    """Pyramid RNN encoder.
+class MultitaskRNNEncoder(nn.Module):
+    """Multi-task RNN encoder.
     Args:
-
+        input_size (int): the dimension of input features
+        rnn_type (string): lstm or gru or rnn
+        bidirectional (bool): if True, use the bidirectional encoder
+        num_units (int): the number of units in each layer
+        # num_proj (int): the number of nodes in recurrent projection layer
+        num_layers_main (int): the number of layers in the main task
+        num_layers_sub (int): the number of layers in the sub task
+        dropout (float): the probability to drop nodes
+        parameter_init (float): Range of uniform distribution to initialize
+            weight parameters
+        use_cuda (bool, optional):
+        batch_first (bool, optional):
     """
 
     def __init__(self,
@@ -26,17 +35,14 @@ class PyramidRNNEncoder(nn.Module):
                  bidirectional,
                  num_units,
                  #  num_proj,
-                 num_layers,
-                 downsample_list,
+                 num_layers_main,
+                 num_layers_sub,
                  dropout,
                  parameter_init,
                  use_cuda=False,
                  batch_first=False):
 
-        super(PyramidRNNEncoder, self).__init__()
-
-        if len(downsample_list) != num_layers:
-            raise ValueError
+        super(MultitaskRNNEncoder, self).__init__()
 
         self.input_size = input_size
         self.rnn_type = rnn_type
@@ -44,8 +50,8 @@ class PyramidRNNEncoder(nn.Module):
         self.num_directions = 2 if bidirectional else 1
         self.num_units = num_units
         # self.num_proj = num_proj
-        self.num_layers = num_layers
-        self.downsample_list = downsample_list
+        self.num_layers_main = num_layers_main
+        self.num_layers_sub = num_layers_sub
         self.dropout = dropout
         # NOTE: dropout is applied except the last layer
 
@@ -53,8 +59,12 @@ class PyramidRNNEncoder(nn.Module):
         self.use_cuda = use_cuda
         self.batch_first = batch_first
 
+        if num_layers_sub < 1 or num_layers_main < self.num_layers_sub:
+            raise ValueError(
+                'Set num_layers_sub between 1 to num_layers_main.')
+
         self.rnns = []
-        for i in range(num_layers):
+        for i in range(num_layers_main):
             if rnn_type == 'lstm':
                 rnn = nn.LSTM(
                     input_size if i == 0 else num_units * self.num_directions,
@@ -83,8 +93,7 @@ class PyramidRNNEncoder(nn.Module):
                     dropout=dropout,
                     bidirectional=bidirectional)
             else:
-                raise ValueError(
-                    'rnn_type must be "lstm" or "gru" or "rnn".')
+                raise ValueError('rnn_type must be "lstm" or "gru" or "rnn".')
 
             if use_cuda:
                 rnn = rnn.cuda()
@@ -122,7 +131,18 @@ class PyramidRNNEncoder(nn.Module):
         Args:
             inputs: A tensor of size `[B, T, input_size]`
         Returns:
-
+            if batch_first is True,
+                outputs: A tensor of size `[T, B, num_units * num_directions]`
+                h_n: A tensor of size
+                    `[num_layers * num_directions, B, num_units]`
+                outputs_sub (): A tensor of size `[]`
+                h_n_sub (): A tensor of size `[]`
+            else
+                outputs: A tensor of size `[B, T, num_units * num_directions]`
+                h_n: A tensor of size
+                    `[B, num_layers * num_directions, num_units]`
+                outputs_sub (): A tensor of size `[]`
+                h_n_sub (): A tensor of size `[]`
         """
         batch_size, max_time = inputs.size()[:2]
 
@@ -133,12 +153,9 @@ class PyramidRNNEncoder(nn.Module):
             # Reshape to the time-major
             inputs = inputs.transpose(0, 1)
 
-        # print(inputs.size())
-
         outputs = inputs
         final_state_list = []
-        for i in range(self.num_layers):
-            # self.rnns[i].flatten_parameters()
+        for i in range(self.num_layers_main):
             if self.rnn_type == 'lstm':
                 outputs, (h_n, c_n) = self.rnns[i](outputs, hx=h_0)
             else:
@@ -150,25 +167,11 @@ class PyramidRNNEncoder(nn.Module):
             # `[B, T, num_units * num_directions]` (batch_first: True)
             # `[T, B, num_units * num_directions]` (batch_first: False)
 
-            outputs_list = []
-            if self.downsample_list[i]:
-                for t in range(max_time):
-                    # Pick up features at even time step
-                    if (t + 1) % 2 == 0:
-                        if self.batch_first:
-                            outputs_t = outputs[:, t, :].unsqueeze(1)
-                        else:
-                            outputs_t = outputs[t, :, :].unsqueeze(0)
-                        outputs_list.append(outputs_t)
-                if self.batch_first:
-                    outputs = torch.cat(outputs_list, dim=1)
-                    max_time = outputs.size(1)
-                else:
-                    outputs = torch.cat(outputs_list, dim=0)
-                    max_time = outputs.size(0)
-
-                # print(outputs.size())
+            if i == self.num_layers_sub - 1:
+                outputs_sub = outputs
+                h_n_sub = torch.cat(final_state_list, dim=0)
+                # `[B, num_layers_sub * num_directions, num_units]`
 
         h_n = torch.cat(final_state_list, dim=0)
 
-        return outputs, h_n
+        return outputs, h_n, outputs_sub, h_n_sub

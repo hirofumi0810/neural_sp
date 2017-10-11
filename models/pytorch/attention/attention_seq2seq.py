@@ -205,10 +205,10 @@ class AttentionSeq2seq(ModelBase):
                 `[T_out, B, num_classes (including <SOS> and <EOS>)]`
             att_weights (FloatTensor): A tensor of size `[B, T_out, T_in]`
         """
-        encoder_outputs, encoder_final_state = self.encoder(inputs)
+        encoder_states, encoder_final_state = self.encoder(inputs)
         # TODO: start decoder state from encoder final state
         outputs, att_weights = self.decode_train(
-            encoder_outputs, labels, encoder_final_state)
+            encoder_states, labels, encoder_final_state)
         return outputs, att_weights
 
     def compute_loss(self, outputs, labels,
@@ -241,10 +241,10 @@ class AttentionSeq2seq(ModelBase):
         batch_size, max_time_outputs, max_time_inputs = att_weights.size()
         raise NotImplementedError
 
-    def decode_train(self, encoder_outputs, labels, encoder_final_state):
+    def decode_train(self, encoder_states, labels, encoder_final_state):
         """Decoding when training.
         Args:
-            encoder_outputs (FloatTensor): A tensor of size
+            encoder_states (FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
             labels (LongTensor): A tensor of size `[B, T_out]`
             encoder_final_state (FloatTensor): A tensor of size
@@ -262,7 +262,8 @@ class AttentionSeq2seq(ModelBase):
         att_weight_vec = None
 
         if self.init_dec_state_with_enc_state:
-            # Initialize decoder state with the final state of the top layer of the encoder
+            # Initialize decoder state with the final state of the top layer of
+            # the encoder
             if self.encoder_bidirectional:
                 final_enc_state_fw = encoder_final_state[-2]
                 final_enc_state_bw = encoder_final_state[-1]
@@ -276,15 +277,15 @@ class AttentionSeq2seq(ModelBase):
         for t in range(labels_max_seq_len - 1):
             y = ys[:, t:t + 1, :]
 
-            dec_output, dec_state, context_vec, att_weight_vec = self.decode_step(
-                encoder_outputs,
+            dec_state, dec_state, context_vec, att_weight_vec = self.decode_step(
+                encoder_states,
                 y,
                 dec_state,
                 att_weight_vec)
 
             # Map to the projection layer
             output = self.dec_proj_dec_state(
-                dec_output) + self.dec_proj_context(context_vec)
+                dec_state) + self.dec_proj_context(context_vec)
 
             att_weights.append(att_weight_vec)
             outputs.append(output)
@@ -297,17 +298,17 @@ class AttentionSeq2seq(ModelBase):
 
         return outputs, att_weights
 
-    def decode_step(self, encoder_outputs, y, dec_state, att_weight_vec):
+    def decode_step(self, encoder_states, y, dec_state, att_weight_vec):
         """
         Args:
-            encoder_outputs (torch.FloatTensor): A tensor of size
+            encoder_states (torch.FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
             y (FloatTensor): A tensor of size `[B, 1, embedding_dim]`
             dec_state (FloatTensor): A tensor of size
                 `[1, B, decoder_num_units]`
             att_weight_vec (FloatTensor): A tensor of size `[B, T_in]`
         Returns:
-            dec_output (FloatTensor): A tensor of size
+            dec_state (FloatTensor): A tensor of size
                 `[B, 1, decoder_num_units]`
             dec_state (FloatTensor): A tensor of size
                 `[1, B, decoder_num_units]`
@@ -316,20 +317,20 @@ class AttentionSeq2seq(ModelBase):
             att_weight_vec (FloatTensor): A tensor of size `[B, T_in]`
         """
         if self.decoder_type == 'lstm':
-            dec_output, dec_state = self.decoder(
+            dec_state, dec_state = self.decoder(
                 y, hx=dec_state)
             # TODO; fix bug
 
         elif self.decoder_type == 'gru':
-            dec_output, dec_state = self.decoder(
+            dec_state, dec_state = self.decoder(
                 y, hx=dec_state)
 
-        # dec_output: `[B, 1, decoder_num_units]`
-        context_vec, att_weight_vec = self.attend(encoder_outputs,
-                                                  dec_output,
+        # dec_state: `[B, 1, decoder_num_units]`
+        context_vec, att_weight_vec = self.attend(encoder_states,
+                                                  dec_state,
                                                   att_weight_vec)
 
-        return dec_output, dec_state, context_vec, att_weight_vec
+        return dec_state, dec_state, context_vec, att_weight_vec
 
     def decode_infer(self, inputs, labels, beam_width=1):
         """
@@ -354,7 +355,7 @@ class AttentionSeq2seq(ModelBase):
             outputs (np.ndarray): A tensor of size `[]`
             att_weights (np.ndarray): A tensor of size `[]`
         """
-        encoder_outputs, encoder_final_state = self.encoder(inputs)
+        encoder_states, encoder_final_state = self.encoder(inputs)
 
         # Start from <SOS>
         y = labels[:, 0:1]
@@ -364,7 +365,8 @@ class AttentionSeq2seq(ModelBase):
         att_weight_vec = None
 
         if self.init_dec_state_with_enc_state:
-            # Initialize decoder state with the final state of the top layer of the encoder
+            # Initialize decoder state with the final state of the top layer of
+            # the encoder
             if self.encoder_bidirectional:
                 final_enc_state_fw = encoder_final_state[-2]
                 final_enc_state_bw = encoder_final_state[-1]
@@ -380,15 +382,15 @@ class AttentionSeq2seq(ModelBase):
             y = self.embedding(y)
             # y = self.embedding_dropout(y)
 
-            dec_output, dec_state, context_vec, att_weight_vec = self.decode_step(
-                encoder_outputs,
+            dec_state, dec_state, context_vec, att_weight_vec = self.decode_step(
+                encoder_states,
                 y,
                 dec_state,
                 att_weight_vec)
 
             # Map to the projection layer
             output = self.dec_proj_dec_state(
-                dec_output) + self.dec_proj_context(context_vec)
+                dec_state) + self.dec_proj_context(context_vec)
 
             # Map to the outpu layer
             output = self.fc(F.tanh(output.squeeze(dim=1)))
@@ -416,7 +418,7 @@ class AttentionSeq2seq(ModelBase):
         Returns:
 
         """
-        encoder_outputs, encoder_final_state = self.encoder(inputs)
+        encoder_states, encoder_final_state = self.encoder(inputs)
 
         # Start from <SOS>
         y = labels[:, 0:1]
@@ -426,7 +428,8 @@ class AttentionSeq2seq(ModelBase):
         att_weight_vec = None
 
         if self.init_dec_state_with_enc_state:
-            # Initialize decoder state with the final state of the top layer of the encoder
+            # Initialize decoder state with the final state of the top layer of
+            # the encoder
             if self.encoder_bidirectional:
                 final_enc_state_fw = encoder_final_state[-2]
                 final_enc_state_bw = encoder_final_state[-1]

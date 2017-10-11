@@ -8,7 +8,9 @@ from __future__ import division
 from __future__ import print_function
 
 from models.pytorch.encoders.rnn import RNNEncoder
-from models.pytorch.encoders.pyramid_rnn import PyramidRNNEnocer
+from models.pytorch.encoders.pyramid_rnn import PyramidRNNEncoder
+from models.pytorch.encoders.multitask_rnn import MultitaskRNNEncoder
+
 # from models.pytorch.encoders.vgg import VGGEncoder
 # from models.pytorch.encoders.resnet import ResNetEncoder
 
@@ -17,9 +19,13 @@ ENCODERS = {
     "lstm": RNNEncoder,
     "gru": RNNEncoder,
     "rnn": RNNEncoder,
-    "plstm": PyramidRNNEnocer,
-    "pgru": PyramidRNNEnocer,
-    "prnn": PyramidRNNEnocer,
+    "plstm": PyramidRNNEncoder,
+    "pgru": PyramidRNNEncoder,
+    "prnn": PyramidRNNEncoder,
+    "lstm_mtl": MultitaskRNNEncoder,
+    "gru_mtl": MultitaskRNNEncoder,
+    "rnn_mtl": MultitaskRNNEncoder,
+
     # "vgg": VGGEncoder,
     # "resnet": ResNetEncoder,
 }

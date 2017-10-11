@@ -13,6 +13,7 @@ import unittest
 
 import torch
 import torch.nn as nn
+from torch.autograd import Variable
 
 sys.path.append('../../../')
 from models.pytorch.ctc.ctc import CTC
@@ -29,15 +30,14 @@ class TestCTC(unittest.TestCase):
         print("CTC Working check.")
 
         # RNNs
-        # self.check(encoder_type='lstm', bidirectional=False)
-        # self.check(encoder_type='lstm', bidirectional=True)
+        self.check(encoder_type='lstm', bidirectional=False)
+        self.check(encoder_type='lstm', bidirectional=True)
         self.check(encoder_type='gru', bidirectional=False)
         self.check(encoder_type='gru', bidirectional=True)
         self.check(encoder_type='rnn', bidirectional=False)
         self.check(encoder_type='rnn', bidirectional=True)
-
-        # self.check(encoder_type='conv_lstm')
-        # self.check('vgg_lstm')
+        # self.check(encoder_type='cldnn', bidirectional=True)
+        # self.check(encoder_type='cldnn', bidirectional=True)
 
         # CNNs
         # self.check(encoder_type='resnet')
@@ -59,13 +59,11 @@ class TestCTC(unittest.TestCase):
 
         # Wrap by Variable
         inputs = np2var_pytorch(inputs)
-        labels = np2var_pytorch(labels, dtype='long')
+        labels = np2var_pytorch(labels, dtype='int')
         # inputs_seq_len = np2var_pytorch(inputs_seq_len, dtype='long')
         # labels_seq_len = np2var_pytorch(labels_seq_len, dtype='long')
         inputs_seq_len = np2var_pytorch(inputs_seq_len, dtype='int')
         labels_seq_len = np2var_pytorch(labels_seq_len, dtype='int')
-        print(inputs_seq_len)
-        print(labels_seq_len)
 
         # Load model
         model = CTC(
@@ -81,17 +79,16 @@ class TestCTC(unittest.TestCase):
             parameter_init=0.1,
             bottleneck_dim=None)
 
-        # Initialize parameters
-        model.init_weights()
-
-        # Count total parameters
-        print("Total %s M parameters" %
-              ("{:,}".format(model.total_parameters / 1000000)))
-
         # Define optimizer
         optimizer, scheduler = model.set_optimizer(
             'adam', learning_rate_init=1e-3, weight_decay=0,
             lr_schedule=False, factor=0.1, patience_epoch=5)
+
+        # Initialize parameters
+        model.init_weights()
+
+        # Count total parameters
+        print("Total %.3f M parameters" % (model.total_parameters / 1000000))
 
         # GPU setting
         use_cuda = torch.cuda.is_available()
@@ -114,10 +111,9 @@ class TestCTC(unittest.TestCase):
 
         # Train model
         max_step = 1000
-        start_time_global = time.time()
         start_time_step = time.time()
         ler_train_pre = 1
-        not_improved_count = 0
+        save_flag = False
         for step in range(max_step):
 
             # Clear gradients before

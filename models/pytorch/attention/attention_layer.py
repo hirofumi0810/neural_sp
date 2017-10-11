@@ -85,12 +85,12 @@ class AttentionMechanism(nn.Module):
         elif self.attention_type == 'baidu_attetion':
             raise NotImplementedError
 
-    def forward(self, encoder_outputs, dec_output, att_weight_vec):
+    def forward(self, encoder_states, dec_state, att_weight_vec):
         """
         Args:
-            encoder_outputs (FloatTensor): A tensor of size
+            encoder_states (FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            dec_output (FloatTensor): A tensor of size
+            dec_state (FloatTensor): A tensor of size
                 `[B, 1, decoder_num_units]`
             att_weight_vec (FloatTensor): A tensor of size `[B, T_in]`
         Returns:
@@ -102,8 +102,8 @@ class AttentionMechanism(nn.Module):
 
         if self.attention_type == 'content':
             # energy = dot(v_a, tanh(W_enc(hidden_enc) + W_dec(hidden_dec)))
-            _enc = self.W_enc(encoder_outputs)  # `[B, T_in, att_dim]`
-            _dec = self.W_dec(dec_output)  # `[B, 1, att_dim]`
+            _enc = self.W_enc(encoder_states)  # `[B, T_in, att_dim]`
+            _dec = self.W_dec(dec_state)  # `[B, 1, att_dim]`
             _dec = _dec.expand_as(_enc)  # `[B, T_in, att_dim]`
             energy = F.tanh(_enc + _dec)  # `[B, T_in, att_dim]`
             energy = self.v_a(energy)  # `[B, T_in, 1]`
@@ -115,8 +115,8 @@ class AttentionMechanism(nn.Module):
         elif self.attention_type == 'hybrid':
             # f = F * α_{i-1}
             # energy = dot(v_a, tanh(W_enc(hidden_enc) + W_dec(hidden_dec) + W_fil(f)))
-            _enc = self.W_enc(encoder_outputs)  # `[B, T_in, att_dim]`
-            _dec = self.W_dec(dec_output)  # `[B, 1, att_dim]`
+            _enc = self.W_enc(encoder_states)  # `[B, T_in, att_dim]`
+            _dec = self.W_dec(dec_state)  # `[B, 1, att_dim]`
             _dec = _dec.expand_as(_enc)  # `[B, T_in, att_dim]`
             _fil = self.fil(att_weight_vec.unsqueeze(dim=1))  # `[B, 1, 11]`
             print(_fil.size())
@@ -128,8 +128,8 @@ class AttentionMechanism(nn.Module):
 
         elif self.attention_type == 'MLP_dot':
             # energy = dot(W_enc(hidden_enc), W_dec(hidden_dec))
-            _enc = self.W_enc(encoder_outputs)  # `[B, T_in, att_dim]`
-            _dec = self.W_dec(dec_output)  # `[B, 1, att_dim]`
+            _enc = self.W_enc(encoder_states)  # `[B, T_in, att_dim]`
+            _dec = self.W_dec(dec_state)  # `[B, 1, att_dim]`
             _dec = _dec.transpose(1, 2)  # `[B, att_dim, 1]`
             energy = torch.bmm(_enc, _dec)  # `[B, T_in, 1]`
             energy = energy.squeeze(dim=2)  # `[B, T_in]`
@@ -137,23 +137,23 @@ class AttentionMechanism(nn.Module):
         elif self.attention_type == 'luong_dot':
             # dot(hidden_enc, hidden_dec)
             # NOTE: both the encoder and decoder must be the same size
-            _enc = encoder_outputs  # `[B, T_in, hidden_size]`
-            _dec = dec_output.transpose(1, 2)  # `[B, 1, hidden_size]`
+            _enc = encoder_states  # `[B, T_in, hidden_size]`
+            _dec = dec_state.transpose(1, 2)  # `[B, 1, hidden_size]`
             energy = torch.bmm(_enc, _dec)  # `[B, T_in, 1]`
             energy = energy.squeeze(dim=2)  # `[B, T_in]`
 
         elif self.attention_type == 'luong_general':
             # energy = dot(W(hidden_enc), hidden_dec)
-            _enc = self.W_a(encoder_outputs)  # `[B, T_in, hidden_size]`
-            _dec = dec_output.transpose(1, 2)  # `[B, hidden_size, 1]`
+            _enc = self.W_a(encoder_states)  # `[B, T_in, hidden_size]`
+            _dec = dec_state.transpose(1, 2)  # `[B, hidden_size, 1]`
             energy = torch.bmm(_enc, _dec)  # `[B, T_in, 1]`
             energy = energy.squeeze(dim=2)  # `[B, T_in]`
 
         elif self.attention_type == 'luong_concat':
             # energy = dot(v_a, tanh(W_a([hidden_dec;hidden_enc])))
             # NOTE: both the encoder and decoder must be the same size
-            _enc = encoder_outputs  # `[B, T_in, hidden_size]`
-            _dec = dec_output.expand_as(_enc)  # `[B, T_in, hidden_size]`
+            _enc = encoder_states  # `[B, T_in, hidden_size]`
+            _dec = dec_state.expand_as(_enc)  # `[B, T_in, hidden_size]`
             # `[B, T_in, hidden_size * 2]`
             concat = torch.cat((_enc, _dec), dim=2)
             concat = F.tanh(self.W_a(concat))  # `[B, T_in, att_dim]`
@@ -174,7 +174,7 @@ class AttentionMechanism(nn.Module):
 
         # Compute context vector (weighted sum of encoder outputs)
         context_vector = torch.sum(
-            encoder_outputs * att_weight_vec.unsqueeze(dim=2),
+            encoder_states * att_weight_vec.unsqueeze(dim=2),
             dim=1, keepdim=True)
 
         return context_vector, att_weight_vec
