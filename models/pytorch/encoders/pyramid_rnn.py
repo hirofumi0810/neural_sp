@@ -17,7 +17,18 @@ from torch.autograd import Variable
 class PyramidRNNEncoder(nn.Module):
     """Pyramid RNN encoder.
     Args:
-
+        input_size (int): the dimension of input features
+        rnn_type (string): lstm or gru or rnn
+        bidirectional (bool): if True, use the bidirectional encoder
+        num_units (int): the number of units in each layer
+        # num_proj (int): the number of nodes in recurrent projection layer
+        num_layers (int): the number of layers
+        dropout (float): the probability to drop nodes
+        parameter_init (float): Range of uniform distribution to initialize
+            weight parameters
+        downsample_type (string): drop or concat
+        use_cuda (bool, optional):
+        batch_first (bool, optional):
     """
 
     def __init__(self,
@@ -30,6 +41,7 @@ class PyramidRNNEncoder(nn.Module):
                  downsample_list,
                  dropout,
                  parameter_init,
+                 downsample_type='drop',
                  use_cuda=False,
                  batch_first=False):
 
@@ -37,6 +49,8 @@ class PyramidRNNEncoder(nn.Module):
 
         if len(downsample_list) != num_layers:
             raise ValueError
+        if downsample_type not in ['drop', 'concat']:
+            raise ValueError('downsample_type must be "drop" or "concat".')
 
         self.input_size = input_size
         self.rnn_type = rnn_type
@@ -46,6 +60,7 @@ class PyramidRNNEncoder(nn.Module):
         # self.num_proj = num_proj
         self.num_layers = num_layers
         self.downsample_list = downsample_list
+        self.downsample_type = downsample_type
         self.dropout = dropout
         # NOTE: dropout is applied except the last layer
 
@@ -53,11 +68,14 @@ class PyramidRNNEncoder(nn.Module):
         self.use_cuda = use_cuda
         self.batch_first = batch_first
 
+        next_input_size = num_units * self.num_directions
+        # if downsample_type == 'concat':
+        #     next_input_size *= 2
         self.rnns = []
         for i in range(num_layers):
             if rnn_type == 'lstm':
                 rnn = nn.LSTM(
-                    input_size if i == 0 else num_units * self.num_directions,
+                    input_size if i == 0 else next_input_size,
                     hidden_size=num_units,
                     num_layers=1,
                     bias=True,
@@ -66,7 +84,7 @@ class PyramidRNNEncoder(nn.Module):
                     bidirectional=bidirectional)
             elif rnn_type == 'gru':
                 rnn = nn.GRU(
-                    input_size if i == 0 else num_units * self.num_directions,
+                    input_size if i == 0 else next_input_size,
                     hidden_size=num_units,
                     num_layers=1,
                     bias=True,
@@ -75,7 +93,7 @@ class PyramidRNNEncoder(nn.Module):
                     bidirectional=bidirectional)
             elif rnn_type == 'rnn':
                 rnn = nn.RNN(
-                    input_size if i == 0 else num_units * self.num_directions,
+                    input_size if i == 0 else next_input_size,
                     hidden_size=num_units,
                     num_layers=1,
                     bias=True,
@@ -168,6 +186,8 @@ class PyramidRNNEncoder(nn.Module):
                     max_time = outputs.size(0)
 
                 # print(outputs.size())
+            # TODO: 今は偶数時間だけ取ってきてるだけ，
+            # 奇数と偶数をconcatするように修正
 
         h_n = torch.cat(final_state_list, dim=0)
 

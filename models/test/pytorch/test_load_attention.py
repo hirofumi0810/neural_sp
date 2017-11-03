@@ -70,7 +70,7 @@ class TestLoadAttention(unittest.TestCase):
             init_dec_state_with_enc_state=True,
             downsample_list=[],
             sharpening_factor=2,
-            logits_softmax_temperature=1)
+            logits_temperature=1)
         model.name = 'att_pytorch'
 
         # Define optimizer

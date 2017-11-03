@@ -96,9 +96,9 @@ def wer_align(ref, hyp):
         ref (list): words in the reference transcript
         hyp (list): words in the predicted transcript
     Returns:
-        substitute (int):
-        insert (int):
-        delete (int):
+        substitute (int): the number of substitution error
+        insert (int): the number of insertion error
+        delete (int): the number of deletion error
     """
     # Build the matrix
     d = np.zeros((len(ref) + 1) * (len(hyp) + 1),

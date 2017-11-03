@@ -1,8 +1,10 @@
+.DS_Store
 *.pyc
 *.log
 __pycache__
 .dropbox.attr
 .ftpconfig
+log
 
-pytorch_ctc
-tools
+# test model
+*.epoch-*

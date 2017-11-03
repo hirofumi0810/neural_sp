@@ -91,19 +91,19 @@ class AttentionMechanism(nn.Module):
             encoder_states (FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
             dec_state (FloatTensor): A tensor of size
-                `[B, 1, decoder_num_units]`
+                `[1, B, decoder_num_units]`
             att_weight_vec (FloatTensor): A tensor of size `[B, T_in]`
         Returns:
             content_vector (FloatTensor): A tensor of size
                 `[B, 1, encoder_num_units]`
             att_weight_vec (FloatTensor): A tensor of size `[B, T_in]`
         """
-        # TODO: Add the bridge layer
+        # TODO: Add the bridge layer between encoder and decoder_dropout
 
         if self.attention_type == 'content':
             # energy = dot(v_a, tanh(W_enc(hidden_enc) + W_dec(hidden_dec)))
             _enc = self.W_enc(encoder_states)  # `[B, T_in, att_dim]`
-            _dec = self.W_dec(dec_state)  # `[B, 1, att_dim]`
+            _dec = self.W_dec(dec_state).transpose(0, 1)  # `[B, 1, att_dim]`
             _dec = _dec.expand_as(_enc)  # `[B, T_in, att_dim]`
             energy = F.tanh(_enc + _dec)  # `[B, T_in, att_dim]`
             energy = self.v_a(energy)  # `[B, T_in, 1]`
@@ -116,10 +116,9 @@ class AttentionMechanism(nn.Module):
             # f = F * α_{i-1}
             # energy = dot(v_a, tanh(W_enc(hidden_enc) + W_dec(hidden_dec) + W_fil(f)))
             _enc = self.W_enc(encoder_states)  # `[B, T_in, att_dim]`
-            _dec = self.W_dec(dec_state)  # `[B, 1, att_dim]`
+            _dec = self.W_dec(dec_state).transpose(0, 1)  # `[B, 1, att_dim]`
             _dec = _dec.expand_as(_enc)  # `[B, T_in, att_dim]`
             _fil = self.fil(att_weight_vec.unsqueeze(dim=1))  # `[B, 1, 11]`
-            print(_fil.size())
             _fil = self.W_fil(_fil)  # `[B, 1, att_dim]`
             _fil = _fil.expand_as(_enc)  # `[B, T_in, att_dim]`
             energy = F.tanh(_enc + _dec + _fil)  # `[B, T_in, att_dim]`
@@ -129,7 +128,7 @@ class AttentionMechanism(nn.Module):
         elif self.attention_type == 'MLP_dot':
             # energy = dot(W_enc(hidden_enc), W_dec(hidden_dec))
             _enc = self.W_enc(encoder_states)  # `[B, T_in, att_dim]`
-            _dec = self.W_dec(dec_state)  # `[B, 1, att_dim]`
+            _dec = self.W_dec(dec_state).transpose(0, 1)  # `[B, 1, att_dim]`
             _dec = _dec.transpose(1, 2)  # `[B, att_dim, 1]`
             energy = torch.bmm(_enc, _dec)  # `[B, T_in, 1]`
             energy = energy.squeeze(dim=2)  # `[B, T_in]`
@@ -138,14 +137,16 @@ class AttentionMechanism(nn.Module):
             # dot(hidden_enc, hidden_dec)
             # NOTE: both the encoder and decoder must be the same size
             _enc = encoder_states  # `[B, T_in, hidden_size]`
-            _dec = dec_state.transpose(1, 2)  # `[B, 1, hidden_size]`
+            _dec = dec_state.transpose(0, 1).transpose(
+                1, 2)  # `[B, hidden_size, 1]`
             energy = torch.bmm(_enc, _dec)  # `[B, T_in, 1]`
             energy = energy.squeeze(dim=2)  # `[B, T_in]`
 
         elif self.attention_type == 'luong_general':
             # energy = dot(W(hidden_enc), hidden_dec)
             _enc = self.W_a(encoder_states)  # `[B, T_in, hidden_size]`
-            _dec = dec_state.transpose(1, 2)  # `[B, hidden_size, 1]`
+            _dec = dec_state.transpose(0, 1).transpose(
+                1, 2)  # `[B, hidden_size, 1]`
             energy = torch.bmm(_enc, _dec)  # `[B, T_in, 1]`
             energy = energy.squeeze(dim=2)  # `[B, T_in]`
 
@@ -153,7 +154,8 @@ class AttentionMechanism(nn.Module):
             # energy = dot(v_a, tanh(W_a([hidden_dec;hidden_enc])))
             # NOTE: both the encoder and decoder must be the same size
             _enc = encoder_states  # `[B, T_in, hidden_size]`
-            _dec = dec_state.expand_as(_enc)  # `[B, T_in, hidden_size]`
+            _dec = dec_state.transpose(0, 1).expand_as(
+                _enc)  # `[B, T_in, hidden_size]`
             # `[B, T_in, hidden_size * 2]`
             concat = torch.cat((_enc, _dec), dim=2)
             concat = F.tanh(self.W_a(concat))  # `[B, T_in, att_dim]`

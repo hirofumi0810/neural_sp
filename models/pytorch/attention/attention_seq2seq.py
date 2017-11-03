@@ -27,7 +27,7 @@ class AttentionSeq2seq(ModelBase):
         encoder_num_layers (int): the number of layers of the encoder
         encoder_dropout (float): the probability to drop nodes
 
-        attention_type (string):
+        attention_type (string): the type of attention
         attention_dim (int):
 
         decoder_type (string): lstm or gru
@@ -39,7 +39,6 @@ class AttentionSeq2seq(ModelBase):
         num_classes (int): the number of classes of target labels
             (except for a blank label)
 
-
         max_decode_length (int):
         splice (int, optional): frames to splice. Default is 1 frame.
         parameter_init (float, optional): Range of uniform distribution to
@@ -47,7 +46,7 @@ class AttentionSeq2seq(ModelBase):
         downsample_list (list, optional):
         init_dec_state_with_enc_state (bool, optional):
         sharpening_factor (float):
-        logits_softmax_temperature (float):
+        logits_temperature (float):
         clip_grad (float, optional): Range of gradient clipping (> 0)
     """
 
@@ -76,7 +75,7 @@ class AttentionSeq2seq(ModelBase):
                  downsample_list=[],
                  init_dec_state_with_enc_state=True,
                  sharpening_factor=1.,
-                 logits_softmax_temperature=1):
+                 logits_temperature=1):
 
         super(ModelBase, self).__init__()
 
@@ -108,18 +107,22 @@ class AttentionSeq2seq(ModelBase):
         self.max_decode_length = max_decode_length
         self.init_dec_state_with_enc_state = init_dec_state_with_enc_state
         self.sharpening_factor = sharpening_factor
-        self.logits_softmax_temperature = logits_softmax_temperature
+        self.logits_temperature = logits_temperature
 
         # Common setting
         self.parameter_init = parameter_init
+        self.name = 'attention_pytorch'
 
         ####################
         # Encoder
         ####################
+        # Load an instance
         if len(downsample_list) == 0:
             encoder = load(encoder_type=encoder_type)
         else:
             encoder = load(encoder_type='p' + encoder_type)
+
+        # Call the encoder function
         if encoder_type in ['lstm', 'gru', 'rnn']:
             if len(downsample_list) == 0:
                 self.encoder = encoder(input_size=input_size,
@@ -182,9 +185,9 @@ class AttentionSeq2seq(ModelBase):
 
         self.embedding = nn.Embedding(num_classes + 2, embedding_dim)
         # self.embedding_dropout = nn.Dropout(decoder_dropout)
-        self.dec_proj_dec_state = nn.Linear(
+        self.output_proj_dec_state = nn.Linear(
             decoder_num_units, decoder_num_proj)
-        self.dec_proj_context = nn.Linear(
+        self.output_proj_context = nn.Linear(
             encoder_num_units * self.encoder_num_directions, decoder_num_proj)
         self.fc = nn.Linear(decoder_num_proj, num_classes + 2)
         # NOTE: <SOS> is removed because the decoder never predict <SOS> class
@@ -206,7 +209,6 @@ class AttentionSeq2seq(ModelBase):
             att_weights (FloatTensor): A tensor of size `[B, T_out, T_in]`
         """
         encoder_states, encoder_final_state = self.encoder(inputs)
-        # TODO: start decoder state from encoder final state
         outputs, att_weights = self.decode_train(
             encoder_states, labels, encoder_final_state)
         return outputs, att_weights
@@ -284,13 +286,14 @@ class AttentionSeq2seq(ModelBase):
                 att_weight_vec)
 
             # Map to the projection layer
-            output = self.dec_proj_dec_state(
-                dec_state) + self.dec_proj_context(context_vec)
+            output = self.output_proj_dec_state(
+                dec_state) + self.output_proj_context(context_vec)
 
             att_weights.append(att_weight_vec)
             outputs.append(output)
 
         outputs = torch.cat(outputs, dim=1)
+        print(outputs.size())
         outputs = self.fc(F.tanh(outputs))
         att_weights = torch.stack(att_weights, dim=1)
         # NOTE; att_weights in the training stage may be used for computing the
@@ -389,8 +392,9 @@ class AttentionSeq2seq(ModelBase):
                 att_weight_vec)
 
             # Map to the projection layer
-            output = self.dec_proj_dec_state(
-                dec_state) + self.dec_proj_context(context_vec)
+            output = self.output_proj_dec_state(
+                dec_state) + self.output_proj_context(context_vec)
+            print(outputs.size())
 
             # Map to the outpu layer
             output = self.fc(F.tanh(output.squeeze(dim=1)))

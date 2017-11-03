@@ -34,12 +34,12 @@ class TestAttention(unittest.TestCase):
         #            decoder_type='lstm')
 
         # Pyramidal encoder
-        self.check(encoder_type='gru', bidirectional=True,
-                   decoder_type='gru', attention_type='content',
-                   downsample=True)
-        self.check(encoder_type='gru', bidirectional=False,
-                   decoder_type='gru', attention_type='content',
-                   downsample=True)
+        # self.check(encoder_type='gru', bidirectional=True,
+        #            decoder_type='gru', attention_type='content',
+        #            downsample=True)
+        # self.check(encoder_type='gru', bidirectional=False,
+        #            decoder_type='gru', attention_type='content',
+        #            downsample=True)
         # NOTE: Pyramidal encoder does not work on GPU
 
         # Attention type
@@ -122,8 +122,7 @@ class TestAttention(unittest.TestCase):
             init_dec_state_with_enc_state=True,
             downsample_list=[] if not downsample else [True] * 2,
             sharpening_factor=2,
-            logits_softmax_temperature=1)
-        model.name = 'att_pytorch'
+            logits_temperature=1)
 
         # Define optimizer
         optimizer, scheduler = model.set_optimizer(
