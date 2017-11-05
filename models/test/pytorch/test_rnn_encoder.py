@@ -13,7 +13,7 @@ import unittest
 sys.path.append('../../../')
 from models.pytorch.encoders.load_encoder import load
 from models.test.data import generate_data, np2var_pytorch
-from models.test.util import measure_time
+from utils.measure_time_func import measure_time
 
 
 class TestRNNEncoders(unittest.TestCase):
@@ -21,14 +21,23 @@ class TestRNNEncoders(unittest.TestCase):
     def test(self):
         print("RNN Encoders Working check.")
 
-        self.check(encoder_type='lstm')
+        # LSTM
+        self.check(encoder_type='lstm', bidirectional=False)
         self.check(encoder_type='lstm', bidirectional=True)
         self.check(encoder_type='lstm', bidirectional=True,
                    batch_first=True)
-        self.check(encoder_type='gru')
+
+        # GRU
+        self.check(encoder_type='gru', bidirectional=False)
         self.check(encoder_type='gru', bidirectional=True)
-        self.check(encoder_type='rnn')
+        self.check(encoder_type='gru', bidirectional=True,
+                   batch_first=True)
+
+        # RNN
+        self.check(encoder_type='rnn', bidirectional=False)
         self.check(encoder_type='rnn', bidirectional=True)
+        self.check(encoder_type='rnn', bidirectional=True,
+                   batch_first=True)
 
     @measure_time
     def check(self, encoder_type, bidirectional=False, batch_first=False):
@@ -61,9 +70,10 @@ class TestRNNEncoders(unittest.TestCase):
             encoder = encoder(input_size=inputs.size(-1),
                               rnn_type=encoder_type,
                               bidirectional=bidirectional,
-                              dropout=0.8,
                               num_units=256,
+                              num_proj=0,
                               num_layers=5,
+                              dropout=0.2,
                               parameter_init=0.1,
                               batch_first=batch_first)
         else:
