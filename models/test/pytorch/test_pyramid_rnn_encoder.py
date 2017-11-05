@@ -13,7 +13,7 @@ import unittest
 sys.path.append('../../../')
 from models.pytorch.encoders.load_encoder import load
 from models.test.data import generate_data, np2var_pytorch
-from models.test.util import measure_time
+from utils.measure_time_func import measure_time
 
 
 class TestPyramidRNNEncoders(unittest.TestCase):
@@ -21,22 +21,57 @@ class TestPyramidRNNEncoders(unittest.TestCase):
     def test(self):
         print("Pyramidal RNN Encoders Working check.")
 
-        self.check(encoder_type='lstm')
-        self.check(encoder_type='lstm', bidirectional=True)
+        # LSTM
+        self.check(encoder_type='lstm', bidirectional=False,
+                   downsample_type='drop')
         self.check(encoder_type='lstm', bidirectional=True,
-                   batch_first=True)
-        self.check(encoder_type='gru')
-        self.check(encoder_type='gru', bidirectional=True)
-        self.check(encoder_type='rnn')
-        self.check(encoder_type='rnn', bidirectional=True)
+                   downsample_type='drop')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   batch_first=True, downsample_type='drop')
+        self.check(encoder_type='lstm', bidirectional=False,
+                   downsample_type='concat')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   downsample_type='concat')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   batch_first=True, downsample_type='concat')
+
+        # GRU
+        self.check(encoder_type='gru', bidirectional=False,
+                   downsample_type='drop')
+        self.check(encoder_type='gru', bidirectional=True,
+                   downsample_type='drop')
+        self.check(encoder_type='gru', bidirectional=True,
+                   batch_first=True, downsample_type='drop')
+        self.check(encoder_type='gru', bidirectional=False,
+                   downsample_type='concat')
+        self.check(encoder_type='gru', bidirectional=True,
+                   downsample_type='concat')
+        self.check(encoder_type='gru', bidirectional=True,
+                   batch_first=True, downsample_type='concat')
+
+        # RNN
+        self.check(encoder_type='rnn', bidirectional=False,
+                   downsample_type='drop')
+        self.check(encoder_type='rnn', bidirectional=True,
+                   downsample_type='drop')
+        self.check(encoder_type='rnn', bidirectional=True,
+                   batch_first=True, downsample_type='drop')
+        self.check(encoder_type='rnn', bidirectional=False,
+                   downsample_type='concat')
+        self.check(encoder_type='rnn', bidirectional=True,
+                   downsample_type='concat')
+        self.check(encoder_type='rnn', bidirectional=True,
+                   batch_first=True, downsample_type='concat')
 
     @measure_time
-    def check(self, encoder_type, bidirectional=False, batch_first=False):
+    def check(self, encoder_type, bidirectional=False, batch_first=False,
+              downsample_type='concat'):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
         print('  batch_first: %s' % str(batch_first))
+        print('  downsample_type: %s' % downsample_type)
         print('==================================================')
 
         # Load batch data
@@ -62,11 +97,13 @@ class TestPyramidRNNEncoders(unittest.TestCase):
                               rnn_type=encoder_type,
                               bidirectional=bidirectional,
                               num_units=256,
+                              num_proj=0,
                               num_layers=5,
+                              dropout=0.2,
+                              parameter_init=0.1,
                               downsample_list=[
                                   False, True, True, False, False],
-                              dropout=0.8,
-                              parameter_init=0.1,
+                              downsample_type=downsample_type,
                               batch_first=batch_first)
         else:
             raise NotImplementedError
