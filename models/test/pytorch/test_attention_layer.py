@@ -15,7 +15,7 @@ from torch.autograd import Variable
 
 sys.path.append('../../../')
 from models.pytorch.attention.attention_layer import AttentionMechanism
-from models.test.util import measure_time
+from utils.measure_time_func import measure_time
 
 torch.manual_seed(1)
 
@@ -25,15 +25,15 @@ class TestAttentionLayer(unittest.TestCase):
     def test(self):
         print("Attention layer Working check.")
 
-        self.check(attention_type='MLP_dot')
-        self.check(attention_type='luong_dot')
-        self.check(attention_type='luong_general')
-        self.check(attention_type='luong_concat')
-        self.check(attention_type='content')
-
+        self.check(attention_type='bahdanau_content')
+        # self.check(attention_type='normed_bahdanau_content')
         # self.check(attention_type='location')
         # self.check(attention_type='hybrid')
-        # NOTE: these are under implementation
+        self.check(attention_type='dot_product')
+        self.check(attention_type='luong_dot')
+        # self.check(attention_type='scaled_luong_dot')
+        self.check(attention_type='luong_general')
+        self.check(attention_type='luong_concat')
 
     @measure_time
     def check(self, attention_type):
@@ -47,7 +47,8 @@ class TestAttentionLayer(unittest.TestCase):
             decoder_num_units=256,
             attention_type=attention_type,
             attention_dim=128,
-            sharpening_factor=2)
+            sharpening_factor=2,
+            sigmoid_smoothing=False)
 
         batch_size = 4
         max_time = 20
