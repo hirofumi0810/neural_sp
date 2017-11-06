@@ -1,14 +1,17 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
+"""Attention sequence-to-sequence model."""
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import numpy as np
+# import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.autograd import Variable
 
 from models.pytorch.base import ModelBase
 from models.pytorch.encoders.load_encoder import load
@@ -21,33 +24,42 @@ class AttentionSeq2seq(ModelBase):
         input_size (int): the dimension of input features
         encoder_type (string): the type of the encoder. Set lstm or gru or rnn.
         encoder_bidirectional (bool): if True, create a bidirectional encoder
-        encoder_num_units (int): the number of units in each layer
-        # encoder_num_proj (int): the number of nodes in recurrent
-            projection layer of the encoder
+        encoder_num_units (int): the number of units in each layer of the
+            encoder
+        encoder_num_proj (int): the number of nodes in the projection layer of
+            the encoder.
         encoder_num_layers (int): the number of layers of the encoder
-        encoder_dropout (float): the probability to drop nodes
-
+        encoder_dropout (float): the probability to drop nodes of the encoder
         attention_type (string): the type of attention
-        attention_dim (int):
-
+        attention_dim: (int) the dimension of the attention layer
         decoder_type (string): lstm or gru
-        decoder_num_units (int):
-        # decdoder_num_layers (int):
-        decoder_dropout (float, optional):
-        embedding_dim (int):
-        # embedding_dropout (int):
-        num_classes (int): the number of classes of target labels
-            (except for a blank label)
-
-        max_decode_length (int):
-        splice (int, optional): frames to splice. Default is 1 frame.
-        parameter_init (float, optional): Range of uniform distribution to
-            initialize weight parameters
+        decoder_num_units (int): the number of units in each layer of the
+            decoder
+        decoder_num_proj (int): the number of nodes in the projection layer of
+            the decoder.
+        decoder_num_layers (int): the number of layers of the decoder
+        decoder_dropout (float): the probability to drop nodes of the decoder
+        embedding_dim (int): the dimension of the embedding in target spaces
+        embedding_dropout (int): the probability to drop nodes of the
+            embedding layer
+        num_classes (int): the number of nodes in softmax layer
+        sos_index (int): index of the start of sentence tag (<SOS>)
+        eos_index (int): index of the end of sentence tag (<EOS>)
+        max_decode_length (int): the length of output sequences to stop
+            prediction when EOS token have not been emitted
+        splice (int, optional): the number of frames to splice. This is used
+            when using CNN-like encoder. Default is 1 frame.
+        parameter_init (float, optional): the range of uniform distribution to
+            initialize weight parameters (>= 0)
         downsample_list (list, optional):
         init_dec_state_with_enc_state (bool, optional):
-        sharpening_factor (float):
-        logits_temperature (float):
-        clip_grad (float, optional): Range of gradient clipping (> 0)
+        sharpening_factor (float, optional): a sharpening factor in the
+            softmax layer for computing attention weights
+        logits_temperature (float, optional): a parameter for smoothing the
+            softmax layer in outputing probabilities
+        sigmoid_smoothing (bool, optional): if True, replace softmax function
+            in computing attention weights with sigmoid function for smoothing
+        input_feeding_approach (bool, optional): if True,
     """
 
     def __init__(self,
@@ -55,7 +67,7 @@ class AttentionSeq2seq(ModelBase):
                  encoder_type,
                  encoder_bidirectional,
                  encoder_num_units,
-                 #  encoder_num_proj,
+                 encoder_num_proj,
                  encoder_num_layers,
                  encoder_dropout,
                  attention_type,
@@ -63,21 +75,32 @@ class AttentionSeq2seq(ModelBase):
                  decoder_type,
                  decoder_num_units,
                  decoder_num_proj,
-                 #   decdoder_num_layers,
+                 decdoder_num_layers,
                  decoder_dropout,
                  embedding_dim,
-                 #  embedding_dropout,
+                 embedding_dropout,
                  num_classes,
+                 sos_index,
                  eos_index,
                  max_decode_length=100,
                  splice=1,
                  parameter_init=0.1,
                  downsample_list=[],
                  init_dec_state_with_enc_state=True,
-                 sharpening_factor=1.,
-                 logits_temperature=1):
+                 sharpening_factor=1,
+                 logits_temperature=1,
+                 sigmoid_smoothing=False,
+                 input_feeding_approach=False):
 
         super(ModelBase, self).__init__()
+
+        # TODO:
+        # clip_activation
+        # time_major
+
+        assert input_size % 3 == 0, 'input_size must be divisible by 3 (+ delta, double delta features).'
+        # NOTE: input features are expected to including Δ and ΔΔ features
+        assert splice % 2 == 1, 'splice must be the odd number'
 
         # Setting for the encoder
         self.input_size = input_size
@@ -86,32 +109,35 @@ class AttentionSeq2seq(ModelBase):
         self.encoder_bidirectional = encoder_bidirectional
         self.encoder_num_directions = 2 if encoder_bidirectional else 1
         self.encoder_num_units = encoder_num_units
-        # self.encoder_num_proj = encoder_num_proj
+        self.encoder_num_proj = encoder_num_proj
         self.encoder_num_layers = encoder_num_layers
         self.downsample_list = downsample_list
         self.encoder_dropout = encoder_dropout
 
-        # Setting for the decoder
+        # Setting for the attention decoder
         self.attention_type = attention_type
         self.attention_dim = attention_dim
         self.decoder_type = decoder_type
         self.decoder_num_units = decoder_num_units
         self.decoder_num_proj = decoder_num_proj
-        # self.decdoder_num_layers = decdoder_num_layers
+        self.decdoder_num_layers = decdoder_num_layers
         self.decoder_dropout = decoder_dropout
         self.embedding_dim = embedding_dim
-        # self.embedding_dropout = embedding_dropout
+        self.embedding_dropout = embedding_dropout
         self.num_classes = num_classes + 2
         # NOTE: add <SOS> and <EOS>
+        self.sos_index = sos_index
         self.eos_index = eos_index
         self.max_decode_length = max_decode_length
         self.init_dec_state_with_enc_state = init_dec_state_with_enc_state
         self.sharpening_factor = sharpening_factor
         self.logits_temperature = logits_temperature
+        self.sigmoid_smoothing = sigmoid_smoothing
+        self.input_feeding_approach = input_feeding_approach
 
         # Common setting
         self.parameter_init = parameter_init
-        self.name = 'attention_pytorch'
+        self.name = 'pytorch_attention_seq2seq'
 
         ####################
         # Encoder
@@ -125,28 +151,32 @@ class AttentionSeq2seq(ModelBase):
         # Call the encoder function
         if encoder_type in ['lstm', 'gru', 'rnn']:
             if len(downsample_list) == 0:
-                self.encoder = encoder(input_size=input_size,
-                                       rnn_type=encoder_type,
-                                       bidirectional=encoder_bidirectional,
-                                       num_units=encoder_num_units,
-                                       num_layers=encoder_num_layers,
-                                       dropout=encoder_dropout,
-                                       parameter_init=parameter_init,
-                                       use_cuda=self.use_cuda,
-                                       batch_first=True)
-
+                self.encoder = encoder(
+                    input_size=input_size,
+                    rnn_type=encoder_type,
+                    bidirectional=encoder_bidirectional,
+                    num_units=encoder_num_units,
+                    num_proj=encoder_num_proj,
+                    num_layers=encoder_num_layers,
+                    dropout=encoder_dropout,
+                    parameter_init=parameter_init,
+                    use_cuda=self.use_cuda,
+                    batch_first=True)
             else:
-                self.encoder = encoder(input_size=input_size,
-                                       rnn_type=encoder_type,
-                                       bidirectional=encoder_bidirectional,
-                                       num_units=encoder_num_units,
-                                       num_layers=encoder_num_layers,
-                                       downsample_list=downsample_list,
-                                       dropout=encoder_dropout,
-                                       parameter_init=parameter_init,
-                                       use_cuda=self.use_cuda,
-                                       batch_first=True)
-
+                # Pyramidal encoder
+                self.encoder = encoder(
+                    input_size=input_size,
+                    rnn_type=encoder_type,
+                    bidirectional=encoder_bidirectional,
+                    num_units=encoder_num_units,
+                    num_proj=encoder_num_proj,
+                    num_layers=encoder_num_layers,
+                    dropout=encoder_dropout,
+                    parameter_init=parameter_init,
+                    downsample_list=downsample_list,
+                    downsample_type='drop',
+                    use_cuda=self.use_cuda,
+                    batch_first=True)
         else:
             raise NotImplementedError
 
@@ -154,21 +184,23 @@ class AttentionSeq2seq(ModelBase):
         # Decoder
         ####################
         if decoder_type == 'lstm':
-            self.decoder = nn.LSTM(embedding_dim,
-                                   hidden_size=decoder_num_units,
-                                   num_layers=1,
-                                   bias=True,
-                                   batch_first=True,
-                                   dropout=decoder_dropout,
-                                   bidirectional=False)
+            self.decoder = nn.LSTM(
+                embedding_dim,
+                hidden_size=decoder_num_units,
+                num_layers=1,
+                bias=True,
+                batch_first=True,
+                dropout=decoder_dropout,
+                bidirectional=False)
         elif decoder_type == 'gru':
-            self.decoder = nn.GRU(embedding_dim,
-                                  hidden_size=decoder_num_units,
-                                  num_layers=1,
-                                  bias=True,
-                                  batch_first=True,
-                                  dropout=decoder_dropout,
-                                  bidirectional=False)
+            self.decoder = nn.GRU(
+                embedding_dim,
+                hidden_size=decoder_num_units,
+                num_layers=1,
+                bias=True,
+                batch_first=True,
+                dropout=decoder_dropout,
+                bidirectional=False)
         else:
             raise TypeError
         # NOTE: decoder is unidirectional and only 1 layer now
@@ -177,27 +209,33 @@ class AttentionSeq2seq(ModelBase):
         # Attention layer
         ##############################
         self.attend = AttentionMechanism(
-            encoder_num_units=encoder_num_units * self.encoder_num_directions,
+            encoder_num_units=encoder_num_units,
             decoder_num_units=decoder_num_units,
             attention_type=attention_type,
             attention_dim=attention_dim,
             sharpening_factor=sharpening_factor)
 
-        self.embedding = nn.Embedding(num_classes + 2, embedding_dim)
-        # self.embedding_dropout = nn.Dropout(decoder_dropout)
-        self.output_proj_dec_state = nn.Linear(
-            decoder_num_units, decoder_num_proj)
-        self.output_proj_context = nn.Linear(
-            encoder_num_units * self.encoder_num_directions, decoder_num_proj)
-        self.fc = nn.Linear(decoder_num_proj, num_classes + 2)
-        # NOTE: <SOS> is removed because the decoder never predict <SOS> class
+        ##################################################
+        # Bridge layer between the encoder and decoder
+        ##################################################
+        if encoder_num_units != decoder_num_units:
+            self.bridge = nn.Linear(
+                encoder_num_units, decoder_num_units)
+        else:
+            self.bridge = None
 
-        # GPU setting
-        if self.use_cuda:
-            self.encoder = self.encoder.cuda()
-            self.attend = self.attend.cuda()
-            self.decoder = self.decoder.cuda()
-            # TODO: Remove this??
+        self.embedding = nn.Embedding(self.num_classes, embedding_dim)
+        self.embedding_dropout = nn.Dropout(decoder_dropout)
+
+        if input_feeding_approach:
+            self.decoder_proj_layer = nn.Linear(
+                decoder_num_units * 2, decoder_num_proj)
+            # NOTE: input-feeding approach
+            self.fc = nn.Linear(decoder_num_proj, self.num_classes)
+        else:
+            self.fc = nn.Linear(decoder_num_units, self.num_classes)
+        # NOTE: <SOS> is removed because the decoder never predict <SOS> class
+        # TODO: self.num_classes - 1
 
     def forward(self, inputs, labels):
         """
@@ -206,23 +244,63 @@ class AttentionSeq2seq(ModelBase):
         Returns:
             outputs (FloatTensor): A tensor of size
                 `[T_out, B, num_classes (including <SOS> and <EOS>)]`
-            att_weights (FloatTensor): A tensor of size `[B, T_out, T_in]`
+            attention_weights (FloatTensor): A tensor of size `[B, T_out, T_in]`
         """
-        encoder_states, encoder_final_state = self.encoder(inputs)
-        outputs, att_weights = self.decode_train(
-            encoder_states, labels, encoder_final_state)
-        return outputs, att_weights
+        encoder_outputs, encoder_final_state = self._encode(inputs)
 
-    def compute_loss(self, outputs, labels,
-                     att_weights=None, coverage_weight=0):
+        outputs, attention_weights = self.decode_train(
+            encoder_outputs, labels, encoder_final_state)
+        return outputs, attention_weights
+
+    def _encode(self, inputs):
         """
         Args:
-            outputs (FloatTensor):
-            labels (LongTensor):
-            att_weights (FloatTensor): A tensor of size `[B, T_out, T_in]`
+            inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
+        Returns:
+            encoder_outputs (FloatTensor): A tensor of size
+                `[B, T_in, encoder_num_units]`
+            encoder_final_state (FloatTensor): A tensor of size
+                `[1, B, encoder_num_units]`
+        """
+        encoder_outputs, encoder_final_state = self.encoder(inputs)
+        # NOTE: encoder_outputs:
+        # `[B, T_in, encoder_num_units * encoder_num_directions]`
+        # encoder_final_state:
+        # `[encoder_num_layers * encoder_num_directions, B, encoder_num_units]`
+
+        # Sum bidirectional outputs
+        if self.encoder_bidirectional:
+            encoder_outputs = encoder_outputs[:, :, :self.encoder_num_units] + \
+                encoder_outputs[:, :, self.encoder_num_units:]
+            # NOTE: encoder_outputs: `[B, T_in, encoder_num_units]`
+
+            # Pick up the final state of the top layer of the encoder (forward)
+            encoder_final_state = encoder_final_state[-2:-1, :, :]
+            # NOTE: encoder_final_state: `[1, B, encoder_num_units]`
+            # TODO: check source code
+        else:
+            encoder_final_state = encoder_final_state[-1, :, :].unsqueeze(0)
+
+        if self.encoder_num_units != self.decoder_num_units:
+            # Bridge between the encoder and decoder
+            encoder_outputs = self.bridge(encoder_outputs)
+            encoder_final_state = encoder_final_state
+            encoder_final_state = self.bridge(
+                encoder_final_state.transpose(0, 1)).transpose(0, 1)
+
+        return encoder_outputs, encoder_final_state
+
+    def compute_loss(self, outputs, labels,
+                     attention_weights=None, coverage_weight=0):
+        """
+        Args:
+            outputs (FloatTensor): A tensor of size `[]`
+            labels (LongTensor): A tensor of size `[]`
+            attention_weights (FloatTensor): A tensor of size
+                `[B, T_out, T_in]`
             coverage_weight (float, optional):
         Returns:
-            loss ():
+            loss (FloatTensor): A tensor of size `[]`
         """
         batch_size, _, num_classes = outputs.size()
         outputs = outputs.view((-1, num_classes))
@@ -233,114 +311,158 @@ class AttentionSeq2seq(ModelBase):
 
         if coverage_weight != 0:
             pass
-            # coverage = self.compute_coverage(att_weights)
+            # coverage = self._compute_coverage(attention_weights)
             # loss += coverage_weight * coverage
-            # raise NotImplementedError
 
         return loss
 
-    def compute_coverage(self, att_weights):
-        batch_size, max_time_outputs, max_time_inputs = att_weights.size()
+    def _compute_coverage(self, attention_weights):
+        batch_size, max_time_outputs, max_time_inputs = attention_weights.size()
         raise NotImplementedError
 
-    def decode_train(self, encoder_states, labels, encoder_final_state):
+    def decode_train(self, encoder_outputs, labels, encoder_final_state=None):
         """Decoding when training.
         Args:
-            encoder_states (FloatTensor): A tensor of size
+            encoder_outputs (FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
             labels (LongTensor): A tensor of size `[B, T_out]`
-            encoder_final_state (FloatTensor): A tensor of size
-                `[]`
+            encoder_final_state (FloatTensor, optional): A tensor of size
+                `[1, B, encoder_num_units]`
         Returns:
-            outputs (FloatTensor): A tensor of size `[B,]`
-            att_weights (FloatTensor): A tensor of size `[B, T_out, T_in]`
+            outputs (FloatTensor): A tensor of size `[B, T_out]`
+            attention_weights (FloatTensor): A tensor of size
+                `[B, T_out, T_in]`
         """
         ys = self.embedding(labels[:, :-1])
-        # ys = self.embedding_dropout(ys)
+        # NOTE: remove <EOS>
+        ys = self.embedding_dropout(ys)
         labels_max_seq_len = labels.size(1)
 
         outputs = []
-        att_weights = []
-        att_weight_vec = None
+        attention_weights = []
+        attention_weights_step = None
 
-        if self.init_dec_state_with_enc_state:
-            # Initialize decoder state with the final state of the top layer of
-            # the encoder
-            if self.encoder_bidirectional:
-                final_enc_state_fw = encoder_final_state[-2]
-                final_enc_state_bw = encoder_final_state[-1]
-                dec_state = torch.cat(
-                    (final_enc_state_fw, final_enc_state_bw), dim=1).unsqueeze(0)
-            else:
-                dec_state = encoder_final_state[-1].unsqueeze(0)
-        else:
-            dec_state = None if self.decoder_type == 'gru' else (None, None)
+        decoder_state = self._init_decoder_state(encoder_final_state)
 
         for t in range(labels_max_seq_len - 1):
             y = ys[:, t:t + 1, :]
 
-            dec_state, dec_state, context_vec, att_weight_vec = self.decode_step(
-                encoder_states,
+            decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
+                encoder_outputs,
                 y,
-                dec_state,
-                att_weight_vec)
+                decoder_state,
+                attention_weights_step)
 
-            # Map to the projection layer
-            output = self.output_proj_dec_state(
-                dec_state) + self.output_proj_context(context_vec)
+            if self.input_feeding_approach:
+                # Input-feeding approach
+                output = self.decoder_proj_layer(
+                    torch.cat([decoder_outputs, context_vector], dim=-1))
+                output = self.fc(F.tanh(output))
+            else:
+                output = self.fc(decoder_outputs + context_vector)
 
-            att_weights.append(att_weight_vec)
+            attention_weights.append(attention_weights_step)
             outputs.append(output)
 
+        # Concatenate in T_out-dimension
         outputs = torch.cat(outputs, dim=1)
-        print(outputs.size())
-        outputs = self.fc(F.tanh(outputs))
-        att_weights = torch.stack(att_weights, dim=1)
-        # NOTE; att_weights in the training stage may be used for computing the
+        attention_weights = torch.stack(attention_weights, dim=1)
+        # NOTE; attention_weights in the training stage may be used for computing the
         # coverage, so do not convert to numpy yet.
 
-        return outputs, att_weights
+        return outputs, attention_weights
 
-    def decode_step(self, encoder_states, y, dec_state, att_weight_vec):
+    def _init_decoder_state(self, encoder_final_state):
         """
         Args:
-            encoder_states (torch.FloatTensor): A tensor of size
+            encoder_final_state (FloatTensor): A tensor of size
+                `[1, B, encoder_num_units]`
+        Returns:
+            decoder_state (FloatTensor): A tensor of size
+                `[1, B, decoder_num_units]`
+        """
+        if self.init_dec_state_with_enc_state and encoder_final_state is None:
+            raise ValueError('Set the final state of the encoder.')
+
+        batch_size = encoder_final_state.size()[1]
+
+        if self.decoder_type == 'lstm':
+            c_0 = Variable(torch.zeros(1, batch_size, self.decoder_num_units))
+
+            if self.use_cuda:
+                c_0 = c_0.cuda()
+
+            if self.init_dec_state_with_enc_state and self.encoder_type == self.decoder_type:
+                # Initialize decoder state with
+                # the final state of the top layer of the encoder (forward)
+                decoder_state = (encoder_final_state, c_0)
+                # TODO: LSTMの場合はメモリセルもencoderのラストで初期化？？
+            else:
+                h_0 = Variable(torch.zeros(
+                    1, batch_size, self.decoder_num_units))
+
+                if self.use_cuda:
+                    h_0 = h_0.cuda()
+
+                decoder_state = (h_0, c_0)
+        else:
+            # gru decoder
+            if self.init_dec_state_with_enc_state and self.encoder_type == self.decoder_type:
+                # Initialize decoder state with
+                # the final state of the top layer of the encoder (forward)
+                decoder_state = encoder_final_state
+            else:
+                h_0 = Variable(torch.zeros(
+                    1, batch_size, self.decoder_num_units))
+
+                if self.use_cuda:
+                    h_0 = h_0.cuda()
+
+                decoder_state = h_0
+
+        return decoder_state
+
+    def _decode_step(self, encoder_outputs, y, decoder_state,
+                     attention_weights_step):
+        """
+        Args:
+            encoder_outputs (FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
             y (FloatTensor): A tensor of size `[B, 1, embedding_dim]`
-            dec_state (FloatTensor): A tensor of size
-                `[1, B, decoder_num_units]`
-            att_weight_vec (FloatTensor): A tensor of size `[B, T_in]`
+            decoder_state (FloatTensor): A tensor of size
+                `[decoder_num_layers, B, decoder_num_units]`
+            attention_weights_step (FloatTensor): A tensor of size `[B, T_in]`
         Returns:
-            dec_state (FloatTensor): A tensor of size
+            decoder_outputs (FloatTensor): A tensor of size
                 `[B, 1, decoder_num_units]`
-            dec_state (FloatTensor): A tensor of size
-                `[1, B, decoder_num_units]`
+            decoder_state (FloatTensor): A tensor of size
+                `[decoder_num_layers, B, decoder_num_units]`
             content_vector (FloatTensor): A tensor of size
                 `[B, 1, encoder_num_units]`
-            att_weight_vec (FloatTensor): A tensor of size `[B, T_in]`
+            attention_weights_step (FloatTensor): A tensor of size `[B, T_in]`
         """
         if self.decoder_type == 'lstm':
-            dec_state, dec_state = self.decoder(
-                y, hx=dec_state)
-            # TODO; fix bug
+            decoder_outputs, decoder_state = self.decoder(
+                y, hx=decoder_state)
 
         elif self.decoder_type == 'gru':
-            dec_state, dec_state = self.decoder(
-                y, hx=dec_state)
+            decoder_outputs, decoder_state = self.decoder(
+                y, hx=decoder_state)
 
-        # dec_state: `[B, 1, decoder_num_units]`
-        context_vec, att_weight_vec = self.attend(encoder_states,
-                                                  dec_state,
-                                                  att_weight_vec)
+        # decoder_outputs: `[B, 1, decoder_num_units]`
+        context_vector, attention_weights_step = self.attend(
+            encoder_outputs,
+            decoder_outputs,
+            attention_weights_step)
 
-        return dec_state, dec_state, context_vec, att_weight_vec
+        return decoder_outputs, decoder_state, context_vector, attention_weights_step
 
     def decode_infer(self, inputs, labels, beam_width=1):
         """
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
             labels (LongTensor): A tensor of size `[B, T_out]`
-            beam_width (int, optional):
+            beam_width (int, optional): the size of beam
         Returns:
 
         """
@@ -355,64 +477,60 @@ class AttentionSeq2seq(ModelBase):
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
             labels (LongTensor): A tensor of size `[B, T_out]`
         Returns:
-            outputs (np.ndarray): A tensor of size `[]`
-            att_weights (np.ndarray): A tensor of size `[]`
+            argmaxs (np.ndarray): A tensor of size `[B, ]`
+            attention_weights (np.ndarray): A tensor of size `[B, ]`
         """
-        encoder_states, encoder_final_state = self.encoder(inputs)
+        encoder_states, encoder_final_state = self._encode(inputs)
 
         # Start from <SOS>
         y = labels[:, 0:1]
 
-        outputs = []
-        att_weights = []
-        att_weight_vec = None
+        argmaxs = []
+        attention_weights = []
+        attention_weights_step = None
 
-        if self.init_dec_state_with_enc_state:
-            # Initialize decoder state with the final state of the top layer of
-            # the encoder
-            if self.encoder_bidirectional:
-                final_enc_state_fw = encoder_final_state[-2]
-                final_enc_state_bw = encoder_final_state[-1]
-                dec_state = torch.cat(
-                    (final_enc_state_fw, final_enc_state_bw), dim=1).unsqueeze(0)
-            else:
-                dec_state = encoder_final_state[-1].unsqueeze(0)
-        else:
-            dec_state = None if self.decoder_type == 'gru' else (None, None)
+        decoder_state = self._init_decoder_state(encoder_final_state)
 
         for _ in range(self.max_decode_length):
-
             y = self.embedding(y)
-            # y = self.embedding_dropout(y)
+            y = self.embedding_dropout(y)
 
-            dec_state, dec_state, context_vec, att_weight_vec = self.decode_step(
+            decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
                 encoder_states,
                 y,
-                dec_state,
-                att_weight_vec)
+                decoder_state,
+                attention_weights_step)
 
-            # Map to the projection layer
-            output = self.output_proj_dec_state(
-                dec_state) + self.output_proj_context(context_vec)
-            print(outputs.size())
+            if self.input_feeding_approach:
+                # Input-feeding approach
+                output = self.decoder_proj_layer(
+                    torch.cat([decoder_outputs, context_vector], dim=-1))
+                output = self.fc(F.tanh(output))
+            else:
+                output = self.fc(decoder_outputs + context_vector)
 
-            # Map to the outpu layer
-            output = self.fc(F.tanh(output.squeeze(dim=1)))
+            # TODO: check this
+            output = output.squeeze(dim=1)
 
             # Pick up 1-best
             y = torch.max(output, dim=1)[1]
             y = y.unsqueeze(dim=1)
-            output = y.cpu().data.numpy()
+            argmaxs.append(y)
+            attention_weights.append(attention_weights_step)
 
-            outputs.append(output)
-            att_weights.append(att_weight_vec.cpu().data.numpy())
-
-            # Break if <EOS> is outputed
-            if np.all(output == self.eos_index):
+            # Break if <EOS> is outputed in all mini-batch
+            if torch.sum(y.data == self.eos_index) == y.numel():
                 break
 
-        outputs = np.concatenate(outputs, axis=1)
-        return outputs, att_weights
+        # Concatenate in T_out-dimension
+        argmaxs = torch.cat(argmaxs, dim=1)
+        attention_weights = torch.stack(attention_weights, dim=1)
+
+        # Convert to numpy
+        argmaxs = argmaxs.cpu().data.numpy()
+        attention_weights = attention_weights.cpu().data.numpy()
+
+        return argmaxs, attention_weights
 
     def _decode_infer_beam_search(self, inputs, labels, beam_width):
         """Beam search decoding when inference.
@@ -428,20 +546,9 @@ class AttentionSeq2seq(ModelBase):
         y = labels[:, 0:1]
 
         outputs = []
-        att_weights = []
-        att_weight_vec = None
+        attention_weights = []
+        attention_weights_step = None
 
-        if self.init_dec_state_with_enc_state:
-            # Initialize decoder state with the final state of the top layer of
-            # the encoder
-            if self.encoder_bidirectional:
-                final_enc_state_fw = encoder_final_state[-2]
-                final_enc_state_bw = encoder_final_state[-1]
-                dec_state = torch.cat(
-                    (final_enc_state_fw, final_enc_state_bw), dim=1).unsqueeze(0)
-            else:
-                dec_state = encoder_final_state[-1].unsqueeze(0)
-        else:
-            dec_state = None if self.decoder_type == 'gru' else (None, None)
+        decoder_state = self._init_decoder_state(encoder_final_state)
 
         raise NotImplementedError

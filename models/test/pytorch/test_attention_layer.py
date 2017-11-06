@@ -58,7 +58,7 @@ class TestAttentionLayer(unittest.TestCase):
         encoder_outputs = Variable(torch.randn(
             (batch_size, max_time, encoder_num_units)))
         decoder_state_step = Variable(torch.randn(
-            (1, batch_size, decoder_num_units)))
+            (batch_size, 1, decoder_num_units)))
         attention_weights_step = Variable(torch.randn(
             (batch_size, max_time)))
 

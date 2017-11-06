@@ -10,8 +10,13 @@ from torch.autograd import Variable
 import chainer
 import numpy as np
 
-# from utils.data.inputs.splicing import do_splice
-from preprocessing.feature_extraction_python_speech_features import wav2feature
+from utils.io.inputs.splicing import do_splice
+from utils.io.inputs.frame_stacking import stack_frame
+from utils.io.inputs.feature_extraction import wav2feature
+
+SPACE = '_'
+SOS = '<'
+EOS = '>'
 
 SPACE_INDEX = 0
 BLANK_INDEX = 27
@@ -83,7 +88,7 @@ def _read_text(trans_path):
     return transcript
 
 
-def generate_data(model, batch_size=1, splice=1):
+def generate_data(model, batch_size=1, num_stack=1, splice=1):
     """
     Args:
         model (string): ctc or attention
@@ -99,15 +104,27 @@ def generate_data(model, batch_size=1, splice=1):
     inputs, inputs_seq_len = wav2feature(
         ['../sample/LDC93S1.wav'] * batch_size,
         feature_type='logfbank', feature_dim=40,
-        energy=True, delta1=True, delta2=True, dtype=np.float32)
+        energy=False, delta1=True, delta2=True, dtype=np.float32)
 
-    # Splicing
-    # inputs = do_splice(inputs, splice=splice)
+    # Frame stacking
+    inputs = stack_frame(inputs,
+                         num_stack=num_stack,
+                         num_skip=num_stack,
+                         progressbar=False)
+    if num_stack != 1:
+        for i in range(len(inputs_seq_len)):
+            inputs_seq_len[i] = len(inputs[i])
+
+    # Splice
+    inputs = do_splice(inputs,
+                       splice=splice,
+                       batch_size=batch_size,
+                       num_stack=num_stack)
 
     # Make transcripts
     transcript = _read_text('../sample/LDC93S1.txt').replace('.', '')
     if model == 'attention':
-        transcript = '<' + transcript + '>'
+        transcript = SOS + transcript + EOS
     labels = np.array([alpha2idx(transcript)] * batch_size, np.int32)
     labels_seq_len = np.array([len(labels[0])] * batch_size)
 
@@ -129,9 +146,9 @@ def alpha2idx(transcript):
     for char in char_list:
         if char == ' ':
             index_list.append(SPACE_INDEX)
-        elif char == '<':
+        elif char == SOS:
             index_list.append(SOS_INDEX)
-        elif char == '>':
+        elif char == EOS:
             index_list.append(EOS_INDEX)
         else:
             index_list.append(ord(char) - first_index)
@@ -152,14 +169,14 @@ def idx2alpha(indices):
     char_list = []
     for index in indices:
         if index == 0:
-            char_list.append('_')
+            char_list.append(SPACE)
         elif index == BLANK_INDEX:
             continue
             # TODO: fix this
         elif index == SOS_INDEX:
-            char_list.append('<')
+            char_list.append(SOS)
         elif index == EOS_INDEX:
-            char_list.append('>')
+            char_list.append(EOS)
         else:
             char_list.append(chr(index + first_index))
     transcript = ''.join(char_list)

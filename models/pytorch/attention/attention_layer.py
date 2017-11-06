@@ -103,29 +103,25 @@ class AttentionMechanism(nn.Module):
         elif self.attention_type == 'baidu_attetion':
             raise NotImplementedError
 
-    def forward(self, encoder_states, decoder_state, att_weight_vec):
+    def forward(self, encoder_states, decoder_outputs, attention_weights_step):
         """
         Args:
             encoder_states (FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            decoder_state (FloatTensor): A tensor of size
-                `[1, B, decoder_num_units]`
-            att_weight_vec (FloatTensor): A tensor of size `[B, T_in]`
+            decoder_outputs (FloatTensor): A tensor of size
+                `[B, 1, decoder_num_units]`
+            attention_weights_step (FloatTensor): A tensor of size `[B, T_in]`
         Returns:
-            content_vector (FloatTensor): A tensor of size
+            context_vector (FloatTensor): A tensor of size
                 `[B, 1, encoder_num_units]`
-            att_weight_vec (FloatTensor): A tensor of size `[B, T_in]`
+            attention_weights_step (FloatTensor): A tensor of size `[B, T_in]`
         """
-        # TODO: Add the bridge layer between encoder and decoder_dropout
-
         if self.attention_type == 'bahdanau_content':
             ###################################################################
             # energy = <v_a, tanh(W_enc(hidden_enc) + W_dec(hidden_dec))>
             ###################################################################
-            # `[B, T_in, att_dim]`
             keys = self.W_enc(encoder_states)
-            # `[1, B, decoder_num_units]` -> `[B, T_in, att_dim]`
-            query = self.W_dec(decoder_state).transpose(0, 1).expand_as(keys)
+            query = self.W_dec(decoder_outputs).expand_as(keys)
             energy = self.v_a(F.tanh(keys + query)).squeeze(dim=2)
 
         elif self.attention_type == 'normed_bahdanau_content':
@@ -135,29 +131,27 @@ class AttentionMechanism(nn.Module):
             raise NotImplementedError
 
         elif self.attention_type == 'hybrid':
+            ###################################################################
             # f = F * α_{i-1}
-            # energy = dot(v_a, tanh(W_enc(hidden_enc) + W_dec(hidden_dec) + W_fil(f)))
-            keys = self.W_enc(encoder_states)  # `[B, T_in, att_dim]`
-            query = self.W_dec(decoder_state).transpose(
-                0, 1)  # `[B, 1, att_dim]`
-            query = query.expand_as(keys)  # `[B, T_in, att_dim]`
-            _fil = self.fil(att_weight_vec.unsqueeze(dim=1))  # `[B, 1, 11]`
-            _fil = self.W_fil(_fil)  # `[B, 1, att_dim]`
-            _fil = _fil.expand_as(keys)  # `[B, T_in, att_dim]`
-            energy = F.tanh(keys + query + _fil)  # `[B, T_in, att_dim]`
-            energy = self.v_a(energy)  # `[B, T_in, 1]`
-            energy = energy.squeeze(dim=2)  # `[B, T_in]`
+            # energy = <v_a,
+            # tanh(W_enc(hidden_enc) + W_dec(hidden_dec) + W_fil(f))>
+            ###################################################################
+            keys = self.W_enc(encoder_states)
+            query = self.W_dec(decoder_outputs).expand_as(keys)
+            # _fil = self.fil(attention_weights_step.unsqueeze(dim=1))
+            # _fil = self.W_fil(_fil)  # `[B, 1, att_dim]`
+            # _fil = _fil.expand_as(keys)  # `[B, T_in, att_dim]`
+            # energy = F.tanh(keys + query + _fil)  # `[B, T_in, att_dim]`
+            # energy = self.v_a(energy)  # `[B, T_in, 1]`
+            # energy = energy.squeeze(dim=2)  # `[B, T_in]`
+            raise NotImplementedError
 
         elif self.attention_type == 'dot_product':
             ###################################################################
             # energy = <W_enc(hidden_enc), W_dec(hidden_dec)>
             ###################################################################
-            # `[B, T_in, att_dim]`
             keys = self.W_enc(encoder_states)
-            # `[1, B, decoder_num_units]` -> `[B, 1, att_dim]`
-            query = self.W_dec(decoder_state).transpose(0, 1)
-            # `[B, 1, att_dim]` -> `[B, att_dim, 1]`
-            query = query.transpose(1, 2)
+            query = self.W_dec(decoder_outputs).transpose(1, 2)
             energy = torch.bmm(keys, query).squeeze(dim=2)
 
         elif self.attention_type == 'luong_dot':
@@ -165,12 +159,8 @@ class AttentionMechanism(nn.Module):
             # energy = <hidden_enc, hidden_dec>
             # NOTE: both the encoder and decoder must be the same size
             ###################################################################
-            # `[B, T_in, encoder_num_units]`
             keys = encoder_states
-            # `[1, B, decoder_num_units]` -> `[B, 1, decoder_num_units]`
-            query = decoder_state.transpose(0, 1)
-            # `[B, 1, decoder_num_units]` -> `[B, decoder_num_units, 1]`
-            query = query.transpose(1, 2)
+            query = decoder_outputs.transpose(1, 2)
             energy = torch.bmm(keys, query).squeeze(dim=2)
 
         elif self.attention_type == 'scaled_luong_dot':
@@ -180,12 +170,8 @@ class AttentionMechanism(nn.Module):
             ###################################################################
             # energy = <W(hidden_enc), hidden_dec>
             ###################################################################
-            # `[B, T_in, encoder_num_units]` -> `[B, T_in, decoder_num_units]`
             keys = self.W_a(encoder_states)
-            # `[1, B, decoder_num_units]` -> `[B, 1, decoder_num_units]`
-            query = decoder_state.transpose(0, 1)
-            # `[B, 1, decoder_num_units]` -> `[B, decoder_num_units, 1]`
-            query = query.transpose(1, 2)
+            query = decoder_outputs.transpose(1, 2)
             energy = torch.bmm(keys, query).squeeze(dim=2)
 
         elif self.attention_type == 'luong_concat':
@@ -193,32 +179,29 @@ class AttentionMechanism(nn.Module):
             # energy = <v_a, tanh(W_a([hidden_dec;hidden_enc]))>
             # NOTE: both the encoder and decoder must be the same size
             ###################################################################
-            # `[B, T_in, encoder_num_units]`
             keys = encoder_states
-            # `[1, B, decoder_num_units]` -> `[B, T_in, decoder_num_units]`
-            query = decoder_state.transpose(0, 1).expand_as(keys)
-            # `[B, T_in, decoder_num_units * 2]`
+            query = decoder_outputs.expand_as(keys)
             concat = torch.cat((keys, query), dim=2)
             energy = self.v_a(F.tanh(self.W_a(concat))).squeeze(dim=2)
 
         else:
             raise NotImplementedError
 
-        # if att_weight_vec is not None:
-        #     att_weight_vec = att_weight_vec.unsqueeze(dim=1)
-        #     att_weight_vec = self.conv(
-        #         att_weight_vec).squeeze(dim=1)
-        #     pax = pax + att_weight_vec
+        # if attention_weights_step is not None:
+        #     attention_weights_step = attention_weights_step.unsqueeze(dim=1)
+        #     attention_weights_step = self.conv(
+        #         attention_weights_step).squeeze(dim=1)
+        #     pax = pax + attention_weights_step
 
         # Compute attention weights
         if self.sigmoid_smoothing:
-            raise NotImplementedError
+            attention_weights_step = F.sigmoid(energy * self.sharpening_factor)
         else:
-            att_weight_vec = F.softmax(energy * self.sharpening_factor)
+            attention_weights_step = F.softmax(energy * self.sharpening_factor)
 
         # Compute context vector (weighted sum of encoder outputs)
         context_vector = torch.sum(
-            encoder_states * att_weight_vec.unsqueeze(dim=2),
+            encoder_states * attention_weights_step.unsqueeze(dim=2),
             dim=1, keepdim=True)
 
-        return context_vector, att_weight_vec
+        return context_vector, attention_weights_step

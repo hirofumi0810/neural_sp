@@ -11,7 +11,7 @@ from python_speech_features import mfcc, fbank
 
 
 def wav2feature(wav_paths, feature_type='logfbank', feature_dim=40,
-                energy=True, delta1=True, delta2=True):
+                energy=True, delta1=True, delta2=True, dtype=np.float32):
     """Read wav file & convert to MFCC or log mel filterbank features.
     Args:
         wav_paths (list): paths to a wav file
@@ -21,6 +21,7 @@ def wav2feature(wav_paths, feature_type='logfbank', feature_dim=40,
         energy (bool, optional): if True, add energy
         delta1 (bool, optional): if True, add delta features
         delta2 (bool, optional): if True, add delta delta features
+        dtype (dtype, optional):
     Returns:
         inputs: A tensor of size `[B, T, input_size]`
         inputs_seq_len: A tensor of size `[B]`
@@ -80,7 +81,7 @@ def wav2feature(wav_paths, feature_type='logfbank', feature_dim=40,
         if inputs is None:
             max_time = feat.shape[0]
             input_size = feat.shape[-1]
-            inputs = np.zeros((batch_size, max_time, input_size))
+            inputs = np.zeros((batch_size, max_time, input_size), dtype=dtype)
 
         inputs[i] = feat
         inputs_seq_len[i] = len(feat)
