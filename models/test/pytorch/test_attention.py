@@ -16,9 +16,10 @@ import torch.nn as nn
 
 sys.path.append('../../../')
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
-from models.test.data import generate_data, np2var_pytorch, idx2alpha
+from models.test.data import generate_data, idx2alpha
 from utils.measure_time_func import measure_time
 from utils.io.tensor import to_np
+from utils.io.variable import np2var_pytorch
 from utils.evaluation.edit_distance import compute_cer
 
 torch.manual_seed(1)
@@ -31,7 +32,7 @@ class TestAttention(unittest.TestCase):
 
         # unidirectional & bidirectional
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', save_path='./')
+                   decoder_type='lstm', save_path=None)
         self.check(encoder_type='lstm', bidirectional=False,
                    decoder_type='lstm')
         self.check(encoder_type='gru', bidirectional=True,
@@ -128,6 +129,8 @@ class TestAttention(unittest.TestCase):
             input_feeding_approach=input_feeding_approach)
 
         # Count total parameters
+        for name, num_params in model.num_params_dict.items():
+            print("%s %d" % (name, num_params))
         print("Total %.3f M parameters" % (model.total_parameters / 1000000))
 
         # Define optimizer
@@ -166,8 +169,8 @@ class TestAttention(unittest.TestCase):
             outputs_train, att_weights = model(inputs, labels)
 
             # Compute loss
-            loss = model.compute_loss(outputs_train, labels,
-                                      att_weights, coverage_weight=0.5)
+            loss = model.compute_loss(outputs_train, labels, att_weights,
+                                      coverage_weight=0.5)
 
             # Compute gradient
             optimizer.zero_grad()
@@ -186,10 +189,9 @@ class TestAttention(unittest.TestCase):
                 # TODO: Change to evaluation mode
 
                 # Decode
-                outputs_infer, _ = model.decode_infer(inputs, labels,
-                                                      beam_width=1)
+                labels_pred, _ = model.decode_infer(inputs, beam_width=1)
 
-                str_pred = idx2alpha(outputs_infer[0][0:-1]).split('>')[0]
+                str_pred = idx2alpha(labels_pred[0][0:-1]).split('>')[0]
                 str_true = idx2alpha(to_np(labels)[0][1:-1])
 
                 # Compute accuracy
@@ -210,9 +212,9 @@ class TestAttention(unittest.TestCase):
                     print('Modle is Converged.')
                     # Save the model
                     if save_path is not None:
-                        model.save_checkpoint(save_path, epoch=1)
+                        saved_path = model.save_checkpoint(save_path, epoch=1)
                         print("=> Saved checkpoint (epoch:%d): %s" %
-                              (1, save_path))
+                              (1, saved_path))
                     break
                 cer_train_pre = cer_train
 

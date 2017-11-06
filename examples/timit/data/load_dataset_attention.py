@@ -10,7 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from os.path import join
+from os.path import join, isfile
 import pickle
 import numpy as np
 
@@ -27,7 +27,7 @@ class Dataset(DatasetBase):
         """A class for loading dataset.
         Args:
             data_type (string): train or dev or test
-            label_type (string): stirng, phone39 or phone48 or phone61 or
+            label_type (string): phone39 or phone48 or phone61 or
                 character or character_capital_divide
             batch_size (int): the size of mini-batch
             map_file_path (string): path to the mapping file
@@ -44,14 +44,6 @@ class Dataset(DatasetBase):
                 will revert back to a random order
             progressbar (bool, optional): if True, visualize progressbar
         """
-        if data_type not in ['train', 'dev', 'test']:
-            raise TypeError('data_type must be "train" or "dev" or "test".')
-        if label_type not in ['phone39', 'phone48', 'phone61', 'character',
-                              'character_capital_divide']:
-            raise TypeError(
-                'label_type must be "phone39" or "phone48" or "phone61" or ' +
-                '"character" or "character_capital_divide".')
-
         super(Dataset, self).__init__(map_file_path=map_file_path)
 
         self.is_test = True if data_type == 'test' else False
@@ -69,17 +61,26 @@ class Dataset(DatasetBase):
         self.progressbar = progressbar
         self.num_gpu = 1
 
-        input_path = join(
-            '/n/sd8/inaguma/corpus/timit/dataset', 'inputs', data_type)
+        # paths where datasets exist
+        dataset_root = ['/data/inaguma/timit',
+                        '/n/sd8/inaguma/corpus/timit/dataset']
+
+        input_path = join(dataset_root[0], 'inputs', data_type)
         # NOTE: ex.) save_path: timit_dataset_path/inputs/data_type/***.npy
-        label_path = join(
-            '/n/sd8/inaguma/corpus/timit/dataset', 'labels', data_type, label_type)
+        label_path = join(dataset_root[0], 'labels', data_type, label_type)
         # NOTE: ex.) save_path:
-        # timit_dataset_path/labels/data_type/character*/***.npy
+        # timit_dataset_path/labels/data_type/label_type/***.npy
 
         # Load the frame number dictionary
-        with open(join(input_path, 'frame_num.pickle'), 'rb') as f:
-            self.frame_num_dict = pickle.load(f)
+        if isfile(join(input_path, 'frame_num.pickle')):
+            with open(join(input_path, 'frame_num.pickle'), 'rb') as f:
+                self.frame_num_dict = pickle.load(f)
+        else:
+            dataset_root.pop(0)
+            input_path = join(dataset_root[0], 'inputs', data_type)
+            label_path = join(dataset_root[0], 'labels', data_type, label_type)
+            with open(join(input_path, 'frame_num.pickle'), 'rb') as f:
+                self.frame_num_dict = pickle.load(f)
 
         # Sort paths to input & label
         axis = 1 if sort_utt else 0

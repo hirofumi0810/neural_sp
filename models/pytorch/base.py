@@ -5,7 +5,9 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from os.path import join, isfile
+import re
+from os.path import join, isfile, basename
+from glob import glob
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -33,23 +35,31 @@ class ModelBase(nn.Module):
         raise NotImplementedError
 
     def init_weights(self):
-        self.num_params = 0
         for name, param in self.named_parameters():
             nn.init.uniform(
                 param.data, a=-self.parameter_init, b=self.parameter_init)
 
-            # Count total parameters
-            self.num_params += param.view(-1).size(0)
+    @property
+    def num_params_dict(self):
+        if not hasattr(self, '_num_params_dict'):
+            self._num_params_dict = {}
+
+            # Register each parameter
+            for name, param in self.named_parameters():
+                self._num_params_dict[name] = param.view(-1).size(0)
+
+        return self._num_params_dict
 
     @property
     def total_parameters(self):
-        if not hasattr(self, 'num_params'):
-            # Count total parameters
-            self.num_params = 0
-            for name, param in self.named_parameters():
-                self.num_params += param.view(-1).size(0)
+        if not hasattr(self, '_num_params'):
+            self._num_params = 0
 
-        return self.num_params
+            # Count total parameters
+            for name, param in self.named_parameters():
+                self._num_params += param.view(-1).size(0)
+
+        return self._num_params
 
     @property
     def use_cuda(self):
@@ -121,16 +131,19 @@ class ModelBase(nn.Module):
     def save_checkpoint(self, save_path, epoch):
         """
         Args:
-            save_path (string):
-            epoch (int):
+            save_path (string): path to save a model (directory)
+            epoch (int): the epoch to save the model
+        Returns:
+            model (string): path to the saved model (file)
         """
-        model_name = self.name + '.epoch-' + str(epoch)
         checkpoint = {
             "state_dict": self.state_dict(),
             "optimizer": self.optimizer.state_dict(),
             "epoch": epoch
         }
-        torch.save(checkpoint, join(save_path, model_name))
+        model_path = join(save_path, 'model.epoch-' + str(epoch))
+        torch.save(checkpoint, model_path)
+        return model_path
 
     def load_checkpoint(self, save_path, epoch):
         """
@@ -138,8 +151,17 @@ class ModelBase(nn.Module):
             save_path (string):
             epoch (int):
         """
-        model_path = join(
-            save_path, self.name + '.epoch-' + str(epoch))
+        if int(epoch) == -1:
+            models = [(int(basename(x).split('-')[-1]), x)
+                      for x in glob(join(save_path, 'model.*'))]
+
+            if len(models) == 0:
+                raise ValueError
+
+            # Restore the model in the last eppch
+            epoch = sorted(models, key=lambda x: x[0])[-1][0]
+
+        model_path = join(save_path, 'model.epoch-' + str(epoch))
         if isfile(join(model_path)):
             print("=> Loading checkpoint (epoch:%d): %s" %
                   (epoch, model_path))

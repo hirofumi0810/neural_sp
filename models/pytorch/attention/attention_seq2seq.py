@@ -7,7 +7,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-# import numpy as np
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -45,6 +45,7 @@ class AttentionSeq2seq(ModelBase):
         num_classes (int): the number of nodes in softmax layer
         sos_index (int): index of the start of sentence tag (<SOS>)
         eos_index (int): index of the end of sentence tag (<EOS>)
+        num_stack (int, optional): the number of frames to stack
         max_decode_length (int): the length of output sequences to stop
             prediction when EOS token have not been emitted
         splice (int, optional): the number of frames to splice. This is used
@@ -82,6 +83,7 @@ class AttentionSeq2seq(ModelBase):
                  num_classes,
                  sos_index,
                  eos_index,
+                 num_stack=1,
                  max_decode_length=100,
                  splice=1,
                  parameter_init=0.1,
@@ -104,6 +106,7 @@ class AttentionSeq2seq(ModelBase):
 
         # Setting for the encoder
         self.input_size = input_size
+        self.num_stack = num_stack
         self.splice = splice
         self.encoder_type = encoder_type
         self.encoder_bidirectional = encoder_bidirectional
@@ -237,32 +240,34 @@ class AttentionSeq2seq(ModelBase):
         # NOTE: <SOS> is removed because the decoder never predict <SOS> class
         # TODO: self.num_classes - 1
 
-    def forward(self, inputs, labels):
+    def forward(self, inputs, labels, volatile=False):
         """
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
+            volatile (bool, optional):
         Returns:
             outputs (FloatTensor): A tensor of size
                 `[T_out, B, num_classes (including <SOS> and <EOS>)]`
             attention_weights (FloatTensor): A tensor of size `[B, T_out, T_in]`
         """
-        encoder_outputs, encoder_final_state = self._encode(inputs)
+        encoder_outputs, encoder_final_state = self._encode(inputs, volatile)
 
         outputs, attention_weights = self.decode_train(
             encoder_outputs, labels, encoder_final_state)
         return outputs, attention_weights
 
-    def _encode(self, inputs):
+    def _encode(self, inputs, volatile):
         """
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
+            volatile (bool):
         Returns:
             encoder_outputs (FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
             encoder_final_state (FloatTensor): A tensor of size
                 `[1, B, encoder_num_units]`
         """
-        encoder_outputs, encoder_final_state = self.encoder(inputs)
+        encoder_outputs, encoder_final_state = self.encoder(inputs, volatile)
         # NOTE: encoder_outputs:
         # `[B, T_in, encoder_num_units * encoder_num_directions]`
         # encoder_final_state:
@@ -294,8 +299,8 @@ class AttentionSeq2seq(ModelBase):
                      attention_weights=None, coverage_weight=0):
         """
         Args:
-            outputs (FloatTensor): A tensor of size `[]`
-            labels (LongTensor): A tensor of size `[]`
+            outputs (FloatTensor): A tensor of size `[B, ]`
+            labels (LongTensor): A tensor of size `[B, ]`
             attention_weights (FloatTensor): A tensor of size
                 `[B, T_out, T_in]`
             coverage_weight (float, optional):
@@ -372,11 +377,12 @@ class AttentionSeq2seq(ModelBase):
 
         return outputs, attention_weights
 
-    def _init_decoder_state(self, encoder_final_state):
+    def _init_decoder_state(self, encoder_final_state, volatile=False):
         """
         Args:
             encoder_final_state (FloatTensor): A tensor of size
                 `[1, B, encoder_num_units]`
+            volatile (bool, optional):
         Returns:
             decoder_state (FloatTensor): A tensor of size
                 `[1, B, decoder_num_units]`
@@ -389,6 +395,9 @@ class AttentionSeq2seq(ModelBase):
         if self.decoder_type == 'lstm':
             c_0 = Variable(torch.zeros(1, batch_size, self.decoder_num_units))
 
+            if volatile:
+                c_0.volatile = True
+
             if self.use_cuda:
                 c_0 = c_0.cuda()
 
@@ -400,6 +409,9 @@ class AttentionSeq2seq(ModelBase):
             else:
                 h_0 = Variable(torch.zeros(
                     1, batch_size, self.decoder_num_units))
+
+                if volatile:
+                    h_0.volatile = True
 
                 if self.use_cuda:
                     h_0 = h_0.cuda()
@@ -414,6 +426,9 @@ class AttentionSeq2seq(ModelBase):
             else:
                 h_0 = Variable(torch.zeros(
                     1, batch_size, self.decoder_num_units))
+
+                if volatile:
+                    h_0.volatile = True
 
                 if self.use_cuda:
                     h_0 = h_0.cuda()
@@ -457,39 +472,47 @@ class AttentionSeq2seq(ModelBase):
 
         return decoder_outputs, decoder_state, context_vector, attention_weights_step
 
-    def decode_infer(self, inputs, labels, beam_width=1):
+    def decode_infer(self, inputs, beam_width=1):
         """
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
-            labels (LongTensor): A tensor of size `[B, T_out]`
             beam_width (int, optional): the size of beam
         Returns:
 
         """
         if beam_width == 1:
-            return self._decode_infer_greedy(inputs, labels)
+            return self._decode_infer_greedy(inputs)
         else:
-            return self._decode_infer_beam_search(inputs, labels, beam_width)
+            return self._decode_infer_beam_search(inputs, beam_width)
 
-    def _decode_infer_greedy(self, inputs, labels):
+    def _decode_infer_greedy(self, inputs):
         """Greedy decoding when inference.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
-            labels (LongTensor): A tensor of size `[B, T_out]`
         Returns:
             argmaxs (np.ndarray): A tensor of size `[B, ]`
             attention_weights (np.ndarray): A tensor of size `[B, ]`
         """
-        encoder_states, encoder_final_state = self._encode(inputs)
+        encoder_states, encoder_final_state = self._encode(inputs,
+                                                           volatile=True)
 
         # Start from <SOS>
-        y = labels[:, 0:1]
+        batch_size = inputs.size()[0]
+        y = np.full((batch_size, 1),
+                    fill_value=self.sos_index, dtype=np.int64)
+        y = torch.from_numpy(y)
+        y = Variable(y, requires_grad=False)
+        y.volatile = True
+        if self.use_cuda:
+            y = y.cuda()
+        # NOTE: y: `[B, 1]`
 
         argmaxs = []
         attention_weights = []
         attention_weights_step = None
 
-        decoder_state = self._init_decoder_state(encoder_final_state)
+        decoder_state = self._init_decoder_state(encoder_final_state,
+                                                 volatile=True)
 
         for _ in range(self.max_decode_length):
             y = self.embedding(y)
@@ -532,23 +555,15 @@ class AttentionSeq2seq(ModelBase):
 
         return argmaxs, attention_weights
 
-    def _decode_infer_beam_search(self, inputs, labels, beam_width):
+    def _decode_infer_beam_search(self, inputs, beam_width):
         """Beam search decoding when inference.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
-            labels (LongTensor): A tensor of size `[B, T_out]`
+            beam_width (int): the size of beam
         Returns:
 
         """
-        encoder_states, encoder_final_state = self.encoder(inputs)
-
-        # Start from <SOS>
-        y = labels[:, 0:1]
-
-        outputs = []
-        attention_weights = []
-        attention_weights_step = None
-
-        decoder_state = self._init_decoder_state(encoder_final_state)
+        encoder_states, encoder_final_state = self._encode(inputs,
+                                                           volatile=True)
 
         raise NotImplementedError

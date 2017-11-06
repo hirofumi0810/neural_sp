@@ -5,8 +5,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import torch
-from torch.autograd import Variable
 import chainer
 import numpy as np
 
@@ -50,28 +48,6 @@ def np2varlist_chainer(inputs):
     # volatile??
 
     return var_list
-
-
-def np2var_pytorch(inputs, dtype='float'):
-    """Convert form np.ndarray to Variable.
-    Args:
-        inputs (np.ndarray): A tensor of size `[B, T, input_size]`
-        type (string, optional): float or long or int
-    Returns:
-        inputs (torch.Variable): A tensor of size `[B, T, input_size]`
-    """
-    inputs = torch.from_numpy(inputs)
-    if dtype == 'float':
-        inputs = inputs.float()
-    elif dtype == 'long':
-        inputs = inputs.long()
-    elif dtype == 'int':
-        inputs = inputs.int()
-
-    inputs = Variable(inputs, requires_grad=False)
-    # NOTE: which is better, 32-bit or 64-bit?
-
-    return inputs
 
 
 def _read_text(trans_path):

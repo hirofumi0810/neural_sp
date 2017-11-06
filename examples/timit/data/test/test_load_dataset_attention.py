@@ -5,7 +5,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import re
 import os
 import sys
 import unittest
@@ -81,8 +80,7 @@ class TestLoadDatasetAttention(unittest.TestCase):
             inputs, labels, inputs_seq_len, labels_seq_len, input_names = data
 
             if data_type != 'test':
-                str_true = map_fn(labels[0][0][0: labels_seq_len[0][0]])
-                str_true = re.sub(r'_', ' ', str_true)
+                str_true = map_fn(labels[0][0][:labels_seq_len[0][0]])
             else:
                 str_true = labels[0][0][0]
 

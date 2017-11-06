@@ -86,10 +86,11 @@ class RNNEncoder(nn.Module):
         else:
             raise TypeError('rnn_type must be "lstm" or "gru" or "rnn".')
 
-    def _init_hidden(self, batch_size):
+    def _init_hidden(self, batch_size, volatile):
         """Initialize hidden states.
         Args:
             batch_size (int): the size of mini-batch
+            volatile (bool):
         Returns:
             if rnn_type is 'lstm', return a tuple of tensors (h_0, c_0).
                 h_0: A tensor of size
@@ -101,12 +102,18 @@ class RNNEncoder(nn.Module):
         h_0 = Variable(torch.zeros(
             self.num_layers * self.num_directions, batch_size, self.num_units))
 
+        if volatile:
+            h_0.volatile = True
+
         if self.use_cuda:
             h_0 = h_0.cuda()
 
         if self.rnn_type == 'lstm':
             c_0 = Variable(torch.zeros(
                 self.num_layers * self.num_directions, batch_size, self.num_units))
+
+            if volatile:
+                c_0.volatile = True
 
             if self.use_cuda:
                 c_0 = c_0.cuda()
@@ -116,10 +123,11 @@ class RNNEncoder(nn.Module):
             # gru or rnn
             return h_0
 
-    def forward(self, inputs):
+    def forward(self, inputs, volatile=False):
         """Forward computation.
         Args:
             inputs: A tensor of size `[B, T, input_size]`
+            volatile (bool, optional): if True,
         Returns:
             outputs:
                 if batch_first is True, a tensor of size
@@ -132,7 +140,7 @@ class RNNEncoder(nn.Module):
         batch_size, max_time = inputs.size()[:2]
 
         # Initialize hidden states (and memory cells) per mini-batch
-        h_0 = self._init_hidden(batch_size=batch_size)
+        h_0 = self._init_hidden(batch_size=batch_size, volatile=volatile)
 
         if not self.batch_first:
             # Reshape inputs to the time-major

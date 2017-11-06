@@ -138,8 +138,7 @@ class TestRestoreAttention(unittest.TestCase):
                 # TODO: Change to evaluation mode
 
                 # Decode
-                outputs_infer, _ = model.decode_infer(inputs, labels,
-                                                      beam_width=1)
+                outputs_infer, _ = model.decode_infer(inputs, beam_width=1)
 
                 str_pred = idx2alpha(outputs_infer[0][0:-1]).split('>')[0]
                 str_true = idx2alpha(to_np(labels)[0][1:-1])
