@@ -77,38 +77,41 @@ class PyramidRNNEncoder(nn.Module):
         self.downsample_type = downsample_type
 
         self.rnns = []
-        for i in range(num_layers):
+        for i_layer in range(num_layers):
             next_input_size = num_units * self.num_directions
-            if downsample_type == 'concat' and i > 0 and downsample_list[i - 1]:
+            if downsample_type == 'concat' and i_layer > 0 and downsample_list[i_layer - 1]:
                 next_input_size *= 2
 
             if rnn_type == 'lstm':
                 rnn = nn.LSTM(
-                    input_size if i == 0 else next_input_size,
+                    input_size if i_layer == 0 else next_input_size,
                     hidden_size=num_units,
                     num_layers=1,
                     bias=True,
                     batch_first=batch_first,
                     dropout=dropout,
                     bidirectional=bidirectional)
+                setattr(self, 'plstm_l' + str(i_layer), rnn)
             elif rnn_type == 'gru':
                 rnn = nn.GRU(
-                    input_size if i == 0 else next_input_size,
+                    input_size if i_layer == 0 else next_input_size,
                     hidden_size=num_units,
                     num_layers=1,
                     bias=True,
                     batch_first=batch_first,
                     dropout=dropout,
                     bidirectional=bidirectional)
+                setattr(self, 'pgru_l' + str(i_layer), rnn)
             elif rnn_type == 'rnn':
                 rnn = nn.RNN(
-                    input_size if i == 0 else next_input_size,
+                    input_size if i_layer == 0 else next_input_size,
                     hidden_size=num_units,
                     num_layers=1,
                     bias=True,
                     batch_first=batch_first,
                     dropout=dropout,
                     bidirectional=bidirectional)
+                setattr(self, 'prnn_l' + str(i_layer), rnn)
             else:
                 raise TypeError('rnn_type must be "lstm" or "gru" or "rnn".')
 
@@ -181,18 +184,18 @@ class PyramidRNNEncoder(nn.Module):
 
         outputs = inputs
         final_state_list = []
-        for i in range(self.num_layers):
+        for i_layer in range(self.num_layers):
             if self.rnn_type == 'lstm':
-                outputs, (h_n, c_n) = self.rnns[i](outputs, hx=h_0)
+                outputs, (h_n, c_n) = self.rnns[i_layer](outputs, hx=h_0)
             else:
                 # gru or rnn
-                outputs, h_n = self.rnns[i](outputs, hx=h_0)
+                outputs, h_n = self.rnns[i_layer](outputs, hx=h_0)
 
             # Save the last hiddne state
             final_state_list.append(h_n)
 
             outputs_list = []
-            if self.downsample_list[i]:
+            if self.downsample_list[i_layer]:
                 for t in range(max_time):
                     # Pick up features at even time step
                     if (t + 1) % 2 == 0:

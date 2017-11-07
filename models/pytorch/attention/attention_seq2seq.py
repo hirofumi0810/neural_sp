@@ -178,7 +178,7 @@ class AttentionSeq2seq(ModelBase):
                     dropout=encoder_dropout,
                     parameter_init=parameter_init,
                     downsample_list=downsample_list,
-                    downsample_type='drop',
+                    downsample_type='concat',
                     use_cuda=self.use_cuda,
                     batch_first=True)
         else:
