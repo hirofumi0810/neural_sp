@@ -70,9 +70,9 @@ def do_eval_per(model, dataset, label_type, beam_width,
             inputs[0], beam_width=beam_width)
 
         for i_batch in range(batch_size):
-            ###############
+            ##############################
             # Hypothesis
-            ###############
+            ##############################
             # Convert from index to phone (-> list of phone strings)
             str_pred = idx2phone_train(labels_pred[i_batch]).split('>')[0]
             # NOTE: Trancate by <EOS>
@@ -83,9 +83,9 @@ def do_eval_per(model, dataset, label_type, beam_width,
 
             phone_pred_list = str_pred.split(' ')
 
-            ###############
+            ##############################
             # Reference
-            ###############
+            ##############################
             if is_test:
                 phone_true_list = labels_true[0][i_batch][0].split(' ')
             else:
@@ -99,8 +99,8 @@ def do_eval_per(model, dataset, label_type, beam_width,
             phone_true_list = map2phone39_eval(phone_true_list)
 
             # Compute PER
-            per_mean += compute_per(ref=phone_pred_list,
-                                    hyp=phone_true_list,
+            per_mean += compute_per(ref=phone_true_list,
+                                    hyp=phone_pred_list,
                                     normalize=True)
 
             if progressbar:

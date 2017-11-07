@@ -24,13 +24,13 @@ param:
   decoder_num_proj: 0
   decoder_num_layers: 1
   embedding_dim: 64
-  max_decode_length: 150
+  max_decode_length: 100
 
   # optimization
-  batch_size: 15
+  batch_size: 50
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 150
+  num_epoch: 100
 
   # regularization
   parameter_init: 0.1
@@ -45,7 +45,7 @@ param:
   decay_rate: 0.5
   decay_patient_epoch: 5
   sort_stop_epoch: 20
-  not_improved_patient_epoch: 10
+  not_improved_patient_epoch: 20
 
   sharpening_factor: 1.0
   logits_temperature: 1.0
@@ -54,5 +54,5 @@ param:
   coverage_weight: 0
 
   eval_start_epoch: 10
-  print_step: 20
+  print_step: 10
   beam_width: 1

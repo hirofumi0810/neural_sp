@@ -14,14 +14,13 @@ from setproctitle import setproctitle
 import yaml
 import shutil
 
-import torch
 import torch.nn as nn
 
 sys.path.append(abspath('../../../'))
 from examples.timit.data.load_dataset_attention import Dataset
 from examples.timit.metrics.attention import do_eval_per
 from utils.training.learning_rate_controller import Controller
-from utils.training.plot import plot_loss, plot_ler
+from utils.training.plot import plot_loss
 from utils.directory import mkdir_join, mkdir
 from utils.io.tensor import to_np
 from utils.io.variable import np2var_pytorch
@@ -85,21 +84,11 @@ def do_train(model, params):
     model.init_weights()
 
     # GPU setting
-    use_cuda = torch.cuda.is_available()
-    deterministic = False
-    if use_cuda and deterministic:
-        print('GPU deterministic mode (no cudnn)')
-        torch.backends.cudnn.enabled = False
-    elif use_cuda:
-        print('GPU mode (faster than the deterministic mode)')
-    else:
-        print('CPU mode')
-    if use_cuda:
-        model = model.cuda()
+    use_cuda = model.use_cuda
+    model.set_cuda(deterministic=False)
 
     # Train model
     csv_steps, csv_loss_train, csv_loss_dev = [], [], []
-    csv_per_train, csv_per_dev = [], []
     start_time_train = time.time()
     start_time_epoch = time.time()
     start_time_step = time.time()
@@ -149,6 +138,9 @@ def do_train(model, params):
                 inputs_dev = inputs_dev.cuda()
                 labels_dev = labels_dev.cuda()
 
+            # ***Change to evaluation mode
+            model.eval()
+
             # Make prediction
             outputs_dev, att_weights = model(inputs_dev[0], labels_dev[0],
                                              volatile=True)
@@ -161,17 +153,8 @@ def do_train(model, params):
             csv_loss_train.append(to_np(loss_train))
             csv_loss_dev.append(to_np(loss_dev))
 
-            # TODO: Change to evaluation mode
-
-            # Decode
-            # labels_pred_train, _ = model.decode_infer(
-            #     inputs_train[0], beam_width=params['beam_width'])
-            # labels_pred_dev, _ = model.decode_infer(
-            #     inputs_dev[0], beam_width=params['beam_width'])
-
-            # TODO: Compute accuracy
-            csv_per_train.append(1)
-            csv_per_dev.append(1)
+            # ***Change to training mode
+            model.train()
 
             duration_step = time.time() - start_time_step
             print("Step %d (epoch: %.3f): loss = %.3f (%.3f) / ler = %.3f (%.3f) / lr = %.5f (%.3f min)" %
@@ -188,14 +171,14 @@ def do_train(model, params):
             print('-----EPOCH:%d (%.3f min)-----' %
                   (train_data.epoch, duration_epoch / 60))
 
-            # Save fugure of loss & ler
+            # Save fugure of loss
             plot_loss(csv_loss_train, csv_loss_dev, csv_steps,
                       save_path=model.save_path)
-            plot_ler(csv_per_train, csv_per_dev, csv_steps,
-                     label_type=params['label_type'],
-                     save_path=model.save_path)
 
             if train_data.epoch >= params['eval_start_epoch']:
+                # ***Change to evaluation mode
+                model.eval()
+
                 start_time_eval = time.time()
                 print('=== Dev Data Evaluation ===')
                 per_dev_epoch = do_eval_per(
@@ -241,6 +224,9 @@ def do_train(model, params):
                     epoch=train_data.epoch,
                     value=per_dev_epoch)
 
+                # ***Change to training mode
+                model.train()
+
             start_time_step = time.time()
             start_time_epoch = time.time()
 
@@ -266,6 +252,8 @@ def main(config_path, model_save_path):
         params['num_classes'] = 48
     elif params['label_type'] == 'phone39':
         params['num_classes'] = 39
+    else:
+        raise TypeError
 
     # Model setting
     model = AttentionSeq2seq(

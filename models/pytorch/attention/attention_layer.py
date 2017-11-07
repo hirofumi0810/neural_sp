@@ -29,6 +29,9 @@ class AttentionMechanism(nn.Module):
             softmax layer for computing attention weights
         sigmoid_smoothing (bool, optional): if True, replace softmax function
             in computing attention weights with sigmoid function for smoothing
+        out_channels (int, optional):
+            This is used for location-based atte
+        kernel_size (int, optional):
     """
 
     def __init__(self,
@@ -37,7 +40,9 @@ class AttentionMechanism(nn.Module):
                  attention_type,
                  attention_dim,
                  sharpening_factor=1,
-                 sigmoid_smoothing=False):
+                 sigmoid_smoothing=False,
+                 out_channels=10,
+                 kernel_size=201):
 
         super(AttentionMechanism, self).__init__()
 
@@ -67,9 +72,6 @@ class AttentionMechanism(nn.Module):
 
         elif self.attention_type == 'location':
             self.W_dec = nn.Linear(decoder_num_units, attention_dim)
-            out_channels = 10
-            kernel_size = 101
-            # TODO: make this parameter
             self.conv = nn.Conv1d(
                 in_channels=1,
                 out_channels=out_channels,
@@ -83,9 +85,6 @@ class AttentionMechanism(nn.Module):
         elif self.attention_type == 'hybrid':
             self.W_enc = nn.Linear(encoder_num_units, attention_dim)
             self.W_dec = nn.Linear(decoder_num_units, attention_dim)
-            out_channels = 10
-            kernel_size = 101
-            # TODO: make this parameter
             self.conv = nn.Conv1d(
                 in_channels=1,
                 out_channels=out_channels,

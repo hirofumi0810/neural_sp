@@ -42,6 +42,9 @@ class Map2phone39(object):
         if self.label_type == 'phone39':
             return phone_list
 
+        if len(phone_list) == 0:
+            return phone_list
+
         # Map to 39 phones
         for i in range(len(phone_list)):
             phone_list[i] = self.map_dict[phone_list[i]]

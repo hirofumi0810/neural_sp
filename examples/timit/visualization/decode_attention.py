@@ -56,6 +56,9 @@ def do_decode(model, params, epoch, beam_width, eval_batch_size):
     checkpoint = model.load_checkpoint(save_path=model.save_path, epoch=epoch)
     model.load_state_dict(checkpoint['state_dict'])
 
+    # Change to evaluation mode
+    model.eval()
+
     # Visualize
     decode(
         model=model,
