@@ -6,28 +6,29 @@ from __future__ import division
 from __future__ import print_function
 
 import torch
-import chainer
+# import chainer
 
 
-def np2var_pytorch(inputs, volatile=False, dtype='float'):
+def np2var_pytorch(inputs, volatile=False, dtype=None):
     """Convert form np.ndarray to Variable.
     Args:
         inputs (np.ndarray): A tensor of size `[B, T, input_size]`
-        volatile (bool, optional):
+        volatile (bool, optional): if True, the history will not be saved.
+            This should be used in inference model for memory efficiency.
         type (string, optional): float or long or int
     Returns:
         inputs (torch.Variable): A tensor of size `[B, T, input_size]`
     """
     inputs = torch.from_numpy(inputs)
-    if dtype == 'float':
-        inputs = inputs.float()
-    elif dtype == 'long':
-        inputs = inputs.long()
-    elif dtype == 'int':
-        inputs = inputs.int()
+    if dtype is not None:
+        if dtype == 'float':
+            inputs = inputs.float()
+        elif dtype == 'long':
+            inputs = inputs.long()
+        elif dtype == 'int':
+            inputs = inputs.int()
 
     inputs = torch.autograd.Variable(inputs, requires_grad=False)
-    # NOTE: which is better, 32-bit or 64-bit?
 
     if volatile:
         inputs.volatile = True

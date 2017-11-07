@@ -66,21 +66,35 @@ class AttentionMechanism(nn.Module):
             raise NotImplementedError
 
         elif self.attention_type == 'location':
-            raise NotImplementedError
+            self.W_dec = nn.Linear(decoder_num_units, attention_dim)
+            out_channels = 10
+            kernel_size = 101
+            # TODO: make this parameter
+            self.conv = nn.Conv1d(
+                in_channels=1,
+                out_channels=out_channels,
+                kernel_size=kernel_size,
+                stride=1,
+                padding=kernel_size // 2,
+                bias=True)
+            self.W_fil = nn.Linear(out_channels, attention_dim)
+            self.v_a = nn.Linear(attention_dim, 1)
 
         elif self.attention_type == 'hybrid':
             self.W_enc = nn.Linear(encoder_num_units, attention_dim)
             self.W_dec = nn.Linear(decoder_num_units, attention_dim)
-            self.W_fil = nn.Linear(100, attention_dim)
-            self.v_a = nn.Linear(attention_dim, 1)
-            self.fil = nn.Conv1d(
+            out_channels = 10
+            kernel_size = 101
+            # TODO: make this parameter
+            self.conv = nn.Conv1d(
                 in_channels=1,
-                out_channels=1,
-                kernel_size=100,
+                out_channels=out_channels,
+                kernel_size=kernel_size,
                 stride=1,
-                padding=0,
-                dilation=1, groups=1, bias=True)
-            # TODO: make filter size parameter
+                padding=kernel_size // 2,
+                bias=True)
+            self.W_fil = nn.Linear(out_channels, attention_dim)
+            self.v_a = nn.Linear(attention_dim, 1)
 
         elif self.attention_type == 'dot_product':
             self.W_enc = nn.Linear(encoder_num_units, attention_dim)
@@ -128,7 +142,18 @@ class AttentionMechanism(nn.Module):
             raise NotImplementedError
 
         elif self.attention_type == 'location':
-            raise NotImplementedError
+            ###################################################################
+            # f = F * α_{i-1}
+            # energy = <v_a, tanh(W_dec(hidden_dec) + W_fil(f))>
+            ###################################################################
+            if attention_weights_step is not None:
+                conv_feat = self.conv(attention_weights_step.unsqueeze(dim=1))
+                conv_feat = self.W_fil(conv_feat.transpose(1, 2))
+                query = self.W_dec(decoder_outputs).expand_as(conv_feat)
+                query += conv_feat
+            else:
+                query = self.W_dec(decoder_outputs)
+            energy = self.v_a(F.tanh(query)).squeeze(dim=2)
 
         elif self.attention_type == 'hybrid':
             ###################################################################
@@ -138,13 +163,11 @@ class AttentionMechanism(nn.Module):
             ###################################################################
             keys = self.W_enc(encoder_states)
             query = self.W_dec(decoder_outputs).expand_as(keys)
-            # _fil = self.fil(attention_weights_step.unsqueeze(dim=1))
-            # _fil = self.W_fil(_fil)  # `[B, 1, att_dim]`
-            # _fil = _fil.expand_as(keys)  # `[B, T_in, att_dim]`
-            # energy = F.tanh(keys + query + _fil)  # `[B, T_in, att_dim]`
-            # energy = self.v_a(energy)  # `[B, T_in, 1]`
-            # energy = energy.squeeze(dim=2)  # `[B, T_in]`
-            raise NotImplementedError
+            if attention_weights_step is not None:
+                conv_feat = self.conv(attention_weights_step.unsqueeze(dim=1))
+                conv_feat = self.W_fil(conv_feat.transpose(1, 2))
+                query += conv_feat
+            energy = self.v_a(F.tanh(keys + query)).squeeze(dim=2)
 
         elif self.attention_type == 'dot_product':
             ###################################################################

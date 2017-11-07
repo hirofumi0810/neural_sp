@@ -65,6 +65,23 @@ class ModelBase(nn.Module):
     def use_cuda(self):
         return torch.cuda.is_available()
 
+    def set_cuda(self, deterministic=False):
+        """Set model to the GPU version.
+        Args:
+            deterministic (bool, optional):
+        """
+        if self.use_cuda and deterministic:
+            print('GPU deterministic mode (no cudnn)')
+            torch.backends.cudnn.enabled = False
+            # NOTE: this is slower than GPU mode.
+        elif self.use_cuda:
+            print('GPU mode')
+        else:
+            print('CPU mode')
+
+        if self.use_cuda:
+            self = self.cuda()
+
     def set_optimizer(self, optimizer, learning_rate_init, weight_decay=0,
                       lr_schedule=True, factor=0.1, patience_epoch=5):
         """Set optimizer.

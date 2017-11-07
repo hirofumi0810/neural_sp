@@ -51,24 +51,24 @@ class TestAttention(unittest.TestCase):
                    decoder_type='gru', downsample=True)
 
         # Attention type
-        self.check(encoder_type='gru', bidirectional=True,
-                   decoder_type='gru', attention_type='bahdanau_content')
-        # self.check(encoder_type='gru', bidirectional=True,
-        #            decoder_type='gru', attention_type='normed_bahdanau_content')
-        # self.check(encoder_type='gru', bidirectional=True,
-        #            decoder_type='gru', attention_type='location')
-        # self.check(encoder_type='gru', bidirectional=True,
-        #            decoder_type='gru', attention_type='hybrid')
-        self.check(encoder_type='gru', bidirectional=True,
-                   decoder_type='gru', attention_type='dot_product')
-        self.check(encoder_type='gru', bidirectional=True,
-                   decoder_type='gru', attention_type='luong_dot')
-        # self.check(encoder_type='gru', bidirectional=True,
-        #            decoder_type='gru', attention_type='scaled_luong_dot')
-        self.check(encoder_type='gru', bidirectional=True,
-                   decoder_type='gru', attention_type='luong_general')
-        self.check(encoder_type='gru', bidirectional=True,
-                   decoder_type='gru', attention_type='luong_concat')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', attention_type='bahdanau_content')
+        # self.check(encoder_type='lstm', bidirectional=True,
+        # decoder_type='lstm', attention_type='normed_bahdanau_content')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', attention_type='location')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', attention_type='hybrid')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', attention_type='dot_product')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', attention_type='luong_dot')
+        # self.check(encoder_type='lstm', bidirectional=True,
+        #            decoder_type='lstm', attention_type='scaled_luong_dot')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', attention_type='luong_general')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', attention_type='luong_concat')
 
     @measure_time
     def check(self, encoder_type, bidirectional, decoder_type,
@@ -86,16 +86,15 @@ class TestAttention(unittest.TestCase):
         print('==================================================')
 
         # Load batch data
-        batch_size = 2
-        inputs, labels, inputs_seq_len, labels_seq_len = generate_data(
+        inputs, labels, _, _ = generate_data(
             model='attention',
-            batch_size=batch_size)
+            batch_size=2,
+            num_stack=1,
+            splice=1)
 
         # Wrap by Variable
         inputs = np2var_pytorch(inputs)
         labels = np2var_pytorch(labels, dtype='long')
-        inputs_seq_len = np2var_pytorch(inputs_seq_len, dtype='long')
-        labels_seq_len = np2var_pytorch(labels_seq_len, dtype='long')
 
         # Load model
         model = AttentionSeq2seq(
@@ -142,15 +141,8 @@ class TestAttention(unittest.TestCase):
         model.init_weights()
 
         # GPU setting
-        use_cuda = torch.cuda.is_available()
-        deterministic = False
-        if use_cuda and deterministic:
-            print('GPU deterministic mode (no cudnn)')
-            torch.backends.cudnn.enabled = False
-        elif use_cuda:
-            print('GPU mode (faster than the deterministic mode)')
-        else:
-            print('CPU mode')
+        use_cuda = model.use_cuda
+        model.set_cuda(deterministic=False)
         if use_cuda:
             model = model.cuda()
             inputs = inputs.cuda()

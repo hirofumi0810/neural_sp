@@ -27,8 +27,8 @@ class TestAttentionLayer(unittest.TestCase):
 
         self.check(attention_type='bahdanau_content')
         # self.check(attention_type='normed_bahdanau_content')
-        # self.check(attention_type='location')
-        # self.check(attention_type='hybrid')
+        self.check(attention_type='location')
+        self.check(attention_type='hybrid')
         self.check(attention_type='dot_product')
         self.check(attention_type='luong_dot')
         # self.check(attention_type='scaled_luong_dot')
@@ -51,7 +51,7 @@ class TestAttentionLayer(unittest.TestCase):
             sigmoid_smoothing=False)
 
         batch_size = 4
-        max_time = 20
+        max_time = 200
         encoder_num_units = 256
         decoder_num_units = 256
 

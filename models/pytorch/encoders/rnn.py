@@ -90,7 +90,8 @@ class RNNEncoder(nn.Module):
         """Initialize hidden states.
         Args:
             batch_size (int): the size of mini-batch
-            volatile (bool):
+            volatile (bool): if True, the history will not be saved.
+                This should be used in inference model for memory efficiency.
         Returns:
             if rnn_type is 'lstm', return a tuple of tensors (h_0, c_0).
                 h_0: A tensor of size
@@ -127,7 +128,8 @@ class RNNEncoder(nn.Module):
         """Forward computation.
         Args:
             inputs: A tensor of size `[B, T, input_size]`
-            volatile (bool, optional): if True,
+            volatile (bool, optional): if True, the history will not be saved.
+                This should be used in inference model for memory efficiency.
         Returns:
             outputs:
                 if batch_first is True, a tensor of size

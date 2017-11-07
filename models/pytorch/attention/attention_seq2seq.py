@@ -45,9 +45,9 @@ class AttentionSeq2seq(ModelBase):
         num_classes (int): the number of nodes in softmax layer
         sos_index (int): index of the start of sentence tag (<SOS>)
         eos_index (int): index of the end of sentence tag (<EOS>)
-        num_stack (int, optional): the number of frames to stack
         max_decode_length (int): the length of output sequences to stop
             prediction when EOS token have not been emitted
+        num_stack (int, optional): the number of frames to stack
         splice (int, optional): the number of frames to splice. This is used
             when using CNN-like encoder. Default is 1 frame.
         parameter_init (float, optional): the range of uniform distribution to
@@ -83,8 +83,8 @@ class AttentionSeq2seq(ModelBase):
                  num_classes,
                  sos_index,
                  eos_index,
-                 num_stack=1,
                  max_decode_length=100,
+                 num_stack=1,
                  splice=1,
                  parameter_init=0.1,
                  downsample_list=[],
@@ -105,7 +105,8 @@ class AttentionSeq2seq(ModelBase):
         assert splice % 2 == 1, 'splice must be the odd number'
 
         # Setting for the encoder
-        self.input_size = input_size
+        self.input_size = input_size * num_stack * splice
+        self.num_channels = input_size // 3
         self.num_stack = num_stack
         self.splice = splice
         self.encoder_type = encoder_type
@@ -155,7 +156,7 @@ class AttentionSeq2seq(ModelBase):
         if encoder_type in ['lstm', 'gru', 'rnn']:
             if len(downsample_list) == 0:
                 self.encoder = encoder(
-                    input_size=input_size,
+                    input_size=self.input_size,
                     rnn_type=encoder_type,
                     bidirectional=encoder_bidirectional,
                     num_units=encoder_num_units,
@@ -168,7 +169,7 @@ class AttentionSeq2seq(ModelBase):
             else:
                 # Pyramidal encoder
                 self.encoder = encoder(
-                    input_size=input_size,
+                    input_size=self.input_size,
                     rnn_type=encoder_type,
                     bidirectional=encoder_bidirectional,
                     num_units=encoder_num_units,
@@ -244,7 +245,8 @@ class AttentionSeq2seq(ModelBase):
         """
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
-            volatile (bool, optional):
+            volatile (bool, optional): if True, the history will not be saved.
+                This should be used in inference model for memory efficiency.
         Returns:
             outputs (FloatTensor): A tensor of size
                 `[T_out, B, num_classes (including <SOS> and <EOS>)]`
@@ -260,7 +262,8 @@ class AttentionSeq2seq(ModelBase):
         """
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
-            volatile (bool):
+            volatile (bool): if True, the history will not be saved.
+                This should be used in inference model for memory efficiency.
         Returns:
             encoder_outputs (FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
@@ -382,7 +385,8 @@ class AttentionSeq2seq(ModelBase):
         Args:
             encoder_final_state (FloatTensor): A tensor of size
                 `[1, B, encoder_num_units]`
-            volatile (bool, optional):
+            volatile (bool, optional): if True, the history will not be saved.
+                This should be used in inference model for memory efficiency.
         Returns:
             decoder_state (FloatTensor): A tensor of size
                 `[1, B, decoder_num_units]`
