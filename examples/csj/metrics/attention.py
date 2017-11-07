@@ -22,6 +22,7 @@ def do_eval_cer(model, dataset, label_type, train_data_size, beam_width,
         model: the model to evaluate
         dataset: An instance of a `Dataset' class
         label_type (string): kanji or kanji or kanji_divide or kana_divide
+        train_data_size (string): train_fullset or train_subset
         beam_width: (int): the size of beam
         is_test (bool, optional): set to True when evaluating by the test set
         eval_batch_size (int, optional): the batch size when evaluating the model
@@ -59,7 +60,7 @@ def do_eval_cer(model, dataset, label_type, train_data_size, beam_width,
 
         batch_size = inputs[0].size()[0]
 
-        # Evaluate by 39 phones
+        # Decode
         labels_pred, _ = model.decode_infer(
             inputs[0], beam_width=beam_width)
 

@@ -25,20 +25,20 @@ param:
   decoder_num_proj: 0
   decoder_num_layers: 1
   embedding_dim: 64
-  max_decode_length: 150
+  max_decode_length: 100
 
   # optimization
-  batch_size: 32
+  batch_size: 64
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 25
+  num_epoch: 30
 
   # regularization
   parameter_init: 0.1
   clip_grad_norm: 5.0
   clip_activation_encoder: 50
   clip_activation_decoder: 50
-  dropout_encoder: 0.2
+  dropout_encoder: 0.5
   dropout_decoder: 0.1
   dropout_embedding: 0.1
   weight_decay: 0
@@ -55,5 +55,5 @@ param:
   coverage_weight: 0
 
   eval_start_epoch: 1
-  print_step: 500
+  print_step: 1000
   beam_width: 1

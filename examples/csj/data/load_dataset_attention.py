@@ -22,7 +22,8 @@ class Dataset(DatasetBase):
     def __init__(self, data_type, train_data_size, label_type, batch_size,
                  map_file_path, max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
-                 shuffle=False, sort_utt=True, sort_stop_epoch=None,
+                 shuffle=False, sort_utt=True, reverse=False,
+                 sort_stop_epoch=None,
                  progressbar=False, num_gpu=1):
         """A class for loading dataset.
         Args:
@@ -38,9 +39,10 @@ class Dataset(DatasetBase):
             num_skip (int, optional): the number of frames to skip
             shuffle (bool, optional): if True, shuffle utterances. This is
                 disabled when sort_utt is True.
-            sort_utt (bool, optional): if True, sort all utterances by the
-                number of frames and utteraces in each mini-batch are shuffled.
-                Otherwise, shuffle utteraces.
+            sort_utt (bool, optional): if True, sort all utterances in the
+                ascending order
+            reverse (bool, optional): if True, sort utteraces in the
+                descending order
             sort_stop_epoch (int, optional): After sort_stop_epoch, training
                 will revert back to a random order
             progressbar (bool, optional): if True, visualize progressbar
@@ -95,9 +97,15 @@ class Dataset(DatasetBase):
         # Sort paths to input & label
         axis = 1 if sort_utt else 0
         frame_num_tuple_sorted = sorted(self.frame_num_dict.items(),
-                                        key=lambda x: x[axis])
+                                        key=lambda x: x[axis],
+                                        reverse=reverse)
+
         input_paths, label_paths = [], []
         for utt_name, frame_num in frame_num_tuple_sorted:
+            # Exclude long utteraces (more than 20s)
+            if frame_num >= 2000:
+                continue
+
             speaker = utt_name.split('_')[0]
             # ex.) utt_name: speaker_uttindex
             input_paths.append(join(input_path, speaker, utt_name + '.npy'))

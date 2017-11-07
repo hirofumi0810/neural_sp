@@ -2,7 +2,7 @@ param:
   # corpus
   corpus: csj
   label_type: kanji
-  train_data_size: train_subset
+  train_data_size: train_fullset
 
   # features
   feature: fbank
@@ -17,7 +17,7 @@ param:
   encoder_bidirectional: True
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 4
+  encoder_num_layers: 6
   attention_type: dot_product
   attention_dim: 128
   decoder_type: lstm
@@ -25,13 +25,13 @@ param:
   decoder_num_proj: 0
   decoder_num_layers: 1
   embedding_dim: 64
-  max_decode_length: 150
+  max_decode_length: 100
 
   # optimization
-  batch_size: 32
+  batch_size: 64
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 25
+  num_epoch: 30
 
   # regularization
   parameter_init: 0.1
@@ -55,5 +55,5 @@ param:
   coverage_weight: 0
 
   eval_start_epoch: 1
-  print_step: 500
+  print_step: 2000
   beam_width: 1

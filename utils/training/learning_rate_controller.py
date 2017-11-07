@@ -11,14 +11,14 @@ from __future__ import print_function
 class Controller(object):
     """Controll learning rate per epoch.
     Args:
-        learning_rate_init: A float value, the initial learning rate
-        decay_start_epoch: int, the epoch to start decay
-        decay_rate: A float value,  the rate to decay the current learning rate
-        decay_patient_epoch: int, decay learning rate if results have not been
+        learning_rate_init (float): the initial learning rate
+        decay_start_epoch (int): the epoch to start decay
+        decay_rate (float): the rate to decay the current learning rate
+        decay_patient_epoch (int): decay learning rate if results have not been
             improved for 'decay_patient_epoch'
-        lower_better: If True, the lower, the better.
+        lower_better (bool): If True, the lower, the better.
                       If False, the higher, the better.
-        worst_value: A flaot value, the worst value of evaluation
+        worst_value (float): the worst value of evaluation
     """
 
     def __init__(self, learning_rate_init, decay_start_epoch, decay_rate,
@@ -35,9 +35,9 @@ class Controller(object):
         """Decay learning rate per epoch.
         Args:
             optimizer ():
-            learning_rate: A float value, the current learning rete
-            epoch: int, the current epoch
-            value: A value to evaluate
+            learning_rate (float): the current learning rete
+            epoch (int): the current epoch
+            value: (float) A value to evaluate
         Returns:
             optimizer ():
             learning_rate (float): the decayed learning rate

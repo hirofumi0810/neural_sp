@@ -47,12 +47,14 @@ class TestLoadDatasetAttention(unittest.TestCase):
 
     @measure_time
     def check(self, label_type, data_type='dev',
-              shuffle=False, sort_utt=False, sort_stop_epoch=None,
+              train_data_size='train_fullset',
+              shuffle=False, sort_utt=True, sort_stop_epoch=None,
               frame_stacking=False, splice=1, num_gpu=1):
 
         print('========================================')
         print('  label_type: %s' % label_type)
         print('  data_type: %s' % data_type)
+        print('  train_data_size: %s' % train_data_size)
         print('  shuffle: %s' % str(shuffle))
         print('  sort_utt: %s' % str(sort_utt))
         print('  sort_stop_epoch: %s' % str(sort_stop_epoch))
@@ -65,17 +67,17 @@ class TestLoadDatasetAttention(unittest.TestCase):
             map_file_path = '../../metrics/mapping_files/' + label_type + '.txt'
         elif 'kanji' in label_type:
             map_file_path = '../../metrics/mapping_files/' + \
-                label_type + '_train_subset.txt'
+                label_type + '_' + train_data_size + '.txt'
 
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
-            data_type=data_type, train_data_size='train_subset',
+            data_type=data_type, train_data_size=train_data_size,
             label_type=label_type, map_file_path=map_file_path,
-            batch_size=64,  max_epoch=2, splice=splice,
+            batch_size=1, max_epoch=2, splice=splice,
             num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
-            sort_utt=sort_utt, sort_stop_epoch=sort_stop_epoch,
+            sort_utt=sort_utt, reverse=True, sort_stop_epoch=sort_stop_epoch,
             progressbar=True, num_gpu=num_gpu)
 
         print('=> Loading mini-batch...')
@@ -107,6 +109,7 @@ class TestLoadDatasetAttention(unittest.TestCase):
             print('----- %s (epoch: %.3f) -----' %
                   (input_names[0][0], dataset.epoch_detail))
             print(inputs[0].shape)
+            print(labels[0].shape)
             print(str_true)
 
             if dataset.epoch_detail >= 0.1:
