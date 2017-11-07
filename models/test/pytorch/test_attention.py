@@ -21,6 +21,7 @@ from utils.measure_time_func import measure_time
 from utils.io.tensor import to_np
 from utils.io.variable import np2var_pytorch
 from utils.evaluation.edit_distance import compute_cer
+from utils.training.learning_rate_controller import Controller
 
 torch.manual_seed(1)
 
@@ -137,6 +138,14 @@ class TestAttention(unittest.TestCase):
             'adam', learning_rate_init=1e-3, weight_decay=0,
             lr_schedule=False, factor=0.1, patience_epoch=5)
 
+        # Define learning rate controller
+        learning_rate = 1e-3
+        lr_controller = Controller(learning_rate_init=learning_rate,
+                                   decay_start_epoch=20,
+                                   decay_rate=0.9,
+                                   decay_patient_epoch=10,
+                                   lower_better=True)
+
         # Initialize parameters
         model.init_weights()
 
@@ -209,6 +218,13 @@ class TestAttention(unittest.TestCase):
                               (1, saved_path))
                     break
                 cer_train_pre = cer_train
+
+                # Update learning rate
+                optimizer, learning_rate = lr_controller.decay_lr(
+                    optimizer=optimizer,
+                    learning_rate=learning_rate,
+                    epoch=step,
+                    value=cer_train)
 
 
 if __name__ == "__main__":

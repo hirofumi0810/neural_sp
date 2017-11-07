@@ -31,14 +31,16 @@ class Controller(object):
         self.lower_better = lower_better
         self.best_value = worst_value
 
-    def decay_lr(self, learning_rate, epoch, value):
+    def decay_lr(self, optimizer, learning_rate, epoch, value):
         """Decay learning rate per epoch.
         Args:
+            optimizer ():
             learning_rate: A float value, the current learning rete
             epoch: int, the current epoch
             value: A value to evaluate
         Returns:
-            learning_rate_decayed: A float value, the decayed learning rate
+            optimizer ():
+            learning_rate (float): the decayed learning rate
         """
         if not self.lower_better:
             value *= -1
@@ -47,19 +49,22 @@ class Controller(object):
             if value < self.best_value:
                 # Update
                 self.best_value = value
-            return learning_rate
-
-        if value < self.best_value:
-            # Improved
-            self.best_value = value
-            self.not_improved_epoch = 0
-            return learning_rate
-        elif self.not_improved_epoch < self.decay_patient_epoch:
-            # Not improved, but learning rate will be not decayed
-            self.not_improved_epoch += 1
-            return learning_rate
+                # NOTE: not update learning rate here
         else:
-            # Not improved, and learning rate will be decayed
-            self.not_improved_epoch = 0
-            learning_rate_decayed = learning_rate * self.decay_rate
-            return learning_rate_decayed
+            if value < self.best_value:
+                # Improved
+                self.best_value = value
+                self.not_improved_epoch = 0
+            elif self.not_improved_epoch < self.decay_patient_epoch:
+                # Not improved, but learning rate will be not decayed
+                self.not_improved_epoch += 1
+            else:
+                # Not improved, and learning rate will be decayed
+                self.not_improved_epoch = 0
+                learning_rate = learning_rate * self.decay_rate
+
+        # Update optimizer
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = learning_rate
+
+        return optimizer, learning_rate

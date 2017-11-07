@@ -207,7 +207,8 @@ def do_train(model, params):
                     break
 
                 # Update learning rate
-                learning_rate = lr_controller.decay_lr(
+                optimizer, learning_rate = lr_controller.decay_lr(
+                    optimizer=optimizer,
                     learning_rate=learning_rate,
                     epoch=train_data.epoch,
                     value=cer_dev_epoch)
@@ -320,7 +321,8 @@ def main(config_path, model_save_path):
 
     # Set save path
     model.save_path = mkdir_join(
-        model_save_path, 'attention', params['label_type'], model.name)
+        model_save_path, 'attention', params['label_type'],
+        params['train_data_size'], model.name)
 
     # Reset model directory
     model_index = 0

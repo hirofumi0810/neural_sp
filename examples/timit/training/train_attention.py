@@ -157,10 +157,9 @@ def do_train(model, params):
             model.train()
 
             duration_step = time.time() - start_time_step
-            print("Step %d (epoch: %.3f): loss = %.3f (%.3f) / ler = %.3f (%.3f) / lr = %.5f (%.3f min)" %
+            print("Step %d (epoch: %.3f): loss = %.3f (%.3f) / lr = %.5f (%.3f min)" %
                   (step + 1, train_data.epoch_detail,
                    to_np(loss_train), to_np(loss_dev),
-                   1, 1,
                    learning_rate, duration_step / 60))
             sys.stdout.flush()
             start_time_step = time.time()
@@ -219,7 +218,8 @@ def do_train(model, params):
                     break
 
                 # Update learning rate
-                learning_rate = lr_controller.decay_lr(
+                optimizer, learning_rate = lr_controller.decay_lr(
+                    optimizer=optimizer,
                     learning_rate=learning_rate,
                     epoch=train_data.epoch,
                     value=per_dev_epoch)
