@@ -22,7 +22,7 @@ parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
 parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
-parser.add_argument('--beam_width', type=int, default=1,
+parser.add_argument('--beam_width', type=int, default=20,
                     help='beam_width (int, optional): beam width for beam search.' +
                     ' 1 disables beam search, which mean greedy decoding.')
 parser.add_argument('--eval_batch_size', type=str, default=1,

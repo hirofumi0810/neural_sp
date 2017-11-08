@@ -229,7 +229,7 @@ class AttentionSeq2seq(ModelBase):
             self.bridge = None
 
         self.embedding = nn.Embedding(self.num_classes, embedding_dim)
-        self.embedding_dropout = nn.Dropout(decoder_dropout)
+        self.embedding_dropout = nn.Dropout(embedding_dropout)
 
         if input_feeding_approach:
             self.decoder_proj_layer = nn.Linear(
@@ -249,8 +249,9 @@ class AttentionSeq2seq(ModelBase):
                 This should be used in inference model for memory efficiency.
         Returns:
             outputs (FloatTensor): A tensor of size
-                `[T_out, B, num_classes (including <SOS> and <EOS>)]`
-            attention_weights (FloatTensor): A tensor of size `[B, T_out, T_in]`
+                `[B, T_out, num_classes (including <SOS> and <EOS>)]`
+            attention_weights (FloatTensor): A tensor of size
+                `[B, T_out, T_in]`
         """
         encoder_outputs, encoder_final_state = self._encode(inputs, volatile)
 
@@ -302,8 +303,8 @@ class AttentionSeq2seq(ModelBase):
                      attention_weights=None, coverage_weight=0):
         """
         Args:
-            outputs (FloatTensor): A tensor of size `[B, ]`
-            labels (LongTensor): A tensor of size `[B, ]`
+            outputs (FloatTensor): A tensor of size `[B, T_out, num_classes]`
+            labels (LongTensor): A tensor of size `[B, T_out]`
             attention_weights (FloatTensor): A tensor of size
                 `[B, T_out, T_in]`
             coverage_weight (float, optional):
@@ -337,7 +338,7 @@ class AttentionSeq2seq(ModelBase):
             encoder_final_state (FloatTensor, optional): A tensor of size
                 `[1, B, encoder_num_units]`
         Returns:
-            outputs (FloatTensor): A tensor of size `[B, T_out]`
+            outputs (FloatTensor): A tensor of size `[B, T_out, num_classes]`
             attention_weights (FloatTensor): A tensor of size
                 `[B, T_out, T_in]`
         """
@@ -346,11 +347,11 @@ class AttentionSeq2seq(ModelBase):
         ys = self.embedding_dropout(ys)
         labels_max_seq_len = labels.size(1)
 
+        decoder_state = self._init_decoder_state(encoder_final_state)
+
         outputs = []
         attention_weights = []
         attention_weights_step = None
-
-        decoder_state = self._init_decoder_state(encoder_final_state)
 
         for t in range(labels_max_seq_len - 1):
             y = ys[:, t:t + 1, :]
@@ -489,21 +490,16 @@ class AttentionSeq2seq(ModelBase):
         else:
             return self._decode_infer_beam_search(inputs, beam_width)
 
-    def _decode_infer_greedy(self, inputs):
-        """Greedy decoding when inference.
+    def _create_token(self, value, batch_size):
+        """Create 1 token per batch dimension.
         Args:
-            inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
+            value (int): the  value to pad
+            batch_size (int): the size of mini-batch
         Returns:
-            argmaxs (np.ndarray): A tensor of size `[B, ]`
-            attention_weights (np.ndarray): A tensor of size `[B, ]`
+            y (LongTensor): A tensor of size `[B, 1]`
         """
-        encoder_states, encoder_final_state = self._encode(inputs,
-                                                           volatile=True)
-
-        # Start from <SOS>
-        batch_size = inputs.size()[0]
         y = np.full((batch_size, 1),
-                    fill_value=self.sos_index, dtype=np.int64)
+                    fill_value=value, dtype=np.int64)
         y = torch.from_numpy(y)
         y = Variable(y, requires_grad=False)
         y.volatile = True
@@ -511,16 +507,37 @@ class AttentionSeq2seq(ModelBase):
             y = y.cuda()
         # NOTE: y: `[B, 1]`
 
+        return y
+
+    def _decode_infer_greedy(self, inputs):
+        """Greedy decoding when inference.
+        Args:
+            inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
+        Returns:
+            argmaxs (np.ndarray): A tensor of size `[B, T_out]`
+            attention_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
+        """
+        encoder_states, encoder_final_state = self._encode(inputs,
+                                                           volatile=True)
+
+        batch_size = inputs.size(0)
+
+        # Start from <SOS>
+        y = self._create_token(value=self.sos_index,
+                               batch_size=batch_size)
+
+        # Initialize decoder state
+        decoder_state = self._init_decoder_state(encoder_final_state,
+                                                 volatile=True)
+
         argmaxs = []
         attention_weights = []
         attention_weights_step = None
 
-        decoder_state = self._init_decoder_state(encoder_final_state,
-                                                 volatile=True)
-
         for _ in range(self.max_decode_length):
             y = self.embedding(y)
             y = self.embedding_dropout(y)
+            # TODO: remove dropout??
 
             decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
                 encoder_states,
@@ -570,4 +587,95 @@ class AttentionSeq2seq(ModelBase):
         encoder_states, encoder_final_state = self._encode(inputs,
                                                            volatile=True)
 
-        raise NotImplementedError
+        batch_size = inputs.size(0)
+
+        # Start from <SOS>
+        y = self._create_token(value=self.sos_index,
+                               batch_size=1)
+        ys = [y] * batch_size
+
+        # Initialize decoder state
+        decoder_state = self._init_decoder_state(encoder_final_state,
+                                                 volatile=True)
+
+        beam = []
+        for i_batch in range(batch_size):
+            if self.decoder_type == 'lstm':
+                beam.append(
+                    [((self.sos_index,), 0.,
+                      (decoder_state[0][:, i_batch:i_batch + 1, :],
+                       decoder_state[1][:, i_batch:i_batch + 1, :]))])
+            else:
+                # gru or rnn
+                beam.append(
+                    [((self.sos_index,), 0.,
+                      decoder_state[:, i_batch:i_batch + 1, :])])
+
+        complete = [[]] * batch_size
+        attention_weights = [] * batch_size
+        attention_weights_step_list = [None] * batch_size
+
+        for t in range(self.max_decode_length):
+
+            new_beam = [[]] * batch_size
+            for i_batch in range(batch_size):
+                for hyp, score, decoder_state in beam[i_batch]:
+
+                    if t == 0:
+                        # Start from <SOS>
+                        y = ys[i_batch]
+                    else:
+                        y = self._create_token(value=hyp[-1],
+                                               batch_size=1)
+                    y = self.embedding(y)
+                    y = self.embedding_dropout(y)
+                    # TODO: remove dropout??
+
+                    decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
+                        encoder_states[i_batch:i_batch + 1, :, :],
+                        y,
+                        decoder_state,
+                        attention_weights_step_list[i_batch])
+                    attention_weights_step_list[i_batch] = attention_weights_step
+
+                    if self.input_feeding_approach:
+                        # Input-feeding approach
+                        output = self.decoder_proj_layer(
+                            torch.cat([decoder_outputs, context_vector], dim=-1))
+                        output = self.fc(F.tanh(output))
+                    else:
+                        output = self.fc(decoder_outputs + context_vector)
+
+                    # TODO: check this
+                    output = output.squeeze(dim=1)
+
+                    output = output.cpu().data.numpy().tolist()
+                    for i, prob in enumerate(output[0]):
+                        new_score = score + prob
+                        new_hyp = hyp + (i,)
+                        new_beam[i_batch].append(
+                            (new_hyp, new_score, decoder_state))
+                new_beam[i_batch] = sorted(
+                    new_beam[i_batch], key=lambda x: x[1], reverse=True)
+
+                # Remove complete hypotheses
+                for cand in new_beam[i_batch][:beam_width]:
+                    if cand[0][-1] == self.eos_index:
+                        complete[i_batch].append(cand)
+                if len(complete[i_batch]) >= beam_width:
+                    complete[i_batch] = complete[i_batch][:beam_width]
+                    break
+                beam[i_batch] = list(filter(lambda x: x[0][-1] !=
+                                            self.eos_index, new_beam[i_batch]))
+                beam[i_batch] = beam[i_batch][:beam_width]
+
+        best = []
+        for i_batch in range(batch_size):
+            complete[i_batch] = sorted(
+                complete[i_batch], key=lambda x: x[1], reverse=True)
+            if len(complete[i_batch]) == 0:
+                complete[i_batch] = beam[i_batch]
+            hyp, score, _ = complete[i_batch][0]
+            best.append(hyp)
+
+        return np.array(best), None

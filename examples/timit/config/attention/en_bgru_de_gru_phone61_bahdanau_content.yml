@@ -12,19 +12,19 @@ param:
   # NOTE: per 20ms
 
   # topology
-  encoder_type: lstm
+  encoder_type: gru
   encoder_bidirectional: True
   encoder_num_units: 256
   encoder_num_proj: 0
-  encoder_num_layers: 4
+  encoder_num_layers: 3
   attention_type: bahdanau_content
-  attention_dim: 128
-  decoder_type: lstm
+  attention_dim: 512
+  decoder_type: gru
   decoder_num_units: 256
   decoder_num_proj: 0
   decoder_num_layers: 1
   embedding_dim: 64
-  max_decode_length: 100
+  max_decode_length: 40
 
   # optimization
   batch_size: 64
@@ -37,7 +37,7 @@ param:
   clip_grad_norm: 5.0
   clip_activation_encoder: 50
   clip_activation_decoder: 50
-  dropout_encoder: 0.2
+  dropout_encoder: 0.5
   dropout_decoder: 0.1
   dropout_embedding: 0.1
   weight_decay: 0
@@ -55,4 +55,4 @@ param:
 
   eval_start_epoch: 10
   print_step: 10
-  beam_width: 1
+  beam_width: 10

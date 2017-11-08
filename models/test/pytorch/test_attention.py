@@ -135,16 +135,21 @@ class TestAttention(unittest.TestCase):
 
         # Define optimizer
         optimizer, scheduler = model.set_optimizer(
-            'adam', learning_rate_init=1e-3, weight_decay=0,
-            lr_schedule=False, factor=0.1, patience_epoch=5)
+            'adam',
+            learning_rate_init=1e-3,
+            weight_decay=1e-6,
+            lr_schedule=False,
+            factor=0.1,
+            patience_epoch=5)
 
         # Define learning rate controller
         learning_rate = 1e-3
-        lr_controller = Controller(learning_rate_init=learning_rate,
-                                   decay_start_epoch=20,
-                                   decay_rate=0.9,
-                                   decay_patient_epoch=10,
-                                   lower_better=True)
+        lr_controller = Controller(
+            learning_rate_init=learning_rate,
+            decay_start_epoch=20,
+            decay_rate=0.9,
+            decay_patient_epoch=10,
+            lower_better=True)
 
         # Initialize parameters
         model.init_weights()
@@ -190,7 +195,7 @@ class TestAttention(unittest.TestCase):
                 # TODO: Change to evaluation mode
 
                 # Decode
-                labels_pred, _ = model.decode_infer(inputs, beam_width=1)
+                labels_pred, _ = model.decode_infer(inputs, beam_width=5)
 
                 str_pred = idx2alpha(labels_pred[0][0:-1]).split('>')[0]
                 str_true = idx2alpha(to_np(labels)[0][1:-1])

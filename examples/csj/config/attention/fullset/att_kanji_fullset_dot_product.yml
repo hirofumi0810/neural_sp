@@ -29,7 +29,7 @@ param:
 
   # optimization
   batch_size: 64
-  optimizer: adam
+  optimizer: rmsprop
   learning_rate: 1e-3
   num_epoch: 30
 
@@ -46,7 +46,7 @@ param:
   decay_rate: 0.5
   decay_patient_epoch: 3
   sort_stop_epoch: 10
-  not_improved_patient_epoch: 3
+  not_improved_patient_epoch: 10
 
   sharpening_factor: 1.0
   logits_temperature: 1.0
@@ -54,6 +54,6 @@ param:
   input_feeding_approach: False
   coverage_weight: 0
 
-  eval_start_epoch: 1
+  eval_start_epoch: 5
   print_step: 2000
-  beam_width: 1
+  beam_width: 20

@@ -22,7 +22,7 @@ parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
 parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
-parser.add_argument('--beam_width', type=int, default=1,
+parser.add_argument('--beam_width', type=int, default=10,
                     help='beam_width (int, optional): beam width for beam search.' +
                     ' 1 disables beam search, which mean greedy decoding.')
 parser.add_argument('--eval_batch_size', type=str, default=1,
@@ -64,7 +64,7 @@ def do_eval(model, params, epoch, beam_width, eval_batch_size):
         dataset=test_data,
         label_type=params['label_type'],
         beam_width=beam_width,
-        is_test=True,
+        is_test=test_data.is_test,
         eval_batch_size=eval_batch_size,
         progressbar=True)
     print('  PER: %f %%' % (per_test * 100))
@@ -112,7 +112,7 @@ def main():
         num_classes=params['num_classes'],
         sos_index=params['num_classes'],
         eos_index=params['num_classes'] + 1,
-        max_decode_length=params['max_decode_length'],
+        max_decode_length=40,
         parameter_init=params['parameter_init'],
         downsample_list=[],
         init_dec_state_with_enc_state=True,

@@ -79,7 +79,7 @@ class AttentionMechanism(nn.Module):
                 stride=1,
                 padding=kernel_size // 2,
                 bias=True)
-            self.W_fil = nn.Linear(out_channels, attention_dim)
+            self.W_conv = nn.Linear(out_channels, attention_dim)
             self.v_a = nn.Linear(attention_dim, 1)
 
         elif self.attention_type == 'hybrid':
@@ -92,7 +92,7 @@ class AttentionMechanism(nn.Module):
                 stride=1,
                 padding=kernel_size // 2,
                 bias=True)
-            self.W_fil = nn.Linear(out_channels, attention_dim)
+            self.W_conv = nn.Linear(out_channels, attention_dim)
             self.v_a = nn.Linear(attention_dim, 1)
 
         elif self.attention_type == 'dot_product':
@@ -143,11 +143,11 @@ class AttentionMechanism(nn.Module):
         elif self.attention_type == 'location':
             ###################################################################
             # f = F * α_{i-1}
-            # energy = <v_a, tanh(W_dec(hidden_dec) + W_fil(f))>
+            # energy = <v_a, tanh(W_dec(hidden_dec) + W_conv(f))>
             ###################################################################
             if attention_weights_step is not None:
                 conv_feat = self.conv(attention_weights_step.unsqueeze(dim=1))
-                conv_feat = self.W_fil(conv_feat.transpose(1, 2))
+                conv_feat = self.W_conv(conv_feat.transpose(1, 2))
                 query = self.W_dec(decoder_outputs).expand_as(conv_feat)
                 query += conv_feat
             else:
@@ -158,13 +158,13 @@ class AttentionMechanism(nn.Module):
             ###################################################################
             # f = F * α_{i-1}
             # energy = <v_a,
-            # tanh(W_enc(hidden_enc) + W_dec(hidden_dec) + W_fil(f))>
+            # tanh(W_enc(hidden_enc) + W_dec(hidden_dec) + W_conv(f))>
             ###################################################################
             keys = self.W_enc(encoder_states)
             query = self.W_dec(decoder_outputs).expand_as(keys)
             if attention_weights_step is not None:
                 conv_feat = self.conv(attention_weights_step.unsqueeze(dim=1))
-                conv_feat = self.W_fil(conv_feat.transpose(1, 2))
+                conv_feat = self.W_conv(conv_feat.transpose(1, 2))
                 query += conv_feat
             energy = self.v_a(F.tanh(keys + query)).squeeze(dim=2)
 
@@ -208,12 +208,6 @@ class AttentionMechanism(nn.Module):
 
         else:
             raise NotImplementedError
-
-        # if attention_weights_step is not None:
-        #     attention_weights_step = attention_weights_step.unsqueeze(dim=1)
-        #     attention_weights_step = self.conv(
-        #         attention_weights_step).squeeze(dim=1)
-        #     pax = pax + attention_weights_step
 
         # Compute attention weights
         if self.sigmoid_smoothing:
