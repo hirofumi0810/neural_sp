@@ -676,6 +676,7 @@ class AttentionSeq2seq(ModelBase):
             if len(complete[i_batch]) == 0:
                 complete[i_batch] = beam[i_batch]
             hyp, score, _ = complete[i_batch][0]
-            best.append(hyp)
+            best.append(hyp[1:])
+            # NOTE: remove <SOS>
 
         return np.array(best), None
