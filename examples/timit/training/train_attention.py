@@ -99,11 +99,10 @@ def do_train(model, params):
 
         # Create feed dictionary for next mini batch (train)
         inputs_train, labels_train, _, _, _ = data
-        inputs_train = np2var_pytorch(inputs_train)
-        labels_train = np2var_pytorch(labels_train, dtype='long')
-        if use_cuda:
-            inputs_train = inputs_train.cuda()
-            labels_train = labels_train.cuda()
+        inputs_train = np2var_pytorch(
+            inputs_train, use_cuda=use_cuda)
+        labels_train = np2var_pytorch(
+            labels_train, use_cuda=use_cuda, dtype='long')
 
         # Clear gradients before
         optimizer.zero_grad()
@@ -131,12 +130,10 @@ def do_train(model, params):
 
             # Create feed dictionary for next mini batch (dev)
             inputs_dev, labels_dev, _, _, _ = dev_data.next()[0]
-            inputs_dev = np2var_pytorch(inputs_dev, volatile=True)
-            labels_dev = np2var_pytorch(labels_dev, volatile=True,
-                                        dtype='long')
-            if use_cuda:
-                inputs_dev = inputs_dev.cuda()
-                labels_dev = labels_dev.cuda()
+            inputs_dev = np2var_pytorch(
+                inputs_dev, use_cuda=use_cuda, volatile=True)
+            labels_dev = np2var_pytorch(
+                labels_dev, use_cuda=use_cuda, volatile=True, dtype='long')
 
             # ***Change to evaluation mode
             model.eval()
@@ -291,10 +288,12 @@ def main(config_path, model_save_path):
     setproctitle('pt_timit_att_' +
                  params['label_type'] + '_' + params['attention_type'])
 
-    model.name = 'en' + str(params['encoder_num_units'])
+    model.name = 'enc' + params['encoder_type'] + \
+        str(params['encoder_num_units'])
     model.name += '_' + str(params['encoder_num_layers'])
     model.name += '_att' + str(params['attention_dim'])
-    model.name += '_de' + str(params['decoder_num_units'])
+    model.name += '_dec' + params['decoder_type'] + \
+        str(params['decoder_num_units'])
     model.name += '_' + str(params['decoder_num_layers'])
     model.name += '_' + params['optimizer']
     model.name += '_lr' + str(params['learning_rate'])

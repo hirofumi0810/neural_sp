@@ -102,11 +102,10 @@ def plot(model, dataset, label_type,
 
         # Create feed dictionary for next mini batch
         inputs, labels_true, _, labels_seq_len, input_names = data
-        inputs = np2var_pytorch(inputs, volatile=True)
-        if model.use_cuda:
-            inputs = inputs.cuda()
+        inputs = np2var_pytorch(
+            inputs, use_cuda=model.use_cuda, volatile=True)
 
-        batch_size = inputs[0].size()[0]
+        batch_size = inputs[0].size(0)
 
         # Make prediction
         labels_pred, attention_weights = model.decode_infer(

@@ -47,7 +47,7 @@ def do_decode(model, params, epoch, beam_width, eval_batch_size):
         map_file_path='../metrics/mapping_files/phone61.txt',
         splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=False, progressbar=True)
+        sort_utt=True, reverse=True, progressbar=True)
 
     # GPU setting
     model.set_cuda(deterministic=False)
@@ -65,7 +65,7 @@ def do_decode(model, params, epoch, beam_width, eval_batch_size):
         dataset=test_data,
         label_type=params['label_type'],
         beam_width=beam_width,
-        is_test=True,
+        is_test=test_data.is_test,
         save_path=None)
     # save_path=model.save_path)
 
@@ -91,18 +91,20 @@ def decode(model, dataset, label_type, beam_width,
 
         # Create feed dictionary for next mini batch
         inputs, labels_true, _, labels_seq_len, input_names = data
-        inputs = np2var_pytorch(inputs, volatile=True)
-        if model.use_cuda:
-            inputs = inputs.cuda()
+        inputs = np2var_pytorch(
+            inputs, use_cuda=model.use_cuda, volatile=True)
 
-        batch_size = inputs[0].size()[0]
+        batch_size = inputs[0].size(0)
 
         # Evaluate by 39 phones
         labels_pred, _ = model.decode_infer(
             inputs[0], beam_width=beam_width)
 
         for i_batch in range(batch_size):
+
             print('----- wav: %s -----' % input_names[0][i_batch])
+
+            # Convert from list of index to string
             if is_test:
                 str_true = labels_true[0][i_batch][0]
             else:

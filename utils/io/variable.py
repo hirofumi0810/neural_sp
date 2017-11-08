@@ -9,10 +9,11 @@ import torch
 # import chainer
 
 
-def np2var_pytorch(inputs, volatile=False, dtype=None):
+def np2var_pytorch(inputs, use_cuda=False, volatile=False, dtype=None):
     """Convert form np.ndarray to Variable.
     Args:
         inputs (np.ndarray): A tensor of size `[B, T, input_size]`
+        use_cuda (bool, optional): if True, use CUDA
         volatile (bool, optional): if True, the history will not be saved.
             This should be used in inference model for memory efficiency.
         type (string, optional): float or long or int
@@ -32,5 +33,8 @@ def np2var_pytorch(inputs, volatile=False, dtype=None):
 
     if volatile:
         inputs.volatile = True
+
+    if use_cuda:
+        inputs = inputs.cuda()
 
     return inputs

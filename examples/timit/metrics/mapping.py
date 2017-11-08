@@ -42,7 +42,7 @@ class Map2phone39(object):
         if self.label_type == 'phone39':
             return phone_list
 
-        if len(phone_list) == 0:
+        if len(phone_list) == 1 and phone_list[0] == '':
             return phone_list
 
         # Map to 39 phones

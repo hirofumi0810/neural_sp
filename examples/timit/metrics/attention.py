@@ -59,11 +59,10 @@ def do_eval_per(model, dataset, label_type, beam_width,
 
         # Create feed dictionary for next mini-batch
         inputs, labels_true, _, labels_seq_len, _ = data
-        inputs = np2var_pytorch(inputs, volatile=True)
-        if model.use_cuda:
-            inputs = inputs.cuda()
+        inputs = np2var_pytorch(
+            inputs, use_cuda=model.use_cuda, volatile=True)
 
-        batch_size = inputs[0].size()[0]
+        batch_size = inputs[0].size(0)
 
         # Evaluate by 39 phones
         labels_pred, _ = model.decode_infer(
