@@ -6,11 +6,11 @@ from __future__ import division
 from __future__ import print_function
 
 
-def to_np(x):
+def tensor2np(x):
     """
     Args:
         x (FloatTensor):
     Returns:
         np.ndarray
     """
-    return x.data.cpu().numpy()
+    return x.cpu().numpy()

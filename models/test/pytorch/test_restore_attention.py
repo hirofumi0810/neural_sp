@@ -16,9 +16,10 @@ import torch.nn as nn
 
 sys.path.append('../../../')
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
-from models.test.data import generate_data, np2var_pytorch, idx2alpha
+from models.test.data import generate_data, idx2alpha
+from utils.io.variable import np2var
 from utils.measure_time_func import measure_time
-from utils.io.tensor import to_np
+from utils.io.tensor import tensor2np
 from utils.evaluation.edit_distance import compute_cer
 
 torch.manual_seed(1)
@@ -41,10 +42,10 @@ class TestRestoreAttention(unittest.TestCase):
             batch_size=batch_size)
 
         # Wrap by Variable
-        inputs = np2var_pytorch(inputs)
-        labels = np2var_pytorch(labels, dtype='long')
-        inputs_seq_len = np2var_pytorch(inputs_seq_len, dtype='long')
-        labels_seq_len = np2var_pytorch(labels_seq_len, dtype='long')
+        inputs = np2var(inputs)
+        labels = np2var(labels, dtype='long')
+        inputs_seq_len = np2var(inputs_seq_len, dtype='long')
+        labels_seq_len = np2var(labels_seq_len, dtype='long')
 
         # Load model
         model = AttentionSeq2seq(
@@ -141,7 +142,7 @@ class TestRestoreAttention(unittest.TestCase):
                 outputs_infer, _ = model.decode_infer(inputs, beam_width=1)
 
                 str_pred = idx2alpha(outputs_infer[0][0:-1]).split('>')[0]
-                str_true = idx2alpha(to_np(labels)[0][1:-1])
+                str_true = idx2alpha(tensor2np(labels)[0][1:-1])
 
                 # Compute accuracy
                 cer_train = compute_cer(str_pred=str_pred.replace('_', ''),
@@ -150,7 +151,7 @@ class TestRestoreAttention(unittest.TestCase):
 
                 duration_step = time.time() - start_time_step
                 print('Step %d: loss = %.3f / ler = %.3f (%.3f sec) / lr = %.5f' %
-                      (step + 1, to_np(loss), cer_train, duration_step, 1e-3))
+                      (step + 1, tensor2np(loss), cer_train, duration_step, 1e-3))
                 start_time_step = time.time()
 
                 # Visualize

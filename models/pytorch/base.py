@@ -5,7 +5,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import re
 from os.path import join, isfile, basename
 from glob import glob
 import torch
@@ -88,7 +87,7 @@ class ModelBase(nn.Module):
         Args:
             optimizer (string): sgd or adam or adadelta or adagrad or rmsprop
             learning_rate_init (float): An initial learning rate
-            weight_decay (float, optional):
+            weight_decay (float, optional): L2 penalty
             lr_schedule (bool, optional): if True, wrap optimizer with
                 scheduler. Default is True.
             factor (float, optional):
@@ -104,22 +103,25 @@ class ModelBase(nn.Module):
                 (", ".join(OPTIMIZER_CLS_NAMES), optimizer))
 
         if optimizer == 'sgd':
-            self.optimizer = optim.SGD(self.parameters(),
-                                       lr=learning_rate_init,
-                                       weight_decay=weight_decay,
-                                       nesterov=False)
+            self.optimizer = optim.SGD(
+                self.parameters(),
+                lr=learning_rate_init,
+                weight_decay=weight_decay,
+                nesterov=False)
         elif optimizer == 'momentum':
-            self.optimizer = optim.SGD(self.parameters(),
-                                       lr=learning_rate_init,
-                                       momentum=0.9,
-                                       weight_decay=weight_decay,
-                                       nesterov=False)
+            self.optimizer = optim.SGD(
+                self.parameters(),
+                lr=learning_rate_init,
+                momentum=0.9,
+                weight_decay=weight_decay,
+                nesterov=False)
         elif optimizer == 'nesterov':
-            self.optimizer = optim.SGD(self.parameters(),
-                                       lr=learning_rate_init,
-                                       momentum=0.9,
-                                       weight_decay=weight_decay,
-                                       nesterov=True)
+            self.optimizer = optim.SGD(
+                self.parameters(),
+                lr=learning_rate_init,
+                momentum=0.9,
+                weight_decay=weight_decay,
+                nesterov=True)
         else:
             self.optimizer = OPTIMIZER_CLS_NAMES[optimizer](
                 self.parameters(),

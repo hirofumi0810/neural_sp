@@ -136,8 +136,7 @@ class RNNEncoder(nn.Module):
                     `[B, T, num_units * num_directions]`
                 else
                     `[T, B, num_units * num_directions]`
-            h_n: A tensor of size
-                `[num_layers * num_directions, B, num_units]`
+            final_state_fw: A tensor of size `[1, B, num_units]`
         """
         batch_size, max_time = inputs.size()[:2]
 
@@ -154,6 +153,13 @@ class RNNEncoder(nn.Module):
             # gru or rnn
             outputs, h_n = self.rnn(inputs, hx=h_0)
 
+        # Pick up the final state of the top layer (forward)
+        if self.num_directions == 2:
+            final_state_fw = h_n[-2:-1, :, :]
+        else:
+            final_state_fw = h_n[-1, :, :].unsqueeze(dim=0)
+        # NOTE: h_n: `[num_layers * num_directions, B, num_units]`
+
         # TODO: add the projection layer
 
-        return outputs, h_n
+        return outputs, final_state_fw

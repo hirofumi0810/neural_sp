@@ -9,10 +9,12 @@ from __future__ import print_function
 
 import sys
 import unittest
+import numpy as np
 
 sys.path.append('../../../')
 from models.pytorch.encoders.load_encoder import load
-from models.test.data import generate_data, np2var_pytorch
+from models.test.data import generate_data
+from utils.io.variable import np2var, var2np
 from utils.measure_time_func import measure_time
 
 
@@ -82,9 +84,9 @@ class TestPyramidRNNEncoders(unittest.TestCase):
             splice=1)
 
         # Wrap by Variable
-        inputs = np2var_pytorch(inputs)
-        labels = np2var_pytorch(labels)
-        inputs_seq_len = np2var_pytorch(inputs_seq_len)
+        inputs = np2var(inputs)
+        labels = np2var(labels)
+        inputs_seq_len = np2var(inputs_seq_len)
 
         max_time = inputs.size(1)
 
@@ -112,11 +114,18 @@ class TestPyramidRNNEncoders(unittest.TestCase):
         max_time /= (2 ** encoder.downsample_list.count(True))
         max_time = int(max_time)
 
+        # Check final state (forward)
+        print('----- Check hidden states (forward) -----')
+        if batch_first:
+            outputs_fw_final = outputs.transpose(
+                0, 1)[-1, 0, :encoder.num_units]
+        else:
+            outputs_fw_final = outputs[-1, 0, :encoder.num_units]
+        assert np.all(var2np(outputs_fw_final) == var2np(final_state[0, 0, :]))
+
         print('----- final state -----')
         print(final_state.size())
-        self.assertEqual((encoder.num_layers * encoder.num_directions,
-                          batch_size,
-                          encoder.num_units),
+        self.assertEqual((1, batch_size, encoder.num_units),
                          final_state.size())
 
         print('----- outputs -----')

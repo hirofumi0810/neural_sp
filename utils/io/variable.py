@@ -9,7 +9,7 @@ import torch
 # import chainer
 
 
-def np2var_pytorch(inputs, use_cuda=False, volatile=False, dtype=None):
+def np2var(inputs, use_cuda=False, volatile=False, dtype=None):
     """Convert form np.ndarray to Variable.
     Args:
         inputs (np.ndarray): A tensor of size `[B, T, input_size]`
@@ -38,3 +38,13 @@ def np2var_pytorch(inputs, use_cuda=False, volatile=False, dtype=None):
         inputs = inputs.cuda()
 
     return inputs
+
+
+def var2np(x):
+    """
+    Args:
+        x (torch.Variable):
+    Returns:
+        np.ndarray
+    """
+    return x.data.cpu().numpy()

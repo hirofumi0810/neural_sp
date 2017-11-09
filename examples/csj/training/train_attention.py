@@ -22,8 +22,7 @@ from examples.csj.metrics.attention import do_eval_cer
 from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
 from utils.directory import mkdir_join, mkdir
-from utils.io.tensor import to_np
-from utils.io.variable import np2var_pytorch
+from utils.io.variable import np2var, var2np
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 
 
@@ -97,9 +96,9 @@ def do_train(model, params):
 
         # Create feed dictionary for next mini batch (train)
         inputs_train, labels_train, _, _, _ = data
-        inputs_train = np2var_pytorch(
+        inputs_train = np2var(
             inputs_train, use_cuda=use_cuda)
-        labels_train = np2var_pytorch(
+        labels_train = np2var(
             labels_train, use_cuda=use_cuda, dtype='long')
 
         # Clear gradients before
@@ -128,12 +127,12 @@ def do_train(model, params):
 
             # Create feed dictionary for next mini batch (dev)
             inputs_dev, labels_dev, _, _, _ = dev_data.next()[0]
-            inputs_dev = np2var_pytorch(
+            inputs_dev = np2var(
                 inputs_dev, use_cuda=use_cuda, volatile=True)
-            labels_dev = np2var_pytorch(
+            labels_dev = np2var(
                 labels_dev, use_cuda=use_cuda, volatile=True, dtype='long')
 
-            # ***Change to evaluation mode
+            # ***Change to evaluation mode***
             model.eval()
 
             # Make prediction
@@ -145,16 +144,16 @@ def do_train(model, params):
                 outputs_dev, labels_dev[0], att_weights,
                 coverage_weight=params['coverage_weight'])
             csv_steps.append(step)
-            csv_loss_train.append(to_np(loss_train))
-            csv_loss_dev.append(to_np(loss_dev))
+            csv_loss_train.append(var2np(loss_train))
+            csv_loss_dev.append(var2np(loss_dev))
 
-            # ***Change to training mode
+            # ***Change to training mode***
             model.train()
 
             duration_step = time.time() - start_time_step
             print("Step %d (epoch: %.3f): loss = %.3f (%.3f) / lr = %.5f (%.3f min)" %
                   (step + 1, train_data.epoch_detail,
-                   to_np(loss_train), to_np(loss_dev),
+                   var2np(loss_train), var2np(loss_dev),
                    learning_rate, duration_step / 60))
             sys.stdout.flush()
             start_time_step = time.time()
@@ -170,7 +169,7 @@ def do_train(model, params):
                       save_path=model.save_path)
 
             if train_data.epoch >= params['eval_start_epoch']:
-                # ***Change to evaluation mode
+                # ***Change to evaluation mode***
                 model.eval()
 
                 start_time_eval = time.time()
@@ -180,13 +179,13 @@ def do_train(model, params):
                     dataset=dev_data,
                     label_type=params['label_type'],
                     train_data_size=params['train_data_size'],
-                    beam_width=params['beam_width'],
+                    beam_width=1,
                     eval_batch_size=1)
                 print('  CER: %f %%' % (cer_dev_epoch * 100))
 
                 if cer_dev_epoch < cer_dev_best:
                     cer_dev_best = cer_dev_epoch
-                    print('■■■ ↑Best Score (PER)↑ ■■■')
+                    print('■■■ ↑Best Score (CER)↑ ■■■')
 
                     # Save the model
                     saved_path = model.save_checkpoint(
@@ -210,7 +209,7 @@ def do_train(model, params):
                     epoch=train_data.epoch,
                     value=cer_dev_epoch)
 
-                # ***Change to training mode
+                # ***Change to training mode***
                 model.train()
 
             start_time_step = time.time()

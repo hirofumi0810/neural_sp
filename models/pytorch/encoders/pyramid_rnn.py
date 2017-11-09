@@ -50,7 +50,7 @@ class PyramidRNNEncoder(nn.Module):
                  downsample_list,
                  downsample_type='drop',
                  use_cuda=False,
-                 batch_first=False,):
+                 batch_first=False):
 
         super(PyramidRNNEncoder, self).__init__()
 
@@ -91,7 +91,6 @@ class PyramidRNNEncoder(nn.Module):
                     batch_first=batch_first,
                     dropout=dropout,
                     bidirectional=bidirectional)
-                setattr(self, 'plstm_l' + str(i_layer), rnn)
             elif rnn_type == 'gru':
                 rnn = nn.GRU(
                     input_size if i_layer == 0 else next_input_size,
@@ -101,7 +100,6 @@ class PyramidRNNEncoder(nn.Module):
                     batch_first=batch_first,
                     dropout=dropout,
                     bidirectional=bidirectional)
-                setattr(self, 'pgru_l' + str(i_layer), rnn)
             elif rnn_type == 'rnn':
                 rnn = nn.RNN(
                     input_size if i_layer == 0 else next_input_size,
@@ -111,9 +109,10 @@ class PyramidRNNEncoder(nn.Module):
                     batch_first=batch_first,
                     dropout=dropout,
                     bidirectional=bidirectional)
-                setattr(self, 'prnn_l' + str(i_layer), rnn)
             else:
                 raise TypeError('rnn_type must be "lstm" or "gru" or "rnn".')
+
+            setattr(self, 'p' + rnn_type + '_l' + str(i_layer), rnn)
 
             if use_cuda:
                 rnn = rnn.cuda()
@@ -170,8 +169,7 @@ class PyramidRNNEncoder(nn.Module):
                     `[B, T // len(downsample_list), num_units * num_directions]`
                 else
                     `[T // len(downsample_list), B, num_units * num_directions]`
-            h_n: A tensor of size
-                `[num_layers * num_directions, B, num_units]`
+            final_state_fw: A tensor of size `[1, B, num_units]`
         """
         batch_size, max_time = inputs.size()[:2]
 
@@ -183,16 +181,12 @@ class PyramidRNNEncoder(nn.Module):
             inputs = inputs.transpose(0, 1)
 
         outputs = inputs
-        final_state_list = []
         for i_layer in range(self.num_layers):
             if self.rnn_type == 'lstm':
                 outputs, (h_n, c_n) = self.rnns[i_layer](outputs, hx=h_0)
             else:
                 # gru or rnn
                 outputs, h_n = self.rnns[i_layer](outputs, hx=h_0)
-
-            # Save the last hiddne state
-            final_state_list.append(h_n)
 
             outputs_list = []
             if self.downsample_list[i_layer]:
@@ -226,6 +220,11 @@ class PyramidRNNEncoder(nn.Module):
                     # `[T_prev // 2, B, num_units * num_directions (* 2)]`
                     max_time = outputs.size(0)
 
-        h_n = torch.cat(final_state_list, dim=0)
+        # Pick up the final state of the top layer (forward)
+        if self.num_directions == 2:
+            final_state_fw = h_n[-2:-1, :, :]
+        else:
+            final_state_fw = h_n[-1, :, :].unsqueeze(dim=0)
+        # NOTE: h_n: `[num_layers * num_directions, B, num_units]`
 
-        return outputs, h_n
+        return outputs, final_state_fw

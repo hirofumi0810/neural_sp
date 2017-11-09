@@ -141,7 +141,7 @@ class AttentionSeq2seq(ModelBase):
 
         # Common setting
         self.parameter_init = parameter_init
-        self.name = 'pytorch_attention_seq2seq'
+        self.name = 'pt_attention_seq2seq'
 
         ####################
         # Encoder
@@ -269,13 +269,12 @@ class AttentionSeq2seq(ModelBase):
             encoder_outputs (FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
             encoder_final_state (FloatTensor): A tensor of size
-                `[1, B, encoder_num_units]`
+                `[1, B, decoder_num_units (may be equal to encoder_num_units)]`
         """
         encoder_outputs, encoder_final_state = self.encoder(inputs, volatile)
         # NOTE: encoder_outputs:
         # `[B, T_in, encoder_num_units * encoder_num_directions]`
-        # encoder_final_state:
-        # `[encoder_num_layers * encoder_num_directions, B, encoder_num_units]`
+        # encoder_final_state: `[1, B, encoder_num_units]`
 
         # Sum bidirectional outputs
         if self.encoder_bidirectional:
@@ -283,19 +282,15 @@ class AttentionSeq2seq(ModelBase):
                 encoder_outputs[:, :, self.encoder_num_units:]
             # NOTE: encoder_outputs: `[B, T_in, encoder_num_units]`
 
-            # Pick up the final state of the top layer of the encoder (forward)
-            encoder_final_state = encoder_final_state[-2:-1, :, :]
-            # NOTE: encoder_final_state: `[1, B, encoder_num_units]`
-            # TODO: check source code
-        else:
-            encoder_final_state = encoder_final_state[-1, :, :].unsqueeze(0)
-
         if self.encoder_num_units != self.decoder_num_units:
+            _, batch_size, encoder_num_units = encoder_final_state.size()
+
             # Bridge between the encoder and decoder
             encoder_outputs = self.bridge(encoder_outputs)
-            encoder_final_state = encoder_final_state
             encoder_final_state = self.bridge(
-                encoder_final_state.transpose(0, 1)).transpose(0, 1)
+                encoder_final_state.view(-1, encoder_num_units))
+            encoder_final_state = encoder_final_state.view(1, batch_size, -1)
+            # NOTE: flatten
 
         return encoder_outputs, encoder_final_state
 

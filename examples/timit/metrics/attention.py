@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 from examples.timit.metrics.mapping import Map2phone39
 from utils.io.labels.phone import Idx2phone
-from utils.io.variable import np2var_pytorch
+from utils.io.variable import np2var
 from utils.evaluation.edit_distance import compute_per
 
 
@@ -59,7 +59,7 @@ def do_eval_per(model, dataset, label_type, beam_width,
 
         # Create feed dictionary for next mini-batch
         inputs, labels_true, _, labels_seq_len, _ = data
-        inputs = np2var_pytorch(
+        inputs = np2var(
             inputs, use_cuda=model.use_cuda, volatile=True)
 
         batch_size = inputs[0].size(0)

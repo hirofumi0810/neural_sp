@@ -15,7 +15,7 @@ import argparse
 sys.path.append(abspath('../../../'))
 from examples.csj.data.load_dataset_attention import Dataset
 from utils.io.labels.character import Idx2char
-from utils.io.variable import np2var_pytorch
+from utils.io.variable import np2var
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 
 parser = argparse.ArgumentParser()
@@ -106,7 +106,7 @@ def decode(model, dataset, label_type, train_data_size, beam_width,
 
         # Create feed dictionary for next mini batch
         inputs, labels_true, _, labels_seq_len, input_names = data
-        inputs = np2var_pytorch(
+        inputs = np2var(
             inputs, use_cuda=model.use_cuda, volatile=True)
 
         batch_size = inputs[0].size(0)
