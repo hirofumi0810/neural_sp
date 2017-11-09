@@ -12,8 +12,9 @@ import unittest
 
 sys.path.append('../../../')
 from models.pytorch.encoders.load_encoder import load
-from models.test.data import generate_data, np2var_pytorch
-from models.test.util import measure_time
+from models.test.data import generate_data
+from utils.io.variable import np2var
+from utils.measure_time_func import measure_time
 
 
 class TestMultitaskRNNEncoders(unittest.TestCase):
@@ -24,14 +25,18 @@ class TestMultitaskRNNEncoders(unittest.TestCase):
         self.check(encoder_type='lstm')
         self.check(encoder_type='lstm', bidirectional=True)
         self.check(encoder_type='lstm', bidirectional=True,
-                   batch_first=True)
+                   batch_first=False)
+
         self.check(encoder_type='gru')
         self.check(encoder_type='gru', bidirectional=True)
+        self.check(encoder_type='gru', bidirectional=True,
+                   batch_first=False)
+
         self.check(encoder_type='rnn')
         self.check(encoder_type='rnn', bidirectional=True)
 
     @measure_time
-    def check(self, encoder_type, bidirectional=False, batch_first=False):
+    def check(self, encoder_type, bidirectional=False, batch_first=True):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
@@ -47,9 +52,9 @@ class TestMultitaskRNNEncoders(unittest.TestCase):
             splice=1)
 
         # Wrap by Variable
-        inputs = np2var_pytorch(inputs)
-        labels = np2var_pytorch(labels)
-        inputs_seq_len = np2var_pytorch(inputs_seq_len)
+        inputs = np2var(inputs)
+        labels = np2var(labels)
+        inputs_seq_len = np2var(inputs_seq_len)
 
         max_time = inputs.size(1)
 
@@ -62,9 +67,10 @@ class TestMultitaskRNNEncoders(unittest.TestCase):
                               rnn_type=encoder_type,
                               bidirectional=bidirectional,
                               num_units=256,
+                              num_proj=0,
                               num_layers_main=5,
                               num_layers_sub=3,
-                              dropout=0.8,
+                              dropout=0.2,
                               parameter_init=0.1,
                               batch_first=batch_first)
         else:
@@ -76,13 +82,9 @@ class TestMultitaskRNNEncoders(unittest.TestCase):
         print('----- final state -----')
         print(final_state_main.size())
         print(final_state_sub.size())
-        self.assertEqual((encoder.num_layers_main * encoder.num_directions,
-                          batch_size,
-                          encoder.num_units),
+        self.assertEqual((1, batch_size, encoder.num_units),
                          final_state_main.size())
-        self.assertEqual((encoder.num_layers_sub * encoder.num_directions,
-                          batch_size,
-                          encoder.num_units),
+        self.assertEqual((1, batch_size, encoder.num_units),
                          final_state_sub.size())
 
         print('----- outputs -----')
