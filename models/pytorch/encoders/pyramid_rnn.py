@@ -201,7 +201,7 @@ class PyramidRNNEncoder(nn.Module):
                             # NOTE: `[1, B, num_units * num_directions]`
 
                         # Concatenate the successive frames
-                        if self.downsample_type == 'concat':
+                        if self.downsample_type == 'concat' and i_layer != self.num_layers - 1:
                             if self.batch_first:
                                 outputs_t_prev = outputs[:, t - 1:t, :]
                             else:

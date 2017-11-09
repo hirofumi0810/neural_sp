@@ -276,15 +276,15 @@ class AttentionSeq2seq(ModelBase):
         # `[B, T_in, encoder_num_units * encoder_num_directions]`
         # encoder_final_state: `[1, B, encoder_num_units]`
 
+        batch_size, max_time, encoder_num_units = encoder_outputs.size()
+
         # Sum bidirectional outputs
         if self.encoder_bidirectional:
-            encoder_outputs = encoder_outputs[:, :, :self.encoder_num_units] + \
-                encoder_outputs[:, :, self.encoder_num_units:]
+            encoder_outputs = encoder_outputs[:, :, :encoder_num_units // 2] + \
+                encoder_outputs[:, :, encoder_num_units // 2:]
             # NOTE: encoder_outputs: `[B, T_in, encoder_num_units]`
 
         if self.encoder_num_units != self.decoder_num_units:
-            _, batch_size, encoder_num_units = encoder_final_state.size()
-
             # Bridge between the encoder and decoder
             encoder_outputs = self.bridge(encoder_outputs)
             encoder_final_state = self.bridge(
