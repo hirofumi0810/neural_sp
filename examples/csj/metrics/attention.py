@@ -80,8 +80,8 @@ def do_eval_cer(model, dataset, label_type, train_data_size, beam_width,
             str_pred = re.sub(r'[_NZー・<>]+', '', str_pred)
 
             # Compute CER
-            cer_mean += compute_cer(str_pred=str_pred,
-                                    str_true=str_true,
+            cer_mean += compute_cer(ref=str_true,
+                                    hyp=str_pred,
                                     normalize=True)
 
             if progressbar:

@@ -35,18 +35,18 @@ def compute_per(ref, hyp, normalize=True):
     return per
 
 
-def compute_cer(str_pred, str_true, normalize=True):
+def compute_cer(ref, hyp, normalize=True):
     """Compute Character Error Rate.
     Args:
-        str_pred (string): a sentence without spaces
-        str_true (string): a sentence without spaces
-        normalize (bool, optional): if True, divide by the length of str_true
+        ref (string): a sentence without spaces
+        hyp (string): a sentence without spaces
+        normalize (bool, optional): if True, divide by the length of ref
     Returns:
-        cer (float): Character Error Rate between str_true and str_pred
+        cer (float): Character Error Rate between ref and hyp
     """
-    cer = lev.distance(str_pred, str_true)
+    cer = lev.distance(hyp, ref)
     if normalize:
-        cer /= len(list(str_true))
+        cer /= len(list(ref))
     return cer
 
 

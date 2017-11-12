@@ -5,7 +5,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import chainer
 import numpy as np
 
 from utils.io.inputs.splicing import do_splice
@@ -15,39 +14,6 @@ from utils.io.inputs.feature_extraction import wav2feature
 SPACE = '_'
 SOS = '<'
 EOS = '>'
-
-SPACE_INDEX = 0
-BLANK_INDEX = 27
-SOS_INDEX = 27
-EOS_INDEX = 28
-
-
-def np2var_chainer(inputs):
-    """
-    Args:
-        inputs (np.ndarray): A tensor of size `[B, T, input_size]`
-    Returns:
-        chainer.Variable of size `[T, B, input_size]`
-    """
-    return chainer.Variable(inputs, requires_grad=False)
-
-
-def np2varlist_chainer(inputs):
-    """
-    Args:
-        inputs (np.ndarray): A tensor of size `[B, T, input_size]`
-    Returns:
-        var_list (list): list of character.Variable of size `[T, input_size]`
-            Note that len(var_list) == B.
-    """
-    assert len(inputs.shape) == 3
-
-    var_list = []
-    for i_batch in range(inputs.shape[0]):
-        var_list.append(chainer.Variable(inputs[i_batch], requires_grad=False))
-    # volatile??
-
-    return var_list
 
 
 def _read_text(trans_path):
@@ -64,10 +30,11 @@ def _read_text(trans_path):
     return transcript
 
 
-def generate_data(model, batch_size=1, num_stack=1, splice=1):
+def generate_data(model, label_type='char', batch_size=1, num_stack=1, splice=1):
     """
     Args:
         model (string): ctc or attention
+        label_type (string, optional): char or word
         batch_size (int): the size of mini-batch
         splice (int): frames to splice. Default is 1 frame.
     Returns:
@@ -98,62 +65,138 @@ def generate_data(model, batch_size=1, num_stack=1, splice=1):
                        num_stack=num_stack)
 
     # Make transcripts
-    transcript = _read_text('../sample/LDC93S1.txt').replace('.', '')
-    if model == 'attention':
-        transcript = SOS + transcript + EOS
-    labels = np.array([alpha2idx(transcript)] * batch_size, np.int32)
-    labels_seq_len = np.array([len(labels[0])] * batch_size)
+    transcript = _read_text('../sample/LDC93S1.txt')
+    transcript = transcript.replace('.', '').replace(' ', SPACE)
+    if label_type == 'char':
+        if model == 'attention':
+            transcript = SOS + transcript + EOS
+            labels = np.array([char2idx(transcript)] * batch_size, np.int32)
+        elif model == 'ctc':
+            labels = np.array([char2idx(transcript)] * batch_size, np.int32)
+            labels = labels.reshape((-1,))
+        labels_seq_len = np.array([len(char2idx(transcript))] * batch_size)
+    elif label_type == 'word':
+        if model == 'attention':
+            transcript = SOS + SPACE + transcript + SPACE + EOS
+            labels = np.array([word2idx(transcript)] * batch_size, np.int32)
+        elif model == 'ctc':
+            labels = np.array([word2idx(transcript)] * batch_size, np.int32)
+            labels = labels.reshape((-1,))
+        labels_seq_len = np.array([len(word2idx(transcript))] * batch_size)
+    elif label_type == 'word_char':
+        pass
+    else:
+        raise NotImplementedError
 
     return inputs, labels, inputs_seq_len, labels_seq_len
 
 
-def alpha2idx(transcript):
-    """Convert from alphabet to index.
+def char2idx(transcript):
+    """Convert from character to index.
     Args:
-        transcript (string): a sequence of characters
+        transcript (string): a sequence of string
     Returns:
-        index_list (list): indices of alphabets
+        index_list (list): indices of characters
     """
     char_list = list(transcript)
 
-    # 0 is reserved for space
-    first_index = ord('a') - 1
+    first_idx = ord('a') - 1
+    last_idx = ord('z') - first_idx
+    # NOTE: 0 is reserved for space
+
     index_list = []
     for char in char_list:
-        if char == ' ':
-            index_list.append(SPACE_INDEX)
+        if char == SPACE:
+            index_list.append(0)
         elif char == SOS:
-            index_list.append(SOS_INDEX)
+            index_list.append(last_idx + 1)
         elif char == EOS:
-            index_list.append(EOS_INDEX)
+            index_list.append(last_idx + 2)
         else:
-            index_list.append(ord(char) - first_index)
+            index_list.append(ord(char) - first_idx)
     return index_list
 
 
-def idx2alpha(indices):
-    """Convert from index to alphabet.
+def idx2char(indices):
+    """Convert from index to character.
     Args:
         indices (Variable): Variable of indices
         blank_index (int, optional): the index of the blank class
     Returns:
-        transcript (string): a sequence of character
+        transcript (string): a sequence of string
     """
-    # NOTE: 0 is reserved to space
+    if isinstance(indices, np.ndarray):
+        indices = list(indices)
 
-    first_index = ord('a') - 1
+    first_idx = ord('a') - 1
+    last_idx = ord('z') - first_idx
+    # NOTE: 0 is reserved for space
+
     char_list = []
-    for index in indices:
-        if index == 0:
+    for idx in indices:
+        if idx == 0:
             char_list.append(SPACE)
-        elif index == BLANK_INDEX:
-            continue
-            # TODO: fix this
-        elif index == SOS_INDEX:
+        elif idx == last_idx + 1:
             char_list.append(SOS)
-        elif index == EOS_INDEX:
+        elif idx == last_idx + 2:
             char_list.append(EOS)
         else:
-            char_list.append(chr(index + first_index))
+            char_list.append(chr(idx + first_idx))
     transcript = ''.join(char_list)
+    return transcript
+
+
+def word2idx(transcript):
+    """Convert from word to index.
+    Args:
+        transcript (string): a sequence of space-separated string
+    Returns:
+        index_list (list): indices of words
+    """
+    word_list = transcript.split(SPACE)
+
+    # Register word dict
+    vocab = set([])
+    for word in word_list:
+        if word in [SOS, EOS]:
+            continue
+        vocab.add(word)
+
+    word_dict = {}
+    with open('./word.txt', 'w') as f:
+        for idx, word in enumerate(sorted(list(vocab))):
+            word_dict[word] = idx
+            f.write('%s\n' % word)
+        word_dict[SOS] = len(vocab)
+        word_dict[EOS] = len(vocab) + 1
+        f.write('%s\n' % SOS)
+        f.write('%s\n' % EOS)
+
+    index_list = []
+    for word in word_list:
+        index_list.append(word_dict[word])
+    return index_list
+
+
+def idx2word(indices):
+    """Convert from index to word.
+    Args:
+        indices (Variable): Variable of indices
+        blank_index (int, optional): the index of the blank class
+    Returns:
+        transcript (string): a sequence of string
+    """
+    if isinstance(indices, np.ndarray):
+        indices = list(indices)
+
+    word_dict = {}
+    with open('./word.txt', 'r') as f:
+        for idx, line in enumerate(f):
+            word = line.strip()
+            word_dict[idx] = word
+
+    word_list = []
+    for idx in indices:
+        word_list.append(word_dict[idx])
+    transcript = SPACE.join(word_list)
     return transcript

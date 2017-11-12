@@ -16,19 +16,24 @@ import torch.nn as nn
 
 sys.path.append('../../../')
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
-from models.test.data import generate_data, idx2alpha
+from models.test.data import generate_data, idx2char, idx2word
 from utils.measure_time_func import measure_time
 from utils.io.variable import np2var, var2np
-from utils.evaluation.edit_distance import compute_cer
+from utils.evaluation.edit_distance import compute_cer, compute_wer
 from utils.training.learning_rate_controller import Controller
 
-torch.manual_seed(1)
+torch.manual_seed(2017)
 
 
 class TestAttention(unittest.TestCase):
 
     def test(self):
         print("Attention Working check.")
+
+        # word-level attention
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', attention_type='dot_product',
+                   label_type='word')
 
         # unidirectional & bidirectional
         self.check(encoder_type='lstm', bidirectional=True,
@@ -72,11 +77,12 @@ class TestAttention(unittest.TestCase):
 
     @measure_time
     def check(self, encoder_type, bidirectional, decoder_type,
-              attention_type='bahdanau_content',
+              attention_type='bahdanau_content', label_type='char',
               downsample=False, input_feeding_approach=False,
               save_path=None):
 
         print('==================================================')
+        print('  label_type: %s' % label_type)
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
         print('  decoder_type: %s' % decoder_type)
@@ -88,6 +94,7 @@ class TestAttention(unittest.TestCase):
         # Load batch data
         inputs, labels, _, _ = generate_data(
             model='attention',
+            label_type=label_type,
             batch_size=2,
             num_stack=1,
             splice=1)
@@ -95,6 +102,13 @@ class TestAttention(unittest.TestCase):
         # Wrap by Variable
         inputs = np2var(inputs)
         labels = np2var(labels, dtype='long')
+
+        if label_type == 'char':
+            sos_index = 27
+            eos_index = 28
+        elif label_type == 'word':
+            sos_index = 11
+            eos_index = 12
 
         # Load model
         model = AttentionSeq2seq(
@@ -114,9 +128,9 @@ class TestAttention(unittest.TestCase):
             decoder_dropout=0.1,
             embedding_dim=64,
             embedding_dropout=0.1,
-            num_classes=27,  # excluding <SOS> and <EOS>
-            sos_index=27,
-            eos_index=28,
+            num_classes=sos_index,
+            sos_index=sos_index,
+            eos_index=eos_index,
             max_decode_length=100,
             splice=1,
             parameter_init=0.1,
@@ -164,7 +178,7 @@ class TestAttention(unittest.TestCase):
         # Train model
         max_step = 1000
         start_time_step = time.time()
-        cer_train_pre = 1
+        ler_train_pre = 1
         for step in range(max_step):
 
             # Clear gradients before
@@ -186,34 +200,44 @@ class TestAttention(unittest.TestCase):
 
             # Update parameters
             if scheduler is not None:
-                scheduler.step(cer_train_pre)
+                scheduler.step(ler_train_pre)
             else:
                 optimizer.step()
 
             if (step + 1) % 10 == 0:
-                # TODO: Change to evaluation mode
+                # ***Change to evaluation mode***
+                model.eval()
 
                 # Decode
                 labels_pred, _ = model.decode_infer(inputs, beam_width=5)
 
-                str_pred = idx2alpha(labels_pred[0][0:-1]).split('>')[0]
-                str_true = idx2alpha(var2np(labels)[0][1:-1])
-
                 # Compute accuracy
-                cer_train = compute_cer(str_pred=str_pred.replace('_', ''),
-                                        str_true=str_true.replace('_', ''),
-                                        normalize=True)
+                if label_type == 'char':
+                    str_pred = idx2char(labels_pred[0][0:-1]).split('>')[0]
+                    str_true = idx2char(var2np(labels)[0][1:-1])
+                    ler_train = compute_cer(ref=str_true.replace('_', ''),
+                                            hyp=str_pred.replace('_', ''),
+                                            normalize=True)
+                elif label_type == 'word':
+                    str_pred = idx2word(labels_pred[0][0:-1]).split('>')[0]
+                    str_true = idx2word(var2np(labels)[0][1:-1])
+                    ler_train = compute_wer(ref=str_true.split('_'),
+                                            hyp=str_pred.split('_'),
+                                            normalize=True)
+
+                # ***Change to training mode***
+                model.train()
 
                 duration_step = time.time() - start_time_step
                 print('Step %d: loss = %.3f / ler = %.3f (%.3f sec) / lr = %.5f' %
-                      (step + 1, var2np(loss), cer_train, duration_step, 1e-3))
+                      (step + 1, var2np(loss), ler_train, duration_step, learning_rate))
                 start_time_step = time.time()
 
                 # Visualize
                 print('Ref: %s' % str_true)
                 print('Hyp: %s' % str_pred)
 
-                if cer_train < 0.1:
+                if ler_train < 0.1:
                     print('Modle is Converged.')
                     # Save the model
                     if save_path is not None:
@@ -221,14 +245,14 @@ class TestAttention(unittest.TestCase):
                         print("=> Saved checkpoint (epoch:%d): %s" %
                               (1, saved_path))
                     break
-                cer_train_pre = cer_train
+                ler_train_pre = ler_train
 
                 # Update learning rate
                 optimizer, learning_rate = lr_controller.decay_lr(
                     optimizer=optimizer,
                     learning_rate=learning_rate,
                     epoch=step,
-                    value=cer_train)
+                    value=ler_train)
 
 
 if __name__ == "__main__":
