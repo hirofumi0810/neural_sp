@@ -22,9 +22,9 @@ ENCODERS = {
     "plstm": PyramidRNNEncoder,
     "pgru": PyramidRNNEncoder,
     "prnn": PyramidRNNEncoder,
-    "lstm_mtl": MultitaskRNNEncoder,
-    "gru_mtl": MultitaskRNNEncoder,
-    "rnn_mtl": MultitaskRNNEncoder,
+    "lstm_multitask": MultitaskRNNEncoder,
+    "gru_multitask": MultitaskRNNEncoder,
+    "rnn_multitask": MultitaskRNNEncoder,
 
     # "vgg": VGGEncoder,
     # "resnet": ResNetEncoder,

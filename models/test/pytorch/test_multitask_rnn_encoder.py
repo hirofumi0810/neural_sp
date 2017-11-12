@@ -59,7 +59,7 @@ class TestMultitaskRNNEncoders(unittest.TestCase):
         max_time = inputs.size(1)
 
         # Load encoder
-        encoder = load(encoder_type=encoder_type + '_mtl')
+        encoder = load(encoder_type=encoder_type + '_multitask')
 
         # Initialize encoder
         if encoder_type in ['lstm', 'gru', 'rnn']:

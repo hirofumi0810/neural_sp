@@ -34,7 +34,7 @@ def generate_data(model, label_type='char', batch_size=1, num_stack=1, splice=1)
     """
     Args:
         model (string): ctc or attention
-        label_type (string, optional): char or word
+        label_type (string, optional): char or word or word_char
         batch_size (int): the size of mini-batch
         splice (int): frames to splice. Default is 1 frame.
     Returns:
@@ -75,6 +75,8 @@ def generate_data(model, label_type='char', batch_size=1, num_stack=1, splice=1)
             labels = np.array([char2idx(transcript)] * batch_size, np.int32)
             labels = labels.reshape((-1,))
         labels_seq_len = np.array([len(char2idx(transcript))] * batch_size)
+        return inputs, labels, inputs_seq_len, labels_seq_len
+
     elif label_type == 'word':
         if model == 'attention':
             transcript = SOS + SPACE + transcript + SPACE + EOS
@@ -83,12 +85,26 @@ def generate_data(model, label_type='char', batch_size=1, num_stack=1, splice=1)
             labels = np.array([word2idx(transcript)] * batch_size, np.int32)
             labels = labels.reshape((-1,))
         labels_seq_len = np.array([len(word2idx(transcript))] * batch_size)
+        return inputs, labels, inputs_seq_len, labels_seq_len
+
     elif label_type == 'word_char':
-        pass
+        if model == 'attention':
+            transcript_word = SOS + SPACE + transcript + SPACE + EOS
+            transcript_char = SOS + transcript + EOS
+            labels = np.array([word2idx(transcript_word)]
+                              * batch_size, np.int32)
+            labels_sub = np.array([char2idx(transcript_char)]
+                                  * batch_size, np.int32)
+        elif model == 'ctc':
+            raise NotImplementedError
+        labels_seq_len = np.array(
+            [len(word2idx(transcript_word))] * batch_size)
+        labels_seq_len_sub = np.array(
+            [len(char2idx(transcript_char))] * batch_size)
+        return inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub
+
     else:
         raise NotImplementedError
-
-    return inputs, labels, inputs_seq_len, labels_seq_len
 
 
 def char2idx(transcript):
@@ -126,7 +142,7 @@ def idx2char(indices):
         transcript (string): a sequence of string
     """
     if isinstance(indices, np.ndarray):
-        indices = list(indices)
+        indices = indices.tolist()
 
     first_idx = ord('a') - 1
     last_idx = ord('z') - first_idx
@@ -187,7 +203,7 @@ def idx2word(indices):
         transcript (string): a sequence of string
     """
     if isinstance(indices, np.ndarray):
-        indices = list(indices)
+        indices = indices.tolist()
 
     word_dict = {}
     with open('./word.txt', 'r') as f:
