@@ -13,15 +13,16 @@ import unittest
 
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 
 sys.path.append('../../../')
 from models.pytorch.ctc.ctc import CTC
-from models.test.data import generate_data, np2var_pytorch, idx2alpha
-from models.test.util import measure_time
-from utils.io.tensor import to_np
+from models.test.data import generate_data, idx2char
+from utils.io.variable import np2var, var2np
+from utils.measure_time_func import measure_time
+from utils.evaluation.edit_distance import compute_cer
+from utils.training.learning_rate_controller import Controller
 
-torch.manual_seed(1)
+torch.manual_seed(2017)
 
 
 class TestCTC(unittest.TestCase):
@@ -30,12 +31,12 @@ class TestCTC(unittest.TestCase):
         print("CTC Working check.")
 
         # RNNs
-        self.check(encoder_type='lstm', bidirectional=False)
         self.check(encoder_type='lstm', bidirectional=True)
-        self.check(encoder_type='gru', bidirectional=False)
+        self.check(encoder_type='lstm', bidirectional=False)
         self.check(encoder_type='gru', bidirectional=True)
-        self.check(encoder_type='rnn', bidirectional=False)
-        self.check(encoder_type='rnn', bidirectional=True)
+        self.check(encoder_type='gru', bidirectional=False)
+        # self.check(encoder_type='rnn', bidirectional=True)
+        # self.check(encoder_type='rnn', bidirectional=False)
         # self.check(encoder_type='cldnn', bidirectional=True)
         # self.check(encoder_type='cldnn', bidirectional=True)
 
@@ -44,26 +45,30 @@ class TestCTC(unittest.TestCase):
         # self.check(encoder_type='vgg')
 
     @measure_time
-    def check(self, encoder_type, bidirectional=False):
+    def check(self, encoder_type, bidirectional=False, label_type='char',
+              save_path=None):
 
         print('==================================================')
+        print('  label_type: %s' % label_type)
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
         print('==================================================')
 
         # Load batch data
-        batch_size = 4
         inputs, labels, inputs_seq_len, labels_seq_len = generate_data(
             model='ctc',
-            batch_size=batch_size)
+            label_type=label_type,
+            batch_size=2,
+            num_stack=1,
+            splice=1)
+        labels += 1
+        # NOTE: index 0 is reserved for blank
 
         # Wrap by Variable
-        inputs = np2var_pytorch(inputs)
-        labels = np2var_pytorch(labels, dtype='int')
-        # inputs_seq_len = np2var_pytorch(inputs_seq_len, dtype='long')
-        # labels_seq_len = np2var_pytorch(labels_seq_len, dtype='long')
-        inputs_seq_len = np2var_pytorch(inputs_seq_len, dtype='int')
-        labels_seq_len = np2var_pytorch(labels_seq_len, dtype='int')
+        inputs = np2var(inputs)
+        labels = np2var(labels, dtype='int')
+        inputs_seq_len = np2var(inputs_seq_len, dtype='int')
+        labels_seq_len = np2var(labels_seq_len, dtype='int')
 
         # Load model
         model = CTC(
@@ -71,49 +76,54 @@ class TestCTC(unittest.TestCase):
             encoder_type=encoder_type,
             bidirectional=bidirectional,
             num_units=256,
-            # num_proj=None,
+            num_proj=None,
             num_layers=2,
-            dropout=0,
+            dropout=0.1,
             num_classes=27,  # alphabets + space (excluding a blank class)
             splice=1,
             parameter_init=0.1,
             bottleneck_dim=None)
 
+        # Count total parameters
+        for name, num_params in model.num_params_dict.items():
+            print("%s %d" % (name, num_params))
+        print("Total %.3f M parameters" % (model.total_parameters / 1000000))
+
         # Define optimizer
         optimizer, scheduler = model.set_optimizer(
-            'adam', learning_rate_init=1e-3, weight_decay=0,
-            lr_schedule=False, factor=0.1, patience_epoch=5)
+            'adam',
+            learning_rate_init=1e-3,
+            weight_decay=1e-6,
+            lr_schedule=False,
+            factor=0.1,
+            patience_epoch=5)
+
+        # Define learning rate controller
+        learning_rate = 1e-3
+        lr_controller = Controller(
+            learning_rate_init=learning_rate,
+            decay_start_epoch=20,
+            decay_rate=0.9,
+            decay_patient_epoch=10,
+            lower_better=True)
 
         # Initialize parameters
         model.init_weights()
 
-        # Count total parameters
-        print("Total %.3f M parameters" % (model.total_parameters / 1000000))
-
         # GPU setting
-        use_cuda = torch.cuda.is_available()
-        deterministic = False
-        if use_cuda and deterministic:
-            print('GPU deterministic mode (no cudnn)')
-            torch.backends.cudnn.enabled = False
-        elif use_cuda:
-            print('GPU mode (faster than the deterministic mode)')
-        else:
-            print('CPU mode')
+        use_cuda = model.use_cuda
+        model.set_cuda(deterministic=False)
         if use_cuda:
             model = model.cuda()
             inputs = inputs.cuda()
             # labels = labels.cuda()
             # inputs_seq_len = inputs_seq_len.cuda()
             # labels_seq_len = labels_seq_len.cuda()
-            # print(inputs_seq_len)
-            # print(labels_seq_len)
 
         # Train model
         max_step = 1000
         start_time_step = time.time()
-        ler_train_pre = 1
-        save_flag = False
+        cer_train_pre = 1
         for step in range(max_step):
 
             # Clear gradients before
@@ -123,7 +133,8 @@ class TestCTC(unittest.TestCase):
             logits = model(inputs)
 
             # Compute loss
-            loss = model.loss(logits, labels, inputs_seq_len, labels_seq_len)
+            loss = model.compute_loss(
+                logits, labels, inputs_seq_len, labels_seq_len)
 
             # Compute gradient
             optimizer.zero_grad()
@@ -132,37 +143,57 @@ class TestCTC(unittest.TestCase):
             # Clip gradient norm
             nn.utils.clip_grad_norm(model.parameters(), 10)
 
-            ######
-            loss_sum = loss.data.sum()
-            inf = float("inf")
-            if loss_sum == inf or loss_sum == -inf:
-                print("WARNING: received an inf loss, setting loss value to 0")
-                loss_value = 0
+            # Update parameters
+            if scheduler is not None:
+                scheduler.step(cer_train_pre)
             else:
-                loss_value = loss.data[0]
+                optimizer.step()
 
             if (step + 1) % 10 == 0:
-                # Change to evaluation mode
+                # ***Change to evaluation mode***
+                model.eval()
 
                 # Decode
-                # outputs_infer, _ = model.decode_infer(inputs, labels,
-                #                                       beam_width=1)
+                labels_pred = model.decode(inputs, inputs_seq_len,
+                                           beam_width=1)
+
+                str_true = idx2char(
+                    var2np(labels[:var2np(labels_seq_len)[0]] - 1))
+                str_pred = idx2char(labels_pred[0] - 1)
 
                 # Compute accuracy
+                cer_train = compute_cer(ref=str_true.replace('_', ''),
+                                        hyp=str_pred.replace('_', ''),
+                                        normalize=True)
+
+                # ***Change to training mode***
+                model.train()
 
                 duration_step = time.time() - start_time_step
                 print('Step %d: loss = %.3f / ler = %.3f (%.3f sec) / lr = %.5f' %
-                      (step + 1, to_np(loss), 1, duration_step, 1e-3))
+                      (step + 1, var2np(loss), cer_train, duration_step, learning_rate))
                 start_time_step = time.time()
 
                 # Visualize
-                # print('Ref: %s' % idx2alpha(to_np(labels)[0][1:-1]))
-                # print('Hyp: %s' % idx2alpha(outputs_infer[0][0:-1]))
+                print('Ref: %s' % str_true)
+                print('Hyp: %s' % str_pred)
 
-                # if to_np(loss) <1.:
-                #     print('Modle is Converged.')
-                #     break
-                # ler_train_pre = ler_train
+                if cer_train < 0.1:
+                    print('Modle is Converged.')
+                    # Save the model
+                    if save_path is not None:
+                        saved_path = model.save_checkpoint(save_path, epoch=1)
+                        print("=> Saved checkpoint (epoch:%d): %s" %
+                              (1, saved_path))
+                    break
+                cer_train_pre = cer_train
+
+                # Update learning rate
+                optimizer, learning_rate = lr_controller.decay_lr(
+                    optimizer=optimizer,
+                    learning_rate=learning_rate,
+                    epoch=step,
+                    value=cer_train)
 
 
 if __name__ == "__main__":
