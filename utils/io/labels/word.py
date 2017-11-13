@@ -1,7 +1,6 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -9,19 +8,34 @@ from __future__ import print_function
 import numpy as np
 
 
+class Word2idx(object):
+
+    def __init__(self, vocab_file_path):
+        pass
+
+    def __call__(self):
+        pass
+
+
 class Idx2word(object):
     """Convert from index to word.
     Args:
-        map_file_path (string): path to the mapping file
+        vocab_file_path (string): path to the vocabulary file
     """
 
-    def __init__(self, map_file_path):
-        # Read the mapping file
+    def __init__(self, vocab_file_path):
+        # Read the vocabulary file
         self.map_dict = {}
-        with open(map_file_path, 'r') as f:
+        vocab_count = 0
+        with open(vocab_file_path, 'r') as f:
             for line in f:
-                line = line.strip().split()
-                self.map_dict[int(line[1])] = line[0]
+                word = line.strip()
+                self.map_dict[vocab_count] = word
+                vocab_count += 1
+
+        # Add <SOS> & <EOS>
+        self.map_dict[vocab_count] = '<'
+        self.map_dict[vocab_count + 1] = '>'
 
     def __call__(self, index_list, padded_value=-1):
         """
@@ -41,12 +55,3 @@ class Idx2word(object):
         word_list = list(map(lambda x: self.map_dict[x], index_list))
 
         return word_list
-
-
-class Word2idx(object):
-
-    def __init__(self, map_file_path):
-        pass
-
-    def __call__(self):
-        pass

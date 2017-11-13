@@ -25,7 +25,7 @@ parser.add_argument('--model_path', type=str,
 parser.add_argument('--beam_width', type=int, default=10,
                     help='beam_width (int, optional): beam width for beam search.' +
                     ' 1 disables beam search, which mean greedy decoding.')
-parser.add_argument('--eval_batch_size', type=str, default=1,
+parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
 
 
@@ -42,11 +42,11 @@ def do_eval(model, params, epoch, beam_width, eval_batch_size):
     # Load dataset
     test_data = Dataset(
         data_type='test', label_type='phone39',
+        vocab_file_path='../metrics/vocab_files/phone39.txt',
         batch_size=eval_batch_size,
-        map_file_path='../metrics/mapping_files/phone39.txt',
         splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=False, progressbar=True)
+        shuffle=False)
 
     # GPU setting
     model.set_cuda(deterministic=False)

@@ -42,15 +42,15 @@ def do_eval_per(model, dataset, label_type, beam_width,
     eval_label_type = dataset.label_type
 
     idx2phone_train = Idx2phone(
-        map_file_path='../metrics/mapping_files/' + train_label_type + '.txt')
+        vocab_file_path='../metrics/vocab_files/' + train_label_type + '.txt')
     idx2phone_eval = Idx2phone(
-        map_file_path='../metrics/mapping_files/' + eval_label_type + '.txt')
+        vocab_file_path='../metrics/vocab_files/' + eval_label_type + '.txt')
     map2phone39_train = Map2phone39(
         label_type=train_label_type,
-        map_file_path='../metrics/mapping_files/phone2phone.txt')
+        map_file_path='../metrics/phone2phone.txt')
     map2phone39_eval = Map2phone39(
         label_type=eval_label_type,
-        map_file_path='../metrics/mapping_files/phone2phone.txt')
+        map_file_path='../metrics/phone2phone.txt')
 
     per_mean = 0
     if progressbar:

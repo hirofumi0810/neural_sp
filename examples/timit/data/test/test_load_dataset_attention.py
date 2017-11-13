@@ -57,24 +57,23 @@ class TestLoadDatasetAttention(unittest.TestCase):
         print('  splice: %d' % splice)
         print('========================================')
 
-        map_file_path = '../../metrics/mapping_files/' + label_type + '.txt'
+        vocab_file_path = '../../metrics/vocab_files/' + label_type + '.txt'
 
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
             data_type=data_type, label_type=label_type,
-            batch_size=64,  map_file_path=map_file_path,
-            max_epoch=1, splice=splice,
-            num_stack=num_stack, num_skip=num_skip,
+            vocab_file_path=vocab_file_path,
+            batch_size=64, max_epoch=1,
+            splice=splice, num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
-            sort_utt=sort_utt, sort_stop_epoch=sort_stop_epoch,
-            progressbar=True)
+            sort_utt=sort_utt, sort_stop_epoch=sort_stop_epoch)
 
         print('=> Loading mini-batch...')
         if label_type in ['character', 'character_capital_divide']:
-            map_fn = Idx2char(map_file_path=map_file_path)
+            map_fn = Idx2char(vocab_file_path=vocab_file_path)
         else:
-            map_fn = Idx2phone(map_file_path=map_file_path)
+            map_fn = Idx2phone(vocab_file_path=vocab_file_path)
 
         for data, is_new_epoch in dataset:
             inputs, labels, inputs_seq_len, labels_seq_len, input_names = data

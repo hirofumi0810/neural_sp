@@ -11,20 +11,25 @@ import numpy as np
 class Char2idx(object):
     """Convert from character to index.
     Args:
-        map_file_path (string): path to the mapping file
+        vocab_file_path (string): path to the vocabulary file
         double_letter (bool, optional): if True, group repeated letters
     """
 
-    def __init__(self, map_file_path, double_letter=False):
-
+    def __init__(self, vocab_file_path, double_letter=False):
         self.double_letter = double_letter
 
-        # Read the mapping file
+        # Read the vocabulary file
         self.map_dict = {}
-        with open(map_file_path, 'r') as f:
+        vocab_count = 0
+        with open(vocab_file_path, 'r') as f:
             for line in f:
-                line = line.strip().split()
-                self.map_dict[line[0]] = int(line[1])
+                char = line.strip()
+                self.map_dict[char] = vocab_count
+                vocab_count += 1
+
+        # Add <SOS> & <EOS>
+        self.map_dict['<'] = vocab_count
+        self.map_dict['>'] = vocab_count + 1
 
     def __call__(self, str_char):
         """
@@ -70,22 +75,28 @@ class Char2idx(object):
 class Idx2char(object):
     """Convert from index to character.
     Args:
-        map_file_path (string): path to the mapping file
+        vocab_file_path (string): path to the vocabulary file
         capital_divide (bool, optional): set True when using capital-divided
             character sequences
         space_mark (string): the space mark to divide a sequence into words
     """
 
-    def __init__(self, map_file_path, capital_divide=False, space_mark=' '):
+    def __init__(self, vocab_file_path, capital_divide=False, space_mark=' '):
         self.capital_divide = capital_divide
         self.space_mark = space_mark
 
-        # Read the mapping file
+        # Read the vocabulary file
         self.map_dict = {}
-        with open(map_file_path, 'r') as f:
+        vocab_count = 0
+        with open(vocab_file_path, 'r') as f:
             for line in f:
-                line = line.strip().split()
-                self.map_dict[int(line[1])] = line[0]
+                char = line.strip()
+                self.map_dict[vocab_count] = char
+                vocab_count += 1
+
+        # Add <SOS> & <EOS>
+        self.map_dict[vocab_count] = '<'
+        self.map_dict[vocab_count + 1] = '>'
 
     def __call__(self, index_list, padded_value=-1):
         """

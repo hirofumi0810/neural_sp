@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Base class for loading dataset for the Attention model.
+"""Base class for loading dataset for the attention-based model.
    In this class, all data will be loaded at each step.
    You can use the multi-GPU version.
 """
@@ -111,12 +111,10 @@ class DatasetBase(Base):
                 self.epoch += 1
 
         # Load dataset in mini-batch
-        input_list = np.array(list(
-            map(lambda path: np.load(path),
-                np.take(self.input_paths, data_indices, axis=0))))
-        label_list = np.array(list(
-            map(lambda path: np.load(path),
-                np.take(self.label_paths, data_indices, axis=0))))
+        input_list = self._load_npy(
+            np.take(self.input_paths, data_indices, axis=0))
+        label_list = self._load_npy(
+            np.take(self.label_paths, data_indices, axis=0))
 
         if not hasattr(self, 'input_size'):
             self.input_size = input_list[0].shape[1]
@@ -124,10 +122,8 @@ class DatasetBase(Base):
                 self.input_size *= self.num_stack
 
         # Frame stacking
-        input_list = stack_frame(input_list,
-                                 self.num_stack,
-                                 self.num_skip,
-                                 progressbar=False)
+        input_list = stack_frame(
+            input_list, self.num_stack, self.num_skip)
 
         # Compute max frame num in mini-batch
         max_frame_num = max(map(lambda x: x.shape[0], input_list))
@@ -172,13 +168,10 @@ class DatasetBase(Base):
                 labels[i_batch, len(label_list[i_batch]) + 1] = self.eos_index
             inputs_seq_len[i_batch] = frame_num
             labels_seq_len[i_batch] = len(label_list[i_batch]) + 2
-            # TODO: +2 ??
+            # NOTE: count <SOS> and <EOS>
 
-        ###############
-        # Multi-GPUs
-        ###############
+        # Now we split the mini-batch data by num_gpu
         if self.num_gpu > 1:
-            # Now we split the mini-batch data by num_gpu
             inputs = np.array_split(inputs, self.num_gpu, axis=0)
             labels = np.array_split(labels, self.num_gpu, axis=0)
             inputs_seq_len = np.array_split(
@@ -194,10 +187,6 @@ class DatasetBase(Base):
             input_names = np.array(input_names)[np.newaxis, :]
 
         self.iteration += len(data_indices)
-
-        # Clean up
-        del input_list
-        del label_list
 
         return (inputs, labels, inputs_seq_len, labels_seq_len,
                 input_names), self.is_new_epoch

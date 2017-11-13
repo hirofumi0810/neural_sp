@@ -7,6 +7,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numpy as np
+
 
 class Base(object):
 
@@ -16,13 +18,14 @@ class Base(object):
         self.iteration = 0
         self.is_new_epoch = False
 
-        self.map_dict = {}
-        if 'map_file_path' in kwargs.keys():
-            # Read the mapping file
-            with open(kwargs['map_file_path'], 'r') as f:
+        self.num_vocab = 0
+        if 'vocab_file_path' in kwargs.keys():
+            # Read the vocabulary file
+            with open(kwargs['vocab_file_path'], 'r') as f:
                 for line in f:
                     line = line.strip().split()
-                    self.map_dict[line[0]] = int(line[1])
+                    if line != '':
+                        self.num_vocab += 1
 
     def __len__(self):
         return len(self.input_paths)
@@ -36,26 +39,28 @@ class Base(object):
 
     @property
     def sos_index(self):
-        return self.map_dict['<']
+        return self.num_vocab
 
     @property
     def eos_index(self):
-        return self.map_dict['>']
+        return self.num_vocab + 1
+
+    @property
+    def epoch_detail(self):
+        # Floating point version of epoch
+        return self.iteration / len(self)
+
+    def __next__(self):
+        raise NotImplementedError
 
     def next(self, batch_size=None):
         # For python2
         return self.__next__(batch_size)
 
     def reset(self):
-        """Reset data counter. This is useful when you'd like to evaluate
-        overall data during training.
-        """
+        """Reset data counter."""
         self.rest = set(range(0, len(self), 1))
 
-    @property
-    def epoch_detail(self):
-        # Floating point version of epoch.
-        return self.iteration / len(self)
-
-    def __next__(self):
-        raise NotImplementedError
+    def _load_npy(self, paths):
+        """Load npy files."""
+        return np.array(list(map(lambda path: np.load(path), paths)))

@@ -26,7 +26,7 @@ parser.add_argument('--model_path', type=str,
 parser.add_argument('--beam_width', type=int, default=1,
                     help='beam_width (int, optional): beam width for beam search.' +
                     ' 1 disables beam search, which mean greedy decoding.')
-parser.add_argument('--eval_batch_size', type=str, default=1,
+parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
 
 
@@ -43,11 +43,10 @@ def do_decode(model, params, epoch, beam_width, eval_batch_size):
     # Load dataset
     test_data = Dataset(
         data_type='test', label_type='phone61',
-        batch_size=eval_batch_size,
-        map_file_path='../metrics/mapping_files/phone61.txt',
-        splice=params['splice'],
+        vocab_file_path='../metrics/vocab_files/phone61.txt',
+        batch_size=eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=True, reverse=True, progressbar=True)
+        sort_utt=True, reverse=True)
 
     # GPU setting
     model.set_cuda(deterministic=False)
@@ -82,7 +81,7 @@ def decode(model, dataset, label_type, beam_width,
         save_path (string): path to save decoding results
     """
     idx2phone = Idx2phone(
-        map_file_path='../metrics/mapping_files/' + label_type + '.txt')
+        vocab_file_path='../metrics/vocab_files/' + label_type + '.txt')
 
     if save_path is not None:
         sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')

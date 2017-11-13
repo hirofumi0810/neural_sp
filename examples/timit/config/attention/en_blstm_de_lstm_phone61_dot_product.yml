@@ -5,7 +5,7 @@ param:
 
   # features
   feature: fbank
-  input_size: 120
+  input_size: 123
   splice: 1
   num_stack: 2
   num_skip: 2
@@ -55,4 +55,3 @@ param:
 
   eval_start_epoch: 10
   print_step: 10
-  beam_width: 10

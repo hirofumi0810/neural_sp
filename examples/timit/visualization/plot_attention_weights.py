@@ -37,7 +37,7 @@ parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
 parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
-parser.add_argument('--eval_batch_size', type=str, default=1,
+parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
 
 
@@ -52,11 +52,10 @@ def do_plot(model, params, epoch, eval_batch_size):
     # Load dataset
     test_data = Dataset(
         data_type='test', label_type='phone61',
-        batch_size=eval_batch_size,
-        map_file_path='../metrics/mapping_files/phone61.txt',
-        splice=params['splice'],
+        vocab_file_path='../metrics/vocab_files/phone61.txt',
+        batch_size=eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=False, progressbar=True)
+        shuffle=False)
 
     # GPU setting
     model.set_cuda(deterministic=False)
@@ -96,7 +95,7 @@ def plot(model, dataset, label_type,
         mkdir(save_path)
 
     idx2phone = Idx2phone(
-        map_file_path='../metrics/mapping_files/' + label_type + '.txt')
+        vocab_file_path='../metrics/vocab_files/' + label_type + '.txt')
 
     for data, is_new_epoch in dataset:
 

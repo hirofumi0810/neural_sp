@@ -33,27 +33,28 @@ def do_train(model, params):
         model: the model to train
         params (dict): A dictionary of parameters
     """
-    map_file_path_train = '../metrics/mapping_files/' + \
+    vocab_file_path_train = '../metrics/vocab_files/' + \
         params['label_type'] + '.txt'
-    map_file_path_eval = '../metrics/mapping_files/phone39.txt'
+    vocab_file_path_eval = '../metrics/vocab_files/phone39.txt'
 
     # Load dataset
     train_data = Dataset(
         data_type='train', label_type=params['label_type'],
-        batch_size=params['batch_size'], map_file_path=map_file_path_train,
+        vocab_file_path=vocab_file_path_train,
+        batch_size=params['batch_size'],
         max_epoch=params['num_epoch'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'])
     dev_data = Dataset(
         data_type='dev', label_type=params['label_type'],
-        batch_size=params['batch_size'], map_file_path=map_file_path_train,
-        splice=params['splice'],
+        vocab_file_path=vocab_file_path_train,
+        batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=False)
     test_data = Dataset(
         data_type='test', label_type='phone39',
-        batch_size=1, map_file_path=map_file_path_eval,
-        splice=params['splice'],
+        vocab_file_path=vocab_file_path_eval,
+        batch_size=1, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=False)
 
@@ -199,7 +200,7 @@ def do_train(model, params):
                         model=model,
                         dataset=test_data,
                         label_type=params['label_type'],
-                        beam_width=params['beam_width'],
+                        beam_width=1,
                         is_test=True,
                         eval_batch_size=1)
                     print('  PER: %f %%' % (per_test * 100))
