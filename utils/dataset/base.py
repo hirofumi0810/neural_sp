@@ -18,6 +18,7 @@ class Base(object):
         self.iteration = 0
         self.is_new_epoch = False
 
+        # NOTE: these are needed when using attention-based models
         self.num_vocab = 0
         if 'vocab_file_path' in kwargs.keys():
             # Read the vocabulary file
@@ -64,3 +65,9 @@ class Base(object):
     def _load_npy(self, paths):
         """Load npy files."""
         return np.array(list(map(lambda path: np.load(path), paths)))
+
+    def split_per_device(self, x, num_gpus):
+        if num_gpus > 1:
+            return np.array_split(x, num_gpus, axis=0)
+        else:
+            return x[np.newaxis]

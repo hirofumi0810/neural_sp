@@ -11,6 +11,7 @@ from __future__ import division
 from __future__ import print_function
 
 from os.path import basename
+import math
 import random
 import numpy as np
 
@@ -36,15 +37,15 @@ class DatasetBase(Base):
         Returns:
             A tuple of `(inputs, labels, inputs_seq_len, labels_seq_len, input_names)`
                 inputs: list of input data of size
-                    `[num_gpu, B, T_in, input_size]`
+                    `[num_gpus, B, T_in, input_size]`
                 labels: list of target labels of size
-                    `[num_gpu, B, T_out]`
+                    `[num_gpus, B, T_out]`
                 inputs_seq_len: list of length of inputs of size
-                    `[num_gpu, B]`
+                    `[num_gpus, B]`
                 labels_seq_len: list of length of target labels of size
-                    `[num_gpu, B]`
+                    `[num_gpus, B]`
                 input_names: list of file name of input data of size
-                    `[num_gpu, B]`
+                    `[num_gpus, B]`
             is_new_epoch (bool): If true, 1 epoch is finished
         """
         if self.max_epoch is not None and self.epoch >= self.max_epoch:
@@ -58,11 +59,8 @@ class DatasetBase(Base):
         if self.is_new_epoch:
             self.is_new_epoch = False
 
-        if not self.is_test:
-            self.padded_value = self.eos_index
-        else:
-            self.padded_value = None
-        # TODO(hirofumi): move this
+        self.padded_value = self.eos_index if not self.is_test else None
+        # TODO: move this
 
         if self.sort_utt:
             # Sort all uttrances by length
@@ -118,15 +116,12 @@ class DatasetBase(Base):
 
         if not hasattr(self, 'input_size'):
             self.input_size = input_list[0].shape[1]
-            if self.num_stack is not None and self.num_skip is not None:
-                self.input_size *= self.num_stack
-
-        # Frame stacking
-        input_list = stack_frame(
-            input_list, self.num_stack, self.num_skip)
+            self.input_size *= self.num_stack
+            self.input_size *= self.splice
 
         # Compute max frame num in mini-batch
         max_frame_num = max(map(lambda x: x.shape[0], input_list))
+        max_frame_num = math.ceil(max_frame_num / self.num_skip)
 
         # Compute max target label length in mini-batch
         max_seq_len = max(map(len, label_list)) + 2
@@ -134,28 +129,26 @@ class DatasetBase(Base):
 
         # Initialization
         inputs = np.zeros(
-            (len(data_indices), max_frame_num, self.input_size * self.splice),
+            (len(data_indices), max_frame_num, self.input_size),
             dtype=np.float32)
         labels = np.array(
             [[self.padded_value] * max_seq_len] * len(data_indices))
         inputs_seq_len = np.zeros((len(data_indices),), dtype=np.int32)
         labels_seq_len = np.zeros((len(data_indices),), dtype=np.int32)
-        input_names = list(
+        input_names = np.array(list(
             map(lambda path: basename(path).split('.')[0],
-                np.take(self.input_paths, data_indices, axis=0)))
+                np.take(self.input_paths, data_indices, axis=0))))
 
         # Set values of each data in mini-batch
         for i_batch in range(len(data_indices)):
             data_i = input_list[i_batch]
-            frame_num, input_size = data_i.shape
+
+            # Frame stacking
+            data_i = stack_frame(data_i, self.num_stack, self.num_skip)
+            frame_num = data_i.shape[0]
 
             # Splicing
-            data_i = data_i.reshape(1, frame_num, input_size)
-            data_i = do_splice(data_i,
-                               splice=self.splice,
-                               batch_size=1,
-                               num_stack=self.num_stack)
-            data_i = data_i.reshape(frame_num, -1)
+            data_i = do_splice(data_i, self.splice, self.num_stack)
 
             inputs[i_batch, : frame_num, :] = data_i
             if self.is_test:
@@ -168,23 +161,14 @@ class DatasetBase(Base):
                 labels[i_batch, len(label_list[i_batch]) + 1] = self.eos_index
             inputs_seq_len[i_batch] = frame_num
             labels_seq_len[i_batch] = len(label_list[i_batch]) + 2
-            # NOTE: count <SOS> and <EOS>
+            # NOTE: include <SOS> and <EOS>
 
-        # Now we split the mini-batch data by num_gpu
-        if self.num_gpu > 1:
-            inputs = np.array_split(inputs, self.num_gpu, axis=0)
-            labels = np.array_split(labels, self.num_gpu, axis=0)
-            inputs_seq_len = np.array_split(
-                inputs_seq_len, self.num_gpu, axis=0)
-            labels_seq_len = np.array_split(
-                labels_seq_len, self.num_gpu, axis=0)
-            input_names = np.array_split(input_names, self.num_gpu, axis=0)
-        else:
-            inputs = inputs[np.newaxis, :, :, :]
-            labels = labels[np.newaxis, :, :]
-            inputs_seq_len = inputs_seq_len[np.newaxis, :]
-            labels_seq_len = labels_seq_len[np.newaxis, :]
-            input_names = np.array(input_names)[np.newaxis, :]
+        # Now we split the mini-batch data by num_gpus
+        inputs = self.split_per_device(inputs, self.num_gpus)
+        labels = self.split_per_device(labels, self.num_gpus)
+        inputs_seq_len = self.split_per_device(inputs_seq_len, self.num_gpus)
+        labels_seq_len = self.split_per_device(labels_seq_len, self.num_gpus)
+        input_names = self.split_per_device(input_names, self.num_gpus)
 
         self.iteration += len(data_indices)
 

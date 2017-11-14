@@ -58,7 +58,7 @@ class Dataset(DatasetBase):
         self.shuffle = shuffle
         self.sort_utt = sort_utt
         self.sort_stop_epoch = sort_stop_epoch
-        self.num_gpu = 1
+        self.num_gpus = 1
 
         # paths where datasets exist
         dataset_root = ['/data/inaguma/timit',

@@ -1,12 +1,14 @@
 
 # TODO
-- GPU version
 - Multi-GPU version
-- Save & restore models
-- CTC with Tensor (w/o C or C++)
-- Attention
+- Schedule sampling
+- warp CTC
+- multitask Attention
+- multitask CTC
+- Joint CTC-Attention
+- Hierarchical joint CTC-Attention
 - VGG encoder
 - Resnet encoder
 - ConvLSTM encoder
 - CNN-LSTM
-- CTC decoder
+- CTC with Tensor (w/o C or C++)
