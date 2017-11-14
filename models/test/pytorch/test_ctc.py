@@ -124,22 +124,27 @@ class TestCTC(unittest.TestCase):
         model.set_cuda(deterministic=False)
         if use_cuda:
             inputs = inputs.cuda()
+            labels = labels.cuda()
+            inputs_seq_len = inputs_seq_len.cuda()
+            labels_seq_len = labels_seq_len.cuda()
 
         # Train model
         max_step = 1000
         start_time_step = time.time()
-        ler_train_pre = 1
+        ler_pre = 1
         for step in range(max_step):
 
             # Clear gradients before
             optimizer.zero_grad()
 
             # Make prediction
-            logits = model(inputs, inputs_seq_len)
+            logits, perm_indices = model(inputs, inputs_seq_len)
 
             # Compute loss
             loss = model.compute_loss(
-                logits, labels, inputs_seq_len, labels_seq_len)
+                logits, labels[perm_indices],
+                inputs_seq_len[perm_indices],
+                labels_seq_len[perm_indices])
 
             # Compute gradient
             optimizer.zero_grad()
@@ -150,7 +155,7 @@ class TestCTC(unittest.TestCase):
 
             # Update parameters
             if scheduler is not None:
-                scheduler.step(ler_train_pre)
+                scheduler.step(ler_pre)
             else:
                 optimizer.step()
 
@@ -159,38 +164,38 @@ class TestCTC(unittest.TestCase):
                 model.eval()
 
                 # Decode
-                labels_pred = model.decode(inputs, inputs_seq_len,
-                                           beam_width=5)
+                labels_pred = model.decode(
+                    inputs, inputs_seq_len, beam_width=5)
 
                 # Compute accuracy
                 if label_type == 'char':
                     str_true = idx2char(
                         var2np(labels[0, :var2np(labels_seq_len)[0]] - 1))
                     str_pred = idx2char(labels_pred[0] - 1)
-                    ler_train = compute_cer(ref=str_true.replace('_', ''),
-                                            hyp=str_pred.replace('_', ''),
-                                            normalize=True)
+                    ler = compute_cer(ref=str_true.replace('_', ''),
+                                      hyp=str_pred.replace('_', ''),
+                                      normalize=True)
                 elif label_type == 'word':
                     str_true = idx2word(
                         var2np(labels[0, :var2np(labels_seq_len)[0]] - 1))
                     str_pred = idx2word(labels_pred[0] - 1)
-                    ler_train = compute_wer(ref=str_true.split('_'),
-                                            hyp=str_pred.split('_'),
-                                            normalize=True)
+                    ler = compute_wer(ref=str_true.split('_'),
+                                      hyp=str_pred.split('_'),
+                                      normalize=True)
 
                 # ***Change to training mode***
                 model.train()
 
                 duration_step = time.time() - start_time_step
                 print('Step %d: loss = %.3f / ler = %.3f (%.3f sec) / lr = %.5f' %
-                      (step + 1, var2np(loss), ler_train, duration_step, learning_rate))
+                      (step + 1, var2np(loss), ler, duration_step, learning_rate))
                 start_time_step = time.time()
 
                 # Visualize
                 print('Ref: %s' % str_true)
                 print('Hyp: %s' % str_pred)
 
-                if ler_train < 0.1:
+                if ler < 0.1:
                     print('Modle is Converged.')
                     # Save the model
                     if save_path is not None:
@@ -198,14 +203,14 @@ class TestCTC(unittest.TestCase):
                         print("=> Saved checkpoint (epoch:%d): %s" %
                               (1, saved_path))
                     break
-                ler_train_pre = ler_train
+                ler_pre = ler
 
                 # Update learning rate
                 optimizer, learning_rate = lr_controller.decay_lr(
                     optimizer=optimizer,
                     learning_rate=learning_rate,
                     epoch=step,
-                    value=ler_train)
+                    value=ler)
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import math
 import numpy as np
 
 from utils.io.inputs.splicing import do_splice
@@ -49,20 +50,18 @@ def generate_data(model, label_type='char', batch_size=1, num_stack=1, splice=1)
         feature_type='logfbank', feature_dim=40,
         energy=False, delta1=True, delta2=True, dtype=np.float32)
 
-    # Frame stacking
-    inputs = stack_frame(inputs,
-                         num_stack=num_stack,
-                         num_skip=num_stack,
-                         progressbar=False)
-    if num_stack != 1:
-        for i in range(len(inputs_seq_len)):
-            inputs_seq_len[i] = len(inputs[i])
+    max_frame_num = math.ceil(inputs_seq_len[0] / num_stack)
+    inputs_new = np.zeros((batch_size, max_frame_num, inputs.shape[-1]),
+                          dtype=np.float32)
+    for i_batch in range(batch_size):
+        # Frame stacking
+        data_i = stack_frame(inputs[i_batch], num_stack, num_stack)
 
-    # Splice
-    inputs = do_splice(inputs,
-                       splice=splice,
-                       batch_size=batch_size,
-                       num_stack=num_stack)
+        # Splice
+        data_i = do_splice(data_i, splice, num_stack)
+
+        inputs_new[i_batch] = data_i
+        inputs_seq_len[i_batch] = len(data_i)
 
     # Make transcripts
     transcript = _read_text('../sample/LDC93S1.txt')
@@ -73,7 +72,7 @@ def generate_data(model, label_type='char', batch_size=1, num_stack=1, splice=1)
             labels = np.array([char2idx(transcript)] * batch_size, np.int32)
         elif model == 'ctc':
             labels = np.array([char2idx(transcript)] * batch_size, np.int32)
-            labels = labels.reshape((-1,))
+            # labels = labels.reshape((-1,))
         labels_seq_len = np.array([len(char2idx(transcript))] * batch_size)
         return inputs, labels, inputs_seq_len, labels_seq_len
 
@@ -83,7 +82,7 @@ def generate_data(model, label_type='char', batch_size=1, num_stack=1, splice=1)
             labels = np.array([word2idx(transcript)] * batch_size, np.int32)
         elif model == 'ctc':
             labels = np.array([word2idx(transcript)] * batch_size, np.int32)
-            labels = labels.reshape((-1,))
+            # labels = labels.reshape((-1,))
         labels_seq_len = np.array([len(word2idx(transcript))] * batch_size)
         return inputs, labels, inputs_seq_len, labels_seq_len
 

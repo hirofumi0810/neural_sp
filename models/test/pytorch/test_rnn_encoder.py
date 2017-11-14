@@ -81,7 +81,7 @@ class TestRNNEncoders(unittest.TestCase):
         else:
             raise NotImplementedError
 
-        outputs, final_state = encoder(inputs, inputs_seq_len)
+        outputs, final_state, perm_indices = encoder(inputs, inputs_seq_len)
 
         # Check final state (forward)
         print('----- Check hidden states (forward) -----')

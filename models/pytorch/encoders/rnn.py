@@ -147,6 +147,11 @@ class RNNEncoder(nn.Module):
         # Initialize hidden states (and memory cells) per mini-batch
         h_0 = self._init_hidden(batch_size=batch_size, volatile=volatile)
 
+        # Sort inputs by lengths in descending order
+        inputs_seq_len, perm_indices = inputs_seq_len.sort(
+            dim=0, descending=True)
+        inputs = inputs[perm_indices]
+
         if not self.batch_first:
             # Reshape inputs to the time-major
             inputs = inputs.transpose(0, 1)
@@ -182,4 +187,4 @@ class RNNEncoder(nn.Module):
 
         # TODO: add the projection layer
 
-        return outputs, final_state_fw
+        return outputs, final_state_fw, perm_indices

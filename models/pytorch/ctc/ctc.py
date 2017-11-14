@@ -91,6 +91,7 @@ class CTC(ModelBase):
         parameter_init (float, optional): Range of uniform distribution to
             initialize weight parameters
         bottleneck_dim (int, optional):
+        logits_temperature (float):
     """
 
     def __init__(self,
@@ -105,11 +106,12 @@ class CTC(ModelBase):
                  num_stack=1,
                  splice=1,
                  parameter_init=0.1,
-                 bottleneck_dim=None):
+                 bottleneck_dim=None,
+                 logits_temperature=1):
 
         super(ModelBase, self).__init__()
 
-        self.input_size = input_size
+        self.input_size = input_size * num_stack * splice
         self.splice = splice
         self.encoder_type = encoder_type
         self.bidirectional = bidirectional
@@ -119,10 +121,14 @@ class CTC(ModelBase):
         self.num_layers = num_layers
         self.bottleneck_dim = bottleneck_dim
         self.dropout = dropout
+
+        # Setting for CTC
         self.num_classes = num_classes + 1
         # NOTE: Add blank class
         self.blank_index = 0
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
+        self.logits_temperature = logits_temperature
+
         self.parameter_init = parameter_init
         self.name = 'pt_ctc'
 
@@ -130,7 +136,7 @@ class CTC(ModelBase):
         encoder = load(encoder_type=encoder_type)
         if encoder_type in ['lstm', 'gru', 'rnn']:
             self.encoder = encoder(
-                input_size=input_size,
+                input_size=self.input_size,
                 rnn_type=encoder_type,
                 bidirectional=bidirectional,
                 num_units=num_units,
@@ -180,7 +186,7 @@ class CTC(ModelBase):
             logits (FloatTensor): A tensor of size
                 `[T, B, num_classes (including blank)]`
         """
-        encoder_outputs, final_state = self.encoder(
+        encoder_outputs, final_state, perm_indices = self.encoder(
             inputs, inputs_seq_len, volatile)
         max_time, batch_size = encoder_outputs.size()[:2]
 
@@ -197,7 +203,7 @@ class CTC(ModelBase):
         # Reshape back to 3D tensor
         logits = logits.view(max_time, batch_size, -1)
 
-        return logits
+        return logits, perm_indices
 
     def compute_loss(self, logits, labels, inputs_seq_len, labels_seq_len):
         """
@@ -224,8 +230,11 @@ class CTC(ModelBase):
             label_counter += labels_seq_len.data[i_batch]
         labels = labels.view(-1,)
 
-        ctc_loss = ctc_loss_fn(logits, concatenated_labels,
-                               inputs_seq_len, labels_seq_len)
+        if self.logits_temperature != 1:
+            logits /= self.logits_temperature
+
+        ctc_loss = ctc_loss_fn(logits, concatenated_labels.cpu(),
+                               inputs_seq_len.cpu(), labels_seq_len.cpu())
 
         # Average the loss by mini-batch
         ctc_loss /= batch_size
@@ -262,7 +271,9 @@ class CTC(ModelBase):
         Returns:
 
         """
-        logits = self._encode(inputs, inputs_seq_len, volatile=True)
+        logits, perm_indices = self._encode(
+            inputs, inputs_seq_len, volatile=True)
+        inputs_seq_len = inputs_seq_len[perm_indices]
 
         # Convert to batch-major
         logits = logits.transpose(0, 1)
