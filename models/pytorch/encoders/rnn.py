@@ -131,7 +131,7 @@ class RNNEncoder(nn.Module):
         """Forward computation.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T, input_size]`
-            inputs_seq_len (IntTensor): A tensor of size `[]`
+            inputs_seq_len (IntTensor or LongTensor): A tensor of size `[B]`
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:

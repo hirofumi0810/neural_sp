@@ -14,11 +14,12 @@ import numpy as np
 from itertools import groupby
 
 import torch
+from torch.autograd import Variable
 import torch.nn.functional as F
 
 from models.pytorch.base import ModelBase
 from models.pytorch.encoders.load_encoder import load
-# from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
+from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
 from utils.io.variable import var2np
 
@@ -138,7 +139,7 @@ class CTC(ModelBase):
                 dropout=dropout,
                 parameter_init=parameter_init,
                 use_cuda=self.use_cuda,
-                batch_first=True)
+                batch_first=False)
         else:
             raise NotImplementedError
 
@@ -155,34 +156,37 @@ class CTC(ModelBase):
         self.decode_beam = BeamSearchDecoder(blank_index=self.blank_index)
         # TODO: set space index
 
-    def forward(self, inputs, volatile=False):
-        """
+    def forward(self, inputs, inputs_seq_len, volatile=False):
+        """Forward computation.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T, input_size]`
+            inputs_seq_len (IntTensor): A tensor of size `[B]`
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
             logits (FloatTensor): A tensor of size
                 `[T, B, num_classes (including blank)]`
         """
-        return self._forward(inputs, volatile)
+        return self._encode(inputs, inputs_seq_len, volatile)
 
-    def _forward(self, inputs, volatile):
-        """
+    def _encode(self, inputs, inputs_seq_len, volatile):
+        """Encode acoustic features.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T, input_size]`
+            inputs_seq_len (IntTensor): A tensor of size `[B]`
             volatile (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
             logits (FloatTensor): A tensor of size
                 `[T, B, num_classes (including blank)]`
         """
-        encoder_outputs, final_state = self.encoder(inputs)
-        batch_size, max_time = encoder_outputs.size()[:2]
+        encoder_outputs, final_state = self.encoder(
+            inputs, inputs_seq_len, volatile)
+        max_time, batch_size = encoder_outputs.size()[:2]
 
         # Convert to 2D tensor
-        encoder_outputs = encoder_outputs.contiguous()
-        encoder_outputs = encoder_outputs.view(batch_size * max_time, -1)
+        # encoder_outputs = encoder_outputs.contiguous()
+        encoder_outputs = encoder_outputs.view(max_time, batch_size, -1)
 
         if self.bottleneck_dim is not None:
             logits = self.bottleneck(encoder_outputs)
@@ -191,27 +195,37 @@ class CTC(ModelBase):
             logits = self.fc(encoder_outputs)
 
         # Reshape back to 3D tensor
-        logits = logits.view(batch_size, max_time, -1)
+        logits = logits.view(max_time, batch_size, -1)
 
         return logits
 
     def compute_loss(self, logits, labels, inputs_seq_len, labels_seq_len):
         """
         Args:
-            logits (FloatTensor): A tensor of size `[B, T_in, num_classes]`
+            logits (FloatTensor): A tensor of size `[T_in, B, num_classes]`
             labels (LongTensor): A tensor of size `[B, T_out]`
-            inputs_seq_len (LongTensor): A tensor of size `[B]`
+            inputs_seq_len (IntTensor): A tensor of size `[B]`
             labels_seq_len (LongTensor): A tensor of size `[B]`
         Returns:
             ctc_loss (FloatTensor): A tensor of size `[]`
         """
-        batch_size, max_time = logits.size()[:2]
+        max_time, batch_size = logits.size()[:2]
         ctc_loss_fn = CTCLoss()
 
-        logits = logits.transpose(0, 1)
-        # NOTE; logits must be a tensor of size `[T_in, B, num_classes]`
+        # Concatenate all labels for warpctc_pytorch
+        # `[B, T_out]` -> `[1,]`
+        total_lables_seq_len = labels_seq_len.data.sum()
+        concatenated_labels = Variable(
+            torch.zeros(total_lables_seq_len)).int()
+        label_counter = 0
+        for i_batch in range(batch_size):
+            concatenated_labels[label_counter:label_counter +
+                                labels_seq_len.data[i_batch]] = labels[i_batch][:labels_seq_len.data[i_batch]]
+            label_counter += labels_seq_len.data[i_batch]
+        labels = labels.view(-1,)
 
-        ctc_loss = ctc_loss_fn(logits, labels, inputs_seq_len, labels_seq_len)
+        ctc_loss = ctc_loss_fn(logits, concatenated_labels,
+                               inputs_seq_len, labels_seq_len)
 
         # Average the loss by mini-batch
         ctc_loss /= batch_size
@@ -221,13 +235,16 @@ class CTC(ModelBase):
     def posteriors(self, logits, temperature=1, blank_prior=None):
         """
         Args:
-            logits (FloatTensor): A tensor of size `[B, T, num_classes]`
+            logits (FloatTensor): A tensor of size `[T_in, B, num_classes]`
             temperature (float, optional): the temperature parameter for the
                 softmax layer in the inference stage
             blank_prior (float, optional):
         Returns:
             probs (FloatTensor): A tensor of size `[]`
         """
+        # Convert to batch-major
+        logits = logits.transpose(0, 1)
+
         probs = self.softmax(logits / temperature)
 
         # Divide by blank prior
@@ -240,12 +257,16 @@ class CTC(ModelBase):
         """
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
-            inputs_seq_len (LongTensor): A tensor of size `[B]`
+            inputs_seq_len (IntTensor): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
         Returns:
 
         """
-        logits = self._forward(inputs, volatile=True)
+        logits = self._encode(inputs, inputs_seq_len, volatile=True)
+
+        # Convert to batch-major
+        logits = logits.transpose(0, 1)
+
         # log_probs = F.log_softmax(logits, dim=logits.dim() - 1)
         log_probs = self.log_softmax(logits)
         # TODO: update pytorch version
@@ -257,14 +278,14 @@ class CTC(ModelBase):
             # numpy-based decoder
             log_probs = var2np(log_probs)
             inputs_seq_len = var2np(inputs_seq_len)
-            return self._decode_beam(log_probs, inputs_seq_len, beam_width)
+            return self.decode_beam(log_probs, inputs_seq_len, beam_width)
 
     def _decode_greedy(self, log_probs, inputs_seq_len):
         """
         Args:
             log_probs (FloatTensor): log-scale probabilities
                 A tensor of size `[B, num_classes (including blank)]`
-            inputs_seq_len (LongTensor): A tensor of size `[B]`
+            inputs_seq_len (IntTensor): A tensor of size `[B]`
         Returns:
             results (np.ndarray): A tensor of size `[B,]`
         """
@@ -295,7 +316,7 @@ class CTC(ModelBase):
         Args:
             log_probs (FloatTensor): log-scale probabilities
                 A tensor of size `[B, num_classes (including blank)]`
-            inputs_seq_len (LongTensor): A tensor of size `[B]`
+            inputs_seq_len (IntTensor): A tensor of size `[B]`
             beam_width (int): the size of beam
         Returns:
             results (np.ndarray):

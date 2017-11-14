@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """ResNet encoder.
-    This implementation is bases on
+   This implementation is bases on
 """
 
 from __future__ import absolute_import
@@ -10,15 +10,16 @@ from __future__ import division
 from __future__ import print_function
 
 import torch
+import torch.nn as nn
 
 
-class ResNetEnocer(torch.nn.Module):
+class ResNetEncoder(nn.Module):
     """ResNet encoder.
     Args:
     """
 
     def __init__(self):
-        super(ResNetEnocer, self).__init__()
+        super(ResNetEncoder, self).__init__()
 
         raise NotImplementedError
 

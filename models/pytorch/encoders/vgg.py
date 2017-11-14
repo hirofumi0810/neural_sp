@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """VGG encoder.
-    This implementation is bases on
+   This implementation is bases on
 """
 
 from __future__ import absolute_import
@@ -10,15 +10,16 @@ from __future__ import division
 from __future__ import print_function
 
 import torch
+import torch.nn as nn
 
 
-class VGGEnocer(torch.nn.Module):
+class VGGEncoder(nn.Module):
     """VGG encoder.
     Args:
     """
 
     def __init__(self):
-        super(VGGEnocer, self).__init__()
+        super(VGGEncoder, self).__init__()
 
         raise NotImplementedError
 
