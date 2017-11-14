@@ -70,7 +70,7 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
         # Evaluate by 39 phones
         if model_type == 'attention':
             labels_pred, _ = model.decode_infer(
-                inputs[0], beam_width=beam_width)
+                inputs[0], inputs_seq_len[0], beam_width=beam_width)
         elif model_type == 'ctc':
             inputs_seq_len = np2var(
                 inputs_seq_len, use_cuda=model.use_cuda, volatile=True, dtype='int')

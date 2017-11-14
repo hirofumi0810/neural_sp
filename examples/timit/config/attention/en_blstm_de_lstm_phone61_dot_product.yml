@@ -53,5 +53,5 @@ param:
   input_feeding_approach: False
   coverage_weight: 0
 
-  eval_start_epoch: 10
+  eval_start_epoch: 20
   print_step: 10

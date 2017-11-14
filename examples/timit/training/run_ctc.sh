@@ -23,9 +23,9 @@ filename=$(basename $config_path | awk -F. '{print $1}')
 mkdir -p log
 
 # Standard output version
-CUDA_VISIBLE_DEVICES=$gpu_index $PYTHON train_ctc.py \
-  $config_path $MODEL_SAVE_PATH
+# CUDA_VISIBLE_DEVICES=$gpu_index $PYTHON train_ctc.py \
+#   $config_path $MODEL_SAVE_PATH
 
 # Background job version
-# CUDA_VISIBLE_DEVICES=$gpu_index nohup $PYTHON train_ctc.py \
-#   $config_path $MODEL_SAVE_PATH > log/$filename".log" &
+CUDA_VISIBLE_DEVICES=$gpu_index nohup $PYTHON train_ctc.py \
+  $config_path $MODEL_SAVE_PATH > log/$filename".log" &

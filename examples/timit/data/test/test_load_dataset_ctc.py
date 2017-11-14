@@ -70,9 +70,9 @@ class TestLoadDatasetAttention(unittest.TestCase):
 
         print('=> Loading mini-batch...')
         if label_type in ['character', 'character_capital_divide']:
-            map_fn = Idx2char(vocab_file_path=vocab_file_path)
+            map_fn = Idx2char(vocab_file_path)
         else:
-            map_fn = Idx2phone(vocab_file_path=vocab_file_path)
+            map_fn = Idx2phone(vocab_file_path)
 
         for data, is_new_epoch in dataset:
             inputs, labels, inputs_seq_len, labels_seq_len, input_names = data

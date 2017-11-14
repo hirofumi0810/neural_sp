@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Decode the trained Attention outputs (TIMIT corpus)."""
+"""Decode the trained attention-based model's outputs (TIMIT corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -61,6 +61,7 @@ def do_decode(model, params, epoch, beam_width, eval_batch_size):
     # Visualize
     decode(
         model=model,
+        model_type='attention',
         dataset=test_data,
         label_type=params['label_type'],
         beam_width=beam_width,
@@ -69,11 +70,12 @@ def do_decode(model, params, epoch, beam_width, eval_batch_size):
     # save_path=model.save_path)
 
 
-def decode(model, dataset, label_type, beam_width,
+def decode(model, model_type, dataset, label_type, beam_width,
            is_test=False, save_path=None):
     """Visualize label outputs of Attention-based model.
     Args:
         model: the model to evaluate
+        model_type (string): ctc or attention
         dataset: An instance of a `Dataset` class
         label_type (string): phone39 or phone48 or phone61
         beam_width: (int): the size of beam
@@ -89,15 +91,23 @@ def decode(model, dataset, label_type, beam_width,
     for data, is_new_epoch in dataset:
 
         # Create feed dictionary for next mini batch
-        inputs, labels_true, _, labels_seq_len, input_names = data
-        inputs = np2var(
-            inputs, use_cuda=model.use_cuda, volatile=True)
+        if model_type in ['ctc', 'attention']:
+            inputs, labels_true, inputs_seq_len, labels_seq_len, input_names = data
+        else:
+            raise NotImplementedError
+        inputs = np2var(inputs, use_cuda=model.use_cuda, volatile=True)
 
         batch_size = inputs[0].size(0)
 
         # Evaluate by 39 phones
-        labels_pred, _ = model.decode_infer(
-            inputs[0], beam_width=beam_width)
+        if model_type == 'attention':
+            labels_pred, _ = model.decode_infer(
+                inputs[0], beam_width=beam_width)
+        elif model_type == 'ctc':
+            inputs_seq_len = np2var(
+                inputs_seq_len, use_cuda=model.use_cuda, volatile=True, dtype='int')
+            labels_pred = model.decode(
+                inputs[0], inputs_seq_len[0], beam_width=beam_width)
 
         for i_batch in range(batch_size):
 

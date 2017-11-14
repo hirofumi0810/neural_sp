@@ -106,7 +106,8 @@ def do_train(model, params):
 
         # Compute loss in the training set
         loss_train = model.compute_loss(
-            logits, labels[0][perm_indices],
+            logits,
+            labels[0][perm_indices],
             inputs_seq_len[0][perm_indices],
             labels_seq_len[0][perm_indices])
 
@@ -142,7 +143,8 @@ def do_train(model, params):
 
             # Compute loss in the dev set
             loss_dev = model.compute_loss(
-                logits, labels[0][perm_indices],
+                logits,
+                labels[0][perm_indices],
                 inputs_seq_len[0][perm_indices],
                 labels_seq_len[0][perm_indices])
             csv_steps.append(step)
@@ -157,7 +159,7 @@ def do_train(model, params):
                   (step + 1, train_data.epoch_detail,
                    var2np(loss_train), var2np(loss_dev),
                    learning_rate, duration_step / 60))
-            # sys.stdout.flush()
+            sys.stdout.flush()
             start_time_step = time.time()
 
         # Save checkpoint and evaluate model per epoch
@@ -169,12 +171,6 @@ def do_train(model, params):
             # Save fugure of loss
             plot_loss(csv_loss_train, csv_loss_dev, csv_steps,
                       save_path=model.save_path)
-
-            # Save the model
-            saved_path = model.save_checkpoint(
-                model.save_path, epoch=train_data.epoch)
-            print("=> Saved checkpoint (epoch:%d): %s" %
-                  (train_data.epoch, saved_path))
 
             if train_data.epoch >= params['eval_start_epoch']:
                 # ***Change to evaluation mode***
@@ -197,10 +193,10 @@ def do_train(model, params):
                     print('■■■ ↑Best Score (PER)↑ ■■■')
 
                     # # Save the model
-                    # saved_path = model.save_checkpoint(
-                    #     model.save_path, epoch=train_data.epoch)
-                    # print("=> Saved checkpoint (epoch:%d): %s" %
-                    #       (train_data.epoch, saved_path))
+                    saved_path = model.save_checkpoint(
+                        model.save_path, epoch=train_data.epoch)
+                    print("=> Saved checkpoint (epoch:%d): %s" %
+                          (train_data.epoch, saved_path))
 
                     print('=== Test Data Evaluation ===')
                     per_test = do_eval_per(
@@ -316,7 +312,7 @@ def main(config_path, model_save_path):
     # Save config file
     shutil.copyfile(config_path, join(model.save_path, 'config.yml'))
 
-    # sys.stdout = open(join(model.save_path, 'train.log'), 'w')
+    sys.stdout = open(join(model.save_path, 'train.log'), 'w')
     # TODO(hirofumi): change to logger
     do_train(model=model, params=params)
 

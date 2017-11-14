@@ -101,17 +101,22 @@ def do_train(model, params):
         inputs, labels, inputs_seq_len, labels_seq_len, _ = data
         inputs = np2var(inputs, use_cuda=use_cuda)
         labels = np2var(labels, use_cuda=use_cuda, dtype='long')
+        inputs_seq_len = np2var(inputs_seq_len, use_cuda=use_cuda, dtype='int')
+        labels_seq_len = np2var(labels_seq_len, use_cuda=use_cuda, dtype='int')
 
         # Clear gradients before
         optimizer.zero_grad()
 
         # Make prediction
-        outputs, att_weights = model(inputs[0], labels[0])
+        outputs, att_weights, perm_indices = model(
+            inputs[0], inputs_seq_len[0], labels[0])
 
         # Compute loss
         loss_train = model.compute_loss(
-            outputs, labels[0], att_weights,
-            coverage_weight=params['coverage_weight'])
+            outputs,
+            labels[0][perm_indices],
+            labels_seq_len[0][perm_indices],
+            att_weights, coverage_weight=params['coverage_weight'])
 
         # Compute gradient
         optimizer.zero_grad()
@@ -132,18 +137,24 @@ def do_train(model, params):
             inputs = np2var(inputs, use_cuda=use_cuda, volatile=True)
             labels = np2var(labels, use_cuda=use_cuda,
                             volatile=True, dtype='long')
+            inputs_seq_len = np2var(inputs_seq_len, use_cuda=use_cuda,
+                                    volatile=True, dtype='int')
+            labels_seq_len = np2var(labels_seq_len, use_cuda=use_cuda,
+                                    volatile=True, dtype='int')
 
             # ***Change to evaluation mode***
             model.eval()
 
             # Make prediction
-            outputs, att_weights = model(inputs[0], labels[0],
-                                         volatile=True)
+            outputs, att_weights, perm_indices = model(
+                inputs[0], inputs_seq_len[0], labels[0], volatile=True)
 
             # Compute loss in the dev set
             loss_dev = model.compute_loss(
-                outputs, labels[0], att_weights,
-                coverage_weight=params['coverage_weight'])
+                outputs,
+                labels[0][perm_indices],
+                labels_seq_len[0][perm_indices],
+                att_weights, coverage_weight=params['coverage_weight'])
             csv_steps.append(step)
             csv_loss_train.append(var2np(loss_train))
             csv_loss_dev.append(var2np(loss_dev))
