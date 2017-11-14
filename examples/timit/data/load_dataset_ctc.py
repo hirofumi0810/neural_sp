@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Load dataset for the attention-based model (TIMIT corpus).
+"""Load dataset for the CTC model (TIMIT corpus).
    In addition, frame stacking and skipping are used.
    You can use only the single GPU version.
 """
@@ -14,12 +14,12 @@ from os.path import join, isfile
 import pickle
 import numpy as np
 
-from utils.dataset.attention import DatasetBase
+from utils.dataset.ctc import DatasetBase
 
 
 class Dataset(DatasetBase):
 
-    def __init__(self, data_type, label_type, batch_size, vocab_file_path,
+    def __init__(self, data_type, label_type, batch_size,
                  max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
                  shuffle=False, sort_utt=False, reverse=False,
@@ -30,7 +30,6 @@ class Dataset(DatasetBase):
             label_type (string): phone39 or phone48 or phone61 or
                 character or character_capital_divide
             batch_size (int): the size of mini-batch
-            vocab_file_path (string): path to the vocabulary file
             max_epoch (int, optional): the max epoch. None means infinite loop.
             splice (int, optional): frames to splice. Default is 1 frame.
             num_stack (int, optional): the number of frames to stack
@@ -44,7 +43,7 @@ class Dataset(DatasetBase):
             sort_stop_epoch (int, optional): After sort_stop_epoch, training
                 will revert back to a random order
         """
-        super(Dataset, self).__init__(vocab_file_path=vocab_file_path)
+        super(Dataset, self).__init__()
 
         self.is_test = True if data_type == 'test' else False
 
@@ -74,6 +73,7 @@ class Dataset(DatasetBase):
             if isfile(join(input_path, 'frame_num.pickle')):
                 with open(join(input_path, 'frame_num.pickle'), 'rb') as f:
                     self.frame_num_dict = pickle.load(f)
+                break
             else:
                 if len(dataset_root) == 0:
                     raise ValueError('Dataset was not found.')

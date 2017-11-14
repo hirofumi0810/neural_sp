@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Evaluate the trained attention-based model (TIMIT corpus)."""
+"""Evaluate the trained CTC model (TIMIT corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -13,9 +13,9 @@ import yaml
 import argparse
 
 sys.path.append(abspath('../../../'))
-from examples.timit.data.load_dataset_attention import Dataset
+from examples.timit.data.load_dataset_ctc import Dataset
 from examples.timit.metrics.per import do_eval_per
-from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
+from models.pytorch.ctc.ctc import CTC
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--epoch', type=int, default=-1,
@@ -42,9 +42,7 @@ def do_eval(model, params, epoch, beam_width, eval_batch_size):
     # Load dataset
     test_data = Dataset(
         data_type='test', label_type='phone39',
-        vocab_file_path='../metrics/vocab_files/phone39.txt',
-        batch_size=eval_batch_size,
-        splice=params['splice'],
+        batch_size=eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=False)
 
@@ -61,7 +59,7 @@ def do_eval(model, params, epoch, beam_width, eval_batch_size):
     print('Test Data Evaluation:')
     per_test = do_eval_per(
         model=model,
-        model_type='attention',
+        model_type='ctc',
         dataset=test_data,
         label_type=params['label_type'],
         beam_width=beam_width,
@@ -91,36 +89,19 @@ def main():
         raise TypeError
 
     # Model setting
-    model = AttentionSeq2seq(
+    model = CTC(
         input_size=params['input_size'],
         num_stack=params['num_stack'],
         splice=params['splice'],
         encoder_type=params['encoder_type'],
-        encoder_bidirectional=params['encoder_bidirectional'],
-        encoder_num_units=params['encoder_num_units'],
-        encoder_num_proj=params['encoder_num_proj'],
-        encoder_num_layers=params['encoder_num_layers'],
-        encoder_dropout=params['dropout_encoder'],
-        attention_type=params['attention_type'],
-        attention_dim=params['attention_dim'],
-        decoder_type=params['decoder_type'],
-        decoder_num_units=params['decoder_num_units'],
-        decoder_num_proj=params['decoder_num_proj'],
-        decdoder_num_layers=params['decoder_num_layers'],
-        decoder_dropout=params['dropout_decoder'],
-        embedding_dim=params['embedding_dim'],
-        embedding_dropout=params['dropout_embedding'],
+        bidirectional=params['bidirectional'],
+        num_units=params['num_units'],
+        num_proj=params['num_proj'],
+        num_layers=params['num_layers'],
+        dropout=params['dropout'],
         num_classes=params['num_classes'],
-        sos_index=params['num_classes'],
-        eos_index=params['num_classes'] + 1,
-        max_decode_length=40,
         parameter_init=params['parameter_init'],
-        downsample_list=[],
-        init_dec_state_with_enc_state=True,
-        sharpening_factor=params['sharpening_factor'],
-        logits_temperature=params['logits_temperature'],
-        sigmoid_smoothing=params['sigmoid_smoothing'],
-        input_feeding_approach=params['input_feeding_approach'])
+        logits_temperature=params['logits_temperature'])
 
     model.save_path = args.model_path
     do_eval(model=model, params=params,

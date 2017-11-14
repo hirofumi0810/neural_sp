@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Train the attention-based model (TIMIT corpus)."""
+"""Train the CTC model (TIMIT corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -17,13 +17,13 @@ import shutil
 import torch.nn as nn
 
 sys.path.append(abspath('../../../'))
-from examples.timit.data.load_dataset_attention import Dataset
+from examples.timit.data.load_dataset_ctc import Dataset
 from examples.timit.metrics.per import do_eval_per
 from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
 from utils.directory import mkdir_join, mkdir
 from utils.io.variable import np2var, var2np
-from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
+from models.pytorch.ctc.ctc import CTC
 
 
 def do_train(model, params):
@@ -33,27 +33,20 @@ def do_train(model, params):
         model: the model to train
         params (dict): A dictionary of parameters
     """
-    vocab_file_path_train = '../metrics/vocab_files/' + \
-        params['label_type'] + '.txt'
-    vocab_file_path_eval = '../metrics/vocab_files/phone39.txt'
-
     # Load dataset
     train_data = Dataset(
         data_type='train', label_type=params['label_type'],
-        vocab_file_path=vocab_file_path_train,
         batch_size=params['batch_size'],
         max_epoch=params['num_epoch'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'])
     dev_data = Dataset(
         data_type='dev', label_type=params['label_type'],
-        vocab_file_path=vocab_file_path_train,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=False)
     test_data = Dataset(
         data_type='test', label_type='phone39',
-        vocab_file_path=vocab_file_path_eval,
         batch_size=1, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=False)
@@ -100,18 +93,22 @@ def do_train(model, params):
         # Create feed dictionary for next mini batch (train)
         inputs, labels, inputs_seq_len, labels_seq_len, _ = data
         inputs = np2var(inputs, use_cuda=use_cuda)
-        labels = np2var(labels, use_cuda=use_cuda, dtype='long')
+        labels = np2var(labels, use_cuda=use_cuda, dtype='int')
+        inputs_seq_len = np2var(
+            inputs_seq_len, use_cuda=use_cuda, dtype='int')
+        labels_seq_len = np2var(labels_seq_len, use_cuda=use_cuda, dtype='int')
 
         # Clear gradients before
         optimizer.zero_grad()
 
         # Make prediction
-        outputs, att_weights = model(inputs[0], labels[0])
+        logits, perm_indices = model(inputs[0], inputs_seq_len[0])
 
-        # Compute loss
+        # Compute loss in the training set
         loss_train = model.compute_loss(
-            outputs, labels[0], att_weights,
-            coverage_weight=params['coverage_weight'])
+            logits, labels[0][perm_indices],
+            inputs_seq_len[0][perm_indices],
+            labels_seq_len[0][perm_indices])
 
         # Compute gradient
         optimizer.zero_grad()
@@ -130,20 +127,24 @@ def do_train(model, params):
             inputs, labels, inputs_seq_len, labels_seq_len, _ = dev_data.next()[
                 0]
             inputs = np2var(inputs, use_cuda=use_cuda, volatile=True)
-            labels = np2var(labels, use_cuda=use_cuda,
-                            volatile=True, dtype='long')
+            labels = np2var(
+                labels, use_cuda=use_cuda, volatile=True, dtype='int')
+            inputs_seq_len = np2var(
+                inputs_seq_len, use_cuda=use_cuda, volatile=True, dtype='int')
+            labels_seq_len = np2var(
+                labels_seq_len, use_cuda=use_cuda, volatile=True, dtype='int')
 
             # ***Change to evaluation mode***
             model.eval()
 
             # Make prediction
-            outputs, att_weights = model(inputs[0], labels[0],
-                                         volatile=True)
+            logits, perm_indices = model(inputs[0], inputs_seq_len[0])
 
             # Compute loss in the dev set
             loss_dev = model.compute_loss(
-                outputs, labels[0], att_weights,
-                coverage_weight=params['coverage_weight'])
+                logits, labels[0][perm_indices],
+                inputs_seq_len[0][perm_indices],
+                labels_seq_len[0][perm_indices])
             csv_steps.append(step)
             csv_loss_train.append(var2np(loss_train))
             csv_loss_dev.append(var2np(loss_dev))
@@ -156,7 +157,7 @@ def do_train(model, params):
                   (step + 1, train_data.epoch_detail,
                    var2np(loss_train), var2np(loss_dev),
                    learning_rate, duration_step / 60))
-            sys.stdout.flush()
+            # sys.stdout.flush()
             start_time_step = time.time()
 
         # Save checkpoint and evaluate model per epoch
@@ -169,6 +170,12 @@ def do_train(model, params):
             plot_loss(csv_loss_train, csv_loss_dev, csv_steps,
                       save_path=model.save_path)
 
+            # Save the model
+            saved_path = model.save_checkpoint(
+                model.save_path, epoch=train_data.epoch)
+            print("=> Saved checkpoint (epoch:%d): %s" %
+                  (train_data.epoch, saved_path))
+
             if train_data.epoch >= params['eval_start_epoch']:
                 # ***Change to evaluation mode***
                 model.eval()
@@ -177,7 +184,7 @@ def do_train(model, params):
                 print('=== Dev Data Evaluation ===')
                 per_dev_epoch = do_eval_per(
                     model=model,
-                    model_type='attention',
+                    model_type='ctc',
                     dataset=dev_data,
                     label_type=params['label_type'],
                     beam_width=1,
@@ -189,16 +196,16 @@ def do_train(model, params):
                     not_improved_epoch = 0
                     print('■■■ ↑Best Score (PER)↑ ■■■')
 
-                    # Save the model
-                    saved_path = model.save_checkpoint(
-                        model.save_path, epoch=train_data.epoch)
-                    print("=> Saved checkpoint (epoch:%d): %s" %
-                          (train_data.epoch, saved_path))
+                    # # Save the model
+                    # saved_path = model.save_checkpoint(
+                    #     model.save_path, epoch=train_data.epoch)
+                    # print("=> Saved checkpoint (epoch:%d): %s" %
+                    #       (train_data.epoch, saved_path))
 
                     print('=== Test Data Evaluation ===')
                     per_test = do_eval_per(
                         model=model,
-                        model_type='attention',
+                        model_type='ctc',
                         dataset=test_data,
                         label_type=params['label_type'],
                         beam_width=1,
@@ -254,73 +261,41 @@ def main(config_path, model_save_path):
         raise TypeError
 
     # Model setting
-    model = AttentionSeq2seq(
+    model = CTC(
         input_size=params['input_size'],
         num_stack=params['num_stack'],
         splice=params['splice'],
         encoder_type=params['encoder_type'],
-        encoder_bidirectional=params['encoder_bidirectional'],
-        encoder_num_units=params['encoder_num_units'],
-        encoder_num_proj=params['encoder_num_proj'],
-        encoder_num_layers=params['encoder_num_layers'],
-        encoder_dropout=params['dropout_encoder'],
-        attention_type=params['attention_type'],
-        attention_dim=params['attention_dim'],
-        decoder_type=params['decoder_type'],
-        decoder_num_units=params['decoder_num_units'],
-        decoder_num_proj=params['decoder_num_proj'],
-        decdoder_num_layers=params['decoder_num_layers'],
-        decoder_dropout=params['dropout_decoder'],
-        embedding_dim=params['embedding_dim'],
-        embedding_dropout=params['dropout_embedding'],
+        bidirectional=params['bidirectional'],
+        num_units=params['num_units'],
+        num_proj=params['num_proj'],
+        num_layers=params['num_layers'],
+        dropout=params['dropout'],
         num_classes=params['num_classes'],
-        sos_index=params['num_classes'],
-        eos_index=params['num_classes'] + 1,
-        max_decode_length=params['max_decode_length'],
         parameter_init=params['parameter_init'],
-        downsample_list=[],
-        init_dec_state_with_enc_state=True,
-        sharpening_factor=params['sharpening_factor'],
-        logits_temperature=params['logits_temperature'],
-        sigmoid_smoothing=params['sigmoid_smoothing'],
-        input_feeding_approach=params['input_feeding_approach'])
+        logits_temperature=params['logits_temperature'])
 
     # Set process name
-    setproctitle('pt_timit_att_' +
-                 params['label_type'] + '_' + params['attention_type'])
+    setproctitle('pt_timit_ctc_' + params['label_type'])
 
-    model.name = 'enc' + params['encoder_type'] + \
-        str(params['encoder_num_units'])
-    model.name += '_' + str(params['encoder_num_layers'])
-    model.name += '_att' + str(params['attention_dim'])
-    model.name += '_dec' + params['decoder_type'] + \
-        str(params['decoder_num_units'])
-    model.name += '_' + str(params['decoder_num_layers'])
+    model.name += '_' + str(params['num_units'])
+    model.name += '_' + str(params['num_layers'])
     model.name += '_' + params['optimizer']
     model.name += '_lr' + str(params['learning_rate'])
-    model.name += '_' + params['attention_type']
-    if params['dropout_encoder'] != 0:
-        model.name += '_dropen' + str(params['dropout_encoder'])
-    if params['dropout_decoder'] != 0:
-        model.name += '_dropde' + str(params['dropout_decoder'])
-    if params['dropout_embedding'] != 0:
-        model.name += '_dropem' + str(params['dropout_embedding'])
+    if params['num_proj'] != 0:
+        model.name += '_proj' + str(params['num_proj'])
+    if params['dropout'] != 0:
+        model.name += '_drop' + str(params['dropout'])
     if params['num_stack'] != 1:
         model.name += '_stack' + str(params['num_stack'])
     if params['weight_decay'] != 0:
-        model.name += 'wd' + str(params['weight_decay'])
-    if params['sharpening_factor'] != 1:
-        model.name += '_sharp' + str(params['sharpening_factor'])
+        model.name += '_wd' + str(params['weight_decay'])
     if params['logits_temperature'] != 1:
         model.name += '_temp' + str(params['logits_temperature'])
-    if bool(params['sigmoid_smoothing']):
-        model.name += '_smoothing'
-    if bool(params['input_feeding_approach']):
-        model.name += '_infeed'
 
     # Set save path
     model.save_path = mkdir_join(
-        model_save_path, 'attention', params['label_type'], model.name)
+        model_save_path, 'ctc', params['label_type'], model.name)
 
     # Reset model directory
     model_index = 0
@@ -341,7 +316,7 @@ def main(config_path, model_save_path):
     # Save config file
     shutil.copyfile(config_path, join(model.save_path, 'config.yml'))
 
-    sys.stdout = open(join(model.save_path, 'train.log'), 'w')
+    # sys.stdout = open(join(model.save_path, 'train.log'), 'w')
     # TODO(hirofumi): change to logger
     do_train(model=model, params=params)
 

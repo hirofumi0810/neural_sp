@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Define evaluation method for the Attention-based model (TIMIT corpus)."""
+"""Define evaluation method by Phone Error Rate (TIMIT corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -15,11 +15,12 @@ from utils.io.variable import np2var
 from utils.evaluation.edit_distance import compute_per
 
 
-def do_eval_per(model, dataset, label_type, beam_width,
+def do_eval_per(model, model_type, dataset, label_type, beam_width,
                 is_test=False, eval_batch_size=None, progressbar=False):
     """Evaluate trained model by Phone Error Rate.
     Args:
         model: the model to evaluate
+        model_type (string): ctc or attention
         dataset: An instance of a `Dataset' class
         label_type (string): phone39 or phone48 or phone61
         beam_width: (int): the size of beam
@@ -58,15 +59,23 @@ def do_eval_per(model, dataset, label_type, beam_width,
     for data, is_new_epoch in dataset:
 
         # Create feed dictionary for next mini-batch
-        inputs, labels_true, _, labels_seq_len, _ = data
-        inputs = np2var(
-            inputs, use_cuda=model.use_cuda, volatile=True)
+        if model_type in ['ctc', 'attention']:
+            inputs, labels_true, inputs_seq_len, labels_seq_len, _ = data
+        else:
+            raise NotImplementedError
+        inputs = np2var(inputs, use_cuda=model.use_cuda, volatile=True)
 
         batch_size = inputs[0].size(0)
 
         # Evaluate by 39 phones
-        labels_pred, _ = model.decode_infer(
-            inputs[0], beam_width=beam_width)
+        if model_type == 'attention':
+            labels_pred, _ = model.decode_infer(
+                inputs[0], beam_width=beam_width)
+        elif model_type == 'ctc':
+            inputs_seq_len = np2var(
+                inputs_seq_len, use_cuda=model.use_cuda, volatile=True, dtype='int')
+            labels_pred = model.decode(
+                inputs[0], inputs_seq_len[0], beam_width=beam_width)
 
         for i_batch in range(batch_size):
             ##############################
