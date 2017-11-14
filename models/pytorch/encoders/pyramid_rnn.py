@@ -12,9 +12,15 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import math
+import numpy as np
+
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+
+from utils.io.variable import var2np
 
 
 class PyramidRNNEncoder(nn.Module):
@@ -157,10 +163,11 @@ class PyramidRNNEncoder(nn.Module):
             # gru or rnn
             return h_0
 
-    def forward(self, inputs, volatile=False):
+    def forward(self, inputs, inputs_seq_len, volatile=False):
         """Forward computation.
         Args:
             inputs: A tensor of size `[B, T, input_size]`
+            inputs_seq_len (IntTensor or LongTensor)
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
@@ -180,13 +187,29 @@ class PyramidRNNEncoder(nn.Module):
             # Reshape to the time-major
             inputs = inputs.transpose(0, 1)
 
+        if not isinstance(inputs_seq_len, list):
+            pack_seq_len = var2np(inputs_seq_len).tolist()
+        else:
+            pack_seq_len = inputs_seq_len
+
         outputs = inputs
         for i_layer in range(self.num_layers):
+            # Pack encoder inputs
+            outputs = pack_padded_sequence(
+                outputs, pack_seq_len,
+                batch_first=self.batch_first)
+
             if self.rnn_type == 'lstm':
                 outputs, (h_n, c_n) = self.rnns[i_layer](outputs, hx=h_0)
             else:
                 # gru or rnn
                 outputs, h_n = self.rnns[i_layer](outputs, hx=h_0)
+
+            # Unpack encoder outputs
+            outputs, unpacked_seq_len = pad_packed_sequence(
+                outputs,
+                batch_first=self.batch_first)
+            # TODO: update version for padding_value=0.0
 
             outputs_list = []
             if self.downsample_list[i_layer]:
@@ -219,6 +242,10 @@ class PyramidRNNEncoder(nn.Module):
                     outputs = torch.cat(outputs_list, dim=0)
                     # `[T_prev // 2, B, num_units * num_directions (* 2)]`
                     max_time = outputs.size(0)
+
+                # Update inputs_seq_len
+                for i in range(len(pack_seq_len)):
+                    pack_seq_len[i] = pack_seq_len[i] // 2
 
         # Pick up the final state of the top layer (forward)
         if self.num_directions == 2:

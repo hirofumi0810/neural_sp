@@ -52,14 +52,13 @@ class TestRNNEncoders(unittest.TestCase):
 
         # Load batch data
         batch_size = 4
-        inputs, labels, inputs_seq_len, labels_seq_len = generate_data(
+        inputs, _, inputs_seq_len, _ = generate_data(
             model='ctc',
             batch_size=batch_size,
             splice=1)
 
         # Wrap by Variable
         inputs = np2var(inputs)
-        labels = np2var(labels)
         inputs_seq_len = np2var(inputs_seq_len)
 
         max_time = inputs.size(1)
@@ -69,19 +68,20 @@ class TestRNNEncoders(unittest.TestCase):
 
         # Initialize encoder
         if encoder_type in ['lstm', 'gru', 'rnn']:
-            encoder = encoder(input_size=inputs.size(-1),
-                              rnn_type=encoder_type,
-                              bidirectional=bidirectional,
-                              num_units=256,
-                              num_proj=0,
-                              num_layers=5,
-                              dropout=0.2,
-                              parameter_init=0.1,
-                              batch_first=batch_first)
+            encoder = encoder(
+                input_size=inputs.size(-1),
+                rnn_type=encoder_type,
+                bidirectional=bidirectional,
+                num_units=256,
+                num_proj=0,
+                num_layers=5,
+                dropout=0.2,
+                parameter_init=0.1,
+                batch_first=batch_first)
         else:
             raise NotImplementedError
 
-        outputs, final_state = encoder(inputs)
+        outputs, final_state = encoder(inputs, inputs_seq_len)
 
         # Check final state (forward)
         print('----- Check hidden states (forward) -----')

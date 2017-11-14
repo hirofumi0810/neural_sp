@@ -10,6 +10,9 @@ from __future__ import print_function
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+
+from utils.io.variable import var2np
 
 
 class RNNEncoder(nn.Module):
@@ -124,10 +127,11 @@ class RNNEncoder(nn.Module):
             # gru or rnn
             return h_0
 
-    def forward(self, inputs, volatile=False):
+    def forward(self, inputs, inputs_seq_len, volatile=False):
         """Forward computation.
         Args:
-            inputs: A tensor of size `[B, T, input_size]`
+            inputs (FloatTensor): A tensor of size `[B, T, input_size]`
+            inputs_seq_len (IntTensor): A tensor of size `[]`
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
@@ -147,11 +151,27 @@ class RNNEncoder(nn.Module):
             # Reshape inputs to the time-major
             inputs = inputs.transpose(0, 1)
 
+        if not isinstance(inputs_seq_len, list):
+            inputs_seq_len = var2np(inputs_seq_len).tolist()
+
+        # Pack encoder inputs
+        inputs = pack_padded_sequence(
+            inputs, inputs_seq_len,
+            batch_first=self.batch_first)
+
         if self.rnn_type == 'lstm':
             outputs, (h_n, c_n) = self.rnn(inputs, hx=h_0)
         else:
             # gru or rnn
             outputs, h_n = self.rnn(inputs, hx=h_0)
+
+        # Unpack encoder outputs
+        outputs, unpacked_seq_len = pad_packed_sequence(
+            outputs,
+            batch_first=self.batch_first)
+        # TODO: update version for padding_value=0.0
+
+        assert inputs_seq_len == unpacked_seq_len
 
         # Pick up the final state of the top layer (forward)
         if self.num_directions == 2:
