@@ -124,16 +124,18 @@ class RNNEncoder(nn.Module):
 
             return (h_0, c_0)
         else:
-            # gru or rnn
             return h_0
 
-    def forward(self, inputs, inputs_seq_len, volatile=False):
+    def forward(self, inputs, inputs_seq_len, volatile=False,
+                mask_sequence=True):
         """Forward computation.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T, input_size]`
             inputs_seq_len (IntTensor or LongTensor): A tensor of size `[B]`
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
+            mask_sequence (bool, optional): if True, mask by sequence
+                lenghts of inputs
         Returns:
             outputs:
                 if batch_first is True, a tensor of size
@@ -141,16 +143,20 @@ class RNNEncoder(nn.Module):
                 else
                     `[T, B, num_units * num_directions]`
             final_state_fw: A tensor of size `[1, B, num_units]`
+            perm_indices ():
         """
         batch_size, max_time = inputs.size()[:2]
 
         # Initialize hidden states (and memory cells) per mini-batch
         h_0 = self._init_hidden(batch_size=batch_size, volatile=volatile)
 
-        # Sort inputs by lengths in descending order
-        inputs_seq_len, perm_indices = inputs_seq_len.sort(
-            dim=0, descending=True)
-        inputs = inputs[perm_indices]
+        if mask_sequence:
+            # Sort inputs by lengths in descending order
+            inputs_seq_len, perm_indices = inputs_seq_len.sort(
+                dim=0, descending=True)
+            inputs = inputs[perm_indices]
+        else:
+            perm_indices = None
 
         if not self.batch_first:
             # Reshape inputs to the time-major
@@ -159,24 +165,25 @@ class RNNEncoder(nn.Module):
         if not isinstance(inputs_seq_len, list):
             inputs_seq_len = var2np(inputs_seq_len).tolist()
 
-        # Pack encoder inputs
-        inputs = pack_padded_sequence(
-            inputs, inputs_seq_len,
-            batch_first=self.batch_first)
+        if mask_sequence:
+            # Pack encoder inputs
+            inputs = pack_padded_sequence(
+                inputs, inputs_seq_len,
+                batch_first=self.batch_first)
 
         if self.rnn_type == 'lstm':
             outputs, (h_n, c_n) = self.rnn(inputs, hx=h_0)
         else:
-            # gru or rnn
             outputs, h_n = self.rnn(inputs, hx=h_0)
 
-        # Unpack encoder outputs
-        outputs, unpacked_seq_len = pad_packed_sequence(
-            outputs,
-            batch_first=self.batch_first)
-        # TODO: update version for padding_value=0.0
+        if mask_sequence:
+            # Unpack encoder outputs
+            outputs, unpacked_seq_len = pad_packed_sequence(
+                outputs,
+                batch_first=self.batch_first)
+            # TODO: update version for padding_value=0.0
 
-        assert inputs_seq_len == unpacked_seq_len
+            assert inputs_seq_len == unpacked_seq_len
 
         # Pick up the final state of the top layer (forward)
         if self.num_directions == 2:

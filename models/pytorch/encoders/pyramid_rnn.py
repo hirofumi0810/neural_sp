@@ -160,16 +160,18 @@ class PyramidRNNEncoder(nn.Module):
 
             return (h_0, c_0)
         else:
-            # gru or rnn
             return h_0
 
-    def forward(self, inputs, inputs_seq_len, volatile=False):
+    def forward(self, inputs, inputs_seq_len, volatile=False,
+                mask_sequence=True):
         """Forward computation.
         Args:
             inputs: A tensor of size `[B, T, input_size]`
             inputs_seq_len (IntTensor or LongTensor): A tensor of size `[B]`
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
+            mask_sequence (bool, optional): if True, mask by sequence
+                lenghts of inputs
         Returns:
             outputs:
                 if batch_first is True, a tensor of size
@@ -177,11 +179,20 @@ class PyramidRNNEncoder(nn.Module):
                 else
                     `[T // len(downsample_list), B, num_units * num_directions]`
             final_state_fw: A tensor of size `[1, B, num_units]`
+            perm_indices ():
         """
         batch_size, max_time = inputs.size()[:2]
 
         # Initialize hidden states (and memory cells) per mini-batch
         h_0 = self._init_hidden(batch_size=batch_size, volatile=volatile)
+
+        if mask_sequence:
+            # Sort inputs by lengths in descending order
+            inputs_seq_len, perm_indices = inputs_seq_len.sort(
+                dim=0, descending=True)
+            inputs = inputs[perm_indices]
+        else:
+            perm_indices = None
 
         if not self.batch_first:
             # Reshape to the time-major
@@ -194,22 +205,25 @@ class PyramidRNNEncoder(nn.Module):
 
         outputs = inputs
         for i_layer in range(self.num_layers):
-            # Pack encoder inputs
-            outputs = pack_padded_sequence(
-                outputs, pack_seq_len,
-                batch_first=self.batch_first)
+            if mask_sequence:
+                # Pack encoder inputs
+                outputs = pack_padded_sequence(
+                    outputs, pack_seq_len,
+                    batch_first=self.batch_first)
 
             if self.rnn_type == 'lstm':
                 outputs, (h_n, c_n) = self.rnns[i_layer](outputs, hx=h_0)
             else:
-                # gru or rnn
                 outputs, h_n = self.rnns[i_layer](outputs, hx=h_0)
 
-            # Unpack encoder outputs
-            outputs, unpacked_seq_len = pad_packed_sequence(
-                outputs,
-                batch_first=self.batch_first)
-            # TODO: update version for padding_value=0.0
+            if mask_sequence:
+                # Unpack encoder outputs
+                outputs, unpacked_seq_len = pad_packed_sequence(
+                    outputs,
+                    batch_first=self.batch_first)
+                # TODO: update version for padding_value=0.0
+
+                assert pack_seq_len == unpacked_seq_len
 
             outputs_list = []
             if self.downsample_list[i_layer]:
@@ -254,4 +268,4 @@ class PyramidRNNEncoder(nn.Module):
             final_state_fw = h_n[-1, :, :].unsqueeze(dim=0)
         # NOTE: h_n: `[num_layers * num_directions, B, num_units]`
 
-        return outputs, final_state_fw
+        return outputs, final_state_fw, perm_indices

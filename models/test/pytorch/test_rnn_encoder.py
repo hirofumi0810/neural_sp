@@ -42,12 +42,14 @@ class TestRNNEncoders(unittest.TestCase):
                    batch_first=False)
 
     @measure_time
-    def check(self, encoder_type, bidirectional=False, batch_first=True):
+    def check(self, encoder_type, bidirectional=False, batch_first=True,
+              mask_sequence=True):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
         print('  batch_first: %s' % str(batch_first))
+        print('  mask_sequence: %s' % str(mask_sequence))
         print('==================================================')
 
         # Load batch data

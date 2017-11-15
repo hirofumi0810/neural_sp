@@ -67,12 +67,13 @@ class TestPyramidRNNEncoders(unittest.TestCase):
 
     @measure_time
     def check(self, encoder_type, bidirectional=False, batch_first=False,
-              downsample_type='concat'):
+              downsample_type='concat', mask_sequence=True):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
         print('  batch_first: %s' % str(batch_first))
+        print('  mask_sequence: %s' % str(mask_sequence))
         print('  downsample_type: %s' % downsample_type)
         print('==================================================')
 
@@ -109,7 +110,7 @@ class TestPyramidRNNEncoders(unittest.TestCase):
         else:
             raise NotImplementedError
 
-        outputs, final_state = encoder(inputs, inputs_seq_len)
+        outputs, final_state, perm_indices = encoder(inputs, inputs_seq_len)
         max_time /= (2 ** encoder.downsample_list.count(True))
         max_time = int(max_time)
 
