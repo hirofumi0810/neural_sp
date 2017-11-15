@@ -19,7 +19,7 @@ import torch.nn as nn
 sys.path.append(abspath('../../../'))
 from examples.librispeech.data.load_dataset_ctc import Dataset
 from examples.librispeech.metrics.cer import do_eval_cer
-# from examples.librispeech.metrics.wer import do_eval_wer
+from examples.librispeech.metrics.wer import do_eval_wer
 from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
 from utils.directory import mkdir_join, mkdir
@@ -35,7 +35,8 @@ def do_train(model, params):
     """
     # Load dataset
     train_data = Dataset(
-        data_type='train', label_type=params['label_type'],
+        data_type='train', data_size=params['data_size'],
+        label_type=params['label_type'],
         batch_size=params['batch_size'],
         max_epoch=params['num_epoch'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
@@ -177,7 +178,7 @@ def do_train(model, params):
                   (step + 1, train_data.epoch_detail,
                    var2np(loss_train), var2np(loss_dev),
                    learning_rate, duration_step / 60))
-            # sys.stdout.flush()
+            sys.stdout.flush()
             start_time_step = time.time()
 
         # Save checkpoint and evaluate model per epoch
@@ -198,26 +199,26 @@ def do_train(model, params):
                 print('=== Dev Data Evaluation ===')
                 if 'char' in params['label_type']:
                     # dev-clean
-                    cer_dev_clean_epoch, wer_dev_clean_epoch = do_eval_cer(
+                    cer_dev_clean_epoch, _ = do_eval_cer(
                         model=model,
                         model_type='ctc',
                         dataset=dev_clean_data,
                         label_type=params['label_type'],
+                        data_size=params['data_size'],
                         beam_width=1,
                         eval_batch_size=1)
                     print('  CER (clean): %f %%' % (cer_dev_clean_epoch * 100))
-                    print('  WER (clean): %f %%' % (wer_dev_clean_epoch * 100))
 
                     # dev-other
-                    cer_dev_other_epoch, wer_dev_other_epoch = do_eval_cer(
+                    cer_dev_other_epoch, _ = do_eval_cer(
                         model=model,
                         model_type='ctc',
                         dataset=dev_other_data,
                         label_type=params['label_type'],
+                        data_size=params['data_size'],
                         beam_width=1,
                         eval_batch_size=1)
                     print('  CER (other): %f %%' % (cer_dev_other_epoch * 100))
-                    print('  WER (other): %f %%' % (wer_dev_other_epoch * 100))
 
                     if params['data_size'] in ['100h', '460h']:
                         metric_epoch = cer_dev_clean_epoch
@@ -237,36 +238,99 @@ def do_train(model, params):
 
                         print('=== Test Data Evaluation ===')
                         # test-clean
-                        cer_test_clean_epoch, wer_test_clean_epoch = do_eval_cer(
+                        cer_test_clean_epoch, _ = do_eval_cer(
                             model=model,
                             model_type='ctc',
                             dataset=test_clean_data,
                             label_type=params['label_type'],
+                            data_size=params['data_size'],
                             beam_width=1,
                             is_test=True,
                             eval_batch_size=1)
                         print('  CER (clean): %f %%' %
                               (cer_test_clean_epoch * 100))
-                        print('  WER (clean): %f %%' %
-                              (wer_test_clean_epoch * 100))
 
                         # test-other
-                        cer_test_other_epoch, wer_test_other_epoch = do_eval_cer(
+                        cer_test_other_epoch, _ = do_eval_cer(
                             model=model,
                             model_type='ctc',
                             dataset=test_other_data,
                             label_type=params['label_type'],
+                            data_size=params['data_size'],
                             beam_width=1,
                             is_test=True,
                             eval_batch_size=1)
                         print('  CER (other): %f %%' %
                               (cer_test_other_epoch * 100))
+                    else:
+                        not_improved_epoch += 1
+                else:
+                    # dev-clean
+                    wer_dev_clean_epoch = do_eval_wer(
+                        model=model,
+                        model_type='ctc',
+                        dataset=dev_clean_data,
+                        label_type=params['label_type'],
+                        data_size=params['data_size'],
+                        beam_width=1,
+                        eval_batch_size=1)
+                    print('  WER (clean): %f %%' % (wer_dev_clean_epoch * 100))
+
+                    # dev-other
+                    wer_dev_other_epoch = do_eval_wer(
+                        model=model,
+                        model_type='ctc',
+                        dataset=dev_other_data,
+                        label_type=params['label_type'],
+                        data_size=params['data_size'],
+                        beam_width=1,
+                        eval_batch_size=1)
+                    print('  WER (other): %f %%' % (wer_dev_other_epoch * 100))
+
+                    if params['data_size'] in ['100h', '460h']:
+                        metric_epoch = wer_dev_clean_epoch
+                    else:
+                        metric_epoch = wer_dev_other_epoch
+
+                    if metric_epoch < ler_dev_best:
+                        ler_dev_best = metric_epoch
+                        not_improved_epoch = 0
+                        print('■■■ ↑Best Score (WER)↑ ■■■')
+
+                        # # Save the model
+                        saved_path = model.save_checkpoint(
+                            model.save_path, epoch=train_data.epoch)
+                        print("=> Saved checkpoint (epoch:%d): %s" %
+                              (train_data.epoch, saved_path))
+
+                        print('=== Test Data Evaluation ===')
+                        # test-clean
+                        wer_test_clean_epoch = do_eval_wer(
+                            model=model,
+                            model_type='ctc',
+                            dataset=test_clean_data,
+                            label_type=params['label_type'],
+                            data_size=params['data_size'],
+                            beam_width=1,
+                            is_test=True,
+                            eval_batch_size=1)
+                        print('  WER (clean): %f %%' %
+                              (wer_test_clean_epoch * 100))
+
+                        # test-other
+                        wer_test_other_epoch = do_eval_wer(
+                            model=model,
+                            model_type='ctc',
+                            dataset=test_other_data,
+                            label_type=params['label_type'],
+                            data_size=params['data_size'],
+                            beam_width=1,
+                            is_test=True,
+                            eval_batch_size=1)
                         print('  WER (other): %f %%' %
                               (wer_test_other_epoch * 100))
                     else:
                         not_improved_epoch += 1
-                else:
-                    raise NotImplementedError
 
                 duration_eval = time.time() - start_time_eval
                 print('Evaluation time: %.3f min' % (duration_eval / 60))
@@ -314,13 +378,33 @@ def main(config_path, model_save_path):
         elif params['data_size'] == '960h':
             params['num_classes'] = 77
     elif params['label_type'] == 'word_freq1':
-        raise NotImplementedError
+        if params['data_size'] == '100h':
+            params['num_classes'] = 33779
+        elif params['data_size'] == '460h':
+            params['num_classes'] = 0
+        elif params['data_size'] == '960h':
+            params['num_classes'] = 0
     elif params['label_type'] == 'word_freq5':
-        raise NotImplementedError
+        if params['data_size'] == '100h':
+            params['num_classes'] = 11735
+        elif params['data_size'] == '460h':
+            params['num_classes'] = 0
+        elif params['data_size'] == '960h':
+            params['num_classes'] = 0
     elif params['label_type'] == 'word_freq10':
-        raise NotImplementedError
+        if params['data_size'] == '100h':
+            params['num_classes'] = 7213
+        elif params['data_size'] == '460h':
+            params['num_classes'] = 0
+        elif params['data_size'] == '960h':
+            params['num_classes'] = 0
     elif params['label_type'] == 'word_freq15':
-        raise NotImplementedError
+        if params['data_size'] == '100h':
+            params['num_classes'] = 5219
+        elif params['data_size'] == '460h':
+            params['num_classes'] = 0
+        elif params['data_size'] == '960h':
+            params['num_classes'] = 0
     else:
         raise TypeError
 
@@ -383,7 +467,7 @@ def main(config_path, model_save_path):
     # Save config file
     shutil.copyfile(config_path, join(model.save_path, 'config.yml'))
 
-    # sys.stdout = open(join(model.save_path, 'train.log'), 'w')
+    sys.stdout = open(join(model.save_path, 'train.log'), 'w')
     # TODO(hirofumi): change to logger
     do_train(model=model, params=params)
 
