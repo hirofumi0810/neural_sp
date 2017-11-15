@@ -65,9 +65,6 @@ class DatasetBase(Base):
         if self.is_new_epoch:
             self.is_new_epoch = False
 
-        self.padded_value = self.eos_index if not self.is_test else None
-        # TODO: move this
-
         if self.sort_utt:
             # Sort all uttrances by length
             if len(self.rest) > batch_size:
@@ -141,9 +138,9 @@ class DatasetBase(Base):
             (len(data_indices), max_frame_num, self.input_size * self.splice),
             dtype=np.float32)
         labels = np.array(
-            [[self.padded_value] * max_seq_len] * len(data_indices))
+            [[self.att_padded_value] * max_seq_len] * len(data_indices))
         labels_sub = np.array(
-            [[self.padded_value] * max_seq_len_sub] * len(data_indices))
+            [[self.att_padded_value] * max_seq_len_sub] * len(data_indices))
         inputs_seq_len = np.zeros((len(data_indices),), dtype=np.int32)
         labels_seq_len = np.zeros((len(data_indices),), dtype=np.int32)
         labels_seq_len_sub = np.zeros((len(data_indices),), dtype=np.int32)

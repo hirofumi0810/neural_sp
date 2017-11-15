@@ -11,6 +11,7 @@ from __future__ import division
 from __future__ import print_function
 
 from os.path import basename
+import math
 import random
 import numpy as np
 
@@ -31,17 +32,17 @@ class DatasetBase(Base):
         Returns:
             A tuple of `(inputs, labels, inputs_seq_len, labels_seq_len, input_names)`
                 inputs: list of input data of size
-                    `[num_gpu, B, T_int, input_size]`
+                    `[num_gpus, B, T_int, input_size]`
                 att_labels: list of target labels for Attention, of size
-                    `[num_gpu, B, T_out]`
+                    `[num_gpus, B, T_out]`
                 ctc_labels: list of target labels for CTC, of size
-                    `[num_gpu, B, T_out]`
+                    `[num_gpus, B, T_out]`
                 inputs_seq_len: list of length of inputs of size
-                    `[num_gpu, B]`
+                    `[num_gpus, B]`
                 att_labels_seq_len: list of length of target labels for Attention, of size
-                    `[num_gpu, B]`
+                    `[num_gpus, B]`
                 input_names: list of file name of input data of size
-                    `[num_gpu, B]`
+                    `[num_gpus, B]`
             is_new_epoch (bool): If true, one epoch is finished
         """
         if self.max_epoch is not None and self.epoch >= self.max_epoch:
@@ -54,14 +55,6 @@ class DatasetBase(Base):
         # reset
         if self.is_new_epoch:
             self.is_new_epoch = False
-
-        if not self.is_test:
-            self.att_padded_value = self.eos_index
-            self.ctc_padded_value = -1
-        else:
-            self.att_padded_value = None
-            self.ctc_padded_value = None
-        # TODO(hirofumi): move this
 
         if self.sort_utt:
             # Sort all uttrances by length
@@ -178,32 +171,18 @@ class DatasetBase(Base):
             att_labels_seq_len[i_batch] = len(label_list[i_batch]) + 2
             # TODO: +2 ??
 
-        ###############
-        # Multi-GPUs
-        ###############
-        if self.num_gpu > 1:
-            # Now we split the mini-batch data by num_gpu
-            inputs = np.array_split(inputs, self.num_gpu, axis=0)
-            att_labels = np.array_split(att_labels, self.num_gpu, axis=0)
-            ctc_labels = np.array_split(ctc_labels, self.num_gpu, axis=0)
-            inputs_seq_len = np.array_split(
-                inputs_seq_len, self.num_gpu, axis=0)
-            att_labels_seq_len = np.array_split(
-                att_labels_seq_len, self.num_gpu, axis=0)
-            input_names = np.array_split(input_names, self.num_gpu, axis=0)
-        else:
-            inputs = inputs[np.newaxis, :, :, :]
-            att_labels = att_labels[np.newaxis, :, :]
-            ctc_labels = ctc_labels[np.newaxis, :, :]
-            inputs_seq_len = inputs_seq_len[np.newaxis, :]
-            att_labels_seq_len = att_labels_seq_len[np.newaxis, :]
-            input_names = np.array(input_names)[np.newaxis, :]
+        # Now we split the mini-batch data by num_gpus
+        inputs = self.split_per_device(inputs, self.num_gpus)
+        att_labels = self.split_per_device(att_labels, self.num_gpus)
+        ctc_labels = self.split_per_device(ctc_labels, self.num_gpus)
+        inputs_seq_len = self.split_per_device(inputs_seq_len, self.num_gpus)
+        att_labels_seq_len = self.split_per_device(
+            att_labels_seq_len, self.num_gpus)
+        ctc_labels_seq_len = self.split_per_device(
+            ctc_labels_seq_len, self.num_gpus)
+        input_names = self.split_per_device(input_names, self.num_gpus)
 
         self.iteration += len(data_indices)
 
-        # Clean up
-        del input_list
-        del label_list
-
         return (inputs, att_labels, ctc_labels, inputs_seq_len,
-                att_labels_seq_len, input_names), self.is_new_epoch
+                att_labels_seq_len, ctc_labels_seq_len, input_names), self.is_new_epoch

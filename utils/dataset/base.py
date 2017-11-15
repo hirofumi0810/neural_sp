@@ -47,6 +47,14 @@ class Base(object):
         return self.num_vocab + 1
 
     @property
+    def ctc_padded_value(self):
+        return None if self.is_test else -1
+
+    @property
+    def att_padded_value(self):
+        return None if self.is_test else self.sos_index
+
+    @property
     def epoch_detail(self):
         # Floating point version of epoch
         return self.iteration / len(self)

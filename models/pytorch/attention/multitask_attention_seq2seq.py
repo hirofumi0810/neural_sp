@@ -5,16 +5,15 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
 
 # from models.pytorch.base import ModelBase
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 from models.pytorch.encoders.load_encoder import load
 from models.pytorch.attention.attention_layer import AttentionMechanism
+from utils.io.variable import var2np
 
 
 class MultitaskAttentionSeq2seq(AttentionSeq2seq):
@@ -426,15 +425,16 @@ class MultitaskAttentionSeq2seq(AttentionSeq2seq):
         if beam_width == 1:
             return self._decode_infer_greedy_sub(inputs)
         else:
-            raise NotImplementedError
+            return self._decode_infer_beam_sub(inputs, beam_width=beam_width)
 
     def _decode_infer_greedy_sub(self, inputs):
         """Greedy decoding when inference.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
         Returns:
-            argmaxs (np.ndarray): A tensor of size `[B, T_out]`
-            attention_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
+            argmaxs (np.ndarray): A tensor of size `[B, T_out_sub]`
+            attention_weights (np.ndarray): A tensor of size
+                `[B, T_out_sub, T_in]`
         """
         encoder_outputs, encoder_final_state = self._encode(
             inputs, volatile=True)[2:]
@@ -442,8 +442,7 @@ class MultitaskAttentionSeq2seq(AttentionSeq2seq):
         batch_size = inputs.size(0)
 
         # Start from <SOS>
-        y = self._create_token(value=self.sos_index_sub,
-                               batch_size=batch_size)
+        y = self._create_token(value=self.sos_index_sub, batch_size=batch_size)
 
         # Initialize decoder state
         decoder_state = self._init_decoder_state(
@@ -470,15 +469,18 @@ class MultitaskAttentionSeq2seq(AttentionSeq2seq):
                 # Input-feeding approach
                 output = self.decoder_proj_layer_sub(
                     torch.cat([decoder_outputs, context_vector], dim=-1))
-                output = self.fc_sub(F.tanh(output))
+                logits = self.fc_sub(F.tanh(output))
             else:
-                output = self.fc_sub(decoder_outputs + context_vector)
+                logits = self.fc_sub(decoder_outputs + context_vector)
 
-            # TODO: check this
-            output = output.squeeze(dim=1)
+            logits = logits.squeeze(dim=1)
+            # NOTE: `[B, 1, num_classes]` -> `[B, num_classes]`
+
+            # Path through the softmax layer & convert to log-scale
+            log_probs = self.log_softmax(logits)
 
             # Pick up 1-best
-            y = torch.max(output, dim=1)[1]
+            y = torch.max(log_probs, dim=1)[1]
             y = y.unsqueeze(dim=1)
             argmaxs.append(y)
             attention_weights.append(attention_weights_step)
@@ -492,7 +494,10 @@ class MultitaskAttentionSeq2seq(AttentionSeq2seq):
         attention_weights = torch.stack(attention_weights, dim=1)
 
         # Convert to numpy
-        argmaxs = argmaxs.cpu().data.numpy()
-        attention_weights = attention_weights.cpu().data.numpy()
+        argmaxs = var2np(argmaxs)
+        attention_weights = var2np(attention_weights)
 
         return argmaxs, attention_weights
+
+    def _decode_infer_beam_sub(self, inputs, beam_width):
+        raise NotImplementedError

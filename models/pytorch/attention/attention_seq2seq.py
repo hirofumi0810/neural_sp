@@ -16,6 +16,21 @@ from torch.autograd import Variable
 from models.pytorch.base import ModelBase
 from models.pytorch.encoders.load_encoder import load
 from models.pytorch.attention.attention_layer import AttentionMechanism
+from utils.io.variable import var2np
+
+NEG_INF = -float("inf")
+LOG_0 = NEG_INF
+LOG_1 = 0
+
+
+def _logsumexp(*args):
+    """Stable log sum exp."""
+    if all(a == NEG_INF for a in args):
+        return NEG_INF
+    a_max = np.max(args)
+    lsp = np.log(np.sum(np.exp(a - a_max)
+                        for a in args))
+    return a_max + lsp
 
 
 class AttentionSeq2seq(ModelBase):
@@ -243,10 +258,11 @@ class AttentionSeq2seq(ModelBase):
         # NOTE: <SOS> is removed because the decoder never predict <SOS> class
         # TODO: self.num_classes - 1
 
-    def forward(self, inputs, labels, volatile=False):
-        """
+    def forward(self, inputs, inputs_seq_len, labels, volatile=False):
+        """Forward computation.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
+            inputs_seq_len (IntTensor): A tensor of size `[B]`
             labels (LongTensor): A tensor of size `[B, T_out]`
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
@@ -255,17 +271,20 @@ class AttentionSeq2seq(ModelBase):
                 `[B, T_out, num_classes (including <SOS> and <EOS>)]`
             attention_weights (FloatTensor): A tensor of size
                 `[B, T_out, T_in]`
+            perm_indices ():
         """
-        encoder_outputs, encoder_final_state = self._encode(inputs, volatile)
+        encoder_outputs, encoder_final_state, perm_indices = self._encode(
+            inputs, inputs_seq_len, volatile)
 
         outputs, attention_weights = self._decode_train(
-            encoder_outputs, labels, encoder_final_state)
-        return outputs, attention_weights
+            encoder_outputs, labels[perm_indices], encoder_final_state)
+        return outputs, attention_weights, perm_indices
 
-    def _encode(self, inputs, volatile):
+    def _encode(self, inputs, inputs_seq_len, volatile):
         """Encode acoustic features.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
+            inputs_seq_len (IntTensor): A tensor of size `[B]`
             volatile (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
@@ -273,8 +292,10 @@ class AttentionSeq2seq(ModelBase):
                 `[B, T_in, encoder_num_units]`
             encoder_final_state (FloatTensor): A tensor of size
                 `[1, B, decoder_num_units (may be equal to encoder_num_units)]`
+            perm_indices ():
         """
-        encoder_outputs, encoder_final_state = self.encoder(inputs, volatile)
+        encoder_outputs, encoder_final_state, perm_indices = self.encoder(
+            inputs, inputs_seq_len, volatile, mask_sequence=True)
         # NOTE: encoder_outputs:
         # `[B, T_in, encoder_num_units * encoder_num_directions]`
         # encoder_final_state: `[1, B, encoder_num_units]`
@@ -295,25 +316,29 @@ class AttentionSeq2seq(ModelBase):
                 encoder_final_state.view(-1, encoder_num_units))
             encoder_final_state = encoder_final_state.view(1, batch_size, -1)
 
-        return encoder_outputs, encoder_final_state
+        return encoder_outputs, encoder_final_state, perm_indices
 
-    def compute_loss(self, outputs, labels,
+    def compute_loss(self, logits, labels, labels_seq_len,
                      attention_weights=None, coverage_weight=0):
         """Compute loss.
         Args:
-            outputs (FloatTensor): A tensor of size `[B, T_out, num_classes]`
+            logits (FloatTensor): A tensor of size `[B, T_out, num_classes]`
             labels (LongTensor): A tensor of size `[B, T_out]`
+            labels_seq_len (IntTensor): A tensor of size `[B]`
             attention_weights (FloatTensor): A tensor of size
                 `[B, T_out, T_in]`
             coverage_weight (float, optional):
         Returns:
-            loss (FloatTensor): A tensor of size `[]`
+            loss (FloatTensor): A tensor of size `[1]`
         """
-        batch_size, _, num_classes = outputs.size()
-        outputs = outputs.view((-1, num_classes))
+        batch_size, _, num_classes = logits.size()
+
+        logits = logits.view((-1, num_classes))
         labels = labels[:, 1:].contiguous().view(-1)
-        loss = F.cross_entropy(outputs, labels,
+        loss = F.cross_entropy(logits, labels,
+                               ignore_index=self.sos_index,
                                size_average=False)
+        # NOTE: labels are padded by sos_index
 
         # Average the loss by mini-batch
         loss /= batch_size
@@ -481,19 +506,6 @@ class AttentionSeq2seq(ModelBase):
 
         return decoder_outputs, decoder_state, context_vector, attention_weights_step
 
-    def decode_infer(self, inputs, beam_width=1):
-        """
-        Args:
-            inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
-            beam_width (int, optional): the size of beam
-        Returns:
-
-        """
-        if beam_width == 1:
-            return self._decode_infer_greedy(inputs)
-        else:
-            return self._decode_infer_beam_search(inputs, beam_width)
-
     def _create_token(self, value, batch_size):
         """Create 1 token per batch dimension.
         Args:
@@ -513,22 +525,36 @@ class AttentionSeq2seq(ModelBase):
 
         return y
 
-    def _decode_infer_greedy(self, inputs):
+    def decode_infer(self, inputs, inputs_seq_len, beam_width=1):
+        """
+        Args:
+            inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
+            inputs_seq_len (IntTensor): A tensor of size `[B]`
+            beam_width (int, optional): the size of beam
+        Returns:
+
+        """
+        if beam_width == 1:
+            return self._decode_infer_greedy(inputs, inputs_seq_len)
+        else:
+            return self._decode_infer_beam(inputs, inputs_seq_len, beam_width)
+
+    def _decode_infer_greedy(self, inputs, inputs_seq_len):
         """Greedy decoding when inference.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
+            inputs_seq_len (IntTensor): A tensor of size `[B]`
         Returns:
             argmaxs (np.ndarray): A tensor of size `[B, T_out]`
             attention_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
         """
         encoder_outputs, encoder_final_state = self._encode(
-            inputs, volatile=True)[:2]
+            inputs, inputs_seq_len, volatile=True)[:2]
 
         batch_size = inputs.size(0)
 
         # Start from <SOS>
-        y = self._create_token(value=self.sos_index,
-                               batch_size=batch_size)
+        y = self._create_token(value=self.sos_index, batch_size=batch_size)
 
         # Initialize decoder state
         decoder_state = self._init_decoder_state(
@@ -555,15 +581,18 @@ class AttentionSeq2seq(ModelBase):
                 # Input-feeding approach
                 output = self.decoder_proj_layer(
                     torch.cat([decoder_outputs, context_vector], dim=-1))
-                output = self.fc(F.tanh(output))
+                logits = self.fc(F.tanh(output))
             else:
-                output = self.fc(decoder_outputs + context_vector)
+                logits = self.fc(decoder_outputs + context_vector)
 
-            # TODO: check this
-            output = output.squeeze(dim=1)
+            logits = logits.squeeze(dim=1)
+            # NOTE: `[B, 1, num_classes]` -> `[B, num_classes]`
+
+            # Path through the softmax layer & convert to log-scale
+            log_probs = self.log_softmax(logits)
 
             # Pick up 1-best
-            y = torch.max(output, dim=1)[1]
+            y = torch.max(log_probs, dim=1)[1]
             y = y.unsqueeze(dim=1)
             argmaxs.append(y)
             attention_weights.append(attention_weights_step)
@@ -572,32 +601,32 @@ class AttentionSeq2seq(ModelBase):
             if torch.sum(y.data == self.eos_index) == y.numel():
                 break
 
-        # Concatenate in T_out-dimension
+        # Concatenate in T_out dimension
         argmaxs = torch.cat(argmaxs, dim=1)
         attention_weights = torch.stack(attention_weights, dim=1)
 
         # Convert to numpy
-        argmaxs = argmaxs.cpu().data.numpy()
-        attention_weights = attention_weights.cpu().data.numpy()
+        argmaxs = var2np(argmaxs)
+        attention_weights = var2np(attention_weights)
 
         return argmaxs, attention_weights
 
-    def _decode_infer_beam_search(self, inputs, beam_width):
+    def _decode_infer_beam(self, inputs, inputs_seq_len, beam_width):
         """Beam search decoding when inference.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
+            inputs_seq_len (IntTensor): A tensor of size `[B]`
             beam_width (int): the size of beam
         Returns:
 
         """
-        encoder_outputs, encoder_final_state = self._encode(inputs,
-                                                            volatile=True)
+        encoder_outputs, encoder_final_state = self._encode(
+            inputs, inputs_seq_len, volatile=True)[:2]
 
         batch_size = inputs.size(0)
 
         # Start from <SOS>
-        y = self._create_token(value=self.sos_index,
-                               batch_size=1)
+        y = self._create_token(value=self.sos_index, batch_size=1)
         ys = [y] * batch_size
 
         # Initialize decoder state
@@ -610,13 +639,13 @@ class AttentionSeq2seq(ModelBase):
         for i_batch in range(batch_size):
             if self.decoder_type == 'lstm':
                 beam.append(
-                    [((self.sos_index,), 0.,
+                    [((self.sos_index,), LOG_1,
                       (decoder_state[0][:, i_batch:i_batch + 1, :],
                        decoder_state[1][:, i_batch:i_batch + 1, :]))])
             else:
                 # gru or rnn
                 beam.append(
-                    [((self.sos_index,), 0.,
+                    [((self.sos_index,), LOG_1,
                       decoder_state[:, i_batch:i_batch + 1, :])])
 
         complete = [[]] * batch_size
@@ -624,11 +653,9 @@ class AttentionSeq2seq(ModelBase):
         attention_weights_step_list = [None] * batch_size
 
         for t in range(self.max_decode_length):
-
             new_beam = [[]] * batch_size
             for i_batch in range(batch_size):
                 for hyp, score, decoder_state in beam[i_batch]:
-
                     if t == 0:
                         # Start from <SOS>
                         y = ys[i_batch]
@@ -650,19 +677,20 @@ class AttentionSeq2seq(ModelBase):
                         # Input-feeding approach
                         output = self.decoder_proj_layer(
                             torch.cat([decoder_outputs, context_vector], dim=-1))
-                        output = self.fc(F.tanh(output))
+                        logits = self.fc(F.tanh(output))
                     else:
-                        output = self.fc(decoder_outputs + context_vector)
+                        logits = self.fc(decoder_outputs + context_vector)
 
-                    # TODO: check this
-                    output = output.squeeze(dim=1)
+                    logits = logits.squeeze(dim=1)
+                    # NOTE: `[B, 1, num_classes]` -> `[B, num_classes]`
 
-                    output = output.cpu().data.numpy().tolist()
-                    for i, prob in enumerate(output[0]):
-                        # Convert to log-scale
-                        log_prob = np.log(prob + 1e-10)
+                    # Path through the softmax layer & convert to log-scale
+                    log_probs = self.log_softmax(logits)
+                    log_probs = var2np(log_probs).tolist()[0]
 
-                        new_score = score + log_prob
+                    for i, log_prob in enumerate(log_probs):
+                        # new_score = score + log_prob
+                        new_score = _logsumexp(score, log_prob)
                         new_hyp = hyp + (i,)
                         new_beam[i_batch].append(
                             (new_hyp, new_score, decoder_state))
@@ -690,4 +718,4 @@ class AttentionSeq2seq(ModelBase):
             best.append(hyp[1:])
             # NOTE: remove <SOS>
 
-        return np.array(best), None
+        return np.array(best), attention_weights
