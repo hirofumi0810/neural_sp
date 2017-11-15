@@ -113,6 +113,9 @@ def do_train(model, params):
             inputs_seq_len, use_cuda=use_cuda, dtype='int')
         labels_seq_len = np2var(labels_seq_len, use_cuda=use_cuda, dtype='int')
 
+        labels += 1
+        # NOTE: index 0 is reserved for blank
+
         # Clear gradients before
         optimizer.zero_grad()
 
@@ -153,6 +156,9 @@ def do_train(model, params):
                 inputs_seq_len, use_cuda=use_cuda, volatile=True, dtype='int')
             labels_seq_len = np2var(
                 labels_seq_len, use_cuda=use_cuda, volatile=True, dtype='int')
+
+            labels += 1
+            # NOTE: index 0 is reserved for blank
 
             # ***Change to evaluation mode***
             model.eval()

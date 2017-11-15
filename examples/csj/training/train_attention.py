@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Train the Attention-based model (CSJ corpus)."""
+"""Train the attention-based model (CSJ corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -18,7 +18,7 @@ import torch.nn as nn
 
 sys.path.append(abspath('../../../'))
 from examples.csj.data.load_dataset_attention import Dataset
-from examples.csj.metrics.attention import do_eval_cer
+from examples.csj.metrics.cer import do_eval_cer
 from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
 from utils.directory import mkdir_join, mkdir
@@ -32,28 +32,28 @@ def do_train(model, params):
         model: the model to train
         params (dict): A dictionary of parameters
     """
-    if 'kanji' in params['label_type']:
-        map_file_path = '../metrics/mapping_files/' + \
-            params['label_type'] + '_' + params['train_data_size'] + '.txt'
-    elif 'kana' in params['label_type']:
-        map_file_path = '../metrics/mapping_files/' + \
+    if 'kana' in params['label_type']:
+        vocab_file_path = '../metrics/vocab_files/' + \
             params['label_type'] + '.txt'
+    else:
+        vocab_file_path = '../metrics/vocab_files/' + \
+            params['label_type'] + '_' + params['data_size'] + '.txt'
 
     # Load dataset
     train_data = Dataset(
-        data_type='train', train_data_size=params['train_data_size'],
-        label_type=params['label_type'], map_file_path=map_file_path,
+        data_type='train', data_size=params['data_size'],
+        label_type=params['label_type'], vocab_file_path=vocab_file_path,
         batch_size=params['batch_size'], max_epoch=params['num_epoch'],
         splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
-        num_gpu=1)
+        num_gpus=1)
     dev_data = Dataset(
-        data_type='dev', train_data_size=params['train_data_size'],
-        label_type=params['label_type'], map_file_path=map_file_path,
+        data_type='dev', data_size=params['data_size'],
+        label_type=params['label_type'], vocab_file_path=vocab_file_path,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=False, num_gpu=1)
+        sort_utt=False, num_gpus=1)
 
     # Count total parameters
     for name, num_params in model.num_params_dict.items():
@@ -95,22 +95,25 @@ def do_train(model, params):
     for step, (data, is_new_epoch) in enumerate(train_data):
 
         # Create feed dictionary for next mini batch (train)
-        inputs_train, labels_train, _, _, _ = data
-        inputs_train = np2var(
-            inputs_train, use_cuda=use_cuda)
-        labels_train = np2var(
-            labels_train, use_cuda=use_cuda, dtype='long')
+        inputs, labels, inputs_seq_len, labels_seq_len, _ = data
+        inputs = np2var(inputs, use_cuda=use_cuda)
+        labels = np2var(labels, use_cuda=use_cuda, dtype='long')
+        inputs_seq_len = np2var(inputs_seq_len, use_cuda=use_cuda, dtype='int')
+        labels_seq_len = np2var(labels_seq_len, use_cuda=use_cuda, dtype='int')
 
         # Clear gradients before
         optimizer.zero_grad()
 
         # Make prediction
-        outputs_train, att_weights = model(inputs_train[0], labels_train[0])
+        logits, att_weights, perm_indices = model(
+            inputs[0], inputs_seq_len[0], labels[0])
 
         # Compute loss
         loss_train = model.compute_loss(
-            outputs_train, labels_train[0], att_weights,
-            coverage_weight=params['coverage_weight'])
+            logits,
+            labels[0][perm_indices],
+            labels_seq_len[0][perm_indices],
+            att_weights, coverage_weight=params['coverage_weight'])
 
         # Compute gradient
         optimizer.zero_grad()
@@ -126,23 +129,29 @@ def do_train(model, params):
         if (step + 1) % params['print_step'] == 0:
 
             # Create feed dictionary for next mini batch (dev)
-            inputs_dev, labels_dev, _, _, _ = dev_data.next()[0]
-            inputs_dev = np2var(
-                inputs_dev, use_cuda=use_cuda, volatile=True)
-            labels_dev = np2var(
-                labels_dev, use_cuda=use_cuda, volatile=True, dtype='long')
+            inputs, labels, inputs_seq_len, labels_seq_len, _ = dev_data.next()[
+                0]
+            inputs = np2var(inputs, use_cuda=use_cuda, volatile=True)
+            labels = np2var(labels, use_cuda=use_cuda,
+                            volatile=True, dtype='long')
+            inputs_seq_len = np2var(inputs_seq_len, use_cuda=use_cuda,
+                                    volatile=True, dtype='int')
+            labels_seq_len = np2var(labels_seq_len, use_cuda=use_cuda,
+                                    volatile=True, dtype='int')
 
             # ***Change to evaluation mode***
             model.eval()
 
             # Make prediction
-            outputs_dev, att_weights = model(inputs_dev[0], labels_dev[0],
-                                             volatile=True)
+            outputs_dev, att_weights, perm_indices = model(
+                inputs[0], inputs_seq_len[0], labels[0], volatile=True)
 
             # Compute loss in the dev set
             loss_dev = model.compute_loss(
-                outputs_dev, labels_dev[0], att_weights,
-                coverage_weight=params['coverage_weight'])
+                logits,
+                labels[0][perm_indices],
+                labels_seq_len[0][perm_indices],
+                att_weights, coverage_weight=params['coverage_weight'])
             csv_steps.append(step)
             csv_loss_train.append(var2np(loss_train))
             csv_loss_dev.append(var2np(loss_dev))
@@ -176,15 +185,17 @@ def do_train(model, params):
                 print('=== Dev Data Evaluation ===')
                 cer_dev_epoch = do_eval_cer(
                     model=model,
+                    model_type='attention',
                     dataset=dev_data,
                     label_type=params['label_type'],
-                    train_data_size=params['train_data_size'],
+                    data_size=params['data_size'],
                     beam_width=1,
                     eval_batch_size=1)
                 print('  CER: %f %%' % (cer_dev_epoch * 100))
 
                 if cer_dev_epoch < cer_dev_best:
                     cer_dev_best = cer_dev_epoch
+                    not_improved_epoch = 0
                     print('■■■ ↑Best Score (CER)↑ ■■■')
 
                     # Save the model
@@ -236,15 +247,35 @@ def main(config_path, model_save_path):
     elif params['label_type'] == 'kana_divide':
         params['num_classes'] = 147
     elif params['label_type'] == 'kanji':
-        if params['train_data_size'] == 'train_subset':
-            params['num_classes'] = 2981
-        elif params['train_data_size'] == 'train_fullset':
-            params['num_classes'] = 3385
+        if params['data_size'] == 'subset':
+            params['num_classes'] = 2978
+        elif params['data_size'] == 'fullset':
+            params['num_classes'] = 3383
     elif params['label_type'] == 'kanji_divide':
-        if params['train_data_size'] == 'train_subset':
-            params['num_classes'] = 2982
-        elif params['train_data_size'] == 'train_fullset':
-            params['num_classes'] = 3386
+        if params['data_size'] == 'subset':
+            params['num_classes'] = 2979
+        elif params['data_size'] == 'fullset':
+            params['num_classes'] = 3384
+    elif params['label_type'] == 'word_freq1':
+        if params['data_size'] == 'subset':
+            params['num_classes'] = 39169
+        elif params['data_size'] == 'fullset':
+            params['num_classes'] = 66277
+    elif params['label_type'] == 'word_freq5':
+        if params['data_size'] == 'subset':
+            params['num_classes'] = 12877
+        elif params['data_size'] == 'fullset':
+            params['num_classes'] = 23528
+    elif params['label_type'] == 'word_freq10':
+        if params['data_size'] == 'subset':
+            params['num_classes'] = 8542
+        elif params['data_size'] == 'fullset':
+            params['num_classes'] = 15536
+    elif params['label_type'] == 'word_freq15':
+        if params['data_size'] == 'subset':
+            params['num_classes'] = 6726
+        elif params['data_size'] == 'fullset':
+            params['num_classes'] = 12111
     else:
         raise TypeError
 
@@ -286,7 +317,7 @@ def main(config_path, model_save_path):
 
     # Set process name
     setproctitle('pt_csj_att_' + params['label_type'] + '_' +
-                 params['train_data_size'] + '_' + params['attention_type'])
+                 params['data_size'] + '_' + params['attention_type'])
 
     model.name = 'enc' + params['encoder_type'] + \
         str(params['encoder_num_units'])
@@ -320,7 +351,7 @@ def main(config_path, model_save_path):
     # Set save path
     model.save_path = mkdir_join(
         model_save_path, 'attention', params['label_type'],
-        params['train_data_size'], model.name)
+        params['data_size'], model.name)
 
     # Reset model directory
     model_index = 0

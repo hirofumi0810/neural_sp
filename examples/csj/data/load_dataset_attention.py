@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Load dataset for the Attention model (CSJ corpus).
+"""Load dataset for the attention-based model (CSJ corpus).
    In addition, frame stacking and skipping are used.
    You can use the multi-GPU version.
 """
@@ -19,20 +19,20 @@ from utils.dataset.attention import DatasetBase
 
 class Dataset(DatasetBase):
 
-    def __init__(self, data_type, train_data_size, label_type, batch_size,
-                 map_file_path, max_epoch=None, splice=1,
+    def __init__(self, data_type, data_size, label_type, batch_size,
+                 vocab_file_path,
+                 max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
                  shuffle=False, sort_utt=True, reverse=False,
-                 sort_stop_epoch=None,
-                 progressbar=False, num_gpu=1):
+                 sort_stop_epoch=None, num_gpus=1):
         """A class for loading dataset.
         Args:
             data_type (string): train or dev or eval1 or eval2 or eval3
-            train_data_size (string): train_subset or train_fullset
-            label_type (string): kanji or kanji_divide or kana or
-                kana_divide
+            data_size (string): train_subset or train_fullset
+            label_type (string): kanji or kanji_divide or kana or kana_divide
+                or word_freq1 or word_freq5 or word_freq10 or word_freq15
             batch_size (int): the size of mini-batch
-            map_file_path (string): path to the mapping file
+            vocab_file_path (string): path to the vocabulary file
             max_epoch (int, optional): the max epoch. None means infinite loop.
             splice (int, optional): frames to splice. Default is 1 frame.
             num_stack (int, optional): the number of frames to stack
@@ -45,9 +45,9 @@ class Dataset(DatasetBase):
                 descending order
             sort_stop_epoch (int, optional): After sort_stop_epoch, training
                 will revert back to a random order
-            progressbar (bool, optional): if True, visualize progressbar
+            num_gpus (optional, int): the number of GPUs
         """
-        super(Dataset, self).__init__(map_file_path=map_file_path)
+        super(Dataset, self).__init__(vocab_file_path=vocab_file_path)
 
         if data_type in ['eval1', 'eval2', 'eval3']:
             self.is_test = True
@@ -55,9 +55,9 @@ class Dataset(DatasetBase):
             self.is_test = False
 
         self.data_type = data_type
-        self.train_data_size = train_data_size
+        self.data_size = data_size
         self.label_type = label_type
-        self.batch_size = batch_size * num_gpu
+        self.batch_size = batch_size * num_gpus
         self.max_epoch = max_epoch
         self.splice = splice
         self.num_stack = num_stack
@@ -65,34 +65,38 @@ class Dataset(DatasetBase):
         self.shuffle = shuffle
         self.sort_utt = sort_utt
         self.sort_stop_epoch = sort_stop_epoch
-        self.progressbar = progressbar
-        self.num_gpu = num_gpu
+        self.num_gpus = num_gpus
 
         # paths where datasets exist
         dataset_root = ['/data/inaguma/csj',
                         '/n/sd8/inaguma/corpus/csj/dataset']
 
         input_path = join(dataset_root[0], 'inputs',
-                          train_data_size, data_type)
+                          data_size, data_type)
         # NOTE: ex.) save_path:
-        # csj_dataset_path/inputs/train_data_size/data_type/speaker/***.npy
+        # csj/dataset/inputs/data_size/data_type/speaker/*.npy
         label_path = join(dataset_root[0], 'labels',
-                          train_data_size, data_type, label_type)
+                          data_size, data_type, label_type)
         # NOTE: ex.) save_path:
-        # csj_dataset_path/labels/train_data_size/data_type/label_type/speaker/***.npy
+        # csj/dataset/labels/data_size/data_type/label_type/speaker/*.npy
 
         # Load the frame number dictionary
-        if isfile(join(input_path, 'frame_num.pickle')):
-            with open(join(input_path, 'frame_num.pickle'), 'rb') as f:
-                self.frame_num_dict = pickle.load(f)
-        else:
-            dataset_root.pop(0)
-            input_path = join(dataset_root[0], 'inputs',
-                              train_data_size, data_type)
-            label_path = join(dataset_root[0], 'labels',
-                              train_data_size, data_type, label_type)
-            with open(join(input_path, 'frame_num.pickle'), 'rb') as f:
-                self.frame_num_dict = pickle.load(f)
+        for _ in range(len(dataset_root)):
+            if isfile(join(input_path, 'frame_num.pickle')):
+                with open(join(input_path, 'frame_num.pickle'), 'rb') as f:
+                    self.frame_num_dict = pickle.load(f)
+                break
+            else:
+                if len(dataset_root) == 0:
+                    raise ValueError('Dataset was not found.')
+
+                dataset_root.pop(0)
+                input_path = join(
+                    dataset_root[0], 'inputs', data_size, data_type)
+                label_path = join(
+                    dataset_root[0], 'labels', data_size, data_type, label_type)
+                with open(join(input_path, 'frame_num.pickle'), 'rb') as f:
+                    self.frame_num_dict = pickle.load(f)
 
         # Sort paths to input & label
         axis = 1 if sort_utt else 0
@@ -102,10 +106,6 @@ class Dataset(DatasetBase):
 
         input_paths, label_paths = [], []
         for utt_name, frame_num in frame_num_tuple_sorted:
-            # Exclude long utteraces (more than 20s)
-            if frame_num >= 2000:
-                continue
-
             speaker = utt_name.split('_')[0]
             # ex.) utt_name: speaker_uttindex
             input_paths.append(join(input_path, speaker, utt_name + '.npy'))

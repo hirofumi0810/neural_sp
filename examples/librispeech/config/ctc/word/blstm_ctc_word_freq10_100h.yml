@@ -1,7 +1,8 @@
 param:
   # corpus
-  corpus: timit
-  label_type: phone61
+  corpus: librispeech
+  label_type: word_freq10
+  data_size: 100h
 
   # features
   feature: fbank
@@ -14,31 +15,30 @@ param:
   # topology
   encoder_type: lstm
   bidirectional: True
-  num_units: 256
+  num_units: 320
   num_proj: 0
   num_layers: 5
   bottleneck_dim: 0
 
   # optimization
-  batch_size: 50
-  optimizer: adam
+  batch_size: 10
+  optimizer: rmsprop
   learning_rate: 1e-3
-  num_epoch: 100
+  num_epoch: 30
 
   # regularization
   parameter_init: 0.1
   clip_grad_norm: 5.0
   clip_activation: 50
-  dropout: 0.5
+  dropout: 0.2
   weight_decay: 0
-  decay_start_epoch: 20
+  decay_start_epoch: 4
   decay_rate: 0.5
-  decay_patient_epoch: 5
-  sort_stop_epoch: 20
-  not_improved_patient_epoch: 10
+  decay_patient_epoch: 1
+  sort_stop_epoch: 6
+  not_improved_patient_epoch: 3
 
   logits_temperature: 1
 
-  eval_start_epoch: 10
-  print_step: 10
-  beam_width: 20
+  eval_start_epoch: 2
+  print_step: 200

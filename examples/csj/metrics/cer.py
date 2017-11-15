@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Define evaluation method for the Attention-based model (CSJ corpus)."""
+"""Define evaluation method by Character Error Rate (CSJ corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -15,14 +15,15 @@ from utils.io.variable import np2var
 from utils.evaluation.edit_distance import compute_cer
 
 
-def do_eval_cer(model, dataset, label_type, train_data_size, beam_width,
+def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
                 is_test=False, eval_batch_size=None, progressbar=False):
     """Evaluate trained model by Character Error Rate.
     Args:
         model: the model to evaluate
+        model_type (string): ctc or attention
         dataset: An instance of a `Dataset' class
         label_type (string): kanji or kanji or kanji_divide or kana_divide
-        train_data_size (string): train_fullset or train_subset
+        data_size (string): fullset or subset
         beam_width: (int): the size of beam
         is_test (bool, optional): set to True when evaluating by the test set
         eval_batch_size (int, optional): the batch size when evaluating the model
@@ -40,12 +41,12 @@ def do_eval_cer(model, dataset, label_type, train_data_size, beam_width,
         dataset.batch_size = eval_batch_size
 
     if 'kanji' in label_type:
-        map_file_path = '../metrics/mapping_files/' + \
-            label_type + '_' + train_data_size + '.txt'
+        vocab_file_path = '../metrics/vocab_files/' + \
+            label_type + '_' + data_size + '.txt'
     elif 'kana' in label_type:
-        map_file_path = '../metrics/mapping_files/' + label_type + '.txt'
+        vocab_file_path = '../metrics/vocab_files/' + label_type + '.txt'
 
-    idx2char = Idx2char(map_file_path=map_file_path)
+    idx2char = Idx2char(vocab_file_path)
 
     cer_mean = 0
     if progressbar:
@@ -53,25 +54,36 @@ def do_eval_cer(model, dataset, label_type, train_data_size, beam_width,
     for data, is_new_epoch in dataset:
 
         # Create feed dictionary for next mini-batch
-        inputs, labels_true, _, labels_seq_len, _ = data
-        inputs = np2var(
-            inputs, use_cuda=model.use_cuda, volatile=True)
+        if model_type in ['ctc', 'attention']:
+            inputs, labels, inputs_seq_len, labels_seq_len, _ = data
+        else:
+            raise NotImplementedError
+        inputs = np2var(inputs, use_cuda=model.use_cuda, volatile=True)
+        inputs_seq_len = np2var(
+            inputs_seq_len, use_cuda=model.use_cuda, volatile=True, dtype='int')
 
         batch_size = inputs[0].size(0)
 
         # Decode
-        labels_pred, _ = model.decode_infer(
-            inputs[0], beam_width=beam_width)
+        if model_type == 'attention':
+            labels_pred, _ = model.decode_infer(
+                inputs[0], beam_width=beam_width)
+        elif model_type == 'ctc':
+            logits, perm_indices = model(inputs[0], inputs_seq_len[0])
+            labels_pred = model.decode(
+                logits, inputs_seq_len[0][perm_indices], beam_width=beam_width)
+            labels_pred -= 1
+            # NOTE: index 0 is reserved for blank
 
         for i_batch in range(batch_size):
 
             # Convert from list of index to string
             if is_test:
-                str_true = labels_true[0][i_batch][0]
+                str_true = labels[0][i_batch][0]
                 # NOTE: transcript is seperated by space('_')
             else:
                 str_true = idx2char(
-                    labels_true[0][i_batch][1:labels_seq_len[0][i_batch] - 1])
+                    labels[0][i_batch][1:labels_seq_len[0][i_batch] - 1])
             str_pred = idx2char(labels_pred[i_batch]).split('>')[0]
             # NOTE: Trancate by <EOS>
 

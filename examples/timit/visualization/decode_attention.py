@@ -82,8 +82,7 @@ def decode(model, model_type, dataset, label_type, beam_width,
         is_test (bool, optional):
         save_path (string): path to save decoding results
     """
-    idx2phone = Idx2phone(
-        vocab_file_path='../metrics/vocab_files/' + label_type + '.txt')
+    idx2phone = Idx2phone('../metrics/vocab_files/' + label_type + '.txt')
 
     if save_path is not None:
         sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
@@ -92,14 +91,14 @@ def decode(model, model_type, dataset, label_type, beam_width,
 
         # Create feed dictionary for next mini batch
         if model_type in ['ctc', 'attention']:
-            inputs, labels_true, inputs_seq_len, labels_seq_len, input_names = data
+            inputs, labels, inputs_seq_len, labels_seq_len, input_names = data
         else:
             raise NotImplementedError
         inputs = np2var(inputs, use_cuda=model.use_cuda, volatile=True)
 
         batch_size = inputs[0].size(0)
 
-        # Evaluate by 39 phones
+        # Decode
         if model_type == 'attention':
             labels_pred, _ = model.decode_infer(
                 inputs[0], beam_width=beam_width)
@@ -115,10 +114,10 @@ def decode(model, model_type, dataset, label_type, beam_width,
 
             # Convert from list of index to string
             if is_test:
-                str_true = labels_true[0][i_batch][0]
+                str_true = labels[0][i_batch][0]
             else:
                 str_true = idx2phone(
-                    labels_true[0][i_batch][1:labels_seq_len[0][i_batch] - 1])
+                    labels[0][i_batch][1:labels_seq_len[0][i_batch] - 1])
                 # NOTE: Exclude <SOS> and <EOS>
             str_pred = idx2phone(labels_pred[i_batch]).split('>')[0]
             # NOTE: Trancate by <EOS>

@@ -2,7 +2,7 @@ param:
   # corpus
   corpus: csj
   label_type: kanji
-  train_data_size: train_subset
+  data_size: subset
 
   # features
   feature: fbank
@@ -29,7 +29,7 @@ param:
 
   # optimization
   batch_size: 64
-  optimizer: rmsprop
+  optimizer: adam
   learning_rate: 1e-3
   num_epoch: 30
 
@@ -54,6 +54,6 @@ param:
   input_feeding_approach: False
   coverage_weight: 0
 
-  eval_start_epoch: 5
+  eval_start_epoch: 3
   print_step: 1000
   beam_width: 20

@@ -98,6 +98,9 @@ def do_train(model, params):
             inputs_seq_len, use_cuda=use_cuda, dtype='int')
         labels_seq_len = np2var(labels_seq_len, use_cuda=use_cuda, dtype='int')
 
+        labels += 1
+        # NOTE: index 0 is reserved for blank
+
         # Clear gradients before
         optimizer.zero_grad()
 
@@ -134,6 +137,9 @@ def do_train(model, params):
                 inputs_seq_len, use_cuda=use_cuda, volatile=True, dtype='int')
             labels_seq_len = np2var(
                 labels_seq_len, use_cuda=use_cuda, volatile=True, dtype='int')
+
+            labels += 1
+            # NOTE: index 0 is reserved for blank
 
             # ***Change to evaluation mode***
             model.eval()
@@ -172,6 +178,9 @@ def do_train(model, params):
             plot_loss(csv_loss_train, csv_loss_dev, csv_steps,
                       save_path=model.save_path)
 
+            saved_path = model.save_checkpoint(
+                model.save_path, epoch=train_data.epoch)
+
             if train_data.epoch >= params['eval_start_epoch']:
                 # ***Change to evaluation mode***
                 model.eval()
@@ -192,7 +201,7 @@ def do_train(model, params):
                     not_improved_epoch = 0
                     print('■■■ ↑Best Score (PER)↑ ■■■')
 
-                    # # Save the model
+                    # Save the model
                     saved_path = model.save_checkpoint(
                         model.save_path, epoch=train_data.epoch)
                     print("=> Saved checkpoint (epoch:%d): %s" %

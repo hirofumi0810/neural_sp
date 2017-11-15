@@ -64,9 +64,9 @@ class Dataset(DatasetBase):
                         '/n/sd8/inaguma/corpus/timit/dataset']
 
         input_path = join(dataset_root[0], 'inputs', data_type)
-        # NOTE: ex.) timit/inputs/data_type/*.npy
+        # NOTE: ex.) timit/dataset/inputs/data_type/*.npy
         label_path = join(dataset_root[0], 'labels', data_type, label_type)
-        # NOTE: ex.) timit/labels/data_type/label_type/*.npy
+        # NOTE: ex.) timit/dataset/labels/data_type/label_type/*.npy
 
         # Load the frame number dictionary
         for _ in range(len(dataset_root)):

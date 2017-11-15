@@ -108,12 +108,12 @@ def do_train(model, params):
         optimizer.zero_grad()
 
         # Make prediction
-        outputs, att_weights, perm_indices = model(
+        logits, att_weights, perm_indices = model(
             inputs[0], inputs_seq_len[0], labels[0])
 
         # Compute loss
         loss_train = model.compute_loss(
-            outputs,
+            logits,
             labels[0][perm_indices],
             labels_seq_len[0][perm_indices],
             att_weights, coverage_weight=params['coverage_weight'])
@@ -146,12 +146,12 @@ def do_train(model, params):
             model.eval()
 
             # Make prediction
-            outputs, att_weights, perm_indices = model(
+            logits, att_weights, perm_indices = model(
                 inputs[0], inputs_seq_len[0], labels[0], volatile=True)
 
             # Compute loss in the dev set
             loss_dev = model.compute_loss(
-                outputs,
+                logits,
                 labels[0][perm_indices],
                 labels_seq_len[0][perm_indices],
                 att_weights, coverage_weight=params['coverage_weight'])

@@ -28,6 +28,15 @@ class Base(object):
                     if line != '':
                         self.num_vocab += 1
 
+        self.num_vocab_sub = 0
+        if 'vocab_file_path_sub' in kwargs.keys():
+            # Read the vocabulary file
+            with open(kwargs['vocab_file_path_sub'], 'r') as f:
+                for line in f:
+                    line = line.strip().split()
+                    if line != '':
+                        self.num_vocab_sub += 1
+
     def __len__(self):
         return len(self.input_paths)
 
@@ -43,8 +52,16 @@ class Base(object):
         return self.num_vocab
 
     @property
+    def sos_index_sub(self):
+        return self.num_vocab_sub
+
+    @property
     def eos_index(self):
         return self.num_vocab + 1
+
+    @property
+    def eos_index_sub(self):
+        return self.num_vocab_sub + 1
 
     @property
     def ctc_padded_value(self):

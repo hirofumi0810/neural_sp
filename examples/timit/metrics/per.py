@@ -43,9 +43,9 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
     eval_label_type = dataset.label_type
 
     idx2phone_train = Idx2phone(
-        vocab_file_path='../metrics/vocab_files/' + train_label_type + '.txt')
+        '../metrics/vocab_files/' + train_label_type + '.txt')
     idx2phone_eval = Idx2phone(
-        vocab_file_path='../metrics/vocab_files/' + eval_label_type + '.txt')
+        '../metrics/vocab_files/' + eval_label_type + '.txt')
     map2phone39_train = Map2phone39(
         label_type=train_label_type,
         map_file_path='../metrics/phone2phone.txt')
@@ -60,10 +60,12 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
 
         # Create feed dictionary for next mini-batch
         if model_type in ['ctc', 'attention']:
-            inputs, labels_true, inputs_seq_len, labels_seq_len, _ = data
+            inputs, labels, inputs_seq_len, labels_seq_len, _ = data
         else:
             raise NotImplementedError
         inputs = np2var(inputs, use_cuda=model.use_cuda, volatile=True)
+        inputs_seq_len = np2var(
+            inputs_seq_len, use_cuda=model.use_cuda, volatile=True, dtype='int')
 
         batch_size = inputs[0].size(0)
 
@@ -72,10 +74,11 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
             labels_pred, _ = model.decode_infer(
                 inputs[0], inputs_seq_len[0], beam_width=beam_width)
         elif model_type == 'ctc':
-            inputs_seq_len = np2var(
-                inputs_seq_len, use_cuda=model.use_cuda, volatile=True, dtype='int')
+            logits, perm_indices = model(inputs[0], inputs_seq_len[0])
             labels_pred = model.decode(
-                inputs[0], inputs_seq_len[0], beam_width=beam_width)
+                logits, inputs_seq_len[0][perm_indices], beam_width=beam_width)
+            labels_pred -= 1
+            # NOTE: index 0 is reserved for blank
 
         for i_batch in range(batch_size):
             ##############################
@@ -95,11 +98,11 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
             # Reference
             ##############################
             if is_test:
-                phone_true_list = labels_true[0][i_batch][0].split(' ')
+                phone_true_list = labels[0][i_batch][0].split(' ')
             else:
                 # Convert from index to phone (-> list of phone strings)
                 phone_true_list = idx2phone_eval(
-                    labels_true[0][i_batch][1:labels_seq_len[0][i_batch] - 1]).split(' ')
+                    labels[0][i_batch][1:labels_seq_len[0][i_batch] - 1]).split(' ')
                 # NOTE: Exclude <SOS> and <EOS>
 
             # Mapping to 39 phones (-> list of phone strings)

@@ -57,7 +57,7 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
 
         # Create feed dictionary for next mini-batch
         if model_type in ['ctc', 'attention']:
-            inputs, labels_true, inputs_seq_len, labels_seq_len, _ = data
+            inputs, labels, inputs_seq_len, labels_seq_len, _ = data
         else:
             raise NotImplementedError
         inputs = np2var(inputs, use_cuda=model.use_cuda, volatile=True)
@@ -71,18 +71,21 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
             labels_pred, _ = model.decode_infer(
                 inputs[0], beam_width=beam_width)
         elif model_type == 'ctc':
+            logits, perm_indices = model(inputs[0], inputs_seq_len[0])
             labels_pred = model.decode(
-                inputs[0], inputs_seq_len[0], beam_width=beam_width)
+                logits, inputs_seq_len[0][perm_indices], beam_width=beam_width)
+            labels_pred -= 1
+            # NOTE: index 0 is reserved for blank
 
         for i_batch in range(batch_size):
 
             # Convert from list of index to string
             if is_test:
-                str_true = labels_true[0][i_batch][0]
+                str_true = labels[0][i_batch][0]
                 # NOTE: transcript is seperated by space('_')
             else:
                 str_true = idx2char(
-                    labels_true[0][i_batch][1:labels_seq_len[0][i_batch] - 1])
+                    labels[0][i_batch][1:labels_seq_len[0][i_batch] - 1])
             str_pred = idx2char(labels_pred[i_batch]).split('>')[0]
             # NOTE: Trancate by <EOS>
 

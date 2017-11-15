@@ -12,7 +12,7 @@ class Map2phone39(object):
     """Map from 61 or 48 phones to 39 phones.
     Args:
         label_type (string): phone48 or phone61
-        map_file_path: path to the mapping file
+        map_file_path (string): path to the mapping file
     """
 
     def __init__(self, label_type, map_file_path):
