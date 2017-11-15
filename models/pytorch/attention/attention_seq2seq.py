@@ -267,7 +267,7 @@ class AttentionSeq2seq(ModelBase):
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            outputs (FloatTensor): A tensor of size
+            logits (FloatTensor): A tensor of size
                 `[B, T_out, num_classes (including <SOS> and <EOS>)]`
             attention_weights (FloatTensor): A tensor of size
                 `[B, T_out, T_in]`
@@ -276,9 +276,9 @@ class AttentionSeq2seq(ModelBase):
         encoder_outputs, encoder_final_state, perm_indices = self._encode(
             inputs, inputs_seq_len, volatile)
 
-        outputs, attention_weights = self._decode_train(
+        logits, attention_weights = self._decode_train(
             encoder_outputs, labels[perm_indices], encoder_final_state)
-        return outputs, attention_weights, perm_indices
+        return logits, attention_weights, perm_indices
 
     def _encode(self, inputs, inputs_seq_len, volatile):
         """Encode acoustic features.
@@ -363,7 +363,7 @@ class AttentionSeq2seq(ModelBase):
             encoder_final_state (FloatTensor, optional): A tensor of size
                 `[1, B, encoder_num_units]`
         Returns:
-            outputs (FloatTensor): A tensor of size `[B, T_out, num_classes]`
+            logits (FloatTensor): A tensor of size `[B, T_out, num_classes]`
             attention_weights (FloatTensor): A tensor of size
                 `[B, T_out, T_in]`
         """
@@ -376,7 +376,7 @@ class AttentionSeq2seq(ModelBase):
             self.init_dec_state_with_enc_state,
             encoder_final_state)
 
-        outputs = []
+        logits = []
         attention_weights = []
         attention_weights_step = None
 
@@ -393,20 +393,20 @@ class AttentionSeq2seq(ModelBase):
                 # Input-feeding approach
                 output = self.decoder_proj_layer(
                     torch.cat([decoder_outputs, context_vector], dim=-1))
-                output = self.fc(F.tanh(output))
+                logits_step = self.fc(F.tanh(output))
             else:
-                output = self.fc(decoder_outputs + context_vector)
+                logits_step = self.fc(decoder_outputs + context_vector)
 
             attention_weights.append(attention_weights_step)
-            outputs.append(output)
+            logits.append(logits_step)
 
         # Concatenate in T_out-dimension
-        outputs = torch.cat(outputs, dim=1)
+        logits = torch.cat(logits, dim=1)
         attention_weights = torch.stack(attention_weights, dim=1)
         # NOTE; attention_weights in the training stage may be used for computing the
         # coverage, so do not convert to numpy yet.
 
-        return outputs, attention_weights
+        return logits, attention_weights
 
     def _init_decoder_state(self, init_dec_state_with_enc_state,
                             encoder_final_state=None, volatile=False):

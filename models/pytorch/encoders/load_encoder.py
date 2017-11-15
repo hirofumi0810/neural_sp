@@ -9,7 +9,7 @@ from __future__ import print_function
 
 from models.pytorch.encoders.rnn import RNNEncoder
 from models.pytorch.encoders.pyramid_rnn import PyramidRNNEncoder
-from models.pytorch.encoders.multitask_rnn import MultitaskRNNEncoder
+from models.pytorch.encoders.hierarchical_rnn import HierarchicalRNNEncoder
 
 # from models.pytorch.encoders.vgg import VGGEncoder
 # from models.pytorch.encoders.resnet import ResNetEncoder
@@ -22,9 +22,9 @@ ENCODERS = {
     "plstm": PyramidRNNEncoder,
     "pgru": PyramidRNNEncoder,
     "prnn": PyramidRNNEncoder,
-    "lstm_multitask": MultitaskRNNEncoder,
-    "gru_multitask": MultitaskRNNEncoder,
-    "rnn_multitask": MultitaskRNNEncoder,
+    "lstm_hierarchical": HierarchicalRNNEncoder,
+    "gru_hierarchical": HierarchicalRNNEncoder,
+    "rnn_hierarchical": HierarchicalRNNEncoder,
 
     # "vgg": VGGEncoder,
     # "resnet": ResNetEncoder,

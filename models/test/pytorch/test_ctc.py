@@ -142,7 +142,8 @@ class TestCTC(unittest.TestCase):
 
             # Compute loss
             loss = model.compute_loss(
-                logits, labels[perm_indices],
+                logits,
+                labels[perm_indices],
                 inputs_seq_len[perm_indices],
                 labels_seq_len[perm_indices])
 
@@ -170,14 +171,14 @@ class TestCTC(unittest.TestCase):
                 # Compute accuracy
                 if label_type == 'char':
                     str_true = idx2char(
-                        var2np(labels[0, :var2np(labels_seq_len)[0]] - 1))
+                        var2np(labels[perm_indices][0, :var2np(labels_seq_len[perm_indices])[0]] - 1))
                     str_pred = idx2char(labels_pred[0] - 1)
                     ler = compute_cer(ref=str_true.replace('_', ''),
                                       hyp=str_pred.replace('_', ''),
                                       normalize=True)
                 elif label_type == 'word':
                     str_true = idx2word(
-                        var2np(labels[0, :var2np(labels_seq_len)[0]] - 1))
+                        var2np(labels[perm_indices][0, :var2np(labels_seq_len[perm_indices])[0]] - 1))
                     str_pred = idx2word(labels_pred[0] - 1)
                     ler = compute_wer(ref=str_true.split('_'),
                                       hyp=str_pred.split('_'),

@@ -16,7 +16,7 @@ from models.pytorch.attention.attention_layer import AttentionMechanism
 from utils.io.variable import var2np
 
 
-class MultitaskAttentionSeq2seq(AttentionSeq2seq):
+class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
     def __init__(self,
                  input_size,
@@ -58,7 +58,7 @@ class MultitaskAttentionSeq2seq(AttentionSeq2seq):
                  sigmoid_smoothing=False,
                  input_feeding_approach=False):
 
-        super(MultitaskAttentionSeq2seq, self).__init__(
+        super(HierarchicalAttentionSeq2seq, self).__init__(
             input_size=input_size,
             encoder_type=encoder_type,
             encoder_bidirectional=encoder_bidirectional,
@@ -104,14 +104,14 @@ class MultitaskAttentionSeq2seq(AttentionSeq2seq):
         self.max_decode_length_sub = max_decode_length_sub
 
         # Common setting
-        self.name = 'pt_multitask_attention_seq2seq'
+        self.name = 'pt_hierarchical_attention_seq2seq'
 
         #########################
         # Encoder
         # NOTE: overide encoder
         #########################
         # Load an instance
-        encoder = load(encoder_type=encoder_type + '_multitask')
+        encoder = load(encoder_type=encoder_type + '_hierarchical')
 
         # Call the encoder function
         if encoder_type in ['lstm', 'gru', 'rnn']:
@@ -193,10 +193,11 @@ class MultitaskAttentionSeq2seq(AttentionSeq2seq):
         # NOTE: <SOS> is removed because the decoder never predict <SOS> class
         # TODO: self.num_classes_sub - 1
 
-    def forward(self, inputs, labels, labels_sub, volatile=False):
-        """
+    def forward(self, inputs, inputs_seq_len, labels, labels_sub, volatile=False):
+        """Forward computation.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
+            inputs_seq_len (IntTensor): A tensor of size `[B]`
             labels (LongTensor): labels in the main task.
                 A tensor of size `[B, T_out]`
             labels_sub (LongTensor): labels in the sub task.
@@ -204,34 +205,36 @@ class MultitaskAttentionSeq2seq(AttentionSeq2seq):
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            outputs (FloatTensor): outputs in the main task.
+            logits (FloatTensor): logits in the main task.
                 A tensor of size
                 `[B, T_out, num_classes (including <SOS> and <EOS>)]`
             attention_weights (FloatTensor): attention weights in the main task.
                 A tensor of size `[B, T_out, T_in]`
-            outputs_sub (FloatTensor): outputs in the sub task.
+            logits_sub (FloatTensor): logits in the sub task.
                 A tensor of size
                 `[B, T_out_sub, num_classes_sub (including <SOS> and <EOS>)]`
             attention_weights_sub (FloatTensor): attention weights in the sub task.
                 A tensor of size `[B, T_out_sub, T_in]`
+            perm_indices ():
         """
-        encoder_outputs, encoder_final_state, encoder_outputs_sub, encoder_final_state_sub = self._encode(
-            inputs, volatile)
+        encoder_outputs, encoder_final_state, encoder_outputs_sub, encoder_final_state_sub, perm_indices = self._encode(
+            inputs, inputs_seq_len, volatile)
 
         # main task
-        outputs, attention_weights = self._decode_train(
+        logits, attention_weights = self._decode_train(
             encoder_outputs, labels, encoder_final_state)
 
         # sub task
-        outputs_sub, attention_weights_sub = self._decode_train_sub(
+        logits_sub, attention_weights_sub = self._decode_train_sub(
             encoder_outputs_sub, labels_sub, encoder_final_state_sub)
 
-        return outputs, attention_weights, outputs_sub, attention_weights_sub
+        return logits, attention_weights, logits_sub, attention_weights_sub, perm_indices
 
-    def _encode(self, inputs, volatile):
+    def _encode(self, inputs, inputs_seq_len, volatile):
         """Encode acoustic features.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
+            inputs_seq_len (IntTensor): A tensor of size `[B]`
             volatile (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
@@ -243,9 +246,10 @@ class MultitaskAttentionSeq2seq(AttentionSeq2seq):
                 `[B, T_in, encoder_num_units]`
             encoder_final_state_sub (FloatTensor): A tensor of size
                 `[1, B, decoder_num_units_sub (may be equal to encoder_num_units)]`
+            perm_indices_sub ():
         """
-        encoder_outputs, encoder_final_state, encoder_outputs_sub, encoder_final_state_sub = self.encoder(
-            inputs, volatile)
+        encoder_outputs, encoder_final_state, encoder_outputs_sub, encoder_final_state_sub, perm_indices = self.encoder(
+            inputs, inputs_seq_len, volatile, mask_sequence=True)
         # NOTE: encoder_outputs:
         # `[B, T_in, encoder_num_units * encoder_num_directions]`
         # encoder_final_state: `[1, B, encoder_num_units]`
@@ -281,19 +285,22 @@ class MultitaskAttentionSeq2seq(AttentionSeq2seq):
             encoder_final_state_sub = encoder_final_state_sub.view(
                 1, batch_size, -1)
 
-        return encoder_outputs, encoder_final_state, encoder_outputs_sub, encoder_final_state_sub
+        return encoder_outputs, encoder_final_state, encoder_outputs_sub, encoder_final_state_sub, perm_indices
 
-    def compute_loss(self, outputs, labels, outputs_sub, labels_sub,
+    def compute_loss(self, logits, labels, labels_seq_len,
+                     logits_sub, labels_sub, labels_seq_len_sub,
                      attention_weights=None, attention_weights_sub=None,
                      coverage_weight=0):
         """Compute multitask loss.
         Args:
-            outputs (FloatTensor): A tensor of size `[B, T_out, num_classes]`
-            outputs_sub (FloatTensor): A tensor of size
-                `[B, T_out_sub, num_classes_sub]`
+            logits (FloatTensor): A tensor of size `[B, T_out, num_classes]`
             labels (LongTensor): A tensor of size `[B, T_out]`
+            labels_seq_len (IntTensor): A tensor of size `[B]`
             labels_sub (LongTensor): labels in the sub task.
                 A tensor of size `[B, T_out_sub]`
+            logits_sub (FloatTensor): A tensor of size
+                `[B, T_out_sub, num_classes_sub]`
+            labels_seq_len_sub (IntTensor): A tensor of size `[B]`
             attention_weights (FloatTensor): A tensor of size
                 `[B, T_out, T_in]`
             attention_weights_sub (FloatTensor): A tensor of size
@@ -302,18 +309,21 @@ class MultitaskAttentionSeq2seq(AttentionSeq2seq):
         Returns:
             loss (FloatTensor): A tensor of size `[]`
         """
-        batch_size, _, num_classes = outputs.size()
-        outputs = outputs.view((-1, num_classes))
+        batch_size, _, num_classes = logits.size()
+        logits = logits.view((-1, num_classes))
         labels = labels[:, 1:].contiguous().view(-1)
 
-        _, _, num_classes_sub = outputs_sub.size()
-        outputs_sub = outputs_sub.view((-1, num_classes_sub))
+        _, _, num_classes_sub = logits_sub.size()
+        logits_sub = logits_sub.view((-1, num_classes_sub))
         labels_sub = labels_sub[:, 1:].contiguous().view(-1)
 
-        loss = F.cross_entropy(outputs, labels,
+        loss = F.cross_entropy(logits, labels,
+                               ignore_index=self.sos_index,
                                size_average=False)
-        loss += F.cross_entropy(outputs_sub, labels_sub,
+        loss += F.cross_entropy(logits_sub, labels_sub,
+                                ignore_index=self.sos_index_sub,
                                 size_average=False)
+        # NOTE: labels are padded by sos_index
 
         # Average the loss by mini-batch
         loss /= batch_size
@@ -335,7 +345,7 @@ class MultitaskAttentionSeq2seq(AttentionSeq2seq):
             encoder_final_state (FloatTensor, optional): A tensor of size
                 `[1, B, encoder_num_units]`
         Returns:
-            outputs (FloatTensor): A tensor of size `[B, T_out_sub, num_classes]`
+            logits (FloatTensor): A tensor of size `[B, T_out_sub, num_classes]`
             attention_weights_sub (FloatTensor): A tensor of size
                 `[B, T_out_sub, T_in]`
         """
@@ -348,7 +358,7 @@ class MultitaskAttentionSeq2seq(AttentionSeq2seq):
             self.init_dec_state_with_enc_state,
             encoder_final_state)
 
-        outputs = []
+        logits = []
         attention_weights = []
         attention_weights_step = None
 
@@ -365,20 +375,20 @@ class MultitaskAttentionSeq2seq(AttentionSeq2seq):
                 # Input-feeding approach
                 output = self.decoder_proj_layer_sub(
                     torch.cat([decoder_outputs, context_vector], dim=-1))
-                output = self.fc_sub(F.tanh(output))
+                logits_step = self.fc_sub(F.tanh(output))
             else:
-                output = self.fc_sub(decoder_outputs + context_vector)
+                logits_step = self.fc_sub(decoder_outputs + context_vector)
 
             attention_weights.append(attention_weights_step)
-            outputs.append(output)
+            logits.append(logits_step)
 
         # Concatenate in T_out-dimension
-        outputs = torch.cat(outputs, dim=1)
+        logits = torch.cat(logits, dim=1)
         attention_weights = torch.stack(attention_weights, dim=1)
         # NOTE; attention_weights in the training stage may be used for computing the
         # coverage, so do not convert to numpy yet.
 
-        return outputs, attention_weights
+        return logits, attention_weights
 
     def _decode_step_sub(self, encoder_outputs, y, decoder_state,
                          attention_weights_step):
@@ -414,30 +424,33 @@ class MultitaskAttentionSeq2seq(AttentionSeq2seq):
 
         return decoder_outputs, decoder_state, context_vector, attention_weights_step
 
-    def decode_infer_sub(self, inputs, beam_width=1):
+    def decode_infer_sub(self, inputs, inputs_seq_len, beam_width=1):
         """
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
+            inputs_seq_len (IntTensor): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
         Returns:
 
         """
         if beam_width == 1:
-            return self._decode_infer_greedy_sub(inputs)
+            return self._decode_infer_greedy_sub(inputs, inputs_seq_len)
         else:
-            return self._decode_infer_beam_sub(inputs, beam_width=beam_width)
+            return self._decode_infer_beam_sub(
+                inputs, inputs_seq_len, beam_width)
 
-    def _decode_infer_greedy_sub(self, inputs):
+    def _decode_infer_greedy_sub(self, inputs, inputs_seq_len):
         """Greedy decoding when inference.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
+            inputs_seq_len (IntTensor): A tensor of size `[B]`
         Returns:
             argmaxs (np.ndarray): A tensor of size `[B, T_out_sub]`
             attention_weights (np.ndarray): A tensor of size
                 `[B, T_out_sub, T_in]`
         """
         encoder_outputs, encoder_final_state = self._encode(
-            inputs, volatile=True)[2:]
+            inputs, inputs_seq_len, volatile=True)[2:4]
 
         batch_size = inputs.size(0)
 
@@ -499,5 +512,5 @@ class MultitaskAttentionSeq2seq(AttentionSeq2seq):
 
         return argmaxs, attention_weights
 
-    def _decode_infer_beam_sub(self, inputs, beam_width):
+    def _decode_infer_beam_sub(self, inputs, inputs_seq_len, beam_width):
         raise NotImplementedError

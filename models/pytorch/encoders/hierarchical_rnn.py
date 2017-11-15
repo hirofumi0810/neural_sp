@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Multi-task RNN encodrs."""
+"""Hierarchical RNN encoders."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -10,10 +10,13 @@ from __future__ import print_function
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+
+from utils.io.variable import var2np
 
 
-class MultitaskRNNEncoder(nn.Module):
-    """Multi-task RNN encoder.
+class HierarchicalRNNEncoder(nn.Module):
+    """Hierarchical RNN encoder.
     Args:
         input_size (int): the dimension of input features
         rnn_type (string): lstm or gru or rnn
@@ -43,7 +46,7 @@ class MultitaskRNNEncoder(nn.Module):
                  use_cuda=False,
                  batch_first=False):
 
-        super(MultitaskRNNEncoder, self).__init__()
+        super(HierarchicalRNNEncoder, self).__init__()
 
         self.input_size = input_size
         self.rnn_type = rnn_type
@@ -141,57 +144,92 @@ class MultitaskRNNEncoder(nn.Module):
             # gru or rnn
             return h_0
 
-    def forward(self, inputs, volatile=True):
+    def forward(self, inputs, inputs_seq_len, volatile=True,
+                mask_sequence=True):
         """Forward computation.
         Args:
             inputs: A tensor of size `[B, T, input_size]`
+            inputs_seq_len (IntTensor or LongTensor): A tensor of size `[B]`
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
+            mask_sequence (bool, optional): if True, mask by sequence
+                lenghts of inputs
         Returns:
-            outputs_main:
+            outputs:
                 if batch_first is True, a tensor of size
                     `[B, T, num_units * num_directions]`
                 else
                     `[T, B, num_units * num_directions]`
-            final_state_fw_main: A tensor of size `[1, B, num_units]`
+            final_state_fw: A tensor of size `[1, B, num_units]`
             outputs_sub:
                 if batch_first is True, a tensor of size
                     `[B, T, num_units * num_directions]`
                 else
                     `[T, B, num_units * num_directions]`
             final_state_fw_sub: A tensor of size `[1, B, num_units]`
+            perm_indices ():
         """
         batch_size, max_time = inputs.size()[:2]
 
         # Initialize hidden states (and memory cells) per mini-batch
         h_0 = self._init_hidden(batch_size=batch_size, volatile=volatile)
 
+        if mask_sequence:
+            # Sort inputs by lengths in descending order
+            inputs_seq_len, perm_indices = inputs_seq_len.sort(
+                dim=0, descending=True)
+            inputs = inputs[perm_indices]
+        else:
+            perm_indices = None
+
         if not self.batch_first:
             # Reshape to the time-major
             inputs = inputs.transpose(0, 1)
 
-        outputs_main = inputs
+        if not isinstance(inputs_seq_len, list):
+            inputs_seq_len = var2np(inputs_seq_len).tolist()
+
+        if mask_sequence:
+            # Pack encoder inputs
+            inputs = pack_padded_sequence(
+                inputs, inputs_seq_len,
+                batch_first=self.batch_first)
+
+        outputs = inputs
         for i_layer in range(self.num_layers_main):
             if self.rnn_type == 'lstm':
-                outputs_main, (h_n, c_n) = self.rnns[i_layer](
-                    outputs_main, hx=h_0)
+                outputs, (h_n, c_n) = self.rnns[i_layer](
+                    outputs, hx=h_0)
             else:
                 # gru or rnn
-                outputs_main, h_n = self.rnns[i_layer](
-                    outputs_main, hx=h_0)
+                outputs, h_n = self.rnns[i_layer](
+                    outputs, hx=h_0)
 
             if i_layer == self.num_layers_sub - 1:
-                outputs_sub = outputs_main
+                outputs_sub = outputs
                 h_n_sub = h_n
+
+        if mask_sequence:
+            # Unpack encoder outputs
+            outputs, unpacked_seq_len = pad_packed_sequence(
+                outputs,
+                batch_first=self.batch_first)
+            outputs_sub, unpacked_seq_len_sub = pad_packed_sequence(
+                outputs_sub,
+                batch_first=self.batch_first)
+            # TODO: update version for padding_value=0.0
+
+            assert inputs_seq_len == unpacked_seq_len
+            assert inputs_seq_len == unpacked_seq_len_sub
 
         # Pick up the final state of the top layer (forward)
         if self.num_directions == 2:
-            final_state_fw_main = h_n[-2:-1, :, :]
+            final_state_fw = h_n[-2:-1, :, :]
             final_state_fw_sub = h_n_sub[-2:-1, :, :]
         else:
-            final_state_fw_main = h_n[-1, :, :].unsqueeze(dim=0)
+            final_state_fw = h_n[-1, :, :].unsqueeze(dim=0)
             final_state_fw_sub = h_n_sub[-1, :, :].unsqueeze(dim=0)
         # NOTE: h_n: `[num_layers_main * num_directions, B, num_units]`
         #   h_n_sub: `[num_layers_sub * num_directions, B, num_units]`
 
-        return outputs_main, final_state_fw_main, outputs_sub, final_state_fw_sub
+        return outputs, final_state_fw, outputs_sub, final_state_fw_sub, perm_indices

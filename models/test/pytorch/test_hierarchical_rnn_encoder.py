@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Test multi-task RNN encoders in pytorch."""
+"""Test hierarchical RNN encoders in pytorch."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -17,10 +17,10 @@ from utils.io.variable import np2var
 from utils.measure_time_func import measure_time
 
 
-class TestMultitaskRNNEncoders(unittest.TestCase):
+class TestHierarchicalRNNEncoders(unittest.TestCase):
 
     def test(self):
-        print("Multitask RNN Encoders Working check.")
+        print("Hierarchical RNN Encoders Working check.")
 
         self.check(encoder_type='lstm')
         self.check(encoder_type='lstm', bidirectional=True)
@@ -36,48 +36,50 @@ class TestMultitaskRNNEncoders(unittest.TestCase):
         self.check(encoder_type='rnn', bidirectional=True)
 
     @measure_time
-    def check(self, encoder_type, bidirectional=False, batch_first=True):
+    def check(self, encoder_type, bidirectional=False, batch_first=True,
+              mask_sequence=True):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
         print('  batch_first: %s' % str(batch_first))
+        print('  mask_sequence: %s' % str(mask_sequence))
         print('==================================================')
 
         # Load batch data
         batch_size = 4
-        inputs, labels, inputs_seq_len, labels_seq_len = generate_data(
+        inputs, _, inputs_seq_len, _ = generate_data(
             model='ctc',
             batch_size=batch_size,
             splice=1)
 
         # Wrap by Variable
         inputs = np2var(inputs)
-        labels = np2var(labels)
         inputs_seq_len = np2var(inputs_seq_len)
 
         max_time = inputs.size(1)
 
         # Load encoder
-        encoder = load(encoder_type=encoder_type + '_multitask')
+        encoder = load(encoder_type=encoder_type + '_hierarchical')
 
         # Initialize encoder
         if encoder_type in ['lstm', 'gru', 'rnn']:
-            encoder = encoder(input_size=inputs.size(-1),
-                              rnn_type=encoder_type,
-                              bidirectional=bidirectional,
-                              num_units=256,
-                              num_proj=0,
-                              num_layers_main=5,
-                              num_layers_sub=3,
-                              dropout=0.2,
-                              parameter_init=0.1,
-                              batch_first=batch_first)
+            encoder = encoder(
+                input_size=inputs.size(-1),
+                rnn_type=encoder_type,
+                bidirectional=bidirectional,
+                num_units=256,
+                num_proj=0,
+                num_layers_main=5,
+                num_layers_sub=3,
+                dropout=0.2,
+                parameter_init=0.1,
+                batch_first=batch_first)
         else:
             raise NotImplementedError
 
-        outputs_main, final_state_main, outputs_sub, final_state_sub = encoder(
-            inputs)
+        outputs_main, final_state_main, outputs_sub, final_state_sub, perm_indices = encoder(
+            inputs, inputs_seq_len, mask_sequence=mask_sequence)
 
         print('----- final state -----')
         print(final_state_main.size())

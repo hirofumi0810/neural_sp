@@ -110,7 +110,8 @@ class TestPyramidRNNEncoders(unittest.TestCase):
         else:
             raise NotImplementedError
 
-        outputs, final_state, perm_indices = encoder(inputs, inputs_seq_len)
+        outputs, final_state, perm_indices = encoder(
+            inputs, inputs_seq_len, mask_sequence=mask_sequence)
         max_time /= (2 ** encoder.downsample_list.count(True))
         max_time = int(max_time)
 

@@ -188,12 +188,12 @@ class TestAttention(unittest.TestCase):
             optimizer.zero_grad()
 
             # Make prediction
-            outputs, att_weights, perm_indices = model(
+            logits, att_weights, perm_indices = model(
                 inputs, inputs_seq_len, labels)
 
             # Compute loss
             loss = model.compute_loss(
-                outputs,
+                logits,
                 labels[perm_indices],
                 labels_seq_len[perm_indices],
                 att_weights, coverage_weight=0.5)
