@@ -10,13 +10,13 @@ import sys
 import unittest
 
 sys.path.append(os.path.abspath('../../../../'))
-from examples.csj.data.load_dataset_attention import Dataset
+from examples.csj.data.load_dataset_ctc import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
 from utils.measure_time_func import measure_time
 
 
-class TestLoadDatasetAttention(unittest.TestCase):
+class TestLoadDatasetCTC(unittest.TestCase):
 
     def test(self):
 
@@ -52,13 +52,12 @@ class TestLoadDatasetAttention(unittest.TestCase):
 
     @measure_time
     def check(self, label_type, data_type='dev', data_size='subset',
-              shuffle=False, sort_utt=True, sort_stop_epoch=None,
+              shuffle=False, sort_utt=False, sort_stop_epoch=None,
               frame_stacking=False, splice=1, num_gpus=1):
 
         print('========================================')
         print('  label_type: %s' % label_type)
         print('  data_type: %s' % data_type)
-        print('  data_size: %s' % data_size)
         print('  shuffle: %s' % str(shuffle))
         print('  sort_utt: %s' % str(sort_utt))
         print('  sort_stop_epoch: %s' % str(sort_stop_epoch))
@@ -77,11 +76,11 @@ class TestLoadDatasetAttention(unittest.TestCase):
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
             data_type=data_type, data_size=data_size,
-            label_type=label_type, vocab_file_path=vocab_file_path,
-            batch_size=64, max_epoch=2, splice=splice,
-            num_stack=num_stack, num_skip=num_skip,
+            label_type=label_type,
+            batch_size=64, max_epoch=1,
+            splice=splice, num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
-            sort_utt=sort_utt, reverse=True, sort_stop_epoch=sort_stop_epoch,
+            sort_utt=sort_utt, sort_stop_epoch=sort_stop_epoch,
             num_gpus=num_gpus)
 
         print('=> Loading mini-batch...')
@@ -108,15 +107,13 @@ class TestLoadDatasetAttention(unittest.TestCase):
             else:
                 if 'word' in label_type:
                     str_true = '_'.join(
-                        map_fn(labels[0][0][1:labels_seq_len[0][0] - 1]))
+                        map_fn(labels[0][0][:labels_seq_len[0][0]]))
                 else:
-                    str_true = map_fn(
-                        labels[0][0][1:labels_seq_len[0][0] - 1])
+                    str_true = map_fn(labels[0][0][:labels_seq_len[0][0]])
 
-            print('----- %s (epoch: %.3f) -----' %
+            print('----- %s ----- (epoch: %.3f)' %
                   (input_names[0][0], dataset.epoch_detail))
-            print(inputs[0].shape)
-            print(labels[0].shape)
+            print(inputs[0][0].shape)
             print(str_true)
 
             if dataset.epoch_detail >= 0.05:
