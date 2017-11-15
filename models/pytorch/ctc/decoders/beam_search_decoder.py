@@ -62,9 +62,8 @@ class BeamSearchDecoder(object):
         Returns:
             results (np.ndarray): Best path hypothesis (the output label sequence)
         """
-        batch_size, max_time, num_classes = log_probs.shape
-        results = [] * batch_size
-        scores = [] * batch_size
+        batch_size, _, num_classes = log_probs.shape
+        results = []
 
         ##############################
         # Loop pver batch
@@ -139,8 +138,7 @@ class BeamSearchDecoder(object):
                               reverse=True)
                 beam = beam[:beam_width]
 
-            best_hyp = beam[0]
-            results.append(list(best_hyp[0]))
-            scores.append(-_logsumexp(*best_hyp[1]))
+            best_hyp = beam[0][0]
+            results.append(np.array(list(best_hyp)))
 
         return np.array(results)

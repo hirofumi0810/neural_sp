@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Attention sequence-to-sequence model."""
+"""Attention-based sequence-to-sequence model."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -158,7 +158,7 @@ class AttentionSeq2seq(ModelBase):
 
         # Common setting
         self.parameter_init = parameter_init
-        self.name = 'pt_attention_seq2seq'
+        self.name = 'pt_attn'
 
         ####################
         # Encoder

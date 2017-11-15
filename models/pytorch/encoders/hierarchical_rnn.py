@@ -23,7 +23,7 @@ class HierarchicalRNNEncoder(nn.Module):
         bidirectional (bool): if True, use the bidirectional encoder
         num_units (int): the number of units in each layer
         num_proj (int): the number of nodes in the projection layer
-        num_layers_main (int): the number of layers in the main task
+        num_layers (int): the number of layers in the main task
         num_layers_sub (int): the number of layers in the sub task
         dropout (float): the probability to drop nodes
         parameter_init (float): the range of uniform distribution to
@@ -39,7 +39,7 @@ class HierarchicalRNNEncoder(nn.Module):
                  bidirectional,
                  num_units,
                  num_proj,
-                 num_layers_main,
+                 num_layers,
                  num_layers_sub,
                  dropout,
                  parameter_init,
@@ -54,7 +54,7 @@ class HierarchicalRNNEncoder(nn.Module):
         self.num_directions = 2 if bidirectional else 1
         self.num_units = num_units
         self.num_proj = num_proj
-        self.num_layers_main = num_layers_main
+        self.num_layers = num_layers
         self.num_layers_sub = num_layers_sub
         self.dropout = dropout
         # NOTE: dropout is applied except the last layer
@@ -62,12 +62,12 @@ class HierarchicalRNNEncoder(nn.Module):
         self.use_cuda = use_cuda
         self.batch_first = batch_first
 
-        if num_layers_sub < 1 or num_layers_main < self.num_layers_sub:
+        if num_layers_sub < 1 or num_layers < self.num_layers_sub:
             raise ValueError(
-                'Set num_layers_sub between 1 to num_layers_main.')
+                'Set num_layers_sub between 1 to num_layers.')
 
         self.rnns = []
-        for i_layer in range(num_layers_main):
+        for i_layer in range(num_layers):
             if rnn_type == 'lstm':
                 rnn = nn.LSTM(
                     input_size if i_layer == 0 else num_units * self.num_directions,
@@ -196,7 +196,7 @@ class HierarchicalRNNEncoder(nn.Module):
                 batch_first=self.batch_first)
 
         outputs = inputs
-        for i_layer in range(self.num_layers_main):
+        for i_layer in range(self.num_layers):
             if self.rnn_type == 'lstm':
                 outputs, (h_n, c_n) = self.rnns[i_layer](
                     outputs, hx=h_0)
@@ -229,7 +229,7 @@ class HierarchicalRNNEncoder(nn.Module):
         else:
             final_state_fw = h_n[-1, :, :].unsqueeze(dim=0)
             final_state_fw_sub = h_n_sub[-1, :, :].unsqueeze(dim=0)
-        # NOTE: h_n: `[num_layers_main * num_directions, B, num_units]`
+        # NOTE: h_n: `[num_layers * num_directions, B, num_units]`
         #   h_n_sub: `[num_layers_sub * num_directions, B, num_units]`
 
         return outputs, final_state_fw, outputs_sub, final_state_fw_sub, perm_indices

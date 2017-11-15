@@ -70,7 +70,7 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
                 bidirectional=bidirectional,
                 num_units=256,
                 num_proj=0,
-                num_layers_main=5,
+                num_layers=5,
                 num_layers_sub=3,
                 dropout=0.2,
                 parameter_init=0.1,

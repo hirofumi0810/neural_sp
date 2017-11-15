@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Test CTC models in pytorch."""
+"""Test hierarchical CTC models in pytorch."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -15,7 +15,7 @@ import torch
 import torch.nn as nn
 
 sys.path.append('../../../')
-from models.pytorch.ctc.ctc import CTC
+from models.pytorch.ctc.hierarchical_ctc import HierarchicalCTC
 from models.test.data import generate_data, idx2char, idx2word
 from utils.io.variable import np2var, var2np
 from utils.measure_time_func import measure_time
@@ -28,67 +28,52 @@ torch.manual_seed(2017)
 class TestCTC(unittest.TestCase):
 
     def test(self):
-        print("CTC Working check.")
+        print("Hierarchical CTC Working check.")
 
-        # word-level CTC
-        self.check(encoder_type='lstm', bidirectional=True,
-                   label_type='word')
-
-        # RNNs
         self.check(encoder_type='lstm', bidirectional=True)
-        self.check(encoder_type='lstm', bidirectional=False)
-        self.check(encoder_type='gru', bidirectional=True)
-        self.check(encoder_type='gru', bidirectional=False)
-        self.check(encoder_type='rnn', bidirectional=True)
-        self.check(encoder_type='rnn', bidirectional=False)
-        # self.check(encoder_type='cldnn', bidirectional=True)
-        # self.check(encoder_type='cldnn', bidirectional=True)
-
-        # CNNs
-        # self.check(encoder_type='resnet')
-        # self.check(encoder_type='vgg')
 
     @measure_time
-    def check(self, encoder_type, bidirectional=False, label_type='char',
-              save_path=None):
+    def check(self, encoder_type, bidirectional=False):
 
         print('==================================================')
-        print('  label_type: %s' % label_type)
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
         print('==================================================')
 
         # Load batch data
-        inputs, labels, inputs_seq_len, labels_seq_len = generate_data(
+        inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub = generate_data(
             model='ctc',
-            label_type=label_type,
+            label_type='word_char',
             batch_size=2,
             num_stack=1,
             splice=1)
         labels += 1
+        labels_sub += 1
         # NOTE: index 0 is reserved for blank
 
         # Wrap by Variable
         inputs = np2var(inputs)
         labels = np2var(labels, dtype='int')
+        labels_sub = np2var(labels_sub, dtype='int')
         inputs_seq_len = np2var(inputs_seq_len, dtype='int')
         labels_seq_len = np2var(labels_seq_len, dtype='int')
+        labels_seq_len_sub = np2var(labels_seq_len_sub, dtype='int')
 
-        if label_type == 'char':
-            num_classes = 27
-        elif label_type == 'word':
-            num_classes = 11
+        num_classes = 11
+        num_classes_sub = 27
 
         # Load model
-        model = CTC(
+        model = HierarchicalCTC(
             input_size=inputs.size(-1),
             encoder_type=encoder_type,
             bidirectional=bidirectional,
             num_units=256,
             num_proj=None,
-            num_layers=2,
+            num_layers=3,
+            num_layers_sub=2,
             dropout=0.1,
             num_classes=num_classes,
+            num_classes_sub=num_classes_sub,
             splice=1,
             parameter_init=0.1,
             bottleneck_dim=None)
@@ -125,8 +110,10 @@ class TestCTC(unittest.TestCase):
         if use_cuda:
             inputs = inputs.cuda()
             labels = labels.cuda()
+            labels_sub = labels_sub.cuda()
             inputs_seq_len = inputs_seq_len.cuda()
             labels_seq_len = labels_seq_len.cuda()
+            labels_seq_len_sub = labels_seq_len_sub.cuda()
 
         # Train model
         max_step = 1000
@@ -138,7 +125,7 @@ class TestCTC(unittest.TestCase):
             optimizer.zero_grad()
 
             # Make prediction
-            logits, perm_indices = model(inputs, inputs_seq_len)
+            logits, logits_sub, perm_indices = model(inputs, inputs_seq_len)
 
             # Compute loss
             loss = model.compute_loss(
@@ -146,6 +133,11 @@ class TestCTC(unittest.TestCase):
                 labels[perm_indices],
                 inputs_seq_len[perm_indices],
                 labels_seq_len[perm_indices])
+            loss += model.compute_loss(
+                logits_sub,
+                labels_sub[perm_indices],
+                inputs_seq_len[perm_indices],
+                labels_seq_len_sub[perm_indices])
 
             # Compute gradient
             optimizer.zero_grad()
@@ -167,42 +159,39 @@ class TestCTC(unittest.TestCase):
                 # Decode
                 labels_pred = model.decode(
                     logits, inputs_seq_len[perm_indices], beam_width=5)
+                labels_pred_sub = model.decode(
+                    logits_sub, inputs_seq_len[perm_indices], beam_width=5)
 
                 # Compute accuracy
-                if label_type == 'char':
-                    str_true = idx2char(
-                        var2np(labels[perm_indices][0, :var2np(labels_seq_len[perm_indices])[0]] - 1))
-                    str_pred = idx2char(labels_pred[0] - 1)
-                    ler = compute_cer(ref=str_true.replace('_', ''),
-                                      hyp=str_pred.replace('_', ''),
-                                      normalize=True)
-                elif label_type == 'word':
-                    str_true = idx2word(
-                        var2np(labels[perm_indices][0, :var2np(labels_seq_len[perm_indices])[0]] - 1))
-                    str_pred = idx2word(labels_pred[0] - 1)
-                    ler = compute_wer(ref=str_true.split('_'),
-                                      hyp=str_pred.split('_'),
+                str_true = idx2word(
+                    var2np(labels[perm_indices][0, :var2np(labels_seq_len[perm_indices])[0]] - 1))
+                str_pred = idx2word(labels_pred[0] - 1)
+                ler = compute_wer(ref=str_true.split('_'),
+                                  hyp=str_pred.split('_'),
+                                  normalize=True)
+                str_true_sub = idx2char(
+                    var2np(labels_sub[perm_indices][0, :var2np(labels_seq_len_sub[perm_indices])[0]] - 1))
+                str_pred_sub = idx2char(labels_pred_sub[0] - 1)
+                ler_sub = compute_cer(ref=str_true_sub.replace('_', ''),
+                                      hyp=str_pred_sub.replace('_', ''),
                                       normalize=True)
 
                 # ***Change to training mode***
                 model.train()
 
                 duration_step = time.time() - start_time_step
-                print('Step %d: loss = %.3f / ler = %.3f (%.3f sec) / lr = %.5f' %
-                      (step + 1, var2np(loss), ler, duration_step, learning_rate))
+                print('Step %d: loss = %.3f / ler (main) = %.3f / ler (sub) = %.3f (%.3f sec) / lr = %.5f' %
+                      (step + 1, var2np(loss), ler, ler_sub, duration_step, learning_rate))
                 start_time_step = time.time()
 
                 # Visualize
-                print('Ref: %s' % str_true)
-                print('Hyp: %s' % str_pred)
+                print('Ref (word): %s' % str_true)
+                print('Hyp (word): %s' % str_pred)
+                print('Ref (char): %s' % str_true_sub)
+                print('Hyp (char): %s' % str_pred_sub)
 
-                if ler < 0.1:
+                if ler_sub < 0.1:
                     print('Modle is Converged.')
-                    # Save the model
-                    if save_path is not None:
-                        saved_path = model.save_checkpoint(save_path, epoch=1)
-                        print("=> Saved checkpoint (epoch:%d): %s" %
-                              (1, saved_path))
                     break
                 ler_pre = ler
 

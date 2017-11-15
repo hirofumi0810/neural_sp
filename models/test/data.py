@@ -69,20 +69,14 @@ def generate_data(model, label_type='char', batch_size=1, num_stack=1, splice=1)
     if label_type == 'char':
         if model == 'attention':
             transcript = SOS + transcript + EOS
-            labels = np.array([char2idx(transcript)] * batch_size, np.int32)
-        elif model == 'ctc':
-            labels = np.array([char2idx(transcript)] * batch_size, np.int32)
-            # labels = labels.reshape((-1,))
+        labels = np.array([char2idx(transcript)] * batch_size, np.int32)
         labels_seq_len = np.array([len(char2idx(transcript))] * batch_size)
         return inputs, labels, inputs_seq_len, labels_seq_len
 
     elif label_type == 'word':
         if model == 'attention':
             transcript = SOS + SPACE + transcript + SPACE + EOS
-            labels = np.array([word2idx(transcript)] * batch_size, np.int32)
-        elif model == 'ctc':
-            labels = np.array([word2idx(transcript)] * batch_size, np.int32)
-            # labels = labels.reshape((-1,))
+        labels = np.array([word2idx(transcript)] * batch_size, np.int32)
         labels_seq_len = np.array([len(word2idx(transcript))] * batch_size)
         return inputs, labels, inputs_seq_len, labels_seq_len
 
@@ -90,12 +84,13 @@ def generate_data(model, label_type='char', batch_size=1, num_stack=1, splice=1)
         if model == 'attention':
             transcript_word = SOS + SPACE + transcript + SPACE + EOS
             transcript_char = SOS + transcript + EOS
-            labels = np.array([word2idx(transcript_word)]
-                              * batch_size, np.int32)
-            labels_sub = np.array([char2idx(transcript_char)]
-                                  * batch_size, np.int32)
         elif model == 'ctc':
-            raise NotImplementedError
+            transcript_word = transcript
+            transcript_char = transcript
+        labels = np.array([word2idx(transcript_word)]
+                          * batch_size, np.int32)
+        labels_sub = np.array([char2idx(transcript_char)]
+                              * batch_size, np.int32)
         labels_seq_len = np.array(
             [len(word2idx(transcript_word))] * batch_size)
         labels_seq_len_sub = np.array(

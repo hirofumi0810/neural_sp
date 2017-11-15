@@ -1,6 +1,8 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
+"""Hierarchical attention-based sequence-to-sequence model."""
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -104,7 +106,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         self.max_decode_length_sub = max_decode_length_sub
 
         # Common setting
-        self.name = 'pt_hierarchical_attention_seq2seq'
+        self.name = 'pt_hierarchical_attn'
 
         #########################
         # Encoder
@@ -122,7 +124,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     bidirectional=encoder_bidirectional,
                     num_units=encoder_num_units,
                     num_proj=encoder_num_proj,
-                    num_layers_main=encoder_num_layers,
+                    num_layers=encoder_num_layers,
                     num_layers_sub=encoder_num_layers_sub,
                     dropout=encoder_dropout,
                     parameter_init=parameter_init,

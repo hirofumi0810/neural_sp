@@ -1,6 +1,8 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
+"""The Connectionist Temporal Classification model."""
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -23,55 +25,9 @@ from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
 from utils.io.variable import var2np
 
-
-#################################################################
-# Useful documentation from
-# https://discuss.pytorch.org/t/ctcloss-with-warp-ctc-help/8788
-#################################################################
-# The CTC loss function computes total CTC loss on a batch of sequences.
-# Total loss is not the equal to the sum of the losses for individual samples.
-# Not clear why.
-# https://discuss.pytorch.org/t/how-to-fill-the-label-tensor-for-ctc-loss/5801
-#
-# ctc_loss(probs, labels, prob_sizes, label_sizes)
-#
-# probs
-# -----
-# Estimated probabilities.
-# Tensor of size (seq_len, batch_size, n_alphabet+1).
-# Note that each sample in the batch may have a different sequence length, so
-#   the seq_len size of the tensor is maximum of all sequence lengths in the
-#   batch.
-# The tail of short sequences should be padded with zeros.
-# The [0] index of the probabilities is reserved for "blanks" which is why the
-#   3rd dimension is of size n_alphabet+1.
-#
-# labels
-# ------
-# Ground truth labels.
-# A 1-D tensor composed of concatenated sequences of int labels
-#   (not one-hot vectors).
-# Scalars should range from 1 to n_alphabet.
-# 0 is not used, as that is reserved for blanks.
-# For example, if the label sequences for two samples are [1, 2] and [4, 5, 7]
-#   then the tensor is [1, 2, 4, 5, 7].
-#
-# prob_sizes
-# ----------
-# Sequence lengths of the probabilities.
-# A 1-D tensor of ints of length batch_size.
-# The ith value specifies the sequence length of the probabilities of the ith
-#   sample that are used in computing that sample's CTC loss.
-# Values in the probs tensor that extend beyond this length are ignored.
-#
-# label_sizes
-# ------------
-# Sequence lengths of the labels.
-# A 1-D tensor of ints of length batch_size.
-# The ith value specifies the sequence length of the labels of the ith sample
-#   that are used in computing that sample's CTC loss.
-# The length of the labels vector should be equal to the cumulative sum of the
-#   elements in the label_sizes vector.
+NEG_INF = -float("inf")
+LOG_0 = NEG_INF
+LOG_1 = 0
 
 
 class CTC(ModelBase):
@@ -129,11 +85,14 @@ class CTC(ModelBase):
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
         self.logits_temperature = logits_temperature
 
+        # Common setting
         self.parameter_init = parameter_init
         self.name = 'pt_ctc'
 
-        # Load encoder
+        # Load an instance
         encoder = load(encoder_type=encoder_type)
+
+        # Call the encoder function
         if encoder_type in ['lstm', 'gru', 'rnn']:
             self.encoder = encoder(
                 input_size=self.input_size,
@@ -186,8 +145,8 @@ class CTC(ModelBase):
             logits (FloatTensor): A tensor of size
                 `[T, B, num_classes (including blank)]`
         """
-        encoder_outputs, final_state, perm_indices = self.encoder(
-            inputs, inputs_seq_len, volatile)
+        encoder_outputs, _, perm_indices = self.encoder(
+            inputs, inputs_seq_len, volatile, mask_sequence=True)
         max_time, batch_size = encoder_outputs.size()[:2]
 
         # Convert to 2D tensor
@@ -262,19 +221,15 @@ class CTC(ModelBase):
 
         return probs
 
-    def decode(self, inputs, inputs_seq_len, beam_width=1):
+    def decode(self, logits, inputs_seq_len, beam_width=1):
         """
         Args:
-            inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
+            logits (FloatTensor): A tensor of size `[T_in, B, num_classes]`
             inputs_seq_len (IntTensor): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
         Returns:
 
         """
-        logits, perm_indices = self._encode(
-            inputs, inputs_seq_len, volatile=True)
-        inputs_seq_len = inputs_seq_len[perm_indices]
-
         # Convert to batch-major
         logits = logits.transpose(0, 1)
 
@@ -286,6 +241,9 @@ class CTC(ModelBase):
             # torch-based decoder
             return self._decode_greedy(log_probs, inputs_seq_len)
         else:
+            # torch-based decoder
+            # return self._decode_beam(log_probs, inputs_seq_len, beam_width)
+
             # numpy-based decoder
             log_probs = var2np(log_probs)
             inputs_seq_len = var2np(inputs_seq_len)
@@ -295,7 +253,7 @@ class CTC(ModelBase):
         """
         Args:
             log_probs (FloatTensor): log-scale probabilities
-                A tensor of size `[B, num_classes (including blank)]`
+                A tensor of size `[B, T, num_classes (including blank)]`
             inputs_seq_len (IntTensor): A tensor of size `[B]`
         Returns:
             results (np.ndarray): A tensor of size `[B,]`
@@ -317,16 +275,15 @@ class CTC(ModelBase):
             # Step 2. Remove all blank labels
             best_hyp = [x for x in filter(
                 lambda x: x != self.blank_index, collapsed_indices)]
-            results.append(best_hyp)
+            results.append(np.array(best_hyp))
 
-        # return np.squeeze(np.array(results), axis=2)
         return np.array(results)
 
     def _decode_beam(self, log_probs, inputs_seq_len, beam_width):
         """
         Args:
             log_probs (FloatTensor): log-scale probabilities
-                A tensor of size `[B, num_classes (including blank)]`
+                A tensor of size `[B, T, num_classes (including blank)]`
             inputs_seq_len (IntTensor): A tensor of size `[B]`
             beam_width (int): the size of beam
         Returns:
