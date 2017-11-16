@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Plot attention weights (TIMIT corpus)."""
+"""Plot attention weights (CSJ corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -49,14 +49,22 @@ def do_plot(model, params, epoch, eval_batch_size):
         epoch (int): the epoch to restore
         eval_batch_size (int): the size of mini-batch when evaluation
     """
+    if 'kana' in params['label_type']:
+        vocab_file_path = '../metrics/vocab_files/' + \
+            params['label_type'] + '.txt'
+    else:
+        vocab_file_path = '../metrics/vocab_files/' + \
+            params['label_type'] + '_' + params['data_size'] + '.txt'
+
     # Load dataset
     test_data = Dataset(
-        data_type='test', label_type='phone61',
+        data_type='eval1', label_type=params['label_type'],
+        data_size=params['data_size'],
         batch_size=eval_batch_size,
-        map_file_path='../metrics/mapping_files/phone61.txt',
+        vocab_file_path=vocab_file_path,
         splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=False, progressbar=True)
+        shuffle=False)
 
     # GPU setting
     model.set_cuda(deterministic=False)
@@ -72,6 +80,7 @@ def do_plot(model, params, epoch, eval_batch_size):
     plot(model=model,
          dataset=test_data,
          label_type=params['label_type'],
+         data_size=params['data_size'],
          is_test=test_data.is_test,
          # save_path=mkdir_join(model.save_path, 'attention_weights'),
          save_path=None,
@@ -95,8 +104,7 @@ def plot(model, dataset, label_type,
         shutil.rmtree(save_path)
         mkdir(save_path)
 
-    idx2phone = Idx2phone(
-        map_file_path='../metrics/mapping_files/' + label_type + '.txt')
+    idx2phone = Idx2phone('../metrics/vocab_files/' + label_type + '.txt')
 
     for data, is_new_epoch in dataset:
 
@@ -156,12 +164,40 @@ def main():
         params = config['param']
 
     # Except for a <SOS> and <EOS> class
-    if params['label_type'] == 'phone61':
-        params['num_classes'] = 61
-    elif params['label_type'] == 'phone48':
-        params['num_classes'] = 48
-    elif params['label_type'] == 'phone39':
-        params['num_classes'] = 39
+    if params['label_type'] == 'kana':
+        params['num_classes'] = 146
+    elif params['label_type'] == 'kana_divide':
+        params['num_classes'] = 147
+    elif params['label_type'] == 'kanji':
+        if params['data_size'] == 'subset':
+            params['num_classes'] = 2978
+        elif params['data_size'] == 'fullset':
+            params['num_classes'] = 3383
+    elif params['label_type'] == 'kanji_divide':
+        if params['data_size'] == 'subset':
+            params['num_classes'] = 2979
+        elif params['data_size'] == 'fullset':
+            params['num_classes'] = 3384
+    elif params['label_type'] == 'word_freq1':
+        if params['data_size'] == 'subset':
+            params['num_classes'] = 39169
+        elif params['data_size'] == 'fullset':
+            params['num_classes'] = 66277
+    elif params['label_type'] == 'word_freq5':
+        if params['data_size'] == 'subset':
+            params['num_classes'] = 12877
+        elif params['data_size'] == 'fullset':
+            params['num_classes'] = 23528
+    elif params['label_type'] == 'word_freq10':
+        if params['data_size'] == 'subset':
+            params['num_classes'] = 8542
+        elif params['data_size'] == 'fullset':
+            params['num_classes'] = 15536
+    elif params['label_type'] == 'word_freq15':
+        if params['data_size'] == 'subset':
+            params['num_classes'] = 6726
+        elif params['data_size'] == 'fullset':
+            params['num_classes'] = 12111
     else:
         TypeError
 

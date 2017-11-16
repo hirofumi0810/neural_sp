@@ -10,13 +10,13 @@ import sys
 import unittest
 
 sys.path.append(os.path.abspath('../../../../'))
-from examples.csj.data.load_dataset_hierarchical_attention import Dataset
+from examples.csj.data.load_dataset_hierarchical_ctc import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
 from utils.measure_time_func import measure_time
 
 
-class TestLoadDatasetHierarchicalAttention(unittest.TestCase):
+class TestLoadDatasetHierarchicalCTC(unittest.TestCase):
 
     def test(self):
 
@@ -68,8 +68,6 @@ class TestLoadDatasetHierarchicalAttention(unittest.TestCase):
         dataset = Dataset(
             data_type=data_type, data_size=data_size,
             label_type=label_type, label_type_sub=label_type_sub,
-            vocab_file_path=vocab_file_path,
-            vocab_file_path_sub=vocab_file_path_sub,
             batch_size=64, max_epoch=2, splice=splice,
             num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
@@ -101,12 +99,12 @@ class TestLoadDatasetHierarchicalAttention(unittest.TestCase):
             else:
                 if 'word' in label_type:
                     str_true = '_'.join(
-                        idx2word(labels[0][0][1:labels_seq_len[0][0] - 1]))
+                        idx2word(labels[0][0][:labels_seq_len[0][0]]))
                 else:
                     str_true = idx2char(
-                        labels[0][0][1:labels_seq_len[0][0] - 1])
+                        labels[0][0][:labels_seq_len[0][0]])
                 str_true_sub = idx2char_sub(
-                    labels_sub[0][0][1:labels_seq_len_sub[0][0] - 1])
+                    labels_sub[0][0][:labels_seq_len_sub[0][0]])
 
             print('----- %s (epoch: %.3f) -----' %
                   (input_names[0][0], dataset.epoch_detail))

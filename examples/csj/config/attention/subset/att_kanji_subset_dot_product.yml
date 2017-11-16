@@ -10,9 +10,9 @@ param:
   splice: 1
   num_stack: 2
   num_skip: 2
-  # NOTE: per 20ms
 
   # topology
+  model_type: attention
   encoder_type: lstm
   encoder_bidirectional: True
   encoder_num_units: 320
@@ -56,4 +56,3 @@ param:
 
   eval_start_epoch: 3
   print_step: 1000
-  beam_width: 20

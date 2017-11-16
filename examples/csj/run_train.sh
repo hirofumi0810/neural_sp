@@ -5,7 +5,7 @@ MODEL_SAVE_PATH="/n/sd8/inaguma/result/pytorch/csj"
 # Select GPU
 if [ $# -ne 2 ]; then
   echo "Error: set GPU number & config path." 1>&2
-  echo "Usage: ./run_ctc.sh path_to_config_file gpu_index" 1>&2
+  echo "Usage: ./run_train.sh path_to_config_file gpu_index" 1>&2
   exit 1
 fi
 
@@ -23,9 +23,9 @@ filename=$(basename $config_path | awk -F. '{print $1}')
 mkdir -p log
 
 # Standard output version
-# CUDA_VISIBLE_DEVICES=$gpu_index $PYTHON train_ctc.py \
+# CUDA_VISIBLE_DEVICES=$gpu_index $PYTHON train.py \
 #   $config_path $MODEL_SAVE_PATH
 
 # Background job version
-CUDA_VISIBLE_DEVICES=$gpu_index nohup $PYTHON train_ctc.py \
+CUDA_VISIBLE_DEVICES=$gpu_index nohup $PYTHON train.py \
   $config_path $MODEL_SAVE_PATH > log/$filename".log" &
