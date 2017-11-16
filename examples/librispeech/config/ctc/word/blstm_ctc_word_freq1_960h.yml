@@ -2,7 +2,7 @@ param:
   # corpus
   corpus: librispeech
   label_type: word_freq1
-  data_size: 100h
+  data_size: 960h
 
   # features
   feature: fbank
@@ -17,7 +17,7 @@ param:
   bidirectional: True
   num_units: 320
   num_proj: 0
-  num_layers: 5
+  num_layers: 6
   bottleneck_dim: 0
 
   # optimization
@@ -40,5 +40,5 @@ param:
 
   logits_temperature: 1
 
-  eval_start_epoch: 2
-  print_step: 200
+  eval_start_epoch: 5
+  print_step: 2000

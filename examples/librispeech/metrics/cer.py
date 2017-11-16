@@ -23,8 +23,7 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
         model_type (string): ctc or attention or hierarchical_ctc or
             hierarchical_attention or joint_ctc_attention
         dataset: An instance of a `Dataset' class
-        label_type (string): character or character_capital_divide or
-            word_freq1 or word_freq5 or word_freq10 or word_freq15
+        label_type (string): character or character_capital_divide
         data_size (string): 100h or 460h or 960h
         beam_width: (int): the size of beam
         is_test (bool, optional): set to True when evaluating by the test set
@@ -44,9 +43,9 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
         dataset.batch_size = eval_batch_size
 
     if label_type == 'character':
-        vocab_file_path = './metrics/vocab_files/character.txt'
+        vocab_file_path = '../metrics/vocab_files/character.txt'
     else:
-        vocab_file_path = './metrics/vocab_files/' + \
+        vocab_file_path = '../metrics/vocab_files/' + \
             label_type + '_' + data_size + '.txt'
 
     idx2char = Idx2char(vocab_file_path)
@@ -75,16 +74,18 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
         if model_type == 'attention':
             labels_pred, _ = model.decode_infer(
                 inputs[0], inputs_seq_len[0], beam_width=beam_width)
-        elif model_type == 'ctc':
-            logits, perm_indices = model(inputs[0], inputs_seq_len[0])
+        elif model_type == 'hierarchical_attention':
+            labels_pred, _ = model.decode_infer_sub(
+                inputs[0], inputs_seq_len[0], beam_width=beam_width)
+        elif model_type in ['ctc', 'hierarchical_ctc']:
+            if model_type == 'ctc':
+                logits, perm_indices = model(inputs[0], inputs_seq_len[0])
+            else:
+                _, logits, perm_indices = model(inputs[0], inputs_seq_len[0])
             labels_pred = model.decode(
                 logits, inputs_seq_len[0][perm_indices], beam_width=beam_width)
             labels_pred -= 1
             # NOTE: index 0 is reserved for blank
-        elif model_type == 'hierarchical_attention':
-            raise NotImplementedError
-        elif model_type == 'hierarchical_ctc':
-            raise NotImplementedError
         elif model_type == 'joint_ctc_attention':
             raise NotImplementedError
 

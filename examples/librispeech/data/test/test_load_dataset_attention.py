@@ -10,13 +10,13 @@ import sys
 import unittest
 
 sys.path.append(os.path.abspath('../../../../'))
-from examples.librispeech.data.load_dataset_ctc import Dataset
+from examples.librispeech.data.load_dataset_attention import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
 from utils.measure_time_func import measure_time
 
 
-class TestLoadDatasetCTC(unittest.TestCase):
+class TestLoadDatasetAttention(unittest.TestCase):
 
     def test(self):
 
@@ -51,7 +51,7 @@ class TestLoadDatasetCTC(unittest.TestCase):
 
     @measure_time
     def check(self, label_type, data_type='dev_clean', data_size='100h',
-              shuffle=False, sort_utt=False, sort_stop_epoch=None,
+              shuffle=False, sort_utt=True, sort_stop_epoch=None,
               frame_stacking=False, splice=1, num_gpus=1):
 
         print('========================================')
@@ -77,10 +77,11 @@ class TestLoadDatasetCTC(unittest.TestCase):
         dataset = Dataset(
             data_type=data_type, data_size=data_size,
             label_type=label_type, batch_size=64,
-            max_epoch=1, splice=splice,
+            vocab_file_path=vocab_file_path,
+            max_epoch=2, splice=splice,
             num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
-            sort_utt=sort_utt, sort_stop_epoch=sort_stop_epoch,
+            sort_utt=sort_utt, reverse=True, sort_stop_epoch=sort_stop_epoch,
             num_gpus=num_gpus)
 
         print('=> Loading mini-batch...')
@@ -109,9 +110,10 @@ class TestLoadDatasetCTC(unittest.TestCase):
                 if 'word' in label_type:
                     str_true = '_'.join(str_true)
 
-            print('----- %s ----- (epoch: %.3f)' %
+            print('----- %s (epoch: %.3f) -----' %
                   (input_names[0][0], dataset.epoch_detail))
-            print(inputs[0][0].shape)
+            print(inputs[0].shape)
+            print(labels[0].shape)
             print(str_true)
 
             if dataset.epoch_detail >= 0.05:
