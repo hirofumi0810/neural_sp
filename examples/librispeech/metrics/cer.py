@@ -44,9 +44,9 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
         dataset.batch_size = eval_batch_size
 
     if label_type == 'character':
-        vocab_file_path = '../metrics/vocab_files/character.txt'
+        vocab_file_path = './metrics/vocab_files/character.txt'
     else:
-        vocab_file_path = '../metrics/vocab_files/' + \
+        vocab_file_path = './metrics/vocab_files/' + \
             label_type + '_' + data_size + '.txt'
 
     idx2char = Idx2char(vocab_file_path)

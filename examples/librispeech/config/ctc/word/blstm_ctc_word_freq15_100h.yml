@@ -10,9 +10,9 @@ param:
   splice: 1
   num_stack: 2
   num_skip: 2
-  # NOTE: per 20ms
 
   # topology
+  model_type: ctc
   encoder_type: lstm
   bidirectional: True
   num_units: 320
@@ -22,7 +22,7 @@ param:
 
   # optimization
   batch_size: 10
-  optimizer: rmsprop
+  optimizer: adam
   learning_rate: 1e-3
   num_epoch: 30
 

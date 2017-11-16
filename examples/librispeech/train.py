@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Train the CTC model (Librispeech corpus)."""
+"""Train the model (Librispeech corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -16,8 +16,9 @@ import shutil
 
 import torch.nn as nn
 
-sys.path.append(abspath('../../../'))
-from examples.librispeech.data.load_dataset_ctc import Dataset
+sys.path.append(abspath('../../'))
+from examples.librispeech.data.load_dataset_ctc import Dataset as Dataset_ctc
+# from examples.csj.data.load_dataset_attention import Dataset as Dataset_attention
 from examples.librispeech.metrics.cer import do_eval_cer
 from examples.librispeech.metrics.wer import do_eval_wer
 from utils.training.learning_rate_controller import Controller
@@ -25,6 +26,7 @@ from utils.training.plot import plot_loss
 from utils.directory import mkdir_join, mkdir
 from utils.io.variable import np2var, var2np
 from models.pytorch.ctc.ctc import CTC
+from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 
 
 def do_train(model, params):
@@ -34,34 +36,44 @@ def do_train(model, params):
         params (dict): A dictionary of parameters
     """
     # Load dataset
+    if params['label_type'] == 'character':
+        vocab_file_path = './metrics/vocab_files/character.txt'
+    else:
+        vocab_file_path = './metrics/vocab_files/' + \
+            params['label_type'] + '_' + params['data_size'] + '.txt'
+    if params['model_type'] == 'ctc':
+        Dataset = Dataset_ctc
+    elif params['model_type'] == 'attention':
+        # Dataset = Dataset_attention
+        raise NotImplementedError
     train_data = Dataset(
         data_type='train', data_size=params['data_size'],
-        label_type=params['label_type'],
+        label_type=params['label_type'], vocab_file_path=vocab_file_path,
         batch_size=params['batch_size'],
         max_epoch=params['num_epoch'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'])
     dev_clean_data = Dataset(
         data_type='dev_clean', data_size=params['data_size'],
-        label_type=params['label_type'],
+        label_type=params['label_type'], vocab_file_path=vocab_file_path,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=False, num_gpus=1)
     dev_other_data = Dataset(
         data_type='dev_other', data_size=params['data_size'],
-        label_type=params['label_type'],
+        label_type=params['label_type'], vocab_file_path=vocab_file_path,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=False, num_gpus=1)
     test_clean_data = Dataset(
         data_type='test_clean', data_size=params['data_size'],
-        label_type=params['label_type'],
+        label_type=params['label_type'], vocab_file_path=vocab_file_path,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=False)
     test_other_data = Dataset(
         data_type='test_other', data_size=params['data_size'],
-        label_type=params['label_type'],
+        label_type=params['label_type'], vocab_file_path=vocab_file_path,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=False)
@@ -108,26 +120,34 @@ def do_train(model, params):
         # Create feed dictionary for next mini batch (train)
         inputs, labels, inputs_seq_len, labels_seq_len, _ = data
         inputs = np2var(inputs, use_cuda=use_cuda)
-        labels = np2var(labels, use_cuda=use_cuda, dtype='int')
-        inputs_seq_len = np2var(
-            inputs_seq_len, use_cuda=use_cuda, dtype='int')
+        if params['model_type'] == 'ctc':
+            labels = np2var(labels, use_cuda=use_cuda, dtype='int') + 1
+            # NOTE: index 0 is reserved for blank
+        elif params['model_type'] == 'attention':
+            labels = np2var(labels, use_cuda=use_cuda, dtype='long')
+        inputs_seq_len = np2var(inputs_seq_len, use_cuda=use_cuda, dtype='int')
         labels_seq_len = np2var(labels_seq_len, use_cuda=use_cuda, dtype='int')
-
-        labels += 1
-        # NOTE: index 0 is reserved for blank
 
         # Clear gradients before
         optimizer.zero_grad()
 
-        # Make prediction
-        logits, perm_indices = model(inputs[0], inputs_seq_len[0])
-
         # Compute loss in the training set
-        loss_train = model.compute_loss(
-            logits,
-            labels[0][perm_indices],
-            inputs_seq_len[0][perm_indices],
-            labels_seq_len[0][perm_indices])
+        if params['model_type'] == 'ctc':
+            logits, perm_indices = model(inputs[0], inputs_seq_len[0])
+            loss_train = model.compute_loss(
+                logits,
+                labels[0][perm_indices],
+                inputs_seq_len[0][perm_indices],
+                labels_seq_len[0][perm_indices])
+        elif params['model_type'] == 'attention':
+            logits, att_weights, perm_indices = model(
+                inputs[0], inputs_seq_len[0], labels[0])
+            loss_train = model.compute_loss(
+                logits,
+                labels[0][perm_indices],
+                labels_seq_len[0][perm_indices],
+                att_weights,
+                coverage_weight=params['coverage_weight'])
 
         # Compute gradient
         optimizer.zero_grad()
@@ -150,8 +170,13 @@ def do_train(model, params):
                 inputs, labels, inputs_seq_len, labels_seq_len, _ = dev_other_data.next()[
                     0]
             inputs = np2var(inputs, use_cuda=use_cuda, volatile=True)
-            labels = np2var(
-                labels, use_cuda=use_cuda, volatile=True, dtype='int')
+            if params['model_type'] == 'ctc':
+                labels = np2var(
+                    labels, use_cuda=use_cuda, volatile=True, dtype='int') + 1
+                # NOTE: index 0 is reserved for blank
+            elif params['model_type'] == 'attention':
+                labels = np2var(labels, use_cuda=use_cuda,
+                                volatile=True, dtype='long')
             inputs_seq_len = np2var(
                 inputs_seq_len, use_cuda=use_cuda, volatile=True, dtype='int')
             labels_seq_len = np2var(
@@ -163,15 +188,25 @@ def do_train(model, params):
             # ***Change to evaluation mode***
             model.eval()
 
-            # Make prediction
-            logits, perm_indices = model(inputs[0], inputs_seq_len[0])
-
             # Compute loss in the dev set
-            loss_dev = model.compute_loss(
-                logits,
-                labels[0][perm_indices],
-                inputs_seq_len[0][perm_indices],
-                labels_seq_len[0][perm_indices])
+            if params['model_type'] == 'ctc':
+                logits, perm_indices = model(
+                    inputs[0], inputs_seq_len[0], volatile=True)
+                loss_dev = model.compute_loss(
+                    logits,
+                    labels[0][perm_indices],
+                    inputs_seq_len[0][perm_indices],
+                    labels_seq_len[0][perm_indices])
+            elif params['model_type'] == 'attention':
+                logits, att_weights, perm_indices = model(
+                    inputs[0], inputs_seq_len[0], labels[0], volatile=True)
+                loss_dev = model.compute_loss(
+                    logits,
+                    labels[0][perm_indices],
+                    labels_seq_len[0][perm_indices],
+                    att_weights,
+                    coverage_weight=params['coverage_weight'])
+
             csv_steps.append(step)
             csv_loss_train.append(var2np(loss_train))
             csv_loss_dev.append(var2np(loss_dev))
@@ -207,7 +242,7 @@ def do_train(model, params):
                     # dev-clean
                     cer_dev_clean_epoch, _ = do_eval_cer(
                         model=model,
-                        model_type='ctc',
+                        model_type=params['model_type'],
                         dataset=dev_clean_data,
                         label_type=params['label_type'],
                         data_size=params['data_size'],
@@ -218,7 +253,7 @@ def do_train(model, params):
                     # dev-other
                     cer_dev_other_epoch, _ = do_eval_cer(
                         model=model,
-                        model_type='ctc',
+                        model_type=params['model_type'],
                         dataset=dev_other_data,
                         label_type=params['label_type'],
                         data_size=params['data_size'],
@@ -246,7 +281,7 @@ def do_train(model, params):
                         # test-clean
                         cer_test_clean_epoch, _ = do_eval_cer(
                             model=model,
-                            model_type='ctc',
+                            model_type=params['model_type'],
                             dataset=test_clean_data,
                             label_type=params['label_type'],
                             data_size=params['data_size'],
@@ -259,7 +294,7 @@ def do_train(model, params):
                         # test-other
                         cer_test_other_epoch, _ = do_eval_cer(
                             model=model,
-                            model_type='ctc',
+                            model_type=params['model_type'],
                             dataset=test_other_data,
                             label_type=params['label_type'],
                             data_size=params['data_size'],
@@ -274,7 +309,7 @@ def do_train(model, params):
                     # dev-clean
                     wer_dev_clean_epoch = do_eval_wer(
                         model=model,
-                        model_type='ctc',
+                        model_type=params['model_type'],
                         dataset=dev_clean_data,
                         label_type=params['label_type'],
                         data_size=params['data_size'],
@@ -285,7 +320,7 @@ def do_train(model, params):
                     # dev-other
                     wer_dev_other_epoch = do_eval_wer(
                         model=model,
-                        model_type='ctc',
+                        model_type=params['model_type'],
                         dataset=dev_other_data,
                         label_type=params['label_type'],
                         data_size=params['data_size'],
@@ -313,7 +348,7 @@ def do_train(model, params):
                         # test-clean
                         wer_test_clean_epoch = do_eval_wer(
                             model=model,
-                            model_type='ctc',
+                            model_type=params['model_type'],
                             dataset=test_clean_data,
                             label_type=params['label_type'],
                             data_size=params['data_size'],
@@ -326,7 +361,7 @@ def do_train(model, params):
                         # test-other
                         wer_test_other_epoch = do_eval_wer(
                             model=model,
-                            model_type='ctc',
+                            model_type=params['model_type'],
                             dataset=test_other_data,
                             label_type=params['label_type'],
                             data_size=params['data_size'],
@@ -415,44 +450,111 @@ def main(config_path, model_save_path):
         raise TypeError
 
     # Model setting
-    model = CTC(
-        input_size=params['input_size'],
-        num_stack=params['num_stack'],
-        splice=params['splice'],
-        encoder_type=params['encoder_type'],
-        bidirectional=params['bidirectional'],
-        num_units=params['num_units'],
-        num_proj=params['num_proj'],
-        num_layers=params['num_layers'],
-        dropout=params['dropout'],
-        num_classes=params['num_classes'],
-        parameter_init=params['parameter_init'],
-        logits_temperature=params['logits_temperature'])
+    if params['model_type'] == 'ctc':
+        model = CTC(
+            input_size=params['input_size'],
+            num_stack=params['num_stack'],
+            splice=params['splice'],
+            encoder_type=params['encoder_type'],
+            bidirectional=params['bidirectional'],
+            num_units=params['num_units'],
+            num_proj=params['num_proj'],
+            num_layers=params['num_layers'],
+            dropout=params['dropout'],
+            num_classes=params['num_classes'],
+            parameter_init=params['parameter_init'],
+            logits_temperature=params['logits_temperature'])
 
-    # Set process name
-    setproctitle('pt_libri_ctc_' +
-                 params['label_type'] + '_' + params['data_size'])
+        # Set process name
+        setproctitle('pt_libri_ctc_' +
+                     params['label_type'] + '_' + params['data_size'])
 
-    model.name += '_' + str(params['num_units'])
-    model.name += '_' + str(params['num_layers'])
-    model.name += '_' + params['optimizer']
-    model.name += '_lr' + str(params['learning_rate'])
-    if params['num_proj'] != 0:
-        model.name += '_proj' + str(params['num_proj'])
-    if params['dropout'] != 0:
-        model.name += '_drop' + str(params['dropout'])
-    if params['num_stack'] != 1:
-        model.name += '_stack' + str(params['num_stack'])
-    if params['weight_decay'] != 0:
-        model.name += '_wd' + str(params['weight_decay'])
-    if params['bottleneck_dim'] != 0:
-        model.name += '_bottle' + str(params['bottleneck_dim'])
-    if params['logits_temperature'] != 1:
-        model.name += '_temp' + str(params['logits_temperature'])
+        model.name += '_' + str(params['num_units'])
+        model.name += '_' + str(params['num_layers'])
+        model.name += '_' + params['optimizer']
+        model.name += '_lr' + str(params['learning_rate'])
+        if params['num_proj'] != 0:
+            model.name += '_proj' + str(params['num_proj'])
+        if params['dropout'] != 0:
+            model.name += '_drop' + str(params['dropout'])
+        if params['num_stack'] != 1:
+            model.name += '_stack' + str(params['num_stack'])
+        if params['weight_decay'] != 0:
+            model.name += '_wd' + str(params['weight_decay'])
+        if params['bottleneck_dim'] != 0:
+            model.name += '_bottle' + str(params['bottleneck_dim'])
+        if params['logits_temperature'] != 1:
+            model.name += '_temp' + str(params['logits_temperature'])
+
+    elif params['model_type'] == 'attention':
+        # Model setting
+        model = AttentionSeq2seq(
+            input_size=params['input_size'],
+            num_stack=params['num_stack'],
+            splice=params['splice'],
+            encoder_type=params['encoder_type'],
+            encoder_bidirectional=params['encoder_bidirectional'],
+            encoder_num_units=params['encoder_num_units'],
+            encoder_num_proj=params['encoder_num_proj'],
+            encoder_num_layers=params['encoder_num_layers'],
+            encoder_dropout=params['dropout_encoder'],
+            attention_type=params['attention_type'],
+            attention_dim=params['attention_dim'],
+            decoder_type=params['decoder_type'],
+            decoder_num_units=params['decoder_num_units'],
+            decoder_num_proj=params['decoder_num_proj'],
+            decdoder_num_layers=params['decoder_num_layers'],
+            decoder_dropout=params['dropout_decoder'],
+            embedding_dim=params['embedding_dim'],
+            embedding_dropout=params['dropout_embedding'],
+            num_classes=params['num_classes'],
+            sos_index=params['num_classes'],
+            eos_index=params['num_classes'] + 1,
+            max_decode_length=params['max_decode_length'],
+            parameter_init=params['parameter_init'],
+            downsample_list=[],
+            init_dec_state_with_enc_state=True,
+            sharpening_factor=params['sharpening_factor'],
+            logits_temperature=params['logits_temperature'],
+            sigmoid_smoothing=params['sigmoid_smoothing'],
+            input_feeding_approach=params['input_feeding_approach'])
+
+        # Set process name
+        setproctitle('pt_csj_att_' + params['label_type'] + '_' +
+                     params['data_size'] + '_' + params['attention_type'])
+
+        model.name = 'enc' + params['encoder_type'] + \
+            str(params['encoder_num_units'])
+        model.name += '_' + str(params['encoder_num_layers'])
+        model.name += '_att' + str(params['attention_dim'])
+        model.name += '_dec' + params['decoder_type'] + \
+            str(params['decoder_num_units'])
+        model.name += '_' + str(params['decoder_num_layers'])
+        model.name += '_' + params['optimizer']
+        model.name += '_lr' + str(params['learning_rate'])
+        model.name += '_' + params['attention_type']
+        if params['dropout_encoder'] != 0:
+            model.name += '_dropen' + str(params['dropout_encoder'])
+        if params['dropout_decoder'] != 0:
+            model.name += '_dropde' + str(params['dropout_decoder'])
+        if params['dropout_embedding'] != 0:
+            model.name += '_dropem' + str(params['dropout_embedding'])
+        if params['num_stack'] != 1:
+            model.name += '_stack' + str(params['num_stack'])
+        if params['weight_decay'] != 0:
+            model.name += 'wd' + str(params['weight_decay'])
+        if params['sharpening_factor'] != 1:
+            model.name += '_sharp' + str(params['sharpening_factor'])
+        if params['logits_temperature'] != 1:
+            model.name += '_temp' + str(params['logits_temperature'])
+        if bool(params['sigmoid_smoothing']):
+            model.name += '_smoothing'
+        if bool(params['input_feeding_approach']):
+            model.name += '_infeed'
 
     # Set save path
     model.save_path = mkdir_join(
-        model_save_path, 'ctc', params['label_type'], params['data_size'], model.name)
+        model_save_path, params['model_type'], params['label_type'], params['data_size'], model.name)
 
     # Reset model directory
     model_index = 0

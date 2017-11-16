@@ -74,7 +74,7 @@ class TestLoadDatasetCTC(unittest.TestCase):
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
-            data_type=data_type, data_size='100h',
+            data_type=data_type, data_size=data_size,
             label_type=label_type,
             batch_size=64, max_epoch=1,
             splice=splice, num_stack=num_stack, num_skip=num_skip,
