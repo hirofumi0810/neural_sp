@@ -21,20 +21,20 @@ class TestLoadDatasetHierarchicalCTC(unittest.TestCase):
     def test(self):
 
         # data_type
-        self.check(label_type='word_freq1', label_type_sub='kanji',
+        self.check(label_type='word_freq5', label_type_sub='kana',
                    data_type='train')
-        self.check(label_type='word_freq1', label_type_sub='kanji',
+        self.check(label_type='word_freq5', label_type_sub='kana',
                    data_type='dev')
-        self.check(label_type='word_freq1', label_type_sub='kanji',
+        self.check(label_type='word_freq5', label_type_sub='kana',
                    data_type='eval1')
-        # self.check(label_type='word_freq1', label_type_sub='kanji',
+        # self.check(label_type='word_freq5', label_type_sub='kana',
         #            data_type='eval2')
-        # self.check(label_type='word_freq1', label_type_sub='kanji',
+        # self.check(label_type='word_freq5', label_type_sub='kana',
         #            data_type='eval3')
 
         # label_type
-        self.check(label_type='word_freq1', label_type_sub='kana')
-        self.check(label_type='kanji', label_type_sub='kana')
+        self.check(label_type='word_freq5', label_type_sub='kanji')
+        # self.check(label_type='kanji', label_type_sub='kana')
 
     @measure_time
     def check(self, label_type, label_type_sub, data_type='dev',
@@ -55,14 +55,6 @@ class TestLoadDatasetHierarchicalCTC(unittest.TestCase):
         print('  num_gpus: %d' % num_gpus)
         print('========================================')
 
-        vocab_file_path = '../../metrics/vocab_files/' + \
-            label_type + '_' + data_size + '.txt'
-        if 'kana' in label_type_sub:
-            vocab_file_path_sub = '../../metrics/vocab_files/' + label_type_sub + '.txt'
-        else:
-            vocab_file_path_sub = '../../metrics/vocab_files/' + \
-                label_type_sub + '_' + data_size + '.txt'
-
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
@@ -76,8 +68,15 @@ class TestLoadDatasetHierarchicalCTC(unittest.TestCase):
 
         print('=> Loading mini-batch...')
 
+        vocab_file_path = '../../metrics/vocab_files/' + \
+            label_type + '_' + data_size + '.txt'
+        if 'kana' in label_type_sub:
+            vocab_file_path_sub = '../../metrics/vocab_files/' + label_type_sub + '.txt'
+        else:
+            vocab_file_path_sub = '../../metrics/vocab_files/' + \
+                label_type_sub + '_' + data_size + '.txt'
+
         idx2word = Idx2word(vocab_file_path)
-        idx2char = Idx2char(vocab_file_path)
         idx2char_sub = Idx2char(vocab_file_path_sub)
 
         for data, is_new_epoch in dataset:
@@ -93,16 +92,12 @@ class TestLoadDatasetHierarchicalCTC(unittest.TestCase):
                 for inputs_gpu in inputs:
                     print(inputs_gpu.shape)
 
-            if 'eval' in data_type:
+            if dataset.is_test:
                 str_true = labels[0][0][0]
                 str_true_sub = labels_sub[0][0][0]
             else:
-                if 'word' in label_type:
-                    str_true = '_'.join(
-                        idx2word(labels[0][0][:labels_seq_len[0][0]]))
-                else:
-                    str_true = idx2char(
-                        labels[0][0][:labels_seq_len[0][0]])
+                word_list = idx2word(labels[0][0][:labels_seq_len[0][0]])
+                str_true = '_'.join(word_list)
                 str_true_sub = idx2char_sub(
                     labels_sub[0][0][:labels_seq_len_sub[0][0]])
 
@@ -111,6 +106,7 @@ class TestLoadDatasetHierarchicalCTC(unittest.TestCase):
             print(inputs[0].shape)
             print(labels[0].shape)
             print(str_true)
+            print('---')
             print(str_true_sub)
 
             if dataset.epoch_detail >= 0.05:

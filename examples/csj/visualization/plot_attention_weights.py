@@ -26,7 +26,7 @@ green = '#006400'
 
 sys.path.append(abspath('../../../'))
 from models.pytorch.load_model import load
-from examples.timit.data.load_dataset_attention import Dataset
+from examples.csj.data.load_dataset_attention import Dataset
 from utils.io.labels.phone import Idx2phone
 from utils.io.variable import np2var
 from utils.directory import mkdir_join, mkdir
@@ -49,19 +49,13 @@ def do_plot(model, params, epoch, eval_batch_size):
         epoch (int): the epoch to restore
         eval_batch_size (int): the size of mini-batch when evaluation
     """
-    if 'kana' in params['label_type']:
-        vocab_file_path = '../metrics/vocab_files/' + \
-            params['label_type'] + '.txt'
-    else:
-        vocab_file_path = '../metrics/vocab_files/' + \
-            params['label_type'] + '_' + params['data_size'] + '.txt'
-
     # Load dataset
     test_data = Dataset(
-        data_type='eval1', label_type=params['label_type'],
-        data_size=params['data_size'],
-        batch_size=eval_batch_size,
-        vocab_file_path=vocab_file_path,
+        data_type='eval1',
+        # data_type='eval2',
+        # data_type='eval3',
+        label_type=params['label_type'], data_size=params['data_size'],
+        batch_size=eval_batch_size, num_classes=params['num_classes'],
         splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=False)

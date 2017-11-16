@@ -20,7 +20,7 @@ from utils.dataset.hierarchical_ctc import DatasetBase
 class Dataset(DatasetBase):
 
     def __init__(self, data_type, data_size, label_type, label_type_sub,
-                 batch_size, vocab_file_path=None,
+                 batch_size, num_classes=None, num_classes_sub=None,
                  max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
                  shuffle=False, sort_utt=True, reverse=False,
@@ -33,7 +33,8 @@ class Dataset(DatasetBase):
                 word_freq5 or word_freq10 or word_freq15
             label_type_sub (string): kanji or kanji_divide or kana or kana_divide
             batch_size (int): the size of mini-batch
-            vocab_file_path (string): not used
+            num_classes (int): not used
+            num_classes_sub (int): not used
             max_epoch (int, optional): the max epoch. None means infinite loop.
             splice (int, optional): frames to splice. Default is 1 frame.
             num_stack (int, optional): the number of frames to stack
@@ -79,6 +80,8 @@ class Dataset(DatasetBase):
         # csj/dataset/inputs/data_size/data_type/speaker/*/npy
         label_path = join(dataset_root[0], 'labels',
                           data_size, data_type, label_type)
+        label_path_sub = join(dataset_root[0], 'labels',
+                              data_size, data_type, label_type_sub)
         # NOTE: ex.) save_path:
         # csj/dataset/labels/data_size/data_type/label_type/speaker/*/npy
 

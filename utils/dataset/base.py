@@ -18,25 +18,6 @@ class Base(object):
         self.iteration = 0
         self.is_new_epoch = False
 
-        # NOTE: these are needed when using attention-based models
-        self.num_vocab = 0
-        if 'vocab_file_path' in kwargs.keys():
-            # Read the vocabulary file
-            with open(kwargs['vocab_file_path'], 'r') as f:
-                for line in f:
-                    line = line.strip().split()
-                    if line != '':
-                        self.num_vocab += 1
-
-        self.num_vocab_sub = 0
-        if 'vocab_file_path_sub' in kwargs.keys():
-            # Read the vocabulary file
-            with open(kwargs['vocab_file_path_sub'], 'r') as f:
-                for line in f:
-                    line = line.strip().split()
-                    if line != '':
-                        self.num_vocab_sub += 1
-
     def __len__(self):
         return len(self.input_paths)
 
@@ -49,19 +30,19 @@ class Base(object):
 
     @property
     def sos_index(self):
-        return self.num_vocab
+        return self.num_classes
 
     @property
     def sos_index_sub(self):
-        return self.num_vocab_sub
+        return self.num_vocab_classes
 
     @property
     def eos_index(self):
-        return self.num_vocab + 1
+        return self.num_classes + 1
 
     @property
     def eos_index_sub(self):
-        return self.num_vocab_sub + 1
+        return self.num_vocab_classes + 1
 
     @property
     def ctc_padded_value(self):

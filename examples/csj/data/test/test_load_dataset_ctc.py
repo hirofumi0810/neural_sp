@@ -66,12 +66,6 @@ class TestLoadDatasetCTC(unittest.TestCase):
         print('  num_gpus: %d' % num_gpus)
         print('========================================')
 
-        if 'kana' in label_type:
-            vocab_file_path = '../../metrics/vocab_files/' + label_type + '.txt'
-        else:
-            vocab_file_path = '../../metrics/vocab_files/' + \
-                label_type + '_' + data_size + '.txt'
-
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
@@ -84,6 +78,13 @@ class TestLoadDatasetCTC(unittest.TestCase):
             num_gpus=num_gpus)
 
         print('=> Loading mini-batch...')
+
+        if 'kana' in label_type:
+            vocab_file_path = '../../metrics/vocab_files/' + label_type + '.txt'
+        else:
+            vocab_file_path = '../../metrics/vocab_files/' + \
+                label_type + '_' + data_size + '.txt'
+
         if 'word' in label_type:
             map_fn = Idx2word(vocab_file_path)
         else:
@@ -102,7 +103,7 @@ class TestLoadDatasetCTC(unittest.TestCase):
                 for inputs_gpu in inputs:
                     print(inputs_gpu.shape)
 
-            if 'eval' in data_type:
+            if dataset.is_test:
                 str_true = labels[0][0][0]
             else:
                 if 'word' in label_type:

@@ -14,8 +14,8 @@ import argparse
 
 sys.path.append(abspath('../../../'))
 from models.pytorch.load_model import load
-from examples.timit.data.load_dataset_ctc import Dataset as Dataset_ctc
-from examples.timit.data.load_dataset_attention import Dataset as Dataset_attention
+from examples.csj.data.load_dataset_ctc import Dataset as Dataset_ctc
+from examples.csj.data.load_dataset_attention import Dataset as Dataset_attention
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
 from utils.io.variable import np2var
@@ -43,12 +43,6 @@ def do_decode(model, params, epoch, beam_width, eval_batch_size):
         eval_batch_size (int): the size of mini-batch when evaluation
     """
     # Load dataset
-    if 'kana' in params['label_type']:
-        vocab_file_path = '../metrics/vocab_files/' + \
-            params['label_type'] + '.txt'
-    else:
-        vocab_file_path = '../metrics/vocab_files/' + \
-            params['label_type'] + '_' + params['data_size'] + '.txt'
     if params['model_type'] == 'ctc':
         Dataset = Dataset_ctc
     elif params['model_type'] == 'attention':
@@ -57,10 +51,8 @@ def do_decode(model, params, epoch, beam_width, eval_batch_size):
         data_type='eval1',
         # data_type='eval2',
         # data_type='eval3',
-        label_type=params['label_type'],
-        data_size=params['data_size'],
-        batch_size=eval_batch_size,
-        vocab_file_path=vocab_file_path,
+        label_type=params['label_type'], data_size=params['data_size'],
+        batch_size=eval_batch_size, num_classes=params['num_classes'],
         splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, reverse=True)

@@ -8,6 +8,7 @@ from __future__ import print_function
 import os
 import sys
 import unittest
+import yaml
 
 sys.path.append(os.path.abspath('../../../../'))
 from examples.csj.data.load_dataset_attention import Dataset
@@ -67,17 +68,16 @@ class TestLoadDatasetAttention(unittest.TestCase):
         print('  num_gpus: %d' % num_gpus)
         print('========================================')
 
-        if 'kana' in label_type:
-            vocab_file_path = '../../metrics/vocab_files/' + label_type + '.txt'
-        else:
-            vocab_file_path = '../../metrics/vocab_files/' + \
-                label_type + '_' + data_size + '.txt'
+        # Get voabulary number (excluding blank, <SOS>, <EOS> classes)
+        with open('../../metrics/vocab_num.yml', "r") as f:
+            vocab_num = yaml.load(f)
+            num_classes = vocab_num[data_size][label_type]
 
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
             data_type=data_type, data_size=data_size,
-            label_type=label_type, vocab_file_path=vocab_file_path,
+            label_type=label_type, num_classes=num_classes,
             batch_size=64, max_epoch=2, splice=splice,
             num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
@@ -85,6 +85,13 @@ class TestLoadDatasetAttention(unittest.TestCase):
             num_gpus=num_gpus)
 
         print('=> Loading mini-batch...')
+
+        if 'kana' in label_type:
+            vocab_file_path = '../../metrics/vocab_files/' + label_type + '.txt'
+        else:
+            vocab_file_path = '../../metrics/vocab_files/' + \
+                label_type + '_' + data_size + '.txt'
+
         if 'word' in label_type:
             map_fn = Idx2word(vocab_file_path)
         else:
@@ -103,7 +110,7 @@ class TestLoadDatasetAttention(unittest.TestCase):
                 for inputs_gpu in inputs:
                     print(inputs_gpu.shape)
 
-            if 'eval' in data_type:
+            if dataset.is_test:
                 str_true = labels[0][0][0]
             else:
                 if 'word' in label_type:

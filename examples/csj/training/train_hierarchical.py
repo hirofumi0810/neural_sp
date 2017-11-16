@@ -35,28 +35,26 @@ def do_train(model, params):
         params (dict): A dictionary of parameters
     """
     # Load dataset
-    vocab_file_path = './metrics/vocab_files/' + \
-        params['label_type'] + '_' + params['data_size'] + '.txt'
-    if 'kana' in params['label_type_sub']:
-        vocab_file_path_sub = './metrics/vocab_files/' + \
-            params['label_type_sub'] + '.txt'
-    else:
-        vocab_file_path_sub = './metrics/vocab_files/' + \
-            params['label_type_sub'] + '_' + params['data_size'] + '.txt'
     if params['model_type'] == 'hierarchical_ctc':
         Dataset = Dataset_hierarchical_ctc
     elif params['model_type'] == 'hierarchical_attention':
         Dataset = Dataset_hierarchical_attention
     train_data = Dataset(
         data_type='train', data_size=params['data_size'],
-        label_type=params['label_type'], vocab_file_path=vocab_file_path,
+        label_type=params['label_type'],
+        label_type_sub=params['label_type_sub'],
+        num_classes=params['num_classes'],
+        num_classes_sub=params['num_classes_sub'],
         batch_size=params['batch_size'], max_epoch=params['num_epoch'],
         splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'])
     dev_data = Dataset(
         data_type='dev', data_size=params['data_size'],
-        label_type=params['label_type'], vocab_file_path=vocab_file_path,
+        label_type=params['label_type'],
+        label_type_sub=params['label_type_sub'],
+        num_classes=params['num_classes'],
+        num_classes_sub=params['num_classes_sub'],
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True)

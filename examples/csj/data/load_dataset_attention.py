@@ -20,7 +20,7 @@ from utils.dataset.attention import DatasetBase
 class Dataset(DatasetBase):
 
     def __init__(self, data_type, data_size, label_type, batch_size,
-                 vocab_file_path, max_epoch=None, splice=1,
+                 num_classes, max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
                  shuffle=False, sort_utt=True, reverse=False,
                  sort_stop_epoch=None, num_gpus=1):
@@ -31,7 +31,7 @@ class Dataset(DatasetBase):
             label_type (string): kanji or kanji_divide or kana or kana_divide
                 or word_freq1 or word_freq5 or word_freq10 or word_freq15
             batch_size (int): the size of mini-batch
-            vocab_file_path (string): path to the vocabulary file
+            num_classes (int): the number of classes
             max_epoch (int, optional): the max epoch. None means infinite loop.
             splice (int, optional): frames to splice. Default is 1 frame.
             num_stack (int, optional): the number of frames to stack
@@ -46,7 +46,7 @@ class Dataset(DatasetBase):
                 will revert back to a random order
             num_gpus (optional, int): the number of GPUs
         """
-        super(Dataset, self).__init__(vocab_file_path=vocab_file_path)
+        super(Dataset, self).__init__()
 
         if data_type in ['eval1', 'eval2', 'eval3']:
             self.is_test = True
@@ -65,6 +65,8 @@ class Dataset(DatasetBase):
         self.sort_utt = sort_utt
         self.sort_stop_epoch = sort_stop_epoch
         self.num_gpus = num_gpus
+
+        self.num_classes = num_classes
 
         # paths where datasets exist
         dataset_root = ['/data/inaguma/csj',

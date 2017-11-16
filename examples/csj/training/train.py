@@ -16,7 +16,7 @@ import shutil
 
 import torch.nn as nn
 
-sys.path.append(abspath('../../'))
+sys.path.append(abspath('../../../'))
 from models.pytorch.load_model import load
 from examples.csj.data.load_dataset_ctc import Dataset as Dataset_ctc
 from examples.csj.data.load_dataset_attention import Dataset as Dataset_attention
@@ -35,26 +35,20 @@ def do_train(model, params):
         params (dict): A dictionary of parameters
     """
     # Load dataset
-    if 'kana' in params['label_type']:
-        vocab_file_path = './metrics/vocab_files/' + \
-            params['label_type'] + '.txt'
-    else:
-        vocab_file_path = './metrics/vocab_files/' + \
-            params['label_type'] + '_' + params['data_size'] + '.txt'
     if params['model_type'] == 'ctc':
         Dataset = Dataset_ctc
     elif params['model_type'] == 'attention':
         Dataset = Dataset_attention
     train_data = Dataset(
         data_type='train', data_size=params['data_size'],
-        label_type=params['label_type'], vocab_file_path=vocab_file_path,
+        label_type=params['label_type'], num_classes=params['num_classes'],
         batch_size=params['batch_size'], max_epoch=params['num_epoch'],
         splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'])
     dev_data = Dataset(
         data_type='dev', data_size=params['data_size'],
-        label_type=params['label_type'], vocab_file_path=vocab_file_path,
+        label_type=params['label_type'], num_classes=params['num_classes'],
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True)
@@ -93,7 +87,7 @@ def do_train(model, params):
     start_time_train = time.time()
     start_time_epoch = time.time()
     start_time_step = time.time()
-    cer_dev_best = 1
+    ler_dev_best = 1
     not_improved_epoch = 0
     learning_rate = float(params['learning_rate'])
     for step, (data, is_new_epoch) in enumerate(train_data):
@@ -222,22 +216,40 @@ def do_train(model, params):
 
                 start_time_eval = time.time()
                 print('=== Dev Data Evaluation ===')
-                cer_dev_epoch = do_eval_cer(
-                    model=model,
-                    model_type=params['model_type'],
-                    dataset=dev_data,
-                    label_type=params['label_type'],
-                    data_size=params['data_size'],
-                    beam_width=1,
-                    eval_batch_size=1)
-                print('  CER: %f %%' % (cer_dev_epoch * 100))
+                if 'word' not in params['label_type']:
+                    cer_dev_epoch = do_eval_cer(
+                        model=model,
+                        model_type=params['model_type'],
+                        dataset=dev_data,
+                        label_type=params['label_type'],
+                        data_size=params['data_size'],
+                        beam_width=1,
+                        eval_batch_size=1)
+                    print('  CER: %f %%' % (cer_dev_epoch * 100))
 
-                if cer_dev_epoch < cer_dev_best:
-                    cer_dev_best = cer_dev_epoch
-                    not_improved_epoch = 0
-                    print('■■■ ↑Best Score (CER)↑ ■■■')
+                    if cer_dev_epoch < ler_dev_best:
+                        ler_dev_best = cer_dev_epoch
+                        not_improved_epoch = 0
+                        print('■■■ ↑Best Score (CER)↑ ■■■')
+                    else:
+                        not_improved_epoch += 1
                 else:
-                    not_improved_epoch += 1
+                    wer_dev_epoch = do_eval_wer(
+                        model=model,
+                        model_type=params['model_type'],
+                        dataset=dev_data,
+                        label_type=params['label_type'],
+                        data_size=params['data_size'],
+                        beam_width=1,
+                        eval_batch_size=1)
+                    print('  WER: %f %%' % (wer_dev_epoch * 100))
+
+                    if wer_dev_epoch < ler_dev_best:
+                        ler_dev_best = wer_dev_epoch
+                        not_improved_epoch = 0
+                        print('■■■ ↑Best Score (CER)↑ ■■■')
+                    else:
+                        not_improved_epoch += 1
 
                 duration_eval = time.time() - start_time_eval
                 print('Evaluation time: %.3f min' % (duration_eval / 60))
