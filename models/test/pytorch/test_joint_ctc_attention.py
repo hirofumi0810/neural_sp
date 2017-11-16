@@ -92,7 +92,7 @@ class TestAttention(unittest.TestCase):
             decoder_type=decoder_type,
             decoder_num_units=256,
             decoder_num_proj=128,
-            decdoder_num_layers=1,
+            decoder_num_layers=1,
             decoder_dropout=0.1,
             embedding_dim=64,
             embedding_dropout=0.1,

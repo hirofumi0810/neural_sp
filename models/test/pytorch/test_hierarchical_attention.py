@@ -86,7 +86,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             decdoder_num_layers=1,
             decoder_num_units_sub=256,
             decoder_num_proj_sub=128,
-            decdoder_num_layers_sub=1,
+            decoder_num_layers_sub=1,
             decoder_dropout=0.1,
             embedding_dim=64,
             embedding_dim_sub=64,

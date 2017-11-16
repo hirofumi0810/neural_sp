@@ -97,7 +97,7 @@ class AttentionSeq2seq(ModelBase):
                  decoder_type,
                  decoder_num_units,
                  decoder_num_proj,
-                 decdoder_num_layers,
+                 decoder_num_layers,
                  decoder_dropout,
                  embedding_dim,
                  embedding_dropout,
@@ -145,7 +145,7 @@ class AttentionSeq2seq(ModelBase):
         self.decoder_type = decoder_type
         self.decoder_num_units = decoder_num_units
         self.decoder_num_proj = decoder_num_proj
-        self.decdoder_num_layers = decdoder_num_layers
+        self.decoder_num_layers = decoder_num_layers
         self.decoder_dropout = decoder_dropout
         self.embedding_dim = embedding_dim
         self.embedding_dropout = embedding_dropout

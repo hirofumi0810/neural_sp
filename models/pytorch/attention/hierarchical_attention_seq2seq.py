@@ -33,7 +33,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  decoder_type,
                  decoder_num_units,
                  decoder_num_proj,
-                 decdoder_num_layers,
+                 decoder_num_layers,
                  decoder_num_units_sub,  # ***
                  decoder_num_proj_sub,  # ***
                  decdoder_num_layers_sub,  # ***
@@ -72,7 +72,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             decoder_type=decoder_type,
             decoder_num_units=decoder_num_units,
             decoder_num_proj=decoder_num_units,
-            decdoder_num_layers=decdoder_num_layers,
+            decoder_num_layers=decoder_num_layers,
             decoder_dropout=decoder_dropout,
             embedding_dim=embedding_dim,
             embedding_dropout=embedding_dropout,
