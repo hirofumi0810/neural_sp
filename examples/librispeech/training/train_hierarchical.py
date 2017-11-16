@@ -38,16 +38,16 @@ def do_train(model, params):
         params (dict): A dictionary of parameters
     """
     # Load dataset
-    vocab_file_path = './metrics/vocab_files/' + \
+    vocab_file_path = '../metrics/vocab_files/' + \
         params['label_type'] + '_' + params['data_size'] + '.txt'
     if params['label_type_sub'] == 'character':
-        vocab_file_path_sub = './metrics/vocab_files/character.txt'
+        vocab_file_path_sub = '../metrics/vocab_files/character.txt'
     else:
-        vocab_file_path_sub = './metrics/vocab_files/' + \
+        vocab_file_path_sub = '../metrics/vocab_files/' + \
             params['label_type_sub'] + '_' + params['data_size'] + '.txt'
-    if params['model_type'] == 'ctc':
+    if params['model_type'] == 'hierarchical_ctc':
         Dataset = Dataset_hierarchical_ctc
-    elif params['model_type'] == 'attention':
+    elif params['model_type'] == 'hierarchical_attention':
         Dataset = Dataset_hierarchical_attention
     train_data = Dataset(
         data_type='train', data_size=params['data_size'],

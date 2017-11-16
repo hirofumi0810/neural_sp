@@ -1,8 +1,9 @@
 param:
   # corpus
   corpus: librispeech
-  label_type: word_freq1
-  data_size: 960h
+  label_type: word_freq5
+  label_type_sub: character
+  data_size: 100h
 
   # features
   feature: fbank
@@ -12,12 +13,13 @@ param:
   num_skip: 2
 
   # topology
-  model_type: ctc
+  model_type: hierarchical_ctc
   encoder_type: lstm
   bidirectional: True
   num_units: 320
   num_proj: 0
   num_layers: 6
+  num_layers_sub: 4
   bottleneck_dim: 0
 
   # optimization
@@ -32,13 +34,13 @@ param:
   clip_activation: 50
   dropout: 0.2
   weight_decay: 0
-  decay_start_epoch: 4
+  decay_start_epoch: 5
   decay_rate: 0.5
-  decay_patient_epoch: 1
-  sort_stop_epoch: 6
-  not_improved_patient_epoch: 3
+  decay_patient_epoch: 3
+  sort_stop_epoch: 10
+  not_improved_patient_epoch: 5
 
   logits_temperature: 1
 
-  eval_start_epoch: 5
-  print_step: 2000
+  eval_start_epoch: 3
+  print_step: 300
