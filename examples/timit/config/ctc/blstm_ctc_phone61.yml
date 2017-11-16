@@ -9,9 +9,9 @@ param:
   splice: 1
   num_stack: 2
   num_skip: 2
-  # NOTE: per 20ms
 
   # topology
+  model_type: ctc
   encoder_type: lstm
   bidirectional: True
   num_units: 256

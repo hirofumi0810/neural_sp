@@ -9,9 +9,9 @@ param:
   splice: 1
   num_stack: 2
   num_skip: 2
-  # NOTE: per 20ms
 
   # topology
+  model_type: attention
   encoder_type: gru
   encoder_bidirectional: True
   encoder_num_units: 256
