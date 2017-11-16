@@ -63,13 +63,15 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
             inputs, labels, inputs_seq_len, labels_seq_len, _ = data
         else:
             raise NotImplementedError
+
+        # Wrap by variable
         inputs = np2var(inputs, use_cuda=model.use_cuda, volatile=True)
         inputs_seq_len = np2var(
             inputs_seq_len, use_cuda=model.use_cuda, volatile=True, dtype='int')
 
         batch_size = inputs[0].size(0)
 
-        # Evaluate by 39 phones
+        # Decode
         if model_type == 'attention':
             labels_pred, _ = model.decode_infer(
                 inputs[0], inputs_seq_len[0], beam_width=beam_width)
@@ -86,7 +88,7 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
             ##############################
             # Convert from index to phone (-> list of phone strings)
             str_pred = idx2phone_train(labels_pred[i_batch]).split('>')[0]
-            # NOTE: Trancate by <EOS>
+            # NOTE: Trancate by the first <EOS>
 
             # Remove the last space
             if len(str_pred) > 0 and str_pred[-1] == ' ':
@@ -101,9 +103,13 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
                 phone_true_list = labels[0][i_batch][0].split(' ')
             else:
                 # Convert from index to phone (-> list of phone strings)
-                phone_true_list = idx2phone_eval(
-                    labels[0][i_batch][1:labels_seq_len[0][i_batch] - 1]).split(' ')
-                # NOTE: Exclude <SOS> and <EOS>
+                if model_type in ['ctc']:
+                    phone_true_list = idx2phone_eval(
+                        labels[0][i_batch][:labels_seq_len[0][i_batch]]).split(' ')
+                elif model_type in ['attention']:
+                    phone_true_list = idx2phone_eval(
+                        labels[0][i_batch][1:labels_seq_len[0][i_batch] - 1]).split(' ')
+                    # NOTE: Exclude <SOS> and <EOS>
 
             # Mapping to 39 phones (-> list of phone strings)
             phone_pred_list = map2phone39_train(phone_pred_list)

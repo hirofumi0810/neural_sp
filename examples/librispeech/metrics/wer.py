@@ -7,7 +7,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import re
 from tqdm import tqdm
 
 from utils.io.labels.word import Idx2word
@@ -54,8 +53,12 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
         # Create feed dictionary for next mini-batch
         if model_type in ['ctc', 'attention']:
             inputs, labels, inputs_seq_len, labels_seq_len, _ = data
+        elif model_type in ['hierarchical_ctc', 'hierarchical_attention']:
+            inputs, labels, _, inputs_seq_len, labels_seq_len, _, _ = data
         else:
-            raise NotImplementedError
+            raise TypeError
+
+        # Wrap by variable
         inputs = np2var(inputs, use_cuda=model.use_cuda, volatile=True)
         inputs_seq_len = np2var(
             inputs_seq_len, use_cuda=model.use_cuda, volatile=True, dtype='int')
@@ -65,7 +68,7 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
         # Decode
         if model_type == 'attention':
             labels_pred, _ = model.decode_infer(
-                inputs[0], beam_width=beam_width)
+                inputs[0], inputs_seq_len[0], beam_width=beam_width)
         elif model_type == 'ctc':
             logits, perm_indices = model(inputs[0], inputs_seq_len[0])
             labels_pred = model.decode(
@@ -80,16 +83,15 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
                 word_list_true = labels[0][i_batch][0].split('_')
                 # NOTE: transcript is seperated by space('_')
             else:
-                word_list_true = idx2word(
-                    labels[0][i_batch][1:labels_seq_len[0][i_batch] - 1])
-
+                if model_type in ['ctc', 'hierarchical_ctc']:
+                    word_list_true = idx2word(
+                        labels[0][i_batch][:labels_seq_len[0][i_batch]])
+                elif model_type in ['attention', 'hierarchical_attention']:
+                    word_list_true = idx2word(
+                        labels[0][i_batch][1:labels_seq_len[0][i_batch] - 1])
+                    # NOTE: Exclude <SOS> and <EOS>
             word_list_pred = idx2word(labels_pred[i_batch])
-            # str_pred = idx2word(labels_pred[i_batch]).split('>')[0]
-            # TODO: Trancate by <EOS>
-
-            # Remove garbage labels
-            # str_true = re.sub(r'[<>]+', '', str_true)
-            # str_pred = re.sub(r'[<>]+', '', str_pred)
+            # NOTE: Trancate by the first <EOS>
 
             # Compute WER
             wer_mean += compute_wer(ref=word_list_true,

@@ -58,8 +58,12 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
         # Create feed dictionary for next mini-batch
         if model_type in ['ctc', 'attention']:
             inputs, labels, inputs_seq_len, labels_seq_len, _ = data
+        elif model_type in ['hierarchical_ctc', 'hierarchical_attention']:
+            inputs, _, labels, inputs_seq_len, _, labels_seq_len, _ = data
         else:
-            raise NotImplementedError
+            raise TypeError
+
+        # Wrap by variable
         inputs = np2var(inputs, use_cuda=model.use_cuda, volatile=True)
         inputs_seq_len = np2var(
             inputs_seq_len, use_cuda=model.use_cuda, volatile=True, dtype='int')
@@ -69,7 +73,7 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
         # Decode
         if model_type == 'attention':
             labels_pred, _ = model.decode_infer(
-                inputs[0], beam_width=beam_width)
+                inputs[0], inputs_seq_len[0], beam_width=beam_width)
         elif model_type == 'ctc':
             logits, perm_indices = model(inputs[0], inputs_seq_len[0])
             labels_pred = model.decode(
@@ -84,10 +88,15 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
                 str_true = labels[0][i_batch][0]
                 # NOTE: transcript is seperated by space('_')
             else:
-                str_true = idx2char(
-                    labels[0][i_batch][1:labels_seq_len[0][i_batch] - 1])
+                if model_type in ['ctc', 'hierarchical_ctc']:
+                    str_true = idx2char(
+                        labels[0][i_batch][:labels_seq_len[0][i_batch]])
+                elif model_type in ['attention', 'hierarchical_attention']:
+                    str_true = idx2char(
+                        labels[0][i_batch][1:labels_seq_len[0][i_batch] - 1])
+                    # NOTE: Exclude <SOS> and <EOS>
             str_pred = idx2char(labels_pred[i_batch]).split('>')[0]
-            # NOTE: Trancate by <EOS>
+            # NOTE: Trancate by the first <EOS>
 
             # Remove consecutive spaces
             str_pred = re.sub(r'[_]+', '_', str_pred)
