@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Test hierarchical attention-besed models in pytorch."""
+"""Test Joint CTC-Attention models in pytorch."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -15,7 +15,7 @@ import torch
 import torch.nn as nn
 
 sys.path.append('../../../')
-from models.pytorch.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
+from models.pytorch.attention.joint_ctc_attention import JointCTCAttention
 from models.test.data import generate_data, idx2char, idx2word
 from utils.measure_time_func import measure_time
 from utils.io.variable import np2var, var2np
@@ -25,20 +25,25 @@ from utils.training.learning_rate_controller import Controller
 torch.manual_seed(2017)
 
 
-class TestHierarchicalAttention(unittest.TestCase):
+class TestAttention(unittest.TestCase):
 
     def test(self):
-        print("Hierarchical Attention Working check.")
+        print("Attention Working check.")
 
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm')
+                   decoder_type='lstm', label_type='word_char')
+        # self.check(encoder_type='lstm', bidirectional=True,
+        #            decoder_type='lstm', label_type='word')
+        # self.check(encoder_type='lstm', bidirectional=True,
+        #            decoder_type='lstm', label_type='char')
 
     @measure_time
     def check(self, encoder_type, bidirectional, decoder_type,
-              attention_type='dot_product',
+              attention_type='dot_product', label_type='char',
               downsample=False, input_feeding_approach=False):
 
         print('==================================================')
+        print('  label_type: %s' % label_type)
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
         print('  decoder_type: %s' % decoder_type)
@@ -48,35 +53,39 @@ class TestHierarchicalAttention(unittest.TestCase):
         print('==================================================')
 
         # Load batch data
-        inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub = generate_data(
-            model='attention',
-            label_type='word_char',
+        inputs, labels, labels_ctc, inputs_seq_len, labels_seq_len, labels_seq_len_ctc = generate_data(
+            model='joint_ctc_attention',
+            label_type=label_type,
             batch_size=2,
             num_stack=1,
             splice=1)
 
+        print(labels_ctc)
+        print(labels_seq_len_ctc)
+
         # Wrap by Variable
         inputs = np2var(inputs)
-        labels = np2var(labels, dtype='long')   # labels must be long
-        labels_sub = np2var(labels_sub, dtype='long')   # labels must be long
+        labels = np2var(labels, dtype='long')  # labels must be long
+        labels_ctc = np2var(labels_ctc, dtype='int')
         inputs_seq_len = np2var(inputs_seq_len, dtype='int')
         labels_seq_len = np2var(labels_seq_len, dtype='int')
-        labels_seq_len_sub = np2var(labels_seq_len_sub, dtype='int')
+        labels_seq_len_ctc = np2var(labels_seq_len_ctc, dtype='int')
 
-        sos_index = 11
-        eos_index = 12
-        sos_index_sub = 27
-        eos_index_sub = 28
+        if label_type == 'char':
+            sos_index = 27
+            eos_index = 28
+        elif label_type in ['word', 'word_char']:
+            sos_index = 11
+            eos_index = 12
 
         # Load model
-        model = HierarchicalAttentionSeq2seq(
+        model = JointCTCAttention(
             input_size=inputs.size(-1),
             encoder_type=encoder_type,
             encoder_bidirectional=bidirectional,
             encoder_num_units=256,
             encoder_num_proj=0,
             encoder_num_layers=3,
-            encoder_num_layers_sub=2,
             encoder_dropout=0.1,
             attention_type=attention_type,
             attention_dim=128,
@@ -84,23 +93,19 @@ class TestHierarchicalAttention(unittest.TestCase):
             decoder_num_units=256,
             decoder_num_proj=128,
             decdoder_num_layers=1,
-            decoder_num_units_sub=256,
-            decoder_num_proj_sub=128,
-            decdoder_num_layers_sub=1,
             decoder_dropout=0.1,
             embedding_dim=64,
-            embedding_dim_sub=64,
             embedding_dropout=0.1,
             num_classes=sos_index,
             sos_index=sos_index,
             eos_index=eos_index,
-            num_classes_sub=sos_index_sub,
-            sos_index_sub=sos_index_sub,
-            eos_index_sub=eos_index_sub,
-            max_decode_length=30,
-            max_decode_length_sub=100,
+            ctc_num_layers=2,
+            ctc_loss_weight=0.1,
+            max_decode_length=100,
             splice=1,
             parameter_init=0.1,
+            # downsample_list=[] if not downsample else [True] * 2,
+            downsample_list=[],
             init_dec_state_with_enc_state=True,
             sharpening_factor=1,
             logits_temperature=1,
@@ -137,13 +142,12 @@ class TestHierarchicalAttention(unittest.TestCase):
         use_cuda = model.use_cuda
         model.set_cuda(deterministic=False)
         if use_cuda:
-            model = model.cuda()
             inputs = inputs.cuda()
             labels = labels.cuda()
-            labels_sub = labels_sub.cuda()
+            labels_ctc = labels_ctc.cuda()
             inputs_seq_len = inputs_seq_len.cuda()
             labels_seq_len = labels_seq_len.cuda()
-            labels_seq_len_sub = labels_seq_len_sub.cuda()
+            labels_seq_len_ctc = labels_seq_len_ctc.cuda()
 
         # Train model
         max_step = 1000
@@ -155,15 +159,17 @@ class TestHierarchicalAttention(unittest.TestCase):
             optimizer.zero_grad()
 
             # Compute loss
-            logits, att_weights, logits_sub, att_weights_sub, perm_indices = model(
-                inputs, inputs_seq_len, labels, labels_sub)
+            logits, att_weights, logits_ctc, perm_indices = model(
+                inputs, inputs_seq_len, labels)
             loss = model.compute_loss(
                 logits,
+                inputs_seq_len[perm_indices],
                 labels[perm_indices],
                 labels_seq_len[perm_indices],
-                logits_sub,
-                labels_sub[perm_indices],
-                labels_seq_len_sub[perm_indices])
+                logits_ctc,
+                labels_ctc,
+                labels_seq_len_ctc,
+                att_weights, coverage_weight=0.5)
 
             # Compute gradient
             optimizer.zero_grad()
@@ -184,38 +190,37 @@ class TestHierarchicalAttention(unittest.TestCase):
 
                 # Decode
                 labels_pred, _ = model.decode_infer(
-                    inputs, inputs_seq_len, beam_width=1)
-                labels_pred_sub, _ = model.decode_infer_sub(
-                    inputs, inputs_seq_len, beam_width=1)
+                    inputs, inputs_seq_len, beam_width=5)
 
                 # Compute accuracy
-                str_pred = idx2word(labels_pred[0][0:-1]).split('>')[0]
-                str_true = idx2word(var2np(labels)[0][1:-1])
-                ler = compute_wer(ref=str_true.split('_'),
-                                  hyp=str_pred.split('_'),
-                                  normalize=True)
-                str_pred_sub = idx2char(labels_pred_sub[0][0:-1]).split('>')[0]
-                str_true_sub = idx2char(var2np(labels_sub)[0][1:-1])
-                ler_sub = compute_cer(ref=str_true_sub.replace('_', ''),
-                                      hyp=str_pred_sub.replace(
-                    '_', ''),
-                    normalize=True)
+                if label_type == 'char':
+                    str_true = idx2char(var2np(labels[perm_indices])[
+                                        0, :var2np(labels_seq_len[perm_indices])[0]][1:-1])
+                    str_pred = idx2char(labels_pred[0][0:-1]).split('>')[0]
+                    ler = compute_cer(ref=str_true.replace('_', ''),
+                                      hyp=str_pred.replace('_', ''),
+                                      normalize=True)
+                elif label_type == 'word':
+                    str_true = idx2word(var2np(labels[perm_indices])[
+                                        0, :var2np(labels_seq_len[perm_indices])[0]][1:-1])
+                    str_pred = idx2word(labels_pred[0][0:-1]).split('>')[0]
+                    ler = compute_wer(ref=str_true.split('_'),
+                                      hyp=str_pred.split('_'),
+                                      normalize=True)
 
                 # ***Change to training mode***
                 model.train()
 
                 duration_step = time.time() - start_time_step
-                print('Step %d: loss = %.3f / ler (main) = %.3f / ler (sub) = %.3f / lr = %.5f (%.3f sec)' %
-                      (step + 1, var2np(loss), ler, ler_sub, learning_rate, duration_step))
+                print('Step %d: loss = %.3f / ler = %.3f / ler (ctc) = ? / lr = %.5f (%.3f sec)' %
+                      (step + 1, var2np(loss), ler, learning_rate, duration_step))
                 start_time_step = time.time()
 
                 # Visualize
-                print('Ref (word): %s' % str_true)
-                print('Hyp (word): %s' % str_pred)
-                print('Ref (char): %s' % str_true_sub)
-                print('Hyp (char): %s' % str_pred_sub)
+                print('Ref: %s' % str_true)
+                print('Hyp: %s' % str_pred)
 
-                if ler_sub < 0.1:
+                if ler < 0.1:
                     print('Modle is Converged.')
                     break
                 ler_pre = ler

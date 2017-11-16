@@ -12,18 +12,10 @@ try:
 except:
     raise ImportError('Install warpctc_pytorch.')
 
-import numpy as np
-from itertools import groupby
-
-import torch
-from torch.autograd import Variable
-import torch.nn.functional as F
+import torch.nn as nn
 
 from models.pytorch.ctc.ctc import CTC
 from models.pytorch.encoders.load_encoder import load
-from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
-from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
-from utils.io.variable import var2np
 
 NEG_INF = -float("inf")
 LOG_0 = NEG_INF
@@ -112,7 +104,7 @@ class HierarchicalCTC(CTC):
         else:
             raise NotImplementedError
 
-        self.fc_sub = torch.nn.Linear(
+        self.fc_sub = nn.Linear(
             num_units * self.num_directions, self.num_classes_sub)
 
     def _encode(self, inputs, inputs_seq_len, volatile):

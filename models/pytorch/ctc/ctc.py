@@ -16,6 +16,7 @@ import numpy as np
 from itertools import groupby
 
 import torch
+import torch.nn as nn
 from torch.autograd import Variable
 import torch.nn.functional as F
 
@@ -109,11 +110,11 @@ class CTC(ModelBase):
             raise NotImplementedError
 
         if self.bottleneck_dim is not None:
-            self.bottleneck = torch.nn.Linear(
+            self.bottleneck = nn.Linear(
                 num_units * self.num_directions, bottleneck_dim)
-            self.fc = torch.nn.Linear(bottleneck_dim, self.num_classes)
+            self.fc = nn.Linear(bottleneck_dim, self.num_classes)
         else:
-            self.fc = torch.nn.Linear(
+            self.fc = nn.Linear(
                 num_units * self.num_directions, self.num_classes)
 
         # Set CTC decoders

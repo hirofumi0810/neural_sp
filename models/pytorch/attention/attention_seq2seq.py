@@ -8,6 +8,7 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -77,7 +78,10 @@ class AttentionSeq2seq(ModelBase):
             softmax layer in outputing probabilities
         sigmoid_smoothing (bool, optional): if True, replace softmax function
             in computing attention weights with sigmoid function for smoothing
-        input_feeding_approach (bool, optional): if True,
+        input_feeding_approach (bool, optional): See detail in
+            Luong, Minh-Thang, Hieu Pham, and Christopher D. Manning.
+            "Effective approaches to attention-based neural machine translation."
+                arXiv preprint arXiv:1508.04025 (2015).
     """
 
     def __init__(self,
@@ -234,7 +238,8 @@ class AttentionSeq2seq(ModelBase):
             decoder_num_units=decoder_num_units,
             attention_type=attention_type,
             attention_dim=attention_dim,
-            sharpening_factor=sharpening_factor)
+            sharpening_factor=sharpening_factor,
+            sigmoid_smoothing=sigmoid_smoothing)
 
         ##################################################
         # Bridge layer between the encoder and decoder
@@ -332,6 +337,9 @@ class AttentionSeq2seq(ModelBase):
             loss (FloatTensor): A tensor of size `[1]`
         """
         batch_size, _, num_classes = logits.size()
+
+        if self.logits_temperature != 1:
+            logits /= self.logits_temperature
 
         logits = logits.view((-1, num_classes))
         labels = labels[:, 1:].contiguous().view(-1)

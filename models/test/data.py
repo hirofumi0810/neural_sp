@@ -87,6 +87,9 @@ def generate_data(model, label_type='char', batch_size=1, num_stack=1, splice=1)
         elif model == 'ctc':
             transcript_word = transcript
             transcript_char = transcript
+        elif model == 'joint_ctc_attention':
+            transcript_word = SOS + SPACE + transcript + SPACE + EOS
+            transcript_char = transcript
         labels = np.array([word2idx(transcript_word)]
                           * batch_size, np.int32)
         labels_sub = np.array([char2idx(transcript_char)]

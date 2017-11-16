@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Test Attention-besed models in pytorch."""
+"""Test attention-besed models in pytorch."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -187,11 +187,9 @@ class TestAttention(unittest.TestCase):
             # Clear gradients before
             optimizer.zero_grad()
 
-            # Make prediction
+            # Compute loss
             logits, att_weights, perm_indices = model(
                 inputs, inputs_seq_len, labels)
-
-            # Compute loss
             loss = model.compute_loss(
                 logits,
                 labels[perm_indices],
@@ -239,8 +237,8 @@ class TestAttention(unittest.TestCase):
                 model.train()
 
                 duration_step = time.time() - start_time_step
-                print('Step %d: loss = %.3f / ler = %.3f (%.3f sec) / lr = %.5f' %
-                      (step + 1, var2np(loss), ler, duration_step, learning_rate))
+                print('Step %d: loss = %.3f / ler = %.3f / lr = %.5f (%.3f sec)' %
+                      (step + 1, var2np(loss), ler, learning_rate, duration_step))
                 start_time_step = time.time()
 
                 # Visualize

@@ -11,7 +11,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# from models.pytorch.base import ModelBase
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 from models.pytorch.encoders.load_encoder import load
 from models.pytorch.attention.attention_layer import AttentionMechanism
@@ -113,7 +112,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # NOTE: overide encoder
         #########################
         # Load an instance
-        encoder = load(encoder_type=encoder_type + '_hierarchical')
+        if len(downsample_list) == 0:
+            encoder = load(encoder_type=encoder_type + '_hierarchical')
+        else:
+            raise NotImplementedError
 
         # Call the encoder function
         if encoder_type in ['lstm', 'gru', 'rnn']:
@@ -168,7 +170,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             decoder_num_units=decoder_num_units_sub,
             attention_type=attention_type,
             attention_dim=attention_dim,
-            sharpening_factor=sharpening_factor)
+            sharpening_factor=sharpening_factor,
+            sigmoid_smoothing=sigmoid_smoothing)
 
         ##################################################
         # Bridge layer between the encoder and decoder
@@ -318,6 +321,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         _, _, num_classes_sub = logits_sub.size()
         logits_sub = logits_sub.view((-1, num_classes_sub))
         labels_sub = labels_sub[:, 1:].contiguous().view(-1)
+
+        if self.logits_temperature != 1:
+            logits /= self.logits_temperature
+            logits_sub /= self.logits_temperature
 
         loss = F.cross_entropy(logits, labels,
                                ignore_index=self.sos_index,
