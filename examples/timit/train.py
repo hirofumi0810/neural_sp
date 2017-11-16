@@ -285,7 +285,7 @@ def main(config_path, model_save_path):
         config = yaml.load(f)
         params = config['param']
 
-    # Except for a <SOS> and <EOS> class
+    # Except for blank, <SOS>, <EOS> classes
     if params['label_type'] == 'phone61':
         params['num_classes'] = 61
     elif params['label_type'] == 'phone48':
@@ -350,8 +350,6 @@ def main(config_path, model_save_path):
             embedding_dim=params['embedding_dim'],
             embedding_dropout=params['dropout_embedding'],
             num_classes=params['num_classes'],
-            sos_index=params['num_classes'],
-            eos_index=params['num_classes'] + 1,
             max_decode_length=params['max_decode_length'],
             parameter_init=params['parameter_init'],
             downsample_list=[],
@@ -393,10 +391,6 @@ def main(config_path, model_save_path):
             model.name += '_smoothing'
         if bool(params['input_feeding_approach']):
             model.name += '_infeed'
-
-        # Set save path
-        model.save_path = mkdir_join(
-            model_save_path, 'attention', params['label_type'], model.name)
 
     # Set save path
     model.save_path = mkdir_join(

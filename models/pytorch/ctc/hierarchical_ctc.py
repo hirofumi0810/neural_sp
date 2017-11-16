@@ -33,7 +33,7 @@ class HierarchicalCTC(CTC):
         num_layers (int): the number of layers of the encoder
         dropout (float): the probability to drop nodes
         num_classes (int): the number of classes of target labels
-            (except for a blank label)
+            (excluding a blank class)
         num_stack (int, optional): the number of frames to stack
         splice (int, optional): frames to splice. Default is 1 frame.
         parameter_init (float, optional): Range of uniform distribution to

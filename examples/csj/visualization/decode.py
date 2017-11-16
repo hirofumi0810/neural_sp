@@ -91,7 +91,7 @@ def do_decode(model, params, epoch, beam_width, eval_batch_size):
 
 def decode(model, model_type, dataset, label_type, data_size, beam_width,
            is_test=False, save_path=None):
-    """Visualize label outputs of Attention-based model.
+    """Visualize label outputs.
     Args:
         model: the model to evaluate
         model_type (string): ctc or attention
@@ -267,8 +267,6 @@ def main():
             embedding_dim=params['embedding_dim'],
             embedding_dropout=params['dropout_embedding'],
             num_classes=params['num_classes'],
-            sos_index=params['num_classes'],
-            eos_index=params['num_classes'] + 1,
             max_decode_length=params['max_decode_length'],
             parameter_init=params['parameter_init'],
             downsample_list=downsample_list,

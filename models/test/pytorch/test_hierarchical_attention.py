@@ -49,24 +49,14 @@ class TestHierarchicalAttention(unittest.TestCase):
 
         # Load batch data
         inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub = generate_data(
-            model='attention',
+            model_type='attention',
             label_type='word_char',
             batch_size=2,
             num_stack=1,
             splice=1)
 
-        # Wrap by Variable
-        inputs = np2var(inputs)
-        labels = np2var(labels, dtype='long')   # labels must be long
-        labels_sub = np2var(labels_sub, dtype='long')   # labels must be long
-        inputs_seq_len = np2var(inputs_seq_len, dtype='int')
-        labels_seq_len = np2var(labels_seq_len, dtype='int')
-        labels_seq_len_sub = np2var(labels_seq_len_sub, dtype='int')
-
-        sos_index = 11
-        eos_index = 12
-        sos_index_sub = 27
-        eos_index_sub = 28
+        num_classes = 11
+        num_classes_sub = 27
 
         # Load model
         model = HierarchicalAttentionSeq2seq(
@@ -83,7 +73,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             decoder_type=decoder_type,
             decoder_num_units=256,
             decoder_num_proj=128,
-            decdoder_num_layers=1,
+            decoder_num_layers=1,
             decoder_num_units_sub=256,
             decoder_num_proj_sub=128,
             decoder_num_layers_sub=1,
@@ -91,12 +81,8 @@ class TestHierarchicalAttention(unittest.TestCase):
             embedding_dim=64,
             embedding_dim_sub=64,
             embedding_dropout=0.1,
-            num_classes=sos_index,
-            sos_index=sos_index,
-            eos_index=eos_index,
-            num_classes_sub=sos_index_sub,
-            sos_index_sub=sos_index_sub,
-            eos_index_sub=eos_index_sub,
+            num_classes=num_classes,
+            num_classes_sub=num_classes_sub,
             max_decode_length=30,
             max_decode_length_sub=100,
             splice=1,
@@ -136,14 +122,17 @@ class TestHierarchicalAttention(unittest.TestCase):
         # GPU setting
         use_cuda = model.use_cuda
         model.set_cuda(deterministic=False)
-        if use_cuda:
-            model = model.cuda()
-            inputs = inputs.cuda()
-            labels = labels.cuda()
-            labels_sub = labels_sub.cuda()
-            inputs_seq_len = inputs_seq_len.cuda()
-            labels_seq_len = labels_seq_len.cuda()
-            labels_seq_len_sub = labels_seq_len_sub.cuda()
+
+        # Wrap by Variable
+        inputs = np2var(inputs, use_cuda=use_cuda)
+        # labels must be long
+        labels = np2var(labels, dtype='long', use_cuda=use_cuda)
+        labels_sub = np2var(labels_sub, dtype='long',
+                            use_cuda=use_cuda)   # labels must be long
+        inputs_seq_len = np2var(inputs_seq_len, dtype='int', use_cuda=use_cuda)
+        labels_seq_len = np2var(labels_seq_len, dtype='int', use_cuda=use_cuda)
+        labels_seq_len_sub = np2var(
+            labels_seq_len_sub, dtype='int', use_cuda=use_cuda)
 
         # Train model
         max_step = 1000

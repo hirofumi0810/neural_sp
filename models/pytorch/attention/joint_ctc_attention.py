@@ -46,13 +46,13 @@ class JointCTCAttention(AttentionSeq2seq):
         embedding_dropout (int): the probability to drop nodes of the
             embedding layer
         num_classes (int): the number of nodes in softmax layer
-            (except for <SOS> and <EOS> calsses)
-        sos_index (int): index of the start of sentence tag (<SOS>)
-        eos_index (int): index of the end of sentence tag (<EOS>)
+            (excluding <SOS> and <EOS> classes)
         max_decode_length (int): the length of output sequences to stop
             prediction when EOS token have not been emitted
         ctc_num_layers (int): index of the layer to attatch a CTC decoder
         ctc_loss_weight (float): A weight parameter for auxiliary CTC loss
+        ctc_num_classes (int): the number of nodes in softmax layer
+            (excluding a blank class)
         num_stack (int, optional): the number of frames to stack
         splice (int, optional): the number of frames to splice. This is used
             when using CNN-like encoder. Default is 1 frame.
@@ -91,10 +91,9 @@ class JointCTCAttention(AttentionSeq2seq):
                  embedding_dim,
                  embedding_dropout,
                  num_classes,
-                 sos_index,
-                 eos_index,
                  ctc_num_layers,  # ***
                  ctc_loss_weight,  # ***
+                 ctc_num_classes,  # ***
                  max_decode_length=100,
                  num_stack=1,
                  splice=1,
@@ -124,8 +123,6 @@ class JointCTCAttention(AttentionSeq2seq):
             embedding_dim=embedding_dim,
             embedding_dropout=embedding_dropout,
             num_classes=num_classes,
-            sos_index=sos_index,
-            eos_index=eos_index,
             max_decode_length=max_decode_length,
             num_stack=num_stack,
             splice=splice,
@@ -149,7 +146,7 @@ class JointCTCAttention(AttentionSeq2seq):
         # Setting for MTL
         self.ctc_num_layers = ctc_num_layers
         self.ctc_loss_weight = ctc_loss_weight
-        self.ctc_num_classes = num_classes + 1
+        self.ctc_num_classes = ctc_num_classes + 1
 
         #########################
         # Encoder

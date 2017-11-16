@@ -30,12 +30,12 @@ class TestAttention(unittest.TestCase):
     def test(self):
         print("Attention Working check.")
 
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', label_type='word_char')
         # self.check(encoder_type='lstm', bidirectional=True,
         #            decoder_type='lstm', label_type='word')
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            decoder_type='lstm', label_type='char')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', label_type='char')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', label_type='word_char')
 
     @measure_time
     def check(self, encoder_type, bidirectional, decoder_type,
@@ -54,29 +54,23 @@ class TestAttention(unittest.TestCase):
 
         # Load batch data
         inputs, labels, labels_ctc, inputs_seq_len, labels_seq_len, labels_seq_len_ctc = generate_data(
-            model='joint_ctc_attention',
+            model_type='joint_ctc_attention',
             label_type=label_type,
             batch_size=2,
             num_stack=1,
             splice=1)
-
-        print(labels_ctc)
-        print(labels_seq_len_ctc)
-
-        # Wrap by Variable
-        inputs = np2var(inputs)
-        labels = np2var(labels, dtype='long')  # labels must be long
-        labels_ctc = np2var(labels_ctc, dtype='int')
-        inputs_seq_len = np2var(inputs_seq_len, dtype='int')
-        labels_seq_len = np2var(labels_seq_len, dtype='int')
-        labels_seq_len_ctc = np2var(labels_seq_len_ctc, dtype='int')
+        labels_ctc += 1
+        # NOTE: index 0 is reserved for blank
 
         if label_type == 'char':
-            sos_index = 27
-            eos_index = 28
-        elif label_type in ['word', 'word_char']:
-            sos_index = 11
-            eos_index = 12
+            num_classes = 27
+            num_classes_sub = 27
+        elif label_type == 'word':
+            num_classes = 11
+            num_classes_sub = 11
+        elif label_type == 'word_char':
+            num_classes = 27
+            num_classes_sub = 11
 
         # Load model
         model = JointCTCAttention(
@@ -96,11 +90,10 @@ class TestAttention(unittest.TestCase):
             decoder_dropout=0.1,
             embedding_dim=64,
             embedding_dropout=0.1,
-            num_classes=sos_index,
-            sos_index=sos_index,
-            eos_index=eos_index,
+            num_classes=num_classes,
             ctc_num_layers=2,
             ctc_loss_weight=0.1,
+            ctc_num_classes=num_classes_sub,
             max_decode_length=100,
             splice=1,
             parameter_init=0.1,
@@ -141,13 +134,16 @@ class TestAttention(unittest.TestCase):
         # GPU setting
         use_cuda = model.use_cuda
         model.set_cuda(deterministic=False)
-        if use_cuda:
-            inputs = inputs.cuda()
-            labels = labels.cuda()
-            labels_ctc = labels_ctc.cuda()
-            inputs_seq_len = inputs_seq_len.cuda()
-            labels_seq_len = labels_seq_len.cuda()
-            labels_seq_len_ctc = labels_seq_len_ctc.cuda()
+
+        # Wrap by Variable
+        inputs = np2var(inputs, use_cuda=use_cuda)
+        # labels must be long
+        labels = np2var(labels, dtype='long', use_cuda=use_cuda)
+        labels_ctc = np2var(labels_ctc, dtype='int', use_cuda=use_cuda)
+        inputs_seq_len = np2var(inputs_seq_len, dtype='int', use_cuda=use_cuda)
+        labels_seq_len = np2var(labels_seq_len, dtype='int', use_cuda=use_cuda)
+        labels_seq_len_ctc = np2var(
+            labels_seq_len_ctc, dtype='int', use_cuda=use_cuda)
 
         # Train model
         max_step = 1000

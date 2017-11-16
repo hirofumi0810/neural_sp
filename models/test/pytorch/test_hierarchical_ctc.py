@@ -42,7 +42,7 @@ class TestCTC(unittest.TestCase):
 
         # Load batch data
         inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub = generate_data(
-            model='ctc',
+            model_type='ctc',
             label_type='word_char',
             batch_size=2,
             num_stack=1,
@@ -50,14 +50,6 @@ class TestCTC(unittest.TestCase):
         labels += 1
         labels_sub += 1
         # NOTE: index 0 is reserved for blank
-
-        # Wrap by Variable
-        inputs = np2var(inputs)
-        labels = np2var(labels, dtype='int')
-        labels_sub = np2var(labels_sub, dtype='int')
-        inputs_seq_len = np2var(inputs_seq_len, dtype='int')
-        labels_seq_len = np2var(labels_seq_len, dtype='int')
-        labels_seq_len_sub = np2var(labels_seq_len_sub, dtype='int')
 
         num_classes = 11
         num_classes_sub = 27
@@ -107,13 +99,15 @@ class TestCTC(unittest.TestCase):
         # GPU setting
         use_cuda = model.use_cuda
         model.set_cuda(deterministic=False)
-        if use_cuda:
-            inputs = inputs.cuda()
-            labels = labels.cuda()
-            labels_sub = labels_sub.cuda()
-            inputs_seq_len = inputs_seq_len.cuda()
-            labels_seq_len = labels_seq_len.cuda()
-            labels_seq_len_sub = labels_seq_len_sub.cuda()
+
+        # Wrap by Variable
+        inputs = np2var(inputs, use_cuda=use_cuda)
+        labels = np2var(labels, dtype='int', use_cuda=use_cuda)
+        labels_sub = np2var(labels_sub, dtype='int', use_cuda=use_cuda)
+        inputs_seq_len = np2var(inputs_seq_len, dtype='int', use_cuda=use_cuda)
+        labels_seq_len = np2var(labels_seq_len, dtype='int', use_cuda=use_cuda)
+        labels_seq_len_sub = np2var(
+            labels_seq_len_sub, dtype='int', use_cuda=use_cuda)
 
         # Train model
         max_step = 1000

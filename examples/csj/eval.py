@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Evaluate the trained attention-based model (CSJ corpus)."""
+"""Evaluate the trained model (CSJ corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -195,8 +195,6 @@ def main():
         embedding_dim=params['embedding_dim'],
         embedding_dropout=params['dropout_embedding'],
         num_classes=params['num_classes'],
-        sos_index=params['num_classes'],
-        eos_index=params['num_classes'] + 1,
         max_decode_length=100,
         parameter_init=params['parameter_init'],
         downsample_list=downsample_list,

@@ -59,9 +59,7 @@ class AttentionSeq2seq(ModelBase):
         embedding_dropout (int): the probability to drop nodes of the
             embedding layer
         num_classes (int): the number of nodes in softmax layer
-            (except for <SOS> and <EOS> calsses)
-        sos_index (int): index of the start of sentence tag (<SOS>)
-        eos_index (int): index of the end of sentence tag (<EOS>)
+            (excluding <SOS> and <EOS> classes)
         max_decode_length (int): the length of output sequences to stop
             prediction when EOS token have not been emitted
         num_stack (int, optional): the number of frames to stack
@@ -102,8 +100,6 @@ class AttentionSeq2seq(ModelBase):
                  embedding_dim,
                  embedding_dropout,
                  num_classes,
-                 sos_index,
-                 eos_index,
                  max_decode_length=100,
                  num_stack=1,
                  splice=1,
@@ -151,8 +147,8 @@ class AttentionSeq2seq(ModelBase):
         self.embedding_dropout = embedding_dropout
         self.num_classes = num_classes + 2
         # NOTE: Add <SOS> and <EOS>
-        self.sos_index = sos_index
-        self.eos_index = eos_index
+        self.sos_index = num_classes
+        self.eos_index = num_classes + 1
         self.max_decode_length = max_decode_length
         self.init_dec_state_with_enc_state = init_dec_state_with_enc_state
         self.sharpening_factor = sharpening_factor

@@ -20,10 +20,10 @@ from models.pytorch.ctc.ctc import CTC
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--epoch', type=int, default=-1,
-                    help='the epoch to restore')
 parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
+parser.add_argument('--epoch', type=int, default=-1,
+                    help='the epoch to restore')
 parser.add_argument('--beam_width', type=int, default=10,
                     help='beam_width (int, optional): beam width for beam search.' +
                     ' 1 disables beam search, which mean greedy decoding.')
@@ -95,7 +95,7 @@ def main():
     else:
         raise TypeError
 
-    # Model setting
+    # Except for blank, <SOS>, <EOS> classes
     if params['model_type'] == 'ctc':
         model = CTC(
             input_size=params['input_size'],
@@ -132,8 +132,6 @@ def main():
             embedding_dim=params['embedding_dim'],
             embedding_dropout=params['dropout_embedding'],
             num_classes=params['num_classes'],
-            sos_index=params['num_classes'],
-            eos_index=params['num_classes'] + 1,
             max_decode_length=40,
             parameter_init=params['parameter_init'],
             downsample_list=[],

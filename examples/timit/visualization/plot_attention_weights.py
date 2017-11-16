@@ -33,10 +33,10 @@ from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--epoch', type=int, default=-1,
-                    help='the epoch to restore')
 parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
+parser.add_argument('--epoch', type=int, default=-1,
+                    help='the epoch to restore')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
 
@@ -185,8 +185,6 @@ def main():
         embedding_dim=params['embedding_dim'],
         embedding_dropout=params['dropout_embedding'],
         num_classes=params['num_classes'],
-        sos_index=params['num_classes'],
-        eos_index=params['num_classes'] + 1,
         max_decode_length=params['max_decode_length'],
         parameter_init=params['parameter_init'],
         downsample_list=[],

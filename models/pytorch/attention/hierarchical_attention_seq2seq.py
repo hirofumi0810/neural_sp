@@ -36,17 +36,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  decoder_num_layers,
                  decoder_num_units_sub,  # ***
                  decoder_num_proj_sub,  # ***
-                 decdoder_num_layers_sub,  # ***
+                 decoder_num_layers_sub,  # ***
                  decoder_dropout,
                  embedding_dim,
                  embedding_dim_sub,  # ***
                  embedding_dropout,
                  num_classes,
-                 sos_index,
-                 eos_index,
                  num_classes_sub,  # ***
-                 sos_index_sub,  # ***
-                 eos_index_sub,  # ***
                  max_decode_length=50,
                  max_decode_length_sub=100,  # ***
                  num_stack=1,
@@ -77,8 +73,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             embedding_dim=embedding_dim,
             embedding_dropout=embedding_dropout,
             num_classes=num_classes,
-            sos_index=sos_index,
-            eos_index=eos_index,
             max_decode_length=max_decode_length,
             num_stack=num_stack,
             splice=splice,
@@ -96,12 +90,12 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Setting for the decoder
         self.decoder_num_units_sub = decoder_num_units_sub
         self.decoder_num_proj_sub = decoder_num_proj_sub
-        self.decdoder_num_layers_sub = decdoder_num_layers_sub
+        self.decoder_num_layers_sub = decoder_num_layers_sub
         self.embedding_dim_sub = embedding_dim_sub
         self.num_classes_sub = num_classes_sub + 2
         # NOTE: add <SOS> and <EOS>
-        self.sos_index_sub = sos_index_sub
-        self.eos_index_sub = eos_index_sub
+        self.sos_index_sub = num_classes_sub
+        self.eos_index_sub = num_classes_sub + 1
         self.max_decode_length_sub = max_decode_length_sub
 
         # Common setting

@@ -67,8 +67,8 @@ class Dataset(DatasetBase):
         self.num_gpus = num_gpus
 
         # paths where datasets exist
-        dataset_root = ['/n/sd8/inaguma/corpus/csj/dataset',
-                        '/data/inaguma/csj']
+        dataset_root = ['/data/inaguma/csj',
+                        '/n/sd8/inaguma/corpus/csj/dataset']
 
         input_path = join(dataset_root[0], 'inputs',
                           data_size, data_type)

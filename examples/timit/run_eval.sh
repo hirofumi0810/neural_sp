@@ -16,9 +16,11 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda-8.0/lib64:/usr/local/cud
 # Set path to python
 PYTHON=/home/lab5/inaguma/.pyenv/versions/anaconda3-4.1.1/bin/python
 
-config_path=$1
+saved_model_path=$1
 gpu_index=$2
-filename=$(basename $config_path | awk -F. '{print $1}')
 
 CUDA_VISIBLE_DEVICES=$gpu_index $PYTHON eval.py \
-  $config_path $MODEL_SAVE_PATH
+  --model_path $saved_model_path \
+  --epoch -1 \
+  --beam_width 10 \
+  --eval_batch_size 1
