@@ -40,6 +40,9 @@ param:
   sort_stop_epoch: 10
   not_improved_patient_epoch: 5
 
+  # MTL
+  main_loss_weight: 0.5
+
   logits_temperature: 1
 
   eval_start_epoch: 3

@@ -88,7 +88,6 @@ class CTC(ModelBase):
 
         # Common setting
         self.parameter_init = parameter_init
-        self.name = 'pt_ctc'
 
         # Load an instance
         encoder = load(encoder_type=encoder_type)

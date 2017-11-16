@@ -167,7 +167,7 @@ class DatasetBase(Base):
                 labels[i_batch, :len(
                     label_list[i_batch])] = label_list[i_batch]
                 labels_sub[i_batch, :len(
-                    label_list[i_batch])] = label_list_sub[i_batch]
+                    label_list_sub[i_batch])] = label_list_sub[i_batch]
             inputs_seq_len[i_batch] = frame_num
             labels_seq_len[i_batch] = len(label_list[i_batch])
             labels_seq_len_sub[i_batch] = len(label_list_sub[i_batch])

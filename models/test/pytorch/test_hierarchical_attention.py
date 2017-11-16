@@ -60,7 +60,7 @@ class TestHierarchicalAttention(unittest.TestCase):
 
         # Load model
         model = HierarchicalAttentionSeq2seq(
-            input_size=inputs.size(-1),
+            input_size=inputs.shape[-1],
             encoder_type=encoder_type,
             encoder_bidirectional=bidirectional,
             encoder_num_units=256,
@@ -81,6 +81,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             embedding_dim=64,
             embedding_dim_sub=64,
             embedding_dropout=0.1,
+            main_loss_weight=0.5,
             num_classes=num_classes,
             num_classes_sub=num_classes_sub,
             max_decode_length=30,

@@ -32,6 +32,7 @@ class HierarchicalCTC(CTC):
         num_proj (int): the number of nodes in recurrent projection layer
         num_layers (int): the number of layers of the encoder
         dropout (float): the probability to drop nodes
+        main_loss_weight (float): A weight parameter for the main CTC loss
         num_classes (int): the number of classes of target labels
             (excluding a blank class)
         num_stack (int, optional): the number of frames to stack
@@ -51,6 +52,7 @@ class HierarchicalCTC(CTC):
                  num_layers,
                  num_layers_sub,  # ***
                  dropout,
+                 main_loss_weight,  # ***
                  num_classes,
                  num_classes_sub,  # ***
                  num_stack=1,
@@ -80,8 +82,8 @@ class HierarchicalCTC(CTC):
         self.num_classes_sub = num_classes_sub + 1
         # NOTE: Add blank class
 
-        # Common setting
-        self.name = 'pt_hierarchical_ctc'
+        # Setting for MTL
+        self.main_loss_weight = main_loss_weight
 
         # Load an instance
         encoder = load(encoder_type=encoder_type + '_hierarchical')

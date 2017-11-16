@@ -129,6 +129,7 @@ def load(model_type, params):
             num_layers=params['num_layers'],
             num_layers_sub=params['num_layers_sub'],
             dropout=params['dropout'],
+            main_loss_weight=params['main_loss_weight'],
             num_classes=params['num_classes'],
             num_classes_sub=params['num_classes_sub'],
             parameter_init=params['parameter_init'],
@@ -154,6 +155,7 @@ def load(model_type, params):
             model.name += '_bottle' + str(params['bottleneck_dim'])
         if params['logits_temperature'] != 1:
             model.name += '_temp' + str(params['logits_temperature'])
+        model.name += '_main' + str(params['main_loss_weight'])
 
     elif params['model_type'] == 'hierarchical_attention':
         model = HierarchicalAttentionSeq2seq(
@@ -180,6 +182,7 @@ def load(model_type, params):
             embedding_dim=params['embedding_dim'],
             embedding_dim_sub=params['embedding_dim_sub'],
             embedding_dropout=params['dropout_embedding'],
+            main_loss_weight=params['main_loss_weight'],
             num_classes=params['num_classes'],
             num_classes_sub=params['num_classes_sub'],
             max_decode_length=params['max_decode_length'],
@@ -222,5 +225,6 @@ def load(model_type, params):
             model.name += '_smoothing'
         if bool(params['input_feeding_approach']):
             model.name += '_infeed'
+        model.name += '_main' + str(params['main_loss_weight'])
 
     return model

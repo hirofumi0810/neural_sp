@@ -62,6 +62,9 @@ param:
   sort_stop_epoch: 10
   not_improved_patient_epoch: 5
 
+  # MTL
+  main_loss_weight: 0.5
+  
   init_dec_state_with_enc_state: True
   sharpening_factor: 1.0
   logits_temperature: 1.0

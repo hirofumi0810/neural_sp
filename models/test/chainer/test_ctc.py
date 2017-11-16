@@ -17,7 +17,7 @@ sys.path.append('../../')
 from models.chainer.ctc.ctc import CTC
 from models.chainer.ctc.ctc_decoder import GreedyDecoder
 from models.test.data import generate_data, np2var_chainer, np2varlist_chainer, idx2alpha
-from models.test.util import measure_time
+from utils.measure_time_func import measure_time
 
 
 class TestCTC(unittest.TestCase):

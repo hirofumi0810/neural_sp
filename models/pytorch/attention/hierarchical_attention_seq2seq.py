@@ -41,6 +41,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  embedding_dim,
                  embedding_dim_sub,  # ***
                  embedding_dropout,
+                 main_loss_weight,  # ***
                  num_classes,
                  num_classes_sub,  # ***
                  max_decode_length=50,
@@ -98,8 +99,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         self.eos_index_sub = num_classes_sub + 1
         self.max_decode_length_sub = max_decode_length_sub
 
-        # Common setting
-        self.name = 'pt_hierarchical_attn'
+        # Setting for MTL
+        self.main_loss_weight = main_loss_weight
 
         #########################
         # Encoder
@@ -320,12 +321,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             logits /= self.logits_temperature
             logits_sub /= self.logits_temperature
 
+        # Linearly interpolate XE sequence loss in the main and sub tasks
         loss = F.cross_entropy(logits, labels,
                                ignore_index=self.sos_index,
-                               size_average=False)
+                               size_average=False) * self.main_loss_weight
         loss += F.cross_entropy(logits_sub, labels_sub,
                                 ignore_index=self.sos_index_sub,
-                                size_average=False)
+                                size_average=False) * (1 - self.main_loss_weight)
         # NOTE: labels are padded by sos_index
 
         # Average the loss by mini-batch

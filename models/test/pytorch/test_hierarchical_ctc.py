@@ -56,7 +56,7 @@ class TestCTC(unittest.TestCase):
 
         # Load model
         model = HierarchicalCTC(
-            input_size=inputs.size(-1),
+            input_size=inputs.shape[-1],
             encoder_type=encoder_type,
             bidirectional=bidirectional,
             num_units=256,
@@ -64,6 +64,7 @@ class TestCTC(unittest.TestCase):
             num_layers=3,
             num_layers_sub=2,
             dropout=0.1,
+            main_loss_weight=0.5,
             num_classes=num_classes,
             num_classes_sub=num_classes_sub,
             splice=1,
@@ -124,12 +125,12 @@ class TestCTC(unittest.TestCase):
                 logits,
                 labels[perm_indices],
                 inputs_seq_len[perm_indices],
-                labels_seq_len[perm_indices])
+                labels_seq_len[perm_indices]) * model.main_loss_weight
             loss += model.compute_loss(
                 logits_sub,
                 labels_sub[perm_indices],
                 inputs_seq_len[perm_indices],
-                labels_seq_len_sub[perm_indices])
+                labels_seq_len_sub[perm_indices]) * (1 - model.main_loss_weight)
 
             # Compute gradient
             optimizer.zero_grad()

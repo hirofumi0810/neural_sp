@@ -74,7 +74,7 @@ class TestAttention(unittest.TestCase):
 
         # Load model
         model = JointCTCAttention(
-            input_size=inputs.size(-1),
+            input_size=inputs.shape[-1],
             encoder_type=encoder_type,
             encoder_bidirectional=bidirectional,
             encoder_num_units=256,

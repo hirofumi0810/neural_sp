@@ -75,7 +75,7 @@ class TestCTC(unittest.TestCase):
 
         # Load model
         model = CTC(
-            input_size=inputs.size(-1),
+            input_size=inputs.shape[-1],
             encoder_type=encoder_type,
             bidirectional=bidirectional,
             num_units=256,

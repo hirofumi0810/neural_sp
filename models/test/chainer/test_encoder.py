@@ -13,7 +13,7 @@ import unittest
 sys.path.append('../../')
 from models.chainer.encoders.load_encoder import load
 from models.test.data import generate_data, np2var_chainer, np2varlist_chainer
-from models.test.util import measure_time
+from utils.measure_time_func import measure_time
 
 
 class TestEncoders(unittest.TestCase):

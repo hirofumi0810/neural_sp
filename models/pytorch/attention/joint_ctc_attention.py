@@ -142,9 +142,6 @@ class JointCTCAttention(AttentionSeq2seq):
 
         assert encoder_num_layers >= ctc_num_layers, 'ctc_num_layers must be equal to or less than encoder_num_layers'
 
-        # Common setting
-        self.name = 'pt_joint_ctc_attn'
-
         # Setting for MTL
         self.ctc_num_layers = ctc_num_layers
         self.ctc_loss_weight = ctc_loss_weight
