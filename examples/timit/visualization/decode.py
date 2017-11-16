@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Decode the trained attention-based model's outputs (TIMIT corpus)."""
+"""Decode the trained model's outputs (TIMIT corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -13,9 +13,11 @@ import yaml
 import argparse
 
 sys.path.append(abspath('../../../'))
-from examples.timit.data.load_dataset_attention import Dataset
+from examples.timit.data.load_dataset_ctc import Dataset as Dataset_ctc
+from examples.timit.data.load_dataset_attention import Dataset as Dataset_attention
 from utils.io.labels.phone import Idx2phone
 from utils.io.variable import np2var
+from models.pytorch.ctc.ctc import CTC
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 
 parser = argparse.ArgumentParser()
@@ -31,7 +33,7 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
 
 
 def do_decode(model, params, epoch, beam_width, eval_batch_size):
-    """Decode the Attention outputs.
+    """Conduct decoding.
     Args:
         model: the model to restore
         params (dict): A dictionary of parameters
@@ -41,6 +43,10 @@ def do_decode(model, params, epoch, beam_width, eval_batch_size):
         eval_batch_size (int): the size of mini-batch when evaluation
     """
     # Load dataset
+    if params['model_type'] == 'ctc':
+        Dataset = Dataset_ctc
+    elif params['model_type'] == 'attention':
+        Dataset = Dataset_attention
     test_data = Dataset(
         data_type='test', label_type='phone61',
         vocab_file_path='../metrics/vocab_files/phone61.txt',
@@ -61,7 +67,7 @@ def do_decode(model, params, epoch, beam_width, eval_batch_size):
     # Visualize
     decode(
         model=model,
-        model_type='attention',
+        model_type=params['model_type'],
         dataset=test_data,
         label_type=params['label_type'],
         beam_width=beam_width,
@@ -92,39 +98,61 @@ def decode(model, model_type, dataset, label_type, beam_width,
         # Create feed dictionary for next mini batch
         if model_type in ['ctc', 'attention']:
             inputs, labels, inputs_seq_len, labels_seq_len, input_names = data
-        else:
+        elif model_type == 'joint_ctc_attention':
             raise NotImplementedError
+        else:
+            raise TypeError
+
+        # Wrap by variable
         inputs = np2var(inputs, use_cuda=model.use_cuda, volatile=True)
+        inputs_seq_len = np2var(
+            inputs_seq_len, use_cuda=model.use_cuda, volatile=True, dtype='int')
 
         batch_size = inputs[0].size(0)
 
         # Decode
         if model_type == 'attention':
             labels_pred, _ = model.decode_infer(
-                inputs[0], beam_width=beam_width)
+                inputs[0], inputs_seq_len[0], beam_width=beam_width)
         elif model_type == 'ctc':
-            inputs_seq_len = np2var(
-                inputs_seq_len, use_cuda=model.use_cuda, volatile=True, dtype='int')
             labels_pred = model.decode(
                 inputs[0], inputs_seq_len[0], beam_width=beam_width)
+            labels_pred -= 1
+            # NOTE: index 0 is reserved for blank
+        elif model_type == 'joint_ctc_attention':
+            raise NotImplementedError
 
         for i_batch in range(batch_size):
-
             print('----- wav: %s -----' % input_names[0][i_batch])
 
-            # Convert from list of index to string
+            ##############################
+            # Reference
+            ##############################
             if is_test:
                 str_true = labels[0][i_batch][0]
             else:
-                str_true = idx2phone(
-                    labels[0][i_batch][1:labels_seq_len[0][i_batch] - 1])
-                # NOTE: Exclude <SOS> and <EOS>
-            str_pred = idx2phone(labels_pred[i_batch]).split('>')[0]
-            # NOTE: Trancate by <EOS>
+                # Convert from list of index to string
+                if model_type in ['ctc']:
+                    str_true = idx2phone(
+                        labels[0][i_batch][:labels_seq_len[0][i_batch]])
+                elif model_type in ['attention', 'joint_ctc_attention']:
+                    str_true = idx2phone(
+                        labels[0][i_batch][1:labels_seq_len[0][i_batch] - 1])
+                    # NOTE: Exclude <SOS> and <EOS>
 
-            # Remove the last space
-            if len(str_pred) > 0 and str_pred[-1] == ' ':
-                str_pred = str_pred[:-1]
+            ##############################
+            # Hypothesis
+            ##############################
+            # Convert from list of index to string
+            str_pred = idx2phone(labels_pred[i_batch])
+
+            if model_type in ['attention', 'joint_ctc_attention']:
+                str_pred = str_pred.split('>')[0]
+                # NOTE: Trancate by the first <EOS>
+
+                # Remove the last space
+                if len(str_pred) > 0 and str_pred[-1] == ' ':
+                    str_pred = str_pred[:-1]
 
             print('Ref: %s' % str_true)
             print('Hyp: %s' % str_pred)
@@ -153,36 +181,52 @@ def main():
         TypeError
 
     # Model setting
-    model = AttentionSeq2seq(
-        input_size=params['input_size'],
-        num_stack=params['num_stack'],
-        splice=params['splice'],
-        encoder_type=params['encoder_type'],
-        encoder_bidirectional=params['encoder_bidirectional'],
-        encoder_num_units=params['encoder_num_units'],
-        encoder_num_proj=params['encoder_num_proj'],
-        encoder_num_layers=params['encoder_num_layers'],
-        encoder_dropout=params['dropout_encoder'],
-        attention_type=params['attention_type'],
-        attention_dim=params['attention_dim'],
-        decoder_type=params['decoder_type'],
-        decoder_num_units=params['decoder_num_units'],
-        decoder_num_proj=params['decoder_num_proj'],
-        decdoder_num_layers=params['decoder_num_layers'],
-        decoder_dropout=params['dropout_decoder'],
-        embedding_dim=params['embedding_dim'],
-        embedding_dropout=params['dropout_embedding'],
-        num_classes=params['num_classes'],
-        sos_index=params['num_classes'],
-        eos_index=params['num_classes'] + 1,
-        max_decode_length=params['max_decode_length'],
-        parameter_init=params['parameter_init'],
-        downsample_list=[],
-        init_dec_state_with_enc_state=True,
-        sharpening_factor=params['sharpening_factor'],
-        logits_temperature=params['logits_temperature'],
-        sigmoid_smoothing=params['sigmoid_smoothing'],
-        input_feeding_approach=params['input_feeding_approach'])
+    if params['model_type'] == 'ctc':
+        model = CTC(
+            input_size=params['input_size'],
+            num_stack=params['num_stack'],
+            splice=params['splice'],
+            encoder_type=params['encoder_type'],
+            bidirectional=params['bidirectional'],
+            num_units=params['num_units'],
+            num_proj=params['num_proj'],
+            num_layers=params['num_layers'],
+            dropout=params['dropout'],
+            num_classes=params['num_classes'],
+            parameter_init=params['parameter_init'],
+            logits_temperature=params['logits_temperature'])
+
+    elif params['model_type'] == 'attention':
+        model = AttentionSeq2seq(
+            input_size=params['input_size'],
+            num_stack=params['num_stack'],
+            splice=params['splice'],
+            encoder_type=params['encoder_type'],
+            encoder_bidirectional=params['encoder_bidirectional'],
+            encoder_num_units=params['encoder_num_units'],
+            encoder_num_proj=params['encoder_num_proj'],
+            encoder_num_layers=params['encoder_num_layers'],
+            encoder_dropout=params['dropout_encoder'],
+            attention_type=params['attention_type'],
+            attention_dim=params['attention_dim'],
+            decoder_type=params['decoder_type'],
+            decoder_num_units=params['decoder_num_units'],
+            decoder_num_proj=params['decoder_num_proj'],
+            decdoder_num_layers=params['decoder_num_layers'],
+            decoder_dropout=params['dropout_decoder'],
+            embedding_dim=params['embedding_dim'],
+            embedding_dropout=params['dropout_embedding'],
+            num_classes=params['num_classes'],
+            sos_index=params['num_classes'],
+            eos_index=params['num_classes'] + 1,
+            max_decode_length=params['max_decode_length'],
+            parameter_init=params['parameter_init'],
+            downsample_list=[],
+            init_dec_state_with_enc_state=True,
+            sharpening_factor=params['sharpening_factor'],
+            logits_temperature=params['logits_temperature'],
+            sigmoid_smoothing=params['sigmoid_smoothing'],
+            input_feeding_approach=params['input_feeding_approach'])
 
     model.save_path = args.model_path
     do_decode(model=model, params=params,

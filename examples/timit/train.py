@@ -35,16 +35,14 @@ def do_train(model, params):
         model: the model to train
         params (dict): A dictionary of parameters
     """
+    # Load dataset
     vocab_file_path_train = './metrics/vocab_files/' + \
         params['label_type'] + '.txt'
     vocab_file_path_eval = './metrics/vocab_files/phone39.txt'
-
-    # Load dataset
     if params['model_type'] == 'ctc':
         Dataset = Dataset_ctc
     elif params['model_type'] == 'attention':
         Dataset = Dataset_attention
-
     train_data = Dataset(
         data_type='train', label_type=params['label_type'],
         vocab_file_path=vocab_file_path_train,

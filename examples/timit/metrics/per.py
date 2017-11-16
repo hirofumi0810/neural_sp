@@ -48,10 +48,10 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
         './metrics/vocab_files/' + eval_label_type + '.txt')
     map2phone39_train = Map2phone39(
         label_type=train_label_type,
-        map_file_path='../metrics/phone2phone.txt')
+        map_file_path='./metrics/phone2phone.txt')
     map2phone39_eval = Map2phone39(
         label_type=eval_label_type,
-        map_file_path='../metrics/phone2phone.txt')
+        map_file_path='./metrics/phone2phone.txt')
 
     per_mean = 0
     if progressbar:
@@ -109,7 +109,7 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
             str_pred = idx2phone_train(labels_pred[i_batch])
 
             if model_type in ['attention', 'joint_ctc_attention']:
-                str_pred.split('>')[0]
+                str_pred = str_pred.split('>')[0]
                 # NOTE: Trancate by the first <EOS>
 
                 # Remove the last space

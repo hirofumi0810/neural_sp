@@ -46,7 +46,6 @@ def do_eval(model, params, epoch, beam_width, eval_batch_size):
         Dataset = Dataset_ctc
     elif params['model_type'] == 'attention':
         Dataset = Dataset_attention
-
     test_data = Dataset(
         data_type='test', label_type='phone39',
         vocab_file_path='./metrics/vocab_files/phone39.txt',
