@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Train the model (Librispeech corpus)."""
+"""Train the model (CSJ corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -18,10 +18,10 @@ import torch.nn as nn
 
 sys.path.append(abspath('../../../'))
 from models.pytorch.load_model import load
-from examples.librispeech.data.load_dataset_ctc import Dataset as Dataset_ctc
-from examples.librispeech.data.load_dataset_attention import Dataset as Dataset_attention
-from examples.librispeech.metrics.cer import do_eval_cer
-from examples.librispeech.metrics.wer import do_eval_wer
+from examples.csj.data.load_dataset_hierarchical_ctc import Dataset as Dataset_hierarchical_ctc
+from examples.csj.data.load_dataset_hierarchical_attention import Dataset as Dataset_hierarchical_attention
+# from examples.csj.metrics.cer import do_eval_cer
+from examples.csj.metrics.wer import do_eval_wer
 from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
 from utils.directory import mkdir_join, mkdir
@@ -35,42 +35,27 @@ def do_train(model, params):
         params (dict): A dictionary of parameters
     """
     # Load dataset
-    if params['label_type'] == 'character':
-        vocab_file_path = '../metrics/vocab_files/character.txt'
+    vocab_file_path = './metrics/vocab_files/' + \
+        params['label_type'] + '_' + params['data_size'] + '.txt'
+    if 'kana' in params['label_type_sub']:
+        vocab_file_path_sub = './metrics/vocab_files/' + \
+            params['label_type_sub'] + '.txt'
     else:
-        vocab_file_path = '../metrics/vocab_files/' + \
-            params['label_type'] + '_' + params['data_size'] + '.txt'
-    if params['model_type'] == 'ctc':
-        Dataset = Dataset_ctc
-    elif params['model_type'] == 'attention':
-        Dataset = Dataset_attention
+        vocab_file_path_sub = './metrics/vocab_files/' + \
+            params['label_type_sub'] + '_' + params['data_size'] + '.txt'
+    if params['model_type'] == 'hierarchical_ctc':
+        Dataset = Dataset_hierarchical_ctc
+    elif params['model_type'] == 'hierarchical_attention':
+        Dataset = Dataset_hierarchical_attention
     train_data = Dataset(
         data_type='train', data_size=params['data_size'],
         label_type=params['label_type'], vocab_file_path=vocab_file_path,
-        batch_size=params['batch_size'],
-        max_epoch=params['num_epoch'], splice=params['splice'],
+        batch_size=params['batch_size'], max_epoch=params['num_epoch'],
+        splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'])
-    dev_clean_data = Dataset(
-        data_type='dev_clean', data_size=params['data_size'],
-        label_type=params['label_type'], vocab_file_path=vocab_file_path,
-        batch_size=params['batch_size'], splice=params['splice'],
-        num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=True)
-    dev_other_data = Dataset(
-        data_type='dev_other', data_size=params['data_size'],
-        label_type=params['label_type'], vocab_file_path=vocab_file_path,
-        batch_size=params['batch_size'], splice=params['splice'],
-        num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=True)
-    test_clean_data = Dataset(
-        data_type='test_clean', data_size=params['data_size'],
-        label_type=params['label_type'], vocab_file_path=vocab_file_path,
-        batch_size=params['batch_size'], splice=params['splice'],
-        num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=True)
-    test_other_data = Dataset(
-        data_type='test_other', data_size=params['data_size'],
+    dev_data = Dataset(
+        data_type='dev', data_size=params['data_size'],
         label_type=params['label_type'], vocab_file_path=vocab_file_path,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
@@ -110,43 +95,58 @@ def do_train(model, params):
     start_time_train = time.time()
     start_time_epoch = time.time()
     start_time_step = time.time()
-    ler_dev_best = 1
+    wer_dev_best = 1
     not_improved_epoch = 0
     learning_rate = float(params['learning_rate'])
     for step, (data, is_new_epoch) in enumerate(train_data):
 
         # Create feed dictionary for next mini batch (train)
-        inputs, labels, inputs_seq_len, labels_seq_len, _ = data
+        if params['model_type'] in ['hierarchical_ctc', 'hierarchical_attention']:
+            inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub, _ = data
 
         # Wrap by variable
         inputs = np2var(inputs, use_cuda=use_cuda)
-        if params['model_type'] == 'ctc':
+        if params['model_type'] == 'hierarchical_ctc':
             labels = np2var(labels, use_cuda=use_cuda, dtype='int') + 1
+            labels_sub = np2var(labels_sub, use_cuda=use_cuda, dtype='int') + 1
             # NOTE: index 0 is reserved for blank
-        elif params['model_type'] == 'attention':
+        elif params['model_type'] == 'hierarchical_attention':
             labels = np2var(labels, use_cuda=use_cuda, dtype='long')
+            labels_sub = np2var(labels_sub, use_cuda=use_cuda, dtype='long')
         inputs_seq_len = np2var(inputs_seq_len, use_cuda=use_cuda, dtype='int')
         labels_seq_len = np2var(labels_seq_len, use_cuda=use_cuda, dtype='int')
+        labels_seq_len_sub = np2var(
+            labels_seq_len_sub, use_cuda=use_cuda, dtype='int')
 
         # Clear gradients before
         optimizer.zero_grad()
 
         # Compute loss in the training set
-        if params['model_type'] == 'ctc':
-            logits, perm_indices = model(inputs[0], inputs_seq_len[0])
+        if params['model_type'] == 'hierarchical_ctc':
+            logits, logits_sub, perm_indices = model(
+                inputs[0], inputs_seq_len[0])
             loss_train = model.compute_loss(
                 logits,
                 labels[0][perm_indices],
                 inputs_seq_len[0][perm_indices],
                 labels_seq_len[0][perm_indices])
-        elif params['model_type'] == 'attention':
-            logits, att_weights, perm_indices = model(
-                inputs[0], inputs_seq_len[0], labels[0])
+            loss_train += model.compute_loss(
+                logits_sub,
+                labels_sub[0][perm_indices],
+                inputs_seq_len[0][perm_indices],
+                labels_seq_len_sub[0][perm_indices])
+        elif params['model_type'] == 'hierarchical_attention':
+            logits, att_weights, logits_sub, att_weights_sub, perm_indices = model(
+                inputs[0], inputs_seq_len[0], labels[0], labels_sub[0])
             loss_train = model.compute_loss(
                 logits,
                 labels[0][perm_indices],
                 labels_seq_len[0][perm_indices],
+                logits_sub,
+                labels_sub[0][perm_indices],
+                labels_seq_len_sub[0][perm_indices],
                 att_weights,
+                att_weights_sub,
                 coverage_weight=params['coverage_weight'])
 
         # Compute gradient
@@ -163,47 +163,59 @@ def do_train(model, params):
         if (step + 1) % params['print_step'] == 0:
 
             # Create feed dictionary for next mini batch (dev)
-            if params['data_size'] in ['100h', '460h']:
-                inputs, labels, inputs_seq_len, labels_seq_len, _ = dev_clean_data.next()[
-                    0]
-            else:
-                inputs, labels, inputs_seq_len, labels_seq_len, _ = dev_other_data.next()[
+            if params['model_type'] in ['hierarchical_ctc', 'hierarchical_attention']:
+                inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub, _ = dev_data.next()[
                     0]
 
             # Wrap by variable
             inputs = np2var(inputs, use_cuda=use_cuda, volatile=True)
-            if params['model_type'] == 'ctc':
+            if params['model_type'] == 'hierarchical_ctc':
                 labels = np2var(
                     labels, use_cuda=use_cuda, volatile=True, dtype='int') + 1
+                labels_sub = np2var(
+                    labels_sub, use_cuda=use_cuda, volatile=True, dtype='int') + 1
                 # NOTE: index 0 is reserved for blank
-            elif params['model_type'] == 'attention':
+            elif params['model_type'] == 'hierarchical_attention':
                 labels = np2var(labels, use_cuda=use_cuda,
                                 volatile=True, dtype='long')
+                labels_sub = np2var(labels_sub, use_cuda=use_cuda,
+                                    volatile=True, dtype='long')
             inputs_seq_len = np2var(
                 inputs_seq_len, use_cuda=use_cuda, volatile=True, dtype='int')
             labels_seq_len = np2var(
                 labels_seq_len, use_cuda=use_cuda, volatile=True, dtype='int')
+            labels_seq_len_sub = np2var(
+                labels_seq_len_sub, use_cuda=use_cuda, volatile=True, dtype='int')
 
             # ***Change to evaluation mode***
             model.eval()
 
             # Compute loss in the dev set
-            if params['model_type'] == 'ctc':
-                logits, perm_indices = model(
+            if params['model_type'] == 'hierarchical_ctc':
+                logits, logits_sub, perm_indices = model(
                     inputs[0], inputs_seq_len[0], volatile=True)
                 loss_dev = model.compute_loss(
                     logits,
                     labels[0][perm_indices],
                     inputs_seq_len[0][perm_indices],
                     labels_seq_len[0][perm_indices])
-            elif params['model_type'] == 'attention':
-                logits, att_weights, perm_indices = model(
+                loss_dev += model.compute_loss(
+                    logits_sub,
+                    labels_sub[0][perm_indices],
+                    inputs_seq_len[0][perm_indices],
+                    labels_seq_len_sub[0][perm_indices])
+            elif params['model_type'] == 'hierarchical_attention':
+                logits, att_weights, logits_sub, att_weights_sub, perm_indices = model(
                     inputs[0], inputs_seq_len[0], labels[0], volatile=True)
                 loss_dev = model.compute_loss(
                     logits,
                     labels[0][perm_indices],
                     labels_seq_len[0][perm_indices],
+                    logits_sub,
+                    labels_sub[0][perm_indices],
+                    labels_seq_len_sub[0][perm_indices],
                     att_weights,
+                    att_weights_sub,
                     coverage_weight=params['coverage_weight'])
 
             csv_steps.append(step)
@@ -243,134 +255,22 @@ def do_train(model, params):
 
                 start_time_eval = time.time()
                 print('=== Dev Data Evaluation ===')
-                if 'char' in params['label_type']:
-                    # dev-clean
-                    cer_dev_clean_epoch, _ = do_eval_cer(
-                        model=model,
-                        model_type=params['model_type'],
-                        dataset=dev_clean_data,
-                        label_type=params['label_type'],
-                        data_size=params['data_size'],
-                        beam_width=1,
-                        eval_batch_size=1)
-                    print('  CER (clean): %f %%' % (cer_dev_clean_epoch * 100))
+                wer_dev_epoch = do_eval_wer(
+                    model=model,
+                    model_type=params['model_type'],
+                    dataset=dev_data,
+                    label_type=params['label_type'],
+                    data_size=params['data_size'],
+                    beam_width=1,
+                    eval_batch_size=1)
+                print('  WER: %f %%' % (wer_dev_epoch * 100))
 
-                    # dev-other
-                    cer_dev_other_epoch, _ = do_eval_cer(
-                        model=model,
-                        model_type=params['model_type'],
-                        dataset=dev_other_data,
-                        label_type=params['label_type'],
-                        data_size=params['data_size'],
-                        beam_width=1,
-                        eval_batch_size=1)
-                    print('  CER (other): %f %%' % (cer_dev_other_epoch * 100))
-
-                    if params['data_size'] in ['100h', '460h']:
-                        metric_epoch = cer_dev_clean_epoch
-                    else:
-                        metric_epoch = cer_dev_other_epoch
-
-                    if metric_epoch < ler_dev_best:
-                        ler_dev_best = metric_epoch
-                        not_improved_epoch = 0
-                        print('■■■ ↑Best Score (CER)↑ ■■■')
-
-                        print('=== Test Data Evaluation ===')
-                        # test-clean
-                        cer_test_clean_epoch, _ = do_eval_cer(
-                            model=model,
-                            model_type=params['model_type'],
-                            dataset=test_clean_data,
-                            label_type=params['label_type'],
-                            data_size=params['data_size'],
-                            beam_width=1,
-                            is_test=True,
-                            eval_batch_size=1)
-                        print('  CER (clean): %f %%' %
-                              (cer_test_clean_epoch * 100))
-
-                        # test-other
-                        cer_test_other_epoch, _ = do_eval_cer(
-                            model=model,
-                            model_type=params['model_type'],
-                            dataset=test_other_data,
-                            label_type=params['label_type'],
-                            data_size=params['data_size'],
-                            beam_width=1,
-                            is_test=True,
-                            eval_batch_size=1)
-                        print('  CER (other): %f %%' %
-                              (cer_test_other_epoch * 100))
-                    else:
-                        not_improved_epoch += 1
+                if wer_dev_epoch < wer_dev_best:
+                    wer_dev_best = wer_dev_epoch
+                    not_improved_epoch = 0
+                    print('■■■ ↑Best Score (WER)↑ ■■■')
                 else:
-                    # dev-clean
-                    wer_dev_clean_epoch = do_eval_wer(
-                        model=model,
-                        model_type=params['model_type'],
-                        dataset=dev_clean_data,
-                        label_type=params['label_type'],
-                        data_size=params['data_size'],
-                        beam_width=1,
-                        eval_batch_size=1)
-                    print('  WER (clean): %f %%' % (wer_dev_clean_epoch * 100))
-
-                    # dev-other
-                    wer_dev_other_epoch = do_eval_wer(
-                        model=model,
-                        model_type=params['model_type'],
-                        dataset=dev_other_data,
-                        label_type=params['label_type'],
-                        data_size=params['data_size'],
-                        beam_width=1,
-                        eval_batch_size=1)
-                    print('  WER (other): %f %%' % (wer_dev_other_epoch * 100))
-
-                    if params['data_size'] in ['100h', '460h']:
-                        metric_epoch = wer_dev_clean_epoch
-                    else:
-                        metric_epoch = wer_dev_other_epoch
-
-                    if metric_epoch < ler_dev_best:
-                        ler_dev_best = metric_epoch
-                        not_improved_epoch = 0
-                        print('■■■ ↑Best Score (WER)↑ ■■■')
-
-                        # # Save the model
-                        saved_path = model.save_checkpoint(
-                            model.save_path, epoch=train_data.epoch)
-                        print("=> Saved checkpoint (epoch:%d): %s" %
-                              (train_data.epoch, saved_path))
-
-                        print('=== Test Data Evaluation ===')
-                        # test-clean
-                        wer_test_clean_epoch = do_eval_wer(
-                            model=model,
-                            model_type=params['model_type'],
-                            dataset=test_clean_data,
-                            label_type=params['label_type'],
-                            data_size=params['data_size'],
-                            beam_width=1,
-                            is_test=True,
-                            eval_batch_size=1)
-                        print('  WER (clean): %f %%' %
-                              (wer_test_clean_epoch * 100))
-
-                        # test-other
-                        wer_test_other_epoch = do_eval_wer(
-                            model=model,
-                            model_type=params['model_type'],
-                            dataset=test_other_data,
-                            label_type=params['label_type'],
-                            data_size=params['data_size'],
-                            beam_width=1,
-                            is_test=True,
-                            eval_batch_size=1)
-                        print('  WER (other): %f %%' %
-                              (wer_test_other_epoch * 100))
-                    else:
-                        not_improved_epoch += 1
+                    not_improved_epoch += 1
 
                 duration_eval = time.time() - start_time_eval
                 print('Evaluation time: %.3f min' % (duration_eval / 60))
@@ -384,7 +284,7 @@ def do_train(model, params):
                     optimizer=optimizer,
                     learning_rate=learning_rate,
                     epoch=train_data.epoch,
-                    value=metric_epoch)
+                    value=wer_dev_epoch)
 
                 # ***Change to training mode***
                 model.train()
@@ -412,17 +312,21 @@ def main(config_path, model_save_path):
         vocab_num = yaml.load(f)
         params['num_classes'] = vocab_num[params['data_size']
                                           ][params['label_type']]
+        params['num_classes_sub'] = vocab_num[params['data_size']
+                                              ][params['label_type_sub']]
 
     # Model setting
     model = load(model_type=params['model_type'], params=params)
 
     # Set process name
-    setproctitle('pt_libri_' + params['model_type'] + '_' +
-                 params['label_type'] + '_' + params['data_size'])
+    setproctitle('pt_csj_' + params['model_type'] + '_' +
+                 params['label_type'] + '_' + params['label_type_sub'] + '_' + params['data_size'])
 
     # Set save path
     model.save_path = mkdir_join(
-        model_save_path, params['model_type'], params['label_type'], params['data_size'], model.name)
+        model_save_path, params['model_type'],
+        params['label_type'] + '_' + params['label_type_sub'],
+        params['data_size'], model.name)
 
     # Reset model directory
     model_index = 0

@@ -1,0 +1,20 @@
+subset:
+  kana: 146
+  kana_divide: 147
+  kanji: 2978
+  kanji_divide: 2979
+  word_freq1: 39169
+  word_freq5: 12877
+  word_freq10: 8542
+  word_freq15: 6726
+
+
+fullset:
+  kana: 146
+  kana_divide: 147
+  kanji: 3383
+  kanji_divide: 3384
+  word_freq1: 66277
+  word_freq5: 23528
+  word_freq10: 15536
+  word_freq15: 12111

@@ -41,7 +41,7 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
     if eval_batch_size is not None:
         dataset.batch_size = eval_batch_size
 
-    vocab_file_path = './metrics/vocab_files/' + \
+    vocab_file_path = '../metrics/vocab_files/' + \
         label_type + '_' + data_size + '.txt'
 
     idx2word = Idx2word(vocab_file_path)

@@ -42,10 +42,10 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
         dataset.batch_size = eval_batch_size
 
     if 'kanji' in label_type:
-        vocab_file_path = './metrics/vocab_files/' + \
+        vocab_file_path = '../metrics/vocab_files/' + \
             label_type + '_' + data_size + '.txt'
     elif 'kana' in label_type:
-        vocab_file_path = './metrics/vocab_files/' + label_type + '.txt'
+        vocab_file_path = '../metrics/vocab_files/' + label_type + '.txt'
 
     idx2char = Idx2char(vocab_file_path)
 

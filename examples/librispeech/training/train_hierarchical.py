@@ -17,12 +17,9 @@ import shutil
 import torch.nn as nn
 
 sys.path.append(abspath('../../../'))
-from models.pytorch.ctc.hierarchical_ctc import HierarchicalCTC
-from models.pytorch.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
-
+from models.pytorch.load_model import load
 from examples.librispeech.data.load_dataset_hierarchical_ctc import Dataset as Dataset_hierarchical_ctc
 from examples.librispeech.data.load_dataset_hierarchical_attention import Dataset as Dataset_hierarchical_attention
-
 # from examples.librispeech.metrics.cer import do_eval_cer
 from examples.librispeech.metrics.wer import do_eval_wer
 from utils.training.learning_rate_controller import Controller
@@ -67,7 +64,7 @@ def do_train(model, params):
         vocab_file_path_sub=vocab_file_path_sub,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=False, num_gpus=1)
+        shuffle=True)
     dev_other_data = Dataset(
         data_type='dev_other', data_size=params['data_size'],
         label_type=params['label_type'],
@@ -76,7 +73,7 @@ def do_train(model, params):
         vocab_file_path_sub=vocab_file_path_sub,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=False, num_gpus=1)
+        shuffle=True)
     test_clean_data = Dataset(
         data_type='test_clean', data_size=params['data_size'],
         label_type=params['label_type'],
@@ -85,7 +82,7 @@ def do_train(model, params):
         vocab_file_path_sub=vocab_file_path_sub,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=False)
+        shuffle=True)
     test_other_data = Dataset(
         data_type='test_other', data_size=params['data_size'],
         label_type=params['label_type'],
@@ -94,7 +91,7 @@ def do_train(model, params):
         vocab_file_path_sub=vocab_file_path_sub,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=False)
+        shuffle=True)
 
     # Count total parameters
     for name, num_params in model.num_params_dict.items():
@@ -392,160 +389,20 @@ def main(config_path, model_save_path):
         config = yaml.load(f)
         params = config['param']
 
-    # Except for blank, <SOS>, <EOS> classes
-    if params['label_type'] == 'word_freq1':
-        if params['data_size'] == '100h':
-            params['num_classes'] = 33779
-        elif params['data_size'] == '460h':
-            params['num_classes'] = 65988
-        elif params['data_size'] == '960h':
-            params['num_classes'] = 89115
-    elif params['label_type'] == 'word_freq5':
-        if params['data_size'] == '100h':
-            params['num_classes'] = 11735
-        elif params['data_size'] == '460h':
-            params['num_classes'] = 27140
-        elif params['data_size'] == '960h':
-            params['num_classes'] = 37271
-    elif params['label_type'] == 'word_freq10':
-        if params['data_size'] == '100h':
-            params['num_classes'] = 7213
-        elif params['data_size'] == '460h':
-            params['num_classes'] = 18641
-        elif params['data_size'] == '960h':
-            params['num_classes'] = 26642
-    elif params['label_type'] == 'word_freq15':
-        if params['data_size'] == '100h':
-            params['num_classes'] = 5219
-        elif params['data_size'] == '460h':
-            params['num_classes'] = 14498
-        elif params['data_size'] == '960h':
-            params['num_classes'] = 21409
-    else:
-        raise TypeError
-
-    if params['label_type_sub'] == 'character':
-        params['num_classes_sub'] = 28
-    elif params['label_type_sub'] == 'character_capital_divide':
-        if params['data_size'] == '100h':
-            params['num_classes_sub'] = 72
-        elif params['data_size'] == '460h':
-            params['num_classes_sub'] = 77
-        elif params['data_size'] == '960h':
-            params['num_classes_sub'] = 77
-    else:
-        raise TypeError
+    # Get voabulary number (excluding blank, <SOS>, <EOS> classes)
+    with open('../metrics/vocab_num.yml', "r") as f:
+        vocab_num = yaml.load(f)
+        params['num_classes'] = vocab_num[params['data_size']
+                                          ][params['label_type']]
+        params['num_classes_sub'] = vocab_num[params['data_size']
+                                              ][params['label_type_sub']]
 
     # Model setting
-    if params['model_type'] == 'hierarchical_ctc':
-        model = HierarchicalCTC(
-            input_size=params['input_size'],
-            num_stack=params['num_stack'],
-            splice=params['splice'],
-            encoder_type=params['encoder_type'],
-            bidirectional=params['bidirectional'],
-            num_units=params['num_units'],
-            num_proj=params['num_proj'],
-            num_layers=params['num_layers'],
-            num_layers_sub=params['num_layers_sub'],
-            dropout=params['dropout'],
-            num_classes=params['num_classes'],
-            num_classes_sub=params['num_classes_sub'],
-            parameter_init=params['parameter_init'],
-            logits_temperature=params['logits_temperature'])
+    model = load(model_type=params['model_type'], params=params)
 
-        # Set process name
-        setproctitle('pt_libri_ctc_' +
-                     params['label_type'] + '_' + params['label_type_sub'] + '_' + params['data_size'])
-
-        model.name += '_' + str(params['num_units'])
-        model.name += '_' + str(params['num_layers'])
-        model.name += '_' + str(params['num_layers_sub'])
-        model.name += '_' + params['optimizer']
-        model.name += '_lr' + str(params['learning_rate'])
-        if params['num_proj'] != 0:
-            model.name += '_proj' + str(params['num_proj'])
-        if params['dropout'] != 0:
-            model.name += '_drop' + str(params['dropout'])
-        if params['num_stack'] != 1:
-            model.name += '_stack' + str(params['num_stack'])
-        if params['weight_decay'] != 0:
-            model.name += '_wd' + str(params['weight_decay'])
-        if params['bottleneck_dim'] != 0:
-            model.name += '_bottle' + str(params['bottleneck_dim'])
-        if params['logits_temperature'] != 1:
-            model.name += '_temp' + str(params['logits_temperature'])
-
-    elif params['model_type'] == 'hierarchical_attention':
-        model = HierarchicalAttentionSeq2seq(
-            input_size=params['input_size'],
-            num_stack=params['num_stack'],
-            splice=params['splice'],
-            encoder_type=params['encoder_type'],
-            encoder_bidirectional=params['encoder_bidirectional'],
-            encoder_num_units=params['encoder_num_units'],
-            encoder_num_proj=params['encoder_num_proj'],
-            encoder_num_layers=params['encoder_num_layers'],
-            encoder_num_layers_sub=params['encoder_num_layers_sub'],
-            encoder_dropout=params['dropout_encoder'],
-            attention_type=params['attention_type'],
-            attention_dim=params['attention_dim'],
-            decoder_type=params['decoder_type'],
-            decoder_num_units=params['decoder_num_units'],
-            decoder_num_proj=params['decoder_num_proj'],
-            decoder_num_layers=params['decoder_num_layers'],
-            decoder_num_units_sub=params['decoder_num_units_sub'],
-            decoder_num_proj_sub=params['decoder_num_proj_sub'],
-            decoder_num_layers_sub=params['decoder_num_layers_sub'],
-            decoder_dropout=params['dropout_decoder'],
-            embedding_dim=params['embedding_dim'],
-            embedding_dim_sub=params['embedding_dim_sub'],
-            embedding_dropout=params['dropout_embedding'],
-            num_classes=params['num_classes'],
-            num_classes_sub=params['num_classes_sub'],
-            max_decode_length=params['max_decode_length'],
-            max_decode_length_sub=params['max_decode_length_sub'],
-            parameter_init=params['parameter_init'],
-            downsample_list=[],
-            init_dec_state_with_enc_state=True,
-            sharpening_factor=params['sharpening_factor'],
-            logits_temperature=params['logits_temperature'],
-            sigmoid_smoothing=params['sigmoid_smoothing'],
-            input_feeding_approach=params['input_feeding_approach'])
-
-        # Set process name
-        setproctitle('pt_libri_att_' +
-                     params['label_type'] + '_' + params['label_type_sub'] + '_' + params['data_size'])
-
-        model.name = 'enc' + params['encoder_type'] + \
-            str(params['encoder_num_units'])
-        model.name += '_' + str(params['encoder_num_layers'])
-        model.name += '_' + str(params['encoder_num_layers_sub'])
-        model.name += '_att' + str(params['attention_dim'])
-        model.name += '_dec' + params['decoder_type'] + \
-            str(params['decoder_num_units'])
-        model.name += '_' + str(params['decoder_num_layers'])
-        model.name += '_' + params['optimizer']
-        model.name += '_lr' + str(params['learning_rate'])
-        model.name += '_' + params['attention_type']
-        if params['dropout_encoder'] != 0:
-            model.name += '_dropen' + str(params['dropout_encoder'])
-        if params['dropout_decoder'] != 0:
-            model.name += '_dropde' + str(params['dropout_decoder'])
-        if params['dropout_embedding'] != 0:
-            model.name += '_dropem' + str(params['dropout_embedding'])
-        if params['num_stack'] != 1:
-            model.name += '_stack' + str(params['num_stack'])
-        if params['weight_decay'] != 0:
-            model.name += 'wd' + str(params['weight_decay'])
-        if params['sharpening_factor'] != 1:
-            model.name += '_sharp' + str(params['sharpening_factor'])
-        if params['logits_temperature'] != 1:
-            model.name += '_temp' + str(params['logits_temperature'])
-        if bool(params['sigmoid_smoothing']):
-            model.name += '_smoothing'
-        if bool(params['input_feeding_approach']):
-            model.name += '_infeed'
+    # Set process name
+    setproctitle('pt_libri_' + params['model_type'] + '_' +
+                 params['label_type'] + '_' + params['label_type_sub'] + '_' + params['data_size'])
 
     # Set save path
     model.save_path = mkdir_join(

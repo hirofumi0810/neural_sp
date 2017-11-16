@@ -20,6 +20,13 @@ param:
   encoder_num_proj: 0
   encoder_num_layers: 6
   encoder_num_layers_sub: 4
+  downsample_list:
+    - False
+    - False
+    - False
+    - False
+    - False
+    - False
   attention_type: dot_product
   attention_dim: 128
   decoder_type: lstm
@@ -55,6 +62,7 @@ param:
   sort_stop_epoch: 10
   not_improved_patient_epoch: 5
 
+  init_dec_state_with_enc_state: True
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False

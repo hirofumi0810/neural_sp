@@ -25,11 +25,11 @@ orange = '#D2691E'
 green = '#006400'
 
 sys.path.append(abspath('../../../'))
+from models.pytorch.load_model import load
 from examples.timit.data.load_dataset_attention import Dataset
 from utils.io.labels.phone import Idx2phone
 from utils.io.variable import np2var
 from utils.directory import mkdir_join, mkdir
-from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 
 
 parser = argparse.ArgumentParser()
@@ -154,45 +154,14 @@ def main():
         config = yaml.load(f)
         params = config['param']
 
-    # Except for a <SOS> and <EOS> class
-    if params['label_type'] == 'phone61':
-        params['num_classes'] = 61
-    elif params['label_type'] == 'phone48':
-        params['num_classes'] = 48
-    elif params['label_type'] == 'phone39':
-        params['num_classes'] = 39
-    else:
-        TypeError
+    # Get voabulary number (excluding blank, <SOS>, <EOS> classes)
+    with open('../metrics/vocab_num.yml', "r") as f:
+        vocab_num = yaml.load(f)
+        params['num_classes'] = vocab_num[params['data_size']
+                                          ][params['label_type']]
 
     # Model setting
-    model = AttentionSeq2seq(
-        input_size=params['input_size'],
-        num_stack=params['num_stack'],
-        splice=params['splice'],
-        encoder_type=params['encoder_type'],
-        encoder_bidirectional=params['encoder_bidirectional'],
-        encoder_num_units=params['encoder_num_units'],
-        encoder_num_proj=params['encoder_num_proj'],
-        encoder_num_layers=params['encoder_num_layers'],
-        encoder_dropout=params['dropout_encoder'],
-        attention_type=params['attention_type'],
-        attention_dim=params['attention_dim'],
-        decoder_type=params['decoder_type'],
-        decoder_num_units=params['decoder_num_units'],
-        decoder_num_proj=params['decoder_num_proj'],
-        decdoder_num_layers=params['decoder_num_layers'],
-        decoder_dropout=params['dropout_decoder'],
-        embedding_dim=params['embedding_dim'],
-        embedding_dropout=params['dropout_embedding'],
-        num_classes=params['num_classes'],
-        max_decode_length=params['max_decode_length'],
-        parameter_init=params['parameter_init'],
-        downsample_list=[],
-        init_dec_state_with_enc_state=True,
-        sharpening_factor=params['sharpening_factor'],
-        logits_temperature=params['logits_temperature'],
-        sigmoid_smoothing=params['sigmoid_smoothing'],
-        input_feeding_approach=params['input_feeding_approach'])
+    model = load(model_type=params['model_type'], params=params)
 
     model.save_path = args.model_path
     do_plot(model=model, params=params,

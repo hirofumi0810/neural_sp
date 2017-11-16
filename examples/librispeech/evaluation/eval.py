@@ -13,14 +13,11 @@ import yaml
 import argparse
 
 sys.path.append(abspath('../../../'))
-from models.pytorch.ctc.ctc import CTC
-from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
-
+from models.pytorch.load_model import load
 from examples.librispeech.data.load_dataset_ctc import Dataset as Dataset_ctc
 from examples.librispeech.data.load_dataset_attention import Dataset as Dataset_attention
-
-from examples.csj.metrics.cer import do_eval_cer
-from examples.csj.metrics.wer import do_eval_wer
+from examples.librispeech.metrics.cer import do_eval_cer
+from examples.librispeech.metrics.wer import do_eval_wer
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model_path', type=str,
@@ -80,7 +77,7 @@ def do_eval(model, params, epoch, beam_width, eval_batch_size):
     if 'char' in params['label_type']:
         cer_test_clean, wer_test_clean = do_eval_cer(
             model=model,
-            model_type='attention',
+            model_type=params['model_type'],
             dataset=test_clean_data,
             label_type=params['label_type'],
             data_size=params['data_size'],
@@ -93,7 +90,7 @@ def do_eval(model, params, epoch, beam_width, eval_batch_size):
 
         cer_test_other, wer_test_other = do_eval_cer(
             model=model,
-            model_type='attention',
+            model_type=params['model_type'],
             dataset=test_other_data,
             label_type=params['label_type'],
             data_size=params['data_size'],
@@ -138,89 +135,14 @@ def main():
         config = yaml.load(f)
         params = config['param']
 
-    # Except for blank, <SOS>, <EOS> classes
-    if params['label_type'] == 'kana':
-        params['num_classes'] = 146
-    elif params['label_type'] == 'kana_divide':
-        params['num_classes'] = 147
-    elif params['label_type'] == 'kanji':
-        if params['data_size'] == 'subset':
-            params['num_classes'] = 2978
-        elif params['data_size'] == 'fullset':
-            params['num_classes'] = 3383
-    elif params['label_type'] == 'kanji_divide':
-        if params['data_size'] == 'subset':
-            params['num_classes'] = 2979
-        elif params['data_size'] == 'fullset':
-            params['num_classes'] = 3384
-    elif params['label_type'] == 'word_freq1':
-        if params['data_size'] == 'subset':
-            params['num_classes'] = 39169
-        elif params['data_size'] == 'fullset':
-            params['num_classes'] = 66277
-    elif params['label_type'] == 'word_freq5':
-        if params['data_size'] == 'subset':
-            params['num_classes'] = 12877
-        elif params['data_size'] == 'fullset':
-            params['num_classes'] = 23528
-    elif params['label_type'] == 'word_freq10':
-        if params['data_size'] == 'subset':
-            params['num_classes'] = 8542
-        elif params['data_size'] == 'fullset':
-            params['num_classes'] = 15536
-    elif params['label_type'] == 'word_freq15':
-        if params['data_size'] == 'subset':
-            params['num_classes'] = 6726
-        elif params['data_size'] == 'fullset':
-            params['num_classes'] = 12111
-    else:
-        raise TypeError
+    # Get voabulary number (excluding blank, <SOS>, <EOS> classes)
+    with open('../metrics/vocab_num.yml', "r") as f:
+        vocab_num = yaml.load(f)
+        params['num_classes'] = vocab_num[params['data_size']
+                                          ][params['label_type']]
 
     # Model setting
-    if params['model_type'] == 'ctc':
-        model = CTC(
-            input_size=params['input_size'],
-            num_stack=params['num_stack'],
-            splice=params['splice'],
-            encoder_type=params['encoder_type'],
-            bidirectional=params['bidirectional'],
-            num_units=params['num_units'],
-            num_proj=params['num_proj'],
-            num_layers=params['num_layers'],
-            dropout=params['dropout'],
-            num_classes=params['num_classes'],
-            parameter_init=params['parameter_init'],
-            logits_temperature=params['logits_temperature'])
-
-    elif params['model_type'] == 'attention':
-        model = AttentionSeq2seq(
-            input_size=params['input_size'],
-            num_stack=params['num_stack'],
-            splice=params['splice'],
-            encoder_type=params['encoder_type'],
-            encoder_bidirectional=params['encoder_bidirectional'],
-            encoder_num_units=params['encoder_num_units'],
-            encoder_num_proj=params['encoder_num_proj'],
-            encoder_num_layers=params['encoder_num_layers'],
-            encoder_dropout=params['dropout_encoder'],
-            attention_type=params['attention_type'],
-            attention_dim=params['attention_dim'],
-            decoder_type=params['decoder_type'],
-            decoder_num_units=params['decoder_num_units'],
-            decoder_num_proj=params['decoder_num_proj'],
-            decdoder_num_layers=params['decoder_num_layers'],
-            decoder_dropout=params['dropout_decoder'],
-            embedding_dim=params['embedding_dim'],
-            embedding_dropout=params['dropout_embedding'],
-            num_classes=params['num_classes'],
-            max_decode_length=100,
-            parameter_init=params['parameter_init'],
-            downsample_list=[],
-            init_dec_state_with_enc_state=True,
-            sharpening_factor=params['sharpening_factor'],
-            logits_temperature=params['logits_temperature'],
-            sigmoid_smoothing=params['sigmoid_smoothing'],
-            input_feeding_approach=params['input_feeding_approach'])
+    model = load(model_type=params['model_type'], params=params)
 
     model.save_path = args.model_path
     do_eval(model=model, params=params,

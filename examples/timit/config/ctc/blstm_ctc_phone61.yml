@@ -41,4 +41,3 @@ param:
 
   eval_start_epoch: 10
   print_step: 10
-  beam_width: 20

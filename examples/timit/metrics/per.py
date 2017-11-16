@@ -43,15 +43,15 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
     eval_label_type = dataset.label_type
 
     idx2phone_train = Idx2phone(
-        './metrics/vocab_files/' + train_label_type + '.txt')
+        '../metrics/vocab_files/' + train_label_type + '.txt')
     idx2phone_eval = Idx2phone(
-        './metrics/vocab_files/' + eval_label_type + '.txt')
+        '../metrics/vocab_files/' + eval_label_type + '.txt')
     map2phone39_train = Map2phone39(
         label_type=train_label_type,
-        map_file_path='./metrics/phone2phone.txt')
+        map_file_path='../metrics/phone2phone.txt')
     map2phone39_eval = Map2phone39(
         label_type=eval_label_type,
-        map_file_path='./metrics/phone2phone.txt')
+        map_file_path='../metrics/phone2phone.txt')
 
     per_mean = 0
     if progressbar:
@@ -63,8 +63,6 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
             inputs, labels, inputs_seq_len, labels_seq_len, _ = data
         elif model_type == 'joint_ctc_attention':
             raise NotImplementedError
-        else:
-            raise TypeError
 
         # Wrap by variable
         inputs = np2var(inputs, use_cuda=model.use_cuda, volatile=True)

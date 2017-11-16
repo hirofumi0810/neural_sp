@@ -13,9 +13,11 @@ import yaml
 import argparse
 
 sys.path.append(abspath('../../../'))
-from examples.csj.data.load_dataset_attention import Dataset
-from examples.csj.metrics.attention import do_eval_cer
-from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
+from models.pytorch.load_model import load
+from examples.librispeech.data.load_dataset_ctc import Dataset as Dataset_ctc
+from examples.librispeech.data.load_dataset_attention import Dataset as Dataset_attention
+from examples.csj.metrics.cer import do_eval_cer
+from examples.csj.metrics.wer import do_eval_wer
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model_path', type=str,
@@ -39,14 +41,17 @@ def do_eval(model, params, epoch, beam_width, eval_batch_size):
             1 disables beam search, which mean greedy decoding.
         eval_batch_size (int): the size of mini-batch when evaluation
     """
+    # Load dataset
     if 'kana' in params['label_type']:
         vocab_file_path = '../metrics/vocab_files/' + \
             params['label_type'] + '.txt'
     else:
         vocab_file_path = '../metrics/vocab_files/' + \
             params['label_type'] + '_' + params['data_size'] + '.txt'
-
-    # Load dataset
+    if params['model_type'] == 'ctc':
+        Dataset = Dataset_ctc
+    elif params['model_type'] == 'attention':
+        Dataset = Dataset_attention
     eval1_data = Dataset(
         data_type='eval1', label_type=params['label_type'],
         data_size=params['data_size'],
@@ -132,77 +137,14 @@ def main():
         config = yaml.load(f)
         params = config['param']
 
-    # Except for a <SOS> and <EOS> class
-    if params['label_type'] == 'kana':
-        params['num_classes'] = 146
-    elif params['label_type'] == 'kana_divide':
-        params['num_classes'] = 147
-    elif params['label_type'] == 'kanji':
-        if params['data_size'] == 'subset':
-            params['num_classes'] = 2978
-        elif params['data_size'] == 'fullset':
-            params['num_classes'] = 3383
-    elif params['label_type'] == 'kanji_divide':
-        if params['data_size'] == 'subset':
-            params['num_classes'] = 2979
-        elif params['data_size'] == 'fullset':
-            params['num_classes'] = 3384
-    elif params['label_type'] == 'word_freq1':
-        if params['data_size'] == 'subset':
-            params['num_classes'] = 39169
-        elif params['data_size'] == 'fullset':
-            params['num_classes'] = 66277
-    elif params['label_type'] == 'word_freq5':
-        if params['data_size'] == 'subset':
-            params['num_classes'] = 12877
-        elif params['data_size'] == 'fullset':
-            params['num_classes'] = 23528
-    elif params['label_type'] == 'word_freq10':
-        if params['data_size'] == 'subset':
-            params['num_classes'] = 8542
-        elif params['data_size'] == 'fullset':
-            params['num_classes'] = 15536
-    elif params['label_type'] == 'word_freq15':
-        if params['data_size'] == 'subset':
-            params['num_classes'] = 6726
-        elif params['data_size'] == 'fullset':
-            params['num_classes'] = 12111
-    else:
-        raise TypeError
-
-    downsample_list = [False] * params['encoder_num_layers']
-    downsample_list[1] = True
-    downsample_list[2] = True
+    # Get voabulary number (excluding blank, <SOS>, <EOS> classes)
+    with open('../metrics/vocab_num.yml', "r") as f:
+        vocab_num = yaml.load(f)
+        params['num_classes'] = vocab_num[params['data_size']
+                                          ][params['label_type']]
 
     # Model setting
-    model = AttentionSeq2seq(
-        input_size=params['input_size'],
-        num_stack=params['num_stack'],
-        splice=params['splice'],
-        encoder_type=params['encoder_type'],
-        encoder_bidirectional=params['encoder_bidirectional'],
-        encoder_num_units=params['encoder_num_units'],
-        encoder_num_proj=params['encoder_num_proj'],
-        encoder_num_layers=params['encoder_num_layers'],
-        encoder_dropout=params['dropout_encoder'],
-        attention_type=params['attention_type'],
-        attention_dim=params['attention_dim'],
-        decoder_type=params['decoder_type'],
-        decoder_num_units=params['decoder_num_units'],
-        decoder_num_proj=params['decoder_num_proj'],
-        decdoder_num_layers=params['decoder_num_layers'],
-        decoder_dropout=params['dropout_decoder'],
-        embedding_dim=params['embedding_dim'],
-        embedding_dropout=params['dropout_embedding'],
-        num_classes=params['num_classes'],
-        max_decode_length=100,
-        parameter_init=params['parameter_init'],
-        downsample_list=downsample_list,
-        init_dec_state_with_enc_state=True,
-        sharpening_factor=params['sharpening_factor'],
-        logits_temperature=params['logits_temperature'],
-        sigmoid_smoothing=params['sigmoid_smoothing'],
-        input_feeding_approach=params['input_feeding_approach'])
+    model = load(model_type=params['model_type'], params=params)
 
     model.save_path = args.model_path
     do_eval(model=model, params=params,

@@ -221,11 +221,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         # main task
         logits, attention_weights = self._decode_train(
-            encoder_outputs, labels, encoder_final_state)
+            encoder_outputs, labels[perm_indices], encoder_final_state)
 
         # sub task
         logits_sub, attention_weights_sub = self._decode_train_sub(
-            encoder_outputs_sub, labels_sub, encoder_final_state_sub)
+            encoder_outputs_sub, labels_sub[perm_indices], encoder_final_state_sub)
 
         return logits, attention_weights, logits_sub, attention_weights_sub, perm_indices
 

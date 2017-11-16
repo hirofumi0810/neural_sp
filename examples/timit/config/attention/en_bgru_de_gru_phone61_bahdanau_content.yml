@@ -17,6 +17,10 @@ param:
   encoder_num_units: 256
   encoder_num_proj: 0
   encoder_num_layers: 3
+  downsample_list:
+    - False
+    - False
+    - False
   attention_type: bahdanau_content
   attention_dim: 512
   decoder_type: gru
@@ -47,6 +51,7 @@ param:
   sort_stop_epoch: 20
   not_improved_patient_epoch: 20
 
+  init_dec_state_with_enc_state: True
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False

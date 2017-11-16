@@ -58,7 +58,9 @@ class JointCTCAttention(AttentionSeq2seq):
             when using CNN-like encoder. Default is 1 frame.
         parameter_init (float, optional): the range of uniform distribution to
             initialize weight parameters (>= 0)
-        downsample_list (list, optional):
+        downsample_list (list, optional): downsample_list (list, optional): downsample in the corresponding layers (True)
+            ex.) [False, True, True, False] means that downsample is conducted
+                in the 2nd and 3rd layers.
         init_dec_state_with_enc_state (bool, optional): if True, initialize
             decoder state with the final encoder state.
         sharpening_factor (float, optional): a sharpening factor in the
