@@ -20,7 +20,8 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
     """Evaluate trained model by Character Error Rate.
     Args:
         model: the model to evaluate
-        model_type (string): ctc or attention
+        model_type (string): ctc or attention or hierarchical_ctc or
+            hierarchical_attention or joint_ctc_attention
         dataset: An instance of a `Dataset' class
         label_type (string): kanji or kanji or kanji_divide or kana_divide
         data_size (string): fullset or subset
@@ -78,9 +79,18 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
                 logits, inputs_seq_len[0][perm_indices], beam_width=beam_width)
             labels_pred -= 1
             # NOTE: index 0 is reserved for blank
+        elif model_type == 'hierarchical_attention':
+            raise NotImplementedError
+        elif model_type == 'hierarchical_ctc':
+            raise NotImplementedError
+        elif model_type == 'joint_ctc_attention':
+            raise NotImplementedError
 
         for i_batch in range(batch_size):
 
+            ##############################
+            # Reference
+            ##############################
             # Convert from list of index to string
             if is_test:
                 str_true = labels[0][i_batch][0]
@@ -89,12 +99,19 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
                 if model_type in ['ctc', 'hierarchical_ctc']:
                     str_true = idx2char(
                         labels[0][i_batch][:labels_seq_len[0][i_batch]])
-                elif model_type in ['attention', 'hierarchical_attention']:
+                elif model_type in ['attention', 'hierarchical_attention', 'joint_ctc_attention']:
                     str_true = idx2char(
                         labels[0][i_batch][1:labels_seq_len[0][i_batch] - 1])
                     # NOTE: Exclude <SOS> and <EOS>
-            str_pred = idx2char(labels_pred[i_batch]).split('>')[0]
-            # NOTE: Trancate by the first <EOS>
+
+            ##############################
+            # Hypothesis
+            ##############################
+            str_pred = idx2char(labels_pred[i_batch])
+
+            if model_type in ['attention', 'hierarchical_attention']:
+                str_pred = str_pred.split('>')[0]
+                # NOTE: Trancate by the first <EOS>
 
             # Remove garbage labels
             str_true = re.sub(r'[_NZー・<>]+', '', str_true)

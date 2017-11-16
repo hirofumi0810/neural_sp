@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Define evaluation method by Character Error Rate (Librispeech corpus)."""
+"""Define evaluation method by Word Error Rate (CSJ corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -10,12 +10,12 @@ from __future__ import print_function
 import re
 from tqdm import tqdm
 
-from utils.io.labels.character import Idx2char
+from utils.io.labels.word import Idx2word
 from utils.io.variable import np2var
-from utils.evaluation.edit_distance import compute_cer, compute_wer, wer_align
+from utils.evaluation.edit_distance import compute_wer, wer_align
 
 
-def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
+def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
                 is_test=False, eval_batch_size=None, progressbar=False):
     """Evaluate trained model by Character Error Rate.
     Args:
@@ -23,15 +23,13 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
         model_type (string): ctc or attention or hierarchical_ctc or
             hierarchical_attention or joint_ctc_attention
         dataset: An instance of a `Dataset' class
-        label_type (string): character or character_capital_divide or
-            word_freq1 or word_freq5 or word_freq10 or word_freq15
-        data_size (string): 100h or 460h or 960h
+        label_type (string): word_freq1 or word_freq5 or word_freq10 or word_freq15
+        data_size (string): fullset or subset
         beam_width: (int): the size of beam
         is_test (bool, optional): set to True when evaluating by the test set
         eval_batch_size (int, optional): the batch size when evaluating the model
         progressbar (bool, optional): if True, visualize the progressbar
     Returns:
-        cer_mean (float): An average of CER
         wer_mean (float): An average of WER
     """
     batch_size_original = dataset.batch_size
@@ -43,15 +41,12 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
     if eval_batch_size is not None:
         dataset.batch_size = eval_batch_size
 
-    if label_type == 'character':
-        vocab_file_path = '../metrics/vocab_files/character.txt'
-    else:
-        vocab_file_path = '../metrics/vocab_files/' + \
-            label_type + '_' + data_size + '.txt'
+    vocab_file_path = '../metrics/vocab_files/' + \
+        label_type + '_' + data_size + '.txt'
 
-    idx2char = Idx2char(vocab_file_path)
+    idx2word = Idx2word(vocab_file_path)
 
-    cer_mean, wer_mean = 0, 0
+    wer_mean = 0
     if progressbar:
         pbar = tqdm(total=len(dataset))
     for data, is_new_epoch in dataset:
@@ -60,9 +55,9 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
         if model_type in ['ctc', 'attention']:
             inputs, labels, inputs_seq_len, labels_seq_len, _ = data
         elif model_type in ['hierarchical_ctc', 'hierarchical_attention']:
-            inputs, _, labels, inputs_seq_len, _, labels_seq_len, _ = data
+            inputs, labels, _, inputs_seq_len, labels_seq_len, _,  _ = data
         else:
-            raise TypeError
+            TypeError
 
         # Wrap by variable
         inputs = np2var(inputs, use_cuda=model.use_cuda, volatile=True)
@@ -95,31 +90,34 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
             ##############################
             # Convert from list of index to string
             if is_test:
-                str_true = labels[0][i_batch][0]
+                word_list_true = labels[0][i_batch][0].split('_')
+                # NOTE: transcript is seperated by space('_')
             else:
                 if model_type in ['ctc', 'hierarchical_ctc']:
-                    str_true = idx2char(
+                    word_list_true = idx2word(
                         labels[0][i_batch][:labels_seq_len[0][i_batch]])
-                elif model_type in ['attention', 'hierarchical_attention']:
-                    str_true = idx2char(
+                elif model_type in ['attention', 'hierarchical_attention', 'joint_ctc_attention']:
+                    word_list_true = idx2word(
                         labels[0][i_batch][1:labels_seq_len[0][i_batch] - 1])
                     # NOTE: Exclude <SOS> and <EOS>
+            str_true = '_'.join(word_list_true)
 
             ##############################
             # Hypothesis
             ##############################
-            str_pred = idx2char(labels_pred[i_batch])
-
+            word_list_pred = idx2word(labels_pred[i_batch])
+            str_pred = '_'.join(word_list_pred)
             if model_type in ['attention', 'hierarchical_attention']:
                 str_pred = str_pred.split('>')[0]
                 # NOTE: Trancate by the first <EOS>
 
-            # Remove consecutive spaces
-            str_pred = re.sub(r'[_]+', '_', str_pred)
+                # Remove the last space
+                if len(str_pred) > 0 and str_pred[-1] == '_':
+                    str_pred = str_pred[:-1]
 
-            # Remove garbage labels
-            str_true = re.sub(r'[\'<>]+', '', str_true)
-            str_pred = re.sub(r'[\'<>]+', '', str_pred)
+            # Remove noise labels
+            str_true = re.sub(r'[NZ]+', '', str_true)
+            str_pred = re.sub(r'[NZ]+', '', str_pred)
 
             # Compute WER
             wer_mean += compute_wer(ref=str_true.split('_'),
@@ -132,22 +130,16 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
             # print('INS: %d' % insert)
             # print('DEL: %d' % delete)
 
-            # Compute CER
-            cer_mean += compute_cer(ref=str_true,
-                                    hyp=str_pred,
-                                    normalize=True)
-
             if progressbar:
                 pbar.update(1)
 
         if is_new_epoch:
             break
 
-    cer_mean /= len(dataset)
     wer_mean /= len(dataset)
 
     # Register original batch size
     if eval_batch_size is not None:
         dataset.batch_size = batch_size_original
 
-    return cer_mean, wer_mean
+    return wer_mean

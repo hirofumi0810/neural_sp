@@ -19,10 +19,10 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
     """Evaluate trained model by Word Error Rate.
     Args:
         model: the model to evaluate
-        model_type (string): ctc or attention
+        model_type (string): ctc or attention or hierarchical_ctc or
+            hierarchical_attention or joint_ctc_attention
         dataset: An instance of a `Dataset' class
-        label_type (string): character or character_capital_divide or
-            word_freq1 or word_freq5 or word_freq10 or word_freq15
+        label_type (string): word_freq1 or word_freq5 or word_freq10 or word_freq15
         data_size (string): 100h or 460h or 960h
         beam_width: (int): the size of beam
         is_test (bool, optional): set to True when evaluating by the test set
@@ -75,9 +75,18 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
                 logits, inputs_seq_len[0][perm_indices], beam_width=beam_width)
             labels_pred -= 1
             # NOTE: index 0 is reserved for blank
+        elif model_type == 'hierarchical_attention':
+            raise NotImplementedError
+        elif model_type == 'hierarchical_ctc':
+            raise NotImplementedError
+        elif model_type == 'joint_ctc_attention':
+            raise NotImplementedError
 
         for i_batch in range(batch_size):
 
+            ##############################
+            # Reference
+            ##############################
             # Convert from list of index to string
             if is_test:
                 word_list_true = labels[0][i_batch][0].split('_')
@@ -90,8 +99,21 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
                     word_list_true = idx2word(
                         labels[0][i_batch][1:labels_seq_len[0][i_batch] - 1])
                     # NOTE: Exclude <SOS> and <EOS>
+
+            ##############################
+            # Hypothesis
+            ##############################
             word_list_pred = idx2word(labels_pred[i_batch])
-            # NOTE: Trancate by the first <EOS>
+            str_pred = '_'.join(word_list_pred)
+            if model_type in ['attention', 'hierarchical_attention']:
+                str_pred = str_pred.split('>')[0]
+                # NOTE: Trancate by the first <EOS>
+
+                # Remove the last space
+                if len(str_pred) > 0 and str_pred[-1] == '_':
+                    str_pred = str_pred[:-1]
+
+                word_list_pred = str_pred.split('_')
 
             # Compute WER
             wer_mean += compute_wer(ref=word_list_true,

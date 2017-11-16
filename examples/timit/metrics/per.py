@@ -20,7 +20,7 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
     """Evaluate trained model by Phone Error Rate.
     Args:
         model: the model to evaluate
-        model_type (string): ctc or attention
+        model_type (string): ctc or attention or joint_ctc_attention
         dataset: An instance of a `Dataset' class
         label_type (string): phone39 or phone48 or phone61
         beam_width: (int): the size of beam
@@ -61,8 +61,10 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
         # Create feed dictionary for next mini-batch
         if model_type in ['ctc', 'attention']:
             inputs, labels, inputs_seq_len, labels_seq_len, _ = data
-        else:
+        elif model_type == 'joint_ctc_attention':
             raise NotImplementedError
+        else:
+            raise TypeError
 
         # Wrap by variable
         inputs = np2var(inputs, use_cuda=model.use_cuda, volatile=True)
@@ -81,21 +83,10 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
                 logits, inputs_seq_len[0][perm_indices], beam_width=beam_width)
             labels_pred -= 1
             # NOTE: index 0 is reserved for blank
+        elif model_type == 'joint_ctc_attention':
+            raise NotImplementedError
 
         for i_batch in range(batch_size):
-            ##############################
-            # Hypothesis
-            ##############################
-            # Convert from index to phone (-> list of phone strings)
-            str_pred = idx2phone_train(labels_pred[i_batch]).split('>')[0]
-            # NOTE: Trancate by the first <EOS>
-
-            # Remove the last space
-            if len(str_pred) > 0 and str_pred[-1] == ' ':
-                str_pred = str_pred[:-1]
-
-            phone_pred_list = str_pred.split(' ')
-
             ##############################
             # Reference
             ##############################
@@ -106,14 +97,30 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
                 if model_type in ['ctc']:
                     phone_true_list = idx2phone_eval(
                         labels[0][i_batch][:labels_seq_len[0][i_batch]]).split(' ')
-                elif model_type in ['attention']:
+                elif model_type in ['attention', 'joint_ctc_attention']:
                     phone_true_list = idx2phone_eval(
                         labels[0][i_batch][1:labels_seq_len[0][i_batch] - 1]).split(' ')
                     # NOTE: Exclude <SOS> and <EOS>
 
+            ##############################
+            # Hypothesis
+            ##############################
+            # Convert from index to phone (-> list of phone strings)
+            str_pred = idx2phone_train(labels_pred[i_batch])
+
+            if model_type in ['attention', 'joint_ctc_attention']:
+                str_pred.split('>')[0]
+                # NOTE: Trancate by the first <EOS>
+
+                # Remove the last space
+                if len(str_pred) > 0 and str_pred[-1] == ' ':
+                    str_pred = str_pred[:-1]
+
+            phone_pred_list = str_pred.split(' ')
+
             # Mapping to 39 phones (-> list of phone strings)
-            phone_pred_list = map2phone39_train(phone_pred_list)
             phone_true_list = map2phone39_eval(phone_true_list)
+            phone_pred_list = map2phone39_train(phone_pred_list)
 
             # Compute PER
             per_mean += compute_per(ref=phone_true_list,
