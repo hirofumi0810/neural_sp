@@ -44,8 +44,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  main_loss_weight,  # ***
                  num_classes,
                  num_classes_sub,  # ***
-                 max_decode_length=50,
-                 max_decode_length_sub=100,  # ***
                  num_stack=1,
                  splice=1,
                  parameter_init=0.1,
@@ -74,7 +72,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             embedding_dim=embedding_dim,
             embedding_dropout=embedding_dropout,
             num_classes=num_classes,
-            max_decode_length=max_decode_length,
             num_stack=num_stack,
             splice=splice,
             parameter_init=parameter_init,
@@ -97,7 +94,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # NOTE: add <SOS> and <EOS>
         self.sos_index_sub = num_classes_sub
         self.eos_index_sub = num_classes_sub + 1
-        self.max_decode_length_sub = max_decode_length_sub
 
         # Setting for MTL
         self.main_loss_weight = main_loss_weight
@@ -429,26 +425,32 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         return decoder_outputs, decoder_state, context_vector, attention_weights_step
 
-    def decode_infer_sub(self, inputs, inputs_seq_len, beam_width=1):
+    def decode_infer_sub(self, inputs, inputs_seq_len, beam_width=1,
+                         max_decode_length=100):
         """
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
             inputs_seq_len (IntTensor): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
+            max_decode_length (int, optional): the length of output sequences
+                to stop prediction when EOS token have not been emitted
         Returns:
 
         """
         if beam_width == 1:
-            return self._decode_infer_greedy_sub(inputs, inputs_seq_len)
+            return self._decode_infer_greedy_sub(inputs, inputs_seq_len, max_decode_length)
         else:
             return self._decode_infer_beam_sub(
-                inputs, inputs_seq_len, beam_width)
+                inputs, inputs_seq_len, beam_width, max_decode_length)
 
-    def _decode_infer_greedy_sub(self, inputs, inputs_seq_len):
+    def _decode_infer_greedy_sub(self, inputs, inputs_seq_len,
+                                 _max_decode_length):
         """Greedy decoding when inference.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
             inputs_seq_len (IntTensor): A tensor of size `[B]`
+            _max_decode_length (int): the length of output sequences
+                to stop prediction when EOS token have not been emitted
         Returns:
             argmaxs (np.ndarray): A tensor of size `[B, T_out_sub]`
             attention_weights (np.ndarray): A tensor of size
@@ -472,7 +474,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         attention_weights = []
         attention_weights_step = None
 
-        for _ in range(self.max_decode_length_sub):
+        for _ in range(_max_decode_length):
             y = self.embedding_sub(y)
             y = self.embedding_dropout_sub(y)
             # TODO: remove dropout??
@@ -517,5 +519,5 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         return argmaxs, attention_weights
 
-    def _decode_infer_beam_sub(self, inputs, inputs_seq_len, beam_width):
+    def _decode_infer_beam_sub(self, inputs, inputs_seq_len, beam_width, max_decode_length):
         raise NotImplementedError

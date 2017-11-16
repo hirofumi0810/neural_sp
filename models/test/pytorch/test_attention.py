@@ -123,7 +123,6 @@ class TestAttention(unittest.TestCase):
             embedding_dim=64,
             embedding_dropout=0.1,
             num_classes=num_classes,
-            max_decode_length=100,
             splice=1,
             parameter_init=0.1,
             downsample_list=[] if not downsample else [True] * 2,
@@ -207,7 +206,7 @@ class TestAttention(unittest.TestCase):
 
                 # Decode
                 labels_pred, _ = model.decode_infer(
-                    inputs, inputs_seq_len, beam_width=5)
+                    inputs, inputs_seq_len, beam_width=5, max_decode_length=100)
 
                 # Compute accuracy
                 if label_type == 'char':

@@ -47,8 +47,6 @@ class JointCTCAttention(AttentionSeq2seq):
             embedding layer
         num_classes (int): the number of nodes in softmax layer
             (excluding <SOS> and <EOS> classes)
-        max_decode_length (int): the length of output sequences to stop
-            prediction when EOS token have not been emitted
         ctc_num_layers (int): index of the layer to attatch a CTC decoder
         ctc_loss_weight (float): A weight parameter for auxiliary CTC loss
         ctc_num_classes (int): the number of nodes in softmax layer
@@ -96,7 +94,6 @@ class JointCTCAttention(AttentionSeq2seq):
                  ctc_num_layers,  # ***
                  ctc_loss_weight,  # ***
                  ctc_num_classes,  # ***
-                 max_decode_length=100,
                  num_stack=1,
                  splice=1,
                  parameter_init=0.1,
@@ -125,7 +122,6 @@ class JointCTCAttention(AttentionSeq2seq):
             embedding_dim=embedding_dim,
             embedding_dropout=embedding_dropout,
             num_classes=num_classes,
-            max_decode_length=max_decode_length,
             num_stack=num_stack,
             splice=splice,
             parameter_init=parameter_init,

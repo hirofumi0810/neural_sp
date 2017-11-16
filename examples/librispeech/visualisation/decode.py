@@ -128,7 +128,7 @@ def decode(model, model_type, dataset, label_type, data_size, beam_width,
         # Decode
         if model_type == 'attention':
             labels_pred, _ = model.decode_infer(
-                inputs[0], inputs_seq_len[0], beam_width=beam_width)
+                inputs[0], inputs_seq_len[0], beam_width=beam_width, max_decode_length=model.max_decode_length)
         elif model_type == 'ctc':
             labels_pred = model.decode(
                 inputs[0], inputs_seq_len[0], beam_width=beam_width)

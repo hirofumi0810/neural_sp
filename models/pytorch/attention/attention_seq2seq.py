@@ -60,8 +60,6 @@ class AttentionSeq2seq(ModelBase):
             embedding layer
         num_classes (int): the number of nodes in softmax layer
             (excluding <SOS> and <EOS> classes)
-        max_decode_length (int): the length of output sequences to stop
-            prediction when EOS token have not been emitted
         num_stack (int, optional): the number of frames to stack
         splice (int, optional): the number of frames to splice. This is used
             when using CNN-like encoder. Default is 1 frame.
@@ -102,7 +100,6 @@ class AttentionSeq2seq(ModelBase):
                  embedding_dim,
                  embedding_dropout,
                  num_classes,
-                 max_decode_length=100,
                  num_stack=1,
                  splice=1,
                  parameter_init=0.1,
@@ -151,7 +148,6 @@ class AttentionSeq2seq(ModelBase):
         # NOTE: Add <SOS> and <EOS>
         self.sos_index = num_classes
         self.eos_index = num_classes + 1
-        self.max_decode_length = max_decode_length
         self.init_dec_state_with_enc_state = init_dec_state_with_enc_state
         self.sharpening_factor = sharpening_factor
         self.logits_temperature = logits_temperature
@@ -530,12 +526,15 @@ class AttentionSeq2seq(ModelBase):
 
         return y
 
-    def decode_infer(self, inputs, inputs_seq_len, beam_width=1):
+    def decode_infer(self, inputs, inputs_seq_len, beam_width=1,
+                     max_decode_length=100):
         """
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
             inputs_seq_len (IntTensor): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
+            max_decode_length (int, optional): the length of output sequences
+                to stop prediction when EOS token have not been emitted
         Returns:
 
         """
@@ -544,11 +543,13 @@ class AttentionSeq2seq(ModelBase):
         else:
             return self._decode_infer_beam(inputs, inputs_seq_len, beam_width)
 
-    def _decode_infer_greedy(self, inputs, inputs_seq_len):
+    def _decode_infer_greedy(self, inputs, inputs_seq_len, _max_decode_length):
         """Greedy decoding when inference.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
             inputs_seq_len (IntTensor): A tensor of size `[B]`
+            _max_decode_length (int): the length of output sequences
+                to stop prediction when EOS token have not been emitted
         Returns:
             argmaxs (np.ndarray): A tensor of size `[B, T_out]`
             attention_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
@@ -571,7 +572,7 @@ class AttentionSeq2seq(ModelBase):
         attention_weights = []
         attention_weights_step = None
 
-        for _ in range(self.max_decode_length):
+        for _ in range(_max_decode_length):
             y = self.embedding(y)
             y = self.embedding_dropout(y)
             # TODO: remove dropout??
@@ -616,12 +617,15 @@ class AttentionSeq2seq(ModelBase):
 
         return argmaxs, attention_weights
 
-    def _decode_infer_beam(self, inputs, inputs_seq_len, beam_width):
+    def _decode_infer_beam(self, inputs, inputs_seq_len, beam_width,
+                           _max_decode_length):
         """Beam search decoding when inference.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
             inputs_seq_len (IntTensor): A tensor of size `[B]`
             beam_width (int): the size of beam
+            _max_decode_length (int, optional): the length of output sequences
+                to stop prediction when EOS token have not been emitted
         Returns:
 
         """
@@ -657,7 +661,7 @@ class AttentionSeq2seq(ModelBase):
         attention_weights = [] * batch_size
         attention_weights_step_list = [None] * batch_size
 
-        for t in range(self.max_decode_length):
+        for t in range(_max_decode_length):
             new_beam = [[]] * batch_size
             for i_batch in range(batch_size):
                 for hyp, score, decoder_state in beam[i_batch]:

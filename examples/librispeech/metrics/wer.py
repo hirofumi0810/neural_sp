@@ -68,7 +68,7 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
         # Decode
         if model_type in ['attention', 'hierarchical_attention']:
             labels_pred, _ = model.decode_infer(
-                inputs[0], inputs_seq_len[0], beam_width=beam_width)
+                inputs[0], inputs_seq_len[0], beam_width=beam_width, max_decode_length=model.max_decode_length)
         elif model_type in ['ctc', 'hierarchical_ctc']:
             if model_type == 'ctc':
                 logits, perm_indices = model(inputs[0], inputs_seq_len[0])

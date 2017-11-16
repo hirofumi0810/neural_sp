@@ -84,8 +84,6 @@ class TestHierarchicalAttention(unittest.TestCase):
             main_loss_weight=0.5,
             num_classes=num_classes,
             num_classes_sub=num_classes_sub,
-            max_decode_length=30,
-            max_decode_length_sub=100,
             splice=1,
             parameter_init=0.1,
             init_dec_state_with_enc_state=True,
@@ -174,9 +172,9 @@ class TestHierarchicalAttention(unittest.TestCase):
 
                 # Decode
                 labels_pred, _ = model.decode_infer(
-                    inputs, inputs_seq_len, beam_width=1)
+                    inputs, inputs_seq_len, beam_width=1, max_decode_length=30)
                 labels_pred_sub, _ = model.decode_infer_sub(
-                    inputs, inputs_seq_len, beam_width=1)
+                    inputs, inputs_seq_len, beam_width=1, max_decode_length=100)
 
                 # Compute accuracy
                 str_pred = idx2word(labels_pred[0][0:-1]).split('>')[0]

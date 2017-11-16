@@ -67,19 +67,18 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
         batch_size = inputs[0].size(0)
 
         # Decode
-        if model_type == 'attention':
+        if model_type in ['attention', 'hierarchical_attention']:
             labels_pred, _ = model.decode_infer(
-                inputs[0], inputs_seq_len[0], beam_width=beam_width)
-        elif model_type == 'ctc':
-            logits, perm_indices = model(inputs[0], inputs_seq_len[0])
+                inputs[0], inputs_seq_len[0], beam_width=beam_width, max_decode_length=model.max_decode_length)
+        elif model_type in ['ctc', 'hierarchical_ctc']:
+            if model_type == 'ctc':
+                logits, perm_indices = model(inputs[0], inputs_seq_len[0])
+            else:
+                logits, _, perm_indices = model(inputs[0], inputs_seq_len[0])
             labels_pred = model.decode(
                 logits, inputs_seq_len[0][perm_indices], beam_width=beam_width)
             labels_pred -= 1
             # NOTE: index 0 is reserved for blank
-        elif model_type == 'hierarchical_attention':
-            raise NotImplementedError
-        elif model_type == 'hierarchical_ctc':
-            raise NotImplementedError
         elif model_type == 'joint_ctc_attention':
             raise NotImplementedError
 

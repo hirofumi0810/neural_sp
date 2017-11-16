@@ -108,7 +108,7 @@ def plot(model, dataset, label_type,
 
         # Make prediction
         labels_pred, attention_weights = model.decode_infer(
-            inputs[0], beam_width=1)
+            inputs[0], beam_width=1, max_decode_length=1)
 
         for i_batch in range(batch_size):
 
