@@ -19,7 +19,7 @@ from utils.dataset.attention import DatasetBase
 
 class Dataset(DatasetBase):
 
-    def __init__(self, data_type, label_type, batch_size, vocab_file_path,
+    def __init__(self, data_type, label_type, batch_size, num_classes,
                  max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
                  shuffle=False, sort_utt=False, reverse=False,
@@ -30,7 +30,7 @@ class Dataset(DatasetBase):
             label_type (string): phone39 or phone48 or phone61 or
                 character or character_capital_divide
             batch_size (int): the size of mini-batch
-            vocab_file_path (string): path to the vocabulary file
+            num_classes (int): the number of classes
             max_epoch (int, optional): the max epoch. None means infinite loop.
             splice (int, optional): frames to splice. Default is 1 frame.
             num_stack (int, optional): the number of frames to stack
@@ -44,7 +44,7 @@ class Dataset(DatasetBase):
             sort_stop_epoch (int, optional): After sort_stop_epoch, training
                 will revert back to a random order
         """
-        super(Dataset, self).__init__(vocab_file_path=vocab_file_path)
+        super(Dataset, self).__init__()
 
         self.is_test = True if data_type == 'test' else False
 
@@ -59,6 +59,8 @@ class Dataset(DatasetBase):
         self.sort_utt = sort_utt
         self.sort_stop_epoch = sort_stop_epoch
         self.num_gpus = 1
+
+        self.num_classes = num_classes
 
         # paths where datasets exist
         dataset_root = ['/data/inaguma/timit',

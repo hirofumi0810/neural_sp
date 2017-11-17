@@ -39,5 +39,5 @@ param:
 
   logits_temperature: 1
 
-  eval_start_epoch: 10
+  eval_start_epoch: 20
   print_step: 10

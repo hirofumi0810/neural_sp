@@ -28,7 +28,6 @@ param:
   decoder_num_proj: 0
   decoder_num_layers: 1
   embedding_dim: 64
-  max_decode_length: 40
 
   # optimization
   batch_size: 64
@@ -49,7 +48,7 @@ param:
   decay_rate: 0.5
   decay_patient_epoch: 5
   sort_stop_epoch: 20
-  not_improved_patient_epoch: 20
+  not_improved_patient_epoch: 10
 
   init_dec_state_with_enc_state: True
   sharpening_factor: 1.0

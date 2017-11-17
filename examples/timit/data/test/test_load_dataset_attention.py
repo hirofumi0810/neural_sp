@@ -8,10 +8,10 @@ from __future__ import print_function
 import os
 import sys
 import unittest
+import yaml
 
 sys.path.append(os.path.abspath('../../../../'))
 from examples.timit.data.load_dataset_attention import Dataset
-from utils.io.labels.character import Idx2char
 from utils.io.labels.phone import Idx2phone
 from utils.measure_time_func import measure_time
 
@@ -57,31 +57,32 @@ class TestLoadDatasetAttention(unittest.TestCase):
         print('  splice: %d' % splice)
         print('========================================')
 
-        vocab_file_path = '../../metrics/vocab_files/' + label_type + '.txt'
+        # Get voabulary number (excluding blank, <SOS>, <EOS> classes)
+        with open('../../metrics/vocab_num.yml', "r") as f:
+            vocab_num = yaml.load(f)
+            num_classes = vocab_num[label_type]
 
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
             data_type=data_type, label_type=label_type,
-            vocab_file_path=vocab_file_path,
+            num_classes=num_classes,
             batch_size=64, max_epoch=1,
             splice=splice, num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
             sort_utt=sort_utt, sort_stop_epoch=sort_stop_epoch)
 
         print('=> Loading mini-batch...')
-        if label_type in ['character', 'character_capital_divide']:
-            map_fn = Idx2char(vocab_file_path)
-        else:
-            map_fn = Idx2phone(vocab_file_path)
+        idx2phone = Idx2phone(
+            '../../metrics/vocab_files/' + label_type + '.txt')
 
         for data, is_new_epoch in dataset:
             inputs, labels, inputs_seq_len, labels_seq_len, input_names = data
 
-            if data_type != 'test':
-                str_true = map_fn(labels[0][0][:labels_seq_len[0][0]])
-            else:
+            if dataset.is_test:
                 str_true = labels[0][0][0]
+            else:
+                str_true = idx2phone(labels[0][0][:labels_seq_len[0][0]])
 
             print('----- %s ----- (epoch: %.3f)' %
                   (input_names[0][0], dataset.epoch_detail))

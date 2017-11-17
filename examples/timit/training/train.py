@@ -35,29 +35,26 @@ def do_train(model, params):
         params (dict): A dictionary of parameters
     """
     # Load dataset
-    vocab_file_path_train = '../metrics/vocab_files/' + \
-        params['label_type'] + '.txt'
-    vocab_file_path_eval = '../metrics/vocab_files/phone39.txt'
     if params['model_type'] == 'ctc':
         Dataset = Dataset_ctc
     elif params['model_type'] == 'attention':
         Dataset = Dataset_attention
     train_data = Dataset(
         data_type='train', label_type=params['label_type'],
-        vocab_file_path=vocab_file_path_train,
+        num_classes=params['num_classes'],
         batch_size=params['batch_size'],
         max_epoch=params['num_epoch'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'])
     dev_data = Dataset(
         data_type='dev', label_type=params['label_type'],
-        vocab_file_path=vocab_file_path_train,
+        num_classes=params['num_classes'],
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True)
     test_data = Dataset(
         data_type='test', label_type='phone39',
-        vocab_file_path=vocab_file_path_eval,
+        num_classes=39,
         batch_size=1, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True)
@@ -222,6 +219,7 @@ def do_train(model, params):
                     dataset=dev_data,
                     label_type=params['label_type'],
                     beam_width=1,
+                    max_decode_length=40,
                     eval_batch_size=1)
                 print('  PER: %f %%' % (per_dev_epoch * 100))
 
@@ -243,7 +241,7 @@ def do_train(model, params):
                         dataset=test_data,
                         label_type=params['label_type'],
                         beam_width=1,
-                        is_test=True,
+                        max_decode_length=40,
                         eval_batch_size=1)
                     print('  PER: %f %%' % (per_test * 100))
                 else:
@@ -294,7 +292,7 @@ def main(config_path, model_save_path):
 
     # Set process name
     setproctitle(
-        'pt_timit_' + params['model_type'] + '_' + params['label_type'])
+        'timit_' + params['model_type'] + '_' + params['label_type'])
 
     # Set save path
     model.save_path = mkdir_join(
