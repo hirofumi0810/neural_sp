@@ -17,7 +17,7 @@ ATTENTION_TYPE = [
 
 
 class AttentionMechanism(nn.Module):
-    """Attention-besed RNN decoder.
+    """Attention layer.
     Args:
         encoder_num_units (int): the number of units in each layer of the
             encoder
@@ -29,9 +29,10 @@ class AttentionMechanism(nn.Module):
             softmax layer for computing attention weights
         sigmoid_smoothing (bool, optional): if True, replace softmax function
             in computing attention weights with sigmoid function for smoothing
-        out_channels (int, optional):
-            This is used for location-based atte
-        kernel_size (int, optional):
+        out_channels (int, optional): the number of channles of conv outputs.
+            This is used for location-based attention.
+        kernel_size (int, optional): the size of kernel.
+            This must be the odd number.
     """
 
     def __init__(self,
@@ -42,9 +43,15 @@ class AttentionMechanism(nn.Module):
                  sharpening_factor=1,
                  sigmoid_smoothing=False,
                  out_channels=10,
-                 kernel_size=201):
+                 kernel_size=101):
 
         super(AttentionMechanism, self).__init__()
+
+        assert kernel_size % 2 == 1
+        if attention_type not in ATTENTION_TYPE:
+            raise TypeError(
+                "attention_type should be one of [%s], you provided %s." %
+                (", ".join(ATTENTION_TYPE), attention_type))
 
         self.encoder_num_units = encoder_num_units
         self.decoder_num_units = decoder_num_units
@@ -52,15 +59,6 @@ class AttentionMechanism(nn.Module):
         self.attention_dim = attention_dim
         self.sharpening_factor = sharpening_factor
         self.sigmoid_smoothing = sigmoid_smoothing
-
-        if encoder_num_units != decoder_num_units:
-            raise NotImplementedError(
-                'Add the bridge layer between the encoder and decoder.')
-
-        if attention_type not in ATTENTION_TYPE:
-            raise TypeError(
-                "attention_type should be one of [%s], you provided %s." %
-                (", ".join(ATTENTION_TYPE), attention_type))
 
         if self.attention_type == 'bahdanau_content':
             self.W_enc = nn.Linear(encoder_num_units, attention_dim)

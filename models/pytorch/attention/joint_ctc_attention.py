@@ -191,7 +191,7 @@ class JointCTCAttention(AttentionSeq2seq):
                 `[B, T_out, T_in]`
             logits_ctc (FloatTensor): A tensor of size
                 `[B, T_in, ctc_num_classes (including blank)]`
-            perm_indices ():
+            perm_indices (FloatTensor):
         """
         encoder_outputs, encoder_final_state, logits_ctc, perm_indices = self._encode(
             inputs, inputs_seq_len, volatile)
@@ -214,7 +214,7 @@ class JointCTCAttention(AttentionSeq2seq):
                 `[1, B, decoder_num_units (may be equal to encoder_num_units)]`
             logits_ctc (FloatTensor): A tensor of size
                 `[B, T_in, ctc_num_classes (including blank)]`
-            perm_indices ():
+            perm_indices (FloatTensor):
         """
         encoder_outputs, encoder_final_state,  encoder_outputs_sub, _, perm_indices = self.encoder(
             inputs, inputs_seq_len, volatile, mask_sequence=True)

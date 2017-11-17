@@ -13,6 +13,7 @@ import torch.nn.functional as F
 
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 from models.pytorch.encoders.load_encoder import load
+from models.pytorch.attention.decoders.rnn_decoder import RNNDecoder
 from models.pytorch.attention.attention_layer import AttentionMechanism
 from utils.io.variable import var2np
 
@@ -131,27 +132,16 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         ##############################
         # Decoder in the sub task
         ##############################
-        if decoder_type == 'lstm':
-            self.decoder_sub = nn.LSTM(
-                embedding_dim_sub,
-                hidden_size=decoder_num_units_sub,
-                num_layers=1,
-                bias=True,
-                batch_first=True,
-                dropout=decoder_dropout,
-                bidirectional=False)
-        elif decoder_type == 'gru':
-            self.decoder_sub = nn.GRU(
-                embedding_dim_sub,
-                hidden_size=decoder_num_units_sub,
-                num_layers=1,
-                bias=True,
-                batch_first=True,
-                dropout=decoder_dropout,
-                bidirectional=False)
-        else:
-            raise TypeError
-        # NOTE: decoder is unidirectional and only 1 layer now
+        self.decoder_sub = RNNDecoder(
+            embedding_dim=embedding_dim_sub,
+            rnn_type=decoder_type,
+            num_units=decoder_num_units_sub,
+            num_proj=decoder_num_proj,
+            num_layers=decoder_num_layers,
+            dropout=decoder_dropout,
+            parameter_init=parameter_init,
+            use_cuda=self.use_cuda,
+            batch_first=True)
 
         ###################################
         # Attention layer in the sub task
@@ -211,7 +201,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 `[B, T_out_sub, num_classes_sub (including <SOS> and <EOS>)]`
             attention_weights_sub (FloatTensor): attention weights in the sub task.
                 A tensor of size `[B, T_out_sub, T_in]`
-            perm_indices ():
+            perm_indices (FloatTensor):
         """
         encoder_outputs, encoder_final_state, encoder_outputs_sub, encoder_final_state_sub, perm_indices = self._encode(
             inputs, inputs_seq_len, volatile)
@@ -242,7 +232,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 `[B, T_in, encoder_num_units]`
             encoder_final_state_sub (FloatTensor): A tensor of size
                 `[1, B, decoder_num_units_sub (may be equal to encoder_num_units)]`
-            perm_indices_sub ():
+            perm_indices_sub (FloatTensor):
         """
         encoder_outputs, encoder_final_state, encoder_outputs_sub, encoder_final_state_sub, perm_indices = self.encoder(
             inputs, inputs_seq_len, volatile, mask_sequence=True)
@@ -303,7 +293,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 `[B, T_out_sub, T_in]`
             coverage_weight (float, optional):
         Returns:
-            loss (FloatTensor): A tensor of size `[]`
+            loss (FloatTensor): A tensor of size `[1]`
         """
         batch_size, _, num_classes = logits.size()
         logits = logits.view((-1, num_classes))
@@ -355,9 +345,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         ys = self.embedding_dropout_sub(ys)
         labels_max_seq_len = labels.size(1)
 
-        decoder_state = self._init_decoder_state(
-            self.init_dec_state_with_enc_state,
-            encoder_final_state)
+        # Initialize decoder state
+        decoder_state = self._init_decoder_state(encoder_final_state)
 
         logits = []
         attention_weights = []
@@ -410,12 +399,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 `[B, 1, encoder_num_units]`
             attention_weights_step (FloatTensor): A tensor of size `[B, T_in]`
         """
-        if self.decoder_type == 'lstm':
-            decoder_outputs, decoder_state = self.decoder_sub(
-                y, hx=decoder_state)
-        elif self.decoder_type == 'gru':
-            decoder_outputs, decoder_state = self.decoder_sub(
-                y, hx=decoder_state)
+        decoder_outputs, decoder_state = self.decoder_sub(y, decoder_state)
 
         # decoder_outputs: `[B, 1, decoder_num_units]`
         context_vector, attention_weights_step = self.attend_sub(
@@ -466,9 +450,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         # Initialize decoder state
         decoder_state = self._init_decoder_state(
-            self.init_dec_state_with_enc_state,
-            encoder_final_state,
-            volatile=True)
+            encoder_final_state, volatile=True)
 
         argmaxs = []
         attention_weights = []

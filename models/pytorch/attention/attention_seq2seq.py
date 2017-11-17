@@ -16,6 +16,7 @@ from torch.autograd import Variable
 
 from models.pytorch.base import ModelBase
 from models.pytorch.encoders.load_encoder import load
+from models.pytorch.attention.decoders.rnn_decoder import RNNDecoder
 from models.pytorch.attention.attention_layer import AttentionMechanism
 from utils.io.variable import var2np
 
@@ -201,27 +202,16 @@ class AttentionSeq2seq(ModelBase):
         ####################
         # Decoder
         ####################
-        if decoder_type == 'lstm':
-            self.decoder = nn.LSTM(
-                embedding_dim,
-                hidden_size=decoder_num_units,
-                num_layers=1,
-                bias=True,
-                batch_first=True,
-                dropout=decoder_dropout,
-                bidirectional=False)
-        elif decoder_type == 'gru':
-            self.decoder = nn.GRU(
-                embedding_dim,
-                hidden_size=decoder_num_units,
-                num_layers=1,
-                bias=True,
-                batch_first=True,
-                dropout=decoder_dropout,
-                bidirectional=False)
-        else:
-            raise TypeError
-        # NOTE: decoder is unidirectional and only 1 layer now
+        self.decoder = RNNDecoder(
+            embedding_dim=embedding_dim,
+            rnn_type=decoder_type,
+            num_units=decoder_num_units,
+            num_proj=decoder_num_proj,
+            num_layers=decoder_num_layers,
+            dropout=decoder_dropout,
+            parameter_init=parameter_init,
+            use_cuda=self.use_cuda,
+            batch_first=True)
 
         ##############################
         # Attention layer
@@ -269,7 +259,7 @@ class AttentionSeq2seq(ModelBase):
                 `[B, T_out, num_classes (including <SOS> and <EOS>)]`
             attention_weights (FloatTensor): A tensor of size
                 `[B, T_out, T_in]`
-            perm_indices ():
+            perm_indices (FloatTensor):
         """
         encoder_outputs, encoder_final_state, perm_indices = self._encode(
             inputs, inputs_seq_len, volatile)
@@ -290,7 +280,7 @@ class AttentionSeq2seq(ModelBase):
                 `[B, T_in, encoder_num_units]`
             encoder_final_state (FloatTensor): A tensor of size
                 `[1, B, decoder_num_units (may be equal to encoder_num_units)]`
-            perm_indices ():
+            perm_indices (FloatTensor):
         """
         encoder_outputs, encoder_final_state, perm_indices = self.encoder(
             inputs, inputs_seq_len, volatile, mask_sequence=True)
@@ -373,9 +363,8 @@ class AttentionSeq2seq(ModelBase):
         ys = self.embedding_dropout(ys)
         labels_max_seq_len = labels.size(1)
 
-        decoder_state = self._init_decoder_state(
-            self.init_dec_state_with_enc_state,
-            encoder_final_state)
+        # Initialize decoder state
+        decoder_state = self._init_decoder_state(encoder_final_state)
 
         logits = []
         attention_weights = []
@@ -409,12 +398,9 @@ class AttentionSeq2seq(ModelBase):
 
         return logits, attention_weights
 
-    def _init_decoder_state(self, init_dec_state_with_enc_state,
-                            encoder_final_state=None, volatile=False):
+    def _init_decoder_state(self, encoder_final_state, volatile=False):
         """Initialize decoder state.
         Args:
-            init_dec_state_with_enc_state (bool): if True, initialize
-                decoder state with the final encoder state.
             encoder_final_state (FloatTensor): A tensor of size
                 `[1, B, encoder_num_units]`
             volatile (bool, optional): if True, the history will not be saved.
@@ -423,7 +409,7 @@ class AttentionSeq2seq(ModelBase):
             decoder_state (FloatTensor): A tensor of size
                 `[1, B, decoder_num_units]`
         """
-        if init_dec_state_with_enc_state and encoder_final_state is None:
+        if self.init_dec_state_with_enc_state and encoder_final_state is None:
             raise ValueError('Set the final state of the encoder.')
 
         batch_size = encoder_final_state.size()[1]
@@ -437,7 +423,7 @@ class AttentionSeq2seq(ModelBase):
             if self.use_cuda:
                 c_0 = c_0.cuda()
 
-            if init_dec_state_with_enc_state and self.encoder_type == self.decoder_type:
+            if self.init_dec_state_with_enc_state and self.encoder_type == self.decoder_type:
                 # Initialize decoder state with
                 # the final state of the top layer of the encoder (forward)
                 decoder_state = (encoder_final_state, c_0)
@@ -455,7 +441,7 @@ class AttentionSeq2seq(ModelBase):
                 decoder_state = (h_0, c_0)
         else:
             # gru decoder
-            if init_dec_state_with_enc_state and self.encoder_type == self.decoder_type:
+            if self.init_dec_state_with_enc_state and self.encoder_type == self.decoder_type:
                 # Initialize decoder state with
                 # the final state of the top layer of the encoder (forward)
                 decoder_state = encoder_final_state
@@ -492,12 +478,7 @@ class AttentionSeq2seq(ModelBase):
                 `[B, 1, encoder_num_units]`
             attention_weights_step (FloatTensor): A tensor of size `[B, T_in]`
         """
-        if self.decoder_type == 'lstm':
-            decoder_outputs, decoder_state = self.decoder(
-                y, hx=decoder_state)
-        elif self.decoder_type == 'gru':
-            decoder_outputs, decoder_state = self.decoder(
-                y, hx=decoder_state)
+        decoder_outputs, decoder_state = self.decoder(y, decoder_state)
 
         # decoder_outputs: `[B, 1, decoder_num_units]`
         context_vector, attention_weights_step = self.attend(
@@ -564,9 +545,7 @@ class AttentionSeq2seq(ModelBase):
 
         # Initialize decoder state
         decoder_state = self._init_decoder_state(
-            self.init_dec_state_with_enc_state,
-            encoder_final_state,
-            volatile=True)
+            encoder_final_state, volatile=True)
 
         argmaxs = []
         attention_weights = []
@@ -640,9 +619,7 @@ class AttentionSeq2seq(ModelBase):
 
         # Initialize decoder state
         decoder_state = self._init_decoder_state(
-            self.init_dec_state_with_enc_state,
-            encoder_final_state,
-            volatile=True)
+            encoder_final_state, volatile=True)
 
         beam = []
         for i_batch in range(batch_size):
