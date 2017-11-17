@@ -2,6 +2,7 @@ param:
   # corpus
   corpus: csj
   label_type: word_freq5
+  label_type_sub: kanji
   data_size: subset
 
   # features
@@ -12,12 +13,13 @@ param:
   num_skip: 2
 
   # topology
-  model_type: ctc
+  model_type: hierarchical_ctc
   encoder_type: lstm
   bidirectional: True
   num_units: 320
   num_proj: 0
   num_layers: 6
+  num_layers_sub: 4
   bottleneck_dim: 0
 
   # optimization
@@ -37,6 +39,9 @@ param:
   decay_patient_epoch: 3
   sort_stop_epoch: 10
   not_improved_patient_epoch: 5
+
+  # MTL
+  main_loss_weight: 0.5
 
   logits_temperature: 1
 

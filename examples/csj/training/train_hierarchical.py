@@ -20,7 +20,7 @@ sys.path.append(abspath('../../../'))
 from models.pytorch.load_model import load
 from examples.csj.data.load_dataset_hierarchical_ctc import Dataset as Dataset_hierarchical_ctc
 from examples.csj.data.load_dataset_hierarchical_attention import Dataset as Dataset_hierarchical_attention
-# from examples.csj.metrics.cer import do_eval_cer
+from examples.csj.metrics.cer import do_eval_cer
 from examples.csj.metrics.wer import do_eval_wer
 from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
@@ -260,13 +260,26 @@ def do_train(model, params):
                     label_type=params['label_type'],
                     data_size=params['data_size'],
                     beam_width=1,
+                    max_decode_length=60,
                     eval_batch_size=1)
-                print('  WER: %f %%' % (wer_dev_epoch * 100))
+                print('  WER (main): %f %%' % (wer_dev_epoch * 100))
 
                 if wer_dev_epoch < wer_dev_best:
                     wer_dev_best = wer_dev_epoch
                     not_improved_epoch = 0
                     print('■■■ ↑Best Score (WER)↑ ■■■')
+
+                    cer_dev_epoch = do_eval_cer(
+                        model=model,
+                        model_type=params['model_type'],
+                        dataset=dev_data,
+                        label_type=params['label_type_sub'],
+                        data_size=params['data_size'],
+                        beam_width=1,
+                        max_decode_length=100,
+                        eval_batch_size=1)
+                    print('  CER (sub): %f %%' % (cer_dev_epoch * 100))
+
                 else:
                     not_improved_epoch += 1
 
@@ -317,7 +330,7 @@ def main(config_path, model_save_path):
     model = load(model_type=params['model_type'], params=params)
 
     # Set process name
-    setproctitle('pt_csj_' + params['model_type'] + '_' +
+    setproctitle('csj_' + params['model_type'] + '_' +
                  params['label_type'] + '_' + params['label_type_sub'] + '_' + params['data_size'])
 
     # Set save path

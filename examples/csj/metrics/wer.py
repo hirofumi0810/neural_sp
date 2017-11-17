@@ -16,7 +16,8 @@ from utils.evaluation.edit_distance import compute_wer, wer_align
 
 
 def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
-                is_test=False, eval_batch_size=None, progressbar=False):
+                max_decode_length=100, eval_batch_size=None,
+                progressbar=False):
     """Evaluate trained model by Character Error Rate.
     Args:
         model: the model to evaluate
@@ -26,7 +27,9 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
         label_type (string): word_freq1 or word_freq5 or word_freq10 or word_freq15
         data_size (string): fullset or subset
         beam_width: (int): the size of beam
-        is_test (bool, optional): set to True when evaluating by the test set
+        max_decode_length (int, optional): the length of output sequences
+            to stop prediction when EOS token have not been emitted.
+            This is used for seq2seq models.
         eval_batch_size (int, optional): the batch size when evaluating the model
         progressbar (bool, optional): if True, visualize the progressbar
     Returns:
@@ -88,7 +91,7 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
             # Reference
             ##############################
             # Convert from list of index to string
-            if is_test:
+            if dataset.is_test:
                 word_list_true = labels[0][i_batch][0].split('_')
                 # NOTE: transcript is seperated by space('_')
             else:

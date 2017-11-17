@@ -224,6 +224,7 @@ def do_train(model, params):
                         label_type=params['label_type'],
                         data_size=params['data_size'],
                         beam_width=1,
+                        max_decode_length=100,
                         eval_batch_size=1)
                     print('  CER: %f %%' % (cer_dev_epoch * 100))
 
@@ -241,6 +242,7 @@ def do_train(model, params):
                         label_type=params['label_type'],
                         data_size=params['data_size'],
                         beam_width=1,
+                        max_decode_length=60,
                         eval_batch_size=1)
                     print('  WER: %f %%' % (wer_dev_epoch * 100))
 
@@ -296,7 +298,7 @@ def main(config_path, model_save_path):
     model = load(model_type=params['model_type'], params=params)
 
     # Set process name
-    setproctitle('pt_csj_' + params['model_type'] + '_' +
+    setproctitle('csj_' + params['model_type'] + '_' +
                  params['label_type'] + '_' + params['data_size'])
 
     # Set save path

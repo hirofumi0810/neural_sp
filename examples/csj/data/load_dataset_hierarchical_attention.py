@@ -71,7 +71,7 @@ class Dataset(DatasetBase):
         self.num_gpus = num_gpus
 
         self.num_classes = num_classes
-        self.num_classes = num_classes_sub
+        self.num_classes_sub = num_classes_sub
 
         # paths where datasets exist
         dataset_root = ['/data/inaguma/csj',

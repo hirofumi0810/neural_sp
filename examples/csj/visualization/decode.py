@@ -30,18 +30,28 @@ parser.add_argument('--beam_width', type=int, default=1,
                     ' 1 disables beam search, which mean greedy decoding.')
 parser.add_argument('--eval_batch_size', type=str, default=1,
                     help='the size of mini-batch in evaluation')
+parser.add_argument('--max_decode_length', type=int, default=100,  # or 60
+                    help='the length of output sequences to stop prediction when EOS token have not been emitted')
 
 
-def do_decode(model, params, epoch, beam_width, eval_batch_size):
-    """Conduct decoding.
-    Args:
-        model: the model to restore
-        params (dict): A dictionary of parameters
-        epoch (int): the epoch to restore
-        beam_width (int): beam width for beam search.
-            1 disables beam search, which mean greedy decoding.
-        eval_batch_size (int): the size of mini-batch when evaluation
-    """
+def main():
+
+    args = parser.parse_args()
+
+    # Load config file
+    with open(join(args.model_path, 'config.yml'), "r") as f:
+        config = yaml.load(f)
+        params = config['param']
+
+    # Get voabulary number (excluding blank, <SOS>, <EOS> classes)
+    with open('../metrics/vocab_num.yml', "r") as f:
+        vocab_num = yaml.load(f)
+        params['num_classes'] = vocab_num[params['data_size']
+                                          ][params['label_type']]
+
+    # Model setting
+    model = load(model_type=params['model_type'], params=params)
+
     # Load dataset
     if params['model_type'] == 'ctc':
         Dataset = Dataset_ctc
@@ -51,9 +61,9 @@ def do_decode(model, params, epoch, beam_width, eval_batch_size):
         data_type='eval1',
         # data_type='eval2',
         # data_type='eval3',
-        label_type=params['label_type'], data_size=params['data_size'],
-        batch_size=eval_batch_size, num_classes=params['num_classes'],
-        splice=params['splice'],
+        data_size=params['data_size'],
+        label_type=params['label_type'], num_classes=params['num_classes'],
+        batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, reverse=True)
 
@@ -61,7 +71,8 @@ def do_decode(model, params, epoch, beam_width, eval_batch_size):
     model.set_cuda(deterministic=False)
 
     # Load the saved model
-    checkpoint = model.load_checkpoint(save_path=model.save_path, epoch=epoch)
+    checkpoint = model.load_checkpoint(
+        save_path=args.model_path, epoch=args.epoch)
     model.load_state_dict(checkpoint['state_dict'])
 
     # Change to evaluation mode
@@ -73,14 +84,14 @@ def do_decode(model, params, epoch, beam_width, eval_batch_size):
            dataset=eval_data,
            label_type=params['label_type'],
            data_size=params['data_size'],
-           beam_width=beam_width,
-           is_test=eval_data.is_test,
+           beam_width=args.beam_width,
+           max_decode_length=args.max_decode_length,
            save_path=None)
     # save_path=model.save_path)
 
 
 def decode(model, model_type, dataset, label_type, data_size, beam_width,
-           is_test=False, save_path=None):
+           max_decode_length=100, save_path=None):
     """Visualize label outputs.
     Args:
         model: the model to evaluate
@@ -90,7 +101,9 @@ def decode(model, model_type, dataset, label_type, data_size, beam_width,
             word_freq1 or word_freq5 or word_freq10 or word_freq15
         data_size (string): train_fullset or train_subset
         beam_width: (int): the size of beam
-        is_test (bool, optional):
+        max_decode_length (int, optional): the length of output sequences
+            to stop prediction when EOS token have not been emitted.
+            This is used for seq2seq models.
         save_path (string): path to save decoding results
     """
     if 'kana' in label_type:
@@ -99,7 +112,10 @@ def decode(model, model_type, dataset, label_type, data_size, beam_width,
         vocab_file_path = '../metrics/vocab_files/' + \
             label_type + '_' + data_size + '.txt'
 
-    idx2char = Idx2char(vocab_file_path)
+    if 'word' not in label_type:
+        map_fn = Idx2char(vocab_file_path)
+    else:
+        map_fn = Idx2word(vocab_file_path)
 
     if save_path is not None:
         sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
@@ -122,7 +138,7 @@ def decode(model, model_type, dataset, label_type, data_size, beam_width,
         # Decode
         if model_type == 'attention':
             labels_pred, _ = model.decode_infer(
-                inputs[0], inputs_seq_len=[0], beam_width=beam_width, max_decode_length=model.max_decode_length)
+                inputs[0], inputs_seq_len=[0], beam_width=beam_width, max_decode_length=max_decode_length)
         elif model_type == 'ctc':
             labels_pred = model.decode(
                 inputs[0], inputs_seq_len[0], beam_width=beam_width)
@@ -135,24 +151,38 @@ def decode(model, model_type, dataset, label_type, data_size, beam_width,
             ##############################
             # Reference
             ##############################
-            if is_test:
+            if dataset.is_test:
                 str_true = labels[0][i_batch][0]
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
-                if model_type in ['ctc']:
-                    str_true = idx2char(
-                        labels[0][i_batch][:labels_seq_len[0][i_batch]])
-                elif model_type in ['attention']:
-                    str_true = idx2char(
-                        labels[0][i_batch][1:labels_seq_len[0][i_batch] - 1])
-                    # NOTE: Exclude <SOS> and <EOS>
+                if 'word' not in label_type:
+                    if model_type in ['ctc']:
+                        str_true = map_fn(
+                            labels[0][i_batch][:labels_seq_len[0][i_batch]])
+                    elif model_type in ['attention']:
+                        str_true = map_fn(
+                            labels[0][i_batch][1:labels_seq_len[0][i_batch] - 1])
+                        # NOTE: Exclude <SOS> and <EOS>
+                else:
+                    if model_type == 'ctc':
+                        word_list_true = map_fn(
+                            labels[0][i_batch][:labels_seq_len[0][i_batch]])
+                    elif model_type == 'attention':
+                        word_list_true = map_fn(
+                            labels[0][i_batch][1:labels_seq_len[0][i_batch] - 1])
+                        # NOTE: Exclude <SOS> and <EOS>
+                    str_true = ' '.join(word_list_true)
 
             ##############################
             # Hypothesis
             ##############################
             # Convert from list of index to string
-            str_pred = idx2char(labels_pred[i_batch])
+            if 'word' not in label_type:
+                str_pred = map_fn(labels_pred[i_batch])
+            else:
+                word_list_pred = map_fn(labels_pred[i_batch])
+                str_pred = ' '.join(word_list_pred)
 
             if model_type in ['attention', 'joint_ctc_attention']:
                 str_pred = str_pred.split('>')[0]
@@ -167,30 +197,6 @@ def decode(model, model_type, dataset, label_type, data_size, beam_width,
 
         if is_new_epoch:
             break
-
-
-def main():
-
-    args = parser.parse_args()
-
-    # Load config file
-    with open(join(args.model_path, 'config.yml'), "r") as f:
-        config = yaml.load(f)
-        params = config['param']
-
-    # Get voabulary number (excluding blank, <SOS>, <EOS> classes)
-    with open('../metrics/vocab_num.yml', "r") as f:
-        vocab_num = yaml.load(f)
-        params['num_classes'] = vocab_num[params['data_size']
-                                          ][params['label_type']]
-
-    # Model setting
-    model = load(model_type=params['model_type'], params=params)
-
-    model.save_path = args.model_path
-    do_decode(model=model, params=params,
-              epoch=args.epoch, eval_batch_size=args.eval_batch_size,
-              beam_width=args.beam_width)
 
 
 if __name__ == '__main__':
