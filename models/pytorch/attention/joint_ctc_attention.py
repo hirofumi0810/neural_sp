@@ -148,14 +148,14 @@ class JointCTCAttention(AttentionSeq2seq):
         # NOTE: overide encoder
         #########################
         # Load an instance
-        if len(downsample_list) == 0:
+        if sum(downsample_list) == 0:
             encoder = load(encoder_type=encoder_type + '_hierarchical')
         else:
             raise NotImplementedError
 
         # Call the encoder function
         if encoder_type in ['lstm', 'gru', 'rnn']:
-            if len(downsample_list) == 0:
+            if sum(downsample_list) == 0:
                 self.encoder = encoder(
                     input_size=self.input_size,
                     rnn_type=encoder_type,

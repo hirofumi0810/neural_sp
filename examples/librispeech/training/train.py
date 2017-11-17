@@ -35,43 +35,38 @@ def do_train(model, params):
         params (dict): A dictionary of parameters
     """
     # Load dataset
-    if params['label_type'] == 'character':
-        vocab_file_path = '../metrics/vocab_files/character.txt'
-    else:
-        vocab_file_path = '../metrics/vocab_files/' + \
-            params['label_type'] + '_' + params['data_size'] + '.txt'
     if params['model_type'] == 'ctc':
         Dataset = Dataset_ctc
     elif params['model_type'] == 'attention':
         Dataset = Dataset_attention
     train_data = Dataset(
         data_type='train', data_size=params['data_size'],
-        label_type=params['label_type'], vocab_file_path=vocab_file_path,
+        label_type=params['label_type'], num_classes=params['num_classes'],
         batch_size=params['batch_size'],
         max_epoch=params['num_epoch'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'])
     dev_clean_data = Dataset(
         data_type='dev_clean', data_size=params['data_size'],
-        label_type=params['label_type'], vocab_file_path=vocab_file_path,
+        label_type=params['label_type'], num_classes=params['num_classes'],
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True)
     dev_other_data = Dataset(
         data_type='dev_other', data_size=params['data_size'],
-        label_type=params['label_type'], vocab_file_path=vocab_file_path,
+        label_type=params['label_type'], num_classes=params['num_classes'],
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True)
     test_clean_data = Dataset(
         data_type='test_clean', data_size=params['data_size'],
-        label_type=params['label_type'], vocab_file_path=vocab_file_path,
+        label_type=params['label_type'], num_classes=params['num_classes'],
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True)
     test_other_data = Dataset(
         data_type='test_other', data_size=params['data_size'],
-        label_type=params['label_type'], vocab_file_path=vocab_file_path,
+        label_type=params['label_type'], num_classes=params['num_classes'],
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True)
@@ -252,6 +247,7 @@ def do_train(model, params):
                         label_type=params['label_type'],
                         data_size=params['data_size'],
                         beam_width=1,
+                        max_decode_length=600,
                         eval_batch_size=1)
                     print('  CER (clean): %f %%' % (cer_dev_clean_epoch * 100))
 
@@ -263,6 +259,7 @@ def do_train(model, params):
                         label_type=params['label_type'],
                         data_size=params['data_size'],
                         beam_width=1,
+                        max_decode_length=600,
                         eval_batch_size=1)
                     print('  CER (other): %f %%' % (cer_dev_other_epoch * 100))
 
@@ -285,7 +282,7 @@ def do_train(model, params):
                             label_type=params['label_type'],
                             data_size=params['data_size'],
                             beam_width=1,
-                            is_test=True,
+                            max_decode_length=600,
                             eval_batch_size=1)
                         print('  CER (clean): %f %%' %
                               (cer_test_clean_epoch * 100))
@@ -298,7 +295,7 @@ def do_train(model, params):
                             label_type=params['label_type'],
                             data_size=params['data_size'],
                             beam_width=1,
-                            is_test=True,
+                            max_decode_length=600,
                             eval_batch_size=1)
                         print('  CER (other): %f %%' %
                               (cer_test_other_epoch * 100))
@@ -313,6 +310,7 @@ def do_train(model, params):
                         label_type=params['label_type'],
                         data_size=params['data_size'],
                         beam_width=1,
+                        max_decode_length=100,
                         eval_batch_size=1)
                     print('  WER (clean): %f %%' % (wer_dev_clean_epoch * 100))
 
@@ -324,6 +322,7 @@ def do_train(model, params):
                         label_type=params['label_type'],
                         data_size=params['data_size'],
                         beam_width=1,
+                        max_decode_length=100,
                         eval_batch_size=1)
                     print('  WER (other): %f %%' % (wer_dev_other_epoch * 100))
 
@@ -352,7 +351,7 @@ def do_train(model, params):
                             label_type=params['label_type'],
                             data_size=params['data_size'],
                             beam_width=1,
-                            is_test=True,
+                            max_decode_length=100,
                             eval_batch_size=1)
                         print('  WER (clean): %f %%' %
                               (wer_test_clean_epoch * 100))
@@ -365,7 +364,7 @@ def do_train(model, params):
                             label_type=params['label_type'],
                             data_size=params['data_size'],
                             beam_width=1,
-                            is_test=True,
+                            max_decode_length=100,
                             eval_batch_size=1)
                         print('  WER (other): %f %%' %
                               (wer_test_other_epoch * 100))
@@ -417,7 +416,7 @@ def main(config_path, model_save_path):
     model = load(model_type=params['model_type'], params=params)
 
     # Set process name
-    setproctitle('pt_libri_' + params['model_type'] + '_' +
+    setproctitle('libri_' + params['model_type'] + '_' +
                  params['label_type'] + '_' + params['data_size'])
 
     # Set save path

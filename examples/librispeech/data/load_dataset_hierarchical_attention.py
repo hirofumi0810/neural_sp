@@ -20,7 +20,7 @@ from utils.dataset.hierarchical_attention import DatasetBase
 class Dataset(DatasetBase):
 
     def __init__(self, data_type, data_size, label_type, label_type_sub,
-                 batch_size, vocab_file_path, vocab_file_path_sub,
+                 batch_size, num_classes, num_classes_sub,
                  max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
                  shuffle=False, sort_utt=True, reverse=False,
@@ -33,8 +33,8 @@ class Dataset(DatasetBase):
             label_type (string): word_freq1 or word_freq5 or word_freq10 or word_freq15
             label_type_sub (string): characater or characater_capital_divide
             batch_size (int): the size of mini-batch
-            vocab_file_path (string): path to the vocabulary file in the main task
-            vocab_file_path_sub (string): path to the vocabulary file in the sub task
+            num_classes (int): the number of classes in the main task
+            num_classes_sub (int): the number of classes in the sub task
             max_epoch (int, optional): the max epoch. None means infinite loop.
             splice (int, optional): frames to splice. Default is 1 frame.
             num_stack (int, optional): the number of frames to stack
@@ -49,8 +49,7 @@ class Dataset(DatasetBase):
                 will revert back to a random order
             num_gpus (int, optional): the number of GPUs
         """
-        super(Dataset, self).__init__(vocab_file_path=vocab_file_path,
-                                      vocab_file_path_sub=vocab_file_path_sub)
+        super(Dataset, self).__init__()
 
         if data_type in ['test_clean', 'test_other']:
             self.is_test = True
@@ -70,6 +69,9 @@ class Dataset(DatasetBase):
         self.sort_utt = sort_utt
         self.sort_stop_epoch = sort_stop_epoch
         self.num_gpus = num_gpus
+
+        self.num_classes = num_classes
+        self.num_classes_sub = num_classes_sub
 
         # paths where datasets exist
         dataset_root = ['/data/inaguma/librispeech',

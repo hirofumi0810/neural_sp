@@ -16,7 +16,8 @@ from utils.evaluation.edit_distance import compute_cer, compute_wer, wer_align
 
 
 def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
-                is_test=False, eval_batch_size=None, progressbar=False):
+                max_decode_length=100, eval_batch_size=None,
+                progressbar=False):
     """Evaluate trained model by Character Error Rate.
     Args:
         model: the model to evaluate
@@ -26,7 +27,9 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
         label_type (string): character or character_capital_divide
         data_size (string): 100h or 460h or 960h
         beam_width: (int): the size of beam
-        is_test (bool, optional): set to True when evaluating by the test set
+        max_decode_length (int, optional): the length of output sequences
+            to stop prediction when EOS token have not been emitted.
+            This is used for seq2seq models.
         eval_batch_size (int, optional): the batch size when evaluating the model
         progressbar (bool, optional): if True, visualize the progressbar
     Returns:
@@ -73,10 +76,12 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
         # Decode
         if model_type == 'attention':
             labels_pred, _ = model.decode_infer(
-                inputs[0], inputs_seq_len[0], beam_width=beam_width, max_decode_length=model.max_decode_length)
+                inputs[0], inputs_seq_len[0],
+                beam_width=beam_width, max_decode_length=max_decode_length)
         elif model_type == 'hierarchical_attention':
             labels_pred, _ = model.decode_infer_sub(
-                inputs[0], inputs_seq_len[0], beam_width=beam_width, max_decode_length=model.max_decode_length_sub)
+                inputs[0], inputs_seq_len[0],
+                beam_width=beam_width, max_decode_length=max_decode_length)
         elif model_type in ['ctc', 'hierarchical_ctc']:
             if model_type == 'ctc':
                 logits, perm_indices = model(inputs[0], inputs_seq_len[0])
@@ -94,10 +99,10 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
             ##############################
             # Reference
             ##############################
-            # Convert from list of index to string
-            if is_test:
+            if dataset.is_test:
                 str_true = labels[0][i_batch][0]
             else:
+                # Convert from list of index to string
                 if model_type in ['ctc', 'hierarchical_ctc']:
                     str_true = idx2char(
                         labels[0][i_batch][:labels_seq_len[0][i_batch]])

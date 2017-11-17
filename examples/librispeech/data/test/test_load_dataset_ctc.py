@@ -28,11 +28,11 @@ class TestLoadDatasetCTC(unittest.TestCase):
         # self.check(label_type='character', data_type='test_other')
 
         # label_type
-        self.check(label_type='character_capital_divide')
         self.check(label_type='word_freq1')
         self.check(label_type='word_freq5')
         self.check(label_type='word_freq10')
         self.check(label_type='word_freq15')
+        self.check(label_type='character_capital_divide')
 
         # sort
         self.check(label_type='character', sort_utt=True)
@@ -66,12 +66,6 @@ class TestLoadDatasetCTC(unittest.TestCase):
         print('  num_gpus: %d' % num_gpus)
         print('========================================')
 
-        if label_type == 'character':
-            vocab_file_path = '../../metrics/vocab_files/character.txt'
-        else:
-            vocab_file_path = '../../metrics/vocab_files/' + \
-                label_type + '_' + data_size + '.txt'
-
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
@@ -84,6 +78,13 @@ class TestLoadDatasetCTC(unittest.TestCase):
             num_gpus=num_gpus)
 
         print('=> Loading mini-batch...')
+
+        if label_type == 'character':
+            vocab_file_path = '../../metrics/vocab_files/character.txt'
+        else:
+            vocab_file_path = '../../metrics/vocab_files/' + \
+                label_type + '_' + data_size + '.txt'
+
         if 'word' in label_type:
             map_fn = Idx2word(vocab_file_path)
         else:

@@ -20,7 +20,7 @@ sys.path.append(abspath('../../../'))
 from models.pytorch.load_model import load
 from examples.librispeech.data.load_dataset_hierarchical_ctc import Dataset as Dataset_hierarchical_ctc
 from examples.librispeech.data.load_dataset_hierarchical_attention import Dataset as Dataset_hierarchical_attention
-# from examples.librispeech.metrics.cer import do_eval_cer
+from examples.librispeech.metrics.cer import do_eval_cer
 from examples.librispeech.metrics.wer import do_eval_wer
 from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
@@ -35,13 +35,6 @@ def do_train(model, params):
         params (dict): A dictionary of parameters
     """
     # Load dataset
-    vocab_file_path = '../metrics/vocab_files/' + \
-        params['label_type'] + '_' + params['data_size'] + '.txt'
-    if params['label_type_sub'] == 'character':
-        vocab_file_path_sub = '../metrics/vocab_files/character.txt'
-    else:
-        vocab_file_path_sub = '../metrics/vocab_files/' + \
-            params['label_type_sub'] + '_' + params['data_size'] + '.txt'
     if params['model_type'] == 'hierarchical_ctc':
         Dataset = Dataset_hierarchical_ctc
     elif params['model_type'] == 'hierarchical_attention':
@@ -50,8 +43,8 @@ def do_train(model, params):
         data_type='train', data_size=params['data_size'],
         label_type=params['label_type'],
         label_type_sub=params['label_type_sub'],
-        vocab_file_path=vocab_file_path,
-        vocab_file_path_sub=vocab_file_path_sub,
+        num_classes=params['num_classes'],
+        num_classes_sub=params['num_classes_sub'],
         batch_size=params['batch_size'],
         max_epoch=params['num_epoch'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
@@ -60,8 +53,8 @@ def do_train(model, params):
         data_type='dev_clean', data_size=params['data_size'],
         label_type=params['label_type'],
         label_type_sub=params['label_type_sub'],
-        vocab_file_path=vocab_file_path,
-        vocab_file_path_sub=vocab_file_path_sub,
+        num_classes=params['num_classes'],
+        num_classes_sub=params['num_classes_sub'],
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True)
@@ -69,8 +62,8 @@ def do_train(model, params):
         data_type='dev_other', data_size=params['data_size'],
         label_type=params['label_type'],
         label_type_sub=params['label_type_sub'],
-        vocab_file_path=vocab_file_path,
-        vocab_file_path_sub=vocab_file_path_sub,
+        num_classes=params['num_classes'],
+        num_classes_sub=params['num_classes_sub'],
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True)
@@ -78,8 +71,8 @@ def do_train(model, params):
         data_type='test_clean', data_size=params['data_size'],
         label_type=params['label_type'],
         label_type_sub=params['label_type_sub'],
-        vocab_file_path=vocab_file_path,
-        vocab_file_path_sub=vocab_file_path_sub,
+        num_classes=params['num_classes'],
+        num_classes_sub=params['num_classes_sub'],
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True)
@@ -87,8 +80,8 @@ def do_train(model, params):
         data_type='test_other', data_size=params['data_size'],
         label_type=params['label_type'],
         label_type_sub=params['label_type_sub'],
-        vocab_file_path=vocab_file_path,
-        vocab_file_path_sub=vocab_file_path_sub,
+        num_classes=params['num_classes'],
+        num_classes_sub=params['num_classes_sub'],
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True)
@@ -301,6 +294,7 @@ def do_train(model, params):
                     label_type=params['label_type'],
                     data_size=params['data_size'],
                     beam_width=1,
+                    max_decode_length=100,
                     eval_batch_size=1)
                 print('  WER (clean): %f %%' % (wer_dev_clean_epoch * 100))
 
@@ -312,6 +306,7 @@ def do_train(model, params):
                     label_type=params['label_type'],
                     data_size=params['data_size'],
                     beam_width=1,
+                    max_decode_length=100,
                     eval_batch_size=1)
                 print('  WER (other): %f %%' % (wer_dev_other_epoch * 100))
 
@@ -334,10 +329,21 @@ def do_train(model, params):
                         label_type=params['label_type'],
                         data_size=params['data_size'],
                         beam_width=1,
-                        is_test=True,
+                        max_decode_length=100,
                         eval_batch_size=1)
-                    print('  WER (clean): %f %%' %
+                    print('  WER (clean, main): %f %%' %
                           (wer_test_clean_epoch * 100))
+                    cer_test_clean_epoch, _ = do_eval_cer(
+                        model=model,
+                        model_type=params['model_type'],
+                        dataset=test_clean_data,
+                        label_type=params['label_type_sub'],
+                        data_size=params['data_size'],
+                        beam_width=1,
+                        max_decode_length=600,
+                        eval_batch_size=1)
+                    print('  CER (clean, sub): %f %%' %
+                          (cer_test_clean_epoch * 100))
 
                     # test-other
                     wer_test_other_epoch = do_eval_wer(
@@ -347,10 +353,21 @@ def do_train(model, params):
                         label_type=params['label_type'],
                         data_size=params['data_size'],
                         beam_width=1,
-                        is_test=True,
+                        max_decode_length=100,
                         eval_batch_size=1)
-                    print('  WER (other): %f %%' %
+                    print('  WER (other, main): %f %%' %
                           (wer_test_other_epoch * 100))
+                    cer_test_other_epoch, _ = do_eval_cer(
+                        model=model,
+                        model_type=params['model_type'],
+                        dataset=test_other_data,
+                        label_type=params['label_type_sub'],
+                        data_size=params['data_size'],
+                        beam_width=1,
+                        max_decode_length=600,
+                        eval_batch_size=1)
+                    print('  CER (other, sub): %f %%' %
+                          (cer_test_other_epoch * 100))
                 else:
                     not_improved_epoch += 1
 
@@ -401,7 +418,7 @@ def main(config_path, model_save_path):
     model = load(model_type=params['model_type'], params=params)
 
     # Set process name
-    setproctitle('pt_libri_' + params['model_type'] + '_' +
+    setproctitle('libri_' + params['model_type'] + '_' +
                  params['label_type'] + '_' + params['label_type_sub'] + '_' + params['data_size'])
 
     # Set save path

@@ -161,14 +161,14 @@ class AttentionSeq2seq(ModelBase):
         # Encoder
         ####################
         # Load an instance
-        if len(downsample_list) == 0:
+        if sum(downsample_list) == 0:
             encoder = load(encoder_type=encoder_type)
         else:
             encoder = load(encoder_type='p' + encoder_type)
 
         # Call the encoder function
         if encoder_type in ['lstm', 'gru', 'rnn']:
-            if len(downsample_list) == 0:
+            if sum(downsample_list) == 0:
                 self.encoder = encoder(
                     input_size=self.input_size,
                     rnn_type=encoder_type,
@@ -539,9 +539,9 @@ class AttentionSeq2seq(ModelBase):
 
         """
         if beam_width == 1:
-            return self._decode_infer_greedy(inputs, inputs_seq_len)
+            return self._decode_infer_greedy(inputs, inputs_seq_len, max_decode_length)
         else:
-            return self._decode_infer_beam(inputs, inputs_seq_len, beam_width)
+            return self._decode_infer_beam(inputs, inputs_seq_len, beam_width, max_decode_length)
 
     def _decode_infer_greedy(self, inputs, inputs_seq_len, _max_decode_length):
         """Greedy decoding when inference.

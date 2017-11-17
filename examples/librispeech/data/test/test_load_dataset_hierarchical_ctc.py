@@ -56,14 +56,6 @@ class TestLoadDatasetHierarchicalCTC(unittest.TestCase):
         print('  num_gpus: %d' % num_gpus)
         print('========================================')
 
-        vocab_file_path = '../../metrics/vocab_files/' + \
-            label_type + '_' + data_size + '.txt'
-        if label_type == 'character':
-            vocab_file_path_sub = '../../metrics/vocab_files/character.txt'
-        else:
-            vocab_file_path_sub = '../../metrics/vocab_files/' + \
-                label_type_sub + '_' + data_size + '.txt'
-
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
@@ -76,6 +68,14 @@ class TestLoadDatasetHierarchicalCTC(unittest.TestCase):
             num_gpus=num_gpus)
 
         print('=> Loading mini-batch...')
+
+        vocab_file_path = '../../metrics/vocab_files/' + \
+            label_type + '_' + data_size + '.txt'
+        if label_type_sub == 'character':
+            vocab_file_path_sub = '../../metrics/vocab_files/character.txt'
+        else:
+            vocab_file_path_sub = '../../metrics/vocab_files/' + \
+                label_type_sub + '_' + data_size + '.txt'
 
         idx2word = Idx2word(vocab_file_path)
         idx2char = Idx2char(vocab_file_path_sub)

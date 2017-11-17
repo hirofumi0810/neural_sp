@@ -8,6 +8,7 @@ from __future__ import print_function
 import os
 import sys
 import unittest
+import yaml
 
 sys.path.append(os.path.abspath('../../../../'))
 from examples.librispeech.data.load_dataset_attention import Dataset
@@ -28,11 +29,11 @@ class TestLoadDatasetAttention(unittest.TestCase):
         # self.check(label_type='character', data_type='test_other')
 
         # label_type
-        self.check(label_type='character_capital_divide')
         self.check(label_type='word_freq1')
         self.check(label_type='word_freq5')
         self.check(label_type='word_freq10')
         self.check(label_type='word_freq15')
+        self.check(label_type='character_capital_divide')
 
         # sort
         self.check(label_type='character', sort_utt=True)
@@ -66,18 +67,17 @@ class TestLoadDatasetAttention(unittest.TestCase):
         print('  num_gpus: %d' % num_gpus)
         print('========================================')
 
-        if label_type == 'character':
-            vocab_file_path = '../../metrics/vocab_files/character.txt'
-        else:
-            vocab_file_path = '../../metrics/vocab_files/' + \
-                label_type + '_' + data_size + '.txt'
+        # Get voabulary number (excluding blank, <SOS>, <EOS> classes)
+        with open('../../metrics/vocab_num.yml', "r") as f:
+            vocab_num = yaml.load(f)
+            num_classes = vocab_num[data_size][label_type]
 
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
             data_type=data_type, data_size=data_size,
             label_type=label_type, batch_size=64,
-            vocab_file_path=vocab_file_path,
+            num_classes=num_classes,
             max_epoch=2, splice=splice,
             num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
@@ -85,6 +85,13 @@ class TestLoadDatasetAttention(unittest.TestCase):
             num_gpus=num_gpus)
 
         print('=> Loading mini-batch...')
+
+        if label_type == 'character':
+            vocab_file_path = '../../metrics/vocab_files/character.txt'
+        else:
+            vocab_file_path = '../../metrics/vocab_files/' + \
+                label_type + '_' + data_size + '.txt'
+
         if 'word' in label_type:
             map_fn = Idx2word(vocab_file_path)
         else:

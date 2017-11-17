@@ -8,6 +8,7 @@ from __future__ import print_function
 import os
 import sys
 import unittest
+import yaml
 
 sys.path.append(os.path.abspath('../../../../'))
 from examples.librispeech.data.load_dataset_hierarchical_attention import Dataset
@@ -56,13 +57,11 @@ class TestLoadDatasetHierarchicalAttention(unittest.TestCase):
         print('  num_gpus: %d' % num_gpus)
         print('========================================')
 
-        vocab_file_path = '../../metrics/vocab_files/' + \
-            label_type + '_' + data_size + '.txt'
-        if label_type == 'character':
-            vocab_file_path_sub = '../../metrics/vocab_files/character.txt'
-        else:
-            vocab_file_path_sub = '../../metrics/vocab_files/' + \
-                label_type_sub + '_' + data_size + '.txt'
+        # Get voabulary number (excluding blank, <SOS>, <EOS> classes)
+        with open('../../metrics/vocab_num.yml', "r") as f:
+            vocab_num = yaml.load(f)
+            num_classes = vocab_num[data_size][label_type]
+            num_classes_sub = vocab_num[data_size][label_type_sub]
 
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
@@ -70,8 +69,8 @@ class TestLoadDatasetHierarchicalAttention(unittest.TestCase):
             data_type=data_type, data_size=data_size,
             label_type=label_type, label_type_sub=label_type_sub,
             batch_size=64,
-            vocab_file_path=vocab_file_path,
-            vocab_file_path_sub=vocab_file_path_sub,
+            num_classes=num_classes,
+            num_classes_sub=num_classes_sub,
             max_epoch=2, splice=splice,
             num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
@@ -79,6 +78,14 @@ class TestLoadDatasetHierarchicalAttention(unittest.TestCase):
             num_gpus=num_gpus)
 
         print('=> Loading mini-batch...')
+
+        vocab_file_path = '../../metrics/vocab_files/' + \
+            label_type + '_' + data_size + '.txt'
+        if label_type_sub == 'character':
+            vocab_file_path_sub = '../../metrics/vocab_files/character.txt'
+        else:
+            vocab_file_path_sub = '../../metrics/vocab_files/' + \
+                label_type_sub + '_' + data_size + '.txt'
 
         idx2word = Idx2word(vocab_file_path)
         idx2char = Idx2char(vocab_file_path_sub)
