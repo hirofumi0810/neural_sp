@@ -265,19 +265,22 @@ class AttentionSeq2seq(ModelBase):
             # encoder_num_units * self.encoder_num_directions, num_classes + 1)
             self.fc_ctc = nn.Linear(encoder_num_units, num_classes + 1)
 
-    def forward(self, inputs, labels, inputs_seq_len, labels_seq_len):
+    def forward(self, inputs, labels, inputs_seq_len, labels_seq_len,
+                volatile=False):
         """Forward computation.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
             labels (LongTensor): A tensor of size `[B, T_out]`
             inputs_seq_len (IntTensor): A tensor of size `[B]`
             labels_seq_len (IntTensor): A tensor of size `[B]`
+            volatile (bool): if True, the history will not be saved.
+                This should be used in inference model for memory efficiency.
         Returns:
             loss (FloatTensor): A tensor of size `[1]`
         """
         # Encode acoustic features
         encoder_outputs, encoder_final_state, perm_indices = self._encode(
-            inputs, inputs_seq_len, volatile=False)
+            inputs, inputs_seq_len, volatile=volatile)
 
         # Permutate indices
         labels = labels[perm_indices]

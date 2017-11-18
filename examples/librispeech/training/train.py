@@ -191,14 +191,9 @@ def do_train(model, params):
                     inputs_seq_len[0][perm_indices],
                     labels_seq_len[0][perm_indices])
             elif params['model_type'] == 'attention':
-                logits, att_weights, perm_indices = model(
-                    inputs[0], inputs_seq_len[0], labels[0], volatile=True)
-                loss_dev = model.compute_loss(
-                    logits,
-                    labels[0][perm_indices],
-                    labels_seq_len[0][perm_indices],
-                    att_weights,
-                    coverage_weight=params['coverage_weight'])
+                loss_dev = model(
+                    inputs[0], labels[0], inputs_seq_len[0], labels_seq_len[0],
+                    volatile=True)
 
             csv_steps.append(step)
             csv_loss_train.append(var2np(loss_train))

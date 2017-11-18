@@ -143,15 +143,8 @@ class TestHierarchicalAttention(unittest.TestCase):
             optimizer.zero_grad()
 
             # Compute loss
-            logits, att_weights, logits_sub, att_weights_sub, perm_indices = model(
-                inputs, inputs_seq_len, labels, labels_sub)
-            loss = model.compute_loss(
-                logits,
-                labels[perm_indices],
-                labels_seq_len[perm_indices],
-                logits_sub,
-                labels_sub[perm_indices],
-                labels_seq_len_sub[perm_indices])
+            loss = model(inputs, labels, labels_sub,
+                         inputs_seq_len, labels_seq_len, labels_seq_len_sub)
 
             # Compute gradient
             optimizer.zero_grad()

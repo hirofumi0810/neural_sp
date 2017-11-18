@@ -53,7 +53,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  sharpening_factor=1,
                  logits_temperature=1,
                  sigmoid_smoothing=False,
-                 input_feeding_approach=False):
+                 input_feeding_approach=False,
+                 coverage_weight=0,
+                 ctc_loss_weight=0):
 
         super(HierarchicalAttentionSeq2seq, self).__init__(
             input_size=input_size,
@@ -81,7 +83,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             sharpening_factor=sharpening_factor,
             logits_temperature=logits_temperature,
             sigmoid_smoothing=sigmoid_smoothing,
-            input_feeding_approach=input_feeding_approach)
+            input_feeding_approach=input_feeding_approach,
+            coverage_weight=coverage_weight)
 
         # Setting for the encoder
         self.encoder_num_layers_sub = encoder_num_layers_sub
@@ -179,42 +182,76 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # NOTE: <SOS> is removed because the decoder never predict <SOS> class
         # TODO: self.num_classes_sub - 1
 
-    def forward(self, inputs, inputs_seq_len, labels, labels_sub, volatile=False):
+    def forward(self, inputs, labels, labels_sub, inputs_seq_len,
+                labels_seq_len, labels_seq_len_sub, volatile=False):
         """Forward computation.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
+            labels (LongTensor): A tensor of size `[B, T_out]`
+            labels_sub (LongTensor): A tensor of size `[B, T_out_sub]`
             inputs_seq_len (IntTensor): A tensor of size `[B]`
-            labels (LongTensor): labels in the main task.
-                A tensor of size `[B, T_out]`
-            labels_sub (LongTensor): labels in the sub task.
-                A tensor of size `[B, T_out_sub]`
+            labels_seq_len (IntTensor): A tensor of size `[B]`
+            labels_seq_len_sub (IntTensor): A tensor of size `[B]`
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            logits (FloatTensor): logits in the main task.
-                A tensor of size
-                `[B, T_out, num_classes (including <SOS> and <EOS>)]`
-            attention_weights (FloatTensor): attention weights in the main task.
-                A tensor of size `[B, T_out, T_in]`
-            logits_sub (FloatTensor): logits in the sub task.
-                A tensor of size
-                `[B, T_out_sub, num_classes_sub (including <SOS> and <EOS>)]`
-            attention_weights_sub (FloatTensor): attention weights in the sub task.
-                A tensor of size `[B, T_out_sub, T_in]`
-            perm_indices (FloatTensor):
+            loss (FloatTensor): A tensor of size `[1]`
         """
+        # Encode acoustic features
         encoder_outputs, encoder_final_state, encoder_outputs_sub, encoder_final_state_sub, perm_indices = self._encode(
             inputs, inputs_seq_len, volatile)
 
-        # main task
+        # Permutate indices
+        labels = labels[perm_indices]
+        labels_sub = labels_sub[perm_indices]
+        inputs_seq_len = inputs_seq_len[perm_indices]
+        labels_seq_len = labels_seq_len[perm_indices]
+        labels_seq_len_sub = labels_seq_len_sub[perm_indices]
+
+        # Teacher-forcing (main task)
         logits, attention_weights = self._decode_train(
             encoder_outputs, labels[perm_indices], encoder_final_state)
 
-        # sub task
+        # Teacher-forcing (sub task)
         logits_sub, attention_weights_sub = self._decode_train_sub(
             encoder_outputs_sub, labels_sub[perm_indices], encoder_final_state_sub)
 
-        return logits, attention_weights, logits_sub, attention_weights_sub, perm_indices
+        # Output smoothing
+        if self.logits_temperature != 1:
+            logits /= self.logits_temperature
+            logits_sub /= self.logits_temperature
+
+        batch_size, _, num_classes = logits.size()
+        num_classes_sub = logits_sub.size(2)
+
+        # Compute XE sequence loss
+        logits = logits.view((-1, num_classes))
+        labels_1d = labels[:, 1:].contiguous().view(-1)
+        loss = F.cross_entropy(logits, labels_1d,
+                               ignore_index=self.sos_index,
+                               size_average=False) * self.main_loss_weight
+        # NOTE: labels are padded by sos_index
+
+        # Linearly interpolate XE sequence loss in the main and sub tasks
+        logits_sub = logits_sub.view((-1, num_classes_sub))
+        labels_sub = labels_sub[:, 1:].contiguous().view(-1)
+        loss += F.cross_entropy(logits_sub, labels_sub,
+                                ignore_index=self.sos_index_sub,
+                                size_average=False) * (1 - self.main_loss_weight)
+
+        if self.coverage_weight != 0:
+            pass
+            # coverage = self._compute_coverage(attention_weights)
+            # loss += coverage_weight * coverage
+
+        # Auxiliary CTC loss (optional)
+        if self.ctc_loss_weight > 0:
+            raise NotImplementedError
+
+        # Average the loss by mini-batch
+        loss /= batch_size
+
+        return loss
 
     def _encode(self, inputs, inputs_seq_len, volatile):
         """Encode acoustic features.
@@ -272,59 +309,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 1, batch_size, -1)
 
         return encoder_outputs, encoder_final_state, encoder_outputs_sub, encoder_final_state_sub, perm_indices
-
-    def compute_loss(self, logits, labels, labels_seq_len,
-                     logits_sub, labels_sub, labels_seq_len_sub,
-                     attention_weights=None, attention_weights_sub=None,
-                     coverage_weight=0):
-        """Compute multitask loss.
-        Args:
-            logits (FloatTensor): A tensor of size `[B, T_out, num_classes]`
-            labels (LongTensor): A tensor of size `[B, T_out]`
-            labels_seq_len (IntTensor): A tensor of size `[B]`
-            labels_sub (LongTensor): labels in the sub task.
-                A tensor of size `[B, T_out_sub]`
-            logits_sub (FloatTensor): A tensor of size
-                `[B, T_out_sub, num_classes_sub]`
-            labels_seq_len_sub (IntTensor): A tensor of size `[B]`
-            attention_weights (FloatTensor): A tensor of size
-                `[B, T_out, T_in]`
-            attention_weights_sub (FloatTensor): A tensor of size
-                `[B, T_out_sub, T_in]`
-            coverage_weight (float, optional):
-        Returns:
-            loss (FloatTensor): A tensor of size `[1]`
-        """
-        batch_size, _, num_classes = logits.size()
-        logits = logits.view((-1, num_classes))
-        labels = labels[:, 1:].contiguous().view(-1)
-
-        _, _, num_classes_sub = logits_sub.size()
-        logits_sub = logits_sub.view((-1, num_classes_sub))
-        labels_sub = labels_sub[:, 1:].contiguous().view(-1)
-
-        if self.logits_temperature != 1:
-            logits /= self.logits_temperature
-            logits_sub /= self.logits_temperature
-
-        # Linearly interpolate XE sequence loss in the main and sub tasks
-        loss = F.cross_entropy(logits, labels,
-                               ignore_index=self.sos_index,
-                               size_average=False) * self.main_loss_weight
-        loss += F.cross_entropy(logits_sub, labels_sub,
-                                ignore_index=self.sos_index_sub,
-                                size_average=False) * (1 - self.main_loss_weight)
-        # NOTE: labels are padded by sos_index
-
-        # Average the loss by mini-batch
-        loss /= batch_size
-
-        if coverage_weight != 0:
-            pass
-            # coverage = self._compute_coverage(attention_weights)
-            # loss += coverage_weight * coverage
-
-        return loss
 
     def _decode_train_sub(self, encoder_outputs, labels,
                           encoder_final_state=None):

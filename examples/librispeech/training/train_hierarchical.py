@@ -166,18 +166,9 @@ def do_train(model, params):
                 inputs_seq_len[0][perm_indices],
                 labels_seq_len_sub[0][perm_indices])
         elif params['model_type'] == 'hierarchical_attention':
-            logits, att_weights, logits_sub, att_weights_sub, perm_indices = model(
-                inputs[0], inputs_seq_len[0], labels[0], labels_sub[0])
-            loss_train = model.compute_loss(
-                logits,
-                labels[0][perm_indices],
-                labels_seq_len[0][perm_indices],
-                logits_sub,
-                labels_sub[0][perm_indices],
-                labels_seq_len_sub[0][perm_indices],
-                att_weights,
-                att_weights_sub,
-                coverage_weight=params['coverage_weight'])
+            loss_train = model(
+                inputs[0], labels[0], labels_sub[0], inputs_seq_len[0],
+                labels_seq_len[0], labels_seq_len_sub[0])
 
         # Compute gradient
         optimizer.zero_grad()
@@ -240,18 +231,9 @@ def do_train(model, params):
                     inputs_seq_len[0][perm_indices],
                     labels_seq_len_sub[0][perm_indices])
             elif params['model_type'] == 'hierarchical_attention':
-                logits, att_weights, logits_sub, att_weights_sub, perm_indices = model(
-                    inputs[0], inputs_seq_len[0], labels[0], volatile=True)
-                loss_dev = model.compute_loss(
-                    logits,
-                    labels[0][perm_indices],
-                    labels_seq_len[0][perm_indices],
-                    logits_sub,
-                    labels_sub[0][perm_indices],
-                    labels_seq_len_sub[0][perm_indices],
-                    att_weights,
-                    att_weights_sub,
-                    coverage_weight=params['coverage_weight'])
+                loss_train = model(
+                    inputs[0], labels[0], labels_sub[0], inputs_seq_len[0],
+                    labels_seq_len[0], labels_seq_len_sub[0], volatile=False)
 
             csv_steps.append(step)
             csv_loss_train.append(var2np(loss_train))

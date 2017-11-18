@@ -114,7 +114,7 @@ def load(model_type, params):
         if params['logits_temperature'] != 1:
             model.name += '_temp' + str(params['logits_temperature'])
         if bool(params['sigmoid_smoothing']):
-            model.name += '_smoothing'
+            model.name += '_smooth'
         if bool(params['input_feeding_approach']):
             model.name += '_infeed'
         if params['coverage_weight'] > 0:
@@ -196,7 +196,8 @@ def load(model_type, params):
             sharpening_factor=params['sharpening_factor'],
             logits_temperature=params['logits_temperature'],
             sigmoid_smoothing=params['sigmoid_smoothing'],
-            input_feeding_approach=params['input_feeding_approach'])
+            input_feeding_approach=params['input_feeding_approach'],
+            coverage_weight=params['coverage_weight'])
 
         model.name = params['encoder_type']
         if params['encoder_bidirectional']:
@@ -225,9 +226,13 @@ def load(model_type, params):
         if params['logits_temperature'] != 1:
             model.name += '_temp' + str(params['logits_temperature'])
         if bool(params['sigmoid_smoothing']):
-            model.name += '_smoothing'
+            model.name += '_smooth'
         if bool(params['input_feeding_approach']):
             model.name += '_infeed'
         model.name += '_main' + str(params['main_loss_weight'])
+        if params['coverage_weight'] > 0:
+            model.name += '_coverage' + str(params['coverage_weight'])
+        # if params['ctc_loss_weight'] > 0:
+        #     model.name += '_ctc' + str(params['ctc_loss_weight'])
 
     return model
