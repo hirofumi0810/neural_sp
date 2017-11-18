@@ -180,19 +180,18 @@ class CTC(ModelBase):
         # Concatenate all labels for warpctc_pytorch
         # `[B, T_out]` -> `[1,]`
         total_lables_seq_len = labels_seq_len.data.sum()
-        concatenated_labels = Variable(
+        concat_labels = Variable(
             torch.zeros(total_lables_seq_len)).int()
         label_counter = 0
         for i_batch in range(batch_size):
-            concatenated_labels[label_counter:label_counter +
-                                labels_seq_len.data[i_batch]] = labels[i_batch][:labels_seq_len.data[i_batch]]
+            concat_labels[label_counter:label_counter +
+                          labels_seq_len.data[i_batch]] = labels[i_batch][:labels_seq_len.data[i_batch]]
             label_counter += labels_seq_len.data[i_batch]
-        labels = labels.view(-1,)
 
         if self.logits_temperature != 1:
             logits /= self.logits_temperature
 
-        ctc_loss = ctc_loss_fn(logits, concatenated_labels.cpu(),
+        ctc_loss = ctc_loss_fn(logits, concat_labels.cpu(),
                                inputs_seq_len.cpu(), labels_seq_len.cpu())
 
         # Average the loss by mini-batch

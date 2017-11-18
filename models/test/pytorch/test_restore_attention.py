@@ -38,7 +38,7 @@ class TestRestoreAttention(unittest.TestCase):
         # Load batch data
         batch_size = 2
         inputs, labels, inputs_seq_len, labels_seq_len = generate_data(
-            model='attention',
+            model_type='attention',
             batch_size=batch_size)
 
         # Wrap by Variable
@@ -71,7 +71,7 @@ class TestRestoreAttention(unittest.TestCase):
             max_decode_length=100,
             splice=1,
             parameter_init=0.1,
-            downsample_list=[],
+            subsample_list=[],
             init_dec_state_with_enc_state=True,
             sharpening_factor=1,
             logits_temperature=1,

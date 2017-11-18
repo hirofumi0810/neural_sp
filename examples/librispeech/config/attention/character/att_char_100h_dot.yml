@@ -8,8 +8,8 @@ param:
   feature: fbank
   input_size: 123
   splice: 1
-  num_stack: 2
-  num_skip: 2
+  num_stack: 1
+  num_skip: 1
 
   # topology
   model_type: attention
@@ -18,10 +18,10 @@ param:
   encoder_num_units: 320
   encoder_num_proj: 0
   encoder_num_layers: 4
-  downsample_list:
+  subsample_list:
     - False
-    - False
-    - False
+    - True
+    - True
     - False
   attention_type: dot_product
   attention_dim: 128
@@ -58,6 +58,7 @@ param:
   sigmoid_smoothing: False
   input_feeding_approach: False
   coverage_weight: 0
+  ctc_loss_weight: 0.1
 
   eval_start_epoch: 10
   print_step: 300

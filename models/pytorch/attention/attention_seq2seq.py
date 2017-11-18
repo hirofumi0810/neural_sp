@@ -7,6 +7,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+try:
+    from warpctc_pytorch import CTCLoss
+except:
+    raise ImportError('Install warpctc_pytorch.')
+
 import numpy as np
 
 import torch
@@ -66,8 +71,8 @@ class AttentionSeq2seq(ModelBase):
             when using CNN-like encoder. Default is 1 frame.
         parameter_init (float, optional): the range of uniform distribution to
             initialize weight parameters (>= 0)
-        downsample_list (list, optional): downsample in the corresponding layers (True)
-            ex.) [False, True, True, False] means that downsample is conducted
+        subsample_list (list, optional): subsample in the corresponding layers (True)
+            ex.) [False, True, True, False] means that subsample is conducted
                 in the 2nd and 3rd layers.
         init_dec_state_with_enc_state (bool, optional): if True, initialize
             decoder state with the final encoder state.
@@ -81,6 +86,9 @@ class AttentionSeq2seq(ModelBase):
             Luong, Minh-Thang, Hieu Pham, and Christopher D. Manning.
             "Effective approaches to attention-based neural machine translation."
                 arXiv preprint arXiv:1508.04025 (2015).
+        coverage_weight (float, optional): the weight parameter for coverage
+            computation.
+        ctc_loss_weight (float): A weight parameter for auxiliary CTC loss
     """
 
     def __init__(self,
@@ -104,12 +112,14 @@ class AttentionSeq2seq(ModelBase):
                  num_stack=1,
                  splice=1,
                  parameter_init=0.1,
-                 downsample_list=[],
+                 subsample_list=[],
                  init_dec_state_with_enc_state=True,
                  sharpening_factor=1,
                  logits_temperature=1,
                  sigmoid_smoothing=False,
-                 input_feeding_approach=False):
+                 input_feeding_approach=False,
+                 coverage_weight=0,
+                 ctc_loss_weight=0):
 
         super(ModelBase, self).__init__()
 
@@ -132,7 +142,7 @@ class AttentionSeq2seq(ModelBase):
         self.encoder_num_units = encoder_num_units
         self.encoder_num_proj = encoder_num_proj
         self.encoder_num_layers = encoder_num_layers
-        self.downsample_list = downsample_list
+        self.subsample_list = subsample_list
         self.encoder_dropout = encoder_dropout
 
         # Setting for the attention decoder
@@ -154,6 +164,10 @@ class AttentionSeq2seq(ModelBase):
         self.logits_temperature = logits_temperature
         self.sigmoid_smoothing = sigmoid_smoothing
         self.input_feeding_approach = input_feeding_approach
+        self.coverage_weight = coverage_weight
+
+        # Joint CTC-Attention
+        self.ctc_loss_weight = ctc_loss_weight
 
         # Common setting
         self.parameter_init = parameter_init
@@ -162,14 +176,14 @@ class AttentionSeq2seq(ModelBase):
         # Encoder
         ####################
         # Load an instance
-        if sum(downsample_list) == 0:
+        if sum(subsample_list) == 0:
             encoder = load(encoder_type=encoder_type)
         else:
             encoder = load(encoder_type='p' + encoder_type)
 
         # Call the encoder function
         if encoder_type in ['lstm', 'gru', 'rnn']:
-            if sum(downsample_list) == 0:
+            if sum(subsample_list) == 0:
                 self.encoder = encoder(
                     input_size=self.input_size,
                     rnn_type=encoder_type,
@@ -192,8 +206,8 @@ class AttentionSeq2seq(ModelBase):
                     num_layers=encoder_num_layers,
                     dropout=encoder_dropout,
                     parameter_init=parameter_init,
-                    downsample_list=downsample_list,
-                    downsample_type='concat',
+                    subsample_list=subsample_list,
+                    subsample_type='concat',
                     use_cuda=self.use_cuda,
                     batch_first=True)
         else:
@@ -246,27 +260,102 @@ class AttentionSeq2seq(ModelBase):
         # NOTE: <SOS> is removed because the decoder never predict <SOS> class
         # TODO: self.num_classes - 1
 
-    def forward(self, inputs, inputs_seq_len, labels, volatile=False):
+        if ctc_loss_weight > 0:
+            # self.fc_ctc = nn.Linear(
+            # encoder_num_units * self.encoder_num_directions, num_classes + 1)
+            self.fc_ctc = nn.Linear(encoder_num_units, num_classes + 1)
+
+    def forward(self, inputs, labels, inputs_seq_len, labels_seq_len):
         """Forward computation.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
-            inputs_seq_len (IntTensor): A tensor of size `[B]`
             labels (LongTensor): A tensor of size `[B, T_out]`
-            volatile (bool, optional): if True, the history will not be saved.
-                This should be used in inference model for memory efficiency.
+            inputs_seq_len (IntTensor): A tensor of size `[B]`
+            labels_seq_len (IntTensor): A tensor of size `[B]`
         Returns:
-            logits (FloatTensor): A tensor of size
-                `[B, T_out, num_classes (including <SOS> and <EOS>)]`
-            attention_weights (FloatTensor): A tensor of size
-                `[B, T_out, T_in]`
-            perm_indices (FloatTensor):
+            loss (FloatTensor): A tensor of size `[1]`
         """
+        # Encode acoustic features
         encoder_outputs, encoder_final_state, perm_indices = self._encode(
-            inputs, inputs_seq_len, volatile)
+            inputs, inputs_seq_len, volatile=False)
 
+        # Permutate indices
+        labels = labels[perm_indices]
+        inputs_seq_len = inputs_seq_len[perm_indices]
+        labels_seq_len = labels_seq_len[perm_indices]
+
+        # Teacher-forcing
         logits, attention_weights = self._decode_train(
-            encoder_outputs, labels[perm_indices], encoder_final_state)
-        return logits, attention_weights, perm_indices
+            encoder_outputs, labels, encoder_final_state)
+
+        # Output smoothing
+        if self.logits_temperature != 1:
+            logits /= self.logits_temperature
+
+        batch_size, max_time = encoder_outputs.size()[:2]
+
+        # Compute XE sequence loss
+        num_classes = logits.size(2)
+        logits = logits.view((-1, num_classes))
+        labels_1d = labels[:, 1:].contiguous().view(-1)
+        loss = F.cross_entropy(logits, labels_1d,
+                               ignore_index=self.sos_index,
+                               size_average=False)
+        # NOTE: labels are padded by sos_index
+
+        # Add coverage term
+        if self.coverage_weight != 0:
+            pass
+            # coverage = self._compute_coverage(attention_weights)
+            # loss += coverage_weight * coverage
+
+        # Auxiliary CTC loss (optional)
+        if self.ctc_loss_weight > 0:
+            # Convert to 2D tensor
+            encoder_outputs = encoder_outputs.contiguous()
+            encoder_outputs = encoder_outputs.view(batch_size, max_time, -1)
+            logits_ctc = self.fc_ctc(encoder_outputs)
+
+            # Reshape back to 3D tensor
+            logits_ctc = logits_ctc.view(batch_size, max_time, -1)
+
+            # Convert to batch-major
+            logits_ctc = logits_ctc.transpose(0, 1)
+
+            ctc_loss_fn = CTCLoss()
+
+            # Ignore <SOS> and <EOS>
+            labels_seq_len -= 2
+
+            # Concatenate all labels for warpctc_pytorch
+            # `[B, T_out]` -> `[1,]`
+            total_lables_seq_len = labels_seq_len.data.sum()
+            concat_labels = Variable(
+                torch.zeros(total_lables_seq_len)).int()
+            label_counter = 0
+            for i_batch in range(batch_size):
+                concat_labels[label_counter:label_counter +
+                              labels_seq_len.data[i_batch]] = labels[i_batch][1:labels_seq_len.data[i_batch] + 1]
+                label_counter += labels_seq_len.data[i_batch]
+
+            # Subsampling
+            inputs_seq_len /= sum(self.subsample_list) * 2
+            # NOTE: floor is not needed because inputs_seq_len is IntTensor
+
+            ctc_loss = ctc_loss_fn(logits_ctc, concat_labels.cpu(),
+                                   inputs_seq_len.cpu(), labels_seq_len.cpu())
+
+            if self.use_cuda:
+                ctc_loss = ctc_loss.cuda()
+
+            # Linearly interpolate XE sequence loss and CTC loss
+            loss = self.ctc_loss_weight * ctc_loss + \
+                (1 - self.ctc_loss_weight) * loss
+
+        # Average the loss by mini-batch
+        loss /= batch_size
+
+        return loss
 
     def _encode(self, inputs, inputs_seq_len, volatile):
         """Encode acoustic features.
@@ -305,41 +394,6 @@ class AttentionSeq2seq(ModelBase):
             encoder_final_state = encoder_final_state.view(1, batch_size, -1)
 
         return encoder_outputs, encoder_final_state, perm_indices
-
-    def compute_loss(self, logits, labels, labels_seq_len,
-                     attention_weights=None, coverage_weight=0):
-        """Compute loss.
-        Args:
-            logits (FloatTensor): A tensor of size `[B, T_out, num_classes]`
-            labels (LongTensor): A tensor of size `[B, T_out]`
-            labels_seq_len (IntTensor): A tensor of size `[B]`
-            attention_weights (FloatTensor): A tensor of size
-                `[B, T_out, T_in]`
-            coverage_weight (float, optional):
-        Returns:
-            loss (FloatTensor): A tensor of size `[1]`
-        """
-        batch_size, _, num_classes = logits.size()
-
-        if self.logits_temperature != 1:
-            logits /= self.logits_temperature
-
-        logits = logits.view((-1, num_classes))
-        labels = labels[:, 1:].contiguous().view(-1)
-        loss = F.cross_entropy(logits, labels,
-                               ignore_index=self.sos_index,
-                               size_average=False)
-        # NOTE: labels are padded by sos_index
-
-        # Average the loss by mini-batch
-        loss /= batch_size
-
-        if coverage_weight != 0:
-            pass
-            # coverage = self._compute_coverage(attention_weights)
-            # loss += coverage_weight * coverage
-
-        return loss
 
     def _compute_coverage(self, attention_weights):
         batch_size, max_time_outputs, max_time_inputs = attention_weights.size()

@@ -79,12 +79,14 @@ def load(model_type, params):
             embedding_dropout=params['dropout_embedding'],
             num_classes=params['num_classes'],
             parameter_init=params['parameter_init'],
-            downsample_list=params['downsample_list'],
+            subsample_list=params['subsample_list'],
             init_dec_state_with_enc_state=params['init_dec_state_with_enc_state'],
             sharpening_factor=params['sharpening_factor'],
             logits_temperature=params['logits_temperature'],
             sigmoid_smoothing=params['sigmoid_smoothing'],
-            input_feeding_approach=params['input_feeding_approach'])
+            input_feeding_approach=params['input_feeding_approach'],
+            coverage_weight=params['coverage_weight'],
+            ctc_loss_weight=params['ctc_loss_weight'])
 
         model.name = params['encoder_type']
         if params['encoder_bidirectional']:
@@ -115,6 +117,10 @@ def load(model_type, params):
             model.name += '_smoothing'
         if bool(params['input_feeding_approach']):
             model.name += '_infeed'
+        if params['coverage_weight'] > 0:
+            model.name += '_coverage' + str(params['coverage_weight'])
+        if params['ctc_loss_weight'] > 0:
+            model.name += '_ctc' + str(params['ctc_loss_weight'])
 
     if params['model_type'] == 'hierarchical_ctc':
         model = HierarchicalCTC(
@@ -185,7 +191,7 @@ def load(model_type, params):
             num_classes=params['num_classes'],
             num_classes_sub=params['num_classes_sub'],
             parameter_init=params['parameter_init'],
-            downsample_list=params['downsample_list'],
+            subsample_list=params['subsample_list'],
             init_dec_state_with_enc_state=params['init_dec_state_with_enc_state'],
             sharpening_factor=params['sharpening_factor'],
             logits_temperature=params['logits_temperature'],

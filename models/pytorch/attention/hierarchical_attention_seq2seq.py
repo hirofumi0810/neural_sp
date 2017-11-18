@@ -48,7 +48,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  num_stack=1,
                  splice=1,
                  parameter_init=0.1,
-                 downsample_list=[],
+                 subsample_list=[],
                  init_dec_state_with_enc_state=True,
                  sharpening_factor=1,
                  logits_temperature=1,
@@ -76,7 +76,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             num_stack=num_stack,
             splice=splice,
             parameter_init=parameter_init,
-            downsample_list=downsample_list,
+            subsample_list=subsample_list,
             init_dec_state_with_enc_state=init_dec_state_with_enc_state,
             sharpening_factor=sharpening_factor,
             logits_temperature=logits_temperature,
@@ -104,14 +104,14 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # NOTE: overide encoder
         #########################
         # Load an instance
-        if sum(downsample_list) == 0:
+        if sum(subsample_list) == 0:
             encoder = load(encoder_type=encoder_type + '_hierarchical')
         else:
             raise NotImplementedError
 
         # Call the encoder function
         if encoder_type in ['lstm', 'gru', 'rnn']:
-            if sum(downsample_list) == 0:
+            if sum(subsample_list) == 0:
                 self.encoder = encoder(
                     input_size=self.input_size,
                     rnn_type=encoder_type,

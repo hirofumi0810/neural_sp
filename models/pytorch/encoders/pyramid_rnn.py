@@ -35,10 +35,10 @@ class PyramidRNNEncoder(nn.Module):
         dropout (float): the probability to drop nodes
         parameter_init (float): the range of uniform distribution to
             initialize weight parameters (>= 0)
-        downsample_list (list): downsample in the corresponding layers (True)
+        subsample_list (list): subsample in the corresponding layers (True)
             ex.) [False, True, True, False] means that downsample is conducted
                 in the 2nd and 3rd layers.
-        downsample_type (string): drop or concat
+        subsample_type (string, optional): drop or concat
         use_cuda (bool, optional): if True, use GPUs
         batch_first (bool, optional): if True, batch-major computation will be
             performed
@@ -53,18 +53,18 @@ class PyramidRNNEncoder(nn.Module):
                  num_layers,
                  dropout,
                  parameter_init,
-                 downsample_list,
-                 downsample_type='drop',
+                 subsample_list,
+                 subsample_type='drop',
                  use_cuda=False,
                  batch_first=False):
 
         super(PyramidRNNEncoder, self).__init__()
 
-        if len(downsample_list) != num_layers:
+        if len(subsample_list) != num_layers:
             raise ValueError(
-                'downsample_list must be the same size as num_layers.')
-        if downsample_type not in ['drop', 'concat']:
-            raise TypeError('downsample_type must be "drop" or "concat".')
+                'subsample_list must be the same size as num_layers.')
+        if subsample_type not in ['drop', 'concat']:
+            raise TypeError('subsample_type must be "drop" or "concat".')
 
         self.input_size = input_size
         self.rnn_type = rnn_type
@@ -79,13 +79,13 @@ class PyramidRNNEncoder(nn.Module):
         self.use_cuda = use_cuda
         self.batch_first = batch_first
 
-        self.downsample_list = downsample_list
-        self.downsample_type = downsample_type
+        self.subsample_list = subsample_list
+        self.subsample_type = subsample_type
 
         self.rnns = []
         for i_layer in range(num_layers):
             next_input_size = num_units * self.num_directions
-            if downsample_type == 'concat' and i_layer > 0 and downsample_list[i_layer - 1]:
+            if subsample_type == 'concat' and i_layer > 0 and subsample_list[i_layer - 1]:
                 next_input_size *= 2
 
             if rnn_type == 'lstm':
@@ -175,9 +175,9 @@ class PyramidRNNEncoder(nn.Module):
         Returns:
             outputs:
                 if batch_first is True, a tensor of size
-                    `[B, T // len(downsample_list), num_units * num_directions]`
+                    `[B, T // len(subsample_list), num_units * num_directions]`
                 else
-                    `[T // len(downsample_list), B, num_units * num_directions]`
+                    `[T // len(subsample_list), B, num_units * num_directions]`
             final_state_fw: A tensor of size `[1, B, num_units]`
             perm_indices ():
         """
@@ -226,7 +226,7 @@ class PyramidRNNEncoder(nn.Module):
                 assert pack_seq_len == unpacked_seq_len
 
             outputs_list = []
-            if self.downsample_list[i_layer]:
+            if self.subsample_list[i_layer]:
                 for t in range(max_time):
                     # Pick up features at even time step
                     if (t + 1) % 2 == 0:
@@ -238,7 +238,7 @@ class PyramidRNNEncoder(nn.Module):
                             # NOTE: `[1, B, num_units * num_directions]`
 
                         # Concatenate the successive frames
-                        if self.downsample_type == 'concat' and i_layer != self.num_layers - 1:
+                        if self.subsample_type == 'concat' and i_layer != self.num_layers - 1:
                             if self.batch_first:
                                 outputs_t_prev = outputs[:, t - 1:t, :]
                             else:

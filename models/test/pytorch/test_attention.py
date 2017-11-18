@@ -31,9 +31,9 @@ class TestAttention(unittest.TestCase):
         print("Attention Working check.")
 
         # word-level attention
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            decoder_type='lstm', attention_type='dot_product',
-        #            label_type='word')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', attention_type='dot_product',
+                   label_type='word')
 
         # unidirectional & bidirectional
         self.check(encoder_type='lstm', bidirectional=True,
@@ -51,9 +51,9 @@ class TestAttention(unittest.TestCase):
 
         # Pyramidal encoder
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', downsample=True)
+                   decoder_type='lstm', subsample=True)
         self.check(encoder_type='gru', bidirectional=True,
-                   decoder_type='gru', downsample=True)
+                   decoder_type='gru', subsample=True)
 
         # Attention type
         self.check(encoder_type='lstm', bidirectional=True,
@@ -78,7 +78,7 @@ class TestAttention(unittest.TestCase):
     @measure_time
     def check(self, encoder_type, bidirectional, decoder_type,
               attention_type='dot_product', label_type='char',
-              downsample=False, input_feeding_approach=False,
+              subsample=False, input_feeding_approach=False,
               save_path=None):
 
         print('==================================================')
@@ -87,7 +87,7 @@ class TestAttention(unittest.TestCase):
         print('  bidirectional: %s' % str(bidirectional))
         print('  decoder_type: %s' % decoder_type)
         print('  attention_type: %s' % attention_type)
-        print('  downsample: %s' % str(downsample))
+        print('  subsample: %s' % str(subsample))
         print('  input_feeding_approach: %s' % str(input_feeding_approach))
         print('==================================================')
 
@@ -125,12 +125,14 @@ class TestAttention(unittest.TestCase):
             num_classes=num_classes,
             splice=1,
             parameter_init=0.1,
-            downsample_list=[] if not downsample else [True] * 2,
+            subsample_list=[] if not subsample else [True] * 2,
             init_dec_state_with_enc_state=True,
             sharpening_factor=1,
             logits_temperature=1,
             sigmoid_smoothing=False,
-            input_feeding_approach=input_feeding_approach)
+            input_feeding_approach=input_feeding_approach,
+            coverage_weight=0.5,
+            ctc_loss_weight=0.1)
 
         # Count total parameters
         for name, num_params in model.num_params_dict.items():
@@ -141,7 +143,7 @@ class TestAttention(unittest.TestCase):
         optimizer, scheduler = model.set_optimizer(
             'adam',
             learning_rate_init=1e-3,
-            weight_decay=1e-6,
+            weight_decay=1e-8,
             lr_schedule=False,
             factor=0.1,
             patience_epoch=5)
@@ -179,13 +181,7 @@ class TestAttention(unittest.TestCase):
             optimizer.zero_grad()
 
             # Compute loss
-            logits, att_weights, perm_indices = model(
-                inputs, inputs_seq_len, labels)
-            loss = model.compute_loss(
-                logits,
-                labels[perm_indices],
-                labels_seq_len[perm_indices],
-                att_weights, coverage_weight=0.5)
+            loss = model(inputs, labels, inputs_seq_len, labels_seq_len)
 
             # Compute gradient
             optimizer.zero_grad()
@@ -210,15 +206,15 @@ class TestAttention(unittest.TestCase):
 
                 # Compute accuracy
                 if label_type == 'char':
-                    str_true = idx2char(var2np(labels[perm_indices])[
-                                        0, :var2np(labels_seq_len[perm_indices])[0]][1:-1])
+                    str_true = idx2char(var2np(labels)[
+                                        0, :var2np(labels_seq_len)[0]][1:-1])
                     str_pred = idx2char(labels_pred[0][0:-1]).split('>')[0]
                     ler = compute_cer(ref=str_true.replace('_', ''),
                                       hyp=str_pred.replace('_', ''),
                                       normalize=True)
                 elif label_type == 'word':
-                    str_true = idx2word(var2np(labels[perm_indices])[
-                                        0, :var2np(labels_seq_len[perm_indices])[0]][1:-1])
+                    str_true = idx2word(var2np(labels)[
+                                        0, :var2np(labels_seq_len)[0]][1:-1])
                     str_pred = idx2word(labels_pred[0][0:-1]).split('>')[0]
                     ler = compute_wer(ref=str_true.split('_'),
                                       hyp=str_pred.split('_'),

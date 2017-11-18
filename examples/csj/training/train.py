@@ -140,14 +140,8 @@ def do_train(model, params):
                 inputs_seq_len[0][perm_indices],
                 labels_seq_len[0][perm_indices])
         elif params['model_type'] == 'attention':
-            logits, att_weights, perm_indices = model(
-                inputs[0], inputs_seq_len[0], labels[0])
-            loss_train = model.compute_loss(
-                logits,
-                labels[0][perm_indices],
-                labels_seq_len[0][perm_indices],
-                att_weights,
-                coverage_weight=params['coverage_weight'])
+            loss_train = model(
+                inputs[0], labels[0], inputs_seq_len[0], labels_seq_len[0])
 
         # Compute gradient
         optimizer.zero_grad()

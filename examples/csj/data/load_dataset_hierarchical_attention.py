@@ -116,12 +116,16 @@ class Dataset(DatasetBase):
 
         input_paths, label_paths, label_paths_sub = [], [], []
         for utt_name, frame_num in frame_num_tuple_sorted:
-            speaker = utt_name.split('_')[0]
-            # ex.) utt_name: speaker_uttindex
-            input_paths.append(join(input_path, speaker, utt_name + '.npy'))
-            label_paths.append(join(label_path, speaker, utt_name + '.npy'))
-            label_paths_sub.append(
-                join(label_path_sub, speaker, utt_name + '.npy'))
+            # Ignore utteraces which are shorter than 200ms
+            if frame_num >= 20:
+                speaker = utt_name.split('_')[0]
+                # ex.) utt_name: speaker_uttindex
+                input_paths.append(
+                    join(input_path, speaker, utt_name + '.npy'))
+                label_paths.append(
+                    join(label_path, speaker, utt_name + '.npy'))
+                label_paths_sub.append(
+                    join(label_path_sub, speaker, utt_name + '.npy'))
         self.input_paths = np.array(input_paths)
         self.label_paths = np.array(label_paths)
         self.label_paths_sub = np.array(label_paths_sub)

@@ -55,7 +55,7 @@ class TestRNNEncoders(unittest.TestCase):
         # Load batch data
         batch_size = 4
         inputs, _, inputs_seq_len, _ = generate_data(
-            model='ctc',
+            model_type='ctc',
             batch_size=batch_size,
             splice=1)
 

@@ -25,62 +25,62 @@ class TestPyramidRNNEncoders(unittest.TestCase):
 
         # LSTM
         self.check(encoder_type='lstm', bidirectional=False,
-                   downsample_type='drop')
+                   subsample_type='drop')
         self.check(encoder_type='lstm', bidirectional=True,
-                   downsample_type='drop')
+                   subsample_type='drop')
         self.check(encoder_type='lstm', bidirectional=True,
-                   batch_first=True, downsample_type='drop')
+                   batch_first=True, subsample_type='drop')
         self.check(encoder_type='lstm', bidirectional=False,
-                   downsample_type='concat')
+                   subsample_type='concat')
         self.check(encoder_type='lstm', bidirectional=True,
-                   downsample_type='concat')
+                   subsample_type='concat')
         self.check(encoder_type='lstm', bidirectional=True,
-                   batch_first=True, downsample_type='concat')
+                   batch_first=True, subsample_type='concat')
 
         # GRU
         self.check(encoder_type='gru', bidirectional=False,
-                   downsample_type='drop')
+                   subsample_type='drop')
         self.check(encoder_type='gru', bidirectional=True,
-                   downsample_type='drop')
+                   subsample_type='drop')
         self.check(encoder_type='gru', bidirectional=True,
-                   batch_first=True, downsample_type='drop')
+                   batch_first=True, subsample_type='drop')
         self.check(encoder_type='gru', bidirectional=False,
-                   downsample_type='concat')
+                   subsample_type='concat')
         self.check(encoder_type='gru', bidirectional=True,
-                   downsample_type='concat')
+                   subsample_type='concat')
         self.check(encoder_type='gru', bidirectional=True,
-                   batch_first=True, downsample_type='concat')
+                   batch_first=True, subsample_type='concat')
 
         # RNN
         self.check(encoder_type='rnn', bidirectional=False,
-                   downsample_type='drop')
+                   subsample_type='drop')
         self.check(encoder_type='rnn', bidirectional=True,
-                   downsample_type='drop')
+                   subsample_type='drop')
         self.check(encoder_type='rnn', bidirectional=True,
-                   batch_first=True, downsample_type='drop')
+                   batch_first=True, subsample_type='drop')
         self.check(encoder_type='rnn', bidirectional=False,
-                   downsample_type='concat')
+                   subsample_type='concat')
         self.check(encoder_type='rnn', bidirectional=True,
-                   downsample_type='concat')
+                   subsample_type='concat')
         self.check(encoder_type='rnn', bidirectional=True,
-                   batch_first=True, downsample_type='concat')
+                   batch_first=True, subsample_type='concat')
 
     @measure_time
     def check(self, encoder_type, bidirectional=False, batch_first=False,
-              downsample_type='concat', mask_sequence=True):
+              subsample_type='concat', mask_sequence=True):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
         print('  batch_first: %s' % str(batch_first))
         print('  mask_sequence: %s' % str(mask_sequence))
-        print('  downsample_type: %s' % downsample_type)
+        print('  subsample_type: %s' % subsample_type)
         print('==================================================')
 
         # Load batch data
         batch_size = 4
         inputs, _, inputs_seq_len, _ = generate_data(
-            model='ctc',
+            model_type='ctc',
             batch_size=batch_size,
             splice=1)
 
@@ -104,15 +104,15 @@ class TestPyramidRNNEncoders(unittest.TestCase):
                 num_layers=5,
                 dropout=0.2,
                 parameter_init=0.1,
-                downsample_list=[False, True, True, False, False],
-                downsample_type=downsample_type,
+                subsample_list=[False, True, True, False, False],
+                subsample_type=subsample_type,
                 batch_first=batch_first)
         else:
             raise NotImplementedError
 
         outputs, final_state, perm_indices = encoder(
             inputs, inputs_seq_len, mask_sequence=mask_sequence)
-        max_time /= (2 ** encoder.downsample_list.count(True))
+        max_time /= (2 ** encoder.subsample_list.count(True))
         max_time = int(max_time)
 
         # Check final state (forward)
