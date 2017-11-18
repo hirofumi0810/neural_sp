@@ -30,6 +30,14 @@ class TestAttention(unittest.TestCase):
     def test(self):
         print("Attention Working check.")
 
+        # Joint CTC-Attention
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', ctc_loss_weight=0.1)
+
+        # multiple layer decoder
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', decoder_num_layers=2)
+
         # word-level attention
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', attention_type='dot_product',
@@ -79,6 +87,7 @@ class TestAttention(unittest.TestCase):
     def check(self, encoder_type, bidirectional, decoder_type,
               attention_type='dot_product', label_type='char',
               subsample=False, input_feeding_approach=False,
+              ctc_loss_weight=0, decoder_num_layers=1,
               save_path=None):
 
         print('==================================================')
@@ -89,6 +98,8 @@ class TestAttention(unittest.TestCase):
         print('  attention_type: %s' % attention_type)
         print('  subsample: %s' % str(subsample))
         print('  input_feeding_approach: %s' % str(input_feeding_approach))
+        print('  ctc_loss_weight: %s' % str(ctc_loss_weight))
+        print('  decoder_num_layers: %s' % str(decoder_num_layers))
         print('==================================================')
 
         # Load batch data
@@ -118,11 +129,12 @@ class TestAttention(unittest.TestCase):
             decoder_type=decoder_type,
             decoder_num_units=256,
             decoder_num_proj=128,
-            decoder_num_layers=1,
+            decoder_num_layers=decoder_num_layers,
             decoder_dropout=0.1,
             embedding_dim=64,
             embedding_dropout=0.1,
             num_classes=num_classes,
+            ctc_loss_weight=ctc_loss_weight,
             splice=1,
             parameter_init=0.1,
             subsample_list=[] if not subsample else [True] * 2,
@@ -131,8 +143,7 @@ class TestAttention(unittest.TestCase):
             logits_temperature=1,
             sigmoid_smoothing=False,
             input_feeding_approach=input_feeding_approach,
-            coverage_weight=0.5,
-            ctc_loss_weight=0.1)
+            coverage_weight=0.5)
 
         # Count total parameters
         for name, num_params in model.num_params_dict.items():
@@ -202,7 +213,8 @@ class TestAttention(unittest.TestCase):
 
                 # Decode
                 labels_pred, _ = model.decode_infer(
-                    inputs, inputs_seq_len, beam_width=5, max_decode_length=100)
+                    inputs, inputs_seq_len,
+                    beam_width=5, max_decode_length=100)
 
                 # Compute accuracy
                 if label_type == 'char':

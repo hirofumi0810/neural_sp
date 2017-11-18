@@ -468,8 +468,23 @@ class AttentionSeq2seq(ModelBase):
 
         batch_size = encoder_final_state.size()[1]
 
+        h_0 = Variable(torch.zeros(
+            self.decoder_num_layers, batch_size, self.decoder_num_units))
+
+        if volatile:
+            h_0.volatile = True
+
+        if self.use_cuda:
+            h_0 = h_0.cuda()
+
+        if self.init_dec_state_with_enc_state and self.encoder_type == self.decoder_type:
+            # Initialize decoder state in the first layer with
+            # the final state of the top layer of the encoder (forward)
+            h_0[0, :, :] = encoder_final_state
+
         if self.decoder_type == 'lstm':
-            c_0 = Variable(torch.zeros(1, batch_size, self.decoder_num_units))
+            c_0 = Variable(torch.zeros(
+                self.decoder_num_layers, batch_size, self.decoder_num_units))
 
             if volatile:
                 c_0.volatile = True
@@ -477,39 +492,9 @@ class AttentionSeq2seq(ModelBase):
             if self.use_cuda:
                 c_0 = c_0.cuda()
 
-            if self.init_dec_state_with_enc_state and self.encoder_type == self.decoder_type:
-                # Initialize decoder state with
-                # the final state of the top layer of the encoder (forward)
-                decoder_state = (encoder_final_state, c_0)
-                # TODO: LSTMの場合はメモリセルもencoderのラストで初期化？？
-            else:
-                h_0 = Variable(torch.zeros(
-                    1, batch_size, self.decoder_num_units))
-
-                if volatile:
-                    h_0.volatile = True
-
-                if self.use_cuda:
-                    h_0 = h_0.cuda()
-
-                decoder_state = (h_0, c_0)
+            decoder_state = (h_0, c_0)
         else:
-            # gru decoder
-            if self.init_dec_state_with_enc_state and self.encoder_type == self.decoder_type:
-                # Initialize decoder state with
-                # the final state of the top layer of the encoder (forward)
-                decoder_state = encoder_final_state
-            else:
-                h_0 = Variable(torch.zeros(
-                    1, batch_size, self.decoder_num_units))
-
-                if volatile:
-                    h_0.volatile = True
-
-                if self.use_cuda:
-                    h_0 = h_0.cuda()
-
-                decoder_state = h_0
+            decoder_state = h_0
 
         return decoder_state
 
@@ -678,15 +663,12 @@ class AttentionSeq2seq(ModelBase):
         beam = []
         for i_batch in range(batch_size):
             if self.decoder_type == 'lstm':
-                beam.append(
-                    [((self.sos_index,), LOG_1,
-                      (decoder_state[0][:, i_batch:i_batch + 1, :],
-                       decoder_state[1][:, i_batch:i_batch + 1, :]))])
+                h_n = decoder_state[0][:, i_batch:i_batch + 1, :].contiguous()
+                c_n = decoder_state[1][:, i_batch:i_batch + 1, :].contiguous()
+                beam.append([((self.sos_index,), LOG_1, (h_n, c_n))])
             else:
-                # gru or rnn
-                beam.append(
-                    [((self.sos_index,), LOG_1,
-                      decoder_state[:, i_batch:i_batch + 1, :])])
+                h_n = decoder_state[:, i_batch:i_batch + 1, :].contiguous()
+                beam.append([((self.sos_index,), LOG_1, h_n)])
 
         complete = [[]] * batch_size
         attention_weights = [] * batch_size

@@ -89,19 +89,16 @@ class RNNDecoder(nn.Module):
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            outputs:
-                if batch_first is True, a tensor of size
-                    `[B, 1, num_units]`
-                else
-                    `[1, B, num_units]`
-            decoder_state:
+            y: if batch_first is True, a tensor of size `[B, 1, num_units]`
+               else `[1, B, num_units]`
+            decoder_state (FloatTensor or tuple):
         """
         if not self.batch_first:
             # Reshape y to the time-major
             y = y.transpose(0, 1)
 
-        outputs, decoder_state = self.rnn(y, hx=decoder_state)
+        y, decoder_state = self.rnn(y, hx=decoder_state)
 
         # TODO: add the projection layer
 
-        return outputs, decoder_state
+        return y, decoder_state
