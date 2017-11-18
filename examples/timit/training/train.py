@@ -13,6 +13,7 @@ import time
 from setproctitle import setproctitle
 import yaml
 import shutil
+import copy
 
 import torch.nn as nn
 
@@ -25,6 +26,8 @@ from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
 from utils.directory import mkdir_join, mkdir
 from utils.io.variable import np2var, var2np
+
+MAX_DECODE_LENGTH_PHONE = 40
 
 
 def do_train(model, params):
@@ -96,6 +99,7 @@ def do_train(model, params):
     per_dev_best = 1
     not_improved_epoch = 0
     learning_rate = float(params['learning_rate'])
+    best_model = model
     for step, (data, is_new_epoch) in enumerate(train_data):
 
         # Create feed dictionary for next mini batch (train)
@@ -219,13 +223,14 @@ def do_train(model, params):
                     dataset=dev_data,
                     label_type=params['label_type'],
                     beam_width=1,
-                    max_decode_length=40,
+                    max_decode_length=MAX_DECODE_LENGTH_PHONE,
                     eval_batch_size=1)
                 print('  PER: %f %%' % (per_dev_epoch * 100))
 
                 if per_dev_epoch < per_dev_best:
                     per_dev_best = per_dev_epoch
                     not_improved_epoch = 0
+                    best_model = copy.deepcopy(model)
                     print('■■■ ↑Best Score (PER)↑ ■■■')
 
                     # Save the model
@@ -233,17 +238,6 @@ def do_train(model, params):
                         model.save_path, epoch=train_data.epoch)
                     print("=> Saved checkpoint (epoch:%d): %s" %
                           (train_data.epoch, saved_path))
-
-                    print('=== Test Data Evaluation ===')
-                    per_test = do_eval_per(
-                        model=model,
-                        model_type=params['model_type'],
-                        dataset=test_data,
-                        label_type=params['label_type'],
-                        beam_width=1,
-                        max_decode_length=40,
-                        eval_batch_size=1)
-                    print('  PER: %f %%' % (per_test * 100))
                 else:
                     not_improved_epoch += 1
 
@@ -266,6 +260,18 @@ def do_train(model, params):
 
             start_time_step = time.time()
             start_time_epoch = time.time()
+
+    # Evaluate the best model
+    print('=== Test Data Evaluation ===')
+    per_test = do_eval_per(
+        model=best_model,
+        model_type=params['model_type'],
+        dataset=test_data,
+        label_type=params['label_type'],
+        beam_width=1,
+        max_decode_length=MAX_DECODE_LENGTH_PHONE,
+        eval_batch_size=1)
+    print('  PER: %f %%' % (per_test * 100))
 
     duration_train = time.time() - start_time_train
     print('Total time: %.3f hour' % (duration_train / 3600))

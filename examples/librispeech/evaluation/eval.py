@@ -80,7 +80,7 @@ def main():
     # ***Change to evaluation mode***
     model.eval()
 
-    print('Test Data Evaluation:')
+    print('=== Test Data Evaluation ===')
     if 'char' in params['label_type']:
         cer_test_clean, wer_test_clean = do_eval_cer(
             model=model,

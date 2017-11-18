@@ -72,7 +72,7 @@ def main():
     # Change to evaluation mode
     model.eval()
 
-    print('Test Data Evaluation:')
+    print('=== Test Data Evaluation ===')
     per_test = do_eval_per(
         model=model,
         model_type=params['model_type'],

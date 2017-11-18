@@ -13,6 +13,7 @@ import time
 from setproctitle import setproctitle
 import yaml
 import shutil
+import copy
 
 import torch.nn as nn
 
@@ -26,6 +27,9 @@ from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
 from utils.directory import mkdir_join, mkdir
 from utils.io.variable import np2var, var2np
+
+MAX_DECODE_LENGTH_WORD = 60
+MAX_DECODE_LENGTH_CHAR = 100
 
 
 def do_train(model, params):
@@ -52,6 +56,24 @@ def do_train(model, params):
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True)
+    eval1_data = Dataset(
+        data_type='eval1', data_size=params['data_size'],
+        label_type=params['label_type'], num_classes=params['num_classes'],
+        batch_size=params['batch_size'], splice=params['splice'],
+        num_stack=params['num_stack'], num_skip=params['num_skip'],
+        shuffle=False)
+    eval2_data = Dataset(
+        data_type='eval2', data_size=params['data_size'],
+        label_type=params['label_type'], num_classes=params['num_classes'],
+        batch_size=params['batch_size'], splice=params['splice'],
+        num_stack=params['num_stack'], num_skip=params['num_skip'],
+        shuffle=False)
+    eval3_data = Dataset(
+        data_type='eval3', data_size=params['data_size'],
+        label_type=params['label_type'], num_classes=params['num_classes'],
+        batch_size=params['batch_size'], splice=params['splice'],
+        num_stack=params['num_stack'], num_skip=params['num_skip'],
+        shuffle=False)
 
     # Count total parameters
     for name, num_params in model.num_params_dict.items():
@@ -90,6 +112,7 @@ def do_train(model, params):
     ler_dev_best = 1
     not_improved_epoch = 0
     learning_rate = float(params['learning_rate'])
+    best_model = model
     for step, (data, is_new_epoch) in enumerate(train_data):
 
         # Create feed dictionary for next mini batch (train)
@@ -217,41 +240,35 @@ def do_train(model, params):
                 start_time_eval = time.time()
                 print('=== Dev Data Evaluation ===')
                 if 'word' not in params['label_type']:
-                    cer_dev_epoch = do_eval_cer(
+                    metric_dev_epoch = do_eval_cer(
                         model=model,
                         model_type=params['model_type'],
                         dataset=dev_data,
                         label_type=params['label_type'],
                         data_size=params['data_size'],
                         beam_width=1,
-                        max_decode_length=100,
+                        max_decode_length=MAX_DECODE_LENGTH_CHAR,
                         eval_batch_size=1)
-                    print('  CER: %f %%' % (cer_dev_epoch * 100))
-
-                    if cer_dev_epoch < ler_dev_best:
-                        ler_dev_best = cer_dev_epoch
-                        not_improved_epoch = 0
-                        print('■■■ ↑Best Score (CER)↑ ■■■')
-                    else:
-                        not_improved_epoch += 1
+                    print('  CER: %f %%' % (metric_dev_epoch * 100))
                 else:
-                    wer_dev_epoch = do_eval_wer(
+                    metric_dev_epoch = do_eval_wer(
                         model=model,
                         model_type=params['model_type'],
                         dataset=dev_data,
                         label_type=params['label_type'],
                         data_size=params['data_size'],
                         beam_width=1,
-                        max_decode_length=60,
+                        max_decode_length=MAX_DECODE_LENGTH_WORD,
                         eval_batch_size=1)
-                    print('  WER: %f %%' % (wer_dev_epoch * 100))
+                    print('  WER: %f %%' % (metric_dev_epoch * 100))
 
-                    if wer_dev_epoch < ler_dev_best:
-                        ler_dev_best = wer_dev_epoch
-                        not_improved_epoch = 0
-                        print('■■■ ↑Best Score (CER)↑ ■■■')
-                    else:
-                        not_improved_epoch += 1
+                if metric_dev_epoch < ler_dev_best:
+                    ler_dev_best = metric_dev_epoch
+                    not_improved_epoch = 0
+                    best_model = copy.deepcopy(model)
+                    print('■■■ ↑Best Score↑ ■■■')
+                else:
+                    not_improved_epoch += 1
 
                 duration_eval = time.time() - start_time_eval
                 print('Evaluation time: %.3f min' % (duration_eval / 60))
@@ -265,13 +282,88 @@ def do_train(model, params):
                     optimizer=optimizer,
                     learning_rate=learning_rate,
                     epoch=train_data.epoch,
-                    value=cer_dev_epoch)
+                    value=metric_dev_epoch)
 
                 # ***Change to training mode***
                 model.train()
 
             start_time_step = time.time()
             start_time_epoch = time.time()
+
+    # Evaluate the best model
+    print('=== Test Data Evaluation ===')
+    if params['label_type'] not in 'word':
+        cer_eval1 = do_eval_cer(
+            model=best_model,
+            model_type=params['model_type'],
+            dataset=eval1_data,
+            label_type=params['label_type'],
+            data_size=params['data_size'],
+            beam_width=1,
+            max_decode_length=MAX_DECODE_LENGTH_CHAR,
+            eval_batch_size=1)
+        print('  CER (eval1): %f %%' % (cer_eval1 * 100))
+
+        cer_eval2 = do_eval_cer(
+            model=best_model,
+            model_type=params['model_type'],
+            dataset=eval2_data,
+            label_type=params['label_type'],
+            data_size=params['data_size'],
+            beam_width=1,
+            max_decode_length=MAX_DECODE_LENGTH_CHAR,
+            eval_batch_size=1)
+        print('  CER (eval2): %f %%' % (cer_eval2 * 100))
+
+        cer_eval3 = do_eval_cer(
+            model=best_model,
+            model_type=params['model_type'],
+            dataset=eval3_data,
+            label_type=params['label_type'],
+            data_size=params['data_size'],
+            beam_width=1,
+            max_decode_length=MAX_DECODE_LENGTH_CHAR,
+            eval_batch_size=1)
+        print('  CER (eval3): %f %%' % (cer_eval3 * 100))
+
+        print('  CER (mean): %f %%' %
+              ((cer_eval1 + cer_eval2 + cer_eval3) * 100 / 3))
+    else:
+        wer_eval1 = do_eval_wer(
+            model=best_model,
+            model_type=params['model_type'],
+            dataset=eval1_data,
+            label_type=params['label_type'],
+            data_size=params['data_size'],
+            beam_width=1,
+            max_decode_length=MAX_DECODE_LENGTH_CHAR,
+            eval_batch_size=1)
+        print('  WER (eval1): %f %%' % (wer_eval1 * 100))
+
+        wer_eval2 = do_eval_wer(
+            model=best_model,
+            model_type=params['model_type'],
+            dataset=eval2_data,
+            label_type=params['label_type'],
+            data_size=params['data_size'],
+            beam_width=1,
+            max_decode_length=MAX_DECODE_LENGTH_CHAR,
+            eval_batch_size=1)
+        print('  WER (eval2): %f %%' % (wer_eval2 * 100))
+
+        wer_eval3 = do_eval_wer(
+            model=best_model,
+            model_type=params['model_type'],
+            dataset=eval3_data,
+            label_type=params['label_type'],
+            data_size=params['data_size'],
+            beam_width=1,
+            max_decode_length=MAX_DECODE_LENGTH_CHAR,
+            eval_batch_size=1)
+        print('  WER (eval3): %f %%' % (wer_eval3 * 100))
+
+        print('  WER (mean): %f %%' %
+              ((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3))
 
     duration_train = time.time() - start_time_train
     print('Total time: %.3f hour' % (duration_train / 3600))

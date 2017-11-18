@@ -86,45 +86,79 @@ def main():
     # Change to evaluation mode
     model.eval()
 
-    print('Test Data Evaluation:')
-    cer_eval1 = do_eval_cer(
-        model=model,
-        model_type='attention',
-        dataset=eval1_data,
-        label_type=params['label_type'],
-        data_size=params['data_size'],
-        beam_width=args.beam_width,
-        max_decode_length=args.max_decode_length,
-        eval_batch_size=args.eval_batch_size,
-        progressbar=True)
-    print('  CER (eval1): %f %%' % (cer_eval1 * 100))
+    print('=== Test Data Evaluation ===')
+    if 'word' not in params['label_type']:
+        cer_eval1 = do_eval_cer(
+            model=model,
+            model_type=params['model_type'],
+            dataset=eval1_data,
+            label_type=params['label_type'],
+            data_size=params['data_size'],
+            beam_width=args.beam_width,
+            max_decode_length=args.max_decode_length,
+            progressbar=True)
+        print('  CER (eval1): %f %%' % (cer_eval1 * 100))
 
-    cer_eval2 = do_eval_cer(
-        model=model,
-        model_type='attention',
-        dataset=eval2_data,
-        label_type=params['label_type'],
-        data_size=params['data_size'],
-        beam_width=args.beam_width,
-        max_decode_length=args.max_decode_length,
-        eval_batch_size=args.eval_batch_size,
-        progressbar=True)
-    print('  CER (eval2): %f %%' % (cer_eval2 * 100))
+        cer_eval2 = do_eval_cer(
+            model=model,
+            model_type=params['model_type'],
+            dataset=eval2_data,
+            label_type=params['label_type'],
+            data_size=params['data_size'],
+            beam_width=args.beam_width,
+            max_decode_length=args.max_decode_length,
+            progressbar=True)
+        print('  CER (eval2): %f %%' % (cer_eval2 * 100))
 
-    cer_eval3 = do_eval_cer(
-        model=model,
-        model_type='attention',
-        dataset=eval3_data,
-        label_type=params['label_type'],
-        data_size=params['data_size'],
-        beam_width=args.beam_width,
-        max_decode_length=args.max_decode_length,
-        eval_batch_size=args.eval_batch_size,
-        progressbar=True)
-    print('  CER (eval3): %f %%' % (cer_eval3 * 100))
+        cer_eval3 = do_eval_cer(
+            model=model,
+            model_type=params['model_type'],
+            dataset=eval3_data,
+            label_type=params['label_type'],
+            data_size=params['data_size'],
+            beam_width=args.beam_width,
+            max_decode_length=args.max_decode_length,
+            progressbar=True)
+        print('  CER (eval3): %f %%' % (cer_eval3 * 100))
 
-    print('  CER (mean): %f %%' %
-          ((cer_eval1 + cer_eval2 + cer_eval3) * 100 / 3))
+        print('  CER (mean): %f %%' %
+              ((cer_eval1 + cer_eval2 + cer_eval3) * 100 / 3))
+    else:
+        wer_eval1 = do_eval_wer(
+            model=model,
+            model_type=params['model_type'],
+            dataset=eval1_data,
+            label_type=params['label_type'],
+            data_size=params['data_size'],
+            beam_width=args.beam_width,
+            max_decode_length=args.max_decode_length,
+            progressbar=True)
+        print('  WER (eval1): %f %%' % (wer_eval1 * 100))
+
+        wer_eval2 = do_eval_wer(
+            model=model,
+            model_type=params['model_type'],
+            dataset=eval2_data,
+            label_type=params['label_type'],
+            data_size=params['data_size'],
+            beam_width=args.beam_width,
+            max_decode_length=args.max_decode_length,
+            progressbar=True)
+        print('  WER (eval2): %f %%' % (wer_eval2 * 100))
+
+        wer_eval3 = do_eval_wer(
+            model=model,
+            model_type=params['model_type'],
+            dataset=eval3_data,
+            label_type=params['label_type'],
+            data_size=params['data_size'],
+            beam_width=args.beam_width,
+            max_decode_length=args.max_decode_length,
+            progressbar=True)
+        print('  WER (eval3): %f %%' % (wer_eval3 * 100))
+
+        print('  WER (mean): %f %%' %
+              ((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3))
 
 
 if __name__ == '__main__':
