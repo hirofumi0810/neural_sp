@@ -61,19 +61,22 @@ def main():
         label_type=params['label_type'], num_classes=params['num_classes'],
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=False, progressbar=True)
+        shuffle=False,
+        use_cuda=model.use_cuda, volatile=True)
     eval2_data = Dataset(
         data_type='eval2', data_size=params['data_size'],
         label_type=params['label_type'], num_classes=params['num_classes'],
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=False, progressbar=True)
+        shuffle=False,
+        use_cuda=model.use_cuda, volatile=True)
     eval3_data = Dataset(
         data_type='eval3', data_size=params['data_size'],
         label_type=params['label_type'], num_classes=params['num_classes'],
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=False, progressbar=True)
+        shuffle=False,
+        use_cuda=model.use_cuda, volatile=True)
 
     # GPU setting
     model.set_cuda(deterministic=False)

@@ -18,7 +18,7 @@ from examples.csj.data.load_dataset_ctc import Dataset as Dataset_ctc
 from examples.csj.data.load_dataset_attention import Dataset as Dataset_attention
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
-from utils.io.variable import np2var
+from utils.io.variable import var2np
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model_path', type=str,
@@ -65,7 +65,8 @@ def main():
         label_type=params['label_type'], num_classes=params['num_classes'],
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=True, reverse=True)
+        sort_utt=True, reverse=True,
+        use_cuda=model.use_cuda, volatile=True)
 
     # GPU setting
     model.set_cuda(deterministic=False)
@@ -128,22 +129,13 @@ def decode(model, model_type, dataset, label_type, data_size, beam_width,
         else:
             raise NotImplementedError
 
-        # Wrap by variable
-        inputs = np2var(inputs, use_cuda=model.use_cuda, volatile=True)
-        inputs_seq_len = np2var(
-            inputs_seq_len, use_cuda=model.use_cuda, volatile=True, dtype='int')
-
         batch_size = inputs[0].size(0)
 
         # Decode
-        if model_type == 'attention':
-            labels_pred, _ = model.decode_infer(
-                inputs[0], inputs_seq_len=[0], beam_width=beam_width, max_decode_length=max_decode_length)
-        elif model_type == 'ctc':
-            labels_pred = model.decode(
-                inputs[0], inputs_seq_len[0], beam_width=beam_width)
-            labels_pred -= 1
-            # NOTE: index 0 is reserved for blank
+        labels_pred, perm_indices = model.decode(
+            inputs[0], inputs_seq_len[0],
+            beam_width=beam_width,
+            max_decode_length=max_decode_length)
 
         for i_batch in range(batch_size):
             print('----- wav: %s -----' % input_names[0][i_batch])
@@ -155,6 +147,10 @@ def decode(model, model_type, dataset, label_type, data_size, beam_width,
                 str_true = labels[0][i_batch][0]
                 # NOTE: transcript is seperated by space('_')
             else:
+                # Permutate indices
+                labels = var2np(labels[perm_indices])
+                labels_seq_len = var2np(labels_seq_len[perm_indices])
+
                 # Convert from list of index to string
                 if 'word' not in label_type:
                     if model_type in ['ctc']:

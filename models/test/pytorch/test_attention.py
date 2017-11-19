@@ -128,7 +128,6 @@ class TestAttention(unittest.TestCase):
             attention_dim=128,
             decoder_type=decoder_type,
             decoder_num_units=256,
-            decoder_num_proj=128,
             decoder_num_layers=decoder_num_layers,
             decoder_dropout=0.1,
             embedding_dim=64,
@@ -212,7 +211,7 @@ class TestAttention(unittest.TestCase):
                 model.eval()
 
                 # Decode
-                labels_pred, _ = model.decode_infer(
+                labels_pred, _ = model.decode(
                     inputs, inputs_seq_len,
                     beam_width=5, max_decode_length=100)
 

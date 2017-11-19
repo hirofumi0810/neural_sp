@@ -22,11 +22,10 @@ param:
     - False
     - False
     - False
-  attention_type: dot_product
+  attention_type: hybrid
   attention_dim: 128
   decoder_type: lstm
   decoder_num_units: 256
-  decoder_num_proj: 0
   decoder_num_layers: 1
   embedding_dim: 64
 
@@ -41,23 +40,25 @@ param:
   clip_grad_norm: 5.0
   clip_activation_encoder: 50
   clip_activation_decoder: 50
-  dropout_encoder: 0.8
+  dropout_encoder: 0.2
   dropout_decoder: 0.1
   dropout_embedding: 0.1
   weight_decay: 0
+  init_dec_state_with_enc_state: True
+  sharpening_factor: 1.0
+  logits_temperature: 1.0
+  sigmoid_smoothing: False
+  input_feeding_approach: False
+  coverage_weight: 0
+  eval_start_epoch: 20
+  print_step: 10
+
+  # annealing
   decay_start_epoch: 20
   decay_rate: 0.5
   decay_patient_epoch: 5
   sort_stop_epoch: 20
   not_improved_patient_epoch: 10
 
-  init_dec_state_with_enc_state: True
-  sharpening_factor: 1.0
-  logits_temperature: 1.0
-  sigmoid_smoothing: False
-  input_feeding_approach: True
-  coverage_weight: 0
+  # MTL
   ctc_loss_weight: 0
-
-  eval_start_epoch: 20
-  print_step: 10

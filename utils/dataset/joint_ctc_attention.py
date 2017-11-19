@@ -6,6 +6,8 @@
    You can use the multi-GPU version.
 """
 
+# TODO: remove this
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -18,6 +20,7 @@ import numpy as np
 from utils.dataset.base import Base
 from utils.io.inputs.frame_stacking import stack_frame
 from utils.io.inputs.splicing import do_splice
+from utils.io.variable import np2var
 
 
 class DatasetBase(Base):

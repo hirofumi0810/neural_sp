@@ -33,10 +33,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  attention_dim,
                  decoder_type,
                  decoder_num_units,
-                 decoder_num_proj,
                  decoder_num_layers,
                  decoder_num_units_sub,  # ***
-                 decoder_num_proj_sub,  # ***
                  decoder_num_layers_sub,  # ***
                  decoder_dropout,
                  embedding_dim,
@@ -70,7 +68,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             attention_dim=attention_dim,
             decoder_type=decoder_type,
             decoder_num_units=decoder_num_units,
-            decoder_num_proj=decoder_num_units,
             decoder_num_layers=decoder_num_layers,
             decoder_dropout=decoder_dropout,
             embedding_dim=embedding_dim,
@@ -93,7 +90,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         # Setting for the decoder
         self.decoder_num_units_sub = decoder_num_units_sub
-        self.decoder_num_proj_sub = decoder_num_proj_sub
         self.decoder_num_layers_sub = decoder_num_layers_sub
         self.embedding_dim_sub = embedding_dim_sub
         self.num_classes_sub = num_classes_sub + 2
@@ -158,7 +154,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             embedding_dim=embedding_dim_sub,
             rnn_type=decoder_type,
             num_units=decoder_num_units_sub,
-            num_proj=decoder_num_proj,
             num_layers=decoder_num_layers,
             dropout=decoder_dropout,
             parameter_init=parameter_init,
@@ -191,10 +186,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # TODO: dropoutは別に用意する必要ある（実装確認）？
 
         if input_feeding_approach:
-            self.decoder_proj_layer_sub = nn.Linear(
-                decoder_num_units_sub * 2, decoder_num_proj_sub)
+            self.input_feeding_sub = nn.Linear(
+                decoder_num_units_sub * 2, decoder_num_units_sub)
             # NOTE: input-feeding approach
-            self.fc_sub = nn.Linear(decoder_num_proj_sub, self.num_classes_sub)
+            self.fc_sub = nn.Linear(
+                decoder_num_units_sub, self.num_classes_sub)
         else:
             self.fc_sub = nn.Linear(
                 decoder_num_units_sub, self.num_classes_sub)
@@ -224,7 +220,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         """
         # Encode acoustic features
         encoder_outputs, encoder_final_state, encoder_outputs_sub, encoder_final_state_sub, perm_indices = self._encode(
-            inputs, inputs_seq_len, volatile)
+            inputs, inputs_seq_len, volatile=volatile)
 
         # Permutate indices
         labels = labels[perm_indices]
@@ -381,7 +377,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
             if self.input_feeding_approach:
                 # Input-feeding approach
-                output = self.decoder_proj_layer_sub(
+                output = self.input_feeding_sub(
                     torch.cat([decoder_outputs, context_vector], dim=-1))
                 logits_step = self.fc_sub(F.tanh(output))
             else:
@@ -427,8 +423,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         return decoder_outputs, decoder_state, context_vector, attention_weights_step
 
-    def decode_infer_sub(self, inputs, inputs_seq_len, beam_width=1,
-                         max_decode_length=100):
+    def decode_sub(self, inputs, inputs_seq_len, beam_width=1,
+                   max_decode_length=100):
         """
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
@@ -437,31 +433,38 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             max_decode_length (int, optional): the length of output sequences
                 to stop prediction when EOS token have not been emitted
         Returns:
-
+            best_hyps ():
+            perm_indices ():
         """
-        if beam_width == 1:
-            return self._decode_infer_greedy_sub(inputs, inputs_seq_len, max_decode_length)
-        else:
-            return self._decode_infer_beam_sub(
-                inputs, inputs_seq_len, beam_width, max_decode_length)
+        # Encode acoustic features
+        _, _, encoder_outputs, encoder_final_state, perm_indices = self._encode(
+            inputs, inputs_seq_len, volatile=True)
 
-    def _decode_infer_greedy_sub(self, inputs, inputs_seq_len,
-                                 _max_decode_length):
+        if beam_width == 1:
+            best_hyps, _ = self._decode_infer_greedy_sub(
+                encoder_outputs, encoder_final_state, max_decode_length)
+        else:
+            best_hyps, _ = self._decode_infer_beam_sub(
+                encoder_outputs, encoder_final_state, beam_width, max_decode_length)
+
+        return best_hyps, perm_indices
+
+    def _decode_infer_greedy_sub(self, encoder_outputs, encoder_final_state,
+                                 max_decode_length):
         """Greedy decoding when inference.
         Args:
-            inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
-            inputs_seq_len (IntTensor): A tensor of size `[B]`
-            _max_decode_length (int): the length of output sequences
+            encoder_outputs (FloatTensor): A tensor of size
+                `[B, T_in, encoder_num_units_sub]`
+            encoder_final_state (FloatTensor): A tensor of size
+                `[1, B, decoder_num_units_sub (may be equal to encoder_num_units_sub)]`
+            max_decode_length (int): the length of output sequences
                 to stop prediction when EOS token have not been emitted
         Returns:
-            argmaxs (np.ndarray): A tensor of size `[B, T_out_sub]`
+            best_hyps (np.ndarray): A tensor of size `[B, T_out_sub]`
             attention_weights (np.ndarray): A tensor of size
                 `[B, T_out_sub, T_in]`
         """
-        encoder_outputs, encoder_final_state = self._encode(
-            inputs, inputs_seq_len, volatile=True)[2:4]
-
-        batch_size = inputs.size(0)
+        batch_size = encoder_outputs.size(0)
 
         # Start from <SOS>
         y = self._create_token(value=self.sos_index_sub, batch_size=batch_size)
@@ -470,11 +473,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         decoder_state = self._init_decoder_state(
             encoder_final_state, volatile=True)
 
-        argmaxs = []
+        best_hyps = []
         attention_weights = []
         attention_weights_step = None
 
-        for _ in range(_max_decode_length):
+        for _ in range(max_decode_length):
             y = self.embedding_sub(y)
             y = self.embedding_dropout_sub(y)
             # TODO: remove dropout??
@@ -487,7 +490,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
             if self.input_feeding_approach:
                 # Input-feeding approach
-                output = self.decoder_proj_layer_sub(
+                output = self.input_feeding_sub(
                     torch.cat([decoder_outputs, context_vector], dim=-1))
                 logits = self.fc_sub(F.tanh(output))
             else:
@@ -502,7 +505,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # Pick up 1-best
             y = torch.max(log_probs, dim=1)[1]
             y = y.unsqueeze(dim=1)
-            argmaxs.append(y)
+            best_hyps.append(y)
             attention_weights.append(attention_weights_step)
 
             # Break if <EOS> is outputed in all mini-batch
@@ -510,14 +513,15 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 break
 
         # Concatenate in T_out-dimension
-        argmaxs = torch.cat(argmaxs, dim=1)
+        best_hyps = torch.cat(best_hyps, dim=1)
         attention_weights = torch.stack(attention_weights, dim=1)
 
         # Convert to numpy
-        argmaxs = var2np(argmaxs)
+        best_hyps = var2np(best_hyps)
         attention_weights = var2np(attention_weights)
 
-        return argmaxs, attention_weights
+        return best_hyps, attention_weights
 
-    def _decode_infer_beam_sub(self, inputs, inputs_seq_len, beam_width, max_decode_length):
+    def _decode_infer_beam_sub(self, encoder_outputs, encoder_final_state,
+                               beam_width, max_decode_length):
         raise NotImplementedError

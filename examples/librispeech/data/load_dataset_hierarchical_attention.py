@@ -24,7 +24,8 @@ class Dataset(DatasetBase):
                  max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
                  shuffle=False, sort_utt=True, reverse=False,
-                 sort_stop_epoch=None, num_gpus=1):
+                 sort_stop_epoch=None, num_gpus=1,
+                 use_cuda=False, volatile=False):
         """A class for loading dataset.
         Args:
             data_type (string): train or dev_clean or dev_other or test_clean
@@ -48,6 +49,8 @@ class Dataset(DatasetBase):
             sort_stop_epoch (int, optional): After sort_stop_epoch, training
                 will revert back to a random order
             num_gpus (int, optional): the number of GPUs
+            use_cuda (bool, optional):
+            volatile (boo, optional):
         """
         super(Dataset, self).__init__()
 
@@ -69,6 +72,8 @@ class Dataset(DatasetBase):
         self.sort_utt = sort_utt
         self.sort_stop_epoch = sort_stop_epoch
         self.num_gpus = num_gpus
+        self.use_cuda = use_cuda
+        self.volatile = volatile
 
         self.num_classes = num_classes
         self.num_classes_sub = num_classes_sub

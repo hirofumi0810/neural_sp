@@ -31,10 +31,8 @@ param:
   attention_dim: 128
   decoder_type: lstm
   decoder_num_units: 320
-  decoder_num_proj: 0
   decoder_num_layers: 1
   decoder_num_units_sub: 320
-  decoder_num_proj_sub: 0
   decoder_num_layers_sub: 1
   embedding_dim: 512
   embedding_dim_sub: 64
@@ -68,7 +66,7 @@ param:
   sort_stop_epoch: 15
   not_improved_patient_epoch: 5
   eval_start_epoch: 10
-  print_step: 1000
+  print_step: 2000
 
   # MTL
   main_loss_weight: 0.5

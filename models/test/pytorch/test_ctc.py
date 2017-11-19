@@ -65,8 +65,6 @@ class TestCTC(unittest.TestCase):
             batch_size=2,
             num_stack=1,
             splice=1)
-        labels += 1
-        # NOTE: index 0 is reserved for blank
 
         if label_type == 'char':
             num_classes = 27
@@ -133,12 +131,7 @@ class TestCTC(unittest.TestCase):
             optimizer.zero_grad()
 
             # Compute loss
-            logits, perm_indices = model(inputs, inputs_seq_len)
-            loss = model.compute_loss(
-                logits,
-                labels[perm_indices],
-                inputs_seq_len[perm_indices],
-                labels_seq_len[perm_indices])
+            loss = model(inputs, labels, inputs_seq_len, labels_seq_len)
 
             # Compute gradient
             optimizer.zero_grad()
@@ -158,21 +151,21 @@ class TestCTC(unittest.TestCase):
                 model.eval()
 
                 # Decode
-                labels_pred = model.decode(
-                    logits, inputs_seq_len[perm_indices], beam_width=5)
+                labels_pred, _ = model.decode(
+                    inputs, inputs_seq_len, beam_width=5)
 
                 # Compute accuracy
                 if label_type == 'char':
                     str_true = idx2char(
-                        var2np(labels[perm_indices][0, :var2np(labels_seq_len[perm_indices])[0]] - 1))
-                    str_pred = idx2char(labels_pred[0] - 1)
+                        var2np(labels[0, :var2np(labels_seq_len)[0]]))
+                    str_pred = idx2char(labels_pred[0])
                     ler = compute_cer(ref=str_true.replace('_', ''),
                                       hyp=str_pred.replace('_', ''),
                                       normalize=True)
                 elif label_type == 'word':
                     str_true = idx2word(
-                        var2np(labels[perm_indices][0, :var2np(labels_seq_len[perm_indices])[0]] - 1))
-                    str_pred = idx2word(labels_pred[0] - 1)
+                        var2np(labels[0, :var2np(labels_seq_len)[0]]))
+                    str_pred = idx2word(labels_pred[0])
                     ler = compute_wer(ref=str_true.split('_'),
                                       hyp=str_pred.split('_'),
                                       normalize=True)

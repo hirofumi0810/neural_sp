@@ -47,9 +47,6 @@ class TestCTC(unittest.TestCase):
             batch_size=2,
             num_stack=1,
             splice=1)
-        labels += 1
-        labels_sub += 1
-        # NOTE: index 0 is reserved for blank
 
         num_classes = 11
         num_classes_sub = 27
@@ -120,17 +117,8 @@ class TestCTC(unittest.TestCase):
             optimizer.zero_grad()
 
             # Compute loss
-            logits, logits_sub, perm_indices = model(inputs, inputs_seq_len)
-            loss = model.compute_loss(
-                logits,
-                labels[perm_indices],
-                inputs_seq_len[perm_indices],
-                labels_seq_len[perm_indices]) * model.main_loss_weight
-            loss += model.compute_loss(
-                logits_sub,
-                labels_sub[perm_indices],
-                inputs_seq_len[perm_indices],
-                labels_seq_len_sub[perm_indices]) * (1 - model.main_loss_weight)
+            loss = model(inputs, labels, labels_sub,
+                         inputs_seq_len, labels_seq_len, labels_seq_len_sub)
 
             # Compute gradient
             optimizer.zero_grad()
@@ -150,21 +138,21 @@ class TestCTC(unittest.TestCase):
                 model.eval()
 
                 # Decode
-                labels_pred = model.decode(
-                    logits, inputs_seq_len[perm_indices], beam_width=5)
-                labels_pred_sub = model.decode(
-                    logits_sub, inputs_seq_len[perm_indices], beam_width=5)
+                labels_pred, _ = model.decode(
+                    inputs, inputs_seq_len, beam_width=1)
+                labels_pred_sub, _ = model.decode_sub(
+                    inputs, inputs_seq_len, beam_width=1)
 
                 # Compute accuracy
                 str_true = idx2word(
-                    var2np(labels[perm_indices][0, :var2np(labels_seq_len[perm_indices])[0]] - 1))
-                str_pred = idx2word(labels_pred[0] - 1)
+                    var2np(labels[0, :var2np(labels_seq_len)[0]]))
+                str_pred = idx2word(labels_pred[0])
                 ler = compute_wer(ref=str_true.split('_'),
                                   hyp=str_pred.split('_'),
                                   normalize=True)
                 str_true_sub = idx2char(
-                    var2np(labels_sub[perm_indices][0, :var2np(labels_seq_len_sub[perm_indices])[0]] - 1))
-                str_pred_sub = idx2char(labels_pred_sub[0] - 1)
+                    var2np(labels_sub[0, :var2np(labels_seq_len_sub)[0]]))
+                str_pred_sub = idx2char(labels_pred_sub[0])
                 ler_sub = compute_cer(ref=str_true_sub.replace('_', ''),
                                       hyp=str_pred_sub.replace('_', ''),
                                       normalize=True)

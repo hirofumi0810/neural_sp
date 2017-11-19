@@ -49,31 +49,36 @@ def do_train(model, params):
         batch_size=params['batch_size'],
         max_epoch=params['num_epoch'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'])
+        sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
+        use_cuda=model.use_cuda)
     dev_clean_data = Dataset(
         data_type='dev_clean', data_size=params['data_size'],
         label_type=params['label_type'], num_classes=params['num_classes'],
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=True)
+        shuffle=True,
+        use_cuda=model.use_cuda, volatile=True)
     dev_other_data = Dataset(
         data_type='dev_other', data_size=params['data_size'],
         label_type=params['label_type'], num_classes=params['num_classes'],
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=True)
+        shuffle=True,
+        use_cuda=model.use_cuda, volatile=True)
     test_clean_data = Dataset(
         data_type='test_clean', data_size=params['data_size'],
         label_type=params['label_type'], num_classes=params['num_classes'],
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=True)
+        shuffle=True,
+        use_cuda=model.use_cuda, volatile=True)
     test_other_data = Dataset(
         data_type='test_other', data_size=params['data_size'],
         label_type=params['label_type'], num_classes=params['num_classes'],
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=True)
+        shuffle=True,
+        use_cuda=model.use_cuda, volatile=True)
 
     # Count total parameters
     for name, num_params in model.num_params_dict.items():
@@ -101,7 +106,6 @@ def do_train(model, params):
     model.init_weights()
 
     # GPU setting
-    use_cuda = model.use_cuda
     model.set_cuda(deterministic=False)
 
     # Train model
@@ -119,30 +123,12 @@ def do_train(model, params):
         # Create feed dictionary for next mini batch (train)
         inputs, labels, inputs_seq_len, labels_seq_len, _ = data
 
-        # Wrap by variable
-        inputs = np2var(inputs, use_cuda=use_cuda)
-        if params['model_type'] == 'ctc':
-            labels = np2var(labels, use_cuda=use_cuda, dtype='int') + 1
-            # NOTE: index 0 is reserved for blank
-        elif params['model_type'] == 'attention':
-            labels = np2var(labels, use_cuda=use_cuda, dtype='long')
-        inputs_seq_len = np2var(inputs_seq_len, use_cuda=use_cuda, dtype='int')
-        labels_seq_len = np2var(labels_seq_len, use_cuda=use_cuda, dtype='int')
-
         # Clear gradients before
         optimizer.zero_grad()
 
         # Compute loss in the training set
-        if params['model_type'] == 'ctc':
-            logits, perm_indices = model(inputs[0], inputs_seq_len[0])
-            loss_train = model.compute_loss(
-                logits,
-                labels[0][perm_indices],
-                inputs_seq_len[0][perm_indices],
-                labels_seq_len[0][perm_indices])
-        elif params['model_type'] == 'attention':
-            loss_train = model(
-                inputs[0], labels[0], inputs_seq_len[0], labels_seq_len[0])
+        loss_train = model(
+            inputs[0], labels[0], inputs_seq_len[0], labels_seq_len[0])
         loss_val_train += loss_train.data[0]
 
         # Compute gradient
@@ -166,36 +152,13 @@ def do_train(model, params):
                 inputs, labels, inputs_seq_len, labels_seq_len, _ = dev_other_data.next()[
                     0]
 
-            # Wrap by variable
-            inputs = np2var(inputs, use_cuda=use_cuda, volatile=True)
-            if params['model_type'] == 'ctc':
-                labels = np2var(
-                    labels, use_cuda=use_cuda, volatile=True, dtype='int') + 1
-                # NOTE: index 0 is reserved for blank
-            elif params['model_type'] == 'attention':
-                labels = np2var(labels, use_cuda=use_cuda,
-                                volatile=True, dtype='long')
-            inputs_seq_len = np2var(
-                inputs_seq_len, use_cuda=use_cuda, volatile=True, dtype='int')
-            labels_seq_len = np2var(
-                labels_seq_len, use_cuda=use_cuda, volatile=True, dtype='int')
-
             # ***Change to evaluation mode***
             model.eval()
 
             # Compute loss in the dev set
-            if params['model_type'] == 'ctc':
-                logits, perm_indices = model(
-                    inputs[0], inputs_seq_len[0], volatile=True)
-                loss_dev = model.compute_loss(
-                    logits,
-                    labels[0][perm_indices],
-                    inputs_seq_len[0][perm_indices],
-                    labels_seq_len[0][perm_indices])
-            elif params['model_type'] == 'attention':
-                loss_dev = model(
-                    inputs[0], labels[0], inputs_seq_len[0], labels_seq_len[0],
-                    volatile=True)
+            loss_dev = model(
+                inputs[0], labels[0], inputs_seq_len[0], labels_seq_len[0],
+                volatile=True)
 
             loss_val_train /= params['print_step']
             loss_val_dev = loss_dev.data[0]

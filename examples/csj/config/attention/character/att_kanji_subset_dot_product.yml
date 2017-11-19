@@ -27,7 +27,6 @@ param:
   attention_dim: 128
   decoder_type: lstm
   decoder_num_units: 320
-  decoder_num_proj: 0
   decoder_num_layers: 1
   embedding_dim: 64
 

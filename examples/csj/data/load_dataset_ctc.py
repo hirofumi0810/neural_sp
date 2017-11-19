@@ -23,7 +23,8 @@ class Dataset(DatasetBase):
                  num_classes=None, max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
                  shuffle=False, sort_utt=True, reverse=False,
-                 sort_stop_epoch=None, num_gpus=1):
+                 sort_stop_epoch=None, num_gpus=1,
+                 use_cuda=False, volatile=False):
         """A class for loading dataset.
         Args:
             data_type (string): train or dev_clean or dev_other or test_clean
@@ -46,6 +47,8 @@ class Dataset(DatasetBase):
             sort_stop_epoch (int, optional): After sort_stop_epoch, training
                 will revert back to a random order
             num_gpus (int, optional): the number of GPUs
+            use_cuda (bool, optional):
+            volatile (boo, optional):
         """
         super(Dataset, self).__init__()
 
@@ -66,6 +69,8 @@ class Dataset(DatasetBase):
         self.sort_utt = sort_utt
         self.sort_stop_epoch = sort_stop_epoch
         self.num_gpus = num_gpus
+        self.use_cuda = use_cuda
+        self.volatile = volatile
 
         # paths where datasets exist
         dataset_root = ['/data/inaguma/csj',
@@ -110,8 +115,10 @@ class Dataset(DatasetBase):
             if frame_num >= 20:
                 speaker = utt_name.split('_')[0]
                 # ex.) utt_name: speaker_uttindex
-                input_paths.append(join(input_path, speaker, utt_name + '.npy'))
-                label_paths.append(join(label_path, speaker, utt_name + '.npy'))
+                input_paths.append(
+                    join(input_path, speaker, utt_name + '.npy'))
+                label_paths.append(
+                    join(label_path, speaker, utt_name + '.npy'))
         self.input_paths = np.array(input_paths)
         self.label_paths = np.array(label_paths)
         # NOTE: Not load dataset yet

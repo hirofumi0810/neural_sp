@@ -18,7 +18,7 @@ from itertools import groupby
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
-import torch.nn.functional as F
+# import torch.nn.functional as F
 
 from models.pytorch.base import ModelBase
 from models.pytorch.encoders.load_encoder import load
@@ -117,22 +117,55 @@ class CTC(ModelBase):
                 num_units * self.num_directions, self.num_classes)
 
         # Set CTC decoders
-        # self.decode_greedy = GreedyDecoder(blank_index=self.blank_index)
-        self.decode_beam = BeamSearchDecoder(blank_index=self.blank_index)
+        # self._decode_greedy_np = GreedyDecoder(blank_index=self.blank_index)
+        self._decode_beam_np = BeamSearchDecoder(blank_index=self.blank_index)
         # TODO: set space index
 
-    def forward(self, inputs, inputs_seq_len, volatile=False):
+    def forward(self, inputs, labels, inputs_seq_len, labels_seq_len,
+                volatile=False):
         """Forward computation.
         Args:
-            inputs (FloatTensor): A tensor of size `[B, T, input_size]`
+            inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
+            labels (LongTensor): A tensor of size `[B, T_out]`
             inputs_seq_len (IntTensor): A tensor of size `[B]`
-            volatile (bool, optional): if True, the history will not be saved.
+            labels_seq_len (IntTensor): A tensor of size `[B]`
+            volatile (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            logits (FloatTensor): A tensor of size
-                `[T, B, num_classes (including blank)]`
+            loss (FloatTensor): A tensor of size `[1]`
         """
-        return self._encode(inputs, inputs_seq_len, volatile)
+        labels_tmp = labels + 1
+        # NOTE: index 0 is reserved for blank
+
+        # Encode acoustic features
+        logits, perm_indices = self._encode(
+            inputs, inputs_seq_len, volatile=volatile)
+
+        # Permutate indices
+        labels_tmp = labels_tmp[perm_indices]
+        inputs_seq_len = inputs_seq_len[perm_indices]
+        labels_seq_len = labels_seq_len[perm_indices]
+
+        max_time, batch_size = logits.size()[:2]
+
+        # Concatenate all labels for warpctc_pytorch
+        # `[B, T_out]` -> `[1,]`
+        concatenated_labels = self._concatenate_labels(
+            labels_tmp, labels_seq_len)
+
+        # Output smoothing
+        if self.logits_temperature != 1:
+            logits /= self.logits_temperature
+
+        # Compute CTC loss
+        ctc_loss_fn = CTCLoss()
+        ctc_loss = ctc_loss_fn(logits, concatenated_labels.cpu(),
+                               inputs_seq_len.cpu(), labels_seq_len.cpu())
+
+        # Average the loss by mini-batch
+        ctc_loss /= batch_size
+
+        return ctc_loss
 
     def _encode(self, inputs, inputs_seq_len, volatile):
         """Encode acoustic features.
@@ -144,6 +177,7 @@ class CTC(ModelBase):
         Returns:
             logits (FloatTensor): A tensor of size
                 `[T, B, num_classes (including blank)]`
+            perm_indices (FloatTensor):
         """
         encoder_outputs, _, perm_indices = self.encoder(
             inputs, inputs_seq_len, volatile, mask_sequence=True)
@@ -164,51 +198,41 @@ class CTC(ModelBase):
 
         return logits, perm_indices
 
-    def compute_loss(self, logits, labels, inputs_seq_len, labels_seq_len):
-        """
+    def _concatenate_labels(self, labels, labels_seq_len):
+        """Concatenate all labels in mini-batch and convert to a 1D tensor.
         Args:
-            logits (FloatTensor): A tensor of size `[T_in, B, num_classes]`
             labels (LongTensor): A tensor of size `[B, T_out]`
-            inputs_seq_len (IntTensor): A tensor of size `[B]`
-            labels_seq_len (LongTensor): A tensor of size `[B]`
+            labels_seq_len (IntTensor): A tensor of size `[B]`
         Returns:
-            ctc_loss (FloatTensor): A tensor of size `[]`
+            concatenated_labels (): A tensor of size `[all_label_num]`
         """
-        max_time, batch_size = logits.size()[:2]
-        ctc_loss_fn = CTCLoss()
-
-        # Concatenate all labels for warpctc_pytorch
-        # `[B, T_out]` -> `[1,]`
+        batch_size = labels.size(0)
         total_lables_seq_len = labels_seq_len.data.sum()
-        concat_labels = Variable(
+        concatenated_labels = Variable(
             torch.zeros(total_lables_seq_len)).int()
         label_counter = 0
         for i_batch in range(batch_size):
-            concat_labels[label_counter:label_counter +
-                          labels_seq_len.data[i_batch]] = labels[i_batch][:labels_seq_len.data[i_batch]]
+            concatenated_labels[label_counter:label_counter +
+                                labels_seq_len.data[i_batch]] = labels[i_batch][:labels_seq_len.data[i_batch]]
             label_counter += labels_seq_len.data[i_batch]
 
-        if self.logits_temperature != 1:
-            logits /= self.logits_temperature
+        return concatenated_labels
 
-        ctc_loss = ctc_loss_fn(logits, concat_labels.cpu(),
-                               inputs_seq_len.cpu(), labels_seq_len.cpu())
-
-        # Average the loss by mini-batch
-        ctc_loss /= batch_size
-
-        return ctc_loss
-
-    def posteriors(self, logits, temperature=1, blank_prior=None):
+    def posteriors(self, inputs, inputs_seq_len, temperature=1, blank_prior=None):
         """
         Args:
-            logits (FloatTensor): A tensor of size `[T_in, B, num_classes]`
+            inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
+            inputs_seq_len (IntTensor): A tensor of size `[B]`
             temperature (float, optional): the temperature parameter for the
                 softmax layer in the inference stage
             blank_prior (float, optional):
         Returns:
             probs (FloatTensor): A tensor of size `[]`
         """
+        # Encode acoustic features
+        logits, perm_indices = self._encode(
+            inputs, inputs_seq_len, volatile=True)
+
         # Convert to batch-major
         logits = logits.transpose(0, 1)
 
@@ -220,15 +244,26 @@ class CTC(ModelBase):
 
         return probs
 
-    def decode(self, logits, inputs_seq_len, beam_width=1):
+    def decode(self, inputs, inputs_seq_len, beam_width=1,
+               max_decode_length=None):
         """
         Args:
-            logits (FloatTensor): A tensor of size `[T_in, B, num_classes]`
+            inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
             inputs_seq_len (IntTensor): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
+            max_decode_length: not used
         Returns:
-
+            best_hyps ():
+            perm_indices ():
         """
+        # Encode acoustic features
+        if hasattr(self, 'main_loss_weight'):
+            logits, _, perm_indices = self._encode(
+                inputs, inputs_seq_len, volatile=True)
+        else:
+            logits, perm_indices = self._encode(
+                inputs, inputs_seq_len, volatile=True)
+
         # Convert to batch-major
         logits = logits.transpose(0, 1)
 
@@ -238,15 +273,21 @@ class CTC(ModelBase):
 
         if beam_width == 1:
             # torch-based decoder
-            return self._decode_greedy(log_probs, inputs_seq_len)
+            best_hyps = self._decode_greedy(log_probs, inputs_seq_len)
         else:
             # torch-based decoder
-            # return self._decode_beam(log_probs, inputs_seq_len, beam_width)
+            # best_hyps = self._decode_beam(log_probs, inputs_seq_len, beam_width)
 
             # numpy-based decoder
             log_probs = var2np(log_probs)
             inputs_seq_len = var2np(inputs_seq_len)
-            return self.decode_beam(log_probs, inputs_seq_len, beam_width)
+            best_hyps = self._decode_beam_np(
+                log_probs, inputs_seq_len, beam_width)
+
+        best_hyps -= 1
+        # NOTE: index 0 is reserved for blank
+
+        return best_hyps, perm_indices
 
     def _decode_greedy(self, log_probs, inputs_seq_len):
         """
@@ -255,10 +296,10 @@ class CTC(ModelBase):
                 A tensor of size `[B, T, num_classes (including blank)]`
             inputs_seq_len (IntTensor): A tensor of size `[B]`
         Returns:
-            results (np.ndarray): A tensor of size `[B,]`
+            best_hyps (np.ndarray): A tensor of size `[B,]`
         """
         batch_size = log_probs.size(0)
-        results = []
+        best_hyps = []
 
         # Pickup argmax class
         for i_batch in range(batch_size):
@@ -274,9 +315,9 @@ class CTC(ModelBase):
             # Step 2. Remove all blank labels
             best_hyp = [x for x in filter(
                 lambda x: x != self.blank_index, collapsed_indices)]
-            results.append(np.array(best_hyp))
+            best_hyps.append(np.array(best_hyp))
 
-        return np.array(results)
+        return np.array(best_hyps)
 
     def _decode_beam(self, log_probs, inputs_seq_len, beam_width):
         """
@@ -286,6 +327,6 @@ class CTC(ModelBase):
             inputs_seq_len (IntTensor): A tensor of size `[B]`
             beam_width (int): the size of beam
         Returns:
-            results (np.ndarray):
+            best_hyps (np.ndarray):
         """
         raise NotImplementedError

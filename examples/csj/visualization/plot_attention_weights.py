@@ -29,7 +29,7 @@ from models.pytorch.load_model import load
 from examples.csj.data.load_dataset_attention import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
-from utils.io.variable import np2var
+from utils.io.variable import var2np
 from utils.directory import mkdir_join, mkdir
 
 
@@ -71,7 +71,8 @@ def main():
         label_type=params['label_type'], num_classes=params['num_classes'],
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=False)
+        shuffle=False,
+        use_cuda=model.use_cuda, volatile=True)
 
     # GPU setting
     model.set_cuda(deterministic=False)
@@ -124,17 +125,12 @@ def plot(model, dataset, data_size, label_type, save_path=None, show=False):
     for data, is_new_epoch in dataset:
 
         # Create feed dictionary for next mini batch
-        inputs, labels_true, _, labels_seq_len, input_names = data
-
-        # Wrap by variable
-        inputs = np2var(inputs, use_cuda=model.use_cuda, volatile=True)
-        inputs_seq_len = np2var(
-            inputs_seq_len, use_cuda=model.use_cuda, volatile=True, dtype='int')
+        inputs, _, inputs_seq_len, _, input_names = data
 
         batch_size = inputs[0].size(0)
 
-        # Make prediction
-        labels_pred, att_weights = model.decode_infer(
+        # Decode
+        labels_pred, att_weights, _ = model.attention_weights(
             inputs[0], inputs_seq_len[0], beam_width=1, max_decode_length=100)
 
         for i_batch in range(batch_size):

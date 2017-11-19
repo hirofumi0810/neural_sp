@@ -34,7 +34,7 @@ class Base(object):
 
     @property
     def sos_index_sub(self):
-        return self.num_vocab_classes
+        return self.num_classes_sub
 
     @property
     def eos_index(self):
@@ -42,7 +42,7 @@ class Base(object):
 
     @property
     def eos_index_sub(self):
-        return self.num_vocab_classes + 1
+        return self.num_classes_sub + 1
 
     @property
     def ctc_padded_value(self):

@@ -16,7 +16,6 @@ class RNNDecoder(nn.Module):
         embedding_dim (int): the dimension of input features
         rnn_type (string): lstm or gru or rnn
         num_units (int): the number of units in each layer
-        num_proj (int): the number of nodes in the projection layer
         num_layers (int): the number of layers
         dropout (float): the probability to drop nodes
         parameter_init (float): the range of uniform distribution to
@@ -30,7 +29,6 @@ class RNNDecoder(nn.Module):
                  embedding_dim,
                  rnn_type,
                  num_units,
-                 num_proj,
                  num_layers,
                  dropout,
                  parameter_init,
@@ -42,7 +40,6 @@ class RNNDecoder(nn.Module):
         self.embedding_dim = embedding_dim
         self.rnn_type = rnn_type
         self.num_units = num_units
-        self.num_proj = num_proj
         self.num_layers = num_layers
         self.dropout = dropout
         # NOTE: dropout is applied except the last layer
@@ -98,7 +95,5 @@ class RNNDecoder(nn.Module):
             y = y.transpose(0, 1)
 
         y, decoder_state = self.rnn(y, hx=decoder_state)
-
-        # TODO: add the projection layer
 
         return y, decoder_state

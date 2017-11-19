@@ -11,12 +11,12 @@ import re
 from tqdm import tqdm
 
 from utils.io.labels.character import Idx2char
-from utils.io.variable import np2var
+from utils.io.variable import var2np
 from utils.evaluation.edit_distance import compute_cer
 
 
 def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
-                max_decode_length=100, eval_batch_size=None,
+                max_decode_length, eval_batch_size=None,
                 progressbar=False):
     """Evaluate trained model by Character Error Rate.
     Args:
@@ -27,7 +27,7 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
         label_type (string): kanji or kanji or kanji_divide or kana_divide
         data_size (string): fullset or subset
         beam_width: (int): the size of beam
-        max_decode_length (int, optional): the length of output sequences
+        max_decode_length (int): the length of output sequences
             to stop prediction when EOS token have not been emitted.
             This is used for seq2seq models.
         eval_batch_size (int, optional): the batch size when evaluating the model
@@ -62,45 +62,35 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
             inputs, labels, inputs_seq_len, labels_seq_len, _ = data
         elif model_type in ['hierarchical_ctc', 'hierarchical_attention']:
             inputs, _, labels, inputs_seq_len, _, labels_seq_len, _ = data
-        else:
-            TypeError
-
-        # Wrap by variable
-        inputs = np2var(inputs, use_cuda=model.use_cuda, volatile=True)
-        inputs_seq_len = np2var(
-            inputs_seq_len, use_cuda=model.use_cuda, volatile=True, dtype='int')
 
         batch_size = inputs[0].size(0)
 
         # Decode
-        if model_type == 'attention':
-            labels_pred, _ = model.decode_infer(
-                inputs[0], inputs_seq_len[0], beam_width=beam_width, max_decode_length=model.max_decode_length)
-        elif model_type == 'hierarchical_attention':
-            labels_pred, _ = model.decode_infer_sub(
-                inputs[0], inputs_seq_len[0], beam_width=beam_width, max_decode_length=model.max_decode_length_sub)
-        elif model_type in ['ctc', 'hierarchical_ctc']:
-            if model_type == 'ctc':
-                logits, perm_indices = model(inputs[0], inputs_seq_len[0])
-            else:
-                _, logits, perm_indices = model(inputs[0], inputs_seq_len[0])
-            labels_pred = model.decode(
-                logits, inputs_seq_len[0][perm_indices], beam_width=beam_width)
-            labels_pred -= 1
-            # NOTE: index 0 is reserved for blank
-        elif model_type == 'joint_ctc_attention':
-            raise NotImplementedError
+        if model_type in ['attention', 'ctc']:
+            labels_pred, perm_indices = model.decode(
+                inputs[0], inputs_seq_len[0],
+                beam_width=beam_width,
+                max_decode_length=max_decode_length)
+        elif model_type in['hierarchical_attention', 'hierarchical_ctc']:
+            labels_pred, perm_indices = model.decode_sub(
+                inputs[0], inputs_seq_len[0],
+                beam_width=beam_width,
+                max_decode_length=max_decode_length)
 
         for i_batch in range(batch_size):
 
             ##############################
             # Reference
             ##############################
-            # Convert from list of index to string
             if dataset.is_test:
                 str_true = labels[0][i_batch][0]
                 # NOTE: transcript is seperated by space('_')
             else:
+                # Permutate indices
+                labels = var2np(labels[perm_indices])
+                labels_seq_len = var2np(labels_seq_len[perm_indices])
+
+                # Convert from list of index to string
                 if model_type in ['ctc', 'hierarchical_ctc']:
                     str_true = idx2char(
                         labels[0][i_batch][:labels_seq_len[0][i_batch]])

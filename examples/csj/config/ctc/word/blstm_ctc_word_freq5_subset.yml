@@ -41,4 +41,4 @@ param:
   sort_stop_epoch: 15
   not_improved_patient_epoch: 5
   eval_start_epoch: 10
-  print_step: 1000
+  print_step: 2000

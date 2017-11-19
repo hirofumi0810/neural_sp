@@ -31,13 +31,13 @@ param:
   clip_activation: 50
   dropout: 0.5
   weight_decay: 0
+  logits_temperature: 1
+
+  # annealing
   decay_start_epoch: 20
   decay_rate: 0.5
   decay_patient_epoch: 5
   sort_stop_epoch: 20
   not_improved_patient_epoch: 10
-
-  logits_temperature: 1
-
   eval_start_epoch: 20
   print_step: 10

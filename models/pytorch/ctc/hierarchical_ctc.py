@@ -13,9 +13,11 @@ except:
     raise ImportError('Install warpctc_pytorch.')
 
 import torch.nn as nn
+# import torch.nn.functional as F
 
 from models.pytorch.ctc.ctc import CTC
 from models.pytorch.encoders.load_encoder import load
+from utils.io.variable import var2np
 
 NEG_INF = -float("inf")
 LOG_0 = NEG_INF
@@ -109,6 +111,62 @@ class HierarchicalCTC(CTC):
         self.fc_sub = nn.Linear(
             num_units * self.num_directions, self.num_classes_sub)
 
+    def forward(self, inputs, labels, labels_sub, inputs_seq_len,
+                labels_seq_len, labels_seq_len_sub, volatile=False):
+        """Forward computation.
+        Args:
+            inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
+            labels (LongTensor): A tensor of size `[B, T_out]`
+            labels_sub (LongTensor): A tensor of size `[B, T_out_sub]`
+            inputs_seq_len (IntTensor): A tensor of size `[B]`
+            labels_seq_len (IntTensor): A tensor of size `[B]`
+            labels_seq_len_sub (IntTensor): A tensor of size `[B]`
+            volatile (bool, optional): if True, the history will not be saved.
+                This should be used in inference model for memory efficiency.
+        Returns:
+            loss (FloatTensor): A tensor of size `[1]`
+        """
+        labels_tmp = labels + 1
+        labels_sub_tmp = labels_sub + 1
+        # NOTE: index 0 is reserved for blank
+
+        # Encode acoustic features
+        logits, logits_sub, perm_indices = self._encode(
+            inputs, inputs_seq_len, volatile=volatile)
+
+        # Permutate indices
+        labels_tmp = labels_tmp[perm_indices]
+        labels_sub_tmp = labels_sub_tmp[perm_indices]
+        inputs_seq_len = inputs_seq_len[perm_indices]
+        labels_seq_len = labels_seq_len[perm_indices]
+        labels_seq_len_sub = labels_seq_len_sub[perm_indices]
+
+        max_time, batch_size = logits.size()[:2]
+
+        # Concatenate all labels for warpctc_pytorch
+        # `[B, T_out]` -> `[1,]`
+        concatenated_labels = self._concatenate_labels(
+            labels_tmp, labels_seq_len)
+        concatenated_labels_sub = self._concatenate_labels(
+            labels_sub_tmp, labels_seq_len_sub)
+
+        # Output smoothing
+        if self.logits_temperature != 1:
+            logits /= self.logits_temperature
+            logits_sub /= self.logits_temperature
+
+        # Compute CTC loss
+        ctc_loss_fn = CTCLoss()
+        ctc_loss = ctc_loss_fn(logits, concatenated_labels.cpu(),
+                               inputs_seq_len.cpu(), labels_seq_len.cpu()) * self.main_loss_weight
+        ctc_loss += ctc_loss_fn(logits_sub, concatenated_labels_sub.cpu(),
+                                inputs_seq_len.cpu(), labels_seq_len_sub.cpu()) * (1 - self.main_loss_weight)
+
+        # Average the loss by mini-batch
+        ctc_loss /= batch_size
+
+        return ctc_loss
+
     def _encode(self, inputs, inputs_seq_len, volatile):
         """Encode acoustic features.
         Args:
@@ -144,3 +202,43 @@ class HierarchicalCTC(CTC):
         logits_sub = logits_sub.view(max_time, batch_size, -1)
 
         return logits, logits_sub, perm_indices
+
+    def decode_sub(self, inputs, inputs_seq_len, beam_width=1,
+                   max_decode_length=None):
+        """
+        Args:
+            inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
+            inputs_seq_len (IntTensor): A tensor of size `[B]`
+            beam_width (int, optional): the size of beam
+            max_decode_length: not used
+        Returns:
+            best_hyp ():
+            perm_indices ():
+        """
+        # Encode acoustic features
+        _, logits_sub, perm_indices = self._encode(
+            inputs, inputs_seq_len, volatile=True)
+
+        # Convert to batch-major
+        logits_sub = logits_sub.transpose(0, 1)
+
+        # log_probs = F.log_softmax(logits_sub, dim=logits_sub.dim() - 1)
+        log_probs = self.log_softmax(logits_sub)
+        # TODO: update pytorch version
+
+        if beam_width == 1:
+            # torch-based decoder
+            best_hyp = self._decode_greedy(log_probs, inputs_seq_len)
+        else:
+            # torch-based decoder
+            # best_hyp = self._decode_beam(log_probs, inputs_seq_len, beam_width)
+
+            # numpy-based decoder
+            log_probs = var2np(log_probs)
+            inputs_seq_len = var2np(inputs_seq_len)
+            best_hyp = self.decode_beam(log_probs, inputs_seq_len, beam_width)
+
+        best_hyp -= 1
+        # NOTE: index 0 is reserved for blank
+
+        return best_hyp, perm_indices

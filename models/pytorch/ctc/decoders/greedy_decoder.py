@@ -22,10 +22,10 @@ class GreedyDecoder(object):
             log_probs (np.ndarray): A tensor of size `[B, T, num_classes]`
             inputs_seq_len (np.ndarray): A tensor of size `[B]`
         Returns:
-            results (np.ndarray): Best path hypothesis, A tensor of size `[B, max_len]`
+            best_hyps (np.ndarray): Best path hypothesis, A tensor of size `[B, max_len]`
         """
         batch_size = log_probs.shape[0]
-        results = [] * batch_size
+        best_hyps = [] * batch_size
 
         # Pickup argmax class
         for i_batch in range(batch_size):
@@ -41,6 +41,6 @@ class GreedyDecoder(object):
             # Step 2. Remove all blank labels
             best_hyp = [x for x in filter(
                 lambda x: x != self._blank, collapsed_indices)]
-            results.append(best_hyp)
+            best_hyps.append(best_hyp)
 
-        return np.array(results)
+        return np.array(best_hyps)

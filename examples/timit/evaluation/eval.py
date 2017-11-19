@@ -59,7 +59,8 @@ def main():
         num_classes=params['num_classes'],
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        soft_utt=False)
+        soft_utt=False,
+        use_cuda=model.use_cuda, volatile=True)
 
     # GPU setting
     model.set_cuda(deterministic=False)

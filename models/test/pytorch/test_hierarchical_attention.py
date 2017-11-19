@@ -76,10 +76,8 @@ class TestHierarchicalAttention(unittest.TestCase):
             attention_dim=128,
             decoder_type=decoder_type,
             decoder_num_units=256,
-            decoder_num_proj=128,
             decoder_num_layers=1,
             decoder_num_units_sub=256,
-            decoder_num_proj_sub=128,
             decoder_num_layers_sub=1,
             decoder_dropout=0.1,
             embedding_dim=64,
@@ -133,8 +131,7 @@ class TestHierarchicalAttention(unittest.TestCase):
         inputs = np2var(inputs, use_cuda=use_cuda)
         # labels must be long
         labels = np2var(labels, dtype='long', use_cuda=use_cuda)
-        labels_sub = np2var(labels_sub, dtype='long',
-                            use_cuda=use_cuda)   # labels must be long
+        labels_sub = np2var(labels_sub, dtype='long', use_cuda=use_cuda)
         inputs_seq_len = np2var(inputs_seq_len, dtype='int', use_cuda=use_cuda)
         labels_seq_len = np2var(labels_seq_len, dtype='int', use_cuda=use_cuda)
         labels_seq_len_sub = np2var(
@@ -171,9 +168,9 @@ class TestHierarchicalAttention(unittest.TestCase):
                 model.eval()
 
                 # Decode
-                labels_pred, _ = model.decode_infer(
+                labels_pred, _ = model.decode(
                     inputs, inputs_seq_len, beam_width=1, max_decode_length=30)
-                labels_pred_sub, _ = model.decode_infer_sub(
+                labels_pred_sub, _ = model.decode_sub(
                     inputs, inputs_seq_len, beam_width=1, max_decode_length=100)
 
                 # Compute accuracy

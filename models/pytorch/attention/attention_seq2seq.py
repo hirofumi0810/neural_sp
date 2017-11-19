@@ -23,6 +23,8 @@ from models.pytorch.base import ModelBase
 from models.pytorch.encoders.load_encoder import load
 from models.pytorch.attention.decoders.rnn_decoder import RNNDecoder
 from models.pytorch.attention.attention_layer import AttentionMechanism
+from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
+from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
 from utils.io.variable import var2np
 
 NEG_INF = -float("inf")
@@ -57,8 +59,6 @@ class AttentionSeq2seq(ModelBase):
         decoder_type (string): lstm or gru
         decoder_num_units (int): the number of units in each layer of the
             decoder
-        decoder_num_proj (int): the number of nodes in the projection layer of
-            the decoder.
         decoder_num_layers (int): the number of layers of the decoder
         decoder_dropout (float): the probability to drop nodes of the decoder
         embedding_dim (int): the dimension of the embedding in target spaces
@@ -103,7 +103,6 @@ class AttentionSeq2seq(ModelBase):
                  attention_dim,
                  decoder_type,
                  decoder_num_units,
-                 decoder_num_proj,
                  decoder_num_layers,
                  decoder_dropout,
                  embedding_dim,
@@ -150,7 +149,6 @@ class AttentionSeq2seq(ModelBase):
         self.attention_dim = attention_dim
         self.decoder_type = decoder_type
         self.decoder_num_units = decoder_num_units
-        self.decoder_num_proj = decoder_num_proj
         self.decoder_num_layers = decoder_num_layers
         self.decoder_dropout = decoder_dropout
         self.embedding_dim = embedding_dim
@@ -220,7 +218,6 @@ class AttentionSeq2seq(ModelBase):
             embedding_dim=embedding_dim,
             rnn_type=decoder_type,
             num_units=decoder_num_units,
-            num_proj=decoder_num_proj,
             num_layers=decoder_num_layers,
             dropout=decoder_dropout,
             parameter_init=parameter_init,
@@ -251,19 +248,24 @@ class AttentionSeq2seq(ModelBase):
         self.embedding_dropout = nn.Dropout(embedding_dropout)
 
         if input_feeding_approach:
-            self.decoder_proj_layer = nn.Linear(
-                decoder_num_units * 2, decoder_num_proj)
+            self.input_feeeding = nn.Linear(
+                decoder_num_units * 2, decoder_num_units)
             # NOTE: input-feeding approach
-            self.fc = nn.Linear(decoder_num_proj, self.num_classes)
+            self.fc = nn.Linear(decoder_num_units, self.num_classes)
         else:
             self.fc = nn.Linear(decoder_num_units, self.num_classes)
         # NOTE: <SOS> is removed because the decoder never predict <SOS> class
         # TODO: self.num_classes - 1
+        # TODO: consider projection
 
         if ctc_loss_weight > 0:
             # self.fc_ctc = nn.Linear(
             # encoder_num_units * self.encoder_num_directions, num_classes + 1)
             self.fc_ctc = nn.Linear(encoder_num_units, num_classes + 1)
+
+            # Set CTC decoders
+            self._decode_ctc_greedy_np = GreedyDecoder(blank_index=0)
+            self._decode_ctc_beam_np = BeamSearchDecoder(blank_index=0)
 
     def forward(self, inputs, labels, inputs_seq_len, labels_seq_len,
                 volatile=False):
@@ -343,6 +345,9 @@ class AttentionSeq2seq(ModelBase):
 
         ctc_loss_fn = CTCLoss()
 
+        labels_tmp = labels + 1
+        # NOTE: index 0 is reserved for blank
+
         # Ignore <SOS> and <EOS>
         labels_seq_len -= 2
 
@@ -354,7 +359,7 @@ class AttentionSeq2seq(ModelBase):
         label_counter = 0
         for i_batch in range(batch_size):
             concat_labels[label_counter:label_counter +
-                          labels_seq_len.data[i_batch]] = labels[i_batch][1:labels_seq_len.data[i_batch] + 1]
+                          labels_seq_len.data[i_batch]] = labels_tmp[i_batch][1:labels_seq_len.data[i_batch] + 1]
             label_counter += labels_seq_len.data[i_batch]
 
         # Subsampling
@@ -418,7 +423,7 @@ class AttentionSeq2seq(ModelBase):
         raise NotImplementedError
 
     def _decode_train(self, encoder_outputs, labels, encoder_final_state=None):
-        """Decoding when training.
+        """Decoding in the training stage.
         Args:
             encoder_outputs (FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
@@ -453,7 +458,7 @@ class AttentionSeq2seq(ModelBase):
 
             if self.input_feeding_approach:
                 # Input-feeding approach
-                output = self.decoder_proj_layer(
+                output = self.input_feeeding(
                     torch.cat([decoder_outputs, context_vector], dim=-1))
                 logits_step = self.fc(F.tanh(output))
             else:
@@ -518,7 +523,7 @@ class AttentionSeq2seq(ModelBase):
 
     def _decode_step(self, encoder_outputs, y, decoder_state,
                      attention_weights_step):
-        """
+        """Decoding step.
         Args:
             encoder_outputs (FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
@@ -564,9 +569,9 @@ class AttentionSeq2seq(ModelBase):
 
         return y
 
-    def decode_infer(self, inputs, inputs_seq_len, beam_width=1,
-                     max_decode_length=100):
-        """
+    def decode(self, inputs, inputs_seq_len, beam_width=1,
+               max_decode_length=100):
+        """Decoding in the inference stage.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
             inputs_seq_len (IntTensor): A tensor of size `[B]`
@@ -574,28 +579,72 @@ class AttentionSeq2seq(ModelBase):
             max_decode_length (int, optional): the length of output sequences
                 to stop prediction when EOS token have not been emitted
         Returns:
-
+            best_hyps ():
+            perm_indices ():
         """
-        if beam_width == 1:
-            return self._decode_infer_greedy(inputs, inputs_seq_len, max_decode_length)
+        # Encode acoustic features
+        if hasattr(self, 'main_loss_weight'):
+            encoder_outputs, encoder_final_state, _, _, perm_indices = self._encode(
+                inputs, inputs_seq_len, volatile=True)
         else:
-            return self._decode_infer_beam(inputs, inputs_seq_len, beam_width, max_decode_length)
+            encoder_outputs, encoder_final_state, perm_indices = self._encode(
+                inputs, inputs_seq_len, volatile=True)
 
-    def _decode_infer_greedy(self, inputs, inputs_seq_len, _max_decode_length):
-        """Greedy decoding when inference.
+        if beam_width == 1:
+            best_hyps, _ = self._decode_infer_greedy(
+                encoder_outputs, encoder_final_state, max_decode_length)
+        else:
+            best_hyps, _ = self._decode_infer_beam(
+                encoder_outputs, encoder_final_state, beam_width, max_decode_length)
+
+        return best_hyps, perm_indices
+
+    def attention_weights(self, inputs, inputs_seq_len, beam_width=1,
+                          max_decode_length=100):
+        """Get attention weights for visualization.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
             inputs_seq_len (IntTensor): A tensor of size `[B]`
-            _max_decode_length (int): the length of output sequences
+            beam_width (int, optional): the size of beam
+            max_decode_length (int, optional): the length of output sequences
                 to stop prediction when EOS token have not been emitted
         Returns:
-            argmaxs (np.ndarray): A tensor of size `[B, T_out]`
+            best_hyps ():
+            attention_weights ():
+            perm_indices ():
+        """
+        # Encode acoustic features
+        if hasattr(self, 'main_loss_weight'):
+            encoder_outputs, encoder_final_state, _, _, perm_indices = self._encode(
+                inputs, inputs_seq_len, volatile=True)
+        else:
+            encoder_outputs, encoder_final_state, perm_indices = self._encode(
+                inputs, inputs_seq_len, volatile=True)
+
+        if beam_width == 1:
+            best_hyps, attention_weights = self._decode_infer_greedy(
+                inputs, inputs_seq_len, max_decode_length)
+        else:
+            best_hyps, attention_weights = self._decode_infer_beam(
+                inputs, inputs_seq_len, beam_width, max_decode_length)
+
+        return best_hyps, attention_weights, perm_indices
+
+    def _decode_infer_greedy(self, encoder_outputs, encoder_final_state,
+                             max_decode_length):
+        """Greedy decoding in the inference stage.
+        Args:
+            encoder_outputs (FloatTensor): A tensor of size
+                `[B, T_in, encoder_num_units]`
+            encoder_final_state (FloatTensor): A tensor of size
+                `[1, B, decoder_num_units (may be equal to encoder_num_units)]`
+            max_decode_length (int): the length of output sequences
+                to stop prediction when EOS token have not been emitted
+        Returns:
+            best_hyps (np.ndarray): A tensor of size `[B, T_out]`
             attention_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
         """
-        encoder_outputs, encoder_final_state = self._encode(
-            inputs, inputs_seq_len, volatile=True)[:2]
-
-        batch_size = inputs.size(0)
+        batch_size = encoder_outputs.size(0)
 
         # Start from <SOS>
         y = self._create_token(value=self.sos_index, batch_size=batch_size)
@@ -604,11 +653,11 @@ class AttentionSeq2seq(ModelBase):
         decoder_state = self._init_decoder_state(
             encoder_final_state, volatile=True)
 
-        argmaxs = []
+        best_hyps = []
         attention_weights = []
         attention_weights_step = None
 
-        for _ in range(_max_decode_length):
+        for _ in range(max_decode_length):
             y = self.embedding(y)
             y = self.embedding_dropout(y)
             # TODO: remove dropout??
@@ -621,7 +670,7 @@ class AttentionSeq2seq(ModelBase):
 
             if self.input_feeding_approach:
                 # Input-feeding approach
-                output = self.decoder_proj_layer(
+                output = self.input_feeeding(
                     torch.cat([decoder_outputs, context_vector], dim=-1))
                 logits = self.fc(F.tanh(output))
             else:
@@ -636,7 +685,7 @@ class AttentionSeq2seq(ModelBase):
             # Pick up 1-best
             y = torch.max(log_probs, dim=1)[1]
             y = y.unsqueeze(dim=1)
-            argmaxs.append(y)
+            best_hyps.append(y)
             attention_weights.append(attention_weights_step)
 
             # Break if <EOS> is outputed in all mini-batch
@@ -644,31 +693,31 @@ class AttentionSeq2seq(ModelBase):
                 break
 
         # Concatenate in T_out dimension
-        argmaxs = torch.cat(argmaxs, dim=1)
+        best_hyps = torch.cat(best_hyps, dim=1)
         attention_weights = torch.stack(attention_weights, dim=1)
 
         # Convert to numpy
-        argmaxs = var2np(argmaxs)
+        best_hyps = var2np(best_hyps)
         attention_weights = var2np(attention_weights)
 
-        return argmaxs, attention_weights
+        return best_hyps, attention_weights
 
-    def _decode_infer_beam(self, inputs, inputs_seq_len, beam_width,
-                           _max_decode_length):
-        """Beam search decoding when inference.
+    def _decode_infer_beam(self, encoder_outputs, encoder_final_state,
+                           beam_width, max_decode_length):
+        """Beam search decoding in the inference stage.
         Args:
-            inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
-            inputs_seq_len (IntTensor): A tensor of size `[B]`
+            encoder_outputs (FloatTensor): A tensor of size
+                `[B, T_in, encoder_num_units]`
+            encoder_final_state (FloatTensor): A tensor of size
+                `[1, B, decoder_num_units (may be equal to encoder_num_units)]`
             beam_width (int): the size of beam
-            _max_decode_length (int, optional): the length of output sequences
+            max_decode_length (int, optional): the length of output sequences
                 to stop prediction when EOS token have not been emitted
         Returns:
-
+            best_hyps (np.ndarray): A tensor of size `[B, T_out]`
+            attention_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
         """
-        encoder_outputs, encoder_final_state = self._encode(
-            inputs, inputs_seq_len, volatile=True)[:2]
-
-        batch_size = inputs.size(0)
+        batch_size = encoder_outputs.size(0)
 
         # Start from <SOS>
         y = self._create_token(value=self.sos_index, batch_size=1)
@@ -692,7 +741,7 @@ class AttentionSeq2seq(ModelBase):
         attention_weights = [] * batch_size
         attention_weights_step_list = [None] * batch_size
 
-        for t in range(_max_decode_length):
+        for t in range(max_decode_length):
             new_beam = [[]] * batch_size
             for i_batch in range(batch_size):
                 for hyp, score, decoder_state in beam[i_batch]:
@@ -715,7 +764,7 @@ class AttentionSeq2seq(ModelBase):
 
                     if self.input_feeding_approach:
                         # Input-feeding approach
-                        output = self.decoder_proj_layer(
+                        output = self.input_feeeding(
                             torch.cat([decoder_outputs, context_vector], dim=-1))
                         logits = self.fc(F.tanh(output))
                     else:
@@ -748,14 +797,40 @@ class AttentionSeq2seq(ModelBase):
                                             self.eos_index, new_beam[i_batch]))
                 beam[i_batch] = beam[i_batch][:beam_width]
 
-        best = []
+        best_hyps = []
         for i_batch in range(batch_size):
             complete[i_batch] = sorted(
                 complete[i_batch], key=lambda x: x[1], reverse=True)
             if len(complete[i_batch]) == 0:
                 complete[i_batch] = beam[i_batch]
             hyp, score, _ = complete[i_batch][0]
-            best.append(hyp[1:])
+            best_hyps.append(hyp[1:])
             # NOTE: remove <SOS>
 
-        return np.array(best), attention_weights
+        return np.array(best_hyps), attention_weights
+
+    def decode_ctc(self, inputs, inputs_seq_len, beam_width):
+        assert self.ctc_loss_weight > 0
+
+        # Encode acoustic features
+        encoder_outputs, encoder_final_state, perm_indices = self._encode(
+            inputs, inputs_seq_len, volatile=True)
+
+        batch_size, max_time = encoder_outputs.size()[:2]
+
+        # Convert to 2D tensor
+        encoder_outputs = encoder_outputs.contiguous()
+        encoder_outputs = encoder_outputs.view(batch_size, max_time, -1)
+        logits_ctc = self.fc_ctc(encoder_outputs)
+
+        # Convert to batch-major
+        logits_ctc = logits_ctc.transpose(0, 1)
+
+        # log_probs = F.log_softmax(logits_ctc, dim=logits_ctc.dim() - 1)
+        log_probs = self.log_softmax(logits_ctc)
+        # TODO: update pytorch version
+
+        if beam_width == 1:
+            best_hyps, _ = self._decode_ctc_greedy_np(log_probs)
+        else:
+            best_hyps, _ = self._decode_ctc_beam_np(log_probs, beam_width)

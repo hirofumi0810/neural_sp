@@ -52,7 +52,8 @@ def do_train(model, params):
         batch_size=params['batch_size'], max_epoch=params['num_epoch'],
         splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'])
+        sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
+        use_cuda=model.use_cuda)
     dev_data = Dataset(
         data_type='dev', data_size=params['data_size'],
         label_type=params['label_type'],
@@ -61,7 +62,8 @@ def do_train(model, params):
         num_classes_sub=params['num_classes_sub'],
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=True)
+        shuffle=True,
+        use_cuda=model.use_cuda, volatile=True)
     eval1_data = Dataset(
         data_type='eval1', data_size=params['data_size'],
         label_type=params['label_type'],
@@ -70,7 +72,8 @@ def do_train(model, params):
         num_classes_sub=params['num_classes_sub'],
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=False)
+        shuffle=False,
+        use_cuda=model.use_cuda, volatile=True)
     eval2_data = Dataset(
         data_type='eval2', data_size=params['data_size'],
         label_type=params['label_type'],
@@ -79,7 +82,8 @@ def do_train(model, params):
         num_classes_sub=params['num_classes_sub'],
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=False)
+        shuffle=False,
+        use_cuda=model.use_cuda, volatile=True)
     eval3_data = Dataset(
         data_type='eval3', data_size=params['data_size'],
         label_type=params['label_type'],
@@ -88,7 +92,8 @@ def do_train(model, params):
         num_classes_sub=params['num_classes_sub'],
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=False)
+        shuffle=False,
+        use_cuda=model.use_cuda, volatile=True)
 
     # Count total parameters
     for name, num_params in model.num_params_dict.items():
@@ -116,7 +121,6 @@ def do_train(model, params):
     model.init_weights()
 
     # GPU setting
-    use_cuda = model.use_cuda
     model.set_cuda(deterministic=False)
 
     # Train model
@@ -132,22 +136,7 @@ def do_train(model, params):
     for step, (data, is_new_epoch) in enumerate(train_data):
 
         # Create feed dictionary for next mini batch (train)
-        if params['model_type'] in ['hierarchical_ctc', 'hierarchical_attention']:
-            inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub, _ = data
-
-        # Wrap by variable
-        inputs = np2var(inputs, use_cuda=use_cuda)
-        if params['model_type'] == 'hierarchical_ctc':
-            labels = np2var(labels, use_cuda=use_cuda, dtype='int') + 1
-            labels_sub = np2var(labels_sub, use_cuda=use_cuda, dtype='int') + 1
-            # NOTE: index 0 is reserved for blank
-        elif params['model_type'] == 'hierarchical_attention':
-            labels = np2var(labels, use_cuda=use_cuda, dtype='long')
-            labels_sub = np2var(labels_sub, use_cuda=use_cuda, dtype='long')
-        inputs_seq_len = np2var(inputs_seq_len, use_cuda=use_cuda, dtype='int')
-        labels_seq_len = np2var(labels_seq_len, use_cuda=use_cuda, dtype='int')
-        labels_seq_len_sub = np2var(
-            labels_seq_len_sub, use_cuda=use_cuda, dtype='int')
+        inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub, _ = data
 
         # Clear gradients before
         optimizer.zero_grad()
@@ -186,51 +175,16 @@ def do_train(model, params):
         if (step + 1) % params['print_step'] == 0:
 
             # Create feed dictionary for next mini batch (dev)
-            if params['model_type'] in ['hierarchical_ctc', 'hierarchical_attention']:
-                inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub, _ = dev_data.next()[
-                    0]
-
-            # Wrap by variable
-            inputs = np2var(inputs, use_cuda=use_cuda, volatile=True)
-            if params['model_type'] == 'hierarchical_ctc':
-                labels = np2var(
-                    labels, use_cuda=use_cuda, volatile=True, dtype='int') + 1
-                labels_sub = np2var(
-                    labels_sub, use_cuda=use_cuda, volatile=True, dtype='int') + 1
-                # NOTE: index 0 is reserved for blank
-            elif params['model_type'] == 'hierarchical_attention':
-                labels = np2var(labels, use_cuda=use_cuda,
-                                volatile=True, dtype='long')
-                labels_sub = np2var(labels_sub, use_cuda=use_cuda,
-                                    volatile=True, dtype='long')
-            inputs_seq_len = np2var(
-                inputs_seq_len, use_cuda=use_cuda, volatile=True, dtype='int')
-            labels_seq_len = np2var(
-                labels_seq_len, use_cuda=use_cuda, volatile=True, dtype='int')
-            labels_seq_len_sub = np2var(
-                labels_seq_len_sub, use_cuda=use_cuda, volatile=True, dtype='int')
+            inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub, _ = dev_data.next()[
+                0]
 
             # ***Change to evaluation mode***
             model.eval()
 
             # Compute loss in the dev set
-            if params['model_type'] == 'hierarchical_ctc':
-                logits, logits_sub, perm_indices = model(
-                    inputs[0], inputs_seq_len[0], volatile=True)
-                loss_dev = model.compute_loss(
-                    logits,
-                    labels[0][perm_indices],
-                    inputs_seq_len[0][perm_indices],
-                    labels_seq_len[0][perm_indices])
-                loss_dev += model.compute_loss(
-                    logits_sub,
-                    labels_sub[0][perm_indices],
-                    inputs_seq_len[0][perm_indices],
-                    labels_seq_len_sub[0][perm_indices])
-            elif params['model_type'] == 'hierarchical_attention':
-                loss_train = model(
-                    inputs[0], labels[0], labels_sub[0], inputs_seq_len[0],
-                    labels_seq_len[0], labels_seq_len_sub[0], volatile=False)
+            loss_dev = model(
+                inputs[0], labels[0], labels_sub[0], inputs_seq_len[0],
+                labels_seq_len[0], labels_seq_len_sub[0], volatile=True)
 
             loss_val_train /= params['print_step']
             loss_val_dev = loss_dev.data[0]

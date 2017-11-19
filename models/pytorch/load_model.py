@@ -72,7 +72,6 @@ def load(model_type, params):
             attention_dim=params['attention_dim'],
             decoder_type=params['decoder_type'],
             decoder_num_units=params['decoder_num_units'],
-            decoder_num_proj=params['decoder_num_proj'],
             decoder_num_layers=params['decoder_num_layers'],
             decoder_dropout=params['dropout_decoder'],
             embedding_dim=params['embedding_dim'],
@@ -178,10 +177,8 @@ def load(model_type, params):
             attention_dim=params['attention_dim'],
             decoder_type=params['decoder_type'],
             decoder_num_units=params['decoder_num_units'],
-            decoder_num_proj=params['decoder_num_proj'],
             decoder_num_layers=params['decoder_num_layers'],
             decoder_num_units_sub=params['decoder_num_units_sub'],
-            decoder_num_proj_sub=params['decoder_num_proj_sub'],
             decoder_num_layers_sub=params['decoder_num_layers_sub'],
             decoder_dropout=params['dropout_decoder'],
             embedding_dim=params['embedding_dim'],
@@ -197,7 +194,9 @@ def load(model_type, params):
             logits_temperature=params['logits_temperature'],
             sigmoid_smoothing=params['sigmoid_smoothing'],
             input_feeding_approach=params['input_feeding_approach'],
-            coverage_weight=params['coverage_weight'])
+            coverage_weight=params['coverage_weight'],
+            ctc_loss_weight=params['ctc_loss_weight'],
+            ctc_loss_weight_sub=params['ctc_loss_weight_sub'])
 
         model.name = params['encoder_type']
         if params['encoder_bidirectional']:
@@ -232,7 +231,9 @@ def load(model_type, params):
         model.name += '_main' + str(params['main_loss_weight'])
         if params['coverage_weight'] > 0:
             model.name += '_coverage' + str(params['coverage_weight'])
-        # if params['ctc_loss_weight'] > 0:
-        #     model.name += '_ctc' + str(params['ctc_loss_weight'])
+        if params['ctc_loss_weight'] > 0:
+            model.name += '_ctc' + str(params['ctc_loss_weight'])
+        if params['ctc_loss_weight_sub'] > 0:
+            model.name += '_ctcsub' + str(params['ctc_loss_weight_sub'])
 
     return model
