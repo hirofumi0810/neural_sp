@@ -128,6 +128,7 @@ def do_train(model, params):
     not_improved_epoch = 0
     learning_rate = float(params['learning_rate'])
     best_model = model
+    loss_val_train = 0.
     for step, (data, is_new_epoch) in enumerate(train_data):
 
         # Create feed dictionary for next mini batch (train)
@@ -169,6 +170,7 @@ def do_train(model, params):
             loss_train = model(
                 inputs[0], labels[0], labels_sub[0], inputs_seq_len[0],
                 labels_seq_len[0], labels_seq_len_sub[0])
+        loss_val_train += loss_train.data[0]
 
         # Compute gradient
         optimizer.zero_grad()
@@ -230,9 +232,11 @@ def do_train(model, params):
                     inputs[0], labels[0], labels_sub[0], inputs_seq_len[0],
                     labels_seq_len[0], labels_seq_len_sub[0], volatile=False)
 
+            loss_val_train /= params['print_step']
+            loss_val_dev = loss_dev.data[0]
             csv_steps.append(step)
-            csv_loss_train.append(var2np(loss_train))
-            csv_loss_dev.append(var2np(loss_dev))
+            csv_loss_train.append(loss_val_train)
+            csv_loss_dev.append(loss_val_dev)
 
             # ***Change to training mode***
             model.train()
@@ -240,10 +244,11 @@ def do_train(model, params):
             duration_step = time.time() - start_time_step
             print("Step %d (epoch: %.3f): loss = %.3f (%.3f) / lr = %.5f (%.3f min)" %
                   (step + 1, train_data.epoch_detail,
-                   var2np(loss_train), var2np(loss_dev),
+                   loss_val_train, loss_val_dev,
                    learning_rate, duration_step / 60))
             sys.stdout.flush()
             start_time_step = time.time()
+            loss_val_train = 0.
 
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:
