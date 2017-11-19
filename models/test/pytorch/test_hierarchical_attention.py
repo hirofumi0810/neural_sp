@@ -31,19 +31,23 @@ class TestHierarchicalAttention(unittest.TestCase):
         print("Hierarchical Attention Working check.")
 
         self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', subsample=True)
+
+        self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm')
 
     @measure_time
     def check(self, encoder_type, bidirectional, decoder_type,
               attention_type='dot_product',
-              downsample=False, input_feeding_approach=False):
+              subsample=False, input_feeding_approach=False,
+              ctc_loss_weight=0):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
         print('  decoder_type: %s' % decoder_type)
         print('  attention_type: %s' % attention_type)
-        print('  downsample: %s' % str(downsample))
+        print('  subsample: %s' % str(subsample))
         print('  input_feeding_approach: %s' % str(input_feeding_approach))
         print('==================================================')
 
@@ -86,11 +90,14 @@ class TestHierarchicalAttention(unittest.TestCase):
             num_classes_sub=num_classes_sub,
             splice=1,
             parameter_init=0.1,
+            subsample_list=[] if not subsample else [True, True, False],
             init_dec_state_with_enc_state=True,
             sharpening_factor=1,
             logits_temperature=1,
             sigmoid_smoothing=False,
-            input_feeding_approach=input_feeding_approach)
+            input_feeding_approach=input_feeding_approach,
+            ctc_loss_weight=0,
+            ctc_loss_weight_sub=0.1)
 
         # Count total parameters
         for name, num_params in model.num_params_dict.items():
@@ -178,9 +185,8 @@ class TestHierarchicalAttention(unittest.TestCase):
                 str_pred_sub = idx2char(labels_pred_sub[0][0:-1]).split('>')[0]
                 str_true_sub = idx2char(var2np(labels_sub)[0][1:-1])
                 ler_sub = compute_cer(ref=str_true_sub.replace('_', ''),
-                                      hyp=str_pred_sub.replace(
-                    '_', ''),
-                    normalize=True)
+                                      hyp=str_pred_sub.replace('_', ''),
+                                      normalize=True)
 
                 # ***Change to training mode***
                 model.train()

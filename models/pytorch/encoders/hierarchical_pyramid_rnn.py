@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Hierarchical RNN encoders."""
+"""Hierarchical Pyramid RNN encoders."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -15,8 +15,8 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from utils.io.variable import var2np
 
 
-class HierarchicalRNNEncoder(nn.Module):
-    """Hierarchical RNN encoder.
+class HierarchicalPyramidRNNEncoder(nn.Module):
+    """Hierarchical Pyramid RNN encoder.
     Args:
         input_size (int): the dimension of input features
         rnn_type (string): lstm or gru or rnn
@@ -28,6 +28,10 @@ class HierarchicalRNNEncoder(nn.Module):
         dropout (float): the probability to drop nodes
         parameter_init (float): the range of uniform distribution to
             initialize weight parameters (>= 0)
+        subsample_list (list): subsample in the corresponding layers (True)
+            ex.) [False, True, True, False] means that downsample is conducted
+                in the 2nd and 3rd layers.
+        subsample_type (string, optional): drop or concat
         use_cuda (bool, optional): if True, use GPUs
         batch_first (bool, optional): if True, batch-major computation will be
             performed
@@ -43,14 +47,21 @@ class HierarchicalRNNEncoder(nn.Module):
                  num_layers_sub,
                  dropout,
                  parameter_init,
+                 subsample_list,
+                 subsample_type='drop',
                  use_cuda=False,
                  batch_first=False):
 
-        super(HierarchicalRNNEncoder, self).__init__()
+        super(HierarchicalPyramidRNNEncoder, self).__init__()
 
         if num_layers_sub < 1 or num_layers < num_layers_sub:
             raise ValueError(
                 'Set num_layers_sub between 1 to num_layers.')
+        if len(subsample_list) != num_layers:
+            raise ValueError(
+                'subsample_list must be the same size as num_layers.')
+        if subsample_type not in ['drop', 'concat']:
+            raise TypeError('subsample_type must be "drop" or "concat".')
 
         self.input_size = input_size
         self.rnn_type = rnn_type
@@ -66,11 +77,21 @@ class HierarchicalRNNEncoder(nn.Module):
         self.use_cuda = use_cuda
         self.batch_first = batch_first
 
+        self.subsample_list = subsample_list
+        self.subsample_type = subsample_type
+
         self.rnns = []
         for i_layer in range(num_layers):
+            if i_layer == 0:
+                next_input_size = input_size
+            else:
+                next_input_size = num_units * self.num_directions
+                if subsample_type == 'concat' and i_layer > 0 and subsample_list[i_layer - 1] and i_layer != num_layers_sub:
+                    next_input_size *= 2
+
             if rnn_type == 'lstm':
                 rnn = nn.LSTM(
-                    input_size if i_layer == 0 else num_units * self.num_directions,
+                    next_input_size,
                     hidden_size=num_units,
                     num_layers=1,
                     bias=True,
@@ -79,7 +100,7 @@ class HierarchicalRNNEncoder(nn.Module):
                     bidirectional=bidirectional)
             elif rnn_type == 'gru':
                 rnn = nn.GRU(
-                    input_size if i_layer == 0 else num_units * self.num_directions,
+                    next_input_size,
                     hidden_size=num_units,
                     num_layers=1,
                     bias=True,
@@ -88,7 +109,7 @@ class HierarchicalRNNEncoder(nn.Module):
                     bidirectional=bidirectional)
             elif rnn_type == 'rnn':
                 rnn = nn.RNN(
-                    input_size if i_layer == 0 else num_units * self.num_directions,
+                    next_input_size,
                     hidden_size=num_units,
                     num_layers=1,
                     bias=True,
@@ -98,7 +119,7 @@ class HierarchicalRNNEncoder(nn.Module):
             else:
                 raise ValueError('rnn_type must be "lstm" or "gru" or "rnn".')
 
-            setattr(self, rnn_type + '_l' + str(i_layer), rnn)
+            setattr(self, 'p' + rnn_type + '_l' + str(i_layer), rnn)
 
             if use_cuda:
                 rnn = rnn.cuda()
@@ -156,15 +177,15 @@ class HierarchicalRNNEncoder(nn.Module):
         Returns:
             outputs:
                 if batch_first is True, a tensor of size
-                    `[B, T, num_units * num_directions]`
+                    `[B, T // sum(subsample_list), num_units * num_directions]`
                 else
-                    `[T, B, num_units * num_directions]`
+                    `[T // sum(subsample_list), B, num_units * num_directions]`
             final_state_fw: A tensor of size `[1, B, num_units]`
             outputs_sub:
                 if batch_first is True, a tensor of size
-                    `[B, T, num_units * num_directions]`
+                    `[B, T // sum(subsample_list), num_units * num_directions]`
                 else
-                    `[T, B, num_units * num_directions]`
+                    `[T // sum(subsample_list), B, num_units * num_directions]`
             final_state_fw_sub: A tensor of size `[1, B, num_units]`
             perm_indices ():
         """
@@ -186,34 +207,69 @@ class HierarchicalRNNEncoder(nn.Module):
             inputs = inputs.transpose(0, 1)
 
         if not isinstance(inputs_seq_len, list):
-            inputs_seq_len = var2np(inputs_seq_len).tolist()
-
-        if mask_sequence:
-            # Pack encoder inputs
-            inputs = pack_padded_sequence(
-                inputs, inputs_seq_len, batch_first=self.batch_first)
+            pack_seq_len = var2np(inputs_seq_len).tolist()
+        else:
+            pack_seq_len = inputs_seq_len
 
         outputs = inputs
         for i_layer in range(self.num_layers):
+            if mask_sequence:
+                # Pack encoder inputs in each layer
+                outputs = pack_padded_sequence(
+                    outputs, pack_seq_len, batch_first=self.batch_first)
+
             if self.rnn_type == 'lstm':
                 outputs, (h_n, c_n) = self.rnns[i_layer](outputs, hx=h_0)
             else:
                 outputs, h_n = self.rnns[i_layer](outputs, hx=h_0)
 
+            if mask_sequence:
+                # Unpack encoder outputs in each layer
+                outputs, unpacked_seq_len = pad_packed_sequence(
+                    outputs, batch_first=self.batch_first)
+                # TODO: update version for padding_value=0.0
+
+                assert pack_seq_len == unpacked_seq_len
+
+            outputs_list = []
+            if self.subsample_list[i_layer]:
+                for t in range(max_time):
+                    # Pick up features at even time step
+                    if (t + 1) % 2 == 0:
+                        if self.batch_first:
+                            outputs_t = outputs[:, t:t + 1, :]
+                            # NOTE: `[B, 1, num_units * num_directions]`
+                        else:
+                            outputs_t = outputs[t:t + 1, :, :]
+                            # NOTE: `[1, B, num_units * num_directions]`
+
+                        # Concatenate the successive frames
+                        if self.subsample_type == 'concat' and i_layer not in [self.num_layers - 1, self.num_layers_sub - 1]:
+                            if self.batch_first:
+                                outputs_t_prev = outputs[:, t - 1:t, :]
+                            else:
+                                outputs_t_prev = outputs[t - 1:t, :, :]
+                            outputs_t = torch.cat(
+                                [outputs_t_prev, outputs_t], dim=2)
+
+                        outputs_list.append(outputs_t)
+
+                if self.batch_first:
+                    outputs = torch.cat(outputs_list, dim=1)
+                    # `[B, T_prev // 2, num_units (* 2) * num_directions]`
+                    max_time = outputs.size(1)
+                else:
+                    outputs = torch.cat(outputs_list, dim=0)
+                    # `[T_prev // 2, B, num_units (* 2) * num_directions]`
+                    max_time = outputs.size(0)
+
+                # Update inputs_seq_len
+                for i in range(len(pack_seq_len)):
+                    pack_seq_len[i] = pack_seq_len[i] // 2
+
             if i_layer == self.num_layers_sub - 1:
                 outputs_sub = outputs
                 h_n_sub = h_n
-
-        if mask_sequence:
-            # Unpack encoder outputs
-            outputs, unpacked_seq_len = pad_packed_sequence(
-                outputs, batch_first=self.batch_first)
-            outputs_sub, unpacked_seq_len_sub = pad_packed_sequence(
-                outputs_sub, batch_first=self.batch_first)
-            # TODO: update version for padding_value=0.0
-
-            assert inputs_seq_len == unpacked_seq_len
-            assert inputs_seq_len == unpacked_seq_len_sub
 
         # Pick up the final state of the top layer (forward)
         if self.num_directions == 2:

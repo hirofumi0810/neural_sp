@@ -78,32 +78,31 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
         else:
             raise NotImplementedError
 
-        outputs_main, final_state_main, outputs_sub, final_state_sub, perm_indices = encoder(
+        outputs, final_state, outputs_sub, final_state_sub, perm_indices = encoder(
             inputs, inputs_seq_len, mask_sequence=mask_sequence)
 
         print('----- final state -----')
-        print(final_state_main.size())
         print(final_state_sub.size())
-        self.assertEqual((1, batch_size, encoder.num_units),
-                         final_state_main.size())
+        print(final_state.size())
         self.assertEqual((1, batch_size, encoder.num_units),
                          final_state_sub.size())
+        self.assertEqual((1, batch_size, encoder.num_units),
+                         final_state.size())
 
         print('----- outputs -----')
-        print(outputs_main.size())
         print(outputs_sub.size())
+        print(outputs.size())
         num_directions = 2 if bidirectional else 1
         if batch_first:
             self.assertEqual((batch_size, max_time, encoder.num_units * num_directions),
-                             outputs_main.size())
-            self.assertEqual((batch_size, max_time, encoder.num_units * num_directions),
                              outputs_sub.size())
-
+            self.assertEqual((batch_size, max_time, encoder.num_units * num_directions),
+                             outputs.size())
         else:
             self.assertEqual((max_time, batch_size, encoder.num_units * num_directions),
-                             outputs_main.size())
-            self.assertEqual((max_time, batch_size, encoder.num_units * num_directions),
                              outputs_sub.size())
+            self.assertEqual((max_time, batch_size, encoder.num_units * num_directions),
+                             outputs.size())
 
 
 if __name__ == '__main__':

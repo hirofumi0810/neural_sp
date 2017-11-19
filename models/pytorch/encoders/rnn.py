@@ -168,8 +168,7 @@ class RNNEncoder(nn.Module):
         if mask_sequence:
             # Pack encoder inputs
             inputs = pack_padded_sequence(
-                inputs, inputs_seq_len,
-                batch_first=self.batch_first)
+                inputs, inputs_seq_len, batch_first=self.batch_first)
 
         if self.rnn_type == 'lstm':
             outputs, (h_n, c_n) = self.rnn(inputs, hx=h_0)
@@ -179,8 +178,7 @@ class RNNEncoder(nn.Module):
         if mask_sequence:
             # Unpack encoder outputs
             outputs, unpacked_seq_len = pad_packed_sequence(
-                outputs,
-                batch_first=self.batch_first)
+                outputs, batch_first=self.batch_first)
             # TODO: update version for padding_value=0.0
 
             assert inputs_seq_len == unpacked_seq_len

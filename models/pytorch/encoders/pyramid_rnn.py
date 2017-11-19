@@ -12,9 +12,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import math
-import numpy as np
-
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -84,13 +81,16 @@ class PyramidRNNEncoder(nn.Module):
 
         self.rnns = []
         for i_layer in range(num_layers):
-            next_input_size = num_units * self.num_directions
-            if subsample_type == 'concat' and i_layer > 0 and subsample_list[i_layer - 1]:
-                next_input_size *= 2
+            if i_layer == 0:
+                next_input_size = input_size
+            else:
+                next_input_size = num_units * self.num_directions
+                if subsample_type == 'concat' and i_layer > 0 and subsample_list[i_layer - 1]:
+                    next_input_size *= 2
 
             if rnn_type == 'lstm':
                 rnn = nn.LSTM(
-                    input_size if i_layer == 0 else next_input_size,
+                    next_input_size,
                     hidden_size=num_units,
                     num_layers=1,
                     bias=True,
@@ -99,7 +99,7 @@ class PyramidRNNEncoder(nn.Module):
                     bidirectional=bidirectional)
             elif rnn_type == 'gru':
                 rnn = nn.GRU(
-                    input_size if i_layer == 0 else next_input_size,
+                    next_input_size,
                     hidden_size=num_units,
                     num_layers=1,
                     bias=True,
@@ -108,7 +108,7 @@ class PyramidRNNEncoder(nn.Module):
                     bidirectional=bidirectional)
             elif rnn_type == 'rnn':
                 rnn = nn.RNN(
-                    input_size if i_layer == 0 else next_input_size,
+                    next_input_size,
                     hidden_size=num_units,
                     num_layers=1,
                     bias=True,
@@ -175,9 +175,9 @@ class PyramidRNNEncoder(nn.Module):
         Returns:
             outputs:
                 if batch_first is True, a tensor of size
-                    `[B, T // len(subsample_list), num_units * num_directions]`
+                    `[B, T // sum(subsample_list), num_units * num_directions]`
                 else
-                    `[T // len(subsample_list), B, num_units * num_directions]`
+                    `[T // sum(subsample_list), B, num_units * num_directions]`
             final_state_fw: A tensor of size `[1, B, num_units]`
             perm_indices ():
         """
@@ -206,10 +206,9 @@ class PyramidRNNEncoder(nn.Module):
         outputs = inputs
         for i_layer in range(self.num_layers):
             if mask_sequence:
-                # Pack encoder inputs
+                # Pack encoder outputs in each layer
                 outputs = pack_padded_sequence(
-                    outputs, pack_seq_len,
-                    batch_first=self.batch_first)
+                    outputs, pack_seq_len, batch_first=self.batch_first)
 
             if self.rnn_type == 'lstm':
                 outputs, (h_n, c_n) = self.rnns[i_layer](outputs, hx=h_0)
@@ -217,10 +216,9 @@ class PyramidRNNEncoder(nn.Module):
                 outputs, h_n = self.rnns[i_layer](outputs, hx=h_0)
 
             if mask_sequence:
-                # Unpack encoder outputs
+                # Unpack encoder outputs in each layer
                 outputs, unpacked_seq_len = pad_packed_sequence(
-                    outputs,
-                    batch_first=self.batch_first)
+                    outputs, batch_first=self.batch_first)
                 # TODO: update version for padding_value=0.0
 
                 assert pack_seq_len == unpacked_seq_len
@@ -250,11 +248,11 @@ class PyramidRNNEncoder(nn.Module):
 
                 if self.batch_first:
                     outputs = torch.cat(outputs_list, dim=1)
-                    # `[B, T_prev // 2, num_units * num_directions (* 2)]`
+                    # `[B, T_prev // 2, num_units (* 2) * num_directions]`
                     max_time = outputs.size(1)
                 else:
                     outputs = torch.cat(outputs_list, dim=0)
-                    # `[T_prev // 2, B, num_units * num_directions (* 2)]`
+                    # `[T_prev // 2, B, num_units (* 2) * num_directions]`
                     max_time = outputs.size(0)
 
                 # Update inputs_seq_len

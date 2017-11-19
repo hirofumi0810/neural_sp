@@ -295,7 +295,7 @@ class AttentionSeq2seq(ModelBase):
         if self.logits_temperature != 1:
             logits /= self.logits_temperature
 
-        batch_size, max_time = encoder_outputs.size()[:2]
+        batch_size = encoder_outputs.size(0)
 
         # Compute XE sequence loss
         num_classes = logits.size(2)
@@ -303,7 +303,7 @@ class AttentionSeq2seq(ModelBase):
         labels_1d = labels[:, 1:].contiguous().view(-1)
         loss = F.cross_entropy(logits, labels_1d,
                                ignore_index=self.sos_index,
-                               size_average=False)
+                               size_average=False) * (1 - self.ctc_loss_weight)
         # NOTE: labels are padded by sos_index
 
         # Add coverage term
@@ -314,51 +314,66 @@ class AttentionSeq2seq(ModelBase):
 
         # Auxiliary CTC loss (optional)
         if self.ctc_loss_weight > 0:
-            # Convert to 2D tensor
-            encoder_outputs = encoder_outputs.contiguous()
-            encoder_outputs = encoder_outputs.view(batch_size, max_time, -1)
-            logits_ctc = self.fc_ctc(encoder_outputs)
-
-            # Reshape back to 3D tensor
-            logits_ctc = logits_ctc.view(batch_size, max_time, -1)
-
-            # Convert to batch-major
-            logits_ctc = logits_ctc.transpose(0, 1)
-
-            ctc_loss_fn = CTCLoss()
-
-            # Ignore <SOS> and <EOS>
-            labels_seq_len -= 2
-
-            # Concatenate all labels for warpctc_pytorch
-            # `[B, T_out]` -> `[1,]`
-            total_lables_seq_len = labels_seq_len.data.sum()
-            concat_labels = Variable(
-                torch.zeros(total_lables_seq_len)).int()
-            label_counter = 0
-            for i_batch in range(batch_size):
-                concat_labels[label_counter:label_counter +
-                              labels_seq_len.data[i_batch]] = labels[i_batch][1:labels_seq_len.data[i_batch] + 1]
-                label_counter += labels_seq_len.data[i_batch]
-
-            # Subsampling
-            inputs_seq_len /= sum(self.subsample_list) * 2
-            # NOTE: floor is not needed because inputs_seq_len is IntTensor
-
-            ctc_loss = ctc_loss_fn(logits_ctc, concat_labels.cpu(),
-                                   inputs_seq_len.cpu(), labels_seq_len.cpu())
-
-            if self.use_cuda:
-                ctc_loss = ctc_loss.cuda()
-
-            # Linearly interpolate XE sequence loss and CTC loss
-            loss = self.ctc_loss_weight * ctc_loss + \
-                (1 - self.ctc_loss_weight) * loss
+            ctc_loss = self._compute_ctc_loss(
+                encoder_outputs, labels, inputs_seq_len, labels_seq_len)
+            loss += ctc_loss * self.ctc_loss_weight
 
         # Average the loss by mini-batch
         loss /= batch_size
 
         return loss
+
+    def _compute_ctc_loss(self, encoder_outputs, labels,
+                          inputs_seq_len, labels_seq_len, is_sub_task=False):
+        batch_size, max_time = encoder_outputs.size()[:2]
+
+        # Convert to 2D tensor
+        encoder_outputs = encoder_outputs.contiguous()
+        encoder_outputs = encoder_outputs.view(batch_size, max_time, -1)
+        if is_sub_task:
+            logits_ctc = self.fc_ctc_sub(encoder_outputs)
+        else:
+            logits_ctc = self.fc_ctc(encoder_outputs)
+
+        # Reshape back to 3D tensor
+        logits_ctc = logits_ctc.view(batch_size, max_time, -1)
+
+        # Convert to batch-major
+        logits_ctc = logits_ctc.transpose(0, 1)
+
+        ctc_loss_fn = CTCLoss()
+
+        # Ignore <SOS> and <EOS>
+        labels_seq_len -= 2
+
+        # Concatenate all labels for warpctc_pytorch
+        # `[B, T_out]` -> `[1,]`
+        total_lables_seq_len = labels_seq_len.data.sum()
+        concat_labels = Variable(
+            torch.zeros(total_lables_seq_len)).int()
+        label_counter = 0
+        for i_batch in range(batch_size):
+            concat_labels[label_counter:label_counter +
+                          labels_seq_len.data[i_batch]] = labels[i_batch][1:labels_seq_len.data[i_batch] + 1]
+            label_counter += labels_seq_len.data[i_batch]
+
+        # Subsampling
+        if is_sub_task:
+            if sum(self.subsample_list[:self.encoder_num_layers_sub]) != 0:
+                inputs_seq_len /= sum(
+                    self.subsample_list[:self.encoder_num_layers_sub]) * 2
+        else:
+            if sum(self.subsample_list) != 0:
+                inputs_seq_len /= sum(self.subsample_list) * 2
+        # NOTE: floor is not needed because inputs_seq_len is IntTensor
+
+        ctc_loss = ctc_loss_fn(logits_ctc, concat_labels.cpu(),
+                               inputs_seq_len.cpu(), labels_seq_len.cpu())
+
+        if self.use_cuda:
+            ctc_loss = ctc_loss.cuda()
+
+        return ctc_loss
 
     def _encode(self, inputs, inputs_seq_len, volatile):
         """Encode acoustic features.

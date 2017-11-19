@@ -55,7 +55,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  sigmoid_smoothing=False,
                  input_feeding_approach=False,
                  coverage_weight=0,
-                 ctc_loss_weight=0):
+                 ctc_loss_weight=0,
+                 ctc_loss_weight_sub=0):
 
         super(HierarchicalAttentionSeq2seq, self).__init__(
             input_size=input_size,
@@ -84,7 +85,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             logits_temperature=logits_temperature,
             sigmoid_smoothing=sigmoid_smoothing,
             input_feeding_approach=input_feeding_approach,
-            coverage_weight=coverage_weight)
+            coverage_weight=coverage_weight,
+            ctc_loss_weight=ctc_loss_weight)
 
         # Setting for the encoder
         self.encoder_num_layers_sub = encoder_num_layers_sub
@@ -101,6 +103,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         # Setting for MTL
         self.main_loss_weight = main_loss_weight
+        self.sub_loss_weight = 1 - main_loss_weight - \
+            ctc_loss_weight - ctc_loss_weight_sub
+        self.ctc_loss_weight_sub = ctc_loss_weight_sub
+        assert self.ctc_loss_weight * self.ctc_loss_weight_sub == 0
 
         #########################
         # Encoder
@@ -110,7 +116,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         if sum(subsample_list) == 0:
             encoder = load(encoder_type=encoder_type + '_hierarchical')
         else:
-            raise NotImplementedError
+            encoder = load(encoder_type='p' + encoder_type + '_hierarchical')
 
         # Call the encoder function
         if encoder_type in ['lstm', 'gru', 'rnn']:
@@ -128,7 +134,20 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     use_cuda=self.use_cuda,
                     batch_first=True)
             else:
-                raise NotImplementedError
+                self.encoder = encoder(
+                    input_size=self.input_size,
+                    rnn_type=encoder_type,
+                    bidirectional=encoder_bidirectional,
+                    num_units=encoder_num_units,
+                    num_proj=encoder_num_proj,
+                    num_layers=encoder_num_layers,
+                    num_layers_sub=encoder_num_layers_sub,
+                    dropout=encoder_dropout,
+                    parameter_init=parameter_init,
+                    subsample_list=subsample_list,
+                    subsample_type='concat',
+                    use_cuda=self.use_cuda,
+                    batch_first=True)
         else:
             raise NotImplementedError
 
@@ -182,6 +201,12 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # NOTE: <SOS> is removed because the decoder never predict <SOS> class
         # TODO: self.num_classes_sub - 1
 
+        if ctc_loss_weight_sub > 0:
+            # self.fc_ctc = nn.Linear(
+            # encoder_num_units * self.encoder_num_directions, num_classes_sub
+            # + 1)
+            self.fc_ctc_sub = nn.Linear(encoder_num_units, num_classes_sub + 1)
+
     def forward(self, inputs, labels, labels_sub, inputs_seq_len,
                 labels_seq_len, labels_seq_len_sub, volatile=False):
         """Forward computation.
@@ -221,10 +246,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             logits /= self.logits_temperature
             logits_sub /= self.logits_temperature
 
-        batch_size, _, num_classes = logits.size()
-        num_classes_sub = logits_sub.size(2)
+        batch_size = encoder_outputs.size(0)
 
-        # Compute XE sequence loss
+        # Compute XE sequence loss in the main task
+        num_classes = logits.size(2)
         logits = logits.view((-1, num_classes))
         labels_1d = labels[:, 1:].contiguous().view(-1)
         loss = F.cross_entropy(logits, labels_1d,
@@ -232,13 +257,15 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                size_average=False) * self.main_loss_weight
         # NOTE: labels are padded by sos_index
 
-        # Linearly interpolate XE sequence loss in the main and sub tasks
+        # Compute XE sequence loss in the sub task
+        num_classes_sub = logits_sub.size(2)
         logits_sub = logits_sub.view((-1, num_classes_sub))
-        labels_sub = labels_sub[:, 1:].contiguous().view(-1)
-        loss += F.cross_entropy(logits_sub, labels_sub,
+        labels_sub_1d = labels_sub[:, 1:].contiguous().view(-1)
+        loss += F.cross_entropy(logits_sub, labels_sub_1d,
                                 ignore_index=self.sos_index_sub,
-                                size_average=False) * (1 - self.main_loss_weight)
+                                size_average=False) * self.sub_loss_weight
 
+        # Add coverage term
         if self.coverage_weight != 0:
             pass
             # coverage = self._compute_coverage(attention_weights)
@@ -246,7 +273,14 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         # Auxiliary CTC loss (optional)
         if self.ctc_loss_weight > 0:
-            raise NotImplementedError
+            ctc_loss = self._compute_ctc_loss(
+                encoder_outputs, labels, inputs_seq_len, labels_seq_len)
+            loss += ctc_loss * self.ctc_loss_weight
+        elif self.ctc_loss_weight_sub > 0:
+            ctc_loss_sub = self._compute_ctc_loss(
+                encoder_outputs_sub, labels_sub,
+                inputs_seq_len, labels_seq_len_sub, is_sub_task=True)
+            loss += ctc_loss_sub * self.ctc_loss_weight_sub
 
         # Average the loss by mini-batch
         loss /= batch_size
