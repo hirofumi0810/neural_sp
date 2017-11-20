@@ -12,11 +12,20 @@ class Char2idx(object):
     """Convert from character to index.
     Args:
         vocab_file_path (string): path to the vocabulary file
-        double_letter (bool, optional): if True, group repeated letters
+        space_mark (string, optional): the space mark to divide a sequence into words
+        capital_divide (bool, optional): if True, words will be divided by
+            capital letters. This is used for English.
+        double_letter (bool, optional): if True, group repeated letters.
+            This is used for Japanese.
+        remove_list (list, optional): characters to neglect
     """
 
-    def __init__(self, vocab_file_path, double_letter=False):
+    def __init__(self, vocab_file_path, space_mark='_', capital_divide=False,
+                 double_letter=False, remove_list=[]):
+        self.space_mark = space_mark
+        self.capital_divide = capital_divide
         self.double_letter = double_letter
+        self.remove_list = remove_list
 
         # Read the vocabulary file
         self.map_dict = {}
@@ -24,6 +33,8 @@ class Char2idx(object):
         with open(vocab_file_path, 'r') as f:
             for line in f:
                 char = line.strip()
+                if char in remove_list:
+                    continue
                 self.map_dict[char] = vocab_count
                 vocab_count += 1
 
@@ -34,56 +45,73 @@ class Char2idx(object):
     def __call__(self, str_char):
         """
         Args:
-            str_char (string): string of characters
+            str_char (string): a sequence of characters
         Returns:
-            char_list (list): character indices
+            index_list (list): character indices
         """
-        char_list = list(str_char)
+        index_list = []
 
         # Convert from character to index
-        if self.double_letter:
+        if self.capital_divide:
+            for word in str_char.split(self.space_mark):
+                # Replace the first character with the capital letter
+                index_list.append(self.map_dict[word[0].upper()])
+
+                # Check double-letters
+                skip_flag = False
+                for i in range(1, len(word) - 1, 1):
+                    if skip_flag:
+                        skip_flag = False
+                        continue
+
+                    if not skip_flag and word[i:i + 2] in self.map_dict.keys():
+                        index_list.append(self.map_dict[word[i:i + 2]])
+                        skip_flag = True
+                    else:
+                        index_list.append(self.map_dict[word[i]])
+
+                # Final character
+                if not skip_flag:
+                    index_list.append(self.map_dict[word[-1]])
+
+        elif self.double_letter:
             skip_flag = False
-            for i in range(len(char_list) - 1):
+            for i in range(len(str_char) - 1):
                 if skip_flag:
-                    char_list[i] = ''
                     skip_flag = False
                     continue
 
-                if char_list[i] + char_list[i + 1] in self.map_dict.keys():
-                    char_list[i] = self.map_dict[char_list[i] +
-                                                 char_list[i + 1]]
+                if not skip_flag and str_char[i:i + 2] in self.map_dict.keys():
+                    index_list.append(self.map_dict[str_char[i:i + 2]])
                     skip_flag = True
                 else:
-                    char_list[i] = self.map_dict[char_list[i]]
+                    index_list.append(self.map_dict[str_char[i]])
 
             # Final character
-            if skip_flag:
-                char_list[-1] = ''
-            else:
-                char_list[-1] = self.map_dict[char_list[-1]]
+            if not skip_flag:
+                index_list.append(self.map_dict[str_char[-1]])
 
-            # Remove skipped characters
-            while '' in char_list:
-                char_list.remove('')
         else:
-            for i in range(len(char_list)):
-                char_list[i] = self.map_dict[char_list[i]]
+            index_list = list(map(lambda x: self.map_dict[x], list(str_char)))
 
-        return char_list
+        return np.array(index_list)
 
 
 class Idx2char(object):
     """Convert from index to character.
     Args:
         vocab_file_path (string): path to the vocabulary file
-        capital_divide (bool, optional): set True when using capital-divided
-            character sequences
-        space_mark (string): the space mark to divide a sequence into words
+        space_mark (string, optional): the space mark to divide a sequence into words
+        capital_divide (bool, optional): if True, words will be divided by
+            capital letters. This is used for English.
+        remove_list (list, optional): characters to neglect
     """
 
-    def __init__(self, vocab_file_path, capital_divide=False, space_mark=' '):
-        self.capital_divide = capital_divide
+    def __init__(self, vocab_file_path, space_mark='_', capital_divide=False,
+                 remove_list=[]):
         self.space_mark = space_mark
+        self.capital_divide = capital_divide
+        self.remove_list = remove_list
 
         # Read the vocabulary file
         self.map_dict = {}
@@ -91,6 +119,8 @@ class Idx2char(object):
         with open(vocab_file_path, 'r') as f:
             for line in f:
                 char = line.strip()
+                if char in remove_list:
+                    continue
                 self.map_dict[vocab_count] = char
                 vocab_count += 1
 
@@ -98,34 +128,25 @@ class Idx2char(object):
         self.map_dict[vocab_count] = '<'
         self.map_dict[vocab_count + 1] = '>'
 
-    def __call__(self, index_list, padded_value=-1):
+    def __call__(self, index_list):
         """
         Args:
-            index_list (np.ndarray): list of character indices.
-                Batch size 1 is expected.
-            padded_value (int): the value used for padding
+            index_list (list): list of character indices.
         Returns:
             str_char (string): a sequence of characters
         """
-        # Remove padded values
-        assert type(
-            index_list) == np.ndarray, 'index_list should be np.ndarray.'
-        index_list = np.delete(index_list, np.where(
-            index_list == padded_value), axis=0)
+        _char_list = list(map(lambda x: self.map_dict[x], index_list))
+        char_list = []
 
         # Convert from indices to the corresponding characters
-        char_list = list(map(lambda x: self.map_dict[x], index_list))
-
         if self.capital_divide:
-            char_list_tmp = []
-            for i in range(len(char_list)):
-                if i != 0 and 'A' <= char_list[i] <= 'Z':
-                    char_list_tmp += [self.space_mark, char_list[i].lower()]
+            for i in range(len(_char_list)):
+                if i != 0 and 'A' <= _char_list[i] <= 'Z':
+                    char_list += [self.space_mark, _char_list[i].lower()]
                 else:
-                    char_list_tmp += [char_list[i].lower()]
-            str_char = ''.join(char_list_tmp)
-        else:
+                    char_list += [_char_list[i].lower()]
             str_char = ''.join(char_list)
+        else:
+            str_char = ''.join(_char_list)
 
         return str_char
-        # TODO: change to batch version

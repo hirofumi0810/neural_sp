@@ -40,7 +40,7 @@ param:
   clip_grad_norm: 5.0
   clip_activation_encoder: 50
   clip_activation_decoder: 50
-  dropout_encoder: 0.2
+  dropout_encoder: 0.5
   dropout_decoder: 0.1
   dropout_embedding: 0.1
   weight_decay: 0

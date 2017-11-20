@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Base class for loading dataset for the multitask attention-based model.
+"""Base class for loading dataset for the multitask CTC and attention-based model.
    In this class, all data will be loaded at each step.
    You can use the multi-GPU version.
 """
@@ -27,10 +27,10 @@ class DatasetBase(Base):
         super(DatasetBase, self).__init__(*args, **kwargs)
 
     def __getitem__(self, index):
-        input_i = np.array(self.input_paths[index])
-        label_i = np.array(self.label_paths[index])
-        label_sub_i = np.array(self.label_sub_paths[index])
-        return (input_i, label_i, label_sub_i)
+        feature = self._load_npy([self.df['input_path'][index]])
+        transcript = self.df['transcript'][index]
+        transcript_sub = self.df_sub['transcript'][index]
+        return (feature, transcript, transcript_sub)
 
     def __next__(self, batch_size=None):
         """Generate each mini-batch.
@@ -114,11 +114,9 @@ class DatasetBase(Base):
 
         # Load dataset in mini-batch
         input_list = self._load_npy(
-            np.take(self.input_paths, data_indices, axis=0))
-        label_list = self._load_npy(
-            np.take(self.label_paths, data_indices, axis=0))
-        label_list_sub = self._load_npy(
-            np.take(self.label_paths_sub, data_indices, axis=0))
+            np.array(self.df['input_path'][data_indices]))
+        label_list = np.array(self.df['transcript'][data_indices])
+        label_list_sub = np.array(self.df_sub['transcript'][data_indices])
 
         if not hasattr(self, 'input_size'):
             self.input_size = input_list[0].shape[1]
@@ -147,7 +145,7 @@ class DatasetBase(Base):
         labels_seq_len_sub = np.zeros((len(data_indices),), dtype=np.int32)
         input_names = np.array(list(
             map(lambda path: basename(path).split('.')[0],
-                np.take(self.input_paths, data_indices, axis=0))))
+                np.array(self.df['input_path'][data_indices]))))
 
         # Set values of each data in mini-batch
         for i_batch in range(len(data_indices)):
@@ -161,25 +159,35 @@ class DatasetBase(Base):
             data_i = do_splice(data_i, self.splice, self.num_stack)
 
             inputs[i_batch, : frame_num, :] = data_i
+            inputs_seq_len[i_batch] = frame_num
+            indices = self.map_fn(label_list[i_batch])
+            indices_sub = self.map_fn_sub(label_list_sub[i_batch])
+            label_num = len(indices)
+            label_num_sub = len(indices_sub)
             if self.is_test:
                 labels[i_batch, 0] = label_list[i_batch]
                 labels_sub[i_batch, 0] = label_list_sub[i_batch]
-                # NOTE: transcript is saved as string
             else:
-                labels[i_batch, 0] = self.sos_index
-                labels[i_batch, 1:len(label_list[i_batch]) +
-                       1] = label_list[i_batch]
-                labels[i_batch, len(label_list[i_batch]
-                                    ) + 1] = self.eos_index
+                if self.model_type == 'hierarchical_attention':
+                    labels[i_batch, 0] = self.sos_index
+                    labels[i_batch, 1:label_num + 1] = indices
+                    labels[i_batch, label_num + 1] = self.eos_index
+                    labels_seq_len[i_batch] = label_num + 2
+                    # NOTE: include <SOS> and <EOS>
 
-                labels_sub[i_batch, 0] = self.sos_index_sub
-                labels_sub[i_batch, 1:len(label_list_sub[i_batch]) +
-                           1] = label_list_sub[i_batch]
-                labels_sub[i_batch, len(label_list_sub[i_batch]
-                                        ) + 1] = self.eos_index_sub
-            inputs_seq_len[i_batch] = frame_num
-            labels_seq_len[i_batch] = len(label_list[i_batch]) + 2
-            labels_seq_len_sub[i_batch] = len(label_list_sub[i_batch]) + 2
+                    labels_sub[i_batch, 0] = self.sos_index_sub
+                    labels_sub[i_batch, 1: label_num_sub + 1] = indices_sub
+                    labels_sub[i_batch, label_num_sub + 1] = self.eos_index_sub
+                    labels_seq_len_sub[i_batch] = label_num_sub + 2
+                elif self.model_type == 'hierarchical_ctc':
+                    labels[i_batch, 0:label_num] = indices
+                    labels_seq_len[i_batch] = label_num
+
+                    labels_sub[i_batch,
+                               0: label_num_sub] = indices_sub
+                    labels_seq_len_sub[i_batch] = label_num_sub
+                else:
+                    raise TypeError
 
         # Now we split the mini-batch data by num_gpus
         inputs = self.split_per_device(inputs, self.num_gpus)
@@ -192,7 +200,8 @@ class DatasetBase(Base):
         input_names = self.split_per_device(input_names, self.num_gpus)
 
         # Wrap by variable
-        inputs = np2var(inputs, use_cuda=self.use_cuda, volatile=self.volatile)
+        inputs = np2var(inputs, use_cuda=self.use_cuda,
+                        volatile=self.volatile)
         inputs_seq_len = np2var(
             inputs_seq_len, use_cuda=self.use_cuda, volatile=self.volatile, dtype='int')
 

@@ -10,12 +10,13 @@ import sys
 import unittest
 
 sys.path.append(os.path.abspath('../../../../'))
-from examples.timit.data.load_dataset_ctc import Dataset
+from examples.timit.data.load_dataset import Dataset
 from utils.io.labels.phone import Idx2phone
+from utils.io.labels.character import Idx2char
 from utils.measure_time_func import measure_time
 
 
-class TestLoadDatasetAttention(unittest.TestCase):
+class TestLoadDataset(unittest.TestCase):
 
     def test(self):
 
@@ -56,30 +57,44 @@ class TestLoadDatasetAttention(unittest.TestCase):
         print('  splice: %d' % splice)
         print('========================================')
 
+        vocab_file_path = '../../metrics/vocab_files/' + label_type + '.txt'
+
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
+            model_type='ctc',
             data_type=data_type, label_type=label_type,
+            vocab_file_path=vocab_file_path,
             batch_size=64, max_epoch=1,
             splice=splice, num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
             sort_utt=sort_utt, sort_stop_epoch=sort_stop_epoch)
 
         print('=> Loading mini-batch...')
-        idx2phone = Idx2phone(
-            '../../metrics/vocab_files/' + label_type + '.txt')
+        if 'phone' in label_type:
+            map_fn = Idx2phone(vocab_file_path)
+        else:
+            map_fn = Idx2char(vocab_file_path)
 
         for data, is_new_epoch in dataset:
             inputs, labels, inputs_seq_len, labels_seq_len, input_names = data
 
+            if data_type == 'train':
+                for i, l in zip(inputs[0], labels[0]):
+                    if len(i) < len(l):
+                        raise ValueError(
+                            'input length must be longer than label length.')
+
             if dataset.is_test:
                 str_true = labels[0][0][0]
             else:
-                str_true = idx2phone(labels[0][0][:labels_seq_len[0][0]])
+                str_true = map_fn(
+                    labels.data[0][0][:labels_seq_len.data[0][0]])
 
             print('----- %s ----- (epoch: %.3f)' %
                   (input_names[0][0], dataset.epoch_detail))
-            print(inputs[0][0].shape)
+            print(inputs.data.numpy()[0].shape)
+            # print(labels.data.numpy()[0].shape)
             print(str_true)
 
 

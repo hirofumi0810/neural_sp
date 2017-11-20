@@ -8,16 +8,15 @@ from __future__ import print_function
 import os
 import sys
 import unittest
-import yaml
 
 sys.path.append(os.path.abspath('../../../../'))
-from examples.csj.data.load_dataset_attention import Dataset
+from examples.csj.data.load_dataset import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
 from utils.measure_time_func import measure_time
 
 
-class TestLoadDatasetAttention(unittest.TestCase):
+class TestLoadDataset(unittest.TestCase):
 
     def test(self):
 
@@ -68,32 +67,25 @@ class TestLoadDatasetAttention(unittest.TestCase):
         print('  num_gpus: %d' % num_gpus)
         print('========================================')
 
-        # Get voabulary number (excluding blank, <SOS>, <EOS> classes)
-        with open('../../metrics/vocab_num.yml', "r") as f:
-            vocab_num = yaml.load(f)
-            num_classes = vocab_num[data_size][label_type]
+        vocab_file_path = '../../metrics/vocab_files/' + \
+            label_type + '_' + data_size + '.txt'
 
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
+            model_type='attention',
             data_type=data_type, data_size=data_size,
-            label_type=label_type, num_classes=num_classes,
-            batch_size=64, max_epoch=2, splice=splice,
+            label_type=label_type, batch_size=64,
+            vocab_file_path=vocab_file_path,
+            max_epoch=2, splice=splice,
             num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
             sort_utt=sort_utt, reverse=True, sort_stop_epoch=sort_stop_epoch,
             num_gpus=num_gpus)
 
         print('=> Loading mini-batch...')
-
-        if 'kana' in label_type:
-            vocab_file_path = '../../metrics/vocab_files/' + label_type + '.txt'
-        else:
-            vocab_file_path = '../../metrics/vocab_files/' + \
-                label_type + '_' + data_size + '.txt'
-
         if 'word' in label_type:
-            map_fn = Idx2word(vocab_file_path)
+            map_fn = Idx2word(vocab_file_path, space_mark='_')
         else:
             map_fn = Idx2char(vocab_file_path)
 
@@ -113,17 +105,13 @@ class TestLoadDatasetAttention(unittest.TestCase):
             if dataset.is_test:
                 str_true = labels[0][0][0]
             else:
-                if 'word' in label_type:
-                    str_true = '_'.join(
-                        map_fn(labels[0][0][1:labels_seq_len[0][0] - 1]))
-                else:
-                    str_true = map_fn(
-                        labels[0][0][1:labels_seq_len[0][0] - 1])
+                str_true = map_fn(
+                    labels.data[0][0][0:labels_seq_len.data[0][0]])
 
             print('----- %s (epoch: %.3f) -----' %
                   (input_names[0][0], dataset.epoch_detail))
-            print(inputs[0].shape)
-            print(labels[0].shape)
+            print(inputs.data.numpy()[0].shape)
+            # print(labels.data[0].shape)
             print(str_true)
 
             if dataset.epoch_detail >= 0.05:

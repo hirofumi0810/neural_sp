@@ -14,8 +14,7 @@ import argparse
 
 sys.path.append(abspath('../../../'))
 from models.pytorch.load_model import load
-from examples.timit.data.load_dataset_ctc import Dataset as Dataset_ctc
-from examples.timit.data.load_dataset_attention import Dataset as Dataset_attention
+from examples.timit.data.load_dataset import Dataset
 from examples.timit.metrics.per import do_eval_per
 
 parser = argparse.ArgumentParser()
@@ -44,28 +43,26 @@ def main():
     # Get voabulary number (excluding blank, <SOS>, <EOS> classes)
     with open('../metrics/vocab_num.yml', "r") as f:
         vocab_num = yaml.load(f)
-        params['num_classes'] = vocab_num['phone39']
+        params['num_classes'] = vocab_num[params['label_type']]
 
-    # Model setting
+    # Load model
     model = load(model_type=params['model_type'], params=params)
 
     # Load dataset
-    if params['model_type'] == 'ctc':
-        Dataset = Dataset_ctc
-    elif params['model_type'] == 'attention':
-        Dataset = Dataset_attention
+    vocab_file_path = '../metrics/vocab_files/phone39.txt'
     test_data = Dataset(
+        model_type=params['model_type'],
         data_type='test', label_type='phone39',
-        num_classes=params['num_classes'],
+        vocab_file_path=vocab_file_path,
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        soft_utt=False,
+        sort_utt=False,
         use_cuda=model.use_cuda, volatile=True)
 
     # GPU setting
     model.set_cuda(deterministic=False)
 
-    # Load the saved model
+    # Restore the saved model
     checkpoint = model.load_checkpoint(
         save_path=args.model_path, epoch=args.epoch)
     model.load_state_dict(checkpoint['state_dict'])

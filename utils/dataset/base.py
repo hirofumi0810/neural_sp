@@ -13,16 +13,31 @@ import numpy as np
 class Base(object):
 
     def __init__(self, *args, **kwargs):
-
         self.epoch = 0
         self.iteration = 0
         self.is_new_epoch = False
 
+        # Read the vocabulary file
+        vocab_count = 0
+        with open(kwargs['vocab_file_path'], 'r') as f:
+            for line in f:
+                vocab_count += 1
+        self.num_classes = vocab_count
+
+        if 'vocab_file_path_sub' in kwargs.keys():
+            vocab_count_sub = 0
+            with open(kwargs['vocab_file_path_sub'], 'r') as f:
+                for line in f:
+                    vocab_count_sub += 1
+            self.num_classes_sub = vocab_count_sub
+
     def __len__(self):
-        return len(self.input_paths)
+        return len(self.df)
 
     def __getitem__(self, index):
-        return (self.input_list[index], self.label_list[index])
+        feature = self._load_npy([self.df['input_path'][index]])
+        transcript = self.df['transcript'][index]
+        return (feature, transcript)
 
     def __iter__(self):
         """Returns self."""

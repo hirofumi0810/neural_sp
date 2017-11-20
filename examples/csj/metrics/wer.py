@@ -44,10 +44,9 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
     if eval_batch_size is not None:
         dataset.batch_size = eval_batch_size
 
-    vocab_file_path = '../metrics/vocab_files/' + \
-        label_type + '_' + data_size + '.txt'
-
-    idx2word = Idx2word(vocab_file_path)
+    idx2word = Idx2word(
+        vocab_file_path='../metrics/vocab_files/' +
+        label_type + '_' + data_size + '.txt')
 
     wer_mean = 0
     if progressbar:
@@ -60,11 +59,11 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
         elif model_type in ['hierarchical_ctc', 'hierarchical_attention']:
             inputs, labels, _, inputs_seq_len, labels_seq_len, _,  _ = data
 
-        batch_size = inputs[0].size(0)
+        batch_size = inputs.size(0)
 
         # Decode
         labels_pred, perm_indices = model.decode(
-            inputs[0], inputs_seq_len[0],
+            inputs, inputs_seq_len,
             beam_width=beam_width,
             max_decode_length=max_decode_length)
 
@@ -74,7 +73,7 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
             # Reference
             ##############################
             if dataset.is_test:
-                word_list_true = labels[0][i_batch][0].split('_')
+                word_list_true = labels[i_batch][0].split('_')
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Permutate indices
@@ -84,10 +83,10 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
                 # Convert from list of index to string
                 if model_type in ['ctc', 'hierarchical_ctc']:
                     word_list_true = idx2word(
-                        labels[0][i_batch][:labels_seq_len[0][i_batch]])
+                        labels[i_batch][:labels_seq_len[i_batch]])
                 elif model_type in ['attention', 'hierarchical_attention', 'joint_ctc_attention']:
                     word_list_true = idx2word(
-                        labels[0][i_batch][1:labels_seq_len[0][i_batch] - 1])
+                        labels[i_batch][1:labels_seq_len[i_batch] - 1])
                     # NOTE: Exclude <SOS> and <EOS>
             str_true = '_'.join(word_list_true)
 

@@ -14,8 +14,7 @@ import argparse
 
 sys.path.append(abspath('../../../'))
 from models.pytorch.load_model import load
-from examples.librispeech.data.load_dataset_hierarchical_ctc import Dataset as Dataset_ctc
-from examples.librispeech.data.load_dataset_hierarchical_attention import Dataset as Dataset_attention
+from examples.librispeech.data.load_dataset_hierarchical import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
 from utils.io.variable import var2np
@@ -28,7 +27,7 @@ parser.add_argument('--epoch', type=int, default=-1,
 parser.add_argument('--beam_width', type=int, default=1,
                     help='beam_width (int, optional): beam width for beam search.' +
                     ' 1 disables beam search, which mean greedy decoding.')
-parser.add_argument('--eval_batch_size', type=str, default=1,
+parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
 parser.add_argument('--max_decode_length', type=int, default=100,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
@@ -53,20 +52,22 @@ def main():
         params['num_classes_sub'] = vocab_num[params['data_size']
                                               ][params['label_type_sub']]
 
-    # Model setting
+    # Load model
     model = load(model_type=params['model_type'], params=params)
 
     # Load dataset
-    if params['model_type'] == 'hierarchical_ctc':
-        Dataset = Dataset_ctc
-    elif params['model_type'] == 'hierarchical_attention':
-        Dataset = Dataset_attention
+    vocab_file_path = '../metrics/vocab_files/' + \
+        params['label_type'] + '_' + params['data_size'] + '.txt'
+    vocab_file_path_sub = '../metrics/vocab_files/' + \
+        params['label_type_sub'] + '_' + params['data_size'] + '.txt'
     test_data = Dataset(
+        model_type=params['model_type'],
         data_type='test_clean',
         # data_type='test_other',
         data_size=params['data_size'],
         label_type=params['label_type'], label_type_sub=params['label_type_sub'],
-        num_classes=params['num_classes'], num_classes_sub=params['num_classes_sub'],
+        vocab_file_path=vocab_file_path,
+        vocab_file_path_sub=vocab_file_path_sub,
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, reverse=True,
@@ -75,7 +76,7 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False)
 
-    # Load the saved model
+    # Restore the saved model
     checkpoint = model.load_checkpoint(
         save_path=args.model_path, epoch=args.epoch)
     model.load_state_dict(checkpoint['state_dict'])
@@ -112,16 +113,12 @@ def decode(model, model_type, dataset, label_type, label_type_sub, data_size,
             This is used for seq2seq models.
         save_path (string): path to save decoding results
     """
-    vocab_file_path = '../metrics/vocab_files/' + \
-        label_type + '_' + data_size + '.txt'
-    if label_type_sub == 'character':
-        vocab_file_path_sub = '../metrics/vocab_files/character.txt'
-    else:
-        vocab_file_path_sub = '../metrics/vocab_files/' + \
-            label_type_sub + '_' + data_size + '.txt'
-
-    map_fn = Idx2word(vocab_file_path)
-    map_fn_sub = Idx2char(vocab_file_path_sub)
+    idx2word = Idx2word(
+        vocab_file_path='../metrics/vocab_files/' +
+        label_type + '_' + data_size + '.txt')
+    idx2char = Idx2char(
+        vocab_file_path='../metrics/vocab_files/' +
+        label_type_sub + '_' + data_size + '.txt')
 
     if save_path is not None:
         sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
@@ -131,26 +128,24 @@ def decode(model, model_type, dataset, label_type, label_type_sub, data_size,
         # Create feed dictionary for next mini batch
         inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub, input_names = data
 
-        batch_size = inputs[0].size(0)
-
         # Decode
         labels_pred, perm_indices = model.decode(
-            inputs[0], inputs_seq_len[0],
+            inputs, inputs_seq_len,
             beam_width=beam_width,
             max_decode_length=max_decode_length)
         labels_pred_sub, _ = model.decode_sub(
-            inputs[0], inputs_seq_len[0],
+            inputs, inputs_seq_len,
             beam_width=beam_width,
             max_decode_length=max_decode_length)
 
-        for i_batch in range(batch_size):
-            print('----- wav: %s -----' % input_names[0][i_batch])
+        for i_batch in range(inputs.size(0)):
+            print('----- wav: %s -----' % input_names[i_batch])
 
             ##############################
             # Reference
             ##############################
             if dataset.is_test:
-                str_true = labels[0][i_batch][0].replace('_', ' ')
+                str_true = labels[i_batch][0]
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Permutate indices
@@ -161,31 +156,21 @@ def decode(model, model_type, dataset, label_type, label_type_sub, data_size,
 
                 # Convert from list of index to string
                 if model_type == 'hierarchical_ctc':
-                    word_list_true = map_fn(
-                        labels[0][i_batch][:labels_seq_len[0][i_batch]])
+                    str_true = idx2word(
+                        labels[i_batch][:labels_seq_len[i_batch]])
                 elif model_type == 'hierarchical_attention':
-                    word_list_true = map_fn(
-                        labels[0][i_batch][1:labels_seq_len[0][i_batch] - 1])
+                    str_true = idx2word(
+                        labels[i_batch][1:labels_seq_len[i_batch] - 1])
                     # NOTE: Exclude <SOS> and <EOS>
-                str_true = ' '.join(word_list_true)
-
-                # if model_type == 'hierarchical_ctc':
-                #     str_true_sub = map_fn_sub(
-                #         labels_sub[0][i_batch][:labels_seq_len_sub[0][i_batch]])
-                # elif model_type == 'hierarchical_attention':
-                #     str_true_sub = map_fn_sub(
-                #         labels_sub[0][i_batch][1:labels_seq_len_sub[0][i_batch] - 1])
-                #     # NOTE: Exclude <SOS> and <EOS>
 
             ##############################
             # Hypothesis
             ##############################
             # Convert from list of index to string
-            word_list_pred = map_fn(labels_pred[i_batch])
-            str_pred = ' '.join(word_list_pred)
+            str_pred = idx2word(labels_pred[i_batch])
 
-            str_pred_sub = map_fn_sub(
-                labels_pred_sub[i_batch]).replace('_', ' ')
+            str_pred_sub = idx2char(
+                labels_pred_sub[i_batch])
 
             if model_type == 'hierarchical_attention':
                 str_pred = str_pred.split('>')[0]
@@ -193,14 +178,14 @@ def decode(model, model_type, dataset, label_type, label_type_sub, data_size,
                 # NOTE: Trancate by the first <EOS>
 
                 # Remove the last space
-                if len(str_pred) > 0 and str_pred[-1] == ' ':
+                if len(str_pred) > 0 and str_pred[-1] == '_':
                     str_pred = str_pred[:-1]
-                if len(str_pred_sub) > 0 and str_pred_sub[-1] == ' ':
+                if len(str_pred_sub) > 0 and str_pred_sub[-1] == '_':
                     str_pred_sub = str_pred_sub[:-1]
 
-            print('Ref: %s' % str_true)
-            print('Hyp (word): %s' % str_pred)
-            print('Hyp (char): %s' % str_pred_sub)
+            print('Ref: %s' % str_true.replace('_', ' '))
+            print('Hyp (word): %s' % str_pred.replace('_', ' '))
+            print('Hyp (char): %s' % str_pred_sub.replace('_', ' '))
 
         if is_new_epoch:
             break

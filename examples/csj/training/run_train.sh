@@ -24,8 +24,10 @@ mkdir -p log
 
 # Standard output version
 # CUDA_VISIBLE_DEVICES=$gpu_index $PYTHON train.py \
-#   $config_path $MODEL_SAVE_PATH
+#   --config_path $config_path \
+#   --model_save_path $MODEL_SAVE_PATH
 
 # Background job version
 CUDA_VISIBLE_DEVICES=$gpu_index nohup $PYTHON train.py \
-  $config_path $MODEL_SAVE_PATH > log/$filename".log" &
+  --config_path $config_path \
+  --model_save_path $MODEL_SAVE_PATH > log/$filename".log" &

@@ -44,13 +44,9 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
     if eval_batch_size is not None:
         dataset.batch_size = eval_batch_size
 
-    if 'kanji' in label_type:
-        vocab_file_path = '../metrics/vocab_files/' + \
-            label_type + '_' + data_size + '.txt'
-    elif 'kana' in label_type:
-        vocab_file_path = '../metrics/vocab_files/' + label_type + '.txt'
-
-    idx2char = Idx2char(vocab_file_path)
+    idx2char = Idx2char(
+        vocab_file_path='../metrics/vocab_files/' +
+        label_type + '_' + data_size + '.txt')
 
     cer_mean = 0
     if progressbar:
@@ -63,17 +59,17 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
         elif model_type in ['hierarchical_ctc', 'hierarchical_attention']:
             inputs, _, labels, inputs_seq_len, _, labels_seq_len, _ = data
 
-        batch_size = inputs[0].size(0)
+        batch_size = inputs.size(0)
 
         # Decode
         if model_type in ['attention', 'ctc']:
             labels_pred, perm_indices = model.decode(
-                inputs[0], inputs_seq_len[0],
+                inputs, inputs_seq_len,
                 beam_width=beam_width,
                 max_decode_length=max_decode_length)
         elif model_type in['hierarchical_attention', 'hierarchical_ctc']:
             labels_pred, perm_indices = model.decode_sub(
-                inputs[0], inputs_seq_len[0],
+                inputs, inputs_seq_len,
                 beam_width=beam_width,
                 max_decode_length=max_decode_length)
 
@@ -83,7 +79,7 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
             # Reference
             ##############################
             if dataset.is_test:
-                str_true = labels[0][i_batch][0]
+                str_true = labels[i_batch][0]
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Permutate indices
@@ -93,10 +89,10 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
                 # Convert from list of index to string
                 if model_type in ['ctc', 'hierarchical_ctc']:
                     str_true = idx2char(
-                        labels[0][i_batch][:labels_seq_len[0][i_batch]])
+                        labels[i_batch][:labels_seq_len[i_batch]])
                 elif model_type in ['attention', 'hierarchical_attention', 'joint_ctc_attention']:
                     str_true = idx2char(
-                        labels[0][i_batch][1:labels_seq_len[0][i_batch] - 1])
+                        labels[i_batch][1:labels_seq_len[i_batch] - 1])
                     # NOTE: Exclude <SOS> and <EOS>
 
             ##############################

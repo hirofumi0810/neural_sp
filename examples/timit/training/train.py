@@ -7,20 +7,20 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from os.path import join, isfile, abspath
+from os.path import join, abspath
 import sys
 import time
 from setproctitle import setproctitle
 import yaml
 import shutil
 import copy
+import argparse
 
 import torch.nn as nn
 
 sys.path.append(abspath('../../../'))
 from models.pytorch.load_model import load
-from examples.timit.data.load_dataset_ctc import Dataset as Dataset_ctc
-from examples.timit.data.load_dataset_attention import Dataset as Dataset_attention
+from examples.timit.data.load_dataset import Dataset
 from examples.timit.metrics.per import do_eval_per
 from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
@@ -29,37 +29,70 @@ from utils.io.variable import np2var, var2np
 
 MAX_DECODE_LENGTH_PHONE = 40
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--config_path', type=str,
+                    help='path to the configuration file')
+parser.add_argument('--model_save_path', type=str,
+                    help='path to save the model')
 
-def do_train(model, params):
-    """Run training. If target labels are phone, the model is evaluated by PER
-    with 39 phones.
-    Args:
-        model: the model to train
-        params (dict): A dictionary of parameters
-    """
+
+def main():
+
+    args = parser.parse_args()
+
+    # Load a config file (.yml)
+    with open(args.config_path, "r") as f:
+        config = yaml.load(f)
+        params = config['param']
+
+    # Get voabulary number (excluding blank, <SOS>, <EOS> classes)
+    with open('../metrics/vocab_num.yml', "r") as f:
+        vocab_num = yaml.load(f)
+        params['num_classes'] = vocab_num[params['label_type']]
+
+    # Load model
+    model = load(model_type=params['model_type'], params=params)
+
+    # Set process name
+    setproctitle(
+        'timit_' + params['model_type'] + '_' + params['label_type'])
+
+    # Set save path
+    save_path = mkdir_join(
+        args.model_save_path, params['model_type'], params['label_type'], model.name)
+    model.set_save_path(save_path)
+
+    # Save config file
+    shutil.copyfile(args.config_path, join(model.save_path, 'config.yml'))
+
+    sys.stdout = open(join(model.save_path, 'train.log'), 'w')
+    # TODO(hirofumi): change to logger
+
     # Load dataset
-    if params['model_type'] == 'ctc':
-        Dataset = Dataset_ctc
-    elif params['model_type'] == 'attention':
-        Dataset = Dataset_attention
+    vocab_file_path_train = '../metrics/vocab_files/' + \
+        params['label_type'] + '.txt'
+    vocab_file_path_eval = '../metrics/vocab_files/phone39.txt'
     train_data = Dataset(
+        model_type=params['model_type'],
         data_type='train', label_type=params['label_type'],
-        num_classes=params['num_classes'],
+        vocab_file_path=vocab_file_path_train,
         batch_size=params['batch_size'],
         max_epoch=params['num_epoch'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
         use_cuda=model.use_cuda)
     dev_data = Dataset(
+        model_type=params['model_type'],
         data_type='dev', label_type=params['label_type'],
-        num_classes=params['num_classes'],
+        vocab_file_path=vocab_file_path_train,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True,
         use_cuda=model.use_cuda, volatile=True)
     test_data = Dataset(
+        model_type=params['model_type'],
         data_type='test', label_type='phone39',
-        num_classes=39,
+        vocab_file_path=vocab_file_path_eval,
         batch_size=1, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True,
@@ -112,8 +145,7 @@ def do_train(model, params):
         optimizer.zero_grad()
 
         # Compute loss in the training set
-        loss_train = model(
-            inputs[0], labels[0], inputs_seq_len[0], labels_seq_len[0])
+        loss_train = model(inputs, labels, inputs_seq_len, labels_seq_len)
         loss_val_train += loss_train.data[0]
 
         # Compute gradient
@@ -137,9 +169,8 @@ def do_train(model, params):
             model.eval()
 
             # Compute loss in the dev set
-            loss_dev = model(
-                inputs[0], labels[0], inputs_seq_len[0], labels_seq_len[0],
-                volatile=True)
+            loss_dev = model(inputs, labels, inputs_seq_len, labels_seq_len,
+                             volatile=True)
 
             loss_val_train /= params['print_step']
             loss_val_dev = loss_dev.data[0]
@@ -239,57 +270,5 @@ def do_train(model, params):
         f.write('')
 
 
-def main(config_path, model_save_path):
-
-    # Load a config file (.yml)
-    with open(config_path, "r") as f:
-        config = yaml.load(f)
-        params = config['param']
-
-    # Get voabulary number (excluding blank, <SOS>, <EOS> classes)
-    with open('../metrics/vocab_num.yml', "r") as f:
-        vocab_num = yaml.load(f)
-        params['num_classes'] = vocab_num[params['label_type']]
-
-    # Model setting
-    model = load(model_type=params['model_type'], params=params)
-
-    # Set process name
-    setproctitle(
-        'timit_' + params['model_type'] + '_' + params['label_type'])
-
-    # Set save path
-    model.save_path = mkdir_join(
-        model_save_path, params['model_type'], params['label_type'], model.name)
-
-    # Reset model directory
-    model_index = 0
-    new_model_path = model.save_path
-    while True:
-        if isfile(join(new_model_path, 'complete.txt')):
-            # Training of the first model have been finished
-            model_index += 1
-            new_model_path = model.save_path + '_' + str(model_index)
-        elif isfile(join(new_model_path, 'config.yml')):
-            # Training of the first model have not been finished yet
-            model_index += 1
-            new_model_path = model.save_path + '_' + str(model_index)
-        else:
-            break
-    model.save_path = mkdir(new_model_path)
-
-    # Save config file
-    shutil.copyfile(config_path, join(model.save_path, 'config.yml'))
-
-    sys.stdout = open(join(model.save_path, 'train.log'), 'w')
-    # TODO(hirofumi): change to logger
-    do_train(model=model, params=params)
-
-
 if __name__ == '__main__':
-
-    args = sys.argv
-    if len(args) != 3:
-        raise ValueError('Length of args should be 3.')
-
-    main(config_path=args[1], model_save_path=args[2])
+    main()

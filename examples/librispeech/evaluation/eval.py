@@ -14,8 +14,7 @@ import argparse
 
 sys.path.append(abspath('../../../'))
 from models.pytorch.load_model import load
-from examples.librispeech.data.load_dataset_ctc import Dataset as Dataset_ctc
-from examples.librispeech.data.load_dataset_attention import Dataset as Dataset_attention
+from examples.librispeech.data.load_dataset import Dataset
 from examples.librispeech.metrics.cer import do_eval_cer
 from examples.librispeech.metrics.wer import do_eval_wer
 
@@ -48,24 +47,24 @@ def main():
         params['num_classes'] = vocab_num[params['data_size']
                                           ][params['label_type']]
 
-    # Model setting
+    # Load model
     model = load(model_type=params['model_type'], params=params)
 
     # Load dataset
-    if params['model_type'] == 'ctc':
-        Dataset = Dataset_ctc
-    elif params['model_type'] == 'attention':
-        Dataset = Dataset_attention
+    vocab_file_path = '../metrics/vocab_files/' + \
+        params['label_type'] + '_' + params['data_size'] + '.txt'
     test_clean_data = Dataset(
+        model_type=params['model_type'],
         data_type='test_clean', data_size=params['data_size'],
-        label_type=params['label_type'], num_classes=params['num_classes'],
+        label_type=params['label_type'], vocab_file_path=vocab_file_path,
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=False,
         use_cuda=model.use_cuda, volatile=True)
     test_other_data = Dataset(
+        model_type=params['model_type'],
         data_type='test_other', data_size=params['data_size'],
-        label_type=params['label_type'], num_classes=params['num_classes'],
+        label_type=params['label_type'], vocab_file_path=vocab_file_path,
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=False,
@@ -74,7 +73,7 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False)
 
-    # Load the saved model
+    # Restore the saved model
     checkpoint = model.load_checkpoint(
         save_path=args.model_path, epoch=args.epoch)
     model.load_state_dict(checkpoint['state_dict'])

@@ -8,39 +8,37 @@ from __future__ import print_function
 import os
 import sys
 import unittest
-import yaml
 
 sys.path.append(os.path.abspath('../../../../'))
-from examples.librispeech.data.load_dataset_hierarchical_attention import Dataset
+from examples.csj.data.load_dataset_hierarchical import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
 from utils.measure_time_func import measure_time
 
 
-class TestLoadDatasetHierarchicalAttention(unittest.TestCase):
+class TestLoadDatasetHierarchical(unittest.TestCase):
 
     def test(self):
 
         # data_type
-        self.check(label_type='word_freq5', label_type_sub='character',
+        self.check(label_type='word_freq5', label_type_sub='kana',
                    data_type='train')
-        self.check(label_type='word_freq5', label_type_sub='character',
-                   data_type='dev_clean')
-        # self.check(label_type='word_freq5', label_type_sub='character',
-        #            data_type='dev_other')
-        self.check(label_type='word_freq5', label_type_sub='character',
-                   data_type='test_clean')
-        # self.check(label_type='word_freq5', label_type_sub='character',
-        #            data_type='test_other')
+        self.check(label_type='word_freq5', label_type_sub='kana',
+                   data_type='dev')
+        self.check(label_type='word_freq5', label_type_sub='kana',
+                   data_type='eval1')
+        # self.check(label_type='word_freq5', label_type_sub='kana',
+        #            data_type='eval2')
+        # self.check(label_type='word_freq5', label_type_sub='kana',
+        #            data_type='eval3')
 
         # label_type
-        self.check(label_type='word_freq1', label_type_sub='character')
-        self.check(label_type='word_freq10', label_type_sub='character')
-        self.check(label_type='word_freq15', label_type_sub='character')
+        self.check(label_type='word_freq5', label_type_sub='kanji')
+        # self.check(label_type='kanji', label_type_sub='kana')
 
     @measure_time
-    def check(self, label_type, label_type_sub,
-              data_type='dev_clean', data_size='100h',
+    def check(self, label_type, label_type_sub, data_type='dev',
+              data_size='subset',
               shuffle=False, sort_utt=True, sort_stop_epoch=None,
               frame_stacking=False, splice=1, num_gpus=1):
 
@@ -57,20 +55,20 @@ class TestLoadDatasetHierarchicalAttention(unittest.TestCase):
         print('  num_gpus: %d' % num_gpus)
         print('========================================')
 
-        # Get voabulary number (excluding blank, <SOS>, <EOS> classes)
-        with open('../../metrics/vocab_num.yml', "r") as f:
-            vocab_num = yaml.load(f)
-            num_classes = vocab_num[data_size][label_type]
-            num_classes_sub = vocab_num[data_size][label_type_sub]
+        vocab_file_path = '../../metrics/vocab_files/' + \
+            label_type + '_' + data_size + '.txt'
+        vocab_file_path_sub = '../../metrics/vocab_files/' + \
+            label_type_sub + '_' + data_size + '.txt'
 
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
+            model_type='hierarchical_attention',
             data_type=data_type, data_size=data_size,
             label_type=label_type, label_type_sub=label_type_sub,
             batch_size=64,
-            num_classes=num_classes,
-            num_classes_sub=num_classes_sub,
+            vocab_file_path=vocab_file_path,
+            vocab_file_path_sub=vocab_file_path_sub,
             max_epoch=2, splice=splice,
             num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
@@ -78,16 +76,7 @@ class TestLoadDatasetHierarchicalAttention(unittest.TestCase):
             num_gpus=num_gpus)
 
         print('=> Loading mini-batch...')
-
-        vocab_file_path = '../../metrics/vocab_files/' + \
-            label_type + '_' + data_size + '.txt'
-        if label_type_sub == 'character':
-            vocab_file_path_sub = '../../metrics/vocab_files/character.txt'
-        else:
-            vocab_file_path_sub = '../../metrics/vocab_files/' + \
-                label_type_sub + '_' + data_size + '.txt'
-
-        idx2word = Idx2word(vocab_file_path)
+        idx2word = Idx2word(vocab_file_path, space_mark='_')
         idx2char = Idx2char(vocab_file_path_sub)
 
         for data, is_new_epoch in dataset:
@@ -105,20 +94,22 @@ class TestLoadDatasetHierarchicalAttention(unittest.TestCase):
 
             if dataset.is_test:
                 str_true = labels[0][0][0]
-                str_true_sub = labels[0][0][0]
+                str_true_sub = labels_sub[0][0][0]
             else:
-                word_list = idx2word(labels[0][0][:labels_seq_len[0][0]])
-                str_true = '_'.join(word_list)
+                str_true = idx2word(
+                    labels.data[0][0][:labels_seq_len.data[0][0]])
                 str_true_sub = idx2char(
-                    labels_sub[0][0][:labels_seq_len_sub[0][0]])
+                    labels_sub.data[0][0][:labels_seq_len_sub.data[0][0]])
 
             print('----- %s (epoch: %.3f) -----' %
                   (input_names[0][0], dataset.epoch_detail))
-            print(inputs[0].shape)
-            print(labels[0].shape)
+            print(inputs.data.numpy()[0].shape)
+            # print(labels.data[0].shape)
+            print('-' * 20)
             print(str_true)
-            print('---')
+            print('-' * 10)
             print(str_true_sub)
+            print('-' * 20)
 
             if dataset.epoch_detail >= 0.05:
                 break

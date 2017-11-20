@@ -7,20 +7,20 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from os.path import join, isfile, abspath
+from os.path import join, abspath
 import sys
 import time
 from setproctitle import setproctitle
 import yaml
 import shutil
 import copy
+import argparse
 
 import torch.nn as nn
 
 sys.path.append(abspath('../../../'))
 from models.pytorch.load_model import load
-from examples.csj.data.load_dataset_hierarchical_ctc import Dataset as Dataset_hierarchical_ctc
-from examples.csj.data.load_dataset_hierarchical_attention import Dataset as Dataset_hierarchical_attention
+from examples.csj.data.load_dataset_hierarchical import Dataset
 from examples.csj.metrics.cer import do_eval_cer
 from examples.csj.metrics.wer import do_eval_wer
 from utils.training.learning_rate_controller import Controller
@@ -32,64 +32,107 @@ MAX_DECODE_LENGTH_WORD = 60
 MAX_DECODE_LENGTH_CHAR = 100
 
 
-def do_train(model, params):
-    """Run training.
-    Args:
-        model: the model to train
-        params (dict): A dictionary of parameters
-    """
+parser = argparse.ArgumentParser()
+parser.add_argument('--config_path', type=str,
+                    help='path to the configuration file')
+parser.add_argument('--model_save_path', type=str,
+                    help='path to save the model')
+
+
+def main():
+
+    args = parser.parse_args()
+
+    # Load a config file (.yml)
+    with open(args.config_path, "r") as f:
+        config = yaml.load(f)
+        params = config['param']
+
+    # Get voabulary number (excluding blank, <SOS>, <EOS> classes)
+    with open('../metrics/vocab_num.yml', "r") as f:
+        vocab_num = yaml.load(f)
+        params['num_classes'] = vocab_num[params['data_size']
+                                          ][params['label_type']]
+        params['num_classes_sub'] = vocab_num[params['data_size']
+                                              ][params['label_type_sub']]
+
+    # Model setting
+    model = load(model_type=params['model_type'], params=params)
+
+    # Set process name
+    setproctitle('csj_' + params['model_type'] + '_' +
+                 params['label_type'] + '_' + params['label_type_sub'] + '_' + params['data_size'])
+
+    # Set save path
+    save_path = mkdir_join(
+        args.model_save_path, params['model_type'],
+        params['label_type'] + '_' + params['label_type_sub'],
+        params['data_size'], model.name)
+    model.set_save_path(save_path)
+
+    # Save config file
+    shutil.copyfile(args.config_path, join(model.save_path, 'config.yml'))
+
+    sys.stdout = open(join(model.save_path, 'train.log'), 'w')
+    # TODO(hirofumi): change to logger
+
     # Load dataset
-    if params['model_type'] == 'hierarchical_ctc':
-        Dataset = Dataset_hierarchical_ctc
-    elif params['model_type'] == 'hierarchical_attention':
-        Dataset = Dataset_hierarchical_attention
+    vocab_file_path = '../metrics/vocab_files/' + \
+        params['label_type'] + '_' + params['data_size'] + '.txt'
+    vocab_file_path_sub = '../metrics/vocab_files/' + \
+        params['label_type_sub'] + '_' + params['data_size'] + '.txt'
     train_data = Dataset(
+        model_type=params['model_type'],
         data_type='train', data_size=params['data_size'],
         label_type=params['label_type'],
         label_type_sub=params['label_type_sub'],
-        num_classes=params['num_classes'],
-        num_classes_sub=params['num_classes_sub'],
+        vocab_file_path=vocab_file_path,
+        vocab_file_path_sub=vocab_file_path_sub,
         batch_size=params['batch_size'], max_epoch=params['num_epoch'],
         splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
         use_cuda=model.use_cuda)
     dev_data = Dataset(
+        model_type=params['model_type'],
         data_type='dev', data_size=params['data_size'],
         label_type=params['label_type'],
         label_type_sub=params['label_type_sub'],
-        num_classes=params['num_classes'],
-        num_classes_sub=params['num_classes_sub'],
+        vocab_file_path=vocab_file_path,
+        vocab_file_path_sub=vocab_file_path_sub,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True,
         use_cuda=model.use_cuda, volatile=True)
     eval1_data = Dataset(
+        model_type=params['model_type'],
         data_type='eval1', data_size=params['data_size'],
         label_type=params['label_type'],
         label_type_sub=params['label_type_sub'],
-        num_classes=params['num_classes'],
-        num_classes_sub=params['num_classes_sub'],
+        vocab_file_path=vocab_file_path,
+        vocab_file_path_sub=vocab_file_path_sub,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=False,
         use_cuda=model.use_cuda, volatile=True)
     eval2_data = Dataset(
+        model_type=params['model_type'],
         data_type='eval2', data_size=params['data_size'],
         label_type=params['label_type'],
         label_type_sub=params['label_type_sub'],
-        num_classes=params['num_classes'],
-        num_classes_sub=params['num_classes_sub'],
+        vocab_file_path=vocab_file_path,
+        vocab_file_path_sub=vocab_file_path_sub,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=False,
         use_cuda=model.use_cuda, volatile=True)
     eval3_data = Dataset(
+        model_type=params['model_type'],
         data_type='eval3', data_size=params['data_size'],
         label_type=params['label_type'],
         label_type_sub=params['label_type_sub'],
-        num_classes=params['num_classes'],
-        num_classes_sub=params['num_classes_sub'],
+        vocab_file_path=vocab_file_path,
+        vocab_file_path_sub=vocab_file_path_sub,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=False,
@@ -142,23 +185,8 @@ def do_train(model, params):
         optimizer.zero_grad()
 
         # Compute loss in the training set
-        if params['model_type'] == 'hierarchical_ctc':
-            logits, logits_sub, perm_indices = model(
-                inputs[0], inputs_seq_len[0])
-            loss_train = model.compute_loss(
-                logits,
-                labels[0][perm_indices],
-                inputs_seq_len[0][perm_indices],
-                labels_seq_len[0][perm_indices])
-            loss_train += model.compute_loss(
-                logits_sub,
-                labels_sub[0][perm_indices],
-                inputs_seq_len[0][perm_indices],
-                labels_seq_len_sub[0][perm_indices])
-        elif params['model_type'] == 'hierarchical_attention':
-            loss_train = model(
-                inputs[0], labels[0], labels_sub[0], inputs_seq_len[0],
-                labels_seq_len[0], labels_seq_len_sub[0])
+        loss_train = model(inputs, labels, labels_sub, inputs_seq_len,
+                           labels_seq_len, labels_seq_len_sub)
         loss_val_train += loss_train.data[0]
 
         # Compute gradient
@@ -182,9 +210,8 @@ def do_train(model, params):
             model.eval()
 
             # Compute loss in the dev set
-            loss_dev = model(
-                inputs[0], labels[0], labels_sub[0], inputs_seq_len[0],
-                labels_seq_len[0], labels_seq_len_sub[0], volatile=True)
+            loss_dev = model(inputs, labels, labels_sub, inputs_seq_len,
+                             labels_seq_len, labels_seq_len_sub, volatile=True)
 
             loss_val_train /= params['print_step']
             loss_val_dev = loss_dev.data[0]
@@ -214,12 +241,6 @@ def do_train(model, params):
             plot_loss(csv_loss_train, csv_loss_dev, csv_steps,
                       save_path=model.save_path)
 
-            # Save the model
-            saved_path = model.save_checkpoint(
-                model.save_path, epoch=train_data.epoch)
-            print("=> Saved checkpoint (epoch:%d): %s" %
-                  (train_data.epoch, saved_path))
-
             if train_data.epoch >= params['eval_start_epoch']:
                 # ***Change to evaluation mode***
                 model.eval()
@@ -242,6 +263,12 @@ def do_train(model, params):
                     not_improved_epoch = 0
                     best_model = copy.deepcopy(model)
                     print('■■■ ↑Best Score (WER)↑ ■■■')
+
+                    # Save the model
+                    saved_path = model.save_checkpoint(
+                        model.save_path, epoch=train_data.epoch)
+                    print("=> Saved checkpoint (epoch:%d): %s" %
+                          (train_data.epoch, saved_path))
                 else:
                     not_improved_epoch += 1
 
@@ -346,62 +373,5 @@ def do_train(model, params):
         f.write('')
 
 
-def main(config_path, model_save_path):
-
-    # Load a config file (.yml)
-    with open(config_path, "r") as f:
-        config = yaml.load(f)
-        params = config['param']
-
-    # Get voabulary number (excluding blank, <SOS>, <EOS> classes)
-    with open('../metrics/vocab_num.yml', "r") as f:
-        vocab_num = yaml.load(f)
-        params['num_classes'] = vocab_num[params['data_size']
-                                          ][params['label_type']]
-        params['num_classes_sub'] = vocab_num[params['data_size']
-                                              ][params['label_type_sub']]
-
-    # Model setting
-    model = load(model_type=params['model_type'], params=params)
-
-    # Set process name
-    setproctitle('csj_' + params['model_type'] + '_' +
-                 params['label_type'] + '_' + params['label_type_sub'] + '_' + params['data_size'])
-
-    # Set save path
-    model.save_path = mkdir_join(
-        model_save_path, params['model_type'],
-        params['label_type'] + '_' + params['label_type_sub'],
-        params['data_size'], model.name)
-
-    # Reset model directory
-    model_index = 0
-    new_model_path = model.save_path
-    while True:
-        if isfile(join(new_model_path, 'complete.txt')):
-            # Training of the first model have been finished
-            model_index += 1
-            new_model_path = model.save_path + '_' + str(model_index)
-        elif isfile(join(new_model_path, 'config.yml')):
-            # Training of the first model have not been finished yet
-            model_index += 1
-            new_model_path = model.save_path + '_' + str(model_index)
-        else:
-            break
-    model.save_path = mkdir(new_model_path)
-
-    # Save config file
-    shutil.copyfile(config_path, join(model.save_path, 'config.yml'))
-
-    sys.stdout = open(join(model.save_path, 'train.log'), 'w')
-    # TODO(hirofumi): change to logger
-    do_train(model=model, params=params)
-
-
 if __name__ == '__main__':
-
-    args = sys.argv
-    if len(args) != 3:
-        raise ValueError('Length of args should be 3.')
-
-    main(config_path=args[1], model_save_path=args[2])
+    main()

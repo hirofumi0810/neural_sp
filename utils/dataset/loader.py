@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Load dataset for the multitask CTC model.
+"""Base class for loading dataset for the CTC and attention-based model.
    In this class, all data will be loaded at each step.
    You can use the multi-GPU version.
 """
@@ -26,31 +26,20 @@ class DatasetBase(Base):
     def __init__(self, *args, **kwargs):
         super(DatasetBase, self).__init__(*args, **kwargs)
 
-    def __getitem__(self, index):
-        input_i = np.array(self.input_paths[index])
-        label_i = np.array(self.label_paths[index])
-        label_sub_i = np.array(self.label_sub_paths[index])
-        return (input_i, label_i, label_sub_i)
-
     def __next__(self, batch_size=None):
         """Generate each mini-batch.
         Args:
             batch_size (int, optional): the size of mini-batch
         Returns:
-            A tuple of `(inputs, labels, labels_sub,
-                    inputs_seq_len, labels_seq_len, labels_seq_len_sub, input_names)`
+            A tuple of `(inputs, labels, inputs_seq_len, labels_seq_len, input_names)`
                 inputs: list of input data of size
                     `[num_gpus, B, T_in, input_size]`
-                labels: list of target labels in the main task, size
-                    `[num_gpus, B, T_in]`
-                labels_sub: list of target labels in the sub task, size
-                    `[num_gpus, B, T_in]`
+                labels: list of target labels of size
+                    `[num_gpus, B, T_out]`
                 inputs_seq_len: list of length of inputs of size
                     `[num_gpus, B]`
-                labels_seq_len: list of length of target labels in the main
-                    task, size `[num_gpus, B]`
-                labels_seq_len_sub: list of length of target labels in the sub
-                    task, size `[num_gpus, B]`
+                labels_seq_len: list of length of target labels of size
+                    `[num_gpus, B]`
                 input_names: list of file name of input data of size
                     `[num_gpus, B]`
             is_new_epoch (bool): If true, 1 epoch is finished
@@ -114,11 +103,8 @@ class DatasetBase(Base):
 
         # Load dataset in mini-batch
         input_list = self._load_npy(
-            np.take(self.input_paths, data_indices, axis=0))
-        label_list = self._load_npy(
-            np.take(self.label_paths, data_indices, axis=0))
-        label_list_sub = self._load_npy(
-            np.take(self.label_paths_sub, data_indices, axis=0))
+            np.array(self.df['input_path'][data_indices]))
+        label_list = np.array(self.df['transcript'][data_indices])
 
         if not hasattr(self, 'input_size'):
             self.input_size = input_list[0].shape[1]
@@ -130,23 +116,20 @@ class DatasetBase(Base):
         max_frame_num = math.ceil(max_frame_num / self.num_skip)
 
         # Compute max target label length in mini-batch
-        max_seq_len = max(map(len, label_list))
-        max_seq_len_sub = max(map(len, label_list_sub))
+        max_seq_len = max(map(len, label_list)) + 2
+        # NOTE: + <SOS> and <EOS>
 
         # Initialization
         inputs = np.zeros(
-            (len(data_indices), max_frame_num, self.input_size * self.splice),
+            (len(data_indices), max_frame_num, self.input_size),
             dtype=np.float32)
         labels = np.array(
-            [[self.ctc_padded_value] * max_seq_len] * len(data_indices))
-        labels_sub = np.array(
-            [[self.ctc_padded_value] * max_seq_len_sub] * len(data_indices))
+            [[self.att_padded_value] * max_seq_len] * len(data_indices))
         inputs_seq_len = np.zeros((len(data_indices),), dtype=np.int32)
         labels_seq_len = np.zeros((len(data_indices),), dtype=np.int32)
-        labels_seq_len_sub = np.zeros((len(data_indices),), dtype=np.int32)
         input_names = np.array(list(
             map(lambda path: basename(path).split('.')[0],
-                np.take(self.input_paths, data_indices, axis=0))))
+                np.array(self.df['input_path'][data_indices]))))
 
         # Set values of each data in mini-batch
         for i_batch in range(len(data_indices)):
@@ -159,28 +142,30 @@ class DatasetBase(Base):
             # Splicing
             data_i = do_splice(data_i, self.splice, self.num_stack)
 
-            inputs[i_batch, :frame_num, :] = data_i
+            inputs[i_batch, : frame_num, :] = data_i
+            inputs_seq_len[i_batch] = frame_num
+            indices = self.map_fn(label_list[i_batch])
+            label_num = len(indices)
             if self.is_test:
                 labels[i_batch, 0] = label_list[i_batch]
-                labels_sub[i_batch, 0] = label_list_sub[i_batch]
-                # NOTE: transcript is saved as string
             else:
-                labels[i_batch, :len(
-                    label_list[i_batch])] = label_list[i_batch]
-                labels_sub[i_batch, :len(
-                    label_list_sub[i_batch])] = label_list_sub[i_batch]
-            inputs_seq_len[i_batch] = frame_num
-            labels_seq_len[i_batch] = len(label_list[i_batch])
-            labels_seq_len_sub[i_batch] = len(label_list_sub[i_batch])
+                if self.model_type == 'attention':
+                    labels[i_batch, 0] = self.sos_index
+                    labels[i_batch, 1:label_num + 1] = indices
+                    labels[i_batch, label_num + 1] = self.eos_index
+                    labels_seq_len[i_batch] = label_num + 2
+                    # NOTE: include <SOS> and <EOS>
+                elif self.model_type == 'ctc':
+                    labels[i_batch, 0:label_num] = indices
+                    labels_seq_len[i_batch] = label_num
+                else:
+                    raise TypeError
 
         # Now we split the mini-batch data by num_gpus
         inputs = self.split_per_device(inputs, self.num_gpus)
         labels = self.split_per_device(labels, self.num_gpus)
-        labels_sub = self.split_per_device(labels_sub, self.num_gpus)
         inputs_seq_len = self.split_per_device(inputs_seq_len, self.num_gpus)
         labels_seq_len = self.split_per_device(labels_seq_len, self.num_gpus)
-        labels_seq_len_sub = self.split_per_device(
-            labels_seq_len_sub, self.num_gpus)
         input_names = self.split_per_device(input_names, self.num_gpus)
 
         # Wrap by variable
@@ -190,15 +175,11 @@ class DatasetBase(Base):
 
         if not self.is_test:
             labels = np2var(
-                labels, use_cuda=self.use_cuda, volatile=self.volatile, dtype='int')
-            labels_sub = np2var(
-                labels_sub, use_cuda=self.use_cuda, volatile=self.volatile, dtype='int')
+                labels, use_cuda=self.use_cuda, volatile=self.volatile, dtype='long')
             labels_seq_len = np2var(
                 labels_seq_len, use_cuda=self.use_cuda, volatile=self.volatile, dtype='int')
-            labels_seq_len_sub = np2var(
-                labels_seq_len_sub, use_cuda=self.use_cuda, volatile=self.volatile, dtype='int')
 
         self.iteration += len(data_indices)
 
-        return (inputs, labels, labels_sub, inputs_seq_len, labels_seq_len,
-                labels_seq_len_sub, input_names), self.is_new_epoch
+        return (inputs, labels, inputs_seq_len, labels_seq_len,
+                input_names), self.is_new_epoch

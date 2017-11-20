@@ -19,7 +19,7 @@ PYTHON=/home/lab5/inaguma/.pyenv/versions/anaconda3-4.1.1/bin/python
 saved_model_path=$1
 gpu_index=$2
 
-CUDA_VISIBLE_DEVICES=$gpu_index $PYTHON eval.py \
+CUDA_VISIBLE_DEVICES=$gpu_index $PYTHON decode.py \
   --model_path $saved_model_path \
   --epoch -1 \
   --beam_width 1 \

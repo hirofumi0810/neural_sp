@@ -62,35 +62,33 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
     for data, is_new_epoch in dataset:
 
         # Create feed dictionary for next mini-batch
-        if model_type in ['ctc', 'attention']:
-            inputs, labels, inputs_seq_len, labels_seq_len, _ = data
-
-        batch_size = inputs[0].size(0)
+        inputs, labels, inputs_seq_len, labels_seq_len, _ = data
 
         # Decode
         labels_pred, perm_indices = model.decode(
-            inputs[0], inputs_seq_len[0],
+            inputs, inputs_seq_len,
             beam_width=beam_width,
             max_decode_length=max_decode_length)
 
-        for i_batch in range(batch_size):
+        for i_batch in range(inputs.size(0)):
             ##############################
             # Reference
             ##############################
             if dataset.is_test:
-                phone_true_list = labels[0][i_batch][0].split(' ')
+                phone_true_list = labels[i_batch][0].split(' ')
+                # NOTE: transcript is seperated by space(' ')
             else:
                 # Permutate indices
                 labels = var2np(labels[perm_indices])
                 labels_seq_len = var2np(labels_seq_len[perm_indices])
 
                 # Convert from index to phone (-> list of phone strings)
-                if model_type in ['ctc']:
+                if model_type == 'ctc':
                     phone_true_list = idx2phone_eval(
-                        labels[0][i_batch][:labels_seq_len[0][i_batch]]).split(' ')
-                elif model_type in ['attention', 'joint_ctc_attention']:
+                        labels[i_batch][:labels_seq_len[i_batch]]).split(' ')
+                elif model_type == 'attention':
                     phone_true_list = idx2phone_eval(
-                        labels[0][i_batch][1:labels_seq_len[0][i_batch] - 1]).split(' ')
+                        labels[i_batch][1:labels_seq_len[i_batch] - 1]).split(' ')
                     # NOTE: Exclude <SOS> and <EOS>
 
             ##############################
@@ -99,7 +97,7 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
             # Convert from index to phone (-> list of phone strings)
             str_pred = idx2phone_train(labels_pred[i_batch])
 
-            if model_type in ['attention', 'joint_ctc_attention']:
+            if model_type == 'attention':
                 str_pred = str_pred.split('>')[0]
                 # NOTE: Trancate by the first <EOS>
 
