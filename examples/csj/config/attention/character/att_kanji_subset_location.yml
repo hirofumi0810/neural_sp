@@ -24,7 +24,7 @@ param:
     - True
     - True
     - False
-  attention_type: dot_product
+  attention_type: location
   attention_dim: 128
   decoder_type: lstm
   decoder_num_units: 320
@@ -50,7 +50,7 @@ param:
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False
-  input_feeding_approach: False
+  input_feeding: False
   coverage_weight: 0
 
   # annealing

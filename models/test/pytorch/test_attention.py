@@ -55,7 +55,7 @@ class TestAttention(unittest.TestCase):
 
         # Input-feeding approach
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', input_feeding_approach=True)
+                   decoder_type='lstm', input_feeding=True)
 
         # Pyramidal encoder
         self.check(encoder_type='lstm', bidirectional=True,
@@ -65,13 +65,11 @@ class TestAttention(unittest.TestCase):
 
         # Attention type
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', attention_type='bahdanau_content')
+                   decoder_type='lstm', attention_type='content')
         # self.check(encoder_type='lstm', bidirectional=True,
-        # decoder_type='lstm', attention_type='normed_bahdanau_content')
+        # decoder_type='lstm', attention_type='normed_content')
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', attention_type='location')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', attention_type='hybrid')
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', attention_type='dot_product')
         self.check(encoder_type='lstm', bidirectional=True,
@@ -85,8 +83,8 @@ class TestAttention(unittest.TestCase):
 
     @measure_time
     def check(self, encoder_type, bidirectional, decoder_type,
-              attention_type='dot_product', label_type='char',
-              subsample=False, input_feeding_approach=False,
+              attention_type='location', label_type='char',
+              subsample=False, input_feeding=False,
               ctc_loss_weight=0, decoder_num_layers=1,
               save_path=None):
 
@@ -97,7 +95,7 @@ class TestAttention(unittest.TestCase):
         print('  decoder_type: %s' % decoder_type)
         print('  attention_type: %s' % attention_type)
         print('  subsample: %s' % str(subsample))
-        print('  input_feeding_approach: %s' % str(input_feeding_approach))
+        print('  input_feeding: %s' % str(input_feeding))
         print('  ctc_loss_weight: %s' % str(ctc_loss_weight))
         print('  decoder_num_layers: %s' % str(decoder_num_layers))
         print('==================================================')
@@ -141,7 +139,7 @@ class TestAttention(unittest.TestCase):
             sharpening_factor=1,
             logits_temperature=1,
             sigmoid_smoothing=False,
-            input_feeding_approach=input_feeding_approach,
+            input_feeding=input_feeding,
             coverage_weight=0.5)
 
         # Count total parameters

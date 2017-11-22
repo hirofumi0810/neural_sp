@@ -76,7 +76,7 @@ class TestRestoreAttention(unittest.TestCase):
             sharpening_factor=1,
             logits_temperature=1,
             sigmoid_smoothing=False,
-            input_feeding_approach=False)
+            input_feeding=False)
 
         # Count total parameters
         print("Total %.3f M parameters" % (model.total_parameters / 1000000))

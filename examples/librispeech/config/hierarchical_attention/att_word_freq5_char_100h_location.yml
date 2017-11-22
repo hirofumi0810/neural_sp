@@ -2,6 +2,7 @@ param:
   # corpus
   corpus: librispeech
   label_type: word_freq5
+  label_type_sub: character
   data_size: 100h
 
   # features
@@ -13,12 +14,13 @@ param:
   num_skip: 1
 
   # topology
-  model_type: attention
+  model_type: hierarchical_attention
   encoder_type: lstm
   encoder_bidirectional: True
   encoder_num_units: 320
   encoder_num_proj: 0
   encoder_num_layers: 6
+  encoder_num_layers_sub: 4
   subsample_list:
     - False
     - True
@@ -26,15 +28,18 @@ param:
     - False
     - False
     - False
-  attention_type: dot_product
+  attention_type: location
   attention_dim: 128
   decoder_type: lstm
   decoder_num_units: 320
   decoder_num_layers: 1
+  decoder_num_units_sub: 320
+  decoder_num_layers_sub: 1
   embedding_dim: 512
+  embedding_dim_sub: 64
 
   # optimization
-  batch_size: 5
+  batch_size: 10
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 30
@@ -52,7 +57,7 @@ param:
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False
-  input_feeding_approach: False
+  input_feeding: False
   coverage_weight: 0
 
   # annealing
@@ -65,4 +70,6 @@ param:
   print_step: 200
 
   # MTL
-  ctc_loss_weight: 0.1
+  main_loss_weight: 0.5
+  ctc_loss_weight: 0
+  ctc_loss_weight_sub: 0

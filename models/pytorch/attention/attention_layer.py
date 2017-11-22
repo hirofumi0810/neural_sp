@@ -8,12 +8,12 @@ from __future__ import print_function
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.autograd import Variable
 
 ATTENTION_TYPE = [
-    'bahdanau_content', 'normed_bahdanau_content',
-    'location', 'hybrid', 'dot_product',
+    'content', 'normed_content', 'location', 'dot_product',
     'luong_dot', 'scaled_luong_dot', 'luong_general', 'luong_concat',
-    'baidu_attetion']
+    'rnn_attention']
 
 
 class AttentionMechanism(nn.Module):
@@ -60,27 +60,15 @@ class AttentionMechanism(nn.Module):
         self.sharpening_factor = sharpening_factor
         self.sigmoid_smoothing = sigmoid_smoothing
 
-        if self.attention_type == 'bahdanau_content':
+        if self.attention_type == 'content':
             self.W_enc = nn.Linear(encoder_num_units, attention_dim)
             self.W_dec = nn.Linear(decoder_num_units, attention_dim)
             self.v_a = nn.Linear(attention_dim, 1)
 
-        elif self.attention_type == 'normed_bahdanau_content':
+        elif self.attention_type == 'normed_content':
             raise NotImplementedError
 
         elif self.attention_type == 'location':
-            self.W_dec = nn.Linear(decoder_num_units, attention_dim)
-            self.conv = nn.Conv1d(
-                in_channels=1,
-                out_channels=out_channels,
-                kernel_size=kernel_size,
-                stride=1,
-                padding=kernel_size // 2,
-                bias=True)
-            self.W_conv = nn.Linear(out_channels, attention_dim)
-            self.v_a = nn.Linear(attention_dim, 1)
-
-        elif self.attention_type == 'hybrid':
             self.W_enc = nn.Linear(encoder_num_units, attention_dim)
             self.W_dec = nn.Linear(decoder_num_units, attention_dim)
             self.conv = nn.Conv1d(
@@ -111,7 +99,7 @@ class AttentionMechanism(nn.Module):
             self.W_a = nn.Linear(decoder_num_units * 2, attention_dim)
             self.v_a = nn.Linear(attention_dim, 1)
 
-        elif self.attention_type == 'baidu_attetion':
+        elif self.attention_type == 'rnn_attention':
             raise NotImplementedError
 
     def forward(self, encoder_states, decoder_outputs, attention_weights_step):
@@ -127,48 +115,41 @@ class AttentionMechanism(nn.Module):
                 `[B, 1, encoder_num_units]`
             attention_weights_step (FloatTensor): A tensor of size `[B, T_in]`
         """
-        if self.attention_type == 'bahdanau_content':
+        if self.attention_type == 'content':
             ###################################################################
-            # energy = <v_a, tanh(W_enc(hidden_enc) + W_dec(hidden_dec))>
+            # energy = <v_a, tanh(W_enc(h_en) + W_dec(h_de))>
             ###################################################################
             keys = self.W_enc(encoder_states)
             query = self.W_dec(decoder_outputs).expand_as(keys)
             energy = self.v_a(F.tanh(keys + query)).squeeze(dim=2)
 
-        elif self.attention_type == 'normed_bahdanau_content':
+        elif self.attention_type == 'normed_content':
             raise NotImplementedError
 
         elif self.attention_type == 'location':
             ###################################################################
             # f = F * α_{i-1}
-            # energy = <v_a, tanh(W_dec(hidden_dec) + W_conv(f))>
-            ###################################################################
-            if attention_weights_step is not None:
-                conv_feat = self.conv(attention_weights_step.unsqueeze(dim=1))
-                conv_feat = self.W_conv(conv_feat.transpose(1, 2))
-                query = self.W_dec(decoder_outputs).expand_as(conv_feat)
-                query += conv_feat
-            else:
-                query = self.W_dec(decoder_outputs)
-            energy = self.v_a(F.tanh(query)).squeeze(dim=2)
-
-        elif self.attention_type == 'hybrid':
-            ###################################################################
-            # f = F * α_{i-1}
             # energy = <v_a,
-            # tanh(W_enc(hidden_enc) + W_dec(hidden_dec) + W_conv(f))>
+            # tanh(W_enc(h_en) + W_dec(h_de) + W_conv(f))>
             ###################################################################
             keys = self.W_enc(encoder_states)
             query = self.W_dec(decoder_outputs).expand_as(keys)
-            if attention_weights_step is not None:
-                conv_feat = self.conv(attention_weights_step.unsqueeze(dim=1))
-                conv_feat = self.W_conv(conv_feat.transpose(1, 2))
-                query += conv_feat
-            energy = self.v_a(F.tanh(keys + query)).squeeze(dim=2)
+
+            if attention_weights_step is None:
+                batch_size, max_time = encoder_states.size()[:2]
+                attention_weights_step = Variable(
+                    torch.zeros(batch_size, max_time))
+                if torch.cuda.is_available():
+                    attention_weights_step = attention_weights_step.cuda()
+                # TODO: volatile, require_grad
+
+            conv_feat = self.conv(attention_weights_step.unsqueeze(dim=1))
+            conv_feat = self.W_conv(conv_feat.transpose(1, 2))
+            energy = self.v_a(F.tanh(keys + query + conv_feat)).squeeze(dim=2)
 
         elif self.attention_type == 'dot_product':
             ###################################################################
-            # energy = <W_enc(hidden_enc), W_dec(hidden_dec)>
+            # energy = <W_enc(h_en), W_dec(h_de)>
             ###################################################################
             keys = self.W_enc(encoder_states)
             query = self.W_dec(decoder_outputs).transpose(1, 2)
@@ -176,7 +157,7 @@ class AttentionMechanism(nn.Module):
 
         elif self.attention_type == 'luong_dot':
             ###################################################################
-            # energy = <hidden_enc, hidden_dec>
+            # energy = <h_en, h_de>
             # NOTE: both the encoder and decoder must be the same size
             ###################################################################
             keys = encoder_states
@@ -188,7 +169,7 @@ class AttentionMechanism(nn.Module):
 
         elif self.attention_type == 'luong_general':
             ###################################################################
-            # energy = <W(hidden_enc), hidden_dec>
+            # energy = <W(h_en), h_de>
             ###################################################################
             keys = self.W_a(encoder_states)
             query = decoder_outputs.transpose(1, 2)
@@ -196,7 +177,7 @@ class AttentionMechanism(nn.Module):
 
         elif self.attention_type == 'luong_concat':
             ###################################################################
-            # energy = <v_a, tanh(W_a([hidden_dec;hidden_enc]))>
+            # energy = <v_a, tanh(W_a([h_de; h_en]))>
             # NOTE: both the encoder and decoder must be the same size
             ###################################################################
             keys = encoder_states

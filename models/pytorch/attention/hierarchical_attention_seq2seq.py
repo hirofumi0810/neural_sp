@@ -51,7 +51,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  sharpening_factor=1,
                  logits_temperature=1,
                  sigmoid_smoothing=False,
-                 input_feeding_approach=False,
+                 input_feeding=False,
                  coverage_weight=0,
                  ctc_loss_weight=0,
                  ctc_loss_weight_sub=0):
@@ -81,7 +81,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             sharpening_factor=sharpening_factor,
             logits_temperature=logits_temperature,
             sigmoid_smoothing=sigmoid_smoothing,
-            input_feeding_approach=input_feeding_approach,
+            input_feeding=input_feeding,
             coverage_weight=coverage_weight,
             ctc_loss_weight=ctc_loss_weight)
 
@@ -185,7 +185,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         self.embedding_dropout_sub = nn.Dropout(embedding_dropout)
         # TODO: dropoutは別に用意する必要ある（実装確認）？
 
-        if input_feeding_approach:
+        if input_feeding:
             self.input_feeding_sub = nn.Linear(
                 decoder_num_units_sub * 2, decoder_num_units_sub)
             # NOTE: input-feeding approach
@@ -375,7 +375,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 decoder_state,
                 attention_weights_step)
 
-            if self.input_feeding_approach:
+            if self.input_feeding:
                 # Input-feeding approach
                 output = self.input_feeding_sub(
                     torch.cat([decoder_outputs, context_vector], dim=-1))
@@ -488,7 +488,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 decoder_state,
                 attention_weights_step)
 
-            if self.input_feeding_approach:
+            if self.input_feeding:
                 # Input-feeding approach
                 output = self.input_feeding_sub(
                     torch.cat([decoder_outputs, context_vector], dim=-1))

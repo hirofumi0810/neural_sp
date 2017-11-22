@@ -25,15 +25,15 @@ class TestAttentionLayer(unittest.TestCase):
     def test(self):
         print("Attention layer Working check.")
 
-        self.check(attention_type='bahdanau_content')
-        # self.check(attention_type='normed_bahdanau_content')
+        self.check(attention_type='content')
+        # self.check(attention_type='normed_content')
         self.check(attention_type='location')
-        self.check(attention_type='hybrid')
         self.check(attention_type='dot_product')
         self.check(attention_type='luong_dot')
         # self.check(attention_type='scaled_luong_dot')
         self.check(attention_type='luong_general')
         self.check(attention_type='luong_concat')
+        # self.check(attention_type='rnn_attention')
 
     @measure_time
     def check(self, attention_type):

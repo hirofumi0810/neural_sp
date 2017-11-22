@@ -39,7 +39,7 @@ class TestHierarchicalAttention(unittest.TestCase):
     @measure_time
     def check(self, encoder_type, bidirectional, decoder_type,
               attention_type='dot_product',
-              subsample=False, input_feeding_approach=False,
+              subsample=False, input_feeding=False,
               ctc_loss_weight=0):
 
         print('==================================================')
@@ -48,7 +48,7 @@ class TestHierarchicalAttention(unittest.TestCase):
         print('  decoder_type: %s' % decoder_type)
         print('  attention_type: %s' % attention_type)
         print('  subsample: %s' % str(subsample))
-        print('  input_feeding_approach: %s' % str(input_feeding_approach))
+        print('  input_feeding: %s' % str(input_feeding))
         print('==================================================')
 
         # Load batch data
@@ -93,7 +93,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             sharpening_factor=1,
             logits_temperature=1,
             sigmoid_smoothing=False,
-            input_feeding_approach=input_feeding_approach,
+            input_feeding=input_feeding,
             ctc_loss_weight=0,
             ctc_loss_weight_sub=0.1)
 

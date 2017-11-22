@@ -49,7 +49,7 @@ param:
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False
-  input_feeding_approach: False
+  input_feeding: False
   coverage_weight: 0
 
   # annealing

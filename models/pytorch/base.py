@@ -14,6 +14,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 from models.pytorch.tmp.lr_scheduler import ReduceLROnPlateau
+from utils.directory import mkdir
 
 OPTIMIZER_CLS_NAMES = {
     "sgd": optim.SGD,
@@ -67,17 +68,22 @@ class ModelBase(nn.Module):
     def use_cuda(self):
         return torch.cuda.is_available()
 
-    def set_cuda(self, deterministic=False):
+    def set_cuda(self, deterministic=False, benchmark=True):
         """Set model to the GPU version.
         Args:
             deterministic (bool, optional):
+
         """
         if self.use_cuda and deterministic:
             print('GPU deterministic mode (no cudnn)')
             torch.backends.cudnn.enabled = False
             # NOTE: this is slower than GPU mode.
         elif self.use_cuda:
-            print('GPU mode')
+            if benchmark:
+                torch.backends.cudnn.benchmark = True
+                print('GPU mode (benchmark)')
+            else:
+                print('GPU mode')
         else:
             print('CPU mode')
 
@@ -149,6 +155,23 @@ class ModelBase(nn.Module):
             scheduler = None
 
         return self.optimizer, scheduler
+
+    def set_save_path(self, save_path):
+        # Reset model directory
+        model_index = 0
+        save_path_tmp = save_path
+        while True:
+            if isfile(join(save_path_tmp, 'complete.txt')):
+                # Training of the first model have been finished
+                model_index += 1
+                save_path_tmp = save_path + '_' + str(model_index)
+            elif isfile(join(save_path_tmp, 'config.yml')):
+                # Training of the first model have not been finished yet
+                model_index += 1
+                save_path_tmp = save_path + '_' + str(model_index)
+            else:
+                break
+        self.save_path = mkdir(save_path_tmp)
 
     def save_checkpoint(self, save_path, epoch):
         """

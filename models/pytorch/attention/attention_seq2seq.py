@@ -82,7 +82,7 @@ class AttentionSeq2seq(ModelBase):
             softmax layer in outputing probabilities
         sigmoid_smoothing (bool, optional): if True, replace softmax function
             in computing attention weights with sigmoid function for smoothing
-        input_feeding_approach (bool, optional): See detail in
+        input_feeding (bool, optional): See detail in
             Luong, Minh-Thang, Hieu Pham, and Christopher D. Manning.
             "Effective approaches to attention-based neural machine translation."
                 arXiv preprint arXiv:1508.04025 (2015).
@@ -116,7 +116,7 @@ class AttentionSeq2seq(ModelBase):
                  sharpening_factor=1,
                  logits_temperature=1,
                  sigmoid_smoothing=False,
-                 input_feeding_approach=False,
+                 input_feeding=False,
                  coverage_weight=0,
                  ctc_loss_weight=0):
 
@@ -161,7 +161,7 @@ class AttentionSeq2seq(ModelBase):
         self.sharpening_factor = sharpening_factor
         self.logits_temperature = logits_temperature
         self.sigmoid_smoothing = sigmoid_smoothing
-        self.input_feeding_approach = input_feeding_approach
+        self.input_feeding = input_feeding
         self.coverage_weight = coverage_weight
 
         # Joint CTC-Attention
@@ -247,7 +247,7 @@ class AttentionSeq2seq(ModelBase):
         self.embedding = nn.Embedding(self.num_classes, embedding_dim)
         self.embedding_dropout = nn.Dropout(embedding_dropout)
 
-        if input_feeding_approach:
+        if input_feeding:
             self.input_feeeding = nn.Linear(
                 decoder_num_units * 2, decoder_num_units)
             # NOTE: input-feeding approach
@@ -446,6 +446,7 @@ class AttentionSeq2seq(ModelBase):
         logits = []
         attention_weights = []
         attention_weights_step = None
+        context_vector = None
 
         for t in range(labels_max_seq_len - 1):
             y = ys[:, t:t + 1, :]
@@ -456,7 +457,7 @@ class AttentionSeq2seq(ModelBase):
                 decoder_state,
                 attention_weights_step)
 
-            if self.input_feeding_approach:
+            if self.input_feeding:
                 # Input-feeding approach
                 output = self.input_feeeding(
                     torch.cat([decoder_outputs, context_vector], dim=-1))
@@ -489,7 +490,7 @@ class AttentionSeq2seq(ModelBase):
         if self.init_dec_state_with_enc_state and encoder_final_state is None:
             raise ValueError('Set the final state of the encoder.')
 
-        batch_size = encoder_final_state.size()[1]
+        batch_size = encoder_final_state.size(1)
 
         h_0 = Variable(torch.zeros(
             self.decoder_num_layers, batch_size, self.decoder_num_units))
@@ -668,7 +669,7 @@ class AttentionSeq2seq(ModelBase):
                 decoder_state,
                 attention_weights_step)
 
-            if self.input_feeding_approach:
+            if self.input_feeding:
                 # Input-feeding approach
                 output = self.input_feeeding(
                     torch.cat([decoder_outputs, context_vector], dim=-1))
@@ -762,7 +763,7 @@ class AttentionSeq2seq(ModelBase):
                         attention_weights_step_list[i_batch])
                     attention_weights_step_list[i_batch] = attention_weights_step
 
-                    if self.input_feeding_approach:
+                    if self.input_feeding:
                         # Input-feeding approach
                         output = self.input_feeeding(
                             torch.cat([decoder_outputs, context_vector], dim=-1))
