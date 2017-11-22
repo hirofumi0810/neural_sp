@@ -6,6 +6,7 @@ param:
 
   # features
   feature: fbank
+  save_format: numpy
   input_size: 123
   splice: 1
   num_stack: 1
@@ -31,7 +32,7 @@ param:
   embedding_dim: 64
 
   # optimization
-  batch_size: 25
+  batch_size: 20
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 30
@@ -62,4 +63,4 @@ param:
   print_step: 200
 
   # MTL
-  ctc_loss_weight: 0.1
+  ctc_loss_weight: 0.2

@@ -69,7 +69,8 @@ def main():
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=False,
-        use_cuda=model.use_cuda, volatile=True)
+        use_cuda=model.use_cuda, volatile=True,
+        save_format=params['save_format'])
 
     # GPU setting
     model.set_cuda(deterministic=False)
@@ -145,7 +146,8 @@ def plot(model, dataset, label_type, save_path=None, show=False):
 
             # Save as a png file
             if save_path is not None:
-                plt.savefig(join(save_path, input_names[0] + '.png'), dvi=500)
+                plt.savefig(
+                    join(save_path, input_names[i_batch] + '.png'), dvi=500)
 
             plt.close()
 

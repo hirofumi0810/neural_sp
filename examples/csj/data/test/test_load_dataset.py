@@ -81,7 +81,7 @@ class TestLoadDataset(unittest.TestCase):
             num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
             sort_utt=sort_utt, reverse=True, sort_stop_epoch=sort_stop_epoch,
-            num_gpus=num_gpus)
+            num_gpus=num_gpus, save_format='numpy')
 
         print('=> Loading mini-batch...')
         if 'word' in label_type:
@@ -93,7 +93,7 @@ class TestLoadDataset(unittest.TestCase):
             inputs, labels, inputs_seq_len, labels_seq_len, input_names = data
 
             if data_type == 'train':
-                for i, l in zip(inputs[0], labels[0]):
+                for i, l in zip(inputs, labels):
                     if len(i) < len(l):
                         raise ValueError(
                             'input length must be longer than label length.')
@@ -103,15 +103,15 @@ class TestLoadDataset(unittest.TestCase):
                     print(inputs_gpu.shape)
 
             if dataset.is_test:
-                str_true = labels[0][0][0]
+                str_true = labels[0][0]
             else:
                 str_true = map_fn(
-                    labels.data[0][0][0:labels_seq_len.data[0][0]])
+                    labels.data[0][0:labels_seq_len.data[0]])
 
             print('----- %s (epoch: %.3f) -----' %
-                  (input_names[0][0], dataset.epoch_detail))
-            print(inputs.data.numpy()[0].shape)
-            # print(labels.data[0].shape)
+                  (input_names[0], dataset.epoch_detail))
+            print(inputs.data.numpy().shape)
+            # print(labels.data.shape)
             print(str_true)
 
             if dataset.epoch_detail >= 0.05:

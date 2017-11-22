@@ -26,7 +26,7 @@ green = '#006400'
 
 sys.path.append(abspath('../../../'))
 from models.pytorch.load_model import load
-from examples.csj.data.load_dataset_attention import Dataset
+from examples.csj.data.load_dataset import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
 from utils.io.variable import var2np
@@ -38,7 +38,7 @@ parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
 parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
-parser.add_argument('--eval_batch_size', type=str, default=1,
+parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
 parser.add_argument('--max_decode_length', type=int, default=100,  # or 60
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
@@ -59,25 +59,29 @@ def main():
         params['num_classes'] = vocab_num[params['data_size']
                                           ][params['label_type']]
 
-    # Model setting
+    # Load model
     model = load(model_type=params['model_type'], params=params)
 
     # Load dataset
+    vocab_file_path = '../metrics/vocab_files/' + \
+        params['label_type'] + '_' + params['data_size'] + '.txt'
     test_data = Dataset(
+        model_type=params['model_type'],
         data_type='eval1',
         # data_type='eval2',
         # data_type='eval3',
         data_size=params['data_size'],
-        label_type=params['label_type'], num_classes=params['num_classes'],
+        label_type=params['label_type'], vocab_file_path=vocab_file_path,
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=False,
-        use_cuda=model.use_cuda, volatile=True)
+        use_cuda=model.use_cuda, volatile=True,
+        save_format=params['save_format'])
 
     # GPU setting
     model.set_cuda(deterministic=False)
 
-    # Load the saved model
+    # Restore the saved model
     checkpoint = model.load_checkpoint(
         save_path=args.model_path, epoch=args.epoch)
     model.load_state_dict(checkpoint['state_dict'])
@@ -111,29 +115,24 @@ def plot(model, dataset, data_size, label_type, save_path=None, show=False):
         shutil.rmtree(save_path)
         mkdir(save_path)
 
-    if label_type == 'character':
-        vocab_file_path = '../metrics/vocab_files/character.txt'
-    else:
-        vocab_file_path = '../metrics/vocab_files/' + \
-            label_type + '_' + data_size + '.txt'
+    vocab_file_path = '../metrics/vocab_files/' + \
+        label_type + '_' + data_size + '.txt'
 
-    if 'char' in label_type:
-        map_fn = Idx2char(vocab_file_path)
-    else:
+    if 'word' in label_type:
         map_fn = Idx2word(vocab_file_path)
+    else:
+        map_fn = Idx2char(vocab_file_path)
 
     for data, is_new_epoch in dataset:
 
         # Create feed dictionary for next mini batch
         inputs, _, inputs_seq_len, _, input_names = data
 
-        batch_size = inputs[0].size(0)
-
         # Decode
         labels_pred, att_weights, _ = model.attention_weights(
-            inputs[0], inputs_seq_len[0], beam_width=1, max_decode_length=100)
+            inputs, inputs_seq_len, beam_width=1, max_decode_length=100)
 
-        for i_batch in range(batch_size):
+        for i_batch in range(inputs.size(0)):
 
             # Check if the sum of attention weights equals to 1
             # print(np.sum(att_weights[i_batch], axis=1))
@@ -160,7 +159,8 @@ def plot(model, dataset, data_size, label_type, save_path=None, show=False):
 
             # Save as a png file
             if save_path is not None:
-                plt.savefig(join(save_path, input_names[0] + '.png'), dvi=500)
+                plt.savefig(
+                    join(save_path, input_names[i_batch] + '.png'), dvi=500)
 
             plt.close()
 

@@ -7,6 +7,7 @@ param:
 
   # features
   feature: fbank
+  save_format: numpy
   input_size: 123
   splice: 1
   num_stack: 2

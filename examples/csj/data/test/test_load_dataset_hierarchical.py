@@ -73,7 +73,7 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
             num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
             sort_utt=sort_utt, reverse=True, sort_stop_epoch=sort_stop_epoch,
-            num_gpus=num_gpus)
+            num_gpus=num_gpus, save_format='numpy')
 
         print('=> Loading mini-batch...')
         idx2word = Idx2word(vocab_file_path, space_mark='_')
@@ -83,7 +83,7 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
             inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub, input_names = data
 
             if data_type == 'train':
-                for i, l in zip(inputs[0], labels[0]):
+                for i, l in zip(inputs, labels):
                     if len(i) < len(l):
                         raise ValueError(
                             'input length must be longer than label length.')
@@ -93,18 +93,18 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
                     print(inputs_gpu.shape)
 
             if dataset.is_test:
-                str_true = labels[0][0][0]
-                str_true_sub = labels_sub[0][0][0]
+                str_true = labels[0][0]
+                str_true_sub = labels_sub[0][0]
             else:
                 str_true = idx2word(
-                    labels.data[0][0][:labels_seq_len.data[0][0]])
+                    labels.data[0][:labels_seq_len.data[0]])
                 str_true_sub = idx2char(
-                    labels_sub.data[0][0][:labels_seq_len_sub.data[0][0]])
+                    labels_sub.data[0][:labels_seq_len_sub.data[0]])
 
             print('----- %s (epoch: %.3f) -----' %
-                  (input_names[0][0], dataset.epoch_detail))
-            print(inputs.data.numpy()[0].shape)
-            # print(labels.data[0].shape)
+                  (input_names[0], dataset.epoch_detail))
+            print(inputs.data.numpy().shape)
+            # print(labels.data.shape)
             print('-' * 20)
             print(str_true)
             print('-' * 10)

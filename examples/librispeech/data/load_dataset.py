@@ -26,7 +26,7 @@ class Dataset(DatasetBase):
                  num_stack=1, num_skip=1,
                  shuffle=False, sort_utt=False, reverse=False,
                  sort_stop_epoch=None, num_gpus=1,
-                 use_cuda=False, volatile=False):
+                 use_cuda=False, volatile=False, save_format='numpy'):
         """A class for loading dataset.
         Args:
             model_type (string): attention or ctc
@@ -52,6 +52,7 @@ class Dataset(DatasetBase):
             num_gpus (int, optional): the number of GPUs
             use_cuda (bool, optional):
             volatile (boo, optional):
+            save_format (string, optional): numpy or htk
         """
         super(Dataset, self).__init__(vocab_file_path=vocab_file_path)
 
@@ -75,11 +76,12 @@ class Dataset(DatasetBase):
         self.num_gpus = num_gpus
         self.use_cuda = use_cuda
         self.volatile = volatile
+        self.save_format = save_format
 
         # Set mapping function
         dataset_path = join(
             '/n/sd8/inaguma/corpus/librispeech/dataset',
-            data_size, data_type, 'dataset.csv')
+            data_size, data_type, 'dataset_' + save_format + '.csv')
 
         if label_type == 'character':
             self.map_fn = Char2idx(vocab_file_path)
@@ -87,8 +89,6 @@ class Dataset(DatasetBase):
             self.map_fn = Char2idx(vocab_file_path, capital_divide=True)
         elif 'word' in label_type:
             self.map_fn = Word2idx(vocab_file_path)
-        else:
-            raise ValueError
 
         # Load dataset file
         self.df = pd.read_csv(dataset_path)

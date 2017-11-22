@@ -94,25 +94,25 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
                     print(inputs_gpu.shape)
 
             if dataset.is_test:
-                str_true = labels[0][0][0]
-                str_true_sub = labels[0][0][0]
+                str_true = labels[0][0]
+                str_true_sub = labels[0][0]
             else:
                 str_true = idx2word(
-                    labels.data[0][0][:labels_seq_len.data[0][0]])
+                    labels.data[0][:labels_seq_len.data[0]])
                 str_true_sub = idx2char(
-                    labels_sub.data[0][0][:labels_seq_len_sub.data[0][0]])
+                    labels_sub.data[0][:labels_seq_len_sub.data[0]])
 
             print('----- %s (epoch: %.3f) -----' %
-                  (input_names[0][0], dataset.epoch_detail))
-            print(inputs.data[0].data.numpy()[0].shape)
-            print(labels_seq_len.data[0])
-            print('-' * 20)
+                  (input_names[0], dataset.epoch_detail))
+            print(inputs.data.numpy().shape)
+            if not dataset.is_test:
+                print(max(labels_seq_len.data.numpy()))
+            print('=' * 20)
             print(str_true)
             print('-' * 10)
             print(str_true_sub)
-            print('-' * 20)
 
-            if dataset.epoch_detail >= 0.05:
+            if dataset.epoch_detail >= 0.1:
                 break
 
 

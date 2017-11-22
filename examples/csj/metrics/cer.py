@@ -59,8 +59,6 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
         elif model_type in ['hierarchical_ctc', 'hierarchical_attention']:
             inputs, _, labels, inputs_seq_len, _, labels_seq_len, _ = data
 
-        batch_size = inputs.size(0)
-
         # Decode
         if model_type in ['attention', 'ctc']:
             labels_pred, perm_indices = model.decode(
@@ -73,7 +71,7 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
                 beam_width=beam_width,
                 max_decode_length=max_decode_length)
 
-        for i_batch in range(batch_size):
+        for i_batch in range(inputs.size(0)):
 
             ##############################
             # Reference
@@ -90,7 +88,7 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
                 if model_type in ['ctc', 'hierarchical_ctc']:
                     str_true = idx2char(
                         labels[i_batch][:labels_seq_len[i_batch]])
-                elif model_type in ['attention', 'hierarchical_attention', 'joint_ctc_attention']:
+                elif model_type in ['attention', 'hierarchical_attention']:
                     str_true = idx2char(
                         labels[i_batch][1:labels_seq_len[i_batch] - 1])
                     # NOTE: Exclude <SOS> and <EOS>

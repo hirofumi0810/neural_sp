@@ -5,6 +5,7 @@ param:
 
   # features
   feature: fbank
+  save_format: numpy
   input_size: 123
   splice: 1
   num_stack: 2
@@ -27,7 +28,7 @@ param:
   decoder_type: lstm
   decoder_num_units: 256
   decoder_num_layers: 1
-  embedding_dim: 64
+  embedding_dim: 32
 
   # optimization
   batch_size: 50
@@ -48,7 +49,7 @@ param:
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False
-  input_feeding_approach: True
+  input_feeding_approach: False
   coverage_weight: 0
 
   # annealing

@@ -114,7 +114,7 @@ class TestLoadDataset(unittest.TestCase):
                 print(max(labels_seq_len.data.numpy()))
             print(str_true)
 
-            if dataset.epoch_detail >= 0.05:
+            if dataset.epoch_detail >= 0.1:
                 break
 
 

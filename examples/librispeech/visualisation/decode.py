@@ -63,7 +63,8 @@ def main():
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, reverse=True,
-        use_cuda=model.use_cuda, volatile=True)
+        use_cuda=model.use_cuda, volatile=True,
+        save_format=params['save_format'])
 
     # GPU setting
     model.set_cuda(deterministic=False)
@@ -141,31 +142,19 @@ def decode(model, model_type, dataset, label_type, data_size, beam_width,
                 labels_seq_len = var2np(labels_seq_len[perm_indices])
 
                 # Convert from list of index to string
-                if 'char' in label_type:
-                    if model_type == 'ctc':
-                        str_true = map_fn(
-                            labels[i_batch][:labels_seq_len[i_batch]])
-                    elif model_type == 'attention':
-                        str_true = map_fn(
-                            labels[i_batch][1:labels_seq_len[i_batch] - 1])
-                        # NOTE: Exclude <SOS> and <EOS>
-                else:
-                    if model_type == 'ctc':
-                        str_true = map_fn(
-                            labels[i_batch][:labels_seq_len[i_batch]])
-                    elif model_type == 'attention':
-                        str_true = map_fn(
-                            labels[i_batch][1:labels_seq_len[i_batch] - 1])
-                        # NOTE: Exclude <SOS> and <EOS>
+                if model_type == 'ctc':
+                    str_true = map_fn(
+                        labels[i_batch][:labels_seq_len[i_batch]])
+                elif model_type == 'attention':
+                    str_true = map_fn(
+                        labels[i_batch][1:labels_seq_len[i_batch] - 1])
+                    # NOTE: Exclude <SOS> and <EOS>
 
             ##############################
             # Hypothesis
             ##############################
             # Convert from list of index to string
-            if 'char' in label_type:
-                str_pred = map_fn(labels_pred[i_batch])
-            else:
-                str_pred = map_fn(labels_pred[i_batch])
+            str_pred = map_fn(labels_pred[i_batch])
 
             if model_type == 'attention':
                 str_pred = str_pred.split('>')[0]

@@ -5,10 +5,11 @@ param:
 
   # features
   feature: fbank
+  save_format: numpy
   input_size: 123
   splice: 1
-  num_stack: 1
-  num_skip: 1
+  num_stack: 2
+  num_skip: 2
 
   # topology
   model_type: attention
@@ -27,7 +28,7 @@ param:
   decoder_type: lstm
   decoder_num_units: 256
   decoder_num_layers: 1
-  embedding_dim: 64
+  embedding_dim: 32
 
   # optimization
   batch_size: 50
@@ -50,8 +51,6 @@ param:
   sigmoid_smoothing: False
   input_feeding_approach: False
   coverage_weight: 0
-  eval_start_epoch: 20
-  print_step: 10
 
   # annealing
   decay_start_epoch: 20
@@ -59,6 +58,8 @@ param:
   decay_patient_epoch: 5
   sort_stop_epoch: 20
   not_improved_patient_epoch: 10
+  eval_start_epoch: 20
+  print_step: 10
 
   # MTL
   ctc_loss_weight: 0

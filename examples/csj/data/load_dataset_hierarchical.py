@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Load dataset for the hierarchical CTC and attention-based model (Librispeech corpus).
+"""Load dataset for the hierarchical CTC and attention-based model (CSJ corpus).
    In addition, frame stacking and skipping are used.
    You can use the multi-GPU version.
 """
@@ -14,6 +14,7 @@ from os.path import join
 import pandas as pd
 
 from utils.dataset.loader_hierarchical import DatasetBase
+from utils.io.labels.phone import Phone2idx
 from utils.io.labels.character import Char2idx
 from utils.io.labels.word import Word2idx
 
@@ -30,12 +31,12 @@ class Dataset(DatasetBase):
                  use_cuda=False, volatile=False, save_format='numpy'):
         """A class for loading dataset.
         Args:
-            model_type (string): hierarchical_ctc or hierarchical_attention
-            data_type (string): train or dev_clean or dev_other or test_clean
-                or test_other
-            data_size (string): 100h or 460h or 960h
-            label_type (string): word_freq1 or word_freq5 or word_freq10 or word_freq15
-            label_type_sub (string): characater or characater_capital_divide
+            model_type (string): hierarchical_attention or hierarchical_ctc
+            data_type (string): train or dev or eval1 or eval2 or eval3
+            data_size (string): subset or fullset
+            label_type (string): kanji or kanji_divide or word_freq1 or
+                word_freq5 or word_freq10 or word_freq15
+            label_type_sub (string): kanji or kanji_divide or kana or kana_divide
             batch_size (int): the size of mini-batch
             vocab_file_path (string): path to the vocabulary file in the main
                 task
@@ -53,15 +54,14 @@ class Dataset(DatasetBase):
                 descending order
             sort_stop_epoch (int, optional): After sort_stop_epoch, training
                 will revert back to a random order
-            num_gpus (int, optional): the number of GPUs
+            num_gpus (optional, int): the number of GPUs
             use_cuda (bool, optional):
             volatile (boo, optional):
             save_format (string, optional): numpy or htk
         """
-        super(Dataset, self).__init__(vocab_file_path=vocab_file_path,
-                                      vocab_file_path_sub=vocab_file_path_sub)
+        super(Dataset, self).__init__()
 
-        if data_type in ['test_clean', 'test_other']:
+        if data_type in ['eval1', 'eval2', 'eval3']:
             self.is_test = True
         else:
             self.is_test = False
@@ -86,27 +86,42 @@ class Dataset(DatasetBase):
 
         # Set mapping function
         dataset_path = join(
-            '/n/sd8/inaguma/corpus/librispeech/dataset',
-            data_size, data_type, 'dataset_' + save_format + '.csv')
+            '/n/sd8/inaguma/corpus/csj/dataset',
+            data_size, data_type, 'dataset_kanji_' + save_format + '.csv')
+
+        if 'kana' in label_type_sub:
+            dataset_path_sub = join(
+                '/n/sd8/inaguma/corpus/csj/dataset',
+                data_size, data_type, 'dataset_kana_' + save_format + '.csv')
+        elif 'kanji' in label_type_sub:
+            dataset_path_sub = join(
+                '/n/sd8/inaguma/corpus/csj/dataset',
+                data_size, data_type, 'dataset_kanji_' + save_format + '.csv')
+        elif 'phone' in label_type_sub:
+            dataset_path_sub = join(
+                '/n/sd8/inaguma/corpus/csj/dataset',
+                data_size, data_type, 'dataset_phone_' + save_format + '.csv')
 
         self.map_fn = Word2idx(vocab_file_path)
-        if label_type_sub == 'character':
-            self.map_fn_sub = Char2idx(vocab_file_path_sub)
-        elif label_type_sub == 'character_capital_divide':
-            self.map_fn_sub = Char2idx(
-                vocab_file_path_sub, capital_divide=True)
+        self.map_fn_sub = Char2idx(vocab_file_path_sub, double_letter=True)
 
         # Load dataset file
         self.df = pd.read_csv(dataset_path)
         self.df = self.df.loc[:, [
+            'frame_num', 'input_path', 'transcript']]
+        self.df_sub = pd.read_csv(dataset_path_sub)
+        self.df_sub = self.df_sub.loc[:, [
             'frame_num', 'input_path', 'transcript']]
 
         # Sort paths to input & label
         if sort_utt:
             self.df = self.df.sort_values(
                 by='frame_num', ascending=not reverse)
+            self.df_sub = self.df_sub.sort_values(
+                by='frame_num', ascending=not reverse)
         else:
             self.df = self.df.sort_values(by='input_path', ascending=True)
-        self.df_sub = self.df
+            self.df_sub = self.df_sub.sort_values(
+                by='input_path', ascending=True)
 
         self.rest = set(range(0, len(self.df), 1))

@@ -91,7 +91,8 @@ def main():
         max_epoch=params['num_epoch'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
-        use_cuda=model.use_cuda)
+        use_cuda=model.use_cuda,
+        save_format=params['save_format'])
     dev_clean_data = Dataset(
         model_type=params['model_type'],
         data_type='dev_clean', data_size=params['data_size'],
@@ -102,7 +103,8 @@ def main():
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True,
-        use_cuda=model.use_cuda, volatile=True)
+        use_cuda=model.use_cuda, volatile=True,
+        save_format=params['save_format'])
     dev_other_data = Dataset(
         model_type=params['model_type'],
         data_type='dev_other', data_size=params['data_size'],
@@ -113,7 +115,8 @@ def main():
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True,
-        use_cuda=model.use_cuda, volatile=True)
+        use_cuda=model.use_cuda, volatile=True,
+        save_format=params['save_format'])
     test_clean_data = Dataset(
         model_type=params['model_type'],
         data_type='test_clean', data_size=params['data_size'],
@@ -124,7 +127,8 @@ def main():
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=False,
-        use_cuda=model.use_cuda, volatile=True)
+        use_cuda=model.use_cuda, volatile=True,
+        save_format=params['save_format'])
     test_other_data = Dataset(
         model_type=params['model_type'],
         data_type='test_other', data_size=params['data_size'],
@@ -135,7 +139,8 @@ def main():
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=False,
-        use_cuda=model.use_cuda, volatile=True)
+        use_cuda=model.use_cuda, volatile=True,
+        save_format=params['save_format'])
 
     # Count total parameters
     for name, num_params in model.num_params_dict.items():

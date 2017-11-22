@@ -92,7 +92,8 @@ def main():
         splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
-        use_cuda=model.use_cuda)
+        use_cuda=model.use_cuda,
+        save_format=params['save_format'])
     dev_data = Dataset(
         model_type=params['model_type'],
         data_type='dev', data_size=params['data_size'],
@@ -103,7 +104,8 @@ def main():
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True,
-        use_cuda=model.use_cuda, volatile=True)
+        use_cuda=model.use_cuda, volatile=True,
+        save_format=params['save_format'])
     eval1_data = Dataset(
         model_type=params['model_type'],
         data_type='eval1', data_size=params['data_size'],
@@ -114,7 +116,8 @@ def main():
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=False,
-        use_cuda=model.use_cuda, volatile=True)
+        use_cuda=model.use_cuda, volatile=True,
+        save_format=params['save_format'])
     eval2_data = Dataset(
         model_type=params['model_type'],
         data_type='eval2', data_size=params['data_size'],
@@ -125,7 +128,8 @@ def main():
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=False,
-        use_cuda=model.use_cuda, volatile=True)
+        use_cuda=model.use_cuda, volatile=True,
+        save_format=params['save_format'])
     eval3_data = Dataset(
         model_type=params['model_type'],
         data_type='eval3', data_size=params['data_size'],
@@ -136,7 +140,8 @@ def main():
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=False,
-        use_cuda=model.use_cuda, volatile=True)
+        use_cuda=model.use_cuda, volatile=True,
+        save_format=params['save_format'])
 
     # Count total parameters
     for name, num_params in model.num_params_dict.items():
@@ -326,7 +331,7 @@ def main():
         beam_width=args.beam_width,
         max_decode_length=MAX_DECODE_LENGTH_WORD,
         eval_batch_size=1)
-    print('  WER (eval2): %f %%' % (wer_eval2 * 100))
+    print('  WER (eval2, main): %f %%' % (wer_eval2 * 100))
     cer_eval2 = do_eval_cer(
         model=best_model,
         model_type=params['model_type'],
@@ -348,7 +353,7 @@ def main():
         beam_width=args.beam_width,
         max_decode_length=MAX_DECODE_LENGTH_WORD,
         eval_batch_size=1)
-    print('  WER (eval3): %f %%' % (wer_eval3 * 100))
+    print('  WER (eval3, main): %f %%' % (wer_eval3 * 100))
     cer_eval3 = do_eval_cer(
         model=best_model,
         model_type=params['model_type'],

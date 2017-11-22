@@ -25,10 +25,10 @@ class Dataset(DatasetBase):
                  num_stack=1, num_skip=1,
                  shuffle=False, sort_utt=False, reverse=False,
                  sort_stop_epoch=None,
-                 use_cuda=False, volatile=False):
+                 use_cuda=False, volatile=False, save_format='numpy'):
         """A class for loading dataset.
         Args:
-            model_type: ctc or attention
+            model_type (string): ctc or attention
             data_type (string): train or dev or test
             label_type (string): phone39 or phone48 or phone61 or
                 character or character_capital_divide
@@ -48,6 +48,7 @@ class Dataset(DatasetBase):
                 will revert back to a random order
             use_cuda (bool, optional):
             volatile (boo, optional):
+            save_format (string, optional): numpy or htk
         """
         super(Dataset, self).__init__(vocab_file_path=vocab_file_path)
 
@@ -67,15 +68,16 @@ class Dataset(DatasetBase):
         self.num_gpus = 1
         self.use_cuda = use_cuda
         self.volatile = volatile
+        self.save_format = save_format
 
         # Set mapping function
         if 'phone' in label_type:
             self.map_fn = Phone2idx(vocab_file_path)
             dataset_path = join('/n/sd8/inaguma/corpus/timit/dataset',
-                                data_type, 'dataset_' + label_type + '.csv')
+                                data_type, 'dataset_' + save_format + '_' + label_type + '.csv')
         else:
             dataset_path = join('/n/sd8/inaguma/corpus/timit/dataset',
-                                data_type, 'dataset_character.csv')
+                                data_type, 'dataset_' + save_format + '_character.csv')
             if label_type == 'character':
                 self.map_fn = Char2idx(vocab_file_path)
 

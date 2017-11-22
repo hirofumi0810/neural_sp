@@ -5,10 +5,11 @@ param:
 
   # features
   feature: fbank
+  save_format: numpy
   input_size: 123
   splice: 1
-  num_stack: 1
-  num_skip: 1
+  num_stack: 2
+  num_skip: 2
 
   # topology
   model_type: attention
@@ -27,7 +28,7 @@ param:
   decoder_type: lstm
   decoder_num_units: 256
   decoder_num_layers: 1
-  embedding_dim: 64
+  embedding_dim: 32
 
   # optimization
   batch_size: 64
