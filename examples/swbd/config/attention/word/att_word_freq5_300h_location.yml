@@ -1,0 +1,70 @@
+param:
+  # corpus
+  corpus: switchboard
+  label_type: word_freq5
+  data_size: 300h
+
+  # features
+  feature: fbank
+  save_format: numpy
+  input_size: 120
+  splice: 1
+  num_stack: 1
+  num_skip: 1
+
+  # topology
+  model_type: attention
+  encoder_type: lstm
+  encoder_bidirectional: True
+  encoder_num_units: 320
+  encoder_num_proj: 0
+  encoder_num_layers: 6
+  subsample_list:
+    - False
+    - True
+    - True
+    - False
+    - False
+    - False
+  attention_type: location
+  attention_dim: 128
+  decoder_type: lstm
+  decoder_num_units: 320
+  decoder_num_layers: 1
+  embedding_dim: 512
+  conv_num_channels: 10
+  conv_width: 101
+
+  # optimization
+  batch_size: 5
+  optimizer: adam
+  learning_rate: 1e-3
+  num_epoch: 30
+
+  # regularization
+  parameter_init: 0.1
+  clip_grad_norm: 5.0
+  clip_activation_encoder: 50
+  clip_activation_decoder: 50
+  dropout_encoder: 0.2
+  dropout_decoder: 0.1
+  dropout_embedding: 0.1
+  weight_decay: 0
+  init_dec_state_with_enc_state: True
+  sharpening_factor: 1.0
+  logits_temperature: 1.0
+  sigmoid_smoothing: False
+  input_feeding: False
+  coverage_weight: 0
+
+  # annealing
+  decay_start_epoch: 10
+  decay_rate: 0.5
+  decay_patient_epoch: 3
+  sort_stop_epoch: 15
+  not_improved_patient_epoch: 5
+  eval_start_epoch: 10
+  print_step: 200
+
+  # MTL
+  ctc_loss_weight: 0.1
