@@ -87,20 +87,20 @@ class Dataset(DatasetBase):
         # Set mapping function
         dataset_path = join(
             '/n/sd8/inaguma/corpus/csj/dataset',
-            data_size, data_type, 'dataset_kanji_' + save_format + '.csv')
+            save_format, data_size, data_type, 'dataset_kanji.csv')
 
         if 'kana' in label_type_sub:
             dataset_path_sub = join(
                 '/n/sd8/inaguma/corpus/csj/dataset',
-                data_size, data_type, 'dataset_kana_' + save_format + '.csv')
+                save_format, data_size, data_type, 'dataset_kana.csv')
         elif 'kanji' in label_type_sub:
             dataset_path_sub = join(
                 '/n/sd8/inaguma/corpus/csj/dataset',
-                data_size, data_type, 'dataset_kanji_' + save_format + '.csv')
+                save_format, data_size, data_type, 'dataset_kanji.csv')
         elif 'phone' in label_type_sub:
             dataset_path_sub = join(
                 '/n/sd8/inaguma/corpus/csj/dataset',
-                data_size, data_type, 'dataset_phone_' + save_format + '.csv')
+                save_format, data_size, data_type, 'dataset_phone.csv')
 
         self.map_fn = Word2idx(vocab_file_path)
         self.map_fn_sub = Char2idx(vocab_file_path_sub, double_letter=True)
@@ -123,5 +123,8 @@ class Dataset(DatasetBase):
             self.df = self.df.sort_values(by='input_path', ascending=True)
             self.df_sub = self.df_sub.sort_values(
                 by='input_path', ascending=True)
+        new_df = pd.DataFrame([0] * len(self), columns=['index'])
+        self.df = pd.concat([self.df, new_df], axis=1)
+        self.df_sub = pd.concat([self.df_sub, new_df], axis=1)
 
         self.rest = set(range(0, len(self.df), 1))

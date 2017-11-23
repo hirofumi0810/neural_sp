@@ -8,6 +8,7 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
+from struct import unpack
 
 
 class Base(object):
@@ -35,7 +36,7 @@ class Base(object):
         return len(self.df)
 
     def __getitem__(self, index):
-        feature = self._load_npy([self.df['input_path'][index]])
+        feature = self.load_npy(self.df['input_path'][index])
         transcript = self.df['transcript'][index]
         return (feature, transcript)
 
@@ -83,12 +84,45 @@ class Base(object):
         """Reset data counter."""
         self.rest = set(range(0, len(self), 1))
 
-    def _load_npy(self, paths):
-        """Load npy files."""
-        return np.array(list(map(lambda path: np.load(path), paths)))
-
     def split_per_device(self, x, num_gpus):
         if num_gpus > 1:
             return np.array_split(x, num_gpus, axis=0)
         else:
             return x[np.newaxis]
+
+    def load_npy(self, path):
+        """Load npy files.
+        Args:
+            path (string):
+        Returns:
+            input_data (np.ndarray): A tensor of size (frame_num, feature_dim)
+        """
+        return np.load(path)
+
+    def load_htk(htk_path):
+        """Load each HTK file.
+        Args:
+            htk_path (string): path to a HTK file
+        Returns:
+            input_data (np.ndarray): A tensor of size (frame_num, feature_dim)
+        """
+        # print('...Reading: %s' % htk_path)
+        with open(htk_path, "rb") as f:
+            # Read header
+            spam = f.read(12)
+            frame_num, sampPeriod, sampSize, parmKind = unpack(">IIHH", spam)
+
+            # for debug
+            # print(frame_num)  # frame num
+            # print(sampPeriod)  # 10ms
+            # print(sampSize)  # feature dim * 4 (byte)
+            # print(parmKind)
+
+            # Read data
+            feature_dim = int(sampSize / 4)
+            f.seek(12, 0)
+            input_data = np.fromfile(f, 'f')
+            input_data = input_data.reshape(-1, feature_dim)
+            input_data.byteswap(True)
+
+        return input_data

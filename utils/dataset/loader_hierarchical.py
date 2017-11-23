@@ -10,7 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from os.path import basename
+from os.path import basename, isfile
 import math
 import random
 import numpy as np
@@ -19,6 +19,8 @@ from utils.dataset.base import Base
 from utils.io.inputs.frame_stacking import stack_frame
 from utils.io.inputs.splicing import do_splice
 from utils.io.variable import np2var
+
+# NOTE: Loading numpy is faster than loading htk
 
 
 class DatasetBase(Base):
@@ -112,25 +114,49 @@ class DatasetBase(Base):
                 self.is_new_epoch = True
                 self.epoch += 1
 
+        # Tokenize
+        if self.epoch == 0 or (self.epoch == 1 and self.is_new_epoch):
+            for i in range(len(data_indices)):
+                indices = self.map_fn(self.df['transcript'][data_indices[i]])
+                indices_sub = self.map_fn_sub(
+                    self.df_sub['transcript'][data_indices[i]])
+                str_indices = ' '.join(list(map(str, indices.tolist())))
+                str_indices_sub = ' '.join(
+                    list(map(str, indices_sub.tolist())))
+                self.df['index'][data_indices[i]] = str_indices
+                self.df_sub['index'][data_indices[i]] = str_indices_sub
+
+                # Change path
+                new_input_path = self.df['input_path'][data_indices[i]].replace(
+                    '/n/sd8/inaguma/', '/data/inaguma/')
+                if isfile(new_input_path):
+                    self.df['input_path'][data_indices[i]] = new_input_path
+
         # Load dataset in mini-batch
-        input_list = self._load_npy(
-            np.array(self.df['input_path'][data_indices]))
-        label_list = np.array(self.df['transcript'][data_indices])
-        label_list_sub = np.array(self.df_sub['transcript'][data_indices])
+        input_path_list = np.array(self.df['input_path'][data_indices])
+        str_indices_list = np.array(self.df['index'][data_indices])
+        str_indices_list_sub = np.array(self.df_sub['index'][data_indices])
 
         if not hasattr(self, 'input_size'):
-            self.input_size = input_list[0].shape[1]
+            if self.save_format == 'numpy':
+                self.input_size = self.load_npy(input_path_list[0]).shape[-1]
+            elif self.save_format == 'htk':
+                self.input_size = self.read_htk(input_path_list[0]).shape[-1]
+            else:
+                raise TypeError
             self.input_size *= self.num_stack
             self.input_size *= self.splice
 
         # Compute max frame num in mini-batch
-        max_frame_num = max(map(lambda x: x.shape[0], input_list))
+        max_frame_num = max(self.df['frame_num'][data_indices])
         max_frame_num = math.ceil(max_frame_num / self.num_skip)
 
         # Compute max target label length in mini-batch
-        max_seq_len = max(map(len, label_list)) + 2
-        max_seq_len_sub = max(map(len, label_list_sub)) + 2
-        # NOTE: + <SOS> and <EOS>
+        max_seq_len = max(
+            map(lambda x: len(x.split(' ')), str_indices_list)) + 2
+        max_seq_len_sub = max(
+            map(lambda x: len(x.split(' ')), str_indices_list_sub)) + 2
+        # NOTE: add <SOS> and <EOS>
 
         # Initialization
         inputs = np.zeros(
@@ -149,7 +175,13 @@ class DatasetBase(Base):
 
         # Set values of each data in mini-batch
         for i_batch in range(len(data_indices)):
-            data_i = input_list[i_batch]
+            # Load input data
+            if self.save_format == 'numpy':
+                data_i = self.load_npy(input_path_list[i_batch])
+            elif self.save_format == 'htk':
+                data_i = self.read_htk(input_path_list[i_batch])
+            else:
+                raise TypeError
 
             # Frame stacking
             data_i = stack_frame(data_i, self.num_stack, self.num_skip)
@@ -160,13 +192,15 @@ class DatasetBase(Base):
 
             inputs[i_batch, : frame_num, :] = data_i
             inputs_seq_len[i_batch] = frame_num
-            indices = self.map_fn(label_list[i_batch])
-            indices_sub = self.map_fn_sub(label_list_sub[i_batch])
+            indices = list(map(int, str_indices_list[i_batch].split(' ')))
+            indices_sub = list(
+                map(int, str_indices_list_sub[i_batch].split(' ')))
             label_num = len(indices)
             label_num_sub = len(indices_sub)
             if self.is_test:
-                labels[i_batch, 0] = label_list[i_batch]
-                labels_sub[i_batch, 0] = label_list_sub[i_batch]
+                labels[i_batch, 0] = self.df['transcript'][data_indices[i_batch]]
+                labels_sub[i_batch,
+                           0] = self.df_sub['transcript'][data_indices[i_batch]]
             else:
                 if self.model_type == 'hierarchical_attention':
                     labels[i_batch, 0] = self.sos_index
@@ -190,14 +224,14 @@ class DatasetBase(Base):
                     raise TypeError
 
         # Now we split the mini-batch data by num_gpus
-        inputs = self.split_per_device(inputs, self.num_gpus)
-        labels = self.split_per_device(labels, self.num_gpus)
-        labels_sub = self.split_per_device(labels_sub, self.num_gpus)
-        inputs_seq_len = self.split_per_device(inputs_seq_len, self.num_gpus)
-        labels_seq_len = self.split_per_device(labels_seq_len, self.num_gpus)
-        labels_seq_len_sub = self.split_per_device(
-            labels_seq_len_sub, self.num_gpus)
-        input_names = self.split_per_device(input_names, self.num_gpus)
+        # inputs = self.split_per_device(inputs, self.num_gpus)
+        # labels = self.split_per_device(labels, self.num_gpus)
+        # labels_sub = self.split_per_device(labels_sub, self.num_gpus)
+        # inputs_seq_len = self.split_per_device(inputs_seq_len, self.num_gpus)
+        # labels_seq_len = self.split_per_device(labels_seq_len, self.num_gpus)
+        # labels_seq_len_sub = self.split_per_device(
+        #     labels_seq_len_sub, self.num_gpus)
+        # input_names = self.split_per_device(input_names, self.num_gpus)
 
         # Wrap by variable
         inputs = np2var(inputs, use_cuda=self.use_cuda,

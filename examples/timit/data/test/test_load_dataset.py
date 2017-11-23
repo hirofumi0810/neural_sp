@@ -65,7 +65,7 @@ class TestLoadDataset(unittest.TestCase):
             model_type='ctc',
             data_type=data_type, label_type=label_type,
             vocab_file_path=vocab_file_path,
-            batch_size=64, max_epoch=1,
+            batch_size=64, max_epoch=5,
             splice=splice, num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
             sort_utt=sort_utt, sort_stop_epoch=sort_stop_epoch,

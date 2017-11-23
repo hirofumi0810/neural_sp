@@ -95,5 +95,7 @@ class Dataset(DatasetBase):
                 by='frame_num', ascending=not reverse)
         else:
             self.df = self.df.sort_values(by='input_path', ascending=True)
+        new_df = pd.DataFrame([0] * len(self), columns=['index'])
+        self.df = pd.concat([self.df, new_df], axis=1)
 
         self.rest = set(range(0, len(self.df), 1))

@@ -87,7 +87,7 @@ class Dataset(DatasetBase):
         # Set mapping function
         dataset_path = join(
             '/n/sd8/inaguma/corpus/librispeech/dataset',
-            data_size, data_type, 'dataset_' + save_format + '.csv')
+            save_format, data_size, data_type, 'dataset.csv')
 
         self.map_fn = Word2idx(vocab_file_path)
         if label_type_sub == 'character':
@@ -107,6 +107,8 @@ class Dataset(DatasetBase):
                 by='frame_num', ascending=not reverse)
         else:
             self.df = self.df.sort_values(by='input_path', ascending=True)
+        new_df = pd.DataFrame([0] * len(self), columns=['index'])
+        self.df = pd.concat([self.df, new_df], axis=1)
         self.df_sub = self.df
 
         self.rest = set(range(0, len(self.df), 1))

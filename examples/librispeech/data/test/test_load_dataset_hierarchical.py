@@ -70,7 +70,7 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
             batch_size=64,
             vocab_file_path=vocab_file_path,
             vocab_file_path_sub=vocab_file_path_sub,
-            max_epoch=2, splice=splice,
+            max_epoch=1, splice=splice,
             num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
             sort_utt=sort_utt, reverse=True, sort_stop_epoch=sort_stop_epoch,

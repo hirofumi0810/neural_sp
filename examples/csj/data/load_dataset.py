@@ -82,15 +82,15 @@ class Dataset(DatasetBase):
         if 'kana' in label_type:
             dataset_path = join(
                 '/n/sd8/inaguma/corpus/csj/dataset',
-                data_size, data_type, 'dataset_kana_' + save_format + '.csv')
+                save_format, data_size, data_type, 'dataset_kana.csv')
         elif 'kanji' in label_type or 'word' in label_type:
             dataset_path = join(
                 '/n/sd8/inaguma/corpus/csj/dataset',
-                data_size, data_type, 'dataset_kanji_' + save_format + '.csv')
+                save_format, data_size, data_type, 'dataset_kanji.csv')
         elif 'phone' in label_type:
             dataset_path = join(
                 '/n/sd8/inaguma/corpus/csj/dataset',
-                data_size, data_type, 'dataset_phone_' + save_format + '.csv')
+                save_format, data_size, data_type, 'dataset_phone.csv')
 
         if 'word' in label_type:
             self.map_fn = Word2idx(vocab_file_path)
@@ -108,5 +108,7 @@ class Dataset(DatasetBase):
                 by='frame_num', ascending=not reverse)
         else:
             self.df = self.df.sort_values(by='input_path', ascending=True)
+        new_df = pd.DataFrame([0] * len(self), columns=['index'])
+        self.df = pd.concat([self.df, new_df], axis=1)
 
         self.rest = set(range(0, len(self.df), 1))
