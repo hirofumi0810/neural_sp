@@ -48,7 +48,9 @@ class TestAttentionLayer(unittest.TestCase):
             attention_type=attention_type,
             attention_dim=128,
             sharpening_factor=2,
-            sigmoid_smoothing=False)
+            sigmoid_smoothing=False,
+            out_channels=10,
+            kernel_size=101)
 
         batch_size = 4
         max_time = 200

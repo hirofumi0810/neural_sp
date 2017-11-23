@@ -37,6 +37,8 @@ param:
   decoder_num_layers_sub: 1
   embedding_dim: 512
   embedding_dim_sub: 64
+  conv_num_channels: 10
+  conv_width: 101
 
   # optimization
   batch_size: 32

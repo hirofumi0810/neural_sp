@@ -140,7 +140,9 @@ class TestAttention(unittest.TestCase):
             logits_temperature=1,
             sigmoid_smoothing=False,
             input_feeding=input_feeding,
-            coverage_weight=0.5)
+            coverage_weight=0.5,
+            conv_num_channels=10,
+            conv_width=101)
 
         # Count total parameters
         for name, num_params in model.num_params_dict.items():

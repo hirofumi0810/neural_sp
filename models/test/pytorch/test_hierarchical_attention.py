@@ -95,7 +95,9 @@ class TestHierarchicalAttention(unittest.TestCase):
             sigmoid_smoothing=False,
             input_feeding=input_feeding,
             ctc_loss_weight=0,
-            ctc_loss_weight_sub=0.1)
+            ctc_loss_weight_sub=0.1,
+            conv_num_channels=10,
+            conv_width=101)
 
         # Count total parameters
         for name, num_params in model.num_params_dict.items():

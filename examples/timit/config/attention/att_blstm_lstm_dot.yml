@@ -29,6 +29,8 @@ param:
   decoder_num_units: 256
   decoder_num_layers: 1
   embedding_dim: 32
+  conv_num_channels: 0  # not used
+  conv_width: 0   # not used
 
   # optimization
   batch_size: 50

@@ -30,6 +30,8 @@ param:
   decoder_num_units: 320
   decoder_num_layers: 1
   embedding_dim: 64
+  conv_num_channels: 10
+  conv_width: 101
 
   # optimization
   batch_size: 64

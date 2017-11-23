@@ -85,7 +85,9 @@ def load(model_type, params):
             sigmoid_smoothing=params['sigmoid_smoothing'],
             input_feeding=params['input_feeding'],
             coverage_weight=params['coverage_weight'],
-            ctc_loss_weight=params['ctc_loss_weight'])
+            ctc_loss_weight=params['ctc_loss_weight'],
+            conv_num_channels=params['conv_num_channels'],
+            conv_width=params['conv_width'])
 
         model.name = params['encoder_type']
         if params['encoder_bidirectional']:
@@ -196,7 +198,9 @@ def load(model_type, params):
             input_feeding=params['input_feeding'],
             coverage_weight=params['coverage_weight'],
             ctc_loss_weight=params['ctc_loss_weight'],
-            ctc_loss_weight_sub=params['ctc_loss_weight_sub'])
+            ctc_loss_weight_sub=params['ctc_loss_weight_sub'],
+            conv_num_channels=params['conv_num_channels'],
+            conv_width=params['conv_width'])
 
         model.name = params['encoder_type']
         if params['encoder_bidirectional']:

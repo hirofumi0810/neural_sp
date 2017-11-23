@@ -74,10 +74,10 @@ class Dataset(DatasetBase):
         if 'phone' in label_type:
             self.map_fn = Phone2idx(vocab_file_path)
             dataset_path = join('/n/sd8/inaguma/corpus/timit/dataset',
-                                data_type, 'dataset_' + save_format + '_' + label_type + '.csv')
+                                save_format, data_type, 'dataset_' + label_type + '.csv')
         else:
             dataset_path = join('/n/sd8/inaguma/corpus/timit/dataset',
-                                data_type, 'dataset_' + save_format + '_character.csv')
+                                save_format, data_type, 'dataset_character.csv')
             if label_type == 'character':
                 self.map_fn = Char2idx(vocab_file_path)
 

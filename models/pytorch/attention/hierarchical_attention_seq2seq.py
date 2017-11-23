@@ -54,7 +54,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  input_feeding=False,
                  coverage_weight=0,
                  ctc_loss_weight=0,
-                 ctc_loss_weight_sub=0):
+                 ctc_loss_weight_sub=0,
+                 conv_num_channels=10,
+                 conv_width=101):
 
         super(HierarchicalAttentionSeq2seq, self).__init__(
             input_size=input_size,
@@ -83,7 +85,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             sigmoid_smoothing=sigmoid_smoothing,
             input_feeding=input_feeding,
             coverage_weight=coverage_weight,
-            ctc_loss_weight=ctc_loss_weight)
+            ctc_loss_weight=ctc_loss_weight,
+            conv_num_channels=conv_num_channels,
+            conv_width=conv_width)
 
         # Setting for the encoder
         self.encoder_num_layers_sub = encoder_num_layers_sub
@@ -169,7 +173,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             attention_type=attention_type,
             attention_dim=attention_dim,
             sharpening_factor=sharpening_factor,
-            sigmoid_smoothing=sigmoid_smoothing)
+            sigmoid_smoothing=sigmoid_smoothing,
+            out_channels=conv_num_channels,
+            kernel_size=conv_width)
 
         ##################################################
         # Bridge layer between the encoder and decoder

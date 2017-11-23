@@ -22,12 +22,14 @@ param:
     - False
     - False
     - False
-  attention_type: content
+  attention_type: location
   attention_dim: 512
   decoder_type: gru
   decoder_num_units: 256
   decoder_num_layers: 1
   embedding_dim: 32
+  conv_num_channels: 10
+  conv_width: 101
 
   # optimization
   batch_size: 64

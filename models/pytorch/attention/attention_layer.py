@@ -8,7 +8,6 @@ from __future__ import print_function
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
 
 ATTENTION_TYPE = [
     'content', 'normed_content', 'location', 'dot_product',
@@ -25,10 +24,10 @@ class AttentionMechanism(nn.Module):
             decoder
         attention_type (string): the type of attention
         attention_dim: (int) the dimension of the attention layer
-        sharpening_factor (float, optional): a sharpening factor in the
-            softmax layer for computing attention weights
-        sigmoid_smoothing (bool, optional): if True, replace softmax function
-            in computing attention weights with sigmoid function for smoothing
+        sharpening_factor (float): a sharpening factor in the softmax layer for
+            computing attention weights
+        sigmoid_smoothing (bool): if True, replace softmax function in
+            computing attention weights with sigmoid function for smoothing
         out_channels (int, optional): the number of channles of conv outputs.
             This is used for location-based attention.
         kernel_size (int, optional): the size of kernel.
@@ -40,8 +39,8 @@ class AttentionMechanism(nn.Module):
                  decoder_num_units,
                  attention_type,
                  attention_dim,
-                 sharpening_factor=1,
-                 sigmoid_smoothing=False,
+                 sharpening_factor,
+                 sigmoid_smoothing,
                  out_channels=10,
                  kernel_size=101):
 
@@ -134,15 +133,6 @@ class AttentionMechanism(nn.Module):
             ###################################################################
             keys = self.W_enc(encoder_states)
             query = self.W_dec(decoder_outputs).expand_as(keys)
-
-            if attention_weights_step is None:
-                batch_size, max_time = encoder_states.size()[:2]
-                attention_weights_step = Variable(
-                    torch.zeros(batch_size, max_time))
-                if torch.cuda.is_available():
-                    attention_weights_step = attention_weights_step.cuda()
-                # TODO: volatile, require_grad
-
             conv_feat = self.conv(attention_weights_step.unsqueeze(dim=1))
             conv_feat = self.W_conv(conv_feat.transpose(1, 2))
             energy = self.v_a(F.tanh(keys + query + conv_feat)).squeeze(dim=2)

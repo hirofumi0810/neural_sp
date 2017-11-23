@@ -89,6 +89,10 @@ class AttentionSeq2seq(ModelBase):
         coverage_weight (float, optional): the weight parameter for coverage
             computation.
         ctc_loss_weight (float): A weight parameter for auxiliary CTC loss
+        conv_num_channels (int, optional): the number of channles of conv
+            outputs. This is used for location-based attention.
+        conv_width (int, optional): the size of kernel.
+            This must be the odd number.
     """
 
     def __init__(self,
@@ -118,7 +122,9 @@ class AttentionSeq2seq(ModelBase):
                  sigmoid_smoothing=False,
                  input_feeding=False,
                  coverage_weight=0,
-                 ctc_loss_weight=0):
+                 ctc_loss_weight=0,
+                 conv_num_channels=10,
+                 conv_width=101):
 
         super(ModelBase, self).__init__()
 
@@ -163,6 +169,8 @@ class AttentionSeq2seq(ModelBase):
         self.sigmoid_smoothing = sigmoid_smoothing
         self.input_feeding = input_feeding
         self.coverage_weight = coverage_weight
+        self.conv_num_channels = conv_num_channels
+        self.conv_width = conv_width
 
         # Joint CTC-Attention
         self.ctc_loss_weight = ctc_loss_weight
@@ -233,7 +241,9 @@ class AttentionSeq2seq(ModelBase):
             attention_type=attention_type,
             attention_dim=attention_dim,
             sharpening_factor=sharpening_factor,
-            sigmoid_smoothing=sigmoid_smoothing)
+            sigmoid_smoothing=sigmoid_smoothing,
+            out_channels=conv_num_channels,
+            kernel_size=conv_width)
 
         ##################################################
         # Bridge layer between the encoder and decoder
@@ -435,6 +445,8 @@ class AttentionSeq2seq(ModelBase):
             attention_weights (FloatTensor): A tensor of size
                 `[B, T_out, T_in]`
         """
+        batch_size, max_time = encoder_outputs.size()[:2]
+
         ys = self.embedding(labels[:, :-1])
         # NOTE: remove <EOS>
         ys = self.embedding_dropout(ys)
@@ -443,10 +455,14 @@ class AttentionSeq2seq(ModelBase):
         # Initialize decoder state
         decoder_state = self._init_decoder_state(encoder_final_state)
 
+        # Initialize attention weights
+        attention_weights_step = Variable(torch.zeros(batch_size, max_time))
+        if self.use_cuda:
+            attention_weights_step = attention_weights_step.cuda()
+            # TODO: volatile, require_grad
+
         logits = []
         attention_weights = []
-        attention_weights_step = None
-        context_vector = None
 
         for t in range(labels_max_seq_len - 1):
             y = ys[:, t:t + 1, :]
@@ -645,7 +661,7 @@ class AttentionSeq2seq(ModelBase):
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
             attention_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
         """
-        batch_size = encoder_outputs.size(0)
+        batch_size, max_time = encoder_outputs.size()[:2]
 
         # Start from <SOS>
         y = self._create_token(value=self.sos_index, batch_size=batch_size)
@@ -654,9 +670,14 @@ class AttentionSeq2seq(ModelBase):
         decoder_state = self._init_decoder_state(
             encoder_final_state, volatile=True)
 
+        # Initialize attention weights
+        attention_weights_step = Variable(torch.zeros(batch_size, max_time))
+        if self.use_cuda:
+            attention_weights_step = attention_weights_step.cuda()
+            # TODO: volatile, require_grad
+
         best_hyps = []
         attention_weights = []
-        attention_weights_step = None
 
         for _ in range(max_decode_length):
             y = self.embedding(y)
@@ -718,7 +739,7 @@ class AttentionSeq2seq(ModelBase):
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
             attention_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
         """
-        batch_size = encoder_outputs.size(0)
+        batch_size, max_time = encoder_outputs.size()[:2]
 
         # Start from <SOS>
         y = self._create_token(value=self.sos_index, batch_size=1)
@@ -727,6 +748,13 @@ class AttentionSeq2seq(ModelBase):
         # Initialize decoder state
         decoder_state = self._init_decoder_state(
             encoder_final_state, volatile=True)
+
+        # Initialize attention weights
+        attention_weights_step = Variable(torch.zeros(batch_size, max_time))
+        if self.use_cuda:
+            attention_weights_step = attention_weights_step.cuda()
+            # TODO: volatile, require_grad
+        attention_weights_step_list = [attention_weights_step] * batch_size
 
         beam = []
         for i_batch in range(batch_size):
@@ -740,7 +768,6 @@ class AttentionSeq2seq(ModelBase):
 
         complete = [[]] * batch_size
         attention_weights = [] * batch_size
-        attention_weights_step_list = [None] * batch_size
 
         for t in range(max_decode_length):
             new_beam = [[]] * batch_size
@@ -811,6 +838,7 @@ class AttentionSeq2seq(ModelBase):
         return np.array(best_hyps), attention_weights
 
     def decode_ctc(self, inputs, inputs_seq_len, beam_width):
+
         assert self.ctc_loss_weight > 0
 
         # Encode acoustic features
