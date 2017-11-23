@@ -84,7 +84,7 @@ class TestLoadDataset(unittest.TestCase):
 
         print('=> Loading mini-batch...')
         if 'word' in label_type:
-            map_fn = Idx2word(vocab_file_path, space_mark='_')
+            map_fn = Idx2word(vocab_file_path, space_mark=' ')
         else:
             map_fn = Idx2char(vocab_file_path)
 
@@ -109,10 +109,10 @@ class TestLoadDataset(unittest.TestCase):
 
             print('----- %s (epoch: %.3f) -----' %
                   (input_names[0], dataset.epoch_detail))
-            print(inputs.data.numpy().shape)
-            if not dataset.is_test:
-                print(max(labels_seq_len.data.numpy()))
             print(str_true)
+            print('inputs_seq_len: %d' % inputs_seq_len.data.numpy()[0])
+            if not dataset.is_test:
+                print('labels_seq_len: %d' % labels_seq_len.data.numpy()[0])
 
             if dataset.epoch_detail >= 0.1:
                 break

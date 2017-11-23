@@ -17,6 +17,7 @@ class Base(object):
         self.epoch = 0
         self.iteration = 0
         self.is_new_epoch = False
+        self.offset = 0
 
         # Read the vocabulary file
         vocab_count = 0
@@ -62,10 +63,12 @@ class Base(object):
 
     @property
     def ctc_padded_value(self):
+        # Pad by -1
         return None if self.is_test else -1
 
     @property
     def att_padded_value(self):
+        # Pad by <SOS>
         return None if self.is_test else self.sos_index
 
     @property
@@ -126,3 +129,8 @@ class Base(object):
             input_data.byteswap(True)
 
         return input_data
+
+    def tokenize(self, str_true, map_fn):
+        indices = map_fn(str_true)
+        str_indices = ' '.join(list(map(str, indices.tolist())))
+        return str_indices

@@ -85,17 +85,16 @@ class Dataset(DatasetBase):
                 self.map_fn = Char2idx(vocab_file_path, capital_divide=True)
 
         # Load dataset file
-        self.df = pd.read_csv(dataset_path)
-        self.df = self.df.loc[:, [
-            'frame_num', 'input_path', 'transcript']]
+        df = pd.read_csv(dataset_path)
+        df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
+        new_df = pd.DataFrame([0] * len(df), columns=['index'])
+        df = pd.concat([df, new_df], axis=1)
 
         # Sort paths to input & label
         if sort_utt:
-            self.df = self.df.sort_values(
-                by='frame_num', ascending=not reverse)
+            df = df.sort_values(by='frame_num', ascending=not reverse)
         else:
-            self.df = self.df.sort_values(by='input_path', ascending=True)
-        new_df = pd.DataFrame([0] * len(self), columns=['index'])
-        self.df = pd.concat([self.df, new_df], axis=1)
+            df = df.sort_values(by='input_path', ascending=True)
 
-        self.rest = set(range(0, len(self.df), 1))
+        self.df = df
+        self.rest = set(range(0, len(df), 1))

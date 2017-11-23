@@ -106,25 +106,26 @@ class Dataset(DatasetBase):
         self.map_fn_sub = Char2idx(vocab_file_path_sub, double_letter=True)
 
         # Load dataset file
-        self.df = pd.read_csv(dataset_path)
-        self.df = self.df.loc[:, [
-            'frame_num', 'input_path', 'transcript']]
-        self.df_sub = pd.read_csv(dataset_path_sub)
-        self.df_sub = self.df_sub.loc[:, [
-            'frame_num', 'input_path', 'transcript']]
+        df = pd.read_csv(dataset_path)
+        df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
+        new_df = pd.DataFrame([0] * len(df), columns=['index'])
+        df = pd.concat([df, new_df], axis=1)
+
+        df_sub = pd.read_csv(dataset_path_sub)
+        df_sub = df_sub.loc[:, ['frame_num', 'input_path', 'transcript']]
+        new_df = pd.DataFrame([0] * len(df_sub), columns=['index'])
+        df_sub = pd.concat([df_sub, new_df], axis=1)
+
+        # TODO: Remove inappropriate utteraces
 
         # Sort paths to input & label
         if sort_utt:
-            self.df = self.df.sort_values(
-                by='frame_num', ascending=not reverse)
-            self.df_sub = self.df_sub.sort_values(
-                by='frame_num', ascending=not reverse)
+            df = df.sort_values(by='frame_num', ascending=not reverse)
+            df_sub = df_sub.sort_values(by='frame_num', ascending=not reverse)
         else:
-            self.df = self.df.sort_values(by='input_path', ascending=True)
-            self.df_sub = self.df_sub.sort_values(
-                by='input_path', ascending=True)
-        new_df = pd.DataFrame([0] * len(self), columns=['index'])
-        self.df = pd.concat([self.df, new_df], axis=1)
-        self.df_sub = pd.concat([self.df_sub, new_df], axis=1)
+            df = df.sort_values(by='input_path', ascending=True)
+            df_sub = df_sub.sort_values(by='input_path', ascending=True)
 
-        self.rest = set(range(0, len(self.df), 1))
+        self.df = df
+        self.df_sub = df_sub
+        self.rest = set(range(0, len(df), 1))

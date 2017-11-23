@@ -77,8 +77,8 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
             num_gpus=num_gpus)
 
         print('=> Loading mini-batch...')
-        idx2word = Idx2word(vocab_file_path, space_mark='_')
-        idx2char = Idx2char(vocab_file_path_sub, space_mark='_')
+        idx2word = Idx2word(vocab_file_path, space_mark=' ')
+        idx2char = Idx2char(vocab_file_path_sub)
 
         for data, is_new_epoch in dataset:
             inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub, input_names = data
@@ -104,13 +104,16 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
 
             print('----- %s (epoch: %.3f) -----' %
                   (input_names[0], dataset.epoch_detail))
-            print(inputs.data.numpy().shape)
-            if not dataset.is_test:
-                print(max(labels_seq_len.data.numpy()))
             print('=' * 20)
             print(str_true)
             print('-' * 10)
             print(str_true_sub)
+            print('inputs_seq_len: %d' % inputs_seq_len.data.numpy()[0])
+            if not dataset.is_test:
+                print('labels_seq_len (word): %d' %
+                      labels_seq_len.data.numpy()[0])
+                print('labels_seq_len (char): %d' %
+                      labels_seq_len_sub.data.numpy()[0])
 
             if dataset.epoch_detail >= 0.1:
                 break

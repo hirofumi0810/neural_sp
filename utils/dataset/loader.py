@@ -19,6 +19,7 @@ from utils.dataset.base import Base
 from utils.io.inputs.frame_stacking import stack_frame
 from utils.io.inputs.splicing import do_splice
 from utils.io.variable import np2var
+# from utils.parallel import make_parallel
 
 # NOTE: Loading numpy is faster than loading htk
 
@@ -57,12 +58,14 @@ class DatasetBase(Base):
         if self.is_new_epoch:
             self.is_new_epoch = False
 
-        if self.sort_utt:
-            # Sort all uttrances by length
+        if self.sort_utt or not self.shuffle:
             if len(self.rest) > batch_size:
-                data_indices = sorted(list(self.rest))[:batch_size]
-                self.rest -= set(data_indices)
-                # NOTE: rest is uttrance length order
+                data_indices = self.df[batch_size *
+                                       self.offset:batch_size * (self.offset + 1)].index
+                data_indices = list(data_indices)
+                self.rest -= set(list(data_indices))
+                # NOTE: rest is in uttrance length order when sort_utt == True
+                # NOTE: otherwise in name length order when shuffle == False
             else:
                 # Last mini-batch
                 data_indices = list(self.rest)
@@ -75,8 +78,7 @@ class DatasetBase(Base):
 
             # Shuffle data in the mini-batch
             random.shuffle(data_indices)
-
-        elif self.shuffle:
+        else:
             # Randomly sample uttrances
             if len(self.rest) > batch_size:
                 data_indices = random.sample(list(self.rest), batch_size)
@@ -91,30 +93,18 @@ class DatasetBase(Base):
                 # Shuffle selected mini-batch
                 random.shuffle(data_indices)
 
-        else:
-            if len(self.rest) > batch_size:
-                data_indices = sorted(list(self.rest))[:batch_size]
-                self.rest -= set(data_indices)
-                # NOTE: rest is in name order
-            else:
-                # Last mini-batch
-                data_indices = list(self.rest)
-                self.reset()
-                self.is_new_epoch = True
-                self.epoch += 1
-
         # Tokenize
         if self.epoch == 0 or (self.epoch == 1 and self.is_new_epoch):
-            for i in range(len(data_indices)):
-                indices = self.map_fn(self.df['transcript'][data_indices[i]])
+            for i in data_indices:
+                indices = self.map_fn(self.df['transcript'][i])
                 str_indices = ' '.join(list(map(str, indices.tolist())))
-                self.df['index'][data_indices[i]] = str_indices
+                self.df['index'][i] = str_indices
 
                 # Change path
-                new_input_path = self.df['input_path'][data_indices[i]].replace(
+                new_input_path = self.df['input_path'][i].replace(
                     '/n/sd8/inaguma/', '/data/inaguma/')
                 if isfile(new_input_path):
-                    self.df['input_path'][data_indices[i]] = new_input_path
+                    self.df['input_path'][i] = new_input_path
 
         # Load dataset in mini-batch
         input_path_list = np.array(self.df['input_path'][data_indices])
@@ -127,6 +117,7 @@ class DatasetBase(Base):
                 self.input_size = self.read_htk(input_path_list[0]).shape[-1]
             else:
                 raise TypeError
+            # self.input_size = (input_data_list[0]).shape[-1]
             self.input_size *= self.num_stack
             self.input_size *= self.splice
 
@@ -207,6 +198,7 @@ class DatasetBase(Base):
                 labels_seq_len, use_cuda=self.use_cuda, volatile=self.volatile, dtype='int')
 
         self.iteration += len(data_indices)
+        self.offset += len(data_indices)
 
         return (inputs, labels, inputs_seq_len, labels_seq_len,
                 input_names), self.is_new_epoch
