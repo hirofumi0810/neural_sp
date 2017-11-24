@@ -84,8 +84,9 @@ class Base(object):
         return self.__next__(batch_size)
 
     def reset(self):
-        """Reset data counter."""
+        """Reset data counter and offset."""
         self.rest = set(range(0, len(self), 1))
+        self.offset = 0
 
     def split_per_device(self, x, num_gpus):
         if num_gpus > 1:
@@ -129,8 +130,3 @@ class Base(object):
             input_data.byteswap(True)
 
         return input_data
-
-    def tokenize(self, str_true, map_fn):
-        indices = map_fn(str_true)
-        str_indices = ' '.join(list(map(str, indices.tolist())))
-        return str_indices

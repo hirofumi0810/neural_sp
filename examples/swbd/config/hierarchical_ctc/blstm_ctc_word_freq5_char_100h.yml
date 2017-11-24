@@ -1,28 +1,30 @@
 param:
   # corpus
-  corpus: librispeech
+  corpus: switchboard
   label_type: word_freq5
-  data_size: 100h
+  label_type_sub: character
+  data_size: 300h
 
   # features
   feature: fbank
   save_format: numpy
   input_size: 120
   splice: 1
-  num_stack: 3
-  num_skip: 3
+  num_stack: 2
+  num_skip: 2
 
   # topology
-  model_type: ctc
+  model_type: hierarchical_ctc
   encoder_type: lstm
   bidirectional: True
   num_units: 320
   num_proj: 0
   num_layers: 6
+  num_layers_sub: 4
   bottleneck_dim: 0
 
   # optimization
-  batch_size: 20
+  batch_size: 10
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 30
@@ -42,4 +44,7 @@ param:
   sort_stop_epoch: 15
   not_improved_patient_epoch: 5
   eval_start_epoch: 10
-  print_step: 200
+  print_step: 1000
+
+  # MTL
+  main_loss_weight: 0.5

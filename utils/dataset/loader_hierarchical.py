@@ -19,7 +19,6 @@ from utils.dataset.base import Base
 from utils.io.inputs.frame_stacking import stack_frame
 from utils.io.inputs.splicing import do_splice
 from utils.io.variable import np2var
-# from utils.parallel import make_parallel
 
 # NOTE: Loading numpy is faster than loading htk
 
@@ -105,18 +104,9 @@ class DatasetBase(Base):
                 # Shuffle selected mini-batch
                 random.shuffle(data_indices)
 
-        # Tokenize
+        # Change path to input data if exists in local
         if self.epoch == 0 or (self.epoch == 1 and self.is_new_epoch):
             for i in data_indices:
-                indices = self.map_fn(self.df['transcript'][i])
-                indices_sub = self.map_fn_sub(self.df_sub['transcript'][i])
-                str_indices = ' '.join(list(map(str, indices.tolist())))
-                str_indices_sub = ' '.join(
-                    list(map(str, indices_sub.tolist())))
-                self.df['index'][i] = str_indices
-                self.df_sub['index'][i] = str_indices_sub
-
-                # Change path
                 new_input_path = self.df['input_path'][i].replace(
                     '/n/sd8/inaguma/', '/data/inaguma/')
                 if isfile(new_input_path):
@@ -124,8 +114,9 @@ class DatasetBase(Base):
 
         # Load dataset in mini-batch
         input_path_list = np.array(self.df['input_path'][data_indices])
-        str_indices_list = np.array(self.df['index'][data_indices])
-        str_indices_list_sub = np.array(self.df_sub['index'][data_indices])
+        str_indices_list = np.array(self.df['transcript'][data_indices])
+        str_indices_list_sub = np.array(
+            self.df_sub['transcript'][data_indices])
 
         if not hasattr(self, 'input_size'):
             if self.save_format == 'numpy':
@@ -182,16 +173,17 @@ class DatasetBase(Base):
 
             inputs[i_batch, : frame_num, :] = data_i
             inputs_seq_len[i_batch] = frame_num
-            indices = list(map(int, str_indices_list[i_batch].split(' ')))
-            indices_sub = list(
-                map(int, str_indices_list_sub[i_batch].split(' ')))
-            label_num = len(indices)
-            label_num_sub = len(indices_sub)
             if self.is_test:
                 labels[i_batch, 0] = self.df['transcript'][data_indices[i_batch]]
                 labels_sub[i_batch,
                            0] = self.df_sub['transcript'][data_indices[i_batch]]
+                # NOTE: transcript is not tokenized
             else:
+                indices = list(map(int, str_indices_list[i_batch].split(' ')))
+                indices_sub = list(
+                    map(int, str_indices_list_sub[i_batch].split(' ')))
+                label_num = len(indices)
+                label_num_sub = len(indices_sub)
                 if self.model_type == 'hierarchical_attention':
                     labels[i_batch, 0] = self.sos_index
                     labels[i_batch, 1:label_num + 1] = indices
@@ -250,7 +242,8 @@ class DatasetBase(Base):
                 labels_seq_len_sub, use_cuda=self.use_cuda, volatile=self.volatile, dtype='int')
 
         self.iteration += len(data_indices)
-        self.offset += len(data_indices)
+        if not self.is_new_epoch:
+            self.offset += 1
 
         return (inputs, labels, labels_sub, inputs_seq_len, labels_seq_len,
                 labels_seq_len_sub, input_names), self.is_new_epoch

@@ -161,6 +161,8 @@ def main():
         optimizer.step()
         # TODO: Add scheduler
 
+        del loss_train
+
         if (step + 1) % params['print_step'] == 0:
 
             # Create feed dictionary for next mini batch (dev)

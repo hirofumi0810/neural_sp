@@ -14,8 +14,6 @@ from os.path import join
 import pandas as pd
 
 from utils.dataset.loader import DatasetBase
-from utils.io.labels.character import Char2idx
-from utils.io.labels.word import Word2idx
 
 
 class Dataset(DatasetBase):
@@ -78,23 +76,11 @@ class Dataset(DatasetBase):
         self.volatile = volatile
         self.save_format = save_format
 
-        # Set mapping function
-        dataset_path = join(
-            '/n/sd8/inaguma/corpus/librispeech/dataset',
-            save_format, data_size, data_type, 'dataset.csv')
-
-        if label_type == 'character':
-            self.map_fn = Char2idx(vocab_file_path)
-        elif label_type == 'character_capital_divide':
-            self.map_fn = Char2idx(vocab_file_path, capital_divide=True)
-        elif 'word' in label_type:
-            self.map_fn = Word2idx(vocab_file_path)
-
         # Load dataset file
+        dataset_path = join('/n/sd8/inaguma/corpus/librispeech/dataset',
+                            save_format, data_size, data_type, label_type + '.csv')
         df = pd.read_csv(dataset_path)
         df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
-        new_df = pd.DataFrame([0] * len(df), columns=['index'])
-        df = pd.concat([df, new_df], axis=1)
 
         # Sort paths to input & label
         if sort_utt:

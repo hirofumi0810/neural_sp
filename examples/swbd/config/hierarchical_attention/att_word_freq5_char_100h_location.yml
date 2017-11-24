@@ -2,6 +2,7 @@ param:
   # corpus
   corpus: switchboard
   label_type: word_freq5
+  label_type_sub: character
   data_size: 300h
 
   # features
@@ -13,12 +14,13 @@ param:
   num_skip: 1
 
   # topology
-  model_type: attention
+  model_type: hierarchical_attention
   encoder_type: lstm
   encoder_bidirectional: True
   encoder_num_units: 320
   encoder_num_proj: 0
   encoder_num_layers: 6
+  encoder_num_layers_sub: 4
   subsample_list:
     - True
     - True
@@ -31,7 +33,10 @@ param:
   decoder_type: lstm
   decoder_num_units: 320
   decoder_num_layers: 1
+  decoder_num_units_sub: 320
+  decoder_num_layers_sub: 1
   embedding_dim: 512
+  embedding_dim_sub: 64
   conv_num_channels: 10
   conv_width: 101
 
@@ -67,4 +72,6 @@ param:
   print_step: 1000
 
   # MTL
+  main_loss_weight: 0.5
   ctc_loss_weight: 0
+  ctc_loss_weight_sub: 0

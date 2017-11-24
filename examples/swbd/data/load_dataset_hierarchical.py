@@ -12,11 +12,8 @@ from __future__ import print_function
 
 from os.path import join
 import pandas as pd
-import copy
 
 from utils.dataset.loader_hierarchical import DatasetBase
-from utils.io.labels.character import Char2idx
-from utils.io.labels.word import Word2idx
 
 
 class Dataset(DatasetBase):
@@ -82,34 +79,34 @@ class Dataset(DatasetBase):
         self.volatile = volatile
         self.save_format = save_format
 
-        # Set mapping function
-        dataset_path = join(
-            '/n/sd8/inaguma/corpus/swbd/dataset',
-            save_format, data_size, data_type, 'dataset.csv')
-
-        self.map_fn = Word2idx(vocab_file_path)
-        if label_type_sub == 'character':
-            self.map_fn_sub = Char2idx(vocab_file_path_sub, double_letter=True)
-        elif label_type_sub == 'character_capital_divide':
-            self.map_fn_sub = Char2idx(
-                vocab_file_path_sub, capital_divide=True)
-
         # Load dataset file
+        dataset_path = join('/n/sd8/inaguma/corpus/swbd/dataset',
+                            save_format, data_size, data_type, label_type + '.csv')
+        dataset_path_sub = join('/n/sd8/inaguma/corpus/swbd/dataset',
+                                save_format, data_size, data_type, label_type_sub + '.csv')
         df = pd.read_csv(dataset_path)
         df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
-        new_df = pd.DataFrame([0] * len(df), columns=['index'])
-        df = pd.concat([df, new_df], axis=1)
+        df_sub = pd.read_csv(dataset_path_sub)
+        df_sub = df_sub.loc[:, ['frame_num', 'input_path', 'transcript']]
 
         # Remove inappropriate utteraces
         df = df[df.apply(lambda x: not(len(list(x['transcript']))
                                        <= 30 and x['frame_num'] >= 1000), axis=1)]
+        df = df[df.apply(lambda x: x['frame_num'] <= 2000, axis=1)]
+        df_sub = df_sub[df_sub.apply(lambda x: not(len(list(x['transcript']))
+                                                   <= 30 and x['frame_num'] >= 1000), axis=1)]
+        df_sub = df_sub[df_sub.apply(lambda x: x['frame_num'] <= 2000, axis=1)]
 
         # Sort paths to input & label
         if sort_utt:
             df = df.sort_values(by='frame_num', ascending=not reverse)
+            df_sub = df_sub.sort_values(by='frame_num', ascending=not reverse)
         else:
             df = df.sort_values(by='input_path', ascending=True)
+            df_sub = df_sub.sort_values(by='input_path', ascending=True)
+
+        assert len(df) == len(df_sub)
 
         self.df = df
-        self.df_sub = copy.deepcopy(df)
+        self.df_sub = df_sub
         self.rest = set(range(0, len(df), 1))

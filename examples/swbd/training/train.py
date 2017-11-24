@@ -29,7 +29,7 @@ from utils.directory import mkdir_join, mkdir
 from utils.io.variable import np2var, var2np
 
 MAX_DECODE_LENGTH_WORD = 100
-MAX_DECODE_LENGTH_CHAR = 600
+MAX_DECODE_LENGTH_CHAR = 300
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_path', type=str,
@@ -172,6 +172,8 @@ def main():
         # Update parameters
         optimizer.step()
         # TODO: Add scheduler
+
+        del loss_train
 
         if (step + 1) % params['print_step'] == 0:
 

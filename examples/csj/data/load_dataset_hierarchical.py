@@ -14,9 +14,6 @@ from os.path import join
 import pandas as pd
 
 from utils.dataset.loader_hierarchical import DatasetBase
-from utils.io.labels.phone import Phone2idx
-from utils.io.labels.character import Char2idx
-from utils.io.labels.word import Word2idx
 
 
 class Dataset(DatasetBase):
@@ -84,39 +81,20 @@ class Dataset(DatasetBase):
         self.volatile = volatile
         self.save_format = save_format
 
-        # Set mapping function
-        dataset_path = join(
-            '/n/sd8/inaguma/corpus/csj/dataset',
-            save_format, data_size, data_type, 'dataset_kanji.csv')
-
-        if 'kana' in label_type_sub:
-            dataset_path_sub = join(
-                '/n/sd8/inaguma/corpus/csj/dataset',
-                save_format, data_size, data_type, 'dataset_kana.csv')
-        elif 'kanji' in label_type_sub:
-            dataset_path_sub = join(
-                '/n/sd8/inaguma/corpus/csj/dataset',
-                save_format, data_size, data_type, 'dataset_kanji.csv')
-        elif 'phone' in label_type_sub:
-            dataset_path_sub = join(
-                '/n/sd8/inaguma/corpus/csj/dataset',
-                save_format, data_size, data_type, 'dataset_phone.csv')
-
-        self.map_fn = Word2idx(vocab_file_path)
-        self.map_fn_sub = Char2idx(vocab_file_path_sub, double_letter=True)
-
         # Load dataset file
+        dataset_path = join('/n/sd8/inaguma/corpus/csj/dataset',
+                            save_format, data_size, data_type, label_type + '.csv')
+        dataset_path_sub = join('/n/sd8/inaguma/corpus/csj/dataset',
+                                save_format, data_size, data_type, label_type_sub + '.csv')
         df = pd.read_csv(dataset_path)
         df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
-        new_df = pd.DataFrame([0] * len(df), columns=['index'])
-        df = pd.concat([df, new_df], axis=1)
-
         df_sub = pd.read_csv(dataset_path_sub)
         df_sub = df_sub.loc[:, ['frame_num', 'input_path', 'transcript']]
-        new_df = pd.DataFrame([0] * len(df_sub), columns=['index'])
-        df_sub = pd.concat([df_sub, new_df], axis=1)
 
-        # TODO: Remove inappropriate utteraces
+        # Remove inappropriate utteraces
+        df = df[df.apply(lambda x: 20 <= x['frame_num'] <= 2000, axis=1)]
+        df_sub = df_sub[df_sub.apply(
+            lambda x: 20 <= x['frame_num'] <= 2000, axis=1)]
 
         # Sort paths to input & label
         if sort_utt:
@@ -125,6 +103,8 @@ class Dataset(DatasetBase):
         else:
             df = df.sort_values(by='input_path', ascending=True)
             df_sub = df_sub.sort_values(by='input_path', ascending=True)
+
+        assert len(df) == len(df_sub)
 
         self.df = df
         self.df_sub = df_sub
