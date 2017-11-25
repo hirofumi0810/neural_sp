@@ -223,6 +223,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 This should be used in inference model for memory efficiency.
         Returns:
             loss (FloatTensor): A tensor of size `[1]`
+            loss_main (FloatTensor): A tensor of size `[1]`
+            loss_sub (FloatTensor): A tensor of size `[1]`
         """
         # Encode acoustic features
         encoder_outputs, encoder_final_state, encoder_outputs_sub, encoder_final_state_sub, perm_indices = self._encode(
@@ -254,18 +256,20 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         num_classes = logits.size(2)
         logits = logits.view((-1, num_classes))
         labels_1d = labels[:, 1:].contiguous().view(-1)
-        loss = F.cross_entropy(logits, labels_1d,
-                               ignore_index=self.sos_index,
-                               size_average=False) * self.main_loss_weight
+        loss_main = F.cross_entropy(logits, labels_1d,
+                                    ignore_index=self.sos_index,
+                                    size_average=False)
         # NOTE: labels are padded by sos_index
 
         # Compute XE sequence loss in the sub task
         num_classes_sub = logits_sub.size(2)
         logits_sub = logits_sub.view((-1, num_classes_sub))
         labels_sub_1d = labels_sub[:, 1:].contiguous().view(-1)
-        loss += F.cross_entropy(logits_sub, labels_sub_1d,
-                                ignore_index=self.sos_index_sub,
-                                size_average=False) * self.sub_loss_weight
+        loss_sub = F.cross_entropy(logits_sub, labels_sub_1d,
+                                   ignore_index=self.sos_index_sub,
+                                   size_average=False)
+
+        loss = loss_main * self.main_loss_weight + loss_sub * self.sub_loss_weight
 
         # Add coverage term
         if self.coverage_weight != 0:
@@ -287,7 +291,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Average the loss by mini-batch
         loss /= batch_size
 
-        return loss
+        return loss, loss_main * self.main_loss_weight / batch_size, loss_sub * self.sub_loss_weight / batch_size
 
     def _encode(self, inputs, inputs_seq_len, volatile):
         """Encode acoustic features.

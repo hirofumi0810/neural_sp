@@ -125,6 +125,8 @@ class HierarchicalCTC(CTC):
                 This should be used in inference model for memory efficiency.
         Returns:
             loss (FloatTensor): A tensor of size `[1]`
+            loss_main (FloatTensor): A tensor of size `[1]`
+            loss_sub (FloatTensor): A tensor of size `[1]`
         """
         labels_tmp = labels + 1
         labels_sub_tmp = labels_sub + 1
@@ -157,15 +159,19 @@ class HierarchicalCTC(CTC):
 
         # Compute CTC loss
         ctc_loss_fn = CTCLoss()
-        ctc_loss = ctc_loss_fn(logits, concatenated_labels.cpu(),
-                               inputs_seq_len.cpu(), labels_seq_len.cpu()) * self.main_loss_weight
-        ctc_loss += ctc_loss_fn(logits_sub, concatenated_labels_sub.cpu(),
-                                inputs_seq_len.cpu(), labels_seq_len_sub.cpu()) * (1 - self.main_loss_weight)
+        loss_main = ctc_loss_fn(
+            logits, concatenated_labels.cpu(),
+            inputs_seq_len.cpu(), labels_seq_len.cpu())
+        loss_sub = ctc_loss_fn(
+            logits_sub, concatenated_labels_sub.cpu(),
+            inputs_seq_len.cpu(), labels_seq_len_sub.cpu())
+        loss = loss_main * self.main_loss_weight + \
+            loss_sub * (1 - self.main_loss_weight)
 
         # Average the loss by mini-batch
-        ctc_loss /= batch_size
+        loss /= batch_size
 
-        return ctc_loss
+        return loss, loss_main * self.main_loss_weight / batch_size, loss_sub * (1 - self.main_loss_weight) / batch_size
 
     def _encode(self, inputs, inputs_seq_len, volatile):
         """Encode acoustic features.

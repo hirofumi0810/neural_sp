@@ -46,7 +46,6 @@ class AttentionMechanism(nn.Module):
 
         super(AttentionMechanism, self).__init__()
 
-        assert kernel_size % 2 == 1
         if attention_type not in ATTENTION_TYPE:
             raise TypeError(
                 "attention_type should be one of [%s], you provided %s." %
@@ -68,6 +67,7 @@ class AttentionMechanism(nn.Module):
             raise NotImplementedError
 
         elif self.attention_type == 'location':
+            assert kernel_size % 2 == 1
             self.W_enc = nn.Linear(encoder_num_units, attention_dim)
             self.W_dec = nn.Linear(decoder_num_units, attention_dim)
             self.conv = nn.Conv1d(

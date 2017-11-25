@@ -167,7 +167,7 @@ def main():
     not_improved_epoch = 0
     learning_rate = float(params['learning_rate'])
     best_model = model
-    loss_val_train = 0.
+    loss_val_train, loss_main_val_train, loss_sub_val_train = 0., 0., 0.
     for step, (data, is_new_epoch) in enumerate(train_data):
 
         # Create feed dictionary for next mini batch (train)
@@ -177,9 +177,12 @@ def main():
         optimizer.zero_grad()
 
         # Compute loss in the training set
-        loss_train = model(inputs, labels, labels_sub, inputs_seq_len,
-                           labels_seq_len, labels_seq_len_sub)
+        loss_train, loss_main_train, loss_sub_train = model(
+            inputs, labels, labels_sub, inputs_seq_len,
+            labels_seq_len, labels_seq_len_sub)
         loss_val_train += loss_train.data[0]
+        loss_main_val_train += loss_main_train.data[0]
+        loss_sub_val_train += loss_sub_train.data[0]
 
         # Compute gradient
         optimizer.zero_grad()
@@ -193,6 +196,8 @@ def main():
         # TODO: Add scheduler
 
         del loss_train
+        del loss_main_train
+        del loss_sub_train
 
         if (step + 1) % params['print_step'] == 0:
 
@@ -204,11 +209,16 @@ def main():
             model.eval()
 
             # Compute loss in the dev set
-            loss_dev = model(inputs, labels, labels_sub, inputs_seq_len,
-                             labels_seq_len, labels_seq_len_sub, volatile=True)
+            loss_dev, loss_main_dev, loss_sub_dev = model(
+                inputs, labels, labels_sub, inputs_seq_len,
+                labels_seq_len, labels_seq_len_sub, volatile=True)
 
             loss_val_train /= params['print_step']
+            loss_main_val_train /= params['print_step']
+            loss_sub_val_train /= params['print_step']
             loss_val_dev = loss_dev.data[0]
+            loss_main_val_dev = loss_main_dev.data[0]
+            loss_sub_val_dev = loss_sub_dev.data[0]
             csv_steps.append(step)
             csv_loss_train.append(loss_val_train)
             csv_loss_dev.append(loss_val_dev)
@@ -217,9 +227,10 @@ def main():
             model.train()
 
             duration_step = time.time() - start_time_step
-            print("Step %d (epoch: %.3f): loss = %.3f (%.3f) / lr = %.5f (%.3f min)" %
+            print("Step %d (epoch: %.3f): loss = %.3f/%.3f (%.3f/%.3f) / lr = %.5f (%.3f min)" %
                   (step + 1, train_data.epoch_detail,
-                   loss_val_train, loss_val_dev,
+                   loss_main_val_train, loss_sub_val_train,
+                   loss_main_val_dev, loss_sub_val_dev,
                    learning_rate, duration_step / 60))
             sys.stdout.flush()
             start_time_step = time.time()

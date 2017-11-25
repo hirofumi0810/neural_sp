@@ -117,8 +117,9 @@ class TestCTC(unittest.TestCase):
             optimizer.zero_grad()
 
             # Compute loss
-            loss = model(inputs, labels, labels_sub,
-                         inputs_seq_len, labels_seq_len, labels_seq_len_sub)
+            loss, loss_main, loss_sub = model(
+                inputs, labels, labels_sub,
+                inputs_seq_len, labels_seq_len, labels_seq_len_sub)
 
             # Compute gradient
             optimizer.zero_grad()
@@ -161,8 +162,9 @@ class TestCTC(unittest.TestCase):
                 model.train()
 
                 duration_step = time.time() - start_time_step
-                print('Step %d: loss = %.3f / ler (main) = %.3f / ler (sub) = %.3f / lr = %.5f (%.3f sec)' %
-                      (step + 1, var2np(loss), ler, ler_sub, learning_rate, duration_step))
+                print('Step %d: loss = %.3f (%.3f/%.3f) / ler = %.3f (%.3f) / lr = %.5f (%.3f sec)' %
+                      (step + 1, loss.data[0], loss_main.data[0], loss_sub.data[0],
+                       ler, ler_sub, learning_rate, duration_step))
                 start_time_step = time.time()
 
                 # Visualize
