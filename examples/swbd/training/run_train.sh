@@ -23,11 +23,11 @@ filename=$(basename $config_path | awk -F. '{print $1}')
 mkdir -p log
 
 # Standard output version
-# CUDA_VISIBLE_DEVICES=$gpu_index $PYTHON train.py \
+# CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 $PYTHON train.py \
 #   --config_path $config_path \
 #   --model_save_path $MODEL_SAVE_PATH
 
 # Background job version
-CUDA_VISIBLE_DEVICES=$gpu_index nohup $PYTHON train.py \
+CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 nohup $PYTHON train.py \
   --config_path $config_path \
   --model_save_path $MODEL_SAVE_PATH > log/$filename".log" &

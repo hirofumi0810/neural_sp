@@ -15,6 +15,7 @@ import yaml
 import shutil
 import copy
 import argparse
+from tensorboardX import SummaryWriter
 
 import torch.nn as nn
 
@@ -158,6 +159,9 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False)
 
+    # Setting for tensorboard
+    tf_writer = SummaryWriter(model.save_path)
+
     # Train model
     csv_steps, csv_loss_train, csv_loss_dev = [], [], []
     start_time_train = time.time()
@@ -222,6 +226,21 @@ def main():
             csv_steps.append(step)
             csv_loss_train.append(loss_val_train)
             csv_loss_dev.append(loss_val_dev)
+
+            # Logging by tensorboard
+            tf_writer.add_scalar('train/loss', loss_val_train, step + 1)
+            tf_writer.add_scalar(
+                'train/loss_main', loss_main_val_train, step + 1)
+            tf_writer.add_scalar(
+                'train/loss_sub', loss_sub_val_train, step + 1)
+            tf_writer.add_scalar('dev/loss', loss_val_dev, step + 1)
+            tf_writer.add_scalar('dev/loss_main', loss_main_val_dev, step + 1)
+            tf_writer.add_scalar('dev/loss_sub', loss_sub_val_dev, step + 1)
+            for name, param in model.named_parameters():
+                name = name.replace('.', '/')
+                tf_writer.add_histogram(name, var2np(param.clone()), step + 1)
+                tf_writer.add_histogram(
+                    name + '/grad', var2np(param.grad.clone()), step + 1)
 
             # ***Change to training mode***
             model.train()
@@ -352,6 +371,8 @@ def main():
     # Training was finished correctly
     with open(join(model.save_path, 'complete.txt'), 'w') as f:
         f.write('')
+
+    tf_writer.close()
 
 
 if __name__ == '__main__':
