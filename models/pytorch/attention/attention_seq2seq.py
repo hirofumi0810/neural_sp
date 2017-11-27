@@ -200,7 +200,8 @@ class AttentionSeq2seq(ModelBase):
                     dropout=encoder_dropout,
                     parameter_init=parameter_init,
                     use_cuda=self.use_cuda,
-                    batch_first=True)
+                    batch_first=True,
+                    merge_bidirectional=True)
             else:
                 # Pyramidal encoder
                 self.encoder = encoder(
@@ -215,7 +216,8 @@ class AttentionSeq2seq(ModelBase):
                     subsample_list=subsample_list,
                     subsample_type='concat',
                     use_cuda=self.use_cuda,
-                    batch_first=True)
+                    batch_first=True,
+                    merge_bidirectional=True)
         else:
             raise NotImplementedError
 
@@ -410,20 +412,14 @@ class AttentionSeq2seq(ModelBase):
         # `[B, T_in, encoder_num_units * encoder_num_directions]`
         # encoder_final_state: `[1, B, encoder_num_units]`
 
-        batch_size, max_time, encoder_num_units = encoder_outputs.size()
-
-        # Sum bidirectional outputs
-        if self.encoder_bidirectional:
-            encoder_outputs = encoder_outputs[:, :, :encoder_num_units // 2] + \
-                encoder_outputs[:, :, encoder_num_units // 2:]
-            # NOTE: encoder_outputs: `[B, T_in, encoder_num_units]`
+        batch_size = encoder_outputs.size(0)
 
         # Bridge between the encoder and decoder
         if self.encoder_num_units != self.decoder_num_units:
             # Bridge between the encoder and decoder
             encoder_outputs = self.bridge(encoder_outputs)
             encoder_final_state = self.bridge(
-                encoder_final_state.view(-1, encoder_num_units))
+                encoder_final_state.view(-1, self.encoder_num_units))
             encoder_final_state = encoder_final_state.view(1, batch_size, -1)
 
         return encoder_outputs, encoder_final_state, perm_indices

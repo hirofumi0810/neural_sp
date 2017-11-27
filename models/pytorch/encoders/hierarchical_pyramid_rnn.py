@@ -35,6 +35,7 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
         use_cuda (bool, optional): if True, use GPUs
         batch_first (bool, optional): if True, batch-major computation will be
             performed
+        merge_bidirectional (bool, optional): if True, sum bidirectional outputs
     """
 
     def __init__(self,
@@ -50,7 +51,8 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
                  subsample_list,
                  subsample_type='drop',
                  use_cuda=False,
-                 batch_first=False):
+                 batch_first=False,
+                 merge_bidirectional=False):
 
         super(HierarchicalPyramidRNNEncoder, self).__init__()
 
@@ -76,6 +78,7 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
         self.parameter_init = parameter_init
         self.use_cuda = use_cuda
         self.batch_first = batch_first
+        self.merge_bidirectional = merge_bidirectional
 
         self.subsample_list = subsample_list
         self.subsample_type = subsample_type
@@ -177,15 +180,15 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
         Returns:
             outputs:
                 if batch_first is True, a tensor of size
-                    `[B, T // sum(subsample_list), num_units * num_directions]`
+                    `[B, T // sum(subsample_list), num_units (* num_directions)]`
                 else
-                    `[T // sum(subsample_list), B, num_units * num_directions]`
+                    `[T // sum(subsample_list), B, num_units (* num_directions)]`
             final_state_fw: A tensor of size `[1, B, num_units]`
             outputs_sub:
                 if batch_first is True, a tensor of size
-                    `[B, T // sum(subsample_list), num_units * num_directions]`
+                    `[B, T // sum(subsample_list), num_units (* num_directions)]`
                 else
-                    `[T // sum(subsample_list), B, num_units * num_directions]`
+                    `[T // sum(subsample_list), B, num_units (* num_directions)]`
             final_state_fw_sub: A tensor of size `[1, B, num_units]`
             perm_indices ():
         """
@@ -270,6 +273,13 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
             if i_layer == self.num_layers_sub - 1:
                 outputs_sub = outputs
                 h_n_sub = h_n
+
+        # Sum bidirectional outputs
+        if self.bidirectional and self.merge_bidirectional:
+            outputs = outputs[:, :, :self.num_units] + \
+                outputs[:, :, self.num_units:]
+            outputs_sub = outputs_sub[:, :, :self.num_units] + \
+                outputs_sub[:, :, self.num_units:]
 
         # Pick up the final state of the top layer (forward)
         if self.num_directions == 2:

@@ -10,6 +10,7 @@ from __future__ import print_function
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.autograd import Variable
 
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 from models.pytorch.encoders.load_encoder import load
@@ -132,7 +133,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     dropout=encoder_dropout,
                     parameter_init=parameter_init,
                     use_cuda=self.use_cuda,
-                    batch_first=True)
+                    batch_first=True,
+                    merge_bidirectional=True)
             else:
                 self.encoder = encoder(
                     input_size=self.input_size,
@@ -147,7 +149,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     subsample_list=subsample_list,
                     subsample_type='concat',
                     use_cuda=self.use_cuda,
-                    batch_first=True)
+                    batch_first=True,
+                    merge_bidirectional=True)
         else:
             raise NotImplementedError
 
@@ -189,7 +192,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         self.embedding_sub = nn.Embedding(
             self.num_classes_sub, embedding_dim_sub)
         self.embedding_dropout_sub = nn.Dropout(embedding_dropout)
-        # TODO: dropoutは別に用意する必要ある（実装確認）？
 
         if input_feeding:
             self.input_feeding_sub = nn.Linear(
@@ -239,11 +241,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         # Teacher-forcing (main task)
         logits, attention_weights = self._decode_train(
-            encoder_outputs, labels[perm_indices], encoder_final_state)
+            encoder_outputs, labels, encoder_final_state)
 
         # Teacher-forcing (sub task)
         logits_sub, attention_weights_sub = self._decode_train_sub(
-            encoder_outputs_sub, labels_sub[perm_indices], encoder_final_state_sub)
+            encoder_outputs_sub, labels_sub, encoder_final_state_sub)
 
         # Output smoothing
         if self.logits_temperature != 1:
@@ -319,24 +321,14 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # encoder_outputs_sub: `[B, T_in, encoder_num_units * encoder_num_directions]`
         # encoder_final_state_sub: `[1, B, encoder_num_units]`
 
-        batch_size, max_time, encoder_num_units = encoder_outputs.size()
-
-        # Sum bidirectional outputs
-        if self.encoder_bidirectional:
-            encoder_outputs = encoder_outputs[:, :, :encoder_num_units // 2] + \
-                encoder_outputs[:, :, encoder_num_units // 2:]
-            # NOTE: encoder_outputs: `[B, T_in, encoder_num_units]`
-
-            encoder_outputs_sub = encoder_outputs_sub[:, :, :encoder_num_units // 2] + \
-                encoder_outputs_sub[:, :, encoder_num_units // 2:]
-            # NOTE: encoder_outputs_sub: `[B, T_in, encoder_num_units]`
+        batch_size = encoder_outputs.size(0)
 
         # Bridge between the encoder and decoder in the main task
         if self.encoder_num_units != self.decoder_num_units:
             # Bridge between the encoder and decoder
             encoder_outputs = self.bridge(encoder_outputs)
             encoder_final_state = self.bridge(
-                encoder_final_state.view(-1, encoder_num_units))
+                encoder_final_state.view(-1, self.encoder_num_units))
             encoder_final_state = encoder_final_state.view(1, batch_size, -1)
 
         # Bridge between the encoder and decoder in the sub task
@@ -344,7 +336,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # Bridge between the encoder and decoder
             encoder_outputs_sub = self.bridge_sub(encoder_outputs_sub)
             encoder_final_state_sub = self.bridge_sub(
-                encoder_final_state_sub.view(-1, encoder_num_units))
+                encoder_final_state_sub.view(-1, self.encoder_num_units))
             encoder_final_state_sub = encoder_final_state_sub.view(
                 1, batch_size, -1)
 
@@ -364,6 +356,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             attention_weights_sub (FloatTensor): A tensor of size
                 `[B, T_out_sub, T_in]`
         """
+        batch_size, max_time = encoder_outputs.size()[:2]
+
         ys = self.embedding_sub(labels[:, :-1])
         # NOTE: remove <EOS>
         ys = self.embedding_dropout_sub(ys)
@@ -372,9 +366,14 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Initialize decoder state
         decoder_state = self._init_decoder_state(encoder_final_state)
 
+        # Initialize attention weights
+        attention_weights_step = Variable(torch.zeros(batch_size, max_time))
+        if self.use_cuda:
+            attention_weights_step = attention_weights_step.cuda()
+            # TODO: volatile, require_grad
+
         logits = []
         attention_weights = []
-        attention_weights_step = None
 
         for t in range(labels_max_seq_len - 1):
             y = ys[:, t:t + 1, :]

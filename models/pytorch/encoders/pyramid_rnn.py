@@ -39,6 +39,7 @@ class PyramidRNNEncoder(nn.Module):
         use_cuda (bool, optional): if True, use GPUs
         batch_first (bool, optional): if True, batch-major computation will be
             performed
+        merge_bidirectional (bool, optional): if True, sum bidirectional outputs
     """
 
     def __init__(self,
@@ -53,7 +54,8 @@ class PyramidRNNEncoder(nn.Module):
                  subsample_list,
                  subsample_type='drop',
                  use_cuda=False,
-                 batch_first=False):
+                 batch_first=False,
+                 merge_bidirectional=False):
 
         super(PyramidRNNEncoder, self).__init__()
 
@@ -75,6 +77,7 @@ class PyramidRNNEncoder(nn.Module):
         self.parameter_init = parameter_init
         self.use_cuda = use_cuda
         self.batch_first = batch_first
+        self.merge_bidirectional = merge_bidirectional
 
         self.subsample_list = subsample_list
         self.subsample_type = subsample_type
@@ -175,9 +178,9 @@ class PyramidRNNEncoder(nn.Module):
         Returns:
             outputs:
                 if batch_first is True, a tensor of size
-                    `[B, T // sum(subsample_list), num_units * num_directions]`
+                    `[B, T // sum(subsample_list), num_units (* num_directions)]`
                 else
-                    `[T // sum(subsample_list), B, num_units * num_directions]`
+                    `[T // sum(subsample_list), B, num_units (* num_directions)]`
             final_state_fw: A tensor of size `[1, B, num_units]`
             perm_indices ():
         """
@@ -259,11 +262,18 @@ class PyramidRNNEncoder(nn.Module):
                 for i in range(len(pack_seq_len)):
                     pack_seq_len[i] = pack_seq_len[i] // 2
 
+        # Sum bidirectional outputs
+        if self.bidirectional and self.merge_bidirectional:
+            outputs = outputs[:, :, :self.num_units] + \
+                outputs[:, :, self.num_units:]
+
         # Pick up the final state of the top layer (forward)
         if self.num_directions == 2:
             final_state_fw = h_n[-2:-1, :, :]
         else:
             final_state_fw = h_n[-1, :, :].unsqueeze(dim=0)
         # NOTE: h_n: `[num_layers * num_directions, B, num_units]`
+
+        # TODO: add the projection layer
 
         return outputs, final_state_fw, perm_indices

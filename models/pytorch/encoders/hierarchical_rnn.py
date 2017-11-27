@@ -31,6 +31,7 @@ class HierarchicalRNNEncoder(nn.Module):
         use_cuda (bool, optional): if True, use GPUs
         batch_first (bool, optional): if True, batch-major computation will be
             performed
+        merge_bidirectional (bool, optional): if True, sum bidirectional outputs
     """
 
     def __init__(self,
@@ -44,7 +45,8 @@ class HierarchicalRNNEncoder(nn.Module):
                  dropout,
                  parameter_init,
                  use_cuda=False,
-                 batch_first=False):
+                 batch_first=False,
+                 merge_bidirectional=False):
 
         super(HierarchicalRNNEncoder, self).__init__()
 
@@ -65,6 +67,7 @@ class HierarchicalRNNEncoder(nn.Module):
         self.parameter_init = parameter_init
         self.use_cuda = use_cuda
         self.batch_first = batch_first
+        self.merge_bidirectional = merge_bidirectional
 
         self.rnns = []
         for i_layer in range(num_layers):
@@ -156,15 +159,15 @@ class HierarchicalRNNEncoder(nn.Module):
         Returns:
             outputs:
                 if batch_first is True, a tensor of size
-                    `[B, T, num_units * num_directions]`
+                    `[B, T, num_units (* num_directions)]`
                 else
-                    `[T, B, num_units * num_directions]`
+                    `[T, B, num_units (* num_directions)]`
             final_state_fw: A tensor of size `[1, B, num_units]`
             outputs_sub:
                 if batch_first is True, a tensor of size
-                    `[B, T, num_units * num_directions]`
+                    `[B, T, num_units (* num_directions)]`
                 else
-                    `[T, B, num_units * num_directions]`
+                    `[T, B, num_units (* num_directions)]`
             final_state_fw_sub: A tensor of size `[1, B, num_units]`
             perm_indices ():
         """
@@ -214,6 +217,13 @@ class HierarchicalRNNEncoder(nn.Module):
 
             assert inputs_seq_len == unpacked_seq_len
             assert inputs_seq_len == unpacked_seq_len_sub
+
+        # Sum bidirectional outputs
+        if self.bidirectional and self.merge_bidirectional:
+            outputs = outputs[:, :, :self.num_units] + \
+                outputs[:, :, self.num_units:]
+            outputs_sub = outputs_sub[:, :, :self.num_units] + \
+                outputs_sub[:, :, self.num_units:]
 
         # Pick up the final state of the top layer (forward)
         if self.num_directions == 2:
