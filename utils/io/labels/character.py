@@ -39,8 +39,8 @@ class Char2idx(object):
                 vocab_count += 1
 
         # Add <SOS> & <EOS>
-        self.map_dict['<'] = vocab_count
-        self.map_dict['>'] = vocab_count + 1
+        self.map_dict['<'] = vocab_count + 1
+        self.map_dict['>'] = vocab_count
 
     def __call__(self, str_char):
         """
@@ -125,8 +125,8 @@ class Idx2char(object):
                 vocab_count += 1
 
         # Add <SOS> & <EOS>
-        self.map_dict[vocab_count] = '<'
-        self.map_dict[vocab_count + 1] = '>'
+        self.map_dict[vocab_count + 1] = '<'
+        self.map_dict[vocab_count] = '>'
 
     def __call__(self, index_list):
         """

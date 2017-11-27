@@ -82,6 +82,11 @@ class Dataset(DatasetBase):
         df = pd.read_csv(dataset_path)
         df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
 
+        # Remove long utteraces (> 20s)
+        # print('Original utterance num: %d' % len(df))
+        # df = df[df.apply(lambda x: x['frame_num'] <= 2000, axis=1)]
+        # print('Restricted utterance num: %d' % len(df))
+
         # Sort paths to input & label
         if sort_utt:
             df = df.sort_values(by='frame_num', ascending=not reverse)

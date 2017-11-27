@@ -9,11 +9,12 @@ from __future__ import print_function
 
 try:
     from warpctc_pytorch import CTCLoss
-except:
+except ImportError:
     raise ImportError('Install warpctc_pytorch.')
-
-import numpy as np
-from itertools import groupby
+try:
+    import pytorch_ctc
+except ImportError:
+    raise ImportError('Install pytorch_ctc.')
 
 import torch
 import torch.nn as nn
@@ -117,7 +118,7 @@ class CTC(ModelBase):
                 num_units * self.num_directions, self.num_classes)
 
         # Set CTC decoders
-        # self._decode_greedy_np = GreedyDecoder(blank_index=self.blank_index)
+        self._decode_greedy_np = GreedyDecoder(blank_index=self.blank_index)
         self._decode_beam_np = BeamSearchDecoder(blank_index=self.blank_index)
         # TODO: set space index
 
@@ -134,7 +135,7 @@ class CTC(ModelBase):
         Returns:
             loss (FloatTensor): A tensor of size `[1]`
         """
-        labels_tmp = labels + 1
+        _labels = labels + 1
         # NOTE: index 0 is reserved for blank
 
         # Encode acoustic features
@@ -142,7 +143,7 @@ class CTC(ModelBase):
             inputs, inputs_seq_len, volatile=volatile)
 
         # Permutate indices
-        labels_tmp = labels_tmp[perm_indices]
+        _labels = _labels[perm_indices]
         inputs_seq_len = inputs_seq_len[perm_indices]
         labels_seq_len = labels_seq_len[perm_indices]
 
@@ -150,8 +151,8 @@ class CTC(ModelBase):
 
         # Concatenate all labels for warpctc_pytorch
         # `[B, T_out]` -> `[1,]`
-        concatenated_labels = self._concatenate_labels(
-            labels_tmp, labels_seq_len)
+        concatenated_labels = _concatenate_labels(
+            _labels, labels_seq_len)
 
         # Output smoothing
         if self.logits_temperature != 1:
@@ -198,26 +199,6 @@ class CTC(ModelBase):
 
         return logits, perm_indices
 
-    def _concatenate_labels(self, labels, labels_seq_len):
-        """Concatenate all labels in mini-batch and convert to a 1D tensor.
-        Args:
-            labels (LongTensor): A tensor of size `[B, T_out]`
-            labels_seq_len (IntTensor): A tensor of size `[B]`
-        Returns:
-            concatenated_labels (): A tensor of size `[all_label_num]`
-        """
-        batch_size = labels.size(0)
-        total_lables_seq_len = labels_seq_len.data.sum()
-        concatenated_labels = Variable(
-            torch.zeros(total_lables_seq_len)).int()
-        label_counter = 0
-        for i_batch in range(batch_size):
-            concatenated_labels[label_counter:label_counter +
-                                labels_seq_len.data[i_batch]] = labels[i_batch][:labels_seq_len.data[i_batch]]
-            label_counter += labels_seq_len.data[i_batch]
-
-        return concatenated_labels
-
     def posteriors(self, inputs, inputs_seq_len, temperature=1, blank_prior=None):
         """
         Args:
@@ -245,13 +226,15 @@ class CTC(ModelBase):
         return probs
 
     def decode(self, inputs, inputs_seq_len, beam_width=1,
-               max_decode_length=None):
+               max_decode_length=None, decode_by_pytorch_ctc=False):
         """
         Args:
             inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
             inputs_seq_len (IntTensor): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
             max_decode_length: not used
+            decode_by_pytorch_ctc (bool, optional): if True, decoding will be
+                conducted by using pytorch_ctc package.
         Returns:
             best_hyps ():
             perm_indices ():
@@ -267,66 +250,49 @@ class CTC(ModelBase):
         # Convert to batch-major
         logits = logits.transpose(0, 1)
 
-        # log_probs = F.log_softmax(logits, dim=logits.dim() - 1)
-        log_probs = self.log_softmax(logits)
-        # TODO: update pytorch version
-
-        if beam_width == 1:
-            # torch-based decoder
-            best_hyps = self._decode_greedy(log_probs, inputs_seq_len)
+        if decode_by_pytorch_ctc:
+            raise NotImplementedError
+            # probs = self.softmax(logits)
+            # scorer = pytorch_ctc.Scorer()
+            # decoder = pytorch_ctc.CTCBeamDecoder(
+            #     scorer, labels, top_paths=1, beam_width=beam_width,
+            #     blank_index=0, space_index=28, merge_repeated=True)
+            # output, score, out_seq_len = decoder.decode(probs, seq_len=None)
         else:
-            # torch-based decoder
-            # best_hyps = self._decode_beam(log_probs, inputs_seq_len, beam_width)
+            # log_probs = F.log_softmax(logits, dim=logits.dim() - 1)
+            log_probs = self.log_softmax(logits)
+            # TODO: update pytorch version
 
-            # numpy-based decoder
-            log_probs = var2np(log_probs)
-            inputs_seq_len = var2np(inputs_seq_len)
-            best_hyps = self._decode_beam_np(
-                log_probs, inputs_seq_len, beam_width)
+            if beam_width == 1:
+                best_hyps = self._decode_greedy(log_probs, inputs_seq_len)
+            else:
+                log_probs = var2np(log_probs)
+                inputs_seq_len = var2np(inputs_seq_len)
+                best_hyps = self._decode_beam_np(
+                    log_probs, inputs_seq_len, beam_width)
 
-        best_hyps -= 1
-        # NOTE: index 0 is reserved for blank
+            best_hyps -= 1
+            # NOTE: index 0 is reserved for blank
 
         return best_hyps, perm_indices
 
-    def _decode_greedy(self, log_probs, inputs_seq_len):
-        """
-        Args:
-            log_probs (FloatTensor): log-scale probabilities
-                A tensor of size `[B, T, num_classes (including blank)]`
-            inputs_seq_len (IntTensor): A tensor of size `[B]`
-        Returns:
-            best_hyps (np.ndarray): A tensor of size `[B,]`
-        """
-        batch_size = log_probs.size(0)
-        best_hyps = []
 
-        # Pickup argmax class
-        for i_batch in range(batch_size):
-            indices = []
-            time = var2np(inputs_seq_len)[i_batch]
-            for t in range(time):
-                _, argmax = torch.max(log_probs[i_batch, t], dim=0)
-                indices.append(var2np(argmax).tolist()[0])
+def _concatenate_labels(labels, labels_seq_len):
+    """Concatenate all labels in mini-batch and convert to a 1D tensor.
+    Args:
+        labels (LongTensor): A tensor of size `[B, T_out]`
+        labels_seq_len (IntTensor): A tensor of size `[B]`
+    Returns:
+        concatenated_labels (): A tensor of size `[all_label_num]`
+    """
+    batch_size = labels.size(0)
+    total_lables_seq_len = labels_seq_len.data.sum()
+    concatenated_labels = Variable(
+        torch.zeros(total_lables_seq_len)).int()
+    label_counter = 0
+    for i_batch in range(batch_size):
+        concatenated_labels[label_counter:label_counter +
+                            labels_seq_len.data[i_batch]] = labels[i_batch][:labels_seq_len.data[i_batch]]
+        label_counter += labels_seq_len.data[i_batch]
 
-            # Step 1. Collapse repeated labels
-            collapsed_indices = [x[0] for x in groupby(indices)]
-
-            # Step 2. Remove all blank labels
-            best_hyp = [x for x in filter(
-                lambda x: x != self.blank_index, collapsed_indices)]
-            best_hyps.append(np.array(best_hyp))
-
-        return np.array(best_hyps)
-
-    def _decode_beam(self, log_probs, inputs_seq_len, beam_width):
-        """
-        Args:
-            log_probs (FloatTensor): log-scale probabilities
-                A tensor of size `[B, T, num_classes (including blank)]`
-            inputs_seq_len (IntTensor): A tensor of size `[B]`
-            beam_width (int): the size of beam
-        Returns:
-            best_hyps (np.ndarray):
-        """
-        raise NotImplementedError
+    return concatenated_labels

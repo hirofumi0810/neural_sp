@@ -129,7 +129,7 @@ class DatasetBase(Base):
             (len(data_indices), max_frame_num, self.input_size),
             dtype=np.float32)
         labels = np.array(
-            [[self.att_padded_value] * max_seq_len] * len(data_indices))
+            [[self.sos_index] * max_seq_len] * len(data_indices))
         inputs_seq_len = np.zeros((len(data_indices),), dtype=np.int32)
         labels_seq_len = np.zeros((len(data_indices),), dtype=np.int32)
         input_names = np.array(list(

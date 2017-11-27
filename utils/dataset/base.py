@@ -47,29 +47,19 @@ class Base(object):
 
     @property
     def sos_index(self):
-        return self.num_classes
-
-    @property
-    def sos_index_sub(self):
-        return self.num_classes_sub
-
-    @property
-    def eos_index(self):
         return self.num_classes + 1
 
     @property
-    def eos_index_sub(self):
+    def sos_index_sub(self):
         return self.num_classes_sub + 1
 
     @property
-    def ctc_padded_value(self):
-        # Pad by -1
-        return None if self.is_test else -1
+    def eos_index(self):
+        return self.num_classes
 
     @property
-    def att_padded_value(self):
-        # Pad by <SOS>
-        return None if self.is_test else self.sos_index
+    def eos_index_sub(self):
+        return self.num_classes_sub
 
     @property
     def epoch_detail(self):

@@ -16,6 +16,7 @@ from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 from models.pytorch.encoders.load_encoder import load
 from models.pytorch.attention.decoders.rnn_decoder import RNNDecoder
 from models.pytorch.attention.attention_layer import AttentionMechanism
+from models.pytorch.ctc.ctc import _concatenate_labels
 from utils.io.variable import var2np
 
 
@@ -99,8 +100,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         self.embedding_dim_sub = embedding_dim_sub
         self.num_classes_sub = num_classes_sub + 2
         # NOTE: add <SOS> and <EOS>
-        self.sos_index_sub = num_classes_sub
-        self.eos_index_sub = num_classes_sub + 1
+        self.sos_index_sub = num_classes_sub + 1
+        self.eos_index_sub = num_classes_sub
 
         # Setting for MTL
         self.main_loss_weight = main_loss_weight
@@ -198,12 +199,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 decoder_num_units_sub * 2, decoder_num_units_sub)
             # NOTE: input-feeding approach
             self.fc_sub = nn.Linear(
-                decoder_num_units_sub, self.num_classes_sub)
+                decoder_num_units_sub, self.num_classes_sub - 1)
         else:
             self.fc_sub = nn.Linear(
-                decoder_num_units_sub, self.num_classes_sub)
+                decoder_num_units_sub, self.num_classes_sub - 1)
         # NOTE: <SOS> is removed because the decoder never predict <SOS> class
-        # TODO: self.num_classes_sub - 1
 
         if ctc_loss_weight_sub > 0:
             # self.fc_ctc = nn.Linear(
@@ -359,7 +359,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         batch_size, max_time = encoder_outputs.size()[:2]
 
         ys = self.embedding_sub(labels[:, :-1])
-        # NOTE: remove <EOS>
+        # NOTE: remove <EOS> in the longest utterance
         ys = self.embedding_dropout_sub(ys)
         labels_max_seq_len = labels.size(1)
 

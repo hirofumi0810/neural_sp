@@ -20,7 +20,7 @@ param:
   encoder_num_proj: 0
   encoder_num_layers: 4
   subsample_list:
-    - False
+    - True
     - True
     - True
     - False
@@ -34,7 +34,7 @@ param:
   conv_width: 101
 
   # optimization
-  batch_size: 20
+  batch_size: 32
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 30
@@ -49,7 +49,7 @@ param:
   dropout_embedding: 0.1
   weight_decay: 0
   init_dec_state_with_enc_state: True
-  sharpening_factor: 1.0
+  sharpening_factor: 2.0
   logits_temperature: 1.0
   sigmoid_smoothing: False
   input_feeding: False

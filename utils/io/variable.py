@@ -9,42 +9,42 @@ import torch
 # import chainer
 
 
-def np2var(inputs, use_cuda=False, volatile=False, dtype=None):
+def np2var(array, use_cuda=False, volatile=False, dtype=None):
     """Convert form np.ndarray to Variable.
     Args:
-        inputs (np.ndarray): A tensor of size `[B, T, input_size]`
+        array (np.ndarray): A tensor of any sizes
         use_cuda (bool, optional): if True, use CUDA
         volatile (bool, optional): if True, the history will not be saved.
             This should be used in inference model for memory efficiency.
         type (string, optional): float or long or int
     Returns:
-        inputs (torch.Variable): A tensor of size `[B, T, input_size]`
+        array (torch.Variable): A tensor of size `[B, T, input_size]`
     """
-    inputs = torch.from_numpy(inputs)
+    array = torch.from_numpy(array)
     if dtype is not None:
         if dtype == 'float':
-            inputs = inputs.float()
+            array = array.float()
         elif dtype == 'long':
-            inputs = inputs.long()
+            array = array.long()
         elif dtype == 'int':
-            inputs = inputs.int()
+            array = array.int()
 
-    inputs = torch.autograd.Variable(inputs, requires_grad=False)
+    array = torch.autograd.Variable(array, requires_grad=False)
 
     if volatile:
-        inputs.volatile = True
+        array.volatile = True
 
     if use_cuda:
-        inputs = inputs.cuda()
+        array = array.cuda()
 
-    return inputs
+    return array
 
 
-def var2np(x):
+def var2np(var):
     """
     Args:
-        x (torch.Variable):
+        var (torch.Variable):
     Returns:
         np.ndarray
     """
-    return x.data.cpu().numpy()
+    return var.data.cpu().numpy()

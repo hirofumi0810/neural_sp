@@ -21,7 +21,7 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
     Args:
         model: the model to evaluate
         model_type (string): ctc or attention or hierarchical_ctc or
-            hierarchical_attention or joint_ctc_attention
+            hierarchical_attention
         dataset: An instance of a `Dataset' class
         label_type (string): word_freq1 or word_freq5 or word_freq10 or word_freq15
         data_size (string): 100h or 460h or 960h

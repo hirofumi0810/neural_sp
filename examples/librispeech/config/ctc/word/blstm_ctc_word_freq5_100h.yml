@@ -9,8 +9,8 @@ param:
   save_format: numpy
   input_size: 120
   splice: 1
-  num_stack: 3
-  num_skip: 3
+  num_stack: 2
+  num_skip: 2
 
   # topology
   model_type: ctc

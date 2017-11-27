@@ -15,7 +15,7 @@ except:
 import torch.nn as nn
 # import torch.nn.functional as F
 
-from models.pytorch.ctc.ctc import CTC
+from models.pytorch.ctc.ctc import CTC, _concatenate_labels
 from models.pytorch.encoders.load_encoder import load
 from utils.io.variable import var2np
 
@@ -128,8 +128,8 @@ class HierarchicalCTC(CTC):
             loss_main (FloatTensor): A tensor of size `[1]`
             loss_sub (FloatTensor): A tensor of size `[1]`
         """
-        labels_tmp = labels + 1
-        labels_sub_tmp = labels_sub + 1
+        _labels = labels + 1
+        _labels_sub = labels_sub + 1
         # NOTE: index 0 is reserved for blank
 
         # Encode acoustic features
@@ -137,8 +137,8 @@ class HierarchicalCTC(CTC):
             inputs, inputs_seq_len, volatile=volatile)
 
         # Permutate indices
-        labels_tmp = labels_tmp[perm_indices]
-        labels_sub_tmp = labels_sub_tmp[perm_indices]
+        _labels = _labels[perm_indices]
+        _labels_sub = _labels_sub[perm_indices]
         inputs_seq_len = inputs_seq_len[perm_indices]
         labels_seq_len = labels_seq_len[perm_indices]
         labels_seq_len_sub = labels_seq_len_sub[perm_indices]
@@ -147,10 +147,10 @@ class HierarchicalCTC(CTC):
 
         # Concatenate all labels for warpctc_pytorch
         # `[B, T_out]` -> `[1,]`
-        concatenated_labels = self._concatenate_labels(
-            labels_tmp, labels_seq_len)
-        concatenated_labels_sub = self._concatenate_labels(
-            labels_sub_tmp, labels_seq_len_sub)
+        concatenated_labels = _concatenate_labels(
+            _labels, labels_seq_len)
+        concatenated_labels_sub = _concatenate_labels(
+            _labels_sub, labels_seq_len_sub)
 
         # Output smoothing
         if self.logits_temperature != 1:
@@ -164,7 +164,7 @@ class HierarchicalCTC(CTC):
             inputs_seq_len.cpu(), labels_seq_len.cpu())
         loss_sub = ctc_loss_fn(
             logits_sub, concatenated_labels_sub.cpu(),
-            inputs_seq_len.cpu(), labels_seq_len_sub.cpu())
+            inputs_seq_len.clone().cpu(), labels_seq_len_sub.cpu())
         loss = loss_main * self.main_loss_weight + \
             loss_sub * (1 - self.main_loss_weight)
 

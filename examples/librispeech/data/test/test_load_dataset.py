@@ -23,16 +23,16 @@ class TestLoadDataset(unittest.TestCase):
         # data_type
         self.check(label_type='character', data_type='train')
         self.check(label_type='character', data_type='dev_clean')
-        # self.check(label_type='character', data_type='dev_other')
+        self.check(label_type='character', data_type='dev_other')
         self.check(label_type='character', data_type='test_clean')
-        # self.check(label_type='character', data_type='test_other')
+        self.check(label_type='character', data_type='test_other')
 
         # label_type
         self.check(label_type='word_freq1')
         self.check(label_type='word_freq5')
         self.check(label_type='word_freq10')
         self.check(label_type='word_freq15')
-        # self.check(label_type='character_capital_divide')
+        self.check(label_type='character_capital_divide')
 
         # sort
         self.check(label_type='character', sort_utt=True)
@@ -50,7 +50,7 @@ class TestLoadDataset(unittest.TestCase):
         # self.check(label_type='character', num_gpus=8)
 
     @measure_time
-    def check(self, label_type, data_type='dev_clean', data_size='100h',
+    def check(self, label_type, data_type='dev_clean', data_size='960h',
               shuffle=False, sort_utt=True, sort_stop_epoch=None,
               frame_stacking=False, splice=1, num_gpus=1):
 
@@ -111,6 +111,7 @@ class TestLoadDataset(unittest.TestCase):
                   (input_names[0], dataset.epoch_detail))
             print(str_true)
             print('inputs_seq_len: %d' % inputs_seq_len.data.numpy()[0])
+            assert inputs_seq_len.data.numpy()[0] <= 2000
             if not dataset.is_test:
                 print('labels_seq_len: %d' % labels_seq_len.data.numpy()[0])
 

@@ -9,8 +9,10 @@ from __future__ import print_function
 
 try:
     from warpctc_pytorch import CTCLoss
+    ctc_loss_fn = CTCLoss()
 except:
     raise ImportError('Install warpctc_pytorch.')
+
 
 import numpy as np
 
@@ -23,6 +25,7 @@ from models.pytorch.base import ModelBase
 from models.pytorch.encoders.load_encoder import load
 from models.pytorch.attention.decoders.rnn_decoder import RNNDecoder
 from models.pytorch.attention.attention_layer import AttentionMechanism
+from models.pytorch.ctc.ctc import _concatenate_labels
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
 from utils.io.variable import var2np
@@ -161,8 +164,8 @@ class AttentionSeq2seq(ModelBase):
         self.embedding_dropout = embedding_dropout
         self.num_classes = num_classes + 2
         # NOTE: Add <SOS> and <EOS>
-        self.sos_index = num_classes
-        self.eos_index = num_classes + 1
+        self.sos_index = num_classes + 1
+        self.eos_index = num_classes
         self.init_dec_state_with_enc_state = init_dec_state_with_enc_state
         self.sharpening_factor = sharpening_factor
         self.logits_temperature = logits_temperature
@@ -263,11 +266,10 @@ class AttentionSeq2seq(ModelBase):
             self.input_feeeding = nn.Linear(
                 decoder_num_units * 2, decoder_num_units)
             # NOTE: input-feeding approach
-            self.fc = nn.Linear(decoder_num_units, self.num_classes)
+            self.fc = nn.Linear(decoder_num_units, self.num_classes - 1)
         else:
-            self.fc = nn.Linear(decoder_num_units, self.num_classes)
+            self.fc = nn.Linear(decoder_num_units, self.num_classes - 1)
         # NOTE: <SOS> is removed because the decoder never predict <SOS> class
-        # TODO: self.num_classes - 1
         # TODO: consider projection
 
         if ctc_loss_weight > 0:
@@ -355,24 +357,16 @@ class AttentionSeq2seq(ModelBase):
         # Convert to batch-major
         logits_ctc = logits_ctc.transpose(0, 1)
 
-        ctc_loss_fn = CTCLoss()
-
-        labels_tmp = labels + 1
+        inputs_seq_len = inputs_seq_len.clone()
+        labels = labels.clone()[:, 1:] + 1
+        labels_seq_len = labels_seq_len.clone() - 2
         # NOTE: index 0 is reserved for blank
-
-        # Ignore <SOS> and <EOS>
-        labels_seq_len -= 2
+        # NOTE: Ignore <SOS> and <EOS>
 
         # Concatenate all labels for warpctc_pytorch
         # `[B, T_out]` -> `[1,]`
-        total_lables_seq_len = labels_seq_len.data.sum()
-        concat_labels = Variable(
-            torch.zeros(total_lables_seq_len)).int()
-        label_counter = 0
-        for i_batch in range(batch_size):
-            concat_labels[label_counter:label_counter +
-                          labels_seq_len.data[i_batch]] = labels_tmp[i_batch][1:labels_seq_len.data[i_batch] + 1]
-            label_counter += labels_seq_len.data[i_batch]
+        concatenated_labels = _concatenate_labels(
+            labels, labels_seq_len)
 
         # Subsampling
         if is_sub_task:
@@ -384,7 +378,7 @@ class AttentionSeq2seq(ModelBase):
                 inputs_seq_len /= sum(self.subsample_list) * 2
         # NOTE: floor is not needed because inputs_seq_len is IntTensor
 
-        ctc_loss = ctc_loss_fn(logits_ctc, concat_labels.cpu(),
+        ctc_loss = ctc_loss_fn(logits_ctc, concatenated_labels.cpu(),
                                inputs_seq_len.cpu(), labels_seq_len.cpu())
 
         if self.use_cuda:
@@ -444,7 +438,7 @@ class AttentionSeq2seq(ModelBase):
         batch_size, max_time = encoder_outputs.size()[:2]
 
         ys = self.embedding(labels[:, :-1])
-        # NOTE: remove <EOS>
+        # NOTE: remove <EOS> in the longest utterance
         ys = self.embedding_dropout(ys)
         labels_max_seq_len = labels.size(1)
 

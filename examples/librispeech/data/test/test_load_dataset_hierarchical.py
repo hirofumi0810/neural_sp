@@ -25,12 +25,12 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
                    data_type='train')
         self.check(label_type='word_freq5', label_type_sub='character',
                    data_type='dev_clean')
-        # self.check(label_type='word_freq5', label_type_sub='character',
-        #            data_type='dev_other')
+        self.check(label_type='word_freq5', label_type_sub='character',
+                   data_type='dev_other')
         self.check(label_type='word_freq5', label_type_sub='character',
                    data_type='test_clean')
-        # self.check(label_type='word_freq5', label_type_sub='character',
-        #            data_type='test_other')
+        self.check(label_type='word_freq5', label_type_sub='character',
+                   data_type='test_other')
 
         # label_type
         self.check(label_type='word_freq1', label_type_sub='character')
@@ -39,7 +39,7 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
 
     @measure_time
     def check(self, label_type, label_type_sub,
-              data_type='dev_clean', data_size='100h',
+              data_type='dev_clean', data_size='960h',
               shuffle=False, sort_utt=True, sort_stop_epoch=None,
               frame_stacking=False, splice=1, num_gpus=1):
 
@@ -109,6 +109,7 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
             print('-' * 10)
             print(str_true_sub)
             print('inputs_seq_len: %d' % inputs_seq_len.data.numpy()[0])
+            assert inputs_seq_len.data.numpy()[0] <= 2000
             if not dataset.is_test:
                 print('labels_seq_len (word): %d' %
                       labels_seq_len.data.numpy()[0])
