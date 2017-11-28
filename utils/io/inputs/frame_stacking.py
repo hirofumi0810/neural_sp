@@ -6,7 +6,6 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-import math
 
 
 def stack_frame(inputs, num_stack, num_skip):
@@ -30,7 +29,7 @@ def stack_frame(inputs, num_stack, num_skip):
         raise ValueError('num_skip must be less than num_stack.')
 
     frame_num, input_size = inputs.shape
-    frame_num_new = math.ceil(frame_num / num_skip)
+    frame_num_new = (frame_num + 1) // num_skip
 
     stacked_inputs = np.zeros((frame_num_new, input_size * num_stack))
     stack_count = 0  # counter

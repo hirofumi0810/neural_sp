@@ -14,14 +14,14 @@ def do_splice(inputs, splice=1, num_stack=1):
     """Splice input data. This is expected to be used for CNN-like models.
     Args:
         inputs (np.ndarray): A tensor of size
-            `[T, input_size (num_channels * 3 * num_stack)]'
+            `[T, input_size (freq * 3 * num_stack)]'
         splice (int): frames to splice. Default is 1 frame.
             ex.) if splice == 11
                 [t-5, ..., t-1, t, t+1, ..., t+5] (total 11 frames)
         num_stack (int, optional): the number of frames to stack
     Returns:
         data_spliced (np.ndarray): A tensor of size
-            `[T, num_channels * (splice * num_stack) * 3 (static + Δ + ΔΔ)]`
+            `[T, freq * (splice * num_stack) * 3 (static + Δ + ΔΔ)]`
     """
     assert isinstance(inputs, np.ndarray), 'inputs should be np.ndarray.'
     assert len(inputs.shape) == 2, 'inputs must be 2 demension.'
@@ -31,12 +31,11 @@ def do_splice(inputs, splice=1, num_stack=1):
         return inputs
 
     max_time, input_size = inputs.shape
-    num_channels = (input_size // 3) // num_stack
-    input_data_spliced = np.zeros(
-        (max_time, num_channels * (splice * num_stack) * 3))
+    freq = (input_size // 3) // num_stack
+    input_data_spliced = np.zeros((max_time, freq * (splice * num_stack) * 3))
 
     for i_time in range(max_time):
-        spliced_frames = np.zeros((splice * num_stack, num_channels, 3))
+        spliced_frames = np.zeros((splice * num_stack, freq, 3))
         for i_splice in range(0, splice, 1):
             #########################
             # padding left frames
@@ -58,18 +57,18 @@ def do_splice(inputs, splice=1, num_stack=1):
             else:
                 copy_frame = inputs[i_time + (i_splice - splice)]
 
-            # `[num_channels * 3 * num_stack]` -> `[num_channels, 3, num_stack]`
-            copy_frame = copy_frame.reshape((num_channels, 3, num_stack))
+            # `[freq * 3 * num_stack]` -> `[freq, 3, num_stack]`
+            copy_frame = copy_frame.reshape((freq, 3, num_stack))
 
-            # `[num_channels, 3, num_stack]` -> `[num_stack, num_channels, 3]`
+            # `[freq, 3, num_stack]` -> `[num_stack, freq, 3]`
             copy_frame = np.transpose(copy_frame, (2, 0, 1))
 
             spliced_frames[i_splice: i_splice + num_stack] = copy_frame
 
-        # `[splice * num_stack, num_channels, 3] -> `[num_channels, splice * num_stack, 3]`
+        # `[splice * num_stack, freq, 3] -> `[freq, splice * num_stack, 3]`
         spliced_frames = np.transpose(spliced_frames, (1, 0, 2))
 
         input_data_spliced[i_time] = spliced_frames.reshape(
-            (num_channels * (splice * num_stack) * 3))
+            (freq * (splice * num_stack) * 3))
 
     return input_data_spliced

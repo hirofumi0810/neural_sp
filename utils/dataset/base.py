@@ -62,6 +62,14 @@ class Base(object):
         return self.num_classes_sub
 
     @property
+    def pad_value(self):
+        return self.sos_index if not self.is_test else None
+
+    @property
+    def pad_value_sub(self):
+        return self.sos_index_sub if not self.is_test else None
+
+    @property
     def epoch_detail(self):
         # Floating point version of epoch
         return self.iteration / len(self)

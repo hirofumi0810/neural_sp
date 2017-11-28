@@ -31,7 +31,8 @@ def _read_text(trans_path):
     return transcript
 
 
-def generate_data(model_type, label_type='char', batch_size=1, num_stack=1, splice=1):
+def generate_data(model_type, label_type='char', batch_size=1,
+                  num_stack=1, splice=1):
     """
     Args:
         model_type (string): ctc or attention
@@ -51,14 +52,15 @@ def generate_data(model_type, label_type='char', batch_size=1, num_stack=1, spli
         energy=False, delta1=True, delta2=True, dtype=np.float32)
 
     max_frame_num = math.ceil(inputs_seq_len[0] / num_stack)
-    inputs_new = np.zeros((batch_size, max_frame_num, inputs.shape[-1]),
+    inputs_new = np.zeros((batch_size, max_frame_num, inputs.shape[-1] * num_stack * splice),
                           dtype=np.float32)
     for i_batch in range(batch_size):
         # Frame stacking
-        data_i = stack_frame(inputs[i_batch], num_stack, num_stack)
+        data_i = stack_frame(
+            inputs[i_batch], num_stack=num_stack, num_skip=num_stack)
 
         # Splice
-        data_i = do_splice(data_i, splice, num_stack)
+        data_i = do_splice(data_i, splice=splice, num_stack=num_stack)
 
         inputs_new[i_batch] = data_i
         inputs_seq_len[i_batch] = len(data_i)
@@ -78,13 +80,13 @@ def generate_data(model_type, label_type='char', batch_size=1, num_stack=1, spli
                 [len(char2idx(transcript_attn))] * batch_size)
             labels_seq_len_ctc = np.array(
                 [len(char2idx(transcript_ctc))] * batch_size)
-            return inputs, labels_attn, labels_ctc, inputs_seq_len, labels_seq_len_attn, labels_seq_len_ctc
+            return inputs_new, labels_attn, labels_ctc, inputs_seq_len, labels_seq_len_attn, labels_seq_len_ctc
         else:
             if model_type == 'attention':
                 transcript = SOS + transcript + EOS
             labels = np.array([char2idx(transcript)] * batch_size, np.int32)
             labels_seq_len = np.array([len(char2idx(transcript))] * batch_size)
-            return inputs, labels, inputs_seq_len, labels_seq_len
+            return inputs_new, labels, inputs_seq_len, labels_seq_len
 
     elif label_type == 'word':
         if model_type == 'joint_ctc_attention':
@@ -98,13 +100,13 @@ def generate_data(model_type, label_type='char', batch_size=1, num_stack=1, spli
                 [len(word2idx(transcript_attn))] * batch_size)
             labels_seq_len_ctc = np.array(
                 [len(word2idx(transcript_ctc))] * batch_size)
-            return inputs, labels_attn, labels_ctc, inputs_seq_len, labels_seq_len_attn, labels_seq_len_ctc
+            return inputs_new, labels_attn, labels_ctc, inputs_seq_len, labels_seq_len_attn, labels_seq_len_ctc
         else:
             if model_type == 'attention':
                 transcript = SOS + SPACE + transcript + SPACE + EOS
             labels = np.array([word2idx(transcript)] * batch_size, np.int32)
             labels_seq_len = np.array([len(word2idx(transcript))] * batch_size)
-            return inputs, labels, inputs_seq_len, labels_seq_len
+            return inputs_new, labels, inputs_seq_len, labels_seq_len
 
     elif label_type == 'word_char':
         if model_type == 'attention':
@@ -124,7 +126,7 @@ def generate_data(model_type, label_type='char', batch_size=1, num_stack=1, spli
             [len(word2idx(transcript_word))] * batch_size)
         labels_seq_len_sub = np.array(
             [len(char2idx(transcript_char))] * batch_size)
-        return inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub
+        return inputs_new, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub
 
     else:
         raise NotImplementedError

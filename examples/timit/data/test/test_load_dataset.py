@@ -62,10 +62,10 @@ class TestLoadDataset(unittest.TestCase):
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
-            model_type='ctc',
+            model_type='attention',
             data_type=data_type, label_type=label_type,
             vocab_file_path=vocab_file_path,
-            batch_size=64, max_epoch=5,
+            batch_size=64, max_epoch=2,
             splice=splice, num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
             sort_utt=sort_utt, sort_stop_epoch=sort_stop_epoch,
@@ -94,9 +94,11 @@ class TestLoadDataset(unittest.TestCase):
 
             print('----- %s ----- (epoch: %.3f)' %
                   (input_names[0], dataset.epoch_detail))
-            print(inputs.data.numpy().shape)
-            # print(labels.data.numpy()[0].shape)
             print(str_true)
+            print('inputs_seq_len: %d' % inputs_seq_len.data.numpy()[0])
+            assert inputs_seq_len.data.numpy()[0] <= 2000
+            if not dataset.is_test:
+                print('labels_seq_len: %d' % labels_seq_len.data.numpy()[0])
 
 
 if __name__ == '__main__':
