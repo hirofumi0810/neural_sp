@@ -7,12 +7,12 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import math
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
+from models.pytorch.encoders.cnn import CNNEncoder
 from utils.io.variable import var2np
 
 
@@ -72,40 +72,19 @@ class RNNEncoder(nn.Module):
         self.merge_bidirectional = merge_bidirectional
 
         # Setting for CNNs before RNNs
-        self.splice = splice
-        self.num_stack = num_stack
-        self.input_channels = 3
-        self.input_freq = input_size // self.input_channels
-
         if len(channels) > 0 and len(channels) == len(kernel_sizes) and len(kernel_sizes) == len(strides):
-            convs = []
-            in_c = self.input_channels
-            assert input_size % in_c == 0
-            for i in range(len(channels)):
-                assert kernel_sizes[i][0] % 2 == 1
-                assert kernel_sizes[i][1] % 2 == 1
-
-                convs.append(nn.Conv2d(
-                    in_channels=in_c,
-                    out_channels=channels[i],
-                    kernel_size=tuple(kernel_sizes[i]),
-                    stride=tuple(strides[i]),
-                    padding=(kernel_sizes[i][0] // 2, kernel_sizes[i][1] // 2),
-                    bias=not batch_norm))
-                convs.append(nn.ReLU())
-                if batch_norm:
-                    convs.append(nn.BatchNorm2d(channels[i]))
-                    # TODO: compare BN before ReLU and after ReLU
-                convs.append(nn.Dropout(p=dropout))
-                in_c = channels[i]
-            self.conv = nn.Sequential(*convs)
-
-            out_freq = self.input_freq
-            out_time = splice * num_stack
-            for f, t in strides:
-                out_freq = math.ceil(out_freq / f)
-                out_time = math.ceil(out_time / t)
-            input_size = channels[-1] * out_freq * out_time
+            self.conv = CNNEncoder(
+                input_size,
+                num_stack=num_stack,
+                splice=splice,
+                channels=channels,
+                kernel_sizes=kernel_sizes,
+                strides=strides,
+                dropout=dropout,
+                parameter_init=parameter_init,
+                use_cuda=use_cuda,
+                batch_norm=batch_norm)
+            input_size = self.conv.output_size
         else:
             input_size = input_size * splice * num_stack
             self.conv = None
@@ -212,31 +191,7 @@ class RNNEncoder(nn.Module):
 
         # Path through CNN layers before RNN layers
         if self.conv is not None:
-            # for debug
-            # print('input_size: %d' % input_size)
-            # print('input_freq: %d' % self.input_freq)
-            # print('input_channels %d' % self.input_channels)
-            # print('splice: %d' % self.splice)
-            # print('num_stack: %d' % self.num_stack)
-
-            assert input_size == self.input_freq * \
-                self.input_channels * self.splice * self.num_stack
-
-            # Reshape to 4D tensor
-            inputs = inputs.view(
-                batch_size * max_time, self.input_channels,
-                self.input_freq, self.splice * self.num_stack)
-
-            # print(inputs.size())
             inputs = self.conv(inputs)
-            # print(inputs.size())
-
-            output_channels, freq, time = inputs.size()[1:]
-
-            # Collapse feature dimension
-            inputs = inputs.view(batch_size, -1,
-                                 output_channels * freq * time)
-            # print(inputs.size())
 
         if not self.batch_first:
             # Reshape inputs to the time-major

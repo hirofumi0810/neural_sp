@@ -115,7 +115,7 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
                 channels=channels,
                 kernel_sizes=kernel_sizes,
                 strides=strides,
-                batch_norm=batch_norm)
+                batch_norm=True)
         else:
             raise NotImplementedError
 
