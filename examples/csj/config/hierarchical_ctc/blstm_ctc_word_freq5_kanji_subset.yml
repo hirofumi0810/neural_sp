@@ -21,7 +21,10 @@ param:
   num_proj: 0
   num_layers: 6
   num_layers_sub: 4
-  bottleneck_dim: 0
+  bottleneck_dim_list: []
+  channels: []
+  kernel_sizes: []
+  strides: []
 
   # optimization
   batch_size: 20

@@ -25,8 +25,6 @@ def load(model_type, params):
     if model_type == 'ctc':
         model = CTC(
             input_size=params['input_size'],
-            num_stack=params['num_stack'],
-            splice=params['splice'],
             encoder_type=params['encoder_type'],
             bidirectional=params['bidirectional'],
             num_units=params['num_units'],
@@ -35,7 +33,12 @@ def load(model_type, params):
             dropout=params['dropout'],
             num_classes=params['num_classes'],
             parameter_init=params['parameter_init'],
-            logits_temperature=params['logits_temperature'])
+            logits_temperature=params['logits_temperature'],
+            num_stack=params['num_stack'],
+            splice=params['splice'],
+            channels=params['channels'],
+            kernel_sizes=params['kernel_sizes'],
+            strides=params['strides'])
 
         model.name = params['encoder_type']
         if params['bidirectional']:
@@ -52,8 +55,10 @@ def load(model_type, params):
             model.name += '_stack' + str(params['num_stack'])
         if params['weight_decay'] != 0:
             model.name += '_wd' + str(params['weight_decay'])
-        if params['bottleneck_dim'] != 0:
-            model.name += '_bottle' + str(params['bottleneck_dim'])
+        if len(params['channels']) != 0:
+            model.name += '_conv'
+        if len(params['bottleneck_dim_list']) != 0:
+            model.name += '_bottle'
         if params['logits_temperature'] != 1:
             model.name += '_temp' + str(params['logits_temperature'])
 
@@ -126,8 +131,6 @@ def load(model_type, params):
     if params['model_type'] == 'hierarchical_ctc':
         model = HierarchicalCTC(
             input_size=params['input_size'],
-            num_stack=params['num_stack'],
-            splice=params['splice'],
             encoder_type=params['encoder_type'],
             bidirectional=params['bidirectional'],
             num_units=params['num_units'],
@@ -139,7 +142,12 @@ def load(model_type, params):
             num_classes=params['num_classes'],
             num_classes_sub=params['num_classes_sub'],
             parameter_init=params['parameter_init'],
-            logits_temperature=params['logits_temperature'])
+            logits_temperature=params['logits_temperature'],
+            num_stack=params['num_stack'],
+            splice=params['splice'],
+            channels=params['channels'],
+            kernel_sizes=params['kernel_sizes'],
+            strides=params['strides'])
 
         model.name = params['encoder_type']
         if params['bidirectional']:
@@ -157,8 +165,10 @@ def load(model_type, params):
             model.name += '_stack' + str(params['num_stack'])
         if params['weight_decay'] != 0:
             model.name += '_wd' + str(params['weight_decay'])
-        if params['bottleneck_dim'] != 0:
-            model.name += '_bottle' + str(params['bottleneck_dim'])
+        if len(params['channels']) != 0:
+            model.name += '_conv'
+        if len(params['bottleneck_dim_list']) != 0:
+            model.name += '_bottle'
         if params['logits_temperature'] != 1:
             model.name += '_temp' + str(params['logits_temperature'])
         model.name += '_main' + str(params['main_loss_weight'])

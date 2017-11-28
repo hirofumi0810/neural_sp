@@ -30,30 +30,49 @@ class TestCTC(unittest.TestCase):
     def test(self):
         print("Hierarchical CTC Working check.")
 
+        # CLDNN-CTC
+        self.check(encoder_type='lstm', bidirectional=True,
+                   conv=True)
+
         self.check(encoder_type='lstm', bidirectional=True)
 
     @measure_time
-    def check(self, encoder_type, bidirectional=False):
+    def check(self, encoder_type, bidirectional=False, conv=False):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
+        print('  conv: %s' % str(conv))
         print('==================================================')
 
+        if conv:
+            splice = 5
+            channels = [32, 32]
+            kernel_sizes = [[41, 11], [21, 11]]
+            strides = [[2, 2], [2, 1]]  # freq * time
+            bottleneck_dim_list = [786, 786]
+        else:
+            splice = 1
+            channels = []
+            kernel_sizes = []
+            strides = []
+            bottleneck_dim_list = []
+
         # Load batch data
+        num_stack = 2
         inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub = generate_data(
             model_type='ctc',
             label_type='word_char',
             batch_size=2,
-            num_stack=1,
-            splice=1)
+            num_stack=num_stack,
+            splice=splice)
 
         num_classes = 11
         num_classes_sub = 27
 
         # Load model
         model = HierarchicalCTC(
-            input_size=inputs.shape[-1],
+            input_size=inputs.shape[-1] // splice // num_stack,   # 120
             encoder_type=encoder_type,
             bidirectional=bidirectional,
             num_units=256,
@@ -64,9 +83,13 @@ class TestCTC(unittest.TestCase):
             main_loss_weight=0.5,
             num_classes=num_classes,
             num_classes_sub=num_classes_sub,
-            splice=1,
             parameter_init=0.1,
-            bottleneck_dim=None)
+            bottleneck_dim_list=bottleneck_dim_list,
+            num_stack=num_stack,
+            splice=splice,
+            channels=channels,
+            kernel_sizes=kernel_sizes,
+            strides=strides)
 
         # Count total parameters
         for name, num_params in model.num_params_dict.items():

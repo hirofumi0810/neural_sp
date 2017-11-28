@@ -30,6 +30,10 @@ class TestCTC(unittest.TestCase):
     def test(self):
         print("CTC Working check.")
 
+        # CLDNN-CTC
+        self.check(encoder_type='lstm', bidirectional=True,
+                   conv=True)
+
         # word-level CTC
         self.check(encoder_type='lstm', bidirectional=True,
                    label_type='word')
@@ -41,8 +45,6 @@ class TestCTC(unittest.TestCase):
         self.check(encoder_type='gru', bidirectional=False)
         self.check(encoder_type='rnn', bidirectional=True)
         self.check(encoder_type='rnn', bidirectional=False)
-        # self.check(encoder_type='cldnn', bidirectional=True)
-        # self.check(encoder_type='cldnn', bidirectional=True)
 
         # CNNs
         # self.check(encoder_type='resnet')
@@ -50,21 +52,36 @@ class TestCTC(unittest.TestCase):
 
     @measure_time
     def check(self, encoder_type, bidirectional=False, label_type='char',
-              save_path=None):
+              conv=False, save_path=None):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
+        print('  conv: %s' % str(conv))
         print('==================================================')
 
+        if conv:
+            splice = 5
+            channels = [32, 32]
+            kernel_sizes = [[41, 11], [21, 11]]
+            strides = [[2, 2], [2, 1]]  # freq * time
+            bottleneck_dim_list = [786, 786]
+        else:
+            splice = 1
+            channels = []
+            kernel_sizes = []
+            strides = []
+            bottleneck_dim_list = []
+
         # Load batch data
+        num_stack = 2
         inputs, labels, inputs_seq_len, labels_seq_len = generate_data(
             model_type='ctc',
             label_type=label_type,
             batch_size=2,
-            num_stack=1,
-            splice=1)
+            num_stack=num_stack,
+            splice=splice)
 
         if label_type == 'char':
             num_classes = 27
@@ -73,7 +90,7 @@ class TestCTC(unittest.TestCase):
 
         # Load model
         model = CTC(
-            input_size=inputs.shape[-1],
+            input_size=inputs.shape[-1] // splice // num_stack,  # 120
             encoder_type=encoder_type,
             bidirectional=bidirectional,
             num_units=256,
@@ -81,9 +98,13 @@ class TestCTC(unittest.TestCase):
             num_layers=2,
             dropout=0.1,
             num_classes=num_classes,
-            splice=1,
             parameter_init=0.1,
-            bottleneck_dim=None)
+            bottleneck_dim_list=bottleneck_dim_list,
+            num_stack=num_stack,
+            splice=splice,
+            channels=channels,
+            kernel_sizes=kernel_sizes,
+            strides=strides)
 
         # Count total parameters
         for name, num_params in model.num_params_dict.items():
@@ -182,7 +203,7 @@ class TestCTC(unittest.TestCase):
                 print('Ref: %s' % str_true)
                 print('Hyp: %s' % str_pred)
 
-                if ler < 0.1:
+                if ler < 0.05:
                     print('Modle is Converged.')
                     # Save the model
                     if save_path is not None:

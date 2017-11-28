@@ -44,12 +44,15 @@ class CTC(ModelBase):
         dropout (float): the probability to drop nodes
         num_classes (int): the number of classes of target labels
             (excluding a blank class)
-        num_stack (int, optional): the number of frames to stack
-        splice (int, optional): frames to splice. Default is 1 frame.
         parameter_init (float, optional): Range of uniform distribution to
             initialize weight parameters
-        bottleneck_dim (int, optional):
+        bottleneck_dim_list (list, optional):
         logits_temperature (float):
+        num_stack (int, optional): the number of frames to stack
+        splice (int, optional): frames to splice. Default is 1 frame.
+        channels (list, optional):
+        kernel_sizes (list, optional):
+        strides (list, optional):
     """
 
     def __init__(self,
@@ -61,24 +64,19 @@ class CTC(ModelBase):
                  num_layers,
                  dropout,
                  num_classes,
+                 parameter_init=0.1,
+                 bottleneck_dim_list=[],
+                 logits_temperature=1,
                  num_stack=1,
                  splice=1,
-                 parameter_init=0.1,
-                 bottleneck_dim=None,
-                 logits_temperature=1):
+                 channels=[],
+                 kernel_sizes=[],
+                 strides=[]):
 
         super(ModelBase, self).__init__()
 
-        self.input_size = input_size * num_stack * splice
-        self.splice = splice
-        self.encoder_type = encoder_type
-        self.bidirectional = bidirectional
         self.num_directions = 2 if bidirectional else 1
-        self.num_units = num_units
-        self.num_proj = num_proj
-        self.num_layers = num_layers
-        self.bottleneck_dim = bottleneck_dim
-        self.dropout = dropout
+        self.bottleneck_dim_list = bottleneck_dim_list
 
         # Setting for CTC
         self.num_classes = num_classes + 1
@@ -96,7 +94,7 @@ class CTC(ModelBase):
         # Call the encoder function
         if encoder_type in ['lstm', 'gru', 'rnn']:
             self.encoder = encoder(
-                input_size=self.input_size,
+                input_size=input_size,  # 120 or 123
                 rnn_type=encoder_type,
                 bidirectional=bidirectional,
                 num_units=num_units,
@@ -105,14 +103,26 @@ class CTC(ModelBase):
                 dropout=dropout,
                 parameter_init=parameter_init,
                 use_cuda=self.use_cuda,
-                batch_first=False)
+                batch_first=False,
+                num_stack=num_stack,
+                splice=splice,
+                channels=channels,
+                kernel_sizes=kernel_sizes,
+                strides=strides)
         else:
             raise NotImplementedError
 
-        if self.bottleneck_dim is not None:
-            self.bottleneck = nn.Linear(
-                num_units * self.num_directions, bottleneck_dim)
-            self.fc = nn.Linear(bottleneck_dim, self.num_classes)
+        if len(bottleneck_dim_list) > 0:
+            bottleneck_layers = []
+            for i in range(len(bottleneck_dim_list)):
+                if i == 0:
+                    bottleneck_layers.append(nn.Linear(
+                        num_units * self.num_directions, bottleneck_dim_list[i]))
+                else:
+                    bottleneck_layers.append(nn.Linear(
+                        bottleneck_dim_list[i - 1], bottleneck_dim_list[i]))
+            self.fc = nn.Linear(bottleneck_dim_list[-1], self.num_classes)
+            self.bottleneck_layers = nn.Sequential(*bottleneck_layers)
         else:
             self.fc = nn.Linear(
                 num_units * self.num_directions, self.num_classes)
@@ -188,11 +198,9 @@ class CTC(ModelBase):
         # encoder_outputs = encoder_outputs.contiguous()
         encoder_outputs = encoder_outputs.view(max_time, batch_size, -1)
 
-        if self.bottleneck_dim is not None:
-            logits = self.bottleneck(encoder_outputs)
-            logits = self.fc(logits)
-        else:
-            logits = self.fc(encoder_outputs)
+        if len(self.bottleneck_dim_list) > 0:
+            encoder_outputs = self.bottleneck_layers(encoder_outputs)
+        logits = self.fc(encoder_outputs)
 
         # Reshape back to 3D tensor
         logits = logits.view(max_time, batch_size, -1)
@@ -264,12 +272,11 @@ class CTC(ModelBase):
             # TODO: update pytorch version
 
             if beam_width == 1:
-                best_hyps = self._decode_greedy(log_probs, inputs_seq_len)
+                best_hyps = self._decode_greedy_np(
+                    var2np(log_probs), var2np(inputs_seq_len))
             else:
-                log_probs = var2np(log_probs)
-                inputs_seq_len = var2np(inputs_seq_len)
                 best_hyps = self._decode_beam_np(
-                    log_probs, inputs_seq_len, beam_width)
+                    var2np(log_probs), var2np(inputs_seq_len), beam_width)
 
             best_hyps -= 1
             # NOTE: index 0 is reserved for blank

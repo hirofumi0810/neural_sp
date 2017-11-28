@@ -37,12 +37,15 @@ class HierarchicalCTC(CTC):
         main_loss_weight (float): A weight parameter for the main CTC loss
         num_classes (int): the number of classes of target labels
             (excluding a blank class)
-        num_stack (int, optional): the number of frames to stack
-        splice (int, optional): frames to splice. Default is 1 frame.
         parameter_init (float, optional): Range of uniform distribution to
             initialize weight parameters
-        bottleneck_dim (int, optional):
+        bottleneck_dim_list (list, optional):
         logits_temperature (float):
+        num_stack (int, optional): the number of frames to stack
+        splice (int, optional): frames to splice. Default is 1 frame.
+        channels (list, optional):
+        kernel_sizes (list, optional):
+        strides (list, optional):
     """
 
     def __init__(self,
@@ -57,11 +60,14 @@ class HierarchicalCTC(CTC):
                  main_loss_weight,  # ***
                  num_classes,
                  num_classes_sub,  # ***
+                 parameter_init=0.1,
+                 bottleneck_dim_list=[],
+                 logits_temperature=1,
                  num_stack=1,
                  splice=1,
-                 parameter_init=0.1,
-                 bottleneck_dim=None,
-                 logits_temperature=1):
+                 channels=[],
+                 kernel_sizes=[],
+                 strides=[]):
 
         super(HierarchicalCTC, self).__init__(
             input_size=input_size,
@@ -72,10 +78,8 @@ class HierarchicalCTC(CTC):
             num_layers=num_layers,
             dropout=dropout,
             num_classes=num_classes,
-            num_stack=num_stack,
-            splice=splice,
             parameter_init=parameter_init,
-            bottleneck_dim=bottleneck_dim,
+            bottleneck_dim_list=bottleneck_dim_list,
             logits_temperature=logits_temperature)
 
         self.num_layers_sub = num_layers_sub
@@ -94,7 +98,7 @@ class HierarchicalCTC(CTC):
         # NOTE: overide encoder
         if encoder_type in ['lstm', 'gru', 'rnn']:
             self.encoder = encoder(
-                input_size=self.input_size,
+                input_size=input_size,  # 120 or 123
                 rnn_type=encoder_type,
                 bidirectional=bidirectional,
                 num_units=num_units,
@@ -104,7 +108,12 @@ class HierarchicalCTC(CTC):
                 dropout=dropout,
                 parameter_init=parameter_init,
                 use_cuda=self.use_cuda,
-                batch_first=False)
+                batch_first=False,
+                num_stack=num_stack,
+                splice=splice,
+                channels=channels,
+                kernel_sizes=kernel_sizes,
+                strides=strides)
         else:
             raise NotImplementedError
 
@@ -196,11 +205,9 @@ class HierarchicalCTC(CTC):
         encoder_outputs_sub = encoder_outputs_sub.view(
             max_time, batch_size, -1)
 
-        if self.bottleneck_dim is not None:
-            logits = self.bottleneck(encoder_outputs)
-            logits = self.fc(logits)
-        else:
-            logits = self.fc(encoder_outputs)
+        if len(self.bottleneck_dim_list) > 0:
+            encoder_outputs = self.bottleneck_layers(encoder_outputs)
+        logits = self.fc(encoder_outputs)
         logits_sub = self.fc_sub(encoder_outputs_sub)
 
         # Reshape back to 3D tensor
@@ -233,16 +240,11 @@ class HierarchicalCTC(CTC):
         # TODO: update pytorch version
 
         if beam_width == 1:
-            # torch-based decoder
-            best_hyp = self._decode_greedy(log_probs, inputs_seq_len)
+            best_hyp = self._decode_greedy_np(
+                var2np(log_probs), var2np(inputs_seq_len))
         else:
-            # torch-based decoder
-            # best_hyp = self._decode_beam(log_probs, inputs_seq_len, beam_width)
-
-            # numpy-based decoder
-            log_probs = var2np(log_probs)
-            inputs_seq_len = var2np(inputs_seq_len)
-            best_hyp = self.decode_beam(log_probs, inputs_seq_len, beam_width)
+            best_hyp = self._decode_beam_np(
+                var2np(log_probs), var2np(inputs_seq_len), beam_width)
 
         best_hyp -= 1
         # NOTE: index 0 is reserved for blank

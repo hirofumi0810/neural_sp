@@ -29,6 +29,10 @@ class TestRNNEncoders(unittest.TestCase):
         self.check(encoder_type='lstm', bidirectional=True,
                    batch_first=False)
         self.check(encoder_type='lstm', bidirectional=True,
+                   conv=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   batch_first=False, conv=True)
+        self.check(encoder_type='lstm', bidirectional=True,
                    merge_bidirectional=True)
 
         # GRU
@@ -36,6 +40,10 @@ class TestRNNEncoders(unittest.TestCase):
         self.check(encoder_type='gru', bidirectional=True)
         self.check(encoder_type='gru', bidirectional=True,
                    batch_first=False)
+        self.check(encoder_type='gru', bidirectional=True,
+                   conv=True)
+        self.check(encoder_type='gru', bidirectional=True,
+                   batch_first=False, conv=True)
         self.check(encoder_type='gru', bidirectional=True,
                    merge_bidirectional=True)
 
@@ -45,26 +53,44 @@ class TestRNNEncoders(unittest.TestCase):
         self.check(encoder_type='rnn', bidirectional=True,
                    batch_first=False)
         self.check(encoder_type='rnn', bidirectional=True,
+                   conv=True)
+        self.check(encoder_type='rnn', bidirectional=True,
+                   batch_first=False, conv=True)
+        self.check(encoder_type='rnn', bidirectional=True,
                    merge_bidirectional=True)
 
     @measure_time
     def check(self, encoder_type, bidirectional=False, batch_first=True,
-              mask_sequence=True, merge_bidirectional=False):
+              conv=False, mask_sequence=True, merge_bidirectional=False):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
         print('  batch_first: %s' % str(batch_first))
+        print('  conv: %s' % str(conv))
         print('  mask_sequence: %s' % str(mask_sequence))
         print('  merge_bidirectional: %s' % str(merge_bidirectional))
         print('==================================================')
 
+        if conv:
+            splice = 11
+            channels = [32, 32]
+            kernel_sizes = [[3, 3], [3, 3]]
+            strides = [[2, 2], [2, 1]]  # freq * time
+        else:
+            splice = 1
+            channels = []
+            kernel_sizes = []
+            strides = []
+
         # Load batch data
         batch_size = 4
+        num_stack = 1
         inputs, _, inputs_seq_len, _ = generate_data(
             model_type='ctc',
             batch_size=batch_size,
-            splice=1)
+            num_stack=num_stack,
+            splice=splice)
 
         # Wrap by Variable
         inputs = np2var(inputs)
@@ -78,7 +104,7 @@ class TestRNNEncoders(unittest.TestCase):
         # Initialize encoder
         if encoder_type in ['lstm', 'gru', 'rnn']:
             encoder = encoder(
-                input_size=inputs.size(-1),
+                input_size=inputs.size(-1) // splice // num_stack,  # 120
                 rnn_type=encoder_type,
                 bidirectional=bidirectional,
                 num_units=256,
@@ -87,7 +113,12 @@ class TestRNNEncoders(unittest.TestCase):
                 dropout=0.2,
                 parameter_init=0.1,
                 batch_first=batch_first,
-                merge_bidirectional=merge_bidirectional)
+                merge_bidirectional=merge_bidirectional,
+                splice=splice,
+                num_stack=num_stack,
+                channels=channels,
+                kernel_sizes=kernel_sizes,
+                strides=strides)
         else:
             raise NotImplementedError
 
@@ -125,13 +156,13 @@ class TestRNNEncoders(unittest.TestCase):
         num_directions = 2 if bidirectional and not merge_bidirectional else 1
         if batch_first:
             self.assertEqual(
-                (batch_size, max_time, encoder.num_units * num_directions),
-                outputs.size())
+                (batch_size, max_time,
+                 encoder.num_units * num_directions), outputs.size())
 
         else:
             self.assertEqual(
-                (max_time, batch_size, encoder.num_units * num_directions),
-                outputs.size())
+                (max_time, batch_size,
+                 encoder.num_units * num_directions), outputs.size())
 
 
 if __name__ == '__main__':
