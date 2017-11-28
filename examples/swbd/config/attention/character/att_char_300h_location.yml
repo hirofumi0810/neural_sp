@@ -33,6 +33,11 @@ param:
   conv_num_channels: 10
   conv_width: 101
 
+  channels: []
+  kernel_sizes: []
+  strides: []
+  batch_norm: False
+
   # optimization
   batch_size: 25
   optimizer: adam
@@ -62,7 +67,7 @@ param:
   sort_stop_epoch: 15
   not_improved_patient_epoch: 5
   eval_start_epoch: 10
-  print_step: 1000
+  print_step: 2000
 
   # MTL
   ctc_loss_weight: 0

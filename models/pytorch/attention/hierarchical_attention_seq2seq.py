@@ -16,7 +16,7 @@ from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 from models.pytorch.encoders.load_encoder import load
 from models.pytorch.attention.decoders.rnn_decoder import RNNDecoder
 from models.pytorch.attention.attention_layer import AttentionMechanism
-from models.pytorch.ctc.ctc import _concatenate_labels
+# from models.pytorch.ctc.ctc import _concatenate_labels
 from utils.io.variable import var2np
 
 
@@ -45,8 +45,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  main_loss_weight,  # ***
                  num_classes,
                  num_classes_sub,  # ***
-                 num_stack=1,
-                 splice=1,
                  parameter_init=0.1,
                  subsample_list=[],
                  init_dec_state_with_enc_state=True,
@@ -58,7 +56,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  ctc_loss_weight=0,
                  ctc_loss_weight_sub=0,
                  conv_num_channels=10,
-                 conv_width=101):
+                 conv_width=101,
+                 num_stack=1,
+                 splice=1,
+                 channels=[],
+                 kernel_sizes=[],
+                 strides=[],
+                 batch_norm=False):
 
         super(HierarchicalAttentionSeq2seq, self).__init__(
             input_size=input_size,
@@ -77,8 +81,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             embedding_dim=embedding_dim,
             embedding_dropout=embedding_dropout,
             num_classes=num_classes,
-            num_stack=num_stack,
-            splice=splice,
             parameter_init=parameter_init,
             subsample_list=subsample_list,
             init_dec_state_with_enc_state=init_dec_state_with_enc_state,
@@ -89,7 +91,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             coverage_weight=coverage_weight,
             ctc_loss_weight=ctc_loss_weight,
             conv_num_channels=conv_num_channels,
-            conv_width=conv_width)
+            conv_width=conv_width,
+            num_stack=num_stack,
+            splice=splice,
+            channels=channels,
+            kernel_sizes=kernel_sizes,
+            strides=strides,
+            batch_norm=batch_norm)
 
         # Setting for the encoder
         self.encoder_num_layers_sub = encoder_num_layers_sub
@@ -135,7 +143,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     parameter_init=parameter_init,
                     use_cuda=self.use_cuda,
                     batch_first=True,
-                    merge_bidirectional=True)
+                    merge_bidirectional=True,
+                    num_stack=num_stack,
+                    splice=splice,
+                    channels=channels,
+                    kernel_sizes=kernel_sizes,
+                    strides=strides,
+                    batch_norm=batch_norm)
             else:
                 self.encoder = encoder(
                     input_size=self.input_size,
@@ -151,7 +165,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     subsample_type='concat',
                     use_cuda=self.use_cuda,
                     batch_first=True,
-                    merge_bidirectional=True)
+                    merge_bidirectional=True,
+                    num_stack=num_stack,
+                    splice=splice,
+                    channels=channels,
+                    kernel_sizes=kernel_sizes,
+                    strides=strides,
+                    batch_norm=batch_norm)
         else:
             raise NotImplementedError
 

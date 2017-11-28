@@ -40,6 +40,11 @@ param:
   conv_num_channels: 10
   conv_width: 101
 
+  channels: []
+  kernel_sizes: []
+  strides: []
+  batch_norm: False
+
   # optimization
   batch_size: 32
   optimizer: adam

@@ -30,6 +30,12 @@ class TestHierarchicalAttention(unittest.TestCase):
     def test(self):
         print("Hierarchical Attention Working check.")
 
+        # CNN-LSTM encoder
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', conv=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', conv=True, batch_norm=True)
+
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', subsample=True)
 
@@ -40,7 +46,8 @@ class TestHierarchicalAttention(unittest.TestCase):
     def check(self, encoder_type, bidirectional, decoder_type,
               attention_type='dot_product',
               subsample=False, input_feeding=False,
-              ctc_loss_weight=0):
+              ctc_loss_weight=0, decoder_num_layers=1,
+              conv=False, batch_norm=False):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
@@ -49,22 +56,38 @@ class TestHierarchicalAttention(unittest.TestCase):
         print('  attention_type: %s' % attention_type)
         print('  subsample: %s' % str(subsample))
         print('  input_feeding: %s' % str(input_feeding))
+        print('  ctc_loss_weight: %s' % str(ctc_loss_weight))
+        print('  decoder_num_layers: %s' % str(decoder_num_layers))
+        print('  conv: %s' % str(conv))
+        print('  batch_norm: %s' % str(batch_norm))
         print('==================================================')
 
+        if conv:
+            splice = 5
+            channels = [32, 32]
+            kernel_sizes = [[41, 11], [21, 11]]
+            strides = [[2, 2], [2, 1]]  # freq * time
+        else:
+            splice = 1
+            channels = []
+            kernel_sizes = []
+            strides = []
+
         # Load batch data
+        num_stack = 2
         inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub = generate_data(
             model_type='attention',
             label_type='word_char',
             batch_size=2,
-            num_stack=1,
-            splice=1)
+            num_stack=num_stack,
+            splice=splice)
 
         num_classes = 11
         num_classes_sub = 27
 
         # Load model
         model = HierarchicalAttentionSeq2seq(
-            input_size=inputs.shape[-1],
+            input_size=inputs.shape[-1] // splice // num_stack,  # 120
             encoder_type=encoder_type,
             encoder_bidirectional=bidirectional,
             encoder_num_units=256,
@@ -76,7 +99,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             attention_dim=128,
             decoder_type=decoder_type,
             decoder_num_units=256,
-            decoder_num_layers=1,
+            decoder_num_layers=decoder_num_layers,
             decoder_num_units_sub=256,
             decoder_num_layers_sub=1,
             decoder_dropout=0.1,
@@ -86,7 +109,6 @@ class TestHierarchicalAttention(unittest.TestCase):
             main_loss_weight=0.5,
             num_classes=num_classes,
             num_classes_sub=num_classes_sub,
-            splice=1,
             parameter_init=0.1,
             subsample_list=[] if not subsample else [True, True, False],
             init_dec_state_with_enc_state=True,
@@ -97,7 +119,13 @@ class TestHierarchicalAttention(unittest.TestCase):
             ctc_loss_weight=0,
             ctc_loss_weight_sub=0.1,
             conv_num_channels=10,
-            conv_width=101)
+            conv_width=101,
+            num_stack=num_stack,
+            splice=splice,
+            channels=channels,
+            kernel_sizes=kernel_sizes,
+            strides=strides,
+            batch_norm=batch_norm)
 
         # Count total parameters
         for name, num_params in model.num_params_dict.items():

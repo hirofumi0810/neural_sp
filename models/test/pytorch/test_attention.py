@@ -30,6 +30,12 @@ class TestAttention(unittest.TestCase):
     def test(self):
         print("Attention Working check.")
 
+        # CNN-LSTM encoder
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', conv=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', conv=True, batch_norm=True)
+
         # Joint CTC-Attention
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', ctc_loss_weight=0.1)
@@ -86,7 +92,7 @@ class TestAttention(unittest.TestCase):
               attention_type='location', label_type='char',
               subsample=False, input_feeding=False,
               ctc_loss_weight=0, decoder_num_layers=1,
-              save_path=None):
+              conv=False, batch_norm=False, save_path=None):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
@@ -98,15 +104,29 @@ class TestAttention(unittest.TestCase):
         print('  input_feeding: %s' % str(input_feeding))
         print('  ctc_loss_weight: %s' % str(ctc_loss_weight))
         print('  decoder_num_layers: %s' % str(decoder_num_layers))
+        print('  conv: %s' % str(conv))
+        print('  batch_norm: %s' % str(batch_norm))
         print('==================================================')
 
+        if conv:
+            splice = 5
+            channels = [32, 32]
+            kernel_sizes = [[41, 11], [21, 11]]
+            strides = [[2, 2], [2, 1]]  # freq * time
+        else:
+            splice = 1
+            channels = []
+            kernel_sizes = []
+            strides = []
+
         # Load batch data
+        num_stack = 2
         inputs, labels, inputs_seq_len, labels_seq_len = generate_data(
             model_type='attention',
             label_type=label_type,
             batch_size=2,
-            num_stack=1,
-            splice=1)
+            num_stack=num_stack,
+            splice=splice)
 
         if label_type == 'char':
             num_classes = 27
@@ -115,7 +135,7 @@ class TestAttention(unittest.TestCase):
 
         # Load model
         model = AttentionSeq2seq(
-            input_size=inputs.shape[-1],
+            input_size=inputs.shape[-1] // splice // num_stack,  # 120
             encoder_type=encoder_type,
             encoder_bidirectional=bidirectional,
             encoder_num_units=256,
@@ -132,7 +152,6 @@ class TestAttention(unittest.TestCase):
             embedding_dropout=0.1,
             num_classes=num_classes,
             ctc_loss_weight=ctc_loss_weight,
-            splice=1,
             parameter_init=0.1,
             subsample_list=[] if not subsample else [True] * 2,
             init_dec_state_with_enc_state=True,
@@ -142,7 +161,13 @@ class TestAttention(unittest.TestCase):
             input_feeding=input_feeding,
             coverage_weight=0.5,
             conv_num_channels=10,
-            conv_width=101)
+            conv_width=101,
+            num_stack=num_stack,
+            splice=splice,
+            channels=channels,
+            kernel_sizes=kernel_sizes,
+            strides=strides,
+            batch_norm=batch_norm)
 
         # Count total parameters
         for name, num_params in model.num_params_dict.items():

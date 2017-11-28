@@ -68,8 +68,6 @@ def load(model_type, params):
     elif model_type == 'attention':
         model = AttentionSeq2seq(
             input_size=params['input_size'],
-            num_stack=params['num_stack'],
-            splice=params['splice'],
             encoder_type=params['encoder_type'],
             encoder_bidirectional=params['encoder_bidirectional'],
             encoder_num_units=params['encoder_num_units'],
@@ -95,7 +93,13 @@ def load(model_type, params):
             coverage_weight=params['coverage_weight'],
             ctc_loss_weight=params['ctc_loss_weight'],
             conv_num_channels=params['conv_num_channels'],
-            conv_width=params['conv_width'])
+            conv_width=params['conv_width'],
+            num_stack=params['num_stack'],
+            splice=params['splice'],
+            channels=params['channels'],
+            kernel_sizes=params['kernel_sizes'],
+            strides=params['strides'],
+            batch_norm=params['batch_norm'])
 
         model.name = params['encoder_type']
         if params['encoder_bidirectional']:
@@ -117,7 +121,11 @@ def load(model_type, params):
         if params['num_stack'] != 1:
             model.name += '_stack' + str(params['num_stack'])
         if params['weight_decay'] != 0:
-            model.name += 'wd' + str(params['weight_decay'])
+            model.name += '_wd' + str(params['weight_decay'])
+        if len(params['channels']) != 0:
+            model.name += '_conv'
+        if bool(params['batch_norm']):
+            model.name += '_bn'
         if params['sharpening_factor'] != 1:
             model.name += '_sharp' + str(params['sharpening_factor'])
         if params['logits_temperature'] != 1:
@@ -182,8 +190,6 @@ def load(model_type, params):
     elif params['model_type'] == 'hierarchical_attention':
         model = HierarchicalAttentionSeq2seq(
             input_size=params['input_size'],
-            num_stack=params['num_stack'],
-            splice=params['splice'],
             encoder_type=params['encoder_type'],
             encoder_bidirectional=params['encoder_bidirectional'],
             encoder_num_units=params['encoder_num_units'],
@@ -216,7 +222,13 @@ def load(model_type, params):
             ctc_loss_weight=params['ctc_loss_weight'],
             ctc_loss_weight_sub=params['ctc_loss_weight_sub'],
             conv_num_channels=params['conv_num_channels'],
-            conv_width=params['conv_width'])
+            conv_width=params['conv_width'],
+            num_stack=params['num_stack'],
+            splice=params['splice'],
+            channels=params['channels'],
+            kernel_sizes=params['kernel_sizes'],
+            strides=params['strides'],
+            batch_norm=params['batch_norm'])
 
         model.name = params['encoder_type']
         if params['encoder_bidirectional']:
@@ -239,7 +251,11 @@ def load(model_type, params):
         if params['num_stack'] != 1:
             model.name += '_stack' + str(params['num_stack'])
         if params['weight_decay'] != 0:
-            model.name += 'wd' + str(params['weight_decay'])
+            model.name += '_wd' + str(params['weight_decay'])
+        if len(params['channels']) != 0:
+            model.name += '_conv'
+        if bool(params['batch_norm']):
+            model.name += '_bn'
         if params['sharpening_factor'] != 1:
             model.name += '_sharp' + str(params['sharpening_factor'])
         if params['logits_temperature'] != 1:

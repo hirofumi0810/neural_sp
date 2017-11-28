@@ -87,9 +87,6 @@ class CTC(ModelBase):
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
         self.logits_temperature = logits_temperature
 
-        # Common setting
-        self.parameter_init = parameter_init
-
         # Load an instance
         encoder = load(encoder_type=encoder_type)
 

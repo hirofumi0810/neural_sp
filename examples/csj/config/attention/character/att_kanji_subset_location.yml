@@ -32,6 +32,11 @@ param:
   embedding_dim: 64
   conv_num_channels: 10
   conv_width: 101
+  
+  channels: []
+  kernel_sizes: []
+  strides: []
+  batch_norm: False
 
   # optimization
   batch_size: 64

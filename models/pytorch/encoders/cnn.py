@@ -47,10 +47,11 @@ class CNNEncoder(nn.Module):
         self.input_channels = 3
         self.input_freq = input_size // self.input_channels
 
+        assert input_size % self.input_channels == 0
+        assert splice % 2 == 1, 'splice must be the odd number'
         assert len(channels) > 0
         assert len(channels) == len(kernel_sizes)
         assert len(kernel_sizes) == len(strides)
-        assert input_size % self.input_channels == 0
 
         convs = []
         in_c = self.input_channels

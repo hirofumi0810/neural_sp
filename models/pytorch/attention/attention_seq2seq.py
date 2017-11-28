@@ -69,9 +69,6 @@ class AttentionSeq2seq(ModelBase):
             embedding layer
         num_classes (int): the number of nodes in softmax layer
             (excluding <SOS> and <EOS> classes)
-        num_stack (int, optional): the number of frames to stack
-        splice (int, optional): the number of frames to splice. This is used
-            when using CNN-like encoder. Default is 1 frame.
         parameter_init (float, optional): the range of uniform distribution to
             initialize weight parameters (>= 0)
         subsample_list (list, optional): subsample in the corresponding layers (True)
@@ -96,6 +93,12 @@ class AttentionSeq2seq(ModelBase):
             outputs. This is used for location-based attention.
         conv_width (int, optional): the size of kernel.
             This must be the odd number.
+        num_stack (int, optional): the number of frames to stack
+        splice (int, optional): frames to splice. Default is 1 frame.
+        channels (list, optional):
+        kernel_sizes (list, optional):
+        strides (list, optional):
+        batch_norm (bool, optional):
     """
 
     def __init__(self,
@@ -115,8 +118,6 @@ class AttentionSeq2seq(ModelBase):
                  embedding_dim,
                  embedding_dropout,
                  num_classes,
-                 num_stack=1,
-                 splice=1,
                  parameter_init=0.1,
                  subsample_list=[],
                  init_dec_state_with_enc_state=True,
@@ -127,7 +128,13 @@ class AttentionSeq2seq(ModelBase):
                  coverage_weight=0,
                  ctc_loss_weight=0,
                  conv_num_channels=10,
-                 conv_width=101):
+                 conv_width=101,
+                 num_stack=1,
+                 splice=1,
+                 channels=[],
+                 kernel_sizes=[],
+                 strides=[],
+                 batch_norm=False):
 
         super(ModelBase, self).__init__()
 
@@ -135,15 +142,7 @@ class AttentionSeq2seq(ModelBase):
         # clip_activation
         # time_major
 
-        assert input_size % 3 == 0, 'input_size must be divisible by 3 (+ delta, double delta features).'
-        # NOTE: input features are expected to including Δ and ΔΔ features
-        assert splice % 2 == 1, 'splice must be the odd number'
-
         # Setting for the encoder
-        self.input_size = input_size * num_stack * splice
-        self.num_channels = input_size // 3
-        self.num_stack = num_stack
-        self.splice = splice
         self.encoder_type = encoder_type
         self.encoder_bidirectional = encoder_bidirectional
         self.encoder_num_directions = 2 if encoder_bidirectional else 1
@@ -151,7 +150,6 @@ class AttentionSeq2seq(ModelBase):
         self.encoder_num_proj = encoder_num_proj
         self.encoder_num_layers = encoder_num_layers
         self.subsample_list = subsample_list
-        self.encoder_dropout = encoder_dropout
 
         # Setting for the attention decoder
         self.attention_type = attention_type
@@ -159,9 +157,7 @@ class AttentionSeq2seq(ModelBase):
         self.decoder_type = decoder_type
         self.decoder_num_units = decoder_num_units
         self.decoder_num_layers = decoder_num_layers
-        self.decoder_dropout = decoder_dropout
         self.embedding_dim = embedding_dim
-        self.embedding_dropout = embedding_dropout
         self.num_classes = num_classes + 2
         # NOTE: Add <SOS> and <EOS>
         self.sos_index = num_classes + 1
@@ -178,9 +174,6 @@ class AttentionSeq2seq(ModelBase):
         # Joint CTC-Attention
         self.ctc_loss_weight = ctc_loss_weight
 
-        # Common setting
-        self.parameter_init = parameter_init
-
         ####################
         # Encoder
         ####################
@@ -194,7 +187,7 @@ class AttentionSeq2seq(ModelBase):
         if encoder_type in ['lstm', 'gru', 'rnn']:
             if sum(subsample_list) == 0:
                 self.encoder = encoder(
-                    input_size=self.input_size,
+                    input_size=input_size,
                     rnn_type=encoder_type,
                     bidirectional=encoder_bidirectional,
                     num_units=encoder_num_units,
@@ -204,11 +197,17 @@ class AttentionSeq2seq(ModelBase):
                     parameter_init=parameter_init,
                     use_cuda=self.use_cuda,
                     batch_first=True,
-                    merge_bidirectional=True)
+                    merge_bidirectional=True,
+                    num_stack=num_stack,
+                    splice=splice,
+                    channels=channels,
+                    kernel_sizes=kernel_sizes,
+                    strides=strides,
+                    batch_norm=batch_norm)
             else:
                 # Pyramidal encoder
                 self.encoder = encoder(
-                    input_size=self.input_size,
+                    input_size=input_size,
                     rnn_type=encoder_type,
                     bidirectional=encoder_bidirectional,
                     num_units=encoder_num_units,
@@ -220,7 +219,13 @@ class AttentionSeq2seq(ModelBase):
                     subsample_type='concat',
                     use_cuda=self.use_cuda,
                     batch_first=True,
-                    merge_bidirectional=True)
+                    merge_bidirectional=True,
+                    num_stack=num_stack,
+                    splice=splice,
+                    channels=channels,
+                    kernel_sizes=kernel_sizes,
+                    strides=strides,
+                    batch_norm=batch_norm)
         else:
             raise NotImplementedError
 
