@@ -46,6 +46,7 @@ class HierarchicalCTC(CTC):
         channels (list, optional):
         kernel_sizes (list, optional):
         strides (list, optional):
+        batch_norm (bool, optional):
     """
 
     def __init__(self,
@@ -67,7 +68,8 @@ class HierarchicalCTC(CTC):
                  splice=1,
                  channels=[],
                  kernel_sizes=[],
-                 strides=[]):
+                 strides=[],
+                 batch_norm=False):
 
         super(HierarchicalCTC, self).__init__(
             input_size=input_size,
@@ -80,7 +82,8 @@ class HierarchicalCTC(CTC):
             num_classes=num_classes,
             parameter_init=parameter_init,
             bottleneck_dim_list=bottleneck_dim_list,
-            logits_temperature=logits_temperature)
+            logits_temperature=logits_temperature,
+            batch_norm=batch_norm)
 
         self.num_layers_sub = num_layers_sub
 
@@ -113,7 +116,8 @@ class HierarchicalCTC(CTC):
                 splice=splice,
                 channels=channels,
                 kernel_sizes=kernel_sizes,
-                strides=strides)
+                strides=strides,
+                batch_norm=batch_norm)
         else:
             raise NotImplementedError
 
@@ -200,10 +204,10 @@ class HierarchicalCTC(CTC):
         max_time, batch_size = encoder_outputs.size()[:2]
 
         # Convert to 2D tensor
-        # encoder_outputs = encoder_outputs.contiguous()
-        encoder_outputs = encoder_outputs.view(max_time, batch_size, -1)
+        encoder_outputs = encoder_outputs.view(max_time * batch_size, -1)
         encoder_outputs_sub = encoder_outputs_sub.view(
-            max_time, batch_size, -1)
+            max_time * batch_size, -1)
+        # contiguous()
 
         if len(self.bottleneck_dim_list) > 0:
             encoder_outputs = self.bottleneck_layers(encoder_outputs)

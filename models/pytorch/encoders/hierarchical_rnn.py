@@ -38,6 +38,7 @@ class HierarchicalRNNEncoder(nn.Module):
         channels (list, optional):
         kernel_sizes (list, optional):
         strides (list, optional):
+        batch_norm (bool, optional):
     """
 
     def __init__(self,
@@ -57,7 +58,8 @@ class HierarchicalRNNEncoder(nn.Module):
                  splice=1,
                  channels=[],
                  kernel_sizes=[],
-                 strides=[]):
+                 strides=[],
+                 batch_norm=False):
 
         super(HierarchicalRNNEncoder, self).__init__()
 
@@ -95,8 +97,12 @@ class HierarchicalRNNEncoder(nn.Module):
                     out_channels=channels[i],
                     kernel_size=tuple(kernel_sizes[i]),
                     stride=tuple(strides[i]),
-                    padding=(kernel_sizes[i][0] // 2, kernel_sizes[i][1] // 2)))
+                    padding=(kernel_sizes[i][0] // 2, kernel_sizes[i][1] // 2),
+                    bias=not batch_norm))
                 convs.append(nn.ReLU())
+                if batch_norm:
+                    convs.append(nn.BatchNorm2d(channels[i]))
+                    # TODO: compare BN before ReLU and after ReLU
                 convs.append(nn.Dropout(p=dropout))
                 in_c = channels[i]
             self.conv = nn.Sequential(*convs)

@@ -33,6 +33,8 @@ class TestCTC(unittest.TestCase):
         # CLDNN-CTC
         self.check(encoder_type='lstm', bidirectional=True,
                    conv=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   conv=True, batch_norm=True)
 
         # word-level CTC
         self.check(encoder_type='lstm', bidirectional=True,
@@ -52,13 +54,14 @@ class TestCTC(unittest.TestCase):
 
     @measure_time
     def check(self, encoder_type, bidirectional=False, label_type='char',
-              conv=False, save_path=None):
+              conv=False, batch_norm=False, save_path=None):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
         print('  conv: %s' % str(conv))
+        print('  batch_norm: %s' % str(batch_norm))
         print('==================================================')
 
         if conv:
@@ -104,7 +107,8 @@ class TestCTC(unittest.TestCase):
             splice=splice,
             channels=channels,
             kernel_sizes=kernel_sizes,
-            strides=strides)
+            strides=strides,
+            batch_norm=batch_norm)
 
         # Count total parameters
         for name, num_params in model.num_params_dict.items():

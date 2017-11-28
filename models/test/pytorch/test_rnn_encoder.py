@@ -118,7 +118,8 @@ class TestRNNEncoders(unittest.TestCase):
                 num_stack=num_stack,
                 channels=channels,
                 kernel_sizes=kernel_sizes,
-                strides=strides)
+                strides=strides,
+                batch_norm=True)
         else:
             raise NotImplementedError
 

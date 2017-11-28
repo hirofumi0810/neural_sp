@@ -29,6 +29,7 @@ param:
   strides:
     - [2, 2]
     - [2, 1]
+  batch_norm: False
 
   # optimization
   batch_size: 30

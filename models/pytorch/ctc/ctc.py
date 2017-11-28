@@ -53,6 +53,7 @@ class CTC(ModelBase):
         channels (list, optional):
         kernel_sizes (list, optional):
         strides (list, optional):
+        batch_norm (bool, optional):
     """
 
     def __init__(self,
@@ -71,7 +72,8 @@ class CTC(ModelBase):
                  splice=1,
                  channels=[],
                  kernel_sizes=[],
-                 strides=[]):
+                 strides=[],
+                 batch_norm=False):
 
         super(ModelBase, self).__init__()
 
@@ -108,7 +110,8 @@ class CTC(ModelBase):
                 splice=splice,
                 channels=channels,
                 kernel_sizes=kernel_sizes,
-                strides=strides)
+                strides=strides,
+                batch_norm=batch_norm)
         else:
             raise NotImplementedError
 
@@ -117,12 +120,22 @@ class CTC(ModelBase):
             for i in range(len(bottleneck_dim_list)):
                 if i == 0:
                     bottleneck_layers.append(nn.Linear(
-                        num_units * self.num_directions, bottleneck_dim_list[i]))
+                        num_units *
+                        self.num_directions, bottleneck_dim_list[i],
+                        bias=not batch_norm))
                 else:
+                    if batch_norm:
+                        bottleneck_layers.append(nn.BatchNorm1d(
+                            bottleneck_dim_list[i - 1]))
+                        print(bottleneck_layers)
                     bottleneck_layers.append(nn.Linear(
-                        bottleneck_dim_list[i - 1], bottleneck_dim_list[i]))
-            self.fc = nn.Linear(bottleneck_dim_list[-1], self.num_classes)
+                        bottleneck_dim_list[i - 1], bottleneck_dim_list[i],
+                        bias=not batch_norm))
+                bottleneck_layers.append(nn.Dropout(p=dropout))
+            # TODO: try batch_norm
             self.bottleneck_layers = nn.Sequential(*bottleneck_layers)
+            self.fc = nn.Linear(bottleneck_dim_list[-1], self.num_classes,
+                                bias=not batch_norm)
         else:
             self.fc = nn.Linear(
                 num_units * self.num_directions, self.num_classes)
@@ -195,8 +208,8 @@ class CTC(ModelBase):
         max_time, batch_size = encoder_outputs.size()[:2]
 
         # Convert to 2D tensor
-        # encoder_outputs = encoder_outputs.contiguous()
-        encoder_outputs = encoder_outputs.view(max_time, batch_size, -1)
+        encoder_outputs = encoder_outputs.view(max_time * batch_size, -1)
+        # contiguous()
 
         if len(self.bottleneck_dim_list) > 0:
             encoder_outputs = self.bottleneck_layers(encoder_outputs)

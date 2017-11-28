@@ -38,7 +38,8 @@ def load(model_type, params):
             splice=params['splice'],
             channels=params['channels'],
             kernel_sizes=params['kernel_sizes'],
-            strides=params['strides'])
+            strides=params['strides'],
+            batch_norm=params['batch_norm'])
 
         model.name = params['encoder_type']
         if params['bidirectional']:
@@ -57,6 +58,8 @@ def load(model_type, params):
             model.name += '_wd' + str(params['weight_decay'])
         if len(params['channels']) != 0:
             model.name += '_conv'
+        if bool(params['batch_norm']):
+            model.name += '_bn'
         if len(params['bottleneck_dim_list']) != 0:
             model.name += '_bottle'
         if params['logits_temperature'] != 1:
@@ -147,7 +150,8 @@ def load(model_type, params):
             splice=params['splice'],
             channels=params['channels'],
             kernel_sizes=params['kernel_sizes'],
-            strides=params['strides'])
+            strides=params['strides'],
+            batch_norm=params['batch_norm'])
 
         model.name = params['encoder_type']
         if params['bidirectional']:
@@ -167,6 +171,8 @@ def load(model_type, params):
             model.name += '_wd' + str(params['weight_decay'])
         if len(params['channels']) != 0:
             model.name += '_conv'
+        if bool(params['batch_norm']):
+            model.name += '_bn'
         if len(params['bottleneck_dim_list']) != 0:
             model.name += '_bottle'
         if params['logits_temperature'] != 1:

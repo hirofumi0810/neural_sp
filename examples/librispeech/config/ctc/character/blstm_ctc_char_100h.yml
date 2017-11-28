@@ -23,6 +23,7 @@ param:
   channels: []
   kernel_sizes: []
   strides: []
+  batch_norm: False
 
   # optimization
   batch_size: 30
