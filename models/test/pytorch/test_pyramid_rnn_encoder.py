@@ -23,57 +23,71 @@ class TestPyramidRNNEncoders(unittest.TestCase):
     def test(self):
         print("Pyramidal RNN Encoders Working check.")
 
-        # LSTM
+        # drop
         self.check(encoder_type='lstm', bidirectional=False,
                    subsample_type='drop')
         self.check(encoder_type='lstm', bidirectional=True,
                    subsample_type='drop')
         self.check(encoder_type='lstm', bidirectional=True,
                    batch_first=True, subsample_type='drop')
+        self.check(encoder_type='gru', bidirectional=False,
+                   subsample_type='drop')
+        self.check(encoder_type='gru', bidirectional=True,
+                   subsample_type='drop')
+        self.check(encoder_type='gru', bidirectional=True,
+                   batch_first=True, subsample_type='drop')
+        self.check(encoder_type='rnn', bidirectional=False,
+                   subsample_type='drop')
+        self.check(encoder_type='rnn', bidirectional=True,
+                   subsample_type='drop')
+        self.check(encoder_type='rnn', bidirectional=True,
+                   batch_first=True, subsample_type='drop')
+
+        # concat
         self.check(encoder_type='lstm', bidirectional=False,
                    subsample_type='concat')
         self.check(encoder_type='lstm', bidirectional=True,
                    subsample_type='concat')
         self.check(encoder_type='lstm', bidirectional=True,
                    batch_first=True, subsample_type='concat')
+        self.check(encoder_type='gru', bidirectional=False,
+                   subsample_type='concat')
+        self.check(encoder_type='gru', bidirectional=True,
+                   subsample_type='concat')
+        self.check(encoder_type='gru', bidirectional=True,
+                   batch_first=True, subsample_type='concat')
+        self.check(encoder_type='rnn', bidirectional=False,
+                   subsample_type='concat')
+        self.check(encoder_type='rnn', bidirectional=True,
+                   subsample_type='concat')
+        self.check(encoder_type='rnn', bidirectional=True,
+                   batch_first=True, subsample_type='concat')
+
+        # Conv
+        self.check(encoder_type='lstm', bidirectional=True,
+                   conv=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   batch_first=False, conv=True)
+        self.check(encoder_type='gru', bidirectional=True,
+                   conv=True)
+        self.check(encoder_type='gru', bidirectional=True,
+                   batch_first=False, conv=True)
+        self.check(encoder_type='rnn', bidirectional=True,
+                   conv=True)
+        self.check(encoder_type='rnn', bidirectional=True,
+                   batch_first=False, conv=True)
+
+        # merge_bidirectional
         self.check(encoder_type='lstm', bidirectional=True,
                    merge_bidirectional=True)
-
-        # GRU
-        self.check(encoder_type='gru', bidirectional=False,
-                   subsample_type='drop')
-        self.check(encoder_type='gru', bidirectional=True,
-                   subsample_type='drop')
-        self.check(encoder_type='gru', bidirectional=True,
-                   batch_first=True, subsample_type='drop')
-        self.check(encoder_type='gru', bidirectional=False,
-                   subsample_type='concat')
-        self.check(encoder_type='gru', bidirectional=True,
-                   subsample_type='concat')
-        self.check(encoder_type='gru', bidirectional=True,
-                   batch_first=True, subsample_type='concat')
         self.check(encoder_type='gru', bidirectional=True,
                    merge_bidirectional=True)
-
-        # RNN
-        self.check(encoder_type='rnn', bidirectional=False,
-                   subsample_type='drop')
-        self.check(encoder_type='rnn', bidirectional=True,
-                   subsample_type='drop')
-        self.check(encoder_type='rnn', bidirectional=True,
-                   batch_first=True, subsample_type='drop')
-        self.check(encoder_type='rnn', bidirectional=False,
-                   subsample_type='concat')
-        self.check(encoder_type='rnn', bidirectional=True,
-                   subsample_type='concat')
-        self.check(encoder_type='rnn', bidirectional=True,
-                   batch_first=True, subsample_type='concat')
         self.check(encoder_type='rnn', bidirectional=True,
                    merge_bidirectional=True)
 
     @measure_time
     def check(self, encoder_type, bidirectional=False, batch_first=False,
-              subsample_type='concat', mask_sequence=True,
+              subsample_type='concat', conv=False, mask_sequence=True,
               merge_bidirectional=False):
 
         print('==================================================')
@@ -81,16 +95,30 @@ class TestPyramidRNNEncoders(unittest.TestCase):
         print('  bidirectional: %s' % str(bidirectional))
         print('  batch_first: %s' % str(batch_first))
         print('  subsample_type: %s' % subsample_type)
+        print('  conv: %s' % str(conv))
         print('  mask_sequence: %s' % str(mask_sequence))
         print('  merge_bidirectional: %s' % str(merge_bidirectional))
         print('==================================================')
 
+        if conv:
+            splice = 11
+            channels = [32, 32]
+            kernel_sizes = [[3, 3], [3, 3]]
+            strides = [[2, 2], [2, 1]]  # freq * time
+        else:
+            splice = 1
+            channels = []
+            kernel_sizes = []
+            strides = []
+
         # Load batch data
         batch_size = 4
+        num_stack = 1
         inputs, _, inputs_seq_len, _ = generate_data(
             model_type='ctc',
             batch_size=batch_size,
-            splice=1)
+            num_stack=num_stack,
+            splice=splice)
 
         # Wrap by Variable
         inputs = np2var(inputs)
@@ -104,7 +132,7 @@ class TestPyramidRNNEncoders(unittest.TestCase):
         # Initialize encoder
         if encoder_type in ['lstm', 'gru', 'rnn']:
             encoder = encoder(
-                input_size=inputs.size(-1),
+                input_size=inputs.size(-1) // splice // num_stack,  # 120
                 rnn_type=encoder_type,
                 bidirectional=bidirectional,
                 num_units=256,
@@ -115,7 +143,13 @@ class TestPyramidRNNEncoders(unittest.TestCase):
                 subsample_list=[False, True, True, False, False],
                 subsample_type=subsample_type,
                 batch_first=batch_first,
-                merge_bidirectional=merge_bidirectional)
+                merge_bidirectional=merge_bidirectional,
+                splice=splice,
+                num_stack=num_stack,
+                channels=channels,
+                kernel_sizes=kernel_sizes,
+                strides=strides,
+                batch_norm=True)
         else:
             raise NotImplementedError
 

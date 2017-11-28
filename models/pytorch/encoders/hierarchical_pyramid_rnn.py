@@ -9,9 +9,10 @@ from __future__ import print_function
 
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
+from models.pytorch.encoders.rnn_utils import _init_hidden
+from models.pytorch.encoders.cnn import CNNEncoder
 from utils.io.variable import var2np
 
 
@@ -36,6 +37,12 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
         batch_first (bool, optional): if True, batch-major computation will be
             performed
         merge_bidirectional (bool, optional): if True, sum bidirectional outputs
+        num_stack (int, optional): the number of frames to stack
+        splice (int, optional): frames to splice. Default is 1 frame.
+        channels (list, optional):
+        kernel_sizes (list, optional):
+        strides (list, optional):
+        batch_norm (bool, optional):
     """
 
     def __init__(self,
@@ -52,7 +59,13 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
                  subsample_type='drop',
                  use_cuda=False,
                  batch_first=False,
-                 merge_bidirectional=False):
+                 merge_bidirectional=False,
+                 num_stack=1,
+                 splice=1,
+                 channels=[],
+                 kernel_sizes=[],
+                 strides=[],
+                 batch_norm=False):
 
         super(HierarchicalPyramidRNNEncoder, self).__init__()
 
@@ -65,7 +78,6 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
         if subsample_type not in ['drop', 'concat']:
             raise TypeError('subsample_type must be "drop" or "concat".')
 
-        self.input_size = input_size
         self.rnn_type = rnn_type
         self.bidirectional = bidirectional
         self.num_directions = 2 if bidirectional else 1
@@ -73,16 +85,31 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
         self.num_proj = num_proj
         self.num_layers = num_layers
         self.num_layers_sub = num_layers_sub
-        self.dropout = dropout
-        # NOTE: dropout is applied except the last layer
-        self.parameter_init = parameter_init
         self.use_cuda = use_cuda
         self.batch_first = batch_first
         self.merge_bidirectional = merge_bidirectional
-
         self.subsample_list = subsample_list
         self.subsample_type = subsample_type
 
+        # Setting for CNNs before RNNs
+        if len(channels) > 0 and len(channels) == len(kernel_sizes) and len(kernel_sizes) == len(strides):
+            self.conv = CNNEncoder(
+                input_size,
+                num_stack=num_stack,
+                splice=splice,
+                channels=channels,
+                kernel_sizes=kernel_sizes,
+                strides=strides,
+                dropout=dropout,
+                parameter_init=parameter_init,
+                use_cuda=use_cuda,
+                batch_norm=batch_norm)
+            input_size = self.conv.output_size
+        else:
+            input_size = input_size * splice * num_stack
+            self.conv = None
+
+        # NOTE: dropout is applied except the last layer
         self.rnns = []
         for i_layer in range(num_layers):
             if i_layer == 0:
@@ -129,44 +156,6 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
 
             self.rnns.append(rnn)
 
-    def _init_hidden(self, batch_size, volatile):
-        """Initialize hidden states.
-        Args:
-            batch_size (int): the size of mini-batch
-            volatile (bool): if True, the history will not be saved.
-                This should be used in inference model for memory efficiency.
-        Returns:
-            if rnn_type is 'lstm', return a tuple of tensors (h_0, c_0).
-                h_0: A tensor of size
-                    `[num_layers * num_directions, batch_size, num_units]`
-                c_0: A tensor of size
-                    `[num_layers * num_directions, batch_size, num_units]`
-            otherwise return h_0.
-        """
-        h_0 = Variable(torch.zeros(
-            1 * self.num_directions, batch_size, self.num_units))
-
-        if volatile:
-            h_0.volatile = True
-
-        if self.use_cuda:
-            h_0 = h_0.cuda()
-
-        if self.rnn_type == 'lstm':
-            c_0 = Variable(torch.zeros(
-                1 * self.num_directions, batch_size, self.num_units))
-
-            if volatile:
-                c_0.volatile = True
-
-            if self.use_cuda:
-                c_0 = c_0.cuda()
-
-            return (h_0, c_0)
-        else:
-            # gru or rnn
-            return h_0
-
     def forward(self, inputs, inputs_seq_len, volatile=True,
                 mask_sequence=True):
         """Forward computation.
@@ -195,7 +184,13 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
         batch_size, max_time = inputs.size()[:2]
 
         # Initialize hidden states (and memory cells) per mini-batch
-        h_0 = self._init_hidden(batch_size=batch_size, volatile=volatile)
+        h_0 = _init_hidden(batch_size=batch_size,
+                           rnn_type=self.rnn_type,
+                           num_units=self.num_units,
+                           num_directions=self.num_directions,
+                           num_layers=1,
+                           use_cuda=self.use_cuda,
+                           volatile=volatile)
 
         if mask_sequence:
             # Sort inputs by lengths in descending order
@@ -204,6 +199,10 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
             inputs = inputs[perm_indices]
         else:
             perm_indices = None
+
+        # Path through CNN layers before RNN layers
+        if self.conv is not None:
+            inputs = self.conv(inputs)
 
         if not self.batch_first:
             # Reshape to the time-major

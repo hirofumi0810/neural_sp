@@ -28,34 +28,34 @@ class TestRNNEncoders(unittest.TestCase):
         self.check(encoder_type='lstm', bidirectional=True)
         self.check(encoder_type='lstm', bidirectional=True,
                    batch_first=False)
-        self.check(encoder_type='lstm', bidirectional=True,
-                   conv=True)
-        self.check(encoder_type='lstm', bidirectional=True,
-                   batch_first=False, conv=True)
-        self.check(encoder_type='lstm', bidirectional=True,
-                   merge_bidirectional=True)
-
-        # GRU
         self.check(encoder_type='gru', bidirectional=False)
         self.check(encoder_type='gru', bidirectional=True)
         self.check(encoder_type='gru', bidirectional=True,
                    batch_first=False)
-        self.check(encoder_type='gru', bidirectional=True,
-                   conv=True)
-        self.check(encoder_type='gru', bidirectional=True,
-                   batch_first=False, conv=True)
-        self.check(encoder_type='gru', bidirectional=True,
-                   merge_bidirectional=True)
-
-        # RNN
         self.check(encoder_type='rnn', bidirectional=False)
         self.check(encoder_type='rnn', bidirectional=True)
         self.check(encoder_type='rnn', bidirectional=True,
                    batch_first=False)
+
+        # Conv
+        self.check(encoder_type='lstm', bidirectional=True,
+                   conv=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   batch_first=False, conv=True)
+        self.check(encoder_type='gru', bidirectional=True,
+                   conv=True)
+        self.check(encoder_type='gru', bidirectional=True,
+                   batch_first=False, conv=True)
         self.check(encoder_type='rnn', bidirectional=True,
                    conv=True)
         self.check(encoder_type='rnn', bidirectional=True,
                    batch_first=False, conv=True)
+
+        # merge_bidirectional
+        self.check(encoder_type='lstm', bidirectional=True,
+                   merge_bidirectional=True)
+        self.check(encoder_type='gru', bidirectional=True,
+                   merge_bidirectional=True)
         self.check(encoder_type='rnn', bidirectional=True,
                    merge_bidirectional=True)
 

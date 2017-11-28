@@ -7,11 +7,10 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import torch
 import torch.nn as nn
-from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
+from models.pytorch.encoders.rnn_utils import _init_hidden
 from models.pytorch.encoders.cnn import CNNEncoder
 from utils.io.variable import var2np
 
@@ -120,43 +119,6 @@ class RNNEncoder(nn.Module):
         else:
             raise TypeError('rnn_type must be "lstm" or "gru" or "rnn".')
 
-    def _init_hidden(self, batch_size, volatile):
-        """Initialize hidden states.
-        Args:
-            batch_size (int): the size of mini-batch
-            volatile (bool): if True, the history will not be saved.
-                This should be used in inference model for memory efficiency.
-        Returns:
-            if rnn_type is 'lstm', return a tuple of tensors (h_0, c_0).
-                h_0: A tensor of size
-                    `[num_layers * num_directions, batch_size, num_units]`
-                c_0: A tensor of size
-                    `[num_layers * num_directions, batch_size, num_units]`
-            otherwise return h_0.
-        """
-        h_0 = Variable(torch.zeros(
-            self.num_layers * self.num_directions, batch_size, self.num_units))
-
-        if volatile:
-            h_0.volatile = True
-
-        if self.use_cuda:
-            h_0 = h_0.cuda()
-
-        if self.rnn_type == 'lstm':
-            c_0 = Variable(torch.zeros(
-                self.num_layers * self.num_directions, batch_size, self.num_units))
-
-            if volatile:
-                c_0.volatile = True
-
-            if self.use_cuda:
-                c_0 = c_0.cuda()
-
-            return (h_0, c_0)
-        else:
-            return h_0
-
     def forward(self, inputs, inputs_seq_len, volatile=False,
                 mask_sequence=True):
         """Forward computation.
@@ -179,7 +141,13 @@ class RNNEncoder(nn.Module):
         batch_size, max_time, input_size = inputs.size()
 
         # Initialize hidden states (and memory cells) per mini-batch
-        h_0 = self._init_hidden(batch_size=batch_size, volatile=volatile)
+        h_0 = _init_hidden(batch_size=batch_size,
+                           rnn_type=self.rnn_type,
+                           num_units=self.num_units,
+                           num_directions=self.num_directions,
+                           num_layers=self.num_layers,
+                           use_cuda=self.use_cuda,
+                           volatile=volatile)
 
         if mask_sequence:
             # Sort inputs by lengths in descending order
