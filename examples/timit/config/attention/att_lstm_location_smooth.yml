@@ -1,0 +1,74 @@
+param:
+  # corpus
+  corpus: timit
+  label_type: phone61
+
+  # features
+  feature: fbank
+  save_format: numpy
+  input_size: 123
+  splice: 1
+  num_stack: 2
+  num_skip: 2
+
+  # topology
+  model_type: attention
+  encoder_type: lstm
+  encoder_bidirectional: True
+  encoder_num_units: 256
+  encoder_num_proj: 0
+  encoder_num_layers: 4
+  subsample_list:
+    - False
+    - False
+    - False
+    - False
+  attention_type: location
+  attention_dim: 128
+  decoder_type: lstm
+  decoder_num_units: 256
+  decoder_num_layers: 1
+  embedding_dim: 32
+  conv_num_channels: 10
+  conv_width: 201
+
+  # CNN before RNN encoder
+  channels: []
+  kernel_sizes: []
+  strides: []
+  batch_norm: False
+
+  # optimization
+  batch_size: 50
+  optimizer: adam
+  learning_rate: 1e-3
+  num_epoch: 100
+
+  # regularization
+  parameter_init: 0.1
+  clip_grad_norm: 5.0
+  clip_activation_encoder: 50
+  clip_activation_decoder: 50
+  dropout_encoder: 0.5
+  dropout_decoder: 0.1
+  dropout_embedding: 0.1
+  weight_decay: 0
+  init_dec_state_with_enc_state: True
+  sharpening_factor: 1.0
+  logits_temperature: 1.0
+  sigmoid_smoothing: True
+  input_feeding: False
+  coverage_weight: 0
+  scheduled_sampling_prob: 0
+
+  # annealing
+  decay_start_epoch: 20
+  decay_rate: 0.5
+  decay_patient_epoch: 5
+  sort_stop_epoch: 20
+  not_improved_patient_epoch: 10
+  eval_start_epoch: 20
+  print_step: 10
+
+  # MTL
+  ctc_loss_weight: 0
