@@ -181,7 +181,7 @@ class PyramidRNNEncoder(nn.Module):
                            rnn_type=self.rnn_type,
                            num_units=self.num_units,
                            num_directions=self.num_directions,
-                           num_layers=self.num_layers,
+                           num_layers=1,
                            use_cuda=self.use_cuda,
                            volatile=volatile)
 

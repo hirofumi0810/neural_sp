@@ -540,7 +540,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # NOTE: `[B, 1, num_classes]` -> `[B, num_classes]`
 
             # Path through the softmax layer & convert to log-scale
-            log_probs = self.log_softmax(logits)
+            log_probs = F.log_softmax(logits, dim=logits.dim() - 1)
 
             # Pick up 1-best
             y = torch.max(log_probs, dim=1)[1]

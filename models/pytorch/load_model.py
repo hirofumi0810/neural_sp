@@ -44,8 +44,8 @@ def load(model_type, params):
         model.name = params['encoder_type']
         if params['bidirectional']:
             model.name = 'b' + model.name
-        model.name += '_' + str(params['num_units']) + 'H'
-        model.name += '_' + str(params['num_layers']) + 'L'
+        model.name += str(params['num_units']) + 'H'
+        model.name += str(params['num_layers']) + 'L'
         model.name += '_' + params['optimizer']
         model.name += '_lr' + str(params['learning_rate'])
         if params['num_proj'] != 0:
@@ -105,20 +105,17 @@ def load(model_type, params):
         model.name = params['encoder_type']
         if params['encoder_bidirectional']:
             model.name = 'b' + model.name
-        model.name += '_' + str(params['encoder_num_units']) + 'H'
-        model.name += '_' + str(params['encoder_num_layers']) + 'L'
+        model.name += str(params['encoder_num_units']) + 'H'
+        model.name += str(params['encoder_num_layers']) + 'L'
         model.name += '_' + params['decoder_type']
-        model.name += '_' + str(params['decoder_num_units']) + 'H'
-        model.name += '_' + str(params['decoder_num_layers']) + 'L'
+        model.name += str(params['decoder_num_units']) + 'H'
+        model.name += str(params['decoder_num_layers']) + 'L'
         model.name += '_' + params['optimizer']
         model.name += '_lr' + str(params['learning_rate'])
         model.name += '_' + params['attention_type']
-        if params['dropout_encoder'] != 0:
-            model.name += '_dropen' + str(params['dropout_encoder'])
-        if params['dropout_decoder'] != 0:
-            model.name += '_dropde' + str(params['dropout_decoder'])
-        if params['dropout_embedding'] != 0:
-            model.name += '_dropemb' + str(params['dropout_embedding'])
+        model.name += '_dropen' + str(params['dropout_encoder'])
+        model.name += 'de' + str(params['dropout_decoder'])
+        model.name += 'emb' + str(params['dropout_embedding'])
         if params['num_stack'] != 1:
             model.name += '_stack' + str(params['num_stack'])
         if params['weight_decay'] != 0:
@@ -167,9 +164,9 @@ def load(model_type, params):
         model.name = params['encoder_type']
         if params['bidirectional']:
             model.name = 'b' + model.name
-        model.name += '_' + str(params['num_units']) + 'H'
-        model.name += '_' + str(params['num_layers']) + 'L'
-        model.name += '_' + str(params['num_layers_sub']) + 'L'
+        model.name += str(params['num_units']) + 'H'
+        model.name += str(params['num_layers']) + 'L'
+        model.name += str(params['num_layers_sub']) + 'L'
         model.name += '_' + params['optimizer']
         model.name += '_lr' + str(params['learning_rate'])
         if params['num_proj'] != 0:
@@ -237,21 +234,18 @@ def load(model_type, params):
         model.name = params['encoder_type']
         if params['encoder_bidirectional']:
             model.name = 'b' + model.name
-        model.name += '_' + str(params['encoder_num_units']) + 'H'
-        model.name += '_' + str(params['encoder_num_layers']) + 'L'
-        model.name += '_' + str(params['encoder_num_layers_sub']) + 'L'
+        model.name += str(params['encoder_num_units']) + 'H'
+        model.name += str(params['encoder_num_layers']) + 'L'
+        model.name += str(params['encoder_num_layers_sub']) + 'L'
         model.name += '_' + params['decoder_type']
-        model.name += '_' + str(params['decoder_num_units']) + 'H'
-        model.name += '_' + str(params['decoder_num_layers']) + 'L'
+        model.name += str(params['decoder_num_units']) + 'H'
+        model.name += str(params['decoder_num_layers']) + 'L'
         model.name += '_' + params['optimizer']
         model.name += '_lr' + str(params['learning_rate'])
         model.name += '_' + params['attention_type']
-        if params['dropout_encoder'] != 0:
-            model.name += '_dropen' + str(params['dropout_encoder'])
-        if params['dropout_decoder'] != 0:
-            model.name += '_dropde' + str(params['dropout_decoder'])
-        if params['dropout_embedding'] != 0:
-            model.name += '_dropemb' + str(params['dropout_embedding'])
+        model.name += '_dropen' + str(params['dropout_encoder'])
+        model.name += 'de' + str(params['dropout_decoder'])
+        model.name += 'emb' + str(params['dropout_embedding'])
         if params['num_stack'] != 1:
             model.name += '_stack' + str(params['num_stack'])
         if params['weight_decay'] != 0:

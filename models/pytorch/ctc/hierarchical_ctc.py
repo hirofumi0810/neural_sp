@@ -13,7 +13,7 @@ except:
     raise ImportError('Install warpctc_pytorch.')
 
 import torch.nn as nn
-# import torch.nn.functional as F
+import torch.nn.functional as F
 
 from models.pytorch.ctc.ctc import CTC, _concatenate_labels
 from models.pytorch.encoders.load_encoder import load
@@ -239,9 +239,7 @@ class HierarchicalCTC(CTC):
         # Convert to batch-major
         logits_sub = logits_sub.transpose(0, 1)
 
-        # log_probs = F.log_softmax(logits_sub, dim=logits_sub.dim() - 1)
-        log_probs = self.log_softmax(logits_sub)
-        # TODO: update pytorch version
+        log_probs = F.log_softmax(logits_sub, dim=logits_sub.dim() - 1)
 
         if beam_width == 1:
             best_hyp = self._decode_greedy_np(

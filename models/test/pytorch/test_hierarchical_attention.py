@@ -31,10 +31,10 @@ class TestHierarchicalAttention(unittest.TestCase):
         print("Hierarchical Attention Working check.")
 
         # CNN-LSTM encoder
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            decoder_type='lstm', conv=True)
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            decoder_type='lstm', conv=True, batch_norm=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', conv=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', conv=True, batch_norm=True)
 
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', subsample=True)

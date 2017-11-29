@@ -448,6 +448,9 @@ class AttentionSeq2seq(ModelBase):
         batch_size, max_time = encoder_outputs.size()[:2]
         labels_max_seq_len = labels.size(1)
 
+        ys = self.embedding(labels)
+        # NOTE: <EOS> should path through the embedding layer
+
         # Initialize decoder state
         decoder_state = self._init_decoder_state(encoder_final_state)
 
@@ -467,8 +470,7 @@ class AttentionSeq2seq(ModelBase):
                 y_prev = torch.max(logits[-1], dim=2)[1]
                 y = self.embedding(y_prev)
             else:
-                y = self.embedding(labels[:, t:t + 1])
-                y = self.embedding_dropout(y)
+                y = self.embedding_dropout(ys[:, t:t + 1])
 
             decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
                 encoder_outputs,
@@ -523,7 +525,7 @@ class AttentionSeq2seq(ModelBase):
         if self.init_dec_state_with_enc_state and self.encoder_type == self.decoder_type:
             # Initialize decoder state in the first layer with
             # the final state of the top layer of the encoder (forward)
-            h_0[0, :, :] = encoder_final_state
+            h_0[0, :, :] = encoder_final_state.squeeze(0)
 
         if self.decoder_type == 'lstm':
             c_0 = Variable(torch.zeros(
@@ -704,7 +706,7 @@ class AttentionSeq2seq(ModelBase):
             # NOTE: `[B, 1, num_classes]` -> `[B, num_classes]`
 
             # Path through the softmax layer & convert to log-scale
-            log_probs = self.log_softmax(logits)
+            log_probs = F.log_softmax(logits, dim=logits.dim() - 1)
 
             # Pick up 1-best
             y = torch.max(log_probs, dim=1)[1]
@@ -743,26 +745,19 @@ class AttentionSeq2seq(ModelBase):
         """
         batch_size, max_time = encoder_outputs.size()[:2]
 
-        # Initialize decoder state
-        decoder_state = self._init_decoder_state(
-            encoder_final_state, volatile=True)
-
         # Initialize attention weights
-        attention_weights_step = Variable(torch.zeros(batch_size, max_time))
+        attention_weights_step = Variable(torch.zeros(1, max_time))
         if self.use_cuda:
             attention_weights_step = attention_weights_step.cuda()
             # TODO: volatile, require_grad
-        attention_weights_step_list = [attention_weights_step] * batch_size
+        attention_weights_steps = [attention_weights_step] * batch_size
 
         beam = []
         for i_batch in range(batch_size):
-            if self.decoder_type == 'lstm':
-                h_n = decoder_state[0][:, i_batch:i_batch + 1, :].contiguous()
-                c_n = decoder_state[1][:, i_batch:i_batch + 1, :].contiguous()
-                beam.append([((self.sos_index,), LOG_1, (h_n, c_n))])
-            else:
-                h_n = decoder_state[:, i_batch:i_batch + 1, :].contiguous()
-                beam.append([((self.sos_index,), LOG_1, h_n)])
+            # Initialize decoder state
+            decoder_state = self._init_decoder_state(
+                encoder_final_state[:, i_batch:i_batch + 1, :], volatile=True)
+            beam.append([((self.sos_index,), LOG_1, decoder_state)])
 
         complete = [[]] * batch_size
         attention_weights = [] * batch_size
@@ -770,7 +765,7 @@ class AttentionSeq2seq(ModelBase):
         for t in range(max_decode_length):
             new_beam = [[]] * batch_size
             for i_batch in range(batch_size):
-                for hyp, score, decoder_state in beam[i_batch]:
+                for hyp, score, decoder_state_i in beam[i_batch]:
                     if t == 0:
                         # Start from <SOS>
                         y = self._create_token(
@@ -782,12 +777,12 @@ class AttentionSeq2seq(ModelBase):
                     y = self.embedding_dropout(y)
                     # TODO: remove dropout??
 
-                    decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
+                    decoder_outputs, decoder_state_i, context_vector, attention_weights_step = self._decode_step(
                         encoder_outputs[i_batch:i_batch + 1, :, :],
                         y,
-                        decoder_state,
-                        attention_weights_step_list[i_batch])
-                    attention_weights_step_list[i_batch] = attention_weights_step
+                        decoder_state_i,
+                        attention_weights_steps[i_batch])
+                    attention_weights_steps[i_batch] = attention_weights_step
 
                     if self.input_feeding:
                         # Input-feeding approach
@@ -801,7 +796,7 @@ class AttentionSeq2seq(ModelBase):
                     # NOTE: `[B, 1, num_classes]` -> `[B, num_classes]`
 
                     # Path through the softmax layer & convert to log-scale
-                    log_probs = self.log_softmax(logits)
+                    log_probs = F.log_softmax(logits, dim=logits.dim() - 1)
                     log_probs = var2np(log_probs).tolist()[0]
 
                     for i, log_prob in enumerate(log_probs):
@@ -809,7 +804,7 @@ class AttentionSeq2seq(ModelBase):
                         new_score = _logsumexp(score, log_prob)
                         new_hyp = hyp + (i,)
                         new_beam[i_batch].append(
-                            (new_hyp, new_score, decoder_state))
+                            (new_hyp, new_score, decoder_state_i))
                 new_beam[i_batch] = sorted(
                     new_beam[i_batch], key=lambda x: x[1], reverse=True)
 
@@ -854,9 +849,7 @@ class AttentionSeq2seq(ModelBase):
         # Convert to batch-major
         logits_ctc = logits_ctc.transpose(0, 1)
 
-        # log_probs = F.log_softmax(logits_ctc, dim=logits_ctc.dim() - 1)
-        log_probs = self.log_softmax(logits_ctc)
-        # TODO: update pytorch version
+        log_probs = F.log_softmax(logits_ctc, dim=logits_ctc.dim() - 1)
 
         if beam_width == 1:
             best_hyps, _ = self._decode_ctc_greedy_np(log_probs)

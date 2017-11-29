@@ -19,7 +19,7 @@ except ImportError:
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
-# import torch.nn.functional as F
+import torch.nn.functional as F
 
 from models.pytorch.base import ModelBase
 from models.pytorch.encoders.load_encoder import load
@@ -278,9 +278,7 @@ class CTC(ModelBase):
             #     blank_index=0, space_index=28, merge_repeated=True)
             # output, score, out_seq_len = decoder.decode(probs, seq_len=None)
         else:
-            # log_probs = F.log_softmax(logits, dim=logits.dim() - 1)
-            log_probs = self.log_softmax(logits)
-            # TODO: update pytorch version
+            log_probs = F.log_softmax(logits, dim=logits.dim() - 1)
 
             if beam_width == 1:
                 best_hyps = self._decode_greedy_np(

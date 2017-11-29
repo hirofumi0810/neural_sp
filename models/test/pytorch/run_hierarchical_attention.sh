@@ -13,7 +13,7 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda-8.0/lib64:/usr/local/cud
 
 # Set path to python
 # PYTHON=/home/lab5/inaguma/.pyenv/versions/anaconda3-4.1.1/bin/python
-YTHON=/home/lab5/inaguma/.pyenv/versions/anaconda3-4.1.1/envs/`hostname`/bin/python
+PYTHON=/home/lab5/inaguma/.pyenv/versions/anaconda3-4.1.1/envs/`hostname`/bin/python
 
 gpu_index=$1
 

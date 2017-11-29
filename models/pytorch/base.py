@@ -221,13 +221,3 @@ class ModelBase(nn.Module):
         else:
             raise ValueError("No checkpoint found at %s" % model_path)
         return checkpoint
-
-    def softmax(self, x):
-        # TODO: Remove this when updating pytorch version
-        # Now F.softmax has wrong behavior (dim=0).
-        if x.dim() == 3:
-            return F.softmax(x.transpose(0, 2)).transpose(0, 2)
-        return F.softmax(x)
-
-    def log_softmax(self, x):
-        return torch.log(self.softmax(x))

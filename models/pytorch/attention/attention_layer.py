@@ -178,11 +178,14 @@ class AttentionMechanism(nn.Module):
         else:
             raise NotImplementedError
 
+        # Sharpening
+        energy *= self.sharpening_factor
+
         # Compute attention weights
         if self.sigmoid_smoothing:
-            attention_weights_step = F.sigmoid(energy * self.sharpening_factor)
+            attention_weights_step = F.sigmoid(energy, dim=energy.dim() - 1)
         else:
-            attention_weights_step = F.softmax(energy * self.sharpening_factor)
+            attention_weights_step = F.softmax(energy, dim=energy.dim() - 1)
 
         # Compute context vector (weighted sum of encoder outputs)
         context_vector = torch.sum(

@@ -31,10 +31,10 @@ class TestAttention(unittest.TestCase):
         print("Attention Working check.")
 
         # CNN-LSTM encoder
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            decoder_type='lstm', conv=True)
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            decoder_type='lstm', conv=True, batch_norm=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', conv=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', conv=True, batch_norm=True)
 
         # Joint CTC-Attention
         self.check(encoder_type='lstm', bidirectional=True,
@@ -72,20 +72,20 @@ class TestAttention(unittest.TestCase):
         # Attention type
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', attention_type='content')
-        # self.check(encoder_type='lstm', bidirectional=True,
-        # decoder_type='lstm', attention_type='normed_content')
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', attention_type='location')
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', attention_type='dot_product')
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', attention_type='luong_dot')
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            decoder_type='lstm', attention_type='scaled_luong_dot')
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', attention_type='luong_general')
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', attention_type='luong_concat')
+        # self.check(encoder_type='lstm', bidirectional=True,
+        #            decoder_type='lstm', attention_type='scaled_luong_dot')
+        # self.check(encoder_type='lstm', bidirectional=True,
+        #            decoder_type='lstm', attention_type='normed_content')
 
     @measure_time
     def check(self, encoder_type, bidirectional, decoder_type,
@@ -239,7 +239,7 @@ class TestAttention(unittest.TestCase):
                 # Decode
                 labels_pred, _ = model.decode(
                     inputs, inputs_seq_len,
-                    beam_width=5, max_decode_length=100)
+                    beam_width=2, max_decode_length=100)
 
                 # Compute accuracy
                 if label_type == 'char':
