@@ -183,7 +183,7 @@ class AttentionMechanism(nn.Module):
 
         # Compute attention weights
         if self.sigmoid_smoothing:
-            attention_weights_step = F.sigmoid(energy, dim=energy.dim() - 1)
+            attention_weights_step = F.sigmoid(energy)
         else:
             attention_weights_step = F.softmax(energy, dim=energy.dim() - 1)
 

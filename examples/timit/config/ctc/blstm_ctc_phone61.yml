@@ -37,6 +37,7 @@ param:
   dropout: 0.5
   weight_decay: 0
   logits_temperature: 1
+  weight_noise_std: 0
 
   # annealing
   decay_start_epoch: 20

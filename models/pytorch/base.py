@@ -42,11 +42,15 @@ class ModelBase(nn.Module):
             nn.init.uniform(param.data,
                             a=-self.parameter_init, b=self.parameter_init)
 
-    def weight_noise_injection(self, std):
-        for name, param in self.named_parameters():
-            param.data += 0
+    def _inject_weight_noise(self, mean, std):
 
-        raise NotImplementedError
+        m = torch.distributions.Normal(
+            torch.Tensor([mean]), torch.Tensor([std]))
+        for name, param in self.named_parameters():
+            noise = m.sample()
+            if self.use_cuda:
+                noise = noise.cuda()
+            param.data += noise
 
     @property
     def num_params_dict(self):

@@ -100,6 +100,7 @@ class AttentionSeq2seq(ModelBase):
         strides (list, optional):
         batch_norm (bool, optional):
         scheduled_sampling_prob (float, optional):
+        weight_noise_std (flaot, optional):
     """
 
     def __init__(self,
@@ -136,7 +137,8 @@ class AttentionSeq2seq(ModelBase):
                  kernel_sizes=[],
                  strides=[],
                  batch_norm=False,
-                 scheduled_sampling_prob=0):
+                 scheduled_sampling_prob=0,
+                 weight_noise_std=0):
 
         super(ModelBase, self).__init__()
 
@@ -177,7 +179,10 @@ class AttentionSeq2seq(ModelBase):
         # Joint CTC-Attention
         self.ctc_loss_weight = ctc_loss_weight
 
+        # Regualarization
         self.parameter_init = parameter_init
+        self.weight_noise_injection = False
+        self.weight_noise_std = weight_noise_std
 
         ####################
         # Encoder
@@ -304,6 +309,10 @@ class AttentionSeq2seq(ModelBase):
         Returns:
             loss (FloatTensor): A tensor of size `[1]`
         """
+        # Gaussian noise injection
+        if self.weight_noise_injection:
+            self._inject_weight_noise(mean=0., std=self.weight_noise_std)
+
         # Encode acoustic features
         encoder_outputs, encoder_final_state, perm_indices = self._encode(
             inputs, inputs_seq_len, volatile=volatile)

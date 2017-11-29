@@ -1,8 +1,7 @@
 param:
   # corpus
-  corpus: csj
-  label_type: word_freq5
-  data_size: subset
+  corpus: timit
+  label_type: phone61
 
   # features
   feature: fbank
@@ -16,9 +15,9 @@ param:
   model_type: ctc
   encoder_type: lstm
   bidirectional: True
-  num_units: 320
+  num_units: 256
   num_proj: 0
-  num_layers: 6
+  num_layers: 5
   bottleneck_dim_list: []
   channels: []
   kernel_sizes: []
@@ -26,25 +25,25 @@ param:
   batch_norm: False
 
   # optimization
-  batch_size: 20
+  batch_size: 50
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 30
+  num_epoch: 100
 
   # regularization
   parameter_init: 0.1
   clip_grad_norm: 5.0
   clip_activation: 50
-  dropout: 0.2
+  dropout: 0.5
   weight_decay: 0
   logits_temperature: 1
-  weight_noise_std: 0
-  
+  weight_noise_std: 0.075
+
   # annealing
-  decay_start_epoch: 10
+  decay_start_epoch: 20
   decay_rate: 0.5
-  decay_patient_epoch: 3
-  sort_stop_epoch: 15
-  not_improved_patient_epoch: 5
-  eval_start_epoch: 10
-  print_step: 2000
+  decay_patient_epoch: 5
+  sort_stop_epoch: 20
+  not_improved_patient_epoch: 10
+  eval_start_epoch: 20
+  print_step: 10

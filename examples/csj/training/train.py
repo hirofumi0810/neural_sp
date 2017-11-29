@@ -186,6 +186,10 @@ def main():
         optimizer.step()
         # TODO: Add scheduler
 
+        # Inject Gaussian noise to all parameters
+        if learning_rate < float(params['learning_rate']):
+            model.weight_noise_injection()
+            
         del loss_train
 
         if (step + 1) % params['print_step'] == 0:

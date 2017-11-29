@@ -60,6 +60,7 @@ param:
   input_feeding: False
   coverage_weight: 0
   scheduled_sampling_prob: 0.1
+  weight_noise_std: 0
 
   # annealing
   decay_start_epoch: 20

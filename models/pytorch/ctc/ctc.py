@@ -54,6 +54,7 @@ class CTC(ModelBase):
         kernel_sizes (list, optional):
         strides (list, optional):
         batch_norm (bool, optional):
+        weight_noise_std (flaot, optional):
     """
 
     def __init__(self,
@@ -73,7 +74,8 @@ class CTC(ModelBase):
                  channels=[],
                  kernel_sizes=[],
                  strides=[],
-                 batch_norm=False):
+                 batch_norm=False,
+                 weight_noise_std=0):
 
         super(ModelBase, self).__init__()
 
@@ -87,7 +89,10 @@ class CTC(ModelBase):
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
         self.logits_temperature = logits_temperature
 
+        # Regualarization
         self.parameter_init = parameter_init
+        self.weight_noise_injection = False
+        self.weight_noise_std = weight_noise_std
 
         # Load an instance
         encoder = load(encoder_type=encoder_type)
@@ -158,6 +163,10 @@ class CTC(ModelBase):
         """
         _labels = labels + 1
         # NOTE: index 0 is reserved for blank
+
+        # Gaussian noise injection
+        if self.weight_noise_injection:
+            self._inject_weight_noise(mean=0., std=self.weight_noise_std)
 
         # Encode acoustic features
         logits, perm_indices = self._encode(

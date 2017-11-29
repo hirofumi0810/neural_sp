@@ -232,6 +232,10 @@ class TestAttention(unittest.TestCase):
             else:
                 optimizer.step()
 
+            # Inject Gaussian noise to all parameters
+            if loss.data[0] < 50:
+                model.weight_noise_injection = True
+
             if (step + 1) % 10 == 0:
                 # ***Change to evaluation mode***
                 model.eval()
@@ -262,7 +266,7 @@ class TestAttention(unittest.TestCase):
 
                 duration_step = time.time() - start_time_step
                 print('Step %d: loss = %.3f / ler = %.3f / lr = %.5f (%.3f sec)' %
-                      (step + 1, var2np(loss), ler, learning_rate, duration_step))
+                      (step + 1, loss.data[0], ler, learning_rate, duration_step))
                 start_time_step = time.time()
 
                 # Visualize
