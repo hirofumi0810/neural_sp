@@ -140,7 +140,7 @@ def main():
     optimizer, _ = model.set_optimizer(
         params['optimizer'],
         learning_rate_init=float(params['learning_rate']),
-        weight_decay=params['weight_decay'],
+        weight_decay=float(params['weight_decay']),
         lr_schedule=False,
         factor=params['decay_rate'],
         patience_epoch=params['decay_patient_epoch'])
