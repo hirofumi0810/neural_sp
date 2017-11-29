@@ -31,10 +31,10 @@ class TestHierarchicalAttention(unittest.TestCase):
         print("Hierarchical Attention Working check.")
 
         # CNN-LSTM encoder
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', conv=True)
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', conv=True, batch_norm=True)
+        # self.check(encoder_type='lstm', bidirectional=True,
+        #            decoder_type='lstm', conv=True)
+        # self.check(encoder_type='lstm', bidirectional=True,
+        #            decoder_type='lstm', conv=True, batch_norm=True)
 
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', subsample=True)
@@ -104,7 +104,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             decoder_num_layers_sub=1,
             decoder_dropout=0.1,
             embedding_dim=64,
-            embedding_dim_sub=64,
+            embedding_dim_sub=32,
             embedding_dropout=0.1,
             main_loss_weight=0.5,
             num_classes=num_classes,
@@ -125,7 +125,8 @@ class TestHierarchicalAttention(unittest.TestCase):
             channels=channels,
             kernel_sizes=kernel_sizes,
             strides=strides,
-            batch_norm=batch_norm)
+            batch_norm=batch_norm,
+            scheduled_sampling_prob=0.1)
 
         # Count total parameters
         for name, num_params in model.num_params_dict.items():

@@ -72,7 +72,7 @@ class HierarchicalCTC(CTC):
                  batch_norm=False):
 
         super(HierarchicalCTC, self).__init__(
-            input_size=input_size,
+            input_size=input_size,  # 120 or 123
             encoder_type=encoder_type,
             bidirectional=bidirectional,
             num_units=num_units,

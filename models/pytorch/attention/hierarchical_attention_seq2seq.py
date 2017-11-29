@@ -7,6 +7,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -62,7 +63,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  channels=[],
                  kernel_sizes=[],
                  strides=[],
-                 batch_norm=False):
+                 batch_norm=False,
+                 scheduled_sampling_prob=0):
 
         super(HierarchicalAttentionSeq2seq, self).__init__(
             input_size=input_size,
@@ -97,7 +99,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             channels=channels,
             kernel_sizes=kernel_sizes,
             strides=strides,
-            batch_norm=batch_norm)
+            batch_norm=batch_norm,
+            scheduled_sampling_prob=scheduled_sampling_prob)
 
         # Setting for the encoder
         self.encoder_num_layers_sub = encoder_num_layers_sub
@@ -132,7 +135,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         if encoder_type in ['lstm', 'gru', 'rnn']:
             if sum(subsample_list) == 0:
                 self.encoder = encoder(
-                    input_size=self.input_size,
+                    input_size=input_size,  # 120 or 123
                     rnn_type=encoder_type,
                     bidirectional=encoder_bidirectional,
                     num_units=encoder_num_units,
@@ -152,7 +155,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     batch_norm=batch_norm)
             else:
                 self.encoder = encoder(
-                    input_size=self.input_size,
+                    input_size=input_size,   # 120 or 123
                     rnn_type=encoder_type,
                     bidirectional=encoder_bidirectional,
                     num_units=encoder_num_units,
@@ -377,10 +380,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 `[B, T_out_sub, T_in]`
         """
         batch_size, max_time = encoder_outputs.size()[:2]
-
-        ys = self.embedding_sub(labels[:, :-1])
-        # NOTE: remove <EOS> in the longest utterance
-        ys = self.embedding_dropout_sub(ys)
         labels_max_seq_len = labels.size(1)
 
         # Initialize decoder state
@@ -396,7 +395,14 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         attention_weights = []
 
         for t in range(labels_max_seq_len - 1):
-            y = ys[:, t:t + 1, :]
+
+            # Scheduled sampling
+            if self.scheduled_sampling_prob > 0 and t > 0 and random.random() < self.scheduled_sampling_prob:
+                y_prev = torch.max(logits[-1], dim=2)[1]
+                y = self.embedding_sub(y_prev)
+            else:
+                y = self.embedding_sub(labels[:, t:t + 1])
+                y = self.embedding_dropout_sub(y)
 
             decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step_sub(
                 encoder_outputs,
@@ -493,18 +499,23 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             attention_weights (np.ndarray): A tensor of size
                 `[B, T_out_sub, T_in]`
         """
-        batch_size = encoder_outputs.size(0)
-
-        # Start from <SOS>
-        y = self._create_token(value=self.sos_index_sub, batch_size=batch_size)
+        batch_size, max_time = encoder_outputs.size()[:2]
 
         # Initialize decoder state
         decoder_state = self._init_decoder_state(
             encoder_final_state, volatile=True)
 
+        # Initialize attention weights
+        attention_weights_step = Variable(torch.zeros(batch_size, max_time))
+        if self.use_cuda:
+            attention_weights_step = attention_weights_step.cuda()
+            # TODO: volatile, require_grad
+
         best_hyps = []
         attention_weights = []
-        attention_weights_step = None
+
+        # Start from <SOS>
+        y = self._create_token(value=self.sos_index_sub, batch_size=batch_size)
 
         for _ in range(max_decode_length):
             y = self.embedding_sub(y)

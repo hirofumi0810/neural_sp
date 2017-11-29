@@ -31,10 +31,10 @@ class TestAttention(unittest.TestCase):
         print("Attention Working check.")
 
         # CNN-LSTM encoder
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', conv=True)
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', conv=True, batch_norm=True)
+        # self.check(encoder_type='lstm', bidirectional=True,
+        #            decoder_type='lstm', conv=True)
+        # self.check(encoder_type='lstm', bidirectional=True,
+        #            decoder_type='lstm', conv=True, batch_norm=True)
 
         # Joint CTC-Attention
         self.check(encoder_type='lstm', bidirectional=True,
@@ -148,7 +148,7 @@ class TestAttention(unittest.TestCase):
             decoder_num_units=256,
             decoder_num_layers=decoder_num_layers,
             decoder_dropout=0.1,
-            embedding_dim=64,
+            embedding_dim=32,
             embedding_dropout=0.1,
             num_classes=num_classes,
             ctc_loss_weight=ctc_loss_weight,
@@ -167,7 +167,8 @@ class TestAttention(unittest.TestCase):
             channels=channels,
             kernel_sizes=kernel_sizes,
             strides=strides,
-            batch_norm=batch_norm)
+            batch_norm=batch_norm,
+            scheduled_sampling_prob=0.05)
 
         # Count total parameters
         for name, num_params in model.num_params_dict.items():

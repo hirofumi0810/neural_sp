@@ -87,6 +87,8 @@ class CTC(ModelBase):
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
         self.logits_temperature = logits_temperature
 
+        self.parameter_init = parameter_init
+
         # Load an instance
         encoder = load(encoder_type=encoder_type)
 
@@ -124,7 +126,6 @@ class CTC(ModelBase):
                     if batch_norm:
                         bottleneck_layers.append(nn.BatchNorm1d(
                             bottleneck_dim_list[i - 1]))
-                        print(bottleneck_layers)
                     bottleneck_layers.append(nn.Linear(
                         bottleneck_dim_list[i - 1], bottleneck_dim_list[i],
                         bias=not batch_norm))

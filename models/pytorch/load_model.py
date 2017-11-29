@@ -99,7 +99,8 @@ def load(model_type, params):
             channels=params['channels'],
             kernel_sizes=params['kernel_sizes'],
             strides=params['strides'],
-            batch_norm=params['batch_norm'])
+            batch_norm=params['batch_norm'],
+            scheduled_sampling_prob=params['scheduled_sampling_prob'])
 
         model.name = params['encoder_type']
         if params['encoder_bidirectional']:
@@ -138,6 +139,8 @@ def load(model_type, params):
             model.name += '_coverage' + str(params['coverage_weight'])
         if params['ctc_loss_weight'] > 0:
             model.name += '_ctc' + str(params['ctc_loss_weight'])
+        if params['scheduled_sampling_prob'] > 0:
+            model.name += '_sample' + str(params['scheduled_sampling_prob'])
 
     if params['model_type'] == 'hierarchical_ctc':
         model = HierarchicalCTC(
@@ -228,7 +231,8 @@ def load(model_type, params):
             channels=params['channels'],
             kernel_sizes=params['kernel_sizes'],
             strides=params['strides'],
-            batch_norm=params['batch_norm'])
+            batch_norm=params['batch_norm'],
+            scheduled_sampling_prob=params['scheduled_sampling_prob'])
 
         model.name = params['encoder_type']
         if params['encoder_bidirectional']:
@@ -271,5 +275,7 @@ def load(model_type, params):
             model.name += '_ctc' + str(params['ctc_loss_weight'])
         if params['ctc_loss_weight_sub'] > 0:
             model.name += '_ctcsub' + str(params['ctc_loss_weight_sub'])
+        if params['scheduled_sampling_prob'] > 0:
+            model.name += '_sample' + str(params['scheduled_sampling_prob'])
 
     return model

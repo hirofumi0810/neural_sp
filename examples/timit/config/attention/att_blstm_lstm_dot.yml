@@ -32,6 +32,7 @@ param:
   conv_num_channels: 0  # not used
   conv_width: 0   # not used
 
+  # CNN before RNN encoder
   channels: []
   kernel_sizes: []
   strides: []
@@ -58,6 +59,7 @@ param:
   sigmoid_smoothing: False
   input_feeding: False
   coverage_weight: 0
+  scheduled_sampling_prob: 0
 
   # annealing
   decay_start_epoch: 20

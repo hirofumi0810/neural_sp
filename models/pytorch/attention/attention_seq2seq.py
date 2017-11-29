@@ -13,7 +13,7 @@ try:
 except:
     raise ImportError('Install warpctc_pytorch.')
 
-
+import random
 import numpy as np
 
 import torch
@@ -99,6 +99,7 @@ class AttentionSeq2seq(ModelBase):
         kernel_sizes (list, optional):
         strides (list, optional):
         batch_norm (bool, optional):
+        scheduled_sampling_prob (float, optional):
     """
 
     def __init__(self,
@@ -134,7 +135,8 @@ class AttentionSeq2seq(ModelBase):
                  channels=[],
                  kernel_sizes=[],
                  strides=[],
-                 batch_norm=False):
+                 batch_norm=False,
+                 scheduled_sampling_prob=0):
 
         super(ModelBase, self).__init__()
 
@@ -170,9 +172,12 @@ class AttentionSeq2seq(ModelBase):
         self.coverage_weight = coverage_weight
         self.conv_num_channels = conv_num_channels
         self.conv_width = conv_width
+        self.scheduled_sampling_prob = scheduled_sampling_prob
 
         # Joint CTC-Attention
         self.ctc_loss_weight = ctc_loss_weight
+
+        self.parameter_init = parameter_init
 
         ####################
         # Encoder
@@ -187,7 +192,7 @@ class AttentionSeq2seq(ModelBase):
         if encoder_type in ['lstm', 'gru', 'rnn']:
             if sum(subsample_list) == 0:
                 self.encoder = encoder(
-                    input_size=input_size,
+                    input_size=input_size,  # 120 or 123
                     rnn_type=encoder_type,
                     bidirectional=encoder_bidirectional,
                     num_units=encoder_num_units,
@@ -207,7 +212,7 @@ class AttentionSeq2seq(ModelBase):
             else:
                 # Pyramidal encoder
                 self.encoder = encoder(
-                    input_size=input_size,
+                    input_size=input_size,  # 120 or 123
                     rnn_type=encoder_type,
                     bidirectional=encoder_bidirectional,
                     num_units=encoder_num_units,
@@ -441,10 +446,6 @@ class AttentionSeq2seq(ModelBase):
                 `[B, T_out, T_in]`
         """
         batch_size, max_time = encoder_outputs.size()[:2]
-
-        ys = self.embedding(labels[:, :-1])
-        # NOTE: remove <EOS> in the longest utterance
-        ys = self.embedding_dropout(ys)
         labels_max_seq_len = labels.size(1)
 
         # Initialize decoder state
@@ -460,7 +461,14 @@ class AttentionSeq2seq(ModelBase):
         attention_weights = []
 
         for t in range(labels_max_seq_len - 1):
-            y = ys[:, t:t + 1, :]
+
+            # Scheduled sampling
+            if self.scheduled_sampling_prob > 0 and t > 0 and random.random() < self.scheduled_sampling_prob:
+                y_prev = torch.max(logits[-1], dim=2)[1]
+                y = self.embedding(y_prev)
+            else:
+                y = self.embedding(labels[:, t:t + 1])
+                y = self.embedding_dropout(y)
 
             decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
                 encoder_outputs,
@@ -570,8 +578,7 @@ class AttentionSeq2seq(ModelBase):
         Returns:
             y (LongTensor): A tensor of size `[B, 1]`
         """
-        y = np.full((batch_size, 1),
-                    fill_value=value, dtype=np.int64)
+        y = np.full((batch_size, 1), fill_value=value, dtype=np.int64)
         y = torch.from_numpy(y)
         y = Variable(y, requires_grad=False)
         y.volatile = True
@@ -658,9 +665,6 @@ class AttentionSeq2seq(ModelBase):
         """
         batch_size, max_time = encoder_outputs.size()[:2]
 
-        # Start from <SOS>
-        y = self._create_token(value=self.sos_index, batch_size=batch_size)
-
         # Initialize decoder state
         decoder_state = self._init_decoder_state(
             encoder_final_state, volatile=True)
@@ -673,6 +677,9 @@ class AttentionSeq2seq(ModelBase):
 
         best_hyps = []
         attention_weights = []
+
+        # Start from <SOS>
+        y = self._create_token(value=self.sos_index, batch_size=batch_size)
 
         for _ in range(max_decode_length):
             y = self.embedding(y)
@@ -736,10 +743,6 @@ class AttentionSeq2seq(ModelBase):
         """
         batch_size, max_time = encoder_outputs.size()[:2]
 
-        # Start from <SOS>
-        y = self._create_token(value=self.sos_index, batch_size=1)
-        ys = [y] * batch_size
-
         # Initialize decoder state
         decoder_state = self._init_decoder_state(
             encoder_final_state, volatile=True)
@@ -770,10 +773,11 @@ class AttentionSeq2seq(ModelBase):
                 for hyp, score, decoder_state in beam[i_batch]:
                     if t == 0:
                         # Start from <SOS>
-                        y = ys[i_batch]
+                        y = self._create_token(
+                            value=self.sos_index, batch_size=1)
                     else:
-                        y = self._create_token(value=hyp[-1],
-                                               batch_size=1)
+                        y = self._create_token(
+                            value=hyp[-1], batch_size=1)
                     y = self.embedding(y)
                     y = self.embedding_dropout(y)
                     # TODO: remove dropout??

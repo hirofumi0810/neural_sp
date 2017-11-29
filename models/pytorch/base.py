@@ -39,8 +39,14 @@ class ModelBase(nn.Module):
 
     def init_weights(self):
         for name, param in self.named_parameters():
-            nn.init.uniform(
-                param.data, a=-self.parameter_init, b=self.parameter_init)
+            nn.init.uniform(param.data,
+                            a=-self.parameter_init, b=self.parameter_init)
+
+    def weight_noise_injection(self, std):
+        for name, param in self.named_parameters():
+            param.data += 0
+
+        raise NotImplementedError
 
     @property
     def num_params_dict(self):

@@ -32,7 +32,8 @@ param:
   embedding_dim: 64
   conv_num_channels: 10
   conv_width: 101
-  
+
+  # CNN before RNN encoder
   channels: []
   kernel_sizes: []
   strides: []
@@ -59,7 +60,8 @@ param:
   sigmoid_smoothing: False
   input_feeding: False
   coverage_weight: 0
-
+  scheduled_sampling_prob: 0
+  
   # annealing
   decay_start_epoch: 10
   decay_rate: 0.5

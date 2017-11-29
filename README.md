@@ -1,8 +1,8 @@
 
 # TODO
 - Multi-GPU version
-- Schedule sampling
 - Resnet encoder
 - ConvLSTM encoder
-- native pytorch CTC
+- Native pytorch CTC
 - Recurrent batch normalization
+- Weight noise injection
