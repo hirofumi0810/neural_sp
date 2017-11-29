@@ -1,0 +1,12 @@
+certifi==2017.11.5
+cffi==1.11.2
+numpy==1.13.3
+pycparser==2.18
+python-Levenshtein==0.12.0
+python-speech-features==0.6
+pytorch-ctc==0.1
+PyYAML==3.12
+scipy==1.0.0
+torch==0.4.0a0+929a11f
+tqdm==4.19.4
+warpctc-pytorch==0.1

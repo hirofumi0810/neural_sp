@@ -126,7 +126,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             kernel_sizes=kernel_sizes,
             strides=strides,
             batch_norm=batch_norm,
-            scheduled_sampling_prob=0.1)
+            scheduled_sampling_prob=0)
 
         # Count total parameters
         for name, num_params in model.num_params_dict.items():

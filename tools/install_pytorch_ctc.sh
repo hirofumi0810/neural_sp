@@ -2,8 +2,12 @@
 
 current_dir=`pwd`
 cd ~/tool
-git clone --recursive https://github.com/ryanleary/pytorch-ctc.git
-cd pytorch-ctc
+
+if [ ! -e pytorch-ctc_`hostname` ]; then
+  git clone --recursive https://github.com/ryanleary/pytorch-ctc.git
+  mv pytorch-ctc pytorch-ctc_`hostname`
+fi
+cd pytorch-ctc_`hostname`
 
 pip install -r requirements.txt
 

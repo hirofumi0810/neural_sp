@@ -150,9 +150,9 @@ def char2idx(transcript):
         if char == SPACE:
             index_list.append(0)
         elif char == SOS:
-            index_list.append(last_idx + 1)
-        elif char == EOS:
             index_list.append(last_idx + 2)
+        elif char == EOS:
+            index_list.append(last_idx + 1)
         else:
             index_list.append(ord(char) - first_idx)
     return index_list
@@ -177,9 +177,9 @@ def idx2char(indices):
     for idx in indices:
         if idx == 0:
             char_list.append(SPACE)
-        elif idx == last_idx + 1:
-            char_list.append(SOS)
         elif idx == last_idx + 2:
+            char_list.append(SOS)
+        elif idx == last_idx + 1:
             char_list.append(EOS)
         else:
             char_list.append(chr(idx + first_idx))
@@ -204,14 +204,14 @@ def word2idx(transcript):
         vocab.add(word)
 
     word_dict = {}
-    with open('./word.txt', 'w') as f:
+    with open('../word.txt', 'w') as f:
         for idx, word in enumerate(sorted(list(vocab))):
             word_dict[word] = idx
             f.write('%s\n' % word)
-        word_dict[SOS] = len(vocab)
-        word_dict[EOS] = len(vocab) + 1
-        f.write('%s\n' % SOS)
+        word_dict[SOS] = len(vocab) + 1
+        word_dict[EOS] = len(vocab)
         f.write('%s\n' % EOS)
+        f.write('%s\n' % SOS)
 
     index_list = []
     for word in word_list:
@@ -231,7 +231,7 @@ def idx2word(indices):
         indices = indices.tolist()
 
     word_dict = {}
-    with open('./word.txt', 'r') as f:
+    with open('../word.txt', 'r') as f:
         for idx, line in enumerate(f):
             word = line.strip()
             word_dict[idx] = word
