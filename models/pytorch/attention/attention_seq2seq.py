@@ -30,19 +30,8 @@ from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
 from utils.io.variable import var2np
 
-NEG_INF = -float("inf")
-LOG_0 = NEG_INF
+
 LOG_1 = 0
-
-
-def _logsumexp(*args):
-    """Stable log sum exp."""
-    if all(a == NEG_INF for a in args):
-        return NEG_INF
-    a_max = np.max(args)
-    lsp = np.log(np.sum(np.exp(a - a_max)
-                        for a in args))
-    return a_max + lsp
 
 
 class AttentionSeq2seq(ModelBase):
@@ -182,7 +171,7 @@ class AttentionSeq2seq(ModelBase):
         # Regualarization
         self.parameter_init = parameter_init
         self.weight_noise_injection = False
-        self.weight_noise_std = weight_noise_std
+        self.weight_noise_std = float(weight_noise_std)
 
         ####################
         # Encoder
@@ -457,9 +446,6 @@ class AttentionSeq2seq(ModelBase):
         batch_size, max_time = encoder_outputs.size()[:2]
         labels_max_seq_len = labels.size(1)
 
-        ys = self.embedding(labels)
-        # NOTE: <EOS> should path through the embedding layer
-
         # Initialize decoder state
         decoder_state = self._init_decoder_state(encoder_final_state)
 
@@ -474,12 +460,13 @@ class AttentionSeq2seq(ModelBase):
 
         for t in range(labels_max_seq_len - 1):
 
-            # Scheduled sampling
             if self.scheduled_sampling_prob > 0 and t > 0 and random.random() < self.scheduled_sampling_prob:
+                # Scheduled sampling
                 y_prev = torch.max(logits[-1], dim=2)[1]
                 y = self.embedding(y_prev)
             else:
-                y = self.embedding_dropout(ys[:, t:t + 1])
+                y = self.embedding(labels[:, t:t + 1])
+            y = self.embedding_dropout(y)
 
             decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
                 encoder_outputs,
@@ -625,7 +612,9 @@ class AttentionSeq2seq(ModelBase):
                 encoder_outputs, encoder_final_state, max_decode_length)
         else:
             best_hyps, _ = self._decode_infer_beam(
-                encoder_outputs, encoder_final_state, beam_width, max_decode_length)
+                encoder_outputs, encoder_final_state,
+                inputs_seq_len[perm_indices],
+                beam_width, max_decode_length)
 
         return best_hyps, perm_indices
 
@@ -682,9 +671,9 @@ class AttentionSeq2seq(ModelBase):
 
         # Initialize attention weights
         attention_weights_step = Variable(torch.zeros(batch_size, max_time))
+        attention_weights_step.volatile = True
         if self.use_cuda:
             attention_weights_step = attention_weights_step.cuda()
-            # TODO: volatile, require_grad
 
         best_hyps = []
         attention_weights = []
@@ -738,6 +727,7 @@ class AttentionSeq2seq(ModelBase):
         return best_hyps, attention_weights
 
     def _decode_infer_beam(self, encoder_outputs, encoder_final_state,
+                           inputs_seq_len,
                            beam_width, max_decode_length):
         """Beam search decoding in the inference stage.
         Args:
@@ -745,6 +735,7 @@ class AttentionSeq2seq(ModelBase):
                 `[B, T_in, encoder_num_units]`
             encoder_final_state (FloatTensor): A tensor of size
                 `[1, B, decoder_num_units (may be equal to encoder_num_units)]`
+            inputs_seq_len (IntTensor): A tensor of size `[B]`
             beam_width (int): the size of beam
             max_decode_length (int, optional): the length of output sequences
                 to stop prediction when EOS token have not been emitted
@@ -752,46 +743,41 @@ class AttentionSeq2seq(ModelBase):
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
             attention_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
         """
-        batch_size, max_time = encoder_outputs.size()[:2]
-
-        # Initialize attention weights
-        attention_weights_step = Variable(torch.zeros(1, max_time))
-        if self.use_cuda:
-            attention_weights_step = attention_weights_step.cuda()
-            # TODO: volatile, require_grad
-        attention_weights_steps = [attention_weights_step] * batch_size
+        batch_size = encoder_outputs.size(0)
 
         beam = []
         for i_batch in range(batch_size):
             # Initialize decoder state
             decoder_state = self._init_decoder_state(
                 encoder_final_state[:, i_batch:i_batch + 1, :], volatile=True)
-            beam.append([((self.sos_index,), LOG_1, decoder_state)])
+
+            # Initialize attention weights
+            max_time = inputs_seq_len.data[i_batch]
+            attention_weights_step = Variable(torch.zeros(1, max_time))
+            attention_weights_step.volatile = True
+            if self.use_cuda:
+                attention_weights_step = attention_weights_step.cuda()
+
+            beam.append([([self.sos_index], LOG_1,
+                          decoder_state, attention_weights_step)])
 
         complete = [[]] * batch_size
-        attention_weights = [] * batch_size
-
         for t in range(max_decode_length):
             new_beam = [[]] * batch_size
             for i_batch in range(batch_size):
-                for hyp, score, decoder_state_i in beam[i_batch]:
-                    if t == 0:
-                        # Start from <SOS>
-                        y = self._create_token(
-                            value=self.sos_index, batch_size=1)
-                    else:
-                        y = self._create_token(
-                            value=hyp[-1], batch_size=1)
+                for hyp, score, decoder_state, attention_weights_step in beam[i_batch]:
+                    y_prev = hyp[-1] if t > 0 else self.sos_index
+                    y = self._create_token(value=y_prev, batch_size=1)
                     y = self.embedding(y)
                     y = self.embedding_dropout(y)
                     # TODO: remove dropout??
 
-                    decoder_outputs, decoder_state_i, context_vector, attention_weights_step = self._decode_step(
-                        encoder_outputs[i_batch:i_batch + 1, :, :],
+                    max_time = inputs_seq_len.data[i_batch]
+                    decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
+                        encoder_outputs[i_batch:i_batch + 1, :max_time, :],
                         y,
-                        decoder_state_i,
-                        attention_weights_steps[i_batch])
-                    attention_weights_steps[i_batch] = attention_weights_step
+                        decoder_state,
+                        attention_weights_step)
 
                     if self.input_feeding:
                         # Input-feeding approach
@@ -809,11 +795,11 @@ class AttentionSeq2seq(ModelBase):
                     log_probs = var2np(log_probs).tolist()[0]
 
                     for i, log_prob in enumerate(log_probs):
-                        # new_score = score + log_prob
-                        new_score = _logsumexp(score, log_prob)
-                        new_hyp = hyp + (i,)
+                        new_hyp = hyp + [i]
+                        new_score = np.logaddexp(score, log_prob)
                         new_beam[i_batch].append(
-                            (new_hyp, new_score, decoder_state_i))
+                            (new_hyp, new_score, decoder_state,
+                             attention_weights_step))
                 new_beam[i_batch] = sorted(
                     new_beam[i_batch], key=lambda x: x[1], reverse=True)
 
@@ -829,16 +815,18 @@ class AttentionSeq2seq(ModelBase):
                 beam[i_batch] = beam[i_batch][:beam_width]
 
         best_hyps = []
+        attention_weights = [] * batch_size
         for i_batch in range(batch_size):
             complete[i_batch] = sorted(
                 complete[i_batch], key=lambda x: x[1], reverse=True)
             if len(complete[i_batch]) == 0:
                 complete[i_batch] = beam[i_batch]
-            hyp, score, _ = complete[i_batch][0]
+            hyp, score, _, attention_weights_step = complete[i_batch][0]
             best_hyps.append(hyp[1:])
             # NOTE: remove <SOS>
+            attention_weights.append(attention_weights_step)
 
-        return np.array(best_hyps), attention_weights
+        return np.array(best_hyps), np.array(attention_weights)
 
     def decode_ctc(self, inputs, inputs_seq_len, beam_width):
 

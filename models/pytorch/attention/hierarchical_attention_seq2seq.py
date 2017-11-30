@@ -396,13 +396,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         for t in range(labels_max_seq_len - 1):
 
-            # Scheduled sampling
             if self.scheduled_sampling_prob > 0 and t > 0 and random.random() < self.scheduled_sampling_prob:
+                # Scheduled sampling
                 y_prev = torch.max(logits[-1], dim=2)[1]
                 y = self.embedding_sub(y_prev)
             else:
                 y = self.embedding_sub(labels[:, t:t + 1])
-                y = self.embedding_dropout_sub(y)
+            y = self.embedding_dropout_sub(y)
 
             decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step_sub(
                 encoder_outputs,
@@ -507,9 +507,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         # Initialize attention weights
         attention_weights_step = Variable(torch.zeros(batch_size, max_time))
+        attention_weights_step.volatile = True
         if self.use_cuda:
             attention_weights_step = attention_weights_step.cuda()
-            # TODO: volatile, require_grad
 
         best_hyps = []
         attention_weights = []

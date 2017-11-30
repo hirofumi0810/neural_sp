@@ -52,6 +52,7 @@ def main():
     # Load dataset
     vocab_file_path = '../metrics/vocab_files/' + params['label_type'] + '.txt'
     test_data = Dataset(
+        model_type=params['model_type'],
         data_type='test', label_type=params['label_type'],
         vocab_file_path=vocab_file_path,
         batch_size=args.eval_batch_size, splice=params['splice'],

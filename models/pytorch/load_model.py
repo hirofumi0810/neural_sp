@@ -65,7 +65,7 @@ def load(model_type, params):
             model.name += '_bottle'
         if params['logits_temperature'] != 1:
             model.name += '_temp' + str(params['logits_temperature'])
-        if params['weight_noise_std'] != 1:
+        if params['weight_noise_std'] != 0:
             model.name += '_noise' + str(params['weight_noise_std'])
 
     elif model_type == 'attention':
@@ -142,7 +142,7 @@ def load(model_type, params):
             model.name += '_ctc' + str(params['ctc_loss_weight'])
         if params['scheduled_sampling_prob'] > 0:
             model.name += '_sample' + str(params['scheduled_sampling_prob'])
-        if params['weight_noise_std'] != 1:
+        if params['weight_noise_std'] != 0:
             model.name += '_noise' + str(params['weight_noise_std'])
 
     if params['model_type'] == 'hierarchical_ctc':

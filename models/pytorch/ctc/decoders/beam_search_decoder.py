@@ -20,23 +20,6 @@ def _make_new_beam():
     return defaultdict(fn)
 
 
-def _logsumexp(*args):
-    """Stable log sum exp."""
-    if all(a == NEG_INF for a in args):
-        return NEG_INF
-    a_max = np.max(args)
-    lsp = np.log(np.sum(np.exp(a - a_max)
-                        for a in args))
-    return a_max + lsp
-
-
-# def _logsumexp_chainer(a, xp, axis=None):
-#     vmax = xp.amax(a, axis=axis, keepdims=True)
-#     vmax += xp.log(xp.sum(xp.exp(a - vmax),
-#                           axis=axis, keepdims=True, dtype=a.dtype))
-#     return xp.squeeze(vmax, axis=axis)
-
-
 class BeamSearchDecoder(object):
     """Beam search decoder.
     Arga:
@@ -99,8 +82,8 @@ class BeamSearchDecoder(object):
                         # Only the probability of ending in blank gets updated.
                         if c == self._blank:
                             new_p_b, new_p_nb = next_beam[prefix]
-                            new_p_b = _logsumexp(
-                                new_p_b, p_b + p_t, p_nb + p_t)
+                            new_p_b = np.logaddexp(
+                                np.logaddexp(new_p_b, p_b + p_t), p_nb + p_t)
                             next_beam[prefix] = (new_p_b, new_p_nb)
                             continue
 
@@ -111,14 +94,14 @@ class BeamSearchDecoder(object):
                         new_prefix = prefix + (c,)
                         new_p_b, new_p_nb = next_beam[new_prefix]
                         if c != prefix_end:
-                            new_p_nb = _logsumexp(
-                                new_p_nb, p_b + p_t, p_nb + p_t)
+                            new_p_nb = np.logaddexp(
+                                np.logaddexp(new_p_nb, p_b + p_t), p_nb + p_t)
                         else:
                             # We don't include the previous probability of not ending
                             # in blank (p_nb) if c is repeated at the end. The CTC
                             # algorithm merges characters not separated by a
                             # blank.
-                            new_p_nb = _logsumexp(new_p_nb, p_b + p_t)
+                            new_p_nb = np.logaddexp(new_p_nb, p_b + p_t)
 
                         next_beam[new_prefix] = (new_p_b, new_p_nb)
 
@@ -128,13 +111,13 @@ class BeamSearchDecoder(object):
                         # prefix. This is the merging case.
                         if c == prefix_end:
                             new_p_b, new_p_nb = next_beam[prefix]
-                            new_p_nb = _logsumexp(new_p_nb, p_nb + p_t)
+                            new_p_nb = np.logaddexp(new_p_nb, p_nb + p_t)
                             next_beam[prefix] = (new_p_b, new_p_nb)
 
                 # Sort and trim the beam before moving on to the
                 # next time-step.
                 beam = sorted(next_beam.items(),
-                              key=lambda x: _logsumexp(*x[1]),
+                              key=lambda x: np.logaddexp(*x[1]),
                               reverse=True)
                 beam = beam[:beam_width]
 
