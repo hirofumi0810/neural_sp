@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Test hierarchical attention-besed models in pytorch."""
+"""Test hierarchical attention-besed models (with C2W) in pytorch."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -15,7 +15,7 @@ import torch
 import torch.nn as nn
 
 sys.path.append('../../../')
-from models.pytorch.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
+from models.pytorch.attention.hierarchical_attention_seq2seq_c2w import HierarchicalAttentionSeq2seqC2W
 from models.test.data import generate_data, idx2char, idx2word
 from utils.measure_time_func import measure_time
 from utils.io.variable import np2var, var2np
@@ -25,16 +25,10 @@ from utils.training.learning_rate_controller import Controller
 torch.manual_seed(2017)
 
 
-class TestHierarchicalAttention(unittest.TestCase):
+class TestHierarchicalAttentionC2W(unittest.TestCase):
 
     def test(self):
         print("Hierarchical Attention Working check.")
-
-        # CNN-LSTM encoder
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', conv=True)
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', conv=True, batch_norm=True)
 
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', subsample=True)
@@ -44,7 +38,7 @@ class TestHierarchicalAttention(unittest.TestCase):
 
     @measure_time
     def check(self, encoder_type, bidirectional, decoder_type,
-              attention_type='dot_product',
+              attention_type='location',
               subsample=False, input_feeding=False,
               ctc_loss_weight=0, decoder_num_layers=1,
               conv=False, batch_norm=False):
@@ -62,19 +56,9 @@ class TestHierarchicalAttention(unittest.TestCase):
         print('  batch_norm: %s' % str(batch_norm))
         print('==================================================')
 
-        if conv:
-            splice = 5
-            channels = [32, 32]
-            kernel_sizes = [[41, 11], [21, 11]]
-            strides = [[2, 2], [2, 1]]  # freq * time
-        else:
-            splice = 1
-            channels = []
-            kernel_sizes = []
-            strides = []
-
         # Load batch data
         num_stack = 2
+        splice = 1
         inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub = generate_data(
             model_type='attention',
             label_type='word_char',
@@ -86,7 +70,7 @@ class TestHierarchicalAttention(unittest.TestCase):
         num_classes_sub = 27
 
         # Load model
-        model = HierarchicalAttentionSeq2seq(
+        model = HierarchicalAttentionSeq2seqC2W(
             input_size=inputs.shape[-1] // splice // num_stack,  # 120
             encoder_type=encoder_type,
             encoder_bidirectional=bidirectional,
@@ -109,6 +93,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             main_loss_weight=0.5,
             num_classes=num_classes,
             num_classes_sub=num_classes_sub,
+            space_index=0,
             parameter_init=0.1,
             subsample_list=[] if not subsample else [True, True, False],
             init_dec_state_with_enc_state=True,
@@ -122,9 +107,9 @@ class TestHierarchicalAttention(unittest.TestCase):
             conv_width=101,
             num_stack=num_stack,
             splice=splice,
-            channels=channels,
-            kernel_sizes=kernel_sizes,
-            strides=strides,
+            channels=[],
+            kernel_sizes=[],
+            strides=[],
             batch_norm=batch_norm,
             scheduled_sampling_prob=0)
 
@@ -231,7 +216,7 @@ class TestHierarchicalAttention(unittest.TestCase):
                 print('Hyp (word): %s' % str_pred)
                 print('Hyp (char): %s' % str_pred_sub)
 
-                if ler_sub < 0.1:
+                if ler < 0.1:
                     print('Modle is Converged.')
                     break
                 ler_pre = ler

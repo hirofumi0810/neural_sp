@@ -196,9 +196,8 @@ class TestCTC(unittest.TestCase):
                 start_time_step = time.time()
 
                 # Visualize
-                print('Ref (word): %s' % str_true)
+                print('Ref: %s' % str_true)
                 print('Hyp (word): %s' % str_pred)
-                print('Ref (char): %s' % str_true_sub)
                 print('Hyp (char): %s' % str_pred_sub)
 
                 if ler_sub < 0.1:

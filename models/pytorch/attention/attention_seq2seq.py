@@ -560,7 +560,6 @@ class AttentionSeq2seq(ModelBase):
         """
         decoder_outputs, decoder_state = self.decoder(y, decoder_state)
 
-        # decoder_outputs: `[B, 1, decoder_num_units]`
         context_vector, attention_weights_step = self.attend(
             encoder_outputs,
             decoder_outputs,
@@ -774,7 +773,7 @@ class AttentionSeq2seq(ModelBase):
 
                     max_time = inputs_seq_len.data[i_batch]
                     decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
-                        encoder_outputs[i_batch:i_batch + 1, :max_time, :],
+                        encoder_outputs[i_batch:i_batch + 1, :max_time],
                         y,
                         decoder_state,
                         attention_weights_step)

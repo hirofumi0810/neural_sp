@@ -55,7 +55,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  input_feeding=False,
                  coverage_weight=0,
                  ctc_loss_weight=0,
-                 ctc_loss_weight_sub=0,
+                 ctc_loss_weight_sub=0,  # ***
                  conv_num_channels=10,
                  conv_width=101,
                  num_stack=1,
@@ -450,7 +450,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         """
         decoder_outputs, decoder_state = self.decoder_sub(y, decoder_state)
 
-        # decoder_outputs: `[B, 1, decoder_num_units]`
         context_vector, attention_weights_step = self.attend_sub(
             encoder_outputs,
             decoder_outputs,
@@ -537,7 +536,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 logits = self.fc_sub(decoder_outputs + context_vector)
 
             logits = logits.squeeze(dim=1)
-            # NOTE: `[B, 1, num_classes]` -> `[B, num_classes]`
+            # NOTE: `[B, 1, num_classes_sub]` -> `[B, num_classes_sub]`
 
             # Path through the softmax layer & convert to log-scale
             log_probs = F.log_softmax(logits, dim=logits.dim() - 1)
