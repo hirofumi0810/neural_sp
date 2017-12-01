@@ -24,7 +24,8 @@ import torch.nn.functional as F
 from models.pytorch.base import ModelBase
 from models.pytorch.encoders.load_encoder import load
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
-from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
+# from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
+from models.pytorch.ctc.decoders.beam_search_decoder2 import BeamSearchDecoder
 from utils.io.variable import var2np
 
 NEG_INF = -float("inf")
@@ -92,7 +93,7 @@ class CTC(ModelBase):
         # Regualarization
         self.parameter_init = parameter_init
         self.weight_noise_injection = False
-        self.weight_noise_std = weight_noise_std
+        self.weight_noise_std = float(weight_noise_std)
 
         # Load an instance
         encoder = load(encoder_type=encoder_type)
@@ -280,7 +281,7 @@ class CTC(ModelBase):
 
         if decode_by_pytorch_ctc:
             raise NotImplementedError
-            # probs = self.softmax(logits)
+            # probs = F.softmax(logits)
             # scorer = pytorch_ctc.Scorer()
             # decoder = pytorch_ctc.CTCBeamDecoder(
             #     scorer, labels, top_paths=1, beam_width=beam_width,
@@ -294,7 +295,8 @@ class CTC(ModelBase):
                     var2np(log_probs), var2np(inputs_seq_len))
             else:
                 best_hyps = self._decode_beam_np(
-                    var2np(log_probs), var2np(inputs_seq_len), beam_width)
+                    var2np(log_probs), var2np(inputs_seq_len),
+                    beam_width=beam_width)
 
             best_hyps -= 1
             # NOTE: index 0 is reserved for blank
