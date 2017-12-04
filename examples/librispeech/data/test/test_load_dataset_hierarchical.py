@@ -109,7 +109,6 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
             print('-' * 10)
             print(str_true_sub)
             print('inputs_seq_len: %d' % inputs_seq_len.data.numpy()[0])
-            assert inputs_seq_len.data.numpy()[0] <= 2000
             if not dataset.is_test:
                 print('labels_seq_len (word): %d' %
                       labels_seq_len.data.numpy()[0])

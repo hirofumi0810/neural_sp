@@ -1,7 +1,5 @@
 #!/bin/bash
 
-MODEL_SAVE_PATH="/n/sd8/inaguma/result/pytorch/librispeech"
-
 # Select GPU
 if [ $# -ne 2 ]; then
   echo "Error: set GPU number & config path." 1>&2
@@ -23,5 +21,5 @@ gpu_index=$2
 CUDA_VISIBLE_DEVICES=$gpu_index $PYTHON eval.py \
   --model_path $saved_model_path \
   --epoch -1 \
-  --beam_width 1 \
+  --beam_width 20 \
   --eval_batch_size 1

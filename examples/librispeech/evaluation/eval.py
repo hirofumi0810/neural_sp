@@ -120,7 +120,8 @@ def main():
             label_type=params['label_type'],
             data_size=params['data_size'],
             beam_width=args.beam_width,
-            max_decode_length=args.max_decode_length)
+            max_decode_length=args.max_decode_length,
+            progressbar=True)
         print('  WER (clean): %f %%' % (wer_test_clean * 100))
 
         # test-other
@@ -131,7 +132,8 @@ def main():
             label_type=params['label_type'],
             data_size=params['data_size'],
             beam_width=args.beam_width,
-            max_decode_length=args.max_decode_length)
+            max_decode_length=args.max_decode_length,
+            progressbar=True)
         print('  WER (other): %f %%' % (wer_test_other * 100))
 
 

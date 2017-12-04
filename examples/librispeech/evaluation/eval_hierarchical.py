@@ -102,7 +102,8 @@ def main():
         label_type=params['label_type'],
         data_size=params['data_size'],
         beam_width=args.beam_width,
-        max_decode_length=args.max_decode_length)
+        max_decode_length=args.max_decode_length,
+        progressbar=True)
     print('  WER (clean, main): %f %%' % (wer_test_clean * 100))
     cer_test_clean, _ = do_eval_cer(
         model=model,
@@ -123,7 +124,8 @@ def main():
         label_type=params['label_type'],
         data_size=params['data_size'],
         beam_width=args.beam_width,
-        max_decode_length=args.max_decode_length)
+        max_decode_length=args.max_decode_length,
+        progressbar=True)
     print('  WER (other, main): %f %%' % (wer_test_other * 100))
     cer_test_other, _ = do_eval_cer(
         model=model,

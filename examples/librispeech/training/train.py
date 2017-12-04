@@ -187,9 +187,9 @@ def main():
         # TODO: Add scheduler
 
         # Inject Gaussian noise to all parameters
-        if learning_rate < float(params['learning_rate']):
-            model.weight_noise_injection()
-            
+        if float(params['weight_noise_std']) > 0 and learning_rate < float(params['learning_rate']):
+            model.weight_noise_injection = True
+
         del loss_train
 
         if (step + 1) % params['print_step'] == 0:

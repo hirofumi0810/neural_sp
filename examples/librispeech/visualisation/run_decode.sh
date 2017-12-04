@@ -1,7 +1,5 @@
 #!/bin/bash
 
-MODEL_SAVE_PATH="/n/sd8/inaguma/result/pytorch/librispeech"
-
 # Select GPU
 if [ $# -ne 2 ]; then
   echo "Error: set GPU number & config path." 1>&2

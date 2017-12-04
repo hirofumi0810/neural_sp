@@ -29,22 +29,22 @@ param:
   batch_size: 32
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 40
+  num_epoch: 70
 
   # regularization
   parameter_init: 0.1
   clip_grad_norm: 5.0
   clip_activation: 50
   dropout: 0.2
-  weight_decay: 0
+  weight_decay: 1e-5
   logits_temperature: 1
   weight_noise_std: 0
-  
+
   # annealing
-  decay_start_epoch: 10
+  decay_start_epoch: 40
   decay_rate: 0.5
   decay_patient_epoch: 3
-  sort_stop_epoch: 15
+  sort_stop_epoch: 100
   not_improved_patient_epoch: 5
-  eval_start_epoch: 10
+  eval_start_epoch: 40
   print_step: 200

@@ -47,7 +47,7 @@ param:
   batch_norm: False
 
   # optimization
-  batch_size: 20
+  batch_size: 16
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 30
@@ -68,6 +68,7 @@ param:
   input_feeding: False
   coverage_weight: 0
   scheduled_sampling_prob: 0
+  weight_noise_std: 0
 
   # annealing
   decay_start_epoch: 10
