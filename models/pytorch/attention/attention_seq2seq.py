@@ -28,7 +28,7 @@ from models.pytorch.attention.attention_layer import AttentionMechanism
 from models.pytorch.ctc.ctc import _concatenate_labels
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
-from utils.io.variable import var2np
+from utils.io.variable import np2var, var2np
 
 
 LOG_1 = 0
@@ -289,15 +289,24 @@ class AttentionSeq2seq(ModelBase):
                 volatile=False):
         """Forward computation.
         Args:
-            inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
-            labels (LongTensor): A tensor of size `[B, T_out]`
-            inputs_seq_len (IntTensor): A tensor of size `[B]`
-            labels_seq_len (IntTensor): A tensor of size `[B]`
+            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            labels (np.ndarray): A tensor of size `[B, T_out]`
+            inputs_seq_len (np.ndarray): A tensor of size `[B]`
+            labels_seq_len (np.ndarray): A tensor of size `[B]`
             volatile (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
             loss (FloatTensor): A tensor of size `[1]`
         """
+        # Wrap by Variable
+        inputs = np2var(inputs, use_cuda=self.use_cuda)
+        labels = np2var(labels, dtype='long', use_cuda=self.use_cuda)
+        # NOTE: labels must be long
+        inputs_seq_len = np2var(
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda)
+        labels_seq_len = np2var(
+            labels_seq_len, dtype='int', use_cuda=self.use_cuda)
+
         # Gaussian noise injection
         if self.weight_noise_injection:
             self._inject_weight_noise(mean=0., std=self.weight_noise_std)
@@ -589,15 +598,20 @@ class AttentionSeq2seq(ModelBase):
                max_decode_length=100):
         """Decoding in the inference stage.
         Args:
-            inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
-            inputs_seq_len (IntTensor): A tensor of size `[B]`
+            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            inputs_seq_len (np.ndarray): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
             max_decode_length (int, optional): the length of output sequences
                 to stop prediction when EOS token have not been emitted
         Returns:
-            best_hyps ():
-            perm_indices ():
+            best_hyps (np.ndarray):
+            perm_indices (np.ndarray):
         """
+        # Wrap by Variable
+        inputs = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
+        inputs_seq_len = np2var(
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
+
         # Encode acoustic features
         if hasattr(self, 'main_loss_weight'):
             encoder_outputs, encoder_final_state, _, _, perm_indices = self._encode(
@@ -615,22 +629,27 @@ class AttentionSeq2seq(ModelBase):
                 inputs_seq_len[perm_indices],
                 beam_width, max_decode_length)
 
-        return best_hyps, perm_indices
+        return best_hyps, var2np(perm_indices)
 
     def attention_weights(self, inputs, inputs_seq_len, beam_width=1,
                           max_decode_length=100):
         """Get attention weights for visualization.
         Args:
-            inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
-            inputs_seq_len (IntTensor): A tensor of size `[B]`
+            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            inputs_seq_len (np.ndarray): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
             max_decode_length (int, optional): the length of output sequences
                 to stop prediction when EOS token have not been emitted
         Returns:
-            best_hyps ():
-            attention_weights ():
-            perm_indices ():
+            best_hyps (np.ndarray):
+            attention_weights (np.ndarray):
+            perm_indices (np.ndarray):
         """
+        # Wrap by Variable
+        inputs = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
+        inputs_seq_len = np2var(
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
+
         # Encode acoustic features
         if hasattr(self, 'main_loss_weight'):
             encoder_outputs, encoder_final_state, _, _, perm_indices = self._encode(
@@ -646,7 +665,7 @@ class AttentionSeq2seq(ModelBase):
             best_hyps, attention_weights = self._decode_infer_beam(
                 inputs, inputs_seq_len, beam_width, max_decode_length)
 
-        return best_hyps, attention_weights, perm_indices
+        return best_hyps, attention_weights, var2np(perm_indices)
 
     def _decode_infer_greedy(self, encoder_outputs, encoder_final_state,
                              max_decode_length):
@@ -828,6 +847,16 @@ class AttentionSeq2seq(ModelBase):
         return np.array(best_hyps), np.array(attention_weights)
 
     def decode_ctc(self, inputs, inputs_seq_len, beam_width):
+        """
+        Args:
+
+        Returns:
+
+        """
+        # Wrap by Variable
+        inputs = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
+        inputs_seq_len = np2var(
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
 
         assert self.ctc_loss_weight > 0
 

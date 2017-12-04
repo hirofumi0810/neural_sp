@@ -18,7 +18,6 @@ import numpy as np
 from utils.dataset.base import Base
 from utils.io.inputs.frame_stacking import stack_frame
 from utils.io.inputs.splicing import do_splice
-from utils.io.variable import np2var
 
 # NOTE: Loading numpy is faster than loading htk
 
@@ -224,22 +223,6 @@ class DatasetBase(Base):
         # labels_seq_len_sub = self.split_per_device(
         #     labels_seq_len_sub, self.num_gpus)
         # input_names = self.split_per_device(input_names, self.num_gpus)
-
-        # Wrap by variable
-        inputs = np2var(inputs, use_cuda=self.use_cuda,
-                        volatile=self.volatile)
-        inputs_seq_len = np2var(
-            inputs_seq_len, use_cuda=self.use_cuda, volatile=self.volatile, dtype='int')
-
-        if not self.is_test:
-            labels = np2var(
-                labels, use_cuda=self.use_cuda, volatile=self.volatile, dtype='long')
-            labels_sub = np2var(
-                labels_sub, use_cuda=self.use_cuda, volatile=self.volatile, dtype='long')
-            labels_seq_len = np2var(
-                labels_seq_len, use_cuda=self.use_cuda, volatile=self.volatile, dtype='int')
-            labels_seq_len_sub = np2var(
-                labels_seq_len_sub, use_cuda=self.use_cuda, volatile=self.volatile, dtype='int')
 
         self.iteration += len(data_indices)
         if not self.is_new_epoch:

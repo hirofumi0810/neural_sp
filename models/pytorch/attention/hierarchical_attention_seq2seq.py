@@ -18,7 +18,7 @@ from models.pytorch.encoders.load_encoder import load
 from models.pytorch.attention.decoders.rnn_decoder import RNNDecoder
 from models.pytorch.attention.attention_layer import AttentionMechanism
 # from models.pytorch.ctc.ctc import _concatenate_labels
-from utils.io.variable import var2np
+from utils.io.variable import np2var, var2np
 
 
 class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
@@ -238,12 +238,12 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 labels_seq_len, labels_seq_len_sub, volatile=False):
         """Forward computation.
         Args:
-            inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
-            labels (LongTensor): A tensor of size `[B, T_out]`
-            labels_sub (LongTensor): A tensor of size `[B, T_out_sub]`
-            inputs_seq_len (IntTensor): A tensor of size `[B]`
-            labels_seq_len (IntTensor): A tensor of size `[B]`
-            labels_seq_len_sub (IntTensor): A tensor of size `[B]`
+            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            labels (np.ndarray): A tensor of size `[B, T_out]`
+            labels_sub (np.ndarray): A tensor of size `[B, T_out_sub]`
+            inputs_seq_len (np.ndarray): A tensor of size `[B]`
+            labels_seq_len (np.ndarray): A tensor of size `[B]`
+            labels_seq_len_sub (np.ndarray): A tensor of size `[B]`
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
@@ -251,6 +251,17 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             loss_main (FloatTensor): A tensor of size `[1]`
             loss_sub (FloatTensor): A tensor of size `[1]`
         """
+        # Wrap by Variable
+        inputs = np2var(inputs, use_cuda=self.use_cuda)
+        labels = np2var(labels, dtype='long', use_cuda=self.use_cuda)
+        labels_sub = np2var(labels_sub, dtype='long', use_cuda=self.use_cuda)
+        inputs_seq_len = np2var(
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda)
+        labels_seq_len = np2var(
+            labels_seq_len, dtype='int', use_cuda=self.use_cuda)
+        labels_seq_len_sub = np2var(
+            labels_seq_len_sub, dtype='int', use_cuda=self.use_cuda)
+
         # Encode acoustic features
         encoder_outputs, encoder_final_state, encoder_outputs_sub, encoder_final_state_sub, perm_indices = self._encode(
             inputs, inputs_seq_len, volatile=volatile)
@@ -467,9 +478,14 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             max_decode_length (int, optional): the length of output sequences
                 to stop prediction when EOS token have not been emitted
         Returns:
-            best_hyps ():
-            perm_indices ():
+            best_hyps (np.ndarray):
+            perm_indices (np.ndarray):
         """
+        # Wrap by Variable
+        inputs = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
+        inputs_seq_len = np2var(
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
+
         # Encode acoustic features
         _, _, encoder_outputs, encoder_final_state, perm_indices = self._encode(
             inputs, inputs_seq_len, volatile=True)

@@ -113,7 +113,7 @@ def decode(model, model_type, dataset, label_type, beam_width,
             beam_width=beam_width,
             max_decode_length=max_decode_length)
 
-        for i_batch in range(inputs.size(0)):
+        for i_batch in range(inputs.shape[0]):
             print('----- wav: %s -----' % input_names[i_batch])
 
             ##############################
@@ -124,8 +124,8 @@ def decode(model, model_type, dataset, label_type, beam_width,
                 # NOTE: transcript is seperated by space(' ')
             else:
                 # Permutate indices
-                labels = var2np(labels[perm_indices])
-                labels_seq_len = var2np(labels_seq_len[perm_indices])
+                labels = labels[perm_indices]
+                labels_seq_len = labels_seq_len[perm_indices]
 
                 # Convert from list of index to string
                 if model_type == 'ctc':

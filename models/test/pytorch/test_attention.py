@@ -197,15 +197,7 @@ class TestAttention(unittest.TestCase):
         model.init_weights()
 
         # GPU setting
-        use_cuda = model.use_cuda
         model.set_cuda(deterministic=False)
-
-        # Wrap by Variable
-        inputs = np2var(inputs, use_cuda=use_cuda)
-        # labels must be long
-        labels = np2var(labels, dtype='long', use_cuda=use_cuda)
-        inputs_seq_len = np2var(inputs_seq_len, dtype='int', use_cuda=use_cuda)
-        labels_seq_len = np2var(labels_seq_len, dtype='int', use_cuda=use_cuda)
 
         # Train model
         max_step = 1000
@@ -247,16 +239,14 @@ class TestAttention(unittest.TestCase):
 
                 # Compute accuracy
                 if label_type == 'char':
-                    str_true = idx2char(var2np(labels)[
-                                        0, :var2np(labels_seq_len)[0]][1:-1])
+                    str_true = idx2char(labels[0, :labels_seq_len[0]][1:-1])
                     str_pred = idx2char(labels_pred[0][0:-1]).split('>')[0]
                     ler = compute_cer(ref=str_true.replace('_', ''),
                                       hyp=str_pred.replace('_', ''),
                                       normalize=True)
                 elif label_type == 'word':
-                    str_true = idx2word(var2np(labels)[
-                                        0, :var2np(labels_seq_len)[0]][1:-1])
-                    str_pred = idx2word(labels_pred[0][0:-1]).split('>')[0]
+                    str_true = idx2word(labels[0, : labels_seq_len[0]][1: -1])
+                    str_pred = idx2word(labels_pred[0][0: -1]).split('>')[0]
                     ler = compute_wer(ref=str_true.split('_'),
                                       hyp=str_pred.split('_'),
                                       normalize=True)

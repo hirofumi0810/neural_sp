@@ -132,7 +132,7 @@ def plot(model, dataset, data_size, label_type, save_path=None, show=False):
         labels_pred, att_weights, _ = model.attention_weights(
             inputs, inputs_seq_len, beam_width=1, max_decode_length=100)
 
-        for i_batch in range(inputs.size(0)):
+        for i_batch in range(inputs.shape[0]):
 
             # Check if the sum of attention weights equals to 1
             # print(np.sum(att_weights[i_batch], axis=1))

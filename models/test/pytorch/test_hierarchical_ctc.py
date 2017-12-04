@@ -123,17 +123,7 @@ class TestCTC(unittest.TestCase):
         model.init_weights()
 
         # GPU setting
-        use_cuda = model.use_cuda
         model.set_cuda(deterministic=False)
-
-        # Wrap by Variable
-        inputs = np2var(inputs, use_cuda=use_cuda)
-        labels = np2var(labels, dtype='int', use_cuda=use_cuda)
-        labels_sub = np2var(labels_sub, dtype='int', use_cuda=use_cuda)
-        inputs_seq_len = np2var(inputs_seq_len, dtype='int', use_cuda=use_cuda)
-        labels_seq_len = np2var(labels_seq_len, dtype='int', use_cuda=use_cuda)
-        labels_seq_len_sub = np2var(
-            labels_seq_len_sub, dtype='int', use_cuda=use_cuda)
 
         # Train model
         max_step = 1000
@@ -173,14 +163,12 @@ class TestCTC(unittest.TestCase):
                     inputs, inputs_seq_len, beam_width=1)
 
                 # Compute accuracy
-                str_true = idx2word(
-                    var2np(labels[0, :var2np(labels_seq_len)[0]]))
+                str_true = idx2word(labels[0, :labels_seq_len[0]])
                 str_pred = idx2word(labels_pred[0])
                 ler = compute_wer(ref=str_true.split('_'),
                                   hyp=str_pred.split('_'),
                                   normalize=True)
-                str_true_sub = idx2char(
-                    var2np(labels_sub[0, :var2np(labels_seq_len_sub)[0]]))
+                str_true_sub = idx2char(labels_sub[0, :labels_seq_len_sub[0]])
                 str_pred_sub = idx2char(labels_pred_sub[0])
                 ler_sub = compute_cer(ref=str_true_sub.replace('_', ''),
                                       hyp=str_pred_sub.replace('_', ''),

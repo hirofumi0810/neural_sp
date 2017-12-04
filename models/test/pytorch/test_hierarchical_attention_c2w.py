@@ -140,18 +140,7 @@ class TestHierarchicalAttentionC2W(unittest.TestCase):
         model.init_weights()
 
         # GPU setting
-        use_cuda = model.use_cuda
         model.set_cuda(deterministic=False)
-
-        # Wrap by Variable
-        inputs = np2var(inputs, use_cuda=use_cuda)
-        # labels must be long
-        labels = np2var(labels, dtype='long', use_cuda=use_cuda)
-        labels_sub = np2var(labels_sub, dtype='long', use_cuda=use_cuda)
-        inputs_seq_len = np2var(inputs_seq_len, dtype='int', use_cuda=use_cuda)
-        labels_seq_len = np2var(labels_seq_len, dtype='int', use_cuda=use_cuda)
-        labels_seq_len_sub = np2var(
-            labels_seq_len_sub, dtype='int', use_cuda=use_cuda)
 
         # Train model
         max_step = 1000
@@ -192,12 +181,12 @@ class TestHierarchicalAttentionC2W(unittest.TestCase):
 
                 # Compute accuracy
                 str_pred = idx2word(labels_pred[0][0:-1]).split('>')[0]
-                str_true = idx2word(var2np(labels)[0][1:-1])
+                str_true = idx2word(labels[0][1:-1])
                 ler = compute_wer(ref=str_true.split('_'),
                                   hyp=str_pred.split('_'),
                                   normalize=True)
                 str_pred_sub = idx2char(labels_pred_sub[0][0:-1]).split('>')[0]
-                str_true_sub = idx2char(var2np(labels_sub)[0][1:-1])
+                str_true_sub = idx2char(labels_sub[0][1:-1])
                 ler_sub = compute_cer(ref=str_true_sub.replace('_', ''),
                                       hyp=str_pred_sub.replace('_', ''),
                                       normalize=True)

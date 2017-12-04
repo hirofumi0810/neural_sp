@@ -17,7 +17,6 @@ from models.pytorch.load_model import load
 from examples.librispeech.data.load_dataset_hierarchical import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
-from utils.io.variable import var2np
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model_path', type=str,
@@ -139,7 +138,7 @@ def decode(model, model_type, dataset, label_type, label_type_sub, data_size,
             beam_width=beam_width,
             max_decode_length=max_decode_length)
 
-        for i_batch in range(inputs.size(0)):
+        for i_batch in range(inputs.shape[0]):
             print('----- wav: %s -----' % input_names[i_batch])
 
             ##############################
@@ -150,10 +149,10 @@ def decode(model, model_type, dataset, label_type, label_type_sub, data_size,
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Permutate indices
-                labels = var2np(labels[perm_indices])
-                labels_sub = var2np(labels_sub[perm_indices])
-                labels_seq_len = var2np(labels_seq_len[perm_indices])
-                labels_seq_len_sub = var2np(labels_seq_len_sub[perm_indices])
+                labels = labels[perm_indices]
+                labels_sub = labels_sub[perm_indices]
+                labels_seq_len = labels_seq_len[perm_indices]
+                labels_seq_len_sub = labels_seq_len_sub[perm_indices]
 
                 # Convert from list of index to string
                 if model_type == 'hierarchical_ctc':

@@ -17,7 +17,7 @@ import torch.nn.functional as F
 
 from models.pytorch.ctc.ctc import CTC, _concatenate_labels
 from models.pytorch.encoders.load_encoder import load
-from utils.io.variable import var2np
+from utils.io.variable import np2var, var2np
 
 NEG_INF = -float("inf")
 LOG_0 = NEG_INF
@@ -128,12 +128,12 @@ class HierarchicalCTC(CTC):
                 labels_seq_len, labels_seq_len_sub, volatile=False):
         """Forward computation.
         Args:
-            inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
-            labels (LongTensor): A tensor of size `[B, T_out]`
-            labels_sub (LongTensor): A tensor of size `[B, T_out_sub]`
-            inputs_seq_len (IntTensor): A tensor of size `[B]`
-            labels_seq_len (IntTensor): A tensor of size `[B]`
-            labels_seq_len_sub (IntTensor): A tensor of size `[B]`
+            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            labels (np.ndarray): A tensor of size `[B, T_out]`
+            labels_sub (np.ndarray): A tensor of size `[B, T_out_sub]`
+            inputs_seq_len (np.ndarray): A tensor of size `[B]`
+            labels_seq_len (np.ndarray): A tensor of size `[B]`
+            labels_seq_len_sub (np.ndarray): A tensor of size `[B]`
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
@@ -141,6 +141,16 @@ class HierarchicalCTC(CTC):
             loss_main (FloatTensor): A tensor of size `[1]`
             loss_sub (FloatTensor): A tensor of size `[1]`
         """
+        # Wrap by Variable
+        inputs = np2var(inputs, use_cuda=self.use_cuda)
+        labels = np2var(labels, dtype='int', use_cuda=False)
+        labels_sub = np2var(labels_sub, dtype='int', use_cuda=False)
+        inputs_seq_len = np2var(
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda)
+        labels_seq_len = np2var(labels_seq_len, dtype='int', use_cuda=False)
+        labels_seq_len_sub = np2var(
+            labels_seq_len_sub, dtype='int', use_cuda=False)
+
         _labels = labels + 1
         _labels_sub = labels_sub + 1
         # NOTE: index 0 is reserved for blank
@@ -150,11 +160,11 @@ class HierarchicalCTC(CTC):
             inputs, inputs_seq_len, volatile=volatile)
 
         # Permutate indices
-        _labels = _labels[perm_indices]
-        _labels_sub = _labels_sub[perm_indices]
+        _labels = _labels[perm_indices.cpu()]
+        _labels_sub = _labels_sub[perm_indices.cpu()]
         inputs_seq_len = inputs_seq_len[perm_indices]
-        labels_seq_len = labels_seq_len[perm_indices]
-        labels_seq_len_sub = labels_seq_len_sub[perm_indices]
+        labels_seq_len = labels_seq_len[perm_indices.cpu()]
+        labels_seq_len_sub = labels_seq_len_sub[perm_indices.cpu()]
 
         max_time, batch_size = logits.size()[:2]
 
@@ -172,12 +182,10 @@ class HierarchicalCTC(CTC):
 
         # Compute CTC loss
         ctc_loss_fn = CTCLoss()
-        loss_main = ctc_loss_fn(
-            logits, concatenated_labels.cpu(),
-            inputs_seq_len.cpu(), labels_seq_len.cpu())
-        loss_sub = ctc_loss_fn(
-            logits_sub, concatenated_labels_sub.cpu(),
-            inputs_seq_len.clone().cpu(), labels_seq_len_sub.cpu())
+        loss_main = ctc_loss_fn(logits, concatenated_labels,
+                                inputs_seq_len.cpu(), labels_seq_len)
+        loss_sub = ctc_loss_fn(logits_sub, concatenated_labels_sub,
+                               inputs_seq_len.clone().cpu(), labels_seq_len_sub)
         loss = loss_main * self.main_loss_weight + \
             loss_sub * (1 - self.main_loss_weight)
 
@@ -198,6 +206,7 @@ class HierarchicalCTC(CTC):
                 `[T, B, num_classes (including blank)]`
             logits_sub (FloatTensor): A tensor of size
                 `[T, B, num_classes_sub (including blank)]`
+            perm_indices (LongTensor):
         """
         encoder_outputs, _, encoder_outputs_sub, _, perm_indices = self.encoder(
             inputs, inputs_seq_len, volatile, mask_sequence=True)
@@ -220,18 +229,27 @@ class HierarchicalCTC(CTC):
 
         return logits, logits_sub, perm_indices
 
+    def posteriors_sub(self, inputs, inputs_seq_len,
+                       temperature=1, blank_prior=None):
+        raise NotImplementedError
+
     def decode_sub(self, inputs, inputs_seq_len, beam_width=1,
                    max_decode_length=None):
         """
         Args:
-            inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
-            inputs_seq_len (IntTensor): A tensor of size `[B]`
+            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            inputs_seq_len (np.ndarray): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
             max_decode_length: not used
         Returns:
             best_hyp ():
-            perm_indices ():
+            perm_indices (np.ndarray):
         """
+        # Wrap by Variable
+        inputs = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
+        inputs_seq_len = np2var(
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
+
         # Encode acoustic features
         _, logits_sub, perm_indices = self._encode(
             inputs, inputs_seq_len, volatile=True)
@@ -251,4 +269,4 @@ class HierarchicalCTC(CTC):
         best_hyp -= 1
         # NOTE: index 0 is reserved for blank
 
-        return best_hyp, perm_indices
+        return best_hyp,  var2np(perm_indices)

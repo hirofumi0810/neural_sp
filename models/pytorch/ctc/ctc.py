@@ -24,9 +24,9 @@ import torch.nn.functional as F
 from models.pytorch.base import ModelBase
 from models.pytorch.encoders.load_encoder import load
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
-# from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
-from models.pytorch.ctc.decoders.beam_search_decoder2 import BeamSearchDecoder
-from utils.io.variable import var2np
+from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
+# from models.pytorch.ctc.decoders.beam_search_decoder2 import BeamSearchDecoder
+from utils.io.variable import np2var, var2np
 
 NEG_INF = -float("inf")
 LOG_0 = NEG_INF
@@ -80,6 +80,7 @@ class CTC(ModelBase):
 
         super(ModelBase, self).__init__()
 
+        self.encoder_type = encoder_type
         self.num_directions = 2 if bidirectional else 1
         self.bottleneck_dim_list = bottleneck_dim_list
 
@@ -117,6 +118,18 @@ class CTC(ModelBase):
                 kernel_sizes=kernel_sizes,
                 strides=strides,
                 batch_norm=batch_norm)
+        elif encoder_type == 'cnn':
+            self.encoder = encoder(
+                input_size=input_size,  # 120 or 123
+                num_stack=num_stack,
+                splice=splice,
+                channels=channels,
+                kernel_sizes=kernel_sizes,
+                strides=strides,
+                dropout=dropout,
+                parameter_init=parameter_init,
+                use_cuda=self.use_cuda,
+                batch_norm=batch_norm)
         else:
             raise NotImplementedError
 
@@ -124,9 +137,12 @@ class CTC(ModelBase):
             bottleneck_layers = []
             for i in range(len(bottleneck_dim_list)):
                 if i == 0:
+                    if encoder_type == 'cnn':
+                        bottle_input_size = self.encoder.output_size
+                    else:
+                        bottle_input_size = num_units * self.num_directions
                     bottleneck_layers.append(nn.Linear(
-                        num_units *
-                        self.num_directions, bottleneck_dim_list[i],
+                        bottle_input_size, bottleneck_dim_list[i],
                         bias=not batch_norm))
                 else:
                     if batch_norm:
@@ -151,19 +167,26 @@ class CTC(ModelBase):
 
     def forward(self, inputs, labels, inputs_seq_len, labels_seq_len,
                 volatile=False):
-        """Forward computation.
+        """Forward computation (only training).
         Args:
-            inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
-            labels (LongTensor): A tensor of size `[B, T_out]`
-            inputs_seq_len (IntTensor): A tensor of size `[B]`
-            labels_seq_len (IntTensor): A tensor of size `[B]`
+            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            labels (np.ndarray): A tensor of size `[B, T_out]`
+            inputs_seq_len (np.ndarray): A tensor of size `[B]`
+            labels_seq_len (np.ndarray): A tensor of size `[B]`
             volatile (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
             loss (FloatTensor): A tensor of size `[1]`
         """
+        # Wrap by Variable
+        inputs = np2var(inputs, use_cuda=self.use_cuda)
+        labels = np2var(labels, dtype='int', use_cuda=False)
+        inputs_seq_len = np2var(
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda)
+        labels_seq_len = np2var(labels_seq_len, dtype='int', use_cuda=False)
+
+        # NOTE: index 0 is reserved for blank in warpctc_pytorch
         _labels = labels + 1
-        # NOTE: index 0 is reserved for blank
 
         # Gaussian noise injection
         if self.weight_noise_injection:
@@ -174,9 +197,10 @@ class CTC(ModelBase):
             inputs, inputs_seq_len, volatile=volatile)
 
         # Permutate indices
-        _labels = _labels[perm_indices]
-        inputs_seq_len = inputs_seq_len[perm_indices]
-        labels_seq_len = labels_seq_len[perm_indices]
+        if self.encoder_type != 'cnn':
+            _labels = _labels[perm_indices.cpu()]
+            inputs_seq_len = inputs_seq_len[perm_indices]
+            labels_seq_len = labels_seq_len[perm_indices.cpu()]
 
         max_time, batch_size = logits.size()[:2]
 
@@ -191,8 +215,8 @@ class CTC(ModelBase):
 
         # Compute CTC loss
         ctc_loss_fn = CTCLoss()
-        ctc_loss = ctc_loss_fn(logits, concatenated_labels.cpu(),
-                               inputs_seq_len.cpu(), labels_seq_len.cpu())
+        ctc_loss = ctc_loss_fn(logits, concatenated_labels,
+                               inputs_seq_len.cpu(), labels_seq_len)
 
         # Average the loss by mini-batch
         ctc_loss /= batch_size
@@ -209,10 +233,16 @@ class CTC(ModelBase):
         Returns:
             logits (FloatTensor): A tensor of size
                 `[T, B, num_classes (including blank)]`
-            perm_indices (FloatTensor):
+            perm_indices (LongTensor):
         """
-        encoder_outputs, _, perm_indices = self.encoder(
-            inputs, inputs_seq_len, volatile, mask_sequence=True)
+        if self.encoder_type != 'cnn':
+            encoder_outputs, _, perm_indices = self.encoder(
+                inputs, inputs_seq_len, volatile, mask_sequence=True)
+        else:
+            encoder_outputs = self.encoder(inputs)
+            # NOTE: `[B, T, feature_dim]`
+            encoder_outputs = encoder_outputs.transpose(0, 1).contiguous()
+            perm_indices = None
         max_time, batch_size = encoder_outputs.size()[:2]
 
         # Convert to 2D tensor
@@ -228,17 +258,24 @@ class CTC(ModelBase):
 
         return logits, perm_indices
 
-    def posteriors(self, inputs, inputs_seq_len, temperature=1, blank_prior=None):
+    def posteriors(self, inputs, inputs_seq_len,
+                   temperature=1, blank_prior=None):
         """
         Args:
-            inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
-            inputs_seq_len (IntTensor): A tensor of size `[B]`
+            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            inputs_seq_len (np.ndarray): A tensor of size `[B]`
             temperature (float, optional): the temperature parameter for the
                 softmax layer in the inference stage
             blank_prior (float, optional):
         Returns:
-            probs (FloatTensor): A tensor of size `[]`
+            probs (np.ndarray): A tensor of size `[]`
+            perm_indices (np.ndarray):
         """
+        # Wrap by Variable
+        inputs = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
+        inputs_seq_len = np2var(
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
+
         # Encode acoustic features
         logits, perm_indices = self._encode(
             inputs, inputs_seq_len, volatile=True)
@@ -252,22 +289,27 @@ class CTC(ModelBase):
         if blank_prior is not None:
             raise NotImplementedError
 
-        return probs
+        return probs, var2np(perm_indices)
 
     def decode(self, inputs, inputs_seq_len, beam_width=1,
                max_decode_length=None, decode_by_pytorch_ctc=False):
         """
         Args:
-            inputs (FloatTensor): A tensor of size `[B, T_in, input_size]`
-            inputs_seq_len (IntTensor): A tensor of size `[B]`
+            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            inputs_seq_len (np.ndarray): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
             max_decode_length: not used
             decode_by_pytorch_ctc (bool, optional): if True, decoding will be
                 conducted by using pytorch_ctc package.
         Returns:
-            best_hyps ():
-            perm_indices ():
+            best_hyps (np.ndarray):
+            perm_indices (np.ndarray):
         """
+        # Wrap by Variable
+        inputs = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
+        inputs_seq_len = np2var(
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
+
         # Encode acoustic features
         if hasattr(self, 'main_loss_weight'):
             logits, _, perm_indices = self._encode(
@@ -301,7 +343,7 @@ class CTC(ModelBase):
             best_hyps -= 1
             # NOTE: index 0 is reserved for blank
 
-        return best_hyps, perm_indices
+        return best_hyps, var2np(perm_indices)
 
 
 def _concatenate_labels(labels, labels_seq_len):

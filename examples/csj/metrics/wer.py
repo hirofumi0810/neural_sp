@@ -11,7 +11,6 @@ import re
 from tqdm import tqdm
 
 from utils.io.labels.word import Idx2word
-from utils.io.variable import var2np
 from utils.evaluation.edit_distance import compute_wer, wer_align
 
 
@@ -65,7 +64,7 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
             beam_width=beam_width,
             max_decode_length=max_decode_length)
 
-        for i_batch in range(inputs.size(0)):
+        for i_batch in range(inputs.shape[0]):
 
             ##############################
             # Reference
@@ -75,8 +74,8 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Permutate indices
-                labels = var2np(labels[perm_indices])
-                labels_seq_len = var2np(labels_seq_len[perm_indices])
+                labels = labels[perm_indices]
+                labels_seq_len = labels_seq_len[perm_indices]
 
                 # Convert from list of index to string
                 if model_type in ['ctc', 'hierarchical_ctc']:
