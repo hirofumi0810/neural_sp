@@ -68,9 +68,7 @@ def main():
         vocab_file_path=vocab_file_path,
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=False,
-        use_cuda=model.use_cuda, volatile=True,
-        save_format=params['save_format'])
+        shuffle=False, save_format=params['save_format'])
 
     # GPU setting
     model.set_cuda(deterministic=False)

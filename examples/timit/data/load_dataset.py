@@ -22,8 +22,7 @@ class Dataset(DatasetBase):
                  vocab_file_path, max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
                  shuffle=False, sort_utt=False, reverse=False,
-                 sort_stop_epoch=None,
-                 use_cuda=False, volatile=False, save_format='numpy'):
+                 sort_stop_epoch=None, save_format='numpy'):
         """A class for loading dataset.
         Args:
             model_type (string): ctc or attention
@@ -44,8 +43,6 @@ class Dataset(DatasetBase):
                 descending order
             sort_stop_epoch (int, optional): After sort_stop_epoch, training
                 will revert back to a random order
-            use_cuda (bool, optional):
-            volatile (boo, optional):
             save_format (string, optional): numpy or htk
         """
         super(Dataset, self).__init__(vocab_file_path=vocab_file_path)
@@ -64,8 +61,6 @@ class Dataset(DatasetBase):
         self.sort_utt = sort_utt
         self.sort_stop_epoch = sort_stop_epoch
         self.num_gpus = 1
-        self.use_cuda = use_cuda
-        self.volatile = volatile
         self.save_format = save_format
 
         # Load dataset file
