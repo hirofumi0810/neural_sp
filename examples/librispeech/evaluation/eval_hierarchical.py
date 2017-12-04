@@ -67,9 +67,7 @@ def main():
         vocab_file_path_sub=vocab_file_path_sub,
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=False,
-        use_cuda=model.use_cuda, volatile=True,
-        save_format=params['save_format'])
+        sort_utt=False, save_format=params['save_format'])
     test_other_data = Dataset(
         model_type=params['model_type'],
         data_type='test_other', data_size=params['data_size'],
@@ -78,9 +76,7 @@ def main():
         vocab_file_path_sub=vocab_file_path_sub,
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=False,
-        use_cuda=model.use_cuda, volatile=True,
-        save_format=params['save_format'])
+        sort_utt=False, save_format=params['save_format'])
 
     # GPU setting
     model.set_cuda(deterministic=False)

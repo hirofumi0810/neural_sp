@@ -61,9 +61,7 @@ def main():
         label_type=params['label_type'], vocab_file_path=vocab_file_path,
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=True, reverse=True,
-        use_cuda=model.use_cuda, volatile=True,
-        save_format=params['save_format'])
+        sort_utt=True, reverse=True, save_format=params['save_format'])
 
     # GPU setting
     model.set_cuda(deterministic=False)

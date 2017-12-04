@@ -12,7 +12,6 @@ from __future__ import print_function
 
 from os.path import join
 import pandas as pd
-import copy
 
 from utils.dataset.loader_hierarchical import DatasetBase
 
@@ -25,8 +24,7 @@ class Dataset(DatasetBase):
                  max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
                  shuffle=False, sort_utt=False, reverse=False,
-                 sort_stop_epoch=None, num_gpus=1,
-                 use_cuda=False, volatile=False, save_format='numpy'):
+                 sort_stop_epoch=None, num_gpus=1, save_format='numpy'):
         """A class for loading dataset.
         Args:
             model_type (string): hierarchical_ctc or hierarchical_attention
@@ -53,8 +51,6 @@ class Dataset(DatasetBase):
             sort_stop_epoch (int, optional): After sort_stop_epoch, training
                 will revert back to a random order
             num_gpus (int, optional): the number of GPUs
-            use_cuda (bool, optional):
-            volatile (boo, optional):
             save_format (string, optional): numpy or htk
         """
         super(Dataset, self).__init__(vocab_file_path=vocab_file_path,
@@ -79,8 +75,6 @@ class Dataset(DatasetBase):
         self.sort_utt = sort_utt
         self.sort_stop_epoch = sort_stop_epoch
         self.num_gpus = num_gpus
-        self.use_cuda = use_cuda
-        self.volatile = volatile
         self.save_format = save_format
 
         # Load dataset file
@@ -94,12 +88,12 @@ class Dataset(DatasetBase):
         df_sub = df_sub.loc[:, ['frame_num', 'input_path', 'transcript']]
 
         # Remove long utteraces (> 20s)
-        # print('Original utterance num (main): %d' % len(df))
-        # print('Original utterance num (sub): %d' % len(df_sub))
-        # df = df[df.apply(lambda x: x['frame_num'] <= 2000, axis=1)]
-        # df_sub = df_sub[df_sub.apply(lambda x: x['frame_num'] <= 2000, axis=1)]
-        # print('Restricted utterance num (main): %d' % len(df))
-        # print('Restricted utterance num (sub): %d' % len(df_sub))
+        print('Original utterance num (main): %d' % len(df))
+        print('Original utterance num (sub): %d' % len(df_sub))
+        df = df[df.apply(lambda x: x['frame_num'] <= 2000, axis=1)]
+        df_sub = df_sub[df_sub.apply(lambda x: x['frame_num'] <= 2000, axis=1)]
+        print('Restricted utterance num (main): %d' % len(df))
+        print('Restricted utterance num (sub): %d' % len(df_sub))
 
         # Sort paths to input & label
         if sort_utt:
