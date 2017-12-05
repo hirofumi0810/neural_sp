@@ -78,9 +78,10 @@ class Dataset(DatasetBase):
         df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
 
         # Remove long utteraces (> 20s)
-        print('Original utterance num: %d' % len(df))
-        df = df[df.apply(lambda x: x['frame_num'] <= 2000, axis=1)]
-        print('Restricted utterance num: %d' % len(df))
+        if data_type == 'train':
+            print('Original utterance num: %d' % len(df))
+            df = df[df.apply(lambda x: x['frame_num'] <= 2000, axis=1)]
+            print('Restricted utterance num: %d' % len(df))
 
         # Sort paths to input & label
         if sort_utt:
@@ -89,4 +90,4 @@ class Dataset(DatasetBase):
             df = df.sort_values(by='input_path', ascending=True)
 
         self.df = df
-        self.rest = set(range(0, len(df), 1))
+        self.rest = set(list(df.index))

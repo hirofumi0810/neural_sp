@@ -50,7 +50,7 @@ class TestLoadDataset(unittest.TestCase):
         # self.check(label_type='character', num_gpus=8)
 
     @measure_time
-    def check(self, label_type, data_type='dev_clean', data_size='960h',
+    def check(self, label_type, data_type='dev_clean', data_size='100h',
               shuffle=False, sort_utt=True, sort_stop_epoch=None,
               frame_stacking=False, splice=1, num_gpus=1):
 
