@@ -92,7 +92,6 @@ def main():
         max_epoch=params['num_epoch'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
-        use_cuda=model.use_cuda,
         save_format=params['save_format'])
     dev_data = Dataset(
         model_type=params['model_type'],
@@ -103,9 +102,7 @@ def main():
         vocab_file_path_sub=vocab_file_path_sub,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=True,
-        use_cuda=model.use_cuda, volatile=True,
-        save_format=params['save_format'])
+        shuffle=True, save_format=params['save_format'])
     eval2000_swbd_data = Dataset(
         model_type=params['model_type'],
         data_type='eval2000_swbd', data_size=params['data_size'],
@@ -115,9 +112,7 @@ def main():
         vocab_file_path_sub=vocab_file_path_sub,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=False,
-        use_cuda=model.use_cuda, volatile=True,
-        save_format=params['save_format'])
+        shuffle=False, save_format=params['save_format'])
     eval2000_ch_data = Dataset(
         model_type=params['model_type'],
         data_type='eval2000_ch', data_size=params['data_size'],
@@ -127,9 +122,7 @@ def main():
         vocab_file_path_sub=vocab_file_path_sub,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=False,
-        use_cuda=model.use_cuda, volatile=True,
-        save_format=params['save_format'])
+        shuffle=False, save_format=params['save_format'])
 
     # Count total parameters
     for name, num_params in model.num_params_dict.items():
@@ -198,6 +191,10 @@ def main():
         # Update parameters
         optimizer.step()
         # TODO: Add scheduler
+
+        # Inject Gaussian noise to all parameters
+        # if float(params['weight_noise_std']) > 0 and learning_rate < float(params['learning_rate']):
+        #     model.weight_noise_injection = True
 
         del loss_train
         del loss_main_train

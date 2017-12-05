@@ -24,13 +24,11 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
         self.check(label_type='word_freq5', label_type_sub='character',
                    data_type='train')
         self.check(label_type='word_freq5', label_type_sub='character',
-                   data_type='dev_clean')
-        # self.check(label_type='word_freq5', label_type_sub='character',
-        #            data_type='dev_other')
+                   data_type='dev')
         self.check(label_type='word_freq5', label_type_sub='character',
-                   data_type='test_clean')
-        # self.check(label_type='word_freq5', label_type_sub='character',
-        #            data_type='test_other')
+                   data_type='eval2000_swbd')
+        self.check(label_type='word_freq5', label_type_sub='character',
+                   data_type='eval2000_ch')
 
         # label_type
         self.check(label_type='word_freq1', label_type_sub='character')
@@ -67,7 +65,7 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
             model_type='hierarchical_attention',
             data_type=data_type, data_size=data_size,
             label_type=label_type, label_type_sub=label_type_sub,
-            batch_size=64,
+            batch_size=1,
             vocab_file_path=vocab_file_path,
             vocab_file_path_sub=vocab_file_path_sub,
             max_epoch=1, splice=splice,
@@ -84,23 +82,17 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
             inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub, input_names = data
 
             if data_type == 'train':
-                for i, l in zip(inputs[0], labels[0]):
-                    if len(i) < len(l):
+                for i in range(len(inputs)):
+                    if inputs.shape[1] < labels.shape[1]:
                         raise ValueError(
                             'input length must be longer than label length.')
-
-            if num_gpus > 1:
-                for inputs_gpu in inputs:
-                    print(inputs_gpu.shape)
 
             if dataset.is_test:
                 str_true = labels[0][0]
                 str_true_sub = labels[0][0]
             else:
-                str_true = idx2word(
-                    labels.data[0][:labels_seq_len.data[0]])
-                str_true_sub = idx2char(
-                    labels_sub.data[0][:labels_seq_len_sub.data[0]])
+                str_true = idx2word(labels[0][:labels_seq_len[0]])
+                str_true_sub = idx2char(labels_sub[0][:labels_seq_len_sub[0]])
 
             print('----- %s (epoch: %.3f) -----' %
                   (input_names[0], dataset.epoch_detail))
@@ -108,14 +100,13 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
             print(str_true)
             print('-' * 10)
             print(str_true_sub)
-            print('inputs_seq_len: %d' % inputs_seq_len.data.numpy()[0])
+            # assert inputs_seq_len[0] <= 2000
+            print('inputs_seq_len: %d' % inputs_seq_len[0])
             if not dataset.is_test:
-                print('labels_seq_len (word): %d' %
-                      labels_seq_len.data.numpy()[0])
-                print('labels_seq_len (char): %d' %
-                      labels_seq_len_sub.data.numpy()[0])
+                print('labels_seq_len (word): %d' % labels_seq_len[0])
+                print('labels_seq_len (char): %d' % labels_seq_len_sub[0])
 
-            if dataset.epoch_detail >= 0.1:
+            if dataset.epoch_detail >= 0.01:
                 break
 
 

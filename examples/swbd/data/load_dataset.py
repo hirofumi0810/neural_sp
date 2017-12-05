@@ -23,8 +23,7 @@ class Dataset(DatasetBase):
                  max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
                  shuffle=False, sort_utt=False, reverse=False,
-                 sort_stop_epoch=None, num_gpus=1,
-                 use_cuda=False, volatile=False, save_format='numpy'):
+                 sort_stop_epoch=None, num_gpus=1, save_format='numpy'):
         """A class for loading dataset.
         Args:
             model_type (string): attention or ctc
@@ -48,8 +47,6 @@ class Dataset(DatasetBase):
             sort_stop_epoch (int, optional): After sort_stop_epoch, training
                 will revert back to a random order
             num_gpus (int, optional): the number of GPUs
-            use_cuda (bool, optional):
-            volatile (boo, optional):
             save_format (string, optional): numpy or htk
         """
         super(Dataset, self).__init__(vocab_file_path=vocab_file_path)
@@ -69,20 +66,31 @@ class Dataset(DatasetBase):
         self.sort_utt = sort_utt
         self.sort_stop_epoch = sort_stop_epoch
         self.num_gpus = num_gpus
-        self.use_cuda = use_cuda
-        self.volatile = volatile
         self.save_format = save_format
 
         # Load dataset file
-        dataset_path = join('/n/sd8/inaguma/corpus/swbd/dataset',
-                            save_format, data_size, data_type, label_type + '.csv')
+        if data_type == 'dev':
+            dataset_path = join('/n/sd8/inaguma/corpus/swbd/dataset',
+                                save_format, data_size, 'train', label_type + '.csv')
+        else:
+            dataset_path = join('/n/sd8/inaguma/corpus/swbd/dataset',
+                                save_format, data_size, data_type, label_type + '.csv')
         df = pd.read_csv(dataset_path)
         df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
 
         # Remove inappropriate utteraces
-        df = df[df.apply(lambda x: not(len(list(x['transcript']))
-                                       <= 30 and x['frame_num'] >= 1000), axis=1)]
-        df = df[df.apply(lambda x: x['frame_num'] <= 2000, axis=1)]
+        if not self.is_test:
+            print('Original utterance num: %d' % len(df))
+            if 'word' in label_type:
+                df = df[df.apply(lambda x: not(len(x['transcript'].split(' '))
+                                               <= 3 and x['frame_num'] >= 1000), axis=1)]
+            else:
+                df = df[df.apply(lambda x: not(len(x['transcript'].split(' '))
+                                               <= 24 and x['frame_num'] >= 1000), axis=1)]
+            df = df[df.apply(lambda x: x['frame_num'] <= 1580, axis=1)]
+            if data_type == 'dev':
+                df = df[:4000]
+            print('Restricted utterance num: %d' % len(df))
 
         # Sort paths to input & label
         if sort_utt:
