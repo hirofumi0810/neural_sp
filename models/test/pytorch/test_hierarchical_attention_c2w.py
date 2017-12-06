@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Test hierarchical attention-besed models (with C2W) in pytorch."""
+"""Test hierarchical attention-besed models with word-character composition in pytorch."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -15,7 +15,7 @@ import torch
 import torch.nn as nn
 
 sys.path.append('../../../')
-from models.pytorch.attention.hierarchical_attention_seq2seq_c2w import HierarchicalAttentionSeq2seqC2W
+from models.pytorch.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
 from models.test.data import generate_data, idx2char, idx2word
 from utils.measure_time_func import measure_time
 from utils.io.variable import np2var, var2np
@@ -30,20 +30,19 @@ class TestHierarchicalAttentionC2W(unittest.TestCase):
     def test(self):
         print("Hierarchical Attention Working check.")
 
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', subsample=True)
-
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm')
+        self.check(composition_case=None)
+        self.check(composition_case='hidden_level')
 
     @measure_time
-    def check(self, encoder_type, bidirectional, decoder_type,
+    def check(self, composition_case,
+              encoder_type='lstm', bidirectional=True, decoder_type='lstm',
               attention_type='location',
-              subsample=False, input_feeding=False,
+              subsample=True, input_feeding=False,
               ctc_loss_weight=0, decoder_num_layers=1,
               conv=False, batch_norm=False):
 
         print('==================================================')
+        print('  composition_case: %s' % composition_case)
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
         print('  decoder_type: %s' % decoder_type)
@@ -70,7 +69,7 @@ class TestHierarchicalAttentionC2W(unittest.TestCase):
         num_classes_sub = 27
 
         # Load model
-        model = HierarchicalAttentionSeq2seqC2W(
+        model = HierarchicalAttentionSeq2seq(
             input_size=inputs.shape[-1] // splice // num_stack,  # 120
             encoder_type=encoder_type,
             encoder_bidirectional=bidirectional,
@@ -93,7 +92,6 @@ class TestHierarchicalAttentionC2W(unittest.TestCase):
             main_loss_weight=0.5,
             num_classes=num_classes,
             num_classes_sub=num_classes_sub,
-            space_index=0,
             parameter_init=0.1,
             subsample_list=[] if not subsample else [True, True, False],
             init_dec_state_with_enc_state=True,
@@ -111,7 +109,9 @@ class TestHierarchicalAttentionC2W(unittest.TestCase):
             kernel_sizes=[],
             strides=[],
             batch_norm=batch_norm,
-            scheduled_sampling_prob=0)
+            scheduled_sampling_prob=0,
+            composition_case=composition_case,
+            space_index=0)
 
         # Count total parameters
         for name, num_params in model.num_params_dict.items():
@@ -176,8 +176,9 @@ class TestHierarchicalAttentionC2W(unittest.TestCase):
                 # Decode
                 labels_pred, _ = model.decode(
                     inputs, inputs_seq_len, beam_width=1, max_decode_length=30)
-                labels_pred_sub, _ = model.decode_sub(
-                    inputs, inputs_seq_len, beam_width=1, max_decode_length=100)
+                labels_pred_sub, _ = model.decode(
+                    inputs, inputs_seq_len, beam_width=1, max_decode_length=100,
+                    is_sub_task=True)
 
                 # Compute accuracy
                 str_pred = idx2word(labels_pred[0][0:-1]).split('>')[0]
@@ -205,7 +206,7 @@ class TestHierarchicalAttentionC2W(unittest.TestCase):
                 print('Hyp (word): %s' % str_pred)
                 print('Hyp (char): %s' % str_pred_sub)
 
-                if ler < 0.1:
+                if ler_sub < 0.1:
                     print('Modle is Converged.')
                     break
                 ler_pre = ler

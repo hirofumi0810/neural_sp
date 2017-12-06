@@ -11,6 +11,7 @@ from models.pytorch.ctc.ctc import CTC
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 from models.pytorch.ctc.hierarchical_ctc import HierarchicalCTC
 from models.pytorch.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
+from models.pytorch.attention.hierarchical_attention_seq2seq_c2w import HierarchicalAttentionSeq2seqC2W
 
 
 def load(model_type, params):
@@ -194,6 +195,12 @@ def load(model_type, params):
         model.name += '_main' + str(params['main_loss_weight'])
 
     elif params['model_type'] == 'hierarchical_attention':
+        # Wrapper
+        if 'space_index' not in params.keys():
+            params['space_index'] = -1
+        if 'composition_case' not in params.keys():
+            params['composition_case'] = None
+
         model = HierarchicalAttentionSeq2seq(
             input_size=params['input_size'],
             encoder_type=params['encoder_type'],
@@ -235,7 +242,9 @@ def load(model_type, params):
             kernel_sizes=params['kernel_sizes'],
             strides=params['strides'],
             batch_norm=params['batch_norm'],
-            scheduled_sampling_prob=params['scheduled_sampling_prob'])
+            scheduled_sampling_prob=params['scheduled_sampling_prob'],
+            composition_case=params['composition_case'],
+            space_index=params['composition_case'])
 
         model.name = params['encoder_type']
         if params['encoder_bidirectional']:
@@ -277,5 +286,7 @@ def load(model_type, params):
             model.name += '_ctcsub' + str(params['ctc_loss_weight_sub'])
         if params['scheduled_sampling_prob'] > 0:
             model.name += '_sample' + str(params['scheduled_sampling_prob'])
+        if params['composition_case'] is not None:
+            model.name += '_' + params['composition_case']
 
     return model

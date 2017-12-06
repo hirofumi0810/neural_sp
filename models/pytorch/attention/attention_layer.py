@@ -101,10 +101,10 @@ class AttentionMechanism(nn.Module):
         elif self.attention_type == 'rnn_attention':
             raise NotImplementedError
 
-    def forward(self, encoder_states, decoder_outputs, attention_weights_step):
+    def forward(self, encoder_outputs, decoder_outputs, attention_weights_step):
         """
         Args:
-            encoder_states (FloatTensor): A tensor of size
+            encoder_outputs (FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
             decoder_outputs (FloatTensor): A tensor of size
                 `[B, 1, decoder_num_units]`
@@ -118,7 +118,7 @@ class AttentionMechanism(nn.Module):
             ###################################################################
             # energy = <v_a, tanh(W_enc(h_en) + W_dec(h_de))>
             ###################################################################
-            keys = self.W_enc(encoder_states)
+            keys = self.W_enc(encoder_outputs)
             query = self.W_dec(decoder_outputs).expand_as(keys)
             energy = self.v_a(F.tanh(keys + query)).squeeze(dim=2)
 
@@ -131,7 +131,7 @@ class AttentionMechanism(nn.Module):
             # energy = <v_a,
             # tanh(W_enc(h_en) + W_dec(h_de) + W_conv(f))>
             ###################################################################
-            keys = self.W_enc(encoder_states)
+            keys = self.W_enc(encoder_outputs)
             query = self.W_dec(decoder_outputs).expand_as(keys)
             conv_feat = self.conv(attention_weights_step.unsqueeze(dim=1))
             conv_feat = self.W_conv(conv_feat.transpose(1, 2))
@@ -141,7 +141,7 @@ class AttentionMechanism(nn.Module):
             ###################################################################
             # energy = <W_enc(h_en), W_dec(h_de)>
             ###################################################################
-            keys = self.W_enc(encoder_states)
+            keys = self.W_enc(encoder_outputs)
             query = self.W_dec(decoder_outputs).transpose(1, 2)
             energy = torch.bmm(keys, query).squeeze(dim=2)
 
@@ -150,7 +150,7 @@ class AttentionMechanism(nn.Module):
             # energy = <h_en, h_de>
             # NOTE: both the encoder and decoder must be the same size
             ###################################################################
-            keys = encoder_states
+            keys = encoder_outputs
             query = decoder_outputs.transpose(1, 2)
             energy = torch.bmm(keys, query).squeeze(dim=2)
 
@@ -161,7 +161,7 @@ class AttentionMechanism(nn.Module):
             ###################################################################
             # energy = <W(h_en), h_de>
             ###################################################################
-            keys = self.W_a(encoder_states)
+            keys = self.W_a(encoder_outputs)
             query = decoder_outputs.transpose(1, 2)
             energy = torch.bmm(keys, query).squeeze(dim=2)
 
@@ -170,7 +170,7 @@ class AttentionMechanism(nn.Module):
             # energy = <v_a, tanh(W_a([h_de; h_en]))>
             # NOTE: both the encoder and decoder must be the same size
             ###################################################################
-            keys = encoder_states
+            keys = encoder_outputs
             query = decoder_outputs.expand_as(keys)
             concat = torch.cat((keys, query), dim=2)
             energy = self.v_a(F.tanh(self.W_a(concat))).squeeze(dim=2)
@@ -189,7 +189,7 @@ class AttentionMechanism(nn.Module):
 
         # Compute context vector (weighted sum of encoder outputs)
         context_vector = torch.sum(
-            encoder_states * attention_weights_step.unsqueeze(dim=2),
+            encoder_outputs * attention_weights_step.unsqueeze(dim=2),
             dim=1, keepdim=True)
 
         return context_vector, attention_weights_step

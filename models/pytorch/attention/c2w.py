@@ -65,67 +65,6 @@ class HierarchicalAttentionSeq2seqC2W(HierarchicalAttentionSeq2seq):
                  scheduled_sampling_prob=0,
                  c2w_case=0):
 
-        super(HierarchicalAttentionSeq2seqC2W, self).__init__(
-            input_size=input_size,
-            encoder_type=encoder_type,
-            encoder_bidirectional=encoder_bidirectional,
-            encoder_num_units=encoder_num_units,
-            encoder_num_proj=encoder_num_proj,
-            encoder_num_layers=encoder_num_layers,
-            encoder_num_layers_sub=encoder_num_layers_sub,
-            encoder_dropout=encoder_dropout,
-            attention_type=attention_type,
-            attention_dim=attention_dim,
-            decoder_type=decoder_type,
-            decoder_num_units=decoder_num_units,
-            decoder_num_layers=decoder_num_layers,
-            decoder_num_units_sub=decoder_num_units_sub,
-            decoder_num_layers_sub=decoder_num_layers_sub,
-            decoder_dropout=decoder_dropout,
-            embedding_dim=embedding_dim,
-            embedding_dim_sub=embedding_dim_sub,
-            embedding_dropout=embedding_dropout,
-            main_loss_weight=main_loss_weight,
-            num_classes=num_classes,
-            num_classes_sub=num_classes_sub,
-            parameter_init=parameter_init,
-            subsample_list=subsample_list,
-            init_dec_state_with_enc_state=init_dec_state_with_enc_state,
-            sharpening_factor=sharpening_factor,
-            logits_temperature=logits_temperature,
-            sigmoid_smoothing=sigmoid_smoothing,
-            input_feeding=input_feeding,
-            coverage_weight=coverage_weight,
-            ctc_loss_weight=ctc_loss_weight,
-            ctc_loss_weight_sub=ctc_loss_weight_sub,
-            conv_num_channels=conv_num_channels,
-            conv_width=conv_width,
-            num_stack=num_stack,
-            splice=splice,
-            channels=channels,
-            kernel_sizes=kernel_sizes,
-            strides=strides,
-            batch_norm=batch_norm,
-            scheduled_sampling_prob=scheduled_sampling_prob)
-
-        self.space_index = space_index
-
-        # Setting for C2W
-        self.c2w_case = c2w_case
-
-        ##############################
-        # Decoder in the main task
-        ##############################
-        self.decoder = RNNDecoder(
-            embedding_dim=embedding_dim_sub * 2,
-            rnn_type=decoder_type,
-            num_units=decoder_num_units,
-            num_layers=decoder_num_layers,
-            dropout=decoder_dropout,
-            parameter_init=parameter_init,
-            use_cuda=self.use_cuda,
-            batch_first=True)
-
         if c2w_case == 0:
             # Ling's LSTM-based C2W composition model
             self.c2w = nn.LSTM(
@@ -230,19 +169,6 @@ class HierarchicalAttentionSeq2seqC2W(HierarchicalAttentionSeq2seq):
 
     def _decode_train(self, encoder_outputs, labels, labels_sub,
                       encoder_final_state=None):
-        """Decoding in the training stage.
-        Args:
-            encoder_outputs (FloatTensor): A tensor of size
-                `[B, T_in, encoder_num_units]`
-            labels (LongTensor): A tensor of size `[B, T_out]`
-            labels_sub (LongTensor): A tensor of size `[B, T_out_sub]`
-            encoder_final_state (FloatTensor, optional): A tensor of size
-                `[1, B, encoder_num_units]`
-        Returns:
-            logits (FloatTensor): A tensor of size `[B, T_out, num_classes]`
-            attention_weights (FloatTensor): A tensor of size
-                `[B, T_out, T_in]`
-        """
         batch_size = encoder_outputs.size(0)
 
         logits = []
@@ -539,85 +465,3 @@ class HierarchicalAttentionSeq2seqC2W(HierarchicalAttentionSeq2seq):
         attention_weights = var2np(attention_weights)
 
         return best_hyps, attention_weights
-
-    def _decode_infer_greedy_sub(self, encoder_outputs, encoder_final_state,
-                                 max_decode_length):
-        """Greedy decoding when inference.
-        Args:
-            encoder_outputs (FloatTensor): A tensor of size
-                `[B, T_in, encoder_num_units_sub]`
-            encoder_final_state (FloatTensor): A tensor of size
-                `[1, B, decoder_num_units_sub (may be equal to encoder_num_units_sub)]`
-            max_decode_length (int): the length of output sequences
-                to stop prediction when EOS token have not been emitted
-        Returns:
-            best_hyps (np.ndarray): A tensor of size `[B, T_out_sub]`
-            attention_weights (np.ndarray): A tensor of size
-                `[B, T_out_sub, T_in]`
-        """
-        batch_size, max_time = encoder_outputs.size()[:2]
-
-        # Initialize decoder state
-        decoder_state = self._init_decoder_state(
-            encoder_final_state, volatile=True)
-
-        # Initialize attention weights
-        attention_weights_step = Variable(torch.zeros(batch_size, max_time))
-        attention_weights_step.volatile = True
-        if self.use_cuda:
-            attention_weights_step = attention_weights_step.cuda()
-
-        best_hyps = []
-        attention_weights = []
-
-        # Start from <SOS>
-        y = self._create_token(value=self.sos_index_sub, batch_size=batch_size)
-
-        for _ in range(max_decode_length):
-            y = self.embedding_sub(y)
-            y = self.embedding_dropout_sub(y)
-            # TODO: remove dropout??
-
-            decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step_sub(
-                encoder_outputs,
-                y,
-                decoder_state,
-                attention_weights_step)
-
-            if self.input_feeding:
-                # Input-feeding approach
-                output = self.input_feeding_sub(
-                    torch.cat([decoder_outputs, context_vector], dim=-1))
-                logits = self.fc_sub(F.tanh(output))
-            else:
-                logits = self.fc_sub(decoder_outputs + context_vector)
-
-            logits = logits.squeeze(dim=1)
-            # NOTE: `[B, 1, num_classes_sub]` -> `[B, num_classes_sub]`
-
-            # Path through the softmax layer & convert to log-scale
-            log_probs = F.log_softmax(logits, dim=logits.dim() - 1)
-
-            # Pick up 1-best
-            y = torch.max(log_probs, dim=1)[1]
-            y = y.unsqueeze(dim=1)
-            best_hyps.append(y)
-            attention_weights.append(attention_weights_step)
-
-            # Break if <EOS> is outputed in all mini-batch
-            if torch.sum(y.data == self.eos_index_sub) == y.numel():
-                break
-
-        # Concatenate in T_out-dimension
-        best_hyps = torch.cat(best_hyps, dim=1)
-        attention_weights = torch.stack(attention_weights, dim=1)
-
-        # Convert to numpy
-        best_hyps = var2np(best_hyps)
-        attention_weights = var2np(attention_weights)
-
-        return best_hyps, attention_weights
-
-    def _decode_infer_beam_sub(self, encoder_outputs, encoder_final_state,
-                               beam_width, max_decode_length):
-        raise NotImplementedError
