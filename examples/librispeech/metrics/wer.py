@@ -114,6 +114,9 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
         if is_new_epoch:
             break
 
+    if progressbar:
+        pbar.close()
+
     wer_mean /= len(dataset)
 
     # Register original batch size

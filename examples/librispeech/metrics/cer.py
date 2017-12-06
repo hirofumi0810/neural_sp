@@ -15,8 +15,7 @@ from utils.evaluation.edit_distance import compute_cer, compute_wer, wer_align
 
 
 def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
-                max_decode_length, eval_batch_size=None,
-                progressbar=False):
+                max_decode_length, eval_batch_size=None, progressbar=False):
     """Evaluate trained model by Character Error Rate.
     Args:
         model: the model to evaluate
@@ -132,6 +131,9 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
         if is_new_epoch:
             break
 
+    if progressbar:
+        pbar.close()
+        
     cer_mean /= len(dataset)
     wer_mean /= len(dataset)
 

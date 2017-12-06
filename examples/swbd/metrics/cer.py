@@ -22,8 +22,7 @@ HESITATION = '%hesitation'
 
 
 def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
-                max_decode_length, eval_batch_size=None,
-                progressbar=False):
+                max_decode_length, eval_batch_size=None, progressbar=False):
     """Evaluate trained model by Character Error Rate.
     Args:
         model: the model to evaluate
@@ -146,7 +145,7 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
                 wer_mean += compute_wer(ref=word_list_true,
                                         hyp=word_list_pred,
                                         normalize=True)
-                # if len(word_list_true) > 0 and len(word_list_pred) > 0:
+                # if len(word_list_pred) > 0:
                 #     substitute, insert, delete = wer_align(
                 #         ref=word_list_true,
                 #         hyp=word_list_pred)
@@ -166,6 +165,9 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
 
         if is_new_epoch:
             break
+
+    if progressbar:
+        pbar.close()
 
     cer_mean /= (len(dataset) - skip_utt_num)
     wer_mean /= (len(dataset) - skip_utt_num)

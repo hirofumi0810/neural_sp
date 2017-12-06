@@ -121,6 +121,9 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
         if is_new_epoch:
             break
 
+    if progressbar:
+        pbar.close()
+
     per_mean /= len(dataset)
 
     # Register original batch size

@@ -133,7 +133,7 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
                 wer_mean += compute_wer(ref=word_list_true,
                                         hyp=word_list_pred,
                                         normalize=True)
-                # if len(word_list_true) > 0 and len(word_list_pred) > 0:
+                # if len(word_list_pred) > 0:
                 #     substitute, insert, delete = wer_align(
                 #         ref=word_list_true,
                 #         hyp=word_list_pred)
@@ -148,6 +148,9 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
 
         if is_new_epoch:
             break
+
+    if progressbar:
+        pbar.close()
 
     wer_mean /= (len(dataset) - skip_utt_num)
 

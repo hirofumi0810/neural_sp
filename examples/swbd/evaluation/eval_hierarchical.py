@@ -91,22 +91,22 @@ def main():
 
     print('=== Test Data Evaluation ===')
     # eval2000 (swbd)
-    wer_eval2000_swbd = do_eval_wer(
-        model=model,
-        model_type=params['model_type'],
-        dataset=eval2000_swbd_data,
-        label_type=params['label_type'],
-        data_size=params['data_size'],
-        beam_width=args.beam_width,
-        max_decode_length=args.max_decode_length,
-        eval_batch_size=args.eval_batch_size,
-        progressbar=True)
-    print('  WER (SWB, main): %f %%' % (wer_eval2000_swbd * 100))
+    # wer_eval2000_swbd = do_eval_wer(
+    #     model=model,
+    #     model_type=params['model_type'],
+    #     dataset=eval2000_swbd_data,
+    #     label_type=params['label_type'],
+    #     data_size=params['data_size'],
+    #     beam_width=args.beam_width,
+    #     max_decode_length=args.max_decode_length,
+    #     eval_batch_size=args.eval_batch_size,
+    #     progressbar=True)
+    # print('  WER (SWB, main): %f %%' % (wer_eval2000_swbd * 100))
     cer_eval2000_swbd, _ = do_eval_cer(
         model=model,
         model_type=params['model_type'],
         dataset=eval2000_swbd_data,
-        label_type=params['label_type'],
+        label_type=params['label_type_sub'],
         data_size=params['data_size'],
         beam_width=args.beam_width,
         max_decode_length=args.max_decode_length,
@@ -130,7 +130,7 @@ def main():
         model=model,
         model_type=params['model_type'],
         dataset=eval2000_ch_data,
-        label_type=params['label_type'],
+        label_type=params['label_type_sub'],
         data_size=params['data_size'],
         beam_width=args.beam_width,
         max_decode_length=args.max_decode_length,
