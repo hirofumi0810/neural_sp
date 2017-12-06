@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Evaluate the trained hierarchical model (Librispeech corpus)."""
+"""Evaluate the trained hierarchical model (Switchboard corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -14,9 +14,9 @@ import argparse
 
 sys.path.append(abspath('../../../'))
 from models.pytorch.load_model import load
-from examples.librispeech.data.load_dataset_hierarchical import Dataset
-from examples.librispeech.metrics.cer import do_eval_cer
-from examples.librispeech.metrics.wer import do_eval_wer
+from examples.swbd.data.load_dataset_hierarchical import Dataset
+from examples.swbd.metrics.cer import do_eval_cer
+from examples.swbd.metrics.wer import do_eval_wer
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model_path', type=str,
@@ -30,7 +30,7 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
 parser.add_argument('--max_decode_length', type=int, default=100,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
-parser.add_argument('--max_decode_length_sub', type=int, default=600,
+parser.add_argument('--max_decode_length_sub', type=int, default=300,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
 
 
@@ -59,18 +59,18 @@ def main():
         params['label_type'] + '_' + params['data_size'] + '.txt'
     vocab_file_path_sub = '../metrics/vocab_files/' + \
         params['label_type_sub'] + '_' + params['data_size'] + '.txt'
-    test_clean_data = Dataset(
+    eval2000_swbd_data = Dataset(
         model_type=params['model_type'],
-        data_type='test_clean', data_size=params['data_size'],
+        data_type='eval2000_swbd', data_size=params['data_size'],
         label_type=params['label_type'], label_type_sub=params['label_type_sub'],
         vocab_file_path=vocab_file_path,
         vocab_file_path_sub=vocab_file_path_sub,
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=False, save_format=params['save_format'])
-    test_other_data = Dataset(
+    eval2000_ch_data = Dataset(
         model_type=params['model_type'],
-        data_type='test_other', data_size=params['data_size'],
+        data_type='eval2000_ch',  data_size=params['data_size'],
         label_type=params['label_type'], label_type_sub=params['label_type_sub'],
         vocab_file_path=vocab_file_path,
         vocab_file_path_sub=vocab_file_path_sub,
@@ -90,53 +90,53 @@ def main():
     model.eval()
 
     print('=== Test Data Evaluation ===')
-    # test-clean
-    wer_test_clean = do_eval_wer(
+    # eval2000 (swbd)
+    wer_eval2000_swbd = do_eval_wer(
         model=model,
         model_type=params['model_type'],
-        dataset=test_clean_data,
+        dataset=eval2000_swbd_data,
         label_type=params['label_type'],
         data_size=params['data_size'],
         beam_width=args.beam_width,
         max_decode_length=args.max_decode_length,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
-    print('  WER (clean, main): %f %%' % (wer_test_clean * 100))
-    cer_test_clean, _ = do_eval_cer(
+    print('  WER (SWB, main): %f %%' % (wer_eval2000_swbd * 100))
+    cer_eval2000_swbd, _ = do_eval_cer(
         model=model,
         model_type=params['model_type'],
-        dataset=test_clean_data,
-        label_type=params['label_type_sub'],
+        dataset=eval2000_swbd_data,
+        label_type=params['label_type'],
         data_size=params['data_size'],
         beam_width=args.beam_width,
         max_decode_length=args.max_decode_length,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
-    print('  CER (clean, sub): %f %%' % (cer_test_clean * 100))
+    print('  CER (SWB, sub): %f %%' % (cer_eval2000_swbd * 100))
 
-    # test-other
-    wer_test_other = do_eval_wer(
+    # eval2000(ch)
+    wer_eval2000_ch = do_eval_wer(
         model=model,
         model_type=params['model_type'],
-        dataset=test_other_data,
+        dataset=eval2000_ch_data,
         label_type=params['label_type'],
         data_size=params['data_size'],
         beam_width=args.beam_width,
         max_decode_length=args.max_decode_length,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
-    print('  WER (other, main): %f %%' % (wer_test_other * 100))
-    cer_test_other, _ = do_eval_cer(
+    print('  WER (CHE, main): %f %%' % (wer_eval2000_ch * 100))
+    cer_eval2000_ch, _ = do_eval_cer(
         model=model,
         model_type=params['model_type'],
-        dataset=test_other_data,
-        label_type=params['label_type_sub'],
+        dataset=eval2000_ch_data,
+        label_type=params['label_type'],
         data_size=params['data_size'],
         beam_width=args.beam_width,
         max_decode_length=args.max_decode_length,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
-    print('  CER (other, sub): %f %%' % (cer_test_other * 100))
+    print('  CER (CHE, sub): %f %%' % (cer_eval2000_ch * 100))
 
 
 if __name__ == '__main__':

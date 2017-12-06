@@ -131,10 +131,11 @@ def decode(model, model_type, dataset, label_type, label_type_sub, data_size,
             inputs, inputs_seq_len,
             beam_width=beam_width,
             max_decode_length=max_decode_length)
-        labels_pred_sub, _ = model.decode_sub(
+        labels_pred_sub, _ = model.decode(
             inputs, inputs_seq_len,
             beam_width=beam_width,
-            max_decode_length=max_decode_length)
+            max_decode_length=max_decode_length,
+            is_sub_task=True)
 
         for i_batch in range(inputs.shape[0]):
             print('----- wav: %s -----' % input_names[i_batch])

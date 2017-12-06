@@ -83,6 +83,3 @@ param:
   main_loss_weight: 0.5
   ctc_loss_weight: 0
   ctc_loss_weight_sub: 0
-
-  # Composition
-  composition_case: hidden_level

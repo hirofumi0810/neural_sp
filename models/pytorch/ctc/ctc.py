@@ -223,26 +223,33 @@ class CTC(ModelBase):
 
         return ctc_loss
 
-    def _encode(self, inputs, inputs_seq_len, volatile):
+    def _encode(self, inputs, inputs_seq_len, volatile, is_multi_task=False):
         """Encode acoustic features.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T, input_size]`
             inputs_seq_len (IntTensor): A tensor of size `[B]`
             volatile (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
+            is_multi_task (bool, optional):
         Returns:
             logits (FloatTensor): A tensor of size
                 `[T, B, num_classes (including blank)]`
+            logits_sub (FloatTensor): A tensor of size
+                `[T, B, num_classes_sub (including blank)]`
             perm_indices (LongTensor):
         """
-        if self.encoder_type != 'cnn':
-            encoder_outputs, _, perm_indices = self.encoder(
+        if is_multi_task:
+            encoder_outputs, _, encoder_outputs_sub, _, perm_indices = self.encoder(
                 inputs, inputs_seq_len, volatile, mask_sequence=True)
         else:
-            encoder_outputs = self.encoder(inputs)
-            # NOTE: `[B, T, feature_dim]`
-            encoder_outputs = encoder_outputs.transpose(0, 1).contiguous()
-            perm_indices = None
+            if self.encoder_type != 'cnn':
+                encoder_outputs, _, perm_indices = self.encoder(
+                    inputs, inputs_seq_len, volatile, mask_sequence=True)
+            else:
+                encoder_outputs = self.encoder(inputs)
+                # NOTE: `[B, T, feature_dim]`
+                encoder_outputs = encoder_outputs.transpose(0, 1).contiguous()
+                perm_indices = None
         max_time, batch_size = encoder_outputs.size()[:2]
 
         # Convert to 2D tensor
@@ -256,10 +263,23 @@ class CTC(ModelBase):
         # Reshape back to 3D tensor
         logits = logits.view(max_time, batch_size, -1)
 
-        return logits, perm_indices
+        if is_multi_task:
+            # Convert to 2D tensor
+            encoder_outputs_sub = encoder_outputs_sub.view(
+                max_time * batch_size, -1)
+            # contiguous()
+
+            logits_sub = self.fc_sub(encoder_outputs_sub)
+
+            # Reshape back to 3D tensor
+            logits_sub = logits_sub.view(max_time, batch_size, -1)
+
+            return logits, logits_sub, perm_indices
+        else:
+            return logits, perm_indices
 
     def posteriors(self, inputs, inputs_seq_len,
-                   temperature=1, blank_prior=None):
+                   temperature=1, blank_prior=None, is_sub_task=False):
         """
         Args:
             inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
@@ -267,6 +287,7 @@ class CTC(ModelBase):
             temperature (float, optional): the temperature parameter for the
                 softmax layer in the inference stage
             blank_prior (float, optional):
+            is_sub_task (bool, optional):
         Returns:
             probs (np.ndarray): A tensor of size `[]`
             perm_indices (np.ndarray):
@@ -277,8 +298,16 @@ class CTC(ModelBase):
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
 
         # Encode acoustic features
-        logits, perm_indices = self._encode(
-            inputs, inputs_seq_len, volatile=True)
+        if hasattr(self, 'main_loss_weight'):
+            if is_sub_task:
+                _, logits, perm_indices = self._encode(
+                    inputs, inputs_seq_len, volatile=True, is_multi_task=True)
+            else:
+                logits, _, perm_indices = self._encode(
+                    inputs, inputs_seq_len, volatile=True, is_multi_task=True)
+        else:
+            logits, perm_indices = self._encode(
+                inputs, inputs_seq_len, volatile=True)
 
         # Convert to batch-major
         logits = logits.transpose(0, 1)
@@ -292,15 +321,14 @@ class CTC(ModelBase):
         return probs, var2np(perm_indices)
 
     def decode(self, inputs, inputs_seq_len, beam_width=1,
-               max_decode_length=None, decode_by_pytorch_ctc=False):
+               max_decode_length=None, is_sub_task=False):
         """
         Args:
             inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
             inputs_seq_len (np.ndarray): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
             max_decode_length: not used
-            decode_by_pytorch_ctc (bool, optional): if True, decoding will be
-                conducted by using pytorch_ctc package.
+            is_sub_task (bool, optional):
         Returns:
             best_hyps (np.ndarray):
             perm_indices (np.ndarray):
@@ -312,8 +340,12 @@ class CTC(ModelBase):
 
         # Encode acoustic features
         if hasattr(self, 'main_loss_weight'):
-            logits, _, perm_indices = self._encode(
-                inputs, inputs_seq_len, volatile=True)
+            if is_sub_task:
+                _, logits, perm_indices = self._encode(
+                    inputs, inputs_seq_len, volatile=True, is_multi_task=True)
+            else:
+                logits, _, perm_indices = self._encode(
+                    inputs, inputs_seq_len, volatile=True, is_multi_task=True)
         else:
             logits, perm_indices = self._encode(
                 inputs, inputs_seq_len, volatile=True)
@@ -321,27 +353,18 @@ class CTC(ModelBase):
         # Convert to batch-major
         logits = logits.transpose(0, 1)
 
-        if decode_by_pytorch_ctc:
-            raise NotImplementedError
-            # probs = F.softmax(logits)
-            # scorer = pytorch_ctc.Scorer()
-            # decoder = pytorch_ctc.CTCBeamDecoder(
-            #     scorer, labels, top_paths=1, beam_width=beam_width,
-            #     blank_index=0, space_index=28, merge_repeated=True)
-            # output, score, out_seq_len = decoder.decode(probs, seq_len=None)
+        log_probs = F.log_softmax(logits, dim=logits.dim() - 1)
+
+        if beam_width == 1:
+            best_hyps = self._decode_greedy_np(
+                var2np(log_probs), var2np(inputs_seq_len))
         else:
-            log_probs = F.log_softmax(logits, dim=logits.dim() - 1)
+            best_hyps = self._decode_beam_np(
+                var2np(log_probs), var2np(inputs_seq_len),
+                beam_width=beam_width)
 
-            if beam_width == 1:
-                best_hyps = self._decode_greedy_np(
-                    var2np(log_probs), var2np(inputs_seq_len))
-            else:
-                best_hyps = self._decode_beam_np(
-                    var2np(log_probs), var2np(inputs_seq_len),
-                    beam_width=beam_width)
-
-            best_hyps -= 1
-            # NOTE: index 0 is reserved for blank
+        best_hyps -= 1
+        # NOTE: index 0 is reserved for blank
 
         return best_hyps, var2np(perm_indices)
 

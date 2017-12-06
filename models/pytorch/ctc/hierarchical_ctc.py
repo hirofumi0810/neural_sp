@@ -13,11 +13,10 @@ except:
     raise ImportError('Install warpctc_pytorch.')
 
 import torch.nn as nn
-import torch.nn.functional as F
 
 from models.pytorch.ctc.ctc import CTC, _concatenate_labels
 from models.pytorch.encoders.load_encoder import load
-from utils.io.variable import np2var, var2np
+from utils.io.variable import np2var
 
 NEG_INF = -float("inf")
 LOG_0 = NEG_INF
@@ -157,7 +156,7 @@ class HierarchicalCTC(CTC):
 
         # Encode acoustic features
         logits, logits_sub, perm_indices = self._encode(
-            inputs, inputs_seq_len, volatile=volatile)
+            inputs, inputs_seq_len, volatile=volatile, is_multi_task=True)
 
         # Permutate indices
         _labels = _labels[perm_indices.cpu()]
@@ -193,80 +192,3 @@ class HierarchicalCTC(CTC):
         loss /= batch_size
 
         return loss, loss_main * self.main_loss_weight / batch_size, loss_sub * (1 - self.main_loss_weight) / batch_size
-
-    def _encode(self, inputs, inputs_seq_len, volatile):
-        """Encode acoustic features.
-        Args:
-            inputs (FloatTensor): A tensor of size `[B, T, input_size]`
-            inputs_seq_len (IntTensor): A tensor of size `[B]`
-            volatile (bool): if True, the history will not be saved.
-                This should be used in inference model for memory efficiency.
-        Returns:
-            logits (FloatTensor): A tensor of size
-                `[T, B, num_classes (including blank)]`
-            logits_sub (FloatTensor): A tensor of size
-                `[T, B, num_classes_sub (including blank)]`
-            perm_indices (LongTensor):
-        """
-        encoder_outputs, _, encoder_outputs_sub, _, perm_indices = self.encoder(
-            inputs, inputs_seq_len, volatile, mask_sequence=True)
-        max_time, batch_size = encoder_outputs.size()[:2]
-
-        # Convert to 2D tensor
-        encoder_outputs = encoder_outputs.view(max_time * batch_size, -1)
-        encoder_outputs_sub = encoder_outputs_sub.view(
-            max_time * batch_size, -1)
-        # contiguous()
-
-        if len(self.bottleneck_dim_list) > 0:
-            encoder_outputs = self.bottleneck_layers(encoder_outputs)
-        logits = self.fc(encoder_outputs)
-        logits_sub = self.fc_sub(encoder_outputs_sub)
-
-        # Reshape back to 3D tensor
-        logits = logits.view(max_time, batch_size, -1)
-        logits_sub = logits_sub.view(max_time, batch_size, -1)
-
-        return logits, logits_sub, perm_indices
-
-    def posteriors_sub(self, inputs, inputs_seq_len,
-                       temperature=1, blank_prior=None):
-        raise NotImplementedError
-
-    def decode_sub(self, inputs, inputs_seq_len, beam_width=1,
-                   max_decode_length=None):
-        """
-        Args:
-            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
-            inputs_seq_len (np.ndarray): A tensor of size `[B]`
-            beam_width (int, optional): the size of beam
-            max_decode_length: not used
-        Returns:
-            best_hyp ():
-            perm_indices (np.ndarray):
-        """
-        # Wrap by Variable
-        inputs = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
-        inputs_seq_len = np2var(
-            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
-
-        # Encode acoustic features
-        _, logits_sub, perm_indices = self._encode(
-            inputs, inputs_seq_len, volatile=True)
-
-        # Convert to batch-major
-        logits_sub = logits_sub.transpose(0, 1)
-
-        log_probs = F.log_softmax(logits_sub, dim=logits_sub.dim() - 1)
-
-        if beam_width == 1:
-            best_hyp = self._decode_greedy_np(
-                var2np(log_probs), var2np(inputs_seq_len))
-        else:
-            best_hyp = self._decode_beam_np(
-                var2np(log_probs), var2np(inputs_seq_len), beam_width)
-
-        best_hyp -= 1
-        # NOTE: index 0 is reserved for blank
-
-        return best_hyp,  var2np(perm_indices)

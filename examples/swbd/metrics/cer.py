@@ -13,6 +13,13 @@ from tqdm import tqdm
 from utils.io.labels.character import Idx2char
 from utils.evaluation.edit_distance import compute_cer, compute_wer, wer_align
 
+HESITATIONS = ['uh', 'um', 'eh', 'mm', 'hm', 'ah', 'huh', 'ha', 'er', 'oof',
+               'hee', 'ach', 'eee', 'ew']
+LAUGHTER = 'LA'
+NOISE = 'NZ'
+VOCALIZED_NOISE = 'VN'
+HESITATION = '%hesitation'
+
 
 def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
                 max_decode_length, eval_batch_size=None,
@@ -49,6 +56,7 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
         label_type + '_' + data_size + '.txt')
 
     cer_mean, wer_mean = 0, 0
+    skip_utt_num = 0
     if progressbar:
         pbar = tqdm(total=len(dataset))
     for data, is_new_epoch in dataset:
@@ -94,6 +102,14 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
                         labels[i_batch][1:labels_seq_len[i_batch] - 1])
                     # NOTE: Exclude <SOS> and <EOS>
 
+            # Remove NOISE, LAUGHTER, VOCALIZED-NOISE, HESITATION
+            word_list_true = str_true.split('_')
+            for i in range(len(word_list_true)):
+                if word_list_true[i] in [NOISE, LAUGHTER, VOCALIZED_NOISE, HESITATION]:
+                    word_list_true[i] = ''
+            while '' in word_list_true:
+                word_list_true.remove('')
+
             ##############################
             # Hypothesis
             ##############################
@@ -110,21 +126,40 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
             str_true = re.sub(r'[\'<>]+', '', str_true)
             str_pred = re.sub(r'[\'<>]+', '', str_pred)
 
-            # Compute WER
-            wer_mean += compute_wer(ref=str_true.split('_'),
-                                    hyp=str_pred.split('_'),
-                                    normalize=True)
-            # substitute, insert, delete = wer_align(
-            #     ref=str_pred.split('_'),
-            #     hyp=str_true.split('_'))
-            # print('SUB: %d' % substitute)
-            # print('INS: %d' % insert)
-            # print('DEL: %d' % delete)
+            # Map various hesitations into a single hesitation class
+            word_list_pred = str_pred.split('_')
+            for i in range(len(word_list_pred)):
+                if word_list_pred[i] in HESITATIONS:
+                    word_list_pred[i] = HESITATION
 
-            # Compute CER
-            cer_mean += compute_cer(ref=str_true,
-                                    hyp=str_pred,
-                                    normalize=True)
+            # Remove NOISE, LAUGHTER, VOCALIZED-NOISE, HESITATION
+            for i in range(len(word_list_pred)):
+                if word_list_pred[i] in HESITATIONS:
+                    word_list_pred[i] = ''
+                elif word_list_pred[i] in [NOISE, LAUGHTER, VOCALIZED_NOISE]:
+                    word_list_pred[i] = ''
+            while '' in word_list_pred:
+                word_list_pred.remove('')
+
+            # Compute WER
+            if len(word_list_true) > 0:
+                wer_mean += compute_wer(ref=word_list_true,
+                                        hyp=word_list_pred,
+                                        normalize=True)
+                # if len(word_list_true) > 0 and len(word_list_pred) > 0:
+                #     substitute, insert, delete = wer_align(
+                #         ref=word_list_true,
+                #         hyp=word_list_pred)
+                #     print('SUB: %d' % substitute)
+                #     print('INS: %d' % insert)
+                #     print('DEL: %d' % delete)
+
+                # Compute CER
+                cer_mean += compute_cer(ref='_'.join(word_list_true),
+                                        hyp='_'.join(word_list_pred),
+                                        normalize=True)
+            else:
+                skip_utt_num += 1
 
             if progressbar:
                 pbar.update(1)
@@ -132,8 +167,8 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
         if is_new_epoch:
             break
 
-    cer_mean /= len(dataset)
-    wer_mean /= len(dataset)
+    cer_mean /= (len(dataset) - skip_utt_num)
+    wer_mean /= (len(dataset) - skip_utt_num)
 
     # Register original batch size
     if eval_batch_size is not None:

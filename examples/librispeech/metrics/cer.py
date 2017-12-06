@@ -66,10 +66,11 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
                 beam_width=beam_width,
                 max_decode_length=max_decode_length)
         elif model_type in['hierarchical_attention', 'hierarchical_ctc']:
-            labels_pred, perm_indices = model.decode_sub(
+            labels_pred, perm_indices = model.decode(
                 inputs, inputs_seq_len,
                 beam_width=beam_width,
-                max_decode_length=max_decode_length)
+                max_decode_length=max_decode_length,
+                is_sub_task=True)
 
         for i_batch in range(inputs.shape[0]):
 

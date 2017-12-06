@@ -52,7 +52,7 @@ param:
   clip_activation_decoder: 50
   dropout_encoder: 0.2
   dropout_decoder: 0.1
-  dropout_embedding: 0.1
+  dropout_embedding: 0
   weight_decay: 1e-5
   init_dec_state_with_enc_state: True
   sharpening_factor: 1.0
@@ -60,7 +60,7 @@ param:
   sigmoid_smoothing: False
   input_feeding: False
   coverage_weight: 0
-  scheduled_sampling_prob: 0
+  scheduled_sampling_prob: 0.1
   weight_noise_std: 0
 
   # annealing

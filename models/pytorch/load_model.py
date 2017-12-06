@@ -11,7 +11,6 @@ from models.pytorch.ctc.ctc import CTC
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 from models.pytorch.ctc.hierarchical_ctc import HierarchicalCTC
 from models.pytorch.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
-from models.pytorch.attention.hierarchical_attention_seq2seq_c2w import HierarchicalAttentionSeq2seqC2W
 
 
 def load(model_type, params):
