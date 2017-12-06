@@ -121,4 +121,4 @@ class Dataset(DatasetBase):
 
         self.df = df
         self.df_sub = df_sub
-        self.rest = set(range(0, len(df), 1))
+        self.rest = set(list(df.index))

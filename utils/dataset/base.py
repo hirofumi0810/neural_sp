@@ -83,7 +83,7 @@ class Base(object):
 
     def reset(self):
         """Reset data counter and offset."""
-        self.rest = set(range(0, len(self), 1))
+        self.rest = set(list(self.df.index))
         self.offset = 0
 
     def split_per_device(self, x, num_gpus):

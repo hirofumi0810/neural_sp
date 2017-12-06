@@ -109,7 +109,7 @@ class TestLoadDataset(unittest.TestCase):
             if not dataset.is_test:
                 print('labels_seq_len: %d' % labels_seq_len[0])
 
-            if dataset.epoch_detail >= 0.01:
+            if dataset.epoch_detail >= 1:
                 break
 
 

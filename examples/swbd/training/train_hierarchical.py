@@ -262,6 +262,12 @@ def main():
             plot_loss(csv_loss_train, csv_loss_dev, csv_steps,
                       save_path=model.save_path)
 
+            # Save the model
+            saved_path = model.save_checkpoint(
+                model.save_path, epoch=train_data.epoch)
+            print("=> Saved checkpoint (epoch:%d): %s" %
+                  (train_data.epoch, saved_path))
+
             if train_data.epoch >= params['eval_start_epoch']:
                 # ***Change to evaluation mode***
                 model.eval()
@@ -288,11 +294,6 @@ def main():
                     best_model = copy.deepcopy(model)
                     print('■■■ ↑Best Score (WER)↑ ■■■')
 
-                    # Save the model
-                    saved_path = model.save_checkpoint(
-                        model.save_path, epoch=train_data.epoch)
-                    print("=> Saved checkpoint (epoch:%d): %s" %
-                          (train_data.epoch, saved_path))
                 else:
                     not_improved_epoch += 1
 

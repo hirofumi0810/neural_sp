@@ -99,4 +99,4 @@ class Dataset(DatasetBase):
             df = df.sort_values(by='input_path', ascending=True)
 
         self.df = df
-        self.rest = set(range(0, len(df), 1))
+        self.rest = set(list(df.index))
