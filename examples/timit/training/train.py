@@ -16,14 +16,13 @@ import shutil
 import argparse
 from tensorboardX import SummaryWriter
 
-import torch.nn as nn
-
 sys.path.append(abspath('../../../'))
 from models.pytorch.load_model import load
 from examples.timit.data.load_dataset import Dataset
 from examples.timit.metrics.per import do_eval_per
 from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
+from utils.training.training_loop import train_step
 from utils.directory import mkdir_join, mkdir
 from utils.io.variable import np2var, var2np
 
@@ -136,34 +135,15 @@ def main():
     not_improved_epoch = 0
     learning_rate = float(params['learning_rate'])
     loss_val_train = 0.
-    for step, (data, is_new_epoch) in enumerate(train_data):
+    for step, (batch, is_new_epoch) in enumerate(train_data):
 
-        # Create feed dictionary for next mini batch (train)
-        inputs, labels, inputs_seq_len, labels_seq_len, _ = data
-
-        # Clear gradients before
-        optimizer.zero_grad()
-
-        # Compute loss in the training set
-        loss_train = model(inputs, labels, inputs_seq_len, labels_seq_len)
-        loss_val_train += loss_train.data[0]
-
-        # Compute gradient
-        optimizer.zero_grad()
-        loss_train.backward()
-
-        # Clip gradient norm
-        nn.utils.clip_grad_norm(model.parameters(), params['clip_grad_norm'])
-
-        # Update parameters
-        optimizer.step()
-        # TODO: Add scheduler
+        model, optimizer, loss_val_train_tmp = train_step(
+            model, optimizer, batch, params['clip_grad_norm'])
+        loss_val_train += loss_val_train_tmp
 
         # Inject Gaussian noise to all parameters
         if float(params['weight_noise_std']) > 0 and learning_rate < float(params['learning_rate']):
             model.weight_noise_injection = True
-
-        del loss_train
 
         if (step + 1) % params['print_step'] == 0:
 
@@ -171,12 +151,11 @@ def main():
             inputs, labels, inputs_seq_len, labels_seq_len, _ = dev_data.next()[
                 0]
 
-            # ***Change to evaluation mode***
-            model.eval()
-
             # Compute loss in the dev set
+            model.eval()
             loss_dev = model(inputs, labels, inputs_seq_len, labels_seq_len,
                              volatile=True)
+            model.train()
 
             loss_val_train /= params['print_step']
             loss_val_dev = loss_dev.data[0]
@@ -192,9 +171,6 @@ def main():
                 tf_writer.add_histogram(name, var2np(param.clone()), step + 1)
                 tf_writer.add_histogram(
                     name + '/grad', var2np(param.grad.clone()), step + 1)
-
-            # ***Change to training mode***
-            model.train()
 
             duration_step = time.time() - start_time_step
             print("Step %d (epoch: %.3f): loss = %.3f (%.3f) / lr = %.5f (%.3f min)" %

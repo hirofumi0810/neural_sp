@@ -17,8 +17,6 @@ import copy
 import argparse
 from tensorboardX import SummaryWriter
 
-import torch.nn as nn
-
 sys.path.append(abspath('../../../'))
 from models.pytorch.load_model import load
 from examples.csj.data.load_dataset_hierarchical import Dataset
@@ -26,6 +24,7 @@ from examples.csj.metrics.cer import do_eval_cer
 from examples.csj.metrics.wer import do_eval_wer
 from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
+from utils.training.training_loop import train_hierarchical_step
 from utils.directory import mkdir_join, mkdir
 from utils.io.variable import np2var, var2np
 
@@ -93,7 +92,6 @@ def main():
         splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
-        use_cuda=model.use_cuda,
         save_format=params['save_format'])
     dev_data = Dataset(
         model_type=params['model_type'],
@@ -104,9 +102,7 @@ def main():
         vocab_file_path_sub=vocab_file_path_sub,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=True,
-        use_cuda=model.use_cuda, volatile=True,
-        save_format=params['save_format'])
+        shuffle=True, save_format=params['save_format'])
     eval1_data = Dataset(
         model_type=params['model_type'],
         data_type='eval1', data_size=params['data_size'],
@@ -116,9 +112,7 @@ def main():
         vocab_file_path_sub=vocab_file_path_sub,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=False,
-        use_cuda=model.use_cuda, volatile=True,
-        save_format=params['save_format'])
+        shuffle=False, save_format=params['save_format'])
     eval2_data = Dataset(
         model_type=params['model_type'],
         data_type='eval2', data_size=params['data_size'],
@@ -128,9 +122,7 @@ def main():
         vocab_file_path_sub=vocab_file_path_sub,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=False,
-        use_cuda=model.use_cuda, volatile=True,
-        save_format=params['save_format'])
+        shuffle=False, save_format=params['save_format'])
     eval3_data = Dataset(
         model_type=params['model_type'],
         data_type='eval3', data_size=params['data_size'],
@@ -140,9 +132,7 @@ def main():
         vocab_file_path_sub=vocab_file_path_sub,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=False,
-        use_cuda=model.use_cuda, volatile=True,
-        save_format=params['save_format'])
+        shuffle=False, save_format=params['save_format'])
 
     # Count total parameters
     for name, num_params in model.num_params_dict.items():
@@ -185,36 +175,18 @@ def main():
     learning_rate = float(params['learning_rate'])
     best_model = model
     loss_val_train, loss_main_val_train, loss_sub_val_train = 0., 0., 0.
-    for step, (data, is_new_epoch) in enumerate(train_data):
+    for step, (batch, is_new_epoch) in enumerate(train_data):
 
-        # Create feed dictionary for next mini batch (train)
-        inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub, _ = data
+        model, optimizer, loss_val_train_tmp, loss_main_val_train_tmp, loss_sub_val_train_tmp = train_hierarchical_step(
+            model, optimizer, batch, params['clip_grad_norm'])
 
-        # Clear gradients before
-        optimizer.zero_grad()
+        loss_val_train += loss_val_train_tmp
+        loss_main_val_train += loss_main_val_train_tmp
+        loss_sub_val_train += loss_sub_val_train_tmp
 
-        # Compute loss in the training set
-        loss_train, loss_main_train, loss_sub_train = model(
-            inputs, labels, labels_sub, inputs_seq_len,
-            labels_seq_len, labels_seq_len_sub)
-        loss_val_train += loss_train.data[0]
-        loss_main_val_train += loss_main_train.data[0]
-        loss_sub_val_train += loss_sub_train.data[0]
-
-        # Compute gradient
-        optimizer.zero_grad()
-        loss_train.backward()
-
-        # Clip gradient norm
-        nn.utils.clip_grad_norm(model.parameters(), params['clip_grad_norm'])
-
-        # Update parameters
-        optimizer.step()
-        # TODO: Add scheduler
-
-        del loss_train
-        del loss_main_train
-        del loss_sub_train
+        # Inject Gaussian noise to all parameters
+        # if float(params['weight_noise_std']) > 0 and learning_rate < float(params['learning_rate']):
+        #     model.weight_noise_injection = True
 
         if (step + 1) % params['print_step'] == 0:
 
