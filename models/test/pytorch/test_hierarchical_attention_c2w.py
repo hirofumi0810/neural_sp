@@ -101,13 +101,14 @@ class TestHierarchicalAttentionC2W(unittest.TestCase):
             input_feeding=input_feeding,
             ctc_loss_weight=0,
             ctc_loss_weight_sub=0.1,
-            conv_num_channels=10,
-            conv_width=101,
+            attention_conv_num_channels=10,
+            attention_conv_width=101,
             num_stack=num_stack,
             splice=splice,
-            channels=[],
-            kernel_sizes=[],
-            strides=[],
+            conv_channels=[],
+            conv_kernel_sizes=[],
+            conv_strides=[],
+            poolings=[],
             batch_norm=batch_norm,
             scheduled_sampling_prob=0,
             composition_case=composition_case,
@@ -177,7 +178,7 @@ class TestHierarchicalAttentionC2W(unittest.TestCase):
                 labels_pred, _ = model.decode(
                     inputs, inputs_seq_len, beam_width=1, max_decode_length=30)
                 labels_pred_sub, _ = model.decode(
-                    inputs, inputs_seq_len, beam_width=1, max_decode_length=100,
+                    inputs, inputs_seq_len, beam_width=1, max_decode_length=60,
                     is_sub_task=True)
 
                 # Compute accuracy

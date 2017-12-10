@@ -97,13 +97,14 @@ def load(model_type, params):
             input_feeding=params['input_feeding'],
             coverage_weight=params['coverage_weight'],
             ctc_loss_weight=params['ctc_loss_weight'],
-            conv_num_channels=params['conv_num_channels'],
-            conv_width=params['conv_width'],
+            attention_conv_num_channels=params['attention_conv_num_channels'],
+            attention_conv_width=params['attention_conv_width'],
             num_stack=params['num_stack'],
             splice=params['splice'],
-            channels=params['channels'],
-            kernel_sizes=params['kernel_sizes'],
-            strides=params['strides'],
+            conv_channels=params['conv_channels'],
+            conv_kernel_sizes=params['conv_kernel_sizes'],
+            conv_strides=params['conv_strides'],
+            poolings=params['poolings'],
             batch_norm=params['batch_norm'],
             scheduled_sampling_prob=params['scheduled_sampling_prob'],
             weight_noise_std=params['weight_noise_std'])
@@ -131,8 +132,8 @@ def load(model_type, params):
             model.name += '_stack' + str(params['num_stack'])
         if params['weight_decay'] != 0:
             model.name += '_wd' + str(params['weight_decay'])
-        if len(params['channels']) != 0:
-            model.name += '_conv'
+        if len(params['conv_channels']) != 0 and params['encoder_type'] not in ['cnn', 'resnet']:
+            model.name = 'conv_' + model.name
         if bool(params['batch_norm']):
             model.name += '_bn'
         if params['sharpening_factor'] != 1:
@@ -242,13 +243,14 @@ def load(model_type, params):
             coverage_weight=params['coverage_weight'],
             ctc_loss_weight=params['ctc_loss_weight'],
             ctc_loss_weight_sub=params['ctc_loss_weight_sub'],
-            conv_num_channels=params['conv_num_channels'],
-            conv_width=params['conv_width'],
+            attention_conv_num_channels=params['attention_conv_num_channels'],
+            attention_conv_width=params['attention_conv_width'],
             num_stack=params['num_stack'],
             splice=params['splice'],
-            channels=params['channels'],
-            kernel_sizes=params['kernel_sizes'],
-            strides=params['strides'],
+            conv_channels=params['conv_channels'],
+            conv_kernel_sizes=params['conv_kernel_sizes'],
+            conv_strides=params['conv_strides'],
+            poolings=params['poolings'],
             batch_norm=params['batch_norm'],
             scheduled_sampling_prob=params['scheduled_sampling_prob'],
             composition_case=params['composition_case'],
@@ -278,8 +280,8 @@ def load(model_type, params):
             model.name += '_stack' + str(params['num_stack'])
         if params['weight_decay'] != 0:
             model.name += '_wd' + str(params['weight_decay'])
-        if len(params['channels']) != 0:
-            model.name += '_conv'
+        if len(params['conv_channels']) != 0 and params['encoder_type'] not in ['cnn', 'resnet']:
+            model.name = 'conv_' + model.name
         if bool(params['batch_norm']):
             model.name += '_bn'
         if params['sharpening_factor'] != 1:

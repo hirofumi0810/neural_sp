@@ -78,15 +78,16 @@ class AttentionSeq2seq(ModelBase):
         coverage_weight (float, optional): the weight parameter for coverage
             computation.
         ctc_loss_weight (float): A weight parameter for auxiliary CTC loss
-        conv_num_channels (int, optional): the number of channles of conv
+        attention_conv_num_channels (int, optional): the number of channles of conv
             outputs. This is used for location-based attention.
-        conv_width (int, optional): the size of kernel.
+        attention_conv_width (int, optional): the size of kernel.
             This must be the odd number.
         num_stack (int, optional): the number of frames to stack
         splice (int, optional): frames to splice. Default is 1 frame.
-        channels (list, optional):
-        kernel_sizes (list, optional):
-        strides (list, optional):
+        conv_channels (list, optional):
+        conv_kernel_sizes (list, optional):
+        conv_strides (list, optional):
+        poolings (list, optional):
         batch_norm (bool, optional):
         scheduled_sampling_prob (float, optional):
         weight_noise_std (flaot, optional):
@@ -118,13 +119,14 @@ class AttentionSeq2seq(ModelBase):
                  input_feeding=False,
                  coverage_weight=0,
                  ctc_loss_weight=0,
-                 conv_num_channels=10,
-                 conv_width=101,
+                 attention_conv_num_channels=10,
+                 attention_conv_width=101,
                  num_stack=1,
                  splice=1,
-                 channels=[],
-                 kernel_sizes=[],
-                 strides=[],
+                 conv_channels=[],
+                 conv_kernel_sizes=[],
+                 conv_strides=[],
+                 poolings=[],
                  batch_norm=False,
                  scheduled_sampling_prob=0,
                  weight_noise_std=0):
@@ -133,7 +135,7 @@ class AttentionSeq2seq(ModelBase):
 
         # TODO:
         # clip_activation
-        # time_major
+        # time_major option
 
         # Setting for the encoder
         self.encoder_type = encoder_type
@@ -144,7 +146,7 @@ class AttentionSeq2seq(ModelBase):
         self.encoder_num_layers = encoder_num_layers
         self.subsample_list = subsample_list
 
-        # Setting for the attention decoder
+        # Setting for the decoder
         self.attention_type = attention_type
         self.attention_dim = attention_dim
         self.decoder_type = decoder_type
@@ -155,14 +157,16 @@ class AttentionSeq2seq(ModelBase):
         # NOTE: Add <SOS> and <EOS>
         self.sos_index = num_classes + 1
         self.eos_index = num_classes
+
+        # Setting for the attention
         self.init_dec_state_with_enc_state = init_dec_state_with_enc_state
         self.sharpening_factor = sharpening_factor
         self.logits_temperature = logits_temperature
         self.sigmoid_smoothing = sigmoid_smoothing
         self.input_feeding = input_feeding
         self.coverage_weight = coverage_weight
-        self.conv_num_channels = conv_num_channels
-        self.conv_width = conv_width
+        self.attention_conv_num_channels = attention_conv_num_channels
+        self.attention_conv_width = attention_conv_width
         self.scheduled_sampling_prob = scheduled_sampling_prob
 
         # Joint CTC-Attention
@@ -199,9 +203,10 @@ class AttentionSeq2seq(ModelBase):
                     merge_bidirectional=True,
                     num_stack=num_stack,
                     splice=splice,
-                    channels=channels,
-                    kernel_sizes=kernel_sizes,
-                    strides=strides,
+                    conv_channels=conv_channels,
+                    conv_kernel_sizes=conv_kernel_sizes,
+                    conv_strides=conv_strides,
+                    poolings=poolings,
                     batch_norm=batch_norm)
             else:
                 # Pyramidal encoder
@@ -221,9 +226,10 @@ class AttentionSeq2seq(ModelBase):
                     merge_bidirectional=True,
                     num_stack=num_stack,
                     splice=splice,
-                    channels=channels,
-                    kernel_sizes=kernel_sizes,
-                    strides=strides,
+                    conv_channels=conv_channels,
+                    conv_kernel_sizes=conv_kernel_sizes,
+                    conv_strides=conv_strides,
+                    poolings=poolings,
                     batch_norm=batch_norm)
         else:
             raise NotImplementedError
@@ -251,8 +257,8 @@ class AttentionSeq2seq(ModelBase):
             attention_dim=attention_dim,
             sharpening_factor=sharpening_factor,
             sigmoid_smoothing=sigmoid_smoothing,
-            out_channels=conv_num_channels,
-            kernel_size=conv_width)
+            out_channels=attention_conv_num_channels,
+            kernel_size=attention_conv_width)
 
         ##################################################
         # Bridge layer between the encoder and decoder
@@ -270,9 +276,8 @@ class AttentionSeq2seq(ModelBase):
             self.input_feeeding = nn.Linear(
                 decoder_num_units * 2, decoder_num_units)
             # NOTE: input-feeding approach
-            self.fc = nn.Linear(decoder_num_units, self.num_classes - 1)
-        else:
-            self.fc = nn.Linear(decoder_num_units, self.num_classes - 1)
+
+        self.fc = nn.Linear(decoder_num_units, self.num_classes - 1)
         # NOTE: <SOS> is removed because the decoder never predict <SOS> class
         # TODO: consider projection
 
@@ -492,7 +497,6 @@ class AttentionSeq2seq(ModelBase):
 
         logits = []
         attention_weights = []
-
         for t in range(labels_max_seq_len - 1):
 
             if is_sub_task:
@@ -673,6 +677,8 @@ class AttentionSeq2seq(ModelBase):
         # Encode acoustic features
         encoder_outputs, encoder_final_state, perm_indices = self._encode(
             inputs, inputs_seq_len, volatile=True)
+        if perm_indices is not None:
+            perm_indices = var2np(perm_indices)
 
         if beam_width == 1:
             best_hyps, _ = self._decode_infer_greedy(
@@ -683,7 +689,7 @@ class AttentionSeq2seq(ModelBase):
                 inputs_seq_len[perm_indices],
                 beam_width, max_decode_length)
 
-        return best_hyps, var2np(perm_indices)
+        return best_hyps, perm_indices
 
     def attention_weights(self, inputs, inputs_seq_len, beam_width=1,
                           max_decode_length=100):
@@ -707,6 +713,8 @@ class AttentionSeq2seq(ModelBase):
         # Encode acoustic features
         encoder_outputs, encoder_final_state, perm_indices = self._encode(
             inputs, inputs_seq_len, volatile=True)
+        if perm_indices is not None:
+            perm_indices = var2np(perm_indices)
 
         if beam_width == 1:
             best_hyps, attention_weights = self._decode_infer_greedy(
@@ -715,7 +723,7 @@ class AttentionSeq2seq(ModelBase):
             best_hyps, attention_weights = self._decode_infer_beam(
                 inputs, inputs_seq_len, beam_width, max_decode_length)
 
-        return best_hyps, attention_weights, var2np(perm_indices)
+        return best_hyps, attention_weights, perm_indices
 
     def _decode_infer_greedy(self, encoder_outputs, encoder_final_state,
                              max_decode_length, is_sub_task=False):
@@ -938,6 +946,8 @@ class AttentionSeq2seq(ModelBase):
         # Encode acoustic features
         encoder_outputs, encoder_final_state, perm_indices = self._encode(
             inputs, inputs_seq_len, volatile=True)
+        if perm_indices is not None:
+            perm_indices = var2np(perm_indices)
 
         batch_size, max_time = encoder_outputs.size()[:2]
 
@@ -955,3 +965,5 @@ class AttentionSeq2seq(ModelBase):
             best_hyps, _ = self._decode_ctc_greedy_np(log_probs)
         else:
             best_hyps, _ = self._decode_ctc_beam_np(log_probs, beam_width)
+
+        return best_hyps, perm_indices

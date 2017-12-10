@@ -64,14 +64,16 @@ class TestHierarchicalAttention(unittest.TestCase):
 
         if conv:
             splice = 5
-            channels = [32, 32]
-            kernel_sizes = [[41, 11], [21, 11]]
-            strides = [[2, 2], [2, 1]]  # freq * time
+            conv_channels = [32, 32]
+            conv_kernel_sizes = [[41, 11], [21, 11]]
+            conv_strides = [[2, 2], [2, 1]]  # freq * time
+            poolings = [[2, 2], [2, 2]]
         else:
             splice = 1
-            channels = []
-            kernel_sizes = []
-            strides = []
+            conv_channels = []
+            conv_kernel_sizes = []
+            conv_strides = []
+            poolings = []
 
         # Load batch data
         num_stack = 2
@@ -118,13 +120,14 @@ class TestHierarchicalAttention(unittest.TestCase):
             input_feeding=input_feeding,
             ctc_loss_weight=0,
             ctc_loss_weight_sub=0.1,
-            conv_num_channels=10,
-            conv_width=101,
+            attention_conv_num_channels=10,
+            attention_conv_width=101,
             num_stack=num_stack,
             splice=splice,
-            channels=channels,
-            kernel_sizes=kernel_sizes,
-            strides=strides,
+            conv_channels=conv_channels,
+            conv_kernel_sizes=conv_kernel_sizes,
+            conv_strides=conv_strides,
+            poolings=poolings,
             batch_norm=batch_norm,
             scheduled_sampling_prob=0)
 
@@ -192,7 +195,7 @@ class TestHierarchicalAttention(unittest.TestCase):
                 labels_pred, _ = model.decode(
                     inputs, inputs_seq_len, beam_width=1, max_decode_length=30)
                 labels_pred_sub, _ = model.decode(
-                    inputs, inputs_seq_len, beam_width=1, max_decode_length=100,
+                    inputs, inputs_seq_len, beam_width=1, max_decode_length=60,
                     is_sub_task=True)
 
                 # Compute accuracy

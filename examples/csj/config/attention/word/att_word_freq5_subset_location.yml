@@ -32,13 +32,14 @@ param:
   decoder_num_units: 320
   decoder_num_layers: 1
   embedding_dim: 512
-  conv_num_channels: 10
-  conv_width: 101
+  attention_conv_num_channels: 10
+  attention_conv_width: 101
 
   # CNN before RNN encoder
-  channels: []
-  kernel_sizes: []
-  strides: []
+  conv_channels: []
+  conv_kernel_sizes: []
+  conv_strides: []
+  poolings: []
   batch_norm: False
 
   # optimization

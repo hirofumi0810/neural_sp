@@ -87,7 +87,6 @@ class RNNEncoder(nn.Module):
                 use_cuda=use_cuda,
                 batch_norm=batch_norm)
             input_size = self.conv.output_size
-            print(input_size)
         else:
             input_size = input_size * splice * num_stack
             self.conv = None
