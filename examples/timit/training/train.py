@@ -79,7 +79,7 @@ def main():
         max_epoch=params['num_epoch'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
-        save_format=params['save_format'])
+        save_format=params['save_format'], num_enque=100)
     dev_data = Dataset(
         model_type=params['model_type'],
         data_type='dev', label_type=params['label_type'],
@@ -147,14 +147,17 @@ def main():
 
         if (step + 1) % params['print_step'] == 0:
 
-            # Create feed dictionary for next mini batch (dev)
             inputs, labels, inputs_seq_len, labels_seq_len, _ = dev_data.next()[
                 0]
 
-            # Compute loss in the dev set
+            # ***Change to evaluation mode***
             model.eval()
+
+            # Compute loss in the dev set
             loss_dev = model(inputs, labels, inputs_seq_len, labels_seq_len,
                              volatile=True)
+
+            # ***Change to training mode***
             model.train()
 
             loss_val_train /= params['print_step']

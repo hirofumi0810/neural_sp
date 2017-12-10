@@ -22,7 +22,7 @@ class Dataset(DatasetBase):
                  vocab_file_path, max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
                  shuffle=False, sort_utt=False, reverse=False,
-                 sort_stop_epoch=None, save_format='numpy', num_enque=100):
+                 sort_stop_epoch=None, save_format='numpy', num_enque=None):
         """A class for loading dataset.
         Args:
             model_type (string): ctc or attention

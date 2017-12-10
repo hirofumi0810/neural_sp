@@ -11,15 +11,15 @@ import time
 import random
 import numpy as np
 from struct import unpack
-from multiprocessing import Queue, Process
+from torch.multiprocessing import Queue, Process
 
 
 class Base(object):
 
     def __init__(self, *args, **kwargs):
         self.epoch = 0
+        self._epoch = 0
         self.iteration = 0
-        self.is_new_epoch = False
         self.offset = 0
 
         # Setting for multiprocessing
@@ -87,40 +87,58 @@ class Base(object):
         Args:
             batch_size (int, optional): the size of mini-batch
         Returns:
-            A tuple of batch (tuple):
+            batch (tuple):
             is_new_epoch (bool): If true, 1 epoch is finished
         """
-        # Clean up multiprocessing
-        if self.preloading_process is not None and self.queue_size == 0:
-            self.preloading_process.terminate()
-            self.preloading_process.join()
+        if self.num_enque is None:
+            if self.max_epoch is not None and self._epoch >= self.max_epoch:
+                raise StopIteration
+            # NOTE: max_epoch = None means infinite loop
 
-        if self.max_epoch is not None and self.epoch >= self.max_epoch:
+            data_indices, is_new_epoch = self.sample_index(batch_size)
+            batch = self.make_batch(data_indices)
+            self.iteration += len(data_indices)
+        else:
             # Clean up multiprocessing
-            self.preloading_process.terminate()
-            self.preloading_process.join()
-            raise StopIteration
-        # NOTE: max_epoch = None means infinite loop
+            if self.preloading_process is not None and self.queue_size == 0:
+                self.preloading_process.terminate()
+                self.preloading_process.join()
 
-        # Enqueue mini-batches
-        if self.queue_size == 0:
-            self.data_indices_list = []
-            for _ in range(self.num_enque):
-                self.data_indices_list.append(self.sample_index(batch_size))
-            self.preloading_process = Process(
-                target=self.preloading_loop, args=(self.queue, self.data_indices_list))
-            self.preloading_process.start()
-            self.queue_size += self.num_enque
-            time.sleep(5)
+            if self.max_epoch is not None and self._epoch >= self.max_epoch:
+                # Clean up multiprocessing
+                self.preloading_process.terminate()
+                self.preloading_process.join()
+                raise StopIteration
+            # NOTE: max_epoch = None means infinite loop
 
-        # print(self.queue.qsize())
-        # print(self.queue_size)
+            # Enqueue mini-batches
+            if self.queue_size == 0:
+                self.data_indices_list = []
+                self.is_new_epoch_list = []
+                for _ in range(self.num_enque):
+                    data_indices, is_new_epoch = self.sample_index(batch_size)
+                    self.data_indices_list.append(data_indices)
+                    self.is_new_epoch_list.append(is_new_epoch)
+                self.preloading_process = Process(
+                    target=self.preloading_loop,
+                    args=(self.queue, self.data_indices_list))
+                self.preloading_process.start()
+                self.queue_size += self.num_enque
+                time.sleep(5)
 
-        self.iteration += len(
-            self.data_indices_list[self.num_enque - self.queue_size])
-        self.queue_size -= 1
+            # print(self.queue.qsize())
+            # print(self.queue_size)
 
-        return self.queue.get(), self.is_new_epoch
+            self.iteration += len(
+                self.data_indices_list[self.num_enque - self.queue_size])
+            self.queue_size -= 1
+            batch = self.queue.get()
+            is_new_epoch = self.is_new_epoch_list.pop(0)
+
+        if is_new_epoch:
+            self.epoch += 1
+
+        return batch, is_new_epoch
 
     def next(self, batch_size=None):
         # For python2
@@ -132,13 +150,12 @@ class Base(object):
             batch_size (int, optional):
         Returns:
             data_indices (np.ndarray):
+            is_new_epoch (bool):
         """
         if batch_size is None:
             batch_size = self.batch_size
 
-        # Reset flag
-        if self.is_new_epoch:
-            self.is_new_epoch = False
+        is_new_epoch = False
 
         if self.sort_utt or not self.shuffle:
             if len(self.rest) > batch_size:
@@ -152,10 +169,10 @@ class Base(object):
             else:
                 # Last mini-batch
                 data_indices = list(self.rest)
-                self.reset()
-                self.is_new_epoch = True
-                self.epoch += 1
-                if self.epoch == self.sort_stop_epoch:
+                self._reset()
+                is_new_epoch = True
+                self._epoch += 1
+                if self._epoch == self.sort_stop_epoch:
                     self.sort_utt = False
                     self.shuffle = True
 
@@ -170,16 +187,26 @@ class Base(object):
             else:
                 # Last mini-batch
                 data_indices = list(self.rest)
-                self.reset()
-                self.is_new_epoch = True
-                self.epoch += 1
+                self._reset()
+                is_new_epoch = True
+                self._epoch += 1
 
                 # Shuffle selected mini-batch
                 random.shuffle(data_indices)
 
-        return data_indices
+        return data_indices, is_new_epoch
 
     def reset(self):
+        self._reset()
+
+        self.queue = Queue()
+        self.queue_size = 0
+
+        # Clean up multiprocessing
+        self.preloading_process.terminate()
+        self.preloading_process.join()
+
+    def _reset(self):
         """Reset data counter and offset."""
         self.rest = set(list(self.df.index))
         self.offset = 0

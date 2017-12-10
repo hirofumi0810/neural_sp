@@ -69,7 +69,8 @@ class TestLoadDataset(unittest.TestCase):
             splice=splice, num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
             sort_utt=sort_utt, sort_stop_epoch=sort_stop_epoch,
-            save_format='numpy')
+            save_format='numpy',
+            num_enque=None if not data_type == 'train' else 100)
 
         print('=> Loading mini-batch...')
         if 'phone' in label_type:

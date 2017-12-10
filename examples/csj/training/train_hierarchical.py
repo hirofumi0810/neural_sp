@@ -92,7 +92,7 @@ def main():
         splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
-        save_format=params['save_format'])
+        save_format=params['save_format'], num_enque=100)
     dev_data = Dataset(
         model_type=params['model_type'],
         data_type='dev', data_size=params['data_size'],
@@ -190,7 +190,6 @@ def main():
 
         if (step + 1) % params['print_step'] == 0:
 
-            # Create feed dictionary for next mini batch (dev)
             inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub, _ = dev_data.next()[
                 0]
 
@@ -201,6 +200,9 @@ def main():
             loss_dev, loss_main_dev, loss_sub_dev = model(
                 inputs, labels, labels_sub, inputs_seq_len,
                 labels_seq_len, labels_seq_len_sub, volatile=True)
+
+            # ***Change to training mode***
+            model.train()
 
             loss_val_train /= params['print_step']
             loss_main_val_train /= params['print_step']
@@ -226,9 +228,6 @@ def main():
                 tf_writer.add_histogram(name, var2np(param.clone()), step + 1)
                 tf_writer.add_histogram(
                     name + '/grad', var2np(param.grad.clone()), step + 1)
-
-            # ***Change to training mode***
-            model.train()
 
             duration_step = time.time() - start_time_step
             print("Step %d (epoch: %.3f): loss = %.3f/%.3f (%.3f/%.3f) / lr = %.5f (%.3f min)" %
@@ -300,6 +299,9 @@ def main():
 
             start_time_step = time.time()
             start_time_epoch = time.time()
+
+    # ***Change to evaluation mode***
+    model.eval()
 
     # Evaluate the best model
     print('=== Test Data Evaluation ===')

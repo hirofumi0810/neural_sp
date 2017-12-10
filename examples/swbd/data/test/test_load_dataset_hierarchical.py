@@ -65,14 +65,15 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
             model_type='hierarchical_attention',
             data_type=data_type, data_size=data_size,
             label_type=label_type, label_type_sub=label_type_sub,
-            batch_size=1,
+            batch_size=64,
             vocab_file_path=vocab_file_path,
             vocab_file_path_sub=vocab_file_path_sub,
             max_epoch=1, splice=splice,
             num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
             sort_utt=sort_utt, reverse=True, sort_stop_epoch=sort_stop_epoch,
-            num_gpus=num_gpus)
+            num_gpus=num_gpus, save_format='numpy',
+            num_enque=None if not data_type == 'train' else 100)
 
         print('=> Loading mini-batch...')
         idx2word = Idx2word(vocab_file_path, space_mark=' ')

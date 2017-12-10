@@ -25,7 +25,7 @@ class Dataset(DatasetBase):
                  num_stack=1, num_skip=1,
                  shuffle=False, sort_utt=False, reverse=False,
                  sort_stop_epoch=None, num_gpus=1, save_format='numpy',
-                 num_enque=100):
+                 num_enque=None):
         """A class for loading dataset.
         Args:
             model_type (string): hierarchical_attention or hierarchical_ctc

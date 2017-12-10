@@ -13,8 +13,6 @@ from __future__ import print_function
 from os.path import basename
 import math
 import numpy as np
-from multiprocessing import Process
-import time
 
 from utils.dataset.base import Base
 from utils.io.inputs.frame_stacking import stack_frame
