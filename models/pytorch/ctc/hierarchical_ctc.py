@@ -31,20 +31,24 @@ class HierarchicalCTC(CTC):
         bidirectional (bool): if True create a bidirectional encoder
         num_units (int): the number of units in each layer
         num_proj (int): the number of nodes in recurrent projection layer
-        num_layers (int): the number of layers of the encoder
+        num_layers (int): the number of layers of the encoder of the main task
+        num_layers_sub (int): the number of layers of the encoder of the sub task
+        fc_list (list):
         dropout (float): the probability to drop nodes
         main_loss_weight (float): A weight parameter for the main CTC loss
-        num_classes (int): the number of classes of target labels
+        num_classes (int): the number of classes of target labels of the main task
+            (excluding a blank class)
+        num_classes_sub (int): the number of classes of target labels of the sub task
             (excluding a blank class)
         parameter_init (float, optional): Range of uniform distribution to
             initialize weight parameters
-        bottleneck_dim_list (list, optional):
         logits_temperature (float):
         num_stack (int, optional): the number of frames to stack
         splice (int, optional): frames to splice. Default is 1 frame.
-        channels (list, optional):
-        kernel_sizes (list, optional):
-        strides (list, optional):
+        conv_channels (list, optional):
+        conv_kernel_sizes (list, optional):
+        conv_strides (list, optional):
+        poolings (list, optional):
         batch_norm (bool, optional):
     """
 
@@ -56,18 +60,19 @@ class HierarchicalCTC(CTC):
                  num_proj,
                  num_layers,
                  num_layers_sub,  # ***
+                 fc_list,
                  dropout,
                  main_loss_weight,  # ***
                  num_classes,
                  num_classes_sub,  # ***
                  parameter_init=0.1,
-                 bottleneck_dim_list=[],
                  logits_temperature=1,
                  num_stack=1,
                  splice=1,
-                 channels=[],
-                 kernel_sizes=[],
-                 strides=[],
+                 conv_channels=[],
+                 conv_kernel_sizes=[],
+                 conv_strides=[],
+                 poolings=[],
                  batch_norm=False):
 
         super(HierarchicalCTC, self).__init__(
@@ -80,7 +85,7 @@ class HierarchicalCTC(CTC):
             dropout=dropout,
             num_classes=num_classes,
             parameter_init=parameter_init,
-            bottleneck_dim_list=bottleneck_dim_list,
+            fc_list=fc_list,
             logits_temperature=logits_temperature,
             batch_norm=batch_norm)
 
@@ -113,9 +118,10 @@ class HierarchicalCTC(CTC):
                 batch_first=False,
                 num_stack=num_stack,
                 splice=splice,
-                channels=channels,
-                kernel_sizes=kernel_sizes,
-                strides=strides,
+                conv_channels=conv_channels,
+                conv_kernel_sizes=conv_kernel_sizes,
+                conv_strides=conv_strides,
+                poolings=poolings,
                 batch_norm=batch_norm)
         else:
             raise NotImplementedError

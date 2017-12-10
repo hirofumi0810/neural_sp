@@ -14,23 +14,13 @@ param:
   # topology
   model_type: ctc
   encoder_type: cnn
-  bidirectional: True
+  bidirectional: False
   num_units: 0
   num_proj: 0
   num_layers: 0
-  bottleneck_dim_list: [1024, 1024, 1024]
-  channels:
-    - 128
-    - 128
-    - 128
-    - 128
-    - 256
-    - 256
-    - 256
-    - 256
-    - 256
-    - 256
-  kernel_sizes:
+  fc_list: [1024, 1024, 1024]
+  conv_channels: [128, 128, 128, 128, 256, 256, 256, 256, 256, 256]
+  conv_kernel_sizes:
     - [3, 5]
     - [3, 5]
     - [3, 5]
@@ -41,7 +31,7 @@ param:
     - [3, 5]
     - [3, 5]
     - [3, 5]
-  strides:
+  conv_strides:
     - [1, 1]
     - [1, 1]
     - [1, 1]
@@ -52,14 +42,23 @@ param:
     - [1, 1]
     - [1, 1]
     - [1, 1]
-  pooling:
-    - [1, 3, 1]  # 1st layer, (freq,time) = (3,1)
+  poolings:
+    - [3, 1]
+    - []
+    - []
+    - []
+    - []
+    - []
+    - []
+    - []
+    - []
+    - []
   batch_norm: False
 
   # optimization
   batch_size: 20
   optimizer: adam
-  learning_rate: 1e-4
+  learning_rate: 1e-3
   num_epoch: 100
 
   # regularization

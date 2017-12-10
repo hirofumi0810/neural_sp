@@ -42,18 +42,19 @@ class CTC(ModelBase):
         num_units (int): the number of units in each layer
         num_proj (int): the number of nodes in recurrent projection layer
         num_layers (int): the number of layers of the encoder
+        fc_list (list):
         dropout (float): the probability to drop nodes
         num_classes (int): the number of classes of target labels
             (excluding a blank class)
         parameter_init (float, optional): Range of uniform distribution to
             initialize weight parameters
-        bottleneck_dim_list (list, optional):
         logits_temperature (float):
         num_stack (int, optional): the number of frames to stack
         splice (int, optional): frames to splice. Default is 1 frame.
-        channels (list, optional):
-        kernel_sizes (list, optional):
-        strides (list, optional):
+        conv_channels (list, optional):
+        conv_kernel_sizes (list, optional):
+        conv_strides (list, optional):
+        poolings (list, optional):
         batch_norm (bool, optional):
         weight_noise_std (flaot, optional):
     """
@@ -65,16 +66,17 @@ class CTC(ModelBase):
                  num_units,
                  num_proj,
                  num_layers,
+                 fc_list,
                  dropout,
                  num_classes,
                  parameter_init=0.1,
-                 bottleneck_dim_list=[],
                  logits_temperature=1,
                  num_stack=1,
                  splice=1,
-                 channels=[],
-                 kernel_sizes=[],
-                 strides=[],
+                 conv_channels=[],
+                 conv_kernel_sizes=[],
+                 conv_strides=[],
+                 poolings=[],
                  batch_norm=False,
                  weight_noise_std=0):
 
@@ -82,7 +84,7 @@ class CTC(ModelBase):
 
         self.encoder_type = encoder_type
         self.num_directions = 2 if bidirectional else 1
-        self.bottleneck_dim_list = bottleneck_dim_list
+        self.fc_list = fc_list
 
         # Setting for CTC
         self.num_classes = num_classes + 1
@@ -114,18 +116,20 @@ class CTC(ModelBase):
                 batch_first=False,
                 num_stack=num_stack,
                 splice=splice,
-                channels=channels,
-                kernel_sizes=kernel_sizes,
-                strides=strides,
+                conv_channels=conv_channels,
+                conv_kernel_sizes=conv_kernel_sizes,
+                conv_strides=conv_strides,
+                poolings=poolings,
                 batch_norm=batch_norm)
         elif encoder_type == 'cnn':
             self.encoder = encoder(
                 input_size=input_size,  # 120 or 123
                 num_stack=num_stack,
                 splice=splice,
-                channels=channels,
-                kernel_sizes=kernel_sizes,
-                strides=strides,
+                conv_channels=conv_channels,
+                conv_kernel_sizes=conv_kernel_sizes,
+                conv_strides=conv_strides,
+                poolings=poolings,
                 dropout=dropout,
                 parameter_init=parameter_init,
                 use_cuda=self.use_cuda,
@@ -133,28 +137,28 @@ class CTC(ModelBase):
         else:
             raise NotImplementedError
 
-        if len(bottleneck_dim_list) > 0:
-            bottleneck_layers = []
-            for i in range(len(bottleneck_dim_list)):
+        if len(fc_list) > 0:
+            fc_layers = []
+            for i in range(len(fc_list)):
                 if i == 0:
                     if encoder_type == 'cnn':
                         bottle_input_size = self.encoder.output_size
                     else:
                         bottle_input_size = num_units * self.num_directions
-                    bottleneck_layers.append(nn.Linear(
-                        bottle_input_size, bottleneck_dim_list[i],
+                    fc_layers.append(nn.Linear(
+                        bottle_input_size, fc_list[i],
                         bias=not batch_norm))
                 else:
                     if batch_norm:
-                        bottleneck_layers.append(nn.BatchNorm1d(
-                            bottleneck_dim_list[i - 1]))
-                    bottleneck_layers.append(nn.Linear(
-                        bottleneck_dim_list[i - 1], bottleneck_dim_list[i],
+                        fc_layers.append(nn.BatchNorm1d(
+                            fc_list[i - 1]))
+                    fc_layers.append(nn.Linear(
+                        fc_list[i - 1], fc_list[i],
                         bias=not batch_norm))
-                bottleneck_layers.append(nn.Dropout(p=dropout))
+                fc_layers.append(nn.Dropout(p=dropout))
             # TODO: try batch_norm
-            self.bottleneck_layers = nn.Sequential(*bottleneck_layers)
-            self.fc = nn.Linear(bottleneck_dim_list[-1], self.num_classes,
+            self.fc_layers = nn.Sequential(*fc_layers)
+            self.fc = nn.Linear(fc_list[-1], self.num_classes,
                                 bias=not batch_norm)
         else:
             self.fc = nn.Linear(
@@ -256,8 +260,8 @@ class CTC(ModelBase):
         encoder_outputs = encoder_outputs.view(max_time * batch_size, -1)
         # contiguous()
 
-        if len(self.bottleneck_dim_list) > 0:
-            encoder_outputs = self.bottleneck_layers(encoder_outputs)
+        if len(self.fc_list) > 0:
+            encoder_outputs = self.fc_layers(encoder_outputs)
         logits = self.fc(encoder_outputs)
 
         # Reshape back to 3D tensor
@@ -278,8 +282,8 @@ class CTC(ModelBase):
         else:
             return logits, perm_indices
 
-    def posteriors(self, inputs, inputs_seq_len,
-                   temperature=1, blank_prior=None, is_sub_task=False):
+    def posteriors(self, inputs, inputs_seq_len, temperature=1,
+                   blank_prior=None, is_sub_task=False):
         """
         Args:
             inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
@@ -308,17 +312,19 @@ class CTC(ModelBase):
         else:
             logits, perm_indices = self._encode(
                 inputs, inputs_seq_len, volatile=True)
+        if perm_indices is not None:
+            perm_indices = var2np(perm_indices)
 
         # Convert to batch-major
         logits = logits.transpose(0, 1)
 
-        probs = self.softmax(logits / temperature)
+        probs = F.softmax(logits / temperature, dim=logits.dim() - 1)
 
         # Divide by blank prior
         if blank_prior is not None:
             raise NotImplementedError
 
-        return probs, var2np(perm_indices)
+        return probs, perm_indices
 
     def decode(self, inputs, inputs_seq_len, beam_width=1,
                max_decode_length=None, is_sub_task=False):
@@ -349,6 +355,8 @@ class CTC(ModelBase):
         else:
             logits, perm_indices = self._encode(
                 inputs, inputs_seq_len, volatile=True)
+        if perm_indices is not None:
+            perm_indices = var2np(perm_indices)
 
         # Convert to batch-major
         logits = logits.transpose(0, 1)
@@ -366,7 +374,7 @@ class CTC(ModelBase):
         best_hyps -= 1
         # NOTE: index 0 is reserved for blank
 
-        return best_hyps, var2np(perm_indices)
+        return best_hyps, perm_indices
 
 
 def _concatenate_labels(labels, labels_seq_len):

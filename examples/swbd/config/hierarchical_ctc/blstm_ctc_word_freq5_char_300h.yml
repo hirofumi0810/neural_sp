@@ -21,10 +21,11 @@ param:
   num_proj: 0
   num_layers: 6
   num_layers_sub: 4
-  bottleneck_dim_list: []
-  channels: []
-  kernel_sizes: []
-  strides: []
+  fc_list: []
+  conv_channels: []
+  conv_kernel_sizes: []
+  conv_strides: []
+  poolings: []
   batch_norm: False
 
   # optimization

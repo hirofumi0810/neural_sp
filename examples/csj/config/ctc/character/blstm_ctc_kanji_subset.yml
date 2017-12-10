@@ -19,10 +19,11 @@ param:
   num_units: 320
   num_proj: 0
   num_layers: 4
-  bottleneck_dim_list: []
-  channels: []
-  kernel_sizes: []
-  strides: []
+  fc_list: []
+  conv_channels: []
+  conv_kernel_sizes: []
+  conv_strides: []
+  poolings: []
   batch_norm: False
 
   # optimization
@@ -36,7 +37,7 @@ param:
   clip_grad_norm: 5.0
   clip_activation: 50
   dropout: 0.2
-  weight_decay: 0
+  weight_decay: 1e-5
   logits_temperature: 1
   weight_noise_std: 0
 
@@ -44,7 +45,7 @@ param:
   decay_start_epoch: 10
   decay_rate: 0.5
   decay_patient_epoch: 3
-  sort_stop_epoch: 15
+  sort_stop_epoch: 100
   not_improved_patient_epoch: 5
   eval_start_epoch: 10
   print_step: 1000

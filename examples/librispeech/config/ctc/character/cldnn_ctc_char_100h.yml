@@ -19,16 +19,17 @@ param:
   num_units: 320
   num_proj: 0
   num_layers: 4
-  bottleneck_dim_list: [786, 74]
-  channels:
+  fc_list: [786, 74]
+  conv_channels:
     - 32
     - 32
-  kernel_sizes:
+  conv_kernel_sizes:
     - [41, 11]
     - [21, 11]
-  strides:
+  conv_strides:
     - [2, 2]
     - [2, 1]
+  poolings: []
   batch_norm: True
 
   # optimization

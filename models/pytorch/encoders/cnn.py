@@ -17,9 +17,10 @@ class CNNEncoder(nn.Module):
         input_size (int): the dimension of input features
         num_stack (int, optional): the number of frames to stack
         splice (int, optional): frames to splice. Default is 1 frame.
-        channels (list, optional):
-        kernel_sizes (list, optional):
-        strides (list, optional):
+        conv_channels (list, optional):
+        conv_kernel_sizes (list, optional):
+        conv_strides (list, optional):
+        poolings (list, optional):
         dropout (float): the probability to drop nodes
         parameter_init (float): the range of uniform distribution to
             initialize weight parameters (>= 0)
@@ -31,9 +32,10 @@ class CNNEncoder(nn.Module):
                  input_size,
                  num_stack,
                  splice,
-                 channels,
-                 kernel_sizes,
-                 strides,
+                 conv_channels,
+                 conv_kernel_sizes,
+                 conv_strides,
+                 poolings,
                  dropout,
                  parameter_init,
                  use_cuda=False,
@@ -49,44 +51,65 @@ class CNNEncoder(nn.Module):
 
         assert input_size % self.input_channels == 0
         assert splice % 2 == 1, 'splice must be the odd number'
-        assert len(channels) > 0
-        assert len(channels) == len(kernel_sizes)
-        assert len(kernel_sizes) == len(strides)
+        assert len(conv_channels) > 0
+        assert len(conv_channels) == len(conv_kernel_sizes)
+        assert len(conv_kernel_sizes) == len(conv_strides)
+        assert len(conv_strides) == len(poolings)
 
         convs = []
         in_c = self.input_channels
-        for i in range(len(channels)):
-            assert kernel_sizes[i][0] % 2 == 1
-            assert kernel_sizes[i][1] % 2 == 1
+        in_freq = self.input_freq
+        in_time = splice * num_stack
+        for i in range(len(conv_channels)):
+            assert conv_kernel_sizes[i][0] % 2 == 1
+            assert conv_kernel_sizes[i][1] % 2 == 1
 
-            convs.append(nn.Conv2d(
+            # conv
+            conv = nn.Conv2d(
                 in_channels=in_c,
-                out_channels=channels[i],
-                kernel_size=tuple(kernel_sizes[i]),
-                stride=tuple(strides[i]),
-                padding=(kernel_sizes[i][0] // 2, kernel_sizes[i][1] // 2),
-                bias=not batch_norm))
-            convs.append(nn.ReLU())
-            if batch_norm:
-                convs.append(nn.BatchNorm2d(channels[i]))
-                # TODO: compare BN before ReLU and after ReLU
-            convs.append(nn.Dropout(p=dropout))
-            in_c = channels[i]
-        self.conv = nn.Sequential(*convs)
+                out_channels=conv_channels[i],
+                kernel_size=tuple(conv_kernel_sizes[i]),
+                stride=tuple(conv_strides[i]),
+                padding=(conv_kernel_sizes[i][0], conv_kernel_sizes[i][1]),
+                bias=not batch_norm)
+            convs.append(conv)
+            in_freq = math.floor(
+                (in_freq + 2 * conv.padding[0] - conv.kernel_size[0]) / conv.stride[0] + 1)
+            in_time = math.floor(
+                (in_time + 2 * conv.padding[1] - conv.kernel_size[1]) / conv.stride[1] + 1)
 
-        out_freq = self.input_freq
-        out_time = splice * num_stack
-        for f, t in strides:
-            out_freq = math.ceil(out_freq / f)
-            out_time = math.ceil(out_time / t)
-        self.output_size = channels[-1] * out_freq * out_time
+            # relu
+            convs.append(nn.ReLU())
+
+            # pooling
+            if len(poolings[i]) > 0:
+                pool = nn.MaxPool2d(
+                    kernel_size=(poolings[i][0], poolings[i][0]),
+                    stride=(poolings[i][0], poolings[i][1]),
+                    padding=(1, 1))
+                convs.append(pool)
+                in_freq = math.floor(
+                    (in_freq + 2 * pool.padding[0] - pool.kernel_size[0]) / pool.stride[0] + 1)
+                in_time = math.floor(
+                    (in_time + 2 * pool.padding[1] - pool.kernel_size[1]) / pool.stride[1] + 1)
+
+            # batch normalization
+            if batch_norm:
+                convs.append(nn.BatchNorm2d(conv_channels[i]))
+                # TODO: compare BN before ReLU and after ReLU
+
+            convs.append(nn.Dropout(p=dropout))
+            in_c = conv_channels[i]
+
+        self.conv = nn.Sequential(*convs)
+        self.output_size = conv_channels[-1] * in_freq * in_time
 
     def forward(self, inputs):
         """Forward computation.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T, input_size]`
         Returns:
-            outputs (FloatTensor): A tensor of size `[B]`
+            outputs (FloatTensor): A tensor of size `[B, T, feature_dim]`
         """
         batch_size, max_time, input_size = inputs.size()
 
@@ -107,7 +130,14 @@ class CNNEncoder(nn.Module):
 
         # print(inputs.size())
         outputs = self.conv(inputs)
+        # print(outputs.size())
+
         # print(inputs.size())
+        # outputs = inputs
+        # for layer in self.conv:
+        #     print(layer)
+        #     outputs = layer(outputs)
+        #     print(outputs.size())
 
         output_channels, freq, time = outputs.size()[1:]
 

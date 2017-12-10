@@ -33,9 +33,10 @@ class RNNEncoder(nn.Module):
         merge_bidirectional (bool, optional): if True, sum bidirectional outputs
         num_stack (int, optional): the number of frames to stack
         splice (int, optional): frames to splice. Default is 1 frame.
-        channels (list, optional):
-        kernel_sizes (list, optional):
-        strides (list, optional):
+        conv_channels (list, optional):
+        conv_kernel_sizes (list, optional):
+        conv_strides (list, optional):
+        poolings (list, optional):
         batch_norm (bool, optional):
     """
 
@@ -53,9 +54,10 @@ class RNNEncoder(nn.Module):
                  merge_bidirectional=False,
                  num_stack=1,
                  splice=1,
-                 channels=[],
-                 kernel_sizes=[],
-                 strides=[],
+                 conv_channels=[],
+                 conv_kernel_sizes=[],
+                 conv_strides=[],
+                 poolings=[],
                  batch_norm=False):
 
         super(RNNEncoder, self).__init__()
@@ -71,19 +73,21 @@ class RNNEncoder(nn.Module):
         self.merge_bidirectional = merge_bidirectional
 
         # Setting for CNNs before RNNs
-        if len(channels) > 0 and len(channels) == len(kernel_sizes) and len(kernel_sizes) == len(strides):
+        if len(conv_channels) > 0 and len(conv_channels) == len(conv_kernel_sizes) and len(conv_kernel_sizes) == len(conv_strides):
             self.conv = CNNEncoder(
                 input_size,
                 num_stack=num_stack,
                 splice=splice,
-                channels=channels,
-                kernel_sizes=kernel_sizes,
-                strides=strides,
+                conv_channels=conv_channels,
+                conv_kernel_sizes=conv_kernel_sizes,
+                conv_strides=conv_strides,
+                poolings=poolings,
                 dropout=dropout,
                 parameter_init=parameter_init,
                 use_cuda=use_cuda,
                 batch_norm=batch_norm)
             input_size = self.conv.output_size
+            print(input_size)
         else:
             input_size = input_size * splice * num_stack
             self.conv = None

@@ -18,14 +18,21 @@ param:
   num_units: 256
   num_proj: 0
   num_layers: 5
-  bottleneck_dim_list: []
-  channels: []
-  kernel_sizes: []
-  strides: []
-  batch_norm: False
+  fc_list: [1024, 1024]
+  conv_channels: [32, 32]
+  conv_kernel_sizes:
+    - [41, 11]
+    - [21, 11]
+  conv_strides:
+    - [2, 2]
+    - [2, 1]
+  poolings:
+    - [2, 2]
+    - [2, 1]
+  batch_norm: True
 
   # optimization
-  batch_size: 50
+  batch_size: 40
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 100
@@ -35,9 +42,9 @@ param:
   clip_grad_norm: 5.0
   clip_activation: 50
   dropout: 0.5
-  weight_decay: 0
+  weight_decay: 1e-5
   logits_temperature: 1
-  weight_noise_std: 1e-5
+  weight_noise_std: 0
 
   # annealing
   decay_start_epoch: 20

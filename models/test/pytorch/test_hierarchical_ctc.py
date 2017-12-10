@@ -51,16 +51,18 @@ class TestCTC(unittest.TestCase):
 
         if conv:
             splice = 5
-            channels = [32, 32]
-            kernel_sizes = [[41, 11], [21, 11]]
-            strides = [[2, 2], [2, 1]]  # freq * time
-            bottleneck_dim_list = [786, 786]
+            conv_channels = [32, 32]
+            conv_kernel_sizes = [[41, 11], [21, 11]]
+            conv_strides = [[2, 2], [2, 1]]  # freq * time
+            poolings = [[2, 2], [2, 2]]
+            fc_list = [786, 786]
         else:
             splice = 1
-            channels = []
-            kernel_sizes = []
-            strides = []
-            bottleneck_dim_list = []
+            conv_channels = []
+            conv_kernel_sizes = []
+            conv_strides = []
+            poolings = []
+            fc_list = []
 
         # Load batch data
         num_stack = 2
@@ -83,17 +85,18 @@ class TestCTC(unittest.TestCase):
             num_proj=None,
             num_layers=3,
             num_layers_sub=2,
+            fc_list=fc_list,
             dropout=0.1,
             main_loss_weight=0.5,
             num_classes=num_classes,
             num_classes_sub=num_classes_sub,
             parameter_init=0.1,
-            bottleneck_dim_list=bottleneck_dim_list,
             num_stack=num_stack,
             splice=splice,
-            channels=channels,
-            kernel_sizes=kernel_sizes,
-            strides=strides,
+            conv_channels=conv_channels,
+            conv_kernel_sizes=conv_kernel_sizes,
+            conv_strides=conv_strides,
+            poolings=poolings,
             batch_norm=batch_norm)
 
         # Count total parameters

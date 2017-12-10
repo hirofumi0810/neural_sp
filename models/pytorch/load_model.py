@@ -30,15 +30,17 @@ def load(model_type, params):
             num_units=params['num_units'],
             num_proj=params['num_proj'],
             num_layers=params['num_layers'],
+            fc_list=params['fc_list'],
             dropout=params['dropout'],
             num_classes=params['num_classes'],
             parameter_init=params['parameter_init'],
             logits_temperature=params['logits_temperature'],
             num_stack=params['num_stack'],
             splice=params['splice'],
-            channels=params['channels'],
-            kernel_sizes=params['kernel_sizes'],
-            strides=params['strides'],
+            conv_channels=params['conv_channels'],
+            conv_kernel_sizes=params['conv_kernel_sizes'],
+            conv_strides=params['conv_strides'],
+            poolings=params['poolings'],
             batch_norm=params['batch_norm'],
             weight_noise_std=params['weight_noise_std'])
 
@@ -57,12 +59,12 @@ def load(model_type, params):
             model.name += '_stack' + str(params['num_stack'])
         if params['weight_decay'] != 0:
             model.name += '_wd' + str(params['weight_decay'])
-        if len(params['channels']) != 0:
-            model.name += '_conv'
+        if len(params['conv_channels']) != 0 and params['encoder_type'] not in ['cnn', 'resnet']:
+            model.name = 'conv_' + model.name
         if bool(params['batch_norm']):
             model.name += '_bn'
-        if len(params['bottleneck_dim_list']) != 0:
-            model.name += '_bottle'
+        if len(params['fc_list']) != 0:
+            model.name += '_fc'
         if params['logits_temperature'] != 1:
             model.name += '_temp' + str(params['logits_temperature'])
         if params['weight_noise_std'] != 0:
@@ -117,9 +119,14 @@ def load(model_type, params):
         model.name += '_' + params['optimizer']
         model.name += '_lr' + str(params['learning_rate'])
         model.name += '_' + params['attention_type']
-        model.name += '_dropen' + str(params['dropout_encoder'])
-        model.name += 'de' + str(params['dropout_decoder'])
-        model.name += 'emb' + str(params['dropout_embedding'])
+        if params['dropout_encoder'] != 0 or params['dropout_decoder'] != 0 or params['dropout_embedding'] != 0:
+            model.name += '_drop'
+            if params['dropout_encoder'] != 0:
+                model.name += 'en' + str(params['dropout_encoder'])
+            if params['dropout_decoder'] != 0:
+                model.name += 'de' + str(params['dropout_decoder'])
+            if params['dropout_embedding'] != 0:
+                model.name += 'emb' + str(params['dropout_embedding'])
         if params['num_stack'] != 1:
             model.name += '_stack' + str(params['num_stack'])
         if params['weight_decay'] != 0:
@@ -154,6 +161,7 @@ def load(model_type, params):
             num_proj=params['num_proj'],
             num_layers=params['num_layers'],
             num_layers_sub=params['num_layers_sub'],
+            fc_list=params['fc_list'],
             dropout=params['dropout'],
             main_loss_weight=params['main_loss_weight'],
             num_classes=params['num_classes'],
@@ -162,9 +170,10 @@ def load(model_type, params):
             logits_temperature=params['logits_temperature'],
             num_stack=params['num_stack'],
             splice=params['splice'],
-            channels=params['channels'],
-            kernel_sizes=params['kernel_sizes'],
-            strides=params['strides'],
+            conv_channels=params['conv_channels'],
+            conv_kernel_sizes=params['conv_kernel_sizes'],
+            conv_strides=params['conv_strides'],
+            poolings=params['poolings'],
             batch_norm=params['batch_norm'])
 
         model.name = params['encoder_type']
@@ -183,12 +192,12 @@ def load(model_type, params):
             model.name += '_stack' + str(params['num_stack'])
         if params['weight_decay'] != 0:
             model.name += '_wd' + str(params['weight_decay'])
-        if len(params['channels']) != 0:
-            model.name += '_conv'
+        if len(params['conv_channels']) != 0 and params['encoder_type'] not in ['cnn', 'resnet']:
+            model.name = 'conv_' + model.name
         if bool(params['batch_norm']):
             model.name += '_bn'
-        if len(params['bottleneck_dim_list']) != 0:
-            model.name += '_bottle'
+        if len(params['fc_list']) != 0:
+            model.name += '_fc'
         if params['logits_temperature'] != 1:
             model.name += '_temp' + str(params['logits_temperature'])
         model.name += '_main' + str(params['main_loss_weight'])
@@ -257,9 +266,14 @@ def load(model_type, params):
         model.name += '_' + params['optimizer']
         model.name += '_lr' + str(params['learning_rate'])
         model.name += '_' + params['attention_type']
-        model.name += '_dropen' + str(params['dropout_encoder'])
-        model.name += 'de' + str(params['dropout_decoder'])
-        model.name += 'emb' + str(params['dropout_embedding'])
+        if params['dropout_encoder'] != 0 or params['dropout_decoder'] != 0 or params['dropout_embedding'] != 0:
+            model.name += '_drop'
+            if params['dropout_encoder'] != 0:
+                model.name += 'en' + str(params['dropout_encoder'])
+            if params['dropout_decoder'] != 0:
+                model.name += 'de' + str(params['dropout_decoder'])
+            if params['dropout_embedding'] != 0:
+                model.name += 'emb' + str(params['dropout_embedding'])
         if params['num_stack'] != 1:
             model.name += '_stack' + str(params['num_stack'])
         if params['weight_decay'] != 0:

@@ -31,8 +31,9 @@ class TestCTC(unittest.TestCase):
         print("CTC Working check.")
 
         # CNN-CTC
-        # self.check(encoder_type='cnn')
-        # self.check(encoder_type='cnn', batch_norm=True)
+        self.check(encoder_type='cnn')
+        self.check(encoder_type='cnn', batch_norm=True)
+        # self.check(encoder_type='resnet')
 
         # CLDNN-CTC
         self.check(encoder_type='lstm', bidirectional=True,
@@ -52,10 +53,6 @@ class TestCTC(unittest.TestCase):
         self.check(encoder_type='rnn', bidirectional=True)
         self.check(encoder_type='rnn', bidirectional=False)
 
-        # CNNs
-        # self.check(encoder_type='resnet')
-        # self.check(encoder_type='vgg')
-
     @measure_time
     def check(self, encoder_type, bidirectional=False, label_type='char',
               conv=False, batch_norm=False, save_path=None):
@@ -70,16 +67,18 @@ class TestCTC(unittest.TestCase):
 
         if conv or encoder_type == 'cnn':
             splice = 5
-            channels = [32, 32]
-            kernel_sizes = [[41, 11], [21, 11]]
-            strides = [[2, 2], [2, 1]]  # freq * time
-            bottleneck_dim_list = [786, 786]
+            conv_channels = [32, 32]
+            conv_kernel_sizes = [[41, 11], [21, 11]]
+            conv_strides = [[2, 2], [2, 1]]  # freq * time
+            poolings = [[2, 2], [2, 2]]
+            fc_list = [786, 786]
         else:
             splice = 1
-            channels = []
-            kernel_sizes = []
-            strides = []
-            bottleneck_dim_list = []
+            conv_channels = []
+            conv_kernel_sizes = []
+            conv_strides = []
+            poolings = []
+            fc_list = []
 
         # Load batch data
         num_stack = 2
@@ -103,15 +102,16 @@ class TestCTC(unittest.TestCase):
             num_units=256,
             num_proj=None,
             num_layers=2,
+            fc_list=fc_list,
             dropout=0.1,
             num_classes=num_classes,
             parameter_init=0.1,
-            bottleneck_dim_list=bottleneck_dim_list,
             num_stack=num_stack,
             splice=splice,
-            channels=channels,
-            kernel_sizes=kernel_sizes,
-            strides=strides,
+            conv_channels=conv_channels,
+            conv_kernel_sizes=conv_kernel_sizes,
+            conv_strides=conv_strides,
+            poolings=poolings,
             batch_norm=batch_norm)
 
         # Count total parameters

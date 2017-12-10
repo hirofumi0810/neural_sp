@@ -24,18 +24,18 @@ class TestRNNEncoders(unittest.TestCase):
         print("RNN Encoders Working check.")
 
         # LSTM
-        self.check(encoder_type='lstm', bidirectional=False)
-        self.check(encoder_type='lstm', bidirectional=True)
-        self.check(encoder_type='lstm', bidirectional=True,
-                   batch_first=False)
-        self.check(encoder_type='gru', bidirectional=False)
-        self.check(encoder_type='gru', bidirectional=True)
-        self.check(encoder_type='gru', bidirectional=True,
-                   batch_first=False)
-        self.check(encoder_type='rnn', bidirectional=False)
-        self.check(encoder_type='rnn', bidirectional=True)
-        self.check(encoder_type='rnn', bidirectional=True,
-                   batch_first=False)
+        # self.check(encoder_type='lstm', bidirectional=False)
+        # self.check(encoder_type='lstm', bidirectional=True)
+        # self.check(encoder_type='lstm', bidirectional=True,
+        #            batch_first=False)
+        # self.check(encoder_type='gru', bidirectional=False)
+        # self.check(encoder_type='gru', bidirectional=True)
+        # self.check(encoder_type='gru', bidirectional=True,
+        #            batch_first=False)
+        # self.check(encoder_type='rnn', bidirectional=False)
+        # self.check(encoder_type='rnn', bidirectional=True)
+        # self.check(encoder_type='rnn', bidirectional=True,
+        #            batch_first=False)
 
         # Conv
         self.check(encoder_type='lstm', bidirectional=True,
@@ -74,14 +74,18 @@ class TestRNNEncoders(unittest.TestCase):
 
         if conv:
             splice = 11
-            channels = [32, 32]
-            kernel_sizes = [[3, 3], [3, 3]]
-            strides = [[2, 2], [2, 1]]  # freq * time
+            conv_channels = [32, 32]
+            conv_kernel_sizes = [[3, 3], [3, 3]]
+            conv_strides = [[2, 2], [2, 1]]  # freq * time
+            poolings = [[2, 2], [2, 2]]
+            # poolings = [[2, 2], []]
+            # poolings = [[], [2, 2]]
         else:
             splice = 1
-            channels = []
-            kernel_sizes = []
-            strides = []
+            conv_channels = []
+            conv_kernel_sizes = []
+            conv_strides = []
+            poolings = []
 
         # Load batch data
         batch_size = 4
@@ -116,9 +120,10 @@ class TestRNNEncoders(unittest.TestCase):
                 merge_bidirectional=merge_bidirectional,
                 splice=splice,
                 num_stack=num_stack,
-                channels=channels,
-                kernel_sizes=kernel_sizes,
-                strides=strides,
+                conv_channels=conv_channels,
+                conv_kernel_sizes=conv_kernel_sizes,
+                conv_strides=conv_strides,
+                poolings=poolings,
                 batch_norm=True)
         else:
             raise NotImplementedError
