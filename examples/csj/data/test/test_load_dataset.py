@@ -24,8 +24,8 @@ class TestLoadDataset(unittest.TestCase):
         self.check(label_type='kanji', data_type='train')
         self.check(label_type='kanji', data_type='dev')
         self.check(label_type='kanji', data_type='eval1')
-        # self.check(label_type='kanji', data_type='eval2')
-        # self.check(label_type='kanji', data_type='eval3')
+        self.check(label_type='kanji', data_type='eval2')
+        self.check(label_type='kanji', data_type='eval3')
 
         # label_type
         self.check(label_type='word_freq1')
@@ -93,26 +93,22 @@ class TestLoadDataset(unittest.TestCase):
             inputs, labels, inputs_seq_len, labels_seq_len, input_names = data
 
             if data_type == 'train':
-                for i, l in zip(inputs, labels):
-                    if len(i) < len(l):
+                for i in range(len(inputs)):
+                    if inputs.shape[1] < labels.shape[1]:
                         raise ValueError(
                             'input length must be longer than label length.')
-
-            if num_gpus > 1:
-                for inputs_gpu in inputs:
-                    print(inputs_gpu.shape)
 
             if dataset.is_test:
                 str_true = labels[0][0]
             else:
-                str_true = map_fn(
-                    labels.data[0][0:labels_seq_len.data[0]])
+                str_true = map_fn(labels[0][0:labels_seq_len[0]])
 
             print('----- %s (epoch: %.3f) -----' %
                   (input_names[0], dataset.epoch_detail))
-            print(inputs.data.numpy().shape)
-            # print(labels.data.shape)
             print(str_true)
+            print('inputs_seq_len: %d' % inputs_seq_len[0])
+            if not dataset.is_test:
+                print('labels_seq_len: %d' % labels_seq_len[0])
 
             if dataset.epoch_detail >= 0.05:
                 break

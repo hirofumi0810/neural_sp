@@ -10,10 +10,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from os.path import basename, isfile
+from os.path import basename
 import math
-import random
 import numpy as np
+from multiprocessing import Process
+import time
 
 from utils.dataset.base import Base
 from utils.io.inputs.frame_stacking import stack_frame
@@ -33,84 +34,26 @@ class DatasetBase(Base):
         transcript_sub = self.df_sub['transcript'][index]
         return (feature, transcript, transcript_sub)
 
-    def __next__(self, batch_size=None):
-        """Generate each mini-batch.
-        Args:
-            batch_size (int, optional): the size of mini-batch
-        Returns:
-            A tuple of `(inputs, labels, labels_sub,
-                    inputs_seq_len, labels_seq_len, labels_seq_len_sub, input_names)`
-                inputs: list of input data of size
-                    `[num_gpus, B, T_in, input_size]`
-                labels: list of target labels in the main task, size
-                    `[num_gpus, B, T_out]`
-                labels_sub: list of target labels in the sub task, size
-                    `[num_gpus, B, T_out_sub]`
-                inputs_seq_len: list of length of inputs of size
-                    `[num_gpus, B]`
-                labels_seq_len: list of length of target labels in the main
-                    task, size `[num_gpus, B]`
-                labels_seq_len_sub: list of length of target labels in the sub
-                    task, size `[num_gpus, B]`
-                input_names: list of file name of input data of size
-                    `[num_gpus, B]`
-            is_new_epoch (bool): If true, 1 epoch is finished
+    def make_batch(self, data_indices):
         """
-        if self.max_epoch is not None and self.epoch >= self.max_epoch:
-            raise StopIteration
-        # NOTE: max_epoch = None means infinite loop
-
-        if batch_size is None:
-            batch_size = self.batch_size
-
-        # reset
-        if self.is_new_epoch:
-            self.is_new_epoch = False
-
-        if self.sort_utt or not self.shuffle:
-            if len(self.rest) > batch_size:
-                data_indices = self.df[batch_size *
-                                       self.offset:batch_size * (self.offset + 1)].index
-                data_indices = list(data_indices)
-                self.rest -= set(list(data_indices))
-                # NOTE: rest is in uttrance length order when sort_utt == True
-                # NOTE: otherwise in name length order when shuffle == False
-            else:
-                # Last mini-batch
-                data_indices = list(self.rest)
-                self.reset()
-                self.is_new_epoch = True
-                self.epoch += 1
-                if self.epoch == self.sort_stop_epoch:
-                    self.sort_utt = False
-                    self.shuffle = True
-
-            # Shuffle data in the mini-batch
-            random.shuffle(data_indices)
-
-        else:
-            # Randomly sample uttrances
-            if len(self.rest) > batch_size:
-                data_indices = random.sample(list(self.rest), batch_size)
-                self.rest -= set(data_indices)
-            else:
-                # Last mini-batch
-                data_indices = list(self.rest)
-                self.reset()
-                self.is_new_epoch = True
-                self.epoch += 1
-
-                # Shuffle selected mini-batch
-                random.shuffle(data_indices)
-
-        # Change path to input data if exists in local
-        if self.epoch == 0 or (self.epoch == 1 and self.is_new_epoch):
-            for i in data_indices:
-                new_input_path = self.df['input_path'][i].replace(
-                    '/n/sd8/inaguma/', '/data/inaguma/')
-                if isfile(new_input_path):
-                    self.df['input_path'][i] = new_input_path
-
+        Args:
+            data_indices (np.ndarray):
+        Returns:
+            inputs: list of input data of size
+                `[num_gpus, B, T_in, input_size]`
+            labels: list of target labels in the main task, size
+                `[num_gpus, B, T_out]`
+            labels_sub: list of target labels in the sub task, size
+                `[num_gpus, B, T_out_sub]`
+            inputs_seq_len: list of length of inputs of size
+                `[num_gpus, B]`
+            labels_seq_len: list of length of target labels in the main
+                task, size `[num_gpus, B]`
+            labels_seq_len_sub: list of length of target labels in the sub
+                task, size `[num_gpus, B]`
+            input_names: list of file name of input data of size
+                `[num_gpus, B]`
+        """
         # Load dataset in mini-batch
         input_path_list = np.array(self.df['input_path'][data_indices])
         str_indices_list = np.array(self.df['transcript'][data_indices])
@@ -121,7 +64,7 @@ class DatasetBase(Base):
             if self.save_format == 'numpy':
                 self.input_size = self.load_npy(input_path_list[0]).shape[-1]
             elif self.save_format == 'htk':
-                self.input_size = self.read_htk(input_path_list[0]).shape[-1]
+                self.input_size = self.load_htk(input_path_list[0]).shape[-1]
             else:
                 raise TypeError
             self.input_size *= self.num_stack
@@ -159,7 +102,7 @@ class DatasetBase(Base):
             if self.save_format == 'numpy':
                 data_i = self.load_npy(input_path_list[i_batch])
             elif self.save_format == 'htk':
-                data_i = self.read_htk(input_path_list[i_batch])
+                data_i = self.load_htk(input_path_list[i_batch])
             else:
                 raise TypeError
 
@@ -201,16 +144,6 @@ class DatasetBase(Base):
                     labels_sub[i_batch,
                                0: label_num_sub] = indices_sub
                     labels_seq_len_sub[i_batch] = label_num_sub
-                elif self.medel_type == 'hierarchical_joint_ctc_attention':
-                    labels[i_batch, 0] = self.sos_index
-                    labels[i_batch, 1:label_num + 1] = indices
-                    labels[i_batch, label_num + 1] = self.eos_index
-                    labels_seq_len[i_batch] = label_num + 2
-                    # NOTE: include <SOS> and <EOS>
-
-                    labels_sub[i_batch,
-                               0: label_num_sub] = indices_sub
-                    labels_seq_len_sub[i_batch] = label_num_sub
                 else:
                     raise TypeError
 
@@ -224,9 +157,4 @@ class DatasetBase(Base):
         #     labels_seq_len_sub, self.num_gpus)
         # input_names = self.split_per_device(input_names, self.num_gpus)
 
-        self.iteration += len(data_indices)
-        if not self.is_new_epoch:
-            self.offset += 1
-
-        return (inputs, labels, labels_sub, inputs_seq_len, labels_seq_len,
-                labels_seq_len_sub, input_names), self.is_new_epoch
+        return inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub, input_names

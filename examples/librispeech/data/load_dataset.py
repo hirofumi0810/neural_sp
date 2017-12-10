@@ -23,7 +23,8 @@ class Dataset(DatasetBase):
                  max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
                  shuffle=False, sort_utt=False, reverse=False,
-                 sort_stop_epoch=None, num_gpus=1, save_format='numpy'):
+                 sort_stop_epoch=None, num_gpus=1, save_format='numpy',
+                 num_enque=100):
         """A class for loading dataset.
         Args:
             model_type (string): attention or ctc
@@ -48,6 +49,7 @@ class Dataset(DatasetBase):
                 will revert back to a random order
             num_gpus (int, optional): the number of GPUs
             save_format (string, optional): numpy or htk
+            num_enque (int, optional): the number of elements to enqueue
         """
         super(Dataset, self).__init__(vocab_file_path=vocab_file_path)
 
@@ -70,6 +72,7 @@ class Dataset(DatasetBase):
         self.sort_stop_epoch = sort_stop_epoch
         self.num_gpus = num_gpus
         self.save_format = save_format
+        self.num_enque = num_enque
 
         # Load dataset file
         dataset_path = join('/n/sd8/inaguma/corpus/librispeech/dataset',
