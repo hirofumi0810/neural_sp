@@ -41,6 +41,6 @@ class GreedyDecoder(object):
             # Step 2. Remove all blank labels
             best_hyp = [x for x in filter(
                 lambda x: x != self._blank, collapsed_indices)]
-            best_hyps.append(best_hyp)
+            best_hyps.append(np.array(best_hyp))
 
         return np.array(best_hyps)

@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Decode the trained model's outputs (CSJ corpus)."""
+"""Decode the model's outputs (CSJ corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -62,9 +62,7 @@ def main():
         label_type=params['label_type'], vocab_file_path=vocab_file_path,
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=True, reverse=True,
-        use_cuda=model.use_cuda, volatile=True,
-        save_format=params['save_format'])
+        sort_utt=True, reverse=True, save_format=params['save_format'])
 
     # GPU setting
     model.set_cuda(deterministic=False)
@@ -86,7 +84,7 @@ def main():
            beam_width=args.beam_width,
            max_decode_length=args.max_decode_length,
            save_path=None)
-    # save_path=model.save_path)
+    # save_path=args.model_path)
 
 
 def decode(model, model_type, dataset, label_type, data_size, beam_width,
@@ -116,10 +114,9 @@ def decode(model, model_type, dataset, label_type, data_size, beam_width,
     if save_path is not None:
         sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
 
-    for data, is_new_epoch in dataset:
+    for batch, is_new_epoch in dataset:
 
-        # Create feed dictionary for next mini batch
-        inputs, labels, inputs_seq_len, labels_seq_len, input_names = data
+        inputs, labels, inputs_seq_len, labels_seq_len, input_names = batch
 
         # Decode
         labels_pred, perm_indices = model.decode(

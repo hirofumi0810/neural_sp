@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Decode the trained model's outputs (Librispeech corpus)."""
+"""Decode the model's outputs (Librispeech corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -82,12 +82,13 @@ def main():
            data_size=params['data_size'],
            beam_width=args.beam_width,
            max_decode_length=args.max_decode_length,
+           eval_batch_size=args.eval_batch_size,
            save_path=None)
-    # save_path=model.save_path)
+    # save_path=args.model_path)
 
 
 def decode(model, model_type, dataset, label_type, data_size, beam_width,
-           max_decode_length=100, save_path=None):
+           max_decode_length=100, eval_batch_size=None, save_path=None):
     """Visualize label outputs.
     Args:
         model: the model to evaluate
@@ -100,11 +101,15 @@ def decode(model, model_type, dataset, label_type, data_size, beam_width,
         max_decode_length (int, optional): the length of output sequences
             to stop prediction when EOS token have not been emitted.
             This is used for seq2seq models.
+        eval_batch_size (int, optional): the batch size when evaluating the model
         save_path (string): path to save decoding results
     """
+    # Set batch size in the evaluation
+    if eval_batch_size is not None:
+        dataset.batch_size = eval_batch_size
+
     vocab_file_path = '../metrics/vocab_files/' + \
         label_type + '_' + data_size + '.txt'
-
     if 'char' in label_type:
         map_fn = Idx2char(vocab_file_path)
     else:
@@ -113,13 +118,12 @@ def decode(model, model_type, dataset, label_type, data_size, beam_width,
     if save_path is not None:
         sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
 
-    for data, is_new_epoch in dataset:
+    for batch, is_new_epoch in dataset:
 
-        # Create feed dictionary for next mini batch
-        inputs, labels, inputs_seq_len, labels_seq_len, input_names = data
+        inputs, labels, inputs_seq_len, labels_seq_len, input_names = batch
 
         # Decode
-        labels_pred, perm_indices = model.decode(
+        labels_pred = model.decode(
             inputs, inputs_seq_len,
             beam_width=beam_width,
             max_decode_length=max_decode_length)
@@ -134,10 +138,6 @@ def decode(model, model_type, dataset, label_type, data_size, beam_width,
                 str_true = labels[i_batch][0]
                 # NOTE: transcript is seperated by space('_')
             else:
-                # Permutate indices
-                labels = labels[perm_indices]
-                labels_seq_len = labels_seq_len[perm_indices]
-
                 # Convert from list of index to string
                 if model_type == 'ctc':
                     str_true = map_fn(

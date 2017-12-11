@@ -574,7 +574,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             is_sub_task (bool, optional):
         Returns:
             best_hyps (np.ndarray):
-            perm_indices (np.ndarray):
         """
         # Wrap by Variable
         inputs_var = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
@@ -613,7 +612,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             else:
                 raise NotImplementedError
 
-        return best_hyps, perm_indices
+        # Permutate indices to the original order
+        if perm_indices is not None:
+            best_hyps = best_hyps[perm_indices]
+
+        return best_hyps
 
     def _decode_infer_greedy_composition(self, encoder_outputs, encoder_outputs_sub,
                                          encoder_final_state, encoder_final_state_sub,

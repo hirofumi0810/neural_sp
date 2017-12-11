@@ -1,1 +1,1 @@
-../../librispeech/visualisation/run_decode.sh
+../../librispeech/visualization/run_decode.sh

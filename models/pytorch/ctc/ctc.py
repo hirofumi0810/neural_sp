@@ -330,8 +330,7 @@ class CTC(ModelBase):
             blank_prior (float, optional):
             is_sub_task (bool, optional):
         Returns:
-            probs (np.ndarray): A tensor of size `[]`
-            perm_indices (np.ndarray):
+            probs (np.ndarray): A tensor of size `[B, T, num_classes]`
         """
         # Wrap by Variable
         inputs_var = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
@@ -350,10 +349,6 @@ class CTC(ModelBase):
             logits, perm_indices = self._encode(
                 inputs_var, inputs_seq_len_var, volatile=True)
 
-        # Permutate indices
-        if perm_indices is not None:
-            perm_indices = var2np(perm_indices)
-
         # Convert to batch-major
         logits = logits.transpose(0, 1)
 
@@ -363,7 +358,11 @@ class CTC(ModelBase):
         if blank_prior is not None:
             raise NotImplementedError
 
-        return probs, perm_indices
+        # Permutate indices to the original order
+        if perm_indices is not None:
+            probs = probs[perm_indices]
+
+        return var2np(probs)
 
     def decode(self, inputs, inputs_seq_len, beam_width=1,
                max_decode_length=None, is_sub_task=False):
@@ -376,7 +375,6 @@ class CTC(ModelBase):
             is_sub_task (bool, optional):
         Returns:
             best_hyps (np.ndarray):
-            perm_indices (np.ndarray):
         """
         # Wrap by Variable
         inputs_var = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
@@ -428,7 +426,11 @@ class CTC(ModelBase):
         best_hyps = best_hyps - 1
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
-        return best_hyps, perm_indices
+        # Permutate indices to the original order
+        if perm_indices is not None:
+            best_hyps = best_hyps[perm_indices]
+
+        return best_hyps
 
 
 def _concatenate_labels(labels, labels_seq_len):

@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Decode the trained model's outputs (Switchboard corpus)."""
+"""Decode the model's outputs (Switchboard corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -83,8 +83,9 @@ def main():
            data_size=params['data_size'],
            beam_width=args.beam_width,
            max_decode_length=args.max_decode_length,
+           eval_batch_size=args.eval_batch_size,
            save_path=None)
-    # save_path=model.save_path)
+    # save_path=args.model_path)
 
 
 if __name__ == '__main__':

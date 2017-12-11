@@ -704,7 +704,11 @@ class AttentionSeq2seq(ModelBase):
                 inputs_seq_len_var,
                 beam_width, max_decode_length)
 
-        return best_hyps, perm_indices
+        # Permutate indices to the original order
+        if perm_indices is not None:
+            best_hyps = best_hyps[perm_indices]
+
+        return best_hyps
 
     def attention_weights(self, inputs, inputs_seq_len, beam_width=1,
                           max_decode_length=100):
@@ -716,9 +720,8 @@ class AttentionSeq2seq(ModelBase):
             max_decode_length (int, optional): the length of output sequences
                 to stop prediction when EOS token have not been emitted
         Returns:
-            best_hyps (np.ndarray):
-            attention_weights (np.ndarray):
-            perm_indices (np.ndarray):
+            best_hyps (np.ndarray): A tensor of size `[B, T_out]`
+            attention_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
         """
         # Wrap by Variable
         inputs_var = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
@@ -736,12 +739,19 @@ class AttentionSeq2seq(ModelBase):
 
         if beam_width == 1:
             best_hyps, attention_weights = self._decode_infer_greedy(
-                inputs_var, inputs_seq_len_var, max_decode_length)
+                encoder_outputs, encoder_final_state, max_decode_length)
         else:
             best_hyps, attention_weights = self._decode_infer_beam(
-                inputs_var, inputs_seq_len_var, beam_width, max_decode_length)
+                encoder_outputs, encoder_final_state,
+                inputs_seq_len_var,
+                beam_width, max_decode_length)
 
-        return best_hyps, attention_weights, perm_indices
+        # Permutate indices to the original order
+        if perm_indices is not None:
+            best_hyps = best_hyps[perm_indices]
+            attention_weights = attention_weights[perm_indices]
+
+        return best_hyps, attention_weights
 
     def _decode_infer_greedy(self, encoder_outputs, encoder_final_state,
                              max_decode_length, is_sub_task=False):

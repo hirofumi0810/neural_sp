@@ -1,1 +1,1 @@
-../../librispeech/visualisation/run_decode_hierarchical.sh
+../../librispeech/visualization/run_decode_hierarchical.sh
