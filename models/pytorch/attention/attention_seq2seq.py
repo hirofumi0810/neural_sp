@@ -304,12 +304,12 @@ class AttentionSeq2seq(ModelBase):
             loss (FloatTensor): A tensor of size `[1]`
         """
         # Wrap by Variable
-        inputs = np2var(inputs, use_cuda=self.use_cuda)
-        labels = np2var(labels, dtype='long', use_cuda=self.use_cuda)
-        # NOTE: labels must be long
-        inputs_seq_len = np2var(
+        inputs_var = np2var(inputs, use_cuda=self.use_cuda)
+        labels_var = np2var(labels, dtype='long', use_cuda=self.use_cuda)
+        # NOTE: labels_var must be long
+        inputs_seq_len_var = np2var(
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda)
-        labels_seq_len = np2var(
+        labels_seq_len_var = np2var(
             labels_seq_len, dtype='int', use_cuda=self.use_cuda)
 
         # Gaussian noise injection
@@ -318,31 +318,30 @@ class AttentionSeq2seq(ModelBase):
 
         # Encode acoustic features
         encoder_outputs, encoder_final_state, perm_indices = self._encode(
-            inputs, inputs_seq_len, volatile=volatile)
+            inputs_var, inputs_seq_len_var, volatile=volatile)
 
         # Permutate indices
-        labels = labels[perm_indices]
-        inputs_seq_len = inputs_seq_len[perm_indices]
-        labels_seq_len = labels_seq_len[perm_indices]
+        if perm_indices is not None:
+            labels_var = labels_var[perm_indices]
+            inputs_seq_len_var = inputs_seq_len_var[perm_indices]
+            labels_seq_len_var = labels_seq_len_var[perm_indices]
 
         # Teacher-forcing
         logits, attention_weights = self._decode_train(
-            encoder_outputs, labels, encoder_final_state)
+            encoder_outputs, labels_var, encoder_final_state)
 
         # Output smoothing
         if self.logits_temperature != 1:
             logits /= self.logits_temperature
 
-        batch_size = encoder_outputs.size(0)
-
         # Compute XE sequence loss
         num_classes = logits.size(2)
         logits = logits.view((-1, num_classes))
-        labels_1d = labels[:, 1:].contiguous().view(-1)
+        labels_1d = labels_var[:, 1:].contiguous().view(-1)
         loss = F.cross_entropy(logits, labels_1d,
                                ignore_index=self.sos_index,
                                size_average=False) * (1 - self.ctc_loss_weight)
-        # NOTE: labels are padded by sos_index
+        # NOTE: labels_var are padded by sos_index
 
         # Add coverage term
         if self.coverage_weight != 0:
@@ -353,16 +352,29 @@ class AttentionSeq2seq(ModelBase):
         # Auxiliary CTC loss (optional)
         if self.ctc_loss_weight > 0:
             ctc_loss = self._compute_ctc_loss(
-                encoder_outputs, labels, inputs_seq_len, labels_seq_len)
+                encoder_outputs, labels_var,
+                inputs_seq_len_var, labels_seq_len_var)
             loss += ctc_loss * self.ctc_loss_weight
 
         # Average the loss by mini-batch
+        batch_size = encoder_outputs.size(0)
         loss /= batch_size
 
         return loss
 
     def _compute_ctc_loss(self, encoder_outputs, labels,
                           inputs_seq_len, labels_seq_len, is_sub_task=False):
+        """
+        Args:
+            encoder_outputs (FloatTensor): A tensor of size
+                `[B, T_in, encoder_num_units]`
+            labels (LongTensor): A tensor of size `[B, T_out]`
+            inputs_seq_len (IntTensor): A tensor of size `[B]`
+            labels_seq_len (IntTensor): A tensor of size `[B]`
+            is_sub_task (bool, optional):
+        Returns:
+            ctc_loss (FloatTensor):
+        """
         batch_size, max_time = encoder_outputs.size()[:2]
 
         # Convert to 2D tensor
@@ -392,12 +404,12 @@ class AttentionSeq2seq(ModelBase):
 
         # Subsampling
         if is_sub_task:
-            if sum(self.subsample_list[:self.encoder_num_layers_sub]) != 0:
+            if sum(self.subsample_list[:self.encoder_num_layers_sub]) > 0:
                 inputs_seq_len /= sum(
-                    self.subsample_list[:self.encoder_num_layers_sub]) * 2
+                    self.subsample_list[:self.encoder_num_layers_sub]) ** 2
         else:
-            if sum(self.subsample_list) != 0:
-                inputs_seq_len /= sum(self.subsample_list) * 2
+            if sum(self.subsample_list) > 0:
+                inputs_seq_len /= sum(self.subsample_list) ** 2
         # NOTE: floor is not needed because inputs_seq_len is IntTensor
 
         ctc_loss = ctc_loss_fn(logits_ctc, concatenated_labels.cpu(),
@@ -670,15 +682,18 @@ class AttentionSeq2seq(ModelBase):
             perm_indices (np.ndarray):
         """
         # Wrap by Variable
-        inputs = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
-        inputs_seq_len = np2var(
+        inputs_var = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
+        inputs_seq_len_var = np2var(
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
 
         # Encode acoustic features
         encoder_outputs, encoder_final_state, perm_indices = self._encode(
-            inputs, inputs_seq_len, volatile=True)
+            inputs_var, inputs_seq_len_var, volatile=True)
+
+        # Permutate indices
         if perm_indices is not None:
             perm_indices = var2np(perm_indices)
+            inputs_seq_len_var = inputs_seq_len_var[perm_indices]
 
         if beam_width == 1:
             best_hyps, _ = self._decode_infer_greedy(
@@ -686,7 +701,7 @@ class AttentionSeq2seq(ModelBase):
         else:
             best_hyps, _ = self._decode_infer_beam(
                 encoder_outputs, encoder_final_state,
-                inputs_seq_len[perm_indices],
+                inputs_seq_len_var,
                 beam_width, max_decode_length)
 
         return best_hyps, perm_indices
@@ -706,22 +721,25 @@ class AttentionSeq2seq(ModelBase):
             perm_indices (np.ndarray):
         """
         # Wrap by Variable
-        inputs = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
-        inputs_seq_len = np2var(
+        inputs_var = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
+        inputs_seq_len_var = np2var(
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
 
         # Encode acoustic features
         encoder_outputs, encoder_final_state, perm_indices = self._encode(
-            inputs, inputs_seq_len, volatile=True)
+            inputs_var, inputs_seq_len_var, volatile=True)
+
+        # Permutate indices
         if perm_indices is not None:
             perm_indices = var2np(perm_indices)
+            inputs_seq_len_var = inputs_seq_len_var[perm_indices]
 
         if beam_width == 1:
             best_hyps, attention_weights = self._decode_infer_greedy(
-                inputs, inputs_seq_len, max_decode_length)
+                inputs_var, inputs_seq_len_var, max_decode_length)
         else:
             best_hyps, attention_weights = self._decode_infer_beam(
-                inputs, inputs_seq_len, beam_width, max_decode_length)
+                inputs_var, inputs_seq_len_var, beam_width, max_decode_length)
 
         return best_hyps, attention_weights, perm_indices
 

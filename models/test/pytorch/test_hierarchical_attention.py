@@ -76,7 +76,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             poolings = []
 
         # Load batch data
-        num_stack = 2
+        num_stack = 1 if subsample or conv else 2
         inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub = generate_data(
             model_type='attention',
             label_type='word_char',

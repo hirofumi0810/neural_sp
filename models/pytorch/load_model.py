@@ -34,6 +34,7 @@ def load(model_type, params):
             dropout=params['dropout'],
             num_classes=params['num_classes'],
             parameter_init=params['parameter_init'],
+            subsample_list=params['subsample_list'],
             logits_temperature=params['logits_temperature'],
             num_stack=params['num_stack'],
             splice=params['splice'],
@@ -45,6 +46,8 @@ def load(model_type, params):
             weight_noise_std=params['weight_noise_std'])
 
         model.name = params['encoder_type']
+        if sum(params['subsample_list']) > 0:
+            model.name = 'p' + model.name
         if params['bidirectional']:
             model.name = 'b' + model.name
         model.name += str(params['num_units']) + 'H'
@@ -110,6 +113,8 @@ def load(model_type, params):
             weight_noise_std=params['weight_noise_std'])
 
         model.name = params['encoder_type']
+        if sum(params['subsample_list']) > 0:
+            model.name = 'p' + model.name
         if params['encoder_bidirectional']:
             model.name = 'b' + model.name
         model.name += str(params['encoder_num_units']) + 'H'
@@ -168,6 +173,7 @@ def load(model_type, params):
             num_classes=params['num_classes'],
             num_classes_sub=params['num_classes_sub'],
             parameter_init=params['parameter_init'],
+            subsample_list=params['subsample_list'],
             logits_temperature=params['logits_temperature'],
             num_stack=params['num_stack'],
             splice=params['splice'],
@@ -178,6 +184,8 @@ def load(model_type, params):
             batch_norm=params['batch_norm'])
 
         model.name = params['encoder_type']
+        if sum(params['subsample_list']) > 0:
+            model.name = 'p' + model.name
         if params['bidirectional']:
             model.name = 'b' + model.name
         model.name += str(params['num_units']) + 'H'
@@ -257,6 +265,8 @@ def load(model_type, params):
             space_index=params['composition_case'])
 
         model.name = params['encoder_type']
+        if sum(params['subsample_list']) > 0:
+            model.name = 'p' + model.name
         if params['encoder_bidirectional']:
             model.name = 'b' + model.name
         model.name += str(params['encoder_num_units']) + 'H'

@@ -309,40 +309,44 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             loss_sub (FloatTensor): A tensor of size `[1]`
         """
         # Wrap by Variable
-        inputs = np2var(inputs, use_cuda=self.use_cuda)
-        labels = np2var(labels, dtype='long', use_cuda=self.use_cuda)
-        labels_sub = np2var(labels_sub, dtype='long', use_cuda=self.use_cuda)
-        inputs_seq_len = np2var(
+        inputs_var = np2var(inputs, use_cuda=self.use_cuda)
+        labels_var = np2var(labels, dtype='long', use_cuda=self.use_cuda)
+        labels_sub_var = np2var(
+            labels_sub, dtype='long', use_cuda=self.use_cuda)
+        inputs_seq_len_var = np2var(
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda)
-        labels_seq_len = np2var(
+        labels_seq_len_var = np2var(
             labels_seq_len, dtype='int', use_cuda=self.use_cuda)
-        labels_seq_len_sub = np2var(
+        labels_seq_len_sub_var = np2var(
             labels_seq_len_sub, dtype='int', use_cuda=self.use_cuda)
 
         # Encode acoustic features
         encoder_outputs, encoder_final_state, encoder_outputs_sub, encoder_final_state_sub, perm_indices = self._encode(
-            inputs, inputs_seq_len, volatile=volatile, is_multi_task=True)
+            inputs_var, inputs_seq_len_var,
+            volatile=volatile, is_multi_task=True)
 
         # Permutate indices
-        labels = labels[perm_indices]
-        labels_sub = labels_sub[perm_indices]
-        inputs_seq_len = inputs_seq_len[perm_indices]
-        labels_seq_len = labels_seq_len[perm_indices]
-        labels_seq_len_sub = labels_seq_len_sub[perm_indices]
+        if perm_indices is not None:
+            labels_var = labels_var[perm_indices]
+            labels_sub_var = labels_sub_var[perm_indices]
+            inputs_seq_len_var = inputs_seq_len_var[perm_indices]
+            labels_seq_len_var = labels_seq_len_var[perm_indices]
+            labels_seq_len_sub_var = labels_seq_len_sub_var[perm_indices]
 
         # Teacher-forcing (main task)
         if self.composition_case is None:
             logits, attention_weights = self._decode_train(
-                encoder_outputs, labels, encoder_final_state)
+                encoder_outputs, labels_var, encoder_final_state)
         else:
             logits, attention_weights = self._decode_train_composition(
                 encoder_outputs, encoder_outputs_sub,
-                labels, labels_sub, labels_seq_len, labels_seq_len_sub,
+                labels_var, labels_sub_var,
+                labels_seq_len_var, labels_seq_len_sub_var,
                 encoder_final_state)
 
         # Teacher-forcing (sub task)
         logits_sub, attention_weights_sub = self._decode_train(
-            encoder_outputs_sub, labels_sub, encoder_final_state_sub,
+            encoder_outputs_sub, labels_sub_var, encoder_final_state_sub,
             is_sub_task=True)
 
         # Output smoothing
@@ -350,21 +354,19 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             logits /= self.logits_temperature
             logits_sub /= self.logits_temperature
 
-        batch_size = encoder_outputs.size(0)
-
         # Compute XE sequence loss in the main task
         num_classes = logits.size(2)
         logits = logits.view((-1, num_classes))
-        labels_1d = labels[:, 1:].contiguous().view(-1)
+        labels_1d = labels_var[:, 1:].contiguous().view(-1)
         loss_main = F.cross_entropy(logits, labels_1d,
                                     ignore_index=self.sos_index,
                                     size_average=False)
-        # NOTE: labels are padded by sos_index
+        # NOTE: labels_var are padded by sos_index
 
         # Compute XE sequence loss in the sub task
         num_classes_sub = logits_sub.size(2)
         logits_sub = logits_sub.view((-1, num_classes_sub))
-        labels_sub_1d = labels_sub[:, 1:].contiguous().view(-1)
+        labels_sub_1d = labels_sub_var[:, 1:].contiguous().view(-1)
         loss_sub = F.cross_entropy(logits_sub, labels_sub_1d,
                                    ignore_index=self.sos_index_sub,
                                    size_average=False)
@@ -380,18 +382,20 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Auxiliary CTC loss (optional)
         if self.ctc_loss_weight > 0:
             ctc_loss = self._compute_ctc_loss(
-                encoder_outputs, labels, inputs_seq_len, labels_seq_len)
+                encoder_outputs, labels, inputs_seq_len_var, labels_seq_len_var)
             loss += ctc_loss * self.ctc_loss_weight
         elif self.ctc_loss_weight_sub > 0:
             ctc_loss_sub = self._compute_ctc_loss(
-                encoder_outputs_sub, labels_sub,
-                inputs_seq_len, labels_seq_len_sub, is_sub_task=True)
+                encoder_outputs_sub, labels_sub_var,
+                inputs_seq_len_var, labels_seq_len_sub_var, is_sub_task=True)
             loss += ctc_loss_sub * self.ctc_loss_weight_sub
 
         # Average the loss by mini-batch
+        batch_size = encoder_outputs.size(0)
         loss /= batch_size
 
-        return loss, loss_main * self.main_loss_weight / batch_size, loss_sub * self.sub_loss_weight / batch_size
+        return (loss, loss_main * self.main_loss_weight / batch_size,
+                loss_sub * self.sub_loss_weight / batch_size)
 
     def _decode_train_composition(self, encoder_outputs, encoder_outputs_sub,
                                   labels, labels_sub,
@@ -573,19 +577,22 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             perm_indices (np.ndarray):
         """
         # Wrap by Variable
-        inputs = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
-        inputs_seq_len = np2var(
+        inputs_var = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
+        inputs_seq_len_var = np2var(
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
 
         # Encode acoustic features
         if is_sub_task:
             _, _, encoder_outputs, encoder_final_state, perm_indices = self._encode(
-                inputs, inputs_seq_len, volatile=True, is_multi_task=True)
+                inputs_var, inputs_seq_len_var, volatile=True, is_multi_task=True)
         else:
             encoder_outputs, encoder_final_state, encoder_outputs_sub, encoder_final_state_sub, perm_indices = self._encode(
-                inputs, inputs_seq_len, volatile=True, is_multi_task=True)
+                inputs_var, inputs_seq_len_var, volatile=True, is_multi_task=True)
+
+        # Permutate indices
         if perm_indices is not None:
             perm_indices = var2np(perm_indices)
+            inputs_seq_len_var = inputs_seq_len_var[perm_indices]
 
         if beam_width == 1:
             if is_sub_task or self.composition_case is None:
@@ -601,7 +608,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             if is_sub_task or self.composition_case is None:
                 best_hyps, _ = self._decode_infer_beam(
                     encoder_outputs, encoder_final_state,
-                    inputs_seq_len[perm_indices],
+                    inputs_seq_len_var,
                     beam_width, max_decode_length)
             else:
                 raise NotImplementedError

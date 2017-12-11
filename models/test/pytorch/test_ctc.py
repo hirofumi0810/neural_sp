@@ -30,6 +30,10 @@ class TestCTC(unittest.TestCase):
     def test(self):
         print("CTC Working check.")
 
+        # Pyramidal encoder
+        self.check(encoder_type='lstm', bidirectional=True,
+                   subsample=True)
+
         # CNN-CTC
         self.check(encoder_type='cnn')
         self.check(encoder_type='cnn', batch_norm=True)
@@ -55,12 +59,13 @@ class TestCTC(unittest.TestCase):
 
     @measure_time
     def check(self, encoder_type, bidirectional=False, label_type='char',
-              conv=False, batch_norm=False, save_path=None):
+              subsample=False, conv=False, batch_norm=False, save_path=None):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
+        print('  subsample: %s' % str(subsample))
         print('  conv: %s' % str(conv))
         print('  batch_norm: %s' % str(batch_norm))
         print('==================================================')
@@ -81,7 +86,7 @@ class TestCTC(unittest.TestCase):
             fc_list = []
 
         # Load batch data
-        num_stack = 2
+        num_stack = 1 if subsample or conv else 2
         inputs, labels, inputs_seq_len, labels_seq_len = generate_data(
             model_type='ctc',
             label_type=label_type,
@@ -106,6 +111,7 @@ class TestCTC(unittest.TestCase):
             dropout=0.1,
             num_classes=num_classes,
             parameter_init=0.1,
+            subsample_list=[] if not subsample else [True] * 2,
             num_stack=num_stack,
             splice=splice,
             conv_channels=conv_channels,

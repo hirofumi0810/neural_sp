@@ -18,6 +18,7 @@ param:
   num_units: 0
   num_proj: 0
   num_layers: 0
+  subsample_list: False
   fc_list: [1024, 1024, 1024]
   conv_channels: [128, 128, 128, 128, 256, 256, 256, 256, 256, 256]
   conv_kernel_sizes:

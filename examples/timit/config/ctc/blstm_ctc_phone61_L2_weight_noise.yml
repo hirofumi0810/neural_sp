@@ -18,6 +18,12 @@ param:
   num_units: 256
   num_proj: 0
   num_layers: 5
+  subsample_list:
+    - False
+    - False
+    - False
+    - False
+    - False
   fc_list: []
   conv_channels: []
   conv_kernel_sizes: []

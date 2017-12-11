@@ -42,6 +42,9 @@ class HierarchicalCTC(CTC):
             (excluding a blank class)
         parameter_init (float, optional): Range of uniform distribution to
             initialize weight parameters
+        subsample_list (list, optional): subsample in the corresponding layers (True)
+            ex.) [False, True, True, False] means that subsample is conducted
+                in the 2nd and 3rd layers.
         logits_temperature (float):
         num_stack (int, optional): the number of frames to stack
         splice (int, optional): frames to splice. Default is 1 frame.
@@ -66,6 +69,7 @@ class HierarchicalCTC(CTC):
                  num_classes,
                  num_classes_sub,  # ***
                  parameter_init=0.1,
+                 subsample_list=[],
                  logits_temperature=1,
                  num_stack=1,
                  splice=1,
@@ -85,6 +89,7 @@ class HierarchicalCTC(CTC):
             dropout=dropout,
             num_classes=num_classes,
             parameter_init=parameter_init,
+            subsample_list=subsample_list,
             fc_list=fc_list,
             logits_temperature=logits_temperature,
             batch_norm=batch_norm)
@@ -99,30 +104,56 @@ class HierarchicalCTC(CTC):
         self.main_loss_weight = main_loss_weight
 
         # Load an instance
-        encoder = load(encoder_type=encoder_type + '_hierarchical')
+        if sum(subsample_list) == 0:
+            encoder = load(encoder_type=encoder_type + '_hierarchical')
+        else:
+            encoder = load(encoder_type='p' + encoder_type + '_hierarchical')
 
         # Call the encoder function
         # NOTE: overide encoder
         if encoder_type in ['lstm', 'gru', 'rnn']:
-            self.encoder = encoder(
-                input_size=input_size,  # 120 or 123
-                rnn_type=encoder_type,
-                bidirectional=bidirectional,
-                num_units=num_units,
-                num_proj=num_proj,
-                num_layers=num_layers,
-                num_layers_sub=num_layers_sub,
-                dropout=dropout,
-                parameter_init=parameter_init,
-                use_cuda=self.use_cuda,
-                batch_first=False,
-                num_stack=num_stack,
-                splice=splice,
-                conv_channels=conv_channels,
-                conv_kernel_sizes=conv_kernel_sizes,
-                conv_strides=conv_strides,
-                poolings=poolings,
-                batch_norm=batch_norm)
+            if sum(subsample_list) == 0:
+                self.encoder = encoder(
+                    input_size=input_size,  # 120 or 123
+                    rnn_type=encoder_type,
+                    bidirectional=bidirectional,
+                    num_units=num_units,
+                    num_proj=num_proj,
+                    num_layers=num_layers,
+                    num_layers_sub=num_layers_sub,
+                    dropout=dropout,
+                    parameter_init=parameter_init,
+                    use_cuda=self.use_cuda,
+                    batch_first=False,
+                    num_stack=num_stack,
+                    splice=splice,
+                    conv_channels=conv_channels,
+                    conv_kernel_sizes=conv_kernel_sizes,
+                    conv_strides=conv_strides,
+                    poolings=poolings,
+                    batch_norm=batch_norm)
+            else:
+                self.encoder = encoder(
+                    input_size=input_size,  # 120 or 123
+                    rnn_type=encoder_type,
+                    bidirectional=bidirectional,
+                    num_units=num_units,
+                    num_proj=num_proj,
+                    num_layers=num_layers,
+                    num_layers_sub=num_layers_sub,
+                    dropout=dropout,
+                    parameter_init=parameter_init,
+                    subsample_list=subsample_list,
+                    subsample_type='concat',
+                    use_cuda=self.use_cuda,
+                    batch_first=False,
+                    num_stack=num_stack,
+                    splice=splice,
+                    conv_channels=conv_channels,
+                    conv_kernel_sizes=conv_kernel_sizes,
+                    conv_strides=conv_strides,
+                    poolings=poolings,
+                    batch_norm=batch_norm)
         else:
             raise NotImplementedError
 
@@ -147,54 +178,66 @@ class HierarchicalCTC(CTC):
             loss_sub (FloatTensor): A tensor of size `[1]`
         """
         # Wrap by Variable
-        inputs = np2var(inputs, use_cuda=self.use_cuda)
-        labels = np2var(labels, dtype='int', use_cuda=False)
-        labels_sub = np2var(labels_sub, dtype='int', use_cuda=False)
-        inputs_seq_len = np2var(
+        inputs_var = np2var(inputs, use_cuda=self.use_cuda)
+        labels_var = np2var(labels, dtype='int', use_cuda=False)
+        labels_sub_var = np2var(labels_sub, dtype='int', use_cuda=False)
+        inputs_seq_len_var = np2var(
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda)
-        labels_seq_len = np2var(labels_seq_len, dtype='int', use_cuda=False)
-        labels_seq_len_sub = np2var(
+        inputs_seq_len_sub_var = inputs_seq_len_var.clone()
+        labels_seq_len_var = np2var(
+            labels_seq_len, dtype='int', use_cuda=False)
+        labels_seq_len_sub_var = np2var(
             labels_seq_len_sub, dtype='int', use_cuda=False)
 
-        _labels = labels + 1
-        _labels_sub = labels_sub + 1
-        # NOTE: index 0 is reserved for blank
+        labels_var = labels_var + 1
+        labels_sub_var = labels_sub_var + 1
+        # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
         # Encode acoustic features
         logits, logits_sub, perm_indices = self._encode(
-            inputs, inputs_seq_len, volatile=volatile, is_multi_task=True)
+            inputs_var, inputs_seq_len_var,
+            volatile=volatile, is_multi_task=True)
 
         # Permutate indices
-        _labels = _labels[perm_indices.cpu()]
-        _labels_sub = _labels_sub[perm_indices.cpu()]
-        inputs_seq_len = inputs_seq_len[perm_indices]
-        labels_seq_len = labels_seq_len[perm_indices.cpu()]
-        labels_seq_len_sub = labels_seq_len_sub[perm_indices.cpu()]
-
-        max_time, batch_size = logits.size()[:2]
+        if perm_indices is not None:
+            labels_var = labels_var[perm_indices.cpu()]
+            labels_sub_var = labels_sub_var[perm_indices.cpu()]
+            inputs_seq_len_var = inputs_seq_len_var[perm_indices]
+            labels_seq_len_var = labels_seq_len_var[perm_indices.cpu()]
+            labels_seq_len_sub_var = labels_seq_len_sub_var[perm_indices.cpu()]
 
         # Concatenate all labels for warpctc_pytorch
         # `[B, T_out]` -> `[1,]`
         concatenated_labels = _concatenate_labels(
-            _labels, labels_seq_len)
+            labels_var, labels_seq_len_var)
         concatenated_labels_sub = _concatenate_labels(
-            _labels_sub, labels_seq_len_sub)
+            labels_sub_var, labels_seq_len_sub_var)
 
         # Output smoothing
         if self.logits_temperature != 1:
             logits /= self.logits_temperature
             logits_sub /= self.logits_temperature
 
+        # Subsampling
+        if sum(self.subsample_list[:self.num_layers_sub]) > 0:
+            inputs_seq_len_sub_var /= sum(
+                self.subsample_list[:self.num_layers_sub]) ** 2
+        if sum(self.subsample_list) != 0:
+            inputs_seq_len_var /= sum(self.subsample_list) ** 2
+        # NOTE: floor is not needed because inputs_seq_len_var is IntTensor
+
         # Compute CTC loss
         ctc_loss_fn = CTCLoss()
         loss_main = ctc_loss_fn(logits, concatenated_labels,
-                                inputs_seq_len.cpu(), labels_seq_len)
+                                inputs_seq_len_var.cpu(), labels_seq_len_var)
         loss_sub = ctc_loss_fn(logits_sub, concatenated_labels_sub,
-                               inputs_seq_len.clone().cpu(), labels_seq_len_sub)
+                               inputs_seq_len_sub_var.cpu(), labels_seq_len_sub_var)
         loss = loss_main * self.main_loss_weight + \
             loss_sub * (1 - self.main_loss_weight)
 
         # Average the loss by mini-batch
+        batch_size = logits.size(1)
         loss /= batch_size
 
-        return loss, loss_main * self.main_loss_weight / batch_size, loss_sub * (1 - self.main_loss_weight) / batch_size
+        return (loss, loss_main * self.main_loss_weight / batch_size,
+                loss_sub * (1 - self.main_loss_weight) / batch_size)

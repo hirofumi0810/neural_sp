@@ -8,8 +8,8 @@ param:
   save_format: numpy
   input_size: 123
   splice: 1
-  num_stack: 2
-  num_skip: 2
+  num_stack: 1
+  num_skip: 1
 
   # topology
   model_type: ctc
@@ -20,8 +20,8 @@ param:
   num_layers: 5
   subsample_list:
     - False
-    - False
-    - False
+    - True
+    - True
     - False
     - False
   fc_list: []

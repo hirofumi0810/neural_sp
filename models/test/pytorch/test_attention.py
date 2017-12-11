@@ -122,7 +122,7 @@ class TestAttention(unittest.TestCase):
             poolings = []
 
         # Load batch data
-        num_stack = 2
+        num_stack = 1 if subsample or conv else 2
         inputs, labels, inputs_seq_len, labels_seq_len = generate_data(
             model_type='attention',
             label_type=label_type,

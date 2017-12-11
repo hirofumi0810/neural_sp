@@ -38,8 +38,7 @@ class TestHierarchicalAttentionC2W(unittest.TestCase):
               encoder_type='lstm', bidirectional=True, decoder_type='lstm',
               attention_type='location',
               subsample=True, input_feeding=False,
-              ctc_loss_weight=0, decoder_num_layers=1,
-              conv=False, batch_norm=False):
+              ctc_loss_weight=0, decoder_num_layers=1):
 
         print('==================================================')
         print('  composition_case: %s' % composition_case)
@@ -51,12 +50,10 @@ class TestHierarchicalAttentionC2W(unittest.TestCase):
         print('  input_feeding: %s' % str(input_feeding))
         print('  ctc_loss_weight: %s' % str(ctc_loss_weight))
         print('  decoder_num_layers: %s' % str(decoder_num_layers))
-        print('  conv: %s' % str(conv))
-        print('  batch_norm: %s' % str(batch_norm))
         print('==================================================')
 
         # Load batch data
-        num_stack = 2
+        num_stack = 1 if subsample else 2
         splice = 1
         inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub = generate_data(
             model_type='attention',
@@ -109,7 +106,7 @@ class TestHierarchicalAttentionC2W(unittest.TestCase):
             conv_kernel_sizes=[],
             conv_strides=[],
             poolings=[],
-            batch_norm=batch_norm,
+            batch_norm=False,
             scheduled_sampling_prob=0,
             composition_case=composition_case,
             space_index=0)

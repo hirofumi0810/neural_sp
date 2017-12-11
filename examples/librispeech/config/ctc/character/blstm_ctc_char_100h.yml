@@ -19,6 +19,11 @@ param:
   num_units: 320
   num_proj: 0
   num_layers: 4
+  subsample_list:
+    - False
+    - False
+    - False
+    - False
   fc_list: []
   conv_channels: []
   conv_kernel_sizes: []

@@ -102,6 +102,8 @@ class CNNEncoder(nn.Module):
             in_c = conv_channels[i]
 
         self.conv = nn.Sequential(*convs)
+        # self.conv = convs
+
         self.output_size = conv_channels[-1] * in_freq * in_time
 
     def forward(self, inputs):
@@ -132,6 +134,7 @@ class CNNEncoder(nn.Module):
         outputs = self.conv(inputs)
         # print(outputs.size())
 
+        # for debug
         # print(inputs.size())
         # outputs = inputs
         # for layer in self.conv:

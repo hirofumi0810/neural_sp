@@ -79,7 +79,7 @@ def main():
         max_epoch=params['num_epoch'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
-        save_format=params['save_format'], num_enque=100)
+        save_format=params['save_format'], num_enque=None)
     dev_data = Dataset(
         model_type=params['model_type'],
         data_type='dev', label_type=params['label_type'],

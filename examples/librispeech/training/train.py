@@ -82,7 +82,7 @@ def main():
         max_epoch=params['num_epoch'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
-        save_format=params['save_format'], num_enque=100)
+        save_format=params['save_format'], num_enque=None)
     dev_clean_data = Dataset(
         model_type=params['model_type'],
         data_type='dev_clean', data_size=params['data_size'],
@@ -216,12 +216,6 @@ def main():
             plot_loss(csv_loss_train, csv_loss_dev, csv_steps,
                       save_path=model.save_path)
 
-            # Save the model
-            saved_path = model.save_checkpoint(
-                model.save_path, epoch=train_data.epoch)
-            print("=> Saved checkpoint (epoch:%d): %s" %
-                  (train_data.epoch, saved_path))
-
             if train_data.epoch >= params['eval_start_epoch']:
                 # ***Change to evaluation mode***
                 model.eval()
@@ -291,6 +285,12 @@ def main():
                     not_improved_epoch = 0
                     best_model = copy.deepcopy(model)
                     print('■■■ ↑Best Score↑ ■■■')
+
+                    # Save the model
+                    saved_path = model.save_checkpoint(
+                        model.save_path, epoch=train_data.epoch)
+                    print("=> Saved checkpoint (epoch:%d): %s" %
+                          (train_data.epoch, saved_path))
                 else:
                     not_improved_epoch += 1
 

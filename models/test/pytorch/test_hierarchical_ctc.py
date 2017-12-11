@@ -30,6 +30,10 @@ class TestCTC(unittest.TestCase):
     def test(self):
         print("Hierarchical CTC Working check.")
 
+        # Pyramidal encoder
+        self.check(encoder_type='lstm', bidirectional=True,
+                   subsample=True)
+
         # CLDNN-CTC
         self.check(encoder_type='lstm', bidirectional=True,
                    conv=True)
@@ -39,12 +43,13 @@ class TestCTC(unittest.TestCase):
         self.check(encoder_type='lstm', bidirectional=True)
 
     @measure_time
-    def check(self, encoder_type, bidirectional=False, conv=False,
-              batch_norm=False):
+    def check(self, encoder_type, bidirectional=False,
+              subsample=False, conv=False, batch_norm=False):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
+        print('  subsample: %s' % str(subsample))
         print('  conv: %s' % str(conv))
         print('  batch_norm: %s' % str(batch_norm))
         print('==================================================')
@@ -65,7 +70,7 @@ class TestCTC(unittest.TestCase):
             fc_list = []
 
         # Load batch data
-        num_stack = 2
+        num_stack = 1 if subsample or conv else 2
         inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub = generate_data(
             model_type='ctc',
             label_type='word_char',
@@ -91,6 +96,7 @@ class TestCTC(unittest.TestCase):
             num_classes=num_classes,
             num_classes_sub=num_classes_sub,
             parameter_init=0.1,
+            subsample_list=[] if not subsample else [True] * 3,
             num_stack=num_stack,
             splice=splice,
             conv_channels=conv_channels,
@@ -162,8 +168,8 @@ class TestCTC(unittest.TestCase):
                 # Decode
                 labels_pred, _ = model.decode(
                     inputs, inputs_seq_len, beam_width=1)
-                labels_pred_sub, _ = model.decode_sub(
-                    inputs, inputs_seq_len, beam_width=1)
+                labels_pred_sub, _ = model.decode(
+                    inputs, inputs_seq_len, beam_width=1, is_sub_task=True)
 
                 # Compute accuracy
                 str_true = idx2word(labels[0, :labels_seq_len[0]])
