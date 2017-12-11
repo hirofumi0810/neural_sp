@@ -58,22 +58,21 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
     skip_utt_num = 0
     if progressbar:
         pbar = tqdm(total=len(dataset))
-    for data, is_new_epoch in dataset:
+    for batch, is_new_epoch in dataset:
 
-        # Create feed dictionary for next mini-batch
         if model_type in ['ctc', 'attention']:
-            inputs, labels, inputs_seq_len, labels_seq_len, _ = data
+            inputs, labels, inputs_seq_len, labels_seq_len, _ = batch
         elif model_type in ['hierarchical_ctc', 'hierarchical_attention']:
-            inputs, _, labels, inputs_seq_len, _, labels_seq_len, _ = data
+            inputs, _, labels, inputs_seq_len, _, labels_seq_len, _ = batch
 
         # Decode
         if model_type in ['attention', 'ctc']:
-            labels_pred, perm_indices = model.decode(
+            labels_pred = model.decode(
                 inputs, inputs_seq_len,
                 beam_width=beam_width,
                 max_decode_length=max_decode_length)
         elif model_type in['hierarchical_attention', 'hierarchical_ctc']:
-            labels_pred, perm_indices = model.decode(
+            labels_pred = model.decode(
                 inputs, inputs_seq_len,
                 beam_width=beam_width,
                 max_decode_length=max_decode_length,
@@ -88,10 +87,6 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
                 str_true = labels[i_batch][0]
                 # NOTE: transcript is seperated by space('_')
             else:
-                # Permutate indices
-                labels = labels[perm_indices]
-                labels_seq_len = labels_seq_len[perm_indices]
-
                 # Convert from list of index to string
                 if model_type in ['ctc', 'hierarchical_ctc']:
                     str_true = idx2char(
@@ -139,6 +134,8 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
                     word_list_pred[i] = ''
             while '' in word_list_pred:
                 word_list_pred.remove('')
+
+            # TODO: 省略を元に戻す
 
             # Compute WER
             if len(word_list_true) > 0:

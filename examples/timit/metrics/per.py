@@ -58,13 +58,12 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
     per_mean = 0
     if progressbar:
         pbar = tqdm(total=len(dataset))
-    for data, is_new_epoch in dataset:
+    for batch, is_new_epoch in dataset:
 
-        # Create feed dictionary for next mini-batch
-        inputs, labels, inputs_seq_len, labels_seq_len, _ = data
+        inputs, labels, inputs_seq_len, labels_seq_len, _ = batch
 
         # Decode
-        labels_pred, perm_indices = model.decode(
+        labels_pred = model.decode(
             inputs, inputs_seq_len,
             beam_width=beam_width,
             max_decode_length=max_decode_length)
@@ -77,10 +76,6 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
                 phone_true_list = labels[i_batch][0].split(' ')
                 # NOTE: transcript is seperated by space(' ')
             else:
-                # Permutate indices
-                labels = labels[perm_indices]
-                labels_seq_len = labels_seq_len[perm_indices]
-
                 # Convert from index to phone (-> list of phone strings)
                 if model_type == 'ctc':
                     phone_true_list = idx2phone_eval(
