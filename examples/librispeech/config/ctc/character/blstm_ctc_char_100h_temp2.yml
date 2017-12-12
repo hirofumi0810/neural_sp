@@ -43,7 +43,7 @@ param:
   clip_activation: 50
   dropout: 0.2
   weight_decay: 1e-5
-  logits_temperature: 1
+  logits_temperature: 2
   weight_noise_std: 0
 
   # annealing

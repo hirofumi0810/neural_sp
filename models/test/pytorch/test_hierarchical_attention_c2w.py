@@ -172,9 +172,9 @@ class TestHierarchicalAttentionC2W(unittest.TestCase):
                 model.eval()
 
                 # Decode
-                labels_pred, _ = model.decode(
+                labels_pred = model.decode(
                     inputs, inputs_seq_len, beam_width=1, max_decode_length=30)
-                labels_pred_sub, _ = model.decode(
+                labels_pred_sub = model.decode(
                     inputs, inputs_seq_len, beam_width=1, max_decode_length=60,
                     is_sub_task=True)
 

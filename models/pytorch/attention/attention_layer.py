@@ -18,8 +18,6 @@ ATTENTION_TYPE = [
 class AttentionMechanism(nn.Module):
     """Attention layer.
     Args:
-        encoder_num_units (int): the number of units in each layer of the
-            encoder
         decoder_num_units (int): the number of units in each layer of the
             decoder
         attention_type (string): the type of attention
@@ -35,7 +33,6 @@ class AttentionMechanism(nn.Module):
     """
 
     def __init__(self,
-                 encoder_num_units,
                  decoder_num_units,
                  attention_type,
                  attention_dim,
@@ -51,25 +48,19 @@ class AttentionMechanism(nn.Module):
                 "attention_type should be one of [%s], you provided %s." %
                 (", ".join(ATTENTION_TYPE), attention_type))
 
-        self.encoder_num_units = encoder_num_units
         self.decoder_num_units = decoder_num_units
         self.attention_type = attention_type
         self.attention_dim = attention_dim
         self.sharpening_factor = sharpening_factor
         self.sigmoid_smoothing = sigmoid_smoothing
 
-        if self.attention_type == 'content':
-            self.W_enc = nn.Linear(encoder_num_units, attention_dim)
-            self.W_dec = nn.Linear(decoder_num_units, attention_dim)
-            self.v_a = nn.Linear(attention_dim, 1)
-
+        if self.attention_type in ['content', 'luong_concat']:
+            self.W = nn.Linear(decoder_num_units * 2, attention_dim)
+            self.v = nn.Linear(attention_dim, 1)
         elif self.attention_type == 'normed_content':
             raise NotImplementedError
-
         elif self.attention_type == 'location':
             assert kernel_size % 2 == 1
-            self.W_enc = nn.Linear(encoder_num_units, attention_dim)
-            self.W_dec = nn.Linear(decoder_num_units, attention_dim)
             self.conv = nn.Conv1d(
                 in_channels=1,
                 out_channels=out_channels,
@@ -77,27 +68,19 @@ class AttentionMechanism(nn.Module):
                 stride=1,
                 padding=kernel_size // 2,
                 bias=True)
+            self.W = nn.Linear(decoder_num_units * 2, attention_dim)
             self.W_conv = nn.Linear(out_channels, attention_dim)
-            self.v_a = nn.Linear(attention_dim, 1)
-
+            self.v = nn.Linear(attention_dim, 1)
         elif self.attention_type == 'dot_product':
-            self.W_enc = nn.Linear(encoder_num_units, attention_dim)
-            self.W_dec = nn.Linear(decoder_num_units, attention_dim)
-
+            self.W_keys = nn.Linear(decoder_num_units, attention_dim)
+            self.W_query = nn.Linear(decoder_num_units, attention_dim)
         elif self.attention_type == 'luong_dot':
             # NOTE: no parameter
             pass
-
         elif self.attention_type == 'scaled_luong_dot':
             raise NotImplementedError
-
         elif self.attention_type == 'luong_general':
-            self.W_a = nn.Linear(decoder_num_units, decoder_num_units)
-
-        elif self.attention_type == 'luong_concat':
-            self.W_a = nn.Linear(decoder_num_units * 2, attention_dim)
-            self.v_a = nn.Linear(attention_dim, 1)
-
+            self.W_keys = nn.Linear(decoder_num_units, decoder_num_units)
         elif self.attention_type == 'rnn_attention':
             raise NotImplementedError
 
@@ -114,13 +97,18 @@ class AttentionMechanism(nn.Module):
                 `[B, 1, encoder_num_units]`
             attention_weights_step (FloatTensor): A tensor of size `[B, T_in]`
         """
-        if self.attention_type == 'content':
+        batch_size, max_time = encoder_outputs.size()[:2]
+
+        if self.attention_type in ['content', 'luong_concat']:
             ###################################################################
-            # energy = <v_a, tanh(W_enc(h_en) + W_dec(h_de))>
+            # energy = <v, tanh(W_keys(h_en) + W_query(h_de))> (bahdanau)
+            # energy = <v, tanh(W([h_de; h_en]))> (luong, effective)
             ###################################################################
-            keys = self.W_enc(encoder_outputs)
-            query = self.W_dec(decoder_outputs).expand_as(keys)
-            energy = self.v_a(F.tanh(keys + query)).squeeze(dim=2)
+            concat = torch.cat((encoder_outputs,
+                                decoder_outputs.expand_as(encoder_outputs)), dim=2)
+            keys_query = self.W(concat.view((batch_size * max_time, -1)))
+            energy = self.v(F.tanh(keys_query))
+            energy = energy.view((batch_size, max_time))
 
         elif self.attention_type == 'normed_content':
             raise NotImplementedError
@@ -128,27 +116,34 @@ class AttentionMechanism(nn.Module):
         elif self.attention_type == 'location':
             ###################################################################
             # f = F * α_{i-1}
-            # energy = <v_a,
-            # tanh(W_enc(h_en) + W_dec(h_de) + W_conv(f))>
+            # energy = <v, tanh(W_keys(h_en) + W_query(h_de) + W_conv(f))>
+            # energy = <v, tanh(W([h_de; h_en] + W_conv(f)))> (effective)
             ###################################################################
-            keys = self.W_enc(encoder_outputs)
-            query = self.W_dec(decoder_outputs).expand_as(keys)
             conv_feat = self.conv(attention_weights_step.unsqueeze(dim=1))
-            conv_feat = self.W_conv(conv_feat.transpose(1, 2))
-            energy = self.v_a(F.tanh(keys + query + conv_feat)).squeeze(dim=2)
+            # -> `[B, out_channels, T_in]`
+            conv_feat = conv_feat.transpose(1, 2).contiguous()
+            # -> `[B, T_in, out_channels]`
+            conv = self.W_conv(conv_feat.view((batch_size * max_time, -1)))
+            # -> `[B * T_in, attention_dim]`
+
+            concat = torch.cat((encoder_outputs,
+                                decoder_outputs.expand_as(encoder_outputs)), dim=2)
+            keys_query = self.W(concat.view((batch_size * max_time, -1)))
+
+            energy = self.v(F.tanh(keys_query + conv))
+            energy = energy.view((batch_size, max_time))
 
         elif self.attention_type == 'dot_product':
             ###################################################################
-            # energy = <W_enc(h_en), W_dec(h_de)>
+            # energy = <W_keys(h_en), W_query(h_de)>
             ###################################################################
-            keys = self.W_enc(encoder_outputs)
-            query = self.W_dec(decoder_outputs).transpose(1, 2)
+            keys = self.W_keys(encoder_outputs)
+            query = self.W_query(decoder_outputs).transpose(1, 2)
             energy = torch.bmm(keys, query).squeeze(dim=2)
 
         elif self.attention_type == 'luong_dot':
             ###################################################################
             # energy = <h_en, h_de>
-            # NOTE: both the encoder and decoder must be the same size
             ###################################################################
             keys = encoder_outputs
             query = decoder_outputs.transpose(1, 2)
@@ -161,25 +156,16 @@ class AttentionMechanism(nn.Module):
             ###################################################################
             # energy = <W(h_en), h_de>
             ###################################################################
-            keys = self.W_a(encoder_outputs)
+            keys = self.W_keys(encoder_outputs)
             query = decoder_outputs.transpose(1, 2)
             energy = torch.bmm(keys, query).squeeze(dim=2)
-
-        elif self.attention_type == 'luong_concat':
-            ###################################################################
-            # energy = <v_a, tanh(W_a([h_de; h_en]))>
-            # NOTE: both the encoder and decoder must be the same size
-            ###################################################################
-            keys = encoder_outputs
-            query = decoder_outputs.expand_as(keys)
-            concat = torch.cat((keys, query), dim=2)
-            energy = self.v_a(F.tanh(self.W_a(concat))).squeeze(dim=2)
 
         else:
             raise NotImplementedError
 
         # Sharpening
         energy *= self.sharpening_factor
+        # NOTE: energy: `[B, T_in]`
 
         # Compute attention weights
         if self.sigmoid_smoothing:

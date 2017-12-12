@@ -233,7 +233,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Attention layer in the sub task
         ###################################
         self.attend_sub = AttentionMechanism(
-            encoder_num_units=encoder_num_units,
             decoder_num_units=decoder_num_units_sub,
             attention_type=attention_type,
             attention_dim=attention_dim,

@@ -5,13 +5,13 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import os
 from os.path import join, isfile, basename
 from glob import glob
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
 
 from models.pytorch.tmp.lr_scheduler import ReduceLROnPlateau
 from utils.directory import mkdir
@@ -82,23 +82,23 @@ class ModelBase(nn.Module):
         """Set model to the GPU version.
         Args:
             deterministic (bool, optional):
-
+            benchmark (bool, optional):
         """
-        if self.use_cuda and deterministic:
-            print('GPU deterministic mode (no cudnn)')
-            torch.backends.cudnn.enabled = False
-            # NOTE: this is slower than GPU mode.
-        elif self.use_cuda:
+        if self.use_cuda:
             if benchmark:
                 torch.backends.cudnn.benchmark = True
                 print('GPU mode (benchmark)')
+            elif deterministic:
+                print('GPU deterministic mode (no cudnn)')
+                torch.backends.cudnn.enabled = False
+                # NOTE: this is slower than GPU mode.
             else:
                 print('GPU mode')
+
+            if self.use_cuda:
+                self = self.cuda()
         else:
             print('CPU mode')
-
-        if self.use_cuda:
-            self = self.cuda()
 
     def set_optimizer(self, optimizer, learning_rate_init, weight_decay=0,
                       lr_schedule=True, factor=0.1, patience_epoch=5):
@@ -196,6 +196,11 @@ class ModelBase(nn.Module):
             "optimizer": self.optimizer.state_dict(),
             "epoch": epoch
         }
+
+        # Remove old parameters
+        for path in glob(join(save_path, 'model.epoch-*')):
+            os.remove(path)
+
         model_path = join(save_path, 'model.epoch-' + str(epoch))
         torch.save(checkpoint, model_path)
         return model_path

@@ -5,3 +5,4 @@
 - ConvLSTM encoder
 - Native pytorch CTC
 - Recurrent batch normalization
+- Ensemble

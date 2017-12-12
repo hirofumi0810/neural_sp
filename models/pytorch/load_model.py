@@ -8,6 +8,7 @@ from __future__ import division
 from __future__ import print_function
 
 from models.pytorch.ctc.ctc import CTC
+from models.pytorch.ctc.student_ctc import StudentCTC
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 from models.pytorch.ctc.hierarchical_ctc import HierarchicalCTC
 from models.pytorch.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
@@ -24,6 +25,57 @@ def load(model_type, params):
 
     if model_type == 'ctc':
         model = CTC(
+            input_size=params['input_size'],
+            encoder_type=params['encoder_type'],
+            bidirectional=params['bidirectional'],
+            num_units=params['num_units'],
+            num_proj=params['num_proj'],
+            num_layers=params['num_layers'],
+            fc_list=params['fc_list'],
+            dropout=params['dropout'],
+            num_classes=params['num_classes'],
+            parameter_init=params['parameter_init'],
+            subsample_list=params['subsample_list'],
+            logits_temperature=params['logits_temperature'],
+            num_stack=params['num_stack'],
+            splice=params['splice'],
+            conv_channels=params['conv_channels'],
+            conv_kernel_sizes=params['conv_kernel_sizes'],
+            conv_strides=params['conv_strides'],
+            poolings=params['poolings'],
+            batch_norm=params['batch_norm'],
+            weight_noise_std=params['weight_noise_std'])
+
+        model.name = params['encoder_type']
+        if sum(params['subsample_list']) > 0:
+            model.name = 'p' + model.name
+        if params['bidirectional']:
+            model.name = 'b' + model.name
+        model.name += str(params['num_units']) + 'H'
+        model.name += str(params['num_layers']) + 'L'
+        model.name += '_' + params['optimizer']
+        model.name += '_lr' + str(params['learning_rate'])
+        if params['num_proj'] != 0:
+            model.name += '_proj' + str(params['num_proj'])
+        if params['dropout'] != 0:
+            model.name += '_drop' + str(params['dropout'])
+        if params['num_stack'] != 1:
+            model.name += '_stack' + str(params['num_stack'])
+        if params['weight_decay'] != 0:
+            model.name += '_wd' + str(params['weight_decay'])
+        if len(params['conv_channels']) != 0 and params['encoder_type'] not in ['cnn', 'resnet']:
+            model.name = 'conv_' + model.name
+        if bool(params['batch_norm']):
+            model.name += '_bn'
+        if len(params['fc_list']) != 0:
+            model.name += '_fc'
+        if params['logits_temperature'] != 1:
+            model.name += '_temp' + str(params['logits_temperature'])
+        if params['weight_noise_std'] != 0:
+            model.name += '_noise' + str(params['weight_noise_std'])
+
+    elif model_type == 'student_ctc':
+        model = StudentCTC(
             input_size=params['input_size'],
             encoder_type=params['encoder_type'],
             bidirectional=params['bidirectional'],

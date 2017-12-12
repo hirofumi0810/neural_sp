@@ -1,7 +1,7 @@
 param:
   # corpus
   corpus: librispeech
-  label_type: character
+  label_type: character_capital_divide
   data_size: 100h
 
   # features

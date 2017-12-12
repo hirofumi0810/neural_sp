@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Hierarchical CTC model."""
+"""Student CTC model."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -13,18 +13,18 @@ except:
     raise ImportError('Install warpctc_pytorch.')
 
 import torch.nn as nn
+import torch.nn.functional as F
 
 from models.pytorch.ctc.ctc import CTC, _concatenate_labels
-from models.pytorch.encoders.load_encoder import load
-from utils.io.variable import np2var
+from utils.io.variable import np2var, var2np
 
 NEG_INF = -float("inf")
 LOG_0 = NEG_INF
 LOG_1 = 0
 
 
-class HierarchicalCTC(CTC):
-    """Hierarchical CTC model.
+class StudentCTC(CTC):
+    """Student CTC model.
     Args:
         input_size (int): the dimension of input features
         encoder_type (string): the type of the encoder. Set lstm or gru or rnn.
@@ -32,13 +32,9 @@ class HierarchicalCTC(CTC):
         num_units (int): the number of units in each layer
         num_proj (int): the number of nodes in recurrent projection layer
         num_layers (int): the number of layers of the encoder of the main task
-        num_layers_sub (int): the number of layers of the encoder of the sub task
-        fc_list (list):
         dropout (float): the probability to drop nodes
         main_loss_weight (float): A weight parameter for the main CTC loss
         num_classes (int): the number of classes of target labels of the main task
-            (excluding a blank class)
-        num_classes_sub (int): the number of classes of target labels of the sub task
             (excluding a blank class)
         parameter_init (float, optional): Range of uniform distribution to
             initialize weight parameters
@@ -53,7 +49,7 @@ class HierarchicalCTC(CTC):
         conv_strides (list, optional):
         poolings (list, optional):
         batch_norm (bool, optional):
-        weight_noise_std (float, optional):
+        weight_noise_std (flaot, optional):
     """
 
     def __init__(self,
@@ -63,12 +59,10 @@ class HierarchicalCTC(CTC):
                  num_units,
                  num_proj,
                  num_layers,
-                 num_layers_sub,  # ***
                  fc_list,
                  dropout,
                  main_loss_weight,  # ***
                  num_classes,
-                 num_classes_sub,  # ***
                  parameter_init=0.1,
                  subsample_list=[],
                  logits_temperature=1,
@@ -81,7 +75,7 @@ class HierarchicalCTC(CTC):
                  batch_norm=False,
                  weight_noise_std=0):
 
-        super(HierarchicalCTC, self).__init__(
+        super(StudentCTC, self).__init__(
             input_size=input_size,  # 120 or 123
             encoder_type=encoder_type,
             bidirectional=bidirectional,
@@ -97,82 +91,25 @@ class HierarchicalCTC(CTC):
             batch_norm=batch_norm,
             weight_noise_std=weight_noise_std)
 
-        self.num_layers_sub = num_layers_sub
-
-        # Setting for CTC
-        self.num_classes_sub = num_classes_sub + 1
-        # NOTE: Add blank class
-
-        # Setting for MTL
+        # Weight parameter for MTL with XE loss
         self.main_loss_weight = main_loss_weight
 
-        # Load an instance
-        if sum(subsample_list) == 0:
-            encoder = load(encoder_type=encoder_type + '_hierarchical')
+        if len(fc_list) > 0:
+            self.fc_xe = nn.Linear(
+                fc_list[-1], self.num_classes)
         else:
-            encoder = load(encoder_type='p' + encoder_type + '_hierarchical')
+            self.fc_xe = nn.Linear(
+                num_units * self.num_directions, self.num_classes)
 
-        # Call the encoder function
-        # NOTE: overide encoder
-        if encoder_type in ['lstm', 'gru', 'rnn']:
-            if sum(subsample_list) == 0:
-                self.encoder = encoder(
-                    input_size=input_size,  # 120 or 123
-                    rnn_type=encoder_type,
-                    bidirectional=bidirectional,
-                    num_units=num_units,
-                    num_proj=num_proj,
-                    num_layers=num_layers,
-                    num_layers_sub=num_layers_sub,
-                    dropout=dropout,
-                    parameter_init=parameter_init,
-                    use_cuda=self.use_cuda,
-                    batch_first=False,
-                    num_stack=num_stack,
-                    splice=splice,
-                    conv_channels=conv_channels,
-                    conv_kernel_sizes=conv_kernel_sizes,
-                    conv_strides=conv_strides,
-                    poolings=poolings,
-                    batch_norm=batch_norm)
-            else:
-                self.encoder = encoder(
-                    input_size=input_size,  # 120 or 123
-                    rnn_type=encoder_type,
-                    bidirectional=bidirectional,
-                    num_units=num_units,
-                    num_proj=num_proj,
-                    num_layers=num_layers,
-                    num_layers_sub=num_layers_sub,
-                    dropout=dropout,
-                    parameter_init=parameter_init,
-                    subsample_list=subsample_list,
-                    subsample_type='concat',
-                    use_cuda=self.use_cuda,
-                    batch_first=False,
-                    num_stack=num_stack,
-                    splice=splice,
-                    conv_channels=conv_channels,
-                    conv_kernel_sizes=conv_kernel_sizes,
-                    conv_strides=conv_strides,
-                    poolings=poolings,
-                    batch_norm=batch_norm)
-        else:
-            raise NotImplementedError
-
-        self.fc_sub = nn.Linear(
-            num_units * self.num_directions, self.num_classes_sub)
-
-    def forward(self, inputs, labels, labels_sub, inputs_seq_len,
-                labels_seq_len, labels_seq_len_sub, volatile=False):
+    def forward(self, inputs, labels, labels_xe, inputs_seq_len,
+                labels_seq_len, volatile=False):
         """Forward computation.
         Args:
             inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
             labels (np.ndarray): A tensor of size `[B, T_out]`
-            labels_sub (np.ndarray): A tensor of size `[B, T_out_sub]`
+            labels_xe (np.ndarray): A tensor of size `[B, T_out_sub]`
             inputs_seq_len (np.ndarray): A tensor of size `[B]`
             labels_seq_len (np.ndarray): A tensor of size `[B]`
-            labels_seq_len_sub (np.ndarray): A tensor of size `[B]`
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
@@ -183,64 +120,142 @@ class HierarchicalCTC(CTC):
         # Wrap by Variable
         inputs_var = np2var(inputs, use_cuda=self.use_cuda)
         labels_var = np2var(labels, dtype='int', use_cuda=False)
-        labels_sub_var = np2var(labels_sub, dtype='int', use_cuda=False)
+        labels_xe_var = np2var(labels_xe, dtype='float', use_cuda=False)
         inputs_seq_len_var = np2var(
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda)
-        _inputs_seq_len_sub_var = inputs_seq_len_var.clone()
         labels_seq_len_var = np2var(
             labels_seq_len, dtype='int', use_cuda=False)
-        labels_seq_len_sub_var = np2var(
-            labels_seq_len_sub, dtype='int', use_cuda=False)
 
         labels_var = labels_var + 1
-        labels_sub_var = labels_sub_var + 1
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
         # Encode acoustic features
-        logits, logits_sub, perm_indices = self._encode(
-            inputs_var, inputs_seq_len_var,
-            volatile=volatile, is_multi_task=True)
+        logits, logits_xe, perm_indices = self._encode(
+            inputs_var, inputs_seq_len_var, volatile=volatile)
 
         # Permutate indices
         if perm_indices is not None:
             labels_var = labels_var[perm_indices.cpu()]
-            labels_sub_var = labels_sub_var[perm_indices.cpu()]
+            labels_xe_var = labels_xe_var[perm_indices.cpu()]
             inputs_seq_len_var = inputs_seq_len_var[perm_indices]
             labels_seq_len_var = labels_seq_len_var[perm_indices.cpu()]
-            labels_seq_len_sub_var = labels_seq_len_sub_var[perm_indices.cpu()]
 
         # Concatenate all labels for warpctc_pytorch
         # `[B, T_out]` -> `[1,]`
         concatenated_labels = _concatenate_labels(
             labels_var, labels_seq_len_var)
-        concatenated_labels_sub = _concatenate_labels(
-            labels_sub_var, labels_seq_len_sub_var)
 
         # Output smoothing
         if self.logits_temperature != 1:
             logits /= self.logits_temperature
-            logits_sub /= self.logits_temperature
+            logits_xe /= self.logits_temperature
 
         # Subsampling
-        if sum(self.subsample_list[:self.num_layers_sub]) > 0:
-            _inputs_seq_len_sub_var /= sum(
-                self.subsample_list[:self.num_layers_sub]) ** 2
         if sum(self.subsample_list) != 0:
             inputs_seq_len_var /= sum(self.subsample_list) ** 2
         # NOTE: floor is not needed because inputs_seq_len_var is IntTensor
 
-        # Compute CTC loss
+        # Compute CTC loss and XE loss
         ctc_loss_fn = CTCLoss()
         loss_main = ctc_loss_fn(logits, concatenated_labels,
                                 inputs_seq_len_var.cpu(), labels_seq_len_var)
-        loss_sub = ctc_loss_fn(logits_sub, concatenated_labels_sub,
-                               _inputs_seq_len_sub_var.cpu(), labels_seq_len_sub_var)
+        loss_xe = F.cross_entropy(logits_xe, labels_xe,
+                                  size_average=False)
         loss = loss_main * self.main_loss_weight + \
-            loss_sub * (1 - self.main_loss_weight)
+            loss_xe * (1 - self.main_loss_weight)
 
         # Average the loss by mini-batch
         batch_size = logits.size(1)
         loss /= batch_size
 
         return (loss, loss_main * self.main_loss_weight / batch_size,
-                loss_sub * (1 - self.main_loss_weight) / batch_size)
+                loss_xe * (1 - self.main_loss_weight) / batch_size)
+
+    def _encode(self, inputs, inputs_seq_len, volatile):
+        """Encode acoustic features.
+        Args:
+            inputs (FloatTensor): A tensor of size `[B, T, input_size]`
+            inputs_seq_len (IntTensor): A tensor of size `[B]`
+            volatile (bool): if True, the history will not be saved.
+                This should be used in inference model for memory efficiency.
+        Returns:
+            logits (FloatTensor): A tensor of size
+                `[T, B, num_classes (including blank)]`
+            logits_xe (FloatTensor): A tensor of size
+                `[T, B, num_classes_sub (including blank)]`
+            perm_indices (LongTensor):
+        """
+        if self.encoder_type != 'cnn':
+            encoder_outputs, _, perm_indices = self.encoder(
+                inputs, inputs_seq_len, volatile, mask_sequence=True)
+        else:
+            encoder_outputs = self.encoder(inputs)
+            # NOTE: `[B, T, feature_dim]`
+            encoder_outputs = encoder_outputs.transpose(0, 1).contiguous()
+            perm_indices = None
+
+        # Convert to 2D tensor
+        max_time, batch_size = encoder_outputs.size()[:2]
+        encoder_outputs = encoder_outputs.view(max_time * batch_size, -1)
+        # contiguous()
+
+        if len(self.fc_list) > 0:
+            encoder_outputs = self.fc_layers(encoder_outputs)
+        logits = self.fc(encoder_outputs)
+        logits_xe = self.fc_xe(encoder_outputs)
+
+        # Reshape back to 3D tensor
+        logits = logits.view(max_time, batch_size, -1)
+        logits_xe = logits_xe.view(max_time, batch_size, -1)
+
+        return logits, logits_xe, perm_indices
+
+    def decode_xe(self, inputs, inputs_seq_len, beam_width=1):
+        """
+        Args:
+            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            inputs_seq_len (np.ndarray): A tensor of size `[B]`
+            beam_width (int, optional): the size of beam
+        Returns:
+            best_hyps (np.ndarray):
+        """
+        # Wrap by Variable
+        inputs_var = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
+        inputs_seq_len_var = np2var(
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
+
+        # Encode acoustic features
+        _, logits_xe, perm_indices = self._encode(
+            inputs_var, inputs_seq_len_var, volatile=True)
+
+        # Permutate indices
+        if perm_indices is not None:
+            perm_indices = var2np(perm_indices)
+            inputs_seq_len_var = inputs_seq_len_var[perm_indices]
+
+        # Convert to batch-major
+        logits_xe = logits_xe.transpose(0, 1)
+
+        # Subsampling
+        if sum(self.subsample_list) > 0:
+            inputs_seq_len_var /= sum(self.subsample_list) ** 2
+        # NOTE: floor is not needed because inputs_seq_len_var is IntTensor
+
+        log_probs_xe = F.log_softmax(logits_xe, dim=logits_xe.dim() - 1)
+
+        if beam_width == 1:
+            best_hyps = self._decode_greedy_np(
+                var2np(log_probs_xe), var2np(inputs_seq_len_var))
+        else:
+            best_hyps = self._decode_beam_np(
+                var2np(log_probs_xe), var2np(inputs_seq_len_var),
+                beam_width=beam_width)
+
+        best_hyps = best_hyps - 1
+        # NOTE: index 0 is reserved for blank in warpctc_pytorch
+
+        # Permutate indices to the original order
+        if perm_indices is not None:
+            best_hyps = best_hyps[perm_indices]
+
+        return best_hyps

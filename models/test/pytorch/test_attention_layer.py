@@ -42,20 +42,19 @@ class TestAttentionLayer(unittest.TestCase):
         print('  attention_type: %s' % attention_type)
         print('==================================================')
 
+        batch_size = 4
+        max_time = 200
+        decoder_num_units = 256
+        encoder_num_units = decoder_num_units
+
         attend = AttentionMechanism(
-            encoder_num_units=256,
-            decoder_num_units=256,
+            decoder_num_units=decoder_num_units,
             attention_type=attention_type,
             attention_dim=128,
             sharpening_factor=2,
             sigmoid_smoothing=False,
             out_channels=10,
             kernel_size=101)
-
-        batch_size = 4
-        max_time = 200
-        encoder_num_units = 256
-        decoder_num_units = 256
 
         encoder_outputs = Variable(torch.randn(
             (batch_size, max_time, encoder_num_units)))

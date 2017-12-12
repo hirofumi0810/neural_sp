@@ -16,6 +16,7 @@ try:
 except ImportError:
     raise ImportError('Install pytorch_ctc.')
 
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -59,7 +60,7 @@ class CTC(ModelBase):
         conv_strides (list, optional):
         poolings (list, optional):
         batch_norm (bool, optional):
-        weight_noise_std (flaot, optional):
+        weight_noise_std (float, optional):
     """
 
     def __init__(self,
@@ -321,7 +322,7 @@ class CTC(ModelBase):
 
     def posteriors(self, inputs, inputs_seq_len, temperature=1,
                    blank_prior=None, is_sub_task=False):
-        """
+        """Returns CTC posteriors (after the softmax layer).
         Args:
             inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
             inputs_seq_len (np.ndarray): A tensor of size `[B]`
@@ -371,7 +372,7 @@ class CTC(ModelBase):
             inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
             inputs_seq_len (np.ndarray): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
-            max_decode_length: not used
+            max_decode_length: not used (to match interface)
             is_sub_task (bool, optional):
         Returns:
             best_hyps (np.ndarray):
@@ -429,6 +430,38 @@ class CTC(ModelBase):
         # Permutate indices to the original order
         if perm_indices is not None:
             best_hyps = best_hyps[perm_indices]
+
+        return best_hyps
+
+    def decode_from_probs(self, probs, inputs_seq_len, beam_width=1,
+                          max_decode_length=None):
+        """
+        Args:
+
+        Returns:
+            best_hyps (np.ndarray):
+        """
+        # TODO: Subsampling
+        # if is_sub_task:
+        #     if sum(self.subsample_list[:self.num_layers_sub]) > 0:
+        #         inputs_seq_len_var /= sum(
+        #             self.subsample_list[:self.num_layers_sub]) ** 2
+        # else:
+        #     if sum(self.subsample_list) > 0:
+        #         inputs_seq_len_var /= sum(self.subsample_list) ** 2
+        # NOTE: floor is not needed because inputs_seq_len_var is IntTensor
+
+        # Convert to log-scale
+        log_probs = np.log(probs + 1e-10)
+
+        if beam_width == 1:
+            best_hyps = self._decode_greedy_np(log_probs, inputs_seq_len)
+        else:
+            best_hyps = self._decode_beam_np(
+                log_probs, inputs_seq_len, beam_width=beam_width)
+
+        best_hyps = best_hyps - 1
+        # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
         return best_hyps
 

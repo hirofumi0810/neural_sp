@@ -251,7 +251,6 @@ class AttentionSeq2seq(ModelBase):
         # Attention layer
         ##############################
         self.attend = AttentionMechanism(
-            encoder_num_units=encoder_num_units,
             decoder_num_units=decoder_num_units,
             attention_type=attention_type,
             attention_dim=attention_dim,
@@ -259,6 +258,8 @@ class AttentionSeq2seq(ModelBase):
             sigmoid_smoothing=sigmoid_smoothing,
             out_channels=attention_conv_num_channels,
             kernel_size=attention_conv_width)
+        # NOTE: encoder's outputs will be mapped to the same dimension as the
+        # decoder states
 
         ##################################################
         # Bridge layer between the encoder and decoder
@@ -460,6 +461,7 @@ class AttentionSeq2seq(ModelBase):
             encoder_final_state = self.bridge(
                 encoder_final_state.view(-1, self.encoder_num_units))
             encoder_final_state = encoder_final_state.view(1, batch_size, -1)
+            # TODO: add self.bridge_init
 
         if is_multi_task:
             # Bridge between the encoder and decoder in the sub task
@@ -470,6 +472,7 @@ class AttentionSeq2seq(ModelBase):
                     encoder_final_state_sub.view(-1, self.encoder_num_units))
                 encoder_final_state_sub = encoder_final_state_sub.view(
                     1, batch_size, -1)
+                # TODO: add self.bridge_sub_init
 
             return encoder_outputs, encoder_final_state, encoder_outputs_sub, encoder_final_state_sub, perm_indices
 

@@ -166,9 +166,9 @@ class TestCTC(unittest.TestCase):
                 model.eval()
 
                 # Decode
-                labels_pred, _ = model.decode(
+                labels_pred = model.decode(
                     inputs, inputs_seq_len, beam_width=1)
-                labels_pred_sub, _ = model.decode(
+                labels_pred_sub = model.decode(
                     inputs, inputs_seq_len, beam_width=1, is_sub_task=True)
 
                 # Compute accuracy

@@ -236,7 +236,7 @@ class TestAttention(unittest.TestCase):
                 model.eval()
 
                 # Decode
-                labels_pred, _ = model.decode(
+                labels_pred = model.decode(
                     inputs, inputs_seq_len,
                     beam_width=2, max_decode_length=60)
 
