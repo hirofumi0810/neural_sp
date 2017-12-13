@@ -30,12 +30,18 @@ class TestHierarchicalAttention(unittest.TestCase):
     def test(self):
         print("Hierarchical Attention Working check.")
 
+        # Word attention + char CTC
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', subsample=True,
+                   ctc_loss_weight_sub=0.5)
+
         # CNN-LSTM encoder
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', conv=True)
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', conv=True, batch_norm=True)
 
+        # Pyramidal encoder
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', subsample=True)
 
@@ -46,7 +52,7 @@ class TestHierarchicalAttention(unittest.TestCase):
     def check(self, encoder_type, bidirectional, decoder_type,
               attention_type='dot_product',
               subsample=False, input_feeding=False,
-              ctc_loss_weight=0, decoder_num_layers=1,
+              ctc_loss_weight_sub=0, decoder_num_layers=1,
               conv=False, batch_norm=False):
 
         print('==================================================')
@@ -56,7 +62,7 @@ class TestHierarchicalAttention(unittest.TestCase):
         print('  attention_type: %s' % attention_type)
         print('  subsample: %s' % str(subsample))
         print('  input_feeding: %s' % str(input_feeding))
-        print('  ctc_loss_weight: %s' % str(ctc_loss_weight))
+        print('  ctc_loss_weight_sub: %s' % str(ctc_loss_weight_sub))
         print('  decoder_num_layers: %s' % str(decoder_num_layers))
         print('  conv: %s' % str(conv))
         print('  batch_norm: %s' % str(batch_norm))
@@ -118,8 +124,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             logits_temperature=1,
             sigmoid_smoothing=False,
             input_feeding=input_feeding,
-            ctc_loss_weight=0,
-            ctc_loss_weight_sub=0.1,
+            ctc_loss_weight_sub=ctc_loss_weight_sub,
             attention_conv_num_channels=10,
             attention_conv_width=101,
             num_stack=num_stack,
@@ -129,7 +134,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             conv_strides=conv_strides,
             poolings=poolings,
             batch_norm=batch_norm,
-            scheduled_sampling_prob=0)
+            scheduled_sampling_prob=0.1)
 
         # Count total parameters
         for name, num_params in model.num_params_dict.items():

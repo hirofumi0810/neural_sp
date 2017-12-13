@@ -18,6 +18,8 @@ from models.pytorch.encoders.load_encoder import load
 from models.pytorch.attention.decoders.rnn_decoder import RNNDecoder
 from models.pytorch.attention.attention_layer import AttentionMechanism
 from models.pytorch.attention.char2word import LSTMChar2Word
+from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
+from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
 from utils.io.variable import np2var, var2np
 
 
@@ -54,7 +56,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  sigmoid_smoothing=False,
                  input_feeding=False,
                  coverage_weight=0,
-                 ctc_loss_weight=0,
                  ctc_loss_weight_sub=0,  # ***
                  attention_conv_num_channels=10,
                  attention_conv_width=101,
@@ -94,7 +95,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             sigmoid_smoothing=sigmoid_smoothing,
             input_feeding=input_feeding,
             coverage_weight=coverage_weight,
-            ctc_loss_weight=ctc_loss_weight,
+            ctc_loss_weight=0,
             attention_conv_num_channels=attention_conv_num_channels,
             attention_conv_width=attention_conv_width,
             num_stack=num_stack,
@@ -120,8 +121,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         # Setting for MTL
         self.main_loss_weight = main_loss_weight
-        self.sub_loss_weight = 1 - main_loss_weight - \
-            ctc_loss_weight - ctc_loss_weight_sub
+        self.sub_loss_weight = 1 - main_loss_weight - ctc_loss_weight_sub
         self.ctc_loss_weight_sub = ctc_loss_weight_sub
         assert self.ctc_loss_weight * self.ctc_loss_weight_sub == 0
 
@@ -134,8 +134,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         self.space_index = space_index
         # NOTE: composition_case:
         # None: normal hierarchical attention model
-        # hidden: leveraga character-level hidden states
-        # embedding: leveraga character embeddings
+        # hidden: leverage character-level hidden states
+        # embedding: leverage character embeddings
 
         #########################
         # Encoder
@@ -201,8 +201,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         ##############################
         if composition_case in [None, 'hidden']:
             decoder_input_size = embedding_dim
-        elif composition_case == 'c2w_finding_function':
-            decoder_input_size = embedding_dim_sub * 2
         else:
             raise NotImplementedError
 
@@ -266,10 +264,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # NOTE: <SOS> is removed because the decoder never predict <SOS> class
 
         if ctc_loss_weight_sub > 0:
-            # self.fc_ctc = nn.Linear(
-            # encoder_num_units * self.encoder_num_directions, num_classes_sub
-            # + 1)
+            # self.fc_sub_ctc = nn.Linear(
+            # encoder_num_units * self.encoder_num_directions, num_classes + 1)
             self.fc_ctc_sub = nn.Linear(encoder_num_units, num_classes_sub + 1)
+
+            # Set CTC decoders
+            self._decode_ctc_greedy_np = GreedyDecoder(blank_index=0)
+            self._decode_ctc_beam_np = BeamSearchDecoder(blank_index=0)
 
         ##################################################
         # Composition layers
@@ -286,9 +287,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 word_embedding_dim=embedding_dim,
                 use_cuda=self.use_cuda)
             self.gating_fn = nn.Linear(embedding_dim, embedding_dim)
-
-        elif composition_case == 'hidden_embedding':
-            raise NotImplementedError
 
     def forward(self, inputs, labels, labels_sub, inputs_seq_len,
                 labels_seq_len, labels_seq_len_sub, volatile=False):
@@ -332,7 +330,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             labels_seq_len_var = labels_seq_len_var[perm_indices]
             labels_seq_len_sub_var = labels_seq_len_sub_var[perm_indices]
 
-        # Teacher-forcing (main task)
+        ##################################################
+        # Main task
+        ##################################################
+        # Teacher-forcing
         if self.composition_case is None:
             logits, attention_weights = self._decode_train(
                 encoder_outputs, labels_var, encoder_final_state)
@@ -343,15 +344,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 labels_seq_len_var, labels_seq_len_sub_var,
                 encoder_final_state)
 
-        # Teacher-forcing (sub task)
-        logits_sub, attention_weights_sub = self._decode_train(
-            encoder_outputs_sub, labels_sub_var, encoder_final_state_sub,
-            is_sub_task=True)
-
         # Output smoothing
         if self.logits_temperature != 1:
             logits /= self.logits_temperature
-            logits_sub /= self.logits_temperature
 
         # Compute XE sequence loss in the main task
         num_classes = logits.size(2)
@@ -362,39 +357,59 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                     size_average=False)
         # NOTE: labels_var are padded by sos_index
 
-        # Compute XE sequence loss in the sub task
-        num_classes_sub = logits_sub.size(2)
-        logits_sub = logits_sub.view((-1, num_classes_sub))
-        labels_sub_1d = labels_sub_var[:, 1:].contiguous().view(-1)
-        loss_sub = F.cross_entropy(logits_sub, labels_sub_1d,
-                                   ignore_index=self.sos_index_sub,
-                                   size_average=False)
-
-        loss = loss_main * self.main_loss_weight + loss_sub * self.sub_loss_weight
+        loss = loss_main * self.main_loss_weight
 
         # Add coverage term
         if self.coverage_weight != 0:
             pass
             # coverage = self._compute_coverage(attention_weights)
             # loss += coverage_weight * coverage
+        # TODO: sub taskも入れる？
 
-        # Auxiliary CTC loss (optional)
-        if self.ctc_loss_weight > 0:
-            ctc_loss = self._compute_ctc_loss(
-                encoder_outputs, labels, inputs_seq_len_var, labels_seq_len_var)
-            loss += ctc_loss * self.ctc_loss_weight
-        elif self.ctc_loss_weight_sub > 0:
+        ##################################################
+        # Sub task (attention)
+        ##################################################
+        if self.sub_loss_weight > 0:
+            # Teacher-forcing
+            logits_sub, attention_weights_sub = self._decode_train(
+                encoder_outputs_sub, labels_sub_var, encoder_final_state_sub,
+                is_sub_task=True)
+
+            # Output smoothing
+            if self.logits_temperature != 1:
+                logits_sub /= self.logits_temperature
+
+            # Compute XE sequence loss in the sub task
+            num_classes_sub = logits_sub.size(2)
+            logits_sub = logits_sub.view((-1, num_classes_sub))
+            labels_sub_1d = labels_sub_var[:, 1:].contiguous().view(-1)
+            loss_sub = F.cross_entropy(logits_sub, labels_sub_1d,
+                                       ignore_index=self.sos_index_sub,
+                                       size_average=False)
+            # NOTE: labels_var are padded by sos_index_sub
+
+            loss += loss_sub * self.sub_loss_weight
+
+        ##################################################
+        # Sub task (CTC)
+        ##################################################
+        if self.ctc_loss_weight_sub > 0:
             ctc_loss_sub = self._compute_ctc_loss(
                 encoder_outputs_sub, labels_sub_var,
                 inputs_seq_len_var, labels_seq_len_sub_var, is_sub_task=True)
+            # NOTE: including subsampling
             loss += ctc_loss_sub * self.ctc_loss_weight_sub
 
         # Average the loss by mini-batch
         batch_size = encoder_outputs.size(0)
         loss /= batch_size
 
-        return (loss, loss_main * self.main_loss_weight / batch_size,
-                loss_sub * self.sub_loss_weight / batch_size)
+        if self.sub_loss_weight > self.ctc_loss_weight_sub:
+            return (loss, loss_main * self.main_loss_weight / batch_size,
+                    loss_sub * self.sub_loss_weight / batch_size)
+        else:
+            return (loss, loss_main * self.main_loss_weight / batch_size,
+                    ctc_loss_sub * self.ctc_loss_weight_sub / batch_size)
 
     def _decode_train_composition(self, encoder_outputs, encoder_outputs_sub,
                                   labels, labels_sub,
@@ -582,10 +597,12 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Encode acoustic features
         if is_sub_task:
             _, _, encoder_outputs, encoder_final_state, perm_indices = self._encode(
-                inputs_var, inputs_seq_len_var, volatile=True, is_multi_task=True)
+                inputs_var, inputs_seq_len_var, volatile=True,
+                is_multi_task=True)
         else:
             encoder_outputs, encoder_final_state, encoder_outputs_sub, encoder_final_state_sub, perm_indices = self._encode(
-                inputs_var, inputs_seq_len_var, volatile=True, is_multi_task=True)
+                inputs_var, inputs_seq_len_var, volatile=True,
+                is_multi_task=True)
 
         # Permutate indices
         if perm_indices is not None:
@@ -593,23 +610,61 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             inputs_seq_len_var = inputs_seq_len_var[perm_indices]
 
         if beam_width == 1:
-            if is_sub_task or self.composition_case is None:
-                best_hyps, _ = self._decode_infer_greedy(
-                    encoder_outputs, encoder_final_state, max_decode_length,
-                    is_sub_task=is_sub_task)
+            if is_sub_task:
+                if self.sub_loss_weight > self.ctc_loss_weight_sub:
+                    # Decode by attention decoder
+                    best_hyps, _ = self._decode_infer_greedy(
+                        encoder_outputs, encoder_final_state, max_decode_length,
+                        is_sub_task=True)
+                else:
+                    # Decode by CTC decoder
+                    # Path through the softmax layer
+                    batch_size, max_time = encoder_outputs.size()[:2]
+                    encoder_outputs = encoder_outputs.contiguous()
+                    encoder_outputs = encoder_outputs.view(
+                        batch_size * max_time, -1)
+                    logits_ctc = self.fc_ctc_sub(encoder_outputs)
+                    logits_ctc = logits_ctc.view(batch_size, max_time, -1)
+                    log_probs = F.log_softmax(
+                        logits_ctc, dim=logits_ctc.dim() - 1)
+
+                    # Subsampling
+                    if sum(self.subsample_list[:self.encoder_num_layers_sub]) > 0:
+                        inputs_seq_len_var /= sum(
+                            self.subsample_list[:self.encoder_num_layers_sub]) ** 2
+                    # NOTE: floor is not needed because inputs_seq_len_var is
+                    # IntTensor
+
+                    if beam_width == 1:
+                        best_hyps = self._decode_ctc_greedy_np(
+                            var2np(log_probs), var2np(inputs_seq_len_var))
+                    else:
+                        best_hyps = self._decode_ctc_beam_np(
+                            var2np(log_probs), var2np(inputs_seq_len_var),
+                            beam_width=beam_width)
+
+                    best_hyps = best_hyps - 1
+                    # NOTE: index 0 is reserved for blank in warpctc_pytorch
             else:
-                best_hyps, _ = self._decode_infer_greedy_composition(
-                    encoder_outputs, encoder_outputs_sub,
-                    encoder_final_state, encoder_final_state_sub,
-                    max_decode_length)
+                if self.composition_case is None:
+                    best_hyps, _ = self._decode_infer_greedy(
+                        encoder_outputs, encoder_final_state, max_decode_length)
+                else:
+                    best_hyps, _ = self._decode_infer_greedy_composition(
+                        encoder_outputs, encoder_outputs_sub,
+                        encoder_final_state, encoder_final_state_sub,
+                        max_decode_length)
         else:
-            if is_sub_task or self.composition_case is None:
-                best_hyps, _ = self._decode_infer_beam(
-                    encoder_outputs, encoder_final_state,
-                    inputs_seq_len_var,
-                    beam_width, max_decode_length)
-            else:
+            if is_sub_task:
                 raise NotImplementedError
+            else:
+                if self.composition_case is None:
+                    best_hyps, attention_weights = self._decode_infer_beam(
+                        encoder_outputs, encoder_final_state,
+                        inputs_seq_len_var,
+                        beam_width, max_decode_length)
+                else:
+                    raise NotImplementedError
 
         # Permutate indices to the original order
         if perm_indices is not None:

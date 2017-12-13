@@ -960,41 +960,57 @@ class AttentionSeq2seq(ModelBase):
 
         return np.array(best_hyps), np.array(attention_weights)
 
-    def decode_ctc(self, inputs, inputs_seq_len, beam_width):
+    def decode_ctc(self, inputs, inputs_seq_len, beam_width=1):
         """
         Args:
-
+            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            inputs_seq_len (np.ndarray): A tensor of size `[B]`
+            beam_width (int, optional): the size of beam
         Returns:
-
+            best_hyps (np.ndarray):
         """
         # Wrap by Variable
-        inputs = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
-        inputs_seq_len = np2var(
+        inputs_var = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
+        inputs_seq_len_var = np2var(
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
 
         assert self.ctc_loss_weight > 0
 
         # Encode acoustic features
         encoder_outputs, encoder_final_state, perm_indices = self._encode(
-            inputs, inputs_seq_len, volatile=True)
+            inputs_var, inputs_seq_len_var, volatile=True)
+
+        # Permutate indices
         if perm_indices is not None:
             perm_indices = var2np(perm_indices)
+            inputs_seq_len_var = inputs_seq_len_var[perm_indices]
 
+        # Path through the softmax layer
         batch_size, max_time = encoder_outputs.size()[:2]
-
-        # Convert to 2D tensor
         encoder_outputs = encoder_outputs.contiguous()
-        encoder_outputs = encoder_outputs.view(batch_size, max_time, -1)
+        encoder_outputs = encoder_outputs.view(batch_size * max_time, -1)
         logits_ctc = self.fc_ctc(encoder_outputs)
-
-        # Convert to batch-major
-        logits_ctc = logits_ctc.transpose(0, 1)
-
+        logits_ctc = logits_ctc.view(batch_size, max_time, -1)
         log_probs = F.log_softmax(logits_ctc, dim=logits_ctc.dim() - 1)
 
-        if beam_width == 1:
-            best_hyps, _ = self._decode_ctc_greedy_np(log_probs)
-        else:
-            best_hyps, _ = self._decode_ctc_beam_np(log_probs, beam_width)
+        # Subsampling
+        if sum(self.subsample_list) > 0:
+            inputs_seq_len_var /= sum(self.subsample_list) ** 2
+        # NOTE: floor is not needed because inputs_seq_len_var is IntTensor
 
-        return best_hyps, perm_indices
+        if beam_width == 1:
+            best_hyps = self._decode_ctc_greedy_np(
+                var2np(log_probs), var2np(inputs_seq_len_var))
+        else:
+            best_hyps = self._decode_ctc_beam_np(
+                var2np(log_probs), var2np(inputs_seq_len_var),
+                beam_width=beam_width)
+
+        best_hyps = best_hyps - 1
+        # NOTE: index 0 is reserved for blank in warpctc_pytorch
+
+        # Permutate indices to the original order
+        if perm_indices is not None:
+            best_hyps = best_hyps[perm_indices]
+
+        return best_hyps

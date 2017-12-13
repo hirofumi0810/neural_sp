@@ -82,5 +82,4 @@ param:
 
   # MTL
   main_loss_weight: 0.5
-  ctc_loss_weight: 0
-  ctc_loss_weight_sub: 0
+  ctc_loss_weight_sub: 0.5

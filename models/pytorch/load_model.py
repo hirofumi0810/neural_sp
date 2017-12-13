@@ -301,7 +301,6 @@ def load(model_type, params):
             sigmoid_smoothing=params['sigmoid_smoothing'],
             input_feeding=params['input_feeding'],
             coverage_weight=params['coverage_weight'],
-            ctc_loss_weight=params['ctc_loss_weight'],
             ctc_loss_weight_sub=params['ctc_loss_weight_sub'],
             attention_conv_num_channels=params['attention_conv_num_channels'],
             attention_conv_width=params['attention_conv_width'],
@@ -357,8 +356,6 @@ def load(model_type, params):
         model.name += '_main' + str(params['main_loss_weight'])
         if params['coverage_weight'] > 0:
             model.name += '_coverage' + str(params['coverage_weight'])
-        if params['ctc_loss_weight'] > 0:
-            model.name += '_ctc' + str(params['ctc_loss_weight'])
         if params['ctc_loss_weight_sub'] > 0:
             model.name += '_ctcsub' + str(params['ctc_loss_weight_sub'])
         if params['scheduled_sampling_prob'] > 0:
