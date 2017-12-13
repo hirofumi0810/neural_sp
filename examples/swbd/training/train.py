@@ -13,7 +13,6 @@ import time
 from setproctitle import setproctitle
 import yaml
 import shutil
-import copy
 import argparse
 from tensorboardX import SummaryWriter
 
@@ -144,7 +143,6 @@ def main():
     ler_dev_best = 1
     not_improved_epoch = 0
     learning_rate = float(params['learning_rate'])
-    best_model = model
     loss_val_train = 0.
     for step, (batch, is_new_epoch) in enumerate(train_data):
 
@@ -205,12 +203,6 @@ def main():
             plot_loss(csv_loss_train, csv_loss_dev, csv_steps,
                       save_path=model.save_path)
 
-            # Save the model
-            saved_path = model.save_checkpoint(
-                model.save_path, epoch=train_data.epoch)
-            print("=> Saved checkpoint (epoch:%d): %s" %
-                  (train_data.epoch, saved_path))
-
             if train_data.epoch >= params['eval_start_epoch']:
                 # ***Change to evaluation mode***
                 model.eval()
@@ -244,8 +236,65 @@ def main():
                 if metric_dev_epoch < ler_dev_best:
                     ler_dev_best = metric_dev_epoch
                     not_improved_epoch = 0
-                    best_model = copy.deepcopy(model)
                     print('■■■ ↑Best Score↑ ■■■')
+
+                    # Save the model
+                    saved_path = model.save_checkpoint(
+                        model.save_path, epoch=train_data.epoch)
+                    print("=> Saved checkpoint (epoch:%d): %s" %
+                          (train_data.epoch, saved_path))
+
+                    print('=== Test Data Evaluation ===')
+                    if 'char' in params['label_type']:
+                        # eval2000 (swbd)
+                        cer_eval2000_swbd, wer_eval2000_swbd = do_eval_cer(
+                            model=model,
+                            model_type=params['model_type'],
+                            dataset=eval2000_swbd_data,
+                            label_type=params['label_type'],
+                            data_size=params['data_size'],
+                            beam_width=1,
+                            max_decode_length=MAX_DECODE_LENGTH_CHAR,
+                            eval_batch_size=1)
+                        print('  CER (SWB): %f %%' % (cer_eval2000_swbd * 100))
+                        print('  WER (SWB): %f %%' % (wer_eval2000_swbd * 100))
+
+                        # eval2000(ch)
+                        cer_eval2000_ch, wer_eval2000_ch = do_eval_cer(
+                            model=model,
+                            model_type=params['model_type'],
+                            dataset=eval2000_ch_data,
+                            label_type=params['label_type'],
+                            data_size=params['data_size'],
+                            beam_width=1,
+                            max_decode_length=MAX_DECODE_LENGTH_CHAR,
+                            eval_batch_size=1)
+                        print('  CER (CHE): %f %%' % (cer_eval2000_ch * 100))
+                        print('  WER (CHE): %f %%' % (wer_eval2000_ch * 100))
+                    else:
+                        # eval2000(swbd)
+                        wer_eval2000_swbd = do_eval_wer(
+                            model=model,
+                            model_type=params['model_type'],
+                            dataset=eval2000_swbd_data,
+                            label_type=params['label_type'],
+                            data_size=params['data_size'],
+                            beam_width=1,
+                            max_decode_length=MAX_DECODE_LENGTH_WORD,
+                            eval_batch_size=1)
+                        print('  WER (SWB): %f %%' % (wer_eval2000_swbd * 100))
+
+                        # eval2000(ch)
+                        wer_eval2000_ch = do_eval_wer(
+                            model=model,
+                            model_type=params['model_type'],
+                            dataset=eval2000_ch_data,
+                            label_type=params['label_type'],
+                            data_size=params['data_size'],
+                            beam_width=1,
+                            max_decode_length=MAX_DECODE_LENGTH_WORD,
+                            eval_batch_size=1)
+                        print('  WER (CHE): %f %%' % (wer_eval2000_ch * 100))
                 else:
                     not_improved_epoch += 1
 
@@ -271,59 +320,6 @@ def main():
 
     # ***Change to evaluation mode***
     model.eval()
-
-    # Evaluate the best model
-    print('=== Test Data Evaluation ===')
-    if 'char' in params['label_type']:
-        # eval2000 (swbd)
-        cer_eval2000_swbd, wer_eval2000_swbd = do_eval_cer(
-            model=best_model,
-            model_type=params['model_type'],
-            dataset=eval2000_swbd_data,
-            label_type=params['label_type'],
-            data_size=params['data_size'],
-            beam_width=1,
-            max_decode_length=MAX_DECODE_LENGTH_CHAR,
-            eval_batch_size=1)
-        print('  CER (SWB): %f %%' % (cer_eval2000_swbd * 100))
-        print('  WER (SWB): %f %%' % (wer_eval2000_swbd * 100))
-
-        # eval2000(ch)
-        cer_eval2000_ch, wer_eval2000_ch = do_eval_cer(
-            model=best_model,
-            model_type=params['model_type'],
-            dataset=eval2000_ch_data,
-            label_type=params['label_type'],
-            data_size=params['data_size'],
-            beam_width=1,
-            max_decode_length=MAX_DECODE_LENGTH_CHAR,
-            eval_batch_size=1)
-        print('  CER (CHE): %f %%' % (cer_eval2000_ch * 100))
-        print('  WER (CHE): %f %%' % (wer_eval2000_ch * 100))
-    else:
-        # eval2000(swbd)
-        wer_eval2000_swbd = do_eval_wer(
-            model=best_model,
-            model_type=params['model_type'],
-            dataset=eval2000_swbd_data,
-            label_type=params['label_type'],
-            data_size=params['data_size'],
-            beam_width=1,
-            max_decode_length=MAX_DECODE_LENGTH_WORD,
-            eval_batch_size=1)
-        print('  WER (SWB): %f %%' % (wer_eval2000_swbd * 100))
-
-        # eval2000(ch)
-        wer_eval2000_ch = do_eval_wer(
-            model=best_model,
-            model_type=params['model_type'],
-            dataset=eval2000_ch_data,
-            label_type=params['label_type'],
-            data_size=params['data_size'],
-            beam_width=1,
-            max_decode_length=MAX_DECODE_LENGTH_WORD,
-            eval_batch_size=1)
-        print('  WER (CHE): %f %%' % (wer_eval2000_ch * 100))
 
     duration_train = time.time() - start_time_train
     print('Total time: %.3f hour' % (duration_train / 3600))

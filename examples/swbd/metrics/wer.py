@@ -7,10 +7,12 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import re
 from tqdm import tqdm
 
 from utils.io.labels.word import Idx2word
 from utils.evaluation.edit_distance import compute_wer, wer_align
+from examples.swbd.metrics.glm import GLM
 
 HESITATIONS = ['uh', 'um', 'eh', 'mm', 'hm', 'ah', 'huh', 'ha', 'er', 'oof',
                'hee', 'ach', 'eee', 'ew']
@@ -53,6 +55,10 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
         vocab_file_path='../metrics/vocab_files/' +
         label_type + '_' + data_size + '.txt')
 
+    # Read GLM file
+    glm = GLM(
+        glm_path='/n/sd8/inaguma/corpus/swbd/data/eval2000/LDC2002T43/reference/en20000405_hub5.glm')
+
     wer_mean = 0
     skip_utt_num = 0
     if progressbar:
@@ -88,14 +94,6 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
                         labels[i_batch][1:labels_seq_len[i_batch] - 1])
                     # NOTE: Exclude <SOS> and <EOS>
 
-            # Remove NOISE, LAUGHTER, VOCALIZED-NOISE, HESITATION
-            word_list_true = str_true.split('_')
-            for i in range(len(word_list_true)):
-                if word_list_true[i] in [NOISE, LAUGHTER, VOCALIZED_NOISE, HESITATION]:
-                    word_list_true[i] = ''
-            while '' in word_list_true:
-                word_list_true.remove('')
-
             ##############################
             # Hypothesis
             ##############################
@@ -108,29 +106,55 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
                 if len(str_pred) > 0 and str_pred[-1] == '_':
                     str_pred = str_pred[:-1]
 
-            # Map various hesitations into a single hesitation class
-            word_list_pred = str_pred.split('_')
-            for i in range(len(word_list_pred)):
-                if word_list_pred[i] in HESITATIONS:
-                    word_list_pred[i] = HESITATION
+            ##############################
+            # Post-proccessing
+            ##############################
+            # Fix abbreviation, hesitation
+            str_true = glm.fix_trans(str_true)
+            str_pred = glm.fix_trans(str_pred)
+            # TODO: 省略は元に戻すのではなく，逆に全てを省略形にする方が良い？？
 
             # Remove NOISE, LAUGHTER, VOCALIZED-NOISE, HESITATION
-            for i in range(len(word_list_pred)):
-                if word_list_pred[i] in HESITATIONS:
-                    word_list_pred[i] = ''
-                elif word_list_pred[i] in [NOISE, LAUGHTER, VOCALIZED_NOISE]:
-                    word_list_pred[i] = ''
-            while '' in word_list_pred:
-                word_list_pred.remove('')
+            str_true = str_true.replace(NOISE, '')
+            str_true = str_true.replace(LAUGHTER, '')
+            str_true = str_true.replace(VOCALIZED_NOISE, '')
+            str_true = str_true.replace(HESITATION, '')
+            str_pred = str_pred.replace(NOISE, '')
+            str_pred = str_pred.replace(LAUGHTER, '')
+            str_pred = str_pred.replace(VOCALIZED_NOISE, '')
+            str_pred = str_pred.replace(HESITATION, '')
 
-            # TODO: 省略を元に戻す
+            # Remove garbage labels
+            str_true = re.sub(r'[\'-<>]+', '', str_true)
+            str_pred = re.sub(r'[\'-<>]+', '', str_pred)
+            # TODO: WER計算するときに消していい？
+
+            # Remove consecutive spaces again
+            str_true = re.sub(r'[_]+', '_', str_true)
+            str_pred = re.sub(r'[_]+', '_', str_pred)
+
+            # Remove the first and last space
+            if len(str_true) > 0 and str_true[0] == '_':
+                str_true = str_true[1:]
+            if len(str_true) > 0 and str_true[-1] == '_':
+                str_true = str_true[:-1]
+            if len(str_pred) > 0 and str_pred[0] == '_':
+                str_pred = str_pred[1:]
+            if len(str_pred) > 0 and str_pred[-1] == '_':
+                str_pred = str_pred[:-1]
+
+            # print('\n' + str_true)
+            # print(str_pred)
+
+            word_list_true = str_true.split('_')
+            word_list_pred = str_pred.split('_')
 
             # Compute WER
-            if len(word_list_true) > 0:
+            if len(str_true) > 0:
                 wer_mean += compute_wer(ref=word_list_true,
                                         hyp=word_list_pred,
                                         normalize=True)
-                # if len(word_list_pred) > 0:
+                # if len(str_pred) > 0:
                 #     substitute, insert, delete = wer_align(
                 #         ref=word_list_true,
                 #         hyp=word_list_pred)
