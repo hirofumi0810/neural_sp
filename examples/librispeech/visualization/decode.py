@@ -11,6 +11,7 @@ from os.path import join, abspath
 import sys
 import yaml
 import argparse
+import re
 
 sys.path.append(abspath('../../../'))
 from models.pytorch.load_model import load
@@ -94,9 +95,9 @@ def decode(model, model_type, dataset, label_type, data_size, beam_width,
         model: the model to evaluate
         model_type (string): ctc or attention
         dataset: An instance of a `Dataset` class
-        label_type (string): kanji or kanji or kanji_divide or kana_divide or
+        label_type (string): character or character_capital_divide or
             word_freq1 or word_freq5 or word_freq10 or word_freq15
-        data_size (string): train_fullset or train_subset
+        data_size (string): 100h or 460h or 960h
         beam_width: (int): the size of beam
         max_decode_length (int, optional): the length of output sequences
             to stop prediction when EOS token have not been emitted.
@@ -162,6 +163,16 @@ def decode(model, model_type, dataset, label_type, data_size, beam_width,
                 # Remove the last space
                 if len(str_pred) > 0 and str_pred[-1] == '_':
                     str_pred = str_pred[:-1]
+
+            # Remove consecutive spaces
+            str_pred = re.sub(r'[_]+', '_', str_pred)
+
+            ##############################
+            # Post-proccessing
+            ##############################
+            # Remove garbage labels
+            str_true = re.sub(r'[\'<>]+', '', str_true)
+            str_pred = re.sub(r'[\'<>]+', '', str_pred)
 
             print('Ref: %s' % str_true.replace('_', ' '))
             print('Hyp: %s' % str_pred.replace('_', ' '))

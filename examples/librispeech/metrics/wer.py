@@ -7,6 +7,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import re
 from tqdm import tqdm
 
 from utils.io.labels.word import Idx2word
@@ -91,6 +92,14 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
                 # Remove the last space
                 if len(str_pred) > 0 and str_pred[-1] == '_':
                     str_pred = str_pred[:-1]
+
+            ##############################
+            # Post-proccessing
+            ##############################
+            # Remove garbage labels
+            str_true = re.sub(r'[\'<>]+', '', str_true)
+            str_pred = re.sub(r'[\'<>]+', '', str_pred)
+            # TODO: WER計算するときに消していい？
 
             # Compute WER
             wer_mean += compute_wer(ref=str_true.split('_'),

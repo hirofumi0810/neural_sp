@@ -11,6 +11,7 @@ from os.path import join, abspath
 import sys
 import yaml
 import argparse
+import re
 
 sys.path.append(abspath('../../../'))
 from models.pytorch.load_model import load
@@ -105,8 +106,8 @@ def decode(model, model_type, dataset, label_type, label_type_sub, data_size,
         model_type (string): hierarchical_ctc or hierarchical_attention
         dataset: An instance of a `Dataset` class
         label_type (string): word_freq1 or word_freq5 or word_freq10 or word_freq15
-        label_type_sub (string): kanji or kanji or kanji_divide or kana_divide
-        data_size (string): train_fullset or train_subset
+        label_type_sub (string): character or character_capital_divide
+        data_size (string): 100h or 460h or 960h
         beam_width: (int): the size of beam
         max_decode_length (int, optional): the length of output sequences
             to stop prediction when EOS token have not been emitted.
@@ -171,9 +172,7 @@ def decode(model, model_type, dataset, label_type, label_type_sub, data_size,
             ##############################
             # Convert from list of index to string
             str_pred = idx2word(labels_pred[i_batch])
-
-            str_pred_sub = idx2char(
-                labels_pred_sub[i_batch])
+            str_pred_sub = idx2char(labels_pred_sub[i_batch])
 
             if model_type == 'hierarchical_attention':
                 str_pred = str_pred.split('>')[0]
@@ -186,7 +185,18 @@ def decode(model, model_type, dataset, label_type, label_type_sub, data_size,
                 if len(str_pred_sub) > 0 and str_pred_sub[-1] == '_':
                     str_pred_sub = str_pred_sub[:-1]
 
-            print('Ref: %s' % str_true.replace('_', ' '))
+            # Remove consecutive spaces
+            str_pred_sub = re.sub(r'[_]+', '_', str_pred_sub)
+
+            ##############################
+            # Post-proccessing
+            ##############################
+            # Remove garbage labels
+            str_true = re.sub(r'[\'<>]+', '', str_true)
+            str_pred = re.sub(r'[\'<>]+', '', str_pred)
+            str_pred_sub = re.sub(r'[\'<>]+', '', str_pred_sub)
+
+            print('Ref       : %s' % str_true.replace('_', ' '))
             print('Hyp (word): %s' % str_pred.replace('_', ' '))
             print('Hyp (char): %s' % str_pred_sub.replace('_', ' '))
 

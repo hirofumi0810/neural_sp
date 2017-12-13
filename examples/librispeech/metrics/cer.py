@@ -104,9 +104,13 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
             # Remove consecutive spaces
             str_pred = re.sub(r'[_]+', '_', str_pred)
 
+            ##############################
+            # Post-proccessing
+            ##############################
             # Remove garbage labels
             str_true = re.sub(r'[\'<>]+', '', str_true)
             str_pred = re.sub(r'[\'<>]+', '', str_pred)
+            # TODO: WER計算するときに消していい？
 
             # Compute WER
             wer_mean += compute_wer(ref=str_true.split('_'),
