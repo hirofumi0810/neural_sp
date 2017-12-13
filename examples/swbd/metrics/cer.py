@@ -50,9 +50,13 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
     if eval_batch_size is not None:
         dataset.batch_size = eval_batch_size
 
-    idx2char = Idx2char(
-        vocab_file_path='../metrics/vocab_files/' +
-        label_type + '_' + data_size + '.txt')
+    if label_type == 'character':
+        idx2char = Idx2char(
+            vocab_file_path='../metrics/vocab_files/character_' + data_size + '.txt')
+    elif label_type == 'character_capital_divide':
+        idx2char = Idx2char(
+            vocab_file_path='../metrics/vocab_files/character_capital_divide_' + data_size + '.txt',
+            capital_divide=True)
 
     cer_mean, wer_mean = 0, 0
     skip_utt_num = 0

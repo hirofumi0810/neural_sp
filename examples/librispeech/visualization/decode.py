@@ -50,6 +50,17 @@ def main():
     # Load model
     model = load(model_type=params['model_type'], params=params)
 
+    # GPU setting
+    model.set_cuda(deterministic=False)
+
+    # Restore the saved model
+    checkpoint = model.load_checkpoint(
+        save_path=args.model_path, epoch=args.epoch)
+    model.load_state_dict(checkpoint['state_dict'])
+
+    # ***Change to evaluation mode***
+    model.eval()
+
     # Load dataset
     vocab_file_path = '../metrics/vocab_files/' + \
         params['label_type'] + '_' + params['data_size'] + '.txt'
@@ -62,17 +73,6 @@ def main():
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, reverse=True, save_format=params['save_format'])
-
-    # GPU setting
-    model.set_cuda(deterministic=False)
-
-    # Restore the saved model
-    checkpoint = model.load_checkpoint(
-        save_path=args.model_path, epoch=args.epoch)
-    model.load_state_dict(checkpoint['state_dict'])
-
-    # Change to evaluation mode
-    model.eval()
 
     # Visualize
     decode(model=model,
@@ -110,8 +110,10 @@ def decode(model, model_type, dataset, label_type, data_size, beam_width,
 
     vocab_file_path = '../metrics/vocab_files/' + \
         label_type + '_' + data_size + '.txt'
-    if 'char' in label_type:
+    if label_type == 'character':
         map_fn = Idx2char(vocab_file_path)
+    elif label_type == 'character_capital_divide':
+        map_fn = Idx2char(vocab_file_path, capital_divide=True)
     else:
         map_fn = Idx2word(vocab_file_path)
 

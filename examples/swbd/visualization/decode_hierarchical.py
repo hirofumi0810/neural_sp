@@ -55,6 +55,17 @@ def main():
     # Load model
     model = load(model_type=params['model_type'], params=params)
 
+    # GPU setting
+    model.set_cuda(deterministic=False)
+
+    # Restore the saved model
+    checkpoint = model.load_checkpoint(
+        save_path=args.model_path, epoch=args.epoch)
+    model.load_state_dict(checkpoint['state_dict'])
+
+    # ***Change to evaluation mode***
+    model.eval()
+
     # Load dataset
     vocab_file_path = '../metrics/vocab_files/' + \
         params['label_type'] + '_' + params['data_size'] + '.txt'
@@ -71,17 +82,6 @@ def main():
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, reverse=True, save_format=params['save_format'])
-
-    # GPU setting
-    model.set_cuda(deterministic=False)
-
-    # Restore the saved model
-    checkpoint = model.load_checkpoint(
-        save_path=args.model_path, epoch=args.epoch)
-    model.load_state_dict(checkpoint['state_dict'])
-
-    # Change to evaluation mode
-    model.eval()
 
     # Visualize
     decode(model=model,
