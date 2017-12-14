@@ -85,8 +85,6 @@ def main():
     decode(model=model,
            model_type=params['model_type'],
            dataset=test_data,
-           label_type=params['label_type'],
-           data_size=params['data_size'],
            beam_width=args.beam_width,
            max_decode_length=args.max_decode_length,
            eval_batch_size=args.eval_batch_size,
@@ -94,16 +92,13 @@ def main():
     # save_path=args.model_path)
 
 
-def decode(model, model_type, dataset, label_type, data_size, beam_width,
+def decode(model, model_type, dataset, beam_width,
            max_decode_length=100, eval_batch_size=None, save_path=None):
     """Visualize label outputs.
     Args:
         model: the model to evaluate
         model_type (string): ctc or attention
         dataset: An instance of a `Dataset` class
-        label_type (string): character or character_capital_divide or
-            word_freq1 or word_freq5 or word_freq10 or word_freq15
-        data_size (string): 300h or 2000h
         beam_width: (int): the size of beam
         max_decode_length (int, optional): the length of output sequences
             to stop prediction when EOS token have not been emitted.
@@ -116,10 +111,10 @@ def decode(model, model_type, dataset, label_type, data_size, beam_width,
         dataset.batch_size = eval_batch_size
 
     vocab_file_path = '../metrics/vocab_files/' + \
-        label_type + '_' + data_size + '.txt'
-    if label_type == 'character':
+        dataset.label_type + '_' + dataset.data_size + '.txt'
+    if dataset.label_type == 'character':
         map_fn = Idx2char(vocab_file_path)
-    elif label_type == 'character_capital_divide':
+    elif dataset.label_type == 'character_capital_divide':
         map_fn = Idx2char(vocab_file_path, capital_divide=True)
     else:
         map_fn = Idx2word(vocab_file_path)

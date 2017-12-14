@@ -93,9 +93,6 @@ def main():
     decode(model=model,
            model_type=params['model_type'],
            dataset=test_data,
-           label_type=params['label_type'],
-           label_type_sub=params['label_type_sub'],
-           data_size=params['data_size'],
            beam_width=args.beam_width,
            max_decode_length=args.max_decode_length,
            eval_batch_size=args.eval_batch_size,
@@ -103,17 +100,13 @@ def main():
     # save_path=args.model_path)
 
 
-def decode(model, model_type, dataset, label_type, label_type_sub, data_size,
-           beam_width, max_decode_length=100, eval_batch_size=None,
-           save_path=None):
+def decode(model, model_type, dataset, beam_width,
+           max_decode_length=100, eval_batch_size=None, save_path=None):
     """Visualize label outputs.
     Args:
         model: the model to evaluate
         model_type (string): hierarchical_ctc or hierarchical_attention
         dataset: An instance of a `Dataset` class
-        label_type (string): word_freq1 or word_freq5 or word_freq10 or word_freq15
-        label_type_sub (string): character or character_capital_divide
-        data_size (string): 300h or 2000h
         beam_width: (int): the size of beam
         max_decode_length (int, optional): the length of output sequences
             to stop prediction when EOS token have not been emitted.
@@ -127,13 +120,14 @@ def decode(model, model_type, dataset, label_type, label_type_sub, data_size,
 
     idx2word = Idx2word(
         vocab_file_path='../metrics/vocab_files/' +
-        label_type + '_' + data_size + '.txt')
-    if label_type_sub == 'character':
+        dataset.label_type + '_' + dataset.data_size + '.txt')
+    if dataset.label_type_sub == 'character':
         idx2char = Idx2char(
-            vocab_file_path='../metrics/vocab_files/character_' + data_size + '.txt')
-    elif label_type_sub == 'character_capital_divide':
+            vocab_file_path='../metrics/vocab_files/character_' + dataset.data_size + '.txt')
+    elif dataset.label_type_sub == 'character_capital_divide':
         idx2char = Idx2char(
-            vocab_file_path='../metrics/vocab_files/character_capital_divide_' + data_size + '.txt',
+            vocab_file_path='../metrics/vocab_files/character_capital_divide_' +
+            dataset.data_size + '.txt',
             capital_divide=True)
 
     # Read GLM file

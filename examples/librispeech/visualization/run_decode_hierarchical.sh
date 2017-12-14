@@ -3,7 +3,7 @@
 # Select GPU
 if [ $# -ne 2 ]; then
   echo "Error: set GPU number & config path." 1>&2
-  echo "Usage: ./run_eval.sh path_to_saved_model gpu_index" 1>&2
+  echo "Usage: ./run_decode_hierarchical.sh path_to_saved_model gpu_index" 1>&2
   exit 1
 fi
 
