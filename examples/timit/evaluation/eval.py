@@ -48,16 +48,6 @@ def main():
     # Load model
     model = load(model_type=params['model_type'], params=params)
 
-    # Load dataset
-    vocab_file_path = '../metrics/vocab_files/phone39.txt'
-    test_data = Dataset(
-        model_type=params['model_type'],
-        data_type='test', label_type='phone39',
-        vocab_file_path=vocab_file_path,
-        batch_size=args.eval_batch_size, splice=params['splice'],
-        num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=False, save_format=params['save_format'])
-
     # GPU setting
     model.set_cuda(deterministic=False)
 
@@ -66,8 +56,21 @@ def main():
         save_path=args.model_path, epoch=args.epoch)
     model.load_state_dict(checkpoint['state_dict'])
 
-    # Change to evaluation mode
+    # ***Change to evaluation mode***
     model.eval()
+
+    # Load dataset
+    vocab_file_path = '../metrics/vocab_files/phone39.txt'
+    test_data = Dataset(
+        input_channel=params['input_channel'],
+        use_delta=params['use_delta'],
+        use_double_delta=params['use_double_delta'],
+        model_type=params['model_type'],
+        data_type='test', label_type='phone39',
+        vocab_file_path=vocab_file_path,
+        batch_size=args.eval_batch_size, splice=params['splice'],
+        num_stack=params['num_stack'], num_skip=params['num_skip'],
+        sort_utt=False, save_format=params['save_format'])
 
     print('=== Test Data Evaluation ===')
     per_test = do_eval_per(
@@ -77,6 +80,7 @@ def main():
         label_type=params['label_type'],
         beam_width=args.beam_width,
         max_decode_length=args.max_decode_length,
+        eval_batch_size=args.eval_batch_size,
         progressbar=True)
     print('  PER: %f %%' % (per_test * 100))
 

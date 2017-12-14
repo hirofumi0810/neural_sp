@@ -1,8 +1,8 @@
 param:
   # corpus
-  corpus: librispeech
-  label_type: word_freq5
-  data_size: 100h
+  corpus: switchboard
+  label_type: character_capital_divide
+  data_size: 300h
 
   # features
   feature: fbank
@@ -20,10 +20,8 @@ param:
   bidirectional: True
   num_units: 320
   num_proj: 0
-  num_layers: 6
+  num_layers: 4
   subsample_list:
-    - False
-    - False
     - False
     - False
     - False
@@ -36,10 +34,10 @@ param:
   batch_norm: False
 
   # optimization
-  batch_size: 32
+  batch_size: 40
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 70
+  num_epoch: 50
 
   # regularization
   parameter_init: 0.1
@@ -51,10 +49,10 @@ param:
   weight_noise_std: 0
 
   # annealing
-  decay_start_epoch: 20
+  decay_start_epoch: 10
   decay_rate: 0.5
   decay_patient_epoch: 3
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
-  eval_start_epoch: 20
-  print_step: 200
+  eval_start_epoch: 10
+  print_step: 1000

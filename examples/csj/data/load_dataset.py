@@ -18,7 +18,8 @@ from utils.dataset.loader import DatasetBase
 
 class Dataset(DatasetBase):
 
-    def __init__(self, model_type, data_type, data_size, label_type,
+    def __init__(self, input_channel, use_delta, use_double_delta,
+                 model_type, data_type, data_size, label_type,
                  batch_size, vocab_file_path,
                  max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
@@ -27,6 +28,9 @@ class Dataset(DatasetBase):
                  num_enque=None):
         """A class for loading dataset.
         Args:
+            input_channel (int):
+            use_delta (bool):
+            use_double_delta (bool):
             model_type (string): attention or ctc
             data_type (string): train or dev or eval1 or eval2 or eval3
             data_size (string): subset or fullset
@@ -57,6 +61,9 @@ class Dataset(DatasetBase):
         else:
             self.is_test = False
 
+        self.input_channel = input_channel
+        self.use_delta = use_delta
+        self.use_double_delta = use_double_delta
         self.model_type = model_type
         self.data_type = data_type
         self.data_size = data_size

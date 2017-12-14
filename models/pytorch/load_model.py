@@ -25,7 +25,8 @@ def load(model_type, params):
 
     if model_type == 'ctc':
         model = CTC(
-            input_size=params['input_size'],
+            input_size=params['input_channel'] *
+            (1 + int(params['use_delta'] + int(params['use_double_delta']))),
             encoder_type=params['encoder_type'],
             bidirectional=params['bidirectional'],
             num_units=params['num_units'],
@@ -76,7 +77,8 @@ def load(model_type, params):
 
     elif model_type == 'student_ctc':
         model = StudentCTC(
-            input_size=params['input_size'],
+            input_size=params['input_channel'] *
+            (1 + int(params['use_delta'] + int(params['use_double_delta']))),
             encoder_type=params['encoder_type'],
             bidirectional=params['bidirectional'],
             num_units=params['num_units'],
@@ -127,7 +129,8 @@ def load(model_type, params):
 
     elif model_type == 'attention':
         model = AttentionSeq2seq(
-            input_size=params['input_size'],
+            input_size=params['input_channel'] *
+            (1 + int(params['use_delta'] + int(params['use_double_delta']))),
             encoder_type=params['encoder_type'],
             encoder_bidirectional=params['encoder_bidirectional'],
             encoder_num_units=params['encoder_num_units'],
@@ -212,7 +215,8 @@ def load(model_type, params):
 
     if params['model_type'] == 'hierarchical_ctc':
         model = HierarchicalCTC(
-            input_size=params['input_size'],
+            input_size=params['input_channel'] *
+            (1 + int(params['use_delta'] + int(params['use_double_delta']))),
             encoder_type=params['encoder_type'],
             bidirectional=params['bidirectional'],
             num_units=params['num_units'],
@@ -271,7 +275,8 @@ def load(model_type, params):
             params['composition_case'] = None
 
         model = HierarchicalAttentionSeq2seq(
-            input_size=params['input_size'],
+            input_size=params['input_channel'] *
+            (1 + int(params['use_delta'] + int(params['use_double_delta']))),
             encoder_type=params['encoder_type'],
             encoder_bidirectional=params['encoder_bidirectional'],
             encoder_num_units=params['encoder_num_units'],

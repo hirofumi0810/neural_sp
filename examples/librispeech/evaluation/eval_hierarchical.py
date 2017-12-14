@@ -71,6 +71,9 @@ def main():
     vocab_file_path_sub = '../metrics/vocab_files/' + \
         params['label_type_sub'] + '_' + params['data_size'] + '.txt'
     test_clean_data = Dataset(
+        input_channel=params['input_channel'],
+        use_delta=params['use_delta'],
+        use_double_delta=params['use_double_delta'],
         model_type=params['model_type'],
         data_type='test_clean', data_size=params['data_size'],
         label_type=params['label_type'], label_type_sub=params['label_type_sub'],
@@ -80,6 +83,9 @@ def main():
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=False, save_format=params['save_format'])
     test_other_data = Dataset(
+        input_channel=params['input_channel'],
+        use_delta=params['use_delta'],
+        use_double_delta=params['use_double_delta'],
         model_type=params['model_type'],
         data_type='test_other', data_size=params['data_size'],
         label_type=params['label_type'], label_type_sub=params['label_type_sub'],

@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Plot the CTC posteriors (Librispeech corpus)."""
+"""Plot the hierarchical CTC posteriors (Switchboard corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -15,11 +15,11 @@ import shutil
 
 sys.path.append(abspath('../../../'))
 from models.pytorch.load_model import load
-from examples.librispeech.data.load_dataset import Dataset
+from examples.swbd.data.load_dataset_hierarchical import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
 from utils.directory import mkdir_join, mkdir
-from utils.visualization.ctc import plot_ctc_probs
+from utils.visualization.ctc import plot_hierarchical_ctc_probs
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model_path', type=str,
@@ -44,6 +44,8 @@ def main():
         vocab_num = yaml.load(f)
         params['num_classes'] = vocab_num[params['data_size']
                                           ][params['label_type']]
+        params['num_classes_sub'] = vocab_num[params['data_size']
+                                              ][params['label_type_sub']]
 
     # Load model
     model = load(model_type=params['model_type'], params=params)
@@ -62,20 +64,21 @@ def main():
     # Load dataset
     vocab_file_path = '../metrics/vocab_files/' + \
         params['label_type'] + '_' + params['data_size'] + '.txt'
+    vocab_file_path_sub = '../metrics/vocab_files/' + \
+        params['label_type_sub'] + '_' + params['data_size'] + '.txt'
     test_data = Dataset(
-        input_channel=params['input_channel'],
-        use_delta=params['use_delta'],
-        use_double_delta=params['use_double_delta'],
         model_type=params['model_type'],
-        data_type='test_clean',
-        # data_type='test_other',
+        data_type='eval2000_swbd',
+        # data_type='eval2000_ch',
         data_size=params['data_size'],
-        label_type=params['label_type'], vocab_file_path=vocab_file_path,
+        label_type=params['label_type'], label_type_sub=params['label_type_sub'],
+        vocab_file_path=vocab_file_path,
+        vocab_file_path_sub=vocab_file_path_sub,
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, reverse=True, save_format=params['save_format'])
 
-    space_index = 27 if params['label_type'] == 'character' else None
+    space_index = 37 if params['label_type_sub'] == 'character' else None
     # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
     # Visualize
@@ -105,40 +108,56 @@ def plot(model, dataset, eval_batch_size=None, save_path=None,
         shutil.rmtree(save_path)
         mkdir(save_path)
 
-    vocab_file_path = '../metrics/vocab_files/' + \
-        dataset.label_type + '_' + dataset.data_size + '.txt'
-    if dataset.label_type == 'character':
-        map_fn = Idx2char(vocab_file_path)
-    elif dataset.label_type == 'character_capital_divide':
-        map_fn = Idx2char(vocab_file_path, capital_divide=True)
-    else:
-        map_fn = Idx2word(vocab_file_path)
+    idx2word = Idx2word(
+        vocab_file_path='../metrics/vocab_files/' +
+        dataset.label_type + '_' + dataset.data_size + '.txt')
+    if dataset.label_type_sub == 'character':
+        idx2char = Idx2char(
+            vocab_file_path='../metrics/vocab_files/character_' + dataset.data_size + '.txt')
+    elif dataset.label_type_sub == 'character_capital_divide':
+        idx2char = Idx2char(
+            vocab_file_path='../metrics/vocab_files/character_capital_divide_' +
+            dataset.data_size + '.txt',
+            capital_divide=True)
 
     for batch, is_new_epoch in dataset:
 
-        inputs, labels, inputs_seq_len, labels_seq_len, input_names = batch
+        inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub, input_names = batch
 
         # Get CTC probs
-        probs = model.posteriors(inputs, inputs_seq_len, temperature=1)
+        probs = model.posteriors(inputs, inputs_seq_len,
+                                 temperature=1)
+        probs_sub = model.posteriors(inputs, inputs_seq_len, is_sub_task=True,
+                                     temperature=1)
         # NOTE: probs: '[B, T, num_classes]'
+        # NOTE: probs_sub: '[B, T, num_classes_sub]'
 
         # Decode
-        labels_pred = model.decode(inputs, inputs_seq_len, beam_width=1)
+        labels_pred = model.decode(
+            inputs, inputs_seq_len,
+            beam_width=1)
+        labels_pred_sub = model.decode(
+            inputs, inputs_seq_len,
+            beam_width=1,
+            is_sub_task=True)
 
         # Visualize
         for i_batch in range(inputs.shape[0]):
 
             # Convert from list of index to string
-            str_pred = map_fn(labels_pred[i_batch])
+            str_pred = idx2word(labels_pred[i_batch])
+            str_pred_sub = idx2char(labels_pred_sub[i_batch])
 
-            speaker, book = input_names[i_batch].split('-')[:2]
-            plot_ctc_probs(
+            speaker = input_names[i_batch].split('_')[0]
+            plot_hierarchical_ctc_probs(
                 probs[i_batch, :inputs_seq_len[i_batch], :],
+                probs_sub[i_batch, :inputs_seq_len[i_batch], :],
                 frame_num=inputs_seq_len[i_batch],
                 num_stack=dataset.num_stack,
                 space_index=space_index,
                 str_pred=str_pred,
-                save_path=mkdir_join(save_path, speaker, book, input_names[i_batch] + '.png'))
+                str_pred_sub=str_pred_sub,
+                save_path=mkdir_join(save_path, speaker, input_names[i_batch] + '.png'))
 
         if is_new_epoch:
             break

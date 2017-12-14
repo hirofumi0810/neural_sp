@@ -6,7 +6,9 @@ param:
   # features
   feature: fbank
   save_format: numpy
-  input_size: 123
+  input_channel: 41
+  use_delta: True
+  use_double_delta: True
   splice: 1
   num_stack: 1
   num_skip: 1
@@ -20,7 +22,7 @@ param:
   num_layers: 5
   subsample_list:
     - False
-    - True
+    - False
     - True
     - False
     - False
@@ -47,10 +49,10 @@ param:
   weight_noise_std: 0
 
   # annealing
-  decay_start_epoch: 20
+  decay_start_epoch: 5
   decay_rate: 0.5
   decay_patient_epoch: 5
   sort_stop_epoch: 100
   not_improved_patient_epoch: 10
-  eval_start_epoch: 20
+  eval_start_epoch: 5
   print_step: 10

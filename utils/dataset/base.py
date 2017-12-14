@@ -203,8 +203,9 @@ class Base(object):
         self.queue_size = 0
 
         # Clean up multiprocessing
-        self.preloading_process.terminate()
-        self.preloading_process.join()
+        if self.preloading_process is not None:
+            self.preloading_process.terminate()
+            self.preloading_process.join()
 
     def _reset(self):
         """Reset data counter and offset."""

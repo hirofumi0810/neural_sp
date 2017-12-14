@@ -59,12 +59,8 @@ class DatasetBase(Base):
             self.df_sub['transcript'][data_indices])
 
         if not hasattr(self, 'input_size'):
-            if self.save_format == 'numpy':
-                self.input_size = self.load_npy(input_path_list[0]).shape[-1]
-            elif self.save_format == 'htk':
-                self.input_size = self.load_htk(input_path_list[0]).shape[-1]
-            else:
-                raise TypeError
+            self.input_size = self.input_channel * \
+                (1 + int(self.use_delta) + int(self.use_double_delta))
             self.input_size *= self.num_stack
             self.input_size *= self.splice
 
@@ -98,11 +94,19 @@ class DatasetBase(Base):
         for i_batch in range(len(data_indices)):
             # Load input data
             if self.save_format == 'numpy':
-                data_i = self.load_npy(input_path_list[i_batch])
+                data_i_tmp = self.load_npy(input_path_list[i_batch])
             elif self.save_format == 'htk':
-                data_i = self.load_htk(input_path_list[i_batch])
+                data_i_tmp = self.load_htk(input_path_list[i_batch])
             else:
                 raise TypeError
+
+            if self.use_double_delta:
+                data_i = data_i_tmp
+            elif self.use_delta:
+                data_i = np.concatenate(
+                    (data_i, data_i_tmp[:self.input_channel * 2]), axis=0)
+            else:
+                data_i = data_i_tmp[:self.input_channel]
 
             # Frame stacking
             data_i = stack_frame(data_i, self.num_stack, self.num_skip)

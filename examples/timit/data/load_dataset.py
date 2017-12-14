@@ -18,13 +18,17 @@ from utils.dataset.loader import DatasetBase
 
 class Dataset(DatasetBase):
 
-    def __init__(self, model_type, data_type, label_type, batch_size,
+    def __init__(self, input_channel, use_delta, use_double_delta,
+                 model_type, data_type, label_type, batch_size,
                  vocab_file_path, max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
                  shuffle=False, sort_utt=False, reverse=False,
                  sort_stop_epoch=None, save_format='numpy', num_enque=None):
         """A class for loading dataset.
         Args:
+            input_channel (int):
+            use_delta (bool):
+            use_double_delta (bool):
             model_type (string): ctc or attention
             data_type (string): train or dev or test
             label_type (string): phone39 or phone48 or phone61 or
@@ -50,6 +54,9 @@ class Dataset(DatasetBase):
 
         self.is_test = True if data_type == 'test' else False
 
+        self.input_channel = input_channel
+        self.use_delta = use_delta
+        self.use_double_delta = use_double_delta
         self.model_type = model_type
         self.data_type = data_type
         self.label_type = label_type

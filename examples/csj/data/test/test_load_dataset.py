@@ -73,6 +73,7 @@ class TestLoadDataset(unittest.TestCase):
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
+            input_channel=80, use_delta=True, use_double_delta=True,
             model_type='attention',
             data_type=data_type, data_size=data_size,
             label_type=label_type, batch_size=64,

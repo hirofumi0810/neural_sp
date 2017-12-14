@@ -72,6 +72,9 @@ def main():
         params['label_type'] + '.txt'
     vocab_file_path_eval = '../metrics/vocab_files/phone39.txt'
     train_data = Dataset(
+        input_channel=params['input_channel'],
+        use_delta=params['use_delta'],
+        use_double_delta=params['use_double_delta'],
         model_type=params['model_type'],
         data_type='train', label_type=params['label_type'],
         vocab_file_path=vocab_file_path_train,
@@ -81,6 +84,9 @@ def main():
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
         save_format=params['save_format'], num_enque=None)
     dev_data = Dataset(
+        input_channel=params['input_channel'],
+        use_delta=params['use_delta'],
+        use_double_delta=params['use_double_delta'],
         model_type=params['model_type'],
         data_type='dev', label_type=params['label_type'],
         vocab_file_path=vocab_file_path_train,
@@ -88,6 +94,9 @@ def main():
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True, save_format=params['save_format'])
     test_data = Dataset(
+        input_channel=params['input_channel'],
+        use_delta=params['use_delta'],
+        use_double_delta=params['use_double_delta'],
         model_type=params['model_type'],
         data_type='test', label_type='phone39',
         vocab_file_path=vocab_file_path_eval,

@@ -8,7 +8,9 @@ param:
   # features
   feature: fbank
   save_format: numpy
-  input_size: 120
+  input_channel: 40
+  use_delta: True
+  use_double_delta: True
   splice: 1
   num_stack: 2
   num_skip: 2
