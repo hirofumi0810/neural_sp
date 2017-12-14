@@ -14,7 +14,7 @@ from utils.io.labels.character import Idx2char
 from utils.evaluation.edit_distance import compute_cer, compute_wer, wer_align
 
 
-def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
+def do_eval_cer(model, model_type, dataset, label_type, beam_width,
                 max_decode_length, eval_batch_size=None, progressbar=False):
     """Evaluate trained model by Character Error Rate.
     Args:
@@ -23,7 +23,6 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
             hierarchical_attention
         dataset: An instance of a `Dataset' class
         label_type (string): character or character_capital_divide
-        data_size (string): 100h or 460h or 960h
         beam_width: (int): the size of beam
         max_decode_length (int): the length of output sequences
             to stop prediction when EOS token have not been emitted.
@@ -45,10 +44,11 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
 
     if label_type == 'character':
         idx2char = Idx2char(
-            vocab_file_path='../metrics/vocab_files/character_' + data_size + '.txt')
+            vocab_file_path='../metrics/vocab_files/character_' + dataset.data_size + '.txt')
     elif label_type == 'character_capital_divide':
         idx2char = Idx2char(
-            vocab_file_path='../metrics/vocab_files/character_capital_divide_' + data_size + '.txt',
+            vocab_file_path='../metrics/vocab_files/character_capital_divide_' +
+            dataset.data_size + '.txt',
             capital_divide=True)
 
     cer_mean, wer_mean = 0, 0

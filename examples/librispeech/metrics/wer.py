@@ -14,7 +14,7 @@ from utils.io.labels.word import Idx2word
 from utils.evaluation.edit_distance import compute_wer, wer_align
 
 
-def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
+def do_eval_wer(model, model_type, dataset, label_type, beam_width,
                 max_decode_length, eval_batch_size=None,
                 progressbar=False):
     """Evaluate trained model by Word Error Rate.
@@ -24,7 +24,6 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
             hierarchical_attention
         dataset: An instance of a `Dataset' class
         label_type (string): word_freq1 or word_freq5 or word_freq10 or word_freq15
-        data_size (string): 100h or 460h or 960h
         beam_width: (int): the size of beam
         max_decode_length (int): the length of output sequences
             to stop prediction when EOS token have not been emitted.
@@ -45,7 +44,7 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
 
     idx2word = Idx2word(
         vocab_file_path='../metrics/vocab_files/' +
-        label_type + '_' + data_size + '.txt')
+        label_type + '_' + dataset.data_size + '.txt')
 
     wer_mean = 0
     if progressbar:

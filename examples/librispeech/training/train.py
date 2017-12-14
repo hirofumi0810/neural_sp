@@ -229,7 +229,6 @@ def main():
                         model_type=params['model_type'],
                         dataset=dev_clean_data,
                         label_type=params['label_type'],
-                        data_size=params['data_size'],
                         beam_width=1,
                         max_decode_length=MAX_DECODE_LENGTH_CHAR,
                         eval_batch_size=1)
@@ -242,7 +241,6 @@ def main():
                         model_type=params['model_type'],
                         dataset=dev_other_data,
                         label_type=params['label_type'],
-                        data_size=params['data_size'],
                         beam_width=1,
                         max_decode_length=MAX_DECODE_LENGTH_CHAR,
                         eval_batch_size=1)
@@ -255,7 +253,6 @@ def main():
                         model_type=params['model_type'],
                         dataset=dev_clean_data,
                         label_type=params['label_type'],
-                        data_size=params['data_size'],
                         beam_width=1,
                         max_decode_length=MAX_DECODE_LENGTH_WORD,
                         eval_batch_size=1)
@@ -268,7 +265,6 @@ def main():
                         model_type=params['model_type'],
                         dataset=dev_other_data,
                         label_type=params['label_type'],
-                        data_size=params['data_size'],
                         beam_width=1,
                         max_decode_length=MAX_DECODE_LENGTH_WORD,
                         eval_batch_size=1)
@@ -326,7 +322,6 @@ def main():
             model_type=params['model_type'],
             dataset=test_clean_data,
             label_type=params['label_type'],
-            data_size=params['data_size'],
             beam_width=1,
             max_decode_length=MAX_DECODE_LENGTH_CHAR,
             eval_batch_size=1)
@@ -339,7 +334,6 @@ def main():
             model_type=params['model_type'],
             dataset=test_other_data,
             label_type=params['label_type'],
-            data_size=params['data_size'],
             beam_width=1,
             max_decode_length=MAX_DECODE_LENGTH_CHAR,
             eval_batch_size=1)
@@ -352,7 +346,6 @@ def main():
             model_type=params['model_type'],
             dataset=test_clean_data,
             label_type=params['label_type'],
-            data_size=params['data_size'],
             beam_width=1,
             max_decode_length=MAX_DECODE_LENGTH_WORD,
             eval_batch_size=1)
@@ -364,7 +357,6 @@ def main():
             model_type=params['model_type'],
             dataset=test_other_data,
             label_type=params['label_type'],
-            data_size=params['data_size'],
             beam_width=1,
             max_decode_length=MAX_DECODE_LENGTH_WORD,
             eval_batch_size=1)

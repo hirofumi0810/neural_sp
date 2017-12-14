@@ -224,7 +224,7 @@ def main():
                    learning_rate, duration_step / 60))
             sys.stdout.flush()
             start_time_step = time.time()
-            loss_val_train = 0.
+            loss_val_train, loss_main_val_train, loss_sub_val_train = 0., 0., 0.
 
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:
@@ -254,7 +254,6 @@ def main():
                     model_type=params['model_type'],
                     dataset=dev_data,
                     label_type=params['label_type'],
-                    data_size=params['data_size'],
                     beam_width=1,
                     max_decode_length=MAX_DECODE_LENGTH_WORD,
                     eval_batch_size=1)
@@ -274,7 +273,6 @@ def main():
                         model_type=params['model_type'],
                         dataset=eval2000_swbd_data,
                         label_type=params['label_type'],
-                        data_size=params['data_size'],
                         beam_width=1,
                         max_decode_length=MAX_DECODE_LENGTH_WORD,
                         eval_batch_size=1)
@@ -284,7 +282,6 @@ def main():
                         model_type=params['model_type'],
                         dataset=eval2000_swbd_data,
                         label_type=params['label_type_sub'],
-                        data_size=params['data_size'],
                         beam_width=1,
                         max_decode_length=MAX_DECODE_LENGTH_CHAR,
                         eval_batch_size=1)
@@ -297,7 +294,6 @@ def main():
                         model_type=params['model_type'],
                         dataset=eval2000_ch_data,
                         label_type=params['label_type'],
-                        data_size=params['data_size'],
                         beam_width=1,
                         max_decode_length=MAX_DECODE_LENGTH_WORD,
                         eval_batch_size=1)
@@ -307,7 +303,6 @@ def main():
                         model_type=params['model_type'],
                         dataset=eval2000_ch_data,
                         label_type=params['label_type_sub'],
-                        data_size=params['data_size'],
                         beam_width=1,
                         max_decode_length=MAX_DECODE_LENGTH_CHAR,
                         eval_batch_size=1)
