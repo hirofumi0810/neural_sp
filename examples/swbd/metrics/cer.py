@@ -7,19 +7,12 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import re
 from tqdm import tqdm
 
 from utils.io.labels.character import Idx2char
 from utils.evaluation.edit_distance import compute_cer, compute_wer, wer_align
 from examples.swbd.metrics.glm import GLM
-
-HESITATIONS = ['uh', 'um', 'eh', 'mm', 'hm', 'ah', 'huh', 'ha', 'er', 'oof',
-               'hee', 'ach', 'eee', 'ew']
-LAUGHTER = 'LA'
-NOISE = 'NZ'
-VOCALIZED_NOISE = 'VN'
-HESITATION = '%hesitation'
+from examples.swbd.metrics.post_processing import fix_trans
 
 
 def do_eval_cer(model, model_type, dataset, label_type, beam_width,
@@ -117,45 +110,11 @@ def do_eval_cer(model, model_type, dataset, label_type, beam_width,
                 if len(str_pred) > 0 and str_pred[-1] == '_':
                     str_pred = str_pred[:-1]
 
-            # Remove consecutive spaces
-            str_pred = re.sub(r'[_]+', '_', str_pred)
-
             ##############################
             # Post-proccessing
             ##############################
-            # Fix abbreviation, hesitation
-            str_true = glm.fix_trans(str_true)
-            str_pred = glm.fix_trans(str_pred)
-            # TODO: 省略は元に戻すのではなく，逆に全てを省略形にする方が良い？？
-
-            # Remove NOISE, LAUGHTER, VOCALIZED-NOISE, HESITATION
-            str_true = str_true.replace(NOISE, '')
-            str_true = str_true.replace(LAUGHTER, '')
-            str_true = str_true.replace(VOCALIZED_NOISE, '')
-            str_true = str_true.replace(HESITATION, '')
-            str_pred = str_pred.replace(NOISE, '')
-            str_pred = str_pred.replace(LAUGHTER, '')
-            str_pred = str_pred.replace(VOCALIZED_NOISE, '')
-            str_pred = str_pred.replace(HESITATION, '')
-
-            # Remove garbage labels
-            str_true = re.sub(r'[\'-<>]+', '', str_true)
-            str_pred = re.sub(r'[\'-<>]+', '', str_pred)
-            # TODO: WER計算するときに消していい？
-
-            # Remove consecutive spaces again
-            str_true = re.sub(r'[_]+', '_', str_true)
-            str_pred = re.sub(r'[_]+', '_', str_pred)
-
-            # Remove the first and last space
-            if len(str_true) > 0 and str_true[0] == '_':
-                str_true = str_true[1:]
-            if len(str_true) > 0 and str_true[-1] == '_':
-                str_true = str_true[:-1]
-            if len(str_pred) > 0 and str_pred[0] == '_':
-                str_pred = str_pred[1:]
-            if len(str_pred) > 0 and str_pred[-1] == '_':
-                str_pred = str_pred[:-1]
+            str_true = fix_trans(str_true, glm)
+            str_pred = fix_trans(str_pred, glm)
 
             # print('\n' + str_true)
             # print(str_pred)
