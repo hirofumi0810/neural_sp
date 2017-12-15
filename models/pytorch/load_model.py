@@ -144,7 +144,6 @@ def load(model_type, params):
             decoder_num_layers=params['decoder_num_layers'],
             decoder_dropout=params['dropout_decoder'],
             embedding_dim=params['embedding_dim'],
-            embedding_dropout=params['dropout_embedding'],
             num_classes=params['num_classes'],
             parameter_init=params['parameter_init'],
             subsample_list=params['subsample_list'],
@@ -165,6 +164,8 @@ def load(model_type, params):
             poolings=params['poolings'],
             batch_norm=params['batch_norm'],
             scheduled_sampling_prob=params['scheduled_sampling_prob'],
+            scheduled_sampling_ramp_max_step=params['scheduled_sampling_ramp_max_step'],
+            label_smoothing_prob=params['label_smoothing_prob'],
             weight_noise_std=params['weight_noise_std'])
 
         model.name = params['encoder_type']
@@ -180,14 +181,12 @@ def load(model_type, params):
         model.name += '_' + params['optimizer']
         model.name += '_lr' + str(params['learning_rate'])
         model.name += '_' + params['attention_type']
-        if params['dropout_encoder'] != 0 or params['dropout_decoder'] != 0 or params['dropout_embedding'] != 0:
+        if params['dropout_encoder'] != 0 or params['dropout_decoder'] != 0:
             model.name += '_drop'
             if params['dropout_encoder'] != 0:
                 model.name += 'en' + str(params['dropout_encoder'])
             if params['dropout_decoder'] != 0:
                 model.name += 'de' + str(params['dropout_decoder'])
-            if params['dropout_embedding'] != 0:
-                model.name += 'emb' + str(params['dropout_embedding'])
         if params['num_stack'] != 1:
             model.name += '_stack' + str(params['num_stack'])
         if params['weight_decay'] != 0:
@@ -203,13 +202,15 @@ def load(model_type, params):
         if bool(params['sigmoid_smoothing']):
             model.name += '_smooth'
         if bool(params['input_feeding']):
-            model.name += '_infeed'
+            model.name += '_inputfeed'
         if params['coverage_weight'] > 0:
             model.name += '_coverage' + str(params['coverage_weight'])
         if params['ctc_loss_weight'] > 0:
             model.name += '_ctc' + str(params['ctc_loss_weight'])
         if params['scheduled_sampling_prob'] > 0:
-            model.name += '_sample' + str(params['scheduled_sampling_prob'])
+            model.name += '_scheduled' + str(params['scheduled_sampling_prob'])
+        if params['label_smoothing_prob'] > 0:
+            model.name += '_labelsmooth' + str(params['label_smoothing_prob'])
         if params['weight_noise_std'] != 0:
             model.name += '_noise' + str(params['weight_noise_std'])
 
@@ -237,7 +238,8 @@ def load(model_type, params):
             conv_kernel_sizes=params['conv_kernel_sizes'],
             conv_strides=params['conv_strides'],
             poolings=params['poolings'],
-            batch_norm=params['batch_norm'])
+            batch_norm=params['batch_norm'],
+            weight_noise_std=params['weight_noise_std'])
 
         model.name = params['encoder_type']
         if sum(params['subsample_list']) > 0:
@@ -265,14 +267,14 @@ def load(model_type, params):
             model.name += '_fc'
         if params['logits_temperature'] != 1:
             model.name += '_temp' + str(params['logits_temperature'])
+        if params['weight_noise_std'] != 0:
+            model.name += '_noise' + str(params['weight_noise_std'])
         model.name += '_main' + str(params['main_loss_weight'])
 
     elif params['model_type'] == 'hierarchical_attention':
         # Wrapper
         if 'space_index' not in params.keys():
             params['space_index'] = -1
-        if 'composition_case' not in params.keys():
-            params['composition_case'] = None
 
         model = HierarchicalAttentionSeq2seq(
             input_size=params['input_channel'] *
@@ -294,7 +296,6 @@ def load(model_type, params):
             decoder_dropout=params['dropout_decoder'],
             embedding_dim=params['embedding_dim'],
             embedding_dim_sub=params['embedding_dim_sub'],
-            embedding_dropout=params['dropout_embedding'],
             main_loss_weight=params['main_loss_weight'],
             num_classes=params['num_classes'],
             num_classes_sub=params['num_classes_sub'],
@@ -317,8 +318,9 @@ def load(model_type, params):
             poolings=params['poolings'],
             batch_norm=params['batch_norm'],
             scheduled_sampling_prob=params['scheduled_sampling_prob'],
-            composition_case=params['composition_case'],
-            space_index=params['composition_case'])
+            scheduled_sampling_ramp_max_step=params['scheduled_sampling_ramp_max_step'],
+            label_smoothing_prob=params['label_smoothing_prob'],
+            weight_noise_std=params['weight_noise_std'])
 
         model.name = params['encoder_type']
         if sum(params['subsample_list']) > 0:
@@ -334,14 +336,12 @@ def load(model_type, params):
         model.name += '_' + params['optimizer']
         model.name += '_lr' + str(params['learning_rate'])
         model.name += '_' + params['attention_type']
-        if params['dropout_encoder'] != 0 or params['dropout_decoder'] != 0 or params['dropout_embedding'] != 0:
+        if params['dropout_encoder'] != 0 or params['dropout_decoder'] != 0:
             model.name += '_drop'
             if params['dropout_encoder'] != 0:
                 model.name += 'en' + str(params['dropout_encoder'])
             if params['dropout_decoder'] != 0:
                 model.name += 'de' + str(params['dropout_decoder'])
-            if params['dropout_embedding'] != 0:
-                model.name += 'emb' + str(params['dropout_embedding'])
         if params['num_stack'] != 1:
             model.name += '_stack' + str(params['num_stack'])
         if params['weight_decay'] != 0:
@@ -357,15 +357,17 @@ def load(model_type, params):
         if bool(params['sigmoid_smoothing']):
             model.name += '_smooth'
         if bool(params['input_feeding']):
-            model.name += '_infeed'
-        model.name += '_main' + str(params['main_loss_weight'])
+            model.name += '_inputfeed'
         if params['coverage_weight'] > 0:
             model.name += '_coverage' + str(params['coverage_weight'])
         if params['ctc_loss_weight_sub'] > 0:
             model.name += '_ctcsub' + str(params['ctc_loss_weight_sub'])
         if params['scheduled_sampling_prob'] > 0:
-            model.name += '_sample' + str(params['scheduled_sampling_prob'])
-        if params['composition_case'] is not None:
-            model.name += '_' + params['composition_case']
+            model.name += '_scheduled' + str(params['scheduled_sampling_prob'])
+        if params['label_smoothing_prob'] > 0:
+            model.name += '_labelsmooth' + str(params['label_smoothing_prob'])
+        if params['weight_noise_std'] != 0:
+            model.name += '_noise' + str(params['weight_noise_std'])
+        model.name += '_main' + str(params['main_loss_weight'])
 
     return model

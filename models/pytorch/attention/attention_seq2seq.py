@@ -54,8 +54,6 @@ class AttentionSeq2seq(ModelBase):
         decoder_num_layers (int): the number of layers of the decoder
         decoder_dropout (float): the probability to drop nodes of the decoder
         embedding_dim (int): the dimension of the embedding in target spaces
-        embedding_dropout (int): the probability to drop nodes of the
-            embedding layer
         num_classes (int): the number of nodes in softmax layer
             (excluding <SOS> and <EOS> classes)
         parameter_init (float, optional): the range of uniform distribution to
@@ -90,6 +88,8 @@ class AttentionSeq2seq(ModelBase):
         poolings (list, optional):
         batch_norm (bool, optional):
         scheduled_sampling_prob (float, optional):
+        scheduled_sampling_ramp_max_step (float, optional):
+        label_smoothing_prob (float, optional):
         weight_noise_std (flaot, optional):
     """
 
@@ -108,7 +108,6 @@ class AttentionSeq2seq(ModelBase):
                  decoder_num_layers,
                  decoder_dropout,
                  embedding_dim,
-                 embedding_dropout,
                  num_classes,
                  parameter_init=0.1,
                  subsample_list=[],
@@ -129,6 +128,8 @@ class AttentionSeq2seq(ModelBase):
                  poolings=[],
                  batch_norm=False,
                  scheduled_sampling_prob=0,
+                 scheduled_sampling_ramp_max_step=0,
+                 label_smoothing_prob=0,
                  weight_noise_std=0):
 
         super(ModelBase, self).__init__()
@@ -167,7 +168,14 @@ class AttentionSeq2seq(ModelBase):
         self.coverage_weight = coverage_weight
         self.attention_conv_num_channels = attention_conv_num_channels
         self.attention_conv_width = attention_conv_width
+
+        # Setting for regularization
+        if scheduled_sampling_prob > 0 and scheduled_sampling_ramp_max_step == 0:
+            raise ValueError
         self.scheduled_sampling_prob = scheduled_sampling_prob
+        self.scheduled_sampling_ramp_max_step = scheduled_sampling_ramp_max_step
+        self._step = 0
+        self.label_smoothing_prob = label_smoothing_prob
 
         # Joint CTC-Attention
         self.ctc_loss_weight = ctc_loss_weight
@@ -271,7 +279,6 @@ class AttentionSeq2seq(ModelBase):
             self.bridge = None
 
         self.embedding = nn.Embedding(self.num_classes, embedding_dim)
-        self.embedding_dropout = nn.Dropout(embedding_dropout)
 
         if input_feeding:
             self.input_feeeding = nn.Linear(
@@ -360,6 +367,8 @@ class AttentionSeq2seq(ModelBase):
         # Average the loss by mini-batch
         batch_size = encoder_outputs.size(0)
         loss /= batch_size
+
+        self._step += 1
 
         return loss
 
@@ -515,13 +524,15 @@ class AttentionSeq2seq(ModelBase):
         for t in range(labels_max_seq_len - 1):
 
             if is_sub_task:
-                if self.scheduled_sampling_prob > 0 and t > 0 and random.random() < self.scheduled_sampling_prob:
+                if self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random() < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step:
                     # Scheduled sampling
                     y_prev = torch.max(logits[-1], dim=2)[1]
                     y = self.embedding_sub(y_prev)
                 else:
+                    # Label smoothing (uniform distribution)
                     y = self.embedding_sub(labels[:, t:t + 1])
-                y = self.embedding_dropout_sub(y)
+                    y += self.label_smoothing_prob * \
+                        (1 / (self.num_classes_sub - 1) - y)
 
                 decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
                     encoder_outputs,
@@ -539,13 +550,15 @@ class AttentionSeq2seq(ModelBase):
                     logits_step = self.fc_sub(decoder_outputs + context_vector)
 
             else:
-                if self.scheduled_sampling_prob > 0 and t > 0 and random.random() < self.scheduled_sampling_prob:
+                if self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random() < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step:
                     # Scheduled sampling
                     y_prev = torch.max(logits[-1], dim=2)[1]
                     y = self.embedding(y_prev)
                 else:
+                    # Label smoothing (uniform distribution)
                     y = self.embedding(labels[:, t:t + 1])
-                y = self.embedding_dropout(y)
+                    y += self.label_smoothing_prob * \
+                        (1 / (self.num_classes - 1) - y)
 
                 decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
                     encoder_outputs,
@@ -671,6 +684,55 @@ class AttentionSeq2seq(ModelBase):
 
         return y
 
+    def attention_weights(self, inputs, inputs_seq_len, beam_width=1,
+                          max_decode_length=100):
+        """Get attention weights for visualization.
+        Args:
+            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            inputs_seq_len (np.ndarray): A tensor of size `[B]`
+            beam_width (int, optional): the size of beam
+            max_decode_length (int, optional): the length of output sequences
+                to stop prediction when EOS token have not been emitted
+        Returns:
+            best_hyps (np.ndarray): A tensor of size `[B, T_out]`
+                Note that best_hyps includes <SOS> tokens.
+            attention_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
+        """
+        # Wrap by Variable
+        inputs_var = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
+        inputs_seq_len_var = np2var(
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
+
+        # Encode acoustic features
+        encoder_outputs, encoder_final_state, perm_indices = self._encode(
+            inputs_var, inputs_seq_len_var, volatile=True)
+
+        # Permutate indices
+        if perm_indices is not None:
+            perm_indices = var2np(perm_indices)
+            inputs_seq_len_var = inputs_seq_len_var[perm_indices]
+
+        if beam_width == 1:
+            best_hyps, attention_weights = self._decode_infer_greedy(
+                encoder_outputs, encoder_final_state, max_decode_length)
+        else:
+            # Subsampling
+            if sum(self.subsample_list) > 0:
+                inputs_seq_len_var /= sum(self.subsample_list) ** 2
+            # NOTE: floor is not needed because inputs_seq_len_var is IntTensor
+
+            best_hyps, attention_weights = self._decode_infer_beam(
+                encoder_outputs, encoder_final_state,
+                inputs_seq_len_var,
+                beam_width, max_decode_length)
+
+        # Permutate indices to the original order
+        if perm_indices is not None:
+            best_hyps = best_hyps[perm_indices]
+            attention_weights = attention_weights[perm_indices]
+
+        return best_hyps, attention_weights
+
     def decode(self, inputs, inputs_seq_len, beam_width=1,
                max_decode_length=100):
         """Decoding in the inference stage.
@@ -702,59 +764,24 @@ class AttentionSeq2seq(ModelBase):
             best_hyps, _ = self._decode_infer_greedy(
                 encoder_outputs, encoder_final_state, max_decode_length)
         else:
+            # Subsampling
+            if sum(self.subsample_list) > 0:
+                inputs_seq_len_var /= sum(self.subsample_list) ** 2
+            # NOTE: floor is not needed because inputs_seq_len_var is IntTensor
+
             best_hyps, _ = self._decode_infer_beam(
                 encoder_outputs, encoder_final_state,
                 inputs_seq_len_var,
                 beam_width, max_decode_length)
+
+        # Remove <SOS>
+        best_hyps = best_hyps[:, 1:]
 
         # Permutate indices to the original order
         if perm_indices is not None:
             best_hyps = best_hyps[perm_indices]
 
         return best_hyps
-
-    def attention_weights(self, inputs, inputs_seq_len, beam_width=1,
-                          max_decode_length=100):
-        """Get attention weights for visualization.
-        Args:
-            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
-            inputs_seq_len (np.ndarray): A tensor of size `[B]`
-            beam_width (int, optional): the size of beam
-            max_decode_length (int, optional): the length of output sequences
-                to stop prediction when EOS token have not been emitted
-        Returns:
-            best_hyps (np.ndarray): A tensor of size `[B, T_out]`
-            attention_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
-        """
-        # Wrap by Variable
-        inputs_var = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
-        inputs_seq_len_var = np2var(
-            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
-
-        # Encode acoustic features
-        encoder_outputs, encoder_final_state, perm_indices = self._encode(
-            inputs_var, inputs_seq_len_var, volatile=True)
-
-        # Permutate indices
-        if perm_indices is not None:
-            perm_indices = var2np(perm_indices)
-            inputs_seq_len_var = inputs_seq_len_var[perm_indices]
-
-        if beam_width == 1:
-            best_hyps, attention_weights = self._decode_infer_greedy(
-                encoder_outputs, encoder_final_state, max_decode_length)
-        else:
-            best_hyps, attention_weights = self._decode_infer_beam(
-                encoder_outputs, encoder_final_state,
-                inputs_seq_len_var,
-                beam_width, max_decode_length)
-
-        # Permutate indices to the original order
-        if perm_indices is not None:
-            best_hyps = best_hyps[perm_indices]
-            attention_weights = attention_weights[perm_indices]
-
-        return best_hyps, attention_weights
 
     def _decode_infer_greedy(self, encoder_outputs, encoder_final_state,
                              max_decode_length, is_sub_task=False):
@@ -769,6 +796,7 @@ class AttentionSeq2seq(ModelBase):
             is_sub_task (bool, optional):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
+                Note that best_hyps includes <SOS> tokens.
             attention_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
         """
         batch_size, max_time = encoder_outputs.size()[:2]
@@ -783,20 +811,18 @@ class AttentionSeq2seq(ModelBase):
         if self.use_cuda:
             attention_weights_step = attention_weights_step.cuda()
 
-        best_hyps = []
-        attention_weights = []
-
         # Start from <SOS>
         sos = self.sos_index_sub if is_sub_task else self.sos_index
         eos = self.eos_index_sub if is_sub_task else self.eos_index
         y = self._create_token(value=sos, batch_size=batch_size)
 
+        best_hyps = [y]
+        attention_weights = [attention_weights_step]
+
         for _ in range(max_decode_length):
 
             if is_sub_task:
                 y = self.embedding_sub(y)
-                y = self.embedding_dropout_sub(y)
-                # TODO: remove dropout??
 
                 decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
                     encoder_outputs,
@@ -815,8 +841,6 @@ class AttentionSeq2seq(ModelBase):
 
             else:
                 y = self.embedding(y)
-                y = self.embedding_dropout(y)
-                # TODO: remove dropout??
 
                 decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
                     encoder_outputs,
@@ -873,6 +897,7 @@ class AttentionSeq2seq(ModelBase):
                 to stop prediction when EOS token have not been emitted
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
+                Note that best_hyps includes <SOS> tokens.
             attention_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
         """
         batch_size = encoder_outputs.size(0)
@@ -901,8 +926,6 @@ class AttentionSeq2seq(ModelBase):
                     y_prev = hyp[-1] if t > 0 else self.sos_index
                     y = self._create_token(value=y_prev, batch_size=1)
                     y = self.embedding(y)
-                    y = self.embedding_dropout(y)
-                    # TODO: remove dropout??
 
                     max_time = inputs_seq_len.data[i_batch]
                     decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
@@ -954,8 +977,7 @@ class AttentionSeq2seq(ModelBase):
             if len(complete[i_batch]) == 0:
                 complete[i_batch] = beam[i_batch]
             hyp, score, _, attention_weights_step = complete[i_batch][0]
-            best_hyps.append(hyp[1:])
-            # NOTE: remove <SOS>
+            best_hyps.append(hyp)
             attention_weights.append(attention_weights_step)
 
         return np.array(best_hyps), np.array(attention_weights)

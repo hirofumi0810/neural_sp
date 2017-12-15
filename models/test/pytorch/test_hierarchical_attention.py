@@ -113,7 +113,6 @@ class TestHierarchicalAttention(unittest.TestCase):
             decoder_dropout=0.1,
             embedding_dim=64,
             embedding_dim_sub=32,
-            embedding_dropout=0.1,
             main_loss_weight=0.5,
             num_classes=num_classes,
             num_classes_sub=num_classes_sub,
@@ -134,7 +133,10 @@ class TestHierarchicalAttention(unittest.TestCase):
             conv_strides=conv_strides,
             poolings=poolings,
             batch_norm=batch_norm,
-            scheduled_sampling_prob=0.1)
+            scheduled_sampling_prob=0.1,
+            scheduled_sampling_ramp_max_step=100,
+            label_smoothing_prob=0.1,
+            weight_noise_std=0)
 
         # Count total parameters
         for name, num_params in model.num_params_dict.items():

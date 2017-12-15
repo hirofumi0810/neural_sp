@@ -151,7 +151,6 @@ class TestAttention(unittest.TestCase):
             decoder_num_layers=decoder_num_layers,
             decoder_dropout=0.1,
             embedding_dim=32,
-            embedding_dropout=0.1,
             num_classes=num_classes,
             ctc_loss_weight=ctc_loss_weight,
             parameter_init=0.1,
@@ -171,7 +170,10 @@ class TestAttention(unittest.TestCase):
             conv_strides=conv_strides,
             poolings=poolings,
             batch_norm=batch_norm,
-            scheduled_sampling_prob=0.1)
+            scheduled_sampling_prob=0.1,
+            scheduled_sampling_ramp_max_step=100,
+            label_smoothing_prob=0.1,
+            weight_noise_std=0)
 
         # Count total parameters
         for name, num_params in model.num_params_dict.items():

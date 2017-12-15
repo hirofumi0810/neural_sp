@@ -54,11 +54,11 @@ param:
   clip_activation_decoder: 50
   dropout_encoder: 0.5
   dropout_decoder: 0.1
-  weight_decay: 1e-5
+  weight_decay: 0
   init_dec_state_with_enc_state: True
   sharpening_factor: 1.0
   logits_temperature: 1.0
-  sigmoid_smoothing: False
+  sigmoid_smoothing: True
   input_feeding: False
   coverage_weight: 0
   scheduled_sampling_prob: 0

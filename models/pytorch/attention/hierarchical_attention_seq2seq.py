@@ -17,7 +17,6 @@ from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 from models.pytorch.encoders.load_encoder import load
 from models.pytorch.attention.decoders.rnn_decoder import RNNDecoder
 from models.pytorch.attention.attention_layer import AttentionMechanism
-from models.pytorch.attention.char2word import LSTMChar2Word
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
 from utils.io.variable import np2var, var2np
@@ -44,7 +43,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  decoder_dropout,
                  embedding_dim,
                  embedding_dim_sub,  # ***
-                 embedding_dropout,
                  main_loss_weight,  # ***
                  num_classes,
                  num_classes_sub,  # ***
@@ -67,8 +65,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  poolings=[],
                  batch_norm=False,
                  scheduled_sampling_prob=0,
-                 composition_case=None,
-                 space_index=None):
+                 scheduled_sampling_ramp_max_step=0,
+                 label_smoothing_prob=0,
+                 weight_noise_std=0):
 
         super(HierarchicalAttentionSeq2seq, self).__init__(
             input_size=input_size,
@@ -85,7 +84,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             decoder_num_layers=decoder_num_layers,
             decoder_dropout=decoder_dropout,
             embedding_dim=embedding_dim,
-            embedding_dropout=embedding_dropout,
             num_classes=num_classes,
             parameter_init=parameter_init,
             subsample_list=subsample_list,
@@ -105,7 +103,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             conv_strides=conv_strides,
             poolings=poolings,
             batch_norm=batch_norm,
-            scheduled_sampling_prob=scheduled_sampling_prob)
+            scheduled_sampling_prob=scheduled_sampling_prob,
+            scheduled_sampling_ramp_max_step=scheduled_sampling_ramp_max_step,
+            label_smoothing_prob=label_smoothing_prob,
+            weight_noise_std=weight_noise_std)
 
         # Setting for the encoder
         self.encoder_num_layers_sub = encoder_num_layers_sub
@@ -124,18 +125,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         self.sub_loss_weight = 1 - main_loss_weight - ctc_loss_weight_sub
         self.ctc_loss_weight_sub = ctc_loss_weight_sub
         assert self.ctc_loss_weight * self.ctc_loss_weight_sub == 0
-
-        # Setting for composition model
-        if composition_case is not None and space_index is None:
-            raise ValueError
-        if composition_case not in [None, 'hidden', 'embedding']:
-            raise ValueError
-        self.composition_case = composition_case
-        self.space_index = space_index
-        # NOTE: composition_case:
-        # None: normal hierarchical attention model
-        # hidden: leverage character-level hidden states
-        # embedding: leverage character embeddings
 
         #########################
         # Encoder
@@ -196,72 +185,55 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         else:
             raise NotImplementedError
 
-        ##############################
-        # Decoder in the main task
-        ##############################
-        if composition_case in [None, 'hidden']:
-            decoder_input_size = embedding_dim
-        else:
-            raise NotImplementedError
+        if self.sub_loss_weight > 0:
+            ##############################
+            # Decoder in the sub task
+            ##############################
+            self.decoder_sub = RNNDecoder(
+                embedding_dim=embedding_dim_sub,
+                rnn_type=decoder_type,
+                num_units=decoder_num_units_sub,
+                num_layers=decoder_num_layers,
+                dropout=decoder_dropout,
+                parameter_init=parameter_init,
+                use_cuda=self.use_cuda,
+                batch_first=True)
 
-        self.decoder = RNNDecoder(
-            embedding_dim=decoder_input_size,
-            rnn_type=decoder_type,
-            num_units=decoder_num_units,
-            num_layers=decoder_num_layers,
-            dropout=decoder_dropout,
-            parameter_init=parameter_init,
-            use_cuda=self.use_cuda,
-            batch_first=True)
+            ###################################
+            # Attention layer in the sub task
+            ###################################
+            self.attend_sub = AttentionMechanism(
+                decoder_num_units=decoder_num_units_sub,
+                attention_type=attention_type,
+                attention_dim=attention_dim,
+                sharpening_factor=sharpening_factor,
+                sigmoid_smoothing=sigmoid_smoothing,
+                out_channels=attention_conv_num_channels,
+                kernel_size=attention_conv_width)
 
-        ##############################
-        # Decoder in the sub task
-        ##############################
-        self.decoder_sub = RNNDecoder(
-            embedding_dim=embedding_dim_sub,
-            rnn_type=decoder_type,
-            num_units=decoder_num_units_sub,
-            num_layers=decoder_num_layers,
-            dropout=decoder_dropout,
-            parameter_init=parameter_init,
-            use_cuda=self.use_cuda,
-            batch_first=True)
+            ##################################################
+            # Bridge layer between the encoder and decoder
+            ##################################################
+            if encoder_num_units != decoder_num_units_sub:
+                self.bridge_sub = nn.Linear(
+                    encoder_num_units, decoder_num_units_sub)
+            else:
+                self.bridge_sub = None
 
-        ###################################
-        # Attention layer in the sub task
-        ###################################
-        self.attend_sub = AttentionMechanism(
-            decoder_num_units=decoder_num_units_sub,
-            attention_type=attention_type,
-            attention_dim=attention_dim,
-            sharpening_factor=sharpening_factor,
-            sigmoid_smoothing=sigmoid_smoothing,
-            out_channels=attention_conv_num_channels,
-            kernel_size=attention_conv_width)
+            self.embedding_sub = nn.Embedding(
+                self.num_classes_sub, embedding_dim_sub)
 
-        ##################################################
-        # Bridge layer between the encoder and decoder
-        ##################################################
-        if encoder_num_units != decoder_num_units_sub:
-            self.bridge_sub = nn.Linear(
-                encoder_num_units, decoder_num_units_sub)
-        else:
-            self.bridge_sub = None
-
-        self.embedding_sub = nn.Embedding(
-            self.num_classes_sub, embedding_dim_sub)
-        self.embedding_dropout_sub = nn.Dropout(embedding_dropout)
-
-        if input_feeding:
-            self.input_feeding_sub = nn.Linear(
-                decoder_num_units_sub * 2, decoder_num_units_sub)
-            # NOTE: input-feeding approach
-            self.fc_sub = nn.Linear(
-                decoder_num_units_sub, self.num_classes_sub - 1)
-        else:
-            self.fc_sub = nn.Linear(
-                decoder_num_units_sub, self.num_classes_sub - 1)
-        # NOTE: <SOS> is removed because the decoder never predict <SOS> class
+            if input_feeding:
+                self.input_feeding_sub = nn.Linear(
+                    decoder_num_units_sub * 2, decoder_num_units_sub)
+                # NOTE: input-feeding approach
+                self.fc_sub = nn.Linear(
+                    decoder_num_units_sub, self.num_classes_sub - 1)
+            else:
+                self.fc_sub = nn.Linear(
+                    decoder_num_units_sub, self.num_classes_sub - 1)
+            # NOTE: <SOS> is removed because the decoder never predict <SOS>
+            # class
 
         if ctc_loss_weight_sub > 0:
             # self.fc_sub_ctc = nn.Linear(
@@ -271,22 +243,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # Set CTC decoders
             self._decode_ctc_greedy_np = GreedyDecoder(blank_index=0)
             self._decode_ctc_beam_np = BeamSearchDecoder(blank_index=0)
-
-        ##################################################
-        # Composition layers
-        ##################################################
-        if composition_case == 'hidden':
-            self.merge_context_vector = nn.Linear(
-                encoder_num_units * 2, encoder_num_units)
-        elif composition_case == 'embedding':
-            self.c2w = LSTMChar2Word(
-                num_units=256,
-                num_layers=1,
-                bidirectional=True,
-                char_embedding_dim=embedding_dim_sub,
-                word_embedding_dim=embedding_dim,
-                use_cuda=self.use_cuda)
-            self.gating_fn = nn.Linear(embedding_dim, embedding_dim)
 
     def forward(self, inputs, labels, labels_sub, inputs_seq_len,
                 labels_seq_len, labels_seq_len_sub, volatile=False):
@@ -334,15 +290,14 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Main task
         ##################################################
         # Teacher-forcing
-        if self.composition_case is None:
-            logits, attention_weights = self._decode_train(
-                encoder_outputs, labels_var, encoder_final_state)
-        else:
-            logits, attention_weights = self._decode_train_composition(
-                encoder_outputs, encoder_outputs_sub,
-                labels_var, labels_sub_var,
-                labels_seq_len_var, labels_seq_len_sub_var,
-                encoder_final_state)
+        logits, attention_weights = self._decode_train(
+            encoder_outputs, labels_var, encoder_final_state)
+
+        # logits, attention_weights = self._decode_train_composition(
+        #     encoder_outputs, encoder_outputs_sub,
+        #     labels_var, labels_sub_var,
+        #     labels_seq_len_var, labels_seq_len_sub_var,
+        #     encoder_final_state)
 
         # Output smoothing
         if self.logits_temperature != 1:
@@ -383,12 +338,12 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             num_classes_sub = logits_sub.size(2)
             logits_sub = logits_sub.view((-1, num_classes_sub))
             labels_sub_1d = labels_sub_var[:, 1:].contiguous().view(-1)
-            loss_sub = F.cross_entropy(logits_sub, labels_sub_1d,
-                                       ignore_index=self.sos_index_sub,
-                                       size_average=False)
+            att_loss_sub = F.cross_entropy(logits_sub, labels_sub_1d,
+                                           ignore_index=self.sos_index_sub,
+                                           size_average=False)
             # NOTE: labels_var are padded by sos_index_sub
 
-            loss += loss_sub * self.sub_loss_weight
+            loss += att_loss_sub * self.sub_loss_weight
 
         ##################################################
         # Sub task (CTC)
@@ -404,9 +359,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         batch_size = encoder_outputs.size(0)
         loss /= batch_size
 
+        self._step += 1
+
         if self.sub_loss_weight > self.ctc_loss_weight_sub:
             return (loss, loss_main * self.main_loss_weight / batch_size,
-                    loss_sub * self.sub_loss_weight / batch_size)
+                    att_loss_sub * self.sub_loss_weight / batch_size)
         else:
             return (loss, loss_main * self.main_loss_weight / batch_size,
                     ctc_loss_sub * self.ctc_loss_weight_sub / batch_size)
@@ -460,7 +417,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     y = self.embedding(y_prev)
                 else:
                     y = self.embedding(labels[:, t:t + 1])
-                y = self.embedding_dropout(y)
 
                 decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
                     encoder_outputs,
@@ -520,8 +476,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     while True:
                         char_embedding = self.embedding_sub(
                             labels_sub[i_batch:i_batch + 1, char_counter:char_counter + 1])
-                        char_embedding = self.embedding_dropout_sub(
-                            char_embedding)
                         # NOTE: char_embedding: `[1, 1, embedding_dim_sub]`
                         char_embeddings.append(char_embedding)
                         if labels_sub[i_batch, char_counter].data[0] == self.space_index:
@@ -545,7 +499,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     else:
                         y = self.embedding(
                             labels[i_batch:i_batch + 1, t:t + 1])
-                    y = self.embedding_dropout(y)
 
                     # Mix word embedding and word representation form C2W model
                     gate = F.sigmoid(self.gating_fn(y.view((-1, y.size(-1)))))
@@ -716,8 +669,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             for _ in range(max_decode_length):
 
                 y = self.embedding(y)
-                y = self.embedding_dropout(y)
-                # TODO: remove dropout??
 
                 decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
                     encoder_outputs,
@@ -803,8 +754,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     char_embeddings = []
                     while True:
                         y_sub = self.embedding_sub(y_sub)
-                        y_sub = self.embedding_dropout_sub(y_sub)
-                        # TODO: remove dropout??
 
                         decoder_outputs_sub, decoder_state_sub, context_vector_sub, attention_weights_step_sub = self._decode_step_sub(
                             encoder_outputs_sub[i_batch:i_batch +
@@ -842,7 +791,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                             break
 
                         emb_char = self.embedding_sub(y_sub)
-                        emb_char = self.embedding_dropout_sub(emb_char)
                         # NOTE: emb_char: `[1, 1, embedding_dim_sub]`
                         char_embeddings.append(emb_char)
                         char_counter += 1
