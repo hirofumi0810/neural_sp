@@ -52,7 +52,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  sharpening_factor=1,
                  logits_temperature=1,
                  sigmoid_smoothing=False,
-                 input_feeding=False,
                  coverage_weight=0,
                  ctc_loss_weight_sub=0,  # ***
                  attention_conv_num_channels=10,
@@ -91,7 +90,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             sharpening_factor=sharpening_factor,
             logits_temperature=logits_temperature,
             sigmoid_smoothing=sigmoid_smoothing,
-            input_feeding=input_feeding,
             coverage_weight=coverage_weight,
             ctc_loss_weight=0,
             attention_conv_num_channels=attention_conv_num_channels,
@@ -190,7 +188,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # Decoder in the sub task
             ##############################
             self.decoder_sub = RNNDecoder(
-                embedding_dim=embedding_dim_sub,
+                embedding_dim=embedding_dim_sub + decoder_num_units_sub,
                 rnn_type=decoder_type,
                 num_units=decoder_num_units_sub,
                 num_layers=decoder_num_layers,
@@ -223,15 +221,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             self.embedding_sub = nn.Embedding(
                 self.num_classes_sub, embedding_dim_sub)
 
-            if input_feeding:
-                self.input_feeding_sub = nn.Linear(
-                    decoder_num_units_sub * 2, decoder_num_units_sub)
-                # NOTE: input-feeding approach
-                self.fc_sub = nn.Linear(
-                    decoder_num_units_sub, self.num_classes_sub - 1)
-            else:
-                self.fc_sub = nn.Linear(
-                    decoder_num_units_sub, self.num_classes_sub - 1)
+            self.proj_layer_sub = nn.Linear(
+                decoder_num_units_sub * 2, decoder_num_units_sub)
+            self.fc_sub = nn.Linear(
+                decoder_num_units_sub, self.num_classes_sub - 1)
             # NOTE: <SOS> is removed because the decoder never predict <SOS>
             # class
 
@@ -599,25 +592,24 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     best_hyps = best_hyps - 1
                     # NOTE: index 0 is reserved for blank in warpctc_pytorch
             else:
-                if self.composition_case is None:
-                    best_hyps, _ = self._decode_infer_greedy(
-                        encoder_outputs, encoder_final_state, max_decode_length)
-                else:
-                    best_hyps, _ = self._decode_infer_greedy_composition(
-                        encoder_outputs, encoder_outputs_sub,
-                        encoder_final_state, encoder_final_state_sub,
-                        max_decode_length)
+                best_hyps, _ = self._decode_infer_greedy(
+                    encoder_outputs, encoder_final_state, max_decode_length)
+
+                # best_hyps, _ = self._decode_infer_greedy_composition(
+                #     encoder_outputs, encoder_outputs_sub,
+                #     encoder_final_state, encoder_final_state_sub,
+                #     max_decode_length)
         else:
             if is_sub_task:
                 raise NotImplementedError
             else:
-                if self.composition_case is None:
-                    best_hyps, attention_weights = self._decode_infer_beam(
-                        encoder_outputs, encoder_final_state,
-                        inputs_seq_len_var,
-                        beam_width, max_decode_length)
-                else:
-                    raise NotImplementedError
+                best_hyps, attention_weights = self._decode_infer_beam(
+                    encoder_outputs, encoder_final_state,
+                    inputs_seq_len_var,
+                    beam_width, max_decode_length)
+
+        # Remove <SOS>
+        best_hyps = best_hyps[:, 1:]
 
         # Permutate indices to the original order
         if perm_indices is not None:

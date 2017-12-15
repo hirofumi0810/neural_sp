@@ -36,8 +36,7 @@ class TestHierarchicalAttentionC2W(unittest.TestCase):
     @measure_time
     def check(self, composition_case,
               encoder_type='lstm', bidirectional=True, decoder_type='lstm',
-              attention_type='location',
-              subsample=True, input_feeding=False,
+              attention_type='location', subsample=True,
               ctc_loss_weight=0, decoder_num_layers=1):
 
         print('==================================================')
@@ -47,7 +46,6 @@ class TestHierarchicalAttentionC2W(unittest.TestCase):
         print('  decoder_type: %s' % decoder_type)
         print('  attention_type: %s' % attention_type)
         print('  subsample: %s' % str(subsample))
-        print('  input_feeding: %s' % str(input_feeding))
         print('  ctc_loss_weight: %s' % str(ctc_loss_weight))
         print('  decoder_num_layers: %s' % str(decoder_num_layers))
         print('==================================================')
@@ -85,7 +83,6 @@ class TestHierarchicalAttentionC2W(unittest.TestCase):
             decoder_dropout=0.1,
             embedding_dim=64,
             embedding_dim_sub=32,
-            embedding_dropout=0.1,
             main_loss_weight=0.5,
             num_classes=num_classes,
             num_classes_sub=num_classes_sub,
@@ -95,8 +92,6 @@ class TestHierarchicalAttentionC2W(unittest.TestCase):
             sharpening_factor=1,
             logits_temperature=1,
             sigmoid_smoothing=False,
-            input_feeding=input_feeding,
-            ctc_loss_weight=0,
             ctc_loss_weight_sub=0.1,
             attention_conv_num_channels=10,
             attention_conv_width=101,

@@ -246,7 +246,7 @@ class AttentionSeq2seq(ModelBase):
         # Decoder
         ####################
         self.decoder = RNNDecoder(
-            embedding_dim=embedding_dim,
+            embedding_dim=embedding_dim + decoder_num_units,
             rnn_type=decoder_type,
             num_units=decoder_num_units,
             num_layers=decoder_num_layers,
@@ -280,11 +280,8 @@ class AttentionSeq2seq(ModelBase):
 
         self.embedding = nn.Embedding(self.num_classes, embedding_dim)
 
-        if input_feeding:
-            self.input_feeeding = nn.Linear(
-                decoder_num_units * 2, decoder_num_units)
-            # NOTE: input-feeding approach
-
+        self.proj_layer = nn.Linear(
+            decoder_num_units * 2, decoder_num_units)
         self.fc = nn.Linear(decoder_num_units, self.num_classes - 1)
         # NOTE: <SOS> is removed because the decoder never predict <SOS> class
         # TODO: consider projection
@@ -519,6 +516,11 @@ class AttentionSeq2seq(ModelBase):
             attention_weights_step = attention_weights_step.cuda()
             # TODO: volatile, require_grad
 
+        # Initialize context vector
+        context_vector = torch.sum(
+            encoder_outputs * attention_weights_step.unsqueeze(dim=2),
+            dim=1, keepdim=True)
+
         logits = []
         attention_weights = []
         for t in range(labels_max_seq_len - 1):
@@ -533,22 +535,6 @@ class AttentionSeq2seq(ModelBase):
                     y = self.embedding_sub(labels[:, t:t + 1])
                     y += self.label_smoothing_prob * \
                         (1 / (self.num_classes_sub - 1) - y)
-
-                decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
-                    encoder_outputs,
-                    y,
-                    decoder_state,
-                    attention_weights_step,
-                    is_sub_task=True)
-
-                if self.input_feeding:
-                    # Input-feeding approach
-                    output = self.input_feeding_sub(
-                        torch.cat([decoder_outputs, context_vector], dim=-1))
-                    logits_step = self.fc_sub(F.tanh(output))
-                else:
-                    logits_step = self.fc_sub(decoder_outputs + context_vector)
-
             else:
                 if self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random() < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step:
                     # Scheduled sampling
@@ -560,19 +546,21 @@ class AttentionSeq2seq(ModelBase):
                     y += self.label_smoothing_prob * \
                         (1 / (self.num_classes - 1) - y)
 
-                decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
-                    encoder_outputs,
-                    y,
-                    decoder_state,
-                    attention_weights_step)
+            decoder_inputs = torch.cat([context_vector, y], dim=-1)
+            decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
+                encoder_outputs=encoder_outputs,
+                decoder_inputs=decoder_inputs,
+                decoder_state=decoder_state,
+                attention_weights_step=attention_weights_step,
+                is_sub_task=is_sub_task)
 
-                if self.input_feeding:
-                    # Input-feeding approach
-                    output = self.input_feeeding(
-                        torch.cat([decoder_outputs, context_vector], dim=-1))
-                    logits_step = self.fc(F.tanh(output))
-                else:
-                    logits_step = self.fc(decoder_outputs + context_vector)
+            outputs = torch.cat([decoder_outputs, context_vector], dim=-1)
+            if is_sub_task:
+                proj = self.proj_layer_sub(outputs)
+                logits_step = self.fc_sub(proj)
+            else:
+                proj = self.proj_layer(outputs)
+                logits_step = self.fc(proj)
 
             attention_weights.append(attention_weights_step)
             logits.append(logits_step)
@@ -631,13 +619,14 @@ class AttentionSeq2seq(ModelBase):
 
         return decoder_state
 
-    def _decode_step(self, encoder_outputs, y, decoder_state,
+    def _decode_step(self, encoder_outputs, decoder_inputs, decoder_state,
                      attention_weights_step, is_sub_task=False):
         """Decoding step.
         Args:
             encoder_outputs (FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            y (FloatTensor): A tensor of size `[B, 1, embedding_dim]`
+            decoder_inputs (FloatTensor): A tensor of size
+                `[B, 1, embedding_dim + encoder_num_units (decoder_num_units)]`
             decoder_state (FloatTensor): A tensor of size
                 `[decoder_num_layers, B, decoder_num_units]`
             attention_weights_step (FloatTensor): A tensor of size `[B, T_in]`
@@ -652,13 +641,15 @@ class AttentionSeq2seq(ModelBase):
             attention_weights_step (FloatTensor): A tensor of size `[B, T_in]`
         """
         if is_sub_task:
-            decoder_outputs, decoder_state = self.decoder_sub(y, decoder_state)
+            decoder_outputs, decoder_state = self.decoder_sub(
+                decoder_inputs, decoder_state)
             context_vector, attention_weights_step = self.attend_sub(
                 encoder_outputs,
                 decoder_outputs,
                 attention_weights_step)
         else:
-            decoder_outputs, decoder_state = self.decoder(y, decoder_state)
+            decoder_outputs, decoder_state = self.decoder(
+                decoder_inputs, decoder_state)
             context_vector, attention_weights_step = self.attend(
                 encoder_outputs,
                 decoder_outputs,
@@ -811,6 +802,11 @@ class AttentionSeq2seq(ModelBase):
         if self.use_cuda:
             attention_weights_step = attention_weights_step.cuda()
 
+        # Initialize context vector
+        context_vector = torch.sum(
+            encoder_outputs * attention_weights_step.unsqueeze(dim=2),
+            dim=1, keepdim=True)
+
         # Start from <SOS>
         sos = self.sos_index_sub if is_sub_task else self.sos_index
         eos = self.eos_index_sub if is_sub_task else self.eos_index
@@ -823,38 +819,24 @@ class AttentionSeq2seq(ModelBase):
 
             if is_sub_task:
                 y = self.embedding_sub(y)
-
-                decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
-                    encoder_outputs,
-                    y,
-                    decoder_state,
-                    attention_weights_step,
-                    is_sub_task=True)
-
-                if self.input_feeding:
-                    # Input-feeding approach
-                    output = self.input_feeding_sub(
-                        torch.cat([decoder_outputs, context_vector], dim=-1))
-                    logits = self.fc_sub(F.tanh(output))
-                else:
-                    logits = self.fc_sub(decoder_outputs + context_vector)
-
             else:
                 y = self.embedding(y)
 
-                decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
-                    encoder_outputs,
-                    y,
-                    decoder_state,
-                    attention_weights_step)
+            decoder_inputs = torch.cat([context_vector, y], dim=-1)
+            decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
+                encoder_outputs=encoder_outputs,
+                decoder_inputs=decoder_inputs,
+                decoder_state=decoder_state,
+                attention_weights_step=attention_weights_step,
+                is_sub_task=is_sub_task)
 
-                if self.input_feeding:
-                    # Input-feeding approach
-                    output = self.input_feeeding(
-                        torch.cat([decoder_outputs, context_vector], dim=-1))
-                    logits = self.fc(F.tanh(output))
-                else:
-                    logits = self.fc(decoder_outputs + context_vector)
+            outputs = torch.cat([decoder_outputs, context_vector], dim=-1)
+            if is_sub_task:
+                output = self.proj_layer_sub(outputs)
+                logits = self.fc_sub(output)
+            else:
+                output = self.proj_layer(outputs)
+                logits = self.fc(output)
 
             logits = logits.squeeze(dim=1)
             # NOTE: `[B, 1, num_classes]` -> `[B, num_classes]`
@@ -883,8 +865,8 @@ class AttentionSeq2seq(ModelBase):
         return best_hyps, attention_weights
 
     def _decode_infer_beam(self, encoder_outputs, encoder_final_state,
-                           inputs_seq_len,
-                           beam_width, max_decode_length):
+                           inputs_seq_len, beam_width, max_decode_length,
+                           is_sub_task=False):
         """Beam search decoding in the inference stage.
         Args:
             encoder_outputs (FloatTensor): A tensor of size
@@ -895,12 +877,17 @@ class AttentionSeq2seq(ModelBase):
             beam_width (int): the size of beam
             max_decode_length (int, optional): the length of output sequences
                 to stop prediction when EOS token have not been emitted
+            is_sub_task (bool, optional):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
                 Note that best_hyps includes <SOS> tokens.
             attention_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
         """
         batch_size = encoder_outputs.size(0)
+
+        # Start from <SOS>
+        sos = self.sos_index_sub if is_sub_task else self.sos_index
+        eos = self.eos_index_sub if is_sub_task else self.eos_index
 
         beam = []
         for i_batch in range(batch_size):
@@ -915,32 +902,44 @@ class AttentionSeq2seq(ModelBase):
             if self.use_cuda:
                 attention_weights_step = attention_weights_step.cuda()
 
+            # Initialize context vector
+            context_vector = torch.sum(
+                encoder_outputs[i_batch:i_batch + 1, :max_time] *
+                attention_weights_step.unsqueeze(dim=2),
+                dim=1, keepdim=True)
+
             beam.append([([self.sos_index], LOG_1,
-                          decoder_state, attention_weights_step)])
+                          decoder_state, attention_weights_step, context_vector)])
 
         complete = [[]] * batch_size
         for t in range(max_decode_length):
             new_beam = [[]] * batch_size
             for i_batch in range(batch_size):
-                for hyp, score, decoder_state, attention_weights_step in beam[i_batch]:
-                    y_prev = hyp[-1] if t > 0 else self.sos_index
+                for hyp, score, decoder_state, attention_weights_step, context_vector in beam[i_batch]:
+                    y_prev = hyp[-1] if t > 0 else sos
                     y = self._create_token(value=y_prev, batch_size=1)
-                    y = self.embedding(y)
+                    if is_sub_task:
+                        y = self.embedding_sub(y)
+                    else:
+                        y = self.embedding(y)
 
                     max_time = inputs_seq_len.data[i_batch]
+                    decoder_inputs = torch.cat([context_vector, y], dim=-1)
                     decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
-                        encoder_outputs[i_batch:i_batch + 1, :max_time],
-                        y,
-                        decoder_state,
-                        attention_weights_step)
+                        encoder_outputs=encoder_outputs[i_batch:i_batch + 1, :max_time],
+                        decoder_inputs=decoder_inputs,
+                        decoder_state=decoder_state,
+                        attention_weights_step=attention_weights_step,
+                        is_sub_task=is_sub_task)
 
-                    if self.input_feeding:
-                        # Input-feeding approach
-                        output = self.input_feeeding(
-                            torch.cat([decoder_outputs, context_vector], dim=-1))
-                        logits = self.fc(F.tanh(output))
+                    outputs = torch.cat(
+                        [decoder_outputs, context_vector], dim=-1)
+                    if is_sub_task:
+                        output = self.proj_layer_sub(outputs)
+                        logits = self.fc_sub(output)
                     else:
-                        logits = self.fc(decoder_outputs + context_vector)
+                        output = self.proj_layer(outputs)
+                        logits = self.fc(output)
 
                     logits = logits.squeeze(dim=1)
                     # NOTE: `[B, 1, num_classes]` -> `[B, num_classes]`
@@ -954,19 +953,19 @@ class AttentionSeq2seq(ModelBase):
                         new_score = np.logaddexp(score, log_prob)
                         new_beam[i_batch].append(
                             (new_hyp, new_score, decoder_state,
-                             attention_weights_step))
+                             attention_weights_step, context_vector))
                 new_beam[i_batch] = sorted(
                     new_beam[i_batch], key=lambda x: x[1], reverse=True)
 
                 # Remove complete hypotheses
                 for cand in new_beam[i_batch][:beam_width]:
-                    if cand[0][-1] == self.eos_index:
+                    if cand[0][-1] == eos:
                         complete[i_batch].append(cand)
                 if len(complete[i_batch]) >= beam_width:
                     complete[i_batch] = complete[i_batch][:beam_width]
                     break
-                beam[i_batch] = list(filter(lambda x: x[0][-1] !=
-                                            self.eos_index, new_beam[i_batch]))
+                beam[i_batch] = list(
+                    filter(lambda x: x[0][-1] != eos, new_beam[i_batch]))
                 beam[i_batch] = beam[i_batch][:beam_width]
 
         best_hyps = []
@@ -976,7 +975,7 @@ class AttentionSeq2seq(ModelBase):
                 complete[i_batch], key=lambda x: x[1], reverse=True)
             if len(complete[i_batch]) == 0:
                 complete[i_batch] = beam[i_batch]
-            hyp, score, _, attention_weights_step = complete[i_batch][0]
+            hyp, score, _, attention_weights_step, _ = complete[i_batch][0]
             best_hyps.append(hyp)
             attention_weights.append(attention_weights_step)
 

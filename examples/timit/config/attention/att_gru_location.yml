@@ -58,7 +58,6 @@ param:
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False
-  input_feeding: False
   coverage_weight: 0
   scheduled_sampling_prob: 0
   scheduled_sampling_ramp_max_step: 2000

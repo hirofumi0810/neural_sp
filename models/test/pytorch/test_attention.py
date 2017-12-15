@@ -90,8 +90,7 @@ class TestAttention(unittest.TestCase):
     @measure_time
     def check(self, encoder_type, bidirectional, decoder_type,
               attention_type='location', label_type='char',
-              subsample=False, input_feeding=False,
-              ctc_loss_weight=0, decoder_num_layers=1,
+              subsample=False, ctc_loss_weight=0, decoder_num_layers=1,
               conv=False, batch_norm=False, save_path=None):
 
         print('==================================================')
@@ -101,7 +100,6 @@ class TestAttention(unittest.TestCase):
         print('  decoder_type: %s' % decoder_type)
         print('  attention_type: %s' % attention_type)
         print('  subsample: %s' % str(subsample))
-        print('  input_feeding: %s' % str(input_feeding))
         print('  ctc_loss_weight: %s' % str(ctc_loss_weight))
         print('  decoder_num_layers: %s' % str(decoder_num_layers))
         print('  conv: %s' % str(conv))
@@ -159,7 +157,6 @@ class TestAttention(unittest.TestCase):
             sharpening_factor=1,
             logits_temperature=1,
             sigmoid_smoothing=False,
-            input_feeding=input_feeding,
             coverage_weight=0.5,
             attention_conv_num_channels=10,
             attention_conv_width=101,
@@ -240,7 +237,9 @@ class TestAttention(unittest.TestCase):
                 # Decode
                 labels_pred = model.decode(
                     inputs, inputs_seq_len,
-                    beam_width=2, max_decode_length=60)
+                    # beam_width=1,
+                    beam_width=2,
+                    max_decode_length=60)
 
                 # Compute accuracy
                 if label_type == 'char':
