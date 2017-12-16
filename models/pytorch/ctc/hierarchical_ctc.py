@@ -15,6 +15,7 @@ except:
 import torch.nn as nn
 
 from models.pytorch.ctc.ctc import CTC, _concatenate_labels
+from models.pytorch.linear import LinearND
 from models.pytorch.encoders.load_encoder import load
 from utils.io.variable import np2var
 
@@ -160,7 +161,7 @@ class HierarchicalCTC(CTC):
         else:
             raise NotImplementedError
 
-        self.fc_sub = nn.Linear(
+        self.fc_sub = LinearND(
             num_units * self.num_directions, self.num_classes_sub)
 
     def forward(self, inputs, labels, labels_sub, inputs_seq_len,

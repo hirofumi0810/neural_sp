@@ -31,11 +31,11 @@ class TestCTC(unittest.TestCase):
         print("CTC Working check.")
 
         # Pyramidal encoder
-        self.check(encoder_type='lstm', bidirectional=True,
-                   subsample=True)
+        # self.check(encoder_type='lstm', bidirectional=True,
+        #            subsample=True)
 
         # CNN-CTC
-        self.check(encoder_type='cnn')
+        # self.check(encoder_type='cnn')
         self.check(encoder_type='cnn', batch_norm=True)
         # self.check(encoder_type='resnet')
 
@@ -121,7 +121,8 @@ class TestCTC(unittest.TestCase):
             batch_norm=batch_norm)
 
         # Count total parameters
-        for name, num_params in model.num_params_dict.items():
+        for name in sorted(list(model.num_params_dict.keys())):
+            num_params = model.num_params_dict[name]
             print("%s %d" % (name, num_params))
         print("Total %.3f M parameters" % (model.total_parameters / 1000000))
 

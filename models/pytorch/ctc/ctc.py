@@ -23,6 +23,7 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 
 from models.pytorch.base import ModelBase
+from models.pytorch.linear import LinearND
 from models.pytorch.encoders.load_encoder import load
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
@@ -177,23 +178,14 @@ class CTC(ModelBase):
                         bottle_input_size = self.encoder.output_size
                     else:
                         bottle_input_size = num_units * self.num_directions
-                    fc_layers.append(nn.Linear(
-                        bottle_input_size, fc_list[i],
-                        bias=not batch_norm))
+                    fc_layers.append(LinearND(bottle_input_size, fc_list[i]))
                 else:
-                    if batch_norm:
-                        fc_layers.append(nn.BatchNorm1d(
-                            fc_list[i - 1]))
-                    fc_layers.append(nn.Linear(
-                        fc_list[i - 1], fc_list[i],
-                        bias=not batch_norm))
+                    fc_layers.append(LinearND(fc_list[i - 1], fc_list[i]))
                 fc_layers.append(nn.Dropout(p=dropout))
-            # TODO: try batch_norm
             self.fc_layers = nn.Sequential(*fc_layers)
-            self.fc = nn.Linear(fc_list[-1], self.num_classes,
-                                bias=not batch_norm)
+            self.fc = LinearND(fc_list[-1], self.num_classes)
         else:
-            self.fc = nn.Linear(
+            self.fc = LinearND(
                 num_units * self.num_directions, self.num_classes)
 
         # Set CTC decoders
@@ -292,30 +284,12 @@ class CTC(ModelBase):
                 encoder_outputs = encoder_outputs.transpose(0, 1).contiguous()
                 perm_indices = None
 
-        # Convert to 2D tensor
-        max_time, batch_size = encoder_outputs.size()[:2]
-        encoder_outputs = encoder_outputs.view(max_time * batch_size, -1)
-        # contiguous()
-
         if len(self.fc_list) > 0:
             encoder_outputs = self.fc_layers(encoder_outputs)
         logits = self.fc(encoder_outputs)
 
-        # Reshape back to 3D tensor
-        logits = logits.view(max_time, batch_size, -1)
-
         if is_multi_task:
-            # Convert to 2D tensor
-            max_time_sub = encoder_outputs_sub.size(0)
-            encoder_outputs_sub = encoder_outputs_sub.view(
-                max_time_sub * batch_size, -1)
-            # contiguous()
-
             logits_sub = self.fc_sub(encoder_outputs_sub)
-
-            # Reshape back to 3D tensor
-            logits_sub = logits_sub.view(max_time_sub, batch_size, -1)
-
             return logits, logits_sub, perm_indices
         else:
             return logits, perm_indices
