@@ -50,8 +50,8 @@ class TestHierarchicalAttention(unittest.TestCase):
 
     @measure_time
     def check(self, encoder_type, bidirectional, decoder_type,
-              attention_type='dot_product',
-              subsample=False,  ctc_loss_weight_sub=0, decoder_num_layers=1,
+              attention_type='dot_product', subsample=False,
+              ctc_loss_weight_sub=0, decoder_num_layers=1,
               conv=False, batch_norm=False):
 
         print('==================================================')
@@ -136,7 +136,8 @@ class TestHierarchicalAttention(unittest.TestCase):
             weight_noise_std=0)
 
         # Count total parameters
-        for name, num_params in model.num_params_dict.items():
+        for name in sorted(list(model.num_params_dict.keys())):
+            num_params = model.num_params_dict[name]
             print("%s %d" % (name, num_params))
         print("Total %.3f M parameters" % (model.total_parameters / 1000000))
 

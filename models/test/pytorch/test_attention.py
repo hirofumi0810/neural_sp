@@ -59,10 +59,6 @@ class TestAttention(unittest.TestCase):
         self.check(encoder_type='gru', bidirectional=False,
                    decoder_type='gru')
 
-        # Input-feeding approach
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', input_feeding=True)
-
         # Pyramidal encoder
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', subsample=True)
@@ -173,7 +169,8 @@ class TestAttention(unittest.TestCase):
             weight_noise_std=0)
 
         # Count total parameters
-        for name, num_params in model.num_params_dict.items():
+        for name in sorted(list(model.num_params_dict.keys())):
+            num_params = model.num_params_dict[name]
             print("%s %d" % (name, num_params))
         print("Total %.3f M parameters" % (model.total_parameters / 1000000))
 

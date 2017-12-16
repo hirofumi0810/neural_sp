@@ -13,6 +13,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
+from models.pytorch.linear import LinearND
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 from models.pytorch.encoders.load_encoder import load
 from models.pytorch.attention.decoders.rnn_decoder import RNNDecoder
@@ -149,7 +150,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     parameter_init=parameter_init,
                     use_cuda=self.use_cuda,
                     batch_first=True,
-                    merge_bidirectional=True,
                     num_stack=num_stack,
                     splice=splice,
                     conv_channels=conv_channels,
@@ -172,7 +172,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     subsample_type='concat',
                     use_cuda=self.use_cuda,
                     batch_first=True,
-                    merge_bidirectional=True,
                     num_stack=num_stack,
                     splice=splice,
                     conv_channels=conv_channels,
@@ -183,6 +182,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         else:
             raise NotImplementedError
 
+        self.is_bridge_sub = False
         if self.sub_loss_weight > 0:
             ##############################
             # Decoder in the sub task
@@ -209,29 +209,37 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 out_channels=attention_conv_num_channels,
                 kernel_size=attention_conv_width)
 
-            ##################################################
-            # Bridge layer between the encoder and decoder
-            ##################################################
-            if encoder_num_units != decoder_num_units_sub:
-                self.bridge_sub = nn.Linear(
+            #################################################################
+            # Bridge layer between the encoder and decoder in the sub task
+            #################################################################
+            if encoder_bidirectional or encoder_num_units != decoder_num_units_sub:
+                if encoder_bidirectional:
+                    self.bridge_sub = LinearND(
+                        encoder_num_units * 2, decoder_num_units_sub)
+                else:
+                    self.bridge_sub = LinearND(
+                        encoder_num_units, decoder_num_units_sub)
+                self.bridge_init_sub = LinearND(
                     encoder_num_units, decoder_num_units_sub)
-            else:
-                self.bridge_sub = None
+                self.is_bridge_sub = True
 
             self.embedding_sub = nn.Embedding(
                 self.num_classes_sub, embedding_dim_sub)
 
-            self.proj_layer_sub = nn.Linear(
+            self.proj_layer_sub = LinearND(
                 decoder_num_units_sub * 2, decoder_num_units_sub)
-            self.fc_sub = nn.Linear(
+            self.fc_sub = LinearND(
                 decoder_num_units_sub, self.num_classes_sub - 1)
             # NOTE: <SOS> is removed because the decoder never predict <SOS>
             # class
 
         if ctc_loss_weight_sub > 0:
-            # self.fc_sub_ctc = nn.Linear(
-            # encoder_num_units * self.encoder_num_directions, num_classes + 1)
-            self.fc_ctc_sub = nn.Linear(encoder_num_units, num_classes_sub + 1)
+            if self.is_bridge_sub:
+                self.fc_ctc_sub = LinearND(
+                    decoder_num_units_sub, num_classes_sub + 1)
+            else:
+                self.fc_ctc_sub = LinearND(
+                    encoder_num_units * self.encoder_num_directions, num_classes_sub + 1)
 
             # Set CTC decoders
             self._decode_ctc_greedy_np = GreedyDecoder(blank_index=0)

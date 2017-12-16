@@ -22,6 +22,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 
 from models.pytorch.base import ModelBase
+from models.pytorch.linear import LinearND
 from models.pytorch.encoders.load_encoder import load
 from models.pytorch.attention.decoders.rnn_decoder import RNNDecoder
 from models.pytorch.attention.attention_layer import AttentionMechanism
@@ -208,7 +209,6 @@ class AttentionSeq2seq(ModelBase):
                     parameter_init=parameter_init,
                     use_cuda=self.use_cuda,
                     batch_first=True,
-                    merge_bidirectional=True,
                     num_stack=num_stack,
                     splice=splice,
                     conv_channels=conv_channels,
@@ -231,7 +231,6 @@ class AttentionSeq2seq(ModelBase):
                     subsample_type='concat',
                     use_cuda=self.use_cuda,
                     batch_first=True,
-                    merge_bidirectional=True,
                     num_stack=num_stack,
                     splice=splice,
                     conv_channels=conv_channels,
@@ -272,24 +271,30 @@ class AttentionSeq2seq(ModelBase):
         ##################################################
         # Bridge layer between the encoder and decoder
         ##################################################
-        if encoder_num_units != decoder_num_units:
-            self.bridge = nn.Linear(
-                encoder_num_units, decoder_num_units)
+        if encoder_bidirectional or encoder_num_units != decoder_num_units:
+            if encoder_bidirectional:
+                self.bridge = LinearND(
+                    encoder_num_units * 2, decoder_num_units)
+            else:
+                self.bridge = LinearND(encoder_num_units, decoder_num_units)
+            self.bridge_init = LinearND(encoder_num_units, decoder_num_units)
+            self.is_bridge = True
         else:
-            self.bridge = None
+            self.is_bridge = False
 
         self.embedding = nn.Embedding(self.num_classes, embedding_dim)
 
-        self.proj_layer = nn.Linear(
-            decoder_num_units * 2, decoder_num_units)
-        self.fc = nn.Linear(decoder_num_units, self.num_classes - 1)
+        self.proj_layer = LinearND(decoder_num_units * 2, decoder_num_units)
+        self.fc = LinearND(decoder_num_units, self.num_classes - 1)
         # NOTE: <SOS> is removed because the decoder never predict <SOS> class
         # TODO: consider projection
 
         if ctc_loss_weight > 0:
-            # self.fc_ctc = nn.Linear(
-            # encoder_num_units * self.encoder_num_directions, num_classes + 1)
-            self.fc_ctc = nn.Linear(encoder_num_units, num_classes + 1)
+            if self.is_bridge:
+                self.fc_ctc = LinearND(decoder_num_units, num_classes + 1)
+            else:
+                self.fc_ctc = LinearND(
+                    encoder_num_units * self.encoder_num_directions, num_classes + 1)
 
             # Set CTC decoders
             self._decode_ctc_greedy_np = GreedyDecoder(blank_index=0)
@@ -382,18 +387,10 @@ class AttentionSeq2seq(ModelBase):
         Returns:
             ctc_loss (FloatTensor):
         """
-        batch_size, max_time = encoder_outputs.size()[:2]
-
-        # Convert to 2D tensor
-        encoder_outputs = encoder_outputs.contiguous()
-        encoder_outputs = encoder_outputs.view(batch_size, max_time, -1)
         if is_sub_task:
             logits_ctc = self.fc_ctc_sub(encoder_outputs)
         else:
             logits_ctc = self.fc_ctc(encoder_outputs)
-
-        # Reshape back to 3D tensor
-        logits_ctc = logits_ctc.view(batch_size, max_time, -1)
 
         # Convert to batch-major
         logits_ctc = logits_ctc.transpose(0, 1)
@@ -437,13 +434,13 @@ class AttentionSeq2seq(ModelBase):
             is_multi_task (bool, optional):
         Returns:
             encoder_outputs (FloatTensor): A tensor of size
-                `[B, T_in, encoder_num_units]`
+                `[B, T_in, decoder_num_units]`
             encoder_final_state (FloatTensor): A tensor of size
-                `[1, B, decoder_num_units (may be equal to encoder_num_units)]`
+                `[1, B, decoder_num_units]`
             encoder_outputs_sub (FloatTensor): A tensor of size
-                `[B, T_in, encoder_num_units]`
+                `[B, T_in, decoder_num_units]`
             encoder_final_state_sub (FloatTensor): A tensor of size
-                `[1, B, decoder_num_units_sub (may be equal to encoder_num_units)]`
+                `[1, B, decoder_num_units_sub]`
             perm_indices (FloatTensor):
         """
         if is_multi_task:
@@ -458,30 +455,18 @@ class AttentionSeq2seq(ModelBase):
         # encoder_outputs_sub: `[B, T_in, encoder_num_units * encoder_num_directions]`
         # encoder_final_state_sub: `[1, B, encoder_num_units]`
 
-        batch_size = encoder_outputs.size(0)
-
         # Bridge between the encoder and decoder in the main task
-        if self.encoder_num_units != self.decoder_num_units:
-            # Bridge between the encoder and decoder
+        if self.is_bridge:
             encoder_outputs = self.bridge(encoder_outputs)
-            encoder_final_state = self.bridge(
-                encoder_final_state.view(-1, self.encoder_num_units))
-            encoder_final_state = encoder_final_state.view(1, batch_size, -1)
-            # TODO: add self.bridge_init
+            encoder_final_state = self.bridge_init(encoder_final_state)
 
         if is_multi_task:
             # Bridge between the encoder and decoder in the sub task
-            if self.encoder_num_units != self.decoder_num_units_sub:
-                # Bridge between the encoder and decoder
+            if self.sub_loss_weight > 0 and self.is_bridge_sub:
                 encoder_outputs_sub = self.bridge_sub(encoder_outputs_sub)
-                encoder_final_state_sub = self.bridge_sub(
-                    encoder_final_state_sub.view(-1, self.encoder_num_units))
-                encoder_final_state_sub = encoder_final_state_sub.view(
-                    1, batch_size, -1)
-                # TODO: add self.bridge_sub_init
-
+                encoder_final_state_sub = self.bridge_init_sub(
+                    encoder_final_state_sub)
             return encoder_outputs, encoder_final_state, encoder_outputs_sub, encoder_final_state_sub, perm_indices
-
         else:
             return encoder_outputs, encoder_final_state, perm_indices
 
@@ -514,12 +499,12 @@ class AttentionSeq2seq(ModelBase):
         attention_weights_step = Variable(torch.zeros(batch_size, max_time))
         if self.use_cuda:
             attention_weights_step = attention_weights_step.cuda()
-            # TODO: volatile, require_grad
 
-        # Initialize context vector
-        context_vector = torch.sum(
-            encoder_outputs * attention_weights_step.unsqueeze(dim=2),
-            dim=1, keepdim=True)
+        # Initialize attentional vector
+        attentional_vector = Variable(torch.zeros(
+            batch_size, 1, self.decoder_num_units))
+        if self.use_cuda:
+            attentional_vector = attentional_vector.cuda()
 
         logits = []
         attention_weights = []
@@ -546,7 +531,7 @@ class AttentionSeq2seq(ModelBase):
                     y += self.label_smoothing_prob * \
                         (1 / (self.num_classes - 1) - y)
 
-            decoder_inputs = torch.cat([context_vector, y], dim=-1)
+            decoder_inputs = torch.cat([y, attentional_vector], dim=-1)
             decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
                 encoder_outputs=encoder_outputs,
                 decoder_inputs=decoder_inputs,
@@ -554,13 +539,13 @@ class AttentionSeq2seq(ModelBase):
                 attention_weights_step=attention_weights_step,
                 is_sub_task=is_sub_task)
 
-            outputs = torch.cat([decoder_outputs, context_vector], dim=-1)
+            concat = torch.cat([decoder_outputs, context_vector], dim=-1)
             if is_sub_task:
-                proj = self.proj_layer_sub(outputs)
-                logits_step = self.fc_sub(proj)
+                attentional_vector = F.tanh(self.proj_layer_sub(concat))
+                logits_step = self.fc_sub(attentional_vector)
             else:
-                proj = self.proj_layer(outputs)
-                logits_step = self.fc(proj)
+                attentional_vector = F.tanh(self.proj_layer(concat))
+                logits_step = self.fc(attentional_vector)
 
             attention_weights.append(attention_weights_step)
             logits.append(logits_step)
@@ -626,7 +611,7 @@ class AttentionSeq2seq(ModelBase):
             encoder_outputs (FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
             decoder_inputs (FloatTensor): A tensor of size
-                `[B, 1, embedding_dim + encoder_num_units (decoder_num_units)]`
+                `[B, 1, embedding_dim + decoder_num_units]`
             decoder_state (FloatTensor): A tensor of size
                 `[decoder_num_layers, B, decoder_num_units]`
             attention_weights_step (FloatTensor): A tensor of size `[B, T_in]`
@@ -802,10 +787,12 @@ class AttentionSeq2seq(ModelBase):
         if self.use_cuda:
             attention_weights_step = attention_weights_step.cuda()
 
-        # Initialize context vector
-        context_vector = torch.sum(
-            encoder_outputs * attention_weights_step.unsqueeze(dim=2),
-            dim=1, keepdim=True)
+        # Initialize attentional vector
+        attentional_vector = Variable(torch.zeros(
+            batch_size, 1, self.decoder_num_units))
+        attentional_vector.volatile = True
+        if self.use_cuda:
+            attentional_vector = attentional_vector.cuda()
 
         # Start from <SOS>
         sos = self.sos_index_sub if is_sub_task else self.sos_index
@@ -822,7 +809,7 @@ class AttentionSeq2seq(ModelBase):
             else:
                 y = self.embedding(y)
 
-            decoder_inputs = torch.cat([context_vector, y], dim=-1)
+            decoder_inputs = torch.cat([y, attentional_vector], dim=-1)
             decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
                 encoder_outputs=encoder_outputs,
                 decoder_inputs=decoder_inputs,
@@ -830,13 +817,13 @@ class AttentionSeq2seq(ModelBase):
                 attention_weights_step=attention_weights_step,
                 is_sub_task=is_sub_task)
 
-            outputs = torch.cat([decoder_outputs, context_vector], dim=-1)
+            concat = torch.cat([decoder_outputs, context_vector], dim=-1)
             if is_sub_task:
-                output = self.proj_layer_sub(outputs)
-                logits = self.fc_sub(output)
+                attentional_vector = F.tanh(self.proj_layer_sub(concat))
+                logits = self.fc_sub(attentional_vector)
             else:
-                output = self.proj_layer(outputs)
-                logits = self.fc(output)
+                attentional_vector = F.tanh(self.proj_layer(concat))
+                logits = self.fc(attentional_vector)
 
             logits = logits.squeeze(dim=1)
             # NOTE: `[B, 1, num_classes]` -> `[B, num_classes]`
@@ -902,20 +889,21 @@ class AttentionSeq2seq(ModelBase):
             if self.use_cuda:
                 attention_weights_step = attention_weights_step.cuda()
 
-            # Initialize context vector
-            context_vector = torch.sum(
-                encoder_outputs[i_batch:i_batch + 1, :max_time] *
-                attention_weights_step.unsqueeze(dim=2),
-                dim=1, keepdim=True)
+            # Initialize attentional vector
+            attentional_vector = Variable(torch.zeros(
+                1, 1, self.decoder_num_units))
+            attentional_vector.volatile = True
+            if self.use_cuda:
+                attentional_vector = attentional_vector.cuda()
 
             beam.append([([self.sos_index], LOG_1,
-                          decoder_state, attention_weights_step, context_vector)])
+                          decoder_state, attention_weights_step, attentional_vector)])
 
         complete = [[]] * batch_size
         for t in range(max_decode_length):
             new_beam = [[]] * batch_size
             for i_batch in range(batch_size):
-                for hyp, score, decoder_state, attention_weights_step, context_vector in beam[i_batch]:
+                for hyp, score, decoder_state, attention_weights_step, attentional_vector in beam[i_batch]:
                     y_prev = hyp[-1] if t > 0 else sos
                     y = self._create_token(value=y_prev, batch_size=1)
                     if is_sub_task:
@@ -924,7 +912,7 @@ class AttentionSeq2seq(ModelBase):
                         y = self.embedding(y)
 
                     max_time = inputs_seq_len.data[i_batch]
-                    decoder_inputs = torch.cat([context_vector, y], dim=-1)
+                    decoder_inputs = torch.cat([y, attentional_vector], dim=-1)
                     decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
                         encoder_outputs=encoder_outputs[i_batch:i_batch + 1, :max_time],
                         decoder_inputs=decoder_inputs,
@@ -932,14 +920,15 @@ class AttentionSeq2seq(ModelBase):
                         attention_weights_step=attention_weights_step,
                         is_sub_task=is_sub_task)
 
-                    outputs = torch.cat(
+                    concat = torch.cat(
                         [decoder_outputs, context_vector], dim=-1)
                     if is_sub_task:
-                        output = self.proj_layer_sub(outputs)
-                        logits = self.fc_sub(output)
+                        attentional_vector = F.tanh(
+                            self.proj_layer_sub(concat))
+                        logits = self.fc_sub(attentional_vector)
                     else:
-                        output = self.proj_layer(outputs)
-                        logits = self.fc(output)
+                        attentional_vector = F.tanh(self.proj_layer(concat))
+                        logits = self.fc(attentional_vector)
 
                     logits = logits.squeeze(dim=1)
                     # NOTE: `[B, 1, num_classes]` -> `[B, num_classes]`
@@ -953,7 +942,7 @@ class AttentionSeq2seq(ModelBase):
                         new_score = np.logaddexp(score, log_prob)
                         new_beam[i_batch].append(
                             (new_hyp, new_score, decoder_state,
-                             attention_weights_step, context_vector))
+                             attention_weights_step, attentional_vector))
                 new_beam[i_batch] = sorted(
                     new_beam[i_batch], key=lambda x: x[1], reverse=True)
 

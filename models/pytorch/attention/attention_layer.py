@@ -9,6 +9,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from models.pytorch.linear import LinearND
+
 ATTENTION_TYPE = [
     'content', 'normed_content', 'location', 'dot_product',
     'luong_dot', 'scaled_luong_dot', 'luong_general', 'luong_concat',
@@ -55,8 +57,8 @@ class AttentionMechanism(nn.Module):
         self.sigmoid_smoothing = sigmoid_smoothing
 
         if self.attention_type in ['content', 'luong_concat']:
-            self.W = nn.Linear(decoder_num_units * 2, attention_dim)
-            self.v = nn.Linear(attention_dim, 1)
+            self.W = LinearND(decoder_num_units * 2, attention_dim)
+            self.V = LinearND(attention_dim, 1)
         elif self.attention_type == 'normed_content':
             raise NotImplementedError
         elif self.attention_type == 'location':
@@ -68,19 +70,19 @@ class AttentionMechanism(nn.Module):
                 stride=1,
                 padding=kernel_size // 2,
                 bias=True)
-            self.W = nn.Linear(decoder_num_units * 2, attention_dim)
-            self.W_conv = nn.Linear(out_channels, attention_dim)
-            self.v = nn.Linear(attention_dim, 1)
+            self.W = LinearND(decoder_num_units * 2, attention_dim)
+            self.W_conv = LinearND(out_channels, attention_dim)
+            self.V = LinearND(attention_dim, 1)
         elif self.attention_type == 'dot_product':
-            self.W_keys = nn.Linear(decoder_num_units, attention_dim)
-            self.W_query = nn.Linear(decoder_num_units, attention_dim)
+            self.W_keys = LinearND(decoder_num_units, attention_dim)
+            self.W_query = LinearND(decoder_num_units, attention_dim)
         elif self.attention_type == 'luong_dot':
             # NOTE: no parameter
             pass
         elif self.attention_type == 'scaled_luong_dot':
             raise NotImplementedError
         elif self.attention_type == 'luong_general':
-            self.W_keys = nn.Linear(decoder_num_units, decoder_num_units)
+            self.W_keys = LinearND(decoder_num_units, decoder_num_units)
         elif self.attention_type == 'rnn_attention':
             raise NotImplementedError
 
@@ -106,9 +108,7 @@ class AttentionMechanism(nn.Module):
             ###################################################################
             concat = torch.cat((encoder_outputs,
                                 decoder_outputs.expand_as(encoder_outputs)), dim=2)
-            keys_query = self.W(concat.view((batch_size * max_time, -1)))
-            energy = self.v(F.tanh(keys_query))
-            energy = energy.view((batch_size, max_time))
+            energy = self.V(F.tanh(self.W(concat))).squeeze(dim=2)
 
         elif self.attention_type == 'normed_content':
             raise NotImplementedError
@@ -123,15 +123,11 @@ class AttentionMechanism(nn.Module):
             # -> `[B, out_channels, T_in]`
             conv_feat = conv_feat.transpose(1, 2).contiguous()
             # -> `[B, T_in, out_channels]`
-            conv = self.W_conv(conv_feat.view((batch_size * max_time, -1)))
-            # -> `[B * T_in, attention_dim]`
 
             concat = torch.cat((encoder_outputs,
                                 decoder_outputs.expand_as(encoder_outputs)), dim=2)
-            keys_query = self.W(concat.view((batch_size * max_time, -1)))
-
-            energy = self.v(F.tanh(keys_query + conv))
-            energy = energy.view((batch_size, max_time))
+            energy = self.V(
+                F.tanh(self.W(concat) + self.W_conv(conv_feat))).squeeze(dim=2)
 
         elif self.attention_type == 'dot_product':
             ###################################################################
