@@ -94,9 +94,19 @@ class DatasetBase(Base):
         for i_batch in range(len(data_indices)):
             # Load input data
             if self.save_format == 'numpy':
-                data_i_tmp = self.load_npy(input_path_list[i_batch])
+                try:
+                    data_i_tmp = self.load_npy(
+                        input_path_list[i_batch].replace('/n/sd8/inaguma/corpus',
+                                                         '/data/inaguma'))
+                except:
+                    data_i_tmp = self.load_npy(input_path_list[i_batch])
             elif self.save_format == 'htk':
-                data_i_tmp = self.load_htk(input_path_list[i_batch])
+                try:
+                    data_i_tmp = self.load_htk(
+                        input_path_list[i_batch].replace('/n/sd8/inaguma/corpus',
+                                                         '/data/inaguma'))
+                except:
+                    data_i_tmp = self.load_htk(input_path_list[i_batch])
             else:
                 raise TypeError
 
