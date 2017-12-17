@@ -81,9 +81,9 @@ class TestLoadDataset(unittest.TestCase):
             max_epoch=1, splice=splice,
             num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
-            sort_utt=sort_utt, reverse=True, sort_stop_epoch=sort_stop_epoch,
+            sort_utt=sort_utt, reverse=False, sort_stop_epoch=sort_stop_epoch,
             num_gpus=num_gpus, save_format='numpy',
-            num_enque=None if not data_type == 'train' else 100)
+            num_enque=None)
 
         print('=> Loading mini-batch...')
         if 'word' in label_type:

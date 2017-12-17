@@ -21,6 +21,10 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
     def test(self):
 
         # data_type
+        self.check(label_type='pos', label_type_sub='word_freq5',
+                   data_type='train')
+        self.check(label_type='kanji', label_type_sub='kana',
+                   data_type='train')
         self.check(label_type='word_freq5', label_type_sub='kana',
                    data_type='train')
         self.check(label_type='word_freq5', label_type_sub='kana',
@@ -74,11 +78,19 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
             shuffle=shuffle,
             sort_utt=sort_utt, reverse=True, sort_stop_epoch=sort_stop_epoch,
             num_gpus=num_gpus, save_format='numpy',
-            num_enque=None if not data_type == 'train' else 100)
+            num_enque=None)
 
         print('=> Loading mini-batch...')
-        idx2word = Idx2word(vocab_file_path, space_mark='_')
-        idx2char = Idx2char(vocab_file_path_sub)
+        if 'word' in label_type:
+            map_fn = Idx2word(vocab_file_path, space_mark='_')
+        elif 'pos' in label_type:
+            map_fn = Idx2word(vocab_file_path, space_mark='_')
+        else:
+            map_fn = Idx2char(vocab_file_path)
+        if 'phone' in label_type_sub:
+            raise NotImplementedError
+        else:
+            map_fn_sub = Idx2char(vocab_file_path_sub)
 
         for data, is_new_epoch in dataset:
             inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub, input_names = data
@@ -93,8 +105,9 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
                 str_true = labels[0][0]
                 str_true_sub = labels_sub[0][0]
             else:
-                str_true = idx2word(labels[0][:labels_seq_len[0]])
-                str_true_sub = idx2char(labels_sub[0][:labels_seq_len_sub[0]])
+                str_true = map_fn(labels[0][:labels_seq_len[0]])
+                str_true_sub = map_fn_sub(
+                    labels_sub[0][:labels_seq_len_sub[0]])
 
             print('----- %s (epoch: %.3f) -----' %
                   (input_names[0], dataset.epoch_detail))
@@ -107,7 +120,7 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
                 print('labels_seq_len (word): %d' % labels_seq_len.data[0])
                 print('labels_seq_len (char): %d' % labels_seq_len_sub.data[0])
 
-            if dataset.epoch_detail >= 0.05:
+            if dataset.epoch_detail >= 0.01:
                 break
 
 

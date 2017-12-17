@@ -2,7 +2,7 @@ param:
   # corpus
   corpus: csj
   label_type: word_freq5
-  label_type_sub: kanji
+  label_type_sub: kanji_divide
   data_size: subset
 
   # features
@@ -30,14 +30,14 @@ param:
     - False
     - False
     - False
-  attention_type: dot_product
+  attention_type: location
   attention_dim: 128
   decoder_type: lstm
   decoder_num_units: 320
   decoder_num_layers: 1
   decoder_num_units_sub: 320
   decoder_num_layers_sub: 1
-  embedding_dim: 512
+  embedding_dim: 256
   embedding_dim_sub: 64
   attention_conv_num_channels: 10
   attention_conv_width: 101
@@ -53,7 +53,7 @@ param:
   batch_size: 32
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 30
+  num_epoch: 50
 
   # regularization
   parameter_init: 0.1
@@ -62,15 +62,16 @@ param:
   clip_activation_decoder: 50
   dropout_encoder: 0.2
   dropout_decoder: 0.1
-  dropout_embedding: 0.1
-  weight_decay: 0
+  weight_decay: 1e-5
   init_dec_state_with_enc_state: True
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False
-  input_feeding: False
   coverage_weight: 0
-  scheduled_sampling_prob: 0
+  scheduled_sampling_prob: 0.25
+  scheduled_sampling_ramp_max_step: 200000
+  label_smoothing_prob: 0
+  weight_noise_std: 0
 
   # annealing
   decay_start_epoch: 10
@@ -83,5 +84,4 @@ param:
 
   # MTL
   main_loss_weight: 0.5
-  ctc_loss_weight: 0
-  ctc_loss_weight_sub: 0
+  ctc_loss_weight_sub: 0.5

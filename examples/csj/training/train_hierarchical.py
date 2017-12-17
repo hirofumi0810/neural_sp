@@ -150,7 +150,8 @@ def main():
         shuffle=False, save_format=params['save_format'])
 
     # Count total parameters
-    for name, num_params in model.num_params_dict.items():
+    for name in sorted(list(model.num_params_dict.keys())):
+        num_params = model.num_params_dict[name]
         print("%s %d" % (name, num_params))
     print("Total %.3f M parameters" % (model.total_parameters / 1000000))
 
