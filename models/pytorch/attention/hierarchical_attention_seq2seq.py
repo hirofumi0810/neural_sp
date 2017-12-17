@@ -305,15 +305,24 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             logits /= self.logits_temperature
 
         # Compute XE sequence loss in the main task
-        num_classes = logits.size(2)
+        batch_size, label_num, num_classes = logits.size()
         logits = logits.view((-1, num_classes))
         labels_1d = labels_var[:, 1:].contiguous().view(-1)
-        loss_main = F.cross_entropy(logits, labels_1d,
-                                    ignore_index=self.sos_index,
-                                    size_average=False)
+        xe_loss_main = F.cross_entropy(
+            logits, labels_1d,
+            ignore_index=self.sos_index,
+            size_average=False) * (1 - self.label_smoothing_prob)
         # NOTE: labels_var are padded by sos_index
 
-        loss = loss_main * self.main_loss_weight
+        # Label smoothing (with uniform distribution)
+        if self.label_smoothing_prob > 0:
+            log_probs = F.log_softmax(logits, dim=logits.dim() - 1)
+            uniform = Variable(torch.ones(
+                batch_size, label_num, num_classes)) / num_classes
+            if self.use_cuda:
+                uniform = uniform.cuda()
+            kl = nn.KLDivLoss(size_average=False, reduce=True)
+            xe_loss_main += kl(log_probs, uniform) * self.label_smoothing_prob
 
         # Add coverage term
         if self.coverage_weight != 0:
@@ -321,6 +330,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # coverage = self._compute_coverage(attention_weights)
             # loss += coverage_weight * coverage
         # TODO: sub taskも入れる？
+
+        loss = xe_loss_main * self.main_loss_weight
 
         ##################################################
         # Sub task (attention)
@@ -336,15 +347,28 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 logits_sub /= self.logits_temperature
 
             # Compute XE sequence loss in the sub task
-            num_classes_sub = logits_sub.size(2)
+            batch_size, label_num_sub, num_classes_sub = logits_sub.size()
             logits_sub = logits_sub.view((-1, num_classes_sub))
             labels_sub_1d = labels_sub_var[:, 1:].contiguous().view(-1)
-            att_loss_sub = F.cross_entropy(logits_sub, labels_sub_1d,
-                                           ignore_index=self.sos_index_sub,
-                                           size_average=False)
+            xe_loss_sub = F.cross_entropy(
+                logits_sub, labels_sub_1d,
+                ignore_index=self.sos_index_sub,
+                size_average=False) * (1 - self.label_smoothing_prob)
             # NOTE: labels_var are padded by sos_index_sub
 
-            loss += att_loss_sub * self.sub_loss_weight
+            # Label smoothing (with uniform distribution)
+            if self.label_smoothing_prob > 0:
+                log_probs_sub = F.log_softmax(
+                    logits_sub, dim=logits_sub.dim() - 1)
+                uniform_sub = Variable(torch.ones(
+                    batch_size, label_num_sub, num_classes_sub)) / num_classes_sub
+                if self.use_cuda:
+                    uniform_sub = uniform_sub.cuda()
+                kl_div_sub = nn.KLDivLoss(size_average=False, reduce=True)
+                xe_loss_sub += kl_div_sub(log_probs_sub, uniform_sub) * \
+                    self.label_smoothing_prob
+
+            loss += xe_loss_sub * self.sub_loss_weight
 
         ##################################################
         # Sub task (CTC)
@@ -363,10 +387,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         self._step += 1
 
         if self.sub_loss_weight > self.ctc_loss_weight_sub:
-            return (loss, loss_main * self.main_loss_weight / batch_size,
-                    att_loss_sub * self.sub_loss_weight / batch_size)
+            return (loss, xe_loss_main * self.main_loss_weight / batch_size,
+                    xe_loss_sub * self.sub_loss_weight / batch_size)
         else:
-            return (loss, loss_main * self.main_loss_weight / batch_size,
+            return (loss, xe_loss_main * self.main_loss_weight / batch_size,
                     ctc_loss_sub * self.ctc_loss_weight_sub / batch_size)
 
     def _decode_train_composition(self, encoder_outputs, encoder_outputs_sub,

@@ -345,19 +345,32 @@ class AttentionSeq2seq(ModelBase):
             logits /= self.logits_temperature
 
         # Compute XE sequence loss
-        num_classes = logits.size(2)
+        batch_size, label_num, num_classes = logits.size()
         logits = logits.view((-1, num_classes))
         labels_1d = labels_var[:, 1:].contiguous().view(-1)
-        loss = F.cross_entropy(logits, labels_1d,
-                               ignore_index=self.sos_index,
-                               size_average=False) * (1 - self.ctc_loss_weight)
+        xe_loss = F.cross_entropy(
+            logits, labels_1d,
+            ignore_index=self.sos_index,
+            size_average=False) * (1 - self.label_smoothing_prob)
         # NOTE: labels_var are padded by sos_index
+
+        # Label smoothing (with uniform distribution)
+        if self.label_smoothing_prob > 0:
+            log_probs = F.log_softmax(logits, dim=logits.dim() - 1)
+            uniform = Variable(torch.ones(
+                batch_size, label_num, num_classes)) / num_classes
+            if self.use_cuda:
+                uniform = uniform.cuda()
+            kl_div = nn.KLDivLoss(size_average=False, reduce=True)
+            xe_loss += kl_div(log_probs, uniform) * self.label_smoothing_prob
 
         # Add coverage term
         if self.coverage_weight != 0:
             pass
             # coverage = self._compute_coverage(attention_weights)
             # loss += coverage_weight * coverage
+
+        loss = xe_loss * (1 - self.ctc_loss_weight)
 
         # Auxiliary CTC loss (optional)
         if self.ctc_loss_weight > 0:
@@ -500,11 +513,10 @@ class AttentionSeq2seq(ModelBase):
         if self.use_cuda:
             attention_weights_step = attention_weights_step.cuda()
 
-        # Initialize attentional vector
-        attentional_vector = Variable(torch.zeros(
-            batch_size, 1, self.decoder_num_units))
-        if self.use_cuda:
-            attentional_vector = attentional_vector.cuda()
+        # Initialize context vector
+        context_vector = torch.sum(
+            encoder_outputs * attention_weights_step.unsqueeze(dim=2),
+            dim=1, keepdim=True)
 
         logits = []
         attention_weights = []
@@ -516,22 +528,18 @@ class AttentionSeq2seq(ModelBase):
                     y_prev = torch.max(logits[-1], dim=2)[1]
                     y = self.embedding_sub(y_prev)
                 else:
-                    # Label smoothing (uniform distribution)
+                    # Teacher-forcing
                     y = self.embedding_sub(labels[:, t:t + 1])
-                    y += self.label_smoothing_prob * \
-                        (1 / (self.num_classes_sub - 1) - y)
             else:
                 if self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random() < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step:
                     # Scheduled sampling
                     y_prev = torch.max(logits[-1], dim=2)[1]
                     y = self.embedding(y_prev)
                 else:
-                    # Label smoothing (uniform distribution)
+                    # Teacher-forcing
                     y = self.embedding(labels[:, t:t + 1])
-                    y += self.label_smoothing_prob * \
-                        (1 / (self.num_classes - 1) - y)
 
-            decoder_inputs = torch.cat([y, attentional_vector], dim=-1)
+            decoder_inputs = torch.cat([y, context_vector], dim=-1)
             decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
                 encoder_outputs=encoder_outputs,
                 decoder_inputs=decoder_inputs,
@@ -787,12 +795,10 @@ class AttentionSeq2seq(ModelBase):
         if self.use_cuda:
             attention_weights_step = attention_weights_step.cuda()
 
-        # Initialize attentional vector
-        attentional_vector = Variable(torch.zeros(
-            batch_size, 1, self.decoder_num_units))
-        attentional_vector.volatile = True
-        if self.use_cuda:
-            attentional_vector = attentional_vector.cuda()
+        # Initialize context vector
+        context_vector = torch.sum(
+            encoder_outputs * attention_weights_step.unsqueeze(dim=2),
+            dim=1, keepdim=True)
 
         # Start from <SOS>
         sos = self.sos_index_sub if is_sub_task else self.sos_index
@@ -809,7 +815,7 @@ class AttentionSeq2seq(ModelBase):
             else:
                 y = self.embedding(y)
 
-            decoder_inputs = torch.cat([y, attentional_vector], dim=-1)
+            decoder_inputs = torch.cat([y, context_vector], dim=-1)
             decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
                 encoder_outputs=encoder_outputs,
                 decoder_inputs=decoder_inputs,
@@ -889,21 +895,20 @@ class AttentionSeq2seq(ModelBase):
             if self.use_cuda:
                 attention_weights_step = attention_weights_step.cuda()
 
-            # Initialize attentional vector
-            attentional_vector = Variable(torch.zeros(
-                1, 1, self.decoder_num_units))
-            attentional_vector.volatile = True
-            if self.use_cuda:
-                attentional_vector = attentional_vector.cuda()
+            # Initialize context vector
+            context_vector = torch.sum(
+                encoder_outputs[i_batch:i_batch + 1] *
+                attention_weights_step.unsqueeze(dim=2),
+                dim=1, keepdim=True)
 
             beam.append([([self.sos_index], LOG_1,
-                          decoder_state, attention_weights_step, attentional_vector)])
+                          decoder_state, attention_weights_step, context_vector)])
 
         complete = [[]] * batch_size
         for t in range(max_decode_length):
             new_beam = [[]] * batch_size
             for i_batch in range(batch_size):
-                for hyp, score, decoder_state, attention_weights_step, attentional_vector in beam[i_batch]:
+                for hyp, score, decoder_state, attention_weights_step, context_vector in beam[i_batch]:
                     y_prev = hyp[-1] if t > 0 else sos
                     y = self._create_token(value=y_prev, batch_size=1)
                     if is_sub_task:
@@ -912,7 +917,7 @@ class AttentionSeq2seq(ModelBase):
                         y = self.embedding(y)
 
                     max_time = inputs_seq_len.data[i_batch]
-                    decoder_inputs = torch.cat([y, attentional_vector], dim=-1)
+                    decoder_inputs = torch.cat([y, context_vector], dim=-1)
                     decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
                         encoder_outputs=encoder_outputs[i_batch:i_batch + 1, :max_time],
                         decoder_inputs=decoder_inputs,
@@ -942,7 +947,7 @@ class AttentionSeq2seq(ModelBase):
                         new_score = np.logaddexp(score, log_prob)
                         new_beam[i_batch].append(
                             (new_hyp, new_score, decoder_state,
-                             attention_weights_step, attentional_vector))
+                             attention_weights_step, context_vector))
                 new_beam[i_batch] = sorted(
                     new_beam[i_batch], key=lambda x: x[1], reverse=True)
 
