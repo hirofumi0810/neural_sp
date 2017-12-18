@@ -87,6 +87,8 @@ class AttentionSeq2seq(ModelBase):
         conv_kernel_sizes (list, optional):
         conv_strides (list, optional):
         poolings (list, optional):
+        activation (string, optional): The activation function of CNN layers.
+            Choose from relu or prelu or hard_tanh
         batch_norm (bool, optional):
         scheduled_sampling_prob (float, optional):
         scheduled_sampling_ramp_max_step (float, optional):
@@ -127,6 +129,7 @@ class AttentionSeq2seq(ModelBase):
                  conv_kernel_sizes=[],
                  conv_strides=[],
                  poolings=[],
+                 activation='relu',
                  batch_norm=False,
                  scheduled_sampling_prob=0,
                  scheduled_sampling_ramp_max_step=0,
@@ -215,6 +218,7 @@ class AttentionSeq2seq(ModelBase):
                     conv_kernel_sizes=conv_kernel_sizes,
                     conv_strides=conv_strides,
                     poolings=poolings,
+                    activation=activation,
                     batch_norm=batch_norm)
             else:
                 # Pyramidal encoder
@@ -237,7 +241,25 @@ class AttentionSeq2seq(ModelBase):
                     conv_kernel_sizes=conv_kernel_sizes,
                     conv_strides=conv_strides,
                     poolings=poolings,
+                    activation=activation,
                     batch_norm=batch_norm)
+        elif encoder_type == 'cnn':
+            assert num_stack == 1
+            assert splice == 1
+            self.encoder = encoder(
+                input_size=input_size,  # 120 or 123
+                conv_channels=conv_channels,
+                conv_kernel_sizes=conv_kernel_sizes,
+                conv_strides=conv_strides,
+                poolings=poolings,
+                activation=activation,
+                dropout=encoder_dropout,
+                parameter_init=parameter_init,
+                use_cuda=self.use_cuda,
+                batch_norm=batch_norm)
+            raise NotImplementedError
+
+            # TODO: consider how to initialize decoder states
         else:
             raise NotImplementedError
 
@@ -377,6 +399,7 @@ class AttentionSeq2seq(ModelBase):
             ctc_loss = self._compute_ctc_loss(
                 encoder_outputs, labels_var,
                 inputs_seq_len_var, labels_seq_len_var)
+            # NOTE: including modifying inputs_seq_len
             loss += ctc_loss * self.ctc_loss_weight
 
         # Average the loss by mini-batch
@@ -408,7 +431,7 @@ class AttentionSeq2seq(ModelBase):
         # Convert to batch-major
         logits_ctc = logits_ctc.transpose(0, 1)
 
-        inputs_seq_len = inputs_seq_len.clone()
+        _inputs_seq_len = inputs_seq_len.clone()
         labels = labels.clone()[:, 1:] + 1
         labels_seq_len = labels_seq_len.clone() - 2
         # NOTE: index 0 is reserved for blank
@@ -419,18 +442,20 @@ class AttentionSeq2seq(ModelBase):
         concatenated_labels = _concatenate_labels(
             labels, labels_seq_len)
 
-        # Subsampling
+        # Modify _inputs_seq_len for reducing time resolution
+        if self.encoder.conv is not None or self.encoder_type == 'cnn':
+            for i in range(len(_inputs_seq_len)):
+                _inputs_seq_len.data[i] = self.encoder.conv_out_size(
+                    _inputs_seq_len.data[i], 1)
         if is_sub_task:
-            if sum(self.subsample_list[:self.encoder_num_layers_sub]) > 0:
-                inputs_seq_len /= sum(
-                    self.subsample_list[:self.encoder_num_layers_sub]) ** 2
+            _inputs_seq_len /= 2 ** sum(
+                self.subsample_list[:self.encoder_num_layers_sub])
         else:
-            if sum(self.subsample_list) > 0:
-                inputs_seq_len /= sum(self.subsample_list) ** 2
-        # NOTE: floor is not needed because inputs_seq_len is IntTensor
+            _inputs_seq_len /= 2 ** sum(self.subsample_list)
+        # NOTE: floor is not needed because _inputs_seq_len is IntTensor
 
         ctc_loss = ctc_loss_fn(logits_ctc, concatenated_labels.cpu(),
-                               inputs_seq_len.cpu(), labels_seq_len.cpu())
+                               _inputs_seq_len.cpu(), labels_seq_len.cpu())
 
         if self.use_cuda:
             ctc_loss = ctc_loss.cuda()
@@ -700,9 +725,12 @@ class AttentionSeq2seq(ModelBase):
             best_hyps, attention_weights = self._decode_infer_greedy(
                 encoder_outputs, encoder_final_state, max_decode_length)
         else:
-            # Subsampling
-            if sum(self.subsample_list) > 0:
-                inputs_seq_len_var /= sum(self.subsample_list) ** 2
+            # Modify inputs_seq_len for reducing time resolution
+            if self.encoder.conv is not None or self.encoder_type == 'cnn':
+                for i in range(len(inputs_seq_len)):
+                    inputs_seq_len_var.data[i] = self.encoder.conv_out_size(
+                        inputs_seq_len_var.data[i], 1)
+            inputs_seq_len_var /= 2 ** sum(self.subsample_list)
             # NOTE: floor is not needed because inputs_seq_len_var is IntTensor
 
             best_hyps, attention_weights = self._decode_infer_beam(
@@ -727,7 +755,7 @@ class AttentionSeq2seq(ModelBase):
             max_decode_length (int, optional): the length of output sequences
                 to stop prediction when EOS token have not been emitted
         Returns:
-            best_hyps (np.ndarray):
+            best_hyps (np.ndarray): A tensor of size `[]`
             perm_indices (np.ndarray):
         """
         # Wrap by Variable
@@ -748,9 +776,12 @@ class AttentionSeq2seq(ModelBase):
             best_hyps, _ = self._decode_infer_greedy(
                 encoder_outputs, encoder_final_state, max_decode_length)
         else:
-            # Subsampling
-            if sum(self.subsample_list) > 0:
-                inputs_seq_len_var /= sum(self.subsample_list) ** 2
+            # Modify inputs_seq_len for reducing time resolution
+            if self.encoder.conv is not None or self.encoder_type == 'cnn':
+                for i in range(len(inputs_seq_len)):
+                    inputs_seq_len_var.data[i] = self.encoder.conv_out_size(
+                        inputs_seq_len_var.data[i], 1)
+            inputs_seq_len_var /= 2 ** sum(self.subsample_list)
             # NOTE: floor is not needed because inputs_seq_len_var is IntTensor
 
             best_hyps, _ = self._decode_infer_beam(
@@ -976,20 +1007,22 @@ class AttentionSeq2seq(ModelBase):
         return np.array(best_hyps), np.array(attention_weights)
 
     def decode_ctc(self, inputs, inputs_seq_len, beam_width=1):
-        """
+        """Decoding by the CTC layer in the inference stage.
+            This is only used for Joint CTC-Attention model.
         Args:
             inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
             inputs_seq_len (np.ndarray): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
         Returns:
-            best_hyps (np.ndarray):
+            best_hyps (np.ndarray): A tensor of size `[]`
         """
+        assert self.ctc_loss_weight > 0
+        # TODO: add is_sub_task??
+
         # Wrap by Variable
         inputs_var = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
         inputs_seq_len_var = np2var(
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
-
-        assert self.ctc_loss_weight > 0
 
         # Encode acoustic features
         encoder_outputs, encoder_final_state, perm_indices = self._encode(
@@ -1008,9 +1041,12 @@ class AttentionSeq2seq(ModelBase):
         logits_ctc = logits_ctc.view(batch_size, max_time, -1)
         log_probs = F.log_softmax(logits_ctc, dim=logits_ctc.dim() - 1)
 
-        # Subsampling
-        if sum(self.subsample_list) > 0:
-            inputs_seq_len_var /= sum(self.subsample_list) ** 2
+        # Modify inputs_seq_len for reducing time resolution
+        if self.encoder.conv is not None or self.encoder_type == 'cnn':
+            for i in range(len(inputs_seq_len)):
+                inputs_seq_len_var.data[i] = self.encoder.conv_out_size(
+                    inputs_seq_len_var.data[i], 1)
+        inputs_seq_len_var /= 2 ** sum(self.subsample_list)
         # NOTE: floor is not needed because inputs_seq_len_var is IntTensor
 
         if beam_width == 1:

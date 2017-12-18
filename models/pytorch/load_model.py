@@ -24,6 +24,9 @@ def load(model_type, params):
     """
 
     if model_type == 'ctc':
+        if 'activation' not in params.keys():
+            params['activation'] = 'relu'
+
         model = CTC(
             input_size=params['input_channel'] *
             (1 + int(params['use_delta'] + int(params['use_double_delta']))),
@@ -44,6 +47,7 @@ def load(model_type, params):
             conv_kernel_sizes=params['conv_kernel_sizes'],
             conv_strides=params['conv_strides'],
             poolings=params['poolings'],
+            activation=params['activation'],
             batch_norm=params['batch_norm'],
             weight_noise_std=params['weight_noise_std'])
 
@@ -74,8 +78,13 @@ def load(model_type, params):
             model.name += '_temp' + str(params['logits_temperature'])
         if params['weight_noise_std'] != 0:
             model.name += '_noise' + str(params['weight_noise_std'])
+        if params['encoder_type'] == 'cnn':
+            model.name += '_' + params['activation']
 
     elif model_type == 'student_ctc':
+        if 'activation' not in params.keys():
+            params['activation'] = 'relu'
+
         model = StudentCTC(
             input_size=params['input_channel'] *
             (1 + int(params['use_delta'] + int(params['use_double_delta']))),
@@ -96,6 +105,7 @@ def load(model_type, params):
             conv_kernel_sizes=params['conv_kernel_sizes'],
             conv_strides=params['conv_strides'],
             poolings=params['poolings'],
+            activation=params['activation'],
             batch_norm=params['batch_norm'],
             weight_noise_std=params['weight_noise_std'])
 
@@ -212,6 +222,9 @@ def load(model_type, params):
             model.name += '_noise' + str(params['weight_noise_std'])
 
     if params['model_type'] == 'hierarchical_ctc':
+        if 'activation' not in params.keys():
+            params['activation'] = 'relu'
+
         model = HierarchicalCTC(
             input_size=params['input_channel'] *
             (1 + int(params['use_delta'] + int(params['use_double_delta']))),
@@ -235,6 +248,7 @@ def load(model_type, params):
             conv_kernel_sizes=params['conv_kernel_sizes'],
             conv_strides=params['conv_strides'],
             poolings=params['poolings'],
+            activation=params['activation'],
             batch_norm=params['batch_norm'],
             weight_noise_std=params['weight_noise_std'])
 

@@ -11,7 +11,8 @@ from models.pytorch.encoders.rnn import RNNEncoder
 from models.pytorch.encoders.pyramid_rnn import PyramidRNNEncoder
 from models.pytorch.encoders.hierarchical_rnn import HierarchicalRNNEncoder
 from models.pytorch.encoders.hierarchical_pyramid_rnn import HierarchicalPyramidRNNEncoder
-from models.pytorch.encoders.cnn import CNNEncoder
+# from models.pytorch.encoders.cnn import CNNEncoder
+from models.pytorch.encoders.cnn_v2 import CNNEncoder
 
 # from models.pytorch.encoders.resnet import ResNetEncoder
 

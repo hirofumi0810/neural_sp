@@ -30,20 +30,19 @@ class TestCTC(unittest.TestCase):
     def test(self):
         print("CTC Working check.")
 
-        # Pyramidal encoder
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            subsample=True)
-
         # CNN-CTC
         # self.check(encoder_type='cnn')
         self.check(encoder_type='cnn', batch_norm=True)
-        # self.check(encoder_type='resnet')
 
         # CLDNN-CTC
         self.check(encoder_type='lstm', bidirectional=True,
                    conv=True)
         self.check(encoder_type='lstm', bidirectional=True,
                    conv=True, batch_norm=True)
+
+        # Pyramidal encoder
+        self.check(encoder_type='lstm', bidirectional=True,
+                   subsample=True)
 
         # word-level CTC
         self.check(encoder_type='lstm', bidirectional=True,
@@ -71,14 +70,22 @@ class TestCTC(unittest.TestCase):
         print('==================================================')
 
         if conv or encoder_type == 'cnn':
-            splice = 5
             conv_channels = [32, 32]
+
+            # pattern 1
             conv_kernel_sizes = [[41, 11], [21, 11]]
-            conv_strides = [[2, 2], [2, 1]]  # freq * time
-            poolings = [[2, 2], [2, 2]]
+            conv_strides = [[2, 2], [2, 1]]
+
+            # pattern 2
+            # conv_kernel_sizes = [[8, 5], [8, 5]]
+            # conv_strides = [[2, 2], [1, 1]]
+
+            poolings = [[], []]
+            # poolings = [[2, 2], [2, 2]]  # not working
+            # poolings = [[2, 2], []]
+            # poolings = [[], [2, 2]]
             fc_list = [786, 786]
         else:
-            splice = 1
             conv_channels = []
             conv_kernel_sizes = []
             conv_strides = []
@@ -86,7 +93,8 @@ class TestCTC(unittest.TestCase):
             fc_list = []
 
         # Load batch data
-        num_stack = 1 if subsample or conv else 2
+        splice = 1
+        num_stack = 1 if subsample or conv or encoder_type == 'cnn' else 2
         inputs, labels, inputs_seq_len, labels_seq_len = generate_data(
             model_type='ctc',
             label_type=label_type,

@@ -48,6 +48,8 @@ class StudentCTC(CTC):
         conv_kernel_sizes (list, optional):
         conv_strides (list, optional):
         poolings (list, optional):
+        activation (string, optional): The activation function of CNN layers.
+            Choose from relu or prelu or hard_tanh
         batch_norm (bool, optional):
         weight_noise_std (flaot, optional):
     """
@@ -72,6 +74,7 @@ class StudentCTC(CTC):
                  conv_kernel_sizes=[],
                  conv_strides=[],
                  poolings=[],
+                 activation='relu',
                  batch_norm=False,
                  weight_noise_std=0):
 
@@ -150,9 +153,12 @@ class StudentCTC(CTC):
             logits /= self.logits_temperature
             logits_xe /= self.logits_temperature
 
-        # Subsampling
-        if sum(self.subsample_list) != 0:
-            inputs_seq_len_var /= sum(self.subsample_list) ** 2
+        # Modify inputs_seq_len for reducing time resolution
+        if self.encoder.conv is not None or self.encoder_type == 'cnn':
+            for i in range(len(inputs_seq_len)):
+                inputs_seq_len_var.data[i] = self.encoder.conv_out_size(
+                    inputs_seq_len_var.data[i], 1)
+        inputs_seq_len_var /= 2 ** sum(self.subsample_list)
         # NOTE: floor is not needed because inputs_seq_len_var is IntTensor
 
         # Compute CTC loss and XE loss
@@ -236,9 +242,12 @@ class StudentCTC(CTC):
         # Convert to batch-major
         logits_xe = logits_xe.transpose(0, 1)
 
-        # Subsampling
-        if sum(self.subsample_list) > 0:
-            inputs_seq_len_var /= sum(self.subsample_list) ** 2
+        # Modify inputs_seq_len for reducing time resolution
+        if self.encoder.conv is not None or self.encoder_type == 'cnn':
+            for i in range(len(inputs_seq_len)):
+                inputs_seq_len_var.data[i] = self.encoder.conv_out_size(
+                    inputs_seq_len_var.data[i], 1)
+        inputs_seq_len_var /= 2 ** sum(self.subsample_list)
         # NOTE: floor is not needed because inputs_seq_len_var is IntTensor
 
         log_probs_xe = F.log_softmax(logits_xe, dim=logits_xe.dim() - 1)

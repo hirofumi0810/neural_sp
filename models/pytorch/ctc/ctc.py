@@ -60,6 +60,8 @@ class CTC(ModelBase):
         conv_kernel_sizes (list, optional):
         conv_strides (list, optional):
         poolings (list, optional):
+        activation (string, optional): The activation function of CNN layers.
+            Choose from relu or prelu or hard_tanh
         batch_norm (bool, optional):
         weight_noise_std (float, optional):
     """
@@ -83,6 +85,7 @@ class CTC(ModelBase):
                  conv_kernel_sizes=[],
                  conv_strides=[],
                  poolings=[],
+                 activation='relu',
                  batch_norm=False,
                  weight_noise_std=0):
 
@@ -131,6 +134,7 @@ class CTC(ModelBase):
                     conv_kernel_sizes=conv_kernel_sizes,
                     conv_strides=conv_strides,
                     poolings=poolings,
+                    activation=activation,
                     batch_norm=batch_norm)
             else:
                 # Pyramidal encoder
@@ -153,12 +157,13 @@ class CTC(ModelBase):
                     conv_kernel_sizes=conv_kernel_sizes,
                     conv_strides=conv_strides,
                     poolings=poolings,
+                    activation=activation,
                     batch_norm=batch_norm)
         elif encoder_type == 'cnn':
+            assert num_stack == 1
+            assert splice == 1
             self.encoder = encoder(
                 input_size=input_size,  # 120 or 123
-                num_stack=num_stack,
-                splice=splice,
                 conv_channels=conv_channels,
                 conv_kernel_sizes=conv_kernel_sizes,
                 conv_strides=conv_strides,
@@ -178,8 +183,12 @@ class CTC(ModelBase):
                         bottle_input_size = self.encoder.output_size
                     else:
                         bottle_input_size = num_units * self.num_directions
+                    # if batch_norm:
+                    #     fc_layers.append(nn.BatchNorm1d(bottle_input_size))
                     fc_layers.append(LinearND(bottle_input_size, fc_list[i]))
                 else:
+                    # if batch_norm:
+                    #     fc_layers.append(nn.BatchNorm1d(fc_list[i - 1]))
                     fc_layers.append(LinearND(fc_list[i - 1], fc_list[i]))
                 fc_layers.append(nn.Dropout(p=dropout))
             self.fc_layers = nn.Sequential(*fc_layers)
@@ -240,9 +249,12 @@ class CTC(ModelBase):
         if self.logits_temperature != 1:
             logits /= self.logits_temperature
 
-        # Subsampling
-        if sum(self.subsample_list) > 0:
-            inputs_seq_len_var /= sum(self.subsample_list) ** 2
+        # Modify inputs_seq_len for reducing time resolution
+        if self.encoder.conv is not None or self.encoder_type == 'cnn':
+            for i in range(len(inputs_seq_len)):
+                inputs_seq_len_var.data[i] = self.encoder.conv_out_size(
+                    inputs_seq_len_var.data[i], 1)
+        inputs_seq_len_var /= 2 ** sum(self.subsample_list)
         # NOTE: floor is not needed because inputs_seq_len_var is IntTensor
 
         # Compute CTC loss
@@ -378,14 +390,16 @@ class CTC(ModelBase):
         # Convert to batch-major
         logits = logits.transpose(0, 1)
 
-        # Subsampling
+        # Modify inputs_seq_len for reducing time resolution
+        if self.encoder.conv is not None or self.encoder_type == 'cnn':
+            for i in range(len(inputs_seq_len)):
+                inputs_seq_len_var.data[i] = self.encoder.conv_out_size(
+                    inputs_seq_len_var.data[i], 1)
         if is_sub_task:
-            if sum(self.subsample_list[:self.num_layers_sub]) > 0:
-                inputs_seq_len_var /= sum(
-                    self.subsample_list[:self.num_layers_sub]) ** 2
+            inputs_seq_len_var /= 2 ** sum(
+                self.subsample_list[:self.num_layers_sub])
         else:
-            if sum(self.subsample_list) > 0:
-                inputs_seq_len_var /= sum(self.subsample_list) ** 2
+            inputs_seq_len_var /= 2 ** sum(self.subsample_list)
         # NOTE: floor is not needed because inputs_seq_len_var is IntTensor
 
         log_probs = F.log_softmax(logits, dim=logits.dim() - 1)
@@ -416,14 +430,6 @@ class CTC(ModelBase):
             best_hyps (np.ndarray):
         """
         # TODO: Subsampling
-        # if is_sub_task:
-        #     if sum(self.subsample_list[:self.num_layers_sub]) > 0:
-        #         inputs_seq_len_var /= sum(
-        #             self.subsample_list[:self.num_layers_sub]) ** 2
-        # else:
-        #     if sum(self.subsample_list) > 0:
-        #         inputs_seq_len_var /= sum(self.subsample_list) ** 2
-        # NOTE: floor is not needed because inputs_seq_len_var is IntTensor
 
         # Convert to log-scale
         log_probs = np.log(probs + 1e-10)

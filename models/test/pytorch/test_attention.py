@@ -30,7 +30,7 @@ class TestAttention(unittest.TestCase):
     def test(self):
         print("Attention Working check.")
 
-        # CNN-LSTM encoder
+        # CLDNN encoder
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', conv=True)
         self.check(encoder_type='lstm', bidirectional=True,
@@ -103,19 +103,27 @@ class TestAttention(unittest.TestCase):
         print('==================================================')
 
         if conv:
-            splice = 5
             conv_channels = [32, 32]
+            # pattern 1
             conv_kernel_sizes = [[41, 11], [21, 11]]
-            conv_strides = [[2, 2], [2, 1]]  # freq * time
+            conv_strides = [[2, 2], [2, 1]]
+
+            # pattern 2
+            # conv_kernel_sizes = [[8, 5], [8, 5]]
+            # conv_strides = [[2, 2], [1, 1]]
+
+            # poolings = [[], []]
             poolings = [[2, 2], [2, 2]]
+            # poolings = [[2, 2], []]
+            # poolings = [[], [2, 2]]
         else:
-            splice = 1
             conv_channels = []
             conv_kernel_sizes = []
             conv_strides = []
             poolings = []
 
         # Load batch data
+        splice = 1
         num_stack = 1 if subsample or conv else 2
         inputs, labels, inputs_seq_len, labels_seq_len = generate_data(
             model_type='attention',
@@ -126,8 +134,10 @@ class TestAttention(unittest.TestCase):
 
         if label_type == 'char':
             num_classes = 27
+            map_fn = idx2char
         elif label_type == 'word':
             num_classes = 11
+            map_fn = idx2word
 
         # Load model
         model = AttentionSeq2seq(
@@ -240,14 +250,14 @@ class TestAttention(unittest.TestCase):
 
                 # Compute accuracy
                 if label_type == 'char':
-                    str_true = idx2char(labels[0, :labels_seq_len[0]][1:-1])
-                    str_pred = idx2char(labels_pred[0][0:-1]).split('>')[0]
+                    str_true = map_fn(labels[0, :labels_seq_len[0]][1:-1])
+                    str_pred = map_fn(labels_pred[0][0:-1]).split('>')[0]
                     ler = compute_cer(ref=str_true.replace('_', ''),
                                       hyp=str_pred.replace('_', ''),
                                       normalize=True)
                 elif label_type == 'word':
-                    str_true = idx2word(labels[0, : labels_seq_len[0]][1: -1])
-                    str_pred = idx2word(labels_pred[0][0: -1]).split('>')[0]
+                    str_true = map_fn(labels[0, : labels_seq_len[0]][1: -1])
+                    str_pred = map_fn(labels_pred[0][0: -1]).split('>')[0]
                     ler = compute_wer(ref=str_true.split('_'),
                                       hyp=str_pred.split('_'),
                                       normalize=True)
@@ -263,6 +273,13 @@ class TestAttention(unittest.TestCase):
                 # Visualize
                 print('Ref: %s' % str_true)
                 print('Hyp: %s' % str_pred)
+
+                # Decode by theCTC decoder
+                if model.ctc_loss_weight >= 0.1:
+                    labels_pred_ctc = model.decode_ctc(
+                        inputs, inputs_seq_len, beam_width=1)
+                    str_pred_ctc = map_fn(labels_pred_ctc[0])
+                    print('Hyp (CTC): %s' % str_pred_ctc)
 
                 if ler < 0.1:
                     print('Modle is Converged.')

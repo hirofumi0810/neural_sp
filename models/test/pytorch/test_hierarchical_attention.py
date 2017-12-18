@@ -30,16 +30,20 @@ class TestHierarchicalAttention(unittest.TestCase):
     def test(self):
         print("Hierarchical Attention Working check.")
 
-        # Word attention + char CTC
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', subsample=True,
-                   ctc_loss_weight_sub=0.5)
-
-        # CNN-LSTM encoder
+        # CLDNN encoder
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', conv=True)
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', conv=True, batch_norm=True)
+
+        # Word attention + char CTC
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', subsample=True,
+                   ctc_loss_weight_sub=0.5)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', subsample=True,
+                   ctc_loss_weight_sub=0.5,
+                   conv=True, batch_norm=True)
 
         # Pyramidal encoder
         self.check(encoder_type='lstm', bidirectional=True,
@@ -50,7 +54,7 @@ class TestHierarchicalAttention(unittest.TestCase):
 
     @measure_time
     def check(self, encoder_type, bidirectional, decoder_type,
-              attention_type='dot_product', subsample=False,
+              attention_type='location', subsample=False,
               ctc_loss_weight_sub=0, decoder_num_layers=1,
               conv=False, batch_norm=False):
 
@@ -67,19 +71,18 @@ class TestHierarchicalAttention(unittest.TestCase):
         print('==================================================')
 
         if conv:
-            splice = 5
             conv_channels = [32, 32]
             conv_kernel_sizes = [[41, 11], [21, 11]]
-            conv_strides = [[2, 2], [2, 1]]  # freq * time
-            poolings = [[2, 2], [2, 2]]
+            conv_strides = [[2, 2], [2, 1]]
+            poolings = [[], []]
         else:
-            splice = 1
             conv_channels = []
             conv_kernel_sizes = []
             conv_strides = []
             poolings = []
 
         # Load batch data
+        splice = 1
         num_stack = 1 if subsample or conv else 2
         inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub = generate_data(
             model_type='attention',
@@ -115,7 +118,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             num_classes=num_classes,
             num_classes_sub=num_classes_sub,
             parameter_init=0.1,
-            subsample_list=[] if not subsample else [True, True, False],
+            subsample_list=[] if not subsample else [False, True, False],
             init_dec_state_with_enc_state=True,
             sharpening_factor=1,
             logits_temperature=1,

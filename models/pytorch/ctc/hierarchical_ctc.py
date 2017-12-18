@@ -53,6 +53,8 @@ class HierarchicalCTC(CTC):
         conv_kernel_sizes (list, optional):
         conv_strides (list, optional):
         poolings (list, optional):
+        activation (string, optional): The activation function of CNN layers.
+            Choose from relu or prelu or hard_tanh
         batch_norm (bool, optional):
         weight_noise_std (float, optional):
     """
@@ -79,6 +81,7 @@ class HierarchicalCTC(CTC):
                  conv_kernel_sizes=[],
                  conv_strides=[],
                  poolings=[],
+                 activation='relu',
                  batch_norm=False,
                  weight_noise_std=0):
 
@@ -135,6 +138,7 @@ class HierarchicalCTC(CTC):
                     conv_kernel_sizes=conv_kernel_sizes,
                     conv_strides=conv_strides,
                     poolings=poolings,
+                    activation=activation,
                     batch_norm=batch_norm)
             else:
                 self.encoder = encoder(
@@ -157,6 +161,7 @@ class HierarchicalCTC(CTC):
                     conv_kernel_sizes=conv_kernel_sizes,
                     conv_strides=conv_strides,
                     poolings=poolings,
+                    activation=activation,
                     batch_norm=batch_norm)
         else:
             raise NotImplementedError
@@ -222,12 +227,17 @@ class HierarchicalCTC(CTC):
             logits /= self.logits_temperature
             logits_sub /= self.logits_temperature
 
-        # Subsampling
-        if sum(self.subsample_list[:self.num_layers_sub]) > 0:
-            _inputs_seq_len_sub_var /= sum(
-                self.subsample_list[:self.num_layers_sub]) ** 2
-        if sum(self.subsample_list) != 0:
-            inputs_seq_len_var /= sum(self.subsample_list) ** 2
+        # Modify inputs_seq_len for reducing time resolution
+        if self.encoder.conv is not None:
+            for i in range(len(inputs_seq_len)):
+                _inputs_seq_len_sub_var.data[i] = self.encoder.conv_out_size(
+                    _inputs_seq_len_sub_var.data[i], 1)
+            for i in range(len(inputs_seq_len)):
+                inputs_seq_len_var.data[i] = self.encoder.conv_out_size(
+                    inputs_seq_len_var.data[i], 1)
+        _inputs_seq_len_sub_var /= 2 ** sum(
+            self.subsample_list[:self.num_layers_sub])
+        inputs_seq_len_var /= 2 ** sum(self.subsample_list)
         # NOTE: floor is not needed because inputs_seq_len_var is IntTensor
 
         # Compute CTC loss

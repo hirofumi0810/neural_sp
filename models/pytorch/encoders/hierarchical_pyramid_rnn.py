@@ -12,7 +12,9 @@ import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from models.pytorch.encoders.rnn_utils import _init_hidden
-from models.pytorch.encoders.cnn import CNNEncoder
+# from models.pytorch.encoders.cnn import CNNEncoder
+from models.pytorch.encoders.cnn_v2 import CNNEncoder
+from models.pytorch.encoders.cnn_utils import ConvOutSize
 from utils.io.variable import var2np
 
 
@@ -43,6 +45,8 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
         conv_kernel_sizes (list, optional):
         conv_strides (list, optional):
         poolings (list, optional):
+        activation (string, optional): The activation function of CNN layers.
+            Choose from relu or prelu or hard_tanh
         batch_norm (bool, optional):
     """
 
@@ -67,6 +71,7 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
                  conv_kernel_sizes=[],
                  conv_strides=[],
                  poolings=[],
+                 activation='relu',
                  batch_norm=False):
 
         super(HierarchicalPyramidRNNEncoder, self).__init__()
@@ -95,19 +100,21 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
 
         # Setting for CNNs before RNNs
         if len(conv_channels) > 0 and len(conv_channels) == len(conv_kernel_sizes) and len(conv_kernel_sizes) == len(conv_strides):
+            assert num_stack == 1
+            assert splice == 1
             self.conv = CNNEncoder(
                 input_size,
-                num_stack=num_stack,
-                splice=splice,
                 conv_channels=conv_channels,
                 conv_kernel_sizes=conv_kernel_sizes,
                 conv_strides=conv_strides,
                 poolings=poolings,
                 dropout=dropout,
                 parameter_init=parameter_init,
+                activation=activation,
                 use_cuda=use_cuda,
                 batch_norm=batch_norm)
             input_size = self.conv.output_size
+            self.conv_out_size = ConvOutSize(self.conv.conv)
         else:
             input_size = input_size * splice * num_stack
             self.conv = None
@@ -123,32 +130,29 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
                     next_input_size *= 2
 
             if rnn_type == 'lstm':
-                rnn = nn.LSTM(
-                    next_input_size,
-                    hidden_size=num_units,
-                    num_layers=1,
-                    bias=True,
-                    batch_first=batch_first,
-                    dropout=dropout,
-                    bidirectional=bidirectional)
+                rnn = nn.LSTM(next_input_size,
+                              hidden_size=num_units,
+                              num_layers=1,
+                              bias=True,
+                              batch_first=batch_first,
+                              dropout=dropout,
+                              bidirectional=bidirectional)
             elif rnn_type == 'gru':
-                rnn = nn.GRU(
-                    next_input_size,
-                    hidden_size=num_units,
-                    num_layers=1,
-                    bias=True,
-                    batch_first=batch_first,
-                    dropout=dropout,
-                    bidirectional=bidirectional)
+                rnn = nn.GRU(next_input_size,
+                             hidden_size=num_units,
+                             num_layers=1,
+                             bias=True,
+                             batch_first=batch_first,
+                             dropout=dropout,
+                             bidirectional=bidirectional)
             elif rnn_type == 'rnn':
-                rnn = nn.RNN(
-                    next_input_size,
-                    hidden_size=num_units,
-                    num_layers=1,
-                    bias=True,
-                    batch_first=batch_first,
-                    dropout=dropout,
-                    bidirectional=bidirectional)
+                rnn = nn.RNN(next_input_size,
+                             hidden_size=num_units,
+                             num_layers=1,
+                             bias=True,
+                             batch_first=batch_first,
+                             dropout=dropout,
+                             bidirectional=bidirectional)
             else:
                 raise ValueError('rnn_type must be "lstm" or "gru" or "rnn".')
 
@@ -212,16 +216,20 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
             inputs = inputs.transpose(0, 1)
 
         if not isinstance(inputs_seq_len, list):
-            pack_seq_len = var2np(inputs_seq_len).tolist()
-        else:
-            pack_seq_len = inputs_seq_len
+            inputs_seq_len = var2np(inputs_seq_len).tolist()
+
+        # Modify inputs_seq_len for reducing time resolution by CNN layers
+        if self.conv is not None:
+            inputs_seq_len = [self.conv_out_size(
+                x, 1) for x in inputs_seq_len]
+            max_time = self.conv_out_size(max_time, 1)
 
         outputs = inputs
         for i_layer in range(self.num_layers):
             if mask_sequence:
                 # Pack encoder inputs in each layer
                 outputs = pack_padded_sequence(
-                    outputs, pack_seq_len, batch_first=self.batch_first)
+                    outputs, inputs_seq_len, batch_first=self.batch_first)
 
             if self.rnn_type == 'lstm':
                 outputs, (h_n, c_n) = self.rnns[i_layer](outputs, hx=h_0)
@@ -234,7 +242,7 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
                     outputs, batch_first=self.batch_first)
                 # TODO: update version for padding_value=0.0
 
-                assert pack_seq_len == unpacked_seq_len
+                assert inputs_seq_len == unpacked_seq_len
 
             outputs_list = []
             if self.subsample_list[i_layer]:
@@ -269,8 +277,8 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
                     max_time = outputs.size(0)
 
                 # Update inputs_seq_len
-                for i in range(len(pack_seq_len)):
-                    pack_seq_len[i] = pack_seq_len[i] // 2
+                for i in range(len(inputs_seq_len)):
+                    inputs_seq_len[i] = inputs_seq_len[i] // 2
 
             if i_layer == self.num_layers_sub - 1:
                 outputs_sub = outputs

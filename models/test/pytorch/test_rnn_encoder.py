@@ -23,20 +23,6 @@ class TestRNNEncoders(unittest.TestCase):
     def test(self):
         print("RNN Encoders Working check.")
 
-        # LSTM
-        # self.check(encoder_type='lstm', bidirectional=False)
-        # self.check(encoder_type='lstm', bidirectional=True)
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            batch_first=False)
-        # self.check(encoder_type='gru', bidirectional=False)
-        # self.check(encoder_type='gru', bidirectional=True)
-        # self.check(encoder_type='gru', bidirectional=True,
-        #            batch_first=False)
-        # self.check(encoder_type='rnn', bidirectional=False)
-        # self.check(encoder_type='rnn', bidirectional=True)
-        # self.check(encoder_type='rnn', bidirectional=True,
-        #            batch_first=False)
-
         # Conv
         self.check(encoder_type='lstm', bidirectional=True,
                    conv=True)
@@ -50,6 +36,20 @@ class TestRNNEncoders(unittest.TestCase):
                    conv=True)
         self.check(encoder_type='rnn', bidirectional=True,
                    batch_first=False, conv=True)
+
+        # LSTM, GRU, RNN
+        self.check(encoder_type='lstm', bidirectional=False)
+        self.check(encoder_type='lstm', bidirectional=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   batch_first=False)
+        self.check(encoder_type='gru', bidirectional=False)
+        self.check(encoder_type='gru', bidirectional=True)
+        self.check(encoder_type='gru', bidirectional=True,
+                   batch_first=False)
+        self.check(encoder_type='rnn', bidirectional=False)
+        self.check(encoder_type='rnn', bidirectional=True)
+        self.check(encoder_type='rnn', bidirectional=True,
+                   batch_first=False)
 
         # merge_bidirectional
         self.check(encoder_type='lstm', bidirectional=True,
@@ -73,15 +73,21 @@ class TestRNNEncoders(unittest.TestCase):
         print('==================================================')
 
         if conv:
-            splice = 11
             conv_channels = [32, 32]
-            conv_kernel_sizes = [[3, 3], [3, 3]]
-            conv_strides = [[2, 2], [2, 1]]  # freq * time
+
+            # pattern 1
+            conv_kernel_sizes = [[41, 11], [21, 11]]
+            conv_strides = [[2, 2], [2, 1]]
+
+            # pattern 2
+            # conv_kernel_sizes = [[8, 5], [8, 5]]
+            # conv_strides = [[2, 2], [1, 1]]
+
+            # poolings = [[], []]
             poolings = [[2, 2], [2, 2]]
             # poolings = [[2, 2], []]
             # poolings = [[], [2, 2]]
         else:
-            splice = 1
             conv_channels = []
             conv_kernel_sizes = []
             conv_strides = []
@@ -89,6 +95,7 @@ class TestRNNEncoders(unittest.TestCase):
 
         # Load batch data
         batch_size = 4
+        splice = 1
         num_stack = 1
         inputs, _, inputs_seq_len, _ = generate_data(
             model_type='ctc',
@@ -99,8 +106,6 @@ class TestRNNEncoders(unittest.TestCase):
         # Wrap by Variable
         inputs = np2var(inputs)
         inputs_seq_len = np2var(inputs_seq_len)
-
-        max_time = inputs.size(1)
 
         # Load encoder
         encoder = load(encoder_type=encoder_type)
@@ -127,6 +132,10 @@ class TestRNNEncoders(unittest.TestCase):
                 batch_norm=True)
         else:
             raise NotImplementedError
+
+        max_time = inputs.size(1)
+        if conv:
+            max_time = encoder.conv.conv_out_size(max_time, 1)
 
         outputs, final_state, perm_indices = encoder(
             inputs, inputs_seq_len, mask_sequence=mask_sequence)

@@ -30,15 +30,15 @@ class TestCTC(unittest.TestCase):
     def test(self):
         print("Hierarchical CTC Working check.")
 
-        # Pyramidal encoder
-        self.check(encoder_type='lstm', bidirectional=True,
-                   subsample=True)
-
         # CLDNN-CTC
         self.check(encoder_type='lstm', bidirectional=True,
                    conv=True)
         self.check(encoder_type='lstm', bidirectional=True,
                    conv=True, batch_norm=True)
+
+        # Pyramidal encoder
+        self.check(encoder_type='lstm', bidirectional=True,
+                   subsample=True)
 
         self.check(encoder_type='lstm', bidirectional=True)
 
@@ -55,14 +55,12 @@ class TestCTC(unittest.TestCase):
         print('==================================================')
 
         if conv:
-            splice = 5
             conv_channels = [32, 32]
             conv_kernel_sizes = [[41, 11], [21, 11]]
-            conv_strides = [[2, 2], [2, 1]]  # freq * time
-            poolings = [[2, 2], [2, 2]]
+            conv_strides = [[2, 2], [2, 1]]
+            poolings = [[], []]
             fc_list = [786, 786]
         else:
-            splice = 1
             conv_channels = []
             conv_kernel_sizes = []
             conv_strides = []
@@ -71,6 +69,7 @@ class TestCTC(unittest.TestCase):
 
         # Load batch data
         num_stack = 1 if subsample or conv else 2
+        splice = 1
         inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub = generate_data(
             model_type='ctc',
             label_type='word_char',

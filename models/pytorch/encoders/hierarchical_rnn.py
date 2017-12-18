@@ -11,7 +11,9 @@ import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from models.pytorch.encoders.rnn_utils import _init_hidden
-from models.pytorch.encoders.cnn import CNNEncoder
+# from models.pytorch.encoders.cnn import CNNEncoder
+from models.pytorch.encoders.cnn_v2 import CNNEncoder
+from models.pytorch.encoders.cnn_utils import ConvOutSize
 from utils.io.variable import var2np
 
 
@@ -38,6 +40,8 @@ class HierarchicalRNNEncoder(nn.Module):
         conv_kernel_sizes (list, optional):
         conv_strides (list, optional):
         poolings (list, optional):
+        activation (string, optional): The activation function of CNN layers.
+            Choose from relu or prelu or hard_tanh
         batch_norm (bool, optional):
     """
 
@@ -60,6 +64,7 @@ class HierarchicalRNNEncoder(nn.Module):
                  conv_kernel_sizes=[],
                  conv_strides=[],
                  poolings=[],
+                 activation='relu',
                  batch_norm=False):
 
         super(HierarchicalRNNEncoder, self).__init__()
@@ -81,19 +86,21 @@ class HierarchicalRNNEncoder(nn.Module):
 
         # Setting for CNNs before RNNs
         if len(conv_channels) > 0 and len(conv_channels) == len(conv_kernel_sizes) and len(conv_kernel_sizes) == len(conv_strides):
+            assert num_stack == 1
+            assert splice == 1
             self.conv = CNNEncoder(
                 input_size,
-                num_stack=num_stack,
-                splice=splice,
                 conv_channels=conv_channels,
                 conv_kernel_sizes=conv_kernel_sizes,
                 conv_strides=conv_strides,
                 poolings=poolings,
                 dropout=dropout,
                 parameter_init=parameter_init,
+                activation=activation,
                 use_cuda=use_cuda,
                 batch_norm=batch_norm)
             input_size = self.conv.output_size
+            self.conv_out_size = ConvOutSize(self.conv.conv)
         else:
             input_size = input_size * splice * num_stack
             self.conv = None
@@ -192,6 +199,10 @@ class HierarchicalRNNEncoder(nn.Module):
 
         if not isinstance(inputs_seq_len, list):
             inputs_seq_len = var2np(inputs_seq_len).tolist()
+
+        # Modify inputs_seq_len for reducing time resolution by CNN layers
+        if self.conv is not None:
+            inputs_seq_len = [self.conv_out_size(x, 1) for x in inputs_seq_len]
 
         if mask_sequence:
             # Pack encoder inputs
