@@ -32,7 +32,10 @@ class TestCTC(unittest.TestCase):
 
         # CNN-CTC
         # self.check(encoder_type='cnn')
-        self.check(encoder_type='cnn', batch_norm=True)
+        self.check(encoder_type='cnn', batch_norm=True, activation='relu')
+        self.check(encoder_type='cnn', batch_norm=True, activation='prelu')
+        self.check(encoder_type='cnn', batch_norm=True, activation='hard_tanh')
+        # self.check(encoder_type='cnn', batch_norm=True, activation='maxout')
 
         # CLDNN-CTC
         self.check(encoder_type='lstm', bidirectional=True,
@@ -58,7 +61,8 @@ class TestCTC(unittest.TestCase):
 
     @measure_time
     def check(self, encoder_type, bidirectional=False, label_type='char',
-              subsample=False, conv=False, batch_norm=False, save_path=None):
+              subsample=False, conv=False, batch_norm=False, activation='relu',
+              save_path=None):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
@@ -67,6 +71,7 @@ class TestCTC(unittest.TestCase):
         print('  subsample: %s' % str(subsample))
         print('  conv: %s' % str(conv))
         print('  batch_norm: %s' % str(batch_norm))
+        print('  activation: %s' % activation)
         print('==================================================')
 
         if conv or encoder_type == 'cnn':
@@ -126,6 +131,7 @@ class TestCTC(unittest.TestCase):
             conv_kernel_sizes=conv_kernel_sizes,
             conv_strides=conv_strides,
             poolings=poolings,
+            activation=activation,
             batch_norm=batch_norm)
 
         # Count total parameters

@@ -10,7 +10,7 @@ from __future__ import print_function
 import math
 import torch.nn as nn
 
-from models.pytorch.encoders.cnn_utils import ConvOutSize
+from models.pytorch.encoders.cnn_utils import ConvOutSize, Maxout
 
 
 class CNNEncoder(nn.Module):
@@ -24,7 +24,7 @@ class CNNEncoder(nn.Module):
         dropout (float): the probability to drop nodes
         parameter_init (float): the range of uniform distribution to
             initialize weight parameters (>= 0)
-        activation (string, optional): relu or prelu or hard_tanh
+        activation (string, optional): relu or prelu or hard_tanh or maxout
         use_cuda (bool, optional): if True, use GPUs
         batch_norm (bool, optional):
     """
@@ -78,6 +78,8 @@ class CNNEncoder(nn.Module):
                 convs.append(nn.PReLU(num_parameters=1, init=0.2))
             elif activation == 'hard_tanh':
                 convs.append(nn.Hardtanh(min_val=0, max_val=20, inplace=True))
+            elif activation == 'maxout':
+                convs.append(Maxout(1, 1, 2))
             else:
                 raise NotImplementedError
 

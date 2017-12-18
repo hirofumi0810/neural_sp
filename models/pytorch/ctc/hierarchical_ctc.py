@@ -54,7 +54,7 @@ class HierarchicalCTC(CTC):
         conv_strides (list, optional):
         poolings (list, optional):
         activation (string, optional): The activation function of CNN layers.
-            Choose from relu or prelu or hard_tanh
+            Choose from relu or prelu or hard_tanh or maxout
         batch_norm (bool, optional):
         weight_noise_std (float, optional):
     """

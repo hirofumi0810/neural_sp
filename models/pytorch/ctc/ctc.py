@@ -61,7 +61,7 @@ class CTC(ModelBase):
         conv_strides (list, optional):
         poolings (list, optional):
         activation (string, optional): The activation function of CNN layers.
-            Choose from relu or prelu or hard_tanh
+            Choose from relu or prelu or hard_tanh or maxout
         batch_norm (bool, optional):
         weight_noise_std (float, optional):
     """
@@ -170,6 +170,7 @@ class CTC(ModelBase):
                 poolings=poolings,
                 dropout=dropout,
                 parameter_init=parameter_init,
+                activation=activation,
                 use_cuda=self.use_cuda,
                 batch_norm=batch_norm)
         else:

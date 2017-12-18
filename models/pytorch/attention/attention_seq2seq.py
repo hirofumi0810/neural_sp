@@ -88,7 +88,7 @@ class AttentionSeq2seq(ModelBase):
         conv_strides (list, optional):
         poolings (list, optional):
         activation (string, optional): The activation function of CNN layers.
-            Choose from relu or prelu or hard_tanh
+            Choose from relu or prelu or hard_tanh or maxout
         batch_norm (bool, optional):
         scheduled_sampling_prob (float, optional):
         scheduled_sampling_ramp_max_step (float, optional):
@@ -252,9 +252,9 @@ class AttentionSeq2seq(ModelBase):
                 conv_kernel_sizes=conv_kernel_sizes,
                 conv_strides=conv_strides,
                 poolings=poolings,
-                activation=activation,
                 dropout=encoder_dropout,
                 parameter_init=parameter_init,
+                activation=activation,
                 use_cuda=self.use_cuda,
                 batch_norm=batch_norm)
             raise NotImplementedError
