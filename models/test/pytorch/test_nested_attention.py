@@ -30,10 +30,10 @@ class TestNestedAttention(unittest.TestCase):
     def test(self):
         print("Nested Attention Working check.")
 
-        self.check(composition_case='hidden')
-        # self.check(composition_case='embedding')
-        # self.check(composition_case='hidden_embedding')
-        # self.check(composition_case='multiscale')
+        # self.check(composition_case='hidden')
+        self.check(composition_case='embedding')
+        self.check(composition_case='hidden_embedding')
+        self.check(composition_case='multiscale')
 
     @measure_time
     def check(self, composition_case,
@@ -168,6 +168,23 @@ class TestNestedAttention(unittest.TestCase):
                 scheduler.step(ler_pre)
             else:
                 optimizer.step()
+
+            if (step + 1) % 10 == 0:
+                # ***Change to evaluation mode***
+                model.eval()
+
+                duration_step = time.time() - start_time_step
+                print('Step %d: loss = %.3f (%.3f/%.3f) / lr = %.5f (%.3f sec)' %
+                      (step + 1, loss.data[0], loss_main.data[0], loss_sub.data[0],
+                       learning_rate, duration_step))
+                start_time_step = time.time()
+
+                # ***Change to training mode***
+                model.train()
+
+                if loss_main.data[0] < 0.5:
+                    print('Modle is Converged.')
+                    break
 
             if (step + 1) % 1000 == 0:
                 # ***Change to evaluation mode***

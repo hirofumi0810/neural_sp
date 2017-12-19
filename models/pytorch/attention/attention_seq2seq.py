@@ -359,7 +359,7 @@ class AttentionSeq2seq(ModelBase):
 
         # Teacher-forcing
         logits, attention_weights = self._decode_train(
-            encoder_outputs, labels_var, encoder_final_state)
+            encoder_outputs, encoder_final_state, labels_var)
 
         # Output smoothing
         if self.logits_temperature != 1:
@@ -511,15 +511,15 @@ class AttentionSeq2seq(ModelBase):
         batch_size, max_time_outputs, max_time_inputs = attention_weights.size()
         raise NotImplementedError
 
-    def _decode_train(self, encoder_outputs, labels, encoder_final_state=None,
+    def _decode_train(self, encoder_outputs, encoder_final_state, labels,
                       is_sub_task=False):
         """Decoding in the training stage.
         Args:
             encoder_outputs (FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            labels (LongTensor): A tensor of size `[B, T_out]`
             encoder_final_state (FloatTensor, optional): A tensor of size
                 `[1, B, decoder_num_units]`
+            labels (LongTensor): A tensor of size `[B, T_out]`
             is_sub_task (bool, optional):
         Returns:
             logits (FloatTensor): A tensor of size `[B, T_out, num_classes]`
@@ -580,8 +580,8 @@ class AttentionSeq2seq(ModelBase):
                 attentional_vector = F.tanh(self.proj_layer(concat))
                 logits_step = self.fc(attentional_vector)
 
-            attention_weights.append(attention_weights_step)
             logits.append(logits_step)
+            attention_weights.append(attention_weights_step)
 
         # Concatenate in T_out-dimension
         logits = torch.cat(logits, dim=1)

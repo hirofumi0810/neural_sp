@@ -297,7 +297,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         ##################################################
         # Teacher-forcing
         logits, attention_weights = self._decode_train(
-            encoder_outputs, labels_var, encoder_final_state)
+            encoder_outputs, encoder_final_state, labels_var)
 
         # Output smoothing
         if self.logits_temperature != 1:
@@ -339,7 +339,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         if self.sub_loss_weight > 0:
             # Teacher-forcing
             logits_sub, attention_weights_sub = self._decode_train(
-                encoder_outputs_sub, labels_sub_var, encoder_final_state_sub,
+                encoder_outputs_sub, encoder_final_state_sub, labels_sub_var,
                 is_sub_task=True)
 
             # Output smoothing
