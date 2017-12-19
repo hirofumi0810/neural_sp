@@ -115,15 +115,14 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         self.decoder_num_layers_sub = decoder_num_layers_sub
         self.embedding_dim_sub = embedding_dim_sub
         self.num_classes_sub = num_classes_sub + 2
-        # NOTE: add <SOS> and <EOS>
         self.sos_index_sub = num_classes_sub + 1
         self.eos_index_sub = num_classes_sub
+        # NOTE: add <SOS> and <EOS>
 
         # Setting for MTL
         self.main_loss_weight = main_loss_weight
         self.sub_loss_weight = 1 - main_loss_weight - ctc_loss_weight_sub
         self.ctc_loss_weight_sub = ctc_loss_weight_sub
-        assert self.ctc_loss_weight * self.ctc_loss_weight_sub == 0
 
         #########################
         # Encoder
@@ -276,6 +275,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         labels_seq_len_sub_var = np2var(
             labels_seq_len_sub, dtype='int', use_cuda=self.use_cuda)
 
+        # Gaussian noise injection
+        if self.weight_noise_injection:
+            self._inject_weight_noise(mean=0., std=self.weight_noise_std)
+
         # Encode acoustic features
         encoder_outputs, encoder_final_state, encoder_outputs_sub, encoder_final_state_sub, perm_indices = self._encode(
             inputs_var, inputs_seq_len_var,
@@ -312,7 +315,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
-            log_probs = F.log_softmax(logits, dim=logits.dim() - 1)
+            log_probs = F.log_softmax(logits, dim=-1)
             uniform = Variable(torch.ones(
                 batch_size, label_num, num_classes)) / num_classes
             if self.use_cuda:
@@ -325,9 +328,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             pass
             # coverage = self._compute_coverage(attention_weights)
             # loss += coverage_weight * coverage
-        # TODO: sub taskも入れる？
+            # TODO: sub taskも入れる？
 
-        loss = xe_loss_main * self.main_loss_weight
+        xe_loss_main = xe_loss_main * self.main_loss_weight / batch_size
+        loss = xe_loss_main
 
         ##################################################
         # Sub task (attention)
@@ -354,8 +358,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
             # Label smoothing (with uniform distribution)
             if self.label_smoothing_prob > 0:
-                log_probs_sub = F.log_softmax(
-                    logits_sub, dim=logits_sub.dim() - 1)
+                log_probs_sub = F.log_softmax(logits_sub, dim=-1)
                 uniform_sub = Variable(torch.ones(
                     batch_size, label_num_sub, num_classes_sub)) / num_classes_sub
                 if self.use_cuda:
@@ -364,7 +367,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 xe_loss_sub += kl_div_sub(log_probs_sub, uniform_sub) * \
                     self.label_smoothing_prob
 
-            loss += xe_loss_sub * self.sub_loss_weight
+            xe_loss_sub = xe_loss_sub * self.sub_loss_weight / batch_size
+            loss += xe_loss_sub
 
         ##################################################
         # Sub task (CTC)
@@ -374,20 +378,16 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 encoder_outputs_sub, labels_sub_var,
                 inputs_seq_len_var, labels_seq_len_sub_var, is_sub_task=True)
             # NOTE: including modifying inputs_seq_len_sub
-            loss += ctc_loss_sub * self.ctc_loss_weight_sub
 
-        # Average the loss by mini-batch
-        batch_size = encoder_outputs.size(0)
-        loss /= batch_size
+            ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub / batch_size
+            loss += ctc_loss_sub
 
         self._step += 1
 
         if self.sub_loss_weight > self.ctc_loss_weight_sub:
-            return (loss, xe_loss_main * self.main_loss_weight / batch_size,
-                    xe_loss_sub * self.sub_loss_weight / batch_size)
+            return loss, xe_loss_main, xe_loss_sub
         else:
-            return (loss, xe_loss_main * self.main_loss_weight / batch_size,
-                    ctc_loss_sub * self.ctc_loss_weight_sub / batch_size)
+            return loss, xe_loss_main, ctc_loss_sub
 
     def decode(self, inputs, inputs_seq_len, beam_width=1,
                max_decode_length=100, is_sub_task=False):
@@ -413,7 +413,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 inputs_var, inputs_seq_len_var, volatile=True,
                 is_multi_task=True)
         else:
-            encoder_outputs, encoder_final_state, encoder_outputs_sub, encoder_final_state_sub, perm_indices = self._encode(
+            encoder_outputs, encoder_final_state, _, _, perm_indices = self._encode(
                 inputs_var, inputs_seq_len_var, volatile=True,
                 is_multi_task=True)
 
@@ -478,7 +478,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     beam_width, max_decode_length)
 
         # Remove <SOS>
-        best_hyps = best_hyps[:, 1:]
+        if not (is_sub_task and self.sub_loss_weight <= self.ctc_loss_weight_sub):
+            best_hyps = best_hyps[:, 1:]
 
         # Permutate indices to the original order
         if perm_indices is not None:

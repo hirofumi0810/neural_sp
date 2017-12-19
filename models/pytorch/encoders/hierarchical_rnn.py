@@ -146,14 +146,14 @@ class HierarchicalRNNEncoder(nn.Module):
             self.rnns.append(rnn)
 
     def forward(self, inputs, inputs_seq_len, volatile=True,
-                mask_sequence=True):
+                pack_sequence=True):
         """Forward computation.
         Args:
             inputs: A tensor of size `[B, T, input_size]`
             inputs_seq_len (IntTensor or LongTensor): A tensor of size `[B]`
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
-            mask_sequence (bool, optional): if True, mask by sequence
+            pack_sequence (bool, optional): if True, mask by sequence
                 lenghts of inputs
         Returns:
             outputs:
@@ -181,7 +181,7 @@ class HierarchicalRNNEncoder(nn.Module):
                            use_cuda=self.use_cuda,
                            volatile=volatile)
 
-        if mask_sequence:
+        if pack_sequence:
             # Sort inputs by lengths in descending order
             inputs_seq_len, perm_indices = inputs_seq_len.sort(
                 dim=0, descending=True)
@@ -204,7 +204,7 @@ class HierarchicalRNNEncoder(nn.Module):
         if self.conv is not None:
             inputs_seq_len = [self.conv_out_size(x, 1) for x in inputs_seq_len]
 
-        if mask_sequence:
+        if pack_sequence:
             # Pack encoder inputs
             inputs = pack_padded_sequence(
                 inputs, inputs_seq_len, batch_first=self.batch_first)
@@ -220,7 +220,7 @@ class HierarchicalRNNEncoder(nn.Module):
                 outputs_sub = outputs
                 h_n_sub = h_n
 
-        if mask_sequence:
+        if pack_sequence:
             # Unpack encoder outputs
             outputs, unpacked_seq_len = pad_packed_sequence(
                 outputs, batch_first=self.batch_first)

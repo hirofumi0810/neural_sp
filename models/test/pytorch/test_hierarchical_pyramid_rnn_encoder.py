@@ -87,7 +87,7 @@ class TestPyramidRNNEncoders(unittest.TestCase):
 
     @measure_time
     def check(self, encoder_type, bidirectional=False, batch_first=False,
-              subsample_type='concat', conv=False, mask_sequence=True,
+              subsample_type='concat', conv=False, pack_sequence=True,
               merge_bidirectional=False):
 
         print('==================================================')
@@ -96,7 +96,7 @@ class TestPyramidRNNEncoders(unittest.TestCase):
         print('  batch_first: %s' % str(batch_first))
         print('  subsample_type: %s' % subsample_type)
         print('  conv: %s' % str(conv))
-        print('  mask_sequence: %s' % str(mask_sequence))
+        print('  pack_sequence: %s' % str(pack_sequence))
         print('  merge_bidirectional: %s' % str(merge_bidirectional))
         print('==================================================')
 
@@ -174,7 +174,7 @@ class TestPyramidRNNEncoders(unittest.TestCase):
         max_time = int(max_time)
 
         outputs, final_state, outputs_sub, final_state_sub, perm_indices = encoder(
-            inputs, inputs_seq_len, mask_sequence=mask_sequence)
+            inputs, inputs_seq_len, pack_sequence=pack_sequence)
 
         # Check final state (forward)
         if not merge_bidirectional:

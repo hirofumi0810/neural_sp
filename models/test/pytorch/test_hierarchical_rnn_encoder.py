@@ -61,14 +61,14 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
 
     @measure_time
     def check(self, encoder_type, bidirectional=False, batch_first=True,
-              conv=False, mask_sequence=True, merge_bidirectional=False):
+              conv=False, pack_sequence=True, merge_bidirectional=False):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
         print('  batch_first: %s' % str(batch_first))
         print('  conv: %s' % str(conv))
-        print('  mask_sequence: %s' % str(mask_sequence))
+        print('  pack_sequence: %s' % str(pack_sequence))
         print('  merge_bidirectional: %s' % str(merge_bidirectional))
         print('==================================================')
 
@@ -139,7 +139,7 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
             max_time = encoder.conv.conv_out_size(max_time, 1)
 
         outputs, final_state, outputs_sub, final_state_sub, perm_indices = encoder(
-            inputs, inputs_seq_len, mask_sequence=mask_sequence)
+            inputs, inputs_seq_len, pack_sequence=pack_sequence)
 
         # Check final state (forward)
         if not merge_bidirectional:

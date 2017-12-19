@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Test hierarchical attention-besed models with word-character composition in pytorch."""
+"""Test nested attention-besed models with word-character composition in pytorch."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -15,7 +15,7 @@ import torch
 import torch.nn as nn
 
 sys.path.append('../../../')
-from models.pytorch.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
+from models.pytorch.attention.nested_attention_seq2seq import NestedAttentionSeq2seq
 from models.test.data import generate_data, idx2char, idx2word
 from utils.measure_time_func import measure_time
 from utils.io.variable import np2var, var2np
@@ -25,19 +25,21 @@ from utils.training.learning_rate_controller import Controller
 torch.manual_seed(2017)
 
 
-class TestHierarchicalAttentionC2W(unittest.TestCase):
+class TestNestedAttention(unittest.TestCase):
 
     def test(self):
-        print("Hierarchical Attention Working check.")
+        print("Nested Attention Working check.")
 
-        self.check(composition_case=None)
-        self.check(composition_case='hidden_level')
+        self.check(composition_case='hidden')
+        # self.check(composition_case='embedding')
+        # self.check(composition_case='hidden_embedding')
+        # self.check(composition_case='multiscale')
 
     @measure_time
     def check(self, composition_case,
               encoder_type='lstm', bidirectional=True, decoder_type='lstm',
               attention_type='location', subsample=True,
-              ctc_loss_weight=0, decoder_num_layers=1):
+              ctc_loss_weight=0, decoder_num_layers=2):
 
         print('==================================================')
         print('  composition_case: %s' % composition_case)
@@ -64,7 +66,7 @@ class TestHierarchicalAttentionC2W(unittest.TestCase):
         num_classes_sub = 27
 
         # Load model
-        model = HierarchicalAttentionSeq2seq(
+        model = NestedAttentionSeq2seq(
             input_size=inputs.shape[-1] // splice // num_stack,  # 120
             encoder_type=encoder_type,
             encoder_bidirectional=bidirectional,
@@ -87,7 +89,7 @@ class TestHierarchicalAttentionC2W(unittest.TestCase):
             num_classes=num_classes,
             num_classes_sub=num_classes_sub,
             parameter_init=0.1,
-            subsample_list=[] if not subsample else [True, True, False],
+            subsample_list=[] if not subsample else [False, True, False],
             init_dec_state_with_enc_state=True,
             sharpening_factor=1,
             logits_temperature=1,
@@ -102,7 +104,11 @@ class TestHierarchicalAttentionC2W(unittest.TestCase):
             conv_strides=[],
             poolings=[],
             batch_norm=False,
-            scheduled_sampling_prob=0,
+            scheduled_sampling_prob=0.1,
+            scheduled_sampling_ramp_max_step=100,
+            # label_smoothing_prob=0.1,
+            label_smoothing_prob=0,
+            weight_noise_std=0,
             composition_case=composition_case,
             space_index=0)
 
@@ -163,7 +169,7 @@ class TestHierarchicalAttentionC2W(unittest.TestCase):
             else:
                 optimizer.step()
 
-            if (step + 1) % 10 == 0:
+            if (step + 1) % 1000 == 0:
                 # ***Change to evaluation mode***
                 model.eval()
 

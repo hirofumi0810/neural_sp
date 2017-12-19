@@ -31,7 +31,6 @@ from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
 from utils.io.variable import np2var, var2np
 
-
 LOG_1 = 0
 
 
@@ -159,9 +158,9 @@ class AttentionSeq2seq(ModelBase):
         self.decoder_num_layers = decoder_num_layers
         self.embedding_dim = embedding_dim
         self.num_classes = num_classes + 2
-        # NOTE: Add <SOS> and <EOS>
         self.sos_index = num_classes + 1
         self.eos_index = num_classes
+        # NOTE: Add <SOS> and <EOS>
 
         # Setting for the attention
         self.init_dec_state_with_enc_state = init_dec_state_with_enc_state
@@ -258,7 +257,6 @@ class AttentionSeq2seq(ModelBase):
                 use_cuda=self.use_cuda,
                 batch_norm=batch_norm)
             raise NotImplementedError
-
             # TODO: consider how to initialize decoder states
         else:
             raise NotImplementedError
@@ -321,6 +319,7 @@ class AttentionSeq2seq(ModelBase):
             # Set CTC decoders
             self._decode_ctc_greedy_np = GreedyDecoder(blank_index=0)
             self._decode_ctc_beam_np = BeamSearchDecoder(blank_index=0)
+            # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
     def forward(self, inputs, labels, inputs_seq_len, labels_seq_len,
                 volatile=False):
@@ -421,7 +420,7 @@ class AttentionSeq2seq(ModelBase):
             labels_seq_len (IntTensor): A tensor of size `[B]`
             is_sub_task (bool, optional):
         Returns:
-            ctc_loss (FloatTensor):
+            ctc_loss (FloatTensor): A tensor of size `[]`
         """
         if is_sub_task:
             logits_ctc = self.fc_ctc_sub(encoder_outputs)
@@ -483,10 +482,10 @@ class AttentionSeq2seq(ModelBase):
         """
         if is_multi_task:
             encoder_outputs, encoder_final_state, encoder_outputs_sub, encoder_final_state_sub, perm_indices = self.encoder(
-                inputs, inputs_seq_len, volatile, mask_sequence=True)
+                inputs, inputs_seq_len, volatile, pack_sequence=True)
         else:
             encoder_outputs, encoder_final_state, perm_indices = self.encoder(
-                inputs, inputs_seq_len, volatile, mask_sequence=True)
+                inputs, inputs_seq_len, volatile, pack_sequence=True)
         # NOTE: encoder_outputs:
         # `[B, T_in, encoder_num_units * encoder_num_directions]`
         # encoder_final_state: `[1, B, encoder_num_units]`
@@ -520,7 +519,7 @@ class AttentionSeq2seq(ModelBase):
                 `[B, T_in, encoder_num_units]`
             labels (LongTensor): A tensor of size `[B, T_out]`
             encoder_final_state (FloatTensor, optional): A tensor of size
-                `[1, B, encoder_num_units]`
+                `[1, B, decoder_num_units]`
             is_sub_task (bool, optional):
         Returns:
             logits (FloatTensor): A tensor of size `[B, T_out, num_classes]`
@@ -535,13 +534,14 @@ class AttentionSeq2seq(ModelBase):
 
         # Initialize attention weights
         attention_weights_step = Variable(torch.zeros(batch_size, max_time))
-        if self.use_cuda:
-            attention_weights_step = attention_weights_step.cuda()
 
         # Initialize context vector
-        context_vector = torch.sum(
-            encoder_outputs * attention_weights_step.unsqueeze(dim=2),
-            dim=1, keepdim=True)
+        context_vector = Variable(
+            torch.zeros(batch_size, 1, encoder_outputs.size(2)))
+
+        if self.use_cuda:
+            attention_weights_step = attention_weights_step.cuda()
+            context_vector = context_vector.cuda()
 
         logits = []
         attention_weights = []
@@ -823,13 +823,14 @@ class AttentionSeq2seq(ModelBase):
         # Initialize attention weights
         attention_weights_step = Variable(torch.zeros(batch_size, max_time))
         attention_weights_step.volatile = True
-        if self.use_cuda:
-            attention_weights_step = attention_weights_step.cuda()
 
         # Initialize context vector
-        context_vector = torch.sum(
-            encoder_outputs * attention_weights_step.unsqueeze(dim=2),
-            dim=1, keepdim=True)
+        context_vector = Variable(
+            torch.zeros(batch_size, 1, encoder_outputs.size(2)))
+
+        if self.use_cuda:
+            attention_weights_step = attention_weights_step.cuda()
+            context_vector = context_vector.cuda()
 
         # Start from <SOS>
         sos = self.sos_index_sub if is_sub_task else self.sos_index
@@ -923,14 +924,14 @@ class AttentionSeq2seq(ModelBase):
             max_time = inputs_seq_len.data[i_batch]
             attention_weights_step = Variable(torch.zeros(1, max_time))
             attention_weights_step.volatile = True
-            if self.use_cuda:
-                attention_weights_step = attention_weights_step.cuda()
 
             # Initialize context vector
-            context_vector = torch.sum(
-                encoder_outputs[i_batch:i_batch + 1] *
-                attention_weights_step.unsqueeze(dim=2),
-                dim=1, keepdim=True)
+            context_vector = Variable(
+                torch.zeros(1, 1, encoder_outputs.size(2)))
+
+            if self.use_cuda:
+                attention_weights_step = attention_weights_step.cuda()
+                context_vector = context_vector.cuda()
 
             beam.append([([self.sos_index], LOG_1,
                           decoder_state, attention_weights_step, context_vector)])
