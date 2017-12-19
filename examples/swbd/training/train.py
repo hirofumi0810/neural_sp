@@ -117,7 +117,8 @@ def main():
         shuffle=True, save_format=params['save_format'])
 
     # Count total parameters
-    for name, num_params in model.num_params_dict.items():
+    for name in sorted(list(model.num_params_dict.keys())):
+        num_params = model.num_params_dict[name]
         print("%s %d" % (name, num_params))
     print("Total %.3f M parameters" % (model.total_parameters / 1000000))
 
@@ -215,7 +216,13 @@ def main():
             plot_loss(csv_loss_train, csv_loss_dev, csv_steps,
                       save_path=model.save_path)
 
-            if train_data.epoch >= params['eval_start_epoch']:
+            if train_data.epoch < params['eval_start_epoch']:
+                # Save the model
+                saved_path = model.save_checkpoint(
+                    model.save_path, epoch=train_data.epoch)
+                print("=> Saved checkpoint (epoch:%d): %s" %
+                      (train_data.epoch, saved_path))
+            else:
                 # ***Change to evaluation mode***
                 model.eval()
 
@@ -240,8 +247,7 @@ def main():
                         beam_width=1,
                         max_decode_length=MAX_DECODE_LENGTH_WORD,
                         eval_batch_size=1)
-                    print('  WER (clean): %f %%' %
-                          (metric_dev_epoch * 100))
+                    print('  WER: %f %%' % (metric_dev_epoch * 100))
 
                 if metric_dev_epoch < ler_dev_best:
                     ler_dev_best = metric_dev_epoch
