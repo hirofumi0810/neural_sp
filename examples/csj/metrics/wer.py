@@ -69,7 +69,7 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
             # Reference
             ##############################
             if dataset.is_test:
-                str_true = labels[i_batch][0].split('_')
+                str_true = labels[i_batch][0]
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string

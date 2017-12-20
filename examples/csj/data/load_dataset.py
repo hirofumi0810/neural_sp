@@ -93,8 +93,9 @@ class Dataset(DatasetBase):
         # Remove inappropriate utteraces
         if not self.is_test:
             print('Original utterance num: %d' % len(df))
-            df = df[df.apply(lambda x: 40 <= x['frame_num'] <= 2000, axis=1)]
+            df = df[df.apply(lambda x: 40 <= x['frame_num'] <= 1800, axis=1)]
             # NOTE: 20s >: 11 utteraces
+            # NOTE: 18s >: 13 utteraces
             if data_type == 'dev':
                 df = df[:4000]
             print('Restricted utterance num: %d' % len(df))

@@ -21,10 +21,9 @@ param:
   encoder_bidirectional: True
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 6
-  encoder_num_layers_sub: 4
+  encoder_num_layers: 5
+  encoder_num_layers_sub: 3
   subsample_list:
-    - False
     - True
     - True
     - False
@@ -50,7 +49,7 @@ param:
   batch_norm: False
 
   # optimization
-  batch_size: 32
+  batch_size: 20
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 50
@@ -74,13 +73,13 @@ param:
   weight_noise_std: 0
 
   # annealing
-  decay_start_epoch: 10
+  decay_start_epoch: 20
   decay_rate: 0.5
   decay_patient_epoch: 3
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
-  eval_start_epoch: 10
-  print_step: 2000
+  eval_start_epoch: 20
+  print_step: 1000
 
   # MTL
   main_loss_weight: 0.5

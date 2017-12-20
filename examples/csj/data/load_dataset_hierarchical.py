@@ -107,10 +107,11 @@ class Dataset(DatasetBase):
         if not self.is_test:
             print('Original utterance num (main): %d' % len(df))
             print('Original utterance num (sub): %d' % len(df_sub))
-            df = df[df.apply(lambda x: 40 <= x['frame_num'] <= 2000, axis=1)]
+            df = df[df.apply(lambda x: 40 <= x['frame_num'] <= 1800, axis=1)]
             df_sub = df_sub[df_sub.apply(
-                lambda x: 40 <= x['frame_num'] <= 2000, axis=1)]
+                lambda x: 40 <= x['frame_num'] <= 1800, axis=1)]
             # NOTE: 20s >: 11 utteraces
+            # NOTE: 18s >: 13 utteraces
             if data_type == 'dev':
                 df = df[:4000]
                 df_sub = df_sub[:4000]
