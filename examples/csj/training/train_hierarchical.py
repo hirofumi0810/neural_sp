@@ -27,6 +27,7 @@ from utils.training.training_loop import train_hierarchical_step
 from utils.directory import mkdir_join, mkdir
 from utils.io.variable import np2var, var2np
 
+MAX_DECODE_LENGTH_POS = 60
 MAX_DECODE_LENGTH_WORD = 60
 MAX_DECODE_LENGTH_CHAR = 100
 
@@ -275,15 +276,27 @@ def main():
 
                 start_time_eval = time.time()
                 print('=== Dev Data Evaluation ===')
-                wer_dev_epoch = do_eval_wer(
-                    model=model,
-                    model_type=params['model_type'],
-                    dataset=dev_data,
-                    label_type=params['label_type'],
-                    data_size=params['data_size'],
-                    beam_width=1,
-                    max_decode_length=MAX_DECODE_LENGTH_WORD,
-                    eval_batch_size=1)
+                if param['label_type'] == 'pos':
+                    wer_dev_epoch = do_eval_wer(
+                        model=model,
+                        model_type=params['model_type'],
+                        dataset=dev_data,
+                        label_type=params['label_type_sub'],
+                        data_size=params['data_size'],
+                        beam_width=1,
+                        max_decode_length=MAX_DECODE_LENGTH_WORD,
+                        eval_batch_size=1,
+                        is_pos=True)
+                else:
+                    wer_dev_epoch = do_eval_wer(
+                        model=model,
+                        model_type=params['model_type'],
+                        dataset=dev_data,
+                        label_type=params['label_type'],
+                        data_size=params['data_size'],
+                        beam_width=1,
+                        max_decode_length=MAX_DECODE_LENGTH_WORD,
+                        eval_batch_size=1)
                 print('  WER: %f %%' % (wer_dev_epoch * 100))
 
                 if wer_dev_epoch < wer_dev_best:
@@ -298,42 +311,68 @@ def main():
                           (train_data.epoch, saved_path))
 
                     print('=== Test Data Evaluation ===')
-                    # eval1
-                    wer_eval1 = do_eval_wer(
-                        model=model,
-                        model_type=params['model_type'],
-                        dataset=eval1_data,
-                        label_type=params['label_type'],
-                        data_size=params['data_size'],
-                        beam_width=args.beam_width,
-                        max_decode_length=MAX_DECODE_LENGTH_WORD,
-                        eval_batch_size=1)
+                    if param['label_type'] == 'pos':
+                        wer_eval1 = do_eval_wer(
+                            model=model,
+                            model_type=params['model_type'],
+                            dataset=eval1_data,
+                            label_type=params['label_type_sub'],
+                            data_size=params['data_size'],
+                            beam_width=args.beam_width,
+                            max_decode_length=MAX_DECODE_LENGTH_WORD,
+                            eval_batch_size=1,
+                            is_pos=True)
+                        wer_eval2 = do_eval_wer(
+                            model=model,
+                            model_type=params['model_type'],
+                            dataset=eval2_data,
+                            label_type=params['label_type_sub'],
+                            data_size=params['data_size'],
+                            beam_width=args.beam_width,
+                            max_decode_length=MAX_DECODE_LENGTH_WORD,
+                            eval_batch_size=1,
+                            is_pos=True)
+                        wer_eval3 = do_eval_wer(
+                            model=model,
+                            model_type=params['model_type'],
+                            dataset=eval3_data,
+                            label_type=params['label_type_sub'],
+                            data_size=params['data_size'],
+                            beam_width=args.beam_width,
+                            max_decode_length=MAX_DECODE_LENGTH_WORD,
+                            eval_batch_size=1,
+                            is_pos=True)
+                    else:
+                        wer_eval1 = do_eval_wer(
+                            model=model,
+                            model_type=params['model_type'],
+                            dataset=eval1_data,
+                            label_type=params['label_type'],
+                            data_size=params['data_size'],
+                            beam_width=args.beam_width,
+                            max_decode_length=MAX_DECODE_LENGTH_WORD,
+                            eval_batch_size=1)
+                        wer_eval2 = do_eval_wer(
+                            model=model,
+                            model_type=params['model_type'],
+                            dataset=eval2_data,
+                            label_type=params['label_type'],
+                            data_size=params['data_size'],
+                            beam_width=args.beam_width,
+                            max_decode_length=MAX_DECODE_LENGTH_WORD,
+                            eval_batch_size=1)
+                        wer_eval3 = do_eval_wer(
+                            model=model,
+                            model_type=params['model_type'],
+                            dataset=eval3_data,
+                            label_type=params['label_type'],
+                            data_size=params['data_size'],
+                            beam_width=args.beam_width,
+                            max_decode_length=MAX_DECODE_LENGTH_WORD,
+                            eval_batch_size=1)
                     print('  WER (eval1, main): %f %%' % (wer_eval1 * 100))
-
-                    # eval2
-                    wer_eval2 = do_eval_wer(
-                        model=model,
-                        model_type=params['model_type'],
-                        dataset=eval2_data,
-                        label_type=params['label_type'],
-                        data_size=params['data_size'],
-                        beam_width=args.beam_width,
-                        max_decode_length=MAX_DECODE_LENGTH_WORD,
-                        eval_batch_size=1)
                     print('  WER (eval2, main): %f %%' % (wer_eval2 * 100))
-
-                    # eval3
-                    wer_eval3 = do_eval_wer(
-                        model=model,
-                        model_type=params['model_type'],
-                        dataset=eval3_data,
-                        label_type=params['label_type'],
-                        data_size=params['data_size'],
-                        beam_width=args.beam_width,
-                        max_decode_length=MAX_DECODE_LENGTH_WORD,
-                        eval_batch_size=1)
                     print('  WER (eval3, main): %f %%' % (wer_eval3 * 100))
-
                     print('  WER (mean, main): %f %%' %
                           ((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3))
                 else:

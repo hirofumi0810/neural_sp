@@ -16,7 +16,7 @@ from utils.evaluation.edit_distance import compute_wer, wer_align
 
 def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
                 max_decode_length, eval_batch_size=None,
-                progressbar=False):
+                progressbar=False, is_pos=False):
     """Evaluate trained model by Character Error Rate.
     Args:
         model: the model to evaluate
@@ -31,6 +31,7 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
             This is used for seq2seq models.
         eval_batch_size (int, optional): the batch size when evaluating the model
         progressbar (bool, optional): if True, visualize the progressbar
+        is_pos (bool, optional):
     Returns:
         wer_mean (float): An average of WER
     """
@@ -55,13 +56,17 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
         if model_type in ['ctc', 'attention']:
             inputs, labels, inputs_seq_len, labels_seq_len, _ = batch
         elif model_type in ['hierarchical_ctc', 'hierarchical_attention']:
-            inputs, labels, _, inputs_seq_len, labels_seq_len, _,  _ = batch
+            if is_pos:
+                inputs, _, labels, inputs_seq_len, _, labels_seq_len, _ = batch
+            else:
+                inputs, labels, _, inputs_seq_len, labels_seq_len, _,  _ = batch
 
         # Decode
         labels_pred = model.decode(
             inputs, inputs_seq_len,
             beam_width=beam_width,
-            max_decode_length=max_decode_length)
+            max_decode_length=max_decode_length,
+            is_sub_task=is_pos)
 
         for i_batch in range(inputs.shape[0]):
 
