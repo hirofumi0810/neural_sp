@@ -55,18 +55,24 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
 
         if model_type in ['ctc', 'attention']:
             inputs, labels, inputs_seq_len, labels_seq_len, _ = batch
+
+            # Decode
+            labels_pred = model.decode(
+                inputs, inputs_seq_len,
+                beam_width=beam_width,
+                max_decode_length=max_decode_length)
+
         elif model_type in ['hierarchical_ctc', 'hierarchical_attention']:
             if is_pos:
                 inputs, _, labels, inputs_seq_len, _, labels_seq_len, _ = batch
             else:
                 inputs, labels, _, inputs_seq_len, labels_seq_len, _,  _ = batch
 
-        # Decode
-        labels_pred = model.decode(
-            inputs, inputs_seq_len,
-            beam_width=beam_width,
-            max_decode_length=max_decode_length,
-            is_sub_task=is_pos)
+            # Decode
+            labels_pred = model.decode(inputs, inputs_seq_len,
+                                       beam_width=beam_width,
+                                       max_decode_length=max_decode_length,
+                                       is_sub_task=is_pos)
 
         for i_batch in range(inputs.shape[0]):
 

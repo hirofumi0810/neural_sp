@@ -189,55 +189,57 @@ def main():
     wer_dev_best = 1
     not_improved_epoch = 0
     learning_rate = float(params['learning_rate'])
-    loss_val_train, loss_main_val_train, loss_sub_val_train = 0., 0., 0.
+    loss_val_train_mean, loss_main_val_train_mean, loss_sub_val_train_mean = 0., 0., 0.
+    loss_val_dev_mean, loss_main_val_dev_mean, loss_sub_val_dev_mean = 0., 0., 0.
     for step, (batch, is_new_epoch) in enumerate(train_data):
 
-        model, optimizer, loss_val_train_tmp, loss_main_val_train_tmp, loss_sub_val_train_tmp = train_hierarchical_step(
+        # Compute loss in the training set (including parameter update)
+        model, optimizer, loss_val_train, loss_main_val_train, loss_sub_val_train = train_hierarchical_step(
             model, optimizer, batch, params['clip_grad_norm'])
+        loss_val_train_mean += loss_val_train
+        loss_main_val_train_mean += loss_main_val_train
+        loss_sub_val_train_mean += loss_sub_val_train
 
-        loss_val_train += loss_val_train_tmp
-        loss_main_val_train += loss_main_val_train_tmp
-        loss_sub_val_train += loss_sub_val_train_tmp
-
-        # Inject Gaussian noise to all parameters
-        # if float(params['weight_noise_std']) > 0 and learning_rate < float(params['learning_rate']):
-        #     model.weight_noise_injection = True
-
-        if (step + 1) % params['print_step'] == 0:
-
+        if (step + 1) % (params['print_step'] // 10) == 0:
+            # Compute loss in the dev set
             inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub, _ = dev_data.next()[
                 0]
-
-            # ***Change to evaluation mode***
             model.eval()
-
-            # Compute loss in the dev set
             loss_dev, loss_main_dev, loss_sub_dev = model(
                 inputs, labels, labels_sub, inputs_seq_len,
                 labels_seq_len, labels_seq_len_sub, volatile=True)
-
-            # ***Change to training mode***
+            loss_val_dev_mean += loss_dev.data[0]
+            loss_main_val_dev_mean += loss_main_dev.data[0]
+            loss_sub_val_dev_mean += loss_sub_dev.data[0]
             model.train()
 
-            loss_val_train /= params['print_step']
-            loss_main_val_train /= params['print_step']
-            loss_sub_val_train /= params['print_step']
-            loss_val_dev = loss_dev.data[0]
-            loss_main_val_dev = loss_main_dev.data[0]
-            loss_sub_val_dev = loss_sub_dev.data[0]
+        # Inject Gaussian noise to all parameters
+        if float(params['weight_noise_std']) > 0 and learning_rate < float(params['learning_rate']):
+            model.weight_noise_injection = True
+
+        if (step + 1) % params['print_step'] == 0:
+
+            loss_val_train_mean /= params['print_step']
+            loss_main_val_train_mean /= params['print_step']
+            loss_sub_val_train_mean /= params['print_step']
+            loss_val_dev_mean /= (params['print_step'] // 10)
+            loss_main_val_dev_mean /= (params['print_step'] // 10)
+            loss_sub_val_dev_mean /= (params['print_step'] // 10)
             csv_steps.append(step)
-            csv_loss_train.append(loss_val_train)
-            csv_loss_dev.append(loss_val_dev)
+            csv_loss_train.append(loss_val_train_mean)
+            csv_loss_dev.append(loss_val_dev_mean)
 
             # Logging by tensorboard
-            tf_writer.add_scalar('train/loss', loss_val_train, step + 1)
+            tf_writer.add_scalar('train/loss', loss_val_train_mean, step + 1)
             tf_writer.add_scalar(
                 'train/loss_main', loss_main_val_train, step + 1)
             tf_writer.add_scalar(
                 'train/loss_sub', loss_sub_val_train, step + 1)
-            tf_writer.add_scalar('dev/loss', loss_val_dev, step + 1)
-            tf_writer.add_scalar('dev/loss_main', loss_main_val_dev, step + 1)
-            tf_writer.add_scalar('dev/loss_sub', loss_sub_val_dev, step + 1)
+            tf_writer.add_scalar('dev/loss', loss_val_dev_mean, step + 1)
+            tf_writer.add_scalar(
+                'dev/loss_main', loss_main_val_dev_mean, step + 1)
+            tf_writer.add_scalar(
+                'dev/loss_sub', loss_sub_val_dev_mean, step + 1)
             for name, param in model.named_parameters():
                 name = name.replace('.', '/')
                 tf_writer.add_histogram(name, var2np(param.clone()), step + 1)
@@ -248,11 +250,12 @@ def main():
             print("Step %d (epoch: %.3f): loss = %.3f/%.3f (%.3f/%.3f) / lr = %.5f (%.3f min)" %
                   (step + 1, train_data.epoch_detail,
                    loss_main_val_train, loss_sub_val_train,
-                   loss_main_val_dev, loss_sub_val_dev,
+                   loss_main_val_dev_mean, loss_sub_val_dev_mean,
                    learning_rate, duration_step / 60))
             sys.stdout.flush()
             start_time_step = time.time()
-            loss_val_train, loss_main_val_train, loss_sub_val_train = 0., 0., 0.
+            loss_val_train_mean, loss_main_val_train_mean, loss_sub_val_train_mean = 0., 0., 0.
+            loss_val_dev_mean, loss_main_val_dev_mean, loss_sub_val_dev_mean = 0., 0., 0.
 
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:

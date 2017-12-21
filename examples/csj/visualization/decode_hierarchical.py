@@ -23,11 +23,11 @@ parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
 parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
+parser.add_argument('--eval_batch_size', type=int, default=1,
+                    help='the size of mini-batch in evaluation')
 parser.add_argument('--beam_width', type=int, default=1,
                     help='beam_width (int, optional): beam width for beam search.' +
                     ' 1 disables beam search, which mean greedy decoding.')
-parser.add_argument('--eval_batch_size', type=int, default=1,
-                    help='the size of mini-batch in evaluation')
 parser.add_argument('--max_decode_length', type=int, default=60,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
 parser.add_argument('--max_decode_length_sub', type=int, default=100,
@@ -92,22 +92,25 @@ def main():
            dataset=test_data,
            beam_width=args.beam_width,
            max_decode_length=args.max_decode_length,
+           max_decode_length_sub=args.max_decode_length_sub,
            eval_batch_size=args.eval_batch_size,
            save_path=None)
     # save_path=args.model_path)
 
 
 def decode(model, model_type, dataset, beam_width,
-           max_decode_length=100, eval_batch_size=None, save_path=None):
+           max_decode_length, max_decode_length_sub,
+           eval_batch_size=None, save_path=None):
     """Visualize label outputs.
     Args:
         model: the model to evaluate
         model_type (string): hierarchical_ctc or hierarchical_attention
         dataset: An instance of a `Dataset` class
         beam_width: (int): the size of beam
-        max_decode_length (int, optional): the length of output sequences
+        max_decode_length (int): the length of output sequences
             to stop prediction when EOS token have not been emitted.
             This is used for seq2seq models.
+        max_decode_length_sub (int):
         eval_batch_size (int, optional): the batch size when evaluating the model
         save_path (string): path to save decoding results
     """
@@ -115,12 +118,20 @@ def decode(model, model_type, dataset, beam_width,
     if eval_batch_size is not None:
         dataset.batch_size = eval_batch_size
 
-    idx2word = Idx2word(
-        vocab_file_path='../metrics/vocab_files/' +
-        dataset.label_type + '_' + dataset.data_size + '.txt')
-    idx2char = Idx2char(
-        vocab_file_path='../metrics/vocab_files/' +
-        dataset.label_type_sub + '_' + dataset.data_size + '.txt')
+    if dataset.label_type == 'pos':
+        map_fn_main = Idx2word(
+            vocab_file_path='../metrics/vocab_files/' +
+            dataset.label_type + '_' + dataset.data_size + '.txt')
+        map_fn_sub = Idx2word(
+            vocab_file_path='../metrics/vocab_files/' +
+            dataset.label_type_sub + '_' + dataset.data_size + '.txt')
+    else:
+        map_fn_main = Idx2word(
+            vocab_file_path='../metrics/vocab_files/' +
+            dataset.label_type + '_' + dataset.data_size + '.txt')
+        map_fn_sub = Idx2char(
+            vocab_file_path='../metrics/vocab_files/' +
+            dataset.label_type_sub + '_' + dataset.data_size + '.txt')
 
     if save_path is not None:
         sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
@@ -130,15 +141,13 @@ def decode(model, model_type, dataset, beam_width,
         inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub, input_names = batch
 
         # Decode
-        labels_pred = model.decode(
-            inputs, inputs_seq_len,
-            beam_width=beam_width,
-            max_decode_length=max_decode_length)
-        labels_pred_sub = model.decode(
-            inputs, inputs_seq_len,
-            beam_width=beam_width,
-            max_decode_length=max_decode_length,
-            is_sub_task=True)
+        labels_pred = model.decode(inputs, inputs_seq_len,
+                                   beam_width=beam_width,
+                                   max_decode_length=max_decode_length)
+        labels_pred_sub = model.decode(inputs, inputs_seq_len,
+                                       beam_width=beam_width,
+                                       max_decode_length=max_decode_length_sub,
+                                       is_sub_task=True)
 
         for i_batch in range(inputs.shape[0]):
             print('----- wav: %s -----' % input_names[i_batch])
@@ -148,23 +157,28 @@ def decode(model, model_type, dataset, beam_width,
             ##############################
             if dataset.is_test:
                 str_true = labels[i_batch][0]
+                str_true_sub = labels_sub[i_batch][0]
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
                 if model_type == 'hierarchical_ctc':
-                    str_true = idx2word(
+                    str_true = map_fn_main(
                         labels[i_batch][:labels_seq_len[i_batch]])
+                    str_true_sub = map_fn_main(
+                        labels_sub[i_batch][:labels_seq_len_sub[i_batch]])
                 elif model_type == 'hierarchical_attention':
-                    str_true = idx2word(
+                    str_true = map_fn_main(
                         labels[i_batch][1:labels_seq_len[i_batch] - 1])
+                    str_true_sub = map_fn_main(
+                        labels_sub[i_batch][1:labels_seq_len_sub[i_batch] - 1])
                     # NOTE: Exclude <SOS> and <EOS>
 
             ##############################
             # Hypothesis
             ##############################
             # Convert from list of index to string
-            str_pred = idx2word(labels_pred[i_batch])
-            str_pred_sub = idx2char(labels_pred_sub[i_batch])
+            str_pred = map_fn_main(labels_pred[i_batch])
+            str_pred_sub = map_fn_sub(labels_pred_sub[i_batch])
 
             if model_type == 'hierarchical_attention':
                 str_pred = str_pred.split('>')[0]
@@ -177,9 +191,10 @@ def decode(model, model_type, dataset, beam_width,
                 if len(str_pred_sub) > 0 and str_pred_sub[-1] == '_':
                     str_pred_sub = str_pred_sub[:-1]
 
-            print('Ref       : %s' % str_true.replace('_', ' '))
-            print('Hyp (word): %s' % str_pred.replace('_', ' '))
-            print('Hyp (char): %s' % str_pred_sub.replace('_', ' '))
+            print('Ref (main): %s' % str_true.replace('_', ' '))
+            print('Hyp (main): %s' % str_pred.replace('_', ' '))
+            print('Ref (sub): %s' % str_true_sub.replace('_', ' '))
+            print('Hyp (sub): %s' % str_pred_sub.replace('_', ' '))
 
         if is_new_epoch:
             break
