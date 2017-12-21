@@ -18,6 +18,8 @@ param:
   model_type: ctc
   encoder_type: cnn
   bidirectional: False
+  residual: False
+  dense_residual: False
   num_units: 0
   num_proj: 0
   num_layers: 0

@@ -18,10 +18,13 @@ param:
   model_type: ctc
   encoder_type: lstm
   bidirectional: True
+  residual: False
+  dense_residual: False
   num_units: 320
   num_proj: 0
-  num_layers: 4
+  num_layers: 5
   subsample_list:
+    - False
     - False
     - False
     - False

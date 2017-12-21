@@ -18,6 +18,8 @@ param:
   model_type: attention
   encoder_type: lstm
   encoder_bidirectional: True
+  residual: False
+  dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
   encoder_num_layers: 5

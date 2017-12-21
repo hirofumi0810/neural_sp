@@ -18,6 +18,8 @@ param:
   model_type: ctc
   encoder_type: lstm
   bidirectional: True
+  residual: False
+  dense_residual: False
   num_units: 320
   num_proj: 0
   num_layers: 5
@@ -35,7 +37,7 @@ param:
   batch_norm: False
 
   # optimization
-  batch_size: 32
+  batch_size: 25
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 50
