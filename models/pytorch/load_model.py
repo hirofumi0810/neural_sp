@@ -49,7 +49,9 @@ def load(model_type, params):
             poolings=params['poolings'],
             activation=params['activation'],
             batch_norm=params['batch_norm'],
-            weight_noise_std=params['weight_noise_std'])
+            weight_noise_std=params['weight_noise_std'],
+            residual=params['residual'],
+            dense_residual=params['dense_residual'])
 
         model.name = params['encoder_type']
         if sum(params['subsample_list']) > 0:
@@ -80,6 +82,10 @@ def load(model_type, params):
             model.name += '_noise' + str(params['weight_noise_std'])
         if params['encoder_type'] == 'cnn':
             model.name += '_' + params['activation']
+        if bool(params['residual']):
+            model.naem += '_residual'
+        if bool(params['dense_residual']):
+            model.name += '_dense_residual'
 
     elif model_type == 'student_ctc':
         if 'activation' not in params.keys():

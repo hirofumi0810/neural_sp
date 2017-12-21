@@ -23,6 +23,28 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
     def test(self):
         print("Hierarchical RNN Encoders Working check.")
 
+        # Projection layer
+        self.check(encoder_type='lstm', bidirectional=False,
+                   projection=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   projection=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   batch_first=False, projection=True)
+
+        # Residual connection
+        self.check(encoder_type='lstm', bidirectional=False,
+                   residual=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   residual=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   batch_first=False, residual=True)
+        self.check(encoder_type='lstm', bidirectional=False,
+                   dense_residual=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   dense_residual=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   batch_first=False, dense_residual=True)
+
         # Conv
         self.check(encoder_type='lstm', bidirectional=True,
                    conv=True)
@@ -61,7 +83,8 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
 
     @measure_time
     def check(self, encoder_type, bidirectional=False, batch_first=True,
-              conv=False, pack_sequence=True, merge_bidirectional=False):
+              conv=False, pack_sequence=True, merge_bidirectional=False,
+              projection=False, residual=False, dense_residual=False):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
@@ -70,6 +93,9 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
         print('  conv: %s' % str(conv))
         print('  pack_sequence: %s' % str(pack_sequence))
         print('  merge_bidirectional: %s' % str(merge_bidirectional))
+        print('  projection: %s' % str(projection))
+        print('  residual: %s' % str(residual))
+        print('  dense_residual: %s' % str(dense_residual))
         print('==================================================')
 
         if conv:
@@ -111,28 +137,27 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
         encoder = load(encoder_type=encoder_type + '_hierarchical')
 
         # Initialize encoder
-        if encoder_type in ['lstm', 'gru', 'rnn']:
-            encoder = encoder(
-                input_size=inputs.size(-1) // splice // num_stack,  # 120
-                rnn_type=encoder_type,
-                bidirectional=bidirectional,
-                num_units=256,
-                num_proj=0,
-                num_layers=5,
-                num_layers_sub=3,
-                dropout=0.2,
-                parameter_init=0.1,
-                batch_first=batch_first,
-                merge_bidirectional=merge_bidirectional,
-                splice=splice,
-                num_stack=num_stack,
-                conv_channels=conv_channels,
-                conv_kernel_sizes=conv_kernel_sizes,
-                conv_strides=conv_strides,
-                poolings=poolings,
-                batch_norm=True)
-        else:
-            raise NotImplementedError
+        encoder = encoder(
+            input_size=inputs.size(-1) // splice // num_stack,  # 120
+            rnn_type=encoder_type,
+            bidirectional=bidirectional,
+            num_units=256,
+            num_proj=0,
+            num_layers=5,
+            num_layers_sub=3,
+            dropout=0.2,
+            parameter_init=0.1,
+            batch_first=batch_first,
+            merge_bidirectional=merge_bidirectional,
+            splice=splice,
+            num_stack=num_stack,
+            conv_channels=conv_channels,
+            conv_kernel_sizes=conv_kernel_sizes,
+            conv_strides=conv_strides,
+            poolings=poolings,
+            batch_norm=True,
+            residual=residual,
+            dense_residual=dense_residual)
 
         max_time = inputs.size(1)
         if conv:
@@ -142,7 +167,7 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
             inputs, inputs_seq_len, pack_sequence=pack_sequence)
 
         # Check final state (forward)
-        if not merge_bidirectional:
+        if not (merge_bidirectional or residual or dense_residual):
             print('----- Check hidden states (forward) -----')
             if batch_first:
                 outputs_fw_final = outputs.transpose(

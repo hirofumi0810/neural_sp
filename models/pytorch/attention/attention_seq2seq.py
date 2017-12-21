@@ -93,6 +93,8 @@ class AttentionSeq2seq(ModelBase):
         scheduled_sampling_ramp_max_step (float, optional):
         label_smoothing_prob (float, optional):
         weight_noise_std (flaot, optional):
+        residual (bool, optional):
+        dense_residual (bool, optional):
     """
 
     def __init__(self,
@@ -133,7 +135,9 @@ class AttentionSeq2seq(ModelBase):
                  scheduled_sampling_prob=0,
                  scheduled_sampling_ramp_max_step=0,
                  label_smoothing_prob=0,
-                 weight_noise_std=0):
+                 weight_noise_std=0,
+                 residual=False,
+                 dense_residual=False):
 
         super(ModelBase, self).__init__()
 
@@ -218,7 +222,9 @@ class AttentionSeq2seq(ModelBase):
                     conv_strides=conv_strides,
                     poolings=poolings,
                     activation=activation,
-                    batch_norm=batch_norm)
+                    batch_norm=batch_norm,
+                    residual=residual,
+                    dense_residual=dense_residual)
             else:
                 # Pyramidal encoder
                 self.encoder = encoder(

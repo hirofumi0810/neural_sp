@@ -10,6 +10,7 @@ from __future__ import print_function
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
+from models.pytorch.linear import LinearND
 from models.pytorch.encoders.rnn_utils import _init_hidden
 # from models.pytorch.encoders.cnn import CNNEncoder
 from models.pytorch.encoders.cnn_v2 import CNNEncoder
@@ -43,6 +44,8 @@ class HierarchicalRNNEncoder(nn.Module):
         activation (string, optional): The activation function of CNN layers.
             Choose from relu or prelu or hard_tanh or maxout
         batch_norm (bool, optional):
+        residual (bool, optional):
+        dense_residual (bool, optional):
     """
 
     def __init__(self,
@@ -65,7 +68,9 @@ class HierarchicalRNNEncoder(nn.Module):
                  conv_strides=[],
                  poolings=[],
                  activation='relu',
-                 batch_norm=False):
+                 batch_norm=False,
+                 residual=False,
+                 dense_residual=False):
 
         super(HierarchicalRNNEncoder, self).__init__()
 
@@ -77,12 +82,15 @@ class HierarchicalRNNEncoder(nn.Module):
         self.bidirectional = bidirectional
         self.num_directions = 2 if bidirectional else 1
         self.num_units = num_units
-        self.num_proj = num_proj
+        self.num_proj = num_proj if num_proj is not None else 0
         self.num_layers = num_layers
         self.num_layers_sub = num_layers_sub
         self.use_cuda = use_cuda
         self.batch_first = batch_first
         self.merge_bidirectional = merge_bidirectional
+        assert not (residual and dense_residual)
+        self.residual = residual
+        self.dense_residual = dense_residual
 
         # Setting for CNNs before RNNs
         if len(conv_channels) > 0 and len(conv_channels) == len(conv_kernel_sizes) and len(conv_kernel_sizes) == len(conv_strides):
@@ -107,43 +115,53 @@ class HierarchicalRNNEncoder(nn.Module):
 
         # NOTE: dropout is applied except the last layer
         self.rnns = []
+        self.projections = []
         for i_layer in range(num_layers):
+            if i_layer == 0:
+                encoder_input_size = input_size
+            elif self.num_proj > 0:
+                encoder_input_size = num_proj
+            else:
+                encoder_input_size = num_units * self.num_directions
+
             if rnn_type == 'lstm':
-                rnn = nn.LSTM(
-                    input_size if i_layer == 0 else num_units * self.num_directions,
-                    hidden_size=num_units,
-                    num_layers=1,
-                    bias=True,
-                    batch_first=batch_first,
-                    dropout=dropout,
-                    bidirectional=bidirectional)
+                rnn_i = nn.LSTM(encoder_input_size,
+                                hidden_size=num_units,
+                                num_layers=1,
+                                bias=True,
+                                batch_first=batch_first,
+                                dropout=dropout,
+                                bidirectional=bidirectional)
             elif rnn_type == 'gru':
-                rnn = nn.GRU(
-                    input_size if i_layer == 0 else num_units * self.num_directions,
-                    hidden_size=num_units,
-                    num_layers=1,
-                    bias=True,
-                    batch_first=batch_first,
-                    dropout=dropout,
-                    bidirectional=bidirectional)
+                rnn_i = nn.GRU(encoder_input_size,
+                               hidden_size=num_units,
+                               num_layers=1,
+                               bias=True,
+                               batch_first=batch_first,
+                               dropout=dropout,
+                               bidirectional=bidirectional)
             elif rnn_type == 'rnn':
-                rnn = nn.RNN(
-                    input_size if i_layer == 0 else num_units * self.num_directions,
-                    hidden_size=num_units,
-                    num_layers=1,
-                    bias=True,
-                    batch_first=batch_first,
-                    dropout=dropout,
-                    bidirectional=bidirectional)
+                rnn_i = nn.RNN(encoder_input_size,
+                               hidden_size=num_units,
+                               num_layers=1,
+                               bias=True,
+                               batch_first=batch_first,
+                               dropout=dropout,
+                               bidirectional=bidirectional)
             else:
                 raise ValueError('rnn_type must be "lstm" or "gru" or "rnn".')
 
-            setattr(self, rnn_type + '_l' + str(i_layer), rnn)
-
+            setattr(self, rnn_type + '_l' + str(i_layer), rnn_i)
             if use_cuda:
-                rnn = rnn.cuda()
+                rnn_i = rnn_i.cuda()
+            self.rnns.append(rnn_i)
 
-            self.rnns.append(rnn)
+            if self.num_proj > 0:
+                proj_i = LinearND(num_units * self.num_directions, num_proj)
+                setattr(self, 'proj_l' + str(i_layer), proj_i)
+                if use_cuda:
+                    proj_i = proj_i.cuda()
+                self.projections.append(proj_i)
 
     def forward(self, inputs, inputs_seq_len, volatile=True,
                 pack_sequence=True):
@@ -170,10 +188,8 @@ class HierarchicalRNNEncoder(nn.Module):
             final_state_fw_sub: A tensor of size `[1, B, num_units]`
             perm_indices ():
         """
-        batch_size, max_time, input_size = inputs.size()
-
         # Initialize hidden states (and memory cells) per mini-batch
-        h_0 = _init_hidden(batch_size=batch_size,
+        h_0 = _init_hidden(batch_size=inputs.size(0),
                            rnn_type=self.rnn_type,
                            num_units=self.num_units,
                            num_directions=self.num_directions,
@@ -210,11 +226,41 @@ class HierarchicalRNNEncoder(nn.Module):
                 inputs, inputs_seq_len, batch_first=self.batch_first)
 
         outputs = inputs
+        res_outputs_list = []
+        # NOTE: exclude residual connection from inputs
         for i_layer in range(self.num_layers):
             if self.rnn_type == 'lstm':
                 outputs, (h_n, c_n) = self.rnns[i_layer](outputs, hx=h_0)
             else:
                 outputs, h_n = self.rnns[i_layer](outputs, hx=h_0)
+
+            if self.residual or self.dense_residual or self.num_proj > 0:
+                if pack_sequence:
+                    # Unpack encoder outputs
+                    outputs, unpacked_seq_len = pad_packed_sequence(
+                        outputs, batch_first=self.batch_first,
+                        padding_value=0.0)
+                    assert inputs_seq_len == unpacked_seq_len
+
+                # Projection layer (affine transformation)
+                if self.num_proj > 0 and i_layer != self.num_layers - 1:
+                    outputs = self.projections[i_layer](outputs)
+                # NOTE: Exclude the last layer
+
+                # Residual connection
+                if self.residual or self.dense_residual:
+                    for outputs_lower in res_outputs_list:
+                        outputs += outputs_lower
+                    if self.residual:
+                        res_outputs_list = [outputs]
+                    elif self.dense_residual:
+                        res_outputs_list.append(outputs)
+
+                if pack_sequence:
+                    # Pack encoder outputs again
+                    outputs = pack_padded_sequence(
+                        outputs, unpacked_seq_len,
+                        batch_first=self.batch_first)
 
             if i_layer == self.num_layers_sub - 1:
                 outputs_sub = outputs

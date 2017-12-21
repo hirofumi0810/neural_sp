@@ -30,6 +30,12 @@ class TestCTC(unittest.TestCase):
     def test(self):
         print("Hierarchical CTC Working check.")
 
+        # Residual LSTM-CTC
+        self.check(encoder_type='lstm', bidirectional=True,
+                   residual=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   dense_residual=True)
+
         # CLDNN-CTC
         self.check(encoder_type='lstm', bidirectional=True,
                    conv=True)
@@ -44,7 +50,8 @@ class TestCTC(unittest.TestCase):
 
     @measure_time
     def check(self, encoder_type, bidirectional=False,
-              subsample=False, conv=False, batch_norm=False):
+              subsample=False, conv=False, batch_norm=False,
+              residual=False, dense_residual=False):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
@@ -52,6 +59,8 @@ class TestCTC(unittest.TestCase):
         print('  subsample: %s' % str(subsample))
         print('  conv: %s' % str(conv))
         print('  batch_norm: %s' % str(batch_norm))
+        print('  residual: %s' % str(residual))
+        print('  dense_residual: %s' % str(dense_residual))
         print('==================================================')
 
         if conv:
@@ -102,7 +111,10 @@ class TestCTC(unittest.TestCase):
             conv_kernel_sizes=conv_kernel_sizes,
             conv_strides=conv_strides,
             poolings=poolings,
-            batch_norm=batch_norm)
+            batch_norm=batch_norm,
+            weight_noise_std=0,
+            residual=residual,
+            dense_residual=dense_residual)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):

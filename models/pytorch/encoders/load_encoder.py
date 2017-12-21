@@ -31,6 +31,7 @@ ENCODERS = {
     "pgru_hierarchical": HierarchicalPyramidRNNEncoder,
     "prnn_hierarchical": HierarchicalPyramidRNNEncoder,
     "cnn": CNNEncoder,
+
     # "resnet": ResNetEncoder,
 }
 

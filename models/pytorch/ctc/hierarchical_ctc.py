@@ -12,8 +12,6 @@ try:
 except:
     raise ImportError('Install warpctc_pytorch.')
 
-import torch.nn as nn
-
 from models.pytorch.ctc.ctc import CTC, _concatenate_labels
 from models.pytorch.linear import LinearND
 from models.pytorch.encoders.load_encoder import load
@@ -57,6 +55,8 @@ class HierarchicalCTC(CTC):
             Choose from relu or prelu or hard_tanh or maxout
         batch_norm (bool, optional):
         weight_noise_std (float, optional):
+        residual (bool, optional):
+        dense_residual (bool, optional):
     """
 
     def __init__(self,
@@ -83,7 +83,9 @@ class HierarchicalCTC(CTC):
                  poolings=[],
                  activation='relu',
                  batch_norm=False,
-                 weight_noise_std=0):
+                 weight_noise_std=0,
+                 residual=False,
+                 dense_residual=False):
 
         super(HierarchicalCTC, self).__init__(
             input_size=input_size,  # 120 or 123
@@ -139,7 +141,9 @@ class HierarchicalCTC(CTC):
                     conv_strides=conv_strides,
                     poolings=poolings,
                     activation=activation,
-                    batch_norm=batch_norm)
+                    batch_norm=batch_norm,
+                    residual=residual,
+                    dense_residual=dense_residual)
             else:
                 self.encoder = encoder(
                     input_size=input_size,  # 120 or 123
@@ -241,17 +245,18 @@ class HierarchicalCTC(CTC):
         # NOTE: floor is not needed because inputs_seq_len_var is IntTensor
 
         # Compute CTC loss
+        batch_size = logits.size(1)
         ctc_loss_fn = CTCLoss()
+        # Main task
         loss_main = ctc_loss_fn(logits, concatenated_labels,
                                 inputs_seq_len_var.cpu(), labels_seq_len_var)
+        loss_main = loss_main * self.main_loss_weight / batch_size
+
+        # Sub task
         loss_sub = ctc_loss_fn(logits_sub, concatenated_labels_sub,
                                _inputs_seq_len_sub_var.cpu(), labels_seq_len_sub_var)
-        loss = loss_main * self.main_loss_weight + \
-            loss_sub * (1 - self.main_loss_weight)
+        loss_sub = loss_sub * (1 - self.main_loss_weight) / batch_size
 
-        # Average the loss by mini-batch
-        batch_size = logits.size(1)
-        loss /= batch_size
+        loss = loss_main + loss_sub
 
-        return (loss, loss_main * self.main_loss_weight / batch_size,
-                loss_sub * (1 - self.main_loss_weight) / batch_size)
+        return loss, loss_main, loss_sub

@@ -23,6 +23,24 @@ class TestPyramidRNNEncoders(unittest.TestCase):
     def test(self):
         print("Pyramidal RNN Encoders Working check.")
 
+        # Residual connection
+        self.check(encoder_type='lstm', bidirectional=False,
+                   residual=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   residual=True)
+        self.check(encoder_type='lstm', bidirectional=False,
+                   batch_first=False, residual=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   batch_first=False, residual=True)
+        self.check(encoder_type='lstm', bidirectional=False,
+                   dense_residual=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   dense_residual=True)
+        self.check(encoder_type='lstm', bidirectional=False,
+                   batch_first=False, dense_residual=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   batch_first=False, dense_residual=True)
+
         # Conv
         self.check(encoder_type='lstm', bidirectional=True,
                    conv=True)
@@ -43,19 +61,19 @@ class TestPyramidRNNEncoders(unittest.TestCase):
         self.check(encoder_type='lstm', bidirectional=True,
                    subsample_type='drop')
         self.check(encoder_type='lstm', bidirectional=True,
-                   batch_first=True, subsample_type='drop')
+                   batch_first=False, subsample_type='drop')
         self.check(encoder_type='gru', bidirectional=False,
                    subsample_type='drop')
         self.check(encoder_type='gru', bidirectional=True,
                    subsample_type='drop')
         self.check(encoder_type='gru', bidirectional=True,
-                   batch_first=True, subsample_type='drop')
+                   batch_first=False, subsample_type='drop')
         self.check(encoder_type='rnn', bidirectional=False,
                    subsample_type='drop')
         self.check(encoder_type='rnn', bidirectional=True,
                    subsample_type='drop')
         self.check(encoder_type='rnn', bidirectional=True,
-                   batch_first=True, subsample_type='drop')
+                   batch_first=False, subsample_type='drop')
 
         # concat
         self.check(encoder_type='lstm', bidirectional=False,
@@ -63,19 +81,19 @@ class TestPyramidRNNEncoders(unittest.TestCase):
         self.check(encoder_type='lstm', bidirectional=True,
                    subsample_type='concat')
         self.check(encoder_type='lstm', bidirectional=True,
-                   batch_first=True, subsample_type='concat')
+                   batch_first=False, subsample_type='concat')
         self.check(encoder_type='gru', bidirectional=False,
                    subsample_type='concat')
         self.check(encoder_type='gru', bidirectional=True,
                    subsample_type='concat')
         self.check(encoder_type='gru', bidirectional=True,
-                   batch_first=True, subsample_type='concat')
+                   batch_first=False, subsample_type='concat')
         self.check(encoder_type='rnn', bidirectional=False,
                    subsample_type='concat')
         self.check(encoder_type='rnn', bidirectional=True,
                    subsample_type='concat')
         self.check(encoder_type='rnn', bidirectional=True,
-                   batch_first=True, subsample_type='concat')
+                   batch_first=False, subsample_type='concat')
 
         # merge_bidirectional
         self.check(encoder_type='lstm', bidirectional=True,
@@ -86,9 +104,9 @@ class TestPyramidRNNEncoders(unittest.TestCase):
                    merge_bidirectional=True)
 
     @measure_time
-    def check(self, encoder_type, bidirectional=False, batch_first=False,
+    def check(self, encoder_type, bidirectional=False, batch_first=True,
               subsample_type='concat', conv=False, pack_sequence=True,
-              merge_bidirectional=False):
+              merge_bidirectional=False, residual=False, dense_residual=False):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
@@ -98,6 +116,8 @@ class TestPyramidRNNEncoders(unittest.TestCase):
         print('  conv: %s' % str(conv))
         print('  pack_sequence: %s' % str(pack_sequence))
         print('  merge_bidirectional: %s' % str(merge_bidirectional))
+        print('  residual: %s' % str(residual))
+        print('  dense_residual: %s' % str(dense_residual))
         print('==================================================')
 
         if conv:
@@ -159,7 +179,9 @@ class TestPyramidRNNEncoders(unittest.TestCase):
                 conv_kernel_sizes=conv_kernel_sizes,
                 conv_strides=conv_strides,
                 poolings=poolings,
-                batch_norm=True)
+                batch_norm=True,
+                residual=residual,
+                dense_residual=dense_residual)
         else:
             raise NotImplementedError
 
@@ -173,7 +195,7 @@ class TestPyramidRNNEncoders(unittest.TestCase):
             inputs, inputs_seq_len, pack_sequence=pack_sequence)
 
         # Check final state (forward)
-        if not merge_bidirectional:
+        if not (merge_bidirectional or residual or dense_residual):
             print('----- Check hidden states (forward) -----')
             if batch_first:
                 outputs_fw_final = outputs.transpose(

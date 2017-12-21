@@ -30,6 +30,12 @@ class TestAttention(unittest.TestCase):
     def test(self):
         print("Attention Working check.")
 
+        # Residual LSTM encoder
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', residual=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', dense_residual=True)
+
         # CLDNN encoder
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', conv=True)
@@ -51,7 +57,7 @@ class TestAttention(unittest.TestCase):
 
         # unidirectional & bidirectional
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', save_path=None)
+                   decoder_type='lstm')
         self.check(encoder_type='lstm', bidirectional=False,
                    decoder_type='lstm')
         self.check(encoder_type='gru', bidirectional=True,
@@ -87,7 +93,8 @@ class TestAttention(unittest.TestCase):
     def check(self, encoder_type, bidirectional, decoder_type,
               attention_type='location', label_type='char',
               subsample=False, ctc_loss_weight=0, decoder_num_layers=1,
-              conv=False, batch_norm=False, save_path=None):
+              conv=False, batch_norm=False,
+              residual=False, dense_residual=False):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
@@ -100,6 +107,8 @@ class TestAttention(unittest.TestCase):
         print('  decoder_num_layers: %s' % str(decoder_num_layers))
         print('  conv: %s' % str(conv))
         print('  batch_norm: %s' % str(batch_norm))
+        print('  residual: %s' % str(residual))
+        print('  dense_residual: %s' % str(dense_residual))
         print('==================================================')
 
         if conv:
@@ -176,7 +185,9 @@ class TestAttention(unittest.TestCase):
             scheduled_sampling_prob=0.1,
             scheduled_sampling_ramp_max_step=100,
             label_smoothing_prob=0.1,
-            weight_noise_std=0)
+            weight_noise_std=0,
+            residual=residual,
+            dense_residual=dense_residual)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):
@@ -283,11 +294,6 @@ class TestAttention(unittest.TestCase):
 
                 if ler < 0.1:
                     print('Modle is Converged.')
-                    # Save the model
-                    if save_path is not None:
-                        saved_path = model.save_checkpoint(save_path, epoch=1)
-                        print("=> Saved checkpoint (epoch:%d): %s" %
-                              (1, saved_path))
                     break
                 ler_pre = ler
 

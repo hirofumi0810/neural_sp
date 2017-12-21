@@ -67,7 +67,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  scheduled_sampling_prob=0,
                  scheduled_sampling_ramp_max_step=0,
                  label_smoothing_prob=0,
-                 weight_noise_std=0):
+                 weight_noise_std=0,
+                 residual=False,
+                 dense_residual=False):
 
         super(HierarchicalAttentionSeq2seq, self).__init__(
             input_size=input_size,
@@ -156,7 +158,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     conv_strides=conv_strides,
                     poolings=poolings,
                     activation=activation,
-                    batch_norm=batch_norm)
+                    batch_norm=batch_norm,
+                    residual=residual,
+                    dense_residual=dense_residual)
             else:
                 self.encoder = encoder(
                     input_size=input_size,   # 120 or 123

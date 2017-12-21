@@ -30,6 +30,12 @@ class TestCTC(unittest.TestCase):
     def test(self):
         print("CTC Working check.")
 
+        # Residual LSTM-CTC
+        self.check(encoder_type='lstm', bidirectional=True,
+                   residual=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   dense_residual=True)
+
         # CNN-CTC
         # self.check(encoder_type='cnn')
         self.check(encoder_type='cnn', batch_norm=True, activation='relu')
@@ -62,7 +68,7 @@ class TestCTC(unittest.TestCase):
     @measure_time
     def check(self, encoder_type, bidirectional=False, label_type='char',
               subsample=False, conv=False, batch_norm=False, activation='relu',
-              save_path=None):
+              residual=False, dense_residual=False):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
@@ -72,6 +78,8 @@ class TestCTC(unittest.TestCase):
         print('  conv: %s' % str(conv))
         print('  batch_norm: %s' % str(batch_norm))
         print('  activation: %s' % activation)
+        print('  residual: %s' % str(residual))
+        print('  dense_residual: %s' % str(dense_residual))
         print('==================================================')
 
         if conv or encoder_type == 'cnn':
@@ -132,7 +140,10 @@ class TestCTC(unittest.TestCase):
             conv_strides=conv_strides,
             poolings=poolings,
             activation=activation,
-            batch_norm=batch_norm)
+            batch_norm=batch_norm,
+            weight_noise_std=0,
+            residual=residual,
+            dense_residual=dense_residual)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):
@@ -229,11 +240,6 @@ class TestCTC(unittest.TestCase):
 
                 if ler < 0.05:
                     print('Modle is Converged.')
-                    # Save the model
-                    if save_path is not None:
-                        saved_path = model.save_checkpoint(save_path, epoch=1)
-                        print("=> Saved checkpoint (epoch:%d): %s" %
-                              (1, saved_path))
                     break
                 ler_pre = ler
 

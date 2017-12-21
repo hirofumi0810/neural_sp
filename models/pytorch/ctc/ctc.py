@@ -64,6 +64,8 @@ class CTC(ModelBase):
             Choose from relu or prelu or hard_tanh or maxout
         batch_norm (bool, optional):
         weight_noise_std (float, optional):
+        residual (bool, optional):
+        dense_residual (bool, optional):
     """
 
     def __init__(self,
@@ -87,7 +89,9 @@ class CTC(ModelBase):
                  poolings=[],
                  activation='relu',
                  batch_norm=False,
-                 weight_noise_std=0):
+                 weight_noise_std=0,
+                 residual=False,
+                 dense_residual=False):
 
         super(ModelBase, self).__init__()
 
@@ -135,7 +139,9 @@ class CTC(ModelBase):
                     conv_strides=conv_strides,
                     poolings=poolings,
                     activation=activation,
-                    batch_norm=batch_norm)
+                    batch_norm=batch_norm,
+                    residual=residual,
+                    dense_residual=dense_residual)
             else:
                 # Pyramidal encoder
                 self.encoder = encoder(
@@ -286,11 +292,11 @@ class CTC(ModelBase):
         """
         if is_multi_task:
             encoder_outputs, _, encoder_outputs_sub, _, perm_indices = self.encoder(
-                inputs, inputs_seq_len, volatile, mask_sequence=True)
+                inputs, inputs_seq_len, volatile, pack_sequence=True)
         else:
             if self.encoder_type != 'cnn':
                 encoder_outputs, _, perm_indices = self.encoder(
-                    inputs, inputs_seq_len, volatile, mask_sequence=True)
+                    inputs, inputs_seq_len, volatile, pack_sequence=True)
             else:
                 encoder_outputs = self.encoder(inputs)
                 # NOTE: `[B, T, feature_dim]`
