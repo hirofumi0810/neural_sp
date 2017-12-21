@@ -17,6 +17,8 @@ param:
   model_type: attention
   encoder_type: gru
   encoder_bidirectional: True
+  residual: False
+  dense_residual: False
   encoder_num_units: 256
   encoder_num_proj: 0
   encoder_num_layers: 4
@@ -37,21 +39,22 @@ param:
   # CNN before RNN encoder
   conv_channels: [32, 32]
   conv_kernel_sizes:
-    - [8, 5]
-    - [8, 5]
+    - [5, 32]
+    - [5, 32]
   conv_strides:
     - [2, 2]
     - [1, 1]
   poolings:
     - []
     - []
-  batch_norm: False
+  batch_norm: True
 
   # optimization
-  batch_size: 4
-  optimizer: momentum
+  batch_size: 8
+  optimizer: adam
   learning_rate: 1e-3
   num_epoch: 200
+  convert_to_sgd_epoch: 200
 
   # regularization
   parameter_init: 0.1
@@ -67,7 +70,7 @@ param:
   sigmoid_smoothing: False
   coverage_weight: 0
   scheduled_sampling_prob: 0.4
-  scheduled_sampling_ramp_max_step: 2000
+  scheduled_sampling_ramp_max_step: 100000
   label_smoothing_prob: 0
   weight_noise_std: 0
 

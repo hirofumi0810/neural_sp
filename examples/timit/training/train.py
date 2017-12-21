@@ -264,6 +264,16 @@ def main():
                     epoch=train_data.epoch,
                     value=per_dev_epoch)
 
+                if train_data.epoch == param['convert_to_sgd_epoch']:
+                    # Convert to fine-tuning stage
+                    optimizer, _ = model.set_optimizer(
+                        'momentum',
+                        learning_rate_init=learning_rate,
+                        weight_decay=float(params['weight_decay']),
+                        lr_schedule=False,
+                        factor=params['decay_rate'],
+                        patience_epoch=params['decay_patient_epoch'])
+
                 # ***Change to training mode***
                 model.train()
 

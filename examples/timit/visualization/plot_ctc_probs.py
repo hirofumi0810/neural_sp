@@ -18,7 +18,7 @@ from models.pytorch.load_model import load
 from examples.timit.data.load_dataset import Dataset
 from utils.io.labels.phone import Idx2phone
 from utils.directory import mkdir_join, mkdir
-from utils.evaluation.ctc import plot_ctc_probs
+from utils.visualization.ctc import plot_ctc_probs
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model_path', type=str,

@@ -19,7 +19,7 @@ from examples.timit.data.load_dataset import Dataset
 from utils.io.labels.phone import Idx2phone
 from utils.io.variable import np2var, var2np
 from utils.directory import mkdir_join, mkdir
-from utils.evaluation.attention import plot_attention_weights
+from utils.visualization.attention import plot_attention_weights
 
 
 parser = argparse.ArgumentParser()
@@ -133,10 +133,12 @@ def plot_attention(model, dataset, label_type, beam_width, max_decode_length,
                 str_pred = str_pred[:-1]
 
             plot_attention_weights(
-                attention_weights[i_batch, :str_pred.split(
-                    ' '), :inputs_seq_len[i_batch]],
+                spectrogram=inputs[i_batch],
+                attention_weights=attention_weights[i_batch, :len(
+                    str_pred.split(' ')), :inputs_seq_len[i_batch]],
                 label_list=str_pred.split(' '),
-                save_path=join(save_path, input_names[i_batch] + '.png'))
+                save_path=join(save_path, input_names[i_batch] + '.png'),
+                fig_size=(14, 7))
 
         if is_new_epoch:
             break

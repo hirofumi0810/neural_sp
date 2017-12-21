@@ -10,8 +10,8 @@ param:
   use_delta: True
   use_double_delta: True
   splice: 1
-  num_stack: 2
-  num_skip: 2
+  num_stack: 1
+  num_skip: 1
 
   # topology
   model_type: ctc
@@ -21,31 +21,36 @@ param:
   dense_residual: False
   num_units: 256
   num_proj: 0
-  num_layers: 5
+  num_layers: 4
   subsample_list:
     - False
     - False
     - False
     - False
-    - False
   fc_list: []
-  conv_channels: []
-  conv_kernel_sizes: []
-  conv_strides: []
-  poolings: []
+  conv_channels: [32, 32]
+  conv_kernel_sizes:
+    - [5, 32]
+    - [5, 32]
+  conv_strides:
+    - [2, 2]
+    - [1, 1]
+  poolings:
+    - []
+    - []
   batch_norm: False
 
   # optimization
-  batch_size: 50
+  batch_size: 8
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 100
+  num_epoch: 200
 
   # regularization
   parameter_init: 0.1
   clip_grad_norm: 5.0
   clip_activation: 50
-  dropout: 0.5
+  dropout: 0.4
   weight_decay: 1e-5
   logits_temperature: 1
   weight_noise_std: 0
@@ -57,4 +62,4 @@ param:
   sort_stop_epoch: 100
   not_improved_patient_epoch: 10
   eval_start_epoch: 20
-  print_step: 10
+  print_step: 100
