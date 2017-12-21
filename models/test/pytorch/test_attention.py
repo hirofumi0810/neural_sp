@@ -46,10 +46,6 @@ class TestAttention(unittest.TestCase):
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', ctc_loss_weight=0.1)
 
-        # multiple layer decoder
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', decoder_num_layers=2)
-
         # word-level attention
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', attention_type='dot_product',
@@ -92,7 +88,7 @@ class TestAttention(unittest.TestCase):
     @measure_time
     def check(self, encoder_type, bidirectional, decoder_type,
               attention_type='location', label_type='char',
-              subsample=False, ctc_loss_weight=0, decoder_num_layers=1,
+              subsample=False, ctc_loss_weight=0,
               conv=False, batch_norm=False,
               residual=False, dense_residual=False):
 
@@ -104,7 +100,6 @@ class TestAttention(unittest.TestCase):
         print('  attention_type: %s' % attention_type)
         print('  subsample: %s' % str(subsample))
         print('  ctc_loss_weight: %s' % str(ctc_loss_weight))
-        print('  decoder_num_layers: %s' % str(decoder_num_layers))
         print('  conv: %s' % str(conv))
         print('  batch_norm: %s' % str(batch_norm))
         print('  residual: %s' % str(residual))
@@ -161,7 +156,7 @@ class TestAttention(unittest.TestCase):
             attention_dim=128,
             decoder_type=decoder_type,
             decoder_num_units=256,
-            decoder_num_layers=decoder_num_layers,
+            decoder_num_layers=2,
             decoder_dropout=0.1,
             embedding_dim=32,
             num_classes=num_classes,
@@ -186,8 +181,10 @@ class TestAttention(unittest.TestCase):
             scheduled_sampling_ramp_max_step=100,
             label_smoothing_prob=0.1,
             weight_noise_std=0,
-            residual=residual,
-            dense_residual=dense_residual)
+            encoder_residual=residual,
+            encoder_dense_residual=dense_residual,
+            decoder_residual=residual,
+            decoder_dense_residual=dense_residual)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):

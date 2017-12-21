@@ -15,27 +15,28 @@ param:
 
   # topology
   model_type: attention
-  encoder_type: gru
+  encoder_type: lstm
   encoder_bidirectional: True
   encoder_residual: False
-  encoder_dense_residual: False
+  encoder_dense_residual: True
   decoder_residual: False
-  decoder_dense_residual: False
+  decoder_dense_residual: True
   encoder_num_units: 256
   encoder_num_proj: 0
-  encoder_num_layers: 3
+  encoder_num_layers: 4
   subsample_list:
+    - False
     - False
     - False
     - False
   attention_type: location
   attention_dim: 128
-  decoder_type: gru
+  decoder_type: lstm
   decoder_num_units: 256
   decoder_num_layers: 1
   embedding_dim: 32
   attention_conv_num_channels: 10
-  attention_conv_width: 101
+  attention_conv_width: 201
 
   # CNN before RNN encoder
   conv_channels: []
@@ -49,7 +50,7 @@ param:
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 100
-  convert_to_sgd_epoch: 100
+  convert_to_sgd_epoch: 20
 
   # regularization
   parameter_init: 0.1

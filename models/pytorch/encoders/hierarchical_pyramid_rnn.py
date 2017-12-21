@@ -137,7 +137,6 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
         # TODO: add the projection layer
         ########################################
 
-        # NOTE: dropout is applied except the last layer
         self.rnns = []
         for i_layer in range(num_layers):
             if i_layer == 0:
@@ -301,7 +300,7 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
                 if self.residual or self.dense_residual:
                     if i_layer >= self.residual_start_layer - 1:
                         for outputs_lower in res_outputs_list:
-                            outputs += outputs_lower
+                            outputs = outputs + outputs_lower
                         if self.residual:
                             res_outputs_list = [outputs]
                         elif self.dense_residual:

@@ -17,8 +17,10 @@ param:
   model_type: attention
   encoder_type: lstm
   encoder_bidirectional: True
-  residual: False
-  dense_residual: False
+  encoder_residual: False
+  encoder_dense_residual: False
+  decoder_residual: False
+  decoder_dense_residual: False
   encoder_num_units: 256
   encoder_num_proj: 0
   encoder_num_layers: 4
@@ -57,7 +59,7 @@ param:
   clip_activation_decoder: 50
   dropout_encoder: 0.5
   dropout_decoder: 0.1
-  weight_decay: 0
+  weight_decay: 1e-5
   init_dec_state_with_enc_state: True
   sharpening_factor: 1.0
   logits_temperature: 1.0

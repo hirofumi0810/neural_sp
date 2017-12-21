@@ -164,7 +164,10 @@ class CTC(ModelBase):
                     conv_strides=conv_strides,
                     poolings=poolings,
                     activation=activation,
-                    batch_norm=batch_norm)
+                    batch_norm=batch_norm,
+                    residual=residual,
+                    dense_residual=dense_residual)
+
         elif encoder_type == 'cnn':
             assert num_stack == 1
             assert splice == 1

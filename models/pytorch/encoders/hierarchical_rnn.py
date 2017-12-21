@@ -113,7 +113,6 @@ class HierarchicalRNNEncoder(nn.Module):
             input_size = input_size * splice * num_stack
             self.conv = None
 
-        # NOTE: dropout is applied except the last layer
         self.rnns = []
         self.projections = []
         for i_layer in range(num_layers):
@@ -250,7 +249,7 @@ class HierarchicalRNNEncoder(nn.Module):
                 # Residual connection
                 if self.residual or self.dense_residual:
                     for outputs_lower in res_outputs_list:
-                        outputs += outputs_lower
+                        outputs = outputs + outputs_lower
                     if self.residual:
                         res_outputs_list = [outputs]
                     elif self.dense_residual:

@@ -36,7 +36,6 @@ def _init_hidden(batch_size, rnn_type, num_units, num_directions,
 
     if volatile:
         h_0.volatile = True
-
     if use_cuda:
         h_0 = h_0.cuda()
 
@@ -46,7 +45,6 @@ def _init_hidden(batch_size, rnn_type, num_units, num_directions,
 
         if volatile:
             c_0.volatile = True
-
         if use_cuda:
             c_0 = c_0.cuda()
 

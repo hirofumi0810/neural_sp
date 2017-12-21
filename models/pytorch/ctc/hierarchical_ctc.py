@@ -166,7 +166,9 @@ class HierarchicalCTC(CTC):
                     conv_strides=conv_strides,
                     poolings=poolings,
                     activation=activation,
-                    batch_norm=batch_norm)
+                    batch_norm=batch_norm,
+                    residual=residual,
+                    dense_residual=dense_residual)
         else:
             raise NotImplementedError
 

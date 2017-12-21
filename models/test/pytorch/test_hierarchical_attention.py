@@ -61,7 +61,7 @@ class TestHierarchicalAttention(unittest.TestCase):
     @measure_time
     def check(self, encoder_type, bidirectional, decoder_type,
               attention_type='location', subsample=False,
-              ctc_loss_weight_sub=0, decoder_num_layers=1,
+              ctc_loss_weight_sub=0,
               conv=False, batch_norm=False,
               residual=False, dense_residual=False):
 
@@ -72,7 +72,6 @@ class TestHierarchicalAttention(unittest.TestCase):
         print('  attention_type: %s' % attention_type)
         print('  subsample: %s' % str(subsample))
         print('  ctc_loss_weight_sub: %s' % str(ctc_loss_weight_sub))
-        print('  decoder_num_layers: %s' % str(decoder_num_layers))
         print('  conv: %s' % str(conv))
         print('  batch_norm: %s' % str(batch_norm))
         print('  residual: %s' % str(residual))
@@ -117,7 +116,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             attention_dim=128,
             decoder_type=decoder_type,
             decoder_num_units=256,
-            decoder_num_layers=decoder_num_layers,
+            decoder_num_layers=2,
             decoder_num_units_sub=256,
             decoder_num_layers_sub=1,
             decoder_dropout=0.1,
@@ -146,8 +145,10 @@ class TestHierarchicalAttention(unittest.TestCase):
             scheduled_sampling_ramp_max_step=100,
             label_smoothing_prob=0.1,
             weight_noise_std=0,
-            residual=residual,
-            dense_residual=dense_residual)
+            encoder_residual=residual,
+            encoder_dense_residual=dense_residual,
+            decoder_residual=residual,
+            decoder_dense_residual=dense_residual)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):

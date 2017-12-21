@@ -17,8 +17,10 @@ param:
   model_type: attention
   encoder_type: gru
   encoder_bidirectional: True
-  residual: False
-  dense_residual: False
+  encoder_residual: False
+  encoder_dense_residual: False
+  decoder_residual: False
+  decoder_dense_residual: False
   encoder_num_units: 256
   encoder_num_proj: 0
   encoder_num_layers: 4
@@ -68,7 +70,7 @@ param:
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False
-  coverage_weight: 0
+  weight_decay: 1e-5
   scheduled_sampling_prob: 0.4
   scheduled_sampling_ramp_max_step: 100000
   label_smoothing_prob: 0

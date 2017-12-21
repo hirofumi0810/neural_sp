@@ -68,8 +68,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  scheduled_sampling_ramp_max_step=0,
                  label_smoothing_prob=0,
                  weight_noise_std=0,
-                 residual=False,
-                 dense_residual=False):
+                 encoder_residual=False,
+                 encoder_dense_residual=False,
+                 decoder_residual=False,
+                 decoder_dense_residual=False):
 
         super(HierarchicalAttentionSeq2seq, self).__init__(
             input_size=input_size,
@@ -107,7 +109,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             scheduled_sampling_prob=scheduled_sampling_prob,
             scheduled_sampling_ramp_max_step=scheduled_sampling_ramp_max_step,
             label_smoothing_prob=label_smoothing_prob,
-            weight_noise_std=weight_noise_std)
+            weight_noise_std=weight_noise_std,
+            encoder_residual=encoder_residual,
+            encoder_dense_residual=encoder_dense_residual,
+            decoder_residual=decoder_residual,
+            decoder_dense_residual=decoder_dense_residual)
 
         # Setting for the encoder
         self.encoder_num_layers_sub = encoder_num_layers_sub
@@ -159,8 +165,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     poolings=poolings,
                     activation=activation,
                     batch_norm=batch_norm,
-                    residual=residual,
-                    dense_residual=dense_residual)
+                    residual=encoder_residual,
+                    dense_residual=encoder_dense_residual)
             else:
                 self.encoder = encoder(
                     input_size=input_size,   # 120 or 123
@@ -183,7 +189,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     conv_strides=conv_strides,
                     poolings=poolings,
                     activation=activation,
-                    batch_norm=batch_norm)
+                    batch_norm=batch_norm,
+                    residual=encoder_residual,
+                    dense_residual=encoder_dense_residual)
         else:
             raise NotImplementedError
 
@@ -200,7 +208,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 dropout=decoder_dropout,
                 parameter_init=parameter_init,
                 use_cuda=self.use_cuda,
-                batch_first=True)
+                batch_first=True,
+                residual=decoder_residual,
+                dense_residual=decoder_dense_residual)
 
             ###################################
             # Attention layer in the sub task

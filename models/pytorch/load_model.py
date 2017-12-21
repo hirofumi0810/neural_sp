@@ -17,11 +17,24 @@ from models.pytorch.attention.hierarchical_attention_seq2seq import Hierarchical
 def load(model_type, params):
     """Load an encoder.
     Args:
-        model_type (string): ctc or attention or hierarchical_ctc or
-            hierarchical_attention or joint_ctc_attention
+        model_type (string): ctc or student_ctc or attention or
+            hierarchical_ctc or hierarchical_attention or
     Returns:
         model (nn.Module): An encoder class
     """
+
+    if 'residual' not in params.keys():
+        params['residual'] = False
+    if 'dense_residual' not in params.keys():
+        params['dense_residual'] = False
+    if 'encoder_residual' not in params.keys():
+        params['encoder_residual'] = False
+    if 'encoder_dense_residual' not in params.keys():
+        params['encoder_dense_residual'] = False
+    if 'decoder_residual' not in params.keys():
+        params['decoder_residual'] = False
+    if 'decoder_dense_residual' not in params.keys():
+        params['decoder_dense_residual'] = False
 
     if model_type == 'ctc':
         if 'activation' not in params.keys():
@@ -83,7 +96,7 @@ def load(model_type, params):
         if params['encoder_type'] == 'cnn':
             model.name += '_' + params['activation']
         if bool(params['residual']):
-            model.naem += '_residual'
+            model.name += '_residual'
         if bool(params['dense_residual']):
             model.name += '_dense_residual'
 
@@ -113,7 +126,9 @@ def load(model_type, params):
             poolings=params['poolings'],
             activation=params['activation'],
             batch_norm=params['batch_norm'],
-            weight_noise_std=params['weight_noise_std'])
+            weight_noise_std=params['weight_noise_std'],
+            residual=params['residual'],
+            dense_residual=params['dense_residual'])
 
         model.name = params['encoder_type']
         if sum(params['subsample_list']) > 0:
@@ -142,6 +157,10 @@ def load(model_type, params):
             model.name += '_temp' + str(params['logits_temperature'])
         if params['weight_noise_std'] != 0:
             model.name += '_noise' + str(params['weight_noise_std'])
+        if bool(params['residual']):
+            model.name += '_residual'
+        if bool(params['dense_residual']):
+            model.name += '_dense_residual'
 
     elif model_type == 'attention':
         model = AttentionSeq2seq(
@@ -181,7 +200,11 @@ def load(model_type, params):
             scheduled_sampling_prob=params['scheduled_sampling_prob'],
             scheduled_sampling_ramp_max_step=params['scheduled_sampling_ramp_max_step'],
             label_smoothing_prob=params['label_smoothing_prob'],
-            weight_noise_std=params['weight_noise_std'])
+            weight_noise_std=params['weight_noise_std'],
+            encoder_residual=params['encoder_residual'],
+            encoder_dense_residual=params['encoder_dense_residual'],
+            decoder_residual=params['decoder_residual'],
+            decoder_dense_residual=params['decoder_dense_residual'])
 
         model.name = params['encoder_type']
         if sum(params['subsample_list']) > 0:
@@ -226,6 +249,14 @@ def load(model_type, params):
             model.name += '_labelsmooth' + str(params['label_smoothing_prob'])
         if params['weight_noise_std'] != 0:
             model.name += '_noise' + str(params['weight_noise_std'])
+        if bool(params['encoder_residual']):
+            model.name += '_encresidual'
+        elif bool(params['encoder_dense_residual']):
+            model.name += '_encdenseresidual'
+        if bool(params['decoder_residual']):
+            model.name += '_decresidual'
+        elif bool(params['decoder_dense_residual']):
+            model.name += '_decdenseresidual'
 
     if params['model_type'] == 'hierarchical_ctc':
         if 'activation' not in params.keys():
@@ -256,7 +287,9 @@ def load(model_type, params):
             poolings=params['poolings'],
             activation=params['activation'],
             batch_norm=params['batch_norm'],
-            weight_noise_std=params['weight_noise_std'])
+            weight_noise_std=params['weight_noise_std'],
+            residual=params['residual'],
+            dense_residual=params['dense_residual'])
 
         model.name = params['encoder_type']
         if sum(params['subsample_list']) > 0:
@@ -286,6 +319,10 @@ def load(model_type, params):
             model.name += '_temp' + str(params['logits_temperature'])
         if params['weight_noise_std'] != 0:
             model.name += '_noise' + str(params['weight_noise_std'])
+        if bool(params['residual']):
+            model.name += '_residual'
+        if bool(params['dense_residual']):
+            model.name += '_dense_residual'
         model.name += '_main' + str(params['main_loss_weight'])
 
     elif params['model_type'] == 'hierarchical_attention':
@@ -336,7 +373,11 @@ def load(model_type, params):
             scheduled_sampling_prob=params['scheduled_sampling_prob'],
             scheduled_sampling_ramp_max_step=params['scheduled_sampling_ramp_max_step'],
             label_smoothing_prob=params['label_smoothing_prob'],
-            weight_noise_std=params['weight_noise_std'])
+            weight_noise_std=params['weight_noise_std'],
+            encoder_residual=params['encoder_residual'],
+            encoder_dense_residual=params['encoder_dense_residual'],
+            decoder_residual=params['decoder_residual'],
+            decoder_dense_residual=params['decoder_dense_residual'])
 
         model.name = params['encoder_type']
         if sum(params['subsample_list']) > 0:
@@ -382,6 +423,14 @@ def load(model_type, params):
             model.name += '_labelsmooth' + str(params['label_smoothing_prob'])
         if params['weight_noise_std'] != 0:
             model.name += '_noise' + str(params['weight_noise_std'])
+        if bool(params['encoder_residual']):
+            model.name += '_encresidual'
+        elif bool(params['encoder_dense_residual']):
+            model.name += '_encdenseresidual'
+        if bool(params['decoder_residual']):
+            model.name += '_decresidual'
+        elif bool(params['decoder_dense_residual']):
+            model.name += '_decdenseresidual'
         model.name += '_main' + str(params['main_loss_weight'])
 
     return model

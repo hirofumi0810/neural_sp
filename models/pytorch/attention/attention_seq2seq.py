@@ -69,15 +69,11 @@ class AttentionSeq2seq(ModelBase):
             softmax layer in outputing probabilities
         sigmoid_smoothing (bool, optional): if True, replace softmax function
             in computing attention weights with sigmoid function for smoothing
-        input_feeding (bool, optional): See detail in
-            Luong, Minh-Thang, Hieu Pham, and Christopher D. Manning.
-            "Effective approaches to attention-based neural machine translation."
-                arXiv preprint arXiv:1508.04025 (2015).
         coverage_weight (float, optional): the weight parameter for coverage
             computation.
         ctc_loss_weight (float): A weight parameter for auxiliary CTC loss
-        attention_conv_num_channels (int, optional): the number of channles of conv
-            outputs. This is used for location-based attention.
+        attention_conv_num_channels (int, optional): the number of channles of
+            conv outputs. This is used for location-based attention.
         attention_conv_width (int, optional): the size of kernel.
             This must be the odd number.
         num_stack (int, optional): the number of frames to stack
@@ -93,8 +89,10 @@ class AttentionSeq2seq(ModelBase):
         scheduled_sampling_ramp_max_step (float, optional):
         label_smoothing_prob (float, optional):
         weight_noise_std (flaot, optional):
-        residual (bool, optional):
-        dense_residual (bool, optional):
+        encoder_residual (bool, optional):
+        encoder_dense_residual (bool, optional):
+        decoder_residual (bool, optional):
+        decoder_dense_residual (bool, optional):
     """
 
     def __init__(self,
@@ -119,7 +117,6 @@ class AttentionSeq2seq(ModelBase):
                  sharpening_factor=1,
                  logits_temperature=1,
                  sigmoid_smoothing=False,
-                 input_feeding=False,
                  coverage_weight=0,
                  ctc_loss_weight=0,
                  attention_conv_num_channels=10,
@@ -136,8 +133,10 @@ class AttentionSeq2seq(ModelBase):
                  scheduled_sampling_ramp_max_step=0,
                  label_smoothing_prob=0,
                  weight_noise_std=0,
-                 residual=False,
-                 dense_residual=False):
+                 encoder_residual=False,
+                 encoder_dense_residual=False,
+                 decoder_residual=False,
+                 decoder_dense_residual=False):
 
         super(ModelBase, self).__init__()
 
@@ -171,7 +170,6 @@ class AttentionSeq2seq(ModelBase):
         self.sharpening_factor = sharpening_factor
         self.logits_temperature = logits_temperature
         self.sigmoid_smoothing = sigmoid_smoothing
-        self.input_feeding = input_feeding
         self.coverage_weight = coverage_weight
         self.attention_conv_num_channels = attention_conv_num_channels
         self.attention_conv_width = attention_conv_width
@@ -223,8 +221,8 @@ class AttentionSeq2seq(ModelBase):
                     poolings=poolings,
                     activation=activation,
                     batch_norm=batch_norm,
-                    residual=residual,
-                    dense_residual=dense_residual)
+                    residual=encoder_residual,
+                    dense_residual=encoder_dense_residual)
             else:
                 # Pyramidal encoder
                 self.encoder = encoder(
@@ -247,7 +245,10 @@ class AttentionSeq2seq(ModelBase):
                     conv_strides=conv_strides,
                     poolings=poolings,
                     activation=activation,
-                    batch_norm=batch_norm)
+                    batch_norm=batch_norm,
+                    residual=encoder_residual,
+                    dense_residual=encoder_dense_residual)
+
         elif encoder_type == 'cnn':
             assert num_stack == 1
             assert splice == 1
@@ -278,7 +279,9 @@ class AttentionSeq2seq(ModelBase):
             dropout=decoder_dropout,
             parameter_init=parameter_init,
             use_cuda=self.use_cuda,
-            batch_first=True)
+            batch_first=True,
+            residual=decoder_residual,
+            dense_residual=decoder_dense_residual)
 
         ##############################
         # Attention layer
@@ -552,7 +555,6 @@ class AttentionSeq2seq(ModelBase):
         logits = []
         attention_weights = []
         for t in range(labels_max_seq_len - 1):
-
             if is_sub_task:
                 if self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random() < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step:
                     # Scheduled sampling
@@ -605,7 +607,7 @@ class AttentionSeq2seq(ModelBase):
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            decoder_state (FloatTensor): A tensor of size
+            decoder_state (FloatTensor or tuple): A tensor of size
                 `[1, B, decoder_num_units]`
         """
         if self.init_dec_state_with_enc_state and encoder_final_state is None:
@@ -613,27 +615,23 @@ class AttentionSeq2seq(ModelBase):
 
         batch_size = encoder_final_state.size(1)
 
-        h_0 = Variable(torch.zeros(
-            self.decoder_num_layers, batch_size, self.decoder_num_units))
-
-        if volatile:
-            h_0.volatile = True
-
-        if self.use_cuda:
-            h_0 = h_0.cuda()
-
         if self.init_dec_state_with_enc_state and self.encoder_type == self.decoder_type:
-            # Initialize decoder state in the first layer with
-            # the final state of the top layer of the encoder (forward)
-            h_0[0, :, :] = encoder_final_state.squeeze(0)
+            # Initialize decoder state with the final state of the top layer
+            # of the encoder (forward)
+            h_0 = encoder_final_state
+        else:
+            h_0 = Variable(torch.zeros(1, batch_size, self.decoder_num_units))
+
+            if volatile:
+                h_0.volatile = True
+            if self.use_cuda:
+                h_0 = h_0.cuda()
 
         if self.decoder_type == 'lstm':
-            c_0 = Variable(torch.zeros(
-                self.decoder_num_layers, batch_size, self.decoder_num_units))
+            c_0 = Variable(torch.zeros(1, batch_size, self.decoder_num_units))
 
             if volatile:
                 c_0.volatile = True
-
             if self.use_cuda:
                 c_0 = c_0.cuda()
 
@@ -651,7 +649,7 @@ class AttentionSeq2seq(ModelBase):
                 `[B, T_in, encoder_num_units]`
             decoder_inputs (FloatTensor): A tensor of size
                 `[B, 1, embedding_dim + decoder_num_units]`
-            decoder_state (FloatTensor): A tensor of size
+            decoder_state (FloatTensor or tuple): A tensor of size
                 `[decoder_num_layers, B, decoder_num_units]`
             attention_weights_step (FloatTensor): A tensor of size `[B, T_in]`
             is_sub_task (bool, optional):
