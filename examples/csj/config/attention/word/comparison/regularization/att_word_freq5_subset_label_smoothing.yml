@@ -1,7 +1,7 @@
 param:
   # corpus
   corpus: csj
-  label_type: kanji
+  label_type: word_freq5
   data_size: subset
 
   # features
@@ -24,20 +24,21 @@ param:
   decoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 4
+  encoder_num_layers: 5
   subsample_list:
     - True
     - True
     - True
+    - False
     - False
   attention_type: location
   attention_dim: 128
   decoder_type: lstm
   decoder_num_units: 320
   decoder_num_layers: 1
-  embedding_dim: 64
+  embedding_dim: 128
   attention_conv_num_channels: 10
-  attention_conv_width: 101
+  attention_conv_width: 201
 
   # CNN before RNN encoder
   conv_channels: []
@@ -47,7 +48,7 @@ param:
   batch_norm: False
 
   # optimization
-  batch_size: 64
+  batch_size: 32
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 100
@@ -67,7 +68,7 @@ param:
   coverage_weight: 0
   scheduled_sampling_prob: 0.4
   scheduled_sampling_ramp_max_step: 300000
-  label_smoothing_prob: 0
+  label_smoothing_prob: 0.1
   weight_noise_std: 0
 
   # annealing
@@ -77,7 +78,7 @@ param:
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
   eval_start_epoch: 20
-  print_step: 500
+  print_step: 1000
 
   # MTL
   ctc_loss_weight: 0
