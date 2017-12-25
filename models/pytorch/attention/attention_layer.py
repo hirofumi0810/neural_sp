@@ -5,6 +5,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -12,7 +14,7 @@ import torch.nn.functional as F
 from models.pytorch.linear import LinearND
 
 ATTENTION_TYPE = [
-    'content', 'normed_content', 'location', 'dot_product',
+    'content', 'bahdanau_content', 'normed_content', 'location', 'dot_product',
     'luong_dot', 'scaled_luong_dot', 'luong_general', 'luong_concat',
     'rnn_attention']
 
@@ -57,32 +59,49 @@ class AttentionMechanism(nn.Module):
         self.sigmoid_smoothing = sigmoid_smoothing
 
         if self.attention_type in ['content', 'luong_concat']:
-            self.W = LinearND(decoder_num_units * 2, attention_dim)
-            self.V = LinearND(attention_dim, 1)
+            self.W = LinearND(decoder_num_units * 2, attention_dim, bias=False)
+            self.V = LinearND(attention_dim, 1, bias=False)
+
         elif self.attention_type == 'normed_content':
             raise NotImplementedError
+
         elif self.attention_type == 'location':
             assert kernel_size % 2 == 1
-            self.conv = nn.Conv1d(
+            # self.conv = nn.Conv1d(
+            #     in_channels=1,
+            #     out_channels=out_channels,
+            #     kernel_size=kernel_size,
+            #     stride=1,
+            #     padding=kernel_size // 2,
+            #     bias=False)
+            self.conv = nn.Conv2d(
                 in_channels=1,
                 out_channels=out_channels,
-                kernel_size=kernel_size,
+                kernel_size=(1, kernel_size),
                 stride=1,
-                padding=kernel_size // 2,
-                bias=True)
-            self.W = LinearND(decoder_num_units * 2, attention_dim)
-            self.W_conv = LinearND(out_channels, attention_dim)
-            self.V = LinearND(attention_dim, 1)
+                padding=(0, kernel_size // 2),
+                bias=False)
+            self.W = LinearND(decoder_num_units * 2, attention_dim, bias=False)
+            self.W_conv = LinearND(out_channels, attention_dim, bias=False)
+            self.V = LinearND(attention_dim, 1, bias=False)
+
         elif self.attention_type == 'dot_product':
-            self.W_keys = LinearND(decoder_num_units, attention_dim)
-            self.W_query = LinearND(decoder_num_units, attention_dim)
+            self.W_keys = LinearND(
+                decoder_num_units, attention_dim, bias=False)
+            self.W_query = LinearND(
+                decoder_num_units, attention_dim, bias=False)
+
         elif self.attention_type == 'luong_dot':
             # NOTE: no parameter
             pass
+
         elif self.attention_type == 'scaled_luong_dot':
             raise NotImplementedError
+
         elif self.attention_type == 'luong_general':
-            self.W_keys = LinearND(decoder_num_units, decoder_num_units)
+            self.W_keys = LinearND(
+                decoder_num_units, decoder_num_units, bias=False)
+
         elif self.attention_type == 'rnn_attention':
             raise NotImplementedError
 
@@ -101,7 +120,7 @@ class AttentionMechanism(nn.Module):
         """
         batch_size, max_time = encoder_outputs.size()[:2]
 
-        if self.attention_type in ['content', 'luong_concat']:
+        if self.attention_type in ['content', 'bahdanau_content', 'luong_concat']:
             ###################################################################
             # energy = <v, tanh(W_keys(h_en) + W_query(h_de))> (bahdanau)
             # energy = <v, tanh(W([h_de; h_en]))> (luong, effective)
@@ -119,8 +138,15 @@ class AttentionMechanism(nn.Module):
             # energy = <v, tanh(W_keys(h_en) + W_query(h_de) + W_conv(f))>
             # energy = <v, tanh(W([h_de; h_en] + W_conv(f)))> (effective)
             ###################################################################
-            conv_feat = self.conv(attention_weights_step.unsqueeze(dim=1))
+            # For 1D conv
+            # conv_feat = self.conv(attention_weights_step.unsqueeze(dim=1))
             # -> `[B, out_channels, T_in]`
+
+            # For 2D conv
+            conv_feat = self.conv(
+                attention_weights_step.view(batch_size, 1, 1, max_time)).squeeze(2)
+            # -> `[B, out_channels, T_in]`
+
             conv_feat = conv_feat.transpose(1, 2).contiguous()
             # -> `[B, T_in, out_channels]`
 
@@ -162,6 +188,9 @@ class AttentionMechanism(nn.Module):
         # Sharpening
         energy *= self.sharpening_factor
         # NOTE: energy: `[B, T_in]`
+
+        # log_t = math.log(energy.size()[1])
+        # energy = log_t * energy
 
         # Compute attention weights
         if self.sigmoid_smoothing:
