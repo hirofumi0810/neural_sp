@@ -13,6 +13,7 @@ try:
 except:
     raise ImportError('Install warpctc_pytorch.')
 
+import math
 import random
 import numpy as np
 
@@ -391,7 +392,7 @@ class AttentionSeq2seq(ModelBase):
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
-            log_probs = F.log_softmax(logits, dim=logits.dim() - 1)
+            log_probs = F.log_softmax(logits, dim=-1)
             uniform = Variable(torch.ones(
                 batch_size, label_num, num_classes)) / num_classes
             if self.use_cuda:
@@ -857,6 +858,7 @@ class AttentionSeq2seq(ModelBase):
         # Initialize context vector
         context_vector = Variable(
             torch.zeros(batch_size, 1, encoder_outputs.size(2)))
+        context_vector.volatile = True
 
         if self.use_cuda:
             attention_weights_step = attention_weights_step.cuda()
@@ -897,7 +899,7 @@ class AttentionSeq2seq(ModelBase):
             # NOTE: `[B, 1, num_classes]` -> `[B, num_classes]`
 
             # Path through the softmax layer & convert to log-scale
-            log_probs = F.log_softmax(logits, dim=logits.dim() - 1)
+            log_probs = F.log_softmax(logits, dim=-1)
 
             # Pick up 1-best
             y = torch.max(log_probs, dim=1)[1]
@@ -946,18 +948,26 @@ class AttentionSeq2seq(ModelBase):
 
         beam = []
         for i_batch in range(batch_size):
+
             # Initialize decoder state
             decoder_state = self._init_decoder_state(
                 encoder_final_state[:, i_batch:i_batch + 1, :], volatile=True)
 
+            # Modify max_time for reducing time resolution
+            max_time = inputs_seq_len[i_batch].data[0]
+            if self.encoder.conv is not None:
+                max_time = self.encoder.conv_out_size(max_time, 1)
+            max_time = math.floor(
+                max_time // (2 ** sum(self.subsample_list)))
+
             # Initialize attention weights
-            max_time = inputs_seq_len.data[i_batch]
             attention_weights_step = Variable(torch.zeros(1, max_time))
             attention_weights_step.volatile = True
 
             # Initialize context vector
             context_vector = Variable(
                 torch.zeros(1, 1, encoder_outputs.size(2)))
+            context_vector.volatile = True
 
             if self.use_cuda:
                 attention_weights_step = attention_weights_step.cuda()
@@ -978,7 +988,13 @@ class AttentionSeq2seq(ModelBase):
                     else:
                         y = self.embedding(y)
 
-                    max_time = inputs_seq_len.data[i_batch]
+                    # Modify max_time for reducing time resolution
+                    max_time = inputs_seq_len[i_batch].data[0]
+                    if self.encoder.conv is not None:
+                        max_time = self.encoder.conv_out_size(max_time, 1)
+                    max_time = math.floor(
+                        max_time // (2 ** sum(self.subsample_list)))
+
                     decoder_inputs = torch.cat([y, context_vector], dim=-1)
                     decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
                         encoder_outputs=encoder_outputs[i_batch:i_batch + 1, :max_time],
@@ -1001,7 +1017,7 @@ class AttentionSeq2seq(ModelBase):
                     # NOTE: `[B, 1, num_classes]` -> `[B, num_classes]`
 
                     # Path through the softmax layer & convert to log-scale
-                    log_probs = F.log_softmax(logits, dim=logits.dim() - 1)
+                    log_probs = F.log_softmax(logits, dim=-1)
                     log_probs = var2np(log_probs).tolist()[0]
 
                     for i, log_prob in enumerate(log_probs):
@@ -1073,7 +1089,7 @@ class AttentionSeq2seq(ModelBase):
         encoder_outputs = encoder_outputs.view(batch_size * max_time, -1)
         logits_ctc = self.fc_ctc(encoder_outputs)
         logits_ctc = logits_ctc.view(batch_size, max_time, -1)
-        log_probs = F.log_softmax(logits_ctc, dim=logits_ctc.dim() - 1)
+        log_probs = F.log_softmax(logits_ctc, dim=-1)
 
         # Modify inputs_seq_len_var for reducing time resolution
         if self.encoder.conv is not None or self.encoder_type == 'cnn':

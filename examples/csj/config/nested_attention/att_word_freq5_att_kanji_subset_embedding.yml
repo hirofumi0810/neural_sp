@@ -16,7 +16,7 @@ param:
   num_skip: 1
 
   # topology
-  model_type: hierarchical_attention
+  model_type: nested_attention
   encoder_type: lstm
   encoder_bidirectional: True
   encoder_residual: False
@@ -88,3 +88,7 @@ param:
   # MTL
   main_loss_weight: 0.5
   ctc_loss_weight_sub: 0
+
+  # composition
+  composition_case: embedding
+  space_index: 2888

@@ -366,7 +366,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             self.gate_fn = LinearND(embedding_dim, embedding_dim)
 
     def forward(self, inputs, labels, labels_sub, inputs_seq_len,
-                labels_seq_len, labels_seq_len_sub, volatile=False):
+                labels_seq_len, labels_seq_len_sub, is_eval=False):
         """Forward computation.
         Args:
             inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
@@ -375,7 +375,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             inputs_seq_len (np.ndarray): A tensor of size `[B]`
             labels_seq_len (np.ndarray): A tensor of size `[B]`
             labels_seq_len_sub (np.ndarray): A tensor of size `[B]`
-            volatile (bool, optional): if True, the history will not be saved.
+            is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
             loss (FloatTensor): A tensor of size `[1]`
@@ -394,14 +394,19 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         labels_seq_len_sub_var = np2var(
             labels_seq_len_sub, dtype='int', use_cuda=self.use_cuda)
 
-        # Gaussian noise injection
-        if self.weight_noise_injection:
-            self._inject_weight_noise(mean=0., std=self.weight_noise_std)
+        if is_eval:
+            self.eval()
+        else:
+            self.train()
+
+            # Gaussian noise injection
+            if self.weight_noise_injection:
+                self._inject_weight_noise(mean=0., std=self.weight_noise_std)
 
         # Encode acoustic features
         encoder_outputs, encoder_final_state, encoder_outputs_sub, encoder_final_state_sub, perm_indices = self._encode(
             inputs_var, inputs_seq_len_var,
-            volatile=volatile, is_multi_task=True)
+            volatile=is_eval, is_multi_task=True)
 
         # Permutate indices
         if perm_indices is not None:
@@ -412,7 +417,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             labels_seq_len_sub_var = labels_seq_len_sub_var[perm_indices]
 
         # Teacher-forcing
-        logits, logits_sub, attention_weights, attention_weights_sub = self._decode_train_composition(
+        logits, logits_sub, attention_weights, attention_weights_sub = self._decode_train_joint(
             encoder_outputs, encoder_outputs_sub,
             encoder_final_state, encoder_final_state_sub,
             inputs_seq_len_var,
@@ -467,8 +472,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         # Add coverage term
         if self.coverage_weight != 0:
             pass
-            # coverage = self._compute_coverage(attention_weights)
-            # loss += coverage_weight * coverage
             # TODO: sub taskも入れる？
 
         xe_loss_main = xe_loss_main * self.main_loss_weight / batch_size
@@ -487,14 +490,14 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub / batch_size
             loss += ctc_loss_sub
 
-        self._step += 1
+        if not is_eval:
+            self._step += 1
 
         return loss, xe_loss_main, xe_loss_sub
 
-    def _decode_train_composition(
-            self, encoder_outputs, encoder_outputs_sub,
-            encoder_final_state, encoder_final_state_sub, inputs_seq_len,
-            labels, labels_sub, labels_seq_len, labels_seq_len_sub):
+    def _decode_train_joint(self, encoder_outputs, encoder_outputs_sub,
+                            encoder_final_state, encoder_final_state_sub, inputs_seq_len,
+                            labels, labels_sub, labels_seq_len, labels_seq_len_sub):
         """Decoding of composition models in the training stage.
         Args:
             encoder_outputs (FloatTensor): A tensor of size
@@ -556,8 +559,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 context_vector_sub = context_vector_sub.cuda()
 
             # Decode by character-level model at first
-            labels_max_seq_len_sub = labels_sub.size(1)
-            for t in range(labels_max_seq_len_sub - 1):
+            labels_sub_max_seq_len = labels_sub.size(1)
+            for t in range(labels_sub_max_seq_len - 1):
 
                 if self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random() < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step:
                     # Scheduled sampling
@@ -633,6 +636,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             # TODO: Cache the same word
             self.c2w_cache = {}
 
+            labels_max_seq_len = labels.size(1)
+            labels_sub_max_seq_len = labels_sub.size(1)
+
             for i_batch in range(batch_size):
 
                 logits_i = []
@@ -646,9 +652,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 decoder_state_sub = self._init_decoder_state(
                     encoder_final_state_sub[:, i_batch:i_batch + 1, :])
 
-                max_time = inputs_seq_len[i_batch].data[0]
-
                 # Modify max_time for reducing time resolution
+                max_time = inputs_seq_len[i_batch].data[0]
                 if self.encoder.conv is not None:
                     max_time = self.encoder.conv_out_size(max_time, 1)
                 max_time = math.floor(
@@ -660,10 +665,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 attention_weights_step_sub = Variable(torch.zeros(1, max_time))
 
                 # Initialize context vector
-                if self.composition_case == 'embedding':
+                if self.composition_case in ['embedding', 'multiscale']:
                     context_vector = Variable(
                         torch.zeros(1, 1, encoder_outputs.size(2)))
-                elif self.composition_case in ['hidden_embedding', 'multiscale']:
+                elif self.composition_case == 'hidden_embedding':
                     context_vector = Variable(
                         torch.zeros(1, 1, encoder_outputs.size(2) * 2))
                 context_vector_sub = Variable(
@@ -702,9 +707,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     char_embs = []
                     for i_char in range(char_lens[t]):  # loop of characters
 
-                        if self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random() < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step:
+                        if self.scheduled_sampling_prob > 0 and t > 0 and i_char > 0 and self._step > 0 and random.random() < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step:
                             # Scheduled sampling
-                            y_prev_sub = torch.max(logits_sub[-1], dim=2)[1]
+                            y_prev_sub = torch.max(logits_sub_i[-1], dim=2)[1]
                             y_sub = self.embedding_sub(y_prev_sub)
                         else:
                             # Teacher-forcing
@@ -714,7 +719,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         decoder_inputs_sub = torch.cat(
                             [y_sub, context_vector_sub], dim=-1)
                         decoder_outputs_sub, decoder_state_sub, context_vector_sub, attention_weights_step_sub = self._decode_step(
-                            encoder_outputs=encoder_outputs_sub[i_batch: i_batch + 1],
+                            encoder_outputs=encoder_outputs_sub[i_batch: i_batch + 1, :max_time],
                             decoder_inputs=decoder_inputs_sub,
                             decoder_state=decoder_state_sub,
                             attention_weights_step=attention_weights_step_sub,
@@ -736,6 +741,39 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         char_embs.append(char_emb)
                         global_char_counter += 1
 
+                    ###############
+                    # For space
+                    ###############
+                    if 0 < t < word_len - 2:
+                        if self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random() < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step:
+                            # Scheduled sampling
+                            y_prev_sub = torch.max(logits_sub_i[-1], dim=2)[1]
+                            y_sub = self.embedding_sub(y_prev_sub)
+                        else:
+                            # Teacher-forcing
+                            y_sub = self.embedding_sub(
+                                labels_sub[i_batch:i_batch + 1, global_char_counter:global_char_counter + 1])
+
+                        decoder_inputs_sub = torch.cat(
+                            [y_sub, context_vector_sub], dim=-1)
+                        decoder_outputs_sub, decoder_state_sub, context_vector_sub, attention_weights_step_sub = self._decode_step(
+                            encoder_outputs=encoder_outputs_sub[i_batch: i_batch + 1, :max_time],
+                            decoder_inputs=decoder_inputs_sub,
+                            decoder_state=decoder_state_sub,
+                            attention_weights_step=attention_weights_step_sub,
+                            is_sub_task=True)
+
+                        concat_sub = torch.cat(
+                            [decoder_outputs_sub, context_vector_sub], dim=-1)
+                        attentional_vector_sub = F.tanh(
+                            self.proj_layer_sub(concat_sub))
+                        logits_step_sub = self.fc_sub(attentional_vector_sub)
+
+                        logits_sub_i.append(logits_step_sub)
+                        attention_weights_sub_i.append(
+                            attention_weights_step_sub)
+                        global_char_counter += 1
+
                     char_embs = torch.cat(char_embs, dim=1)
                     # NOTE: char_embs: `[1, char_num, embedding_dim_sub]`
 
@@ -748,7 +786,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     ########################################
                     if self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random() < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step:
                         # Scheduled sampling
-                        y_prev = torch.max(logits[-1], dim=2)[1]
+                        y_prev = torch.max(logits_i[-1], dim=2)[1]
                         y = self.embedding(y_prev)
                     else:
                         # Teacher-forcing
@@ -760,16 +798,15 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         gate = F.sigmoid(self.gate_fn(y))
                         y_composition = (1 - gate) * y + gate * word_repr
                         # TODO: 足し算じゃなくて，concatでもいいかも
-
                         decoder_inputs = torch.cat(
                             [y_composition, context_vector], dim=-1)
-                    elif self.compostion_case == 'multiscale':
+                    elif self.composition_case == 'multiscale':
                         decoder_inputs = torch.cat([y, context_vector], dim=-1)
                         decoder_inputs = torch.cat(
                             [decoder_inputs, decoder_outputs_sub], dim=-1)
 
                     decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
-                        encoder_outputs=encoder_outputs[i_batch: i_batch + 1],
+                        encoder_outputs=encoder_outputs[i_batch: i_batch + 1, :max_time],
                         decoder_inputs=decoder_inputs,
                         decoder_state=decoder_state,
                         attention_weights_step=attention_weights_step)
@@ -777,7 +814,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     if self.composition_case == 'hidden_embedding':
                         # Compute character-level context vector
                         context_vector_char = torch.sum(
-                            encoder_outputs_sub *
+                            encoder_outputs_sub[i_batch: i_batch + 1, :max_time] *
                             attention_weights_step.unsqueeze(dim=2),
                             dim=1, keepdim=True)
 
@@ -792,7 +829,17 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
                     logits_i.append(logits_step)
                     attention_weights_i.append(attention_weights_step)
-                    print(logits_step.size())
+
+                # Pad tensor
+                for _ in range(labels_max_seq_len - len(logits_i) - 1):
+                    logits_i.append(torch.zeros_like(logits_step))
+                    attention_weights_i.append(
+                        torch.zeros_like(attention_weights_step))
+                for _ in range(labels_sub_max_seq_len - len(logits_sub_i) - 1):
+                    logits_sub_i.append(torch.zeros_like(logits_step_sub))
+                    attention_weights_sub_i.append(
+                        torch.zeros_like(attention_weights_step_sub))
+                # NOTE: remove <EOS>
 
                 # Concatenate in time-dimension
                 logits_i = torch.cat(logits_i, dim=1)
@@ -800,7 +847,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 attention_weights_i = torch.stack(attention_weights_i, dim=1)
                 attention_weights_sub_i = torch.stack(
                     attention_weights_sub_i, dim=1)
-                print(logits_i.size())
 
                 logits.append(logits_i)
                 logits_sub.append(logits_sub_i)
@@ -812,8 +858,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             logits_sub = torch.cat(logits_sub, dim=0)
             attention_weights = torch.stack(attention_weights, dim=0)
             attention_weights_sub = torch.stack(attention_weights_sub, dim=0)
-
-            print(logits.size())
 
         return logits, logits_sub, attention_weights, attention_weights_sub
 
@@ -927,15 +971,18 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         inputs_seq_len_var = np2var(
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
 
+        # Change to evaluation mode
+        self.eval()
+
         # Encode acoustic features
         if is_sub_task:
             _, _, encoder_outputs, encoder_final_state, perm_indices = self._encode(
-                inputs_var, inputs_seq_len_var, volatile=True,
-                is_multi_task=True)
+                inputs_var, inputs_seq_len_var,
+                volatile=True, is_multi_task=True)
         else:
             encoder_outputs, encoder_final_state, encoder_outputs_sub, encoder_final_state_sub, perm_indices = self._encode(
-                inputs_var, inputs_seq_len_var, volatile=True,
-                is_multi_task=True)
+                inputs_var, inputs_seq_len_var,
+                volatile=True, is_multi_task=True)
 
         # Permutate indices
         if perm_indices is not None:
@@ -948,27 +995,27 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     encoder_outputs, encoder_final_state, max_decode_length,
                     is_sub_task=True)
             else:
-                best_hyps, _ = self._decode_infer_greedy_composition(
+                best_hyps, _, _, _ = self._decode_infer_greedy_joint(
                     encoder_outputs, encoder_outputs_sub,
                     encoder_final_state, encoder_final_state_sub,
-                    max_decode_length)
+                    inputs_seq_len_var, max_decode_length)
         else:
             raise NotImplementedError
 
-        # Remove <SOS>
-        best_hyps = best_hyps[:, 1:]
+        if is_sub_task or self.composition_case == 'hidden':
+            # Remove <SOS>
+            best_hyps = best_hyps[:, 1:]
 
-        # Permutate indices to the original order
-        if perm_indices is not None:
-            best_hyps = best_hyps[perm_indices]
+            # Permutate indices to the original order
+            if perm_indices is not None:
+                best_hyps = best_hyps[perm_indices]
+        # TODO: fix this
 
         return best_hyps
 
-    def _decode_infer_greedy_composition(
-            self, encoder_outputs, encoder_outputs_sub,
-            encoder_final_state, encoder_final_state_sub,
-            inputs_seq_len,
-            max_decode_length, max_decode_length_sub):
+    def _decode_infer_greedy_joint(self, encoder_outputs, encoder_outputs_sub,
+                                   encoder_final_state, encoder_final_state_sub,
+                                   inputs_seq_len, max_decode_length):
         """Greedy decoding in the inference stage.
         Args:
             encoder_outputs (FloatTensor): A tensor of size
@@ -982,7 +1029,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             inputs_seq_len (IntTensor): A tensor of size `[B]`
             max_decode_length (int): the length of output sequences
                 to stop prediction when EOS token have not been emitted
-            max_decode_length_sub (int):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
                 Note that best_hyps includes <SOS> tokens.
@@ -993,153 +1039,69 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 `[B, T_out_sub, T_in]`
         """
         batch_size = encoder_outputs.size(0)
-        assert encoder_outputs.size(1) == encoder_outputs_sub.size(1)
+        max_time = encoder_outputs.size(1)
+        max_time_sub = encoder_outputs_sub.size(1)
+        assert max_time == max_time_sub
 
-        eos = self.eos_index
-        eos_sub = self.eos_index_sub
-
-        best_hyps = [y]
-        best_hyps_sub = [y_sub]
-        attention_weights = [attention_weights_step]
-        attention_weights_sub = [attention_weights_step_sub]
-
-        # Proccess per utterance
-        for i_batch in range(batch_size):
+        # Batch-mode
+        if self.composition_case == 'hidden':
 
             # Initialize decoder state
             decoder_state = self._init_decoder_state(
                 encoder_final_state, volatile=True)
-            decoder_state_sub = self._init_decoder_state(
-                encoder_final_state_sub, volatile=True)
-
-            max_time = inputs_seq_len[i_batch]
 
             # Initialize attention weights
-            attention_weights_step = Variable(torch.zeros(1, max_time))
-            attention_weights_step_sub = Variable(torch.zeros(1, max_time))
+            attention_weights_step = Variable(
+                torch.zeros(batch_size, max_time))
             attention_weights_step.volatile = True
-            attention_weights_step_sub.volatile = True
-            if self.use_cuda:
-                attention_weights_step = attention_weights_step.cuda()
-                attention_weights_step_sub = attention_weights_step_sub.cuda()
 
             # Initialize context vector
             context_vector = Variable(
-                torch.zeros(1, 1, encoder_outputs.size(2)))
-            context_vector_sub = Variable(
-                torch.zeros(1, 1, encoder_outputs_sub.size(2)))
+                torch.zeros(batch_size, 1, encoder_outputs.size(2) * 2))
+            context_vector.volatile = True
+
             if self.use_cuda:
+                attention_weights_step = attention_weights_step.cuda()
                 context_vector = context_vector.cuda()
-                context_vector_sub = context_vector_sub.cuda()
 
             # Start from <SOS>
-            y = self._create_token(value=self.sos_index, batch_size=1)
-            y_sub = self._create_token(value=self.sos_index_sub, batch_size=1)
+            y = self._create_token(value=self.sos_index, batch_size=batch_size)
 
-            if self.composition_case in ['hidden', 'embedding', 'hidden_embedding']:
-
-                # TODO: Cache the same word
-                self.c2w_cache = {}
-
-                for _ in range(max_decode_length):
-
-                    if self.composition_case == 'hidden':
-                        pass
-                    else:
-                        pass
-
-                    ###########################################################
-                    # Decode by character-level model until a space is emmited
-                    ###########################################################
-                    if is_sub_task:
-                        y = self.embedding_sub(y)
-                    else:
-                        y = self.embedding(y)
-
-                    decoder_inputs = torch.cat([y, context_vector], dim=-1)
-                    decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
-                        encoder_outputs=encoder_outputs,
-                        decoder_inputs=decoder_inputs,
-                        decoder_state=decoder_state,
-                        attention_weights_step=attention_weights_step,
-                        is_sub_task=is_sub_task)
-
-                    concat = torch.cat(
-                        [decoder_outputs, context_vector], dim=-1)
-                    if is_sub_task:
-                        attentional_vector = F.tanh(
-                            self.proj_layer_sub(concat))
-                        logits = self.fc_sub(attentional_vector)
-                    else:
-                        attentional_vector = F.tanh(self.proj_layer(concat))
-                        logits = self.fc(attentional_vector)
-
-                    logits = logits.squeeze(dim=1)
-                    # NOTE: `[B, 1, num_classes]` -> `[B, num_classes]`
-
-                    # Path through the softmax layer & convert to log-scale
-                    log_probs = F.log_softmax(logits, dim=logits.dim() - 1)
-
-                    # Pick up 1-best
-                    y = torch.max(log_probs, dim=1)[1]
-                    y = y.unsqueeze(dim=1)
-                    best_hyps.append(y)
-                    attention_weights.append(attention_weights_step)
-
-                    # Break if <EOS> is outputed in all mini-batch
-                    if torch.sum(y.data == eos) == y.numel():
-                        break
-
-        # Concatenate in T_out dimension
-        best_hyps = torch.cat(best_hyps, dim=1)
-        attention_weights = torch.stack(attention_weights, dim=1)
-
-        # Convert to numpy
-        best_hyps = var2np(best_hyps)
-        attention_weights = var2np(attention_weights)
-
-        return best_hyps, attention_weights
-
-    def tmp(self, encoder_outputs, encoder_outputs_sub,
-            encoder_final_state, encoder_final_state_sub,
-            max_decode_length):
-
-        if self.composition_case == 'hidden':
+            best_hyps = [y]
+            best_hyps_sub = []
+            attention_weights = [attention_weights_step]
+            attention_weights_sub = []
 
             for _ in range(max_decode_length):
 
                 y = self.embedding(y)
 
+                decoder_inputs = torch.cat([y, context_vector], dim=-1)
                 decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
-                    encoder_outputs,
-                    y,
-                    decoder_state,
-                    attention_weights_step)
+                    encoder_outputs=encoder_outputs,
+                    decoder_inputs=decoder_inputs,
+                    decoder_state=decoder_state,
+                    attention_weights_step=attention_weights_step)
 
                 # Compute character-level context vector
-                context_vector_sub = torch.sum(
+                context_vector_char = torch.sum(
                     encoder_outputs_sub *
                     attention_weights_step.unsqueeze(dim=2),
                     dim=1, keepdim=True)
 
                 # Mix word-level and character-level context vector
                 context_vector = torch.cat(
-                    [context_vector, context_vector_sub], dim=context_vector.dim() - 1)
-                context_vector = self.merge_context_vector(context_vector)
+                    [context_vector, context_vector_char], dim=-1)
 
-                if self.input_feeding:
-                    # Input-feeding approach
-                    output = self.input_feeeding(
-                        torch.cat([decoder_outputs, context_vector], dim=-1))
-                    logits = self.fc(F.tanh(output))
-                else:
-                    logits = self.fc(decoder_outputs + context_vector)
+                concat = torch.cat([decoder_outputs, context_vector], dim=-1)
+                attentional_vector = F.tanh(self.proj_layer(concat))
+                logits = self.fc(attentional_vector)
 
                 logits = logits.squeeze(dim=1)
                 # NOTE: `[B, 1, num_classes]` -> `[B, num_classes]`
 
                 # Path through the softmax layer & convert to log-scale
-                log_probs = F.log_softmax(logits, dim=logits.dim() - 1)
+                log_probs = F.log_softmax(logits, dim=-1)
 
                 # Pick up 1-best
                 y = torch.max(log_probs, dim=1)[1]
@@ -1151,148 +1113,195 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 if torch.sum(y.data == self.eos_index) == y.numel():
                     break
 
-        elif self.composition_case == 'embedding_case':
+            # Concatenate in T_out dimension
+            best_hyps = torch.cat(best_hyps, dim=1)
+            attention_weights = torch.stack(attention_weights, dim=1)
 
-            # TODO:
-            # charの出力結果を各時刻に使っていくならば，単語の数が一致していなければならない．
-            # これはresolving OOVではなかった問題
-            # これを解決するため，限られた領域のみデコードするみたいなテクニックが必要
-            # または，文字列などの離散的な情報ではなく，デコードする前の連続量の情報を使うなどの工夫が必要
+            # Convert to numpy
+            best_hyps = var2np(best_hyps)
+            attention_weights = var2np(attention_weights)
 
-            # Proccess per utterance
+        # Process per utterance
+        elif self.composition_case in ['embedding', 'hidden_embedding', 'multiscale']:
+
+            # TODO: Cache the same word
+            self.c2w_cache = {}
+
+            best_hyps = []
+            best_hyps_sub = []
+            attention_weights = []
+            attention_weights_sub = []
+
             for i_batch in range(batch_size):
-                max_time = encoder_outputs.size(1)
-                max_time_sub = encoder_outputs_sub.size(1)
 
                 # Initialize decoder state
                 decoder_state = self._init_decoder_state(
-                    encoder_final_state[:, i_batch:i_batch + 1], volatile=True)
+                    encoder_final_state[:, i_batch:i_batch + 1, :], volatile=True)
                 decoder_state_sub = self._init_decoder_state(
-                    encoder_final_state_sub[:, i_batch:i_batch + 1], volatile=True)
+                    encoder_final_state_sub[:, i_batch:i_batch + 1, :], volatile=True)
+
+                # Modify max_time for reducing time resolution
+                max_time = inputs_seq_len[i_batch].data[0]
+                if self.encoder.conv is not None:
+                    max_time = self.encoder.conv_out_size(max_time, 1)
+                max_time = math.floor(
+                    max_time // (2 ** sum(self.subsample_list)))
+                # NOTE: assume max_time == max_time_sub
 
                 # Initialize attention weights
                 attention_weights_step = Variable(torch.zeros(1, max_time))
-                attention_weights_step_sub = Variable(
-                    torch.zeros(1, max_time_sub))
+                attention_weights_step_sub = Variable(torch.zeros(1, max_time))
                 attention_weights_step.volatile = True
                 attention_weights_step_sub.volatile = True
+
+                # Initialize context vector
+                if self.composition_case in ['embedding', 'multiscale']:
+                    context_vector = Variable(
+                        torch.zeros(1, 1, encoder_outputs.size(2)))
+                elif self.composition_case == 'hidden_embedding':
+                    context_vector = Variable(
+                        torch.zeros(1, 1, encoder_outputs.size(2) * 2))
+                context_vector_sub = Variable(
+                    torch.zeros(1, 1, encoder_outputs_sub.size(2)))
+                context_vector.volatile = True
+                context_vector_sub.volatile = True
+
                 if self.use_cuda:
                     attention_weights_step = attention_weights_step.cuda()
                     attention_weights_step_sub = attention_weights_step_sub.cuda()
+                    context_vector = context_vector.cuda()
+                    context_vector_sub = context_vector_sub.cuda()
 
                 # Start from <SOS>
                 y = self._create_token(value=self.sos_index, batch_size=1)
                 y_sub = self._create_token(
                     value=self.sos_index_sub, batch_size=1)
 
-                end_flag = False
+                # best_hyps_i = [var2np(y)]
+                # best_hyps_sub_i = [var2np(y_sub)]
+                # attention_weights_i = [var2np(attention_weights_step)]
+                # attention_weights_sub_i = [var2np(attention_weights_step_sub)]
+                best_hyps_i = []
+                best_hyps_sub_i = []
+                attention_weights_i = []
+                attention_weights_sub_i = []
+
+                global_char_counter = 0
                 for _ in range(max_decode_length):
 
-                    # Decode the character sequence until space is emitted
-                    char_counter = 0
-                    total_char_counter = 0
-                    char_embeddings = []
-                    while True:
+                    ###########################################################
+                    # Decode by character-level decoder until space is emitted
+                    ###########################################################
+                    local_char_counter = 0
+                    char_embs = []
+                    while local_char_counter < 10:
                         y_sub = self.embedding_sub(y_sub)
 
-                        decoder_outputs_sub, decoder_state_sub, context_vector_sub, attention_weights_step_sub = self._decode_step_sub(
-                            encoder_outputs_sub[i_batch:i_batch +
-                                                1, :max_time_sub],
-                            y_sub,
-                            decoder_state_sub,
-                            attention_weights_step_sub)
+                        decoder_inputs_sub = torch.cat(
+                            [y_sub, context_vector_sub], dim=-1)
+                        decoder_outputs_sub, decoder_state_sub, context_vector_sub, attention_weights_step_sub = self._decode_step(
+                            encoder_outputs=encoder_outputs_sub[i_batch: i_batch + 1, :max_time],
+                            decoder_inputs=decoder_inputs_sub,
+                            decoder_state=decoder_state_sub,
+                            attention_weights_step=attention_weights_step_sub,
+                            is_sub_task=True)
 
-                        if self.input_feeding:
-                            # Input-feeding approach
-                            output_sub = self.input_feeding_sub(
-                                torch.cat([decoder_outputs_sub, context_vector_sub], dim=-1))
-                            logits_sub = self.fc_sub(F.tanh(output_sub))
-                        else:
-                            logits_sub = self.fc_sub(
-                                decoder_outputs_sub + context_vector_sub)
+                        concat_sub = torch.cat(
+                            [decoder_outputs_sub, context_vector_sub], dim=-1)
+                        attentional_vector_sub = F.tanh(
+                            self.proj_layer_sub(concat_sub))
+                        logits_sub = self.fc_sub(attentional_vector_sub)
 
                         logits_sub = logits_sub.squeeze(dim=1)
-                        # NOTE: `[B, 1, num_classes_sub]` -> `[B,
-                        # num_classes_sub]`
+                        # NOTE: `[B, 1, num_classes_sub]` ->
+                        #       `[B, num_classes_sub]`
 
                         # Path through the softmax layer & convert to log-scale
-                        log_probs_sub = F.log_softmax(
-                            logits_sub, dim=logits_sub.dim() - 1)
+                        log_probs_sub = F.log_softmax(logits_sub, dim=-1)
 
                         # Pick up 1-best
                         y_sub = torch.max(log_probs_sub, dim=1)[1]
-                        print(y_sub.data[0])
                         y_sub = y_sub.unsqueeze(dim=1)
 
-                        if y_sub.data[0] == self.eos_index_sub:
-                            end_flag = True
-                            break
-                        if y_sub.data[0] == self.space_index:
+                        local_char_counter += 1
+                        global_char_counter += 1
+
+                        if y_sub.data[0] in [self.eos_index_sub, self.space_index]:
                             break
 
                         emb_char = self.embedding_sub(y_sub)
                         # NOTE: emb_char: `[1, 1, embedding_dim_sub]`
-                        char_embeddings.append(emb_char)
-                        char_counter += 1
-                        total_char_counter += 1
+                        char_embs.append(emb_char)
 
-                        if total_char_counter >= 60:
-                            end_flag = True
-                            break
-                        if char_counter > 10:
-                            break
-
-                    if len(char_embeddings) == 0:
+                    # Break if no character is emitted
+                    if len(char_embs) == 0:
                         break
 
-                    char_embeddings = torch.cat(char_embeddings, dim=1)
-                    # NOTE: char_embeddings: `[1, char_num, embedding_dim_sub]`
+                    char_embs = torch.cat(char_embs, dim=1)
+                    # NOTE: char_embs: `[1, char_num, embedding_dim_sub]`
 
                     # Get Word representation from a sequence of character
-                    word_repr = self.char2word(char_embeddings, volatile=True)
+                    word_repr = self.c2w(char_embs, volatile=True)
                     # NOTE: word_repr: `[1, 1, embedding_dim_sub * 2]`
 
-                    decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
-                        encoder_outputs[i_batch: i_batch + 1, :max_time],
-                        word_repr,
-                        decoder_state,
-                        attention_weights_step)
+                    ########################################
+                    # Decode by word-level decoder
+                    ########################################
+                    y = self.embedding(y)
 
-                    if self.input_feeding:
-                        # Input-feeding approach
-                        output = self.input_feeeding(
-                            torch.cat([decoder_outputs, context_vector], dim=-1))
-                        logits = self.fc(F.tanh(output))
-                    else:
-                        logits = self.fc(decoder_outputs + context_vector)
+                    if self.composition_case in ['embedding', 'hidden_embedding']:
+                        # Mix word embedding and word representation form C2W
+                        gate = F.sigmoid(self.gate_fn(y))
+                        y_composition = (1 - gate) * y + gate * word_repr
+                        # TODO: 足し算じゃなくて，concatでもいいかも
+                        decoder_inputs = torch.cat(
+                            [y_composition, context_vector], dim=-1)
+                    elif self.composition_case == 'multiscale':
+                        decoder_inputs = torch.cat([y, context_vector], dim=-1)
+                        decoder_inputs = torch.cat(
+                            [decoder_inputs, decoder_outputs_sub], dim=-1)
+
+                    decoder_outputs, decoder_state, context_vector, attention_weights_step = self._decode_step(
+                        encoder_outputs=encoder_outputs[i_batch: i_batch + 1, :max_time],
+                        decoder_inputs=decoder_inputs,
+                        decoder_state=decoder_state,
+                        attention_weights_step=attention_weights_step)
+
+                    if self.composition_case == 'hidden_embedding':
+                        # Compute character-level context vector
+                        context_vector_char = torch.sum(
+                            encoder_outputs_sub[i_batch: i_batch + 1, :max_time] *
+                            attention_weights_step.unsqueeze(dim=2),
+                            dim=1, keepdim=True)
+
+                        # Mix word-level and character-level context vector
+                        context_vector = torch.cat(
+                            [context_vector, context_vector_char], dim=-1)
+
+                    concat = torch.cat(
+                        [decoder_outputs, context_vector], dim=-1)
+                    attentional_vector = F.tanh(self.proj_layer(concat))
+                    logits = self.fc(attentional_vector)
 
                     logits = logits.squeeze(dim=1)
                     # NOTE: `[B, 1, num_classes]` -> `[B, num_classes]`
 
                     # Path through the softmax layer & convert to log-scale
-                    log_probs = F.log_softmax(logits, dim=logits.dim() - 1)
+                    log_probs = F.log_softmax(logits, dim=-1)
 
                     # Pick up 1-best
                     y = torch.max(log_probs, dim=1)[1]
                     y = y.unsqueeze(dim=1)
-                    best_hyps.append(y)
-                    attention_weights.append(attention_weights_step)
+                    best_hyps_i.append(y.data[0, 0])
+                    attention_weights_i.append(var2np(attention_weights_step))
 
-                    # Break if <EOS> is outputed in the character-level decoder or
-                    # length of character sequence exceed a threshold
-                    if end_flag:
+                    # Break if <EOS> is outputed
+                    if y.data[0, 0] == self.eos_index:
                         break
 
-                    # Break if <EOS> is outputed in all mini-batch
-                    if torch.sum(y.data == self.eos_index) == y.numel():
-                        break
+                best_hyps.append(best_hyps_i)
+                best_hyps_sub.append(best_hyps_sub_i)
+                attention_weights.append(attention_weights_i)
+                attention_weights_sub.append(attention_weights_sub_i)
 
-        # Concatenate in T_out dimension
-        best_hyps = torch.cat(best_hyps, dim=1)
-        attention_weights = torch.stack(attention_weights, dim=1)
-
-        # Convert to numpy
-        best_hyps = var2np(best_hyps)
-        attention_weights = var2np(attention_weights)
-
-        return best_hyps, attention_weights
+        return best_hyps, best_hyps_sub, attention_weights, attention_weights_sub

@@ -357,7 +357,7 @@ class CTC(ModelBase):
         # Convert to batch-major
         logits = logits.transpose(0, 1)
 
-        probs = F.softmax(logits / temperature, dim=logits.dim() - 1)
+        probs = F.softmax(logits / temperature, dim=-1)
 
         # Divide by blank prior
         if blank_prior is not None:
@@ -423,7 +423,7 @@ class CTC(ModelBase):
             inputs_seq_len_var /= 2 ** sum(self.subsample_list)
         # NOTE: floor is not needed because inputs_seq_len_var is IntTensor
 
-        log_probs = F.log_softmax(logits, dim=logits.dim() - 1)
+        log_probs = F.log_softmax(logits, dim=-1)
 
         if beam_width == 1:
             best_hyps = self._decode_greedy_np(

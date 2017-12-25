@@ -21,7 +21,7 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
     Args:
         model: the model to evaluate
         model_type (string): ctc or attention or hierarchical_ctc or
-            hierarchical_attention or joint_ctc_attention
+            hierarchical_attention or nested_attention
         dataset: An instance of a `Dataset' class
         label_type (string): kanji or kanji or kanji_divide or kana_divide
         data_size (string): fullset or subset
@@ -54,7 +54,7 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
 
         if model_type in ['ctc', 'attention']:
             inputs, labels, inputs_seq_len, labels_seq_len, _ = batch
-        elif model_type in ['hierarchical_ctc', 'hierarchical_attention']:
+        elif model_type in ['hierarchical_ctc', 'hierarchical_attention', 'nested_attention']:
             inputs, _, labels, inputs_seq_len, _, labels_seq_len, _ = batch
 
         # Decode
@@ -62,7 +62,7 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
             labels_pred = model.decode(inputs, inputs_seq_len,
                                        beam_width=beam_width,
                                        max_decode_length=max_decode_length)
-        elif model_type in['hierarchical_attention', 'hierarchical_ctc']:
+        elif model_type in['hierarchical_attention', 'hierarchical_ctc', 'nested_attention']:
             labels_pred = model.decode(inputs, inputs_seq_len,
                                        beam_width=beam_width,
                                        max_decode_length=max_decode_length,
@@ -81,7 +81,7 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
                 if model_type in ['ctc', 'hierarchical_ctc']:
                     str_true = idx2char(
                         labels[i_batch][:labels_seq_len[i_batch]])
-                elif model_type in ['attention', 'hierarchical_attention']:
+                elif model_type in ['attention', 'hierarchical_attention', 'nested_attention']:
                     str_true = idx2char(
                         labels[i_batch][1:labels_seq_len[i_batch] - 1])
                     # NOTE: Exclude <SOS> and <EOS>
@@ -91,7 +91,7 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
             ##############################
             str_pred = idx2char(labels_pred[i_batch])
 
-            if model_type in ['attention', 'hierarchical_attention']:
+            if model_type in ['attention', 'hierarchical_attention', 'nested_attention']:
                 str_pred = str_pred.split('>')[0]
                 # NOTE: Trancate by the first <EOS>
 

@@ -261,7 +261,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             self._decode_ctc_beam_np = BeamSearchDecoder(blank_index=0)
 
     def forward(self, inputs, labels, labels_sub, inputs_seq_len,
-                labels_seq_len, labels_seq_len_sub, volatile=False):
+                labels_seq_len, labels_seq_len_sub, is_eval=False):
         """Forward computation.
         Args:
             inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
@@ -270,7 +270,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             inputs_seq_len (np.ndarray): A tensor of size `[B]`
             labels_seq_len (np.ndarray): A tensor of size `[B]`
             labels_seq_len_sub (np.ndarray): A tensor of size `[B]`
-            volatile (bool, optional): if True, the history will not be saved.
+            is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
             loss (FloatTensor): A tensor of size `[1]`
@@ -289,14 +289,19 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         labels_seq_len_sub_var = np2var(
             labels_seq_len_sub, dtype='int', use_cuda=self.use_cuda)
 
-        # Gaussian noise injection
-        if self.weight_noise_injection:
-            self._inject_weight_noise(mean=0., std=self.weight_noise_std)
+        if is_eval:
+            self.eval()
+        else:
+            self.train()
+
+            # Gaussian noise injection
+            if self.weight_noise_injection:
+                self._inject_weight_noise(mean=0., std=self.weight_noise_std)
 
         # Encode acoustic features
         encoder_outputs, encoder_final_state, encoder_outputs_sub, encoder_final_state_sub, perm_indices = self._encode(
             inputs_var, inputs_seq_len_var,
-            volatile=volatile, is_multi_task=True)
+            volatile=is_eval, is_multi_task=True)
 
         # Permutate indices
         if perm_indices is not None:
@@ -340,8 +345,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Add coverage term
         if self.coverage_weight != 0:
             pass
-            # coverage = self._compute_coverage(attention_weights)
-            # loss += coverage_weight * coverage
             # TODO: sub taskも入れる？
 
         xe_loss_main = xe_loss_main * self.main_loss_weight / batch_size
@@ -396,7 +399,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub / batch_size
             loss += ctc_loss_sub
 
-        self._step += 1
+        if not is_eval:
+            self._step += 1
 
         if self.sub_loss_weight > self.ctc_loss_weight_sub:
             return loss, xe_loss_main, xe_loss_sub
@@ -421,15 +425,18 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         inputs_seq_len_var = np2var(
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
 
+        # Change to evaluation mode
+        self.eval()
+
         # Encode acoustic features
         if is_sub_task:
             _, _, encoder_outputs, encoder_final_state, perm_indices = self._encode(
-                inputs_var, inputs_seq_len_var, volatile=True,
-                is_multi_task=True)
+                inputs_var, inputs_seq_len_var,
+                volatile=True, is_multi_task=True)
         else:
             encoder_outputs, encoder_final_state, _, _, perm_indices = self._encode(
-                inputs_var, inputs_seq_len_var, volatile=True,
-                is_multi_task=True)
+                inputs_var, inputs_seq_len_var,
+                volatile=True, is_multi_task=True)
 
         # Permutate indices
         if perm_indices is not None:
@@ -456,8 +463,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                         batch_size * max_time, -1)
                     logits_ctc = self.fc_ctc_sub(encoder_outputs)
                     logits_ctc = logits_ctc.view(batch_size, max_time, -1)
-                    log_probs = F.log_softmax(
-                        logits_ctc, dim=logits_ctc.dim() - 1)
+                    log_probs = F.log_softmax(logits_ctc, dim=-1)
 
                     # Modify inputs_seq_len for reducing time resolution
                     if self.encoder.conv is not None:

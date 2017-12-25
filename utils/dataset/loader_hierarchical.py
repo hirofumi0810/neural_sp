@@ -139,7 +139,7 @@ class DatasetBase(Base):
                     map(int, str_indices_list_sub[i_batch].split(' ')))
                 label_num = len(indices)
                 label_num_sub = len(indices_sub)
-                if self.model_type == 'hierarchical_attention':
+                if self.model_type in ['hierarchical_attention', 'nested_attention']:
                     labels[i_batch, 0] = self.sos_index
                     labels[i_batch, 1:label_num + 1] = indices
                     labels[i_batch, label_num + 1] = self.eos_index

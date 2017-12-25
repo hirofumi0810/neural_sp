@@ -12,6 +12,7 @@ from models.pytorch.ctc.student_ctc import StudentCTC
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 from models.pytorch.ctc.hierarchical_ctc import HierarchicalCTC
 from models.pytorch.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
+from models.pytorch.attention.nested_attention_seq2seq import NestedAttentionSeq2seq
 
 
 def load(model_type, params):
@@ -22,7 +23,7 @@ def load(model_type, params):
     Returns:
         model (nn.Module): An encoder class
     """
-
+    # TODO: remove these
     if 'residual' not in params.keys():
         params['residual'] = False
     if 'dense_residual' not in params.keys():
@@ -258,7 +259,7 @@ def load(model_type, params):
         elif bool(params['decoder_dense_residual']):
             model.name += '_decdenseres'
 
-    if params['model_type'] == 'hierarchical_ctc':
+    elif params['model_type'] == 'hierarchical_ctc':
         if 'activation' not in params.keys():
             params['activation'] = 'relu'
 
@@ -326,10 +327,6 @@ def load(model_type, params):
         model.name += '_main' + str(params['main_loss_weight'])
 
     elif params['model_type'] == 'hierarchical_attention':
-        # Wrapper
-        if 'space_index' not in params.keys():
-            params['space_index'] = -1
-
         model = HierarchicalAttentionSeq2seq(
             input_size=params['input_channel'] *
             (1 + int(params['use_delta'] + int(params['use_double_delta']))),
@@ -432,5 +429,100 @@ def load(model_type, params):
         elif bool(params['decoder_dense_residual']):
             model.name += '_decdenseres'
         model.name += '_main' + str(params['main_loss_weight'])
+
+    elif params['model_type'] == 'nested_attention':
+        model = NestedAttentionSeq2seq(
+            input_size=params['input_channel'] *
+            (1 + int(params['use_delta'] + int(params['use_double_delta']))),
+            encoder_type=params['encoder_type'],
+            encoder_bidirectional=params['encoder_bidirectional'],
+            encoder_num_units=params['encoder_num_units'],
+            encoder_num_proj=params['encoder_num_proj'],
+            encoder_num_layers=params['encoder_num_layers'],
+            encoder_num_layers_sub=params['encoder_num_layers_sub'],
+            encoder_dropout=params['dropout_encoder'],
+            attention_type=params['attention_type'],
+            attention_dim=params['attention_dim'],
+            decoder_type=params['decoder_type'],
+            decoder_num_units=params['decoder_num_units'],
+            decoder_num_layers=params['decoder_num_layers'],
+            decoder_num_units_sub=params['decoder_num_units_sub'],
+            decoder_num_layers_sub=params['decoder_num_layers_sub'],
+            decoder_dropout=params['dropout_decoder'],
+            embedding_dim=params['embedding_dim'],
+            embedding_dim_sub=params['embedding_dim_sub'],
+            main_loss_weight=params['main_loss_weight'],
+            num_classes=params['num_classes'],
+            num_classes_sub=params['num_classes_sub'],
+            parameter_init=params['parameter_init'],
+            subsample_list=params['subsample_list'],
+            init_dec_state_with_enc_state=params['init_dec_state_with_enc_state'],
+            sharpening_factor=params['sharpening_factor'],
+            logits_temperature=params['logits_temperature'],
+            sigmoid_smoothing=params['sigmoid_smoothing'],
+            coverage_weight=params['coverage_weight'],
+            ctc_loss_weight_sub=params['ctc_loss_weight_sub'],
+            attention_conv_num_channels=params['attention_conv_num_channels'],
+            attention_conv_width=params['attention_conv_width'],
+            num_stack=params['num_stack'],
+            splice=params['splice'],
+            conv_channels=params['conv_channels'],
+            conv_kernel_sizes=params['conv_kernel_sizes'],
+            conv_strides=params['conv_strides'],
+            poolings=params['poolings'],
+            batch_norm=params['batch_norm'],
+            scheduled_sampling_prob=params['scheduled_sampling_prob'],
+            scheduled_sampling_ramp_max_step=params['scheduled_sampling_ramp_max_step'],
+            label_smoothing_prob=params['label_smoothing_prob'],
+            weight_noise_std=params['weight_noise_std'],
+            composition_case=params['composition_case'],
+            space_index=params['space_index'])
+
+        model.name = params['encoder_type']
+        if sum(params['subsample_list']) > 0:
+            model.name = 'p' + model.name
+        if params['encoder_bidirectional']:
+            model.name = 'b' + model.name
+        model.name += str(params['encoder_num_units']) + 'H'
+        model.name += str(params['encoder_num_layers']) + 'L'
+        model.name += str(params['encoder_num_layers_sub']) + 'L'
+        model.name += '_' + params['decoder_type']
+        model.name += str(params['decoder_num_units']) + 'H'
+        model.name += str(params['decoder_num_layers']) + 'L'
+        model.name += '_' + params['optimizer']
+        model.name += '_lr' + str(params['learning_rate'])
+        model.name += '_' + params['attention_type']
+        if params['dropout_encoder'] != 0 or params['dropout_decoder'] != 0:
+            model.name += '_drop'
+            if params['dropout_encoder'] != 0:
+                model.name += 'en' + str(params['dropout_encoder'])
+            if params['dropout_decoder'] != 0:
+                model.name += 'de' + str(params['dropout_decoder'])
+        if params['num_stack'] != 1:
+            model.name += '_stack' + str(params['num_stack'])
+        if params['weight_decay'] != 0:
+            model.name += '_wd' + str(params['weight_decay'])
+        if len(params['conv_channels']) != 0 and params['encoder_type'] not in ['cnn', 'resnet']:
+            model.name = 'conv_' + model.name
+        if bool(params['batch_norm']):
+            model.name += '_bn'
+        if params['sharpening_factor'] != 1:
+            model.name += '_sharp' + str(params['sharpening_factor'])
+        if params['logits_temperature'] != 1:
+            model.name += '_temp' + str(params['logits_temperature'])
+        if bool(params['sigmoid_smoothing']):
+            model.name += '_smooth'
+        if params['coverage_weight'] > 0:
+            model.name += '_coverage' + str(params['coverage_weight'])
+        if params['ctc_loss_weight_sub'] > 0:
+            model.name += '_ctcsub' + str(params['ctc_loss_weight_sub'])
+        if params['scheduled_sampling_prob'] > 0:
+            model.name += '_scheduled' + str(params['scheduled_sampling_prob'])
+        if params['label_smoothing_prob'] > 0:
+            model.name += '_labelsmooth' + str(params['label_smoothing_prob'])
+        if params['weight_noise_std'] != 0:
+            model.name += '_noise' + str(params['weight_noise_std'])
+        model.name += '_main' + str(params['main_loss_weight'])
+        model.name += '_' + params['composition_case']
 
     return model

@@ -30,7 +30,7 @@ param:
   subsample_list:
     - True
     - True
-    - False
+    - True
     - False
     - False
     - False
@@ -42,9 +42,9 @@ param:
   decoder_num_units_sub: 320
   decoder_num_layers_sub: 1
   embedding_dim: 8
-  embedding_dim_sub: 256
+  embedding_dim_sub: 128
   attention_conv_num_channels: 10
-  attention_conv_width: 101
+  attention_conv_width: 201
 
   # CNN before RNN encoder
   conv_channels: []
@@ -57,7 +57,7 @@ param:
   batch_size: 20
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 50
+  num_epoch: 100
 
   # regularization
   parameter_init: 0.1
@@ -72,8 +72,8 @@ param:
   logits_temperature: 1.0
   sigmoid_smoothing: False
   coverage_weight: 0
-  scheduled_sampling_prob: 0.25
-  scheduled_sampling_ramp_max_step: 200000
+  scheduled_sampling_prob: 0.4
+  scheduled_sampling_ramp_max_step: 300000
   label_smoothing_prob: 0
   weight_noise_std: 0
 

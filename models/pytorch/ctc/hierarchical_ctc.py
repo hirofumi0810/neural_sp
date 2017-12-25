@@ -176,7 +176,7 @@ class HierarchicalCTC(CTC):
             num_units * self.num_directions, self.num_classes_sub)
 
     def forward(self, inputs, labels, labels_sub, inputs_seq_len,
-                labels_seq_len, labels_seq_len_sub, volatile=False):
+                labels_seq_len, labels_seq_len_sub, is_eval=False):
         """Forward computation.
         Args:
             inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
@@ -185,7 +185,7 @@ class HierarchicalCTC(CTC):
             inputs_seq_len (np.ndarray): A tensor of size `[B]`
             labels_seq_len (np.ndarray): A tensor of size `[B]`
             labels_seq_len_sub (np.ndarray): A tensor of size `[B]`
-            volatile (bool, optional): if True, the history will not be saved.
+            is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
             loss (FloatTensor): A tensor of size `[1]`
@@ -208,10 +208,19 @@ class HierarchicalCTC(CTC):
         labels_sub_var = labels_sub_var + 1
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
+        if is_eval:
+            self.eval()
+        else:
+            self.train()
+
+            # Gaussian noise injection
+            if self.weight_noise_injection:
+                self._inject_weight_noise(mean=0., std=self.weight_noise_std)
+
         # Encode acoustic features
         logits, logits_sub, perm_indices = self._encode(
             inputs_var, inputs_seq_len_var,
-            volatile=volatile, is_multi_task=True)
+            volatile=is_eval, is_multi_task=True)
 
         # Permutate indices
         if perm_indices is not None:
@@ -233,7 +242,7 @@ class HierarchicalCTC(CTC):
             logits /= self.logits_temperature
             logits_sub /= self.logits_temperature
 
-        # Modify inputs_seq_len for reducing time resolution
+        # Modify inputs_seq_len_var for reducing time resolution
         if self.encoder.conv is not None:
             for i in range(len(inputs_seq_len)):
                 _inputs_seq_len_sub_var.data[i] = self.encoder.conv_out_size(

@@ -85,7 +85,7 @@ class TestNestedAttention(unittest.TestCase):
             decoder_dropout=0.1,
             embedding_dim=64,
             embedding_dim_sub=32,
-            main_loss_weight=0.5,
+            main_loss_weight=0.1,
             num_classes=num_classes,
             num_classes_sub=num_classes_sub,
             parameter_init=0.1,
@@ -153,8 +153,10 @@ class TestNestedAttention(unittest.TestCase):
 
             # Compute loss
             loss, loss_main, loss_sub = model(
-                inputs, labels, labels_sub,
-                inputs_seq_len, labels_seq_len, labels_seq_len_sub)
+                inputs,
+                labels, labels_sub,
+                inputs_seq_len,
+                labels_seq_len, labels_seq_len_sub)
 
             # Compute gradient
             optimizer.zero_grad()
@@ -170,25 +172,7 @@ class TestNestedAttention(unittest.TestCase):
                 optimizer.step()
 
             if (step + 1) % 10 == 0:
-                # ***Change to evaluation mode***
-                model.eval()
-
-                duration_step = time.time() - start_time_step
-                print('Step %d: loss = %.3f (%.3f/%.3f) / lr = %.5f (%.3f sec)' %
-                      (step + 1, loss.data[0], loss_main.data[0], loss_sub.data[0],
-                       learning_rate, duration_step))
-                start_time_step = time.time()
-
-                # ***Change to training mode***
-                model.train()
-
-                if loss_main.data[0] < 0.5:
-                    print('Modle is Converged.')
-                    break
-
-            if (step + 1) % 1000 == 0:
-                # ***Change to evaluation mode***
-                model.eval()
+                model.main_loss_weight = 0.1 + (1 - 0.1) / max_step * step
 
                 # Decode
                 labels_pred = model.decode(
@@ -208,9 +192,6 @@ class TestNestedAttention(unittest.TestCase):
                 ler_sub = compute_cer(ref=str_true_sub.replace('_', ''),
                                       hyp=str_pred_sub.replace('_', ''),
                                       normalize=True)
-
-                # ***Change to training mode***
-                model.train()
 
                 duration_step = time.time() - start_time_step
                 print('Step %d: loss = %.3f (%.3f/%.3f) / ler (main) = %.3f / ler (sub) = %.3f / lr = %.5f (%.3f sec)' %

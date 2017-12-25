@@ -21,7 +21,7 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
     Args:
         model: the model to evaluate
         model_type (string): ctc or attention or hierarchical_ctc or
-            hierarchical_attention or joint_ctc_attention
+            hierarchical_attention or nested_attention
         dataset: An instance of a `Dataset' class
         label_type (string): word_freq1 or word_freq5 or word_freq10 or word_freq15
         data_size (string): fullset or subset
@@ -62,7 +62,7 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
                 beam_width=beam_width,
                 max_decode_length=max_decode_length)
 
-        elif model_type in ['hierarchical_ctc', 'hierarchical_attention']:
+        elif model_type in ['hierarchical_ctc', 'hierarchical_attention', 'nested_attention']:
             if is_pos:
                 inputs, _, labels, inputs_seq_len, _, labels_seq_len, _ = batch
             else:
@@ -87,7 +87,7 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
                 if model_type in ['ctc', 'hierarchical_ctc']:
                     str_true = idx2word(
                         labels[i_batch][:labels_seq_len[i_batch]])
-                elif model_type in ['attention', 'hierarchical_attention']:
+                elif model_type in ['attention', 'hierarchical_attention', 'nested_attention']:
                     str_true = idx2word(
                         labels[i_batch][1:labels_seq_len[i_batch] - 1])
                     # NOTE: Exclude <SOS> and <EOS>
@@ -96,7 +96,7 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
             # Hypothesis
             ##############################
             str_pred = idx2word(labels_pred[i_batch])
-            if model_type in ['attention', 'hierarchical_attention']:
+            if model_type in ['attention', 'hierarchical_attention', 'nested_attention']:
                 str_pred = str_pred.split('>')[0]
                 # NOTE: Trancate by the first <EOS>
 

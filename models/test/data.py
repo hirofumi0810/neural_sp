@@ -54,7 +54,7 @@ def generate_data(model_type, label_type='char', batch_size=1,
     max_frame_num = math.ceil(inputs_seq_len[0] / num_stack)
     inputs_new = np.zeros((batch_size, max_frame_num, inputs.shape[-1] * num_stack * splice),
                           dtype=np.float32)
-    for i_batch in range(batch_size):
+    for i, i_batch in enumerate(range(batch_size)):
         # Frame stacking
         data_i = stack_frame(
             inputs[i_batch], num_stack=num_stack, num_skip=num_stack)
@@ -63,7 +63,8 @@ def generate_data(model_type, label_type='char', batch_size=1,
         data_i = do_splice(data_i, splice=splice, num_stack=num_stack)
 
         inputs_new[i_batch] = data_i
-        inputs_seq_len[i_batch] = len(data_i)
+        inputs_seq_len[i_batch] = len(data_i) - i
+        # NOTE: change inputs_seq_len elaborately
 
     # Make transcripts
     transcript = _read_text('../sample/LDC93S1.txt')

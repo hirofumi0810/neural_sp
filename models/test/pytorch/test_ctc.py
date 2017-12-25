@@ -205,9 +205,6 @@ class TestCTC(unittest.TestCase):
                 model.weight_noise_injection = True
 
             if (step + 1) % 10 == 0:
-                # ***Change to evaluation mode***
-                model.eval()
-
                 # Decode
                 labels_pred = model.decode(
                     inputs, inputs_seq_len, beam_width=100)
@@ -225,9 +222,6 @@ class TestCTC(unittest.TestCase):
                     ler = compute_wer(ref=str_true.split('_'),
                                       hyp=str_pred.split('_'),
                                       normalize=True)
-
-                # ***Change to training mode***
-                model.train()
 
                 duration_step = time.time() - start_time_step
                 print('Step %d: loss = %.3f / ler = %.3f / lr = %.5f (%.3f sec)' %

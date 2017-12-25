@@ -208,9 +208,6 @@ class TestHierarchicalAttention(unittest.TestCase):
                 optimizer.step()
 
             if (step + 1) % 10 == 0:
-                # ***Change to evaluation mode***
-                model.eval()
-
                 # Decode
                 labels_pred = model.decode(
                     inputs, inputs_seq_len, beam_width=1, max_decode_length=30)
@@ -229,9 +226,6 @@ class TestHierarchicalAttention(unittest.TestCase):
                 ler_sub = compute_cer(ref=str_true_sub.replace('_', ''),
                                       hyp=str_pred_sub.replace('_', ''),
                                       normalize=True)
-
-                # ***Change to training mode***
-                model.train()
 
                 duration_step = time.time() - start_time_step
                 print('Step %d: loss = %.3f (%.3f/%.3f) / ler (main) = %.3f / ler (sub) = %.3f / lr = %.5f (%.3f sec)' %
