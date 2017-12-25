@@ -62,9 +62,6 @@ def main():
         save_path=args.model_path, epoch=args.epoch)
     model.load_state_dict(checkpoint['state_dict'])
 
-    # ***Change to evaluation mode***
-    model.eval()
-
     # Load dataset
     vocab_file_path = '../metrics/vocab_files/' + \
         params['label_type'] + '_' + params['data_size'] + '.txt'
@@ -96,7 +93,6 @@ def main():
         sort_utt=False, save_format=params['save_format'])
 
     print('=== Test Data Evaluation ===')
-    # eval2000 (swbd)
     wer_eval2000_swbd = do_eval_wer(
         model=model,
         model_type=params['model_type'],
@@ -107,18 +103,6 @@ def main():
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
     print('  WER (SWB, main): %f %%' % (wer_eval2000_swbd * 100))
-    cer_eval2000_swbd, _ = do_eval_cer(
-        model=model,
-        model_type=params['model_type'],
-        dataset=eval2000_swbd_data,
-        label_type=params['label_type_sub'],
-        beam_width=args.beam_width,
-        max_decode_length=args.max_decode_length,
-        eval_batch_size=args.eval_batch_size,
-        progressbar=True)
-    print('  CER (SWB, sub): %f %%' % (cer_eval2000_swbd * 100))
-
-    # eval2000(ch)
     wer_eval2000_ch = do_eval_wer(
         model=model,
         model_type=params['model_type'],
@@ -129,6 +113,19 @@ def main():
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
     print('  WER (CHE, main): %f %%' % (wer_eval2000_ch * 100))
+    print('  WER (mean, main): %f %%' %
+          ((wer_eval2000_swbd + wer_eval2000_ch) * 100 / 2))
+
+    cer_eval2000_swbd, _ = do_eval_cer(
+        model=model,
+        model_type=params['model_type'],
+        dataset=eval2000_swbd_data,
+        label_type=params['label_type_sub'],
+        beam_width=args.beam_width,
+        max_decode_length=args.max_decode_length,
+        eval_batch_size=args.eval_batch_size,
+        progressbar=True)
+    print('  CER (SWB, sub): %f %%' % (cer_eval2000_swbd * 100))
     cer_eval2000_ch, _ = do_eval_cer(
         model=model,
         model_type=params['model_type'],
@@ -139,9 +136,6 @@ def main():
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
     print('  CER (CHE, sub): %f %%' % (cer_eval2000_ch * 100))
-
-    print('  WER (mean, main): %f %%' %
-          ((wer_eval2000_swbd + wer_eval2000_ch) * 100 / 2))
     print('  CER (mean, sub): %f %%' %
           ((cer_eval2000_swbd + cer_eval2000_ch) * 100 / 2))
 

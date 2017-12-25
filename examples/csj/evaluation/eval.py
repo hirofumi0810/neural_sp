@@ -58,9 +58,6 @@ def main():
         save_path=args.model_path, epoch=args.epoch)
     model.load_state_dict(checkpoint['state_dict'])
 
-    # ***Change to evaluation mode***
-    model.eval()
-
     # Load dataset
     vocab_file_path = '../metrics/vocab_files/' + \
         params['label_type'] + '_' + params['data_size'] + '.txt'
@@ -96,46 +93,7 @@ def main():
         shuffle=False, save_format=params['save_format'])
 
     print('=== Test Data Evaluation ===')
-    if 'word' not in params['label_type']:
-        cer_eval1 = do_eval_cer(
-            model=model,
-            model_type=params['model_type'],
-            dataset=eval1_data,
-            label_type=params['label_type'],
-            data_size=params['data_size'],
-            beam_width=args.beam_width,
-            max_decode_length=args.max_decode_length,
-            eval_batch_size=args.eval_batch_size,
-            progressbar=True)
-        print('  CER (eval1): %f %%' % (cer_eval1 * 100))
-
-        cer_eval2 = do_eval_cer(
-            model=model,
-            model_type=params['model_type'],
-            dataset=eval2_data,
-            label_type=params['label_type'],
-            data_size=params['data_size'],
-            beam_width=args.beam_width,
-            max_decode_length=args.max_decode_length,
-            eval_batch_size=args.eval_batch_size,
-            progressbar=True)
-        print('  CER (eval2): %f %%' % (cer_eval2 * 100))
-
-        cer_eval3 = do_eval_cer(
-            model=model,
-            model_type=params['model_type'],
-            dataset=eval3_data,
-            label_type=params['label_type'],
-            data_size=params['data_size'],
-            beam_width=args.beam_width,
-            max_decode_length=args.max_decode_length,
-            eval_batch_size=args.eval_batch_size,
-            progressbar=True)
-        print('  CER (eval3): %f %%' % (cer_eval3 * 100))
-
-        print('  CER (mean): %f %%' %
-              ((cer_eval1 + cer_eval2 + cer_eval3) * 100 / 3))
-    else:
+    if 'word' in params['label_type']:
         wer_eval1 = do_eval_wer(
             model=model,
             model_type=params['model_type'],
@@ -147,7 +105,6 @@ def main():
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  WER (eval1): %f %%' % (wer_eval1 * 100))
-
         wer_eval2 = do_eval_wer(
             model=model,
             model_type=params['model_type'],
@@ -159,7 +116,6 @@ def main():
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  WER (eval2): %f %%' % (wer_eval2 * 100))
-
         wer_eval3 = do_eval_wer(
             model=model,
             model_type=params['model_type'],
@@ -171,9 +127,44 @@ def main():
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  WER (eval3): %f %%' % (wer_eval3 * 100))
-
         print('  WER (mean): %f %%' %
               ((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3))
+    else:
+        cer_eval1 = do_eval_cer(
+            model=model,
+            model_type=params['model_type'],
+            dataset=eval1_data,
+            label_type=params['label_type'],
+            data_size=params['data_size'],
+            beam_width=args.beam_width,
+            max_decode_length=args.max_decode_length,
+            eval_batch_size=args.eval_batch_size,
+            progressbar=True)
+        print('  CER (eval1): %f %%' % (cer_eval1 * 100))
+        cer_eval2 = do_eval_cer(
+            model=model,
+            model_type=params['model_type'],
+            dataset=eval2_data,
+            label_type=params['label_type'],
+            data_size=params['data_size'],
+            beam_width=args.beam_width,
+            max_decode_length=args.max_decode_length,
+            eval_batch_size=args.eval_batch_size,
+            progressbar=True)
+        print('  CER (eval2): %f %%' % (cer_eval2 * 100))
+        cer_eval3 = do_eval_cer(
+            model=model,
+            model_type=params['model_type'],
+            dataset=eval3_data,
+            label_type=params['label_type'],
+            data_size=params['data_size'],
+            beam_width=args.beam_width,
+            max_decode_length=args.max_decode_length,
+            eval_batch_size=args.eval_batch_size,
+            progressbar=True)
+        print('  CER (eval3): %f %%' % (cer_eval3 * 100))
+        print('  CER (mean): %f %%' %
+              ((cer_eval1 + cer_eval2 + cer_eval3) * 100 / 3))
 
 
 if __name__ == '__main__':

@@ -68,10 +68,6 @@ def main():
             checkpoint = model.load_checkpoint(
                 save_path=model_path, epoch=-1)
             model.load_state_dict(checkpoint['state_dict'])
-
-            # ***Change to evaluation mode***
-            model.eval()
-
             models.append(model)
 
     print('=' * 30)
@@ -108,7 +104,6 @@ def main():
 
     print('=== Test Data Evaluation ===')
     if 'char' in params['label_type']:
-        # test-clean
         cer_test_clean, wer_test_clean = do_eval_cer(
             models=models,
             model_type=params['model_type'],
@@ -121,8 +116,6 @@ def main():
             progressbar=True)
         print('  CER (clean): %f %%' % (cer_test_clean * 100))
         print('  WER (clean): %f %%' % (wer_test_clean * 100))
-
-        # test-other
         cer_test_other, wer_test_other = do_eval_cer(
             models=models,
             model_type=params['model_type'],
@@ -134,10 +127,12 @@ def main():
             progressbar=True)
         print('  CER (other): %f %%' % (cer_test_other * 100))
         print('  WER (other): %f %%' % (wer_test_other * 100))
-
+        print('  CER (mean): %f %%' %
+              ((cer_test_clean + cer_test_other) * 100 / 2))
+        print('  WER (mean): %f %%' %
+              ((wer_test_clean + wer_test_other) * 100 / 2))
     else:
         raise NotImplementedError
-        # test-clean
         # wer_test_clean = do_eval_wer(
         #     model=model,
         #     model_type=params['model_type'],
@@ -150,7 +145,6 @@ def main():
         #     progressbar=True)
         # print('  WER (clean): %f %%' % (wer_test_clean * 100))
 
-        # test-other
         # wer_test_other = do_eval_wer(
         #     model=model,
         #     model_type=params['model_type'],

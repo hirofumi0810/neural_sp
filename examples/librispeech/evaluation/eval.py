@@ -58,9 +58,6 @@ def main():
         save_path=args.model_path, epoch=args.epoch)
     model.load_state_dict(checkpoint['state_dict'])
 
-    # ***Change to evaluation mode***
-    model.eval()
-
     # Load dataset
     vocab_file_path = '../metrics/vocab_files/' + \
         params['label_type'] + '_' + params['data_size'] + '.txt'
@@ -86,8 +83,30 @@ def main():
         sort_utt=False, save_format=params['save_format'])
 
     print('=== Test Data Evaluation ===')
-    if 'char' in params['label_type']:
-        # test-clean
+    if 'word' in params['label_type']:
+        wer_test_clean = do_eval_wer(
+            model=model,
+            model_type=params['model_type'],
+            dataset=test_clean_data,
+            label_type=params['label_type'],
+            beam_width=args.beam_width,
+            max_decode_length=args.max_decode_length,
+            eval_batch_size=args.eval_batch_size,
+            progressbar=True)
+        print('  WER (clean): %f %%' % (wer_test_clean * 100))
+        wer_test_other = do_eval_wer(
+            model=model,
+            model_type=params['model_type'],
+            dataset=test_other_data,
+            label_type=params['label_type'],
+            beam_width=args.beam_width,
+            max_decode_length=args.max_decode_length,
+            eval_batch_size=args.eval_batch_size,
+            progressbar=True)
+        print('  WER (other): %f %%' % (wer_test_other * 100))
+        print('  WER (mean): %f %%' %
+              ((wer_test_clean + wer_test_other) * 100 / 2))
+    else:
         cer_test_clean, wer_test_clean = do_eval_cer(
             model=model,
             model_type=params['model_type'],
@@ -99,8 +118,6 @@ def main():
             progressbar=True)
         print('  CER (clean): %f %%' % (cer_test_clean * 100))
         print('  WER (clean): %f %%' % (wer_test_clean * 100))
-
-        # test-other
         cer_test_other, wer_test_other = do_eval_cer(
             model=model,
             model_type=params['model_type'],
@@ -112,31 +129,10 @@ def main():
             progressbar=True)
         print('  CER (other): %f %%' % (cer_test_other * 100))
         print('  WER (other): %f %%' % (wer_test_other * 100))
-
-    else:
-        # test-clean
-        wer_test_clean = do_eval_wer(
-            model=model,
-            model_type=params['model_type'],
-            dataset=test_clean_data,
-            label_type=params['label_type'],
-            beam_width=args.beam_width,
-            max_decode_length=args.max_decode_length,
-            eval_batch_size=args.eval_batch_size,
-            progressbar=True)
-        print('  WER (clean): %f %%' % (wer_test_clean * 100))
-
-        # test-other
-        wer_test_other = do_eval_wer(
-            model=model,
-            model_type=params['model_type'],
-            dataset=test_other_data,
-            label_type=params['label_type'],
-            beam_width=args.beam_width,
-            max_decode_length=args.max_decode_length,
-            eval_batch_size=args.eval_batch_size,
-            progressbar=True)
-        print('  WER (other): %f %%' % (wer_test_other * 100))
+        print('  CER (mean): %f %%' %
+              ((cer_test_clean + cer_test_other) * 100 / 2))
+        print('  WER (mean): %f %%' %
+              ((wer_test_clean + wer_test_other) * 100 / 2))
 
 
 if __name__ == '__main__':

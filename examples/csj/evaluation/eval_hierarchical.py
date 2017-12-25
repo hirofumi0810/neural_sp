@@ -62,9 +62,6 @@ def main():
         save_path=args.model_path, epoch=args.epoch)
     model.load_state_dict(checkpoint['state_dict'])
 
-    # ***Change to evaluation mode***
-    model.eval()
-
     # Load dataset
     vocab_file_path = '../metrics/vocab_files/' + \
         params['label_type'] + '_' + params['data_size'] + '.txt'

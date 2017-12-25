@@ -62,9 +62,6 @@ def main():
         save_path=args.model_path, epoch=args.epoch)
     model.load_state_dict(checkpoint['state_dict'])
 
-    # ***Change to evaluation mode***
-    model.eval()
-
     # Load dataset
     vocab_file_path = '../metrics/vocab_files/' + \
         params['label_type'] + '_' + params['data_size'] + '.txt'
@@ -96,7 +93,6 @@ def main():
         sort_utt=False, save_format=params['save_format'])
 
     print('=== Test Data Evaluation ===')
-    # test-clean
     wer_test_clean = do_eval_wer(
         model=model,
         model_type=params['model_type'],
@@ -107,18 +103,6 @@ def main():
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
     print('  WER (clean, main): %f %%' % (wer_test_clean * 100))
-    cer_test_clean, _ = do_eval_cer(
-        model=model,
-        model_type=params['model_type'],
-        dataset=test_clean_data,
-        label_type=params['label_type_sub'],
-        beam_width=args.beam_width,
-        max_decode_length=args.max_decode_length,
-        eval_batch_size=args.eval_batch_size,
-        progressbar=True)
-    print('  CER (clean, sub): %f %%' % (cer_test_clean * 100))
-
-    # test-other
     wer_test_other = do_eval_wer(
         model=model,
         model_type=params['model_type'],
@@ -129,6 +113,19 @@ def main():
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
     print('  WER (other, main): %f %%' % (wer_test_other * 100))
+    print('  WER (mean, main): %f %%' %
+          ((wer_test_clean + wer_test_other) * 100 / 2))
+
+    cer_test_clean, _ = do_eval_cer(
+        model=model,
+        model_type=params['model_type'],
+        dataset=test_clean_data,
+        label_type=params['label_type_sub'],
+        beam_width=args.beam_width,
+        max_decode_length=args.max_decode_length,
+        eval_batch_size=args.eval_batch_size,
+        progressbar=True)
+    print('  CER (clean, sub): %f %%' % (cer_test_clean * 100))
     cer_test_other, _ = do_eval_cer(
         model=model,
         model_type=params['model_type'],
@@ -139,6 +136,8 @@ def main():
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
     print('  CER (other, sub): %f %%' % (cer_test_other * 100))
+    print('  CER (mean, sub): %f %%' %
+          ((cer_test_clean + cer_test_other) * 100 / 2))
 
 
 if __name__ == '__main__':
