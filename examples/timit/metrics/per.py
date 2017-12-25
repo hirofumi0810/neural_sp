@@ -63,10 +63,9 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
         inputs, labels, inputs_seq_len, labels_seq_len, _ = batch
 
         # Decode
-        labels_pred = model.decode(
-            inputs, inputs_seq_len,
-            beam_width=beam_width,
-            max_decode_length=max_decode_length)
+        labels_pred = model.decode(inputs, inputs_seq_len,
+                                   beam_width=beam_width,
+                                   max_decode_length=max_decode_length)
 
         for i_batch in range(inputs.shape[0]):
             ##############################
