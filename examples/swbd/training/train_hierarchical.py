@@ -174,52 +174,45 @@ def main():
     ler_dev_best = 1
     not_improved_epoch = 0
     learning_rate = float(params['learning_rate'])
-    loss_val_train, loss_main_val_train, loss_sub_val_train = 0., 0., 0.
+    loss_val_train_mean, loss_main_val_train_mean, loss_sub_val_train_mean = 0., 0., 0.
     for step, (batch, is_new_epoch) in enumerate(train_data):
 
-        model, optimizer, loss_val_train_tmp, loss_main_val_train_tmp, loss_sub_val_train_tmp = train_hierarchical_step(
+        # Compute loss in the training set (including parameter update)
+        model, optimizer, loss_val_train, loss_main_val_train, loss_sub_val_train = train_hierarchical_step(
             model, optimizer, batch, params['clip_grad_norm'])
-
-        loss_val_train += loss_val_train_tmp
-        loss_main_val_train += loss_main_val_train_tmp
-        loss_sub_val_train += loss_sub_val_train_tmp
+        loss_val_train_mean += loss_val_train
+        loss_main_val_train_mean += loss_main_val_train
+        loss_sub_val_train_mean += loss_sub_val_train
 
         # Inject Gaussian noise to all parameters
-        # if float(params['weight_noise_std']) > 0 and learning_rate < float(params['learning_rate']):
-        #     model.weight_noise_injection = True
+        if float(params['weight_noise_std']) > 0 and learning_rate < float(params['learning_rate']):
+            model.weight_noise_injection = True
 
         if (step + 1) % params['print_step'] == 0:
 
+            # Compute loss in the dev set
             inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub, _ = dev_data.next()[
                 0]
-
-            # ***Change to evaluation mode***
-            model.eval()
-
-            # Compute loss in the dev set
             loss_dev, loss_main_dev, loss_sub_dev = model(
                 inputs, labels, labels_sub, inputs_seq_len,
-                labels_seq_len, labels_seq_len_sub, volatile=True)
+                labels_seq_len, labels_seq_len_sub, is_eval=True)
 
-            # ***Change to training mode***
-            model.train()
-
-            loss_val_train /= params['print_step']
-            loss_main_val_train /= params['print_step']
-            loss_sub_val_train /= params['print_step']
+            loss_val_train_mean /= params['print_step']
+            loss_main_val_train_mean /= params['print_step']
+            loss_sub_val_train_mean /= params['print_step']
             loss_val_dev = loss_dev.data[0]
             loss_main_val_dev = loss_main_dev.data[0]
             loss_sub_val_dev = loss_sub_dev.data[0]
             csv_steps.append(step)
-            csv_loss_train.append(loss_val_train)
+            csv_loss_train.append(loss_val_train_mean)
             csv_loss_dev.append(loss_val_dev)
 
             # Logging by tensorboard
-            tf_writer.add_scalar('train/loss', loss_val_train, step + 1)
+            tf_writer.add_scalar('train/loss', loss_val_train_mean, step + 1)
             tf_writer.add_scalar(
-                'train/loss_main', loss_main_val_train, step + 1)
+                'train/loss_main', loss_main_val_train_mean, step + 1)
             tf_writer.add_scalar(
-                'train/loss_sub', loss_sub_val_train, step + 1)
+                'train/loss_sub', loss_sub_val_train_mean, step + 1)
             tf_writer.add_scalar('dev/loss', loss_val_dev, step + 1)
             tf_writer.add_scalar('dev/loss_main', loss_main_val_dev, step + 1)
             tf_writer.add_scalar('dev/loss_sub', loss_sub_val_dev, step + 1)
@@ -232,12 +225,12 @@ def main():
             duration_step = time.time() - start_time_step
             print("Step %d (epoch: %.3f): loss = %.3f/%.3f (%.3f/%.3f) / lr = %.5f (%.3f min)" %
                   (step + 1, train_data.epoch_detail,
-                   loss_main_val_train, loss_sub_val_train,
+                   loss_main_val_train_mean, loss_sub_val_train_mean,
                    loss_main_val_dev, loss_sub_val_dev,
                    learning_rate, duration_step / 60))
             sys.stdout.flush()
             start_time_step = time.time()
-            loss_val_train, loss_main_val_train, loss_sub_val_train = 0., 0., 0.
+            loss_val_train_mean, loss_main_val_train_mean, loss_sub_val_train_mean = 0., 0., 0.
 
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:
@@ -256,12 +249,8 @@ def main():
                 print("=> Saved checkpoint (epoch:%d): %s" %
                       (train_data.epoch, saved_path))
             else:
-                # ***Change to evaluation mode***
-                model.eval()
-
                 start_time_eval = time.time()
                 print('=== Dev Data Evaluation ===')
-
                 wer_dev_epoch = do_eval_wer(
                     model=model,
                     model_type=params['model_type'],
@@ -272,10 +261,8 @@ def main():
                     eval_batch_size=1)
                 print('  WER: %f %%' % (wer_dev_epoch * 100))
 
-                metric_epoch = wer_dev_epoch
-
-                if metric_epoch < ler_dev_best:
-                    ler_dev_best = metric_epoch
+                if wer_dev_epoch < ler_dev_best:
+                    ler_dev_best = wer_dev_epoch
                     not_improved_epoch = 0
                     print('■■■ ↑Best Score (WER)↑ ■■■')
 
@@ -286,7 +273,6 @@ def main():
                           (train_data.epoch, saved_path))
 
                     print('=== Test Data Evaluation ===')
-                    # eval2000 (swbd)
                     wer_test_swbd = do_eval_wer(
                         model=model,
                         model_type=params['model_type'],
@@ -306,8 +292,6 @@ def main():
                         eval_batch_size=1)
                     print('  CER (SWB, sub): %f %%' %
                           (cer_eval2000_swbd * 100))
-
-                    # eval2000(ch)
                     wer_eval2000_ch = do_eval_wer(
                         model=model,
                         model_type=params['model_type'],
@@ -341,16 +325,10 @@ def main():
                     optimizer=optimizer,
                     learning_rate=learning_rate,
                     epoch=train_data.epoch,
-                    value=metric_epoch)
-
-                # ***Change to training mode***
-                model.train()
+                    value=wer_dev_epoch)
 
             start_time_step = time.time()
             start_time_epoch = time.time()
-
-    # ***Change to evaluation mode***
-    model.eval()
 
     duration_train = time.time() - start_time_train
     print('Total time: %.3f hour' % (duration_train / 3600))

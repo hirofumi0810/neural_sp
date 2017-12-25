@@ -156,12 +156,12 @@ def main():
     ler_dev_best = 1
     not_improved_epoch = 0
     learning_rate = float(params['learning_rate'])
-    loss_val_train = 0.
+    loss_val_train_mean = 0.
     for step, (batch, is_new_epoch) in enumerate(train_data):
 
         model, optimizer, loss_val_train_tmp = train_step(
             model, optimizer, batch, params['clip_grad_norm'])
-        loss_val_train += loss_val_train_tmp
+        loss_val_train_mean += loss_val_train_tmp
 
         # Inject Gaussian noise to all parameters
         if float(params['weight_noise_std']) > 0 and learning_rate < float(params['learning_rate']):
@@ -169,27 +169,20 @@ def main():
 
         if (step + 1) % params['print_step'] == 0:
 
-            inputs, labels, inputs_seq_len, labels_seq_len, _ = dev_data.next()[
-                0]
-
-            # ***Change to evaluation mode***
-            model.eval()
-
             # Compute loss in the dev set
+            inputs, labels, inputs_seq_len, labels_seq_len, _ = dev_clean_data.next()[
+                0]
             loss_dev = model(inputs, labels, inputs_seq_len, labels_seq_len,
-                             volatile=True)
+                             is_eval=True)
 
-            # ***Change to training mode***
-            model.train()
-
-            loss_val_train /= params['print_step']
+            loss_val_train_mean /= params['print_step']
             loss_val_dev = loss_dev.data[0]
             csv_steps.append(step)
-            csv_loss_train.append(loss_val_train)
+            csv_loss_train.append(loss_val_train_mean)
             csv_loss_dev.append(loss_val_dev)
 
             # Logging by tensorboard
-            tf_writer.add_scalar('train/loss', loss_val_train, step + 1)
+            tf_writer.add_scalar('train/loss', loss_val_train_mean, step + 1)
             tf_writer.add_scalar('dev/loss', loss_val_dev, step + 1)
             for name, param in model.named_parameters():
                 name = name.replace('.', '/')
@@ -200,11 +193,11 @@ def main():
             duration_step = time.time() - start_time_step
             print("Step %d (epoch: %.3f): loss = %.3f (%.3f) / lr = %.5f (%.3f min)" %
                   (step + 1, train_data.epoch_detail,
-                   loss_val_train, loss_val_dev,
+                   loss_val_train_mean, loss_val_dev,
                    learning_rate, duration_step / 60))
             sys.stdout.flush()
             start_time_step = time.time()
-            loss_val_train = 0.
+            loss_val_train_mean = 0.
 
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:
@@ -223,22 +216,9 @@ def main():
                 print("=> Saved checkpoint (epoch:%d): %s" %
                       (train_data.epoch, saved_path))
             else:
-                # ***Change to evaluation mode***
-                model.eval()
-
                 start_time_eval = time.time()
                 print('=== Dev Data Evaluation ===')
-                if 'char' in params['label_type']:
-                    metric_dev_epoch, _ = do_eval_cer(
-                        model=model,
-                        model_type=params['model_type'],
-                        dataset=dev_data,
-                        label_type=params['label_type'],
-                        beam_width=1,
-                        max_decode_length=MAX_DECODE_LENGTH_CHAR,
-                        eval_batch_size=1)
-                    print('  CER: %f %%' % (metric_dev_epoch * 100))
-                else:
+                if 'word' in params['label_type']:
                     metric_dev_epoch = do_eval_wer(
                         model=model,
                         model_type=params['model_type'],
@@ -248,6 +228,16 @@ def main():
                         max_decode_length=MAX_DECODE_LENGTH_WORD,
                         eval_batch_size=1)
                     print('  WER: %f %%' % (metric_dev_epoch * 100))
+                else:
+                    metric_dev_epoch, _ = do_eval_cer(
+                        model=model,
+                        model_type=params['model_type'],
+                        dataset=dev_data,
+                        label_type=params['label_type'],
+                        beam_width=1,
+                        max_decode_length=MAX_DECODE_LENGTH_CHAR,
+                        eval_batch_size=1)
+                    print('  CER: %f %%' % (metric_dev_epoch * 100))
 
                 if metric_dev_epoch < ler_dev_best:
                     ler_dev_best = metric_dev_epoch
@@ -261,8 +251,26 @@ def main():
                           (train_data.epoch, saved_path))
 
                     print('=== Test Data Evaluation ===')
-                    if 'char' in params['label_type']:
-                        # eval2000 (swbd)
+                    if 'word' in params['label_type']:
+                        wer_eval2000_swbd = do_eval_wer(
+                            model=model,
+                            model_type=params['model_type'],
+                            dataset=eval2000_swbd_data,
+                            label_type=params['label_type'],
+                            beam_width=1,
+                            max_decode_length=MAX_DECODE_LENGTH_WORD,
+                            eval_batch_size=1)
+                        print('  WER (SWB): %f %%' % (wer_eval2000_swbd * 100))
+                        wer_eval2000_ch = do_eval_wer(
+                            model=model,
+                            model_type=params['model_type'],
+                            dataset=eval2000_ch_data,
+                            label_type=params['label_type'],
+                            beam_width=1,
+                            max_decode_length=MAX_DECODE_LENGTH_WORD,
+                            eval_batch_size=1)
+                        print('  WER (CHE): %f %%' % (wer_eval2000_ch * 100))
+                    else:
                         cer_eval2000_swbd, wer_eval2000_swbd = do_eval_cer(
                             model=model,
                             model_type=params['model_type'],
@@ -273,8 +281,6 @@ def main():
                             eval_batch_size=1)
                         print('  CER (SWB): %f %%' % (cer_eval2000_swbd * 100))
                         print('  WER (SWB): %f %%' % (wer_eval2000_swbd * 100))
-
-                        # eval2000(ch)
                         cer_eval2000_ch, wer_eval2000_ch = do_eval_cer(
                             model=model,
                             model_type=params['model_type'],
@@ -284,28 +290,6 @@ def main():
                             max_decode_length=MAX_DECODE_LENGTH_CHAR,
                             eval_batch_size=1)
                         print('  CER (CHE): %f %%' % (cer_eval2000_ch * 100))
-                        print('  WER (CHE): %f %%' % (wer_eval2000_ch * 100))
-                    else:
-                        # eval2000(swbd)
-                        wer_eval2000_swbd = do_eval_wer(
-                            model=model,
-                            model_type=params['model_type'],
-                            dataset=eval2000_swbd_data,
-                            label_type=params['label_type'],
-                            beam_width=1,
-                            max_decode_length=MAX_DECODE_LENGTH_WORD,
-                            eval_batch_size=1)
-                        print('  WER (SWB): %f %%' % (wer_eval2000_swbd * 100))
-
-                        # eval2000(ch)
-                        wer_eval2000_ch = do_eval_wer(
-                            model=model,
-                            model_type=params['model_type'],
-                            dataset=eval2000_ch_data,
-                            label_type=params['label_type'],
-                            beam_width=1,
-                            max_decode_length=MAX_DECODE_LENGTH_WORD,
-                            eval_batch_size=1)
                         print('  WER (CHE): %f %%' % (wer_eval2000_ch * 100))
                 else:
                     not_improved_epoch += 1
@@ -324,14 +308,8 @@ def main():
                     epoch=train_data.epoch,
                     value=metric_dev_epoch)
 
-                # ***Change to training mode***
-                model.train()
-
             start_time_step = time.time()
             start_time_epoch = time.time()
-
-    # ***Change to evaluation mode***
-    model.eval()
 
     duration_train = time.time() - start_time_train
     print('Total time: %.3f hour' % (duration_train / 3600))

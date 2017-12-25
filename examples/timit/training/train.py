@@ -144,12 +144,12 @@ def main():
     per_dev_best = 1
     not_improved_epoch = 0
     learning_rate = float(params['learning_rate'])
-    loss_val_train = 0.
+    loss_val_train_mean = 0.
     for step, (batch, is_new_epoch) in enumerate(train_data):
 
-        model, optimizer, loss_val_train_tmp = train_step(
+        model, optimizer, loss_val_train = train_step(
             model, optimizer, batch, params['clip_grad_norm'])
-        loss_val_train += loss_val_train_tmp
+        loss_val_train_mean += loss_val_train
 
         # Inject Gaussian noise to all parameters
         if float(params['weight_noise_std']) > 0 and learning_rate < float(params['learning_rate']):
@@ -157,27 +157,20 @@ def main():
 
         if (step + 1) % params['print_step'] == 0:
 
+            # Compute loss in the dev set
             inputs, labels, inputs_seq_len, labels_seq_len, _ = dev_data.next()[
                 0]
-
-            # ***Change to evaluation mode***
-            model.eval()
-
-            # Compute loss in the dev set
             loss_dev = model(inputs, labels, inputs_seq_len, labels_seq_len,
-                             volatile=True)
+                             is_eval=True)
 
-            # ***Change to training mode***
-            model.train()
-
-            loss_val_train /= params['print_step']
+            loss_val_train_mean /= params['print_step']
             loss_val_dev = loss_dev.data[0]
             csv_steps.append(step)
-            csv_loss_train.append(loss_val_train)
+            csv_loss_train.append(loss_val_train_mean)
             csv_loss_dev.append(loss_val_dev)
 
             # Logging by tensorboard
-            tf_writer.add_scalar('train/loss', loss_val_train, step + 1)
+            tf_writer.add_scalar('train/loss', loss_val_train_mean, step + 1)
             tf_writer.add_scalar('dev/loss', loss_val_dev, step + 1)
             for name, param in model.named_parameters():
                 name = name.replace('.', '/')
@@ -188,11 +181,11 @@ def main():
             duration_step = time.time() - start_time_step
             print("Step %d (epoch: %.3f): loss = %.3f (%.3f) / lr = %.5f (%.3f min)" %
                   (step + 1, train_data.epoch_detail,
-                   loss_val_train, loss_val_dev,
+                   loss_val_train_mean, loss_val_dev,
                    learning_rate, duration_step / 60))
             sys.stdout.flush()
             start_time_step = time.time()
-            loss_val_train = 0.
+            loss_val_train_mean = 0.
 
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:
@@ -211,9 +204,6 @@ def main():
                 print("=> Saved checkpoint (epoch:%d): %s" %
                       (train_data.epoch, saved_path))
             else:
-                # ***Change to evaluation mode***
-                model.eval()
-
                 start_time_eval = time.time()
                 print('=== Dev Data Evaluation ===')
                 per_dev_epoch = do_eval_per(
@@ -264,7 +254,7 @@ def main():
                     epoch=train_data.epoch,
                     value=per_dev_epoch)
 
-                if train_data.epoch == param['convert_to_sgd_epoch']:
+                if train_data.epoch == params['convert_to_sgd_epoch']:
                     # Convert to fine-tuning stage
                     optimizer, _ = model.set_optimizer(
                         'momentum',
@@ -273,9 +263,6 @@ def main():
                         lr_schedule=False,
                         factor=params['decay_rate'],
                         patience_epoch=params['decay_patient_epoch'])
-
-                # ***Change to training mode***
-                model.train()
 
             start_time_step = time.time()
             start_time_epoch = time.time()
