@@ -96,9 +96,9 @@ def load(model_type, params):
         if params['encoder_type'] == 'cnn':
             model.name += '_' + params['activation']
         if bool(params['residual']):
-            model.name += '_residual'
+            model.name += '_res'
         if bool(params['dense_residual']):
-            model.name += '_dense_residual'
+            model.name += '_dense_res'
 
     elif model_type == 'student_ctc':
         if 'activation' not in params.keys():
@@ -158,9 +158,9 @@ def load(model_type, params):
         if params['weight_noise_std'] != 0:
             model.name += '_noise' + str(params['weight_noise_std'])
         if bool(params['residual']):
-            model.name += '_residual'
+            model.name += '_res'
         if bool(params['dense_residual']):
-            model.name += '_dense_residual'
+            model.name += '_dense_res'
 
     elif model_type == 'attention':
         model = AttentionSeq2seq(
@@ -250,13 +250,13 @@ def load(model_type, params):
         if params['weight_noise_std'] != 0:
             model.name += '_noise' + str(params['weight_noise_std'])
         if bool(params['encoder_residual']):
-            model.name += '_encresidual'
+            model.name += '_encres'
         elif bool(params['encoder_dense_residual']):
-            model.name += '_encdenseresidual'
+            model.name += '_encdenseres'
         if bool(params['decoder_residual']):
-            model.name += '_decresidual'
+            model.name += '_decres'
         elif bool(params['decoder_dense_residual']):
-            model.name += '_decdenseresidual'
+            model.name += '_decdenseres'
 
     if params['model_type'] == 'hierarchical_ctc':
         if 'activation' not in params.keys():
@@ -320,9 +320,9 @@ def load(model_type, params):
         if params['weight_noise_std'] != 0:
             model.name += '_noise' + str(params['weight_noise_std'])
         if bool(params['residual']):
-            model.name += '_residual'
+            model.name += '_res'
         if bool(params['dense_residual']):
-            model.name += '_dense_residual'
+            model.name += '_dense_res'
         model.name += '_main' + str(params['main_loss_weight'])
 
     elif params['model_type'] == 'hierarchical_attention':
@@ -424,13 +424,13 @@ def load(model_type, params):
         if params['weight_noise_std'] != 0:
             model.name += '_noise' + str(params['weight_noise_std'])
         if bool(params['encoder_residual']):
-            model.name += '_encresidual'
+            model.name += '_encres'
         elif bool(params['encoder_dense_residual']):
-            model.name += '_encdenseresidual'
+            model.name += '_encdenseres'
         if bool(params['decoder_residual']):
-            model.name += '_decresidual'
+            model.name += '_decres'
         elif bool(params['decoder_dense_residual']):
-            model.name += '_decdenseresidual'
+            model.name += '_decdenseres'
         model.name += '_main' + str(params['main_loss_weight'])
 
     return model

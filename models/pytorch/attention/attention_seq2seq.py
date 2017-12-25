@@ -330,35 +330,40 @@ class AttentionSeq2seq(ModelBase):
             self._decode_ctc_beam_np = BeamSearchDecoder(blank_index=0)
             # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
-    def forward(self, inputs, labels, inputs_seq_len, labels_seq_len,
-                volatile=False):
+    def forward(self,  inputs, labels, inputs_seq_len, labels_seq_len,
+                is_eval=False):
         """Forward computation.
         Args:
             inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
             labels (np.ndarray): A tensor of size `[B, T_out]`
             inputs_seq_len (np.ndarray): A tensor of size `[B]`
             labels_seq_len (np.ndarray): A tensor of size `[B]`
-            volatile (bool): if True, the history will not be saved.
+            is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
             loss (FloatTensor): A tensor of size `[1]`
         """
         # Wrap by Variable
-        inputs_var = np2var(inputs, use_cuda=self.use_cuda)
+        inputs_var = np2var(inputs,  use_cuda=self.use_cuda)
         labels_var = np2var(labels, dtype='long', use_cuda=self.use_cuda)
-        # NOTE: labels_var must be long
+        # NOTE: labels must be long
         inputs_seq_len_var = np2var(
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda)
         labels_seq_len_var = np2var(
             labels_seq_len, dtype='int', use_cuda=self.use_cuda)
 
-        # Gaussian noise injection
-        if self.weight_noise_injection:
-            self._inject_weight_noise(mean=0., std=self.weight_noise_std)
+        if is_eval:
+            self.eval()
+        else:
+            self.train()
+
+            # Gaussian noise injection
+            if self.weight_noise_injection:
+                self._inject_weight_noise(mean=0., std=self.weight_noise_std)
 
         # Encode acoustic features
         encoder_outputs, encoder_final_state, perm_indices = self._encode(
-            inputs_var, inputs_seq_len_var, volatile=volatile)
+            inputs_var, inputs_seq_len_var, volatile=is_eval)
 
         # Permutate indices
         if perm_indices is not None:
@@ -397,8 +402,6 @@ class AttentionSeq2seq(ModelBase):
         # Add coverage term
         if self.coverage_weight != 0:
             pass
-            # coverage = self._compute_coverage(attention_weights)
-            # loss += coverage_weight * coverage
 
         loss = xe_loss * (1 - self.ctc_loss_weight)
 
@@ -414,7 +417,8 @@ class AttentionSeq2seq(ModelBase):
         batch_size = encoder_outputs.size(0)
         loss /= batch_size
 
-        self._step += 1
+        if not is_eval:
+            self._step += 1
 
         return loss
 
@@ -698,7 +702,7 @@ class AttentionSeq2seq(ModelBase):
         return y
 
     def attention_weights(self, inputs, inputs_seq_len, beam_width=1,
-                          max_decode_length=100):
+                          max_decode_length=100, is_sub_task=False):
         """Get attention weights for visualization.
         Args:
             inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
@@ -706,6 +710,7 @@ class AttentionSeq2seq(ModelBase):
             beam_width (int, optional): the size of beam
             max_decode_length (int, optional): the length of output sequences
                 to stop prediction when EOS token have not been emitted
+            is_sub_task (bool, optional):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
                 Note that best_hyps includes <SOS> tokens.
@@ -716,9 +721,22 @@ class AttentionSeq2seq(ModelBase):
         inputs_seq_len_var = np2var(
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
 
+        # Change to evaluation mode
+        self.eval()
+
         # Encode acoustic features
-        encoder_outputs, encoder_final_state, perm_indices = self._encode(
-            inputs_var, inputs_seq_len_var, volatile=True)
+        if hasattr(self, 'main_loss_weight'):
+            if is_sub_task:
+                _, _, encoder_outputs, encoder_final_state, perm_indices = self._encode(
+                    inputs_var, inputs_seq_len_var, volatile=True,
+                    is_multi_task=True)
+            else:
+                encoder_outputs, encoder_final_state, _, _, perm_indices = self._encode(
+                    inputs_var, inputs_seq_len_var, volatile=True,
+                    is_multi_task=True)
+        else:
+            encoder_outputs, encoder_final_state, perm_indices = self._encode(
+                inputs_var, inputs_seq_len_var, volatile=True)
 
         # Permutate indices
         if perm_indices is not None:
@@ -727,20 +745,27 @@ class AttentionSeq2seq(ModelBase):
 
         if beam_width == 1:
             best_hyps, attention_weights = self._decode_infer_greedy(
-                encoder_outputs, encoder_final_state, max_decode_length)
+                encoder_outputs, encoder_final_state, max_decode_length,
+                is_sub_task=is_sub_task)
         else:
-            # Modify inputs_seq_len for reducing time resolution
+            # Modify inputs_seq_len_var for reducing time resolution
             if self.encoder.conv is not None or self.encoder_type == 'cnn':
-                for i in range(len(inputs_seq_len)):
+                for i in range(len(inputs_seq_len_var)):
                     inputs_seq_len_var.data[i] = self.encoder.conv_out_size(
                         inputs_seq_len_var.data[i], 1)
-            inputs_seq_len_var /= 2 ** sum(self.subsample_list)
+
+            if is_sub_task:
+                inputs_seq_len_var /= 2 ** sum(
+                    self.subsample_list[:self.encoder_num_layers_sub])
+            else:
+                inputs_seq_len_var /= 2 ** sum(self.subsample_list)
             # NOTE: floor is not needed because inputs_seq_len_var is IntTensor
 
             best_hyps, attention_weights = self._decode_infer_beam(
                 encoder_outputs, encoder_final_state,
                 inputs_seq_len_var,
-                beam_width, max_decode_length)
+                beam_width, max_decode_length,
+                is_sub_task=is_sub_task)
 
         # Permutate indices to the original order
         if perm_indices is not None:
@@ -749,8 +774,7 @@ class AttentionSeq2seq(ModelBase):
 
         return best_hyps, attention_weights
 
-    def decode(self, inputs, inputs_seq_len, beam_width=1,
-               max_decode_length=100):
+    def decode(self, inputs, inputs_seq_len, beam_width=1, max_decode_length=100):
         """Decoding in the inference stage.
         Args:
             inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
@@ -760,12 +784,14 @@ class AttentionSeq2seq(ModelBase):
                 to stop prediction when EOS token have not been emitted
         Returns:
             best_hyps (np.ndarray): A tensor of size `[]`
-            perm_indices (np.ndarray):
         """
         # Wrap by Variable
         inputs_var = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
         inputs_seq_len_var = np2var(
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
+
+        # Change to evaluation mode
+        self.eval()
 
         # Encode acoustic features
         encoder_outputs, encoder_final_state, perm_indices = self._encode(
@@ -780,9 +806,9 @@ class AttentionSeq2seq(ModelBase):
             best_hyps, _ = self._decode_infer_greedy(
                 encoder_outputs, encoder_final_state, max_decode_length)
         else:
-            # Modify inputs_seq_len for reducing time resolution
+            # Modify inputs_seq_len_var for reducing time resolution
             if self.encoder.conv is not None or self.encoder_type == 'cnn':
-                for i in range(len(inputs_seq_len)):
+                for i in range(len(inputs_seq_len_var)):
                     inputs_seq_len_var.data[i] = self.encoder.conv_out_size(
                         inputs_seq_len_var.data[i], 1)
             inputs_seq_len_var /= 2 ** sum(self.subsample_list)
@@ -1029,6 +1055,9 @@ class AttentionSeq2seq(ModelBase):
         inputs_seq_len_var = np2var(
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
 
+        # Change to evaluation mode
+        self.eval()
+
         # Encode acoustic features
         encoder_outputs, encoder_final_state, perm_indices = self._encode(
             inputs_var, inputs_seq_len_var, volatile=True)
@@ -1046,9 +1075,9 @@ class AttentionSeq2seq(ModelBase):
         logits_ctc = logits_ctc.view(batch_size, max_time, -1)
         log_probs = F.log_softmax(logits_ctc, dim=logits_ctc.dim() - 1)
 
-        # Modify inputs_seq_len for reducing time resolution
+        # Modify inputs_seq_len_var for reducing time resolution
         if self.encoder.conv is not None or self.encoder_type == 'cnn':
-            for i in range(len(inputs_seq_len)):
+            for i in range(len(inputs_seq_len_var)):
                 inputs_seq_len_var.data[i] = self.encoder.conv_out_size(
                     inputs_seq_len_var.data[i], 1)
         inputs_seq_len_var /= 2 ** sum(self.subsample_list)

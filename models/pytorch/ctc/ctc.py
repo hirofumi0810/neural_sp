@@ -213,14 +213,14 @@ class CTC(ModelBase):
         # TODO: set space index
 
     def forward(self, inputs, labels, inputs_seq_len, labels_seq_len,
-                volatile=False):
+                is_eval=False):
         """Forward computation (only training).
         Args:
             inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
             labels (np.ndarray): A tensor of size `[B, T_out]`
             inputs_seq_len (np.ndarray): A tensor of size `[B]`
             labels_seq_len (np.ndarray): A tensor of size `[B]`
-            volatile (bool): if True, the history will not be saved.
+            is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
             loss (FloatTensor): A tensor of size `[1]`
@@ -236,13 +236,18 @@ class CTC(ModelBase):
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
         labels_var = labels_var + 1
 
-        # Gaussian noise injection
-        if self.weight_noise_injection:
-            self._inject_weight_noise(mean=0., std=self.weight_noise_std)
+        if is_eval:
+            self.eval()
+        else:
+            self.train()
+
+            # Gaussian noise injection
+            if self.weight_noise_injection:
+                self._inject_weight_noise(mean=0., std=self.weight_noise_std)
 
         # Encode acoustic features
         logits, perm_indices = self._encode(
-            inputs_var, inputs_seq_len_var, volatile=volatile)
+            inputs_var, inputs_seq_len_var, volatile=is_eval)
 
         # Permutate indices
         if perm_indices is not None:
@@ -259,9 +264,9 @@ class CTC(ModelBase):
         if self.logits_temperature != 1:
             logits /= self.logits_temperature
 
-        # Modify inputs_seq_len for reducing time resolution
+        # Modify inputs_seq_len_var for reducing time resolution
         if self.encoder.conv is not None or self.encoder_type == 'cnn':
-            for i in range(len(inputs_seq_len)):
+            for i in range(len(inputs_seq_len_var)):
                 inputs_seq_len_var.data[i] = self.encoder.conv_out_size(
                     inputs_seq_len_var.data[i], 1)
         inputs_seq_len_var /= 2 ** sum(self.subsample_list)
@@ -334,6 +339,9 @@ class CTC(ModelBase):
         inputs_seq_len_var = np2var(
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
 
+        # Change to evaluation mode
+        self.eval()
+
         # Encode acoustic features
         if hasattr(self, 'main_loss_weight'):
             if is_sub_task:
@@ -378,6 +386,9 @@ class CTC(ModelBase):
         inputs_seq_len_var = np2var(
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
 
+        # Change to evaluation mode
+        self.eval()
+
         # Encode acoustic features
         if hasattr(self, 'main_loss_weight'):
             if is_sub_task:
@@ -400,9 +411,9 @@ class CTC(ModelBase):
         # Convert to batch-major
         logits = logits.transpose(0, 1)
 
-        # Modify inputs_seq_len for reducing time resolution
+        # Modify inputs_seq_len_var for reducing time resolution
         if self.encoder.conv is not None or self.encoder_type == 'cnn':
-            for i in range(len(inputs_seq_len)):
+            for i in range(len(inputs_seq_len_var)):
                 inputs_seq_len_var.data[i] = self.encoder.conv_out_size(
                     inputs_seq_len_var.data[i], 1)
         if is_sub_task:
@@ -422,8 +433,8 @@ class CTC(ModelBase):
                 var2np(log_probs), var2np(inputs_seq_len_var),
                 beam_width=beam_width)
 
-        best_hyps = best_hyps - 1
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
+        best_hyps = best_hyps - 1
 
         # Permutate indices to the original order
         if perm_indices is not None:
@@ -435,7 +446,10 @@ class CTC(ModelBase):
                           max_decode_length=None):
         """
         Args:
-
+            probs (np.ndarray):
+            inputs_seq_len (np.ndarray):
+            beam_width (int, optional):
+            max_decode_length (int, optional):
         Returns:
             best_hyps (np.ndarray):
         """
@@ -450,8 +464,8 @@ class CTC(ModelBase):
             best_hyps = self._decode_beam_np(
                 log_probs, inputs_seq_len, beam_width=beam_width)
 
-        best_hyps = best_hyps - 1
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
+        best_hyps = best_hyps - 1
 
         return best_hyps
 

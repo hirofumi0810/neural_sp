@@ -69,44 +69,18 @@ def generate_data(model_type, label_type='char', batch_size=1,
     transcript = _read_text('../sample/LDC93S1.txt')
     transcript = transcript.replace('.', '').replace(' ', SPACE)
     if label_type == 'char':
-        if model_type == 'joint_ctc_attention':
-            transcript_attn = SOS + transcript + EOS
-            transcript_ctc = transcript
-            labels_attn = np.array(
-                [char2idx(transcript_attn)] * batch_size, np.int32)
-            labels_ctc = np.array([char2idx(transcript_ctc)]
-                                  * batch_size, np.int32)
-            labels_seq_len_attn = np.array(
-                [len(char2idx(transcript_attn))] * batch_size)
-            labels_seq_len_ctc = np.array(
-                [len(char2idx(transcript_ctc))] * batch_size)
-            return inputs_new, labels_attn, labels_ctc, inputs_seq_len, labels_seq_len_attn, labels_seq_len_ctc
-        else:
-            if model_type == 'attention':
-                transcript = SOS + transcript + EOS
-            labels = np.array([char2idx(transcript)] * batch_size, np.int32)
-            labels_seq_len = np.array([len(char2idx(transcript))] * batch_size)
-            return inputs_new, labels, inputs_seq_len, labels_seq_len
+        if model_type == 'attention':
+            transcript = SOS + transcript + EOS
+        labels = np.array([char2idx(transcript)] * batch_size, np.int32)
+        labels_seq_len = np.array([len(char2idx(transcript))] * batch_size)
+        return inputs_new, labels, inputs_seq_len, labels_seq_len
 
     elif label_type == 'word':
-        if model_type == 'joint_ctc_attention':
-            transcript_attn = SOS + transcript + EOS
-            transcript_ctc = transcript
-            labels_attn = np.array(
-                [word2idx(transcript_attn)] * batch_size, np.int32)
-            labels_ctc = np.array([word2idx(transcript_ctc)]
-                                  * batch_size, np.int32)
-            labels_seq_len_attn = np.array(
-                [len(word2idx(transcript_attn))] * batch_size)
-            labels_seq_len_ctc = np.array(
-                [len(word2idx(transcript_ctc))] * batch_size)
-            return inputs_new, labels_attn, labels_ctc, inputs_seq_len, labels_seq_len_attn, labels_seq_len_ctc
-        else:
-            if model_type == 'attention':
-                transcript = SOS + SPACE + transcript + SPACE + EOS
-            labels = np.array([word2idx(transcript)] * batch_size, np.int32)
-            labels_seq_len = np.array([len(word2idx(transcript))] * batch_size)
-            return inputs_new, labels, inputs_seq_len, labels_seq_len
+        if model_type == 'attention':
+            transcript = SOS + SPACE + transcript + SPACE + EOS
+        labels = np.array([word2idx(transcript)] * batch_size, np.int32)
+        labels_seq_len = np.array([len(word2idx(transcript))] * batch_size)
+        return inputs_new, labels, inputs_seq_len, labels_seq_len
 
     elif label_type == 'word_char':
         if model_type == 'attention':
@@ -114,9 +88,6 @@ def generate_data(model_type, label_type='char', batch_size=1,
             transcript_char = SOS + transcript + EOS
         elif model_type == 'ctc':
             transcript_word = transcript
-            transcript_char = transcript
-        elif model_type == 'joint_ctc_attention':
-            transcript_word = SOS + SPACE + transcript + SPACE + EOS
             transcript_char = transcript
         labels = np.array([word2idx(transcript_word)]
                           * batch_size, np.int32)
