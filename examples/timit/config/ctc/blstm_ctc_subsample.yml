@@ -24,8 +24,8 @@ param:
   num_layers: 5
   subsample_list:
     - False
-    - False
     - True
+    - False
     - False
     - False
   fc_list: []

@@ -49,7 +49,7 @@ param:
 
   # regularization
   parameter_init: 0.1
-  clip_grad_norm: 5.0
+  clip_grad_norm: 200
   clip_activation: 50
   dropout: 0.4
   weight_decay: 1e-5

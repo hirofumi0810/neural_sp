@@ -10,8 +10,8 @@ param:
   use_delta: True
   use_double_delta: True
   splice: 1
-  num_stack: 2
-  num_skip: 2
+  num_stack: 1
+  num_skip: 1
 
   # topology
   model_type: attention
@@ -23,10 +23,10 @@ param:
   decoder_dense_residual: False
   encoder_num_units: 256
   encoder_num_proj: 0
-  encoder_num_layers: 3
+  encoder_num_layers: 4
   subsample_list:
     - False
-    - False
+    - True
     - False
     - False
   attention_type: location
@@ -71,12 +71,12 @@ param:
   weight_noise_std: 0
 
   # annealing
-  decay_start_epoch: 15
+  decay_start_epoch: 5
   decay_rate: 0.5
   decay_patient_epoch: 5
   sort_stop_epoch: 100
   not_improved_patient_epoch: 10
-  eval_start_epoch: 15
+  eval_start_epoch: 5
   print_step: 10
 
   # MTL
