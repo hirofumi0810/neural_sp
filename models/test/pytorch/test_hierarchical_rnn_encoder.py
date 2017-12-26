@@ -83,7 +83,7 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
 
     @measure_time
     def check(self, encoder_type, bidirectional=False, batch_first=True,
-              conv=False, pack_sequence=True, merge_bidirectional=False,
+              conv=False, merge_bidirectional=False,
               projection=False, residual=False, dense_residual=False):
 
         print('==================================================')
@@ -91,7 +91,6 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
         print('  bidirectional: %s' % str(bidirectional))
         print('  batch_first: %s' % str(batch_first))
         print('  conv: %s' % str(conv))
-        print('  pack_sequence: %s' % str(pack_sequence))
         print('  merge_bidirectional: %s' % str(merge_bidirectional))
         print('  projection: %s' % str(projection))
         print('  residual: %s' % str(residual))
@@ -164,7 +163,7 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
             max_time = encoder.conv.conv_out_size(max_time, 1)
 
         outputs, final_state, outputs_sub, final_state_sub, perm_indices = encoder(
-            inputs, inputs_seq_len, pack_sequence=pack_sequence)
+            inputs, inputs_seq_len)
 
         # Check final state (forward)
         if not (merge_bidirectional or residual or dense_residual):

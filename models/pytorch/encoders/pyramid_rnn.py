@@ -177,16 +177,13 @@ class PyramidRNNEncoder(nn.Module):
                 rnn = rnn.cuda()
             self.rnns.append(rnn)
 
-    def forward(self, inputs, inputs_seq_len, volatile=False,
-                pack_sequence=True):
+    def forward(self, inputs, inputs_seq_len, volatile=False):
         """Forward computation.
         Args:
             inputs: A tensor of size `[B, T, input_size]`
             inputs_seq_len (IntTensor or LongTensor): A tensor of size `[B]`
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
-            pack_sequence (bool, optional): if True, mask by sequence
-                lenghts of inputs
         Returns:
             outputs:
                 if batch_first is True, a tensor of size
@@ -207,13 +204,10 @@ class PyramidRNNEncoder(nn.Module):
                            use_cuda=self.use_cuda,
                            volatile=volatile)
 
-        if pack_sequence:
-            # Sort inputs by lengths in descending order
-            inputs_seq_len, perm_indices = inputs_seq_len.sort(
-                dim=0, descending=True)
-            inputs = inputs[perm_indices]
-        else:
-            perm_indices = None
+        # Sort inputs by lengths in descending order
+        inputs_seq_len, perm_indices = inputs_seq_len.sort(
+            dim=0, descending=True)
+        inputs = inputs[perm_indices]
 
         # Path through CNN layers before RNN layers
         if self.conv is not None:
@@ -236,22 +230,19 @@ class PyramidRNNEncoder(nn.Module):
         res_outputs_list = []
         # NOTE: exclude residual connection from inputs
         for i_layer in range(self.num_layers):
-            if pack_sequence:
-                # Pack encoder outputs in each layer
-                outputs = pack_padded_sequence(
-                    outputs, inputs_seq_len, batch_first=self.batch_first)
+            # Pack encoder outputs in each layer
+            outputs = pack_padded_sequence(
+                outputs, inputs_seq_len, batch_first=self.batch_first)
 
             if self.rnn_type == 'lstm':
-                outputs, (h_n, c_n) = self.rnns[i_layer](outputs, hx=h_0)
+                outputs, (h_n, _) = self.rnns[i_layer](outputs, hx=h_0)
             else:
                 outputs, h_n = self.rnns[i_layer](outputs, hx=h_0)
 
-            if pack_sequence:
-                # Unpack encoder outputs in each layer
-                outputs, unpacked_seq_len = pad_packed_sequence(
-                    outputs, batch_first=self.batch_first,
-                    padding_value=0.0)
-                assert inputs_seq_len == unpacked_seq_len
+            # Unpack encoder outputs in each layer
+            outputs, unpacked_seq_len = pad_packed_sequence(
+                outputs, batch_first=self.batch_first, padding_value=0.0)
+            assert inputs_seq_len == unpacked_seq_len
 
             outputs_list = []
             if self.subsample_list[i_layer]:
@@ -310,5 +301,7 @@ class PyramidRNNEncoder(nn.Module):
         else:
             final_state_fw = h_n[-1, :, :].unsqueeze(dim=0)
         # NOTE: h_n: `[num_layers * num_directions, B, num_units]`
+
+        del h_n
 
         return outputs, final_state_fw, perm_indices

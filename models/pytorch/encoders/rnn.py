@@ -156,16 +156,13 @@ class RNNEncoder(nn.Module):
                     proj_i = proj_i.cuda()
                 self.projections.append(proj_i)
 
-    def forward(self, inputs, inputs_seq_len, volatile=False,
-                pack_sequence=True):
+    def forward(self, inputs, inputs_seq_len, volatile=False):
         """Forward computation.
         Args:
             inputs (FloatTensor): A tensor of size `[B, T, input_size]`
             inputs_seq_len (IntTensor or LongTensor): A tensor of size `[B]`
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
-            pack_sequence (bool, optional): if True, mask by sequence
-                lenghts of inputs
         Returns:
             outputs:
                 if batch_first is True, a tensor of size
@@ -184,13 +181,10 @@ class RNNEncoder(nn.Module):
                            use_cuda=self.use_cuda,
                            volatile=volatile)
 
-        if pack_sequence:
-            # Sort inputs by lengths in descending order
-            inputs_seq_len, perm_indices = inputs_seq_len.sort(
-                dim=0, descending=True)
-            inputs = inputs[perm_indices]
-        else:
-            perm_indices = None
+        # Sort inputs by lengths in descending order
+        inputs_seq_len, perm_indices = inputs_seq_len.sort(
+            dim=0, descending=True)
+        inputs = inputs[perm_indices]
 
         # Path through CNN layers before RNN layers
         if self.conv is not None:
@@ -207,27 +201,24 @@ class RNNEncoder(nn.Module):
         if self.conv is not None:
             inputs_seq_len = [self.conv_out_size(x, 1) for x in inputs_seq_len]
 
-        if pack_sequence:
-            # Pack encoder inputs
-            inputs = pack_padded_sequence(
-                inputs, inputs_seq_len, batch_first=self.batch_first)
+        # Pack encoder inputs
+        inputs = pack_padded_sequence(
+            inputs, inputs_seq_len, batch_first=self.batch_first)
 
         outputs = inputs
         res_outputs_list = []
         # NOTE: exclude residual connection from inputs
         for i_layer in range(self.num_layers):
             if self.rnn_type == 'lstm':
-                outputs, (h_n, c_n) = self.rnns[i_layer](outputs, hx=h_0)
+                outputs, (h_n, _) = self.rnns[i_layer](outputs, hx=h_0)
             else:
                 outputs, h_n = self.rnns[i_layer](outputs, hx=h_0)
 
             if self.residual or self.dense_residual or self.num_proj > 0:
-                if pack_sequence:
-                    # Unpack encoder outputs
-                    outputs, unpacked_seq_len = pad_packed_sequence(
-                        outputs, batch_first=self.batch_first,
-                        padding_value=0.0)
-                    assert inputs_seq_len == unpacked_seq_len
+                # Unpack encoder outputs
+                outputs, unpacked_seq_len = pad_packed_sequence(
+                    outputs, batch_first=self.batch_first, padding_value=0.0)
+                assert inputs_seq_len == unpacked_seq_len
 
                 # Projection layer (affine transformation)
                 if self.num_proj > 0 and i_layer != self.num_layers - 1:
@@ -243,18 +234,16 @@ class RNNEncoder(nn.Module):
                     elif self.dense_residual:
                         res_outputs_list.append(outputs)
 
-                if pack_sequence:
-                    # Pack encoder outputs again
-                    outputs = pack_padded_sequence(
-                        outputs, unpacked_seq_len,
-                        batch_first=self.batch_first)
+                # Pack encoder outputs again
+                outputs = pack_padded_sequence(
+                    outputs, unpacked_seq_len,
+                    batch_first=self.batch_first)
 
-        if pack_sequence:
-            # Unpack encoder outputs
-            outputs, unpacked_seq_len = pad_packed_sequence(
-                outputs, batch_first=self.batch_first)
-            # TODO: update version for padding_value=0.0
-            assert inputs_seq_len == unpacked_seq_len
+        # Unpack encoder outputs
+        outputs, unpacked_seq_len = pad_packed_sequence(
+            outputs, batch_first=self.batch_first)
+        # TODO: update version for padding_value=0.0
+        assert inputs_seq_len == unpacked_seq_len
 
         # Sum bidirectional outputs
         if self.bidirectional and self.merge_bidirectional:
@@ -267,5 +256,7 @@ class RNNEncoder(nn.Module):
         else:
             final_state_fw = h_n[-1, :, :].unsqueeze(dim=0)
         # NOTE: h_n: `[num_layers * num_directions, B, num_units]`
+
+        del h_n
 
         return outputs, final_state_fw, perm_indices
