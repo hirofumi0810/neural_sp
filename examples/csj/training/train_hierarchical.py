@@ -236,8 +236,10 @@ def main():
             for name, param in model.named_parameters():
                 name = name.replace('.', '/')
                 tf_writer.add_histogram(name, var2np(param.clone()), step + 1)
-                tf_writer.add_histogram(
-                    name + '/grad', var2np(param.grad.clone()), step + 1)
+                if param.grad is not None:
+                    tf_writer.add_histogram(
+                        name + '/grad', var2np(param.grad.clone()), step + 1)
+                # TODO: fix this
 
             duration_step = time.time() - start_time_step
             print("Step %d (epoch: %.3f): loss = %.3f/%.3f (%.3f/%.3f) / lr = %.5f (%.3f min)" %

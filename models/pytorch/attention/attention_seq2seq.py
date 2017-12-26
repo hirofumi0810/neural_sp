@@ -754,7 +754,6 @@ class AttentionSeq2seq(ModelBase):
                 for i in range(len(inputs_seq_len_var)):
                     inputs_seq_len_var.data[i] = self.encoder.conv_out_size(
                         inputs_seq_len_var.data[i], 1)
-
             if is_sub_task:
                 inputs_seq_len_var /= 2 ** sum(
                     self.subsample_list[:self.encoder_num_layers_sub])

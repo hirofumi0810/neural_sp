@@ -13,9 +13,7 @@ try:
 except:
     raise ImportError('Install warpctc_pytorch.')
 
-import math
 import random
-import numpy as np
 
 import torch
 import torch.nn as nn
@@ -420,7 +418,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         logits, logits_sub, attention_weights, attention_weights_sub = self._decode_train_joint(
             encoder_outputs, encoder_outputs_sub,
             encoder_final_state, encoder_final_state_sub,
-            inputs_seq_len_var,
+            # inputs_seq_len_var,
             labels_var, labels_sub_var,
             labels_seq_len_var, labels_seq_len_sub_var)
 
@@ -496,8 +494,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         return loss, xe_loss_main, xe_loss_sub
 
     def _decode_train_joint(self, encoder_outputs, encoder_outputs_sub,
-                            encoder_final_state, encoder_final_state_sub, inputs_seq_len,
-                            labels, labels_sub, labels_seq_len, labels_seq_len_sub):
+                            encoder_final_state, encoder_final_state_sub,
+                            labels, labels_sub,
+                            labels_seq_len, labels_seq_len_sub):
         """Decoding of composition models in the training stage.
         Args:
             encoder_outputs (FloatTensor): A tensor of size
@@ -508,7 +507,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 `[1, B, decoder_num_units]`
             encoder_final_state_sub (FloatTensor, optional): A tensor of size
                 `[1, B, decoder_num_units_sub]`
-            inputs_seq_len (IntTensor): A tensor of size `[B]`
             labels (LongTensor): A tensor of size `[B, T_out]`
             labels_sub (LongTensor): A tensor of size `[B, T_out_sub]`
             labels_seq_len (np.ndarray): A tensor of size `[B]`
@@ -651,14 +649,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     encoder_final_state[:, i_batch:i_batch + 1, :])
                 decoder_state_sub = self._init_decoder_state(
                     encoder_final_state_sub[:, i_batch:i_batch + 1, :])
-
-                # Modify max_time for reducing time resolution
-                max_time = inputs_seq_len[i_batch].data[0]
-                if self.encoder.conv is not None:
-                    max_time = self.encoder.conv_out_size(max_time, 1)
-                max_time = math.floor(
-                    max_time // (2 ** sum(self.subsample_list)))
-                # NOTE: assume max_time == max_time_sub
 
                 # Initialize attention weights
                 attention_weights_step = Variable(torch.zeros(1, max_time))
@@ -850,14 +840,16 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
                 logits.append(logits_i)
                 logits_sub.append(logits_sub_i)
-                attention_weights.append(attention_weights_i)
-                attention_weights_sub.append(attention_weights_sub_i)
+                # attention_weights.append(attention_weights_i)
+                # attention_weights_sub.append(attention_weights_sub_i)
 
             # Concatenate in batch-dimension
             logits = torch.cat(logits, dim=0)
             logits_sub = torch.cat(logits_sub, dim=0)
-            attention_weights = torch.stack(attention_weights, dim=0)
-            attention_weights_sub = torch.stack(attention_weights_sub, dim=0)
+            # attention_weights = torch.stack(attention_weights, dim=0)
+            # attention_weights_sub = torch.stack(attention_weights_sub, dim=0)
+            attention_weights = None
+            attention_weights_sub = None
 
         return logits, logits_sub, attention_weights, attention_weights_sub
 
@@ -995,6 +987,16 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     encoder_outputs, encoder_final_state, max_decode_length,
                     is_sub_task=True)
             else:
+                # Modify inputs_seq_len for reducing time resolution
+                if self.encoder.conv is not None or self.encoder_type == 'cnn':
+                    for i in range(len(inputs_seq_len)):
+                        inputs_seq_len_var.data[i] = self.encoder.conv_out_size(
+                            inputs_seq_len_var.data[i], 1)
+                if sum(self.subsample_list) > 0:
+                    inputs_seq_len_var /= sum(self.subsample_list) ** 2
+                    # NOTE: floor is not needed because inputs_seq_len_var is
+                    # IntTensor
+
                 best_hyps, _, _, _ = self._decode_infer_greedy_joint(
                     encoder_outputs, encoder_outputs_sub,
                     encoder_final_state, encoder_final_state_sub,
@@ -1139,14 +1141,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     encoder_final_state[:, i_batch:i_batch + 1, :], volatile=True)
                 decoder_state_sub = self._init_decoder_state(
                     encoder_final_state_sub[:, i_batch:i_batch + 1, :], volatile=True)
-
-                # Modify max_time for reducing time resolution
-                max_time = inputs_seq_len[i_batch].data[0]
-                if self.encoder.conv is not None:
-                    max_time = self.encoder.conv_out_size(max_time, 1)
-                max_time = math.floor(
-                    max_time // (2 ** sum(self.subsample_list)))
-                # NOTE: assume max_time == max_time_sub
 
                 # Initialize attention weights
                 attention_weights_step = Variable(torch.zeros(1, max_time))
