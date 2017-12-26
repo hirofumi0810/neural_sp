@@ -73,28 +73,17 @@ class DatasetBase(Base):
         # Set values of each data in mini-batch
         for i_batch in range(len(data_indices)):
             # Load input data
-            if self.save_format == 'numpy':
-                try:
-                    data_i_tmp = self.load_npy(
-                        input_path_list[i_batch].replace('/n/sd8/inaguma/corpus',
-                                                         '/data/inaguma'))
-                except:
-                    data_i_tmp = self.load_npy(input_path_list[i_batch])
-            elif self.save_format == 'htk':
-                try:
-                    data_i_tmp = self.load_htk(
-                        input_path_list[i_batch].replace('/n/sd8/inaguma/corpus',
-                                                         '/data/inaguma'))
-                except:
-                    data_i_tmp = self.load_htk(input_path_list[i_batch])
-            else:
-                raise TypeError
+            try:
+                data_i_tmp = self.load(
+                    input_path_list[i_batch].replace(
+                        '/n/sd8/inaguma/corpus', '/data/inaguma'))
+            except:
+                data_i_tmp = self.load(input_path_list[i_batch])
 
             if self.use_double_delta:
                 data_i = data_i_tmp
             elif self.use_delta:
-                data_i = np.concatenate(
-                    (data_i, data_i_tmp[:self.input_channel * 2]), axis=0)
+                data_i = data_i_tmp[:self.input_channel * 2]
             else:
                 data_i = data_i_tmp[:self.input_channel]
 

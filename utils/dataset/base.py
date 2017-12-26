@@ -7,6 +7,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import os
 import time
 import random
 import numpy as np
@@ -124,7 +125,7 @@ class Base(object):
                     args=(self.queue, self.data_indices_list))
                 self.preloading_process.start()
                 self.queue_size += self.num_enque
-                time.sleep(5)
+                time.sleep(3)
 
             # print(self.queue.qsize())
             # print(self.queue_size)
@@ -212,7 +213,15 @@ class Base(object):
         self.rest = set(list(self.df.index))
         self.offset = 0
 
-    def load_npy(self, path):
+    def load(self, path):
+        ext = os.path.basename(path).split('.')[-1]
+
+        if ext == 'npy':
+            return self._load_npy(path)
+        elif ext == 'htk':
+            return self._load_htk(path)
+
+    def _load_npy(self, path):
         """Load npy files.
         Args:
             path (string):
@@ -221,14 +230,13 @@ class Base(object):
         """
         return np.load(path)
 
-    def load_htk(htk_path):
+    def _load_htk(htk_path):
         """Load each HTK file.
         Args:
             htk_path (string): path to a HTK file
         Returns:
             input_data (np.ndarray): A tensor of size (frame_num, feature_dim)
         """
-        # print('...Reading: %s' % htk_path)
         with open(htk_path, "rb") as f:
             # Read header
             spam = f.read(12)

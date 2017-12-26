@@ -20,7 +20,7 @@ def stack_frame(inputs, num_stack, num_skip):
         num_skip (int): the number of frames to skip
     Returns:
         stacked_inputs (np.ndarray): A tensor of size
-            `[T / num_skip, input_size * num_stack]`
+            `[floor(T / num_skip), input_size * num_stack]`
     """
     if num_stack == 1 and num_stack == 1:
         return inputs
@@ -35,9 +35,8 @@ def stack_frame(inputs, num_stack, num_skip):
     stack_count = 0  # counter
     stack = []
     for t, frame_t in enumerate(inputs):
-        #####################
+
         # final frame
-        #####################
         if t == len(inputs) - 1:
             # Stack the final frame
             stack.append(frame_t)
@@ -54,9 +53,7 @@ def stack_frame(inputs, num_stack, num_skip):
                     if len(stack) != 0:
                         stack.pop(0)
 
-        ########################
         # first & middle frames
-        ########################
         elif len(stack) < num_stack:
             # Stack some frames until stack is filled
             stack.append(frame_t)

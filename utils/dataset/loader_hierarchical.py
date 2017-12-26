@@ -94,28 +94,17 @@ class DatasetBase(Base):
         # Set values of each data in mini-batch
         for i_batch in range(len(data_indices)):
             # Load input data
-            if self.save_format == 'numpy':
-                try:
-                    data_i_tmp = self.load_npy(
-                        input_path_list[i_batch].replace('/n/sd8/inaguma/corpus',
-                                                         '/data/inaguma'))
-                except:
-                    data_i_tmp = self.load_npy(input_path_list[i_batch])
-            elif self.save_format == 'htk':
-                try:
-                    data_i_tmp = self.load_htk(
-                        input_path_list[i_batch].replace('/n/sd8/inaguma/corpus',
-                                                         '/data/inaguma'))
-                except:
-                    data_i_tmp = self.load_htk(input_path_list[i_batch])
-            else:
-                raise TypeError
+            try:
+                data_i_tmp = self.load(
+                    input_path_list[i_batch].replace(
+                        '/n/sd8/inaguma/corpus', '/data/inaguma'))
+            except:
+                data_i_tmp = self.load(input_path_list[i_batch])
 
             if self.use_double_delta:
                 data_i = data_i_tmp
             elif self.use_delta:
-                data_i = np.concatenate(
-                    (data_i, data_i_tmp[:self.input_channel * 2]), axis=0)
+                data_i = data_i_tmp[:self.input_channel * 2]
             else:
                 data_i = data_i_tmp[:self.input_channel]
 
@@ -128,7 +117,7 @@ class DatasetBase(Base):
             if self.splice > 1:
                 data_i = do_splice(data_i, self.splice, self.num_stack)
 
-            inputs[i_batch, : frame_num, :] = data_i
+            inputs[i_batch, :frame_num, :] = data_i
             inputs_seq_len[i_batch] = frame_num
             if self.is_test:
                 labels[i_batch, 0] = self.df['transcript'][data_indices[i_batch]]
@@ -156,10 +145,10 @@ class DatasetBase(Base):
                     labels[i_batch, 0:label_num] = indices
                     labels_seq_len[i_batch] = label_num
 
-                    labels_sub[i_batch,
-                               0: label_num_sub] = indices_sub
+                    labels_sub[i_batch, 0: label_num_sub] = indices_sub
                     labels_seq_len_sub[i_batch] = label_num_sub
                 else:
                     raise TypeError
 
-        return inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub, input_names
+        return (inputs, labels, labels_sub, inputs_seq_len,
+                labels_seq_len, labels_seq_len_sub, input_names)
