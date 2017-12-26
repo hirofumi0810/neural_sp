@@ -99,11 +99,13 @@ class DatasetBase(Base):
                 data_i = data_i_tmp[:self.input_channel]
 
             # Frame stacking
-            data_i = stack_frame(data_i, self.num_stack, self.num_skip)
+            if self.num_stack > 1:
+                data_i = stack_frame(data_i, self.num_stack, self.num_skip)
             frame_num = data_i.shape[0]
 
             # Splicing
-            data_i = do_splice(data_i, self.splice, self.num_stack)
+            if self.splice > 1:
+                data_i = do_splice(data_i, self.splice, self.num_stack)
 
             inputs[i_batch, : frame_num, :] = data_i
             inputs_seq_len[i_batch] = frame_num
@@ -124,12 +126,5 @@ class DatasetBase(Base):
                     labels_seq_len[i_batch] = label_num
                 else:
                     raise TypeError
-
-        # Now we split the mini-batch data by num_gpus
-        # inputs = self.split_per_device(inputs, self.num_gpus)
-        # labels = self.split_per_device(labels, self.num_gpus)
-        # inputs_seq_len = self.split_per_device(inputs_seq_len, self.num_gpus)
-        # labels_seq_len = self.split_per_device(labels_seq_len, self.num_gpus)
-        # input_names = self.split_per_device(input_names, self.num_gpus)
 
         return inputs, labels, inputs_seq_len, labels_seq_len, input_names
