@@ -16,7 +16,7 @@ from examples.swbd.metrics.post_processing import fix_trans
 
 
 def do_eval_cer(model, model_type, dataset, label_type, beam_width,
-                max_decode_length, eval_batch_size=None, progressbar=False):
+                max_decode_len, eval_batch_size=None, progressbar=False):
     """Evaluate trained model by Character Error Rate.
     Args:
         model: the model to evaluate
@@ -25,7 +25,7 @@ def do_eval_cer(model, model_type, dataset, label_type, beam_width,
         dataset: An instance of a `Dataset' class
         label_type (string): character or character_capital_divide
         beam_width: (int): the size of beam
-        max_decode_length (int): the length of output sequences
+        max_decode_len (int): the length of output sequences
             to stop prediction when EOS token have not been emitted.
             This is used for seq2seq models.
         eval_batch_size (int, optional): the batch size when evaluating the model
@@ -71,11 +71,11 @@ def do_eval_cer(model, model_type, dataset, label_type, beam_width,
         if model_type in ['attention', 'ctc']:
             labels_pred = model.decode(inputs, inputs_seq_len,
                                        beam_width=beam_width,
-                                       max_decode_length=max_decode_length)
+                                       max_decode_len=max_decode_len)
         elif model_type in['hierarchical_attention', 'hierarchical_ctc']:
             labels_pred = model.decode(inputs, inputs_seq_len,
                                        beam_width=beam_width,
-                                       max_decode_length=max_decode_length,
+                                       max_decode_len=max_decode_len,
                                        is_sub_task=True)
 
         for i_batch in range(inputs.shape[0]):

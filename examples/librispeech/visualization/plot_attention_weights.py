@@ -31,7 +31,7 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
 parser.add_argument('--beam_width', type=int, default=1,
                     help='beam_width (int, optional): beam width for beam search.' +
                     ' 1 disables beam search, which mean greedy decoding.')
-parser.add_argument('--max_decode_length', type=int, default=600,  # or 100
+parser.add_argument('--max_decode_len', type=int, default=600,  # or 100
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
 
 
@@ -83,22 +83,21 @@ def main():
     # Visualize
     plot_attention(model=model,
                    dataset=test_data,
-                   label_type=params['label_type'],
-                   data_size=params['data_size'],
                    beam_width=args.beam_width,
-                   max_decode_length=args.max_decode_length,
+                   max_decode_len=args.max_decode_len,
                    eval_batch_size=args.eval_batch_size,
-                   save_path=mkdir_join(args.model_path, 'attention_weights'))
+                   save_path=mkdir_join(args.model_path, 'att_weights'))
 
 
-def plot_attention(model, dataset, label_type, data_size, beam_width,
-                   max_decode_length, eval_batch_size=None, save_path=None):
+def plot_attention(model, dataset, beam_width,
+                   max_decode_len, eval_batch_size=None, save_path=None):
     """Visualize attention weights of attetnion-based model.
     Args:
         model: model to evaluate
         dataset: An instance of a `Dataset` class
-        label_type (string, optional): phone39 or phone48 or phone61
         eval_batch_size (int, optional): the batch size when evaluating the model
+        max_decode_len (int): the length of output sequences
+            to stop prediction when EOS token have not been emitted.
         save_path (string, optional): path to save attention weights plotting
     """
     # Set batch size in the evaluation
@@ -111,8 +110,8 @@ def plot_attention(model, dataset, label_type, data_size, beam_width,
         mkdir(save_path)
 
     vocab_file_path = '../metrics/vocab_files/' + \
-        label_type + '_' + data_size + '.txt'
-    if 'char' in label_type:
+        dataset.label_type + '_' + dataset.data_size + '.txt'
+    if 'char' in dataset.label_type:
         map_fn = Idx2char(vocab_file_path)
     else:
         map_fn = Idx2word(vocab_file_path)
@@ -122,17 +121,17 @@ def plot_attention(model, dataset, label_type, data_size, beam_width,
         inputs, _, inputs_seq_len, _, input_names = batch
 
         # Decode
-        labels_pred, attention_weights = model.attention_weights(
+        labels_pred, att_weights = model.attention_weights(
             inputs, inputs_seq_len,
             beam_width=beam_width,
-            max_decode_length=max_decode_length)
+            max_decode_len=max_decode_len)
         # NOTE: attention_weights: `[B, T_out, T_in]`
 
         # Visualize
         for i_batch in range(inputs.shape[0]):
 
             # Check if the sum of attention weights equals to 1
-            # print(np.sum(attention_weights[i_batch], axis=1))
+            # print(np.sum(att_weights[i_batch], axis=1))
 
             str_pred = map_fn(labels_pred[i_batch]).split('>')[0]
             # NOTE: Trancate by <EOS>
@@ -143,7 +142,8 @@ def plot_attention(model, dataset, label_type, data_size, beam_width,
 
             speaker = input_names[i_batch].split('_')[0]
             plot_attention_weights(
-                attention_weights[i_batch, :len(
+                spectrogram=inputs[i_batch],
+                attention_weights=att_weights[i_batch, :len(
                     str_pred.split('_')), :inputs_seq_len[i_batch]],
                 label_list=str_pred.split('_'),
                 save_path=mkdir_join(save_path, speaker,

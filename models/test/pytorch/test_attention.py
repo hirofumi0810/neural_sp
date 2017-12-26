@@ -162,7 +162,7 @@ class TestAttention(unittest.TestCase):
             num_classes=num_classes,
             ctc_loss_weight=ctc_loss_weight,
             parameter_init=0.1,
-            subsample_list=[] if not subsample else [True] * 2,
+            subsample_list=[] if not subsample else [True, False],
             init_dec_state_with_enc_state=True,
             sharpening_factor=1,
             logits_temperature=1,
@@ -251,7 +251,7 @@ class TestAttention(unittest.TestCase):
                     inputs, inputs_seq_len,
                     # beam_width=1,
                     beam_width=2,
-                    max_decode_length=60)
+                    max_decode_len=60)
 
                 # Compute accuracy
                 if label_type == 'char':

@@ -15,7 +15,7 @@ from utils.evaluation.edit_distance import compute_per
 
 
 def do_eval_per(model, model_type, dataset, label_type, beam_width,
-                max_decode_length, eval_batch_size=None,
+                max_decode_len, eval_batch_size=None,
                 progressbar=False):
     """Evaluate trained model by Phone Error Rate.
     Args:
@@ -24,7 +24,7 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
         dataset: An instance of a `Dataset' class
         label_type (string): phone39 or phone48 or phone61
         beam_width: (int): the size of beam
-        max_decode_length (int): the length of output sequences
+        max_decode_len (int): the length of output sequences
             to stop prediction when EOS token have not been emitted.
             This is used for seq2seq models.
         eval_batch_size (int, optional): the batch size when evaluating the model
@@ -65,7 +65,7 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
         # Decode
         labels_pred = model.decode(inputs, inputs_seq_len,
                                    beam_width=beam_width,
-                                   max_decode_length=max_decode_length)
+                                   max_decode_len=max_decode_len)
 
         for i_batch in range(inputs.shape[0]):
             ##############################

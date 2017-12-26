@@ -27,8 +27,8 @@ from utils.training.training_loop import train_step
 from utils.directory import mkdir_join, mkdir
 from utils.io.variable import np2var, var2np
 
-MAX_DECODE_LENGTH_WORD = 60
-MAX_DECODE_LENGTH_CHAR = 100
+MAX_DECODE_LEN_WORD = 60
+MAX_DECODE_LEN_CHAR = 100
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_path', type=str,
@@ -181,7 +181,7 @@ def main():
         if (step + 1) % params['print_step'] == 0:
 
             # Compute loss in the dev set
-            inputs, labels, inputs_seq_len, labels_seq_len, _ = dev_clean_data.next()[
+            inputs, labels, inputs_seq_len, labels_seq_len, _ = dev_data.next()[
                 0]
             loss_dev = model(inputs, labels, inputs_seq_len, labels_seq_len,
                              is_eval=True)
@@ -237,7 +237,7 @@ def main():
                         label_type=params['label_type'],
                         data_size=params['data_size'],
                         beam_width=1,
-                        max_decode_length=MAX_DECODE_LENGTH_WORD,
+                        max_decode_len=MAX_DECODE_LEN_WORD,
                         eval_batch_size=1)
                     print('  WER: %f %%' % (metric_dev_epoch * 100))
                 else:
@@ -248,7 +248,7 @@ def main():
                         label_type=params['label_type'],
                         data_size=params['data_size'],
                         beam_width=1,
-                        max_decode_length=MAX_DECODE_LENGTH_CHAR,
+                        max_decode_len=MAX_DECODE_LEN_CHAR,
                         eval_batch_size=1)
                     print('  CER: %f %%' % (metric_dev_epoch * 100))
 
@@ -272,7 +272,7 @@ def main():
                             label_type=params['label_type'],
                             data_size=params['data_size'],
                             beam_width=1,
-                            max_decode_length=MAX_DECODE_LENGTH_CHAR,
+                            max_decode_len=MAX_DECODE_LEN_CHAR,
                             eval_batch_size=1)
                         wer_eval2 = do_eval_wer(
                             model=model,
@@ -281,7 +281,7 @@ def main():
                             label_type=params['label_type'],
                             data_size=params['data_size'],
                             beam_width=1,
-                            max_decode_length=MAX_DECODE_LENGTH_CHAR,
+                            max_decode_len=MAX_DECODE_LEN_CHAR,
                             eval_batch_size=1)
                         wer_eval3 = do_eval_wer(
                             model=model,
@@ -290,7 +290,7 @@ def main():
                             label_type=params['label_type'],
                             data_size=params['data_size'],
                             beam_width=1,
-                            max_decode_length=MAX_DECODE_LENGTH_CHAR,
+                            max_decode_len=MAX_DECODE_LEN_CHAR,
                             eval_batch_size=1)
                         print('  WER (eval1): %f %%' % (wer_eval1 * 100))
                         print('  WER (eval2): %f %%' % (wer_eval2 * 100))
@@ -305,7 +305,7 @@ def main():
                             label_type=params['label_type'],
                             data_size=params['data_size'],
                             beam_width=1,
-                            max_decode_length=MAX_DECODE_LENGTH_CHAR,
+                            max_decode_len=MAX_DECODE_LEN_CHAR,
                             eval_batch_size=1)
                         cer_eval2 = do_eval_cer(
                             model=model,
@@ -314,7 +314,7 @@ def main():
                             label_type=params['label_type'],
                             data_size=params['data_size'],
                             beam_width=1,
-                            max_decode_length=MAX_DECODE_LENGTH_CHAR,
+                            max_decode_len=MAX_DECODE_LEN_CHAR,
                             eval_batch_size=1)
                         cer_eval3 = do_eval_cer(
                             model=model,
@@ -323,7 +323,7 @@ def main():
                             label_type=params['label_type'],
                             data_size=params['data_size'],
                             beam_width=1,
-                            max_decode_length=MAX_DECODE_LENGTH_CHAR,
+                            max_decode_len=MAX_DECODE_LEN_CHAR,
                             eval_batch_size=1)
                         print('  CER (eval1): %f %%' % (cer_eval1 * 100))
                         print('  CER (eval2): %f %%' % (cer_eval2 * 100))

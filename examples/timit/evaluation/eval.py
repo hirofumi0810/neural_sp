@@ -27,7 +27,7 @@ parser.add_argument('--beam_width', type=int, default=10,
                     ' 1 disables beam search, which mean greedy decoding.')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--max_decode_length', type=int, default=40,
+parser.add_argument('--max_decode_len', type=int, default=40,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
 
 
@@ -76,7 +76,7 @@ def main():
         dataset=test_data,
         label_type=params['label_type'],
         beam_width=args.beam_width,
-        max_decode_length=args.max_decode_length,
+        max_decode_len=args.max_decode_len,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
     print('  PER: %f %%' % (per_test * 100))

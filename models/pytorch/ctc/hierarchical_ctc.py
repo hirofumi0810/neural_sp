@@ -193,19 +193,16 @@ class HierarchicalCTC(CTC):
             loss_sub (FloatTensor): A tensor of size `[1]`
         """
         # Wrap by Variable
-        inputs_var = np2var(inputs, use_cuda=self.use_cuda)
-        labels_var = np2var(labels, dtype='int', use_cuda=False)
-        labels_sub_var = np2var(labels_sub, dtype='int', use_cuda=False)
-        inputs_seq_len_var = np2var(
-            inputs_seq_len, dtype='int', use_cuda=self.use_cuda)
-        _inputs_seq_len_sub_var = inputs_seq_len_var.clone()
-        labels_seq_len_var = np2var(
-            labels_seq_len, dtype='int', use_cuda=False)
-        labels_seq_len_sub_var = np2var(
-            labels_seq_len_sub, dtype='int', use_cuda=False)
+        xs = np2var(inputs, use_cuda=self.use_cuda)
+        ys = np2var(labels, dtype='int', use_cuda=False)
+        ys_sub = np2var(labels_sub, dtype='int', use_cuda=False)
+        x_lens = np2var(inputs_seq_len, dtype='int', use_cuda=self.use_cuda)
+        x_lens_sub = x_lens.clone()
+        y_lens = np2var(labels_seq_len, dtype='int', use_cuda=False)
+        y_lens_sub = np2var(labels_seq_len_sub, dtype='int', use_cuda=False)
 
-        labels_var = labels_var + 1
-        labels_sub_var = labels_sub_var + 1
+        ys = ys + 1
+        ys_sub = ys_sub + 1
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
         if is_eval:
@@ -219,53 +216,48 @@ class HierarchicalCTC(CTC):
 
         # Encode acoustic features
         logits, logits_sub, perm_indices = self._encode(
-            inputs_var, inputs_seq_len_var,
-            volatile=is_eval, is_multi_task=True)
+            xs, x_lens, volatile=is_eval, is_multi_task=True)
 
         # Permutate indices
         if perm_indices is not None:
-            labels_var = labels_var[perm_indices.cpu()]
-            labels_sub_var = labels_sub_var[perm_indices.cpu()]
-            inputs_seq_len_var = inputs_seq_len_var[perm_indices]
-            labels_seq_len_var = labels_seq_len_var[perm_indices.cpu()]
-            labels_seq_len_sub_var = labels_seq_len_sub_var[perm_indices.cpu()]
+            ys = ys[perm_indices.cpu()]
+            ys_sub = ys_sub[perm_indices.cpu()]
+            x_lens = x_lens[perm_indices]
+            y_lens = y_lens[perm_indices.cpu()]
+            y_lens_sub = y_lens_sub[perm_indices.cpu()]
 
         # Concatenate all labels for warpctc_pytorch
         # `[B, T_out]` -> `[1,]`
-        concatenated_labels = _concatenate_labels(
-            labels_var, labels_seq_len_var)
-        concatenated_labels_sub = _concatenate_labels(
-            labels_sub_var, labels_seq_len_sub_var)
+        concatenated_labels = _concatenate_labels(ys, y_lens)
+        concatenated_labels_sub = _concatenate_labels(ys_sub, y_lens_sub)
 
         # Output smoothing
         if self.logits_temperature != 1:
             logits /= self.logits_temperature
             logits_sub /= self.logits_temperature
 
-        # Modify inputs_seq_len_var for reducing time resolution
+        # Modify x_lens for reducing time resolution
         if self.encoder.conv is not None:
             for i in range(len(inputs_seq_len)):
-                _inputs_seq_len_sub_var.data[i] = self.encoder.conv_out_size(
-                    _inputs_seq_len_sub_var.data[i], 1)
+                x_lens_sub.data[i] = self.encoder.conv_out_size(
+                    x_lens_sub.data[i], 1)
             for i in range(len(inputs_seq_len)):
-                inputs_seq_len_var.data[i] = self.encoder.conv_out_size(
-                    inputs_seq_len_var.data[i], 1)
-        _inputs_seq_len_sub_var /= 2 ** sum(
-            self.subsample_list[:self.num_layers_sub])
-        inputs_seq_len_var /= 2 ** sum(self.subsample_list)
-        # NOTE: floor is not needed because inputs_seq_len_var is IntTensor
+                x_lens.data[i] = self.encoder.conv_out_size(x_lens.data[i], 1)
+        x_lens_sub /= 2 ** sum(self.subsample_list[:self.num_layers_sub])
+        x_lens /= 2 ** sum(self.subsample_list)
+        # NOTE: floor is not needed because x_lens is IntTensor
 
         # Compute CTC loss
         batch_size = logits.size(1)
         ctc_loss_fn = CTCLoss()
         # Main task
         loss_main = ctc_loss_fn(logits, concatenated_labels,
-                                inputs_seq_len_var.cpu(), labels_seq_len_var)
+                                x_lens.cpu(), y_lens)
         loss_main = loss_main * self.main_loss_weight / batch_size
 
         # Sub task
         loss_sub = ctc_loss_fn(logits_sub, concatenated_labels_sub,
-                               _inputs_seq_len_sub_var.cpu(), labels_seq_len_sub_var)
+                               x_lens_sub.cpu(), y_lens_sub)
         loss_sub = loss_sub * (1 - self.main_loss_weight) / batch_size
 
         loss = loss_main + loss_sub

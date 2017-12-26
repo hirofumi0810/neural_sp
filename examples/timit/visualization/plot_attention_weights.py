@@ -32,7 +32,7 @@ parser.add_argument('--beam_width', type=int, default=1,
                     ' 1 disables beam search, which mean greedy decoding.')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--max_decode_length', type=int, default=40,
+parser.add_argument('--max_decode_len', type=int, default=40,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
 
 
@@ -82,12 +82,12 @@ def main():
                    dataset=test_data,
                    label_type=params['label_type'],
                    beam_width=args.beam_width,
-                   max_decode_length=args.max_decode_length,
+                   max_decode_len=args.max_decode_len,
                    eval_batch_size=args.eval_batch_size,
-                   save_path=mkdir_join(args.model_path, 'attention_weights'))
+                   save_path=mkdir_join(args.model_path, 'att_weights'))
 
 
-def plot_attention(model, dataset, label_type, beam_width, max_decode_length,
+def plot_attention(model, dataset, label_type, beam_width, max_decode_len,
                    eval_batch_size=None, save_path=None):
     """Visualize attention weights of attetnion-based model.
     Args:
@@ -117,7 +117,7 @@ def plot_attention(model, dataset, label_type, beam_width, max_decode_length,
         labels_pred, attention_weights = model.attention_weights(
             inputs, inputs_seq_len,
             beam_width=beam_width,
-            max_decode_length=max_decode_length)
+            max_decode_len=max_decode_len)
         # NOTE: attention_weights: `[B, T_out, T_in]`
 
         for i_batch in range(inputs.shape[0]):

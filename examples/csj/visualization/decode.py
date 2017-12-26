@@ -28,7 +28,7 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
 parser.add_argument('--beam_width', type=int, default=1,
                     help='beam_width (int, optional): beam width for beam search.' +
                     ' 1 disables beam search, which mean greedy decoding.')
-parser.add_argument('--max_decode_length', type=int, default=100,  # or 60
+parser.add_argument('--max_decode_len', type=int, default=100,  # or 60
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
 
 
@@ -84,21 +84,21 @@ def main():
            dataset=eval_data,
            data_size=params['data_size'],
            beam_width=args.beam_width,
-           max_decode_length=args.max_decode_length,
+           max_decode_len=args.max_decode_len,
            eval_batch_size=args.eval_batch_size,
            save_path=None)
     # save_path=args.model_path)
 
 
 def decode(model, model_type, dataset, beam_width,
-           max_decode_length=100, eval_batch_size=None, save_path=None):
+           max_decode_len, eval_batch_size=None, save_path=None):
     """Visualize label outputs.
     Args:
         model: the model to evaluate
         model_type (string): ctc or attention
         dataset: An instance of a `Dataset` class
         beam_width: (int): the size of beam
-        max_decode_length (int, optional): the length of output sequences
+        max_decode_len (int): the length of output sequences
             to stop prediction when EOS token have not been emitted.
             This is used for seq2seq models.
         eval_batch_size (int, optional): the batch size when evaluating the model
@@ -123,7 +123,7 @@ def decode(model, model_type, dataset, beam_width,
         labels_pred, perm_indices = model.decode(
             inputs, inputs_seq_len,
             beam_width=beam_width,
-            max_decode_length=max_decode_length)
+            max_decode_len=max_decode_len)
 
         for i_batch in range(inputs.shape[0]):
             print('----- wav: %s -----' % input_names[i_batch])

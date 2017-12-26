@@ -28,9 +28,9 @@ parser.add_argument('--beam_width', type=int, default=1,
                     ' 1 disables beam search, which mean greedy decoding.')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--max_decode_length', type=int, default=100,
+parser.add_argument('--max_decode_len', type=int, default=100,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
-parser.add_argument('--max_decode_length_sub', type=int, default=300,
+parser.add_argument('--max_decode_len_sub', type=int, default=300,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
 
 
@@ -99,7 +99,7 @@ def main():
         dataset=eval2000_swbd_data,
         label_type=params['label_type'],
         beam_width=args.beam_width,
-        max_decode_length=args.max_decode_length,
+        max_decode_len=args.max_decode_len,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
     print('  WER (SWB, main): %f %%' % (wer_eval2000_swbd * 100))
@@ -109,7 +109,7 @@ def main():
         dataset=eval2000_ch_data,
         label_type=params['label_type'],
         beam_width=args.beam_width,
-        max_decode_length=args.max_decode_length,
+        max_decode_len=args.max_decode_len,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
     print('  WER (CHE, main): %f %%' % (wer_eval2000_ch * 100))
@@ -122,7 +122,7 @@ def main():
         dataset=eval2000_swbd_data,
         label_type=params['label_type_sub'],
         beam_width=args.beam_width,
-        max_decode_length=args.max_decode_length,
+        max_decode_len=args.max_decode_len_sub,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
     print('  CER (SWB, sub): %f %%' % (cer_eval2000_swbd * 100))
@@ -132,7 +132,7 @@ def main():
         dataset=eval2000_ch_data,
         label_type=params['label_type_sub'],
         beam_width=args.beam_width,
-        max_decode_length=args.max_decode_length,
+        max_decode_len=args.max_decode_len_sub,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
     print('  CER (CHE, sub): %f %%' % (cer_eval2000_ch * 100))

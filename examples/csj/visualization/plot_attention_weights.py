@@ -33,7 +33,7 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
 parser.add_argument('--beam_width', type=int, default=1,
                     help='beam_width (int, optional): beam width for beam search.' +
                     ' 1 disables beam search, which mean greedy decoding.')
-parser.add_argument('--max_decode_length', type=int, default=100,  # or 60
+parser.add_argument('--max_decode_len', type=int, default=100,  # or 60
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
 
 
@@ -87,20 +87,20 @@ def main():
     plot(model=model,
          dataset=test_data,
          beam_width=args.beam_width,
-         max_decode_length=args.max_decode_length,
+         max_decode_len=args.max_decode_len,
          eval_batch_size=args.eval_batch_size,
          save_path=mkdir_join(args.model_path, 'att_weights'))
     # save_path=None)
 
 
 def plot(model, dataset, beam_width,
-         max_decode_length, eval_batch_size=None, save_path=None):
+         max_decode_len, eval_batch_size=None, save_path=None):
     """Visualize attention weights of Attetnion-based model.
     Args:
         model: model to evaluate
         dataset: An instance of a `Dataset` class
         beam_width: (int): the size of beam
-        max_decode_length (int): the length of output sequences
+        max_decode_len (int): the length of output sequences
             to stop prediction when EOS token have not been emitted.
         eval_batch_size (int, optional): the batch size when evaluating the model
         save_path (string, optional): path to save attention weights plotting
@@ -124,7 +124,7 @@ def plot(model, dataset, beam_width,
 
         # Decode
         labels_pred, att_weights = model.attention_weights(
-            inputs, inputs_seq_len, beam_width=1, max_decode_length=100)
+            inputs, inputs_seq_len, beam_width=1, max_decode_len=100)
 
         for i_batch in range(inputs.shape[0]):
 

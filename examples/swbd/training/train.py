@@ -27,8 +27,8 @@ from utils.training.training_loop import train_step
 from utils.directory import mkdir_join, mkdir
 from utils.io.variable import np2var, var2np
 
-MAX_DECODE_LENGTH_WORD = 100
-MAX_DECODE_LENGTH_CHAR = 300
+MAX_DECODE_LEN_WORD = 100
+MAX_DECODE_LEN_CHAR = 300
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_path', type=str,
@@ -225,7 +225,7 @@ def main():
                         dataset=dev_data,
                         label_type=params['label_type'],
                         beam_width=1,
-                        max_decode_length=MAX_DECODE_LENGTH_WORD,
+                        max_decode_len=MAX_DECODE_LEN_WORD,
                         eval_batch_size=1)
                     print('  WER: %f %%' % (metric_dev_epoch * 100))
                 else:
@@ -235,7 +235,7 @@ def main():
                         dataset=dev_data,
                         label_type=params['label_type'],
                         beam_width=1,
-                        max_decode_length=MAX_DECODE_LENGTH_CHAR,
+                        max_decode_len=MAX_DECODE_LEN_CHAR,
                         eval_batch_size=1)
                     print('  CER: %f %%' % (metric_dev_epoch * 100))
 
@@ -258,7 +258,7 @@ def main():
                             dataset=eval2000_swbd_data,
                             label_type=params['label_type'],
                             beam_width=1,
-                            max_decode_length=MAX_DECODE_LENGTH_WORD,
+                            max_decode_len=MAX_DECODE_LEN_WORD,
                             eval_batch_size=1)
                         print('  WER (SWB): %f %%' % (wer_eval2000_swbd * 100))
                         wer_eval2000_ch = do_eval_wer(
@@ -267,7 +267,7 @@ def main():
                             dataset=eval2000_ch_data,
                             label_type=params['label_type'],
                             beam_width=1,
-                            max_decode_length=MAX_DECODE_LENGTH_WORD,
+                            max_decode_len=MAX_DECODE_LEN_WORD,
                             eval_batch_size=1)
                         print('  WER (CHE): %f %%' % (wer_eval2000_ch * 100))
                     else:
@@ -277,7 +277,7 @@ def main():
                             dataset=eval2000_swbd_data,
                             label_type=params['label_type'],
                             beam_width=1,
-                            max_decode_length=MAX_DECODE_LENGTH_CHAR,
+                            max_decode_len=MAX_DECODE_LEN_CHAR,
                             eval_batch_size=1)
                         print('  CER (SWB): %f %%' % (cer_eval2000_swbd * 100))
                         print('  WER (SWB): %f %%' % (wer_eval2000_swbd * 100))
@@ -287,7 +287,7 @@ def main():
                             dataset=eval2000_ch_data,
                             label_type=params['label_type'],
                             beam_width=1,
-                            max_decode_length=MAX_DECODE_LENGTH_CHAR,
+                            max_decode_len=MAX_DECODE_LEN_CHAR,
                             eval_batch_size=1)
                         print('  CER (CHE): %f %%' % (cer_eval2000_ch * 100))
                         print('  WER (CHE): %f %%' % (wer_eval2000_ch * 100))

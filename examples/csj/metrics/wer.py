@@ -15,7 +15,7 @@ from utils.evaluation.edit_distance import compute_wer, wer_align
 
 
 def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
-                max_decode_length, eval_batch_size=None,
+                max_decode_len, eval_batch_size=None,
                 progressbar=False, is_pos=False):
     """Evaluate trained model by Character Error Rate.
     Args:
@@ -26,7 +26,7 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
         label_type (string): word_freq1 or word_freq5 or word_freq10 or word_freq15
         data_size (string): fullset or subset
         beam_width: (int): the size of beam
-        max_decode_length (int): the length of output sequences
+        max_decode_len (int): the length of output sequences
             to stop prediction when EOS token have not been emitted.
             This is used for seq2seq models.
         eval_batch_size (int, optional): the batch size when evaluating the model
@@ -60,7 +60,7 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
             labels_pred = model.decode(
                 inputs, inputs_seq_len,
                 beam_width=beam_width,
-                max_decode_length=max_decode_length)
+                max_decode_len=max_decode_len)
 
         elif model_type in ['hierarchical_ctc', 'hierarchical_attention', 'nested_attention']:
             if is_pos:
@@ -71,7 +71,7 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
             # Decode
             labels_pred = model.decode(inputs, inputs_seq_len,
                                        beam_width=beam_width,
-                                       max_decode_length=max_decode_length,
+                                       max_decode_len=max_decode_len,
                                        is_sub_task=is_pos)
 
         for i_batch in range(inputs.shape[0]):

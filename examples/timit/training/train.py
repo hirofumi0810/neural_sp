@@ -26,7 +26,7 @@ from utils.training.training_loop import train_step
 from utils.directory import mkdir_join, mkdir
 from utils.io.variable import np2var, var2np
 
-MAX_DECODE_LENGTH_PHONE = 40
+MAX_DECODE_LEN_PHONE = 40
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_path', type=str,
@@ -212,7 +212,7 @@ def main():
                     dataset=dev_data,
                     label_type=params['label_type'],
                     beam_width=1,
-                    max_decode_length=MAX_DECODE_LENGTH_PHONE,
+                    max_decode_len=MAX_DECODE_LEN_PHONE,
                     eval_batch_size=1)
                 print('  PER: %f %%' % (per_dev_epoch * 100))
 
@@ -234,7 +234,7 @@ def main():
                         dataset=test_data,
                         label_type=params['label_type'],
                         beam_width=1,
-                        max_decode_length=MAX_DECODE_LENGTH_PHONE,
+                        max_decode_len=MAX_DECODE_LEN_PHONE,
                         eval_batch_size=1)
                     print('  PER: %f %%' % (per_test * 100))
                 else:

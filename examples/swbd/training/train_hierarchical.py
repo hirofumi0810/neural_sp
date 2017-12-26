@@ -27,8 +27,8 @@ from utils.training.training_loop import train_hierarchical_step
 from utils.directory import mkdir_join, mkdir
 from utils.io.variable import np2var, var2np
 
-MAX_DECODE_LENGTH_WORD = 100
-MAX_DECODE_LENGTH_CHAR = 300
+MAX_DECODE_LEN_WORD = 100
+MAX_DECODE_LEN_CHAR = 300
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_path', type=str,
@@ -257,7 +257,7 @@ def main():
                     dataset=dev_data,
                     label_type=params['label_type'],
                     beam_width=1,
-                    max_decode_length=MAX_DECODE_LENGTH_WORD,
+                    max_decode_len=MAX_DECODE_LEN_WORD,
                     eval_batch_size=1)
                 print('  WER: %f %%' % (wer_dev_epoch * 100))
 
@@ -279,7 +279,7 @@ def main():
                         dataset=eval2000_swbd_data,
                         label_type=params['label_type'],
                         beam_width=1,
-                        max_decode_length=MAX_DECODE_LENGTH_WORD,
+                        max_decode_len=MAX_DECODE_LEN_WORD,
                         eval_batch_size=1)
                     print('  WER (SWB, main): %f %%' % (wer_test_swbd * 100))
                     cer_eval2000_swbd, _ = do_eval_cer(
@@ -288,7 +288,7 @@ def main():
                         dataset=eval2000_swbd_data,
                         label_type=params['label_type_sub'],
                         beam_width=1,
-                        max_decode_length=MAX_DECODE_LENGTH_CHAR,
+                        max_decode_len=MAX_DECODE_LEN_CHAR,
                         eval_batch_size=1)
                     print('  CER (SWB, sub): %f %%' %
                           (cer_eval2000_swbd * 100))
@@ -298,7 +298,7 @@ def main():
                         dataset=eval2000_ch_data,
                         label_type=params['label_type'],
                         beam_width=1,
-                        max_decode_length=MAX_DECODE_LENGTH_WORD,
+                        max_decode_len=MAX_DECODE_LEN_WORD,
                         eval_batch_size=1)
                     print('  WER (CHE, main): %f %%' % (wer_eval2000_ch * 100))
                     cer_eval2000_ch, _ = do_eval_cer(
@@ -307,7 +307,7 @@ def main():
                         dataset=eval2000_ch_data,
                         label_type=params['label_type_sub'],
                         beam_width=1,
-                        max_decode_length=MAX_DECODE_LENGTH_CHAR,
+                        max_decode_len=MAX_DECODE_LEN_CHAR,
                         eval_batch_size=1)
                     print('  CER (CHE, sub): %f %%' % (cer_eval2000_ch * 100))
                 else:

@@ -63,7 +63,9 @@ def generate_data(model_type, label_type='char', batch_size=1,
         data_i = do_splice(data_i, splice=splice, num_stack=num_stack)
 
         inputs_new[i_batch] = data_i
-        inputs_seq_len[i_batch] = len(data_i) - i
+        inputs_seq_len[i_batch] = len(data_i)
+
+        # inputs_seq_len[i_batch] = len(data_i) - i
         # NOTE: change inputs_seq_len elaborately
 
     # Make transcripts

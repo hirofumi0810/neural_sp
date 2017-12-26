@@ -28,9 +28,9 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
 parser.add_argument('--beam_width', type=int, default=1,
                     help='beam_width (int, optional): beam width for beam search.' +
                     ' 1 disables beam search, which mean greedy decoding.')
-parser.add_argument('--max_decode_length', type=int, default=60,
+parser.add_argument('--max_decode_len', type=int, default=60,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
-parser.add_argument('--max_decode_length_sub', type=int, default=100,
+parser.add_argument('--max_decode_len_sub', type=int, default=100,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
 
 
@@ -113,7 +113,7 @@ def main():
             label_type=params['label_type_sub'],
             data_size=params['data_size'],
             beam_width=args.beam_width,
-            max_decode_length=args.max_decode_length,
+            max_decode_len=args.max_decode_len,
             eval_batch_size=args.eval_batch_size,
             progressbar=True,
             is_pos=True)
@@ -125,7 +125,7 @@ def main():
             label_type=params['label_type_sub'],
             data_size=params['data_size'],
             beam_width=args.beam_width,
-            max_decode_length=args.max_decode_length,
+            max_decode_len=args.max_decode_len,
             eval_batch_size=args.eval_batch_size,
             progressbar=True,
             is_pos=True)
@@ -137,7 +137,7 @@ def main():
             label_type=params['label_type_sub'],
             data_size=params['data_size'],
             beam_width=args.beam_width,
-            max_decode_length=args.max_decode_length,
+            max_decode_len=args.max_decode_len,
             eval_batch_size=args.eval_batch_size,
             progressbar=True,
             is_pos=True)
@@ -152,7 +152,7 @@ def main():
             label_type=params['label_type'],
             data_size=params['data_size'],
             beam_width=args.beam_width,
-            max_decode_length=args.max_decode_length,
+            max_decode_len=args.max_decode_len,
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  WER (eval1, main): %f %%' % (wer_eval1 * 100))
@@ -163,7 +163,7 @@ def main():
             label_type=params['label_type'],
             data_size=params['data_size'],
             beam_width=args.beam_width,
-            max_decode_length=args.max_decode_length,
+            max_decode_len=args.max_decode_len,
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  WER (eval2, main): %f %%' % (wer_eval2 * 100))
@@ -174,7 +174,7 @@ def main():
             label_type=params['label_type'],
             data_size=params['data_size'],
             beam_width=args.beam_width,
-            max_decode_length=args.max_decode_length,
+            max_decode_len=args.max_decode_len,
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  WER (eval3, main): %f %%' % (wer_eval3 * 100))
@@ -188,7 +188,7 @@ def main():
             label_type=params['label_type_sub'],
             data_size=params['data_size'],
             beam_width=args.beam_width,
-            max_decode_length=args.max_decode_length,
+            max_decode_len=args.max_decode_len_sub,
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  CER (eval1, sub): %f %%' % (cer_eval1 * 100))
@@ -199,7 +199,7 @@ def main():
             label_type=params['label_type_sub'],
             data_size=params['data_size'],
             beam_width=args.beam_width,
-            max_decode_length=args.max_decode_length,
+            max_decode_len=args.max_decode_len_sub,
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  CER (eval2, sub): %f %%' % (cer_eval2 * 100))
@@ -210,7 +210,7 @@ def main():
             label_type=params['label_type_sub'],
             data_size=params['data_size'],
             beam_width=args.beam_width,
-            max_decode_length=args.max_decode_length,
+            max_decode_len=args.max_decode_len_sub,
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  CER (eval3, sub): %f %%' % (cer_eval3 * 100))

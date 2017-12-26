@@ -15,7 +15,7 @@ from utils.evaluation.edit_distance import compute_cer
 
 
 def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
-                max_decode_length, eval_batch_size=None,
+                max_decode_len, eval_batch_size=None,
                 progressbar=False):
     """Evaluate trained model by Character Error Rate.
     Args:
@@ -26,7 +26,7 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
         label_type (string): kanji or kanji or kanji_divide or kana_divide
         data_size (string): fullset or subset
         beam_width: (int): the size of beam
-        max_decode_length (int): the length of output sequences
+        max_decode_len (int): the length of output sequences
             to stop prediction when EOS token have not been emitted.
             This is used for seq2seq models.
         eval_batch_size (int, optional): the batch size when evaluating the model
@@ -61,11 +61,11 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
         if model_type in ['attention', 'ctc']:
             labels_pred = model.decode(inputs, inputs_seq_len,
                                        beam_width=beam_width,
-                                       max_decode_length=max_decode_length)
+                                       max_decode_len=max_decode_len)
         elif model_type in['hierarchical_attention', 'hierarchical_ctc', 'nested_attention']:
             labels_pred = model.decode(inputs, inputs_seq_len,
                                        beam_width=beam_width,
-                                       max_decode_length=max_decode_length,
+                                       max_decode_len=max_decode_len,
                                        is_sub_task=True)
 
         for i_batch in range(inputs.shape[0]):

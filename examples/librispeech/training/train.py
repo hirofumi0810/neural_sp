@@ -28,8 +28,8 @@ from utils.training.training_loop import train_step
 from utils.directory import mkdir_join, mkdir
 from utils.io.variable import np2var, var2np
 
-MAX_DECODE_LENGTH_WORD = 100
-MAX_DECODE_LENGTH_CHAR = 600
+MAX_DECODE_LEN_WORD = 100
+MAX_DECODE_LEN_CHAR = 600
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_path', type=str,
@@ -241,7 +241,7 @@ def main():
                         dataset=dev_clean_data,
                         label_type=params['label_type'],
                         beam_width=1,
-                        max_decode_length=MAX_DECODE_LENGTH_WORD,
+                        max_decode_len=MAX_DECODE_LEN_WORD,
                         eval_batch_size=1)
                     print('  WER (clean): %f %%' %
                           (metric_dev_clean_epoch * 100))
@@ -251,7 +251,7 @@ def main():
                         dataset=dev_other_data,
                         label_type=params['label_type'],
                         beam_width=1,
-                        max_decode_length=MAX_DECODE_LENGTH_WORD,
+                        max_decode_len=MAX_DECODE_LEN_WORD,
                         eval_batch_size=1)
                     print('  WER (other): %f %%' %
                           (metric_dev_other_epoch * 100))
@@ -262,7 +262,7 @@ def main():
                         dataset=dev_clean_data,
                         label_type=params['label_type'],
                         beam_width=1,
-                        max_decode_length=MAX_DECODE_LENGTH_CHAR,
+                        max_decode_len=MAX_DECODE_LEN_CHAR,
                         eval_batch_size=1)
                     print('  CER (clean): %f %%' %
                           (metric_dev_clean_epoch * 100))
@@ -272,7 +272,7 @@ def main():
                         dataset=dev_other_data,
                         label_type=params['label_type'],
                         beam_width=1,
-                        max_decode_length=MAX_DECODE_LENGTH_CHAR,
+                        max_decode_len=MAX_DECODE_LEN_CHAR,
                         eval_batch_size=1)
                     print('  CER (other): %f %%' %
                           (metric_dev_other_epoch * 100))
@@ -322,7 +322,7 @@ def main():
             dataset=test_clean_data,
             label_type=params['label_type'],
             beam_width=1,
-            max_decode_length=MAX_DECODE_LENGTH_WORD,
+            max_decode_len=MAX_DECODE_LEN_WORD,
             eval_batch_size=1)
         print('  WER (clean): %f %%' % (wer_test_clean * 100))
         wer_test_other = do_eval_wer(
@@ -331,7 +331,7 @@ def main():
             dataset=test_other_data,
             label_type=params['label_type'],
             beam_width=1,
-            max_decode_length=MAX_DECODE_LENGTH_WORD,
+            max_decode_len=MAX_DECODE_LEN_WORD,
             eval_batch_size=1)
         print('  WER (other): %f %%' % (wer_test_other * 100))
     else:
@@ -341,7 +341,7 @@ def main():
             dataset=test_clean_data,
             label_type=params['label_type'],
             beam_width=1,
-            max_decode_length=MAX_DECODE_LENGTH_CHAR,
+            max_decode_len=MAX_DECODE_LEN_CHAR,
             eval_batch_size=1)
         print('  CER (clean): %f %%' % (cer_test_clean * 100))
         print('  WER (clean): %f %%' % (wer_test_clean * 100))
@@ -351,7 +351,7 @@ def main():
             dataset=test_other_data,
             label_type=params['label_type'],
             beam_width=1,
-            max_decode_length=MAX_DECODE_LENGTH_CHAR,
+            max_decode_len=MAX_DECODE_LEN_CHAR,
             eval_batch_size=1)
         print('  CER (other): %f %%' % (cer_test_other * 100))
         print('  WER (other): %f %%' % (wer_test_other * 100))

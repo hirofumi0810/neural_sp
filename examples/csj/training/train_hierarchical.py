@@ -27,9 +27,9 @@ from utils.training.training_loop import train_hierarchical_step
 from utils.directory import mkdir_join, mkdir
 from utils.io.variable import np2var, var2np
 
-MAX_DECODE_LENGTH_POS = 60
-MAX_DECODE_LENGTH_WORD = 60
-MAX_DECODE_LENGTH_CHAR = 100
+MAX_DECODE_LEN_POS = 60
+MAX_DECODE_LEN_WORD = 60
+MAX_DECODE_LEN_CHAR = 100
 
 
 parser = argparse.ArgumentParser()
@@ -278,7 +278,7 @@ def main():
                         label_type=params['label_type_sub'],
                         data_size=params['data_size'],
                         beam_width=1,
-                        max_decode_length=MAX_DECODE_LENGTH_WORD,
+                        max_decode_len=MAX_DECODE_LEN_WORD,
                         eval_batch_size=1,
                         is_pos=True)
                 else:
@@ -289,7 +289,7 @@ def main():
                         label_type=params['label_type'],
                         data_size=params['data_size'],
                         beam_width=1,
-                        max_decode_length=MAX_DECODE_LENGTH_WORD,
+                        max_decode_len=MAX_DECODE_LEN_WORD,
                         eval_batch_size=1)
                 print('  WER: %f %%' % (wer_dev_epoch * 100))
 
@@ -313,7 +313,7 @@ def main():
                             label_type=params['label_type_sub'],
                             data_size=params['data_size'],
                             beam_width=args.beam_width,
-                            max_decode_length=MAX_DECODE_LENGTH_WORD,
+                            max_decode_len=MAX_DECODE_LEN_WORD,
                             eval_batch_size=1,
                             is_pos=True)
                         wer_eval2 = do_eval_wer(
@@ -323,7 +323,7 @@ def main():
                             label_type=params['label_type_sub'],
                             data_size=params['data_size'],
                             beam_width=args.beam_width,
-                            max_decode_length=MAX_DECODE_LENGTH_WORD,
+                            max_decode_len=MAX_DECODE_LEN_WORD,
                             eval_batch_size=1,
                             is_pos=True)
                         wer_eval3 = do_eval_wer(
@@ -333,7 +333,7 @@ def main():
                             label_type=params['label_type_sub'],
                             data_size=params['data_size'],
                             beam_width=args.beam_width,
-                            max_decode_length=MAX_DECODE_LENGTH_WORD,
+                            max_decode_len=MAX_DECODE_LEN_WORD,
                             eval_batch_size=1,
                             is_pos=True)
                     else:
@@ -344,7 +344,7 @@ def main():
                             label_type=params['label_type'],
                             data_size=params['data_size'],
                             beam_width=args.beam_width,
-                            max_decode_length=MAX_DECODE_LENGTH_WORD,
+                            max_decode_len=MAX_DECODE_LEN_WORD,
                             eval_batch_size=1)
                         wer_eval2 = do_eval_wer(
                             model=model,
@@ -353,7 +353,7 @@ def main():
                             label_type=params['label_type'],
                             data_size=params['data_size'],
                             beam_width=args.beam_width,
-                            max_decode_length=MAX_DECODE_LENGTH_WORD,
+                            max_decode_len=MAX_DECODE_LEN_WORD,
                             eval_batch_size=1)
                         wer_eval3 = do_eval_wer(
                             model=model,
@@ -362,7 +362,7 @@ def main():
                             label_type=params['label_type'],
                             data_size=params['data_size'],
                             beam_width=args.beam_width,
-                            max_decode_length=MAX_DECODE_LENGTH_WORD,
+                            max_decode_len=MAX_DECODE_LEN_WORD,
                             eval_batch_size=1)
                     print('  WER (eval1, main): %f %%' % (wer_eval1 * 100))
                     print('  WER (eval2, main): %f %%' % (wer_eval2 * 100))

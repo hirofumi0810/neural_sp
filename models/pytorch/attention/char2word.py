@@ -70,18 +70,16 @@ class LSTMChar2Word(nn.Module):
         outputs, _ = self.c2w_lstm(char_embeddings, hx=h_0)
         # NOTE: outputs: `[1 (B), T, num_units * num_directions]`
 
-        final_state_fw = outputs[0, -1, :self.num_units]
-        # NOTE: `[1, num_units]`
+        final_state_fw = outputs[:, -1, :self.num_units]
+        # NOTE: `[1 (B), num_units]`
 
         word_repr = self.W_fw(final_state_fw)
 
         if self.num_directions == 2:
-            final_state_bw = outputs[0, -1, self.num_units:self.num_units * 2]
+            final_state_bw = outputs[:, -1, self.num_units:self.num_units * 2]
             word_repr += self.W_bw(final_state_bw)
 
-        word_repr = word_repr.unsqueeze(1)
-
-        return word_repr
+        return word_repr.unsqueeze(1)
 
 
 class CNNHighwayChar2Word(object):

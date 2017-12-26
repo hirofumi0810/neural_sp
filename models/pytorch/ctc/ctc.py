@@ -226,15 +226,13 @@ class CTC(ModelBase):
             loss (FloatTensor): A tensor of size `[1]`
         """
         # Wrap by Variable
-        inputs_var = np2var(inputs, use_cuda=self.use_cuda)
-        labels_var = np2var(labels, dtype='int', use_cuda=False)
-        inputs_seq_len_var = np2var(
-            inputs_seq_len, dtype='int', use_cuda=self.use_cuda)
-        labels_seq_len_var = np2var(
-            labels_seq_len, dtype='int', use_cuda=False)
+        x = np2var(inputs, use_cuda=self.use_cuda)
+        ys = np2var(labels, dtype='int', use_cuda=False)
+        x_lens = np2var(inputs_seq_len, dtype='int', use_cuda=self.use_cuda)
+        y_lens = np2var(labels_seq_len, dtype='int', use_cuda=False)
 
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
-        labels_var = labels_var + 1
+        ys = ys + 1
 
         if is_eval:
             self.eval()
@@ -246,36 +244,33 @@ class CTC(ModelBase):
                 self._inject_weight_noise(mean=0., std=self.weight_noise_std)
 
         # Encode acoustic features
-        logits, perm_indices = self._encode(
-            inputs_var, inputs_seq_len_var, volatile=is_eval)
+        logits, perm_indices = self._encode(x, x_lens, volatile=is_eval)
 
         # Permutate indices
         if perm_indices is not None:
-            labels_var = labels_var[perm_indices.cpu()]
-            inputs_seq_len_var = inputs_seq_len_var[perm_indices]
-            labels_seq_len_var = labels_seq_len_var[perm_indices.cpu()]
+            ys = ys[perm_indices.cpu()]
+            x_lens = x_lens[perm_indices]
+            y_lens = y_lens[perm_indices.cpu()]
 
         # Concatenate all labels for warpctc_pytorch
         # `[B, T_out]` -> `[1,]`
-        concatenated_labels = _concatenate_labels(
-            labels_var, labels_seq_len_var)
+        concatenated_labels = _concatenate_labels(ys, y_lens)
 
         # Output smoothing
         if self.logits_temperature != 1:
             logits /= self.logits_temperature
 
-        # Modify inputs_seq_len_var for reducing time resolution
+        # Modify x_lens for reducing time resolution
         if self.encoder.conv is not None or self.encoder_type == 'cnn':
-            for i in range(len(inputs_seq_len_var)):
-                inputs_seq_len_var.data[i] = self.encoder.conv_out_size(
-                    inputs_seq_len_var.data[i], 1)
-        inputs_seq_len_var /= 2 ** sum(self.subsample_list)
-        # NOTE: floor is not needed because inputs_seq_len_var is IntTensor
+            for i in range(len(x_lens)):
+                x_lens.data[i] = self.encoder.conv_out_size(x_lens.data[i], 1)
+        x_lens /= 2 ** sum(self.subsample_list)
+        # NOTE: floor is not needed because x_lens is IntTensor
 
         # Compute CTC loss
         ctc_loss_fn = CTCLoss()
         ctc_loss = ctc_loss_fn(logits, concatenated_labels,
-                               inputs_seq_len_var.cpu(), labels_seq_len_var)
+                               x_lens.cpu(), y_lens)
 
         # Average the loss by mini-batch
         batch_size = logits.size(1)
@@ -283,11 +278,11 @@ class CTC(ModelBase):
 
         return ctc_loss
 
-    def _encode(self, inputs, inputs_seq_len, volatile, is_multi_task=False):
+    def _encode(self, xs, x_lens, volatile, is_multi_task=False):
         """Encode acoustic features.
         Args:
-            inputs (FloatTensor): A tensor of size `[B, T, input_size]`
-            inputs_seq_len (IntTensor): A tensor of size `[B]`
+            xs (FloatTensor): A tensor of size `[B, T, input_size]`
+            x_lens (IntTensor): A tensor of size `[B]`
             volatile (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
             is_multi_task (bool, optional):
@@ -299,21 +294,21 @@ class CTC(ModelBase):
             perm_indices (LongTensor):
         """
         if is_multi_task:
-            encoder_outputs, _, encoder_outputs_sub, _, perm_indices = self.encoder(
-                inputs, inputs_seq_len, volatile, pack_sequence=True)
+            enc_outputs, _, encoder_outputs_sub, _, perm_indices = self.encoder(
+                xs, x_lens, volatile)
         else:
             if self.encoder_type != 'cnn':
-                encoder_outputs, _, perm_indices = self.encoder(
-                    inputs, inputs_seq_len, volatile, pack_sequence=True)
+                enc_outputs, _, perm_indices = self.encoder(
+                    xs, x_lens, volatile)
             else:
-                encoder_outputs = self.encoder(inputs)
+                enc_outputs = self.encoder(xs)
                 # NOTE: `[B, T, feature_dim]`
-                encoder_outputs = encoder_outputs.transpose(0, 1).contiguous()
+                enc_outputs = enc_outputs.transpose(0, 1).contiguous()
                 perm_indices = None
 
         if len(self.fc_list) > 0:
-            encoder_outputs = self.fc_layers(encoder_outputs)
-        logits = self.fc(encoder_outputs)
+            enc_outputs = self.fc_layers(enc_outputs)
+        logits = self.fc(enc_outputs)
 
         if is_multi_task:
             logits_sub = self.fc_sub(encoder_outputs_sub)
@@ -335,8 +330,8 @@ class CTC(ModelBase):
             probs (np.ndarray): A tensor of size `[B, T, num_classes]`
         """
         # Wrap by Variable
-        inputs_var = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
-        inputs_seq_len_var = np2var(
+        x = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
+        x_lens = np2var(
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
 
         # Change to evaluation mode
@@ -346,13 +341,12 @@ class CTC(ModelBase):
         if hasattr(self, 'main_loss_weight'):
             if is_sub_task:
                 _, logits, perm_indices = self._encode(
-                    inputs_var, inputs_seq_len_var, volatile=True, is_multi_task=True)
+                    x, x_lens, volatile=True, is_multi_task=True)
             else:
                 logits, _, perm_indices = self._encode(
-                    inputs_var, inputs_seq_len_var, volatile=True, is_multi_task=True)
+                    x, x_lens, volatile=True, is_multi_task=True)
         else:
-            logits, perm_indices = self._encode(
-                inputs_var, inputs_seq_len_var, volatile=True)
+            logits, perm_indices = self._encode(x, x_lens, volatile=True)
 
         # Convert to batch-major
         logits = logits.transpose(0, 1)
@@ -370,20 +364,20 @@ class CTC(ModelBase):
         return var2np(probs)
 
     def decode(self, inputs, inputs_seq_len, beam_width=1,
-               max_decode_length=None, is_sub_task=False):
+               max_decode_len=None, is_sub_task=False):
         """
         Args:
             inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
             inputs_seq_len (np.ndarray): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
-            max_decode_length: not used (to match interface)
+            max_decode_len: not used (to match interface)
             is_sub_task (bool, optional):
         Returns:
             best_hyps (np.ndarray):
         """
         # Wrap by Variable
-        inputs_var = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
-        inputs_seq_len_var = np2var(
+        x = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
+        x_lens = np2var(
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
 
         # Change to evaluation mode
@@ -393,45 +387,39 @@ class CTC(ModelBase):
         if hasattr(self, 'main_loss_weight'):
             if is_sub_task:
                 _, logits, perm_indices = self._encode(
-                    inputs_var, inputs_seq_len_var,
-                    volatile=True, is_multi_task=True)
+                    x, x_lens, volatile=True, is_multi_task=True)
             else:
                 logits, _, perm_indices = self._encode(
-                    inputs_var, inputs_seq_len_var,
-                    volatile=True, is_multi_task=True)
+                    x, x_lens, volatile=True, is_multi_task=True)
         else:
-            logits, perm_indices = self._encode(
-                inputs_var, inputs_seq_len_var, volatile=True)
+            logits, perm_indices = self._encode(x, x_lens, volatile=True)
 
         # Permutate indices
         if perm_indices is not None:
             perm_indices = var2np(perm_indices)
-            inputs_seq_len_var = inputs_seq_len_var[perm_indices]
+            x_lens = x_lens[perm_indices]
 
         # Convert to batch-major
         logits = logits.transpose(0, 1)
 
-        # Modify inputs_seq_len_var for reducing time resolution
+        # Modify x_lens for reducing time resolution
         if self.encoder.conv is not None or self.encoder_type == 'cnn':
-            for i in range(len(inputs_seq_len_var)):
-                inputs_seq_len_var.data[i] = self.encoder.conv_out_size(
-                    inputs_seq_len_var.data[i], 1)
+            for i in range(len(x_lens)):
+                x_lens.data[i] = self.encoder.conv_out_size(x_lens.data[i], 1)
         if is_sub_task:
-            inputs_seq_len_var /= 2 ** sum(
-                self.subsample_list[:self.num_layers_sub])
+            x_lens /= 2 ** sum(self.subsample_list[:self.num_layers_sub])
         else:
-            inputs_seq_len_var /= 2 ** sum(self.subsample_list)
-        # NOTE: floor is not needed because inputs_seq_len_var is IntTensor
+            x_lens /= 2 ** sum(self.subsample_list)
+        # NOTE: floor is not needed because x_lens is IntTensor
 
         log_probs = F.log_softmax(logits, dim=-1)
 
         if beam_width == 1:
             best_hyps = self._decode_greedy_np(
-                var2np(log_probs), var2np(inputs_seq_len_var))
+                var2np(log_probs), var2np(x_lens))
         else:
             best_hyps = self._decode_beam_np(
-                var2np(log_probs), var2np(inputs_seq_len_var),
-                beam_width=beam_width)
+                var2np(log_probs), var2np(x_lens), beam_width=beam_width)
 
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
         best_hyps = best_hyps - 1
@@ -443,13 +431,13 @@ class CTC(ModelBase):
         return best_hyps
 
     def decode_from_probs(self, probs, inputs_seq_len, beam_width=1,
-                          max_decode_length=None):
+                          max_decode_len=None):
         """
         Args:
             probs (np.ndarray):
             inputs_seq_len (np.ndarray):
             beam_width (int, optional):
-            max_decode_length (int, optional):
+            max_decode_len (int, optional):
         Returns:
             best_hyps (np.ndarray):
         """
@@ -470,22 +458,21 @@ class CTC(ModelBase):
         return best_hyps
 
 
-def _concatenate_labels(labels, labels_seq_len):
+def _concatenate_labels(ys, y_lens):
     """Concatenate all labels in mini-batch and convert to a 1D tensor.
     Args:
-        labels (LongTensor): A tensor of size `[B, T_out]`
-        labels_seq_len (IntTensor): A tensor of size `[B]`
+        ys (LongTensor): A tensor of size `[B, T_out]`
+        y_lens (IntTensor): A tensor of size `[B]`
     Returns:
         concatenated_labels (): A tensor of size `[all_label_num]`
     """
-    batch_size = labels.size(0)
-    total_lables_seq_len = labels_seq_len.data.sum()
-    concatenated_labels = Variable(
-        torch.zeros(total_lables_seq_len)).int()
+    batch_size = ys.size(0)
+    total_y_lens = y_lens.data.sum()
+    concatenated_labels = Variable(torch.zeros(total_y_lens)).int()
     label_counter = 0
     for i_batch in range(batch_size):
         concatenated_labels[label_counter:label_counter +
-                            labels_seq_len.data[i_batch]] = labels[i_batch][:labels_seq_len.data[i_batch]]
-        label_counter += labels_seq_len.data[i_batch]
+                            y_lens.data[i_batch]] = ys[i_batch][:y_lens.data[i_batch]]
+        label_counter += y_lens.data[i_batch]
 
     return concatenated_labels
