@@ -49,35 +49,53 @@ def train_step(model, optimizer, batch, clip_grad_norm):
         # TODO: Add scheduler
 
     except RuntimeError:
-        # Divide mini-batch
-        print('!!! Divide mini-batch !!!')
-        inputs = np.array_split(inputs, 2, axis=0)
-        labels = np.array_split(labels, 2, axis=0)
-        inputs_seq_len = np.array_split(inputs_seq_len, 2, axis=0)
-        labels_seq_len = np.array_split(labels_seq_len, 2, axis=0)
 
         # For scheduled sampling
         if hasattr(model, '_step'):
             model._step -= 1
+            step_prev = model._step
 
-        for inputs_i, labels_i, inputs_seq_len_i, labels_seq_len_i in zip(
-                inputs, labels, inputs_seq_len, labels_seq_len):
-            # Compute loss again
-            loss_train, loss_main_train, loss_sub_train = model(
-                inputs_i, labels_i, inputs_seq_len_i, labels_seq_len_i)
-            loss_val_train += loss_train.data[0]
+        div_num = 2
+        while True:
+            try:
+                print('!!! Divide mini-batch (div_num: %d) !!!' % div_num)
 
-            # Compute gradient
-            optimizer.zero_grad()
-            loss_train.backward()
+                # For scheduled sampling
+                if hasattr(model, '_step'):
+                    model._step = step_prev
 
-            # Clip gradient norm
-            if clip_grad_norm > 0:
-                nn.utils.clip_grad_norm(model.parameters(), clip_grad_norm)
+                # Divide mini-batch
+                inputs_div = np.array_split(inputs, div_num, axis=0)
+                labels_div = np.array_split(labels, div_num, axis=0)
+                inputs_seq_len_div = np.array_split(
+                    inputs_seq_len, div_num, axis=0)
+                labels_seq_len_div = np.array_split(
+                    labels_seq_len, div_num, axis=0)
 
-            # Update parameters
-            optimizer.step()
-            # TODO: Add scheduler
+                loss_val_train = 0
+                for i in range(div_num):
+                    # Compute loss again
+                    loss_train = model(
+                        inputs_div[i], labels_div[i], inputs_seq_len_div[i], labels_seq_len_div[i])
+                    loss_val_train += loss_train.data[0]
+
+                    # Compute gradient
+                    optimizer.zero_grad()
+                    loss_train.backward()
+
+                    # Clip gradient norm
+                    if clip_grad_norm > 0:
+                        nn.utils.clip_grad_norm(
+                            model.parameters(), clip_grad_norm)
+
+                    # Update parameters
+                    optimizer.step()
+
+            except:
+                div_num *= 2
+
+            if div_num > len(inputs):
+                break
 
     del inputs, labels, inputs_seq_len, labels_seq_len
     del loss_train
@@ -129,38 +147,58 @@ def train_hierarchical_step(model, optimizer, batch, clip_grad_norm):
         # TODO: Add scheduler
 
     except RuntimeError:
-        # Divide mini-batch
-        print('!!! Divide mini-batch !!!')
-        inputs = np.array_split(inputs, 2, axis=0)
-        labels = np.array_split(labels, 2, axis=0)
-        labels_sub = np.array_split(labels_sub, 2, axis=0)
-        inputs_seq_len = np.array_split(inputs_seq_len, 2, axis=0)
-        labels_seq_len = np.array_split(labels_seq_len, 2, axis=0)
-        labels_seq_len_sub = np.array_split(labels_seq_len_sub, 2, axis=0)
 
-        model._step -= 1
+        # For scheduled sampling
+        if hasattr(model, '_step'):
+            model._step -= 1
+            step_prev = model._step
 
-        for inputs_i, labels_i, labels_sub_i, inputs_seq_len_i, labels_seq_len_i, labels_seq_len_sub_i in zip(
-                inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub):
-            # Compute loss again
-            loss_train, loss_main_train, loss_sub_train = model(
-                inputs_i, labels_i, labels_sub_i, inputs_seq_len_i,
-                labels_seq_len_i, labels_seq_len_sub_i)
-            loss_val_train += loss_train.data[0]
-            loss_main_val_train += loss_main_train.data[0]
-            loss_sub_val_train += loss_sub_train.data[0]
+        div_num = 2
+        while True:
+            try:
+                print('!!! Divide mini-batch (div_num: %d) !!!' % div_num)
 
-            # Compute gradient
-            optimizer.zero_grad()
-            loss_train.backward()
+                # For scheduled sampling
+                if hasattr(model, '_step'):
+                    model._step = step_prev
 
-            # Clip gradient norm
-            if clip_grad_norm > 0:
-                nn.utils.clip_grad_norm(model.parameters(), clip_grad_norm)
+                # Divide mini-batch
+                inputs_div = np.array_split(inputs, div_num, axis=0)
+                labels_div = np.array_split(labels, div_num, axis=0)
+                labels_sub_div = np.array_split(labels_sub, div_num, axis=0)
+                inputs_seq_len_div = np.array_split(
+                    inputs_seq_len, div_num, axis=0)
+                labels_seq_len_div = np.array_split(
+                    labels_seq_len, div_num, axis=0)
+                labels_seq_len_sub_div = np.array_split(
+                    labels_seq_len_sub, div_num, axis=0)
 
-            # Update parameters
-            optimizer.step()
-            # TODO: Add scheduler
+                loss_val_train = 0
+                for i in range(div_num):
+                    # Compute loss again
+                    loss_train, loss_main_train, loss_sub_train = model(
+                        inputs_div[i], labels_div[i], labels_sub_div[i],
+                        inputs_seq_len_div[i], labels_seq_len_div[i], labels_seq_len_sub_div[i])
+                    loss_val_train += loss_train.data[0]
+                    loss_main_val_train += loss_main_train.data[0]
+                    loss_sub_val_train += loss_sub_train.data[0]
+
+                    # Compute gradient
+                    optimizer.zero_grad()
+                    loss_train.backward()
+
+                    # Clip gradient norm
+                    if clip_grad_norm > 0:
+                        nn.utils.clip_grad_norm(
+                            model.parameters(), clip_grad_norm)
+
+                    # Update parameters
+                    optimizer.step()
+            except:
+                div_num *= 2
+
+            if div_num > len(inputs):
+                break
 
     del inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub
     del loss_train, loss_main_train, loss_sub_train
