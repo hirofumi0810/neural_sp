@@ -27,9 +27,6 @@ parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--beam_width', type=int, default=1,
-                    help='beam_width (int, optional): beam width for beam search.' +
-                    ' 1 disables beam search, which mean greedy decoding.')
 parser.add_argument('--max_decode_len', type=int, default=300,  # or 100
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
 
@@ -82,7 +79,6 @@ def main():
     # Visualize
     plot_attention(model=model,
                    dataset=test_data,
-                   beam_width=args.beam_width,
                    max_decode_len=args.max_decode_len,
                    eval_batch_size=args.eval_batch_size,
                    save_path=mkdir_join(args.model_path, 'att_weights'))

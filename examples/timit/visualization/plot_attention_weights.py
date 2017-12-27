@@ -27,9 +27,6 @@ parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
 parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
-parser.add_argument('--beam_width', type=int, default=1,
-                    help='beam_width (int, optional): beam width for beam search.' +
-                    ' 1 disables beam search, which mean greedy decoding.')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
 parser.add_argument('--max_decode_len', type=int, default=40,
@@ -80,20 +77,19 @@ def main():
     # Visualize
     plot_attention(model=model,
                    dataset=test_data,
-                   label_type=params['label_type'],
-                   beam_width=args.beam_width,
                    max_decode_len=args.max_decode_len,
                    eval_batch_size=args.eval_batch_size,
                    save_path=mkdir_join(args.model_path, 'att_weights'))
 
 
-def plot_attention(model, dataset, label_type, beam_width, max_decode_len,
+def plot_attention(model, dataset, max_decode_len,
                    eval_batch_size=None, save_path=None):
-    """Visualize attention weights of attetnion-based model.
+    """Visualize attention weights of the attetnion-based model.
     Args:
         model: model to evaluate
         dataset: An instance of a `Dataset` class
-        label_type (string, optional): phone39 or phone48 or phone61
+        max_decode_len (int): the length of output sequences
+            to stop prediction when EOS token have not been emitted.
         eval_batch_size (int, optional): the batch size when evaluating the model
         save_path (string, optional): path to save attention weights plotting
     """
@@ -107,7 +103,7 @@ def plot_attention(model, dataset, label_type, beam_width, max_decode_len,
         mkdir(save_path)
 
     idx2phone = Idx2phone(
-        vocab_file_path='../metrics/vocab_files/' + label_type + '.txt')
+        vocab_file_path='../metrics/vocab_files/' + dataset.label_type + '.txt')
 
     for batch, is_new_epoch in dataset:
 
@@ -115,9 +111,7 @@ def plot_attention(model, dataset, label_type, beam_width, max_decode_len,
 
         # Decode
         labels_pred, attention_weights = model.attention_weights(
-            inputs, inputs_seq_len,
-            beam_width=beam_width,
-            max_decode_len=max_decode_len)
+            inputs, inputs_seq_len, max_decode_len=max_decode_len)
         # NOTE: attention_weights: `[B, T_out, T_in]`
 
         for i_batch in range(inputs.shape[0]):
@@ -125,17 +119,23 @@ def plot_attention(model, dataset, label_type, beam_width, max_decode_len,
             # Check if the sum of attention weights equals to 1
             # print(np.sum(attention_weights[i_batch], axis=1))
 
-            str_pred = idx2phone(labels_pred[i_batch]).split('>')[0]
+            str_pred = idx2phone(labels_pred[i_batch])
+            eos = True if '>' in str_pred else False
+
+            str_pred = str_pred.split('>')[0]
             # NOTE: Trancate by <EOS>
 
             # Remove the last space
             if len(str_pred) > 0 and str_pred[-1] == ' ':
                 str_pred = str_pred[:-1]
 
+            if eos:
+                str_pred += ' >'
+
             plot_attention_weights(
                 spectrogram=inputs[i_batch],
                 attention_weights=attention_weights[i_batch, :len(
-                    str_pred.split(' ')), :inputs_seq_len[i_batch]],
+                    str_pred.split(' ')), :inputs_seq_len[i_batch] - 1],
                 label_list=str_pred.split(' '),
                 save_path=join(save_path, input_names[i_batch] + '.png'),
                 fig_size=(14, 7))
