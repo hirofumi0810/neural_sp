@@ -64,8 +64,7 @@ class CNNEncoder(nn.Module):
                 out_channels=conv_channels[i],
                 kernel_size=tuple(conv_kernel_sizes[i]),
                 stride=tuple(conv_strides[i]),
-                # padding=(conv_kernel_sizes[i][0], conv_kernel_sizes[i][1]),
-                padding=(0, 0),
+                padding=tuple(conv_strides[i]),
                 bias=not batch_norm)
             convs.append(conv)
             in_freq = math.floor(
@@ -88,7 +87,9 @@ class CNNEncoder(nn.Module):
                 pool = nn.MaxPool2d(
                     kernel_size=(poolings[i][0], poolings[i][0]),
                     stride=(poolings[i][0], poolings[i][1]),
-                    padding=(1, 1))
+                    # padding=(1, 1),
+                    padding=(0, 0),  # default
+                    ceil_mode=True)
                 convs.append(pool)
                 in_freq = math.floor(
                     (in_freq + 2 * pool.padding[0] - pool.kernel_size[0]) / pool.stride[0] + 1)
@@ -123,6 +124,7 @@ class CNNEncoder(nn.Module):
         # NOTE: inputs: `[B, in_ch, freq, time]`
 
         outputs = self.conv(inputs)
+        # print(outputs.size())
         # NOTE: outputs: `[B, out_ch, new_freq, new_time]`
 
         # Collapse feature dimension
