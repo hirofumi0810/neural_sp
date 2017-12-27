@@ -13,7 +13,6 @@ try:
 except:
     raise ImportError('Install warpctc_pytorch.')
 
-import math
 import random
 import numpy as np
 
@@ -176,6 +175,9 @@ class AttentionSeq2seq(ModelBase):
         self.attention_conv_width = attention_conv_width
 
         # Setting for regularization
+        self.parameter_init = parameter_init
+        self.weight_noise_injection = False
+        self.weight_noise_std = float(weight_noise_std)
         if scheduled_sampling_prob > 0 and scheduled_sampling_ramp_max_step == 0:
             raise ValueError
         self.scheduled_sampling_prob = scheduled_sampling_prob
@@ -185,11 +187,6 @@ class AttentionSeq2seq(ModelBase):
 
         # Joint CTC-Attention
         self.ctc_loss_weight = ctc_loss_weight
-
-        # Regualarization
-        self.parameter_init = parameter_init
-        self.weight_noise_injection = False
-        self.weight_noise_std = float(weight_noise_std)
 
         ####################
         # Encoder
@@ -564,20 +561,20 @@ class AttentionSeq2seq(ModelBase):
                 if is_sample:
                     # Scheduled sampling
                     y_prev = torch.max(logits[-1], dim=2)[1]
-                    y = self.emb_sub(y_prev)
+                    y_prev = self.emb_sub(y_prev)
                 else:
                     # Teacher-forcing
-                    y = self.emb_sub(ys[:, t:t + 1])
+                    y_prev = self.emb_sub(ys[:, t:t + 1])
             else:
                 if is_sample:
                     # Scheduled sampling
                     y_prev = torch.max(logits[-1], dim=2)[1]
-                    y = self.emb(y_prev)
+                    y_prev = self.emb(y_prev)
                 else:
                     # Teacher-forcing
-                    y = self.emb(ys[:, t:t + 1])
+                    y_prev = self.emb(ys[:, t:t + 1])
 
-            dec_inputs = torch.cat([y, context_vec], dim=-1)
+            dec_inputs = torch.cat([y_prev, context_vec], dim=-1)
             dec_outputs, dec_state, context_vec, att_weights_step = self._decode_step(
                 enc_outputs=enc_outputs,
                 dec_inputs=dec_inputs,
@@ -698,19 +695,17 @@ class AttentionSeq2seq(ModelBase):
 
         return y
 
-    def attention_weights(self, inputs, inputs_seq_len, beam_width=1,
+    def attention_weights(self, inputs, inputs_seq_len,
                           max_decode_len=100, is_sub_task=False):
         """Get attention weights for visualization.
         Args:
             inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
             inputs_seq_len (np.ndarray): A tensor of size `[B]`
-            beam_width (int, optional): the size of beam
             max_decode_len (int, optional): the length of output sequences
                 to stop prediction when EOS token have not been emitted
             is_sub_task (bool, optional):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
-                Note that best_hyps includes <SOS> tokens.
             att_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
         """
         # Wrap by Variable
@@ -738,28 +733,10 @@ class AttentionSeq2seq(ModelBase):
             perm_indices = var2np(perm_indices)
             x_lens = x_lens[perm_indices]
 
-        if beam_width == 1:
-            best_hyps, att_weights = self._decode_infer_greedy(
-                enc_outputs, enc_final_state, max_decode_len,
-                is_sub_task=is_sub_task)
-        else:
-            # Modify x_lens for reducing time resolution
-            if self.encoder.conv is not None or self.encoder_type == 'cnn':
-                for i in range(len(x_lens)):
-                    x_lens.data[i] = self.encoder.conv_out_size(
-                        x_lens.data[i], 1)
-            if is_sub_task:
-                x_lens /= 2 ** sum(
-                    self.subsample_list[:self.encoder_num_layers_sub])
-            else:
-                x_lens /= 2 ** sum(self.subsample_list)
-            # NOTE: floor is not needed because x_lens is IntTensor
-
-            best_hyps, att_weights = self._decode_infer_beam(
-                enc_outputs, enc_final_state,
-                x_lens,
-                beam_width, max_decode_len,
-                is_sub_task=is_sub_task)
+        # NOTE: assume beam_width == 1
+        best_hyps, att_weights = self._decode_infer_greedy(
+            enc_outputs, enc_final_state, max_decode_len,
+            is_sub_task=is_sub_task)
 
         # Permutate indices to the original order
         if perm_indices is not None:
@@ -808,12 +785,9 @@ class AttentionSeq2seq(ModelBase):
             x_lens /= 2 ** sum(self.subsample_list)
             # NOTE: floor is not needed because x_lens is IntTensor
 
-            best_hyps, _ = self._decode_infer_beam(
+            best_hyps = self._decode_infer_beam(
                 enc_outputs, enc_final_state,
                 x_lens, beam_width, max_decode_len)
-
-        # Remove <SOS>
-        best_hyps = best_hyps[:, 1:]
 
         # Permutate indices to the original order
         if perm_indices is not None:
@@ -834,7 +808,6 @@ class AttentionSeq2seq(ModelBase):
             is_sub_task (bool, optional):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
-                Note that best_hyps includes <SOS> tokens.
             att_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
         """
         batch_size, max_time = enc_outputs.size()[:2]
@@ -859,8 +832,8 @@ class AttentionSeq2seq(ModelBase):
         eos = self.eos_index_sub if is_sub_task else self.eos_index
         y = self._create_token(value=sos, batch_size=batch_size)
 
-        best_hyps = [y]
-        att_weights = [att_weights_step]
+        best_hyps = []
+        att_weights = []
 
         for _ in range(max_decode_len):
 
@@ -888,11 +861,8 @@ class AttentionSeq2seq(ModelBase):
             logits = logits.squeeze(dim=1)
             # NOTE: `[B, 1, num_classes]` -> `[B, num_classes]`
 
-            # Path through the softmax layer & convert to log-scale
-            log_probs = F.log_softmax(logits, dim=-1)
-
             # Pick up 1-best
-            y = torch.max(log_probs, dim=1)[1]
+            _, y = torch.max(logits, dim=1)
             y = y.unsqueeze(dim=1)
             best_hyps.append(y)
             att_weights.append(att_weights_step)
@@ -911,9 +881,8 @@ class AttentionSeq2seq(ModelBase):
 
         return best_hyps, att_weights
 
-    def _decode_infer_beam(self, enc_outputs, enc_final_state,
-                           x_lens, beam_width, max_decode_len,
-                           is_sub_task=False):
+    def _decode_infer_beam(self, enc_outputs, enc_final_state, x_lens,
+                           beam_width, max_decode_len, is_sub_task=False):
         """Beam search decoding in the inference stage.
         Args:
             enc_outputs (FloatTensor): A tensor of size
@@ -927,8 +896,6 @@ class AttentionSeq2seq(ModelBase):
             is_sub_task (bool, optional):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
-                Note that best_hyps includes <SOS> tokens.
-            att_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
         """
         batch_size = enc_outputs.size(0)
 
@@ -936,7 +903,7 @@ class AttentionSeq2seq(ModelBase):
         sos = self.sos_index_sub if is_sub_task else self.sos_index
         eos = self.eos_index_sub if is_sub_task else self.eos_index
 
-        beam = []
+        best_hyps = []
         for i_batch in range(batch_size):
 
             max_time = x_lens[i_batch].data[0]
@@ -951,89 +918,98 @@ class AttentionSeq2seq(ModelBase):
             att_weights_step.volatile = True
 
             # Initialize context vector
-            context_vec = Variable(
-                torch.zeros(1, 1, enc_outputs.size(2)))
+            context_vec = Variable(torch.zeros(1, 1, enc_outputs.size(2)))
             context_vec.volatile = True
 
             if self.use_cuda:
                 att_weights_step = att_weights_step.cuda()
                 context_vec = context_vec.cuda()
 
-            beam.append([([self.sos_index], LOG_1,
-                          dec_state, att_weights_step, context_vec)])
-
-        complete = [[]] * batch_size
-        for t in range(max_decode_len):
-            new_beam = [[]] * batch_size
-            for i_batch in range(batch_size):
-                for hyp, score, dec_state, att_weights_step, context_vec in beam[i_batch]:
-                    y_prev = hyp[-1] if t > 0 else sos
-                    y = self._create_token(value=y_prev, batch_size=1)
+            complete = []
+            beam = [{'hyp': [],
+                     'score': LOG_1,
+                     'dec_state': dec_state,
+                     'att_weights_step': att_weights_step,
+                     'context_vec': context_vec}]
+            for t in range(max_decode_len):
+                new_beam = []
+                for i_beam in range(len(beam)):
+                    y_prev = beam[i_beam]['hyp'][-1] if t > 0 else sos
+                    y_prev = self._create_token(value=y_prev, batch_size=1)
                     if is_sub_task:
-                        y = self.emb_sub(y)
+                        y_prev = self.emb_sub(y_prev)
                     else:
-                        y = self.emb(y)
+                        y_prev = self.emb(y_prev)
 
                     max_time = x_lens[i_batch].data[0]
                     # NOTE: already modified for reducing time resolution
 
-                    dec_inputs = torch.cat([y, context_vec], dim=-1)
+                    dec_inputs = torch.cat(
+                        [y_prev, beam[i_beam]['context_vec']], dim=-1)
                     dec_outputs, dec_state, context_vec, att_weights_step = self._decode_step(
                         enc_outputs=enc_outputs[i_batch:i_batch +
                                                 1, :max_time],
                         dec_inputs=dec_inputs,
-                        dec_state=dec_state,
-                        att_weights_step=att_weights_step,
+                        dec_state=beam[i_beam]['dec_state'],
+                        att_weights_step=beam[i_beam]['att_weights_step'],
                         is_sub_task=is_sub_task)
 
                     concat = torch.cat([dec_outputs, context_vec], dim=-1)
                     if is_sub_task:
-                        attentional_vec = F.tanh(
-                            self.proj_layer_sub(concat))
+                        attentional_vec = F.tanh(self.proj_layer_sub(concat))
                         logits = self.fc_sub(attentional_vec)
                     else:
                         attentional_vec = F.tanh(self.proj_layer(concat))
                         logits = self.fc(attentional_vec)
 
-                    logits = logits.squeeze(dim=1)
-                    # NOTE: `[B, 1, num_classes]` -> `[B, num_classes]`
+                    logits = logits.squeeze(1)
+                    # NOTE: `[1 (B), 1, num_classes]` -> `[1 (B), num_classes]`
 
                     # Path through the softmax layer & convert to log-scale
                     log_probs = F.log_softmax(logits, dim=-1)
-                    log_probs = var2np(log_probs).tolist()[0]
 
-                    for i, log_prob in enumerate(log_probs):
-                        new_hyp = hyp + [i]
-                        new_score = np.logaddexp(score, log_prob)
-                        new_beam[i_batch].append(
-                            (new_hyp, new_score, dec_state,
-                             att_weights_step, context_vec))
-                new_beam[i_batch] = sorted(
-                    new_beam[i_batch], key=lambda x: x[1], reverse=True)
+                    # Pick up the top-k scores
+                    log_probs_topk, indices_topk = torch.topk(
+                        log_probs, k=beam_width, dim=-1,
+                        largest=True, sorted=True)
+
+                    for i, log_prob in zip(indices_topk.data[0], log_probs_topk.data[0]):
+                        new_hyp = beam[i_beam]['hyp'] + [i]
+
+                        # numpy
+                        new_score = np.logaddexp(
+                            beam[i_beam]['score'], log_prob)
+
+                        # torch
+                        # new_score = _logsumexp(
+                        #     [beam[i_beam]['score'], log_prob], dim=0)
+
+                        new_beam.append({'hyp': new_hyp,
+                                         'score': new_score,
+                                         'dec_state': dec_state,
+                                         'att_weights_step': att_weights_step,
+                                         'context_vec': context_vec})
+
+                new_beam = sorted(
+                    new_beam, key=lambda x: x['score'], reverse=True)
 
                 # Remove complete hypotheses
-                for cand in new_beam[i_batch][:beam_width]:
-                    if cand[0][-1] == eos:
-                        complete[i_batch].append(cand)
-                if len(complete[i_batch]) >= beam_width:
-                    complete[i_batch] = complete[i_batch][:beam_width]
+                for cand in new_beam[:beam_width]:
+                    if cand['hyp'][-1] == eos:
+                        complete.append(cand)
+                if len(complete) >= beam_width:
+                    complete = complete[:beam_width]
                     break
-                beam[i_batch] = list(
-                    filter(lambda x: x[0][-1] != eos, new_beam[i_batch]))
-                beam[i_batch] = beam[i_batch][:beam_width]
+                beam = list(filter(lambda x: x['hyp'][-1] != eos, new_beam))
+                beam = beam[:beam_width]
 
-        best_hyps = []
-        att_weights = [] * batch_size
-        for i_batch in range(batch_size):
-            complete[i_batch] = sorted(
-                complete[i_batch], key=lambda x: x[1], reverse=True)
-            if len(complete[i_batch]) == 0:
-                complete[i_batch] = beam[i_batch]
-            hyp, score, _, att_weights_step, _ = complete[i_batch][0]
-            best_hyps.append(hyp)
-            att_weights.append(att_weights_step)
+            complete = sorted(
+                complete, key=lambda x: x['score'], reverse=True)
+            if len(complete) == 0:
+                complete = beam
+            best_hyps.append(np.array(complete[0]['hyp']))
 
-        return np.array(best_hyps), np.array(att_weights)
+        return np.array(best_hyps)
 
     def decode_ctc(self, inputs, inputs_seq_len, beam_width=1):
         """Decoding by the CTC layer in the inference stage.
@@ -1096,3 +1072,25 @@ class AttentionSeq2seq(ModelBase):
             best_hyps = best_hyps[perm_indices]
 
         return best_hyps
+
+
+def _logsumexp(x, dim=None):
+    """
+    Args:
+        x (list):
+        dim (int, optional):
+    Returns:
+        (int) the summation of x in the log-scale
+    """
+    if dim is None:
+        raise ValueError
+        # TODO: fix this
+
+    if isinstance(x, list):
+        x = torch.FloatTensor(x)
+
+    max_val, _ = torch.max(x, dim=dim)
+    max_val += torch.log(torch.sum(torch.exp(x - max_val),
+                                   dim=dim, keepdim=True))
+
+    return torch.squeeze(max_val, dim=dim).numpy().tolist()[0]

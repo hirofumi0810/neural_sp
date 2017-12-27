@@ -73,7 +73,7 @@ param:
   coverage_weight: 0
   scheduled_sampling_prob: 0.4
   scheduled_sampling_ramp_max_step: 300000
-  label_smoothing_prob: 0
+  label_smoothing_prob: 0.1
   weight_noise_std: 0
 
   # annealing

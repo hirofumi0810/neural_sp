@@ -94,7 +94,7 @@ class TestAttention(unittest.TestCase):
               attention_type='location', label_type='char',
               subsample=False, ctc_loss_weight=0,
               conv=False, batch_norm=False,
-              residual=False, dense_residual=False, label_smoothing=True):
+              residual=False, dense_residual=False, label_smoothing=False):
 
         print('==================================================')
         print('  label_type: %s' % label_type)

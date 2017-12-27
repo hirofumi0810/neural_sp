@@ -489,10 +489,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     x_lens,
                     beam_width, max_decode_len)
 
-        # Remove <SOS>
-        if not (is_sub_task and self.sub_loss_weight <= self.ctc_loss_weight_sub):
-            best_hyps = best_hyps[:, 1:]
-
         # Permutate indices to the original order
         if perm_indices is not None:
             best_hyps = best_hyps[perm_indices]

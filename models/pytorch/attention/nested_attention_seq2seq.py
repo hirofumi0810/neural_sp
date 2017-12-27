@@ -999,9 +999,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             raise NotImplementedError
 
         if is_sub_task or self.composition_case == 'hidden':
-            # Remove <SOS>
-            best_hyps = best_hyps[:, 1:]
-
             # Permutate indices to the original order
             if perm_indices is not None:
                 best_hyps = best_hyps[perm_indices]
