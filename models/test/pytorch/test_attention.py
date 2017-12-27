@@ -30,6 +30,10 @@ class TestAttention(unittest.TestCase):
     def test(self):
         print("Attention Working check.")
 
+        # Label smoothing
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', label_smoothing=True)
+
         # Residual LSTM encoder
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', residual=True)
@@ -90,7 +94,7 @@ class TestAttention(unittest.TestCase):
               attention_type='location', label_type='char',
               subsample=False, ctc_loss_weight=0,
               conv=False, batch_norm=False,
-              residual=False, dense_residual=False):
+              residual=False, dense_residual=False, label_smoothing=True):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
@@ -104,6 +108,7 @@ class TestAttention(unittest.TestCase):
         print('  batch_norm: %s' % str(batch_norm))
         print('  residual: %s' % str(residual))
         print('  dense_residual: %s' % str(dense_residual))
+        print('  label_smoothing: %s' % str(label_smoothing))
         print('==================================================')
 
         if conv:
@@ -179,7 +184,7 @@ class TestAttention(unittest.TestCase):
             batch_norm=batch_norm,
             scheduled_sampling_prob=0.1,
             scheduled_sampling_ramp_max_step=100,
-            label_smoothing_prob=0.1,
+            label_smoothing_prob=0.1 if label_smoothing else 0,
             weight_noise_std=0,
             encoder_residual=residual,
             encoder_dense_residual=dense_residual,

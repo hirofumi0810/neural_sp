@@ -41,17 +41,14 @@ class AttentionSeq2seq(ModelBase):
         input_size (int): the dimension of input features
         encoder_type (string): the type of the encoder. Set lstm or gru or rnn.
         encoder_bidirectional (bool): if True, create a bidirectional encoder
-        encoder_num_units (int): the number of units in each layer of the
-            encoder
-        encoder_num_proj (int): the number of nodes in the projection layer of
-            the encoder.
+        encoder_num_units (int): the number of units in each layer of the encoder
+        encoder_num_proj (int): the number of nodes in the projection layer of the encoder
         encoder_num_layers (int): the number of layers of the encoder
         encoder_dropout (float): the probability to drop nodes of the encoder
         attention_type (string): the type of attention
         attention_dim: (int) the dimension of the attention layer
         decoder_type (string): lstm or gru
-        decoder_num_units (int): the number of units in each layer of the
-            decoder
+        decoder_num_units (int): the number of units in each layer of the decoder
         decoder_num_layers (int): the number of layers of the decoder
         decoder_dropout (float): the probability to drop nodes of the decoder
         embedding_dim (int): the dimension of the embedding in target spaces
@@ -70,8 +67,7 @@ class AttentionSeq2seq(ModelBase):
             softmax layer in outputing probabilities
         sigmoid_smoothing (bool, optional): if True, replace softmax function
             in computing attention weights with sigmoid function for smoothing
-        coverage_weight (float, optional): the weight parameter for coverage
-            computation.
+        coverage_weight (float, optional): the weight parameter for coverage computation
         ctc_loss_weight (float): A weight parameter for auxiliary CTC loss
         attention_conv_num_channels (int, optional): the number of channles of
             conv outputs. This is used for location-based attention.
@@ -79,10 +75,14 @@ class AttentionSeq2seq(ModelBase):
             This must be the odd number.
         num_stack (int, optional): the number of frames to stack
         splice (int, optional): frames to splice. Default is 1 frame.
-        conv_channels (list, optional):
-        conv_kernel_sizes (list, optional):
-        conv_strides (list, optional):
-        poolings (list, optional):
+        conv_channels (list, optional): the number of channles in the
+            convolution of the location-based attention
+        conv_kernel_sizes (list, optional): the size of kernels in the
+            convolution of the location-based attention
+        conv_strides (list, optional): strides in the convolution
+            of the location-based attention
+        poolings (list, optional): the size of poolings in the convolution
+            of the location-based attention
         activation (string, optional): The activation function of CNN layers.
             Choose from relu or prelu or hard_tanh or maxout
         batch_norm (bool, optional):
@@ -160,7 +160,7 @@ class AttentionSeq2seq(ModelBase):
         self.decoder_type = decoder_type
         self.decoder_num_units = decoder_num_units
         self.decoder_num_layers = decoder_num_layers
-        self.embedding_dim = embedding_dim
+        self.emb_dim = embedding_dim
         self.num_classes = num_classes + 2
         self.sos_index = num_classes + 1
         self.eos_index = num_classes
@@ -312,7 +312,7 @@ class AttentionSeq2seq(ModelBase):
         else:
             self.is_bridge = False
 
-        self.embedding = nn.Embedding(self.num_classes, embedding_dim)
+        self.emb = nn.Embedding(self.num_classes, embedding_dim)
 
         self.proj_layer = LinearND(decoder_num_units * 2, decoder_num_units)
         self.fc = LinearND(decoder_num_units, self.num_classes - 1)
@@ -395,8 +395,8 @@ class AttentionSeq2seq(ModelBase):
                 batch_size, label_num, num_classes)) / num_classes
             if self.use_cuda:
                 uniform = uniform.cuda()
-            kl_div = nn.KLDivLoss(size_average=False, reduce=True)
-            xe_loss += kl_div(log_probs, uniform) * self.label_smoothing_prob
+            xe_loss += F.kl_div(log_probs, uniform, size_average=False,
+                                reduce=True) * self.label_smoothing_prob
 
         # Add coverage term
         if self.coverage_weight != 0:
@@ -556,22 +556,26 @@ class AttentionSeq2seq(ModelBase):
         logits = []
         att_weights = []
         for t in range(labels_max_seq_len - 1):
+
+            is_sample = self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random(
+            ) < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step
+
             if is_sub_task:
-                if self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random() < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step:
+                if is_sample:
                     # Scheduled sampling
                     y_prev = torch.max(logits[-1], dim=2)[1]
-                    y = self.embedding_sub(y_prev)
+                    y = self.emb_sub(y_prev)
                 else:
                     # Teacher-forcing
-                    y = self.embedding_sub(ys[:, t:t + 1])
+                    y = self.emb_sub(ys[:, t:t + 1])
             else:
-                if self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random() < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step:
+                if is_sample:
                     # Scheduled sampling
                     y_prev = torch.max(logits[-1], dim=2)[1]
-                    y = self.embedding(y_prev)
+                    y = self.emb(y_prev)
                 else:
                     # Teacher-forcing
-                    y = self.embedding(ys[:, t:t + 1])
+                    y = self.emb(ys[:, t:t + 1])
 
             dec_inputs = torch.cat([y, context_vec], dim=-1)
             dec_outputs, dec_state, context_vec, att_weights_step = self._decode_step(
@@ -861,9 +865,9 @@ class AttentionSeq2seq(ModelBase):
         for _ in range(max_decode_len):
 
             if is_sub_task:
-                y = self.embedding_sub(y)
+                y = self.emb_sub(y)
             else:
-                y = self.embedding(y)
+                y = self.emb(y)
 
             dec_inputs = torch.cat([y, context_vec], dim=-1)
             dec_outputs, dec_state, context_vec, att_weights_step = self._decode_step(
@@ -966,9 +970,9 @@ class AttentionSeq2seq(ModelBase):
                     y_prev = hyp[-1] if t > 0 else sos
                     y = self._create_token(value=y_prev, batch_size=1)
                     if is_sub_task:
-                        y = self.embedding_sub(y)
+                        y = self.emb_sub(y)
                     else:
-                        y = self.embedding(y)
+                        y = self.emb(y)
 
                     max_time = x_lens[i_batch].data[0]
                     # NOTE: already modified for reducing time resolution

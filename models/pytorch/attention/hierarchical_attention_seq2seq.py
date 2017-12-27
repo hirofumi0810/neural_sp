@@ -238,7 +238,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     encoder_num_units, decoder_num_units_sub)
                 self.is_bridge_sub = True
 
-            self.embedding_sub = nn.Embedding(
+            self.emb_sub = nn.Embedding(
                 self.num_classes_sub, embedding_dim_sub)
 
             self.proj_layer_sub = LinearND(
@@ -335,8 +335,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 batch_size, label_num, num_classes)) / num_classes
             if self.use_cuda:
                 uniform = uniform.cuda()
-            kl = nn.KLDivLoss(size_average=False, reduce=True)
-            xe_loss_main += kl(log_probs, uniform) * self.label_smoothing_prob
+            xe_loss_main += F.kl_div(
+                log_probs, uniform, size_average=False, reduce=True) * self.label_smoothing_prob
 
         # Add coverage term
         if self.coverage_weight != 0:
@@ -376,9 +376,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     batch_size, label_num_sub, num_classes_sub)) / num_classes_sub
                 if self.use_cuda:
                     uniform_sub = uniform_sub.cuda()
-                kl_div_sub = nn.KLDivLoss(size_average=False, reduce=True)
-                xe_loss_sub += kl_div_sub(log_probs_sub, uniform_sub) * \
-                    self.label_smoothing_prob
+                xe_loss_sub += F.kl_div(
+                    log_probs_sub, uniform_sub, size_average=False, reduce=True) * self.label_smoothing_prob
 
             xe_loss_sub = xe_loss_sub * self.sub_loss_weight / batch_size
             loss += xe_loss_sub

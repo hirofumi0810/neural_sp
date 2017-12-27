@@ -139,8 +139,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         self.decoder_num_layers = decoder_num_layers
         self.decoder_num_units_sub = decoder_num_units_sub
         self.decoder_num_layers_sub = decoder_num_layers_sub
-        self.embedding_dim = embedding_dim
-        self.embedding_dim_sub = embedding_dim_sub
+        self.emb_dim = embedding_dim
+        self.emb_dim_sub = embedding_dim_sub
         self.num_classes = num_classes + 2
         self.num_classes_sub = num_classes_sub + 2
         self.sos_index = num_classes + 1
@@ -319,9 +319,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         else:
             self.is_bridge_sub = False
 
-        self.embedding = nn.Embedding(self.num_classes, embedding_dim)
-        self.embedding_sub = nn.Embedding(
-            self.num_classes_sub, embedding_dim_sub)
+        self.emb = nn.Embedding(self.num_classes, embedding_dim)
+        self.emb_sub = nn.Embedding(self.num_classes_sub, embedding_dim_sub)
 
         if composition_case in ['hidden', 'hidden_embedding']:
             self.proj_layer = LinearND(
@@ -443,22 +442,21 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
             log_probs = F.log_softmax(logits, dim=-1)
+            log_probs_sub = F.log_softmax(logits_sub, dim=-1)
+
             uniform = Variable(torch.ones(
                 batch_size, label_num, num_classes)) / num_classes
-            if self.use_cuda:
-                uniform = uniform.cuda()
-            kl_div = nn.KLDivLoss(size_average=False, reduce=True)
-            xe_loss_main += kl_div(log_probs, uniform) * \
-                self.label_smoothing_prob
-
-            log_probs_sub = F.log_softmax(logits_sub, dim=-1)
             uniform_sub = Variable(torch.ones(
                 batch_size, label_num_sub, num_classes_sub)) / num_classes_sub
+
             if self.use_cuda:
+                uniform = uniform.cuda()
                 uniform_sub = uniform_sub.cuda()
-            kl_div_sub = nn.KLDivLoss(size_average=False, reduce=True)
-            xe_loss_sub += kl_div_sub(log_probs_sub, uniform_sub) * \
-                self.label_smoothing_prob
+
+            xe_loss_main += F.kl_div(log_probs, uniform, size_average=False,
+                                     reduce=True) * self.label_smoothing_prob
+            xe_loss_sub += F.kl_div(log_probs_sub, uniform_sub,
+                                    size_average=False, reduce=True) * self.label_smoothing_prob
 
         # Add coverage term
         if self.coverage_weight != 0:
@@ -550,13 +548,16 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             ys_sub_max_seq_len = ys_sub.size(1)
             for t in range(ys_sub_max_seq_len - 1):
 
-                if self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random() < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step:
+                is_sample = self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random(
+                ) < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step
+
+                if is_sample:
                     # Scheduled sampling
                     y_prev_sub = torch.max(logits_sub[-1], dim=2)[1]
-                    y_sub = self.embedding_sub(y_prev_sub)
+                    y_sub = self.emb_sub(y_prev_sub)
                 else:
                     # Teacher-forcing
-                    y_sub = self.embedding_sub(ys_sub[:, t:t + 1])
+                    y_sub = self.emb_sub(ys_sub[:, t:t + 1])
 
                 dec_inputs_sub = torch.cat(
                     [y_sub, context_vec_sub], dim=-1)
@@ -580,13 +581,16 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             ys_max_seq_len = ys.size(1)
             for t in range(ys_max_seq_len - 1):
 
-                if self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random() < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step:
+                is_sample = self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random(
+                ) < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step
+
+                if is_sample:
                     # Scheduled sampling
                     y_prev = torch.max(logits[-1], dim=2)[1]
-                    y = self.embedding(y_prev)
+                    y = self.emb(y_prev)
                 else:
                     # Teacher-forcing
-                    y = self.embedding(ys[:, t:t + 1])
+                    y = self.emb(ys[:, t:t + 1])
 
                 dec_inputs = torch.cat([y, context_vec], dim=-1)
                 dec_outputs, dec_state, context_vec, att_weights_step = self._decode_step(
@@ -687,13 +691,16 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     char_embs = []
                     for i_char in range(char_lens[t]):  # loop of characters
 
-                        if self.scheduled_sampling_prob > 0 and t > 0 and i_char > 0 and self._step > 0 and random.random() < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step:
+                        is_sample = self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random(
+                        ) < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step
+
+                        if is_sample:
                             # Scheduled sampling
                             y_prev_sub = torch.max(logits_sub_i[-1], dim=2)[1]
-                            y_sub = self.embedding_sub(y_prev_sub)
+                            y_sub = self.emb_sub(y_prev_sub)
                         else:
                             # Teacher-forcing
-                            y_sub = self.embedding_sub(
+                            y_sub = self.emb_sub(
                                 ys_sub[i_batch:i_batch + 1, global_char_counter:global_char_counter + 1])
 
                         dec_inputs_sub = torch.cat(
@@ -715,7 +722,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         att_weights_sub_i.append(
                             att_weights_step_sub)
 
-                        char_emb = self.embedding_sub(
+                        char_emb = self.emb_sub(
                             ys_sub[i_batch:i_batch + 1, global_char_counter:global_char_counter + 1])
                         # NOTE: char_emb: `[1, 1, embedding_dim_sub]`
                         char_embs.append(char_emb)
@@ -725,13 +732,17 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     # For space
                     ###############
                     if 0 < t < word_len - 2:
-                        if self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random() < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step:
+
+                        is_sample = self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random(
+                        ) < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step
+
+                        if is_sample:
                             # Scheduled sampling
                             y_prev_sub = torch.max(logits_sub_i[-1], dim=2)[1]
-                            y_sub = self.embedding_sub(y_prev_sub)
+                            y_sub = self.emb_sub(y_prev_sub)
                         else:
                             # Teacher-forcing
-                            y_sub = self.embedding_sub(
+                            y_sub = self.emb_sub(
                                 ys_sub[i_batch:i_batch + 1, global_char_counter:global_char_counter + 1])
 
                         dec_inputs_sub = torch.cat(
@@ -763,13 +774,16 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     ########################################
                     # Decode by word-level decoder
                     ########################################
-                    if self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random() < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step:
+                    is_sample = self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random(
+                    ) < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step
+
+                    if is_sample:
                         # Scheduled sampling
                         y_prev = torch.max(logits_i[-1], dim=2)[1]
-                        y = self.embedding(y_prev)
+                        y = self.emb(y_prev)
                     else:
                         # Teacher-forcing
-                        y = self.embedding(
+                        y = self.emb(
                             ys[i_batch:i_batch + 1, t:t + 1])
 
                     if self.composition_case in ['embedding', 'hidden_embedding']:
@@ -1055,7 +1069,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
             for _ in range(max_decode_len):
 
-                y = self.embedding(y)
+                y = self.emb(y)
 
                 dec_inputs = torch.cat([y, context_vec], dim=-1)
                 dec_outputs, dec_state, context_vec, att_weights_step = self._decode_step(
@@ -1168,7 +1182,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     local_char_counter = 0
                     char_embs = []
                     while local_char_counter < 10:
-                        y_sub = self.embedding_sub(y_sub)
+                        y_sub = self.emb_sub(y_sub)
 
                         dec_inputs_sub = torch.cat(
                             [y_sub, context_vec_sub], dim=-1)
@@ -1202,7 +1216,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         if y_sub.data[0] in [self.eos_index_sub, self.space_index]:
                             break
 
-                        emb_char = self.embedding_sub(y_sub)
+                        emb_char = self.emb_sub(y_sub)
                         # NOTE: emb_char: `[1, 1, embedding_dim_sub]`
                         char_embs.append(emb_char)
 
@@ -1220,7 +1234,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     ########################################
                     # Decode by word-level decoder
                     ########################################
-                    y = self.embedding(y)
+                    y = self.emb(y)
 
                     if self.composition_case in ['embedding', 'hidden_embedding']:
                         # Mix word embedding and word representation form C2W
