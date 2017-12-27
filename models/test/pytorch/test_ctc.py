@@ -30,6 +30,10 @@ class TestCTC(unittest.TestCase):
     def test(self):
         print("CTC Working check.")
 
+        # Label smoothing
+        self.check(encoder_type='lstm', bidirectional=True,
+                   label_smoothing=True)
+
         # Residual LSTM-CTC
         self.check(encoder_type='lstm', bidirectional=True,
                    residual=True)
@@ -68,7 +72,7 @@ class TestCTC(unittest.TestCase):
     @measure_time
     def check(self, encoder_type, bidirectional=False, label_type='char',
               subsample=False, conv=False, batch_norm=False, activation='relu',
-              residual=False, dense_residual=False):
+              residual=False, dense_residual=False, label_smoothing=False):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
@@ -80,6 +84,7 @@ class TestCTC(unittest.TestCase):
         print('  activation: %s' % activation)
         print('  residual: %s' % str(residual))
         print('  dense_residual: %s' % str(dense_residual))
+        print('  label_smoothing: %s' % str(label_smoothing))
         print('==================================================')
 
         if conv or encoder_type == 'cnn':
@@ -141,6 +146,7 @@ class TestCTC(unittest.TestCase):
             poolings=poolings,
             activation=activation,
             batch_norm=batch_norm,
+            label_smoothing_prob=0.1 if label_smoothing else 0,
             weight_noise_std=0,
             residual=residual,
             dense_residual=dense_residual)

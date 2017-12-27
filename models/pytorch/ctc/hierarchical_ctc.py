@@ -12,6 +12,10 @@ try:
 except:
     raise ImportError('Install warpctc_pytorch.')
 
+import torch
+import torch.nn.functional as F
+from torch.autograd import Variable
+
 from models.pytorch.ctc.ctc import CTC, _concatenate_labels
 from models.pytorch.linear import LinearND
 from models.pytorch.encoders.load_encoder import load
@@ -54,6 +58,7 @@ class HierarchicalCTC(CTC):
         activation (string, optional): The activation function of CNN layers.
             Choose from relu or prelu or hard_tanh or maxout
         batch_norm (bool, optional):
+        label_smoothing_prob (float, optional):
         weight_noise_std (float, optional):
         residual (bool, optional):
         dense_residual (bool, optional):
@@ -83,6 +88,7 @@ class HierarchicalCTC(CTC):
                  poolings=[],
                  activation='relu',
                  batch_norm=False,
+                 label_smoothing_prob=0,
                  weight_noise_std=0,
                  residual=False,
                  dense_residual=False):
@@ -101,6 +107,7 @@ class HierarchicalCTC(CTC):
             fc_list=fc_list,
             logits_temperature=logits_temperature,
             batch_norm=batch_norm,
+            label_smoothing_prob=label_smoothing_prob,
             weight_noise_std=weight_noise_std)
 
         self.num_layers_sub = num_layers_sub
@@ -188,9 +195,9 @@ class HierarchicalCTC(CTC):
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (FloatTensor): A tensor of size `[1]`
-            loss_main (FloatTensor): A tensor of size `[1]`
-            loss_sub (FloatTensor): A tensor of size `[1]`
+            ctc_loss (FloatTensor): A tensor of size `[1]`
+            ctc_loss_main (FloatTensor): A tensor of size `[1]`
+            ctc_loss_sub (FloatTensor): A tensor of size `[1]`
         """
         # Wrap by Variable
         xs = np2var(inputs, use_cuda=self.use_cuda)
@@ -247,19 +254,43 @@ class HierarchicalCTC(CTC):
         x_lens /= 2 ** sum(self.subsample_list)
         # NOTE: floor is not needed because x_lens is IntTensor
 
-        # Compute CTC loss
-        batch_size = logits.size(1)
-        ctc_loss_fn = CTCLoss()
+        ##################################################
         # Main task
-        loss_main = ctc_loss_fn(logits, concatenated_labels,
-                                x_lens.cpu(), y_lens)
-        loss_main = loss_main * self.main_loss_weight / batch_size
+        ##################################################
+        # Compute CTC loss in the main task
+        batch_size, label_num, num_classes = logits.size()
+        ctc_loss_fn = CTCLoss()
+        ctc_loss_main = ctc_loss_fn(logits, concatenated_labels,
+                                    x_lens.cpu(), y_lens)
 
+        # Label smoothing (with uniform distribution)
+        if self.label_smoothing_prob > 0:
+            log_probs = F.log_softmax(logits, dim=-1)
+            uniform = Variable(torch.ones(
+                batch_size, label_num, num_classes)) / num_classes
+            ctc_loss_main += F.kl_div(log_probs.cpu(), uniform, size_average=False,
+                                      reduce=True) * self.label_smoothing_prob
+
+        ctc_loss_main = ctc_loss_main * self.main_loss_weight / batch_size
+
+        ##################################################
         # Sub task
-        loss_sub = ctc_loss_fn(logits_sub, concatenated_labels_sub,
-                               x_lens_sub.cpu(), y_lens_sub)
-        loss_sub = loss_sub * (1 - self.main_loss_weight) / batch_size
+        ##################################################
+        # Compute CTC loss in the sub task
+        ctc_loss_sub = ctc_loss_fn(logits_sub, concatenated_labels_sub,
+                                   x_lens_sub.cpu(), y_lens_sub)
 
-        loss = loss_main + loss_sub
+        # Label smoothing (with uniform distribution)
+        if self.label_smoothing_prob > 0:
+            label_num_sub, num_classes_sub = logits_sub.size()[1:]
+            log_probs_sub = F.log_softmax(logits_sub, dim=-1)
+            uniform = Variable(torch.ones(
+                batch_size, label_num_sub, num_classes_sub)) / num_classes_sub
+            ctc_loss_sub += F.kl_div(log_probs_sub.cpu(), uniform, size_average=False,
+                                     reduce=True) * self.label_smoothing_prob
 
-        return loss, loss_main, loss_sub
+        ctc_loss_sub = ctc_loss_sub * (1 - self.main_loss_weight) / batch_size
+
+        ctc_loss = ctc_loss_main + ctc_loss_sub
+
+        return ctc_loss, ctc_loss_main, ctc_loss_sub

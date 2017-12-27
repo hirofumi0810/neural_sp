@@ -63,6 +63,7 @@ class CTC(ModelBase):
         activation (string, optional): The activation function of CNN layers.
             Choose from relu or prelu or hard_tanh or maxout
         batch_norm (bool, optional):
+        label_smoothing_prob (float, optional):
         weight_noise_std (float, optional):
         residual (bool, optional):
         dense_residual (bool, optional):
@@ -89,6 +90,7 @@ class CTC(ModelBase):
                  poolings=[],
                  activation='relu',
                  batch_norm=False,
+                 label_smoothing_prob=0,
                  weight_noise_std=0,
                  residual=False,
                  dense_residual=False):
@@ -107,10 +109,11 @@ class CTC(ModelBase):
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
         self.logits_temperature = logits_temperature
 
-        # Regualarization
+        # Setting for regualarization
         self.parameter_init = parameter_init
         self.weight_noise_injection = False
         self.weight_noise_std = float(weight_noise_std)
+        self.label_smoothing_prob = label_smoothing_prob
 
         # Load an instance
         if sum(subsample_list) == 0:
@@ -269,8 +272,18 @@ class CTC(ModelBase):
 
         # Compute CTC loss
         ctc_loss_fn = CTCLoss()
-        ctc_loss = ctc_loss_fn(logits, concatenated_labels,
-                               x_lens.cpu(), y_lens)
+        ctc_loss = ctc_loss_fn(
+            logits, concatenated_labels,
+            x_lens.cpu(), y_lens) * (1 - self.label_smoothing_prob)
+
+        # Label smoothing (with uniform distribution)
+        if self.label_smoothing_prob > 0:
+            batch_size, label_num, num_classes = logits.size()
+            log_probs = F.log_softmax(logits, dim=-1)
+            uniform = Variable(torch.ones(
+                batch_size, label_num, num_classes)) / num_classes
+            ctc_loss += F.kl_div(log_probs.cpu(), uniform, size_average=False,
+                                 reduce=True) * self.label_smoothing_prob
 
         # Average the loss by mini-batch
         batch_size = logits.size(1)

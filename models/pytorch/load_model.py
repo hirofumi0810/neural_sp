@@ -63,6 +63,7 @@ def load(model_type, params):
             poolings=params['poolings'],
             activation=params['activation'],
             batch_norm=params['batch_norm'],
+            label_smoothing_prob=params['label_smoothing_prob'],
             weight_noise_std=params['weight_noise_std'],
             residual=params['residual'],
             dense_residual=params['dense_residual'])
@@ -92,6 +93,8 @@ def load(model_type, params):
             model.name += '_fc'
         if params['logits_temperature'] != 1:
             model.name += '_temp' + str(params['logits_temperature'])
+        if params['label_smoothing_prob'] > 0:
+            model.name += '_labelsmooth' + str(params['label_smoothing_prob'])
         if params['weight_noise_std'] != 0:
             model.name += '_noise' + str(params['weight_noise_std'])
         if params['encoder_type'] == 'cnn':
@@ -288,6 +291,7 @@ def load(model_type, params):
             poolings=params['poolings'],
             activation=params['activation'],
             batch_norm=params['batch_norm'],
+            label_smoothing_prob=params['label_smoothing_prob'],
             weight_noise_std=params['weight_noise_std'],
             residual=params['residual'],
             dense_residual=params['dense_residual'])
@@ -318,6 +322,8 @@ def load(model_type, params):
             model.name += '_fc'
         if params['logits_temperature'] != 1:
             model.name += '_temp' + str(params['logits_temperature'])
+        if params['label_smoothing_prob'] > 0:
+            model.name += '_labelsmooth' + str(params['label_smoothing_prob'])
         if params['weight_noise_std'] != 0:
             model.name += '_noise' + str(params['weight_noise_std'])
         if bool(params['residual']):
