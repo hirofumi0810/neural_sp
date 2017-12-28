@@ -62,21 +62,17 @@ def do_eval_cer(model, model_type, dataset, label_type, beam_width,
         pbar = tqdm(total=len(dataset))
     for batch, is_new_epoch in dataset:
 
+        # Decode
         if model_type in ['ctc', 'attention']:
             inputs, labels, inputs_seq_len, labels_seq_len, _ = batch
+            is_sub_task = False
         elif model_type in ['hierarchical_ctc', 'hierarchical_attention']:
             inputs, _, labels, inputs_seq_len, _, labels_seq_len, _ = batch
-
-        # Decode
-        if model_type in ['attention', 'ctc']:
-            labels_pred = model.decode(inputs, inputs_seq_len,
-                                       beam_width=beam_width,
-                                       max_decode_len=max_decode_len)
-        elif model_type in['hierarchical_attention', 'hierarchical_ctc']:
-            labels_pred = model.decode(inputs, inputs_seq_len,
-                                       beam_width=beam_width,
-                                       max_decode_len=max_decode_len,
-                                       is_sub_task=True)
+            is_sub_task = True
+        labels_hyp = model.decode(inputs, inputs_seq_len,
+                                  beam_width=beam_width,
+                                  max_decode_len=max_decode_len,
+                                  is_sub_task=is_sub_task)
 
         for i_batch in range(inputs.shape[0]):
 
@@ -84,58 +80,58 @@ def do_eval_cer(model, model_type, dataset, label_type, beam_width,
             # Reference
             ##############################
             if dataset.is_test:
-                str_true = labels[i_batch][0]
+                str_ref = labels[i_batch][0]
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
                 if model_type in ['ctc', 'hierarchical_ctc']:
-                    str_true = idx2char(
+                    str_ref = idx2char(
                         labels[i_batch][:labels_seq_len[i_batch]])
                 elif model_type in ['attention', 'hierarchical_attention']:
-                    str_true = idx2char(
+                    str_ref = idx2char(
                         labels[i_batch][1:labels_seq_len[i_batch] - 1])
                     # NOTE: Exclude <SOS> and <EOS>
 
             ##############################
             # Hypothesis
             ##############################
-            str_pred = idx2char(labels_pred[i_batch])
+            str_hyp = idx2char(labels_hyp[i_batch])
             if model_type in ['attention', 'hierarchical_attention']:
-                str_pred = str_pred.split('>')[0]
+                str_hyp = str_hyp.split('>')[0]
                 # NOTE: Trancate by the first <EOS>
 
                 # Remove the last space
-                if len(str_pred) > 0 and str_pred[-1] == '_':
-                    str_pred = str_pred[:-1]
+                if len(str_hyp) > 0 and str_hyp[-1] == '_':
+                    str_hyp = str_hyp[:-1]
 
             ##############################
             # Post-proccessing
             ##############################
-            str_true = fix_trans(str_true, glm)
-            str_pred = fix_trans(str_pred, glm)
+            str_ref = fix_trans(str_ref, glm)
+            str_hyp = fix_trans(str_hyp, glm)
 
-            # print('\n' + str_true)
-            # print(str_pred)
+            # print('\n' + str_ref)
+            # print(str_hyp)
 
-            word_list_true = str_true.split('_')
-            word_list_pred = str_pred.split('_')
+            word_list_ref = str_ref.split('_')
+            word_list_hyp = str_hyp.split('_')
 
             # Compute WER
-            if len(str_true) > 0:
-                wer_mean += compute_wer(ref=word_list_true,
-                                        hyp=word_list_pred,
+            if len(str_ref) > 0:
+                wer_mean += compute_wer(ref=word_list_ref,
+                                        hyp=word_list_hyp,
                                         normalize=True)
-                # if len(str_pred) > 0:
+                # if len(str_hyp) > 0:
                 #     substitute, insert, delete = wer_align(
-                #         ref=word_list_true,
-                #         hyp=word_list_pred)
+                #         ref=word_list_ref,
+                #         hyp=word_list_hyp)
                 #     print('SUB: %d' % substitute)
                 #     print('INS: %d' % insert)
                 #     print('DEL: %d' % delete)
 
                 # Compute CER
-                cer_mean += compute_cer(ref='_'.join(word_list_true),
-                                        hyp='_'.join(word_list_pred),
+                cer_mean += compute_cer(ref='_'.join(word_list_ref),
+                                        hyp='_'.join(word_list_hyp),
                                         normalize=True)
             else:
                 skip_utt_num += 1

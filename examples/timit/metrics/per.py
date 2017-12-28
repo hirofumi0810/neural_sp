@@ -41,18 +41,18 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
     if eval_batch_size is not None:
         dataset.batch_size = eval_batch_size
 
-    train_label_type = label_type
-    eval_label_type = dataset.label_type
+    hyp_label_type = label_type
+    ref_label_type = dataset.label_type
 
-    idx2phone_train = Idx2phone(
-        '../metrics/vocab_files/' + train_label_type + '.txt')
-    idx2phone_eval = Idx2phone(
-        '../metrics/vocab_files/' + eval_label_type + '.txt')
-    map2phone39_train = Map2phone39(
-        label_type=train_label_type,
+    idx2phone_hyp = Idx2phone(
+        '../metrics/vocab_files/' + hyp_label_type + '.txt')
+    idx2phone_ref = Idx2phone(
+        '../metrics/vocab_files/' + ref_label_type + '.txt')
+    map2phone39_hyp = Map2phone39(
+        label_type=hyp_label_type,
         map_file_path='../metrics/phone2phone.txt')
-    map2phone39_eval = Map2phone39(
-        label_type=eval_label_type,
+    map2phone39_ref = Map2phone39(
+        label_type=ref_label_type,
         map_file_path='../metrics/phone2phone.txt')
 
     per_mean = 0
@@ -60,27 +60,26 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
         pbar = tqdm(total=len(dataset))
     for batch, is_new_epoch in dataset:
 
-        inputs, labels, inputs_seq_len, labels_seq_len, _ = batch
-
         # Decode
-        labels_pred = model.decode(inputs, inputs_seq_len,
-                                   beam_width=beam_width,
-                                   max_decode_len=max_decode_len)
+        inputs, labels, inputs_seq_len, labels_seq_len, _ = batch
+        labels_hyp = model.decode(inputs, inputs_seq_len,
+                                  beam_width=beam_width,
+                                  max_decode_len=max_decode_len)
 
         for i_batch in range(inputs.shape[0]):
             ##############################
             # Reference
             ##############################
             if dataset.is_test:
-                phone_true_list = labels[i_batch][0].split(' ')
+                phone_ref_list = labels[i_batch][0].split(' ')
                 # NOTE: transcript is seperated by space(' ')
             else:
                 # Convert from index to phone (-> list of phone strings)
                 if model_type == 'ctc':
-                    phone_true_list = idx2phone_eval(
+                    phone_ref_list = idx2phone_ref(
                         labels[i_batch][:labels_seq_len[i_batch]]).split(' ')
                 elif model_type == 'attention':
-                    phone_true_list = idx2phone_eval(
+                    phone_ref_list = idx2phone_ref(
                         labels[i_batch][1:labels_seq_len[i_batch] - 1]).split(' ')
                     # NOTE: Exclude <SOS> and <EOS>
 
@@ -88,25 +87,27 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
             # Hypothesis
             ##############################
             # Convert from index to phone (-> list of phone strings)
-            str_pred = idx2phone_train(labels_pred[i_batch])
+            str_hyp = idx2phone_hyp(labels_hyp[i_batch])
 
             if model_type == 'attention':
-                str_pred = str_pred.split('>')[0]
+                str_hyp = str_hyp.split('>')[0]
                 # NOTE: Trancate by the first <EOS>
 
                 # Remove the last space
-                if len(str_pred) > 0 and str_pred[-1] == ' ':
-                    str_pred = str_pred[:-1]
+                if len(str_hyp) > 0 and str_hyp[-1] == ' ':
+                    str_hyp = str_hyp[:-1]
 
-            phone_pred_list = str_pred.split(' ')
+            phone_hyp_list = str_hyp.split(' ')
 
             # Mapping to 39 phones (-> list of phone strings)
-            phone_true_list = map2phone39_eval(phone_true_list)
-            phone_pred_list = map2phone39_train(phone_pred_list)
+            if ref_label_type != 'phone39':
+                phone_ref_list = map2phone39_ref(phone_ref_list)
+            if hyp_label_type != 'phone39':
+                phone_hyp_list = map2phone39_hyp(phone_hyp_list)
 
             # Compute PER
-            per_mean += compute_per(ref=phone_true_list,
-                                    hyp=phone_pred_list,
+            per_mean += compute_per(ref=phone_ref_list,
+                                    hyp=phone_hyp_list,
                                     normalize=True)
 
             if progressbar:

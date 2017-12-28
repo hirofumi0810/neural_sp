@@ -57,15 +57,14 @@ def do_eval_wer(model, model_type, dataset, label_type, beam_width,
         pbar = tqdm(total=len(dataset))
     for batch, is_new_epoch in dataset:
 
+        # Decode
         if model_type in ['ctc', 'attention']:
             inputs, labels, inputs_seq_len, labels_seq_len, _ = batch
         elif model_type in ['hierarchical_ctc', 'hierarchical_attention']:
             inputs, labels, _, inputs_seq_len, labels_seq_len, _, _ = batch
-
-        # Decode
-        labels_pred = model.decode(inputs, inputs_seq_len,
-                                   beam_width=beam_width,
-                                   max_decode_len=max_decode_len)
+        labels_hyp = model.decode(inputs, inputs_seq_len,
+                                  beam_width=beam_width,
+                                  max_decode_len=max_decode_len)
 
         for i_batch in range(inputs.shape[0]):
 
@@ -73,51 +72,51 @@ def do_eval_wer(model, model_type, dataset, label_type, beam_width,
             # Reference
             ##############################
             if dataset.is_test:
-                str_true = labels[i_batch][0]
+                str_ref = labels[i_batch][0]
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
                 if model_type in ['ctc', 'hierarchical_ctc']:
-                    str_true = idx2word(
+                    str_ref = idx2word(
                         labels[i_batch][:labels_seq_len[i_batch]])
                 elif model_type in ['attention', 'hierarchical_attention']:
-                    str_true = idx2word(
+                    str_ref = idx2word(
                         labels[i_batch][1:labels_seq_len[i_batch] - 1])
                     # NOTE: Exclude <SOS> and <EOS>
 
             ##############################
             # Hypothesis
             ##############################
-            str_pred = idx2word(labels_pred[i_batch])
+            str_hyp = idx2word(labels_hyp[i_batch])
             if model_type in ['attention', 'hierarchical_attention']:
-                str_pred = str_pred.split('>')[0]
+                str_hyp = str_hyp.split('>')[0]
                 # NOTE: Trancate by the first <EOS>
 
                 # Remove the last space
-                if len(str_pred) > 0 and str_pred[-1] == '_':
-                    str_pred = str_pred[:-1]
+                if len(str_hyp) > 0 and str_hyp[-1] == '_':
+                    str_hyp = str_hyp[:-1]
 
             ##############################
             # Post-proccessing
             ##############################
-            str_true = fix_trans(str_true, glm)
-            str_pred = fix_trans(str_pred, glm)
+            str_ref = fix_trans(str_ref, glm)
+            str_hyp = fix_trans(str_hyp, glm)
 
-            # print('\n' + str_true)
-            # print(str_pred)
+            # print('\n' + str_ref)
+            # print(str_hyp)
 
-            word_list_true = str_true.split('_')
-            word_list_pred = str_pred.split('_')
+            word_list_ref = str_ref.split('_')
+            word_list_hyp = str_hyp.split('_')
 
             # Compute WER
-            if len(str_true) > 0:
-                wer_mean += compute_wer(ref=word_list_true,
-                                        hyp=word_list_pred,
+            if len(str_ref) > 0:
+                wer_mean += compute_wer(ref=word_list_ref,
+                                        hyp=word_list_hyp,
                                         normalize=True)
-                # if len(str_pred) > 0:
+                # if len(str_hyp) > 0:
                 #     substitute, insert, delete = wer_align(
-                #         ref=word_list_true,
-                #         hyp=word_list_pred)
+                #         ref=word_list_ref,
+                #         hyp=word_list_hyp)
                 #     print('SUB: %d' % substitute)
                 #     print('INS: %d' % insert)
                 #     print('DEL: %d' % delete)

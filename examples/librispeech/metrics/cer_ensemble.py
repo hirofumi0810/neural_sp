@@ -70,13 +70,13 @@ def do_eval_cer(models, model_type, dataset, label_type, beam_width,
                 # NOTE: probs: `[1 (B), T, num_classes]`
             probs /= len(models)
 
-            labels_pred = model.decode_from_probs(
+            labels_hyp = model.decode_from_probs(
                 probs, inputs_seq_len,
                 beam_width=beam_width,
                 max_decode_len=max_decode_len)
         elif model_type in['hierarchical_attention', 'hierarchical_ctc']:
             raise NotImplementedError
-            # labels_pred = model.decode(
+            # labels_hyp = model.decode(
             #     inputs, inputs_seq_len,
             #     beam_width=beam_width,
             #     max_decode_len=max_decode_len,
@@ -88,48 +88,48 @@ def do_eval_cer(models, model_type, dataset, label_type, beam_width,
             # Reference
             ##############################
             if dataset.is_test:
-                str_true = labels[i_batch][0]
+                str_ref = labels[i_batch][0]
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
                 if model_type in ['ctc', 'hierarchical_ctc']:
-                    str_true = idx2char(
+                    str_ref = idx2char(
                         labels[i_batch][:labels_seq_len[i_batch]])
                 elif model_type in ['attention', 'hierarchical_attention']:
-                    str_true = idx2char(
+                    str_ref = idx2char(
                         labels[i_batch][1:labels_seq_len[i_batch] - 1])
                     # NOTE: Exclude <SOS> and <EOS>
 
             ##############################
             # Hypothesis
             ##############################
-            str_pred = idx2char(labels_pred[i_batch])
+            str_hyp = idx2char(labels_hyp[i_batch])
 
             if model_type in ['attention', 'hierarchical_attention']:
-                str_pred = str_pred.split('>')[0]
+                str_hyp = str_hyp.split('>')[0]
                 # NOTE: Trancate by the first <EOS>
 
             # Remove consecutive spaces
-            str_pred = re.sub(r'[_]+', '_', str_pred)
+            str_hyp = re.sub(r'[_]+', '_', str_hyp)
 
             # Remove garbage labels
-            str_true = re.sub(r'[\'<>]+', '', str_true)
-            str_pred = re.sub(r'[\'<>]+', '', str_pred)
+            str_ref = re.sub(r'[\'<>]+', '', str_ref)
+            str_hyp = re.sub(r'[\'<>]+', '', str_hyp)
 
             # Compute WER
-            wer_mean += compute_wer(ref=str_true.split('_'),
-                                    hyp=str_pred.split('_'),
+            wer_mean += compute_wer(ref=str_ref.split('_'),
+                                    hyp=str_hyp.split('_'),
                                     normalize=True)
             # substitute, insert, delete = wer_align(
-            #     ref=str_pred.split('_'),
-            #     hyp=str_true.split('_'))
+            #     ref=str_hyp.split('_'),
+            #     hyp=str_ref.split('_'))
             # print('SUB: %d' % substitute)
             # print('INS: %d' % insert)
             # print('DEL: %d' % delete)
 
             # Compute CER
-            cer_mean += compute_cer(ref=str_true,
-                                    hyp=str_pred,
+            cer_mean += compute_cer(ref=str_ref,
+                                    hyp=str_hyp,
                                     normalize=True)
 
             if progressbar:
