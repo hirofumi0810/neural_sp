@@ -35,8 +35,6 @@ def do_eval_cer(models, model_type, dataset, label_type, beam_width,
         cer_mean (float): An average of CER
         wer_mean (float): An average of WER
     """
-    batch_size_original = dataset.batch_size
-
     # Reset data counter
     dataset.reset()
 
@@ -141,11 +139,10 @@ def do_eval_cer(models, model_type, dataset, label_type, beam_width,
     if progressbar:
         pbar.close()
 
+    # Register original batch size
+    dataset.reset()
+
     cer_mean /= len(dataset)
     wer_mean /= len(dataset)
-
-    # Register original batch size
-    if eval_batch_size is not None:
-        dataset.batch_size = batch_size_original
 
     return cer_mean, wer_mean

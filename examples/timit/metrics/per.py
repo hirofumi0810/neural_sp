@@ -8,6 +8,8 @@ from __future__ import division
 from __future__ import print_function
 
 from tqdm import tqdm
+import logging
+logger = logging.getLogger('training')
 
 from examples.timit.metrics.mapping import Map2phone39
 from utils.io.labels.phone import Idx2phone
@@ -32,14 +34,12 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
     Returns:
         per_mean (float): An average of PER
     """
-    batch_size_original = dataset.batch_size
-
     # Reset data counter
     dataset.reset()
 
     # Set batch size in the evaluation
     if eval_batch_size is not None:
-        dataset.batch_size = eval_batch_size
+        dataset._batch_size = eval_batch_size
 
     hyp_label_type = label_type
     ref_label_type = dataset.label_type
@@ -119,10 +119,9 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
     if progressbar:
         pbar.close()
 
-    per_mean /= len(dataset)
-
     # Register original batch size
-    if eval_batch_size is not None:
-        dataset.batch_size = batch_size_original
+    dataset.reset()
+
+    per_mean /= len(dataset)
 
     return per_mean

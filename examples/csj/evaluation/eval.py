@@ -92,7 +92,6 @@ def main():
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=False, save_format=params['save_format'])
 
-    print('=== Test Data Evaluation ===')
     if 'word' in params['label_type']:
         wer_eval1 = do_eval_wer(
             model=model,

@@ -63,13 +63,13 @@ def main():
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         model_type=params['model_type'],
-        data_type='test', label_type='phone39',
+        data_type='test',
+        label_type='phone39',
         vocab_file_path=vocab_file_path,
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=False, save_format=params['save_format'])
 
-    print('=== Test Data Evaluation ===')
     per_test = do_eval_per(
         model=model,
         model_type=params['model_type'],
@@ -79,7 +79,7 @@ def main():
         max_decode_len=args.max_decode_len,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
-    print('  PER: %f %%' % (per_test * 100))
+    print('  PER (test): %f %%' % (per_test * 100))
 
 
 if __name__ == '__main__':

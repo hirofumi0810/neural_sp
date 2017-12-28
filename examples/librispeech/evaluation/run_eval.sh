@@ -21,5 +21,5 @@ gpu_index=$2
 CUDA_VISIBLE_DEVICES=$gpu_index $PYTHON eval.py \
   --model_path $saved_model_path \
   --epoch -1 \
-  --beam_width 1 \
+  --beam_width 10 \
   --eval_batch_size 1

@@ -33,8 +33,6 @@ def do_eval_wer(model, model_type, dataset, label_type, beam_width,
     Returns:
         wer_mean (float): An average of WER
     """
-    batch_size_original = dataset.batch_size
-
     # Reset data counter
     dataset.reset()
 
@@ -118,10 +116,9 @@ def do_eval_wer(model, model_type, dataset, label_type, beam_width,
     if progressbar:
         pbar.close()
 
-    wer_mean /= len(dataset)
-
     # Register original batch size
-    if eval_batch_size is not None:
-        dataset.batch_size = batch_size_original
+    dataset.reset()
+
+    wer_mean /= len(dataset)
 
     return wer_mean

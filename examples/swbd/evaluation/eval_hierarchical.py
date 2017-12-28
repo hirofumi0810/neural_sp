@@ -92,7 +92,6 @@ def main():
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=False, save_format=params['save_format'])
 
-    print('=== Test Data Evaluation ===')
     wer_eval2000_swbd = do_eval_wer(
         model=model,
         model_type=params['model_type'],
