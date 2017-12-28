@@ -13,6 +13,8 @@ import random
 import numpy as np
 from struct import unpack
 from torch.multiprocessing import Queue, Process
+import logging
+logger = logging.getLogger('training')
 
 
 class Base(object):
@@ -22,6 +24,7 @@ class Base(object):
         self._epoch = 0
         self.iteration = 0
         self.offset = 0
+        self._batch_size = self.batch_size
 
         # Setting for multiprocessing
         self.preloading_process = None
@@ -91,10 +94,13 @@ class Base(object):
             batch (tuple):
             is_new_epoch (bool): If true, 1 epoch is finished
         """
+        if batch_size is None:
+            batch_size = self._batch_size
+
         if self.num_enque is None:
             if self.max_epoch is not None and self._epoch >= self.max_epoch:
                 raise StopIteration
-            # NOTE: max_epoch = None means infinite loop
+            # NOTE: max_epoch == None means infinite loop
 
             data_indices, is_new_epoch = self.sample_index(batch_size)
             batch = self.make_batch(data_indices)
@@ -110,7 +116,7 @@ class Base(object):
                 self.preloading_process.terminate()
                 self.preloading_process.join()
                 raise StopIteration
-            # NOTE: max_epoch = None means infinite loop
+            # NOTE: max_epoch == None means infinite loop
 
             # Enqueue mini-batches
             if self.queue_size == 0:
@@ -127,8 +133,8 @@ class Base(object):
                 self.queue_size += self.num_enque
                 time.sleep(3)
 
-            # print(self.queue.qsize())
-            # print(self.queue_size)
+            # logging.info(self.queue.qsize())
+            # logging.info(self.queue_size)
 
             self.iteration += len(
                 self.data_indices_list[self.num_enque - self.queue_size])
@@ -145,17 +151,14 @@ class Base(object):
         # For python2
         return self.__next__(batch_size)
 
-    def sample_index(self, batch_size=None):
+    def sample_index(self, batch_size):
         """Sample data indices of mini-batch.
         Args:
-            batch_size (int, optional):
+            batch_size (int): the size of mini-batch
         Returns:
             data_indices (np.ndarray):
             is_new_epoch (bool):
         """
-        if batch_size is None:
-            batch_size = self.batch_size
-
         is_new_epoch = False
 
         if self.sort_utt or not self.shuffle:
@@ -212,6 +215,7 @@ class Base(object):
         """Reset data counter and offset."""
         self.rest = set(list(self.df.index))
         self.offset = 0
+        self._batch_size = self.batch_size
 
     def load(self, path):
         ext = os.path.basename(path).split('.')[-1]
@@ -243,10 +247,10 @@ class Base(object):
             frame_num, sampPeriod, sampSize, parmKind = unpack(">IIHH", spam)
 
             # for debug
-            # print(frame_num)  # frame num
-            # print(sampPeriod)  # 10ms
-            # print(sampSize)  # feature dim * 4 (byte)
-            # print(parmKind)
+            # logging.info(frame_num)  # frame num
+            # logging.info(sampPeriod)  # 10ms
+            # logging.info(sampSize)  # feature dim * 4 (byte)
+            # logging.info(parmKind)
 
             # Read data
             feature_dim = int(sampSize / 4)
@@ -269,7 +273,7 @@ class Base(object):
             queue ():
             data_indices_list (np.ndarray):
         """
-        # print("Pre-loading started.")
+        # logging.info("Pre-loading started.")
         for i in range(len(data_indices_list)):
             queue.put(self.make_batch(data_indices_list[i]))
-        # print("Pre-loading done.")
+        # logging.info("Pre-loading done.")

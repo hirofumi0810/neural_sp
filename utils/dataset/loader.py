@@ -50,20 +50,20 @@ class DatasetBase(Base):
             self.input_size *= self.splice
 
         # Compute max frame num in mini-batch
-        max_frame_num = max(self.df['frame_num'][data_indices])
-        max_frame_num = math.ceil(max_frame_num / self.num_skip)
+        max_inputs_seq_len = max(self.df['frame_num'][data_indices])
+        max_inputs_seq_len = math.ceil(max_inputs_seq_len / self.num_skip)
 
         # Compute max target label length in mini-batch
-        max_seq_len = max(
+        max_labels_seq_len = max(
             map(lambda x: len(x.split(' ')), str_indices_list)) + 2
         # NOTE: add <SOS> and <EOS>
 
         # Initialization
         inputs = np.zeros(
-            (len(data_indices), max_frame_num, self.input_size),
+            (len(data_indices), max_inputs_seq_len, self.input_size),
             dtype=np.float32)
         labels = np.array(
-            [[self.pad_value] * max_seq_len] * len(data_indices))
+            [[self.pad_value] * max_labels_seq_len] * len(data_indices))
         inputs_seq_len = np.zeros((len(data_indices),), dtype=np.int32)
         labels_seq_len = np.zeros((len(data_indices),), dtype=np.int32)
         input_names = np.array(list(

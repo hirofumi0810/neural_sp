@@ -12,6 +12,8 @@ from __future__ import print_function
 
 from os.path import join
 import pandas as pd
+import logging
+logger = logging.getLogger('training')
 
 from utils.dataset.loader import DatasetBase
 
@@ -55,8 +57,6 @@ class Dataset(DatasetBase):
             save_format (string, optional): numpy or htk
             num_enque (int, optional): the number of elements to enqueue
         """
-        super(Dataset, self).__init__(vocab_file_path=vocab_file_path)
-
         self.is_test = True if 'eval' in data_type else False
 
         self.input_channel = input_channel
@@ -78,6 +78,8 @@ class Dataset(DatasetBase):
         self.save_format = save_format
         self.num_enque = num_enque
 
+        super(Dataset, self).__init__(vocab_file_path=vocab_file_path)
+
         # Load dataset file
         if data_type == 'dev':
             dataset_path = join('/n/sd8/inaguma/corpus/swbd/dataset',
@@ -90,7 +92,7 @@ class Dataset(DatasetBase):
 
         # Remove inappropriate utteraces
         if not self.is_test:
-            print('Original utterance num: %d' % len(df))
+            logger.info('Original utterance num: %d' % len(df))
             if 'word' in label_type:
                 df = df[df.apply(lambda x: not(len(x['transcript'].split(' '))
                                                <= 3 and x['frame_num'] >= 1000), axis=1)]
@@ -100,7 +102,7 @@ class Dataset(DatasetBase):
             df = df[df.apply(lambda x: x['frame_num'] <= 1580, axis=1)]
             if data_type == 'dev':
                 df = df[:4000]
-            print('Restricted utterance num: %d' % len(df))
+            logger.info('Restricted utterance num: %d' % len(df))
 
         # Sort paths to input & label
         if sort_utt:

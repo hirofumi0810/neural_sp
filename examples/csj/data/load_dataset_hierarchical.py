@@ -12,6 +12,8 @@ from __future__ import print_function
 
 from os.path import join
 import pandas as pd
+import logging
+logger = logging.getLogger('training')
 
 from utils.dataset.loader_hierarchical import DatasetBase
 
@@ -59,9 +61,6 @@ class Dataset(DatasetBase):
             save_format (string, optional): numpy or htk
             num_enque (int, optional): the number of elements to enqueue
         """
-        super(Dataset, self).__init__(vocab_file_path=vocab_file_path,
-                                      vocab_file_path_sub=vocab_file_path_sub)
-
         if data_type in ['eval1', 'eval2', 'eval3']:
             self.is_test = True
         else:
@@ -87,6 +86,9 @@ class Dataset(DatasetBase):
         self.save_format = save_format
         self.num_enque = num_enque
 
+        super(Dataset, self).__init__(vocab_file_path=vocab_file_path,
+                                      vocab_file_path_sub=vocab_file_path_sub)
+
         # Load dataset file
         if data_type == 'dev':
             dataset_path = join('/n/sd8/inaguma/corpus/csj/dataset',
@@ -105,8 +107,11 @@ class Dataset(DatasetBase):
 
         # Remove inappropriate utteraces
         if not self.is_test:
-            print('Original utterance num (main): %d' % len(df))
-            print('Original utterance num (sub): %d' % len(df_sub))
+            logger.info('Original utterance num (main): %d' % len(df))
+            logger.info('Original utterance num (sub): %d' % len(df_sub))
+            # df = df[df.apply(lambda x: 20 <= x['frame_num'], axis=1)]
+            # df_sub = df_sub[df_sub.apply(
+            #     lambda x: 20 <= x['frame_num'], axis=1)]
             df = df[df.apply(lambda x: 40 <= x['frame_num'] <= 1800, axis=1)]
             df_sub = df_sub[df_sub.apply(
                 lambda x: 40 <= x['frame_num'] <= 1800, axis=1)]
@@ -115,8 +120,8 @@ class Dataset(DatasetBase):
             if data_type == 'dev':
                 df = df[:4000]
                 df_sub = df_sub[:4000]
-            print('Restricted utterance num (main): %d' % len(df))
-            print('Restricted utterance num (sub): %d' % len(df_sub))
+            logger.info('Restricted utterance num (main): %d' % len(df))
+            logger.info('Restricted utterance num (sub): %d' % len(df_sub))
 
         # Sort paths to input & label
         if sort_utt:

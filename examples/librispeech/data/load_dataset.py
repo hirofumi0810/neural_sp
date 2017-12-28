@@ -12,6 +12,8 @@ from __future__ import print_function
 
 from os.path import join
 import pandas as pd
+import logging
+logger = logging.getLogger('training')
 
 from utils.dataset.loader import DatasetBase
 
@@ -55,8 +57,6 @@ class Dataset(DatasetBase):
             save_format (string, optional): numpy or htk
             num_enque (int, optional): the number of elements to enqueue
         """
-        super(Dataset, self).__init__(vocab_file_path=vocab_file_path)
-
         if data_type in ['test_clean', 'test_other']:
             self.is_test = True
         else:
@@ -81,6 +81,8 @@ class Dataset(DatasetBase):
         self.save_format = save_format
         self.num_enque = num_enque
 
+        super(Dataset, self).__init__(vocab_file_path=vocab_file_path)
+
         # Load dataset file
         dataset_path = join('/n/sd8/inaguma/corpus/librispeech/dataset',
                             save_format, data_size, data_type, label_type + '.csv')
@@ -89,9 +91,9 @@ class Dataset(DatasetBase):
 
         # Remove long utteraces (> 20s)
         if data_type == 'train':
-            print('Original utterance num: %d' % len(df))
+            logger.info('Original utterance num: %d' % len(df))
             df = df[df.apply(lambda x: x['frame_num'] <= 2000, axis=1)]
-            print('Restricted utterance num: %d' % len(df))
+            logger.info('Restricted utterance num: %d' % len(df))
 
         # Sort paths to input & label
         if sort_utt:
