@@ -23,6 +23,14 @@ class TestPyramidRNNEncoders(unittest.TestCase):
     def test(self):
         print("Pyramidal RNN Encoders Working check.")
 
+        # Projection layer
+        self.check(encoder_type='lstm', bidirectional=False,
+                   projection=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   projection=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   batch_first=False, projection=True)
+
         # Residual connection
         self.check(encoder_type='lstm', bidirectional=False,
                    residual=True)
@@ -105,8 +113,9 @@ class TestPyramidRNNEncoders(unittest.TestCase):
 
     @measure_time
     def check(self, encoder_type, bidirectional=False, batch_first=True,
-              subsample_type='concat', conv=False,
-              merge_bidirectional=False, residual=False, dense_residual=False):
+              subsample_type='concat',
+              conv=False, merge_bidirectional=False,
+              projection=False, residual=False, dense_residual=False):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
@@ -115,25 +124,23 @@ class TestPyramidRNNEncoders(unittest.TestCase):
         print('  subsample_type: %s' % subsample_type)
         print('  conv: %s' % str(conv))
         print('  merge_bidirectional: %s' % str(merge_bidirectional))
+        print('  projection: %s' % str(projection))
         print('  residual: %s' % str(residual))
         print('  dense_residual: %s' % str(dense_residual))
         print('==================================================')
 
         if conv:
-            conv_channels = [32, 32]
-
             # pattern 1
-            conv_kernel_sizes = [[41, 11], [21, 11]]
-            conv_strides = [[2, 2], [2, 1]]
-
-            # pattern 2
-            # conv_kernel_sizes = [[8, 5], [8, 5]]
-            # conv_strides = [[2, 2], [1, 1]]
-
+            # conv_channels = [32, 32]
+            # conv_kernel_sizes = [[41, 11], [21, 11]]
+            # conv_strides = [[2, 2], [2, 1]]
             # poolings = [[], []]
+
+            # pattern 2 (VGG like)
+            conv_channels = [64, 64]
+            conv_kernel_sizes = [[3, 3], [3, 3]]
+            conv_strides = [[1, 1], [1, 1]]
             poolings = [[2, 2], [2, 2]]
-            # poolings = [[2, 2], []]
-            # poolings = [[], [2, 2]]
         else:
             conv_channels = []
             conv_kernel_sizes = []
@@ -164,7 +171,7 @@ class TestPyramidRNNEncoders(unittest.TestCase):
                 rnn_type=encoder_type,
                 bidirectional=bidirectional,
                 num_units=256,
-                num_proj=0,
+                num_proj=256 if projection else 0,
                 num_layers=6,
                 num_layers_sub=4,
                 dropout=0.2,

@@ -17,10 +17,10 @@ class CNNEncoder(nn.Module):
     """CNN encoder.
     Args:
         input_size (int): the dimension of input features
-        conv_channels (list, optional):
-        conv_kernel_sizes (list, optional):
-        conv_strides (list, optional):
-        poolings (list, optional):
+        conv_channels (list, optional): the number of channles in CNN layers
+        conv_kernel_sizes (list, optional): the size of kernels in CNN layers
+        conv_strides (list, optional): strides in CNN layers
+        poolings (list, optional): the size of poolings in CNN layers
         dropout (float): the probability to drop nodes
         parameter_init (float): the range of uniform distribution to
             initialize weight parameters (>= 0)

@@ -16,6 +16,7 @@ import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
+from models.pytorch.linear import LinearND
 from models.pytorch.encoders.rnn_utils import _init_hidden
 # from models.pytorch.encoders.cnn import CNNEncoder
 from models.pytorch.encoders.cnn_v2 import CNNEncoder
@@ -45,10 +46,10 @@ class PyramidRNNEncoder(nn.Module):
         merge_bidirectional (bool, optional): if True, sum bidirectional outputs
         num_stack (int, optional): the number of frames to stack
         splice (int, optional): frames to splice. Default is 1 frame.
-        conv_channels (list, optional):
-        conv_kernel_sizes (list, optional):
-        conv_strides (list, optional):
-        poolings (list, optional):
+        conv_channels (list, optional): the number of channles in CNN layers
+        conv_kernel_sizes (list, optional): the size of kernels in CNN layers
+        conv_strides (list, optional): strides in CNN layers
+        poolings (list, optional): the size of poolings in CNN layers
         activation (string, optional): The activation function of CNN layers.
             Choose from relu or prelu or hard_tanh or maxout
         batch_norm (bool, optional):
@@ -127,19 +128,23 @@ class PyramidRNNEncoder(nn.Module):
                 use_cuda=use_cuda,
                 batch_norm=batch_norm)
             input_size = self.conv.output_size
-            self.conv_out_size = ConvOutSize(self.conv.conv)
+            self.get_conv_out_size = ConvOutSize(self.conv.conv)
         else:
             input_size = input_size * splice * num_stack
             self.conv = None
 
-        ########################################
-        # TODO: add the projection layer
-        ########################################
-
         self.rnns = []
+        self.projections = []
         for i_layer in range(num_layers):
             if i_layer == 0:
-                encoder_input_size = input_size
+                if self.conv is None:
+                    encoder_input_size = input_size
+                else:
+                    encoder_input_size = input_size
+            elif self.num_proj > 0:
+                encoder_input_size = num_proj
+                if subsample_type == 'concat' and i_layer > 0 and subsample_list[i_layer - 1]:
+                    encoder_input_size *= 2
             else:
                 encoder_input_size = num_units * self.num_directions
                 if subsample_type == 'concat' and i_layer > 0 and subsample_list[i_layer - 1]:
@@ -176,6 +181,13 @@ class PyramidRNNEncoder(nn.Module):
             if use_cuda:
                 rnn = rnn.cuda()
             self.rnns.append(rnn)
+
+            if self.num_proj > 0:
+                proj_i = LinearND(num_units * self.num_directions, num_units)
+                setattr(self, 'proj_l' + str(i_layer), proj_i)
+                if use_cuda:
+                    proj_i = proj_i.cuda()
+                self.projections.append(proj_i)
 
     def forward(self, inputs, inputs_seq_len, volatile=False):
         """Forward computation.
@@ -222,9 +234,9 @@ class PyramidRNNEncoder(nn.Module):
 
         # Modify inputs_seq_len for reducing time resolution by CNN layers
         if self.conv is not None:
-            inputs_seq_len = [self.conv_out_size(
+            inputs_seq_len = [self.get_conv_out_size(
                 x, 1) for x in inputs_seq_len]
-            max_time = self.conv_out_size(max_time, 1)
+            max_time = self.get_conv_out_size(max_time, 1)
 
         outputs = inputs
         res_outputs_list = []
@@ -243,6 +255,11 @@ class PyramidRNNEncoder(nn.Module):
             outputs, unpacked_seq_len = pad_packed_sequence(
                 outputs, batch_first=self.batch_first, padding_value=0.0)
             assert inputs_seq_len == unpacked_seq_len
+
+            # Projection layer (affine transformation)
+            if self.num_proj > 0 and i_layer != self.num_layers - 1:
+                outputs = self.projections[i_layer](outputs)
+            # NOTE: Exclude the last layer
 
             outputs_list = []
             if self.subsample_list[i_layer]:

@@ -98,20 +98,17 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
         print('==================================================')
 
         if conv:
-            conv_channels = [32, 32]
-
             # pattern 1
-            conv_kernel_sizes = [[41, 11], [21, 11]]
-            conv_strides = [[2, 2], [2, 1]]
-
-            # pattern 2
-            # conv_kernel_sizes = [[8, 5], [8, 5]]
-            # conv_strides = [[2, 2], [1, 1]]
-
+            # conv_channels = [32, 32]
+            # conv_kernel_sizes = [[41, 11], [21, 11]]
+            # conv_strides = [[2, 2], [2, 1]]
             # poolings = [[], []]
+
+            # pattern 2 (VGG like)
+            conv_channels = [64, 64]
+            conv_kernel_sizes = [[3, 3], [3, 3]]
+            conv_strides = [[1, 1], [1, 1]]
             poolings = [[2, 2], [2, 2]]
-            # poolings = [[2, 2], []]
-            # poolings = [[], [2, 2]]
         else:
             conv_channels = []
             conv_kernel_sizes = []
@@ -141,7 +138,7 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
             rnn_type=encoder_type,
             bidirectional=bidirectional,
             num_units=256,
-            num_proj=0,
+            num_proj=256 if projection else 0,
             num_layers=5,
             num_layers_sub=3,
             dropout=0.2,

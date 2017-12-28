@@ -19,6 +19,9 @@ class ConvOutSize(object):
         super(ConvOutSize, self).__init__()
         self.conv = conv
 
+        if self.conv is None:
+            raise ValueError
+
     def __call__(self, size, dim):
         """
         Args:
@@ -28,14 +31,10 @@ class ConvOutSize(object):
         Returns:
             size (int):
         """
-        if self.conv is None:
-            return size
-
         for m in self.conv._modules.values():
             if type(m) in [nn.Conv2d, nn.MaxPool2d]:
                 size = math.floor(
                     (size + 2 * m.padding[dim] - m.kernel_size[dim]) / m.stride[dim] + 1)
-
         assert size >= 1
         return size
 

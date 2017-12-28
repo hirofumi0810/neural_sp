@@ -37,10 +37,10 @@ class HierarchicalRNNEncoder(nn.Module):
         merge_bidirectional (bool, optional): if True, sum bidirectional outputs
         num_stack (int, optional): the number of frames to stack
         splice (int, optional): frames to splice. Default is 1 frame.
-        conv_channels (list, optional):
-        conv_kernel_sizes (list, optional):
-        conv_strides (list, optional):
-        poolings (list, optional):
+        conv_channels (list, optional): the number of channles in CNN layers
+        conv_kernel_sizes (list, optional): the size of kernels in CNN layers
+        conv_strides (list, optional): strides in CNN layers
+        poolings (list, optional): the size of poolings in CNN layers
         activation (string, optional): The activation function of CNN layers.
             Choose from relu or prelu or hard_tanh or maxout
         batch_norm (bool, optional):
@@ -108,7 +108,7 @@ class HierarchicalRNNEncoder(nn.Module):
                 use_cuda=use_cuda,
                 batch_norm=batch_norm)
             input_size = self.conv.output_size
-            self.conv_out_size = ConvOutSize(self.conv.conv)
+            self.get_conv_out_size = ConvOutSize(self.conv.conv)
         else:
             input_size = input_size * splice * num_stack
             self.conv = None
@@ -118,7 +118,7 @@ class HierarchicalRNNEncoder(nn.Module):
         for i_layer in range(num_layers):
             if i_layer == 0:
                 encoder_input_size = input_size
-            elif self.num_proj > 0:
+            elif self.num_proj > 0 and i_layer != num_layers_sub:
                 encoder_input_size = num_proj
             else:
                 encoder_input_size = num_units * self.num_directions
@@ -155,7 +155,7 @@ class HierarchicalRNNEncoder(nn.Module):
                 rnn_i = rnn_i.cuda()
             self.rnns.append(rnn_i)
 
-            if self.num_proj > 0:
+            if self.num_proj > 0 and i_layer != num_layers_sub - 1:
                 proj_i = LinearND(num_units * self.num_directions, num_proj)
                 setattr(self, 'proj_l' + str(i_layer), proj_i)
                 if use_cuda:
@@ -211,7 +211,8 @@ class HierarchicalRNNEncoder(nn.Module):
 
         # Modify inputs_seq_len for reducing time resolution by CNN layers
         if self.conv is not None:
-            inputs_seq_len = [self.conv_out_size(x, 1) for x in inputs_seq_len]
+            inputs_seq_len = [self.get_conv_out_size(
+                x, 1) for x in inputs_seq_len]
 
         # Pack encoder inputs
         inputs = pack_padded_sequence(
@@ -234,9 +235,9 @@ class HierarchicalRNNEncoder(nn.Module):
                 assert inputs_seq_len == unpacked_seq_len
 
                 # Projection layer (affine transformation)
-                if self.num_proj > 0 and i_layer != self.num_layers - 1:
+                if self.num_proj > 0 and i_layer != self.num_layers - 1 and i_layer != self.num_layers_sub - 1:
                     outputs = self.projections[i_layer](outputs)
-                # NOTE: Exclude the last layer
+                # NOTE: Exclude the last layer and the sub layer
 
                 # Residual connection
                 if self.residual or self.dense_residual:
