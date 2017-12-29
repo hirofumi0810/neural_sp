@@ -1,14 +1,14 @@
 param:
   # corpus
-  corpus: librispeech
+  corpus: csj
   label_type: word_freq5
-  label_type_sub: character
-  data_size: 100h
+  label_type_sub: kanji_divide
+  data_size: subset
 
   # features
   feature: fbank
   save_format: numpy
-  input_channel: 40
+  input_channel: 80
   use_delta: True
   use_double_delta: True
   splice: 1
@@ -41,7 +41,7 @@ param:
   decoder_num_units_sub: 320
   decoder_num_layers_sub: 1
   embedding_dim: 128
-  embedding_dim_sub: 16
+  embedding_dim_sub: 64
   attention_conv_num_channels: 10
   attention_conv_width: 201
 
@@ -84,9 +84,9 @@ param:
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
   eval_start_epoch: 10
-  print_step: 200
+  print_step: 1000
 
   # MTL
-  main_loss_weight: 0.5
-  ctc_loss_weight_sub: 0
-  curriculum_training: False
+  main_loss_weight: 0.8
+  ctc_loss_weight_sub: 0.2
+  curriculum_training: True

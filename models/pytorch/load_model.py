@@ -335,6 +335,10 @@ def load(model_type, params):
         model.name += '_main' + str(params['main_loss_weight'])
 
     elif params['model_type'] == 'hierarchical_attention':
+        if 'curriculum_training' not in params.keys():
+            params['curriculum_training'] = False
+        # TODO: remove this
+
         model = HierarchicalAttentionSeq2seq(
             input_size=params['input_channel'] *
             (1 + int(params['use_delta'] + int(params['use_double_delta']))),
@@ -382,7 +386,8 @@ def load(model_type, params):
             encoder_residual=params['encoder_residual'],
             encoder_dense_residual=params['encoder_dense_residual'],
             decoder_residual=params['decoder_residual'],
-            decoder_dense_residual=params['decoder_dense_residual'])
+            decoder_dense_residual=params['decoder_dense_residual'],
+            curriculum_training=params['curriculum_training'])
 
         model.name = params['encoder_type']
         if sum(params['subsample_list']) > 0:
@@ -439,6 +444,8 @@ def load(model_type, params):
         elif bool(params['decoder_dense_residual']):
             model.name += '_decdenseres'
         model.name += '_main' + str(params['main_loss_weight'])
+        if bool(params['curriculum_training']):
+            model.name += '_curriculum'
 
     elif params['model_type'] == 'nested_attention':
         model = NestedAttentionSeq2seq(

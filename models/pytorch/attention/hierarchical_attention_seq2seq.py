@@ -71,7 +71,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  encoder_residual=False,
                  encoder_dense_residual=False,
                  decoder_residual=False,
-                 decoder_dense_residual=False):
+                 decoder_dense_residual=False,
+                 curriculum_training=False):
 
         super(HierarchicalAttentionSeq2seq, self).__init__(
             input_size=input_size,
@@ -129,8 +130,14 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         # Setting for MTL
         self.main_loss_weight = main_loss_weight
+        self._main_loss_weight = main_loss_weight
         self.sub_loss_weight = 1 - main_loss_weight - ctc_loss_weight_sub
+        self._sub_loss_weight = 1 - main_loss_weight - ctc_loss_weight_sub
         self.ctc_loss_weight_sub = ctc_loss_weight_sub
+        self._ctc_loss_weight_sub = ctc_loss_weight_sub
+        if curriculum_training and scheduled_sampling_ramp_max_step = 0:
+            raise ValueError('Set scheduled_sampling_ramp_max_step.')
+        self.curriculum_training = curriculum_training
 
         #########################
         # Encoder
@@ -343,7 +350,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             pass
             # TODO: sub taskも入れる？
 
-        xe_loss_main = xe_loss_main * self.main_loss_weight / batch_size
+        xe_loss_main = xe_loss_main * self._main_loss_weight / batch_size
         loss = xe_loss_main
 
         ##################################################
@@ -379,7 +386,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 xe_loss_sub += F.kl_div(
                     log_probs_sub, uniform_sub, size_average=False, reduce=True) * self.label_smoothing_prob
 
-            xe_loss_sub = xe_loss_sub * self.sub_loss_weight / batch_size
+            xe_loss_sub = xe_loss_sub * self._sub_loss_weight / batch_size
             loss += xe_loss_sub
 
         ##################################################
@@ -391,11 +398,26 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 is_sub_task=True)
             # NOTE: including modifying inputs_seq_len_sub
 
-            ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub / batch_size
+            ctc_loss_sub = ctc_loss_sub * self._ctc_loss_weight_sub / batch_size
             loss += ctc_loss_sub
 
         if not is_eval:
             self._step += 1
+
+            # Curriculum training (gradually from char to word task)
+            if self.curriculum_training:
+                # main
+                self._main_loss_weight = min(
+                    self.main_loss_weight,
+                    0.05 + self.main_loss_weight / self.scheduled_sampling_ramp_max_step * self._step)
+                # sub (attention)
+                self._sub_loss_weight = max(
+                    self.sub_loss_weight,
+                    0.95 - (1 - self.sub_loss_weight) / self.scheduled_sampling_ramp_max_step * self._step)
+                # sub (CTC)
+                self._ctc_loss_weight_sub = max(
+                    self.ctc_loss_weight_sub,
+                    0.95 - (1 - self.ctc_loss_weight_sub) / self.scheduled_sampling_ramp_max_step * self._step)
 
         if self.sub_loss_weight > self.ctc_loss_weight_sub:
             return loss, xe_loss_main, xe_loss_sub
