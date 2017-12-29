@@ -163,6 +163,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         if scheduled_sampling_prob > 0 and scheduled_sampling_ramp_max_step == 0:
             raise ValueError
         self.scheduled_sampling_prob = scheduled_sampling_prob
+        self._scheduled_sampling_prob = scheduled_sampling_prob
         self.scheduled_sampling_ramp_max_step = scheduled_sampling_ramp_max_step
         self._step = 0
         self.label_smoothing_prob = label_smoothing_prob
@@ -482,6 +483,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         if not is_eval:
             self._step += 1
 
+            # Update the probability of scheduled sampling
+            if self.scheduled_sampling_prob > 0:
+                self._scheduled_sampling_prob = min(
+                    self.scheduled_sampling_prob,
+                    self.scheduled_sampling_prob / self.scheduled_sampling_ramp_max_step * self._step)
+
         return loss, xe_loss_main, xe_loss_sub
 
     def _decode_train_joint(self, enc_outputs, enc_outputs_sub,
@@ -549,7 +556,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             for t in range(ys_sub_max_seq_len - 1):
 
                 is_sample = self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random(
-                ) < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step
+                ) < self._scheduled_sampling_prob
 
                 if is_sample:
                     # Scheduled sampling
@@ -582,7 +589,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             for t in range(ys_max_seq_len - 1):
 
                 is_sample = self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random(
-                ) < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step
+                ) < self._scheduled_sampling_prob
 
                 if is_sample:
                     # Scheduled sampling
@@ -692,7 +699,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     for i_char in range(char_lens[t]):  # loop of characters
 
                         is_sample = self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random(
-                        ) < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step
+                        ) < self._scheduled_sampling_prob
 
                         if is_sample:
                             # Scheduled sampling
@@ -734,7 +741,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     if 0 < t < word_len - 2:
 
                         is_sample = self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random(
-                        ) < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step
+                        ) < self._scheduled_sampling_prob
 
                         if is_sample:
                             # Scheduled sampling
@@ -775,7 +782,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     # Decode by word-level decoder
                     ########################################
                     is_sample = self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random(
-                    ) < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step
+                    ) < self._scheduled_sampling_prob
 
                     if is_sample:
                         # Scheduled sampling

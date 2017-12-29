@@ -181,6 +181,7 @@ class AttentionSeq2seq(ModelBase):
         if scheduled_sampling_prob > 0 and scheduled_sampling_ramp_max_step == 0:
             raise ValueError
         self.scheduled_sampling_prob = scheduled_sampling_prob
+        self._scheduled_sampling_prob = scheduled_sampling_prob
         self.scheduled_sampling_ramp_max_step = scheduled_sampling_ramp_max_step
         self._step = 0
         self.label_smoothing_prob = label_smoothing_prob
@@ -416,6 +417,12 @@ class AttentionSeq2seq(ModelBase):
         if not is_eval:
             self._step += 1
 
+            # Update the probability of scheduled sampling
+            if self.scheduled_sampling_prob > 0:
+                self._scheduled_sampling_prob = min(
+                    self.scheduled_sampling_prob,
+                    self.scheduled_sampling_prob / self.scheduled_sampling_ramp_max_step * self._step)
+
         return loss
 
     def _compute_ctc_loss(self, enc_outputs, ys, x_lens, y_lens,
@@ -555,7 +562,7 @@ class AttentionSeq2seq(ModelBase):
         for t in range(labels_max_seq_len - 1):
 
             is_sample = self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random(
-            ) < self.scheduled_sampling_prob * self._step / self.scheduled_sampling_ramp_max_step
+            ) < self._scheduled_sampling_prob
 
             if is_sub_task:
                 if is_sample:
