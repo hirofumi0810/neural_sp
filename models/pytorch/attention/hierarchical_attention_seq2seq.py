@@ -135,7 +135,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         self._sub_loss_weight = 1 - main_loss_weight - ctc_loss_weight_sub
         self.ctc_loss_weight_sub = ctc_loss_weight_sub
         self._ctc_loss_weight_sub = ctc_loss_weight_sub
-        if curriculum_training and scheduled_sampling_ramp_max_step = 0:
+        if curriculum_training and scheduled_sampling_ramp_max_step == 0:
             raise ValueError('Set scheduled_sampling_ramp_max_step.')
         self.curriculum_training = curriculum_training
 
@@ -144,61 +144,34 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # NOTE: overide encoder
         #########################
         # Load an instance
-        if sum(subsample_list) == 0:
-            encoder = load(encoder_type=encoder_type + '_hierarchical')
-        else:
-            encoder = load(encoder_type='p' + encoder_type + '_hierarchical')
+        encoder = load(encoder_type=encoder_type)
 
         # Call the encoder function
         if encoder_type in ['lstm', 'gru', 'rnn']:
-            if sum(subsample_list) == 0:
-                self.encoder = encoder(
-                    input_size=input_size,  # 120 or 123
-                    rnn_type=encoder_type,
-                    bidirectional=encoder_bidirectional,
-                    num_units=encoder_num_units,
-                    num_proj=encoder_num_proj,
-                    num_layers=encoder_num_layers,
-                    num_layers_sub=encoder_num_layers_sub,
-                    dropout=encoder_dropout,
-                    parameter_init=parameter_init,
-                    use_cuda=self.use_cuda,
-                    batch_first=True,
-                    num_stack=num_stack,
-                    splice=splice,
-                    conv_channels=conv_channels,
-                    conv_kernel_sizes=conv_kernel_sizes,
-                    conv_strides=conv_strides,
-                    poolings=poolings,
-                    activation=activation,
-                    batch_norm=batch_norm,
-                    residual=encoder_residual,
-                    dense_residual=encoder_dense_residual)
-            else:
-                self.encoder = encoder(
-                    input_size=input_size,   # 120 or 123
-                    rnn_type=encoder_type,
-                    bidirectional=encoder_bidirectional,
-                    num_units=encoder_num_units,
-                    num_proj=encoder_num_proj,
-                    num_layers=encoder_num_layers,
-                    num_layers_sub=encoder_num_layers_sub,
-                    dropout=encoder_dropout,
-                    parameter_init=parameter_init,
-                    subsample_list=subsample_list,
-                    subsample_type='concat',
-                    use_cuda=self.use_cuda,
-                    batch_first=True,
-                    num_stack=num_stack,
-                    splice=splice,
-                    conv_channels=conv_channels,
-                    conv_kernel_sizes=conv_kernel_sizes,
-                    conv_strides=conv_strides,
-                    poolings=poolings,
-                    activation=activation,
-                    batch_norm=batch_norm,
-                    residual=encoder_residual,
-                    dense_residual=encoder_dense_residual)
+            self.encoder = encoder(
+                input_size=input_size,  # 120 or 123
+                rnn_type=encoder_type,
+                bidirectional=encoder_bidirectional,
+                num_units=encoder_num_units,
+                num_proj=encoder_num_proj,
+                num_layers=encoder_num_layers,
+                num_layers_sub=encoder_num_layers_sub,
+                dropout=encoder_dropout,
+                parameter_init=parameter_init,
+                subsample_list=subsample_list,
+                subsample_type='concat',
+                use_cuda=self.use_cuda,
+                batch_first=True,
+                num_stack=num_stack,
+                splice=splice,
+                conv_channels=conv_channels,
+                conv_kernel_sizes=conv_kernel_sizes,
+                conv_strides=conv_strides,
+                poolings=poolings,
+                activation=activation,
+                batch_norm=batch_norm,
+                residual=encoder_residual,
+                dense_residual=encoder_dense_residual)
         else:
             raise NotImplementedError
 

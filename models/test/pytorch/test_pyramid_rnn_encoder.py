@@ -23,6 +23,9 @@ class TestPyramidRNNEncoders(unittest.TestCase):
     def test(self):
         print("Pyramidal RNN Encoders Working check.")
 
+        self.check(encoder_type='lstm', bidirectional=False,
+                   subsample_type='drop')
+
         # Projection layer
         self.check(encoder_type='lstm', bidirectional=False,
                    projection=True)
@@ -162,7 +165,7 @@ class TestPyramidRNNEncoders(unittest.TestCase):
         inputs_seq_len = np2var(inputs_seq_len)
 
         # Load encoder
-        encoder = load(encoder_type='p' + encoder_type)
+        encoder = load(encoder_type=encoder_type)
 
         # Initialize encoder
         if encoder_type in ['lstm', 'gru', 'rnn']:

@@ -120,62 +120,35 @@ class HierarchicalCTC(CTC):
         self.main_loss_weight = main_loss_weight
 
         # Load an instance
-        if sum(subsample_list) == 0:
-            encoder = load(encoder_type=encoder_type + '_hierarchical')
-        else:
-            encoder = load(encoder_type='p' + encoder_type + '_hierarchical')
+        encoder = load(encoder_type=encoder_type)
 
         # Call the encoder function
         # NOTE: overide encoder
         if encoder_type in ['lstm', 'gru', 'rnn']:
-            if sum(subsample_list) == 0:
-                self.encoder = encoder(
-                    input_size=input_size,  # 120 or 123
-                    rnn_type=encoder_type,
-                    bidirectional=bidirectional,
-                    num_units=num_units,
-                    num_proj=num_proj,
-                    num_layers=num_layers,
-                    num_layers_sub=num_layers_sub,
-                    dropout=dropout,
-                    parameter_init=parameter_init,
-                    use_cuda=self.use_cuda,
-                    batch_first=False,
-                    num_stack=num_stack,
-                    splice=splice,
-                    conv_channels=conv_channels,
-                    conv_kernel_sizes=conv_kernel_sizes,
-                    conv_strides=conv_strides,
-                    poolings=poolings,
-                    activation=activation,
-                    batch_norm=batch_norm,
-                    residual=residual,
-                    dense_residual=dense_residual)
-            else:
-                self.encoder = encoder(
-                    input_size=input_size,  # 120 or 123
-                    rnn_type=encoder_type,
-                    bidirectional=bidirectional,
-                    num_units=num_units,
-                    num_proj=num_proj,
-                    num_layers=num_layers,
-                    num_layers_sub=num_layers_sub,
-                    dropout=dropout,
-                    parameter_init=parameter_init,
-                    subsample_list=subsample_list,
-                    subsample_type='concat',
-                    use_cuda=self.use_cuda,
-                    batch_first=False,
-                    num_stack=num_stack,
-                    splice=splice,
-                    conv_channels=conv_channels,
-                    conv_kernel_sizes=conv_kernel_sizes,
-                    conv_strides=conv_strides,
-                    poolings=poolings,
-                    activation=activation,
-                    batch_norm=batch_norm,
-                    residual=residual,
-                    dense_residual=dense_residual)
+            self.encoder = encoder(
+                input_size=input_size,  # 120 or 123
+                rnn_type=encoder_type,
+                bidirectional=bidirectional,
+                num_units=num_units,
+                num_proj=num_proj,
+                num_layers=num_layers,
+                num_layers_sub=num_layers_sub,
+                dropout=dropout,
+                parameter_init=parameter_init,
+                subsample_list=subsample_list,
+                subsample_type='concat',
+                use_cuda=self.use_cuda,
+                batch_first=False,
+                num_stack=num_stack,
+                splice=splice,
+                conv_channels=conv_channels,
+                conv_kernel_sizes=conv_kernel_sizes,
+                conv_strides=conv_strides,
+                poolings=poolings,
+                activation=activation,
+                batch_norm=batch_norm,
+                residual=residual,
+                dense_residual=dense_residual)
         else:
             raise NotImplementedError
 

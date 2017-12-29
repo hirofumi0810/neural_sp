@@ -129,4 +129,6 @@ class RNNDecoder(nn.Module):
                     elif self.dense_residual:
                         res_outputs_list.append(outputs)
 
+        del decoder_state_init
+
         return outputs, decoder_state

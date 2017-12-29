@@ -142,6 +142,7 @@ class TestRNNEncoders(unittest.TestCase):
             num_layers=5,
             dropout=0.2,
             parameter_init=0.1,
+            subsample_list=[],
             batch_first=batch_first,
             merge_bidirectional=merge_bidirectional,
             splice=splice,
@@ -182,13 +183,13 @@ class TestRNNEncoders(unittest.TestCase):
         num_directions = 2 if bidirectional and not merge_bidirectional else 1
         if batch_first:
             self.assertEqual(
-                (batch_size, max_time,
-                 encoder.num_units * num_directions), outputs.size())
+                (batch_size, max_time, encoder.num_units * num_directions),
+                outputs.size())
 
         else:
             self.assertEqual(
-                (max_time, batch_size,
-                 encoder.num_units * num_directions), outputs.size())
+                (max_time, batch_size, encoder.num_units * num_directions),
+                outputs.size())
 
 
 if __name__ == '__main__':

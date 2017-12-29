@@ -1,13 +1,13 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""RNN encoders."""
+"""(Hierarchical) RNN encoders."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-
+import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
@@ -31,6 +31,10 @@ class RNNEncoder(nn.Module):
         dropout (float): the probability to drop nodes
         parameter_init (float): the range of uniform distribution to
             initialize weight parameters (>= 0)
+        subsample_list (list): subsample in the corresponding layers (True)
+            ex.) [False, True, True, False] means that downsample is conducted
+                in the 2nd and 3rd layers.
+        subsample_type (string, optional): drop or concat
         use_cuda (bool, optional): if True, use GPUs
         batch_first (bool, optional): if True, batch-major computation will be
             performed
@@ -46,6 +50,7 @@ class RNNEncoder(nn.Module):
         batch_norm (bool, optional):
         residual (bool, optional):
         dense_residual (bool, optional):
+        num_layers_sub (int): the number of layers in the sub task
     """
 
     def __init__(self,
@@ -57,6 +62,8 @@ class RNNEncoder(nn.Module):
                  num_layers,
                  dropout,
                  parameter_init,
+                 subsample_list=[],
+                 subsample_type='concat',
                  use_cuda=False,
                  batch_first=False,
                  merge_bidirectional=False,
@@ -69,9 +76,19 @@ class RNNEncoder(nn.Module):
                  activation='relu',
                  batch_norm=False,
                  residual=False,
-                 dense_residual=False):
+                 dense_residual=False,
+                 num_layers_sub=0):
 
         super(RNNEncoder, self).__init__()
+
+        if len(subsample_list) > 0 and len(subsample_list) != num_layers:
+            raise ValueError(
+                'subsample_list must be the same size as num_layers.')
+        if subsample_type not in ['drop', 'concat']:
+            raise TypeError('subsample_type must be "drop" or "concat".')
+        if num_layers_sub < 0 or (num_layers_sub > 1 and num_layers < num_layers_sub):
+            raise ValueError(
+                'Set num_layers_sub between 1 to num_layers.')
 
         self.rnn_type = rnn_type
         self.bidirectional = bidirectional
@@ -82,9 +99,32 @@ class RNNEncoder(nn.Module):
         self.use_cuda = use_cuda
         self.batch_first = batch_first
         self.merge_bidirectional = merge_bidirectional
+
+        # Setting for hierarchical encoder
+        self.num_layers_sub = num_layers_sub
+
+        # Setting for subsampling
+        if len(subsample_list) == 0:
+            self.subsample_list = [False] * num_layers
+        else:
+            self.subsample_list = subsample_list
+        self.subsample_type = subsample_type
+        # This implementation is bases on
+        # https://arxiv.org/abs/1508.01211
+        #     Chan, William, et al. "Listen, attend and spell."
+        #         arXiv preprint arXiv:1508.01211 (2015).
+
+        # Setting for residual connection
         assert not (residual and dense_residual)
         self.residual = residual
         self.dense_residual = dense_residual
+        subsample_last_layer = 0
+        for i_layer_reverse, is_subsample in enumerate(subsample_list[::-1]):
+            if is_subsample:
+                subsample_last_layer = num_layers - i_layer_reverse
+                break
+        self.residual_start_layer = subsample_last_layer + 1
+        # NOTE: このレイヤの出力からres_outputs_listに入れていく
 
         # Setting for CNNs before RNNs
         if len(conv_channels) > 0 and len(conv_channels) == len(conv_kernel_sizes) and len(conv_kernel_sizes) == len(conv_strides):
@@ -114,8 +154,12 @@ class RNNEncoder(nn.Module):
                 encoder_input_size = input_size
             elif self.num_proj > 0:
                 encoder_input_size = num_proj
+                if subsample_type == 'concat' and i_layer > 0 and self.subsample_list[i_layer - 1]:
+                    encoder_input_size *= 2
             else:
                 encoder_input_size = num_units * self.num_directions
+                if subsample_type == 'concat' and i_layer > 0 and self.subsample_list[i_layer - 1]:
+                    encoder_input_size *= 2
 
             if rnn_type == 'lstm':
                 rnn_i = nn.LSTM(encoder_input_size,
@@ -144,7 +188,10 @@ class RNNEncoder(nn.Module):
             else:
                 raise ValueError('rnn_type must be "lstm" or "gru" or "rnn".')
 
-            setattr(self, rnn_type + '_l' + str(i_layer), rnn_i)
+            if self.subsample_list[i_layer]:
+                setattr(self, 'p' + rnn_type + '_l' + str(i_layer), rnn_i)
+            else:
+                setattr(self, rnn_type + '_l' + str(i_layer), rnn_i)
             if use_cuda:
                 rnn_i = rnn_i.cuda()
             self.rnns.append(rnn_i)
@@ -166,14 +213,25 @@ class RNNEncoder(nn.Module):
         Returns:
             outputs:
                 if batch_first is True, a tensor of size
-                    `[B, T, num_units (* num_directions)]`
+                    `[B, T // sum(subsample_list), num_units (* num_directions)]`
                 else
-                    `[T, B, num_units (* num_directions)]`
+                    `[T // sum(subsample_list), B, num_units (* num_directions)]`
             final_state_fw: A tensor of size `[1, B, num_units]`
+
+            OPTION:
+                outputs_sub:
+                    if batch_first is True, a tensor of size
+                        `[B, T // sum(subsample_list), num_units (* num_directions)]`
+                    else
+                        `[T // sum(subsample_list), B, num_units (* num_directions)]`
+                final_state_fw_sub: A tensor of size `[1, B, num_units]`
+
             perm_indices ():
         """
+        batch_size, max_time = inputs.size()[:2]
+
         # Initialize hidden states (and memory cells) per mini-batch
-        h_0 = _init_hidden(batch_size=inputs.size(0),
+        h_0 = _init_hidden(batch_size=batch_size,
                            rnn_type=self.rnn_type,
                            num_units=self.num_units,
                            num_directions=self.num_directions,
@@ -201,50 +259,96 @@ class RNNEncoder(nn.Module):
         if self.conv is not None:
             inputs_seq_len = [self.get_conv_out_size(
                 x, 1) for x in inputs_seq_len]
-
-        # Pack encoder inputs
-        inputs = pack_padded_sequence(
-            inputs, inputs_seq_len, batch_first=self.batch_first)
+            max_time = self.get_conv_out_size(max_time, 1)
 
         outputs = inputs
         res_outputs_list = []
         # NOTE: exclude residual connection from inputs
         for i_layer in range(self.num_layers):
+
+            # Pack i_layer-th encoder inputs
+            if not isinstance(outputs, torch.nn.utils.rnn.PackedSequence):
+                outputs = pack_padded_sequence(
+                    outputs, inputs_seq_len, batch_first=self.batch_first)
+
             if self.rnn_type == 'lstm':
                 outputs, (h_n, _) = self.rnns[i_layer](outputs, hx=h_0)
             else:
                 outputs, h_n = self.rnns[i_layer](outputs, hx=h_0)
 
-            if self.residual or self.dense_residual or self.num_proj > 0:
-                # Unpack encoder outputs
+            # Pick up outputs in the sub task before the projection layer
+            if self.num_layers_sub >= 1 and i_layer == self.num_layers_sub - 1:
+                outputs_sub = outputs
+                h_n_sub = h_n
+
+            if self.residual or self.dense_residual or self.num_proj > 0 or self.subsample_list[i_layer]:
+                # Unpack i_layer-th encoder outputs
                 outputs, unpacked_seq_len = pad_packed_sequence(
                     outputs, batch_first=self.batch_first, padding_value=0.0)
                 assert inputs_seq_len == unpacked_seq_len
 
                 # Projection layer (affine transformation)
-                if self.num_proj > 0 and i_layer != self.num_layers - 1:
-                    outputs = self.projections[i_layer](outputs)
                 # NOTE: Exclude the last layer
+                if i_layer != self.num_layers - 1 and self.num_proj > 0:
+                    outputs = self.projections[i_layer](outputs)
+
+                # Subsampling
+                # NOTE: Exclude the last layer
+                if i_layer != self.num_layers - 1 and self.subsample_list[i_layer]:
+                    # Pick up features at even time step
+                    if self.subsample_type == 'drop':
+                        if self.batch_first:
+                            outputs_list = [outputs[:, t:t + 1, :]
+                                            for t in range(max_time) if (t + 1) % 2 == 0]
+                            # outputs_t: `[B, 1, num_units * num_directions]`
+                        else:
+                            outputs_list = [outputs[t:t + 1, :, :]
+                                            for t in range(max_time) if (t + 1) % 2 == 0]
+                            # outputs_t: `[1, B, num_units * num_directions]`
+
+                    # Concatenate the successive frames
+                    elif self.subsample_type == 'concat':
+                        if self.batch_first:
+                            outputs_list = [torch.cat([outputs[:, t - 1:t, :], outputs[:, t:t + 1, :]], dim=2)
+                                            for t in range(max_time) if (t + 1) % 2 == 0]
+                        else:
+                            outputs_list = [torch.cat([outputs[t - 1:t, :, :], outputs[t:t + 1, :, :]], dim=2)
+                                            for t in range(max_time) if (t + 1) % 2 == 0]
+
+                    # Concatenate in time-dimension
+                    if self.batch_first:
+                        outputs = torch.cat(outputs_list, dim=1)
+                        # `[B, T_prev // 2, num_units (* 2) * num_directions]`
+                        max_time = outputs.size(1)
+                    else:
+                        outputs = torch.cat(outputs_list, dim=0)
+                        # `[T_prev // 2, B, num_units (* 2) * num_directions]`
+                        max_time = outputs.size(0)
+
+                    # Update inputs_seq_len
+                    for i in range(len(inputs_seq_len)):
+                        inputs_seq_len[i] = inputs_seq_len[i] // 2
 
                 # Residual connection
-                if self.residual or self.dense_residual:
-                    for outputs_lower in res_outputs_list:
-                        outputs = outputs + outputs_lower
-                    if self.residual:
-                        res_outputs_list = [outputs]
-                    elif self.dense_residual:
-                        res_outputs_list.append(outputs)
+                elif self.residual or self.dense_residual:
+                    if i_layer >= self.residual_start_layer - 1:
+                        for outputs_lower in res_outputs_list:
+                            outputs = outputs + outputs_lower
+                        if self.residual:
+                            res_outputs_list = [outputs]
+                        elif self.dense_residual:
+                            res_outputs_list.append(outputs)
 
                 # Pack encoder outputs again
                 outputs = pack_padded_sequence(
-                    outputs, unpacked_seq_len,
+                    outputs, inputs_seq_len,
                     batch_first=self.batch_first)
 
         # Unpack encoder outputs
-        outputs, unpacked_seq_len = pad_packed_sequence(
-            outputs, batch_first=self.batch_first)
-        # TODO: update version for padding_value=0.0
-        assert inputs_seq_len == unpacked_seq_len
+        if isinstance(outputs, torch.nn.utils.rnn.PackedSequence):
+            outputs, unpacked_seq_len = pad_packed_sequence(
+                outputs, batch_first=self.batch_first, padding_value=0.0)
+            assert inputs_seq_len == unpacked_seq_len
 
         # Sum bidirectional outputs
         if self.bidirectional and self.merge_bidirectional:
@@ -260,4 +364,28 @@ class RNNEncoder(nn.Module):
 
         del h_n, h_0
 
-        return outputs, final_state_fw, perm_indices
+        # sub task (optional)
+        if self.num_layers_sub >= 1:
+
+            # Unpack encoder outputs
+            outputs_sub, unpacked_seq_len_sub = pad_packed_sequence(
+                outputs_sub, batch_first=self.batch_first, padding_value=0.0)
+            assert inputs_seq_len == unpacked_seq_len_sub
+
+            # Sum bidirectional outputs
+            if self.bidirectional and self.merge_bidirectional:
+                outputs_sub = outputs_sub[:, :, :self.num_units] + \
+                    outputs_sub[:, :, self.num_units:]
+
+            # Pick up the final state of the top layer (forward)
+            if self.num_directions == 2:
+                final_state_fw_sub = h_n_sub[-2:-1, :, :]
+            else:
+                final_state_fw_sub = h_n_sub[-1, :, :].unsqueeze(dim=0)
+            # NOTE: h_n_sub: `[num_layers_sub * num_directions, B, num_units]`
+
+            del h_n_sub
+
+            return outputs, final_state_fw, outputs_sub, final_state_fw_sub, perm_indices
+        else:
+            return outputs, final_state_fw, perm_indices

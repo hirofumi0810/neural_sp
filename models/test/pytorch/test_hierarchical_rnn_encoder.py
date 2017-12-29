@@ -130,7 +130,7 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
         inputs_seq_len = np2var(inputs_seq_len)
 
         # Load encoder
-        encoder = load(encoder_type=encoder_type + '_hierarchical')
+        encoder = load(encoder_type=encoder_type)
 
         # Initialize encoder
         encoder = encoder(
@@ -143,6 +143,7 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
             num_layers_sub=3,
             dropout=0.2,
             parameter_init=0.1,
+            subsample_list=[],
             batch_first=batch_first,
             merge_bidirectional=merge_bidirectional,
             splice=splice,

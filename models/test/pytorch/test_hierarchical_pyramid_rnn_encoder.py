@@ -162,7 +162,7 @@ class TestPyramidRNNEncoders(unittest.TestCase):
         inputs_seq_len = np2var(inputs_seq_len)
 
         # Load encoder
-        encoder = load(encoder_type='p' + encoder_type + '_hierarchical')
+        encoder = load(encoder_type=encoder_type)
 
         # Initialize encoder
         if encoder_type in ['lstm', 'gru', 'rnn']:

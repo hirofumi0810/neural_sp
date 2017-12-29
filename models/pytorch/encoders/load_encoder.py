@@ -8,30 +8,16 @@ from __future__ import division
 from __future__ import print_function
 
 from models.pytorch.encoders.rnn import RNNEncoder
-from models.pytorch.encoders.pyramid_rnn import PyramidRNNEncoder
-from models.pytorch.encoders.hierarchical_rnn import HierarchicalRNNEncoder
-from models.pytorch.encoders.hierarchical_pyramid_rnn import HierarchicalPyramidRNNEncoder
 # from models.pytorch.encoders.cnn import CNNEncoder
 from models.pytorch.encoders.cnn_v2 import CNNEncoder
 
 # from models.pytorch.encoders.resnet import ResNetEncoder
 
-
 ENCODERS = {
     "lstm": RNNEncoder,
     "gru": RNNEncoder,
     "rnn": RNNEncoder,
-    "plstm": PyramidRNNEncoder,
-    "pgru": PyramidRNNEncoder,
-    "prnn": PyramidRNNEncoder,
-    "lstm_hierarchical": HierarchicalRNNEncoder,
-    "gru_hierarchical": HierarchicalRNNEncoder,
-    "rnn_hierarchical": HierarchicalRNNEncoder,
-    "plstm_hierarchical": HierarchicalPyramidRNNEncoder,
-    "pgru_hierarchical": HierarchicalPyramidRNNEncoder,
-    "prnn_hierarchical": HierarchicalPyramidRNNEncoder,
     "cnn": CNNEncoder,
-
     # "resnet": ResNetEncoder,
 }
 
