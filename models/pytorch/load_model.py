@@ -223,6 +223,8 @@ def load(model_type, params):
         model.name += '_' + params['optimizer']
         model.name += '_lr' + str(params['learning_rate'])
         model.name += '_' + params['attention_type']
+        if params['encoder_num_proj'] != 0:
+            model.name += '_proj' + str(params['encoder_num_proj'])
         if params['dropout_encoder'] != 0 or params['dropout_decoder'] != 0:
             model.name += '_drop'
             if params['dropout_encoder'] != 0:
@@ -396,6 +398,8 @@ def load(model_type, params):
         model.name += '_' + params['optimizer']
         model.name += '_lr' + str(params['learning_rate'])
         model.name += '_' + params['attention_type']
+        if params['encoder_num_proj'] != 0:
+            model.name += '_proj' + str(params['encoder_num_proj'])
         if params['dropout_encoder'] != 0 or params['dropout_decoder'] != 0:
             model.name += '_drop'
             if params['dropout_encoder'] != 0:
@@ -498,6 +502,8 @@ def load(model_type, params):
         model.name += '_' + params['optimizer']
         model.name += '_lr' + str(params['learning_rate'])
         model.name += '_' + params['attention_type']
+        if params['encoder_num_proj'] != 0:
+            model.name += '_proj' + str(params['encoder_num_proj'])
         if params['dropout_encoder'] != 0 or params['dropout_decoder'] != 0:
             model.name += '_drop'
             if params['dropout_encoder'] != 0:

@@ -149,7 +149,7 @@ class RNNEncoder(nn.Module):
                 rnn_i = rnn_i.cuda()
             self.rnns.append(rnn_i)
 
-            if self.num_proj > 0:
+            if self.num_proj > 0 and i_layer != num_layers - 1:
                 proj_i = LinearND(num_units * self.num_directions, num_proj)
                 setattr(self, 'proj_l' + str(i_layer), proj_i)
                 if use_cuda:
@@ -190,8 +190,8 @@ class RNNEncoder(nn.Module):
         if self.conv is not None:
             inputs = self.conv(inputs)
 
+        # Convert to the time-major
         if not self.batch_first:
-            # Reshape inputs to the time-major
             inputs = inputs.transpose(0, 1).contiguous()
 
         if not isinstance(inputs_seq_len, list):
@@ -258,6 +258,6 @@ class RNNEncoder(nn.Module):
             final_state_fw = h_n[-1, :, :].unsqueeze(dim=0)
         # NOTE: h_n: `[num_layers * num_directions, B, num_units]`
 
-        del h_n
+        del h_n, h_0
 
         return outputs, final_state_fw, perm_indices

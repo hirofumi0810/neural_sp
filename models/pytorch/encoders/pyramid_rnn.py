@@ -182,7 +182,7 @@ class PyramidRNNEncoder(nn.Module):
                 rnn = rnn.cuda()
             self.rnns.append(rnn)
 
-            if self.num_proj > 0:
+            if self.num_proj > 0 and i_layer != num_layers - 1:
                 proj_i = LinearND(num_units * self.num_directions, num_units)
                 setattr(self, 'proj_l' + str(i_layer), proj_i)
                 if use_cuda:
@@ -225,8 +225,8 @@ class PyramidRNNEncoder(nn.Module):
         if self.conv is not None:
             inputs = self.conv(inputs)
 
+        # Convert to the time-major
         if not self.batch_first:
-            # Reshape to the time-major
             inputs = inputs.transpose(0, 1)
 
         if not isinstance(inputs_seq_len, list):
@@ -261,29 +261,28 @@ class PyramidRNNEncoder(nn.Module):
                 outputs = self.projections[i_layer](outputs)
             # NOTE: Exclude the last layer
 
-            outputs_list = []
             if self.subsample_list[i_layer]:
-                for t in range(max_time):
-                    # Pick up features at even time step
-                    if (t + 1) % 2 == 0:
-                        if self.batch_first:
-                            outputs_t = outputs[:, t:t + 1, :]
-                            # NOTE: `[B, 1, num_units * num_directions]`
-                        else:
-                            outputs_t = outputs[t:t + 1, :, :]
-                            # NOTE: `[1, B, num_units * num_directions]`
+                # Pick up features at even time step
+                if self.subsample_type == 'drop' or i_layer == self.num_layers - 1:
+                    if self.batch_first:
+                        outputs_list = [outputs[:, t:t + 1, :]
+                                        for t in range(max_time) if (t + 1) % 2 == 0]
+                        # NOTE: outputs_t: `[B, 1, num_units * num_directions]`
+                    else:
+                        outputs_list = [outputs[t:t + 1, :, :]
+                                        for t in range(max_time) if (t + 1) % 2 == 0]
+                        # NOTE: outputs_t: `[1, B, num_units * num_directions]`
 
-                        # Concatenate the successive frames
-                        if self.subsample_type == 'concat' and i_layer != self.num_layers - 1:
-                            if self.batch_first:
-                                outputs_t_prev = outputs[:, t - 1:t, :]
-                            else:
-                                outputs_t_prev = outputs[t - 1:t, :, :]
-                            outputs_t = torch.cat(
-                                [outputs_t_prev, outputs_t], dim=2)
+                # Concatenate the successive frames
+                elif self.subsample_type == 'concat':
+                    if self.batch_first:
+                        outputs_list = [torch.cat([outputs[:, t - 1:t, :], outputs[:, t:t + 1, :]], dim=2)
+                                        for t in range(max_time) if (t + 1) % 2 == 0]
+                    else:
+                        outputs_list = [torch.cat([outputs[t - 1:t, :, :], outputs[t:t + 1, :, :]], dim=2)
+                                        for t in range(max_time) if (t + 1) % 2 == 0]
 
-                        outputs_list.append(outputs_t)
-
+                # Concatenate in time-dimension
                 if self.batch_first:
                     outputs = torch.cat(outputs_list, dim=1)
                     # `[B, T_prev // 2, num_units (* 2) * num_directions]`
@@ -319,6 +318,6 @@ class PyramidRNNEncoder(nn.Module):
             final_state_fw = h_n[-1, :, :].unsqueeze(dim=0)
         # NOTE: h_n: `[num_layers * num_directions, B, num_units]`
 
-        del h_n
+        del h_n, h_0
 
         return outputs, final_state_fw, perm_indices

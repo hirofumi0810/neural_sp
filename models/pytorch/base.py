@@ -8,6 +8,8 @@ from __future__ import print_function
 import os
 from os.path import join, isfile, basename
 from glob import glob
+import logging
+logger = logging.getLogger('training')
 
 import torch
 import torch.nn as nn
@@ -87,18 +89,17 @@ class ModelBase(nn.Module):
         if self.use_cuda:
             if benchmark:
                 torch.backends.cudnn.benchmark = True
-                print('GPU mode (benchmark)')
+                logger.info('GPU mode (benchmark)')
             elif deterministic:
-                print('GPU deterministic mode (no cudnn)')
+                logger.info('GPU deterministic mode (no cudnn)')
                 torch.backends.cudnn.enabled = False
                 # NOTE: this is slower than GPU mode.
             else:
-                print('GPU mode')
-
+                logger.info('GPU mode')
             if self.use_cuda:
                 self = self.cuda()
         else:
-            print('CPU mode')
+            logger.info('CPU mode')
 
     def set_optimizer(self, optimizer, learning_rate_init, weight_decay=0,
                       lr_schedule=True, factor=0.1, patience_epoch=5):
@@ -223,8 +224,8 @@ class ModelBase(nn.Module):
 
         model_path = join(save_path, 'model.epoch-' + str(epoch))
         if isfile(join(model_path)):
-            print("=> Loading checkpoint (epoch:%d): %s" %
-                  (epoch, model_path))
+            logger.info("=> Loading checkpoint (epoch:%d): %s" %
+                        (epoch, model_path))
             checkpoint = torch.load(
                 model_path, map_location=lambda storage, loc: storage)
         else:

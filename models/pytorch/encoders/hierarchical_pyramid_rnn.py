@@ -139,7 +139,7 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
         for i_layer in range(num_layers):
             if i_layer == 0:
                 encoder_input_size = input_size
-            elif self.num_proj > 0 and i_layer != num_layers_sub:
+            elif self.num_proj > 0:
                 encoder_input_size = num_proj
                 if subsample_type == 'concat' and i_layer > 0 and subsample_list[i_layer - 1] and i_layer != num_layers_sub:
                     encoder_input_size *= 2
@@ -180,7 +180,7 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
                 rnn = rnn.cuda()
             self.rnns.append(rnn)
 
-            if self.num_proj > 0 and i_layer != num_layers_sub - 1:
+            if self.num_proj > 0 and i_layer != num_layers - 1:
                 proj_i = LinearND(num_units * self.num_directions, num_units)
                 setattr(self, 'proj_l' + str(i_layer), proj_i)
                 if use_cuda:
@@ -229,8 +229,8 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
         if self.conv is not None:
             inputs = self.conv(inputs)
 
+        # Convert to the time-major
         if not self.batch_first:
-            # Reshape to the time-major
             inputs = inputs.transpose(0, 1)
 
         if not isinstance(inputs_seq_len, list):
@@ -260,34 +260,38 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
                 outputs, batch_first=self.batch_first, padding_value=0.0)
             assert inputs_seq_len == unpacked_seq_len
 
+            # Pick up before the projection layer
+            if i_layer == self.num_layers_sub - 1:
+                outputs_sub = outputs
+                h_n_sub = h_n
+
             # Projection layer (affine transformation)
-            if self.num_proj > 0 and i_layer != self.num_layers - 1 and i_layer != self.num_layers_sub - 1:
+            if self.num_proj > 0 and i_layer != self.num_layers - 1:
                 outputs = self.projections[i_layer](outputs)
-            # NOTE: Exclude the last layer and the sub layer
+            # NOTE: Exclude the last layer
 
-            outputs_list = []
             if self.subsample_list[i_layer]:
-                for t in range(max_time):
-                    # Pick up features at even time step
-                    if (t + 1) % 2 == 0:
-                        if self.batch_first:
-                            outputs_t = outputs[:, t:t + 1, :]
-                            # NOTE: `[B, 1, num_units * num_directions]`
-                        else:
-                            outputs_t = outputs[t:t + 1, :, :]
-                            # NOTE: `[1, B, num_units * num_directions]`
+                # Pick up features at even time step
+                if self.subsample_type == 'drop' or i_layer == self.num_layers - 1:
+                    if self.batch_first:
+                        outputs_list = [outputs[:, t:t + 1, :]
+                                        for t in range(max_time) if (t + 1) % 2 == 0]
+                        # NOTE: outputs_t: `[B, 1, num_units * num_directions]`
+                    else:
+                        outputs_list = [outputs[t:t + 1, :, :]
+                                        for t in range(max_time) if (t + 1) % 2 == 0]
+                        # NOTE: outputs_t: `[1, B, num_units * num_directions]`
 
-                        # Concatenate the successive frames
-                        if self.subsample_type == 'concat' and i_layer not in [self.num_layers - 1, self.num_layers_sub - 1]:
-                            if self.batch_first:
-                                outputs_t_prev = outputs[:, t - 1:t, :]
-                            else:
-                                outputs_t_prev = outputs[t - 1:t, :, :]
-                            outputs_t = torch.cat(
-                                [outputs_t_prev, outputs_t], dim=2)
+                # Concatenate the successive frames
+                elif self.subsample_type == 'concat':
+                    if self.batch_first:
+                        outputs_list = [torch.cat([outputs[:, t - 1:t, :], outputs[:, t:t + 1, :]], dim=2)
+                                        for t in range(max_time) if (t + 1) % 2 == 0]
+                    else:
+                        outputs_list = [torch.cat([outputs[t - 1:t, :, :], outputs[t:t + 1, :, :]], dim=2)
+                                        for t in range(max_time) if (t + 1) % 2 == 0]
 
-                        outputs_list.append(outputs_t)
-
+                # Concatenate in time-dimension
                 if self.batch_first:
                     outputs = torch.cat(outputs_list, dim=1)
                     # `[B, T_prev // 2, num_units (* 2) * num_directions]`
@@ -311,10 +315,6 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
                         elif self.dense_residual:
                             res_outputs_list.append(outputs)
 
-            if i_layer == self.num_layers_sub - 1:
-                outputs_sub = outputs
-                h_n_sub = h_n
-
         # Sum bidirectional outputs
         if self.bidirectional and self.merge_bidirectional:
             outputs = outputs[:, :, :self.num_units] + \
@@ -332,6 +332,6 @@ class HierarchicalPyramidRNNEncoder(nn.Module):
         # NOTE: h_n: `[num_layers * num_directions, B, num_units]`
         #   h_n_sub: `[num_layers_sub * num_directions, B, num_units]`
 
-        del h_n, h_n_sub
+        del h_n, h_n_sub, h_0
 
         return outputs, final_state_fw, outputs_sub, final_state_fw_sub, perm_indices

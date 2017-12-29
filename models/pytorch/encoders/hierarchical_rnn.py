@@ -118,7 +118,7 @@ class HierarchicalRNNEncoder(nn.Module):
         for i_layer in range(num_layers):
             if i_layer == 0:
                 encoder_input_size = input_size
-            elif self.num_proj > 0 and i_layer != num_layers_sub:
+            elif self.num_proj > 0:
                 encoder_input_size = num_proj
             else:
                 encoder_input_size = num_units * self.num_directions
@@ -155,7 +155,7 @@ class HierarchicalRNNEncoder(nn.Module):
                 rnn_i = rnn_i.cuda()
             self.rnns.append(rnn_i)
 
-            if self.num_proj > 0 and i_layer != num_layers_sub - 1:
+            if self.num_proj > 0 and i_layer != num_layers - 1:
                 proj_i = LinearND(num_units * self.num_directions, num_proj)
                 setattr(self, 'proj_l' + str(i_layer), proj_i)
                 if use_cuda:
@@ -202,8 +202,8 @@ class HierarchicalRNNEncoder(nn.Module):
         if self.conv is not None:
             inputs = self.conv(inputs)
 
+        # Convert to the time-major
         if not self.batch_first:
-            # Reshape to the time-major
             inputs = inputs.transpose(0, 1).contiguous()
 
         if not isinstance(inputs_seq_len, list):
@@ -228,6 +228,11 @@ class HierarchicalRNNEncoder(nn.Module):
                 outputs, h_n = self.rnns[i_layer](outputs, hx=h_0)
 
             if self.residual or self.dense_residual or self.num_proj > 0:
+                # Pick up before the projection layer
+                if i_layer == self.num_layers_sub - 1:
+                    outputs_sub = outputs
+                    h_n_sub = h_n
+
                 # Unpack encoder outputs
                 outputs, unpacked_seq_len = pad_packed_sequence(
                     outputs, batch_first=self.batch_first,
@@ -235,9 +240,9 @@ class HierarchicalRNNEncoder(nn.Module):
                 assert inputs_seq_len == unpacked_seq_len
 
                 # Projection layer (affine transformation)
-                if self.num_proj > 0 and i_layer != self.num_layers - 1 and i_layer != self.num_layers_sub - 1:
+                if self.num_proj > 0 and i_layer != self.num_layers - 1:
                     outputs = self.projections[i_layer](outputs)
-                # NOTE: Exclude the last layer and the sub layer
+                # NOTE: Exclude the last layer
 
                 # Residual connection
                 if self.residual or self.dense_residual:
@@ -252,10 +257,10 @@ class HierarchicalRNNEncoder(nn.Module):
                 outputs = pack_padded_sequence(
                     outputs, unpacked_seq_len,
                     batch_first=self.batch_first)
-
-            if i_layer == self.num_layers_sub - 1:
-                outputs_sub = outputs
-                h_n_sub = h_n
+            else:
+                if i_layer == self.num_layers_sub - 1:
+                    outputs_sub = outputs
+                    h_n_sub = h_n
 
         # Unpack encoder outputs
         outputs, unpacked_seq_len = pad_packed_sequence(
@@ -282,6 +287,6 @@ class HierarchicalRNNEncoder(nn.Module):
         # NOTE: h_n: `[num_layers * num_directions, B, num_units]`
         #   h_n_sub: `[num_layers_sub * num_directions, B, num_units]`
 
-        del h_n, h_n_sub
+        del h_n, h_n_sub, h_0
 
         return outputs, final_state_fw, outputs_sub, final_state_fw_sub, perm_indices
