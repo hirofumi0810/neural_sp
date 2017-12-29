@@ -40,14 +40,26 @@ param:
   attention_conv_width: 201
 
   # CNN before RNN encoder
-  conv_channels: []
-  conv_kernel_sizes: []
-  conv_strides: []
-  poolings: []
+  conv_channels: [64, 64, 128, 128]
+  conv_kernel_sizes:
+    - [3, 3]
+    - [3, 3]
+    - [3, 3]
+    - [3, 3]
+  conv_strides:
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+  poolings:
+    - []
+    - [2, 2]
+    - []
+    - [2, 2]
   batch_norm: False
 
   # optimization
-  batch_size: 64
+  batch_size: 32
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 100
@@ -78,7 +90,7 @@ param:
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
   eval_start_epoch: 10
-  print_step: 500
+  print_step: 1000
 
   # MTL
   ctc_loss_weight: 0
