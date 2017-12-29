@@ -182,14 +182,14 @@ def main():
     ler_dev_best = 1
     not_improved_epoch = 0
     learning_rate = float(params['learning_rate'])
-    loss_val_train_mean = 0.
+    loss_train_val_mean = 0.
     for step, (batch, is_new_epoch) in enumerate(train_data):
 
         # Compute loss in the training set (including parameter update)
         batch_size_step = train_data._batch_size
-        model, optimizer, loss_val_train, div_num = train_step(
+        model, optimizer, loss_train_val, div_num = train_step(
             model, optimizer, batch, params['clip_grad_norm'])
-        loss_val_train_mean += loss_val_train
+        loss_train_val_mean += loss_train_val
 
         # on-the-fly setting
         train_data._batch_size = train_data.batch_size // div_num
@@ -206,15 +206,15 @@ def main():
             loss_dev = model(inputs, labels, inputs_seq_len, labels_seq_len,
                              is_eval=True)
 
-            loss_val_train_mean /= params['print_step']
-            loss_val_dev = loss_dev.data[0]
+            loss_train_val_mean /= params['print_step']
+            loss_dev_val = loss_dev.data[0]
             csv_steps.append(step)
-            csv_loss_train.append(loss_val_train_mean)
-            csv_loss_dev.append(loss_val_dev)
+            csv_loss_train.append(loss_train_val_mean)
+            csv_loss_dev.append(loss_dev_val)
 
             # Logging by tensorboard
-            tf_writer.add_scalar('train/loss', loss_val_train_mean, step + 1)
-            tf_writer.add_scalar('dev/loss', loss_val_dev, step + 1)
+            tf_writer.add_scalar('train/loss', loss_train_val_mean, step + 1)
+            tf_writer.add_scalar('dev/loss', loss_dev_val, step + 1)
             for name, param in model.named_parameters():
                 name = name.replace('.', '/')
                 tf_writer.add_histogram(name, var2np(param.clone()), step + 1)
@@ -224,14 +224,15 @@ def main():
             duration_step = time.time() - start_time_step
             logger.info("...Step:%d (epoch:%.3f): loss:%.3f (%.3f) / lr:%.5f / batch:%d (%.3f min)" %
                         (step + 1, train_data.epoch_detail,
-                         loss_val_train_mean, loss_val_dev,
+                         loss_train_val_mean, loss_dev_val,
                          learning_rate, batch_size_step, duration_step / 60))
             start_time_step = time.time()
-            loss_val_train_mean = 0.
+            loss_train_val_mean = 0.
 
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:
             duration_epoch = time.time() - start_time_epoch
+            logger.info('===== EPOCH:%d (%.3f min) =====' %
                         (train_data.epoch, duration_epoch / 60))
 
             # Save fugure of loss
@@ -257,7 +258,8 @@ def main():
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_WORD,
                         eval_batch_size=1)
-                    logger.info('  WER (dev): %f %%' % (metric_dev_epoch * 100))
+                    logger.info('  WER (dev): %f %%' %
+                                (metric_dev_epoch * 100))
                 else:
                     metric_dev_epoch = do_eval_cer(
                         model=model,
@@ -268,7 +270,8 @@ def main():
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_CHAR,
                         eval_batch_size=1)
-                    logger.info('  CER (dev): %f %%' % (metric_dev_epoch * 100))
+                    logger.info('  CER (dev): %f %%' %
+                                (metric_dev_epoch * 100))
 
                 if metric_dev_epoch < ler_dev_best:
                     ler_dev_best = metric_dev_epoch

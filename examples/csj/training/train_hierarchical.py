@@ -205,16 +205,16 @@ def main():
     wer_dev_best = 1
     not_improved_epoch = 0
     learning_rate = float(params['learning_rate'])
-    loss_val_train_mean, loss_main_val_train_mean, loss_sub_val_train_mean = 0., 0., 0.
+    loss_train_val_mean, loss_main_train_val_mean, loss_sub_train_val_mean = 0., 0., 0.
     for step, (batch, is_new_epoch) in enumerate(train_data):
 
         # Compute loss in the training set (including parameter update)
         batch_size_step = train_data._batch_size
         model, optimizer, loss_val_train, loss_main_val_train, loss_sub_val_train, div_num = train_hierarchical_step(
             model, optimizer, batch, params['clip_grad_norm'])
-        loss_val_train_mean += loss_val_train
-        loss_main_val_train_mean += loss_main_val_train
-        loss_sub_val_train_mean += loss_sub_val_train
+        loss_train_val_mean += loss_val_train
+        loss_main_train_val_mean += loss_main_val_train
+        loss_sub_train_val_mean += loss_sub_val_train
 
         # on-the-fly setting
         train_data._batch_size = train_data.batch_size // div_num
@@ -232,27 +232,27 @@ def main():
                 inputs, labels, labels_sub, inputs_seq_len,
                 labels_seq_len, labels_seq_len_sub, is_eval=True)
 
-            loss_val_train_mean /= params['print_step']
-            loss_main_val_train_mean /= params['print_step']
-            loss_sub_val_train_mean /= params['print_step']
-            loss_val_dev = loss_dev.data[0]
-            loss_main_val_dev = loss_main_dev.data[0]
-            loss_sub_val_dev = loss_sub_dev.data[0]
+            loss_train_val_mean /= params['print_step']
+            loss_main_train_val_mean /= params['print_step']
+            loss_sub_train_val_mean /= params['print_step']
+            loss_dev_val = loss_dev.data[0]
+            loss_main_dev_val = loss_main_dev.data[0]
+            loss_sub_dev_val = loss_sub_dev.data[0]
             csv_steps.append(step)
-            csv_loss_train.append(loss_val_train_mean)
-            csv_loss_dev.append(loss_val_dev)
+            csv_loss_train.append(loss_train_val_mean)
+            csv_loss_dev.append(loss_dev_val)
 
             # Logging by tensorboard
-            tf_writer.add_scalar('train/loss', loss_val_train_mean, step + 1)
+            tf_writer.add_scalar('train/loss', loss_train_val_mean, step + 1)
             tf_writer.add_scalar(
                 'train/loss_main', loss_main_val_train, step + 1)
             tf_writer.add_scalar(
                 'train/loss_sub', loss_sub_val_train, step + 1)
-            tf_writer.add_scalar('dev/loss', loss_val_dev, step + 1)
+            tf_writer.add_scalar('dev/loss', loss_dev_val, step + 1)
             tf_writer.add_scalar(
-                'dev/loss_main', loss_main_val_dev, step + 1)
+                'dev/loss_main', loss_main_dev_val, step + 1)
             tf_writer.add_scalar(
-                'dev/loss_sub', loss_sub_val_dev, step + 1)
+                'dev/loss_sub', loss_sub_dev_val, step + 1)
             for name, param in model.named_parameters():
                 name = name.replace('.', '/')
                 tf_writer.add_histogram(name, var2np(param.clone()), step + 1)
@@ -264,11 +264,11 @@ def main():
             duration_step = time.time() - start_time_step
             logger.info("...Step:%d (epoch:%.3f): loss:%.3f/%.3f (%.3f/%.3f) / lr:%.5f / batch:%d (%.3f min)" %
                         (step + 1, train_data.epoch_detail,
-                         loss_main_val_train_mean, loss_sub_val_train_mean,
-                         loss_main_val_dev, loss_sub_val_dev,
+                         loss_main_train_val_mean, loss_sub_train_val_mean,
+                         loss_main_dev_val, loss_sub_dev_val,
                          learning_rate, batch_size_step, duration_step / 60))
             start_time_step = time.time()
-            loss_val_train_mean, loss_main_val_train_mean, loss_sub_val_train_mean = 0., 0., 0.
+            loss_train_val_mean, loss_main_train_val_mean, loss_sub_train_val_mean = 0., 0., 0.
 
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:
