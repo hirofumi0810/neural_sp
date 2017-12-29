@@ -24,13 +24,13 @@ param:
   decoder_residual: False
   decoder_dense_residual: False
   encoder_num_units: 320
-  encoder_num_proj: 0
+  encoder_num_proj: 320
   encoder_num_layers: 5
-  encoder_num_layers_sub: 3
+  encoder_num_layers_sub: 4
   subsample_list:
     - True
     - True
-    - False
+    - True
     - False
     - False
   attention_type: location
@@ -40,10 +40,10 @@ param:
   decoder_num_layers: 1
   decoder_num_units_sub: 320
   decoder_num_layers_sub: 1
-  embedding_dim: 256
+  embedding_dim: 128
   embedding_dim_sub: 16
   attention_conv_num_channels: 10
-  attention_conv_width: 101
+  attention_conv_width: 201
 
   # CNN before RNN encoder
   conv_channels: []
@@ -56,7 +56,7 @@ param:
   batch_size: 32
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 70
+  num_epoch: 100
 
   # regularization
   parameter_init: 0.1
@@ -73,16 +73,17 @@ param:
   coverage_weight: 0
   scheduled_sampling_prob: 0.4
   scheduled_sampling_ramp_max_step: 300000
-  label_smoothing_prob: 0.1
+  # label_smoothing_prob: 0.1
+  label_smoothing_prob: 0
   weight_noise_std: 0
 
   # annealing
-  decay_start_epoch: 20
+  decay_start_epoch: 10
   decay_rate: 0.5
   decay_patient_epoch: 3
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
-  eval_start_epoch: 20
+  eval_start_epoch: 10
   print_step: 200
 
   # MTL

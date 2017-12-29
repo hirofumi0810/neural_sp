@@ -1,7 +1,7 @@
 param:
   # corpus
   corpus: librispeech
-  label_type: word_freq5
+  label_type: character
   data_size: 100h
 
   # features
@@ -24,9 +24,8 @@ param:
   decoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 320
-  encoder_num_layers: 5
+  encoder_num_layers: 4
   subsample_list:
-    - True
     - True
     - True
     - False
@@ -36,15 +35,27 @@ param:
   decoder_type: lstm
   decoder_num_units: 320
   decoder_num_layers: 1
-  embedding_dim: 128
+  embedding_dim: 16
   attention_conv_num_channels: 10
   attention_conv_width: 201
 
   # CNN before RNN encoder
-  conv_channels: []
-  conv_kernel_sizes: []
-  conv_strides: []
-  poolings: []
+  conv_channels: [64, 64, 128, 128]
+  conv_kernel_sizes:
+    - [3, 3]
+    - [3, 3]
+    - [3, 3]
+    - [3, 3]
+  conv_strides:
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+  poolings:
+    - []
+    - [2, 2]
+    - []
+    - [2, 2]
   batch_norm: False
 
   # optimization
@@ -64,7 +75,7 @@ param:
   init_dec_state_with_enc_state: True
   sharpening_factor: 1.0
   logits_temperature: 1.0
-  sigmoid_smoothing: True
+  sigmoid_smoothing: False
   coverage_weight: 0
   scheduled_sampling_prob: 0.4
   scheduled_sampling_ramp_max_step: 300000
@@ -79,7 +90,7 @@ param:
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
   eval_start_epoch: 10
-  print_step: 100
+  print_step: 50
 
   # MTL
   ctc_loss_weight: 0
