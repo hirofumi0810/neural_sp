@@ -39,7 +39,7 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
 
     # Set batch size in the evaluation
     if eval_batch_size is not None:
-        dataset.batch_size = eval_batch_size
+        dataset._batch_size = eval_batch_size
 
     idx2char = Idx2char(
         vocab_file_path='../metrics/vocab_files/' +

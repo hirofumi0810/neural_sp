@@ -38,7 +38,7 @@ def do_eval_wer(model, model_type, dataset, label_type, beam_width,
 
     # Set batch size in the evaluation
     if eval_batch_size is not None:
-        dataset.batch_size = eval_batch_size
+        dataset._batch_size = eval_batch_size
 
     idx2word = Idx2word(
         vocab_file_path='../metrics/vocab_files/' +
