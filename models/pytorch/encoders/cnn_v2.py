@@ -104,7 +104,7 @@ class CNNEncoder(nn.Module):
 
         self.conv = nn.Sequential(*convs)
 
-        self.conv_out_size = ConvOutSize(self.conv)
+        self.get_conv_out_size = ConvOutSize(self.conv)
         self.output_size = conv_channels[-1] * in_freq
 
     def forward(self, inputs):

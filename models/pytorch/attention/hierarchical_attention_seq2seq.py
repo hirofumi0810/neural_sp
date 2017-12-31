@@ -218,7 +218,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     encoder_num_units, decoder_num_units_sub)
                 self.is_bridge_sub = True
 
-            self.emb_sub = nn.Embedding(
+            self.embed_sub = nn.Embedding(
                 self.num_classes_sub, embedding_dim_sub)
 
             self.proj_layer_sub = LinearND(
@@ -456,7 +456,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     # Modify inputs_seq_len for reducing time resolution
                     if self.encoder.conv is not None:
                         for i in range(len(inputs_seq_len)):
-                            x_lens.data[i] = self.encoder.conv_out_size(
+                            x_lens.data[i] = self.encoder.get_conv_out_size(
                                 x_lens.data[i], 1)
                     x_lens /= 2 ** sum(
                         self.subsample_list[:self.encoder_num_layers_sub])

@@ -159,7 +159,7 @@ class AttentionSeq2seq(ModelBase):
         self.decoder_type = decoder_type
         self.decoder_num_units = decoder_num_units
         self.decoder_num_layers = decoder_num_layers
-        self.emb_dim = embedding_dim
+        self.embedding_dim = embedding_dim
         self.num_classes = num_classes + 2
         self.sos_index = num_classes + 1
         self.eos_index = num_classes
@@ -282,7 +282,7 @@ class AttentionSeq2seq(ModelBase):
         else:
             self.is_bridge = False
 
-        self.emb = nn.Embedding(self.num_classes, embedding_dim)
+        self.embed = nn.Embedding(self.num_classes, embedding_dim)
 
         self.proj_layer = LinearND(decoder_num_units * 2, decoder_num_units)
         self.fc = LinearND(decoder_num_units, self.num_classes - 1)
@@ -431,7 +431,7 @@ class AttentionSeq2seq(ModelBase):
         # Modify _x_lens for reducing time resolution
         if self.encoder.conv is not None or self.encoder_type == 'cnn':
             for i in range(len(_x_lens)):
-                _x_lens.data[i] = self.encoder.conv_out_size(
+                _x_lens.data[i] = self.encoder.get_conv_out_size(
                     _x_lens.data[i], 1)
         if is_sub_task:
             _x_lens /= 2 ** sum(
@@ -540,18 +540,18 @@ class AttentionSeq2seq(ModelBase):
                 if is_sample:
                     # Scheduled sampling
                     y_prev = torch.max(logits[-1], dim=2)[1]
-                    y_prev = self.emb_sub(y_prev)
+                    y_prev = self.embed_sub(y_prev)
                 else:
                     # Teacher-forcing
-                    y_prev = self.emb_sub(ys[:, t:t + 1])
+                    y_prev = self.embed_sub(ys[:, t:t + 1])
             else:
                 if is_sample:
                     # Scheduled sampling
                     y_prev = torch.max(logits[-1], dim=2)[1]
-                    y_prev = self.emb(y_prev)
+                    y_prev = self.embed(y_prev)
                 else:
                     # Teacher-forcing
-                    y_prev = self.emb(ys[:, t:t + 1])
+                    y_prev = self.embed(ys[:, t:t + 1])
 
             dec_inputs = torch.cat([y_prev, context_vec], dim=-1)
             dec_outputs, dec_state, context_vec, att_weights_step = self._decode_step(
@@ -759,7 +759,7 @@ class AttentionSeq2seq(ModelBase):
             # Modify x_lens for reducing time resolution
             if self.encoder.conv is not None or self.encoder_type == 'cnn':
                 for i in range(len(x_lens)):
-                    x_lens.data[i] = self.encoder.conv_out_size(
+                    x_lens.data[i] = self.encoder.get_conv_out_size(
                         x_lens.data[i], 1)
             x_lens /= 2 ** sum(self.subsample_list)
             # NOTE: floor is not needed because x_lens is IntTensor
@@ -817,9 +817,9 @@ class AttentionSeq2seq(ModelBase):
         for _ in range(max_decode_len):
 
             if is_sub_task:
-                y = self.emb_sub(y)
+                y = self.embed_sub(y)
             else:
-                y = self.emb(y)
+                y = self.embed(y)
 
             dec_inputs = torch.cat([y, context_vec], dim=-1)
             dec_outputs, dec_state, context_vec, att_weights_step = self._decode_step(
@@ -916,9 +916,9 @@ class AttentionSeq2seq(ModelBase):
                     y_prev = beam[i_beam]['hyp'][-1] if t > 0 else sos
                     y_prev = self._create_token(value=y_prev, batch_size=1)
                     if is_sub_task:
-                        y_prev = self.emb_sub(y_prev)
+                        y_prev = self.embed_sub(y_prev)
                     else:
-                        y_prev = self.emb(y_prev)
+                        y_prev = self.embed(y_prev)
 
                     max_time = x_lens[i_batch].data[0]
                     # NOTE: already modified for reducing time resolution
@@ -1031,7 +1031,7 @@ class AttentionSeq2seq(ModelBase):
         # Modify x_lens for reducing time resolution
         if self.encoder.conv is not None or self.encoder_type == 'cnn':
             for i in range(len(x_lens)):
-                x_lens.data[i] = self.encoder.conv_out_size(
+                x_lens.data[i] = self.encoder.get_conv_out_size(
                     x_lens.data[i], 1)
         x_lens /= 2 ** sum(self.subsample_list)
         # NOTE: floor is not needed because x_lens is IntTensor

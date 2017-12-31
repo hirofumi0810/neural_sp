@@ -139,8 +139,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         self.decoder_num_layers = decoder_num_layers
         self.decoder_num_units_sub = decoder_num_units_sub
         self.decoder_num_layers_sub = decoder_num_layers_sub
-        self.emb_dim = embedding_dim
-        self.emb_dim_sub = embedding_dim_sub
+        self.embedding_dim = embedding_dim
+        self.embedding_dim_sub = embedding_dim_sub
         self.num_classes = num_classes + 2
         self.num_classes_sub = num_classes_sub + 2
         self.sos_index = num_classes + 1
@@ -295,8 +295,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         else:
             self.is_bridge_sub = False
 
-        self.emb = nn.Embedding(self.num_classes, embedding_dim)
-        self.emb_sub = nn.Embedding(self.num_classes_sub, embedding_dim_sub)
+        self.embed = nn.Embedding(self.num_classes, embedding_dim)
+        self.embed_sub = nn.Embedding(self.num_classes_sub, embedding_dim_sub)
 
         if composition_case in ['hidden', 'hidden_embedding']:
             self.proj_layer = LinearND(
@@ -536,10 +536,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 if is_sample:
                     # Scheduled sampling
                     y_prev_sub = torch.max(logits_sub[-1], dim=2)[1]
-                    y_sub = self.emb_sub(y_prev_sub)
+                    y_sub = self.embed_sub(y_prev_sub)
                 else:
                     # Teacher-forcing
-                    y_sub = self.emb_sub(ys_sub[:, t:t + 1])
+                    y_sub = self.embed_sub(ys_sub[:, t:t + 1])
 
                 dec_inputs_sub = torch.cat(
                     [y_sub, context_vec_sub], dim=-1)
@@ -569,10 +569,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 if is_sample:
                     # Scheduled sampling
                     y_prev = torch.max(logits[-1], dim=2)[1]
-                    y = self.emb(y_prev)
+                    y = self.embed(y_prev)
                 else:
                     # Teacher-forcing
-                    y = self.emb(ys[:, t:t + 1])
+                    y = self.embed(ys[:, t:t + 1])
 
                 dec_inputs = torch.cat([y, context_vec], dim=-1)
                 dec_outputs, dec_state, context_vec, att_weights_step = self._decode_step(
@@ -679,10 +679,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         if is_sample:
                             # Scheduled sampling
                             y_prev_sub = torch.max(logits_sub_i[-1], dim=2)[1]
-                            y_sub = self.emb_sub(y_prev_sub)
+                            y_sub = self.embed_sub(y_prev_sub)
                         else:
                             # Teacher-forcing
-                            y_sub = self.emb_sub(
+                            y_sub = self.embed_sub(
                                 ys_sub[i_batch:i_batch + 1, global_char_counter:global_char_counter + 1])
 
                         dec_inputs_sub = torch.cat(
@@ -704,7 +704,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         att_weights_sub_i.append(
                             att_weights_step_sub)
 
-                        char_emb = self.emb_sub(
+                        char_emb = self.embed_sub(
                             ys_sub[i_batch:i_batch + 1, global_char_counter:global_char_counter + 1])
                         # NOTE: char_emb: `[1, 1, embedding_dim_sub]`
                         char_embs.append(char_emb)
@@ -721,10 +721,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         if is_sample:
                             # Scheduled sampling
                             y_prev_sub = torch.max(logits_sub_i[-1], dim=2)[1]
-                            y_sub = self.emb_sub(y_prev_sub)
+                            y_sub = self.embed_sub(y_prev_sub)
                         else:
                             # Teacher-forcing
-                            y_sub = self.emb_sub(
+                            y_sub = self.embed_sub(
                                 ys_sub[i_batch:i_batch + 1, global_char_counter:global_char_counter + 1])
 
                         dec_inputs_sub = torch.cat(
@@ -762,10 +762,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     if is_sample:
                         # Scheduled sampling
                         y_prev = torch.max(logits_i[-1], dim=2)[1]
-                        y = self.emb(y_prev)
+                        y = self.embed(y_prev)
                     else:
                         # Teacher-forcing
-                        y = self.emb(
+                        y = self.embed(
                             ys[i_batch:i_batch + 1, t:t + 1])
 
                     if self.composition_case in ['embedding', 'hidden_embedding']:
@@ -905,7 +905,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             # Modify x_lens for reducing time resolution
             if self.encoder.conv is not None or self.encoder_type == 'cnn':
                 for i in range(len(x_lens)):
-                    x_lens.data[i] = self.encoder.conv_out_size(
+                    x_lens.data[i] = self.encoder.get_conv_out_size(
                         x_lens.data[i], 1)
             if sum(self.subsample_list) > 0:
                 x_lens /= sum(self.subsample_list) ** 2
@@ -967,7 +967,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 # Modify x_lens for reducing time resolution
                 if self.encoder.conv is not None or self.encoder_type == 'cnn':
                     for i in range(len(x_lens)):
-                        x_lens.data[i] = self.encoder.conv_out_size(
+                        x_lens.data[i] = self.encoder.get_conv_out_size(
                             x_lens.data[i], 1)
                 if sum(self.subsample_list) > 0:
                     x_lens /= sum(self.subsample_list) ** 2
@@ -1048,7 +1048,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
             for _ in range(max_decode_len):
 
-                y = self.emb(y)
+                y = self.embed(y)
 
                 dec_inputs = torch.cat([y, context_vec], dim=-1)
                 dec_outputs, dec_state, context_vec, att_weights_step = self._decode_step(
@@ -1161,7 +1161,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     local_char_counter = 0
                     char_embs = []
                     while local_char_counter < 10:
-                        y_sub = self.emb_sub(y_sub)
+                        y_sub = self.embed_sub(y_sub)
 
                         dec_inputs_sub = torch.cat(
                             [y_sub, context_vec_sub], dim=-1)
@@ -1195,7 +1195,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         if y_sub.data[0] in [self.eos_index_sub, self.space_index]:
                             break
 
-                        emb_char = self.emb_sub(y_sub)
+                        emb_char = self.embed_sub(y_sub)
                         # NOTE: emb_char: `[1, 1, embedding_dim_sub]`
                         char_embs.append(emb_char)
 
@@ -1213,7 +1213,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     ########################################
                     # Decode by word-level decoder
                     ########################################
-                    y = self.emb(y)
+                    y = self.embed(y)
 
                     if self.composition_case in ['embedding', 'hidden_embedding']:
                         # Mix word embedding and word representation form C2W

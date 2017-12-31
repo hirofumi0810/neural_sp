@@ -219,10 +219,11 @@ class HierarchicalCTC(CTC):
         # Modify x_lens for reducing time resolution
         if self.encoder.conv is not None:
             for i in range(len(inputs_seq_len)):
-                x_lens_sub.data[i] = self.encoder.conv_out_size(
+                x_lens_sub.data[i] = self.encoder.get_conv_out_size(
                     x_lens_sub.data[i], 1)
             for i in range(len(inputs_seq_len)):
-                x_lens.data[i] = self.encoder.conv_out_size(x_lens.data[i], 1)
+                x_lens.data[i] = self.encoder.get_conv_out_size(
+                    x_lens.data[i], 1)
         x_lens_sub /= 2 ** sum(self.subsample_list[:self.num_layers_sub])
         x_lens /= 2 ** sum(self.subsample_list)
         # NOTE: floor is not needed because x_lens is IntTensor

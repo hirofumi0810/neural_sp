@@ -238,7 +238,8 @@ class CTC(ModelBase):
         # Modify x_lens for reducing time resolution
         if self.encoder.conv is not None or self.encoder_type == 'cnn':
             for i in range(len(x_lens)):
-                x_lens.data[i] = self.encoder.conv_out_size(x_lens.data[i], 1)
+                x_lens.data[i] = self.encoder.get_conv_out_size(
+                    x_lens.data[i], 1)
         x_lens /= 2 ** sum(self.subsample_list)
         # NOTE: floor is not needed because x_lens is IntTensor
 
@@ -390,7 +391,8 @@ class CTC(ModelBase):
         # Modify x_lens for reducing time resolution
         if self.encoder.conv is not None or self.encoder_type == 'cnn':
             for i in range(len(x_lens)):
-                x_lens.data[i] = self.encoder.conv_out_size(x_lens.data[i], 1)
+                x_lens.data[i] = self.encoder.get_conv_out_size(
+                    x_lens.data[i], 1)
         if is_sub_task:
             x_lens /= 2 ** sum(self.subsample_list[:self.num_layers_sub])
         else:
