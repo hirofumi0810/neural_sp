@@ -10,6 +10,8 @@ param:
   input_channel: 80
   use_delta: True
   use_double_delta: True
+  # use_delta: False
+  # use_double_delta: False
   splice: 1
   num_stack: 1
   num_skip: 1
@@ -23,7 +25,7 @@ param:
   decoder_residual: False
   decoder_dense_residual: False
   encoder_num_units: 320
-  encoder_num_proj: 320
+  encoder_num_proj: 0
   encoder_num_layers: 5
   subsample_list:
     - True
@@ -31,6 +33,8 @@ param:
     - True
     - False
     - False
+  # subsample_type: drop
+  subsample_type: concat
   attention_type: location
   attention_dim: 128
   decoder_type: lstm
@@ -48,7 +52,7 @@ param:
   batch_norm: False
 
   # optimization
-  batch_size: 32
+  batch_size: 40
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 100

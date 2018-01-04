@@ -21,7 +21,7 @@ param:
   residual: False
   dense_residual: False
   num_units: 320
-  num_proj: 320
+  num_proj: 0
   num_layers: 5
   subsample_list:
     - False
@@ -29,6 +29,7 @@ param:
     - False
     - False
     - False
+  subsample_type: drop
   fc_list: []
   conv_channels: []
   conv_kernel_sizes: []

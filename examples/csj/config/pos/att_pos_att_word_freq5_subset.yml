@@ -24,7 +24,7 @@ param:
   decoder_residual: False
   decoder_dense_residual: False
   encoder_num_units: 320
-  encoder_num_proj: 320
+  encoder_num_proj: 0
   encoder_num_layers: 6
   encoder_num_layers_sub: 5
   subsample_list:
@@ -34,6 +34,7 @@ param:
     - False
     - False
     - False
+  subsample_type: drop
   attention_type: location
   attention_dim: 128
   decoder_type: lstm
@@ -90,3 +91,4 @@ param:
   # MTL
   main_loss_weight: 0.2
   ctc_loss_weight_sub: 0
+  curriculum_training: False

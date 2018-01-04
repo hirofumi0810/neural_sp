@@ -19,9 +19,9 @@ param:
   encoder_type: lstm
   encoder_bidirectional: True
   encoder_residual: False
-  encoder_dense_residual: True
+  encoder_dense_residual: False
   decoder_residual: False
-  decoder_dense_residual: False
+  decoder_dense_residual: True
   encoder_num_units: 320
   encoder_num_proj: 0
   encoder_num_layers: 5
@@ -31,11 +31,12 @@ param:
     - True
     - False
     - False
+  subsample_type: drop
   attention_type: location
   attention_dim: 128
   decoder_type: lstm
   decoder_num_units: 320
-  decoder_num_layers: 1
+  decoder_num_layers: 4
   embedding_dim: 128
   attention_conv_num_channels: 10
   attention_conv_width: 201
@@ -68,7 +69,8 @@ param:
   coverage_weight: 0
   scheduled_sampling_prob: 0.4
   scheduled_sampling_ramp_max_step: 300000
-  label_smoothing_prob: 0.1
+  # label_smoothing_prob: 0.1
+  label_smoothing_prob: 0
   weight_noise_std: 0
 
   # annealing

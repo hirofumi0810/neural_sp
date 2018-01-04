@@ -22,7 +22,7 @@ param:
   residual: False
   dense_residual: False
   num_units: 320
-  num_proj: 320
+  num_proj: 0
   num_layers: 5
   num_layers_sub: 4
   subsample_list:
@@ -31,6 +31,7 @@ param:
     - False
     - False
     - False
+  subsample_type: drop
   fc_list: []
   conv_channels: []
   conv_kernel_sizes: []
@@ -65,3 +66,4 @@ param:
 
   # MTL
   main_loss_weight: 0.5
+  curriculum_training: False
