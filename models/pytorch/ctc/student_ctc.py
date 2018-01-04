@@ -41,6 +41,7 @@ class StudentCTC(CTC):
         subsample_list (list, optional): subsample in the corresponding layers (True)
             ex.) [False, True, True, False] means that subsample is conducted
                 in the 2nd and 3rd layers.
+        subsample_type (string, optional): drop or concat
         logits_temperature (float):
         num_stack (int, optional): the number of frames to stack
         splice (int, optional): frames to splice. Default is 1 frame.
@@ -67,6 +68,7 @@ class StudentCTC(CTC):
                  num_classes,
                  parameter_init=0.1,
                  subsample_list=[],
+                 subsample_type='concat',
                  logits_temperature=1,
                  num_stack=1,
                  splice=1,
@@ -89,6 +91,7 @@ class StudentCTC(CTC):
             num_classes=num_classes,
             parameter_init=parameter_init,
             subsample_list=subsample_list,
+            subsample_type=subsample_type,
             fc_list=fc_list,
             logits_temperature=logits_temperature,
             batch_norm=batch_norm,

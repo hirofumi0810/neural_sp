@@ -30,8 +30,15 @@ class TestAttention(unittest.TestCase):
     def test(self):
         print("Attention Working check.")
 
+        # Pyramidal encoder
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', conv=True)
+                   decoder_type='lstm', subsample='drop')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', subsample='concat')
+
+        # projection
+        self.check(encoder_type='lstm', bidirectional=False, projection=True,
+                   decoder_type='lstm')
 
         # Label smoothing
         self.check(encoder_type='lstm', bidirectional=True,
@@ -68,12 +75,6 @@ class TestAttention(unittest.TestCase):
         self.check(encoder_type='gru', bidirectional=False,
                    decoder_type='gru')
 
-        # Pyramidal encoder
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', subsample=True)
-        self.check(encoder_type='gru', bidirectional=True,
-                   decoder_type='gru', subsample=True)
-
         # Attention type
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', attention_type='content')
@@ -97,12 +98,14 @@ class TestAttention(unittest.TestCase):
               attention_type='location', label_type='char',
               subsample=False, ctc_loss_weight=0,
               conv=False, batch_norm=False,
-              residual=False, dense_residual=False, label_smoothing=False):
+              residual=False, dense_residual=False, label_smoothing=False,
+              projection=False):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
+        print('  projection: %s' % str(projection))
         print('  decoder_type: %s' % decoder_type)
         print('  attention_type: %s' % attention_type)
         print('  subsample: %s' % str(subsample))
@@ -155,7 +158,7 @@ class TestAttention(unittest.TestCase):
             encoder_type=encoder_type,
             encoder_bidirectional=bidirectional,
             encoder_num_units=256,
-            encoder_num_proj=0,
+            encoder_num_proj=256 if projection else 0,
             encoder_num_layers=2,
             encoder_dropout=0.1,
             attention_type=attention_type,
@@ -168,7 +171,8 @@ class TestAttention(unittest.TestCase):
             num_classes=num_classes,
             ctc_loss_weight=ctc_loss_weight,
             parameter_init=0.1,
-            subsample_list=[] if not subsample else [True, False],
+            subsample_list=[] if subsample is False else [True, False],
+            subsample_type='concat' if subsample is False else subsample,
             init_dec_state_with_enc_state=True,
             sharpening_factor=1,
             logits_temperature=1,
@@ -184,7 +188,7 @@ class TestAttention(unittest.TestCase):
             poolings=poolings,
             batch_norm=batch_norm,
             scheduled_sampling_prob=0.1,
-            scheduled_sampling_ramp_max_step=100,
+            scheduled_sampling_ramp_max_step=200,
             label_smoothing_prob=0.1 if label_smoothing else 0,
             weight_noise_std=0,
             encoder_residual=residual,

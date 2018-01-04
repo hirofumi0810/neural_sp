@@ -59,6 +59,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                  num_classes_sub,  # ***
                  parameter_init=0.1,
                  subsample_list=[],
+                 subsample_type='concat',
                  init_dec_state_with_enc_state=True,
                  sharpening_factor=1,
                  logits_temperature=1,
@@ -122,6 +123,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             weight_noise_std=weight_noise_std)
 
         # Setting for the encoder
+        self.input_size = input_size
         self.encoder_type = encoder_type
         self.encoder_bidirectional = encoder_bidirectional
         self.encoder_num_directions = 2 if encoder_bidirectional else 1
@@ -202,7 +204,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 dropout=encoder_dropout,
                 parameter_init=parameter_init,
                 subsample_list=subsample_list,
-                subsample_type='concat',
+                subsample_type=subsample_type,
                 use_cuda=self.use_cuda,
                 batch_first=True,
                 num_stack=num_stack,

@@ -30,6 +30,16 @@ class TestHierarchicalAttention(unittest.TestCase):
     def test(self):
         print("Hierarchical Attention Working check.")
 
+        # Pyramidal encoder
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', subsample='drop')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', subsample='concat')
+
+        # projection
+        self.check(encoder_type='lstm', bidirectional=False, projection=True,
+                   decoder_type='lstm')
+
         # Label smoothing
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', label_smoothing=True)
@@ -55,10 +65,6 @@ class TestHierarchicalAttention(unittest.TestCase):
                    ctc_loss_weight_sub=0.5,
                    conv=True, batch_norm=True)
 
-        # Pyramidal encoder
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', subsample=True)
-
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm')
 
@@ -67,11 +73,13 @@ class TestHierarchicalAttention(unittest.TestCase):
               attention_type='location', subsample=False,
               ctc_loss_weight_sub=0,
               conv=False, batch_norm=False,
-              residual=False, dense_residual=False, label_smoothing=False):
+              residual=False, dense_residual=False, label_smoothing=False,
+              projection=False):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
+        print('  projection: %s' % str(projection))
         print('  decoder_type: %s' % decoder_type)
         print('  attention_type: %s' % attention_type)
         print('  subsample: %s' % str(subsample))
@@ -113,7 +121,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             encoder_type=encoder_type,
             encoder_bidirectional=bidirectional,
             encoder_num_units=256,
-            encoder_num_proj=0,
+            encoder_num_proj=256 if projection else 0,
             encoder_num_layers=3,
             encoder_num_layers_sub=2,
             encoder_dropout=0.1,
@@ -132,6 +140,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             num_classes_sub=num_classes_sub,
             parameter_init=0.1,
             subsample_list=[] if not subsample else [False, True, False],
+            subsample_type='concat' if subsample is False else subsample,
             init_dec_state_with_enc_state=True,
             sharpening_factor=1,
             logits_temperature=1,
@@ -147,7 +156,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             poolings=poolings,
             batch_norm=batch_norm,
             scheduled_sampling_prob=0.1,
-            scheduled_sampling_ramp_max_step=100,
+            scheduled_sampling_ramp_max_step=200,
             label_smoothing_prob=0.1 if label_smoothing else 0,
             weight_noise_std=0,
             encoder_residual=residual,

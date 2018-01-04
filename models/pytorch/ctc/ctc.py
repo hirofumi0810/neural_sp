@@ -53,6 +53,7 @@ class CTC(ModelBase):
         subsample_list (list, optional): subsample in the corresponding layers (True)
             ex.) [False, True, True, False] means that subsample is conducted
                 in the 2nd and 3rd layers.
+        subsample_type (string, optional): drop or concat
         logits_temperature (float):
         num_stack (int, optional): the number of frames to stack
         splice (int, optional): frames to splice. Default is 1 frame.
@@ -81,6 +82,7 @@ class CTC(ModelBase):
                  num_classes,
                  parameter_init=0.1,
                  subsample_list=[],
+                 subsample_type='concat',
                  logits_temperature=1,
                  num_stack=1,
                  splice=1,
@@ -97,6 +99,8 @@ class CTC(ModelBase):
 
         super(ModelBase, self).__init__()
 
+        # Setting for the encoder
+        self.input_size = input_size
         self.encoder_type = encoder_type
         self.num_directions = 2 if bidirectional else 1
         self.fc_list = fc_list
@@ -130,7 +134,7 @@ class CTC(ModelBase):
                 dropout=dropout,
                 parameter_init=parameter_init,
                 subsample_list=subsample_list,
-                subsample_type='concat',
+                subsample_type=subsample_type,
                 use_cuda=self.use_cuda,
                 batch_first=False,
                 num_stack=num_stack,

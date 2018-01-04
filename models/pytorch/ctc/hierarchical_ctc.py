@@ -48,6 +48,7 @@ class HierarchicalCTC(CTC):
         subsample_list (list, optional): subsample in the corresponding layers (True)
             ex.) [False, True, True, False] means that subsample is conducted
                 in the 2nd and 3rd layers.
+        subsample_type (string, optional): drop or concat
         logits_temperature (float):
         num_stack (int, optional): the number of frames to stack
         splice (int, optional): frames to splice. Default is 1 frame.
@@ -79,6 +80,7 @@ class HierarchicalCTC(CTC):
                  num_classes_sub,  # ***
                  parameter_init=0.1,
                  subsample_list=[],
+                 subsample_type='concat',
                  logits_temperature=1,
                  num_stack=1,
                  splice=1,
@@ -104,12 +106,14 @@ class HierarchicalCTC(CTC):
             num_classes=num_classes,
             parameter_init=parameter_init,
             subsample_list=subsample_list,
+            subsample_type=subsample_type,
             fc_list=fc_list,
             logits_temperature=logits_temperature,
             batch_norm=batch_norm,
             label_smoothing_prob=label_smoothing_prob,
             weight_noise_std=weight_noise_std)
 
+        # Setting for the encoder
         self.num_layers_sub = num_layers_sub
 
         # Setting for CTC
@@ -136,7 +140,7 @@ class HierarchicalCTC(CTC):
                 dropout=dropout,
                 parameter_init=parameter_init,
                 subsample_list=subsample_list,
-                subsample_type='concat',
+                subsample_type=subsample_type,
                 use_cuda=self.use_cuda,
                 batch_first=False,
                 num_stack=num_stack,

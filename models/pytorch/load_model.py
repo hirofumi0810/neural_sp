@@ -54,6 +54,7 @@ def load(model_type, params):
             num_classes=params['num_classes'],
             parameter_init=params['parameter_init'],
             subsample_list=params['subsample_list'],
+            subsample_type=params['subsample_type'],
             logits_temperature=params['logits_temperature'],
             num_stack=params['num_stack'],
             splice=params['splice'],
@@ -77,14 +78,14 @@ def load(model_type, params):
         model.name += str(params['num_layers']) + 'L'
         if params['num_proj'] != 0:
             model.name += '_proj' + str(params['num_proj'])
-        # if sum(params['subsample_list']) > 0:
-        #     model.name += '_' + params['subsample_type']
+        if sum(params['subsample_list']) > 0:
+            model.name += '_' + params['subsample_type']
+        if params['num_stack'] != 1:
+            model.name += '_stack' + str(params['num_stack'])
         model.name += '_' + params['optimizer']
         model.name += '_lr' + str(params['learning_rate'])
         if params['dropout'] != 0:
             model.name += '_drop' + str(params['dropout'])
-        if params['num_stack'] != 1:
-            model.name += '_stack' + str(params['num_stack'])
         if bool(params['batch_norm']):
             model.name += '_bn'
         if len(params['fc_list']) != 0:
@@ -119,6 +120,7 @@ def load(model_type, params):
             num_classes=params['num_classes'],
             parameter_init=params['parameter_init'],
             subsample_list=params['subsample_list'],
+            subsample_type=params['subsample_type'],
             logits_temperature=params['logits_temperature'],
             num_stack=params['num_stack'],
             splice=params['splice'],
@@ -141,14 +143,14 @@ def load(model_type, params):
         model.name += str(params['num_layers']) + 'L'
         if params['num_proj'] != 0:
             model.name += '_proj' + str(params['num_proj'])
-        # if sum(params['subsample_list']) > 0:
-        #     model.name += '_' + params['subsample_type']
+        if sum(params['subsample_list']) > 0:
+            model.name += '_' + params['subsample_type']
+        if params['num_stack'] != 1:
+            model.name += '_stack' + str(params['num_stack'])
         model.name += '_' + params['optimizer']
         model.name += '_lr' + str(params['learning_rate'])
         if params['dropout'] != 0:
             model.name += '_drop' + str(params['dropout'])
-        if params['num_stack'] != 1:
-            model.name += '_stack' + str(params['num_stack'])
         if bool(params['batch_norm']):
             model.name += '_bn'
         if len(params['fc_list']) != 0:
@@ -217,6 +219,8 @@ def load(model_type, params):
         if sum(params['subsample_list']) > 0:
             model.name += '_' + params['subsample_type']
         model.name += '_' + params['decoder_type']
+        if params['num_stack'] != 1:
+            model.name += '_stack' + str(params['num_stack'])
         model.name += str(params['decoder_num_units']) + 'H'
         model.name += str(params['decoder_num_layers']) + 'L'
         model.name += '_' + params['optimizer']
@@ -230,8 +234,6 @@ def load(model_type, params):
                 model.name += 'en' + str(params['dropout_encoder'])
             if params['dropout_decoder'] != 0:
                 model.name += 'de' + str(params['dropout_decoder'])
-        if params['num_stack'] != 1:
-            model.name += '_stack' + str(params['num_stack'])
         if bool(params['batch_norm']):
             model.name += '_bn'
         if params['sharpening_factor'] != 1:
@@ -251,13 +253,14 @@ def load(model_type, params):
         if params['weight_noise_std'] != 0:
             model.name += '_noise' + str(params['weight_noise_std'])
         if bool(params['encoder_residual']):
-            model.name += '_encres'
+            model.name += '_enc_res'
         elif bool(params['encoder_dense_residual']):
-            model.name += '_encdenseres'
+            model.name += '_enc_dense_res'
         if bool(params['decoder_residual']):
-            model.name += '_decres'
+            model.name += '_dec_res'
         elif bool(params['decoder_dense_residual']):
-            model.name += '_decdenseres'
+            model.name += '_dec_dense_res'
+        model.name += '_input' + str(model.input_size)
 
     elif params['model_type'] == 'hierarchical_ctc':
         if 'activation' not in params.keys():
@@ -279,6 +282,7 @@ def load(model_type, params):
             num_classes_sub=params['num_classes_sub'],
             parameter_init=params['parameter_init'],
             subsample_list=params['subsample_list'],
+            subsample_type=params['subsample_type'],
             logits_temperature=params['logits_temperature'],
             num_stack=params['num_stack'],
             splice=params['splice'],
@@ -303,14 +307,14 @@ def load(model_type, params):
         model.name += str(params['num_layers_sub']) + 'L'
         if params['num_proj'] != 0:
             model.name += '_proj' + str(params['num_proj'])
-        # if sum(params['subsample_list']) > 0:
-        #     model.name += '_' + params['subsample_type']
+        if sum(params['subsample_list']) > 0:
+            model.name += '_' + params['subsample_type']
+        if params['num_stack'] != 1:
+            model.name += '_stack' + str(params['num_stack'])
         model.name += '_' + params['optimizer']
         model.name += '_lr' + str(params['learning_rate'])
         if params['dropout'] != 0:
             model.name += '_drop' + str(params['dropout'])
-        if params['num_stack'] != 1:
-            model.name += '_stack' + str(params['num_stack'])
         if bool(params['batch_norm']):
             model.name += '_bn'
         if len(params['fc_list']) != 0:
@@ -395,6 +399,8 @@ def load(model_type, params):
             model.name += '_proj' + str(params['encoder_num_proj'])
         if sum(params['subsample_list']) > 0:
             model.name += '_' + params['subsample_type']
+        if params['num_stack'] != 1:
+            model.name += '_stack' + str(params['num_stack'])
         model.name += '_' + params['decoder_type']
         model.name += str(params['decoder_num_units']) + 'H'
         model.name += str(params['decoder_num_layers']) + 'L'
@@ -407,8 +413,6 @@ def load(model_type, params):
                 model.name += 'en' + str(params['dropout_encoder'])
             if params['dropout_decoder'] != 0:
                 model.name += 'de' + str(params['dropout_decoder'])
-        if params['num_stack'] != 1:
-            model.name += '_stack' + str(params['num_stack'])
         if bool(params['batch_norm']):
             model.name += '_bn'
         if params['sharpening_factor'] != 1:
@@ -428,13 +432,13 @@ def load(model_type, params):
         if params['weight_noise_std'] != 0:
             model.name += '_noise' + str(params['weight_noise_std'])
         if bool(params['encoder_residual']):
-            model.name += '_encres'
+            model.name += '_enc_res'
         elif bool(params['encoder_dense_residual']):
-            model.name += '_encdenseres'
+            model.name += '_enc_dense_res'
         if bool(params['decoder_residual']):
-            model.name += '_decres'
+            model.name += '_dec_res'
         elif bool(params['decoder_dense_residual']):
-            model.name += '_decdenseres'
+            model.name += '_dec_dense_res'
         model.name += '_main' + str(params['main_loss_weight'])
         if bool(params['curriculum_training']):
             model.name += '_curriculum'
@@ -500,6 +504,8 @@ def load(model_type, params):
             model.name += '_proj' + str(params['encoder_num_proj'])
         if sum(params['subsample_list']) > 0:
             model.name += '_' + params['subsample_type']
+        if params['num_stack'] != 1:
+            model.name += '_stack' + str(params['num_stack'])
         model.name += '_' + params['decoder_type']
         model.name += str(params['decoder_num_units']) + 'H'
         model.name += str(params['decoder_num_layers']) + 'L'
@@ -512,8 +518,6 @@ def load(model_type, params):
                 model.name += 'en' + str(params['dropout_encoder'])
             if params['dropout_decoder'] != 0:
                 model.name += 'de' + str(params['dropout_decoder'])
-        if params['num_stack'] != 1:
-            model.name += '_stack' + str(params['num_stack'])
         if bool(params['batch_norm']):
             model.name += '_bn'
         if params['sharpening_factor'] != 1:

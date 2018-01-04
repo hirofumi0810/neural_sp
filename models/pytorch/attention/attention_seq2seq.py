@@ -58,6 +58,7 @@ class AttentionSeq2seq(ModelBase):
         subsample_list (list, optional): subsample in the corresponding layers (True)
             ex.) [False, True, True, False] means that subsample is conducted
                 in the 2nd and 3rd layers.
+        subsample_type (string, optional): drop or concat
         init_dec_state_with_enc_state (bool, optional): if True, initialize
             decoder state with the final encoder state.
         sharpening_factor (float, optional): a sharpening factor in the
@@ -113,6 +114,7 @@ class AttentionSeq2seq(ModelBase):
                  num_classes,
                  parameter_init=0.1,
                  subsample_list=[],
+                 subsample_type='concat',
                  init_dec_state_with_enc_state=True,
                  sharpening_factor=1,
                  logits_temperature=1,
@@ -145,6 +147,7 @@ class AttentionSeq2seq(ModelBase):
         # time_major option
 
         # Setting for the encoder
+        self.input_size = input_size
         self.encoder_type = encoder_type
         self.encoder_bidirectional = encoder_bidirectional
         self.encoder_num_directions = 2 if encoder_bidirectional else 1
@@ -207,7 +210,7 @@ class AttentionSeq2seq(ModelBase):
                 dropout=encoder_dropout,
                 parameter_init=parameter_init,
                 subsample_list=subsample_list,
-                subsample_type='concat',
+                subsample_type=subsample_type,
                 use_cuda=self.use_cuda,
                 batch_first=True,
                 num_stack=num_stack,

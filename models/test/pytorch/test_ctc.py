@@ -131,7 +131,7 @@ class TestCTC(unittest.TestCase):
             encoder_type=encoder_type,
             bidirectional=bidirectional,
             num_units=256,
-            num_proj=None,
+            num_proj=256,
             num_layers=2,
             fc_list=fc_list,
             dropout=0.1,
