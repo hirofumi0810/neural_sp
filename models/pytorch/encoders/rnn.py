@@ -9,6 +9,7 @@ from __future__ import print_function
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from models.pytorch.linear import LinearND
@@ -196,7 +197,7 @@ class RNNEncoder(nn.Module):
                 rnn_i = rnn_i.cuda()
             self.rnns.append(rnn_i)
 
-            if self.num_proj > 0 and i_layer != num_layers - 1:
+            if self.num_proj > 0:
                 proj_i = LinearND(num_units * self.num_directions, num_proj)
                 setattr(self, 'proj_l' + str(i_layer), proj_i)
                 if use_cuda:
@@ -288,9 +289,10 @@ class RNNEncoder(nn.Module):
                 assert inputs_seq_len == unpacked_seq_len
 
                 # Projection layer (affine transformation)
-                # NOTE: Exclude the last layer
-                if i_layer != self.num_layers - 1 and self.num_proj > 0:
+                if self.num_proj > 0:
                     outputs = self.projections[i_layer](outputs)
+                    # outputs = F.tanh(outputs)
+                    # outputs = F.relu(outputs)
 
                 # Subsampling
                 # NOTE: Exclude the last layer
@@ -298,30 +300,30 @@ class RNNEncoder(nn.Module):
                     # Pick up features at even time step
                     if self.subsample_type == 'drop':
                         if self.batch_first:
-                            outputs_list = [outputs[:, t:t + 1, :]
-                                            for t in range(max_time) if (t + 1) % 2 == 0]
+                            outputs = [outputs[:, t:t + 1, :]
+                                       for t in range(max_time) if (t + 1) % 2 == 0]
                             # outputs_t: `[B, 1, num_units * num_directions]`
                         else:
-                            outputs_list = [outputs[t:t + 1, :, :]
-                                            for t in range(max_time) if (t + 1) % 2 == 0]
+                            outputs = [outputs[t:t + 1, :, :]
+                                       for t in range(max_time) if (t + 1) % 2 == 0]
                             # outputs_t: `[1, B, num_units * num_directions]`
 
                     # Concatenate the successive frames
                     elif self.subsample_type == 'concat':
                         if self.batch_first:
-                            outputs_list = [torch.cat([outputs[:, t - 1:t, :], outputs[:, t:t + 1, :]], dim=2)
-                                            for t in range(max_time) if (t + 1) % 2 == 0]
+                            outputs = [torch.cat([outputs[:, t - 1:t, :], outputs[:, t:t + 1, :]], dim=2)
+                                       for t in range(max_time) if (t + 1) % 2 == 0]
                         else:
-                            outputs_list = [torch.cat([outputs[t - 1:t, :, :], outputs[t:t + 1, :, :]], dim=2)
-                                            for t in range(max_time) if (t + 1) % 2 == 0]
+                            outputs = [torch.cat([outputs[t - 1:t, :, :], outputs[t:t + 1, :, :]], dim=2)
+                                       for t in range(max_time) if (t + 1) % 2 == 0]
 
                     # Concatenate in time-dimension
                     if self.batch_first:
-                        outputs = torch.cat(outputs_list, dim=1)
+                        outputs = torch.cat(outputs, dim=1)
                         # `[B, T_prev // 2, num_units (* 2) * num_directions]`
                         max_time = outputs.size(1)
                     else:
-                        outputs = torch.cat(outputs_list, dim=0)
+                        outputs = torch.cat(outputs, dim=0)
                         # `[T_prev // 2, B, num_units (* 2) * num_directions]`
                         max_time = outputs.size(0)
 
@@ -339,10 +341,9 @@ class RNNEncoder(nn.Module):
                         elif self.dense_residual:
                             res_outputs_list.append(outputs)
 
-                # Pack encoder outputs again
+                # Pack i_layer-th encoder outputs again
                 outputs = pack_padded_sequence(
-                    outputs, inputs_seq_len,
-                    batch_first=self.batch_first)
+                    outputs, inputs_seq_len, batch_first=self.batch_first)
 
         # Unpack encoder outputs
         if isinstance(outputs, torch.nn.utils.rnn.PackedSequence):
