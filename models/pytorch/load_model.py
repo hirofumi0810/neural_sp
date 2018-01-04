@@ -69,24 +69,22 @@ def load(model_type, params):
             dense_residual=params['dense_residual'])
 
         model.name = params['encoder_type']
-        if sum(params['subsample_list']) > 0:
-            model.name = 'p' + model.name
         if params['bidirectional']:
             model.name = 'b' + model.name
+        if len(params['conv_channels']) != 0 and params['encoder_type'] not in ['cnn', 'resnet']:
+            model.name = 'conv_' + model.name
         model.name += str(params['num_units']) + 'H'
         model.name += str(params['num_layers']) + 'L'
-        model.name += '_' + params['optimizer']
-        model.name += '_lr' + str(params['learning_rate'])
         if params['num_proj'] != 0:
             model.name += '_proj' + str(params['num_proj'])
+        # if sum(params['subsample_list']) > 0:
+        #     model.name += '_' + params['subsample_type']
+        model.name += '_' + params['optimizer']
+        model.name += '_lr' + str(params['learning_rate'])
         if params['dropout'] != 0:
             model.name += '_drop' + str(params['dropout'])
         if params['num_stack'] != 1:
             model.name += '_stack' + str(params['num_stack'])
-        if params['weight_decay'] != 0:
-            model.name += '_wd' + str(params['weight_decay'])
-        if len(params['conv_channels']) != 0 and params['encoder_type'] not in ['cnn', 'resnet']:
-            model.name = 'conv_' + model.name
         if bool(params['batch_norm']):
             model.name += '_bn'
         if len(params['fc_list']) != 0:
@@ -135,24 +133,22 @@ def load(model_type, params):
             dense_residual=params['dense_residual'])
 
         model.name = params['encoder_type']
-        if sum(params['subsample_list']) > 0:
-            model.name = 'p' + model.name
         if params['bidirectional']:
             model.name = 'b' + model.name
+        if len(params['conv_channels']) != 0 and params['encoder_type'] not in ['cnn', 'resnet']:
+            model.name = 'conv_' + model.name
         model.name += str(params['num_units']) + 'H'
         model.name += str(params['num_layers']) + 'L'
-        model.name += '_' + params['optimizer']
-        model.name += '_lr' + str(params['learning_rate'])
         if params['num_proj'] != 0:
             model.name += '_proj' + str(params['num_proj'])
+        # if sum(params['subsample_list']) > 0:
+        #     model.name += '_' + params['subsample_type']
+        model.name += '_' + params['optimizer']
+        model.name += '_lr' + str(params['learning_rate'])
         if params['dropout'] != 0:
             model.name += '_drop' + str(params['dropout'])
         if params['num_stack'] != 1:
             model.name += '_stack' + str(params['num_stack'])
-        if params['weight_decay'] != 0:
-            model.name += '_wd' + str(params['weight_decay'])
-        if len(params['conv_channels']) != 0 and params['encoder_type'] not in ['cnn', 'resnet']:
-            model.name = 'conv_' + model.name
         if bool(params['batch_norm']):
             model.name += '_bn'
         if len(params['fc_list']) != 0:
@@ -186,6 +182,7 @@ def load(model_type, params):
             num_classes=params['num_classes'],
             parameter_init=params['parameter_init'],
             subsample_list=params['subsample_list'],
+            subsample_type=params['subsample_type'],
             init_dec_state_with_enc_state=params['init_dec_state_with_enc_state'],
             sharpening_factor=params['sharpening_factor'],
             logits_temperature=params['logits_temperature'],
@@ -211,12 +208,14 @@ def load(model_type, params):
             decoder_dense_residual=params['decoder_dense_residual'])
 
         model.name = params['encoder_type']
-        if sum(params['subsample_list']) > 0:
-            model.name = 'p' + model.name
         if params['encoder_bidirectional']:
             model.name = 'b' + model.name
+        if len(params['conv_channels']) != 0 and params['encoder_type'] not in ['cnn', 'resnet']:
+            model.name = 'conv_' + model.name
         model.name += str(params['encoder_num_units']) + 'H'
         model.name += str(params['encoder_num_layers']) + 'L'
+        if sum(params['subsample_list']) > 0:
+            model.name += '_' + params['subsample_type']
         model.name += '_' + params['decoder_type']
         model.name += str(params['decoder_num_units']) + 'H'
         model.name += str(params['decoder_num_layers']) + 'L'
@@ -233,10 +232,6 @@ def load(model_type, params):
                 model.name += 'de' + str(params['dropout_decoder'])
         if params['num_stack'] != 1:
             model.name += '_stack' + str(params['num_stack'])
-        if params['weight_decay'] != 0:
-            model.name += '_wd' + str(params['weight_decay'])
-        if len(params['conv_channels']) != 0 and params['encoder_type'] not in ['cnn', 'resnet']:
-            model.name = 'conv_' + model.name
         if bool(params['batch_norm']):
             model.name += '_bn'
         if params['sharpening_factor'] != 1:
@@ -299,25 +294,23 @@ def load(model_type, params):
             dense_residual=params['dense_residual'])
 
         model.name = params['encoder_type']
-        if sum(params['subsample_list']) > 0:
-            model.name = 'p' + model.name
         if params['bidirectional']:
             model.name = 'b' + model.name
+        if len(params['conv_channels']) != 0 and params['encoder_type'] not in ['cnn', 'resnet']:
+            model.name = 'conv_' + model.name
         model.name += str(params['num_units']) + 'H'
         model.name += str(params['num_layers']) + 'L'
         model.name += str(params['num_layers_sub']) + 'L'
-        model.name += '_' + params['optimizer']
-        model.name += '_lr' + str(params['learning_rate'])
         if params['num_proj'] != 0:
             model.name += '_proj' + str(params['num_proj'])
+        # if sum(params['subsample_list']) > 0:
+        #     model.name += '_' + params['subsample_type']
+        model.name += '_' + params['optimizer']
+        model.name += '_lr' + str(params['learning_rate'])
         if params['dropout'] != 0:
             model.name += '_drop' + str(params['dropout'])
         if params['num_stack'] != 1:
             model.name += '_stack' + str(params['num_stack'])
-        if params['weight_decay'] != 0:
-            model.name += '_wd' + str(params['weight_decay'])
-        if len(params['conv_channels']) != 0 and params['encoder_type'] not in ['cnn', 'resnet']:
-            model.name = 'conv_' + model.name
         if bool(params['batch_norm']):
             model.name += '_bn'
         if len(params['fc_list']) != 0:
@@ -364,6 +357,7 @@ def load(model_type, params):
             num_classes_sub=params['num_classes_sub'],
             parameter_init=params['parameter_init'],
             subsample_list=params['subsample_list'],
+            subsample_type=params['subsample_type'],
             init_dec_state_with_enc_state=params['init_dec_state_with_enc_state'],
             sharpening_factor=params['sharpening_factor'],
             logits_temperature=params['logits_temperature'],
@@ -390,21 +384,23 @@ def load(model_type, params):
             curriculum_training=params['curriculum_training'])
 
         model.name = params['encoder_type']
-        if sum(params['subsample_list']) > 0:
-            model.name = 'p' + model.name
         if params['encoder_bidirectional']:
             model.name = 'b' + model.name
+        if len(params['conv_channels']) != 0 and params['encoder_type'] not in ['cnn', 'resnet']:
+            model.name = 'conv_' + model.name
         model.name += str(params['encoder_num_units']) + 'H'
         model.name += str(params['encoder_num_layers']) + 'L'
         model.name += str(params['encoder_num_layers_sub']) + 'L'
+        if params['encoder_num_proj'] != 0:
+            model.name += '_proj' + str(params['encoder_num_proj'])
+        if sum(params['subsample_list']) > 0:
+            model.name += '_' + params['subsample_type']
         model.name += '_' + params['decoder_type']
         model.name += str(params['decoder_num_units']) + 'H'
         model.name += str(params['decoder_num_layers']) + 'L'
         model.name += '_' + params['optimizer']
         model.name += '_lr' + str(params['learning_rate'])
         model.name += '_' + params['attention_type']
-        if params['encoder_num_proj'] != 0:
-            model.name += '_proj' + str(params['encoder_num_proj'])
         if params['dropout_encoder'] != 0 or params['dropout_decoder'] != 0:
             model.name += '_drop'
             if params['dropout_encoder'] != 0:
@@ -413,10 +409,6 @@ def load(model_type, params):
                 model.name += 'de' + str(params['dropout_decoder'])
         if params['num_stack'] != 1:
             model.name += '_stack' + str(params['num_stack'])
-        if params['weight_decay'] != 0:
-            model.name += '_wd' + str(params['weight_decay'])
-        if len(params['conv_channels']) != 0 and params['encoder_type'] not in ['cnn', 'resnet']:
-            model.name = 'conv_' + model.name
         if bool(params['batch_norm']):
             model.name += '_bn'
         if params['sharpening_factor'] != 1:
@@ -473,6 +465,7 @@ def load(model_type, params):
             num_classes_sub=params['num_classes_sub'],
             parameter_init=params['parameter_init'],
             subsample_list=params['subsample_list'],
+            subsample_type=params['subsample_type'],
             init_dec_state_with_enc_state=params['init_dec_state_with_enc_state'],
             sharpening_factor=params['sharpening_factor'],
             logits_temperature=params['logits_temperature'],
@@ -496,21 +489,23 @@ def load(model_type, params):
             space_index=params['space_index'])
 
         model.name = params['encoder_type']
-        if sum(params['subsample_list']) > 0:
-            model.name = 'p' + model.name
         if params['encoder_bidirectional']:
             model.name = 'b' + model.name
+        if len(params['conv_channels']) != 0 and params['encoder_type'] not in ['cnn', 'resnet']:
+            model.name = 'conv_' + model.name
         model.name += str(params['encoder_num_units']) + 'H'
         model.name += str(params['encoder_num_layers']) + 'L'
         model.name += str(params['encoder_num_layers_sub']) + 'L'
+        if params['encoder_num_proj'] != 0:
+            model.name += '_proj' + str(params['encoder_num_proj'])
+        if sum(params['subsample_list']) > 0:
+            model.name += '_' + params['subsample_type']
         model.name += '_' + params['decoder_type']
         model.name += str(params['decoder_num_units']) + 'H'
         model.name += str(params['decoder_num_layers']) + 'L'
         model.name += '_' + params['optimizer']
         model.name += '_lr' + str(params['learning_rate'])
         model.name += '_' + params['attention_type']
-        if params['encoder_num_proj'] != 0:
-            model.name += '_proj' + str(params['encoder_num_proj'])
         if params['dropout_encoder'] != 0 or params['dropout_decoder'] != 0:
             model.name += '_drop'
             if params['dropout_encoder'] != 0:
@@ -519,10 +514,6 @@ def load(model_type, params):
                 model.name += 'de' + str(params['dropout_decoder'])
         if params['num_stack'] != 1:
             model.name += '_stack' + str(params['num_stack'])
-        if params['weight_decay'] != 0:
-            model.name += '_wd' + str(params['weight_decay'])
-        if len(params['conv_channels']) != 0 and params['encoder_type'] not in ['cnn', 'resnet']:
-            model.name = 'conv_' + model.name
         if bool(params['batch_norm']):
             model.name += '_bn'
         if params['sharpening_factor'] != 1:
