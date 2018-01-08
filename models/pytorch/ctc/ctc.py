@@ -137,6 +137,7 @@ class CTC(ModelBase):
                 subsample_type=subsample_type,
                 use_cuda=self.use_cuda,
                 batch_first=False,
+                merge_bidirectional=False,
                 num_stack=num_stack,
                 splice=splice,
                 conv_channels=conv_channels,
@@ -284,17 +285,17 @@ class CTC(ModelBase):
             perm_indices (LongTensor):
         """
         if is_multi_task:
-            enc_outputs, _, encoder_outputs_sub, _, perm_indices = self.encoder(
+            enc_outputs, encoder_outputs_sub, perm_indices = self.encoder(
                 xs, x_lens, volatile)
         else:
-            if self.encoder_type != 'cnn':
-                enc_outputs, _, perm_indices = self.encoder(
-                    xs, x_lens, volatile)
-            else:
+            if self.encoder_type == 'cnn':
                 enc_outputs = self.encoder(xs)
                 # NOTE: `[B, T, feature_dim]`
                 enc_outputs = enc_outputs.transpose(0, 1).contiguous()
                 perm_indices = None
+            else:
+                enc_outputs, perm_indices = self.encoder(
+                    xs, x_lens, volatile)
 
         if len(self.fc_list) > 0:
             enc_outputs = self.fc_layers(enc_outputs)
@@ -386,7 +387,6 @@ class CTC(ModelBase):
 
         # Permutate indices
         if perm_indices is not None:
-            perm_indices = var2np(perm_indices)
             x_lens = x_lens[perm_indices]
 
         # Convert to batch-major
@@ -417,6 +417,7 @@ class CTC(ModelBase):
 
         # Permutate indices to the original order
         if perm_indices is not None:
+            perm_indices = var2np(perm_indices)
             best_hyps = best_hyps[perm_indices]
 
         return best_hyps

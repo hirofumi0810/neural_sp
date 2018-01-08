@@ -12,8 +12,8 @@ param:
   use_delta: True
   use_double_delta: True
   splice: 1
-  num_stack: 1
-  num_skip: 1
+  num_stack: 2
+  num_skip: 2
 
   # topology
   model_type: hierarchical_attention
@@ -30,7 +30,7 @@ param:
   subsample_list:
     - True
     - True
-    - True
+    - False
     - False
     - False
   subsample_type: drop
@@ -67,12 +67,12 @@ param:
   dropout_encoder: 0.2
   dropout_decoder: 0.1
   weight_decay: 1e-5
-  init_dec_state_with_enc_state: True
+  init_dec_state: zero
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False
   coverage_weight: 0
-  scheduled_sampling_prob: 0.4
+  scheduled_sampling_prob: 0.2
   scheduled_sampling_ramp_max_step: 300000
   # label_smoothing_prob: 0.1
   label_smoothing_prob: 0
@@ -89,6 +89,6 @@ param:
 
   # MTL
   main_loss_weight: 0.5
-  # ctc_loss_weight_sub: 0.1
-  ctc_loss_weight_sub: 0.25
+  ctc_loss_weight_sub: 0.1
+  # ctc_loss_weight_sub: 0.25
   curriculum_training: False

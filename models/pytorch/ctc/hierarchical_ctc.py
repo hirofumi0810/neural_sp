@@ -143,6 +143,7 @@ class HierarchicalCTC(CTC):
                 subsample_type=subsample_type,
                 use_cuda=self.use_cuda,
                 batch_first=False,
+                merge_bidirectional=False,
                 num_stack=num_stack,
                 splice=splice,
                 conv_channels=conv_channels,

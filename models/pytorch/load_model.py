@@ -79,7 +79,8 @@ def load(model_type, params):
         if params['num_proj'] != 0:
             model.name += '_proj' + str(params['num_proj'])
         if sum(params['subsample_list']) > 0:
-            model.name += '_' + params['subsample_type']
+            model.name += '_' + params['subsample_type'] + \
+                str(2 ** sum(params['subsample_list']))
         if params['num_stack'] != 1:
             model.name += '_stack' + str(params['num_stack'])
         model.name += '_' + params['optimizer']
@@ -144,7 +145,8 @@ def load(model_type, params):
         if params['num_proj'] != 0:
             model.name += '_proj' + str(params['num_proj'])
         if sum(params['subsample_list']) > 0:
-            model.name += '_' + params['subsample_type']
+            model.name += '_' + params['subsample_type'] + \
+                str(2 ** sum(params['subsample_list']))
         if params['num_stack'] != 1:
             model.name += '_stack' + str(params['num_stack'])
         model.name += '_' + params['optimizer']
@@ -185,7 +187,7 @@ def load(model_type, params):
             parameter_init=params['parameter_init'],
             subsample_list=params['subsample_list'],
             subsample_type=params['subsample_type'],
-            init_dec_state_with_enc_state=params['init_dec_state_with_enc_state'],
+            init_dec_state=params['init_dec_state'],
             sharpening_factor=params['sharpening_factor'],
             logits_temperature=params['logits_temperature'],
             sigmoid_smoothing=params['sigmoid_smoothing'],
@@ -217,10 +219,11 @@ def load(model_type, params):
         model.name += str(params['encoder_num_units']) + 'H'
         model.name += str(params['encoder_num_layers']) + 'L'
         if sum(params['subsample_list']) > 0:
-            model.name += '_' + params['subsample_type']
-        model.name += '_' + params['decoder_type']
+            model.name += '_' + params['subsample_type'] + \
+                str(2 ** sum(params['subsample_list']))
         if params['num_stack'] != 1:
             model.name += '_stack' + str(params['num_stack'])
+        model.name += '_' + params['decoder_type']
         model.name += str(params['decoder_num_units']) + 'H'
         model.name += str(params['decoder_num_layers']) + 'L'
         model.name += '_' + params['optimizer']
@@ -253,13 +256,13 @@ def load(model_type, params):
         if params['weight_noise_std'] != 0:
             model.name += '_noise' + str(params['weight_noise_std'])
         if bool(params['encoder_residual']):
-            model.name += '_enc_res'
+            model.name += '_encres'
         elif bool(params['encoder_dense_residual']):
-            model.name += '_enc_dense_res'
+            model.name += '_encdenseres'
         if bool(params['decoder_residual']):
-            model.name += '_dec_res'
+            model.name += '_decres'
         elif bool(params['decoder_dense_residual']):
-            model.name += '_dec_dense_res'
+            model.name += '_decdenseres'
         model.name += '_input' + str(model.input_size)
 
     elif params['model_type'] == 'hierarchical_ctc':
@@ -308,7 +311,8 @@ def load(model_type, params):
         if params['num_proj'] != 0:
             model.name += '_proj' + str(params['num_proj'])
         if sum(params['subsample_list']) > 0:
-            model.name += '_' + params['subsample_type']
+            model.name += '_' + params['subsample_type'] + \
+                str(2 ** sum(params['subsample_list']))
         if params['num_stack'] != 1:
             model.name += '_stack' + str(params['num_stack'])
         model.name += '_' + params['optimizer']
@@ -362,7 +366,7 @@ def load(model_type, params):
             parameter_init=params['parameter_init'],
             subsample_list=params['subsample_list'],
             subsample_type=params['subsample_type'],
-            init_dec_state_with_enc_state=params['init_dec_state_with_enc_state'],
+            init_dec_state=params['init_dec_state'],
             sharpening_factor=params['sharpening_factor'],
             logits_temperature=params['logits_temperature'],
             sigmoid_smoothing=params['sigmoid_smoothing'],
@@ -398,7 +402,8 @@ def load(model_type, params):
         if params['encoder_num_proj'] != 0:
             model.name += '_proj' + str(params['encoder_num_proj'])
         if sum(params['subsample_list']) > 0:
-            model.name += '_' + params['subsample_type']
+            model.name += '_' + params['subsample_type'] + \
+                str(2 ** sum(params['subsample_list']))
         if params['num_stack'] != 1:
             model.name += '_stack' + str(params['num_stack'])
         model.name += '_' + params['decoder_type']
@@ -432,13 +437,13 @@ def load(model_type, params):
         if params['weight_noise_std'] != 0:
             model.name += '_noise' + str(params['weight_noise_std'])
         if bool(params['encoder_residual']):
-            model.name += '_enc_res'
+            model.name += '_encres'
         elif bool(params['encoder_dense_residual']):
-            model.name += '_enc_dense_res'
+            model.name += '_encdenseres'
         if bool(params['decoder_residual']):
-            model.name += '_dec_res'
+            model.name += '_decres'
         elif bool(params['decoder_dense_residual']):
-            model.name += '_dec_dense_res'
+            model.name += '_decdenseres'
         model.name += '_main' + str(params['main_loss_weight'])
         if bool(params['curriculum_training']):
             model.name += '_curriculum'
@@ -470,7 +475,7 @@ def load(model_type, params):
             parameter_init=params['parameter_init'],
             subsample_list=params['subsample_list'],
             subsample_type=params['subsample_type'],
-            init_dec_state_with_enc_state=params['init_dec_state_with_enc_state'],
+            init_dec_state=params['init_dec_state'],
             sharpening_factor=params['sharpening_factor'],
             logits_temperature=params['logits_temperature'],
             sigmoid_smoothing=params['sigmoid_smoothing'],
@@ -503,7 +508,8 @@ def load(model_type, params):
         if params['encoder_num_proj'] != 0:
             model.name += '_proj' + str(params['encoder_num_proj'])
         if sum(params['subsample_list']) > 0:
-            model.name += '_' + params['subsample_type']
+            model.name += '_' + params['subsample_type'] + \
+                str(2 ** sum(params['subsample_list']))
         if params['num_stack'] != 1:
             model.name += '_stack' + str(params['num_stack'])
         model.name += '_' + params['decoder_type']

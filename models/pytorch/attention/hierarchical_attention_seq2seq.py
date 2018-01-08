@@ -49,7 +49,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  parameter_init=0.1,
                  subsample_list=[],
                  subsample_type='concat',
-                 init_dec_state_with_enc_state=True,
+                 init_dec_state='zero',
                  sharpening_factor=1,
                  logits_temperature=1,
                  sigmoid_smoothing=False,
@@ -94,7 +94,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             parameter_init=parameter_init,
             subsample_list=subsample_list,
             subsample_type=subsample_type,
-            init_dec_state_with_enc_state=init_dec_state_with_enc_state,
+            init_dec_state=init_dec_state,
             sharpening_factor=sharpening_factor,
             logits_temperature=logits_temperature,
             sigmoid_smoothing=sigmoid_smoothing,
@@ -164,6 +164,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 subsample_type=subsample_type,
                 use_cuda=self.use_cuda,
                 batch_first=True,
+                merge_bidirectional=False,
                 num_stack=num_stack,
                 splice=splice,
                 conv_channels=conv_channels,
@@ -216,8 +217,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 else:
                     self.bridge_sub = LinearND(
                         encoder_num_units, decoder_num_units_sub)
-                self.bridge_init_sub = LinearND(
-                    encoder_num_units, decoder_num_units_sub)
                 self.is_bridge_sub = True
 
             self.embed_sub = nn.Embedding(
@@ -278,7 +277,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 self._inject_weight_noise(mean=0., std=self.weight_noise_std)
 
         # Encode acoustic features
-        enc_outputs, enc_final_state, enc_outputs_sub, enc_final_state_sub, perm_indices = self._encode(
+        enc_outputs, enc_outputs_sub, perm_indices = self._encode(
             xs, x_lens, volatile=is_eval, is_multi_task=True)
 
         # Permutate indices
@@ -293,8 +292,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Main task
         ##################################################
         # Teacher-forcing
-        logits, att_weights = self._decode_train(
-            enc_outputs, enc_final_state, ys)
+        logits, att_weights = self._decode_train(enc_outputs, ys)
 
         # Output smoothing
         if self.logits_temperature != 1:
@@ -334,8 +332,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         if self.sub_loss_weight > 0:
             # Teacher-forcing
             logits_sub, attention_weights_sub = self._decode_train(
-                enc_outputs_sub, enc_final_state_sub, ys_sub,
-                is_sub_task=True)
+                enc_outputs_sub, ys_sub, is_sub_task=True)
 
             # Output smoothing
             if self.logits_temperature != 1:
@@ -422,15 +419,14 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         # Encode acoustic features
         if is_sub_task:
-            _, _, enc_outputs, enc_final_state, perm_indices = self._encode(
+            _, enc_outputs, perm_indices = self._encode(
                 xs, x_lens, volatile=True, is_multi_task=True)
         else:
-            enc_outputs, enc_final_state, _, _, perm_indices = self._encode(
+            enc_outputs, _, perm_indices = self._encode(
                 xs, x_lens, volatile=True, is_multi_task=True)
 
         # Permutate indices
         if perm_indices is not None:
-            perm_indices = var2np(perm_indices)
             x_lens = x_lens[perm_indices]
 
         if beam_width == 1:
@@ -440,8 +436,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     # Decode by attention decoder
                     ########################################
                     best_hyps, _ = self._decode_infer_greedy(
-                        enc_outputs, enc_final_state, max_decode_len,
-                        is_sub_task=True)
+                        enc_outputs, max_decode_len, is_sub_task=True)
                 else:
                     ########################################
                     # Decode by CTC decoder
@@ -476,18 +471,18 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     # NOTE: index 0 is reserved for blank in warpctc_pytorch
             else:
                 best_hyps, _ = self._decode_infer_greedy(
-                    enc_outputs, enc_final_state, max_decode_len)
+                    enc_outputs, max_decode_len)
         else:
             if is_sub_task:
                 raise NotImplementedError
             else:
                 best_hyps, att_weights = self._decode_infer_beam(
-                    enc_outputs, enc_final_state,
-                    x_lens,
+                    enc_outputs, x_lens,
                     beam_width, max_decode_len)
 
         # Permutate indices to the original order
         if perm_indices is not None:
+            perm_indices = var2np(perm_indices)
             best_hyps = best_hyps[perm_indices]
 
         return best_hyps

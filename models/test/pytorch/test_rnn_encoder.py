@@ -157,26 +157,9 @@ class TestRNNEncoders(unittest.TestCase):
 
         max_time = inputs.size(1)
         if conv:
-            max_time = encoder.conv.conv_out_size(max_time, 1)
+            max_time = encoder.conv.get_conv_out_size(max_time, 1)
 
-        outputs, final_state, perm_indices = encoder(
-            inputs, inputs_seq_len)
-
-        # Check final state (forward)
-        if not (merge_bidirectional or residual or dense_residual):
-            print('----- Check hidden states (forward) -----')
-            if batch_first:
-                outputs_fw_final = outputs.transpose(
-                    0, 1)[-1, 0, :encoder.num_units]
-            else:
-                outputs_fw_final = outputs[-1, 0, :encoder.num_units]
-            assert np.all(var2np(outputs_fw_final) ==
-                          var2np(final_state[0, 0, :]))
-
-        print('----- final state -----')
-        print(final_state.size())
-        self.assertEqual((1, batch_size, encoder.num_units),
-                         final_state.size())
+        outputs, perm_indices = encoder(inputs, inputs_seq_len)
 
         print('----- outputs -----')
         print(outputs.size())

@@ -197,7 +197,7 @@ class RNNEncoder(nn.Module):
                 rnn_i = rnn_i.cuda()
             self.rnns.append(rnn_i)
 
-            if self.num_proj > 0:
+            if i_layer != self.num_layers - 1 and self.num_proj > 0:
                 proj_i = LinearND(num_units * self.num_directions, num_proj)
                 setattr(self, 'proj_l' + str(i_layer), proj_i)
                 if use_cuda:
@@ -217,16 +217,12 @@ class RNNEncoder(nn.Module):
                     `[B, T // sum(subsample_list), num_units (* num_directions)]`
                 else
                     `[T // sum(subsample_list), B, num_units (* num_directions)]`
-            final_state_fw: A tensor of size `[1, B, num_units]`
-
             OPTION:
                 outputs_sub:
                     if batch_first is True, a tensor of size
                         `[B, T // sum(subsample_list), num_units (* num_directions)]`
                     else
                         `[T // sum(subsample_list), B, num_units (* num_directions)]`
-                final_state_fw_sub: A tensor of size `[1, B, num_units]`
-
             perm_indices ():
         """
         batch_size, max_time = inputs.size()[:2]
@@ -272,78 +268,85 @@ class RNNEncoder(nn.Module):
                 outputs = pack_padded_sequence(
                     outputs, inputs_seq_len, batch_first=self.batch_first)
 
-            if self.rnn_type == 'lstm':
-                outputs, (h_n, _) = self.rnns[i_layer](outputs, hx=h_0)
-            else:
-                outputs, h_n = self.rnns[i_layer](outputs, hx=h_0)
+            outputs, _ = self.rnns[i_layer](outputs, hx=h_0)
 
             # Pick up outputs in the sub task before the projection layer
             if self.num_layers_sub >= 1 and i_layer == self.num_layers_sub - 1:
                 outputs_sub = outputs
-                h_n_sub = h_n
 
-            if self.residual or self.dense_residual or self.num_proj > 0 or self.subsample_list[i_layer]:
-                # Unpack i_layer-th encoder outputs
-                outputs, unpacked_seq_len = pad_packed_sequence(
-                    outputs, batch_first=self.batch_first, padding_value=0.0)
-                assert inputs_seq_len == unpacked_seq_len
+                # Unpack encoder outputs
+                outputs_sub, unpacked_seq_len_sub = pad_packed_sequence(
+                    outputs_sub, batch_first=self.batch_first, padding_value=0.0)
+                assert inputs_seq_len == unpacked_seq_len_sub
 
-                # Projection layer (affine transformation)
-                if self.num_proj > 0:
-                    outputs = self.projections[i_layer](outputs)
-                    # outputs = F.tanh(outputs)
-                    # outputs = F.relu(outputs)
+            # NOTE: Exclude the last layer
+            if i_layer != self.num_layers - 1:
+                if self.residual or self.dense_residual or self.num_proj > 0 or self.subsample_list[i_layer]:
 
-                # Subsampling
-                # NOTE: Exclude the last layer
-                if i_layer != self.num_layers - 1 and self.subsample_list[i_layer]:
-                    # Pick up features at even time step
-                    if self.subsample_type == 'drop':
+                    # Unpack i_layer-th encoder outputs
+                    outputs, unpacked_seq_len = pad_packed_sequence(
+                        outputs, batch_first=self.batch_first, padding_value=0.0)
+                    assert inputs_seq_len == unpacked_seq_len
+
+                    # Projection layer (affine transformation)
+                    if self.num_proj > 0:
+                        outputs = self.projections[i_layer](outputs)
+
+                        # non-linearity
+                        # outputs = F.tanh(outputs)
+                        # outputs = F.relu(outputs)
+
+                    # Subsampling
+                    if self.subsample_list[i_layer]:
+                        # Pick up features at even time step
+                        if self.subsample_type == 'drop':
+                            if self.batch_first:
+                                outputs = [outputs[:, t:t + 1, :]
+                                           for t in range(max_time) if (t + 1) % 2 == 0]
+                                # outputs_t: `[B, 1, num_units *
+                                # num_directions]`
+                            else:
+                                outputs = [outputs[t:t + 1, :, :]
+                                           for t in range(max_time) if (t + 1) % 2 == 0]
+                                # outputs_t: `[1, B, num_units *
+                                # num_directions]`
+
+                        # Concatenate the successive frames
+                        elif self.subsample_type == 'concat':
+                            if self.batch_first:
+                                outputs = [torch.cat([outputs[:, t - 1:t, :], outputs[:, t:t + 1, :]], dim=2)
+                                           for t in range(max_time) if (t + 1) % 2 == 0]
+                            else:
+                                outputs = [torch.cat([outputs[t - 1:t, :, :], outputs[t:t + 1, :, :]], dim=2)
+                                           for t in range(max_time) if (t + 1) % 2 == 0]
+
+                        # Concatenate in time-dimension
                         if self.batch_first:
-                            outputs = [outputs[:, t:t + 1, :]
-                                       for t in range(max_time) if (t + 1) % 2 == 0]
-                            # outputs_t: `[B, 1, num_units * num_directions]`
+                            outputs = torch.cat(outputs, dim=1)
+                            # `[B, T_prev // 2, num_units (* 2) * num_directions]`
+                            max_time = outputs.size(1)
                         else:
-                            outputs = [outputs[t:t + 1, :, :]
-                                       for t in range(max_time) if (t + 1) % 2 == 0]
-                            # outputs_t: `[1, B, num_units * num_directions]`
+                            outputs = torch.cat(outputs, dim=0)
+                            # `[T_prev // 2, B, num_units (* 2) * num_directions]`
+                            max_time = outputs.size(0)
 
-                    # Concatenate the successive frames
-                    elif self.subsample_type == 'concat':
-                        if self.batch_first:
-                            outputs = [torch.cat([outputs[:, t - 1:t, :], outputs[:, t:t + 1, :]], dim=2)
-                                       for t in range(max_time) if (t + 1) % 2 == 0]
-                        else:
-                            outputs = [torch.cat([outputs[t - 1:t, :, :], outputs[t:t + 1, :, :]], dim=2)
-                                       for t in range(max_time) if (t + 1) % 2 == 0]
+                        # Update inputs_seq_len
+                        for i in range(len(inputs_seq_len)):
+                            inputs_seq_len[i] = inputs_seq_len[i] // 2
 
-                    # Concatenate in time-dimension
-                    if self.batch_first:
-                        outputs = torch.cat(outputs, dim=1)
-                        # `[B, T_prev // 2, num_units (* 2) * num_directions]`
-                        max_time = outputs.size(1)
-                    else:
-                        outputs = torch.cat(outputs, dim=0)
-                        # `[T_prev // 2, B, num_units (* 2) * num_directions]`
-                        max_time = outputs.size(0)
+                    # Residual connection
+                    elif self.residual or self.dense_residual:
+                        if i_layer >= self.residual_start_layer - 1:
+                            for outputs_lower in res_outputs_list:
+                                outputs = outputs + outputs_lower
+                            if self.residual:
+                                res_outputs_list = [outputs]
+                            elif self.dense_residual:
+                                res_outputs_list.append(outputs)
 
-                    # Update inputs_seq_len
-                    for i in range(len(inputs_seq_len)):
-                        inputs_seq_len[i] = inputs_seq_len[i] // 2
-
-                # Residual connection
-                elif self.residual or self.dense_residual:
-                    if i_layer >= self.residual_start_layer - 1:
-                        for outputs_lower in res_outputs_list:
-                            outputs = outputs + outputs_lower
-                        if self.residual:
-                            res_outputs_list = [outputs]
-                        elif self.dense_residual:
-                            res_outputs_list.append(outputs)
-
-                # Pack i_layer-th encoder outputs again
-                outputs = pack_padded_sequence(
-                    outputs, inputs_seq_len, batch_first=self.batch_first)
+                    # Pack i_layer-th encoder outputs again
+                    outputs = pack_padded_sequence(
+                        outputs, inputs_seq_len, batch_first=self.batch_first)
 
         # Unpack encoder outputs
         if isinstance(outputs, torch.nn.utils.rnn.PackedSequence):
@@ -356,37 +359,16 @@ class RNNEncoder(nn.Module):
             outputs = outputs[:, :, :self.num_units] + \
                 outputs[:, :, self.num_units:]
 
-        # Pick up the final state of the top layer (forward)
-        if self.num_directions == 2:
-            final_state_fw = h_n[-2:-1, :, :]
-        else:
-            final_state_fw = h_n[-1, :, :].unsqueeze(dim=0)
-        # NOTE: h_n: `[num_layers * num_directions, B, num_units]`
-
-        del h_n, h_0
+        del h_0
 
         # sub task (optional)
         if self.num_layers_sub >= 1:
-
-            # Unpack encoder outputs
-            outputs_sub, unpacked_seq_len_sub = pad_packed_sequence(
-                outputs_sub, batch_first=self.batch_first, padding_value=0.0)
-            assert inputs_seq_len == unpacked_seq_len_sub
 
             # Sum bidirectional outputs
             if self.bidirectional and self.merge_bidirectional:
                 outputs_sub = outputs_sub[:, :, :self.num_units] + \
                     outputs_sub[:, :, self.num_units:]
 
-            # Pick up the final state of the top layer (forward)
-            if self.num_directions == 2:
-                final_state_fw_sub = h_n_sub[-2:-1, :, :]
-            else:
-                final_state_fw_sub = h_n_sub[-1, :, :].unsqueeze(dim=0)
-            # NOTE: h_n_sub: `[num_layers_sub * num_directions, B, num_units]`
-
-            del h_n_sub
-
-            return outputs, final_state_fw, outputs_sub, final_state_fw_sub, perm_indices
+            return outputs, outputs_sub, perm_indices
         else:
-            return outputs, final_state_fw, perm_indices
+            return outputs, perm_indices

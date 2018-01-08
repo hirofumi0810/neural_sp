@@ -34,6 +34,12 @@ class TestCTC(unittest.TestCase):
         self.check(encoder_type='lstm', bidirectional=True,
                    label_smoothing=True)
 
+        # Pyramidal encoder
+        self.check(encoder_type='lstm', bidirectional=True, subsample=True)
+
+        # Projection
+        self.check(encoder_type='lstm', bidirectional=False, projection=True)
+
         # Residual LSTM-CTC
         self.check(encoder_type='lstm', bidirectional=True,
                    residual=True)
@@ -53,10 +59,6 @@ class TestCTC(unittest.TestCase):
         self.check(encoder_type='lstm', bidirectional=True,
                    conv=True, batch_norm=True)
 
-        # Pyramidal encoder
-        self.check(encoder_type='lstm', bidirectional=True,
-                   subsample=True)
-
         # word-level CTC
         self.check(encoder_type='lstm', bidirectional=True,
                    label_type='word')
@@ -71,13 +73,15 @@ class TestCTC(unittest.TestCase):
 
     @measure_time
     def check(self, encoder_type, bidirectional=False, label_type='char',
-              subsample=False, conv=False, batch_norm=False, activation='relu',
+              subsample=False,  projection=False,
+              conv=False, batch_norm=False, activation='relu',
               residual=False, dense_residual=False, label_smoothing=False):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
+        print('  projection: %s' % str(projection))
         print('  subsample: %s' % str(subsample))
         print('  conv: %s' % str(conv))
         print('  batch_norm: %s' % str(batch_norm))
@@ -131,7 +135,7 @@ class TestCTC(unittest.TestCase):
             encoder_type=encoder_type,
             bidirectional=bidirectional,
             num_units=256,
-            num_proj=256,
+            num_proj=256 if projection else 0,
             num_layers=2,
             fc_list=fc_list,
             dropout=0.1,

@@ -60,7 +60,7 @@ param:
   dropout_encoder: 0.5
   dropout_decoder: 0.1
   weight_decay: 1e-5
-  init_dec_state_with_enc_state: True
+  init_dec_state: zero
   sharpening_factor: 2.0
   logits_temperature: 1.0
   sigmoid_smoothing: False

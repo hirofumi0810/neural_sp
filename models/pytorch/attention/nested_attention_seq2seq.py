@@ -60,7 +60,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                  parameter_init=0.1,
                  subsample_list=[],
                  subsample_type='concat',
-                 init_dec_state_with_enc_state=True,
+                 init_dec_state='zero',
                  sharpening_factor=1,
                  logits_temperature=1,
                  sigmoid_smoothing=False,
@@ -102,7 +102,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             num_classes=num_classes,
             parameter_init=parameter_init,
             subsample_list=subsample_list,
-            init_dec_state_with_enc_state=init_dec_state_with_enc_state,
+            init_dec_state=init_dec_state,
             sharpening_factor=sharpening_factor,
             logits_temperature=logits_temperature,
             sigmoid_smoothing=sigmoid_smoothing,
@@ -152,7 +152,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         # NOTE: Add <SOS> and <EOS>
 
         # Setting for the attention
-        self.init_dec_state_with_enc_state = init_dec_state_with_enc_state
         self.sharpening_factor = sharpening_factor
         self.logits_temperature = logits_temperature
         self.sigmoid_smoothing = sigmoid_smoothing
@@ -207,6 +206,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 subsample_type=subsample_type,
                 use_cuda=self.use_cuda,
                 batch_first=True,
+                merge_bidirectional=False,
                 num_stack=num_stack,
                 splice=splice,
                 conv_channels=conv_channels,

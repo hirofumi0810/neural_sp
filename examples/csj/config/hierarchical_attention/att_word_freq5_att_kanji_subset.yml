@@ -67,12 +67,12 @@ param:
   dropout_encoder: 0.2
   dropout_decoder: 0.1
   weight_decay: 1e-5
-  init_dec_state_with_enc_state: True
+  init_dec_state: zero
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False
   coverage_weight: 0
-  scheduled_sampling_prob: 0.4
+  scheduled_sampling_prob: 0.2
   scheduled_sampling_ramp_max_step: 300000
   # label_smoothing_prob: 0.1
   label_smoothing_prob: 0

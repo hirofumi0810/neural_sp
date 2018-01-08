@@ -30,13 +30,19 @@ class TestAttention(unittest.TestCase):
     def test(self):
         print("Attention Working check.")
 
+        # Initialize decoder state
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', init_dec_state='mean')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', init_dec_state='final')
+
         # Pyramidal encoder
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', subsample='drop')
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', subsample='concat')
 
-        # projection
+        # Projection
         self.check(encoder_type='lstm', bidirectional=False, projection=True,
                    decoder_type='lstm')
 
@@ -96,10 +102,9 @@ class TestAttention(unittest.TestCase):
     @measure_time
     def check(self, encoder_type, bidirectional, decoder_type,
               attention_type='location', label_type='char',
-              subsample=False, ctc_loss_weight=0,
-              conv=False, batch_norm=False,
-              residual=False, dense_residual=False, label_smoothing=False,
-              projection=False):
+              subsample=False, projection=False, init_dec_state='zero',
+              ctc_loss_weight=0, conv=False, batch_norm=False,
+              residual=False, dense_residual=False, label_smoothing=False):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
@@ -107,6 +112,7 @@ class TestAttention(unittest.TestCase):
         print('  bidirectional: %s' % str(bidirectional))
         print('  projection: %s' % str(projection))
         print('  decoder_type: %s' % decoder_type)
+        print('  init_dec_state: %s' % init_dec_state)
         print('  attention_type: %s' % attention_type)
         print('  subsample: %s' % str(subsample))
         print('  ctc_loss_weight: %s' % str(ctc_loss_weight))
@@ -173,13 +179,13 @@ class TestAttention(unittest.TestCase):
             parameter_init=0.1,
             subsample_list=[] if subsample is False else [True, False],
             subsample_type='concat' if subsample is False else subsample,
-            init_dec_state_with_enc_state=True,
+            init_dec_state=init_dec_state,
             sharpening_factor=1,
             logits_temperature=1,
             sigmoid_smoothing=False,
             coverage_weight=0.5,
             attention_conv_num_channels=10,
-            attention_conv_width=101,
+            attention_conv_width=201,
             num_stack=num_stack,
             splice=splice,
             conv_channels=conv_channels,

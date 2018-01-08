@@ -30,13 +30,17 @@ class TestHierarchicalAttention(unittest.TestCase):
     def test(self):
         print("Hierarchical Attention Working check.")
 
+        # Curriculum training
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', curriculum_training=True)
+
         # Pyramidal encoder
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', subsample='drop')
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', subsample='concat')
 
-        # projection
+        # Projection
         self.check(encoder_type='lstm', bidirectional=False, projection=True,
                    decoder_type='lstm')
 
@@ -58,23 +62,18 @@ class TestHierarchicalAttention(unittest.TestCase):
 
         # Word attention + char CTC
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', subsample=True,
-                   ctc_loss_weight_sub=0.5)
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', subsample=True,
-                   ctc_loss_weight_sub=0.5,
-                   conv=True, batch_norm=True)
+                   decoder_type='lstm', ctc_loss_weight_sub=0.5)
 
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm')
 
     @measure_time
     def check(self, encoder_type, bidirectional, decoder_type,
-              attention_type='location', subsample=False,
-              ctc_loss_weight_sub=0,
-              conv=False, batch_norm=False,
+              attention_type='location',
+              subsample=False, projection=False,
+              ctc_loss_weight_sub=0, conv=False, batch_norm=False,
               residual=False, dense_residual=False, label_smoothing=False,
-              projection=False):
+              curriculum_training=True):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
@@ -89,6 +88,7 @@ class TestHierarchicalAttention(unittest.TestCase):
         print('  residual: %s' % str(residual))
         print('  dense_residual: %s' % str(dense_residual))
         print('  label_smoothing: %s' % str(label_smoothing))
+        print('  curriculum_training: %s' % str(curriculum_training))
         print('==================================================')
 
         if conv:
@@ -141,13 +141,13 @@ class TestHierarchicalAttention(unittest.TestCase):
             parameter_init=0.1,
             subsample_list=[] if not subsample else [False, True, False],
             subsample_type='concat' if subsample is False else subsample,
-            init_dec_state_with_enc_state=True,
+            init_dec_state='zero',
             sharpening_factor=1,
             logits_temperature=1,
             sigmoid_smoothing=False,
             ctc_loss_weight_sub=ctc_loss_weight_sub,
             attention_conv_num_channels=10,
-            attention_conv_width=101,
+            attention_conv_width=201,
             num_stack=num_stack,
             splice=splice,
             conv_channels=conv_channels,
@@ -162,7 +162,8 @@ class TestHierarchicalAttention(unittest.TestCase):
             encoder_residual=residual,
             encoder_dense_residual=dense_residual,
             decoder_residual=residual,
-            decoder_dense_residual=dense_residual)
+            decoder_dense_residual=dense_residual,
+            curriculum_training=curriculum_training)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):

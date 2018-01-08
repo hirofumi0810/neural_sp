@@ -21,6 +21,7 @@ param:
   dense_residual: False
   num_units: 256
   num_proj: 0
+  # num_proj: 256
   num_layers: 5
   subsample_list:
     - False

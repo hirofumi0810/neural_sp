@@ -65,3 +65,4 @@ param:
 
   # MTL
   main_loss_weight: 0.5
+  curriculum_training: False

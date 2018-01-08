@@ -30,6 +30,13 @@ class TestCTC(unittest.TestCase):
     def test(self):
         print("Hierarchical CTC Working check.")
 
+        # Pyramidal encoder
+        self.check(encoder_type='lstm', bidirectional=True, subsample='drop')
+        self.check(encoder_type='lstm', bidirectional=True, subsample='concat')
+
+        # projection
+        self.check(encoder_type='lstm', bidirectional=False, projection=True)
+
         # Label smoothing
         self.check(encoder_type='lstm', bidirectional=True,
                    label_smoothing=True)
@@ -54,12 +61,14 @@ class TestCTC(unittest.TestCase):
 
     @measure_time
     def check(self, encoder_type, bidirectional=False,
-              subsample=False, conv=False, batch_norm=False,
+              subsample=False, projection=False,
+              conv=False, batch_norm=False,
               residual=False, dense_residual=False, label_smoothing=False):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
+        print('  projection: %s' % str(projection))
         print('  subsample: %s' % str(subsample))
         print('  conv: %s' % str(conv))
         print('  batch_norm: %s' % str(batch_norm))
@@ -100,7 +109,7 @@ class TestCTC(unittest.TestCase):
             encoder_type=encoder_type,
             bidirectional=bidirectional,
             num_units=256,
-            num_proj=256,
+            num_proj=256 if projection else 0,
             num_layers=3,
             num_layers_sub=2,
             fc_list=fc_list,
