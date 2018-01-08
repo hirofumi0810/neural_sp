@@ -2,7 +2,6 @@ param:
   # corpus
   corpus: csj
   label_type: word_freq5
-  label_type_sub: kana_divide
   data_size: subset
 
   # features
@@ -16,7 +15,7 @@ param:
   num_skip: 3
 
   # topology
-  model_type: hierarchical_attention
+  model_type: attention
   encoder_type: lstm
   encoder_bidirectional: True
   encoder_residual: False
@@ -24,10 +23,8 @@ param:
   decoder_residual: False
   decoder_dense_residual: False
   encoder_num_units: 320
-  # encoder_num_proj: 0
   encoder_num_proj: 320
   encoder_num_layers: 4
-  encoder_num_layers_sub: 3
   subsample_list:
     - False
     - False
@@ -39,10 +36,7 @@ param:
   decoder_type: lstm
   decoder_num_units: 320
   decoder_num_layers: 1
-  decoder_num_units_sub: 320
-  decoder_num_layers_sub: 1
   embedding_dim: 128
-  embedding_dim_sub: 64
   attention_conv_num_channels: 10
   attention_conv_width: 201
 
@@ -54,7 +48,7 @@ param:
   batch_norm: False
 
   # optimization
-  batch_size: 20
+  batch_size: 30
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 50
@@ -68,6 +62,8 @@ param:
   dropout_decoder: 0.1
   weight_decay: 1e-6
   init_dec_state: zero
+  # init_dec_state: final
+  # init_dec_state: mean
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False
@@ -88,6 +84,4 @@ param:
   print_step: 1000
 
   # MTL
-  main_loss_weight: 0.5
-  ctc_loss_weight_sub: 0.5
-  curriculum_training: False
+  ctc_loss_weight: 0

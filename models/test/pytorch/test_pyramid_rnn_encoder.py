@@ -23,9 +23,6 @@ class TestPyramidRNNEncoders(unittest.TestCase):
     def test(self):
         print("Pyramidal RNN Encoders Working check.")
 
-        self.check(encoder_type='lstm', bidirectional=False,
-                   subsample_type='drop')
-
         # Projection layer
         self.check(encoder_type='lstm', bidirectional=False,
                    projection=True)

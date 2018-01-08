@@ -293,7 +293,7 @@ class RNNEncoder(nn.Module):
                         outputs = self.projections[i_layer](outputs)
 
                         # non-linearity
-                        # outputs = F.tanh(outputs)
+                        outputs = F.tanh(outputs)
                         # outputs = F.relu(outputs)
 
                     # Subsampling
@@ -301,38 +301,23 @@ class RNNEncoder(nn.Module):
                         # Pick up features at even time step
                         if self.subsample_type == 'drop':
                             if self.batch_first:
-                                outputs = [outputs[:, t:t + 1, :]
-                                           for t in range(max_time) if (t + 1) % 2 == 0]
-                                # outputs_t: `[B, 1, num_units *
-                                # num_directions]`
+                                outputs = outputs[:, ::2, :]
                             else:
-                                outputs = [outputs[t:t + 1, :, :]
-                                           for t in range(max_time) if (t + 1) % 2 == 0]
-                                # outputs_t: `[1, B, num_units *
-                                # num_directions]`
+                                outputs = outputs[::2, :, :]
 
                         # Concatenate the successive frames
                         elif self.subsample_type == 'concat':
                             if self.batch_first:
                                 outputs = [torch.cat([outputs[:, t - 1:t, :], outputs[:, t:t + 1, :]], dim=2)
-                                           for t in range(max_time) if (t + 1) % 2 == 0]
+                                           for t in range(outputs.size(1)) if (t + 1) % 2 == 0]
+                                outputs = torch.cat(outputs, dim=1)
                             else:
                                 outputs = [torch.cat([outputs[t - 1:t, :, :], outputs[t:t + 1, :, :]], dim=2)
-                                           for t in range(max_time) if (t + 1) % 2 == 0]
-
-                        # Concatenate in time-dimension
-                        if self.batch_first:
-                            outputs = torch.cat(outputs, dim=1)
-                            # `[B, T_prev // 2, num_units (* 2) * num_directions]`
-                            max_time = outputs.size(1)
-                        else:
-                            outputs = torch.cat(outputs, dim=0)
-                            # `[T_prev // 2, B, num_units (* 2) * num_directions]`
-                            max_time = outputs.size(0)
+                                           for t in range(outputs.size(0)) if (t + 1) % 2 == 0]
+                                outputs = torch.cat(outputs, dim=0)
 
                         # Update inputs_seq_len
-                        for i in range(len(inputs_seq_len)):
-                            inputs_seq_len[i] = inputs_seq_len[i] // 2
+                        inputs_seq_len = [i // 2 for i in inputs_seq_len]
 
                     # Residual connection
                     elif self.residual or self.dense_residual:
