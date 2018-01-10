@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Convolutional LSTM encoders."""
+"""Convolutional LSTM encoders (pytorch)."""
 
 from __future__ import absolute_import
 from __future__ import division

@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Test hierarchical attention-besed models in pytorch."""
+"""Test hierarchical CTC models (pytorch)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -14,81 +14,67 @@ import unittest
 import torch
 import torch.nn as nn
 
-sys.path.append('../../../')
-from models.pytorch.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
+sys.path.append('../../../../')
+from models.pytorch.ctc.hierarchical_ctc import HierarchicalCTC
 from models.test.data import generate_data, idx2char, idx2word
-from utils.measure_time_func import measure_time
 from utils.io.variable import np2var, var2np
+from utils.measure_time_func import measure_time
 from utils.evaluation.edit_distance import compute_cer, compute_wer
 from utils.training.learning_rate_controller import Controller
 
 torch.manual_seed(2017)
 
 
-class TestHierarchicalAttention(unittest.TestCase):
+class TestCTC(unittest.TestCase):
 
     def test(self):
-        print("Hierarchical Attention Working check.")
-
-        # Curriculum training
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', curriculum_training=True)
+        print("Hierarchical CTC Working check.")
 
         # Pyramidal encoder
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', subsample='drop')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', subsample='concat')
+        self.check(encoder_type='lstm', bidirectional=True, subsample='drop')
+        self.check(encoder_type='lstm', bidirectional=True, subsample='concat')
 
-        # Projection
-        self.check(encoder_type='lstm', bidirectional=False, projection=True,
-                   decoder_type='lstm')
+        # projection
+        self.check(encoder_type='lstm', bidirectional=False, projection=True)
 
         # Label smoothing
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', label_smoothing=True)
+                   label_smoothing=True)
 
-        # Residual LSTM encoder
+        # Residual LSTM-CTC
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', residual=True)
+                   residual=True)
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', dense_residual=True)
+                   dense_residual=True)
 
-        # CLDNN encoder
+        # CLDNN-CTC
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', conv=True)
+                   conv=True)
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', conv=True, batch_norm=True)
+                   conv=True, batch_norm=True)
 
-        # Word attention + char CTC
+        # Pyramidal encoder
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', ctc_loss_weight_sub=0.5)
+                   subsample=True)
 
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm')
+        self.check(encoder_type='lstm', bidirectional=True)
 
     @measure_time
-    def check(self, encoder_type, bidirectional, decoder_type,
-              attention_type='location',
+    def check(self, encoder_type, bidirectional=False,
               subsample=False, projection=False,
-              ctc_loss_weight_sub=0, conv=False, batch_norm=False,
-              residual=False, dense_residual=False, label_smoothing=False,
-              curriculum_training=True):
+              conv=False, batch_norm=False,
+              residual=False, dense_residual=False, label_smoothing=False):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
         print('  projection: %s' % str(projection))
-        print('  decoder_type: %s' % decoder_type)
-        print('  attention_type: %s' % attention_type)
         print('  subsample: %s' % str(subsample))
-        print('  ctc_loss_weight_sub: %s' % str(ctc_loss_weight_sub))
         print('  conv: %s' % str(conv))
         print('  batch_norm: %s' % str(batch_norm))
         print('  residual: %s' % str(residual))
         print('  dense_residual: %s' % str(dense_residual))
         print('  label_smoothing: %s' % str(label_smoothing))
-        print('  curriculum_training: %s' % str(curriculum_training))
         print('==================================================')
 
         if conv:
@@ -96,58 +82,44 @@ class TestHierarchicalAttention(unittest.TestCase):
             conv_kernel_sizes = [[41, 11], [21, 11]]
             conv_strides = [[2, 2], [2, 1]]
             poolings = [[], []]
+            fc_list = [786, 786]
         else:
             conv_channels = []
             conv_kernel_sizes = []
             conv_strides = []
             poolings = []
+            fc_list = []
 
         # Load batch data
-        splice = 1
         num_stack = 1 if subsample or conv else 2
+        splice = 1
         inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub = generate_data(
-            model_type='attention',
+            model_type='ctc',
             label_type='word_char',
             batch_size=2,
             num_stack=num_stack,
-            splice=splice)
+            splice=splice,
+            backend='pytorch')
 
         num_classes = 11
         num_classes_sub = 27
 
         # Load model
-        model = HierarchicalAttentionSeq2seq(
-            input_size=inputs.shape[-1] // splice // num_stack,  # 120
+        model = HierarchicalCTC(
+            input_size=inputs.shape[-1] // splice // num_stack,   # 120
             encoder_type=encoder_type,
-            encoder_bidirectional=bidirectional,
-            encoder_num_units=256,
-            encoder_num_proj=256 if projection else 0,
-            encoder_num_layers=3,
-            encoder_num_layers_sub=2,
-            encoder_dropout=0.1,
-            attention_type=attention_type,
-            attention_dim=128,
-            decoder_type=decoder_type,
-            decoder_num_units=256,
-            decoder_num_layers=2,
-            decoder_num_units_sub=256,
-            decoder_num_layers_sub=1,
-            decoder_dropout=0.1,
-            embedding_dim=64,
-            embedding_dim_sub=32,
+            bidirectional=bidirectional,
+            num_units=256,
+            num_proj=256 if projection else 0,
+            num_layers=3,
+            num_layers_sub=2,
+            fc_list=fc_list,
+            dropout=0.1,
             main_loss_weight=0.5,
             num_classes=num_classes,
             num_classes_sub=num_classes_sub,
             parameter_init=0.1,
-            subsample_list=[] if not subsample else [False, True, False],
-            subsample_type='concat' if subsample is False else subsample,
-            init_dec_state='zero',
-            sharpening_factor=1,
-            logits_temperature=1,
-            sigmoid_smoothing=False,
-            ctc_loss_weight_sub=ctc_loss_weight_sub,
-            attention_conv_num_channels=10,
-            attention_conv_width=201,
+            subsample_list=[] if not subsample else [True] * 3,
             num_stack=num_stack,
             splice=splice,
             conv_channels=conv_channels,
@@ -155,15 +127,10 @@ class TestHierarchicalAttention(unittest.TestCase):
             conv_strides=conv_strides,
             poolings=poolings,
             batch_norm=batch_norm,
-            scheduled_sampling_prob=0.1,
-            scheduled_sampling_ramp_max_step=200,
             label_smoothing_prob=0.1 if label_smoothing else 0,
             weight_noise_std=0,
-            encoder_residual=residual,
-            encoder_dense_residual=dense_residual,
-            decoder_residual=residual,
-            decoder_dense_residual=dense_residual,
-            curriculum_training=curriculum_training)
+            residual=residual,
+            dense_residual=dense_residual)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):
@@ -225,25 +192,24 @@ class TestHierarchicalAttention(unittest.TestCase):
             if (step + 1) % 10 == 0:
                 # Decode
                 labels_pred = model.decode(
-                    inputs, inputs_seq_len, beam_width=1, max_decode_len=30)
+                    inputs, inputs_seq_len, beam_width=1)
                 labels_pred_sub = model.decode(
-                    inputs, inputs_seq_len, beam_width=1, max_decode_len=60,
-                    is_sub_task=True)
+                    inputs, inputs_seq_len, beam_width=1, is_sub_task=True)
 
                 # Compute accuracy
-                str_pred = idx2word(labels_pred[0][0:-1]).split('>')[0]
-                str_true = idx2word(labels[0][1:-1])
+                str_true = idx2word(labels[0, :labels_seq_len[0]])
+                str_pred = idx2word(labels_pred[0])
                 ler = compute_wer(ref=str_true.split('_'),
                                   hyp=str_pred.split('_'),
                                   normalize=True)
-                str_pred_sub = idx2char(labels_pred_sub[0][0:-1]).split('>')[0]
-                str_true_sub = idx2char(labels_sub[0][1:-1])
+                str_true_sub = idx2char(labels_sub[0, :labels_seq_len_sub[0]])
+                str_pred_sub = idx2char(labels_pred_sub[0])
                 ler_sub = compute_cer(ref=str_true_sub.replace('_', ''),
                                       hyp=str_pred_sub.replace('_', ''),
                                       normalize=True)
 
                 duration_step = time.time() - start_time_step
-                print('Step %d: loss = %.3f (%.3f/%.3f) / ler (main) = %.3f / ler (sub) = %.3f / lr = %.5f (%.3f sec)' %
+                print('Step %d: loss = %.3f (%.3f/%.3f) / ler = %.3f (%.3f) / lr = %.5f (%.3f sec)' %
                       (step + 1, loss.data[0], loss_main.data[0], loss_sub.data[0],
                        ler, ler_sub, learning_rate, duration_step))
                 start_time_step = time.time()

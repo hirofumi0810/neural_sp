@@ -103,6 +103,7 @@ def load(model_type, params):
             model.name += '_res'
         if bool(params['dense_residual']):
             model.name += '_dense_res'
+        model.name += '_input' + str(model.input_size)
 
     elif model_type == 'student_ctc':
         if 'activation' not in params.keys():
@@ -218,6 +219,8 @@ def load(model_type, params):
             model.name = 'conv_' + model.name
         model.name += str(params['encoder_num_units']) + 'H'
         model.name += str(params['encoder_num_layers']) + 'L'
+        if params['encoder_num_proj'] != 0:
+            model.name += '_proj' + str(params['encoder_num_proj'])
         if sum(params['subsample_list']) > 0:
             model.name += '_' + params['subsample_type'] + \
                 str(2 ** sum(params['subsample_list']))
@@ -229,8 +232,6 @@ def load(model_type, params):
         model.name += '_' + params['optimizer']
         model.name += '_lr' + str(params['learning_rate'])
         model.name += '_' + params['attention_type']
-        if params['encoder_num_proj'] != 0:
-            model.name += '_proj' + str(params['encoder_num_proj'])
         if params['dropout_encoder'] != 0 or params['dropout_decoder'] != 0:
             model.name += '_drop'
             if params['dropout_encoder'] != 0:

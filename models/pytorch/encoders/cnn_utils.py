@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Utilitiels for CNN encoders."""
+"""Utilitiels for CNN encoders (pytorch)."""
 
 from __future__ import absolute_import
 from __future__ import division

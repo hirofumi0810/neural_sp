@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Test CTC models in pytorch."""
+"""Test CTC models (pytorch)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -14,7 +14,7 @@ import unittest
 import torch
 import torch.nn as nn
 
-sys.path.append('../../../')
+sys.path.append('../../../../')
 from models.pytorch.ctc.ctc import CTC
 from models.test.data import generate_data, idx2char, idx2word
 from utils.io.variable import np2var, var2np
@@ -122,7 +122,8 @@ class TestCTC(unittest.TestCase):
             label_type=label_type,
             batch_size=2,
             num_stack=num_stack,
-            splice=splice)
+            splice=splice,
+            backend='pytorch')
 
         if label_type == 'char':
             num_classes = 27

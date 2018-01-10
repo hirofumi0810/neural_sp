@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""CNN encoder."""
+"""CNN encoder (pytorch)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -106,14 +106,14 @@ class CNNEncoder(nn.Module):
 
         self.output_size = conv_channels[-1] * in_freq * in_time
 
-    def forward(self, inputs):
+    def forward(self, xs):
         """Forward computation.
         Args:
-            inputs (FloatTensor): A tensor of size `[B, T, input_size]`
+            xs (FloatTensor): A tensor of size `[B, T, input_size]`
         Returns:
-            outputs (FloatTensor): A tensor of size `[B, T, feature_dim]`
+            xs (FloatTensor): A tensor of size `[B, T, feature_dim]`
         """
-        batch_size, max_time, input_size = inputs.size()
+        batch_size, max_time, input_size = xs.size()
 
         # for debug
         # print('input_size: %d' % input_size)
@@ -126,27 +126,26 @@ class CNNEncoder(nn.Module):
             self.input_channels * self.splice * self.num_stack
 
         # Reshape to 4D tensor
-        inputs = inputs.view(
+        xs = xs.view(
             batch_size * max_time, self.input_channels,
             self.input_freq, self.splice * self.num_stack)
 
-        # print(inputs.size())
-        outputs = self.conv(inputs)
-        # print(outputs.size())
+        # print(xs.size())
+        xs = self.conv(xs)
+        # print(xs.size())
 
         # for debug
-        # print(inputs.size())
-        # outputs = inputs
+        # print(xs.size())
+        # xs = xs
         # for layer in self.conv:
         #     print(layer)
-        #     outputs = layer(outputs)
-        #     print(outputs.size())
+        #     xs = layer(xs)
+        #     print(xs.size())
 
-        output_channels, freq, time = outputs.size()[1:]
+        output_channels, freq, time = xs.size()[1:]
 
         # Collapse feature dimension
-        outputs = outputs.view(
-            batch_size, -1, output_channels * freq * time)
-        # print(outputs.size())
+        xs = xs.view(batch_size, -1, output_channels * freq * time)
+        # print(xs.size())
 
-        return outputs
+        return xs

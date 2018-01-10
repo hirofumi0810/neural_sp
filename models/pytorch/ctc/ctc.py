@@ -200,13 +200,13 @@ class CTC(ModelBase):
             labels (np.ndarray): A tensor of size `[B, T_out]`
             inputs_seq_len (np.ndarray): A tensor of size `[B]`
             labels_seq_len (np.ndarray): A tensor of size `[B]`
-            is_eval (bool): if True, the history will not be saved.
+            is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
             loss (FloatTensor): A tensor of size `[1]`
         """
         # Wrap by Variable
-        x = np2var(inputs, use_cuda=self.use_cuda)
+        xs = np2var(inputs, use_cuda=self.use_cuda)
         ys = np2var(labels, dtype='int', use_cuda=False)
         x_lens = np2var(inputs_seq_len, dtype='int', use_cuda=self.use_cuda)
         y_lens = np2var(labels_seq_len, dtype='int', use_cuda=False)
@@ -224,7 +224,7 @@ class CTC(ModelBase):
                 self._inject_weight_noise(mean=0., std=self.weight_noise_std)
 
         # Encode acoustic features
-        logits, perm_indices = self._encode(x, x_lens, volatile=is_eval)
+        logits, perm_indices = self._encode(xs, x_lens, volatile=is_eval)
 
         # Permutate indices
         if perm_indices is not None:
@@ -321,7 +321,7 @@ class CTC(ModelBase):
             probs (np.ndarray): A tensor of size `[B, T, num_classes]`
         """
         # Wrap by Variable
-        x = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
+        xs = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
         x_lens = np2var(
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
 
@@ -332,12 +332,12 @@ class CTC(ModelBase):
         if hasattr(self, 'main_loss_weight'):
             if is_sub_task:
                 _, logits, perm_indices = self._encode(
-                    x, x_lens, volatile=True, is_multi_task=True)
+                    xs, x_lens, volatile=True, is_multi_task=True)
             else:
                 logits, _, perm_indices = self._encode(
-                    x, x_lens, volatile=True, is_multi_task=True)
+                    xs, x_lens, volatile=True, is_multi_task=True)
         else:
-            logits, perm_indices = self._encode(x, x_lens, volatile=True)
+            logits, perm_indices = self._encode(xs, x_lens, volatile=True)
 
         # Convert to batch-major
         logits = logits.transpose(0, 1)
@@ -361,13 +361,13 @@ class CTC(ModelBase):
             inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
             inputs_seq_len (np.ndarray): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
-            max_decode_len: not used (to match interface)
+            max_decode_len: not used (to make CTC compatible with attention)
             is_sub_task (bool, optional):
         Returns:
             best_hyps (np.ndarray):
         """
         # Wrap by Variable
-        x = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
+        xs = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
         x_lens = np2var(
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
 
@@ -378,12 +378,12 @@ class CTC(ModelBase):
         if hasattr(self, 'main_loss_weight'):
             if is_sub_task:
                 _, logits, perm_indices = self._encode(
-                    x, x_lens, volatile=True, is_multi_task=True)
+                    xs, x_lens, volatile=True, is_multi_task=True)
             else:
                 logits, _, perm_indices = self._encode(
-                    x, x_lens, volatile=True, is_multi_task=True)
+                    xs, x_lens, volatile=True, is_multi_task=True)
         else:
-            logits, perm_indices = self._encode(x, x_lens, volatile=True)
+            logits, perm_indices = self._encode(xs, x_lens, volatile=True)
 
         # Permutate indices
         if perm_indices is not None:

@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Test praimidal RNN encoders in pytorch."""
+"""Test praimidal RNN encoders (pytorch)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -9,9 +9,9 @@ from __future__ import print_function
 
 import sys
 import unittest
-import numpy as np
+import math
 
-sys.path.append('../../../')
+sys.path.append('../../../../')
 from models.pytorch.encoders.load_encoder import load
 from models.test.data import generate_data
 from utils.io.variable import np2var, var2np
@@ -155,11 +155,12 @@ class TestPyramidRNNEncoders(unittest.TestCase):
             model_type='ctc',
             batch_size=batch_size,
             num_stack=num_stack,
-            splice=splice)
+            splice=splice,
+            backend='pytorch')
 
         # Wrap by Variable
-        inputs = np2var(inputs)
-        inputs_seq_len = np2var(inputs_seq_len)
+        inputs = np2var(inputs, backend='pytorch')
+        inputs_seq_len = np2var(inputs_seq_len, backend='pytorch')
 
         # Load encoder
         encoder = load(encoder_type=encoder_type)
@@ -197,9 +198,13 @@ class TestPyramidRNNEncoders(unittest.TestCase):
             max_time = encoder.conv.get_conv_out_size(max_time, 1)
         max_time_sub = max_time / \
             (2 ** sum(encoder.subsample_list[:encoder.num_layers_sub]))
-        max_time_sub = int(max_time_sub)
         max_time /= (2 ** sum(encoder.subsample_list))
-        max_time = int(max_time)
+        if subsample_type == 'drop':
+            max_time_sub = math.ceil(max_time_sub)
+            max_time = math.ceil(max_time)
+        elif subsample_type == 'concat':
+            max_time_sub = int(max_time_sub)
+            max_time = int(max_time)
 
         outputs, outputs_sub, perm_indices = encoder(inputs, inputs_seq_len)
 

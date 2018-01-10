@@ -42,10 +42,10 @@ class ModelBase(nn.Module):
     def init_weights(self):
         for name, param in self.named_parameters():
             nn.init.uniform(param.data,
-                            a=-self.parameter_init, b=self.parameter_init)
+                            a=-self.parameter_init,
+                            b=self.parameter_init)
 
     def _inject_weight_noise(self, mean, std):
-
         m = torch.distributions.Normal(
             torch.Tensor([mean]), torch.Tensor([std]))
         for name, param in self.named_parameters():

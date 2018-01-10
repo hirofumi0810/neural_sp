@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""CNN encoder."""
+"""CNN encoder (pytorch)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -107,30 +107,29 @@ class CNNEncoder(nn.Module):
         self.get_conv_out_size = ConvOutSize(self.conv)
         self.output_size = conv_channels[-1] * in_freq
 
-    def forward(self, inputs):
+    def forward(self, xs):
         """Forward computation.
         Args:
-            inputs (FloatTensor): A tensor of size `[B, T, input_size]`
+            xs (FloatTensor): A tensor of size `[B, T, input_size]`
         Returns:
-            outputs (FloatTensor): A tensor of size `[B, T', feature_dim]`
+            xs (FloatTensor): A tensor of size `[B, T', feature_dim]`
         """
-        batch_size, max_time, input_size = inputs.size()
+        batch_size, max_time, input_size = xs.size()
 
         assert input_size == self.input_freq * self.input_channels
 
         # Reshape to 4D tensor
-        inputs = inputs.transpose(1, 2).contiguous()
-        inputs = inputs.unsqueeze(dim=1)
-        # NOTE: inputs: `[B, in_ch, freq, time]`
+        xs = xs.transpose(1, 2).contiguous()
+        xs = xs.unsqueeze(dim=1)
+        # NOTE: xs: `[B, in_ch, freq, time]`
 
-        outputs = self.conv(inputs)
-        # print(outputs.size())
-        # NOTE: outputs: `[B, out_ch, new_freq, new_time]`
+        xs = self.conv(xs)
+        # print(xs.size())
+        # NOTE: xs: `[B, out_ch, new_freq, new_time]`
 
         # Collapse feature dimension
-        output_channels, freq, time = outputs.size()[1:]
-        outputs = outputs.transpose(1, 3).contiguous()
-        outputs = outputs.view(
-            batch_size, time, freq * output_channels)
+        output_channels, freq, time = xs.size()[1:]
+        xs = xs.transpose(1, 3).contiguous()
+        xs = xs.view(batch_size, time, freq * output_channels)
 
-        return outputs
+        return xs

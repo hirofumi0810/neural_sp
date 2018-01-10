@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Test attention-besed models in pytorch."""
+"""Test hierarchical attention-besed models (pytorch)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -14,8 +14,8 @@ import unittest
 import torch
 import torch.nn as nn
 
-sys.path.append('../../../')
-from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
+sys.path.append('../../../../')
+from models.pytorch.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
 from models.test.data import generate_data, idx2char, idx2word
 from utils.measure_time_func import measure_time
 from utils.io.variable import np2var, var2np
@@ -25,16 +25,14 @@ from utils.training.learning_rate_controller import Controller
 torch.manual_seed(2017)
 
 
-class TestAttention(unittest.TestCase):
+class TestHierarchicalAttention(unittest.TestCase):
 
     def test(self):
-        print("Attention Working check.")
+        print("Hierarchical Attention Working check.")
 
-        # Initialize decoder state
+        # Curriculum training
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', init_dec_state='mean')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', init_dec_state='final')
+                   decoder_type='lstm', curriculum_training=True)
 
         # Pyramidal encoder
         self.check(encoder_type='lstm', bidirectional=True,
@@ -62,79 +60,42 @@ class TestAttention(unittest.TestCase):
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', conv=True, batch_norm=True)
 
-        # Joint CTC-Attention
+        # Word attention + char CTC
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', ctc_loss_weight=0.1)
+                   decoder_type='lstm', ctc_loss_weight_sub=0.5)
 
-        # word-level attention
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', attention_type='dot_product',
-                   label_type='word')
-
-        # unidirectional & bidirectional
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm')
-        self.check(encoder_type='lstm', bidirectional=False,
-                   decoder_type='lstm')
-        self.check(encoder_type='gru', bidirectional=True,
-                   decoder_type='gru')
-        self.check(encoder_type='gru', bidirectional=False,
-                   decoder_type='gru')
-
-        # Attention type
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', attention_type='content')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', attention_type='location')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', attention_type='dot_product')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', attention_type='luong_dot')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', attention_type='luong_general')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', attention_type='luong_concat')
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            decoder_type='lstm', attention_type='scaled_luong_dot')
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            decoder_type='lstm', attention_type='normed_content')
 
     @measure_time
     def check(self, encoder_type, bidirectional, decoder_type,
-              attention_type='location', label_type='char',
-              subsample=False, projection=False, init_dec_state='zero',
-              ctc_loss_weight=0, conv=False, batch_norm=False,
-              residual=False, dense_residual=False, label_smoothing=False):
+              attention_type='location',
+              subsample=False, projection=False,
+              ctc_loss_weight_sub=0, conv=False, batch_norm=False,
+              residual=False, dense_residual=False, label_smoothing=False,
+              curriculum_training=True):
 
         print('==================================================')
-        print('  label_type: %s' % label_type)
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
         print('  projection: %s' % str(projection))
         print('  decoder_type: %s' % decoder_type)
-        print('  init_dec_state: %s' % init_dec_state)
         print('  attention_type: %s' % attention_type)
         print('  subsample: %s' % str(subsample))
-        print('  ctc_loss_weight: %s' % str(ctc_loss_weight))
+        print('  ctc_loss_weight_sub: %s' % str(ctc_loss_weight_sub))
         print('  conv: %s' % str(conv))
         print('  batch_norm: %s' % str(batch_norm))
         print('  residual: %s' % str(residual))
         print('  dense_residual: %s' % str(dense_residual))
         print('  label_smoothing: %s' % str(label_smoothing))
+        print('  curriculum_training: %s' % str(curriculum_training))
         print('==================================================')
 
         if conv:
-            # pattern 1
-            # conv_channels = [32, 32]
-            # conv_kernel_sizes = [[41, 11], [21, 11]]
-            # conv_strides = [[2, 2], [2, 1]]
-            # poolings = [[], []]
-
-            # pattern 2 (VGG like)
-            conv_channels = [64, 64]
-            conv_kernel_sizes = [[3, 3], [3, 3]]
-            conv_strides = [[1, 1], [1, 1]]
-            poolings = [[2, 2], [2, 2]]
+            conv_channels = [32, 32]
+            conv_kernel_sizes = [[41, 11], [21, 11]]
+            conv_strides = [[2, 2], [2, 1]]
+            poolings = [[], []]
         else:
             conv_channels = []
             conv_kernel_sizes = []
@@ -144,46 +105,48 @@ class TestAttention(unittest.TestCase):
         # Load batch data
         splice = 1
         num_stack = 1 if subsample or conv else 2
-        inputs, labels, inputs_seq_len, labels_seq_len = generate_data(
+        inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub = generate_data(
             model_type='attention',
-            label_type=label_type,
+            label_type='word_char',
             batch_size=2,
             num_stack=num_stack,
-            splice=splice)
+            splice=splice,
+            backend='pytorch')
 
-        if label_type == 'char':
-            num_classes = 27
-            map_fn = idx2char
-        elif label_type == 'word':
-            num_classes = 11
-            map_fn = idx2word
+        num_classes = 11
+        num_classes_sub = 27
 
         # Load model
-        model = AttentionSeq2seq(
+        model = HierarchicalAttentionSeq2seq(
             input_size=inputs.shape[-1] // splice // num_stack,  # 120
             encoder_type=encoder_type,
             encoder_bidirectional=bidirectional,
             encoder_num_units=256,
             encoder_num_proj=256 if projection else 0,
-            encoder_num_layers=2,
+            encoder_num_layers=3,
+            encoder_num_layers_sub=2,
             encoder_dropout=0.1,
             attention_type=attention_type,
             attention_dim=128,
             decoder_type=decoder_type,
             decoder_num_units=256,
             decoder_num_layers=2,
+            decoder_num_units_sub=256,
+            decoder_num_layers_sub=1,
             decoder_dropout=0.1,
-            embedding_dim=32,
+            embedding_dim=64,
+            embedding_dim_sub=32,
+            main_loss_weight=0.5,
             num_classes=num_classes,
-            ctc_loss_weight=ctc_loss_weight,
+            num_classes_sub=num_classes_sub,
             parameter_init=0.1,
-            subsample_list=[] if subsample is False else [True, False],
+            subsample_list=[] if not subsample else [False, True, False],
             subsample_type='concat' if subsample is False else subsample,
-            init_dec_state=init_dec_state,
+            init_dec_state='zero',
             sharpening_factor=1,
             logits_temperature=1,
             sigmoid_smoothing=False,
-            coverage_weight=0.5,
+            ctc_loss_weight_sub=ctc_loss_weight_sub,
             attention_conv_num_channels=10,
             attention_conv_width=201,
             num_stack=num_stack,
@@ -200,7 +163,8 @@ class TestAttention(unittest.TestCase):
             encoder_residual=residual,
             encoder_dense_residual=dense_residual,
             decoder_residual=residual,
-            decoder_dense_residual=dense_residual)
+            decoder_dense_residual=dense_residual,
+            curriculum_training=curriculum_training)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):
@@ -212,7 +176,7 @@ class TestAttention(unittest.TestCase):
         optimizer, scheduler = model.set_optimizer(
             'adam',
             learning_rate_init=1e-3,
-            weight_decay=1e-8,
+            weight_decay=1e-6,
             lr_schedule=False,
             factor=0.1,
             patience_epoch=5)
@@ -242,7 +206,9 @@ class TestAttention(unittest.TestCase):
             optimizer.zero_grad()
 
             # Compute loss
-            loss = model(inputs, labels, inputs_seq_len, labels_seq_len)
+            loss, loss_main, loss_sub = model(
+                inputs, labels, labels_sub,
+                inputs_seq_len, labels_seq_len, labels_seq_len_sub)
 
             # Compute gradient
             optimizer.zero_grad()
@@ -257,49 +223,38 @@ class TestAttention(unittest.TestCase):
             else:
                 optimizer.step()
 
-            # Inject Gaussian noise to all parameters
-            if loss.data[0] < 50:
-                model.weight_noise_injection = True
-
             if (step + 1) % 10 == 0:
                 # Decode
                 labels_pred = model.decode(
-                    inputs, inputs_seq_len,
-                    # beam_width=1,
-                    beam_width=2,
-                    max_decode_len=60)
+                    inputs, inputs_seq_len, beam_width=1, max_decode_len=30)
+                labels_pred_sub = model.decode(
+                    inputs, inputs_seq_len, beam_width=1, max_decode_len=60,
+                    is_sub_task=True)
 
                 # Compute accuracy
-                if label_type == 'char':
-                    str_true = map_fn(labels[0, :labels_seq_len[0]][1:-1])
-                    str_pred = map_fn(labels_pred[0][0:-1]).split('>')[0]
-                    ler = compute_cer(ref=str_true.replace('_', ''),
-                                      hyp=str_pred.replace('_', ''),
-                                      normalize=True)
-                elif label_type == 'word':
-                    str_true = map_fn(labels[0, : labels_seq_len[0]][1: -1])
-                    str_pred = map_fn(labels_pred[0][0: -1]).split('>')[0]
-                    ler = compute_wer(ref=str_true.split('_'),
-                                      hyp=str_pred.split('_'),
+                str_pred = idx2word(labels_pred[0][0:-1]).split('>')[0]
+                str_true = idx2word(labels[0][1:-1])
+                ler = compute_wer(ref=str_true.split('_'),
+                                  hyp=str_pred.split('_'),
+                                  normalize=True)
+                str_pred_sub = idx2char(labels_pred_sub[0][0:-1]).split('>')[0]
+                str_true_sub = idx2char(labels_sub[0][1:-1])
+                ler_sub = compute_cer(ref=str_true_sub.replace('_', ''),
+                                      hyp=str_pred_sub.replace('_', ''),
                                       normalize=True)
 
                 duration_step = time.time() - start_time_step
-                print('Step %d: loss = %.3f / ler = %.3f / lr = %.5f (%.3f sec)' %
-                      (step + 1, loss.data[0], ler, learning_rate, duration_step))
+                print('Step %d: loss = %.3f (%.3f/%.3f) / ler (main) = %.3f / ler (sub) = %.3f / lr = %.5f (%.3f sec)' %
+                      (step + 1, loss.data[0], loss_main.data[0], loss_sub.data[0],
+                       ler, ler_sub, learning_rate, duration_step))
                 start_time_step = time.time()
 
                 # Visualize
                 print('Ref: %s' % str_true)
-                print('Hyp: %s' % str_pred)
+                print('Hyp (word): %s' % str_pred)
+                print('Hyp (char): %s' % str_pred_sub)
 
-                # Decode by theCTC decoder
-                if model.ctc_loss_weight >= 0.1:
-                    labels_pred_ctc = model.decode_ctc(
-                        inputs, inputs_seq_len, beam_width=1)
-                    str_pred_ctc = map_fn(labels_pred_ctc[0])
-                    print('Hyp (CTC): %s' % str_pred_ctc)
-
-                if ler < 0.1:
+                if ler_sub < 0.1:
                     print('Modle is Converged.')
                     break
                 ler_pre = ler

@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Test the attention layer in pytorch."""
+"""Test the attention layer (pytorch)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -13,7 +13,7 @@ import unittest
 import torch
 from torch.autograd import Variable
 
-sys.path.append('../../../')
+sys.path.append('../../../../')
 from models.pytorch.attention.attention_layer import AttentionMechanism
 from utils.measure_time_func import measure_time
 

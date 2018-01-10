@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Test hierarchical RNN encoders in pytorch."""
+"""Test praimidal RNN encoders (pytorch)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -9,19 +9,19 @@ from __future__ import print_function
 
 import sys
 import unittest
-import numpy as np
+import math
 
-sys.path.append('../../../')
+sys.path.append('../../../../')
 from models.pytorch.encoders.load_encoder import load
 from models.test.data import generate_data
 from utils.io.variable import np2var, var2np
 from utils.measure_time_func import measure_time
 
 
-class TestHierarchicalRNNEncoders(unittest.TestCase):
+class TestPyramidRNNEncoders(unittest.TestCase):
 
     def test(self):
-        print("Hierarchical RNN Encoders Working check.")
+        print("Pyramidal RNN Encoders Working check.")
 
         # Projection layer
         self.check(encoder_type='lstm', bidirectional=False,
@@ -36,12 +36,16 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
                    residual=True)
         self.check(encoder_type='lstm', bidirectional=True,
                    residual=True)
+        self.check(encoder_type='lstm', bidirectional=False,
+                   batch_first=False, residual=True)
         self.check(encoder_type='lstm', bidirectional=True,
                    batch_first=False, residual=True)
         self.check(encoder_type='lstm', bidirectional=False,
                    dense_residual=True)
         self.check(encoder_type='lstm', bidirectional=True,
                    dense_residual=True)
+        self.check(encoder_type='lstm', bidirectional=False,
+                   batch_first=False, dense_residual=True)
         self.check(encoder_type='lstm', bidirectional=True,
                    batch_first=False, dense_residual=True)
 
@@ -59,19 +63,45 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
         self.check(encoder_type='rnn', bidirectional=True,
                    batch_first=False, conv=True)
 
-        # LSTM, GRU, RNN
-        self.check(encoder_type='lstm')
-        self.check(encoder_type='lstm', bidirectional=True)
+        # drop
+        self.check(encoder_type='lstm', bidirectional=False,
+                   subsample_type='drop')
         self.check(encoder_type='lstm', bidirectional=True,
-                   batch_first=False)
-        self.check(encoder_type='gru')
-        self.check(encoder_type='gru', bidirectional=True)
+                   subsample_type='drop')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   batch_first=False, subsample_type='drop')
+        self.check(encoder_type='gru', bidirectional=False,
+                   subsample_type='drop')
         self.check(encoder_type='gru', bidirectional=True,
-                   batch_first=False)
-        self.check(encoder_type='rnn')
-        self.check(encoder_type='rnn', bidirectional=True)
+                   subsample_type='drop')
+        self.check(encoder_type='gru', bidirectional=True,
+                   batch_first=False, subsample_type='drop')
+        self.check(encoder_type='rnn', bidirectional=False,
+                   subsample_type='drop')
         self.check(encoder_type='rnn', bidirectional=True,
-                   batch_first=False)
+                   subsample_type='drop')
+        self.check(encoder_type='rnn', bidirectional=True,
+                   batch_first=False, subsample_type='drop')
+
+        # concat
+        self.check(encoder_type='lstm', bidirectional=False,
+                   subsample_type='concat')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   subsample_type='concat')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   batch_first=False, subsample_type='concat')
+        self.check(encoder_type='gru', bidirectional=False,
+                   subsample_type='concat')
+        self.check(encoder_type='gru', bidirectional=True,
+                   subsample_type='concat')
+        self.check(encoder_type='gru', bidirectional=True,
+                   batch_first=False, subsample_type='concat')
+        self.check(encoder_type='rnn', bidirectional=False,
+                   subsample_type='concat')
+        self.check(encoder_type='rnn', bidirectional=True,
+                   subsample_type='concat')
+        self.check(encoder_type='rnn', bidirectional=True,
+                   batch_first=False, subsample_type='concat')
 
         # merge_bidirectional
         self.check(encoder_type='lstm', bidirectional=True,
@@ -83,6 +113,7 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
 
     @measure_time
     def check(self, encoder_type, bidirectional=False, batch_first=True,
+              subsample_type='concat',
               conv=False, merge_bidirectional=False,
               projection=False, residual=False, dense_residual=False):
 
@@ -90,6 +121,7 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
         print('  batch_first: %s' % str(batch_first))
+        print('  subsample_type: %s' % subsample_type)
         print('  conv: %s' % str(conv))
         print('  merge_bidirectional: %s' % str(merge_bidirectional))
         print('  projection: %s' % str(projection))
@@ -123,57 +155,62 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
             model_type='ctc',
             batch_size=batch_size,
             num_stack=num_stack,
-            splice=splice)
+            splice=splice,
+            backend='pytorch')
 
         # Wrap by Variable
-        inputs = np2var(inputs)
-        inputs_seq_len = np2var(inputs_seq_len)
+        inputs = np2var(inputs, backend='pytorch')
+        inputs_seq_len = np2var(inputs_seq_len, backend='pytorch')
 
         # Load encoder
         encoder = load(encoder_type=encoder_type)
 
         # Initialize encoder
-        encoder = encoder(
-            input_size=inputs.size(-1) // splice // num_stack,  # 120
-            rnn_type=encoder_type,
-            bidirectional=bidirectional,
-            num_units=256,
-            num_proj=256 if projection else 0,
-            num_layers=5,
-            num_layers_sub=3,
-            dropout=0.2,
-            parameter_init=0.1,
-            subsample_list=[],
-            batch_first=batch_first,
-            merge_bidirectional=merge_bidirectional,
-            splice=splice,
-            num_stack=num_stack,
-            conv_channels=conv_channels,
-            conv_kernel_sizes=conv_kernel_sizes,
-            conv_strides=conv_strides,
-            poolings=poolings,
-            batch_norm=True,
-            residual=residual,
-            dense_residual=dense_residual)
+        if encoder_type in ['lstm', 'gru', 'rnn']:
+            encoder = encoder(
+                input_size=inputs.size(-1) // splice // num_stack,  # 120
+                rnn_type=encoder_type,
+                bidirectional=bidirectional,
+                num_units=256,
+                num_proj=256 if projection else 0,
+                num_layers=5,
+                dropout=0.2,
+                parameter_init=0.1,
+                subsample_list=[False, True, True, False, False],
+                subsample_type=subsample_type,
+                batch_first=batch_first,
+                merge_bidirectional=merge_bidirectional,
+                splice=splice,
+                num_stack=num_stack,
+                conv_channels=conv_channels,
+                conv_kernel_sizes=conv_kernel_sizes,
+                conv_strides=conv_strides,
+                poolings=poolings,
+                batch_norm=True,
+                residual=residual,
+                dense_residual=dense_residual)
+        else:
+            raise NotImplementedError
 
         max_time = inputs.size(1)
         if conv:
             max_time = encoder.conv.get_conv_out_size(max_time, 1)
+        max_time /= (2 ** sum(encoder.subsample_list))
+        if subsample_type == 'drop':
+            max_time = math.ceil(max_time)
+        elif subsample_type == 'concat':
+            max_time = int(max_time)
 
-        outputs, outputs_sub, perm_indices = encoder(inputs, inputs_seq_len)
+        outputs, perm_indices = encoder(inputs, inputs_seq_len)
 
         print('----- outputs -----')
-        print(outputs_sub.size())
+        print(inputs.size())
         print(outputs.size())
         num_directions = 2 if bidirectional and not merge_bidirectional else 1
         if batch_first:
             self.assertEqual((batch_size, max_time, encoder.num_units * num_directions),
-                             outputs_sub.size())
-            self.assertEqual((batch_size, max_time, encoder.num_units * num_directions),
                              outputs.size())
         else:
-            self.assertEqual((max_time, batch_size, encoder.num_units * num_directions),
-                             outputs_sub.size())
             self.assertEqual((max_time, batch_size, encoder.num_units * num_directions),
                              outputs.size())
 

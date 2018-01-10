@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""ResNet encoder.
+"""ResNet encoder (pytorch).
    This implementation is bases on
 """
 

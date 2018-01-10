@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Load each encoder."""
+"""Load each encoder (pytorch)."""
 
 from __future__ import absolute_import
 from __future__ import division

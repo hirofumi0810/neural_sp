@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Test RNN encoders in pytorch."""
+"""Test hierarchical RNN encoders (pytorch)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -9,19 +9,18 @@ from __future__ import print_function
 
 import sys
 import unittest
-import numpy as np
 
-sys.path.append('../../../')
+sys.path.append('../../../../')
 from models.pytorch.encoders.load_encoder import load
 from models.test.data import generate_data
 from utils.io.variable import np2var, var2np
 from utils.measure_time_func import measure_time
 
 
-class TestRNNEncoders(unittest.TestCase):
+class TestHierarchicalRNNEncoders(unittest.TestCase):
 
     def test(self):
-        print("RNN Encoders Working check.")
+        print("Hierarchical RNN Encoders Working check.")
 
         # Projection layer
         self.check(encoder_type='lstm', bidirectional=False,
@@ -60,15 +59,15 @@ class TestRNNEncoders(unittest.TestCase):
                    batch_first=False, conv=True)
 
         # LSTM, GRU, RNN
-        self.check(encoder_type='lstm', bidirectional=False)
+        self.check(encoder_type='lstm')
         self.check(encoder_type='lstm', bidirectional=True)
         self.check(encoder_type='lstm', bidirectional=True,
                    batch_first=False)
-        self.check(encoder_type='gru', bidirectional=False)
+        self.check(encoder_type='gru')
         self.check(encoder_type='gru', bidirectional=True)
         self.check(encoder_type='gru', bidirectional=True,
                    batch_first=False)
-        self.check(encoder_type='rnn', bidirectional=False)
+        self.check(encoder_type='rnn')
         self.check(encoder_type='rnn', bidirectional=True)
         self.check(encoder_type='rnn', bidirectional=True,
                    batch_first=False)
@@ -123,11 +122,12 @@ class TestRNNEncoders(unittest.TestCase):
             model_type='ctc',
             batch_size=batch_size,
             num_stack=num_stack,
-            splice=splice)
+            splice=splice,
+            backend='pytorch')
 
         # Wrap by Variable
-        inputs = np2var(inputs)
-        inputs_seq_len = np2var(inputs_seq_len)
+        inputs = np2var(inputs, backend='pytorch')
+        inputs_seq_len = np2var(inputs_seq_len, backend='pytorch')
 
         # Load encoder
         encoder = load(encoder_type=encoder_type)
@@ -140,6 +140,7 @@ class TestRNNEncoders(unittest.TestCase):
             num_units=256,
             num_proj=256 if projection else 0,
             num_layers=5,
+            num_layers_sub=3,
             dropout=0.2,
             parameter_init=0.1,
             subsample_list=[],
@@ -159,20 +160,22 @@ class TestRNNEncoders(unittest.TestCase):
         if conv:
             max_time = encoder.conv.get_conv_out_size(max_time, 1)
 
-        outputs, perm_indices = encoder(inputs, inputs_seq_len)
+        outputs, outputs_sub, perm_indices = encoder(inputs, inputs_seq_len)
 
         print('----- outputs -----')
+        print(outputs_sub.size())
         print(outputs.size())
         num_directions = 2 if bidirectional and not merge_bidirectional else 1
         if batch_first:
-            self.assertEqual(
-                (batch_size, max_time, encoder.num_units * num_directions),
-                outputs.size())
-
+            self.assertEqual((batch_size, max_time, encoder.num_units * num_directions),
+                             outputs_sub.size())
+            self.assertEqual((batch_size, max_time, encoder.num_units * num_directions),
+                             outputs.size())
         else:
-            self.assertEqual(
-                (max_time, batch_size, encoder.num_units * num_directions),
-                outputs.size())
+            self.assertEqual((max_time, batch_size, encoder.num_units * num_directions),
+                             outputs_sub.size())
+            self.assertEqual((max_time, batch_size, encoder.num_units * num_directions),
+                             outputs.size())
 
 
 if __name__ == '__main__':

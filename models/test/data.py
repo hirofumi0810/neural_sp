@@ -32,7 +32,7 @@ def _read_text(trans_path):
 
 
 def generate_data(model_type, label_type='char', batch_size=1,
-                  num_stack=1, splice=1):
+                  num_stack=1, splice=1, backend='pytorch'):
     """
     Args:
         model_type (string): ctc or attention
@@ -40,20 +40,25 @@ def generate_data(model_type, label_type='char', batch_size=1,
         batch_size (int): the size of mini-batch
         splice (int): frames to splice. Default is 1 frame.
     Returns:
-        inputs: A tensor of size `[B, T, input_size]`
+        inputs (np.ndarray or list): A tensor of size `[B, T, input_size]`
         labels: `[B, max_label_seq_len]`
-        inputs_seq_len: A tensor of size `[B]`
+        inputs_seq_len (np.ndarray or list): A tensor of size `[B]`
         labels_seq_len: A tensor of size `[B]`
     """
     # Make input data
     inputs, inputs_seq_len = wav2feature(
-        ['../sample/LDC93S1.wav'] * batch_size,
+        ['../../sample/LDC93S1.wav'] * batch_size,
         feature_type='logfbank', feature_dim=40,
         energy=False, delta1=True, delta2=True, dtype=np.float32)
 
     max_frame_num = math.ceil(inputs_seq_len[0] / num_stack)
-    inputs_new = np.zeros((batch_size, max_frame_num, inputs.shape[-1] * num_stack * splice),
-                          dtype=np.float32)
+    if backend == 'pytorch':
+        inputs_new = np.zeros((batch_size, max_frame_num, inputs.shape[-1] * num_stack * splice),
+                              dtype=np.float32)
+    elif backend == 'chainer':
+        inputs_new = [None] * batch_size
+        inputs_seq_len = [None] * batch_size
+
     for i, i_batch in enumerate(range(batch_size)):
         # Frame stacking
         data_i = stack_frame(
@@ -65,11 +70,8 @@ def generate_data(model_type, label_type='char', batch_size=1,
         inputs_new[i_batch] = data_i
         inputs_seq_len[i_batch] = len(data_i)
 
-        # inputs_seq_len[i_batch] = len(data_i) - i
-        # NOTE: change inputs_seq_len elaborately
-
     # Make transcripts
-    transcript = _read_text('../sample/LDC93S1.txt')
+    transcript = _read_text('../../sample/LDC93S1.txt')
     transcript = transcript.replace('.', '').replace(' ', SPACE)
     if label_type == 'char':
         if model_type == 'attention':
@@ -178,7 +180,7 @@ def word2idx(transcript):
         vocab.add(word)
 
     word_dict = {}
-    with open('../word.txt', 'w') as f:
+    with open('../../word.txt', 'w') as f:
         for idx, word in enumerate(sorted(list(vocab))):
             word_dict[word] = idx
             f.write('%s\n' % word)
@@ -205,7 +207,7 @@ def idx2word(indices):
         indices = indices.tolist()
 
     word_dict = {}
-    with open('../word.txt', 'r') as f:
+    with open('../../word.txt', 'r') as f:
         for idx, line in enumerate(f):
             word = line.strip()
             word_dict[idx] = word
