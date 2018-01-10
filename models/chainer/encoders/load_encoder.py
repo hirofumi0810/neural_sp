@@ -1,23 +1,24 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Load each encoder."""
+"""Load each encoder (chainer)."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from models.chainer.encoders.rnn import RNN_Encoder
-# from models.chainer.encoders import vgg
-# from models.chainer.encoders import resnet
-# from models.chainer.encoders import hierarchical
+from models.chainer.encoders.rnn import RNNEncoder
+# from models.chainer.encoders.cnn import CNNEncoder
+# from models.chainer.encoders.cnn_v2 import CNNEncoder
 
+# from models.chainer.encoders.resnet import ResNetEncoder
 
 ENCODERS = {
-    "lstm": RNN_Encoder,
-    "gru": RNN_Encoder,
-    "rnn_tanh": RNN_Encoder,
-    "rnn_relu": RNN_Encoder
+    "lstm": RNNEncoder,
+    "gru": RNNEncoder,
+    "rnn": RNNEncoder,
+    # "cnn": CNNEncoder,
+    # "resnet": ResNetEncoder,
 }
 
 
@@ -26,10 +27,10 @@ def load(encoder_type):
     Args:
         encoder_type (string): name of the encoder in the key of ENCODERS
     Returns:
-        model (chianer.Chain): An encoder class
+        model (nn.Module): An encoder class
     """
     if encoder_type not in ENCODERS:
-        raise ValueError(
+        raise TypeError(
             "encoder_type should be one of [%s], you provided %s." %
             (", ".join(ENCODERS), encoder_type))
     return ENCODERS[encoder_type]
