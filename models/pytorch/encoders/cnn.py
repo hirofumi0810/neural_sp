@@ -22,7 +22,6 @@ class CNNEncoder(nn.Module):
         conv_strides (list, optional): strides in CNN layers
         poolings (list, optional): the size of poolings in CNN layers
         dropout (float): the probability to drop nodes
-        use_cuda (bool, optional): if True, use GPUs
         batch_norm (bool, optional):
     """
 
@@ -35,7 +34,6 @@ class CNNEncoder(nn.Module):
                  conv_strides,
                  poolings,
                  dropout,
-                 use_cuda=False,
                  batch_norm=False):
 
         super(CNNEncoder, self).__init__()

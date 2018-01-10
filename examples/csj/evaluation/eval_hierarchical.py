@@ -13,7 +13,7 @@ import yaml
 import argparse
 
 sys.path.append(abspath('../../../'))
-from models.pytorch.load_model import load
+from models.load_model import load
 from examples.csj.data.load_dataset_hierarchical import Dataset
 from examples.csj.metrics.cer import do_eval_cer
 from examples.csj.metrics.wer import do_eval_wer
@@ -52,10 +52,12 @@ def main():
                                               ][params['label_type_sub']]
 
     # Load model
-    model = load(model_type=params['model_type'], params=params)
+    model = load(model_type=params['model_type'],
+                 params=params,
+                 backend=params['backend'])
 
     # GPU setting
-    model.set_cuda(deterministic=False)
+    model.set_cuda(deterministic=False, benchmark=True)
 
     # Restore the saved model
     checkpoint = model.load_checkpoint(
@@ -116,7 +118,7 @@ def main():
             eval_batch_size=args.eval_batch_size,
             progressbar=True,
             is_pos=True)
-        print('  WER (eval1, main): %f %%' % (wer_eval1 * 100))
+        print('  WER (eval1, sub): %f %%' % (wer_eval1 * 100))
         wer_eval2 = do_eval_wer(
             model=model,
             model_type=params['model_type'],
@@ -128,7 +130,7 @@ def main():
             eval_batch_size=args.eval_batch_size,
             progressbar=True,
             is_pos=True)
-        print('  WER (eval2, main): %f %%' % (wer_eval2 * 100))
+        print('  WER (eval2, sub): %f %%' % (wer_eval2 * 100))
         wer_eval3 = do_eval_wer(
             model=model,
             model_type=params['model_type'],
@@ -140,8 +142,8 @@ def main():
             eval_batch_size=args.eval_batch_size,
             progressbar=True,
             is_pos=True)
-        print('  WER (eval3, main): %f %%' % (wer_eval3 * 100))
-        print('  WER (mean, main): %f %%' %
+        print('  WER (eval3, sub): %f %%' % (wer_eval3 * 100))
+        print('  WER (mean, sub): %f %%' %
               ((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3))
     else:
         wer_eval1 = do_eval_wer(

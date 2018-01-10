@@ -46,6 +46,7 @@ class ModelBase(nn.Module):
             nn.init.uniform(param.data,
                             a=-self.parameter_init,
                             b=self.parameter_init)
+        # TODO: make self.parameter_init argument
 
     def _inject_weight_noise(self, mean, std):
         m = torch.distributions.Normal(
@@ -92,8 +93,7 @@ class ModelBase(nn.Module):
                 # NOTE: this is slower than GPU mode.
             else:
                 logger.info('GPU mode')
-            if self.use_cuda:
-                self = self.cuda()
+            self = self.cuda()
         else:
             logger.info('CPU mode')
 

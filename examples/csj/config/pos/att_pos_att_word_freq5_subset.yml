@@ -1,4 +1,7 @@
 param:
+  # framework
+  framework: pytorch
+  
   # corpus
   corpus: csj
   label_type: pos

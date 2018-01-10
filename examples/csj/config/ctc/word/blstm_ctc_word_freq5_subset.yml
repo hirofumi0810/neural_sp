@@ -1,4 +1,7 @@
 param:
+  # framework
+  framework: pytorch
+  
   # corpus
   corpus: csj
   label_type: word_freq5
@@ -8,8 +11,10 @@ param:
   feature: fbank
   save_format: numpy
   input_channel: 80
-  use_delta: True
-  use_double_delta: True
+  # use_delta: True
+  # use_double_delta: True
+  use_delta: False
+  use_double_delta: False
   splice: 1
   num_stack: 3
   num_skip: 3
@@ -22,9 +27,9 @@ param:
   dense_residual: False
   num_units: 320
   num_proj: 0
-  num_layers: 5
+  # num_proj: 320
+  num_layers: 4
   subsample_list:
-    - False
     - False
     - False
     - False
@@ -38,17 +43,17 @@ param:
   batch_norm: False
 
   # optimization
-  batch_size: 32
+  batch_size: 60
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 100
+  num_epoch: 50
 
   # regularization
   parameter_init: 0.1
   clip_grad_norm: 5.0
   clip_activation: 50
   dropout: 0.2
-  weight_decay: 1e-5
+  weight_decay: 1e-6
   logits_temperature: 1
   label_smoothing_prob: 0
   weight_noise_std: 0
@@ -60,4 +65,4 @@ param:
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
   eval_start_epoch: 10
-  print_step: 1000
+  print_step: 500

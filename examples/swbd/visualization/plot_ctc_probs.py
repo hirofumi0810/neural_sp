@@ -14,7 +14,7 @@ import argparse
 import shutil
 
 sys.path.append(abspath('../../../'))
-from models.pytorch.load_model import load
+from models.load_model import load
 from examples.swbd.data.load_dataset import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
@@ -46,18 +46,17 @@ def main():
                                           ][params['label_type']]
 
     # Load model
-    model = load(model_type=params['model_type'], params=params)
+    model = load(model_type=params['model_type'],
+                 params=params,
+                 backend=params['backend'])
 
     # GPU setting
-    model.set_cuda(deterministic=False)
+    model.set_cuda(deterministic=False, benchmark=True)
 
     # Restore the saved model
     checkpoint = model.load_checkpoint(
         save_path=args.model_path, epoch=args.epoch)
     model.load_state_dict(checkpoint['state_dict'])
-
-    # ***Change to evaluation mode***
-    model.eval()
 
     # Load dataset
     vocab_file_path = '../metrics/vocab_files/' + \

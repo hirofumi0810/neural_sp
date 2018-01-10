@@ -57,51 +57,53 @@ def generate_data(model_type, label_type='char', batch_size=1,
                               dtype=np.float32)
     elif backend == 'chainer':
         inputs_new = [None] * batch_size
-        inputs_seq_len = [None] * batch_size
 
     for i, i_batch in enumerate(range(batch_size)):
         # Frame stacking
         data_i = stack_frame(
-            inputs[i_batch], num_stack=num_stack, num_skip=num_stack)
+            inputs[i_batch], num_stack=num_stack, num_skip=num_stack,
+            dtype=np.float32)
 
         # Splice
-        data_i = do_splice(data_i, splice=splice, num_stack=num_stack)
+        data_i = do_splice(data_i, splice=splice, num_stack=num_stack,
+                           dtype=np.float32)
 
         inputs_new[i_batch] = data_i
         inputs_seq_len[i_batch] = len(data_i)
 
     # Make transcripts
-    transcript = _read_text('../../sample/LDC93S1.txt')
-    transcript = transcript.replace('.', '').replace(' ', SPACE)
+    trans = _read_text('../../sample/LDC93S1.txt')
+    trans = trans.replace('.', '').replace(' ', SPACE)
     if label_type == 'char':
         if model_type == 'attention':
-            transcript = SOS + transcript + EOS
-        labels = np.array([char2idx(transcript)] * batch_size, np.int32)
-        labels_seq_len = np.array([len(char2idx(transcript))] * batch_size)
+            trans = SOS + trans + EOS
+        labels = np.array([char2idx(trans)] * batch_size, dtype=np.int32)
+        labels_seq_len = np.array(
+            [len(char2idx(trans))] * batch_size, dtype=np.int32)
         return inputs_new, labels, inputs_seq_len, labels_seq_len
 
     elif label_type == 'word':
         if model_type == 'attention':
-            transcript = SOS + SPACE + transcript + SPACE + EOS
-        labels = np.array([word2idx(transcript)] * batch_size, np.int32)
-        labels_seq_len = np.array([len(word2idx(transcript))] * batch_size)
+            trans = SOS + SPACE + trans + SPACE + EOS
+        labels = np.array([word2idx(trans)] * batch_size, dtype=np.int32)
+        labels_seq_len = np.array(
+            [len(word2idx(trans))] * batch_size, dtype=np.int32)
         return inputs_new, labels, inputs_seq_len, labels_seq_len
 
     elif label_type == 'word_char':
         if model_type == 'attention':
-            transcript_word = SOS + SPACE + transcript + SPACE + EOS
-            transcript_char = SOS + transcript + EOS
+            trans_word = SOS + SPACE + trans + SPACE + EOS
+            trans_char = SOS + trans + EOS
         elif model_type == 'ctc':
-            transcript_word = transcript
-            transcript_char = transcript
-        labels = np.array([word2idx(transcript_word)]
-                          * batch_size, np.int32)
-        labels_sub = np.array([char2idx(transcript_char)]
-                              * batch_size, np.int32)
+            trans_word = trans
+            trans_char = trans
+        labels = np.array([word2idx(trans_word)] * batch_size, dtype=np.int32)
+        labels_sub = np.array(
+            [char2idx(trans_char)] * batch_size, dtype=np.int32)
         labels_seq_len = np.array(
-            [len(word2idx(transcript_word))] * batch_size)
+            [len(word2idx(trans_word))] * batch_size, dtype=np.int32)
         labels_seq_len_sub = np.array(
-            [len(char2idx(transcript_char))] * batch_size)
+            [len(char2idx(trans_char))] * batch_size, dtype=np.int32)
         return inputs_new, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub
 
     else:

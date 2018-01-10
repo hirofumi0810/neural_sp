@@ -117,19 +117,15 @@ class HierarchicalCTC(CTC):
         self.num_layers_sub = num_layers_sub
 
         # Setting for CTC
-        self.num_classes_sub = num_classes_sub + 1
-        # NOTE: Add blank class
+        self.num_classes_sub = num_classes_sub + 1  # Add blank class
 
         # Setting for MTL
         self.main_loss_weight = main_loss_weight
 
-        # Load an instance
-        encoder = load(encoder_type=encoder_type)
-
-        # Call the encoder function
+        # Load the encoder
         # NOTE: overide encoder
         if encoder_type in ['lstm', 'gru', 'rnn']:
-            self.encoder = encoder(
+            self.encoder = load(encoder_type=encoder_type)(
                 input_size=input_size,  # 120 or 123
                 rnn_type=encoder_type,
                 bidirectional=bidirectional,

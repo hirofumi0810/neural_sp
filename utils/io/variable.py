@@ -42,13 +42,23 @@ def np2var(array, use_cuda=False, volatile=False, dtype=None,
             array = array.cuda()
 
     elif backend == 'chainer':
-        assert isinstance(array, list)
-        array = [chainer.Variable(a, requires_grad=False) for a in array]
+        if use_cuda:
+            if isinstance(array, list):
+                array = [chainer.Variable(chainer.cuda.to_gpu(a), requires_grad=False)
+                         for a in array]
+            else:
+                array = chainer.Variable(
+                    chainer.cuda.to_gpu(array), requires_grad=False)
+        else:
+            if isinstance(array, list):
+                array = [chainer.Variable(a, requires_grad=False)
+                         for a in array]
+            else:
+                array = chainer.Variable(array, requires_grad=False)
 
         # NOTE: volatile argument is not supported anymore since v2.
         # Instead, use chainer.no_backprop_mode()
-
-        # TODO: dtype, use_cuda
+        # NOTE: dtype must be assigned in np.array
 
     else:
         raise TypeError('backend must be "pytorch" or "chainer".')
@@ -60,12 +70,13 @@ def var2np(var, backend='pytorch'):
     """Convert form Variable to np.ndarray.
     Args:
         var (Variable):
+        backend (string, optional): pytorch or chainer
     Returns:
         np.ndarray
     """
     if backend == 'pytorch':
         return var.data.cpu().numpy()
     elif backend == 'chainer':
-        return var.data.to_cpu()
+        return chainer.cuda.to_cpu(var.data)
     else:
         raise TypeError('backend must be "pytorch" or "chainer".')

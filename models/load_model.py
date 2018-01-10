@@ -1,25 +1,20 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Load models (pytorch)."""
+"""Load models."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from models.pytorch.ctc.ctc import CTC
-from models.pytorch.ctc.student_ctc import StudentCTC
-from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
-from models.pytorch.ctc.hierarchical_ctc import HierarchicalCTC
-from models.pytorch.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
-from models.pytorch.attention.nested_attention_seq2seq import NestedAttentionSeq2seq
 
-
-def load(model_type, params):
+def load(model_type, params, backend='pytorch'):
     """Load an encoder.
     Args:
         model_type (string): ctc or student_ctc or attention or
             hierarchical_ctc or hierarchical_attention or
+        params (dict):
+        backend (string, optional): pytorch or chainer
     Returns:
         model (nn.Module): An encoder class
     """
@@ -40,6 +35,13 @@ def load(model_type, params):
     if model_type == 'ctc':
         if 'activation' not in params.keys():
             params['activation'] = 'relu'
+
+        if backend == 'pytorch':
+            from models.pytorch.ctc.ctc import CTC
+        elif backend == 'chainer':
+            from models.chainer.ctc.ctc import CTC
+        else:
+            raise TypeError
 
         model = CTC(
             input_size=params['input_channel'] *
@@ -109,6 +111,13 @@ def load(model_type, params):
         if 'activation' not in params.keys():
             params['activation'] = 'relu'
 
+        if backend == 'pytorch':
+            from models.pytorch.ctc.student_ctc import StudentCTC
+        elif backend == 'chainer':
+            raise NotImplementedError
+        else:
+            raise TypeError
+
         model = StudentCTC(
             input_size=params['input_channel'] *
             (1 + int(params['use_delta'] + int(params['use_double_delta']))),
@@ -168,6 +177,14 @@ def load(model_type, params):
             model.name += '_dense_res'
 
     elif model_type == 'attention':
+
+        if backend == 'pytorch':
+            from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
+        elif backend == 'chainer':
+            raise NotImplementedError
+        else:
+            raise TypeError
+
         model = AttentionSeq2seq(
             input_size=params['input_channel'] *
             (1 + int(params['use_delta'] + int(params['use_double_delta']))),
@@ -270,6 +287,13 @@ def load(model_type, params):
         if 'activation' not in params.keys():
             params['activation'] = 'relu'
 
+        if backend == 'pytorch':
+            from models.pytorch.ctc.hierarchical_ctc import HierarchicalCTC
+        elif backend == 'chainer':
+            raise NotImplementedError
+        else:
+            raise TypeError
+
         model = HierarchicalCTC(
             input_size=params['input_channel'] *
             (1 + int(params['use_delta'] + int(params['use_double_delta']))),
@@ -340,6 +364,13 @@ def load(model_type, params):
         if 'curriculum_training' not in params.keys():
             params['curriculum_training'] = False
         # TODO: remove this
+
+        if backend == 'pytorch':
+            from models.pytorch.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
+        elif backend == 'chainer':
+            raise NotImplementedError
+        else:
+            raise TypeError
 
         model = HierarchicalAttentionSeq2seq(
             input_size=params['input_channel'] *
@@ -450,6 +481,14 @@ def load(model_type, params):
             model.name += '_curriculum'
 
     elif params['model_type'] == 'nested_attention':
+
+        if backend == 'pytorch':
+            from models.pytorch.attention.nested_attention_seq2seq import NestedAttentionSeq2seq
+        elif backend == 'chainer':
+            raise NotImplementedError
+        else:
+            raise TypeError
+
         model = NestedAttentionSeq2seq(
             input_size=params['input_channel'] *
             (1 + int(params['use_delta'] + int(params['use_double_delta']))),

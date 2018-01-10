@@ -173,16 +173,16 @@ class TestHierarchicalAttention(unittest.TestCase):
         print("Total %.3f M parameters" % (model.total_parameters / 1000000))
 
         # Define optimizer
+        learning_rate = 1e-3
         optimizer, scheduler = model.set_optimizer(
             'adam',
-            learning_rate_init=1e-3,
+            learning_rate_init=learning_rate,
             weight_decay=1e-6,
             lr_schedule=False,
             factor=0.1,
             patience_epoch=5)
 
         # Define learning rate controller
-        learning_rate = 1e-3
         lr_controller = Controller(
             learning_rate_init=learning_rate,
             decay_start_epoch=20,
@@ -194,7 +194,7 @@ class TestHierarchicalAttention(unittest.TestCase):
         model.init_weights()
 
         # GPU setting
-        model.set_cuda(deterministic=False)
+        model.set_cuda(deterministic=False, benchmark=True)
 
         # Train model
         max_step = 1000
@@ -202,26 +202,17 @@ class TestHierarchicalAttention(unittest.TestCase):
         ler_pre = 1
         for step in range(max_step):
 
-            # Clear gradients before
+            # Step for parameter update
             optimizer.zero_grad()
-
-            # Compute loss
             loss, loss_main, loss_sub = model(
                 inputs, labels, labels_sub,
                 inputs_seq_len, labels_seq_len, labels_seq_len_sub)
-
-            # Compute gradient
-            optimizer.zero_grad()
             loss.backward()
-
-            # Clip gradient norm
-            nn.utils.clip_grad_norm(model.parameters(), 10)
-
-            # Update parameters
-            if scheduler is not None:
-                scheduler.step(ler_pre)
-            else:
+            nn.utils.clip_grad_norm(model.parameters(), 5)
+            if scheduler is None:
                 optimizer.step()
+            else:
+                scheduler.step(ler_pre)
 
             if (step + 1) % 10 == 0:
                 # Decode

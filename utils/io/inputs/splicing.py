@@ -10,7 +10,7 @@ from __future__ import print_function
 import numpy as np
 
 
-def do_splice(inputs, splice=1, num_stack=1):
+def do_splice(inputs, splice=1, num_stack=1, dtype=np.float32):
     """Splice input data. This is expected to be used for CNN-like models.
     Args:
         inputs (np.ndarray): A tensor of size
@@ -19,6 +19,7 @@ def do_splice(inputs, splice=1, num_stack=1):
             ex.) if splice == 11
                 [t-5, ..., t-1, t, t+1, ..., t+5] (total 11 frames)
         num_stack (int, optional): the number of frames to stack
+        dtype (, optional):
     Returns:
         data_spliced (np.ndarray): A tensor of size
             `[T, freq * (splice * num_stack) * 3 (static + Δ + ΔΔ)]`
@@ -32,7 +33,8 @@ def do_splice(inputs, splice=1, num_stack=1):
 
     max_time, input_size = inputs.shape
     freq = (input_size // 3) // num_stack
-    input_data_spliced = np.zeros((max_time, freq * (splice * num_stack) * 3))
+    input_data_spliced = np.zeros(
+        (max_time, freq * (splice * num_stack) * 3), dtype=dtype)
 
     for i_time in range(max_time):
         spliced_frames = np.zeros((splice * num_stack, freq, 3))

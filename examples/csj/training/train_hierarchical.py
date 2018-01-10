@@ -22,7 +22,7 @@ torch.manual_seed(123456)
 torch.cuda.manual_seed_all(123456)
 
 sys.path.append(abspath('../../../'))
-from models.pytorch.load_model import load
+from models.load_model import load
 from examples.csj.data.load_dataset_hierarchical import Dataset
 from examples.csj.metrics.cer import do_eval_cer
 from examples.csj.metrics.wer import do_eval_wer
@@ -30,7 +30,7 @@ from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
 from utils.training.training_loop import train_hierarchical_step
 from utils.directory import mkdir_join, mkdir
-from utils.io.variable import np2var, var2np
+from utils.io.variable import var2np
 
 MAX_DECODE_LEN_POS = 60
 MAX_DECODE_LEN_WORD = 60
@@ -62,7 +62,9 @@ def main():
                                               ][params['label_type_sub']]
 
     # Model setting
-    model = load(model_type=params['model_type'], params=params)
+    model = load(model_type=params['model_type'],
+                 params=params,
+                 backend=params['backend'])
 
     # Set process name
     setproctitle('csj_' + params['model_type'] + '_' +
@@ -289,7 +291,7 @@ def main():
             else:
                 start_time_eval = time.time()
                 # dev
-                if param['label_type'] == 'pos':
+                if params['label_type'] == 'pos':
                     wer_dev_epoch = do_eval_wer(
                         model=model,
                         model_type=params['model_type'],
@@ -324,14 +326,14 @@ def main():
                                 (train_data.epoch, saved_path))
 
                     # test
-                    if param['label_type'] == 'pos':
+                    if params['label_type'] == 'pos':
                         wer_eval1 = do_eval_wer(
                             model=model,
                             model_type=params['model_type'],
                             dataset=eval1_data,
                             label_type=params['label_type_sub'],
                             data_size=params['data_size'],
-                            beam_width=args.beam_width,
+                            beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_WORD,
                             eval_batch_size=1,
                             is_pos=True)
@@ -341,7 +343,7 @@ def main():
                             dataset=eval2_data,
                             label_type=params['label_type_sub'],
                             data_size=params['data_size'],
-                            beam_width=args.beam_width,
+                            beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_WORD,
                             eval_batch_size=1,
                             is_pos=True)
@@ -351,7 +353,7 @@ def main():
                             dataset=eval3_data,
                             label_type=params['label_type_sub'],
                             data_size=params['data_size'],
-                            beam_width=args.beam_width,
+                            beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_WORD,
                             eval_batch_size=1,
                             is_pos=True)
@@ -362,7 +364,7 @@ def main():
                             dataset=eval1_data,
                             label_type=params['label_type'],
                             data_size=params['data_size'],
-                            beam_width=args.beam_width,
+                            beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_WORD,
                             eval_batch_size=1)
                         wer_eval2 = do_eval_wer(
@@ -371,7 +373,7 @@ def main():
                             dataset=eval2_data,
                             label_type=params['label_type'],
                             data_size=params['data_size'],
-                            beam_width=args.beam_width,
+                            beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_WORD,
                             eval_batch_size=1)
                         wer_eval3 = do_eval_wer(
@@ -380,7 +382,7 @@ def main():
                             dataset=eval3_data,
                             label_type=params['label_type'],
                             data_size=params['data_size'],
-                            beam_width=args.beam_width,
+                            beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_WORD,
                             eval_batch_size=1)
                     logger.info('  WER (eval1, main): %f %%' %

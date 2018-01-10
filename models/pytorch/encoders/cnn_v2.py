@@ -23,7 +23,6 @@ class CNNEncoder(nn.Module):
         poolings (list, optional): the size of poolings in CNN layers
         dropout (float): the probability to drop nodes
         activation (string, optional): relu or prelu or hard_tanh or maxout
-        use_cuda (bool, optional): if True, use GPUs
         batch_norm (bool, optional):
     """
 
@@ -35,7 +34,6 @@ class CNNEncoder(nn.Module):
                  poolings,
                  dropout,
                  activation='relu',
-                 use_cuda=False,
                  batch_norm=False):
 
         super(CNNEncoder, self).__init__()

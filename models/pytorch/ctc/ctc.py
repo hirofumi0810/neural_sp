@@ -107,8 +107,7 @@ class CTC(ModelBase):
         self.subsample_list = subsample_list
 
         # Setting for CTC
-        self.num_classes = num_classes + 1
-        # NOTE: Add blank class
+        self.num_classes = num_classes + 1  # Add blank class
         self.blank_index = 0
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
         self.logits_temperature = logits_temperature
@@ -119,12 +118,9 @@ class CTC(ModelBase):
         self.weight_noise_std = float(weight_noise_std)
         self.label_smoothing_prob = label_smoothing_prob
 
-        # Load an instance
-        encoder = load(encoder_type=encoder_type)
-
         # Call the encoder function
         if encoder_type in ['lstm', 'gru', 'rnn']:
-            self.encoder = encoder(
+            self.encoder = load(encoder_type=encoder_type)(
                 input_size=input_size,  # 120 or 123
                 rnn_type=encoder_type,
                 bidirectional=bidirectional,
@@ -150,7 +146,7 @@ class CTC(ModelBase):
         elif encoder_type == 'cnn':
             assert num_stack == 1
             assert splice == 1
-            self.encoder = encoder(
+            self.encoder = load(encoder_type=encoder_type)(
                 input_size=input_size,  # 120 or 123
                 conv_channels=conv_channels,
                 conv_kernel_sizes=conv_kernel_sizes,

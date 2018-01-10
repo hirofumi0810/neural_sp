@@ -125,10 +125,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         self.decoder_num_units_sub = decoder_num_units_sub
         self.decoder_num_layers_sub = decoder_num_layers_sub
         self.embedding_dim_sub = embedding_dim_sub
-        self.num_classes_sub = num_classes_sub + 2
+        self.num_classes_sub = num_classes_sub + 2  # Add <SOS> and <EOS> class
         self.sos_index_sub = num_classes_sub + 1
         self.eos_index_sub = num_classes_sub
-        # NOTE: add <SOS> and <EOS>
 
         # Setting for MTL
         self.main_loss_weight = main_loss_weight
@@ -145,12 +144,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Encoder
         # NOTE: overide encoder
         #########################
-        # Load an instance
-        encoder = load(encoder_type=encoder_type)
-
-        # Call the encoder function
         if encoder_type in ['lstm', 'gru', 'rnn']:
-            self.encoder = encoder(
+            self.encoder = load(encoder_type=encoder_type)(
                 input_size=input_size,  # 120 or 123
                 rnn_type=encoder_type,
                 bidirectional=encoder_bidirectional,

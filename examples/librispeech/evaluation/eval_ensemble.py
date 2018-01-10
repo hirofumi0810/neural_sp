@@ -14,7 +14,7 @@ import argparse
 from glob import glob
 
 sys.path.append(abspath('../../../'))
-from models.pytorch.load_model import load
+from models.load_model import load
 from examples.librispeech.data.load_dataset import Dataset
 from examples.librispeech.metrics.cer_ensemble import do_eval_cer
 from examples.librispeech.metrics.wer import do_eval_wer
@@ -59,10 +59,12 @@ def main():
                                                   ][params['label_type']]
 
             # Load model
-            model = load(model_type=params['model_type'], params=params)
+            model = load(model_type=params['model_type'],
+                         params=params,
+                         backend=params['backend'])
 
             # GPU setting
-            model.set_cuda(deterministic=False)
+            model.set_cuda(deterministic=False, benchmark=True)
 
             # Restore the saved model
             checkpoint = model.load_checkpoint(

@@ -8,7 +8,7 @@ from __future__ import print_function
 import numpy as np
 
 
-def stack_frame(inputs, num_stack, num_skip):
+def stack_frame(inputs, num_stack, num_skip, dtype=np.float32):
     """Stack & skip some frames. This implementation is based on
        https://arxiv.org/abs/1507.06947.
            Sak, Haşim, et al.
@@ -18,6 +18,7 @@ def stack_frame(inputs, num_stack, num_skip):
         inputs (list): A tensor of size `[T, input_size]`
         num_stack (int): the number of frames to stack
         num_skip (int): the number of frames to skip
+        dtype (, optional):
     Returns:
         stacked_inputs (np.ndarray): A tensor of size
             `[floor(T / num_skip), input_size * num_stack]`
@@ -31,7 +32,8 @@ def stack_frame(inputs, num_stack, num_skip):
     frame_num, input_size = inputs.shape
     frame_num_new = (frame_num + 1) // num_skip
 
-    stacked_inputs = np.zeros((frame_num_new, input_size * num_stack))
+    stacked_inputs = np.zeros(
+        (frame_num_new, input_size * num_stack), dtype=dtype)
     stack_count = 0  # counter
     stack = []
     for t, frame_t in enumerate(inputs):

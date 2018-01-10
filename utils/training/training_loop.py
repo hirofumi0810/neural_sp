@@ -35,22 +35,16 @@ def train_step(model, optimizer, batch, clip_grad_norm):
     loss_train_val = 0.
     div_num = 1
     try:
-        # Compute loss in the training set
-        loss_train = model(inputs, labels, inputs_seq_len, labels_seq_len)
-        loss_train_val = loss_train.data[0]
-
-        # Compute gradient
+        # Step for parameter update
         optimizer.zero_grad()
+        loss_train = model(inputs, labels, inputs_seq_len, labels_seq_len)
         loss_train.backward()
-
-        # Clip gradient norm
         if clip_grad_norm > 0:
             nn.utils.clip_grad_norm(model.parameters(), clip_grad_norm)
-
-        # Update parameters
         optimizer.step()
         # TODO: Add scheduler
 
+        loss_train_val = loss_train.data[0]
         del loss_train
 
     except RuntimeError as e:
@@ -138,26 +132,20 @@ def train_hierarchical_step(model, optimizer, batch, clip_grad_norm):
     loss_train_val, loss_main_train_val, loss_sub_train_val = 0., 0., 0.
     div_num = 1
     try:
-        # Compute loss in the training set
+        # Step for parameter update
+        optimizer.zero_grad()
         loss_train, loss_main_train, loss_sub_train = model(
             inputs, labels, labels_sub, inputs_seq_len,
             labels_seq_len, labels_seq_len_sub)
-        loss_train_val = loss_train.data[0]
-        loss_main_train_val = loss_main_train.data[0]
-        loss_sub_train_val = loss_sub_train.data[0]
-
-        # Compute gradient
-        optimizer.zero_grad()
         loss_train.backward()
-
-        # Clip gradient norm
         if clip_grad_norm > 0:
             nn.utils.clip_grad_norm(model.parameters(), clip_grad_norm)
-
-        # Update parameters
         optimizer.step()
         # TODO: Add scheduler
 
+        loss_train_val = loss_train.data[0]
+        loss_main_train_val = loss_main_train.data[0]
+        loss_sub_train_val = loss_sub_train.data[0]
         del loss_train, loss_main_train, loss_sub_train
 
     except RuntimeError as e:

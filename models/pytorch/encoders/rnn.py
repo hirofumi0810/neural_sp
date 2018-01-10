@@ -136,7 +136,6 @@ class RNNEncoder(nn.Module):
                 poolings=poolings,
                 dropout=dropout,
                 activation=activation,
-                use_cuda=use_cuda,
                 batch_norm=batch_norm)
             input_size = self.conv.output_size
             self.get_conv_out_size = ConvOutSize(self.conv.conv)
@@ -214,11 +213,11 @@ class RNNEncoder(nn.Module):
                 else
                     `[T // sum(subsample_list), B, num_units (* num_directions)]`
             OPTION:
-                xs_sub (FloatTensor):
-                    if batch_first is True, a tensor of size
-                        `[B, T // sum(subsample_list), num_units (* num_directions)]`
-                    else
-                        `[T // sum(subsample_list), B, num_units (* num_directions)]`
+            xs_sub (FloatTensor):
+                if batch_first is True, a tensor of size
+                    `[B, T // sum(subsample_list), num_units (* num_directions)]`
+                else
+                    `[T // sum(subsample_list), B, num_units (* num_directions)]`
             perm_indices (LongTensor):
         """
         batch_size, max_time = xs.size()[:2]

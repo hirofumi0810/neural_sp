@@ -22,14 +22,14 @@ torch.manual_seed(123456)
 torch.cuda.manual_seed_all(123456)
 
 sys.path.append(abspath('../../../'))
-from models.pytorch.load_model import load
+from models.load_model import load
 from examples.timit.data.load_dataset import Dataset
 from examples.timit.metrics.per import do_eval_per
 from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
 from utils.training.training_loop import train_step
 from utils.directory import mkdir_join, mkdir
-from utils.io.variable import np2var, var2np
+from utils.io.variable import var2np
 
 MAX_DECODE_LEN_PHONE = 40
 
@@ -55,7 +55,9 @@ def main():
         params['num_classes'] = vocab_num[params['label_type']]
 
     # Load model
-    model = load(model_type=params['model_type'], params=params)
+    model = load(model_type=params['model_type'],
+                 params=params,
+                 backend=params['backend'])
 
     # Set process name
     setproctitle(

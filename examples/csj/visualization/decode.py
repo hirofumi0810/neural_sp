@@ -13,7 +13,7 @@ import yaml
 import argparse
 
 sys.path.append(abspath('../../../'))
-from models.pytorch.load_model import load
+from models.load_model import load
 from examples.csj.data.load_dataset import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
@@ -48,18 +48,17 @@ def main():
                                           ][params['label_type']]
 
     # Load model
-    model = load(model_type=params['model_type'], params=params)
+    model = load(model_type=params['model_type'],
+                 params=params,
+                 backend=params['backend'])
 
     # GPU setting
-    model.set_cuda(deterministic=False)
+    model.set_cuda(deterministic=False, benchmark=True)
 
     # Restore the saved model
     checkpoint = model.load_checkpoint(
         save_path=args.model_path, epoch=args.epoch)
     model.load_state_dict(checkpoint['state_dict'])
-
-    # ***Change to evaluation mode***
-    model.eval()
 
     # Load dataset
     vocab_file_path = '../metrics/vocab_files/' + \
@@ -82,7 +81,6 @@ def main():
     decode(model=model,
            model_type=params['model_type'],
            dataset=eval_data,
-           data_size=params['data_size'],
            beam_width=args.beam_width,
            max_decode_len=args.max_decode_len,
            eval_batch_size=args.eval_batch_size,
@@ -104,13 +102,16 @@ def decode(model, model_type, dataset, beam_width,
         eval_batch_size (int, optional): the batch size when evaluating the model
         save_path (string): path to save decoding results
     """
+    # Set batch size in the evaluation
+    if eval_batch_size is not None:
+        dataset.batch_size = eval_batch_size
+
     vocab_file_path = '../metrics/vocab_files/' + \
         dataset.label_type + '_' + dataset.data_size + '.txt'
-
-    if 'word' not in dataset.label_type:
-        map_fn = Idx2char(vocab_file_path)
-    else:
+    if 'word' in dataset.label_type:
         map_fn = Idx2word(vocab_file_path)
+    else:
+        map_fn = Idx2char(vocab_file_path)
 
     if save_path is not None:
         sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
@@ -120,10 +121,9 @@ def decode(model, model_type, dataset, beam_width,
         inputs, labels, inputs_seq_len, labels_seq_len, input_names = batch
 
         # Decode
-        labels_pred, perm_indices = model.decode(
-            inputs, inputs_seq_len,
-            beam_width=beam_width,
-            max_decode_len=max_decode_len)
+        labels_pred = model.decode(inputs, inputs_seq_len,
+                                   beam_width=beam_width,
+                                   max_decode_len=max_decode_len)
 
         for i_batch in range(inputs.shape[0]):
             print('----- wav: %s -----' % input_names[i_batch])
@@ -135,10 +135,6 @@ def decode(model, model_type, dataset, beam_width,
                 str_true = labels[i_batch][0]
                 # NOTE: transcript is seperated by space('_')
             else:
-                # Permutate indices
-                labels = labels[perm_indices]
-                labels_seq_len = labels_seq_len[perm_indices]
-
                 # Convert from list of index to string
                 if model_type == 'ctc':
                     str_true = map_fn(

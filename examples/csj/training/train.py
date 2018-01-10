@@ -22,7 +22,7 @@ torch.manual_seed(123456)
 torch.cuda.manual_seed_all(123456)
 
 sys.path.append(abspath('../../../'))
-from models.pytorch.load_model import load
+from models.load_model import load
 from examples.csj.data.load_dataset import Dataset
 from examples.csj.metrics.cer import do_eval_cer
 from examples.csj.metrics.wer import do_eval_wer
@@ -30,7 +30,7 @@ from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
 from utils.training.training_loop import train_step
 from utils.directory import mkdir_join, mkdir
-from utils.io.variable import np2var, var2np
+from utils.io.variable import var2np
 
 MAX_DECODE_LEN_WORD = 60
 MAX_DECODE_LEN_CHAR = 100
@@ -58,7 +58,9 @@ def main():
                                           ][params['label_type']]
 
     # Model setting
-    model = load(model_type=params['model_type'], params=params)
+    model = load(model_type=params['model_type'],
+                 params=params,
+                 backend=params['backend'])
 
     # Set process name
     setproctitle('csj_' + params['model_type'] + '_' +

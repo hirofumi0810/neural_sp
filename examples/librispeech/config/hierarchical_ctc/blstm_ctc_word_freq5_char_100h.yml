@@ -1,4 +1,7 @@
 param:
+  # framework
+  framework: pytorch
+  
   # corpus
   corpus: librispeech
   label_type: word_freq5

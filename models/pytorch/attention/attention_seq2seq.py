@@ -165,10 +165,9 @@ class AttentionSeq2seq(ModelBase):
         self.decoder_num_units = decoder_num_units
         self.decoder_num_layers = decoder_num_layers
         self.embedding_dim = embedding_dim
-        self.num_classes = num_classes + 2
+        self.num_classes = num_classes + 2  # Add <SOS> and <EOS> class
         self.sos_index = num_classes + 1
         self.eos_index = num_classes
-        # NOTE: Add <SOS> and <EOS>
 
         # Setting for the attention
         if init_dec_state not in ['zero', 'mean', 'final']:
@@ -200,12 +199,8 @@ class AttentionSeq2seq(ModelBase):
         ####################
         # Encoder
         ####################
-        # Load an instance
-        encoder = load(encoder_type=encoder_type)
-
-        # Call the encoder function
         if encoder_type in ['lstm', 'gru', 'rnn']:
-            self.encoder = encoder(
+            self.encoder = load(encoder_type=encoder_type)(
                 input_size=input_size,  # 120 or 123
                 rnn_type=encoder_type,
                 bidirectional=encoder_bidirectional,
@@ -231,7 +226,7 @@ class AttentionSeq2seq(ModelBase):
         elif encoder_type == 'cnn':
             assert num_stack == 1
             assert splice == 1
-            self.encoder = encoder(
+            self.encoder = load(encoder_type=encoder_type)(
                 input_size=input_size,  # 120 or 123
                 conv_channels=conv_channels,
                 conv_kernel_sizes=conv_kernel_sizes,

@@ -1,4 +1,7 @@
 param:
+  # framework
+  framework: pytorch
+  
   # corpus
   corpus: csj
   label_type: word_freq5
@@ -24,8 +27,7 @@ param:
   decoder_residual: False
   decoder_dense_residual: False
   encoder_num_units: 320
-  # encoder_num_proj: 0
-  encoder_num_proj: 320
+  encoder_num_proj: 0
   encoder_num_layers: 4
   encoder_num_layers_sub: 3
   subsample_list:
@@ -73,7 +75,7 @@ param:
   sigmoid_smoothing: False
   coverage_weight: 0
   scheduled_sampling_prob: 0.2
-  scheduled_sampling_ramp_max_step: 300000
+  scheduled_sampling_ramp_max_step: 400000
   # label_smoothing_prob: 0.1
   label_smoothing_prob: 0
   weight_noise_std: 0
@@ -89,5 +91,6 @@ param:
 
   # MTL
   main_loss_weight: 0.5
+  # main_loss_weight: 0.8
   ctc_loss_weight_sub: 0.5
   curriculum_training: False

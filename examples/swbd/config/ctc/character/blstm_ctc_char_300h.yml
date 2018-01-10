@@ -1,4 +1,7 @@
 param:
+  # framework
+  framework: pytorch
+  
   # corpus
   corpus: switchboard
   label_type: character
