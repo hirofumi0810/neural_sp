@@ -22,8 +22,6 @@ class CNNEncoder(nn.Module):
         conv_strides (list, optional): strides in CNN layers
         poolings (list, optional): the size of poolings in CNN layers
         dropout (float): the probability to drop nodes
-        parameter_init (float): the range of uniform distribution to
-            initialize weight parameters (>= 0)
         activation (string, optional): relu or prelu or hard_tanh or maxout
         use_cuda (bool, optional): if True, use GPUs
         batch_norm (bool, optional):
@@ -36,7 +34,6 @@ class CNNEncoder(nn.Module):
                  conv_strides,
                  poolings,
                  dropout,
-                 parameter_init,
                  activation='relu',
                  use_cuda=False,
                  batch_norm=False):

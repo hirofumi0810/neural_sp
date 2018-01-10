@@ -138,7 +138,6 @@ class HierarchicalCTC(CTC):
                 num_layers=num_layers,
                 num_layers_sub=num_layers_sub,
                 dropout=dropout,
-                parameter_init=parameter_init,
                 subsample_list=subsample_list,
                 subsample_type=subsample_type,
                 use_cuda=self.use_cuda,
@@ -178,13 +177,17 @@ class HierarchicalCTC(CTC):
             ctc_loss_sub (FloatTensor): A tensor of size `[1]`
         """
         # Wrap by Variable
-        xs = np2var(inputs, use_cuda=self.use_cuda)
-        ys = np2var(labels, dtype='int', use_cuda=False)
-        ys_sub = np2var(labels_sub, dtype='int', use_cuda=False)
-        x_lens = np2var(inputs_seq_len, dtype='int', use_cuda=self.use_cuda)
+        xs = np2var(inputs, use_cuda=self.use_cuda, backend='pytorch')
+        ys = np2var(labels, dtype='int', use_cuda=False, backend='pytorch')
+        ys_sub = np2var(
+            labels_sub, dtype='int', use_cuda=False, backend='pytorch')
+        x_lens = np2var(
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
         x_lens_sub = x_lens.clone()
-        y_lens = np2var(labels_seq_len, dtype='int', use_cuda=False)
-        y_lens_sub = np2var(labels_seq_len_sub, dtype='int', use_cuda=False)
+        y_lens = np2var(
+            labels_seq_len, dtype='int', use_cuda=False, backend='pytorch')
+        y_lens_sub = np2var(
+            labels_seq_len_sub, dtype='int', use_cuda=False, backend='pytorch')
 
         ys = ys + 1
         ys_sub = ys_sub + 1

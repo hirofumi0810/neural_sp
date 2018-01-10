@@ -159,7 +159,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 num_layers=encoder_num_layers,
                 num_layers_sub=encoder_num_layers_sub,
                 dropout=encoder_dropout,
-                parameter_init=parameter_init,
                 subsample_list=subsample_list,
                 subsample_type=subsample_type,
                 use_cuda=self.use_cuda,
@@ -189,7 +188,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 num_units=decoder_num_units_sub,
                 num_layers=decoder_num_layers,
                 dropout=decoder_dropout,
-                parameter_init=parameter_init,
                 use_cuda=self.use_cuda,
                 batch_first=True,
                 residual=decoder_residual,
@@ -259,13 +257,17 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             loss_sub (FloatTensor): A tensor of size `[1]`
         """
         # Wrap by Variable
-        xs = np2var(inputs, use_cuda=self.use_cuda)
-        ys = np2var(labels, dtype='long', use_cuda=self.use_cuda)
-        ys_sub = np2var(labels_sub, dtype='long', use_cuda=self.use_cuda)
-        x_lens = np2var(inputs_seq_len, dtype='int', use_cuda=self.use_cuda)
-        y_lens = np2var(labels_seq_len, dtype='int', use_cuda=self.use_cuda)
-        y_lens_sub = np2var(labels_seq_len_sub, dtype='int',
-                            use_cuda=self.use_cuda)
+        xs = np2var(inputs, use_cuda=self.use_cuda, backend='pytorch')
+        ys = np2var(
+            labels, dtype='long', use_cuda=self.use_cuda, backend='pytorch')
+        ys_sub = np2var(
+            labels_sub, dtype='long', use_cuda=self.use_cuda, backend='pytorch')
+        x_lens = np2var(
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
+        y_lens = np2var(
+            labels_seq_len, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
+        y_lens_sub = np2var(
+            labels_seq_len_sub, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
 
         if is_eval:
             self.eval()
@@ -410,9 +412,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             best_hyps (np.ndarray): A tensor of size `[]`
         """
         # Wrap by Variable
-        xs = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
+        xs = np2var(
+            inputs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
         x_lens = np2var(
-            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
 
         # Change to evaluation mode
         self.eval()

@@ -18,8 +18,6 @@ class RNNDecoder(nn.Module):
         num_units (int): the number of units in each layer
         num_layers (int): the number of layers
         dropout (float): the probability to drop nodes
-        parameter_init (float): the range of uniform distribution to
-            initialize weight parameters (>= 0)
         use_cuda (bool, optional): if True, use GPUs
         batch_first (bool, optional): if True, batch-major computation will be
             performed
@@ -33,7 +31,6 @@ class RNNDecoder(nn.Module):
                  num_units,
                  num_layers,
                  dropout,
-                 parameter_init,
                  use_cuda=False,
                  batch_first=False,
                  residual=False,
@@ -46,7 +43,6 @@ class RNNDecoder(nn.Module):
         self.num_units = num_units
         self.num_layers = num_layers
         self.dropout = dropout
-        self.parameter_init = parameter_init
         self.use_cuda = use_cuda
         self.batch_first = batch_first
         self.residual = residual

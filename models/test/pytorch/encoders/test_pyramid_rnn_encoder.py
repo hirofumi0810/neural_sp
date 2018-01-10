@@ -175,7 +175,6 @@ class TestPyramidRNNEncoders(unittest.TestCase):
                 num_proj=256 if projection else 0,
                 num_layers=5,
                 dropout=0.2,
-                parameter_init=0.1,
                 subsample_list=[False, True, True, False, False],
                 subsample_type=subsample_type,
                 batch_first=batch_first,

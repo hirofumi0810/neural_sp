@@ -1,6 +1,8 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
+"""Base class for all models (pytorch)."""
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -58,22 +60,16 @@ class ModelBase(nn.Module):
     def num_params_dict(self):
         if not hasattr(self, '_num_params_dict'):
             self._num_params_dict = {}
-
-            # Register each parameter
             for name, param in self.named_parameters():
                 self._num_params_dict[name] = param.view(-1).size(0)
-
         return self._num_params_dict
 
     @property
     def total_parameters(self):
         if not hasattr(self, '_num_params'):
             self._num_params = 0
-
-            # Count total parameters
             for name, param in self.named_parameters():
                 self._num_params += param.view(-1).size(0)
-
         return self._num_params
 
     @property

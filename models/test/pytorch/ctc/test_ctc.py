@@ -17,7 +17,7 @@ import torch.nn as nn
 sys.path.append('../../../../')
 from models.pytorch.ctc.ctc import CTC
 from models.test.data import generate_data, idx2char, idx2word
-from utils.io.variable import np2var, var2np
+from utils.io.variable import var2np
 from utils.measure_time_func import measure_time
 from utils.evaluation.edit_distance import compute_cer, compute_wer
 from utils.training.learning_rate_controller import Controller
@@ -37,7 +37,7 @@ class TestCTC(unittest.TestCase):
         # Pyramidal encoder
         self.check(encoder_type='lstm', bidirectional=True, subsample=True)
 
-        # Projection
+        # Projection layer
         self.check(encoder_type='lstm', bidirectional=False, projection=True)
 
         # Residual LSTM-CTC

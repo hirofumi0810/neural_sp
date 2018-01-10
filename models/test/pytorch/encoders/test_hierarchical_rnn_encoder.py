@@ -142,7 +142,6 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
             num_layers=5,
             num_layers_sub=3,
             dropout=0.2,
-            parameter_init=0.1,
             subsample_list=[],
             batch_first=batch_first,
             merge_bidirectional=merge_bidirectional,

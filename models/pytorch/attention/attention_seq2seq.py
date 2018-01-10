@@ -53,8 +53,8 @@ class AttentionSeq2seq(ModelBase):
         embedding_dim (int): the dimension of the embedding in target spaces
         num_classes (int): the number of nodes in softmax layer
             (excluding <SOS> and <EOS> classes)
-        parameter_init (float, optional): the range of uniform distribution to
-            initialize weight parameters (>= 0)
+        parameter_init (float, optional): Range of uniform distribution to
+            initialize weight parameters
         subsample_list (list, optional): subsample in the corresponding layers (True)
             ex.) [False, True, True, False] means that subsample is conducted
                 in the 2nd and 3rd layers.
@@ -213,7 +213,6 @@ class AttentionSeq2seq(ModelBase):
                 num_proj=encoder_num_proj,
                 num_layers=encoder_num_layers,
                 dropout=encoder_dropout,
-                parameter_init=parameter_init,
                 subsample_list=subsample_list,
                 subsample_type=subsample_type,
                 use_cuda=self.use_cuda,
@@ -239,7 +238,6 @@ class AttentionSeq2seq(ModelBase):
                 conv_strides=conv_strides,
                 poolings=poolings,
                 dropout=encoder_dropout,
-                parameter_init=parameter_init,
                 activation=activation,
                 use_cuda=self.use_cuda,
                 batch_norm=batch_norm)
@@ -257,7 +255,6 @@ class AttentionSeq2seq(ModelBase):
             num_units=decoder_num_units,
             num_layers=decoder_num_layers,
             dropout=decoder_dropout,
-            parameter_init=parameter_init,
             use_cuda=self.use_cuda,
             batch_first=True,
             residual=decoder_residual,
@@ -323,11 +320,14 @@ class AttentionSeq2seq(ModelBase):
             loss (FloatTensor): A tensor of size `[1]`
         """
         # Wrap by Variable
-        xs = np2var(inputs,  use_cuda=self.use_cuda)
-        ys = np2var(labels, dtype='long', use_cuda=self.use_cuda)
+        xs = np2var(inputs,  use_cuda=self.use_cuda, backend='pytorch')
+        ys = np2var(
+            labels, dtype='long', use_cuda=self.use_cuda, backend='pytorch')
         # NOTE: labels must be long
-        x_lens = np2var(inputs_seq_len, dtype='int', use_cuda=self.use_cuda)
-        y_lens = np2var(labels_seq_len, dtype='int', use_cuda=self.use_cuda)
+        x_lens = np2var(
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
+        y_lens = np2var(
+            labels_seq_len, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
 
         if is_eval:
             self.eval()
@@ -686,9 +686,10 @@ class AttentionSeq2seq(ModelBase):
             att_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
         """
         # Wrap by Variable
-        xs = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
+        xs = np2var(
+            inputs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
         x_lens = np2var(
-            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
 
         # Change to evaluation mode
         self.eval()
@@ -733,9 +734,10 @@ class AttentionSeq2seq(ModelBase):
             best_hyps (np.ndarray): A tensor of size `[]`
         """
         # Wrap by Variable
-        xs = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
+        xs = np2var(
+            inputs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
         x_lens = np2var(
-            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
 
         # Change to evaluation mode
         self.eval()
@@ -992,9 +994,10 @@ class AttentionSeq2seq(ModelBase):
         # TODO: add is_sub_task??
 
         # Wrap by Variable
-        xs = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
+        xs = np2var(
+            inputs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
         x_lens = np2var(
-            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
 
         # Change to evaluation mode
         self.eval()

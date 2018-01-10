@@ -132,7 +132,6 @@ class CTC(ModelBase):
                 num_proj=num_proj,
                 num_layers=num_layers,
                 dropout=dropout,
-                parameter_init=parameter_init,
                 subsample_list=subsample_list,
                 subsample_type=subsample_type,
                 use_cuda=self.use_cuda,
@@ -158,7 +157,6 @@ class CTC(ModelBase):
                 conv_strides=conv_strides,
                 poolings=poolings,
                 dropout=dropout,
-                parameter_init=parameter_init,
                 activation=activation,
                 use_cuda=self.use_cuda,
                 batch_norm=batch_norm)
@@ -182,6 +180,8 @@ class CTC(ModelBase):
                     fc_layers.append(LinearND(fc_list[i - 1], fc_list[i]))
                 fc_layers.append(nn.Dropout(p=dropout))
             self.fc_layers = nn.Sequential(*fc_layers)
+            # TODO: remove a bias term in the case of batch normalization
+
             self.fc = LinearND(fc_list[-1], self.num_classes)
         else:
             self.fc = LinearND(
@@ -194,7 +194,7 @@ class CTC(ModelBase):
 
     def forward(self, inputs, labels, inputs_seq_len, labels_seq_len,
                 is_eval=False):
-        """Forward computation (only training).
+        """Forward computation.
         Args:
             inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
             labels (np.ndarray): A tensor of size `[B, T_out]`
@@ -206,10 +206,12 @@ class CTC(ModelBase):
             loss (FloatTensor): A tensor of size `[1]`
         """
         # Wrap by Variable
-        xs = np2var(inputs, use_cuda=self.use_cuda)
-        ys = np2var(labels, dtype='int', use_cuda=False)
-        x_lens = np2var(inputs_seq_len, dtype='int', use_cuda=self.use_cuda)
-        y_lens = np2var(labels_seq_len, dtype='int', use_cuda=False)
+        xs = np2var(inputs, use_cuda=self.use_cuda, backend='pytorch')
+        ys = np2var(labels, dtype='int', use_cuda=False, backend='pytorch')
+        x_lens = np2var(
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
+        y_lens = np2var(
+            labels_seq_len, dtype='int', use_cuda=False, backend='pytorch')
 
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
         ys = ys + 1
@@ -291,6 +293,8 @@ class CTC(ModelBase):
             if self.encoder_type == 'cnn':
                 enc_outputs = self.encoder(xs)
                 # NOTE: `[B, T, feature_dim]`
+
+                # Convert to time-major
                 enc_outputs = enc_outputs.transpose(0, 1).contiguous()
                 perm_indices = None
             else:
@@ -321,9 +325,10 @@ class CTC(ModelBase):
             probs (np.ndarray): A tensor of size `[B, T, num_classes]`
         """
         # Wrap by Variable
-        xs = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
+        xs = np2var(
+            inputs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
         x_lens = np2var(
-            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
 
         # Change to evaluation mode
         self.eval()
@@ -367,9 +372,10 @@ class CTC(ModelBase):
             best_hyps (np.ndarray):
         """
         # Wrap by Variable
-        xs = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
+        xs = np2var(
+            inputs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
         x_lens = np2var(
-            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
 
         # Change to evaluation mode
         self.eval()

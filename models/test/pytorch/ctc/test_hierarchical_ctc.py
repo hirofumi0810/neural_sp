@@ -17,7 +17,7 @@ import torch.nn as nn
 sys.path.append('../../../../')
 from models.pytorch.ctc.hierarchical_ctc import HierarchicalCTC
 from models.test.data import generate_data, idx2char, idx2word
-from utils.io.variable import np2var, var2np
+from utils.io.variable import var2np
 from utils.measure_time_func import measure_time
 from utils.evaluation.edit_distance import compute_cer, compute_wer
 from utils.training.learning_rate_controller import Controller
@@ -34,7 +34,7 @@ class TestCTC(unittest.TestCase):
         self.check(encoder_type='lstm', bidirectional=True, subsample='drop')
         self.check(encoder_type='lstm', bidirectional=True, subsample='concat')
 
-        # projection
+        # projection layer
         self.check(encoder_type='lstm', bidirectional=False, projection=True)
 
         # Label smoothing

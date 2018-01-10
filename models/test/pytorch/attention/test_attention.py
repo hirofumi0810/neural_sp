@@ -18,7 +18,7 @@ sys.path.append('../../../../')
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 from models.test.data import generate_data, idx2char, idx2word
 from utils.measure_time_func import measure_time
-from utils.io.variable import np2var, var2np
+from utils.io.variable import var2np
 from utils.evaluation.edit_distance import compute_cer, compute_wer
 from utils.training.learning_rate_controller import Controller
 
@@ -42,7 +42,7 @@ class TestAttention(unittest.TestCase):
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', subsample='concat')
 
-        # Projection
+        # Projection layer
         self.check(encoder_type='lstm', bidirectional=False, projection=True,
                    decoder_type='lstm')
 

@@ -176,7 +176,6 @@ class TestPyramidRNNEncoders(unittest.TestCase):
                 num_layers=6,
                 num_layers_sub=4,
                 dropout=0.2,
-                parameter_init=0.1,
                 subsample_list=[False, True, True, False, False, False],
                 subsample_type=subsample_type,
                 batch_first=batch_first,

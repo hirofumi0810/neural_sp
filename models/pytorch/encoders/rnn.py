@@ -30,8 +30,6 @@ class RNNEncoder(nn.Module):
         num_proj (int): the number of nodes in the projection layer
         num_layers (int): the number of layers
         dropout (float): the probability to drop nodes
-        parameter_init (float): the range of uniform distribution to
-            initialize weight parameters (>= 0)
         subsample_list (list): subsample in the corresponding layers (True)
             ex.) [False, True, True, False] means that downsample is conducted
                 in the 2nd and 3rd layers.
@@ -62,7 +60,6 @@ class RNNEncoder(nn.Module):
                  num_proj,
                  num_layers,
                  dropout,
-                 parameter_init,
                  subsample_list=[],
                  subsample_type='concat',
                  use_cuda=False,
@@ -138,7 +135,6 @@ class RNNEncoder(nn.Module):
                 conv_strides=conv_strides,
                 poolings=poolings,
                 dropout=dropout,
-                parameter_init=parameter_init,
                 activation=activation,
                 use_cuda=use_cuda,
                 batch_norm=batch_norm)

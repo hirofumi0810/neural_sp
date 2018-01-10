@@ -123,62 +123,22 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             weight_noise_std=weight_noise_std)
 
         # Setting for the encoder
-        self.input_size = input_size
-        self.encoder_type = encoder_type
-        self.encoder_bidirectional = encoder_bidirectional
-        self.encoder_num_directions = 2 if encoder_bidirectional else 1
-        self.encoder_num_units = encoder_num_units
-        self.encoder_num_proj = encoder_num_proj
-        self.encoder_num_layers = encoder_num_layers
         self.encoder_num_layers_sub = encoder_num_layers_sub
-        self.subsample_list = subsample_list
 
         # Setting for the decoder
-        self.attention_type = attention_type
-        self.attention_dim = attention_dim
-        self.decoder_type = decoder_type
-        self.decoder_num_units = decoder_num_units
-        self.decoder_num_layers = decoder_num_layers
         self.decoder_num_units_sub = decoder_num_units_sub
         self.decoder_num_layers_sub = decoder_num_layers_sub
-        self.embedding_dim = embedding_dim
         self.embedding_dim_sub = embedding_dim_sub
-        self.num_classes = num_classes + 2
         self.num_classes_sub = num_classes_sub + 2
-        self.sos_index = num_classes + 1
-        self.eos_index = num_classes
         self.sos_index_sub = num_classes_sub + 1
         self.eos_index_sub = num_classes_sub
         # NOTE: Add <SOS> and <EOS>
-
-        # Setting for the attention
-        self.sharpening_factor = sharpening_factor
-        self.logits_temperature = logits_temperature
-        self.sigmoid_smoothing = sigmoid_smoothing
-        self.input_feeding = input_feeding
-        self.coverage_weight = coverage_weight
-        self.attention_conv_num_channels = attention_conv_num_channels
-        self.attention_conv_width = attention_conv_width
-
-        # Setting for regularization of seq2seq
-        if scheduled_sampling_prob > 0 and scheduled_sampling_ramp_max_step == 0:
-            raise ValueError
-        self.scheduled_sampling_prob = scheduled_sampling_prob
-        self._scheduled_sampling_prob = scheduled_sampling_prob
-        self.scheduled_sampling_ramp_max_step = scheduled_sampling_ramp_max_step
-        self._step = 0
-        self.label_smoothing_prob = label_smoothing_prob
 
         # Setting for MTL
         self.main_loss_weight = main_loss_weight
         self.sub_loss_weight = 1 - main_loss_weight - ctc_loss_weight_sub
         self.ctc_loss_weight_sub = ctc_loss_weight_sub
         assert self.sub_loss_weight > 0
-
-        # Regualarization
-        self.parameter_init = parameter_init
-        self.weight_noise_injection = False
-        self.weight_noise_std = float(weight_noise_std)
 
         # Setting for composition
         self.composition_case = composition_case
@@ -201,7 +161,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 num_layers=encoder_num_layers,
                 num_layers_sub=encoder_num_layers_sub,
                 dropout=encoder_dropout,
-                parameter_init=parameter_init,
                 subsample_list=subsample_list,
                 subsample_type=subsample_type,
                 use_cuda=self.use_cuda,
@@ -236,7 +195,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             num_units=decoder_num_units,
             num_layers=decoder_num_layers,
             dropout=decoder_dropout,
-            parameter_init=parameter_init,
             use_cuda=self.use_cuda,
             batch_first=True)
         self.decoder_sub = RNNDecoder(
@@ -245,7 +203,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             num_units=decoder_num_units_sub,
             num_layers=decoder_num_layers,
             dropout=decoder_dropout,
-            parameter_init=parameter_init,
             use_cuda=self.use_cuda,
             batch_first=True)
 
@@ -358,13 +315,17 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             xe_loss_sub (FloatTensor): A tensor of size `[1]`
         """
         # Wrap by Variable
-        xs = np2var(inputs, use_cuda=self.use_cuda)
-        ys = np2var(labels, dtype='long', use_cuda=self.use_cuda)
-        ys_sub = np2var(labels_sub, dtype='long', use_cuda=self.use_cuda)
-        x_lens = np2var(inputs_seq_len, dtype='int', use_cuda=self.use_cuda)
-        y_lens = np2var(labels_seq_len, dtype='int', use_cuda=self.use_cuda)
-        y_lens_sub = np2var(labels_seq_len_sub, dtype='int',
-                            use_cuda=self.use_cuda)
+        xs = np2var(inputs, use_cuda=self.use_cuda, backend='pytorch')
+        ys = np2var(
+            labels, dtype='long', use_cuda=self.use_cuda, backend='pytorch')
+        ys_sub = np2var(
+            labels_sub, dtype='long', use_cuda=self.use_cuda, backend='pytorch')
+        x_lens = np2var(
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
+        y_lens = np2var(
+            labels_seq_len, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
+        y_lens_sub = np2var(
+            labels_seq_len_sub, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
 
         if is_eval:
             self.eval()
@@ -887,9 +848,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             att_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
         """
         # Wrap by Variable
-        xs = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
+        xs = np2var(
+            inputs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
         x_lens = np2var(
-            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
 
         # Encode acoustic features
         enc_outputs, enc_final_state, perm_indices = self._encode(
@@ -940,9 +902,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             best_hyps (np.ndarray): A tensor of size `[]`
         """
         # Wrap by Variable
-        xs = np2var(inputs, use_cuda=self.use_cuda, volatile=True)
+        xs = np2var(
+            inputs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
         x_lens = np2var(
-            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
+            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
 
         # Change to evaluation mode
         self.eval()
