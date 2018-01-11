@@ -93,6 +93,7 @@ def main():
     vocab_file_path = '../metrics/vocab_files/' + \
         params['label_type'] + '_' + params['data_size'] + '.txt'
     train_data = Dataset(
+        backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
@@ -105,6 +106,7 @@ def main():
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
         save_format=params['save_format'], num_enque=None)
     dev_clean_data = Dataset(
+        backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
@@ -115,6 +117,7 @@ def main():
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True, save_format=params['save_format'])
     dev_other_data = Dataset(
+        backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
@@ -125,6 +128,7 @@ def main():
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True, save_format=params['save_format'])
     test_clean_data = Dataset(
+        backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
@@ -135,6 +139,7 @@ def main():
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         save_format=params['save_format'])
     test_other_data = Dataset(
+        backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],

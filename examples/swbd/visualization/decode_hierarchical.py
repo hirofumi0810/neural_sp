@@ -77,6 +77,7 @@ def main():
     vocab_file_path_sub = '../metrics/vocab_files/' + \
         params['label_type_sub'] + '_' + params['data_size'] + '.txt'
     test_data = Dataset(
+        backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],

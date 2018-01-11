@@ -20,8 +20,11 @@ class TestLoadDataset(unittest.TestCase):
 
     def test(self):
 
+        # framework
+        self.check(label_type='phone61', data_type='train', backend='chainer')
+        self.check(label_type='phone61', data_type='train', backend='pytorch')
+
         # data_type
-        self.check(label_type='phone61', data_type='train')
         self.check(label_type='phone61', data_type='dev')
         self.check(label_type='phone61', data_type='test')
 
@@ -43,11 +46,12 @@ class TestLoadDataset(unittest.TestCase):
         self.check(label_type='phone61', splice=11)
 
     @measure_time
-    def check(self, label_type, data_type='dev',
+    def check(self, label_type, data_type='dev', backend='pytorch',
               shuffle=False, sort_utt=False, sort_stop_epoch=None,
               frame_stacking=False, splice=1):
 
         print('========================================')
+        print('  backend: %s' % backend)
         print('  label_type: %s' % label_type)
         print('  data_type: %s' % data_type)
         print('  shuffle: %s' % str(shuffle))
@@ -62,6 +66,7 @@ class TestLoadDataset(unittest.TestCase):
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
+            backend=backend,
             input_channel=41, use_delta=True, use_double_delta=True,
             model_type='attention',
             data_type=data_type, label_type=label_type,
@@ -82,7 +87,7 @@ class TestLoadDataset(unittest.TestCase):
         for data, is_new_epoch in dataset:
             inputs, labels, inputs_seq_len, labels_seq_len, input_names = data
 
-            if data_type == 'train':
+            if data_type == 'train' and backend == 'pytorch':
                 for i in range(len(inputs)):
                     if inputs.shape[1] < labels.shape[1]:
                         raise ValueError(

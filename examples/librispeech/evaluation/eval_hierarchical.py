@@ -70,6 +70,7 @@ def main():
     vocab_file_path_sub = '../metrics/vocab_files/' + \
         params['label_type_sub'] + '_' + params['data_size'] + '.txt'
     test_clean_data = Dataset(
+        backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
@@ -82,6 +83,7 @@ def main():
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=False, save_format=params['save_format'])
     test_other_data = Dataset(
+        backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],

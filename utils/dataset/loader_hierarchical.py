@@ -59,8 +59,12 @@ class DatasetBase(Base):
             self.df_sub['transcript'][data_indices])
 
         if not hasattr(self, 'input_size'):
-            self.input_size = self.input_channel * \
-                (1 + int(self.use_delta) + int(self.use_double_delta))
+            if self.use_double_delta:
+                self.input_size = self.input_channel * 3
+            elif self.use_delta:
+                self.input_size = self.input_channel * 2
+            else:
+                self.input_size = self.input_channel
             self.input_size *= self.num_stack
             self.input_size *= self.splice
 
@@ -77,9 +81,13 @@ class DatasetBase(Base):
         # NOTE: add <SOS> and <EOS>
 
         # Initialization
-        inputs = np.zeros(
-            (len(data_indices), max_inputs_seq_len, self.input_size * self.splice),
-            dtype=np.float32)
+        if self.backend == 'pytorch':
+            inputs = np.zeros(
+                (len(data_indices), max_inputs_seq_len,
+                 self.input_size * self.splice),
+                dtype=np.float32)
+        elif self.backend == 'chainer':
+            inputs = [None] * len(data_indices)
         labels = np.array(
             [[self.pad_value] * max_lables_seq_len] * len(data_indices))
         labels_sub = np.array(
@@ -104,9 +112,9 @@ class DatasetBase(Base):
             if self.use_double_delta:
                 data_i = data_i_tmp
             elif self.use_delta:
-                data_i = data_i_tmp[:self.input_channel * 2]
+                data_i = data_i_tmp[:, :self.input_channel * 2]
             else:
-                data_i = data_i_tmp[:self.input_channel]
+                data_i = data_i_tmp[:, :self.input_channel]
 
             # Frame stacking
             if self.num_stack > 1:
@@ -117,7 +125,10 @@ class DatasetBase(Base):
             if self.splice > 1:
                 data_i = do_splice(data_i, self.splice, self.num_stack)
 
-            inputs[i_batch, :frame_num, :] = data_i
+            if self.backend == 'pytorch':
+                inputs[i_batch, :frame_num, :] = data_i
+            elif self.backend == 'chainer':
+                inputs[i_batch] = data_i
             inputs_seq_len[i_batch] = frame_num
             if self.is_test:
                 labels[i_batch, 0] = self.df['transcript'][data_indices[i_batch]]

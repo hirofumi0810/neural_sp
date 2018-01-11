@@ -61,6 +61,7 @@ def main():
     # Load dataset
     vocab_file_path = '../metrics/vocab_files/phone39.txt'
     test_data = Dataset(
+        backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],

@@ -18,7 +18,7 @@ from utils.dataset.loader import DatasetBase
 
 class Dataset(DatasetBase):
 
-    def __init__(self, input_channel, use_delta, use_double_delta,
+    def __init__(self, backend, input_channel, use_delta, use_double_delta,
                  model_type, data_type, label_type, batch_size,
                  vocab_file_path, max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
@@ -26,9 +26,10 @@ class Dataset(DatasetBase):
                  sort_stop_epoch=None, save_format='numpy', num_enque=None):
         """A class for loading dataset.
         Args:
-            input_channel (int):
-            use_delta (bool):
-            use_double_delta (bool):
+            backend (string): pytorch or chainer
+            input_channel (int): the number of channels of acoustics
+            use_delta (bool): if True, use the delta feature
+            use_double_delta (bool): if True, use the acceleration feature
             model_type (string): ctc or attention
             data_type (string): train or dev or test
             label_type (string): phone39 or phone48 or phone61 or
@@ -52,6 +53,7 @@ class Dataset(DatasetBase):
         """
         self.is_test = True if data_type == 'test' else False
 
+        self.backend = backend
         self.input_channel = input_channel
         self.use_delta = use_delta
         self.use_double_delta = use_double_delta

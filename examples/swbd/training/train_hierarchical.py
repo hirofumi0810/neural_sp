@@ -98,6 +98,7 @@ def main():
     vocab_file_path_sub = '../metrics/vocab_files/' + \
         params['label_type_sub'] + '_' + params['data_size'] + '.txt'
     train_data = Dataset(
+        backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
@@ -113,6 +114,7 @@ def main():
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
         save_format=params['save_format'], num_enque=None)
     dev_data = Dataset(
+        backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
@@ -126,6 +128,7 @@ def main():
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True, save_format=params['save_format'])
     eval2000_swbd_data = Dataset(
+        backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
@@ -139,6 +142,7 @@ def main():
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         save_format=params['save_format'])
     eval2000_ch_data = Dataset(
+        backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],

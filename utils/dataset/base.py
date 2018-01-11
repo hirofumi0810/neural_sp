@@ -181,7 +181,8 @@ class Base(object):
                     self.shuffle = True
 
             # Shuffle data in the mini-batch
-            random.shuffle(data_indices)
+            # random.shuffle(data_indices)
+            # NOTE: stop shuffle now!!!
         else:
             # Randomly sample uttrances
             if len(self.rest) > batch_size:

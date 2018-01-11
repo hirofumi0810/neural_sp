@@ -20,7 +20,7 @@ from utils.dataset.loader_hierarchical import DatasetBase
 
 class Dataset(DatasetBase):
 
-    def __init__(self, input_channel, use_delta, use_double_delta,
+    def __init__(self, backend, input_channel, use_delta, use_double_delta,
                  model_type, data_type, data_size,
                  label_type, label_type_sub,
                  batch_size, vocab_file_path, vocab_file_path_sub,
@@ -31,9 +31,10 @@ class Dataset(DatasetBase):
                  num_enque=None):
         """A class for loading dataset.
         Args:
-            input_channel=params['input_channel'],
-            use_delta=params['use_delta'],
-            use_double_delta=params['use_double_delta'],
+            backend (string): pytorch or chainer
+            input_channel (int): the number of channels of acoustics
+            use_delta (bool): if True, use the delta feature
+            use_double_delta (bool): if True, use the acceleration feature
             model_type (string): hierarchical_ctc or hierarchical_attention
             data_type (string): train or dev_clean or dev_other or test_clean
                 or test_other
@@ -63,6 +64,7 @@ class Dataset(DatasetBase):
         """
         self.is_test = True if 'eval' in data_type else False
 
+        self.backend = backend
         self.input_channel = input_channel
         self.use_delta = use_delta
         self.use_double_delta = use_double_delta

@@ -20,8 +20,13 @@ class TestLoadDataset(unittest.TestCase):
 
     def test(self):
 
+        # framework
+        self.check(label_type='character',
+                   data_type='train', backend='chainer')
+        self.check(label_type='character',
+                   data_type='train', backend='pytorch')
+
         # data_type
-        self.check(label_type='character', data_type='train')
         self.check(label_type='character', data_type='dev_clean')
         self.check(label_type='character', data_type='dev_other')
         self.check(label_type='character', data_type='test_clean')
@@ -50,11 +55,12 @@ class TestLoadDataset(unittest.TestCase):
         # self.check(label_type='character', num_gpus=8)
 
     @measure_time
-    def check(self, label_type, data_type='dev_clean', data_size='100h',
+    def check(self, label_type, data_type='dev_clean', data_size='100h', backend='pytorch',
               shuffle=False, sort_utt=True, sort_stop_epoch=None,
               frame_stacking=False, splice=1, num_gpus=1):
 
         print('========================================')
+        print('  backend: %s' % backend)
         print('  label_type: %s' % label_type)
         print('  data_type: %s' % data_type)
         print('  data_size: %s' % data_size)
@@ -72,6 +78,7 @@ class TestLoadDataset(unittest.TestCase):
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
+            backend=backend,
             input_channel=40, use_delta=True, use_double_delta=True,
             model_type='attention',
             data_type=data_type, data_size=data_size,
@@ -93,7 +100,7 @@ class TestLoadDataset(unittest.TestCase):
         for data, is_new_epoch in dataset:
             inputs, labels, inputs_seq_len, labels_seq_len, input_names = data
 
-            if data_type == 'train':
+            if data_type == 'train' and backend == 'pytorch':
                 for i in range(len(inputs)):
                     if inputs.shape[1] < labels.shape[1]:
                         raise ValueError(

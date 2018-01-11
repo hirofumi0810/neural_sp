@@ -20,9 +20,13 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
 
     def test(self):
 
-        # data_type
+        # framework
         self.check(label_type='word_freq5', label_type_sub='character',
-                   data_type='train')
+                   data_type='train', backend='chainer')
+        self.check(label_type='word_freq5', label_type_sub='character',
+                   data_type='train', backend='pytorch')
+
+        # data_type
         self.check(label_type='word_freq5', label_type_sub='character',
                    data_type='dev')
         self.check(label_type='word_freq5', label_type_sub='character',
@@ -37,11 +41,12 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
 
     @measure_time
     def check(self, label_type, label_type_sub,
-              data_type='dev', data_size='300h',
+              data_type='dev', data_size='300h', backend='pytorch',
               shuffle=False, sort_utt=True, sort_stop_epoch=None,
               frame_stacking=False, splice=1, num_gpus=1):
 
         print('========================================')
+        print('  backend: %s' % backend)
         print('  label_type: %s' % label_type)
         print('  label_type_sub: %s' % label_type_sub)
         print('  data_type: %s' % data_type)
@@ -62,6 +67,7 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
+            backend=backend,
             input_channel=40, use_delta=True, use_double_delta=True,
             model_type='hierarchical_attention',
             data_type=data_type, data_size=data_size,
@@ -83,7 +89,7 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
         for data, is_new_epoch in dataset:
             inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub, input_names = data
 
-            if data_type == 'train':
+            if data_type == 'train' and backend == 'pytorch':
                 for i in range(len(inputs)):
                     if inputs.shape[1] < labels.shape[1]:
                         raise ValueError(
