@@ -34,6 +34,8 @@ from utils.io.variable import var2np
 MAX_DECODE_LEN_PHONE = 40
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--gpu', type=int, default=-1,
+                    help='the index of GPU (negative value indicates CPU)')
 parser.add_argument('--config_path', type=str,
                     help='path to the configuration file')
 parser.add_argument('--model_save_path', type=str,
@@ -144,9 +146,6 @@ def main():
         decay_rate=params['decay_rate'],
         decay_patient_epoch=params['decay_patient_epoch'],
         lower_better=True)
-
-    # Initialize parameters
-    model.init_weights()
 
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)

@@ -155,6 +155,9 @@ class HierarchicalCTC(CTC):
         self.fc_sub = LinearND(
             num_units * self.num_directions, self.num_classes_sub)
 
+        # Initialize parameters
+        self.init_weights(parameter_init)
+
     def forward(self, inputs, labels, labels_sub, inputs_seq_len,
                 labels_seq_len, labels_seq_len_sub, is_eval=False):
         """Forward computation.

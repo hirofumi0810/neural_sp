@@ -292,6 +292,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
             self.gate_fn = LinearND(embedding_dim, embedding_dim)
 
+        # Initialize parameters
+        self.init_weights(parameter_init)
+
     def forward(self, inputs, labels, labels_sub, inputs_seq_len,
                 labels_seq_len, labels_seq_len_sub, is_eval=False):
         """Forward computation.

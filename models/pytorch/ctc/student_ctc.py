@@ -107,6 +107,9 @@ class StudentCTC(CTC):
             self.fc_xe = nn.Linear(
                 num_units * self.num_directions, self.num_classes)
 
+        # Initialize parameters
+        self.init_weights(parameter_init)
+
     def forward(self, inputs, labels, labels_xe, inputs_seq_len,
                 labels_seq_len, is_eval=False):
         """Forward computation.

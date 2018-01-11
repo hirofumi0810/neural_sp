@@ -138,9 +138,6 @@ class TestNestedAttention(unittest.TestCase):
             decay_patient_epoch=10,
             lower_better=True)
 
-        # Initialize parameters
-        model.init_weights()
-
         # GPU setting
         model.set_cuda(deterministic=False, benchmark=True)
 

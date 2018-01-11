@@ -301,6 +301,9 @@ class AttentionSeq2seq(ModelBase):
             self._decode_ctc_beam_np = BeamSearchDecoder(blank_index=0)
             # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
+        # Initialize parameters
+        self.init_weights(parameter_init)
+
     def forward(self, inputs, labels, inputs_seq_len, labels_seq_len,
                 is_eval=False):
         """Forward computation.

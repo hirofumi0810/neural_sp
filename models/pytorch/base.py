@@ -29,7 +29,6 @@ OPTIMIZER_CLS_NAMES = {
     "adagrad": optim.Adagrad,
     "rmsprop": optim.RMSprop
 }
-# TODO: Add yellowfin
 
 
 class ModelBase(nn.Module):
@@ -41,12 +40,11 @@ class ModelBase(nn.Module):
     def forward(self, inputs):
         raise NotImplementedError
 
-    def init_weights(self):
+    def init_weights(self, parameter_init):
         for name, param in self.named_parameters():
             nn.init.uniform(param.data,
-                            a=-self.parameter_init,
-                            b=self.parameter_init)
-        # TODO: make self.parameter_init argument
+                            a=-parameter_init,
+                            b=parameter_init)
 
     def _inject_weight_noise(self, mean, std):
         m = torch.distributions.Normal(

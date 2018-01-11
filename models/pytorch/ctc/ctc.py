@@ -188,6 +188,9 @@ class CTC(ModelBase):
         self._decode_beam_np = BeamSearchDecoder(blank_index=self.blank_index)
         # TODO: set space index
 
+        # Initialize parameters
+        self.init_weights(parameter_init)
+
     def forward(self, inputs, labels, inputs_seq_len, labels_seq_len,
                 is_eval=False):
         """Forward computation.

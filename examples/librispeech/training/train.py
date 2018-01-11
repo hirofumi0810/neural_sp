@@ -168,9 +168,6 @@ def main():
         decay_patient_epoch=params['decay_patient_epoch'],
         lower_better=True)
 
-    # Initialize parameters
-    model.init_weights()
-
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
