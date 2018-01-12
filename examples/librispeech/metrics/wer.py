@@ -58,7 +58,7 @@ def do_eval_wer(model, model_type, dataset, label_type, beam_width,
                                   beam_width=beam_width,
                                   max_decode_len=max_decode_len)
 
-        for i_batch in range(inputs.shape[0]):
+        for i_batch in range(len(inputs)):
 
             ##############################
             # Reference

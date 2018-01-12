@@ -66,7 +66,7 @@ def do_eval_cer(model, model_type, dataset, label_type, beam_width,
                                   max_decode_len=max_decode_len,
                                   is_sub_task=is_sub_task)
 
-        for i_batch in range(inputs.shape[0]):
+        for i_batch in range(len(inputs)):
 
             ##############################
             # Reference
