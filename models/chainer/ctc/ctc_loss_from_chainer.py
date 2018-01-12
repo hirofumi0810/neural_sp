@@ -10,7 +10,7 @@ import numpy
 import six
 
 import chainer
-from chainer import cuda
+from chainer.backends import cuda
 from chainer import function
 from chainer import utils
 from chainer.utils import type_check
@@ -58,7 +58,7 @@ def _move_inputs(prob, input_length, xp):
 class ConnectionistTemporalClassification(function.Function):
 
     """The implementation of Connectionist Temporal Classfication loss functions.
-    To make it usable for real - world cases, this class has two policies below.
+    To make it usable for real-world cases, this class has two policies below.
     1. This class computes forward and backward variables in the log domain.
     2. This class applies the softmax function to inputs. The Backward
     values of CTC loss is often overflows. This is avoided by computing
@@ -103,7 +103,7 @@ class ConnectionistTemporalClassification(function.Function):
     def recurrence_relation(self, label, path_length, max_length, dtype, xp):
         """Transition in forword and backword algorithms is represented as matrix.
         See also
-        https: // blog.wtf.sg / 2014 / 10 / 06 / connectionist - temporal - classification - ctc - with-theano/
+        https://blog.wtf.sg/2014/10/06/connectionist-temporal-classification-ctc-with-theano/
         """
         batch, lab = label.shape
         repeat_mask = xp.ones((batch, lab * 2 + 1))
@@ -265,29 +265,29 @@ def connectionist_temporal_classification(
         x, t, blank_symbol, input_length=None, label_length=None,
         reduce='mean'):
     """Connectionist Temporal Classification loss function.
-    Connectionist Temporal Classification(CTC)[Graves2006]_ is a loss function
+    Connectionist Temporal Classification(CTC) [Graves2006]_ is a loss function
     of sequence labeling where the alignment between the inputs and target is
-    unknown. See also[Graves2012]_
+    unknown. See also [Graves2012]_
     The output is a variable whose value depends on the value of
     the option ``reduce``. If it is ``'no'``, it holds the samplewise
     loss values. If it is ``'mean'``, it takes the mean of loss values.
     Args:
-        x(sequence of Variable): RNN output at each time. ``x`` must be a list
-            of: class: `~chainer.Variable` s. Each element of ``x``, ``x[i]``
-            is a: class: `~chainer.Variable` representing output of RNN at time
+        x (sequence of Variable): RNN output at each time. ``x`` must be a list
+            of :class:`~chainer.Variable` s. Each element of ``x``, ``x[i]``
+            is a :class:`~chainer.Variable` representing output of RNN at time
             ``i``.
-        t(Variable): Expected label sequence.
-        blank_symbol(int): Index of blank_symbol.
-            This value must be non - negative.
-        input_length(Variable): Length of valid sequence for each of mini
+        t (Variable): Expected label sequence.
+        blank_symbol (int): Index of blank_symbol.
+            This value must be non-negative.
+        input_length (Variable): Length of valid sequence for each of mini
             batch ``x`` (optional). If input_length is skipped, It regards that
             all of ``x`` is valid input.
-        label_length(Variable): Length of valid sequence for each of mini
+        label_length (Variable): Length of valid sequence for each of mini
             batch ``t`` (optional). If label_length is skipped, It regards that
             all of ``t`` is valid input.
-        reduce(str): Reduction option. Its value must be either
+        reduce (str): Reduction option. Its value must be either
             ``'mean'`` or ``'no'``. Otherwise,
-            : class: `ValueError` is raised.
+            :class:`ValueError` is raised.
     Returns:
        ~chainer.Variable:
            A variable holding a scalar value of the CTC loss.
@@ -303,15 +303,15 @@ def connectionist_temporal_classification(
     .. note::
        This function is differentiable only by ``x``.
     .. note::
-       This function supports(batch, sequence, 1 - dimensional input) - data.
+       This function supports (batch, sequence, 1-dimensional input)-data.
     .. [Graves2006] Alex Graves, Santiago Fernandez,\
     Faustino Gomez, Jurgen Schmidhuber,\
     `Connectionist Temporal Classification: Labelling Unsegmented\
     Sequence Data with Recurrent Neural Networks\
-    < ftp: // ftp.idsia.ch / pub / juergen / icml2006.pdf >`_
+    <ftp://ftp.idsia.ch/pub/juergen/icml2006.pdf>`_
     .. [Graves2012] Alex Graves,\
     `Supervised Sequence Labelling with Recurrent Neural Networks\
-    < http: // www.cs.toronto.edu / ~graves / preprint.pdf >`_
+    <http://www.cs.toronto.edu/~graves/preprint.pdf>`_
     """
     if not isinstance(x, collections.Sequence):
         raise TypeError('x must be a list of Variables')

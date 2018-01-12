@@ -40,9 +40,9 @@ class HierarchicalCTC(CTC):
         dropout (float): the probability to drop nodes
         main_loss_weight (float): A weight parameter for the main CTC loss
         num_classes (int): the number of classes of target labels of the main task
-            (excluding a blank class)
+            (excluding the blank class)
         num_classes_sub (int): the number of classes of target labels of the sub task
-            (excluding a blank class)
+            (excluding the blank class)
         parameter_init (float, optional): Range of uniform distribution to
             initialize weight parameters
         subsample_list (list, optional): subsample in the corresponding layers (True)
@@ -117,7 +117,7 @@ class HierarchicalCTC(CTC):
         self.num_layers_sub = num_layers_sub
 
         # Setting for CTC
-        self.num_classes_sub = num_classes_sub + 1  # Add blank class
+        self.num_classes_sub = num_classes_sub + 1  # Add the blank class
 
         # Setting for MTL
         self.main_loss_weight = main_loss_weight
@@ -190,7 +190,7 @@ class HierarchicalCTC(CTC):
 
         ys = ys + 1
         ys_sub = ys_sub + 1
-        # NOTE: index 0 is reserved for blank in warpctc_pytorch
+        # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
 
         if is_eval:
             self.eval()
@@ -239,20 +239,18 @@ class HierarchicalCTC(CTC):
         # Main task
         ##################################################
         # Compute CTC loss in the main task
-        batch_size, label_num, num_classes = logits.size()
         ctc_loss_fn = CTCLoss()
         ctc_loss_main = ctc_loss_fn(logits, concatenated_labels,
                                     x_lens.cpu(), y_lens)
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
+            batch_size, label_num, num_classes = logits.size()
             log_probs = F.log_softmax(logits, dim=-1)
             uniform = Variable(torch.ones(
                 batch_size, label_num, num_classes)) / num_classes
             ctc_loss_main += F.kl_div(log_probs.cpu(), uniform, size_average=False,
                                       reduce=True) * self.label_smoothing_prob
-
-        ctc_loss_main = ctc_loss_main * self.main_loss_weight / batch_size
 
         ##################################################
         # Sub task
@@ -270,10 +268,16 @@ class HierarchicalCTC(CTC):
             ctc_loss_sub += F.kl_div(log_probs_sub.cpu(), uniform, size_average=False,
                                      reduce=True) * self.label_smoothing_prob
 
-        ctc_loss_sub = ctc_loss_sub * (1 - self.main_loss_weight) / batch_size
-
         # Total loss
+        ctc_loss_main = ctc_loss_main * self.main_loss_weight
+        ctc_loss_sub = ctc_loss_sub * (1 - self.main_loss_weght)
         ctc_loss = ctc_loss_main + ctc_loss_sub
+
+        # Average the loss by mini-batch
+        batch_size = logits.size(1)
+        ctc_loss_main /= batch_size
+        ctc_loss_sub /= batch_size
+        ctc_loss /= batch_size
 
         if is_eval:
             ctc_loss = ctc_loss.data[0]

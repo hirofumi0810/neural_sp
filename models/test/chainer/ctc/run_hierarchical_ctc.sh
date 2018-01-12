@@ -1,0 +1,1 @@
+../../pytorch/ctc/run_hierarchical_ctc.sh

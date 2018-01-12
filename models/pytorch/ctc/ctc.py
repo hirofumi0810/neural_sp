@@ -47,7 +47,7 @@ class CTC(ModelBase):
         fc_list (list):
         dropout (float): the probability to drop nodes
         num_classes (int): the number of classes of target labels
-            (excluding a blank class)
+            (excluding the blank class)
         parameter_init (float, optional): Range of uniform distribution to
             initialize weight parameters
         subsample_list (list, optional): subsample in the corresponding layers (True)
@@ -107,9 +107,9 @@ class CTC(ModelBase):
         self.subsample_list = subsample_list
 
         # Setting for CTC
-        self.num_classes = num_classes + 1  # Add blank class
+        self.num_classes = num_classes + 1  # Add the blank class
         self.blank_index = 0
-        # NOTE: index 0 is reserved for blank in warpctc_pytorch
+        # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
         self.logits_temperature = logits_temperature
 
         # Setting for regualarization
@@ -212,7 +212,7 @@ class CTC(ModelBase):
         y_lens = np2var(
             labels_seq_len, dtype='int', use_cuda=False, backend='pytorch')
 
-        # NOTE: index 0 is reserved for blank in warpctc_pytorch
+        # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
         ys = ys + 1
 
         if is_eval:
@@ -289,7 +289,7 @@ class CTC(ModelBase):
             perm_indices (LongTensor):
         """
         if is_multi_task:
-            enc_outputs, encoder_outputs_sub, perm_indices = self.encoder(
+            enc_outputs, enc_outputs_sub, perm_indices = self.encoder(
                 xs, x_lens, volatile)
         else:
             if self.encoder_type == 'cnn':
@@ -308,7 +308,7 @@ class CTC(ModelBase):
         logits = self.fc(enc_outputs)
 
         if is_multi_task:
-            logits_sub = self.fc_sub(encoder_outputs_sub)
+            logits_sub = self.fc_sub(enc_outputs_sub)
             return logits, logits_sub, perm_indices
         else:
             return logits, perm_indices
@@ -420,7 +420,7 @@ class CTC(ModelBase):
             best_hyps = self._decode_beam_np(
                 var2np(log_probs), var2np(x_lens), beam_width=beam_width)
 
-        # NOTE: index 0 is reserved for blank in warpctc_pytorch
+        # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
         best_hyps = best_hyps - 1
 
         # Permutate indices to the original order
@@ -452,7 +452,7 @@ class CTC(ModelBase):
             best_hyps = self._decode_beam_np(
                 log_probs, inputs_seq_len, beam_width=beam_width)
 
-        # NOTE: index 0 is reserved for blank in warpctc_pytorch
+        # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
         best_hyps = best_hyps - 1
 
         return best_hyps

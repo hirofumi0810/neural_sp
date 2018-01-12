@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Test CTC models (chainer)."""
+"""Test hierarchical CTC models (chainer)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -12,7 +12,7 @@ import time
 import unittest
 
 sys.path.append('../../../../')
-from models.chainer.ctc.ctc import CTC
+from models.chainer.ctc.hierarchical_ctc import HierarchicalCTC
 from models.test.data import generate_data, idx2char, idx2word
 from utils.measure_time_func import measure_time
 from utils.evaluation.edit_distance import compute_cer, compute_wer
@@ -22,17 +22,18 @@ from utils.evaluation.edit_distance import compute_cer, compute_wer
 class TestCTC(unittest.TestCase):
 
     def test(self):
-        print("CTC Working check.")
+        print("Hierarchical CTC Working check.")
+
+        # Pyramidal encoder
+        # self.check(encoder_type='lstm', bidirectional=True, subsample='drop')
+        # self.check(encoder_type='lstm', bidirectional=True, subsample='concat')
+
+        # projection layer
+        # self.check(encoder_type='lstm', bidirectional=False, projection=True)
 
         # Label smoothing
         # self.check(encoder_type='lstm', bidirectional=True,
         #            label_smoothing=True)
-
-        # Pyramidal encoder
-        # self.check(encoder_type='lstm', bidirectional=True, subsample=True)
-
-        # Projection
-        # self.check(encoder_type='lstm', bidirectional=False, projection=True)
 
         # Residual LSTM-CTC
         self.check(encoder_type='lstm', bidirectional=True,
@@ -40,66 +41,37 @@ class TestCTC(unittest.TestCase):
         self.check(encoder_type='lstm', bidirectional=True,
                    dense_residual=True)
 
-        # CNN-CTC
-        # self.check(encoder_type='cnn')
-        # self.check(encoder_type='cnn', batch_norm=True, activation='relu')
-        # self.check(encoder_type='cnn', batch_norm=True, activation='prelu')
-        # self.check(encoder_type='cnn', batch_norm=True, activation='hard_tanh')
-        # self.check(encoder_type='cnn', batch_norm=True, activation='maxout')
-
         # CLDNN-CTC
         # self.check(encoder_type='lstm', bidirectional=True,
         #            conv=True)
         # self.check(encoder_type='lstm', bidirectional=True,
         #            conv=True, batch_norm=True)
 
-        # word-level CTC
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            label_type='word')
-
-        # RNNs
         self.check(encoder_type='lstm', bidirectional=True)
-        self.check(encoder_type='lstm', bidirectional=False)
-        self.check(encoder_type='gru', bidirectional=True)
-        self.check(encoder_type='gru', bidirectional=False)
-        self.check(encoder_type='rnn', bidirectional=True)
-        self.check(encoder_type='rnn', bidirectional=False)
 
     @measure_time
-    def check(self, encoder_type, bidirectional=False, label_type='char',
-              subsample=False,  projection=False,
-              conv=False, batch_norm=False, activation='relu',
+    def check(self, encoder_type, bidirectional=False,
+              subsample=False, projection=False,
+              conv=False, batch_norm=False,
               residual=False, dense_residual=False, label_smoothing=False):
 
         print('==================================================')
-        print('  label_type: %s' % label_type)
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
         print('  projection: %s' % str(projection))
         print('  subsample: %s' % str(subsample))
         print('  conv: %s' % str(conv))
         print('  batch_norm: %s' % str(batch_norm))
-        print('  activation: %s' % activation)
         print('  residual: %s' % str(residual))
         print('  dense_residual: %s' % str(dense_residual))
         print('  label_smoothing: %s' % str(label_smoothing))
         print('==================================================')
 
-        if conv or encoder_type == 'cnn':
+        if conv:
             conv_channels = [32, 32]
-
-            # pattern 1
             conv_kernel_sizes = [[41, 11], [21, 11]]
             conv_strides = [[2, 2], [2, 1]]
-
-            # pattern 2
-            # conv_kernel_sizes = [[8, 5], [8, 5]]
-            # conv_strides = [[2, 2], [1, 1]]
-
             poolings = [[], []]
-            # poolings = [[2, 2], [2, 2]]  # not working
-            # poolings = [[2, 2], []]
-            # poolings = [[], [2, 2]]
             fc_list = [786, 786]
         else:
             conv_channels = []
@@ -109,41 +81,41 @@ class TestCTC(unittest.TestCase):
             fc_list = []
 
         # Load batch data
+        num_stack = 1 if subsample or conv else 2
         splice = 1
-        num_stack = 1 if subsample or conv or encoder_type == 'cnn' else 2
-        inputs, labels, inputs_seq_len, labels_seq_len = generate_data(
+        inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub = generate_data(
             model_type='ctc',
-            label_type=label_type,
+            label_type='word_char',
             batch_size=2,
             num_stack=num_stack,
             splice=splice,
             backend='chainer')
 
-        if label_type == 'char':
-            num_classes = 27
-        elif label_type == 'word':
-            num_classes = 11
+        num_classes = 11
+        num_classes_sub = 27
 
         # Load model
-        model = CTC(
-            input_size=inputs[0].shape[-1] // splice // num_stack,  # 120
+        model = HierarchicalCTC(
+            input_size=inputs[0].shape[-1] // splice // num_stack,   # 120
             encoder_type=encoder_type,
             bidirectional=bidirectional,
             num_units=256,
             num_proj=256 if projection else 0,
-            num_layers=2,
+            num_layers=3,
+            num_layers_sub=2,
             fc_list=fc_list,
             dropout=0.1,
+            main_loss_weight=0.5,
             num_classes=num_classes,
+            num_classes_sub=num_classes_sub,
             parameter_init=0.1,
-            subsample_list=[] if not subsample else [True] * 2,
+            subsample_list=[] if not subsample else [True] * 3,
             num_stack=num_stack,
             splice=splice,
             conv_channels=conv_channels,
             conv_kernel_sizes=conv_kernel_sizes,
             conv_strides=conv_strides,
             poolings=poolings,
-            activation=activation,
             batch_norm=batch_norm,
             label_smoothing_prob=0.1 if label_smoothing else 0,
             weight_noise_std=0,
@@ -184,7 +156,9 @@ class TestCTC(unittest.TestCase):
 
             # Step for parameter update
             model.optimizer.target.cleargrads()
-            loss = model(inputs, labels, inputs_seq_len, labels_seq_len)
+            loss, loss_main, loss_sub = model(
+                inputs, labels, labels_sub,
+                inputs_seq_len, labels_seq_len, labels_seq_len_sub)
             loss.backward()
             model.optimizer.update()
 
@@ -194,31 +168,35 @@ class TestCTC(unittest.TestCase):
                 # Decode
                 labels_pred = model.decode(
                     inputs, inputs_seq_len, beam_width=1)
+                labels_pred_sub = model.decode(
+                    inputs, inputs_seq_len, beam_width=1, is_sub_task=True)
+
+                print(labels_pred_sub)
 
                 # Compute accuracy
-                if label_type == 'char':
-                    str_true = idx2char(labels[0, :labels_seq_len[0]])
-                    str_pred = idx2char(labels_pred[0])
-                    ler = compute_cer(ref=str_true.replace('_', ''),
-                                      hyp=str_pred.replace('_', ''),
-                                      normalize=True)
-                elif label_type == 'word':
-                    str_true = idx2word(labels[0, :labels_seq_len[0]])
-                    str_pred = idx2word(labels_pred[0])
-                    ler = compute_wer(ref=str_true.split('_'),
-                                      hyp=str_pred.split('_'),
+                str_true = idx2word(labels[0, :labels_seq_len[0]])
+                str_pred = idx2word(labels_pred[0])
+                ler = compute_wer(ref=str_true.split('_'),
+                                  hyp=str_pred.split('_'),
+                                  normalize=True)
+                str_true_sub = idx2char(labels_sub[0, :labels_seq_len_sub[0]])
+                str_pred_sub = idx2char(labels_pred_sub[0])
+                ler_sub = compute_cer(ref=str_true_sub.replace('_', ''),
+                                      hyp=str_pred_sub.replace('_', ''),
                                       normalize=True)
 
                 duration_step = time.time() - start_time_step
-                print('Step %d: loss = %.3f / ler = %.3f / lr = %.5f (%.3f sec)' %
-                      (step + 1, loss.data, ler, learning_rate, duration_step))
+                print('Step %d: loss = %.3f (%.3f/%.3f) / ler = %.3f (%.3f) / lr = %.5f (%.3f sec)' %
+                      (step + 1, loss.data, loss_main.data, loss_sub.data,
+                       ler, ler_sub, learning_rate, duration_step))
                 start_time_step = time.time()
 
                 # Visualize
                 print('Ref: %s' % str_true)
-                print('Hyp: %s' % str_pred)
+                print('Hyp (word): %s' % str_pred)
+                print('Hyp (char): %s' % str_pred_sub)
 
-                if ler < 0.05:
+                if ler_sub < 0.1:
                     print('Modle is Converged.')
                     break
 

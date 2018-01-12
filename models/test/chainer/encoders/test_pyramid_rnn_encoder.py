@@ -14,7 +14,7 @@ import math
 sys.path.append('../../../../')
 from models.chainer.encoders.load_encoder import load
 from models.test.data import generate_data
-from utils.io.variable import np2var, var2np
+from utils.io.variable import np2var
 from utils.measure_time_func import measure_time
 
 

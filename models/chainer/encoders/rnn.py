@@ -9,17 +9,18 @@ from __future__ import print_function
 
 import numpy as np
 
+import chainer
 from chainer import functions as F
 from chainer import links as L
-from chainer import Chain
-from chainer import Variable
+from chainer import initializers
 
+from models.chainer.linear import LinearND
 # from models.chainer.encoders.cnn import CNNEncoder
 # from models.chainer.encoders.cnn_v2 import CNNEncoder
 # from models.chainer.encoders.cnn_utils import ConvOutSize
 
 
-class RNNEncoder(Chain):
+class RNNEncoder(chainer.Chain):
     """RNN encoder.
     Args:
         input_size (int): the dimension of input features
@@ -96,7 +97,6 @@ class RNNEncoder(Chain):
         self.num_units = num_units
         self.num_proj = num_proj if num_proj is not None else 0
         self.num_layers = num_layers
-        self.use_cuda = use_cuda
         self.merge_bidirectional = merge_bidirectional
 
         # TODO:
@@ -129,32 +129,35 @@ class RNNEncoder(Chain):
         self.residual_start_layer = subsample_last_layer + 1
         # NOTE: このレイヤの出力からres_outputs_listに入れていく
 
-        # Setting for CNNs before RNNs
-        if len(conv_channels) > 0 and len(conv_channels) == len(conv_kernel_sizes) and len(conv_kernel_sizes) == len(conv_strides):
-            raise NotImplementedError
-
-            # assert num_stack == 1
-            # assert splice == 1
-            # self.conv = CNNEncoder(
-            #     input_size,
-            #     conv_channels=conv_channels,
-            #     conv_kernel_sizes=conv_kernel_sizes,
-            #     conv_strides=conv_strides,
-            #     poolings=poolings,
-            #     dropout=dropout,
-            #     parameter_init=parameter_init,
-            #     activation=activation,
-            #     use_cuda=use_cuda,
-            #     batch_norm=batch_norm)
-            # input_size = self.conv.output_size
-            # self.get_conv_out_size = ConvOutSize(self.conv.conv)
-        else:
-            input_size = input_size * splice * num_stack
-            self.conv = None
-
-        self.rnns = []
-        self.projections = []
         with self.init_scope():
+            initializer = initializers.Uniform(scale=parameter_init)
+
+            # Setting for CNNs before RNNs# Setting for CNNs before RNNs
+            if len(conv_channels) > 0 and len(conv_channels) == len(conv_kernel_sizes) and len(conv_kernel_sizes) == len(conv_strides):
+                raise NotImplementedError
+
+                # assert num_stack == 1
+                # assert splice == 1
+                # self.conv = CNNEncoder(
+                #     input_size,
+                #     conv_channels=conv_channels,
+                #     conv_kernel_sizes=conv_kernel_sizes,
+                #     conv_strides=conv_strides,
+                #     poolings=poolings,
+                #     dropout=dropout,
+                #     parameter_init=parameter_init,
+                #     activation=activation,
+                #     use_cuda=use_cuda,
+                #     batch_norm=batch_norm)
+                # input_size = self.conv.output_size
+                # self.get_conv_out_size = ConvOutSize(self.conv.conv)
+            else:
+                input_size = input_size * splice * num_stack
+                self.conv = None
+
+            self.rnns = []
+            self.projections = []
+
             for i_layer in range(num_layers):
                 if i_layer == 0:
                     encoder_input_size = input_size
@@ -173,15 +176,17 @@ class RNNEncoder(Chain):
                             n_layers=1,
                             in_size=encoder_input_size,
                             out_size=num_units,
-                            dropout=dropout)
-                        # TODO: initialW
-                        # initial_bias
+                            dropout=dropout,
+                            initialW=initializer,
+                            initial_bias=None)
                     else:
                         rnn_i = L.NStepLSTM(
                             n_layers=1,
                             in_size=encoder_input_size,
                             out_size=num_units,
-                            dropout=dropout)
+                            dropout=dropout,
+                            initialW=initializer,
+                            initial_bias=None)
 
                 elif rnn_type == 'gru':
                     if bidirectional:
@@ -189,13 +194,17 @@ class RNNEncoder(Chain):
                             n_layers=1,
                             in_size=encoder_input_size,
                             out_size=num_units,
-                            dropout=dropout)
+                            dropout=dropout,
+                            initialW=initializer,
+                            initial_bias=None)
                     else:
                         rnn_i = L.NStepGRU(
                             n_layers=1,
                             in_size=encoder_input_size,
                             out_size=num_units,
-                            dropout=dropout)
+                            dropout=dropout,
+                            initialW=initializer,
+                            initial_bias=None)
 
                 elif rnn_type == 'rnn':
                     if bidirectional:
@@ -204,14 +213,18 @@ class RNNEncoder(Chain):
                             n_layers=1,
                             in_size=encoder_input_size,
                             out_size=num_units,
-                            dropout=dropout)
+                            dropout=dropout,
+                            initialW=initializer,
+                            initial_bias=None)
                     else:
                         # rnn_i = L.NStepRNNReLU(
                         rnn_i = L.NStepRNNTanh(
                             n_layers=1,
                             in_size=encoder_input_size,
                             out_size=num_units,
-                            dropout=dropout)
+                            dropout=dropout,
+                            initialW=initializer,
+                            initial_bias=None)
                 else:
                     raise ValueError(
                         'rnn_type must be "lstm" or "gru" or "rnn".')
@@ -220,40 +233,36 @@ class RNNEncoder(Chain):
                     setattr(self, 'p' + rnn_type + '_l' + str(i_layer), rnn_i)
                 else:
                     setattr(self, rnn_type + '_l' + str(i_layer), rnn_i)
-                # if use_cuda:
-                #     rnn_i = rnn_i.cuda()
+                if use_cuda:
+                    rnn_i.to_gpu()
                 self.rnns.append(rnn_i)
 
                 if i_layer != self.num_layers - 1 and self.num_proj > 0:
-                    proj_i = L.Linear(
-                        num_units * self.num_directions, num_proj)
+                    proj_i = LinearND(
+                        num_units * self.num_directions, num_proj,
+                        dropout=dropout,
+                        initializer=initializers.Uniform(scale=parameter_init))
                     setattr(self, 'proj_l' + str(i_layer), proj_i)
-                    # if use_cuda:
-                    #     proj_i = proj_i.cuda()
+                    if use_cuda:
+                        proj_i.to_gpu()
                     self.projections.append(proj_i)
 
-        # Initialize parameters
-        # for param in self.params():
-        #     param.data[...] = np.random.uniform(
-        #         -parameter_init, parameter_init, param.data.shape)
-        # TODO: xpにしなくていい？
-
-    def __call__(self, xs, x_lens, volatile=False):
+    def __call__(self, xs, x_lens):
         """Forward computation.
         Args:
-            xs (list of chainer.Variable): A tensor of size `[B, T, input_size]`
-            x_lens (): A tensor of size `[B]`
-            volatile (bool, optional): if True, the history will not be saved.
-                This should be used in inference model for memory efficiency.
+            xs (list of chainer.Variable): A list of tensors of size
+                `[T, input_size]`, of length '[B]'
+            x_lens (list): A list of length `[B]`
         Returns:
-            xs ():
-                A tensor of size
-                    `[B, T // sum(subsample_list), num_units (* num_directions)]`
+            xs (list of chainer.Variable):
+                A list of tensors of size
+                    `[T // sum(subsample_list), num_units (* num_directions)]`,
+                    of length '[B]'
             OPTION:
-                xs_sub ():
-                    A tensor of size
-                        `[B, T // sum(subsample_list), num_units (* num_directions)]`
-            perm_indices ():
+            xs_sub (list of chainer.Variable):
+                A list of tensor of size
+                    `[T // sum(subsample_list), num_units (* num_directions)]`,
+                    of length `[B]`
         """
         # NOTE: automatically sort xs in descending order by length,
         # and transpose the sequence
@@ -273,8 +282,7 @@ class RNNEncoder(Chain):
         for i_layer in range(self.num_layers):
 
             if self.rnn_type == 'lstm':
-                _, _, xs = self.rnns[i_layer](
-                    hx=None, cx=None, xs=xs)
+                _, _, xs = self.rnns[i_layer](hx=None, cx=None, xs=xs)
             else:
                 _, xs = self.rnns[i_layer](hx=None, xs=xs)
 
@@ -299,7 +307,6 @@ class RNNEncoder(Chain):
                         # Pick up features at odd time step
                         if self.subsample_type == 'drop':
                             xs = [x[::2, :] for x in xs]
-                            print(xs[0].shape)
 
                         # Concatenate the successive frames
                         elif self.subsample_type == 'concat':
@@ -334,30 +341,3 @@ class RNNEncoder(Chain):
             return xs, xs_sub
         else:
             return xs
-
-
-def _init_hidden(self, batch_size, xp):
-    """Initialize hidden states.
-    Args:
-        batch_size (int): the size of mini-batch
-        xp:
-    Returns:
-        if rnn_type is 'lstm', return a tuple of
-            (initial_hidden_state, initial_memory_cell),
-        otherwise return a tensor initial_hidden_state.
-    """
-    initial_hidden_state = Variable(xp.zeros(
-        (self.num_layers * self.num_directions, batch_size, self.num_units),
-        dtype=xp.float32))
-    # volatile??
-
-    if self.rnn_type == 'lstm':
-        # hidden states & memory cells
-        initial_memory_cell = Variable(xp.zeros(
-            (self.num_layers * self.num_directions, batch_size, self.num_units),
-            dtype=xp.float32))
-        # volatile??
-        return (initial_hidden_state, initial_memory_cell)
-    else:  # gru or rnn
-        # hidden states
-        return initial_hidden_state
