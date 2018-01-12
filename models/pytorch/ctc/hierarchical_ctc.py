@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Hierarchical CTC model."""
+"""Hierarchical CTC model (pytorch)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -171,9 +171,9 @@ class HierarchicalCTC(CTC):
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            ctc_loss (FloatTensor): A tensor of size `[1]`
-            ctc_loss_main (FloatTensor): A tensor of size `[1]`
-            ctc_loss_sub (FloatTensor): A tensor of size `[1]`
+            ctc_loss (FloatTensor or float): A tensor of size `[1]`
+            ctc_loss_main (FloatTensor or float): A tensor of size `[1]`
+            ctc_loss_sub (FloatTensor or float): A tensor of size `[1]`
         """
         # Wrap by Variable
         xs = np2var(inputs, use_cuda=self.use_cuda, backend='pytorch')
@@ -272,6 +272,12 @@ class HierarchicalCTC(CTC):
 
         ctc_loss_sub = ctc_loss_sub * (1 - self.main_loss_weight) / batch_size
 
+        # Total loss
         ctc_loss = ctc_loss_main + ctc_loss_sub
+
+        if is_eval:
+            ctc_loss = ctc_loss.data[0]
+            ctc_loss_main = ctc_loss_main.data[0]
+            ctc_loss_sub = ctc_loss_sub.data[0]
 
         return ctc_loss, ctc_loss_main, ctc_loss_sub

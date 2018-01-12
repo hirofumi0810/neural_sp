@@ -1,7 +1,7 @@
 param:
   # framework
-  framework: pytorch
-  
+  backend: pytorch
+
   # corpus
   corpus: librispeech
   label_type: word_freq5
@@ -36,6 +36,7 @@ param:
     - True
     - False
     - False
+  subsample_type: drop
   attention_type: location
   attention_dim: 128
   decoder_type: lstm

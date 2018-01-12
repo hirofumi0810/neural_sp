@@ -10,6 +10,7 @@ from __future__ import print_function
 import os
 from os.path import join, isfile, basename
 from glob import glob
+
 import logging
 logger = logging.getLogger('training')
 
@@ -95,19 +96,20 @@ class ModelBase(nn.Module):
         else:
             logger.info('CPU mode')
 
-    def set_optimizer(self, optimizer, learning_rate_init, weight_decay=0,
+    def set_optimizer(self, optimizer, learning_rate_init,
+                      weight_decay=0, clip_grad_norm=5,
                       lr_schedule=True, factor=0.1, patience_epoch=5):
         """Set optimizer.
         Args:
             optimizer (string): sgd or adam or adadelta or adagrad or rmsprop
             learning_rate_init (float): An initial learning rate
             weight_decay (float, optional): L2 penalty
+            clip_grad_norm (float): not used here
             lr_schedule (bool, optional): if True, wrap optimizer with
                 scheduler. Default is True.
             factor (float, optional):
             patience_epoch (int, optional):
         Returns:
-            optimizer (Optimizer):
             scheduler ():
         """
         optimizer = optimizer.lower()
@@ -117,25 +119,22 @@ class ModelBase(nn.Module):
                 (", ".join(OPTIMIZER_CLS_NAMES), optimizer))
 
         if optimizer == 'sgd':
-            self.optimizer = optim.SGD(
-                self.parameters(),
-                lr=learning_rate_init,
-                weight_decay=weight_decay,
-                nesterov=False)
+            self.optimizer = optim.SGD(self.parameters(),
+                                       lr=learning_rate_init,
+                                       weight_decay=weight_decay,
+                                       nesterov=False)
         elif optimizer == 'momentum':
-            self.optimizer = optim.SGD(
-                self.parameters(),
-                lr=learning_rate_init,
-                momentum=0.9,
-                weight_decay=weight_decay,
-                nesterov=False)
+            self.optimizer = optim.SGD(self.parameters(),
+                                       lr=learning_rate_init,
+                                       momentum=0.9,
+                                       weight_decay=weight_decay,
+                                       nesterov=False)
         elif optimizer == 'nesterov':
-            self.optimizer = optim.SGD(
-                self.parameters(),
-                lr=learning_rate_init,
-                momentum=0.9,
-                weight_decay=weight_decay,
-                nesterov=True)
+            self.optimizer = optim.SGD(self.parameters(),
+                                       lr=learning_rate_init,
+                                       momentum=0.9,
+                                       weight_decay=weight_decay,
+                                       nesterov=True)
         else:
             self.optimizer = OPTIMIZER_CLS_NAMES[optimizer](
                 self.parameters(),
@@ -159,7 +158,7 @@ class ModelBase(nn.Module):
         else:
             scheduler = None
 
-        return self.optimizer, scheduler
+        return scheduler
 
     def set_save_path(self, save_path):
         # Reset model directory
@@ -179,7 +178,7 @@ class ModelBase(nn.Module):
         self.save_path = mkdir(save_path_tmp)
 
     def save_checkpoint(self, save_path, epoch):
-        """
+        """Save checkpoint.
         Args:
             save_path (string): path to save a model (directory)
             epoch (int): the epoch to save the model
@@ -192,16 +191,14 @@ class ModelBase(nn.Module):
             "epoch": epoch
         }
 
-        # Remove old parameters
-        for path in glob(join(save_path, 'model.epoch-*')):
-            os.remove(path)
-
         model_path = join(save_path, 'model.epoch-' + str(epoch))
         torch.save(checkpoint, model_path)
-        return model_path
+
+        logger.info("=> Saved checkpoint (epoch:%d): %s" %
+                    (epoch, model_path))
 
     def load_checkpoint(self, save_path, epoch):
-        """
+        """Load checkpoint.
         Args:
             save_path (string):
             epoch (int):

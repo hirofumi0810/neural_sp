@@ -1,7 +1,5 @@
 #!/bin/bash
 
-MODEL_SAVE_PATH="/n/sd8/inaguma/result/pytorch/librispeech"
-
 # Select GPU
 if [ $# -ne 2 ]; then
   echo "Error: set GPU number & config path." 1>&2
@@ -17,18 +15,17 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda-8.0/lib64:/usr/local/cud
 # PYTHON=/home/lab5/inaguma/.pyenv/versions/anaconda3-4.1.1/bin/python
 PYTHON=/home/lab5/inaguma/.pyenv/versions/anaconda3-4.1.1/envs/`hostname`/bin/python
 
+# Set path to save the model
+MODEL_SAVE_PATH="/n/sd8/inaguma/result"
+
 config_path=$1
 gpu_index=$2
 filename=$(basename $config_path | awk -F. '{print $1}')
 
 mkdir -p log
 
-# Standard output version
-# CUDA_VISIBLE_DEVICES=$gpu_indexCUDA_LAUNCH_BLOCKING=1 $PYTHON train.py \
-#   --config_path $config_path \
-#   --model_save_path $MODEL_SAVE_PATH
-
-# Background job version
-CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 nohup $PYTHON train.py \
+CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+nohup $PYTHON train.py \
+  --gpu $gpu_index \
   --config_path $config_path \
   --model_save_path $MODEL_SAVE_PATH > log/$filename".log" &

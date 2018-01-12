@@ -373,7 +373,12 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             ctc_loss_sub = ctc_loss_sub * self._ctc_loss_weight_sub / batch_size
             loss += ctc_loss_sub
 
-        if not is_eval:
+        if is_eval:
+            loss = loss.data[0]
+            xe_loss_main = xe_loss_main.data[0]
+            xe_loss_sub = xe_loss_sub.data[0]
+            ctc_loss_sub = ctc_loss_sub.data[0]
+        else:
             self._step += 1
 
             # Curriculum training (gradually from char to word task)

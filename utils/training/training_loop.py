@@ -11,22 +11,23 @@ import logging
 logger = logging.getLogger('training')
 import numpy as np
 
+import chainer
 import torch
 import torch.nn as nn
+import chainer
 
 INF = float("inf")
 
 
-def train_step(model, optimizer, batch, clip_grad_norm):
+def train_step(model, batch, clip_grad_norm, backend):
     """
     Args:
-        model (torch.nn.Module):
-        optimizer (torch.optim.Optimizer):
+        model (torch.nn.Module or chainer.Chaine):
         batch (tuple):
         clip_grad_norm (float):
+        backend (string): pytorch or chainer
     Returns:
-        model (torch.nn.Module):
-        optimizer (torch.optim.Optimizer):
+        model (torch.nn.Module or chainer.Chain):
         loss_train_val (float):
         div_num (int):
     """
@@ -36,15 +37,25 @@ def train_step(model, optimizer, batch, clip_grad_norm):
     div_num = 1
     try:
         # Step for parameter update
-        optimizer.zero_grad()
-        loss_train = model(inputs, labels, inputs_seq_len, labels_seq_len)
-        loss_train.backward()
-        if clip_grad_norm > 0:
-            nn.utils.clip_grad_norm(model.parameters(), clip_grad_norm)
-        optimizer.step()
-        # TODO: Add scheduler
+        if backend == 'pytorch':
+            model.optimizer.zero_grad()
+            loss_train = model(inputs, labels, inputs_seq_len, labels_seq_len)
+            loss_train.backward()
+            if clip_grad_norm > 0:
+                nn.utils.clip_grad_norm(model.parameters(), clip_grad_norm)
+            model.optimizer.step()
+            # TODO: Add scheduler
 
-        loss_train_val = loss_train.data[0]
+            loss_train_val = loss_train.data[0]
+
+        elif backend == 'chainer':
+            model.optimizer.target.cleargrads()
+            loss_train = model(inputs, labels, inputs_seq_len, labels_seq_len)
+            loss_train.backward()
+            model.optimizer.update()
+
+            loss_train_val = loss_train.data
+
         del loss_train
 
     except RuntimeError as e:
@@ -79,7 +90,7 @@ def train_step(model, optimizer, batch, clip_grad_norm):
         #             loss_train_val += loss_train.data[0]
         #
         #             # Compute gradient
-        #             optimizer.zero_grad()
+        #             model.optimizer.zero_grad()
         #             loss_train.backward()
         #
         #             # Clip gradient norm
@@ -88,7 +99,7 @@ def train_step(model, optimizer, batch, clip_grad_norm):
         #                     model.parameters(), clip_grad_norm)
         #
         #             # Update parameters
-        #             optimizer.step()
+        #             model.optimizer.step()
         #
         #             del loss_train
         #
@@ -109,19 +120,18 @@ def train_step(model, optimizer, batch, clip_grad_norm):
             "WARNING: received an inf loss, setting loss value to 0.")
         loss_train_val = 0
 
-    return model, optimizer, loss_train_val, div_num
+    return model, loss_train_val, div_num
 
 
-def train_hierarchical_step(model, optimizer, batch, clip_grad_norm):
+def train_hierarchical_step(model, batch, clip_grad_norm, backend):
     """
     Args:
-        model (torch.nn.Module):
-        optimizer (torch.optim.Optimizer):
+        model (torch.nn.Module or chainer.Chain):
         batch (tuple):
         clip_grad_norm (float):
+        backend (string): pytorch or chainer
     Returns:
-        model (torch.nn.Module):
-        optimizer (torch.optim.Optimizer):
+        model (torch.nn.Module or chainer.Chain):
         loss_train_val (float):
         loss_main_train_val (float):
         loss_sub_train_val (float):
@@ -133,19 +143,33 @@ def train_hierarchical_step(model, optimizer, batch, clip_grad_norm):
     div_num = 1
     try:
         # Step for parameter update
-        optimizer.zero_grad()
-        loss_train, loss_main_train, loss_sub_train = model(
-            inputs, labels, labels_sub, inputs_seq_len,
-            labels_seq_len, labels_seq_len_sub)
-        loss_train.backward()
-        if clip_grad_norm > 0:
-            nn.utils.clip_grad_norm(model.parameters(), clip_grad_norm)
-        optimizer.step()
-        # TODO: Add scheduler
+        if backend == 'pytorch':
+            model.optimizer.zero_grad()
+            loss_train, loss_main_train, loss_sub_train = model(
+                inputs, labels, labels_sub, inputs_seq_len,
+                labels_seq_len, labels_seq_len_sub)
+            loss_train.backward()
+            if clip_grad_norm > 0:
+                nn.utils.clip_grad_norm(model.parameters(), clip_grad_norm)
+            model.optimizer.step()
+            # TODO: Add scheduler
 
-        loss_train_val = loss_train.data[0]
-        loss_main_train_val = loss_main_train.data[0]
-        loss_sub_train_val = loss_sub_train.data[0]
+            loss_train_val = loss_train.data[0]
+            loss_main_train_val = loss_main_train.data[0]
+            loss_sub_train_val = loss_sub_train.data[0]
+
+        elif backend == 'chainer':
+            model.optimizer.target.cleargrads()
+            loss_train, loss_main_train, loss_sub_train = model(
+                inputs, labels, labels_sub,
+                inputs_seq_len, labels_seq_len, labels_seq_len_sub)
+            loss_train.backward()
+            model.optimizer.update()
+
+            loss_train_val = loss_train.data
+            loss_main_train_val = loss_main_train.data
+            loss_sub_train_val = loss_sub_train.data
+
         del loss_train, loss_main_train, loss_sub_train
 
     except RuntimeError as e:
@@ -175,7 +199,7 @@ def train_hierarchical_step(model, optimizer, batch, clip_grad_norm):
         #         for i in range(div_num):
         #
         #             torch.cuda.empty_cache()
-        #             optimizer.zero_grad()
+        #             model.optimizer.zero_grad()
         #
         #             # Compute loss again
         #             loss_train, loss_main_train, loss_sub_train = model(
@@ -187,7 +211,7 @@ def train_hierarchical_step(model, optimizer, batch, clip_grad_norm):
         #             loss_sub_train_val += loss_sub_train.data[0]
         #
         #             # Compute gradient
-        #             optimizer.zero_grad()
+        #             model.optimizer.zero_grad()
         #             loss_train.backward()
         #
         #             # Clip gradient norm
@@ -218,5 +242,5 @@ def train_hierarchical_step(model, optimizer, batch, clip_grad_norm):
             "WARNING: received an inf loss, setting loss value to 0 (total loss).")
         loss_train_val, loss_main_train_val, loss_sub_train_val = 0., 0., 0.
 
-    return (model, optimizer, loss_train_val,
+    return (model, loss_train_val,
             loss_main_train_val, loss_sub_train_val, div_num)

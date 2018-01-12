@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""The Connectionist Temporal Classification model."""
+"""The Connectionist Temporal Classification model (pytorch)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -202,7 +202,7 @@ class CTC(ModelBase):
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (FloatTensor): A tensor of size `[1]`
+            ctc_loss (FloatTensor or float): A tensor of size `[1]`
         """
         # Wrap by Variable
         xs = np2var(inputs, use_cuda=self.use_cuda, backend='pytorch')
@@ -267,6 +267,9 @@ class CTC(ModelBase):
         # Average the loss by mini-batch
         batch_size = logits.size(1)
         ctc_loss /= batch_size
+
+        if is_eval:
+            ctc_loss = ctc_loss.data[0]
 
         return ctc_loss
 

@@ -71,8 +71,12 @@ class DatasetBase(Base):
                 dtype=np.float32)
         elif self.backend == 'chainer':
             inputs = [None] * len(data_indices)
-        labels = np.array(
-            [[self.pad_value] * max_labels_seq_len] * len(data_indices))
+        if self.is_test:
+            labels = np.array(
+                [[self.pad_value] * max_labels_seq_len] * len(data_indices))
+        else:
+            labels = np.array(
+                [[self.pad_value] * max_labels_seq_len] * len(data_indices), dtype=np.int32)
         inputs_seq_len = np.zeros((len(data_indices),), dtype=np.int32)
         labels_seq_len = np.zeros((len(data_indices),), dtype=np.int32)
         input_names = np.array(list(

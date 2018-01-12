@@ -1,7 +1,7 @@
 param:
   # framework
-  framework: pytorch
-  
+  backend: pytorch
+
   # corpus
   corpus: timit
   label_type: phone61
@@ -27,6 +27,7 @@ param:
   num_layers: 0
   subsample_list:
     - False
+  subsample_type: drop
   fc_list: [1024, 1024, 1024]
   conv_channels: [128, 128, 128, 128, 256, 256, 256, 256, 256, 256]
   conv_kernel_sizes:

@@ -335,7 +335,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 self._inject_weight_noise(mean=0., std=self.weight_noise_std)
 
         # Encode acoustic features
-        enc_outputs, enc_final_state, enc_outputs_sub, enc_final_state_sub, perm_indices = self._encode(
+        enc_outputs, enc_outputs_sub, perm_indices = self._encode(
             xs, x_lens, volatile=is_eval, is_multi_task=True)
 
         # Permutate indices
@@ -348,7 +348,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         # Teacher-forcing
         logits, logits_sub, att_weights, att_weights_sub = self._decode_train_joint(
-            enc_outputs, enc_outputs_sub, enc_final_state, enc_final_state_sub,
+            enc_outputs, enc_outputs_sub,
             ys, ys_sub, y_lens, y_lens_sub)
 
         # Output smoothing
@@ -416,7 +416,11 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub / batch_size
             loss += ctc_loss_sub
 
-        if not is_eval:
+        if is_eval:
+            loss = loss.data[0]
+            xe_loss_main = xe_loss_main.data[0]
+            xe_loss_sub = xe_loss_sub.data[0]
+        else:
             self._step += 1
 
             # Update the probability of scheduled sampling
@@ -428,7 +432,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         return loss, xe_loss_main, xe_loss_sub
 
     def _decode_train_joint(self, enc_outputs, enc_outputs_sub,
-                            enc_final_state, enc_final_state_sub,
                             ys, ys_sub, y_lens, y_lens_sub):
         """Decoding of composition models in the training stage.
         Args:
@@ -436,10 +439,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 `[B, T_in, decoder_num_units]`
             enc_outputs_sub (FloatTensor): A tensor of size
                 `[B, T_in, decoder_num_units_sub]`
-            enc_final_state (FloatTensor, optional): A tensor of size
-                `[1, B, decoder_num_units]`
-            enc_final_state_sub (FloatTensor, optional): A tensor of size
-                `[1, B, decoder_num_units_sub]`
             ys (LongTensor): A tensor of size `[B, T_out]`
             ys_sub (LongTensor): A tensor of size `[B, T_out_sub]`
             y_lens (np.ndarray): A tensor of size `[B]`
@@ -467,8 +466,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         if self.composition_case == 'hidden':
 
             # Initialize decoder state
-            dec_state = self._init_decoder_state(enc_final_state)
-            dec_state_sub = self._init_decoder_state(enc_final_state_sub)
+            dec_state = self._init_decoder_state(enc_outputs)
+            dec_state_sub = self._init_decoder_state(enc_outputs_sub)
 
             # Initialize attention weights
             att_weights_step = Variable(torch.zeros(batch_size, max_time))
@@ -583,9 +582,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
                 # Initialize decoder state
                 dec_state = self._init_decoder_state(
-                    enc_final_state[:, i_batch:i_batch + 1, :])
+                    enc_outputs[i_batch:i_batch + 1, :max_time])
                 dec_state_sub = self._init_decoder_state(
-                    enc_final_state_sub[:, i_batch:i_batch + 1, :])
+                    enc_outputs_sub[i_batch:i_batch + 1, :max_time_sub])
 
                 # Initialize attention weights
                 att_weights_step = Variable(torch.zeros(1, max_time))
@@ -819,13 +818,11 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             att_weights_step (FloatTensor): A tensor of size `[B, T_in]`
         """
         if is_sub_task:
-            dec_outputs, dec_state = self.decoder_sub(
-                dec_inputs, dec_state)
+            dec_outputs, dec_state = self.decoder_sub(dec_inputs, dec_state)
             context_vec, att_weights_step = self.attend_sub(
                 enc_outputs, dec_outputs, att_weights_step)
         else:
-            dec_outputs, dec_state = self.decoder(
-                dec_inputs, dec_state)
+            dec_outputs, dec_state = self.decoder(dec_inputs, dec_state)
             context_vec, att_weights_step = self.attend(
                 enc_outputs, dec_outputs, att_weights_step)
 
@@ -852,8 +849,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
 
         # Encode acoustic features
-        enc_outputs, enc_final_state, perm_indices = self._encode(
-            xs, x_lens, volatile=True)
+        enc_outputs, perm_indices = self._encode(xs, x_lens, volatile=True)
 
         # Permutate indices
         if perm_indices is not None:
@@ -862,7 +858,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         if beam_width == 1:
             best_hyps, att_weights = self._decode_infer_greedy(
-                enc_outputs, enc_final_state, max_decode_len)
+                enc_outputs, max_decode_len)
         else:
             # Modify x_lens for reducing time resolution
             if self.encoder.conv is not None or self.encoder_type == 'cnn':
@@ -875,8 +871,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 # IntTensor
 
             best_hyps, att_weights = self._decode_infer_beam(
-                enc_outputs, enc_final_state,
-                x_lens,
+                enc_outputs, x_lens,
                 beam_width, max_decode_len)
 
         # Permutate indices to the original order
@@ -910,22 +905,20 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         # Encode acoustic features
         if is_sub_task:
-            _, _, enc_outputs, enc_final_state, perm_indices = self._encode(
+            _, enc_outputs, perm_indices = self._encode(
                 xs, x_lens, volatile=True, is_multi_task=True)
         else:
-            enc_outputs, enc_final_state, enc_outputs_sub, enc_final_state_sub, perm_indices = self._encode(
+            enc_outputs, enc_outputs_sub, perm_indices = self._encode(
                 xs, x_lens, volatile=True, is_multi_task=True)
 
         # Permutate indices
         if perm_indices is not None:
-            perm_indices = var2np(perm_indices)
             x_lens = x_lens[perm_indices]
 
         if beam_width == 1:
             if is_sub_task:
                 best_hyps, _ = self._decode_infer_greedy(
-                    enc_outputs, enc_final_state, max_decode_len,
-                    is_sub_task=True)
+                    enc_outputs, max_decode_len, is_sub_task=True)
             else:
                 # Modify x_lens for reducing time resolution
                 if self.encoder.conv is not None or self.encoder_type == 'cnn':
@@ -937,22 +930,20 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     # NOTE: floor is not needed because x_lens is IntTensor
 
                 best_hyps, _, _, _ = self._decode_infer_greedy_joint(
-                    enc_outputs, enc_outputs_sub,
-                    enc_final_state, enc_final_state_sub,
-                    x_lens, max_decode_len)
+                    enc_outputs, enc_outputs_sub, x_lens, max_decode_len)
         else:
             raise NotImplementedError
 
         if is_sub_task or self.composition_case == 'hidden':
             # Permutate indices to the original order
             if perm_indices is not None:
+                perm_indices = var2np(perm_indices)
                 best_hyps = best_hyps[perm_indices]
         # TODO: fix this
 
         return best_hyps
 
     def _decode_infer_greedy_joint(self, enc_outputs, enc_outputs_sub,
-                                   enc_final_state, enc_final_state_sub,
                                    x_lens, max_decode_len):
         """Greedy decoding in the inference stage.
         Args:
@@ -960,10 +951,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 `[B, T_in, decoder_num_units]`
             enc_outputs_sub (FloatTensor): A tensor of size
                 `[B, T_in, decoder_num_units_sub]`
-            enc_final_state (FloatTensor, optional): A tensor of size
-                `[1, B, decoder_num_units]`
-            enc_final_state_sub (FloatTensor, optional): A tensor of size
-                `[1, B, decoder_num_units_sub]`
             x_lens (IntTensor): A tensor of size `[B]`
             max_decode_len (int): the length of output sequences
                 to stop prediction when EOS token have not been emitted
@@ -985,8 +972,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         if self.composition_case == 'hidden':
 
             # Initialize decoder state
-            dec_state = self._init_decoder_state(
-                enc_final_state, volatile=True)
+            dec_state = self._init_decoder_state(enc_outputs, volatile=True)
 
             # Initialize attention weights
             att_weights_step = Variable(torch.zeros(batch_size, max_time))
@@ -1073,9 +1059,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
                 # Initialize decoder state
                 dec_state = self._init_decoder_state(
-                    enc_final_state[:, i_batch:i_batch + 1, :], volatile=True)
+                    enc_outputs[i_batch:i_batch + 1, :max_time], volatile=True)
                 dec_state_sub = self._init_decoder_state(
-                    enc_final_state_sub[:, i_batch:i_batch + 1, :], volatile=True)
+                    enc_outputs_sub[i_batch:i_batch + 1, :max_time_sub], volatile=True)
 
                 # Initialize attention weights
                 att_weights_step = Variable(torch.zeros(1, max_time))
@@ -1155,7 +1141,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         local_char_counter += 1
                         global_char_counter += 1
 
-                        if y_sub.data[0] in [self.eos_index_sub, self.space_index]:
+                        if y_sub[0].data[0] in [self.eos_index_sub, self.space_index]:
                             break
 
                         emb_char = self.embed_sub(y_sub)

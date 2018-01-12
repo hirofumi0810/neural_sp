@@ -1,7 +1,7 @@
 param:
   # framework
-  framework: pytorch
-  
+  backend: pytorch
+
   # corpus
   corpus: switchboard
   label_type: character_capital_divide
@@ -31,6 +31,7 @@ param:
     - False
     - False
     - False
+  subsample_type: drop
   fc_list: []
   conv_channels: []
   conv_kernel_sizes: []

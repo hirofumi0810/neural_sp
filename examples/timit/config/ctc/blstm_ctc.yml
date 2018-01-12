@@ -1,7 +1,8 @@
 param:
   # framework
-  framework: pytorch
-  
+  backend: pytorch
+  # backend: chainer
+
   # corpus
   corpus: timit
   label_type: phone61
@@ -32,6 +33,7 @@ param:
     - False
     - False
     - False
+  subsample_type: drop
   fc_list: []
   conv_channels: []
   conv_kernel_sizes: []

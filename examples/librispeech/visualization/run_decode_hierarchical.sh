@@ -18,7 +18,8 @@ PYTHON=/home/lab5/inaguma/.pyenv/versions/anaconda3-4.1.1/envs/`hostname`/bin/py
 saved_model_path=$1
 gpu_index=$2
 
-CUDA_VISIBLE_DEVICES=$gpu_index $PYTHON decode_hierarchical.py \
+CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+$PYTHON decode_hierarchical.py \
   --model_path $saved_model_path \
   --epoch -1 \
   --beam_width 1 \

@@ -17,7 +17,9 @@ PYTHON=/home/lab5/inaguma/.pyenv/versions/anaconda3-4.1.1/envs/`hostname`/bin/py
 
 gpu_index=$1
 
-CUDA_VISIBLE_DEVICES=$gpu_index $PYTHON eval_ensemble.py \
+CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+$PYTHON eval_ensemble.py \
   --epoch -1 \
-  --beam_width 10 \
-  --cuda 1
+  --beam_width 1 \
+  --eval_batch_size 1 \
+  --temperature 1

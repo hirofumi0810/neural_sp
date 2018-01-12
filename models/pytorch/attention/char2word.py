@@ -9,7 +9,7 @@ from __future__ import print_function
 
 import torch.nn as nn
 
-from models.pytorch.encoders.rnn_utils import _init_hidden
+from models.pytorch.encoders.rnn import _init_hidden
 
 
 class LSTMChar2Word(nn.Module):

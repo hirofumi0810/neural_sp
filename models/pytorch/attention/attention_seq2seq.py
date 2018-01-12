@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Attention-based sequence-to-sequence model."""
+"""Attention-based sequence-to-sequence model (pytorch)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -315,7 +315,7 @@ class AttentionSeq2seq(ModelBase):
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (FloatTensor): A tensor of size `[1]`
+            loss (FloatTensor or float): A tensor of size `[1]`
         """
         # Wrap by Variable
         xs = np2var(inputs,  use_cuda=self.use_cuda, backend='pytorch')
@@ -390,7 +390,9 @@ class AttentionSeq2seq(ModelBase):
         batch_size = enc_outputs.size(0)
         loss /= batch_size
 
-        if not is_eval:
+        if is_eval:
+            loss = loss.data[0]
+        else:
             self._step += 1
 
             # Update the probability of scheduled sampling

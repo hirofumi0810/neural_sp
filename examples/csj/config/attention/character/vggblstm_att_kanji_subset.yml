@@ -1,6 +1,6 @@
 param:
   # framework
-  framework: pytorch
+  backend: pytorch
 
   # corpus
   corpus: csj

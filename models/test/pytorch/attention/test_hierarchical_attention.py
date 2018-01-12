@@ -18,7 +18,6 @@ sys.path.append('../../../../')
 from models.pytorch.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
 from models.test.data import generate_data, idx2char, idx2word
 from utils.measure_time_func import measure_time
-from utils.io.variable import var2np
 from utils.evaluation.edit_distance import compute_cer, compute_wer
 from utils.training.learning_rate_controller import Controller
 
@@ -174,21 +173,19 @@ class TestHierarchicalAttention(unittest.TestCase):
 
         # Define optimizer
         learning_rate = 1e-3
-        optimizer, scheduler = model.set_optimizer(
-            'adam',
-            learning_rate_init=learning_rate,
-            weight_decay=1e-6,
-            lr_schedule=False,
-            factor=0.1,
-            patience_epoch=5)
+        model.set_optimizer('adam',
+                            learning_rate_init=learning_rate,
+                            weight_decay=1e-6,
+                            lr_schedule=False,
+                            factor=0.1,
+                            patience_epoch=5)
 
         # Define learning rate controller
-        lr_controller = Controller(
-            learning_rate_init=learning_rate,
-            decay_start_epoch=20,
-            decay_rate=0.9,
-            decay_patient_epoch=10,
-            lower_better=True)
+        lr_controller = Controller(learning_rate_init=learning_rate,
+                                   decay_start_epoch=20,
+                                   decay_rate=0.9,
+                                   decay_patient_epoch=10,
+                                   lower_better=True)
 
         # GPU setting
         model.set_cuda(deterministic=False, benchmark=True)
@@ -196,20 +193,16 @@ class TestHierarchicalAttention(unittest.TestCase):
         # Train model
         max_step = 1000
         start_time_step = time.time()
-        ler_pre = 1
         for step in range(max_step):
 
             # Step for parameter update
-            optimizer.zero_grad()
+            model.optimizer.zero_grad()
             loss, loss_main, loss_sub = model(
                 inputs, labels, labels_sub,
                 inputs_seq_len, labels_seq_len, labels_seq_len_sub)
             loss.backward()
             nn.utils.clip_grad_norm(model.parameters(), 5)
-            if scheduler is None:
-                optimizer.step()
-            else:
-                scheduler.step(ler_pre)
+            model.optimizer.step()
 
             if (step + 1) % 10 == 0:
                 # Decode
@@ -245,11 +238,10 @@ class TestHierarchicalAttention(unittest.TestCase):
                 if ler_sub < 0.1:
                     print('Modle is Converged.')
                     break
-                ler_pre = ler
 
                 # Update learning rate
-                optimizer, learning_rate = lr_controller.decay_lr(
-                    optimizer=optimizer,
+                model.optimizer, learning_rate = lr_controller.decay_lr(
+                    optimizer=model.optimizer,
                     learning_rate=learning_rate,
                     epoch=step,
                     value=ler)

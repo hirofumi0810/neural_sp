@@ -1,7 +1,7 @@
 param:
   # framework
-  framework: pytorch
-  
+  backend: pytorch
+
   # corpus
   corpus: librispeech
   label_type: word_freq5
@@ -34,6 +34,7 @@ param:
     - False
     - False
     - False
+  subsample_type: drop
   fc_list: []
   conv_channels: []
   conv_kernel_sizes: []

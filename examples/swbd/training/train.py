@@ -36,6 +36,8 @@ MAX_DECODE_LEN_WORD = 100
 MAX_DECODE_LEN_CHAR = 300
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--gpu', type=int, default=-1,
+                    help='the index of GPU (negative value indicates CPU)')
 parser.add_argument('--config_path', type=str,
                     help='path to the configuration file')
 parser.add_argument('--model_save_path', type=str,
@@ -68,7 +70,8 @@ def main():
 
     # Set save path
     save_path = mkdir_join(
-        args.model_save_path, params['model_type'], params['label_type'], params['data_size'], model.name)
+        args.model_save_path, params['backend'], 'swbd',
+        params['model_type'], params['label_type'], params['data_size'], model.name)
     model.set_save_path(save_path)
 
     # Save config file
@@ -145,10 +148,11 @@ def main():
     logger.info("Total %.3f M parameters" % (model.total_parameters / 1000000))
 
     # Define optimizer
-    optimizer, _ = model.set_optimizer(
-        params['optimizer'],
+    model.set_optimizer(
+        optimizer=params['optimizer'],
         learning_rate_init=float(params['learning_rate']),
         weight_decay=float(params['weight_decay']),
+        clip_grad_norm=params['clip_grad_norm'],
         lr_schedule=False,
         factor=params['decay_rate'],
         patience_epoch=params['decay_patient_epoch'])
@@ -180,8 +184,8 @@ def main():
 
         # Compute loss in the training set (including parameter update)
         batch_size_step = train_data._batch_size
-        model, optimizer, loss_train_val, div_num = train_step(
-            model, optimizer, batch, params['clip_grad_norm'])
+        model, loss_train_val, div_num = train_step(
+            model, batch, params['clip_grad_norm'], backend=params['backend'])
         loss_train_val_mean += loss_train_val
 
         # on-the-fly setting
@@ -194,13 +198,12 @@ def main():
         if (step + 1) % params['print_step'] == 0:
 
             # Compute loss in the dev set
-            inputs, labels, inputs_seq_len, labels_seq_len, _ = dev_clean_data.next()[
+            inputs, labels, inputs_seq_len, labels_seq_len, _ = dev_data.next()[
                 0]
-            loss_dev = model(inputs, labels, inputs_seq_len, labels_seq_len,
-                             is_eval=True)
+            loss_dev_val = model(
+                inputs, labels, inputs_seq_len, labels_seq_len, is_eval=True)
 
             loss_train_val_mean /= params['print_step']
-            loss_dev_val = loss_dev.data[0]
             csv_steps.append(step)
             csv_loss_train.append(loss_train_val_mean)
             csv_loss_dev.append(loss_dev_val)
@@ -208,11 +211,20 @@ def main():
             # Logging by tensorboard
             tf_writer.add_scalar('train/loss', loss_train_val_mean, step + 1)
             tf_writer.add_scalar('dev/loss', loss_dev_val, step + 1)
-            for name, param in model.named_parameters():
-                name = name.replace('.', '/')
-                tf_writer.add_histogram(name, var2np(param.clone()), step + 1)
-                tf_writer.add_histogram(
-                    name + '/grad', var2np(param.grad.clone()), step + 1)
+            if params['backend'] == 'pytorch':
+                for name, param in model.named_parameters():
+                    name = name.replace('.', '/')
+                    tf_writer.add_histogram(
+                        name, var2np(param.clone()), step + 1)
+                    tf_writer.add_histogram(
+                        name + '/grad', var2np(param.grad.clone()), step + 1)
+            elif params['backend'] == 'chainer':
+                for name, param in model.named_parameters():
+                    name = name[1:]
+                    # tf_writer.add_histogram(
+                    #     name, var2np(param.clone()), step + 1)
+                    # tf_writer.add_histogram(
+                    #     name + '/grad', var2np(param.grad.clone()), step + 1)
 
             duration_step = time.time() - start_time_step
             logger.info("...Step:%d (epoch:%.3f): loss:%.3f (%.3f) / lr:%.5f / batch:%d (%.3f min)" %
@@ -234,10 +246,7 @@ def main():
 
             if train_data.epoch < params['eval_start_epoch']:
                 # Save the model
-                saved_path = model.save_checkpoint(
-                    model.save_path, epoch=train_data.epoch)
-                logger.info("=> Saved checkpoint (epoch:%d): %s" %
-                            (train_data.epoch, saved_path))
+                model.save_checkpoint(model.save_path, epoch=train_data.epoch)
             else:
                 start_time_eval = time.time()
                 # dev
@@ -270,10 +279,8 @@ def main():
                     logger.info('■■■ ↑Best Score↑ ■■■')
 
                     # Save the model
-                    saved_path = model.save_checkpoint(
+                    model.save_checkpoint(
                         model.save_path, epoch=train_data.epoch)
-                    logger.info("=> Saved checkpoint (epoch:%d): %s" %
-                                (train_data.epoch, saved_path))
 
                     # test
                     if 'word' in params['label_type']:
@@ -333,8 +340,8 @@ def main():
                     break
 
                 # Update learning rate
-                optimizer, learning_rate = lr_controller.decay_lr(
-                    optimizer=optimizer,
+                model.optimizer, learning_rate = lr_controller.decay_lr(
+                    optimizer=model.optimizer,
                     learning_rate=learning_rate,
                     epoch=train_data.epoch,
                     value=metric_dev_epoch)
