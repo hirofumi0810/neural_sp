@@ -87,16 +87,6 @@ class TestAttention(unittest.TestCase):
                    decoder_type='lstm', attention_type='location')
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', attention_type='dot_product')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', attention_type='luong_dot')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', attention_type='luong_general')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', attention_type='luong_concat')
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            decoder_type='lstm', attention_type='scaled_luong_dot')
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            decoder_type='lstm', attention_type='normed_content')
 
     @measure_time
     def check(self, encoder_type, bidirectional, decoder_type,
@@ -219,6 +209,7 @@ class TestAttention(unittest.TestCase):
 
         # Define learning rate controller
         lr_controller = Controller(learning_rate_init=learning_rate,
+                                   backend='pytorch',
                                    decay_start_epoch=20,
                                    decay_rate=0.9,
                                    decay_patient_epoch=10,

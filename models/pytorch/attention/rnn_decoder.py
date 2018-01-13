@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""RNN decoders."""
+"""RNN decoders (pytorch)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -18,9 +18,8 @@ class RNNDecoder(nn.Module):
         num_units (int): the number of units in each layer
         num_layers (int): the number of layers
         dropout (float): the probability to drop nodes
-        use_cuda (bool, optional): if True, use GPUs
-        batch_first (bool, optional): if True, batch-major computation will be
-            performed
+        use_cuda (bool): if True, use GPUs
+        batch_first (bool): if True, batch-major computation will be performed
         residual (bool, optional):
         dense_residual (bool, optional):
     """
@@ -31,8 +30,8 @@ class RNNDecoder(nn.Module):
                  num_units,
                  num_layers,
                  dropout,
-                 use_cuda=False,
-                 batch_first=False,
+                 use_cuda,
+                 batch_first,
                  residual=False,
                  dense_residual=False):
 
@@ -87,44 +86,38 @@ class RNNDecoder(nn.Module):
                 rnn_i = rnn_i.cuda()
             self.rnns.append(rnn_i)
 
-    def forward(self, y, decoder_state_init, volatile=False):
+    def forward(self, y, dec_state, volatile=False):
         """Forward computation.
         Args:
             y (FloatTensor): A tensor of size `[B, 1, embedding_dim]`
-            decoder_state_init (FloatTensor): A tensor of size
+            dec_state (FloatTensor): A tensor of size
                 `[num_layers, B, num_units]`
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            outputs: if batch_first is True, a tensor of size `[B, 1, num_units]`
+            dec_out: if batch_first is True, a tensor of size `[B, 1, num_units]`
                 else `[1, B, num_units]`
-            decoder_state (FloatTensor or tuple):
+            dec_state (FloatTensor or tuple):
         """
         if not self.batch_first:
             # Reshape y to the time-major
             y = y.transpose(0, 1)
 
-        outputs = y
+        dec_out = y
         res_outputs_list = []
         # NOTE: exclude residual connection from decoder's inputs
         for i_layer in range(self.num_layers):
-            if self.rnn_type == 'lstm':
-                outputs, decoder_state = self.rnns[i_layer](
-                    outputs, hx=decoder_state_init)
-            else:
-                outputs, decoder_state = self.rnns[i_layer](
-                    outputs, hx=decoder_state_init)
+            dec_out, dec_state = self.rnns[i_layer](
+                dec_out, hx=dec_state)
 
             # Residual connection
             if self.residual or self.dense_residual:
                 if self.residual or self.dense_residual:
                     for outputs_lower in res_outputs_list:
-                        outputs = outputs + outputs_lower
+                        dec_out = dec_out + outputs_lower
                     if self.residual:
-                        res_outputs_list = [outputs]
+                        res_outputs_list = [dec_out]
                     elif self.dense_residual:
-                        res_outputs_list.append(outputs)
+                        res_outputs_list.append(dec_out)
 
-        del decoder_state_init
-
-        return outputs, decoder_state
+        return dec_out, dec_state

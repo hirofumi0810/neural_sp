@@ -96,7 +96,7 @@ class HierarchicalCTC(CTC):
                  dense_residual=False):
 
         super(HierarchicalCTC, self).__init__(
-            input_size=input_size,  # 120 or 123
+            input_size=input_size,
             encoder_type=encoder_type,
             bidirectional=bidirectional,
             num_units=num_units,
@@ -126,7 +126,7 @@ class HierarchicalCTC(CTC):
         # NOTE: overide encoder
         if encoder_type in ['lstm', 'gru', 'rnn']:
             self.encoder = load(encoder_type=encoder_type)(
-                input_size=input_size,  # 120 or 123
+                input_size=input_size,
                 rnn_type=encoder_type,
                 bidirectional=bidirectional,
                 num_units=num_units,
@@ -202,16 +202,16 @@ class HierarchicalCTC(CTC):
                 self._inject_weight_noise(mean=0., std=self.weight_noise_std)
 
         # Encode acoustic features
-        logits, logits_sub, perm_indices = self._encode(
+        logits, logits_sub, perm_idx = self._encode(
             xs, x_lens, volatile=is_eval, is_multi_task=True)
 
         # Permutate indices
-        if perm_indices is not None:
-            ys = ys[perm_indices.cpu()]
-            ys_sub = ys_sub[perm_indices.cpu()]
-            x_lens = x_lens[perm_indices]
-            y_lens = y_lens[perm_indices.cpu()]
-            y_lens_sub = y_lens_sub[perm_indices.cpu()]
+        if perm_idx is not None:
+            ys = ys[perm_idx.cpu()]
+            ys_sub = ys_sub[perm_idx.cpu()]
+            x_lens = x_lens[perm_idx]
+            y_lens = y_lens[perm_idx.cpu()]
+            y_lens_sub = y_lens_sub[perm_idx.cpu()]
 
         # Concatenate all labels for warpctc_pytorch
         # `[B, T_out]` -> `[1,]`
@@ -270,7 +270,7 @@ class HierarchicalCTC(CTC):
 
         # Total loss
         ctc_loss_main = ctc_loss_main * self.main_loss_weight
-        ctc_loss_sub = ctc_loss_sub * (1 - self.main_loss_weght)
+        ctc_loss_sub = ctc_loss_sub * (1 - self.main_loss_weight)
         ctc_loss = ctc_loss_main + ctc_loss_sub
 
         # Average the loss by mini-batch

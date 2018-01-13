@@ -108,8 +108,6 @@ class CTC(ModelBase):
 
         # Setting for CTC
         self.num_classes = num_classes + 1  # Add the blank class
-        self.blank_index = 0
-        # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
         self.logits_temperature = logits_temperature
 
         # Setting for regualarization
@@ -121,7 +119,7 @@ class CTC(ModelBase):
         # Call the encoder function
         if encoder_type in ['lstm', 'gru', 'rnn']:
             self.encoder = load(encoder_type=encoder_type)(
-                input_size=input_size,  # 120 or 123
+                input_size=input_size,
                 rnn_type=encoder_type,
                 bidirectional=bidirectional,
                 num_units=num_units,
@@ -147,14 +145,13 @@ class CTC(ModelBase):
             assert num_stack == 1
             assert splice == 1
             self.encoder = load(encoder_type=encoder_type)(
-                input_size=input_size,  # 120 or 123
+                input_size=input_size,
                 conv_channels=conv_channels,
                 conv_kernel_sizes=conv_kernel_sizes,
                 conv_strides=conv_strides,
                 poolings=poolings,
                 dropout=dropout,
                 activation=activation,
-                use_cuda=self.use_cuda,
                 batch_norm=batch_norm)
         else:
             raise NotImplementedError
@@ -184,8 +181,9 @@ class CTC(ModelBase):
                 num_units * self.num_directions, self.num_classes)
 
         # Set CTC decoders
-        self._decode_greedy_np = GreedyDecoder(blank_index=self.blank_index)
-        self._decode_beam_np = BeamSearchDecoder(blank_index=self.blank_index)
+        self._decode_greedy_np = GreedyDecoder(blank_index=0)
+        self._decode_beam_np = BeamSearchDecoder(blank_index=0)
+        # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
         # TODO: set space index
 
         # Initialize parameters
@@ -225,13 +223,13 @@ class CTC(ModelBase):
                 self._inject_weight_noise(mean=0., std=self.weight_noise_std)
 
         # Encode acoustic features
-        logits, perm_indices = self._encode(xs, x_lens, volatile=is_eval)
+        logits, perm_idx = self._encode(xs, x_lens, volatile=is_eval)
 
         # Permutate indices
-        if perm_indices is not None:
-            ys = ys[perm_indices.cpu()]
-            x_lens = x_lens[perm_indices]
-            y_lens = y_lens[perm_indices.cpu()]
+        if perm_idx is not None:
+            ys = ys[perm_idx.cpu()]
+            x_lens = x_lens[perm_idx]
+            y_lens = y_lens[perm_idx.cpu()]
 
         # Concatenate all labels for warpctc_pytorch
         # `[B, T_out]` -> `[1,]`
@@ -286,32 +284,31 @@ class CTC(ModelBase):
                 `[T, B, num_classes (including blank)]`
             logits_sub (FloatTensor): A tensor of size
                 `[T, B, num_classes_sub (including blank)]`
-            perm_indices (LongTensor):
+            perm_idx (LongTensor):
         """
         if is_multi_task:
-            enc_outputs, enc_outputs_sub, perm_indices = self.encoder(
+            enc_out, enc_out_sub, perm_idx = self.encoder(
                 xs, x_lens, volatile)
         else:
             if self.encoder_type == 'cnn':
-                enc_outputs = self.encoder(xs)
+                enc_out = self.encoder(xs)
                 # NOTE: `[B, T, feature_dim]`
 
                 # Convert to time-major
-                enc_outputs = enc_outputs.transpose(0, 1).contiguous()
-                perm_indices = None
+                enc_out = enc_out.transpose(0, 1).contiguous()
+                perm_idx = None
             else:
-                enc_outputs, perm_indices = self.encoder(
-                    xs, x_lens, volatile)
+                enc_out, perm_idx = self.encoder(xs, x_lens, volatile)
 
         if len(self.fc_list) > 0:
-            enc_outputs = self.fc_layers(enc_outputs)
-        logits = self.fc(enc_outputs)
+            enc_out = self.fc_layers(enc_out)
+        logits = self.fc(enc_out)
 
         if is_multi_task:
-            logits_sub = self.fc_sub(enc_outputs_sub)
-            return logits, logits_sub, perm_indices
+            logits_sub = self.fc_sub(enc_out_sub)
+            return logits, logits_sub, perm_idx
         else:
-            return logits, perm_indices
+            return logits, perm_idx
 
     def posteriors(self, inputs, inputs_seq_len, temperature=1,
                    blank_prior=None, is_sub_task=False):
@@ -338,13 +335,13 @@ class CTC(ModelBase):
         # Encode acoustic features
         if hasattr(self, 'main_loss_weight'):
             if is_sub_task:
-                _, logits, perm_indices = self._encode(
+                _, logits, perm_idx = self._encode(
                     xs, x_lens, volatile=True, is_multi_task=True)
             else:
-                logits, _, perm_indices = self._encode(
+                logits, _, perm_idx = self._encode(
                     xs, x_lens, volatile=True, is_multi_task=True)
         else:
-            logits, perm_indices = self._encode(xs, x_lens, volatile=True)
+            logits, perm_idx = self._encode(xs, x_lens, volatile=True)
 
         # Convert to batch-major
         logits = logits.transpose(0, 1)
@@ -356,8 +353,8 @@ class CTC(ModelBase):
             raise NotImplementedError
 
         # Permutate indices to the original order
-        if perm_indices is not None:
-            probs = probs[perm_indices]
+        if perm_idx is not None:
+            probs = probs[perm_idx]
 
         return var2np(probs)
 
@@ -385,17 +382,17 @@ class CTC(ModelBase):
         # Encode acoustic features
         if hasattr(self, 'main_loss_weight'):
             if is_sub_task:
-                _, logits, perm_indices = self._encode(
+                _, logits, perm_idx = self._encode(
                     xs, x_lens, volatile=True, is_multi_task=True)
             else:
-                logits, _, perm_indices = self._encode(
+                logits, _, perm_idx = self._encode(
                     xs, x_lens, volatile=True, is_multi_task=True)
         else:
-            logits, perm_indices = self._encode(xs, x_lens, volatile=True)
+            logits, perm_idx = self._encode(xs, x_lens, volatile=True)
 
         # Permutate indices
-        if perm_indices is not None:
-            x_lens = x_lens[perm_indices]
+        if perm_idx is not None:
+            x_lens = x_lens[perm_idx]
 
         # Convert to batch-major
         logits = logits.transpose(0, 1)
@@ -424,9 +421,9 @@ class CTC(ModelBase):
         best_hyps = best_hyps - 1
 
         # Permutate indices to the original order
-        if perm_indices is not None:
-            perm_indices = var2np(perm_indices)
-            best_hyps = best_hyps[perm_indices]
+        if perm_idx is not None:
+            perm_idx = var2np(perm_idx)
+            best_hyps = best_hyps[perm_idx]
 
         return best_hyps
 

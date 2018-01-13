@@ -15,7 +15,7 @@ from torch.autograd import Variable
 from models.pytorch.linear import LinearND
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 from models.pytorch.encoders.load_encoder import load
-from models.pytorch.attention.decoders.rnn_decoder import RNNDecoder
+from models.pytorch.attention.rnn_decoder import RNNDecoder
 from models.pytorch.attention.attention_layer import AttentionMechanism
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
@@ -146,7 +146,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         #########################
         if encoder_type in ['lstm', 'gru', 'rnn']:
             self.encoder = load(encoder_type=encoder_type)(
-                input_size=input_size,  # 120 or 123
+                input_size=input_size,
                 rnn_type=encoder_type,
                 bidirectional=encoder_bidirectional,
                 num_units=encoder_num_units,
@@ -277,22 +277,22 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 self._inject_weight_noise(mean=0., std=self.weight_noise_std)
 
         # Encode acoustic features
-        enc_outputs, enc_outputs_sub, perm_indices = self._encode(
+        enc_out, enc_out_sub, perm_idx = self._encode(
             xs, x_lens, volatile=is_eval, is_multi_task=True)
 
         # Permutate indices
-        if perm_indices is not None:
-            ys = ys[perm_indices]
-            ys_sub = ys_sub[perm_indices]
-            x_lens = x_lens[perm_indices]
-            y_lens = y_lens[perm_indices]
-            y_lens_sub = y_lens_sub[perm_indices]
+        if perm_idx is not None:
+            ys = ys[perm_idx]
+            ys_sub = ys_sub[perm_idx]
+            x_lens = x_lens[perm_idx]
+            y_lens = y_lens[perm_idx]
+            y_lens_sub = y_lens_sub[perm_idx]
 
         ##################################################
         # Main task
         ##################################################
         # Teacher-forcing
-        logits, att_weights = self._decode_train(enc_outputs, ys)
+        logits, att_weights = self._decode_train(enc_out, ys)
 
         # Output smoothing
         if self.logits_temperature != 1:
@@ -331,8 +331,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         ##################################################
         if self.sub_loss_weight > 0:
             # Teacher-forcing
-            logits_sub, attention_weights_sub = self._decode_train(
-                enc_outputs_sub, ys_sub, is_sub_task=True)
+            logits_sub, att_weights_sub = self._decode_train(
+                enc_out_sub, ys_sub, is_sub_task=True)
 
             # Output smoothing
             if self.logits_temperature != 1:
@@ -366,8 +366,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         ##################################################
         if self.ctc_loss_weight_sub > 0:
             ctc_loss_sub = self._compute_ctc_loss(
-                enc_outputs_sub, ys_sub, x_lens, y_lens_sub,
-                is_sub_task=True)
+                enc_out_sub, ys_sub, x_lens, y_lens_sub, is_sub_task=True)
             # NOTE: including modifying inputs_seq_len_sub
 
             ctc_loss_sub = ctc_loss_sub * self._ctc_loss_weight_sub / batch_size
@@ -425,15 +424,15 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         # Encode acoustic features
         if is_sub_task:
-            _, enc_outputs, perm_indices = self._encode(
+            _, enc_out, perm_idx = self._encode(
                 xs, x_lens, volatile=True, is_multi_task=True)
         else:
-            enc_outputs, _, perm_indices = self._encode(
+            enc_out, _, perm_idx = self._encode(
                 xs, x_lens, volatile=True, is_multi_task=True)
 
         # Permutate indices
-        if perm_indices is not None:
-            x_lens = x_lens[perm_indices]
+        if perm_idx is not None:
+            x_lens = x_lens[perm_idx]
 
         if beam_width == 1:
             if is_sub_task:
@@ -442,17 +441,16 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     # Decode by attention decoder
                     ########################################
                     best_hyps, _ = self._decode_infer_greedy(
-                        enc_outputs, max_decode_len, is_sub_task=True)
+                        enc_out, max_decode_len, is_sub_task=True)
                 else:
                     ########################################
                     # Decode by CTC decoder
                     ########################################
                     # Path through the softmax layer
-                    batch_size, max_time = enc_outputs.size()[:2]
-                    enc_outputs = enc_outputs.contiguous()
-                    enc_outputs = enc_outputs.view(
-                        batch_size * max_time, -1)
-                    logits_ctc = self.fc_ctc_sub(enc_outputs)
+                    batch_size, max_time = enc_out.size()[:2]
+                    enc_out = enc_out.contiguous()
+                    enc_out = enc_out.view(batch_size * max_time, -1)
+                    logits_ctc = self.fc_ctc_sub(enc_out)
                     logits_ctc = logits_ctc.view(batch_size, max_time, -1)
                     log_probs = F.log_softmax(logits_ctc, dim=-1)
 
@@ -477,18 +475,18 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     # NOTE: index 0 is reserved for blank in warpctc_pytorch
             else:
                 best_hyps, _ = self._decode_infer_greedy(
-                    enc_outputs, max_decode_len)
+                    enc_out, max_decode_len)
         else:
             if is_sub_task:
                 raise NotImplementedError
             else:
                 best_hyps, att_weights = self._decode_infer_beam(
-                    enc_outputs, x_lens,
+                    enc_out, x_lens,
                     beam_width, max_decode_len)
 
         # Permutate indices to the original order
-        if perm_indices is not None:
-            perm_indices = var2np(perm_indices)
-            best_hyps = best_hyps[perm_indices]
+        if perm_idx is not None:
+            perm_idx = var2np(perm_idx)
+            best_hyps = best_hyps[perm_idx]
 
         return best_hyps

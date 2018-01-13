@@ -15,6 +15,7 @@ except:
 import torch.nn as nn
 import torch.nn.functional as F
 
+from models.pytorch.linear import LinearND
 from models.pytorch.ctc.ctc import CTC, _concatenate_labels
 from utils.io.variable import np2var, var2np
 
@@ -81,7 +82,7 @@ class StudentCTC(CTC):
                  weight_noise_std=0):
 
         super(StudentCTC, self).__init__(
-            input_size=input_size,  # 120 or 123
+            input_size=input_size,
             encoder_type=encoder_type,
             bidirectional=bidirectional,
             num_units=num_units,
@@ -101,10 +102,9 @@ class StudentCTC(CTC):
         self.main_loss_weight = main_loss_weight
 
         if len(fc_list) > 0:
-            self.fc_xe = nn.Linear(
-                fc_list[-1], self.num_classes)
+            self.fc_xe = LinearND(fc_list[-1], self.num_classes)
         else:
-            self.fc_xe = nn.Linear(
+            self.fc_xe = LinearND(
                 num_units * self.num_directions, self.num_classes)
 
         # Initialize parameters
@@ -146,15 +146,15 @@ class StudentCTC(CTC):
                 self._inject_weight_noise(mean=0., std=self.weight_noise_std)
 
         # Encode acoustic features
-        logits, logits_xe, perm_indices = self._encode(
+        logits, logits_xe, perm_idx = self._encode(
             xs, x_lens, volatile=is_eval)
 
         # Permutate indices
-        if perm_indices is not None:
-            ys = ys[perm_indices.cpu()]
-            ys_xe = ys_xe[perm_indices.cpu()]
-            x_lens = x_lens[perm_indices]
-            y_lens = y_lens[perm_indices.cpu()]
+        if perm_idx is not None:
+            ys = ys[perm_idx.cpu()]
+            ys_xe = ys_xe[perm_idx.cpu()]
+            x_lens = x_lens[perm_idx]
+            y_lens = y_lens[perm_idx.cpu()]
 
         # Concatenate all labels for warpctc_pytorch
         # `[B, T_out]` -> `[1,]`
@@ -204,23 +204,22 @@ class StudentCTC(CTC):
                 `[T, B, num_classes (including blank)]`
             logits_xe (FloatTensor): A tensor of size
                 `[T, B, num_classes_sub (including blank)]`
-            perm_indices (LongTensor):
+            perm_idx (LongTensor):
         """
         if self.encoder_type == 'cnn':
             encoder_outputs = self.encoder(xs)
             # NOTE: `[B, T, feature_dim]`
             encoder_outputs = encoder_outputs.transpose(0, 1).contiguous()
-            perm_indices = None
+            perm_idx = None
         else:
-            encoder_outputs, perm_indices = self.encoder(
-                xs, x_lens, volatile)
+            encoder_outputs, perm_idx = self.encoder(xs, x_lens, volatile)
 
         if len(self.fc_list) > 0:
             encoder_outputs = self.fc_layers(encoder_outputs)
         logits = self.fc(encoder_outputs)
         logits_xe = self.fc_xe(encoder_outputs)
 
-        return logits, logits_xe, perm_indices
+        return logits, logits_xe, perm_idx
 
     def decode_xe(self, inputs, inputs_seq_len, beam_width=1,
                   max_decode_len=None, ):
@@ -239,11 +238,11 @@ class StudentCTC(CTC):
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
 
         # Encode acoustic features
-        _, logits_xe, perm_indices = self._encode(xs, x_lens, volatile=True)
+        _, logits_xe, perm_idx = self._encode(xs, x_lens, volatile=True)
 
         # Permutate indices
-        if perm_indices is not None:
-            x_lens = x_lens[perm_indices]
+        if perm_idx is not None:
+            x_lens = x_lens[perm_idx]
 
         # Convert to batch-major
         logits_xe = logits_xe.transpose(0, 1)
@@ -251,8 +250,7 @@ class StudentCTC(CTC):
         # Modify inputs_seq_len for reducing time resolution
         if self.encoder.conv is not None or self.encoder_type == 'cnn':
             for i in range(len(inputs_seq_len)):
-                x_lens.data[i] = self.encoder.conv_out_size(
-                    x_lens.data[i], 1)
+                x_lens.data[i] = self.encoder.conv_out_size(x_lens.data[i], 1)
         x_lens /= 2 ** sum(self.subsample_list)
         # NOTE: floor is not needed because x_lens is IntTensor
 
@@ -263,15 +261,14 @@ class StudentCTC(CTC):
                 var2np(log_probs_xe), var2np(x_lens))
         else:
             best_hyps = self._decode_beam_np(
-                var2np(log_probs_xe), var2np(x_lens),
-                beam_width=beam_width)
+                var2np(log_probs_xe), var2np(x_lens), beam_width=beam_width)
 
         best_hyps = best_hyps - 1
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
         # Permutate indices to the original order
-        if perm_indices is not None:
-            perm_indices = var2np(perm_indices)
-            best_hyps = best_hyps[perm_indices]
+        if perm_idx is not None:
+            perm_idx = var2np(perm_idx)
+            best_hyps = best_hyps[perm_idx]
 
         return best_hyps

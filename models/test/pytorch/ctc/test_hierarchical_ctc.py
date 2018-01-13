@@ -144,6 +144,7 @@ class TestCTC(unittest.TestCase):
 
         # Define learning rate controller
         lr_controller = Controller(learning_rate_init=learning_rate,
+                                   backend='pytorch',
                                    decay_start_epoch=20,
                                    decay_rate=0.9,
                                    decay_patient_epoch=10,

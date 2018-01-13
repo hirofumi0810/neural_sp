@@ -24,7 +24,7 @@ from torch.autograd import Variable
 from models.pytorch.base import ModelBase
 from models.pytorch.linear import LinearND
 from models.pytorch.encoders.load_encoder import load
-from models.pytorch.attention.decoders.rnn_decoder import RNNDecoder
+from models.pytorch.attention.rnn_decoder import RNNDecoder
 from models.pytorch.attention.attention_layer import AttentionMechanism
 from models.pytorch.ctc.ctc import _concatenate_labels
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
@@ -144,9 +144,7 @@ class AttentionSeq2seq(ModelBase):
 
         super(ModelBase, self).__init__()
 
-        # TODO:
-        # clip_activation
-        # time_major option
+        # TODO: clip_activation
 
         # Setting for the encoder
         self.input_size = input_size
@@ -201,7 +199,7 @@ class AttentionSeq2seq(ModelBase):
         ####################
         if encoder_type in ['lstm', 'gru', 'rnn']:
             self.encoder = load(encoder_type=encoder_type)(
-                input_size=input_size,  # 120 or 123
+                input_size=input_size,
                 rnn_type=encoder_type,
                 bidirectional=encoder_bidirectional,
                 num_units=encoder_num_units,
@@ -227,7 +225,7 @@ class AttentionSeq2seq(ModelBase):
             assert num_stack == 1
             assert splice == 1
             self.encoder = load(encoder_type=encoder_type)(
-                input_size=input_size,  # 120 or 123
+                input_size=input_size,
                 conv_channels=conv_channels,
                 conv_kernel_sizes=conv_kernel_sizes,
                 conv_strides=conv_strides,
@@ -300,6 +298,7 @@ class AttentionSeq2seq(ModelBase):
             self._decode_ctc_greedy_np = GreedyDecoder(blank_index=0)
             self._decode_ctc_beam_np = BeamSearchDecoder(blank_index=0)
             # NOTE: index 0 is reserved for blank in warpctc_pytorch
+            # TODO: set space index
 
         # Initialize parameters
         self.init_weights(parameter_init)
@@ -337,16 +336,16 @@ class AttentionSeq2seq(ModelBase):
                 self._inject_weight_noise(mean=0., std=self.weight_noise_std)
 
         # Encode acoustic features
-        enc_outputs, perm_indices = self._encode(xs, x_lens, volatile=is_eval)
+        enc_out, perm_idx = self._encode(xs, x_lens, volatile=is_eval)
 
         # Permutate indices
-        if perm_indices is not None:
-            ys = ys[perm_indices]
-            x_lens = x_lens[perm_indices]
-            y_lens = y_lens[perm_indices]
+        if perm_idx is not None:
+            ys = ys[perm_idx]
+            x_lens = x_lens[perm_idx]
+            y_lens = y_lens[perm_idx]
 
         # Teacher-forcing
-        logits, att_weights = self._decode_train(enc_outputs, ys)
+        logits, att_weights = self._decode_train(enc_out, ys)
 
         # Output smoothing
         if self.logits_temperature != 1:
@@ -381,13 +380,12 @@ class AttentionSeq2seq(ModelBase):
         # Auxiliary CTC loss (optional)
         if self.ctc_loss_weight > 0:
             ctc_loss = self._compute_ctc_loss(
-                enc_outputs, ys,
-                x_lens, y_lens)
+                enc_out, ys, x_lens, y_lens)
             # NOTE: including modifying inputs_seq_len
             loss += ctc_loss * self.ctc_loss_weight
 
         # Average the loss by mini-batch
-        batch_size = enc_outputs.size(0)
+        batch_size = enc_out.size(0)
         loss /= batch_size
 
         if is_eval:
@@ -403,11 +401,11 @@ class AttentionSeq2seq(ModelBase):
 
         return loss
 
-    def _compute_ctc_loss(self, enc_outputs, ys, x_lens, y_lens,
+    def _compute_ctc_loss(self, enc_out, ys, x_lens, y_lens,
                           is_sub_task=False):
         """
         Args:
-            enc_outputs (FloatTensor): A tensor of size
+            enc_out (FloatTensor): A tensor of size
                 `[B, T_in, decoder_num_units]`
             ys (LongTensor): A tensor of size `[B, T_out]`
             x_lens (IntTensor): A tensor of size `[B]`
@@ -417,9 +415,9 @@ class AttentionSeq2seq(ModelBase):
             ctc_loss (FloatTensor): A tensor of size `[]`
         """
         if is_sub_task:
-            logits_ctc = self.fc_ctc_sub(enc_outputs)
+            logits_ctc = self.fc_ctc_sub(enc_out)
         else:
-            logits_ctc = self.fc_ctc(enc_outputs)
+            logits_ctc = self.fc_ctc(enc_out)
 
         # Convert to batch-major
         logits_ctc = logits_ctc.transpose(0, 1)
@@ -463,42 +461,42 @@ class AttentionSeq2seq(ModelBase):
                 This should be used in inference model for memory efficiency.
             is_multi_task (bool, optional):
         Returns:
-            enc_outputs (FloatTensor): A tensor of size
+            enc_out (FloatTensor): A tensor of size
                 `[B, T_in, decoder_num_units]`
-            enc_outputs_sub (FloatTensor): A tensor of size
+            enc_out_sub (FloatTensor): A tensor of size
                 `[B, T_in, decoder_num_units]`
-            perm_indices (LongTensor):
+            perm_idx (LongTensor):
         """
         if is_multi_task:
-            enc_outputs, enc_outputs_sub, perm_indices = self.encoder(
+            enc_out, enc_out_sub, perm_idx = self.encoder(
                 xs, x_lens, volatile)
         else:
-            enc_outputs, perm_indices = self.encoder(xs, x_lens, volatile)
-        # NOTE: enc_outputs:
+            enc_out, perm_idx = self.encoder(xs, x_lens, volatile)
+        # NOTE: enc_out:
         # `[B, T_in, encoder_num_units * encoder_num_directions]`
-        # enc_outputs_sub: `[B, T_in, encoder_num_units *
+        # enc_out_sub: `[B, T_in, encoder_num_units *
         # encoder_num_directions]`
 
         # Bridge between the encoder and decoder in the main task
         if self.is_bridge:
-            enc_outputs = self.bridge(enc_outputs)
+            enc_out = self.bridge(enc_out)
 
         if is_multi_task:
             # Bridge between the encoder and decoder in the sub task
             if self.sub_loss_weight > 0 and self.is_bridge_sub:
-                enc_outputs_sub = self.bridge_sub(enc_outputs_sub)
-            return enc_outputs, enc_outputs_sub, perm_indices
+                enc_out_sub = self.bridge_sub(enc_out_sub)
+            return enc_out, enc_out_sub, perm_idx
         else:
-            return enc_outputs, perm_indices
+            return enc_out, perm_idx
 
     def _compute_coverage(self, att_weights):
         batch_size, max_time_outputs, max_time_inputs = att_weights.size()
         raise NotImplementedError
 
-    def _decode_train(self, enc_outputs, ys, is_sub_task=False):
+    def _decode_train(self, enc_out, ys, is_sub_task=False):
         """Decoding in the training stage.
         Args:
-            enc_outputs (FloatTensor): A tensor of size
+            enc_out (FloatTensor): A tensor of size
                 `[B, T_in, decoder_num_units]`
             ys (LongTensor): A tensor of size `[B, T_out]`
             is_sub_task (bool, optional):
@@ -507,17 +505,17 @@ class AttentionSeq2seq(ModelBase):
             att_weights (FloatTensor): A tensor of size
                 `[B, T_out, T_in]`
         """
-        batch_size, max_time = enc_outputs.size()[:2]
+        batch_size, max_time = enc_out.size()[:2]
         labels_max_seq_len = ys.size(1)
 
         # Initialize decoder state
-        dec_state = self._init_decoder_state(enc_outputs)
+        dec_state = self._init_decoder_state(enc_out)
 
         # Initialize attention weights
         att_weights_step = Variable(torch.zeros(batch_size, max_time))
 
         # Initialize context vector
-        context_vec = Variable(torch.zeros(batch_size, 1, enc_outputs.size(2)))
+        context_vec = Variable(torch.zeros(batch_size, 1, enc_out.size(2)))
 
         if self.use_cuda:
             att_weights_step = att_weights_step.cuda()
@@ -547,15 +545,15 @@ class AttentionSeq2seq(ModelBase):
                     # Teacher-forcing
                     y_prev = self.embed(ys[:, t:t + 1])
 
-            dec_inputs = torch.cat([y_prev, context_vec], dim=-1)
-            dec_outputs, dec_state, context_vec, att_weights_step = self._decode_step(
-                enc_outputs=enc_outputs,
-                dec_inputs=dec_inputs,
+            dec_in = torch.cat([y_prev, context_vec], dim=-1)
+            dec_out, dec_state, context_vec, att_weights_step = self._decode_step(
+                enc_out=enc_out,
+                dec_in=dec_in,
                 dec_state=dec_state,
                 att_weights_step=att_weights_step,
                 is_sub_task=is_sub_task)
 
-            concat = torch.cat([dec_outputs, context_vec], dim=-1)
+            concat = torch.cat([dec_out, context_vec], dim=-1)
             if is_sub_task:
                 attentional_vec = F.tanh(self.proj_layer_sub(concat))
                 logits_step = self.fc_sub(attentional_vec)
@@ -574,10 +572,10 @@ class AttentionSeq2seq(ModelBase):
 
         return logits, att_weights
 
-    def _init_decoder_state(self, enc_outputs, volatile=False):
+    def _init_decoder_state(self, enc_out, volatile=False):
         """Initialize decoder state.
         Args:
-            enc_outputs (FloatTensor): A tensor of size
+            enc_out (FloatTensor): A tensor of size
                 `[B, T_in, decoder_num_units]`
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
@@ -585,7 +583,7 @@ class AttentionSeq2seq(ModelBase):
             dec_state (FloatTensor or tuple): A tensor of size
                 `[1, B, decoder_num_units]`
         """
-        batch_size = enc_outputs.size(0)
+        batch_size = enc_out.size(0)
 
         if self.init_dec_state == 'zero' or self.encoder_type != self.decoder_type:
             # Initialize zero state
@@ -597,13 +595,13 @@ class AttentionSeq2seq(ModelBase):
         else:
             if self.init_dec_state == 'mean':
                 # Initialize with mean of all encoder outputs
-                h_0 = enc_outputs.mean(dim=1, keepdim=True)
+                h_0 = enc_out.mean(dim=1, keepdim=True)
 
                 # Convert to time-major
                 h_0 = h_0.transpose(0, 1).contiguous()
             elif self.init_dec_state == 'final':
                 # Initialize with the final encoder output (forward)
-                h_0 = enc_outputs[:, -1, :].unsqueeze(1)
+                h_0 = enc_out[:, -1, :].unsqueeze(1)
 
                 # Convert to time-major
                 h_0 = h_0.transpose(0, 1).contiguous()
@@ -620,39 +618,37 @@ class AttentionSeq2seq(ModelBase):
 
         return dec_state
 
-    def _decode_step(self, enc_outputs, dec_inputs, dec_state,
+    def _decode_step(self, enc_out, dec_in, dec_state,
                      att_weights_step, is_sub_task=False):
         """Decoding step.
         Args:
-            enc_outputs (FloatTensor): A tensor of size
+            enc_out (FloatTensor): A tensor of size
                 `[B, T_in, decoder_num_units]`
-            dec_inputs (FloatTensor): A tensor of size
+            dec_in (FloatTensor): A tensor of size
                 `[B, 1, embedding_dim + decoder_num_units]`
             dec_state (FloatTensor or tuple): A tensor of size
                 `[decoder_num_layers, B, decoder_num_units]`
             att_weights_step (FloatTensor): A tensor of size `[B, T_in]`
             is_sub_task (bool, optional):
         Returns:
-            dec_outputs (FloatTensor): A tensor of size
+            dec_out (FloatTensor): A tensor of size
                 `[B, 1, decoder_num_units]`
             dec_state (FloatTensor): A tensor of size
                 `[decoder_num_layers, B, decoder_num_units]`
-            content_vector (FloatTensor): A tensor of size
+            content_vec (FloatTensor): A tensor of size
                 `[B, 1, decoder_num_units]`
             att_weights_step (FloatTensor): A tensor of size `[B, T_in]`
         """
         if is_sub_task:
-            dec_outputs, dec_state = self.decoder_sub(
-                dec_inputs, dec_state)
+            dec_out, dec_state = self.decoder_sub(dec_in, dec_state)
             context_vec, att_weights_step = self.attend_sub(
-                enc_outputs, dec_outputs, att_weights_step)
+                enc_out, dec_out, att_weights_step)
         else:
-            dec_outputs, dec_state = self.decoder(
-                dec_inputs, dec_state)
+            dec_out, dec_state = self.decoder(dec_in, dec_state)
             context_vec, att_weights_step = self.attend(
-                enc_outputs, dec_outputs, att_weights_step)
+                enc_out, dec_out, att_weights_step)
 
-        return dec_outputs, dec_state, context_vec, att_weights_step
+        return dec_out, dec_state, context_vec, att_weights_step
 
     def _create_token(self, value, batch_size):
         """Create 1 token per batch dimension.
@@ -697,28 +693,27 @@ class AttentionSeq2seq(ModelBase):
         # Encode acoustic features
         if hasattr(self, 'main_loss_weight'):
             if is_sub_task:
-                _, enc_outputs, perm_indices = self._encode(
+                _, enc_out, perm_idx = self._encode(
                     xs, x_lens, volatile=True, is_multi_task=True)
             else:
-                enc_outputs, _, perm_indices = self._encode(
+                enc_out, _, perm_idx = self._encode(
                     xs, x_lens, volatile=True, is_multi_task=True)
         else:
-            enc_outputs, perm_indices = self._encode(
-                xs, x_lens, volatile=True)
+            enc_out, perm_idx = self._encode(xs, x_lens, volatile=True)
 
         # Permutate indices
-        if perm_indices is not None:
-            perm_indices = var2np(perm_indices)
-            x_lens = x_lens[perm_indices]
+        if perm_idx is not None:
+            perm_idx = var2np(perm_idx)
+            x_lens = x_lens[perm_idx]
 
         # NOTE: assume beam_width == 1
         best_hyps, att_weights = self._decode_infer_greedy(
-            enc_outputs, max_decode_len, is_sub_task=is_sub_task)
+            enc_out, max_decode_len, is_sub_task=is_sub_task)
 
         # Permutate indices to the original order
-        if perm_indices is not None:
-            best_hyps = best_hyps[perm_indices]
-            att_weights = att_weights[perm_indices]
+        if perm_idx is not None:
+            best_hyps = best_hyps[perm_idx]
+            att_weights = att_weights[perm_idx]
 
         return best_hyps, att_weights
 
@@ -743,16 +738,14 @@ class AttentionSeq2seq(ModelBase):
         self.eval()
 
         # Encode acoustic features
-        enc_outputs, perm_indices = self._encode(
-            xs, x_lens, volatile=True)
+        enc_out, perm_idx = self._encode(xs, x_lens, volatile=True)
 
         # Permutate indices
-        if perm_indices is not None:
-            x_lens = x_lens[perm_indices]
+        if perm_idx is not None:
+            x_lens = x_lens[perm_idx]
 
         if beam_width == 1:
-            best_hyps, _ = self._decode_infer_greedy(
-                enc_outputs, max_decode_len)
+            best_hyps, _ = self._decode_infer_greedy(enc_out, max_decode_len)
         else:
             # Modify x_lens for reducing time resolution
             if self.encoder.conv is not None or self.encoder_type == 'cnn':
@@ -763,20 +756,19 @@ class AttentionSeq2seq(ModelBase):
             # NOTE: floor is not needed because x_lens is IntTensor
 
             best_hyps = self._decode_infer_beam(
-                enc_outputs, x_lens, beam_width, max_decode_len)
+                enc_out, x_lens, beam_width, max_decode_len)
 
         # Permutate indices to the original order
-        if perm_indices is not None:
-            perm_indices = var2np(perm_indices)
-            best_hyps = best_hyps[perm_indices]
+        if perm_idx is not None:
+            perm_idx = var2np(perm_idx)
+            best_hyps = best_hyps[perm_idx]
 
         return best_hyps
 
-    def _decode_infer_greedy(self, enc_outputs, max_decode_len,
-                             is_sub_task=False):
+    def _decode_infer_greedy(self, enc_out, max_decode_len, is_sub_task=False):
         """Greedy decoding in the inference stage.
         Args:
-            enc_outputs (FloatTensor): A tensor of size
+            enc_out (FloatTensor): A tensor of size
                 `[B, T_in, decoder_num_units]`
             max_decode_len (int): the length of output sequences
                 to stop prediction when EOS token have not been emitted
@@ -785,17 +777,17 @@ class AttentionSeq2seq(ModelBase):
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
             att_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
         """
-        batch_size, max_time = enc_outputs.size()[:2]
+        batch_size, max_time = enc_out.size()[:2]
 
         # Initialize decoder state
-        dec_state = self._init_decoder_state(enc_outputs, volatile=True)
+        dec_state = self._init_decoder_state(enc_out, volatile=True)
 
         # Initialize attention weights
         att_weights_step = Variable(torch.zeros(batch_size, max_time))
         att_weights_step.volatile = True
 
         # Initialize context vector
-        context_vec = Variable(torch.zeros(batch_size, 1, enc_outputs.size(2)))
+        context_vec = Variable(torch.zeros(batch_size, 1, enc_out.size(2)))
         context_vec.volatile = True
 
         if self.use_cuda:
@@ -817,15 +809,15 @@ class AttentionSeq2seq(ModelBase):
             else:
                 y = self.embed(y)
 
-            dec_inputs = torch.cat([y, context_vec], dim=-1)
-            dec_outputs, dec_state, context_vec, att_weights_step = self._decode_step(
-                enc_outputs=enc_outputs,
-                dec_inputs=dec_inputs,
+            dec_in = torch.cat([y, context_vec], dim=-1)
+            dec_out, dec_state, context_vec, att_weights_step = self._decode_step(
+                enc_out=enc_out,
+                dec_in=dec_in,
                 dec_state=dec_state,
                 att_weights_step=att_weights_step,
                 is_sub_task=is_sub_task)
 
-            concat = torch.cat([dec_outputs, context_vec], dim=-1)
+            concat = torch.cat([dec_out, context_vec], dim=-1)
             if is_sub_task:
                 attentional_vec = F.tanh(self.proj_layer_sub(concat))
                 logits = self.fc_sub(attentional_vec)
@@ -836,7 +828,7 @@ class AttentionSeq2seq(ModelBase):
             # Pick up 1-best
             _, y = torch.max(logits.squeeze(1), dim=1)
             # NOTE: `[B, 1, num_classes]` -> `[B, num_classes]`
-            y = y.unsqueeze(dim=1)
+            y = y.unsqueeze(1)
             best_hyps.append(y)
             att_weights.append(att_weights_step)
 
@@ -854,11 +846,11 @@ class AttentionSeq2seq(ModelBase):
 
         return best_hyps, att_weights
 
-    def _decode_infer_beam(self, enc_outputs, x_lens,
+    def _decode_infer_beam(self, enc_out, x_lens,
                            beam_width, max_decode_len, is_sub_task=False):
         """Beam search decoding in the inference stage.
         Args:
-            enc_outputs (FloatTensor): A tensor of size
+            enc_out (FloatTensor): A tensor of size
                 `[B, T_in, decoder_num_units]`
             x_lens (IntTensor): A tensor of size `[B]`
             beam_width (int): the size of beam
@@ -868,7 +860,7 @@ class AttentionSeq2seq(ModelBase):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
         """
-        batch_size = enc_outputs.size(0)
+        batch_size = enc_out.size(0)
 
         # Start from <SOS>
         sos = self.sos_index_sub if is_sub_task else self.sos_index
@@ -882,14 +874,14 @@ class AttentionSeq2seq(ModelBase):
 
             # Initialize decoder state
             dec_state = self._init_decoder_state(
-                enc_outputs[i_batch:i_batch + 1, :, :], volatile=True)
+                enc_out[i_batch:i_batch + 1, :, :], volatile=True)
 
             # Initialize attention weights
             att_weights_step = Variable(torch.zeros(1, max_time))
             att_weights_step.volatile = True
 
             # Initialize context vector
-            context_vec = Variable(torch.zeros(1, 1, enc_outputs.size(2)))
+            context_vec = Variable(torch.zeros(1, 1, enc_out.size(2)))
             context_vec.volatile = True
 
             if self.use_cuda:
@@ -915,17 +907,16 @@ class AttentionSeq2seq(ModelBase):
                     max_time = x_lens[i_batch].data[0]
                     # NOTE: already modified for reducing time resolution
 
-                    dec_inputs = torch.cat(
+                    dec_in = torch.cat(
                         [y_prev, beam[i_beam]['context_vec']], dim=-1)
-                    dec_outputs, dec_state, context_vec, att_weights_step = self._decode_step(
-                        enc_outputs=enc_outputs[i_batch:i_batch +
-                                                1, :max_time],
-                        dec_inputs=dec_inputs,
+                    dec_out, dec_state, context_vec, att_weights_step = self._decode_step(
+                        enc_out=enc_out[i_batch:i_batch + 1, :max_time],
+                        dec_in=dec_in,
                         dec_state=beam[i_beam]['dec_state'],
                         att_weights_step=beam[i_beam]['att_weights_step'],
                         is_sub_task=is_sub_task)
 
-                    concat = torch.cat([dec_outputs, context_vec], dim=-1)
+                    concat = torch.cat([dec_out, context_vec], dim=-1)
                     if is_sub_task:
                         attentional_vec = F.tanh(self.proj_layer_sub(concat))
                         logits = self.fc_sub(attentional_vec)
@@ -1003,17 +994,17 @@ class AttentionSeq2seq(ModelBase):
         self.eval()
 
         # Encode acoustic features
-        enc_outputs, perm_indices = self._encode(xs, x_lens, volatile=True)
+        enc_out, perm_idx = self._encode(xs, x_lens, volatile=True)
 
         # Permutate indices
-        if perm_indices is not None:
-            x_lens = x_lens[perm_indices]
+        if perm_idx is not None:
+            x_lens = x_lens[perm_idx]
 
         # Path through the softmax layer
-        batch_size, max_time = enc_outputs.size()[:2]
-        enc_outputs = enc_outputs.contiguous()
-        enc_outputs = enc_outputs.view(batch_size * max_time, -1)
-        logits_ctc = self.fc_ctc(enc_outputs)
+        batch_size, max_time = enc_out.size()[:2]
+        enc_out = enc_out.contiguous()
+        enc_out = enc_out.view(batch_size * max_time, -1)
+        logits_ctc = self.fc_ctc(enc_out)
         logits_ctc = logits_ctc.view(batch_size, max_time, -1)
         log_probs = F.log_softmax(logits_ctc, dim=-1)
 
@@ -1036,9 +1027,9 @@ class AttentionSeq2seq(ModelBase):
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
         # Permutate indices to the original order
-        if perm_indices is not None:
-            perm_indices = var2np(perm_indices)
-            best_hyps = best_hyps[perm_indices]
+        if perm_idx is not None:
+            perm_idx = var2np(perm_idx)
+            best_hyps = best_hyps[perm_idx]
 
         return best_hyps
 
