@@ -299,8 +299,11 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
             self.gate_fn = LinearND(embedding_dim, embedding_dim)
 
-        # Initialize parameters
+        # Initialize all parameters with uniform distribution
         self.init_weights(parameter_init)
+
+        # Initialize bias in forget gate with 1
+        self.init_forget_gate_bias()
 
     def forward(self, inputs, labels, labels_sub, inputs_seq_len,
                 labels_seq_len, labels_seq_len_sub, is_eval=False):

@@ -307,8 +307,11 @@ class AttentionSeq2seq(ModelBase):
             # NOTE: index 0 is reserved for blank in warpctc_pytorch
             # TODO: set space index
 
-        # Initialize parameters
+        # Initialize all parameters with uniform distribution
         self.init_weights(parameter_init)
+
+        # Initialize bias in forget gate with 1
+        self.init_forget_gate_bias()
 
     def forward(self, inputs, labels, inputs_seq_len, labels_seq_len,
                 is_eval=False):
@@ -761,7 +764,7 @@ class AttentionSeq2seq(ModelBase):
         # Initialize decoder state
         dec_state = self._init_decoder_state(enc_out, volatile=True)
 
-        # Initialize attention weights
+        # Initialize attention weights with uniform distribution
         # att_weights_step = Variable(torch.zeros(batch_size, max_time))
         att_weights_step = Variable(
             torch.ones(batch_size, max_time)) / max_time
@@ -857,7 +860,7 @@ class AttentionSeq2seq(ModelBase):
             dec_state = self._init_decoder_state(
                 enc_out[i_batch:i_batch + 1, :, :], volatile=True)
 
-            # Initialize attention weights
+            # Initialize attention weights with uniform distribution
             # att_weights_step = Variable(torch.zeros(1, max_time))
             att_weights_step = Variable(torch.ones(1, max_time)) / max_time
             att_weights_step.volatile = True

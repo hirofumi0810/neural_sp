@@ -47,6 +47,16 @@ class ModelBase(nn.Module):
                             a=-parameter_init,
                             b=parameter_init)
 
+    def init_forget_gate_bias(self):
+        """Initialize bias in forget gate with 1. See detail in
+            https://discuss.pytorch.org/t/set-forget-gate-bias-of-lstm/1745
+        """
+        for name, param in self.named_parameters():
+            if 'lstm' in name and 'bias' in name:
+                n = param.size(0)
+                start, end = n // 4, n // 2
+                param.data[start:end].fill_(1.)
+
     def _inject_weight_noise(self, mean, std):
         m = torch.distributions.Normal(
             torch.Tensor([mean]), torch.Tensor([std]))

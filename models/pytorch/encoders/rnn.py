@@ -164,6 +164,7 @@ class RNNEncoder(nn.Module):
                                 batch_first=batch_first,
                                 dropout=dropout,
                                 bidirectional=bidirectional)
+
             elif rnn_type == 'gru':
                 rnn_i = nn.GRU(encoder_input_size,
                                hidden_size=num_units,
@@ -228,8 +229,8 @@ class RNNEncoder(nn.Module):
         if self.conv is not None:
             xs, x_lens = self.conv(xs, x_lens)
 
-        # Convert to the time-major
         if not self.batch_first:
+            # Convert to the time-major
             xs = xs.transpose(0, 1).contiguous()
 
         # Initialize hidden states (and memory cells) per mini-batch

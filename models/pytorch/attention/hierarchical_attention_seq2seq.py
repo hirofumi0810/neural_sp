@@ -237,8 +237,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             self._decode_ctc_greedy_np = GreedyDecoder(blank_index=0)
             self._decode_ctc_beam_np = BeamSearchDecoder(blank_index=0)
 
-        # Initialize parameters
+        # Initialize all parameters with uniform distribution
         self.init_weights(parameter_init)
+
+        # Initialize bias in forget gate with 1
+        self.init_forget_gate_bias()
 
     def forward(self, inputs, labels, labels_sub, inputs_seq_len,
                 labels_seq_len, labels_seq_len_sub, is_eval=False):

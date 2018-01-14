@@ -188,8 +188,11 @@ class CTC(ModelBase):
         # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
         # TODO: set space index
 
-        # Initialize parameters
+        # Initialize all parameters with uniform distribution
         self.init_weights(parameter_init)
+
+        # Initialize bias in forget gate with 1
+        self.init_forget_gate_bias()
 
     def forward(self, inputs, labels, inputs_seq_len, labels_seq_len,
                 is_eval=False):
