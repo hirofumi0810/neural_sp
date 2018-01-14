@@ -363,7 +363,7 @@ class AttentionSeq2seq(ModelBase):
         ys_1d = ys[:, 1:].contiguous().view(-1)
         loss = F.cross_entropy(
             logits, ys_1d, ignore_index=self.sos_index, size_average=False)
-        # NOTE: ys are padded by sos_index
+        # NOTE: ys are padded by <SOS>
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
@@ -451,37 +451,33 @@ class AttentionSeq2seq(ModelBase):
                 This should be used in inference model for memory efficiency.
             is_multi_task (bool, optional):
         Returns:
-            enc_out (FloatTensor): A tensor of size
-                `[B, T_in, decoder_num_units]`
-            enc_out_sub (FloatTensor): A tensor of size
-                `[B, T_in, decoder_num_units]`
+            xs (FloatTensor): A tensor of size `[B, T_in, decoder_num_units]`
+            xs_sub (FloatTensor): A tensor of size `[B, T_in, decoder_num_units]`
             perm_idx (LongTensor):
         """
         if is_multi_task:
-            enc_out, x_lens, enc_out_sub, x_lens_sub, perm_idx = self.encoder(
+            xs, x_lens, xs_sub, x_lens_sub, perm_idx = self.encoder(
                 xs, x_lens, volatile)
         else:
             if self.encoder_type == 'cnn':
-                enc_out, x_lens = self.encoder(xs, x_lens)
+                xs, x_lens = self.encoder(xs, x_lens)
                 perm_idx = None
             else:
-                enc_out, x_lens, perm_idx = self.encoder(xs, x_lens, volatile)
-        # NOTE: enc_out:
-        # `[B, T_in, encoder_num_units * encoder_num_directions]`
-        # enc_out_sub:
-        # `[B, T_in, encoder_num_units * encoder_num_directions]`
+                xs, x_lens, perm_idx = self.encoder(xs, x_lens, volatile)
+        # NOTE: xs: `[B, T_in, encoder_num_units * encoder_num_directions]`
+        # xs_sub: `[B, T_in, encoder_num_units * encoder_num_directions]`
 
         # Bridge between the encoder and decoder in the main task
         if self.is_bridge:
-            enc_out = self.bridge(enc_out)
+            xs = self.bridge(xs)
 
         if is_multi_task:
             # Bridge between the encoder and decoder in the sub task
             if self.sub_loss_weight > 0 and self.is_bridge_sub:
-                enc_out_sub = self.bridge_sub(enc_out_sub)
-            return enc_out, x_lens, enc_out_sub, x_lens_sub, perm_idx
+                xs_sub = self.bridge_sub(xs_sub)
+            return xs, x_lens, xs_sub, x_lens_sub, perm_idx
         else:
-            return enc_out, x_lens, perm_idx
+            return xs, x_lens, perm_idx
 
     def _compute_coverage(self, att_weights):
         batch_size, max_time_outputs, max_time_inputs = att_weights.size()

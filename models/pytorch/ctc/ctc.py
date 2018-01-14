@@ -284,21 +284,21 @@ class CTC(ModelBase):
             perm_idx (LongTensor):
         """
         if is_multi_task:
-            enc_out, x_lens, enc_out_sub, x_lens_sub, perm_idx = self.encoder(
+            xs, x_lens, xs_sub, x_lens_sub, perm_idx = self.encoder(
                 xs, x_lens, volatile)
         else:
             if self.encoder_type == 'cnn':
-                enc_out, x_lens = self.encoder(xs, x_lens)
+                xs, x_lens = self.encoder(xs, x_lens)
                 perm_idx = None
             else:
-                enc_out, x_lens, perm_idx = self.encoder(xs, x_lens, volatile)
+                xs, x_lens, perm_idx = self.encoder(xs, x_lens, volatile)
 
         if len(self.fc_list) > 0:
-            enc_out = self.fc_layers(enc_out)
-        logits = self.fc(enc_out)
+            xs = self.fc_layers(xs)
+        logits = self.fc(xs)
 
         if is_multi_task:
-            logits_sub = self.fc_sub(enc_out_sub)
+            logits_sub = self.fc_sub(xs_sub)
             return logits, x_lens, logits_sub, x_lens_sub, perm_idx
         else:
             return logits, x_lens, perm_idx

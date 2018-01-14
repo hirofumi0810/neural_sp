@@ -280,7 +280,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 self._inject_weight_noise(mean=0, std=self.weight_noise_std)
 
         # Encode acoustic features
-        enc_out, _, enc_out_sub, x_lens_sub, perm_idx = self._encode(
+        xs, _, xs_sub, x_lens_sub, perm_idx = self._encode(
             xs, x_lens, volatile=is_eval, is_multi_task=True)
 
         # Permutate indices
@@ -294,7 +294,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Main task
         ##################################################
         # Teacher-forcing
-        logits, att_weights = self._decode_train(enc_out, ys)
+        logits, att_weights = self._decode_train(xs, ys)
 
         # Output smoothing
         if self.logits_temperature != 1:
@@ -333,7 +333,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         if self.sub_loss_weight > 0:
             # Teacher-forcing
             logits_sub, att_weights_sub = self._decode_train(
-                enc_out_sub, ys_sub, is_sub_task=True)
+                xs_sub, ys_sub, is_sub_task=True)
 
             # Output smoothing
             if self.logits_temperature != 1:
@@ -367,7 +367,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         ##################################################
         if self.ctc_loss_weight_sub > 0:
             ctc_loss_sub = self._compute_ctc_loss(
-                enc_out_sub, ys_sub, x_lens_sub, y_lens_sub, is_sub_task=True)
+                xs_sub, ys_sub, x_lens_sub, y_lens_sub, is_sub_task=True)
 
             ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub_tmp / batch_size
             loss += ctc_loss_sub

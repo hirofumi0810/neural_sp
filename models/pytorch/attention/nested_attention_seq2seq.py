@@ -342,7 +342,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 self._inject_weight_noise(mean=0, std=self.weight_noise_std)
 
         # Encode acoustic features
-        enc_out, _, enc_out_sub, x_lens_sub, perm_idx = self._encode(
+        xs, _, xs_sub, x_lens_sub, perm_idx = self._encode(
             xs, x_lens, volatile=is_eval, is_multi_task=True)
 
         # Permutate indices
@@ -354,7 +354,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         # Teacher-forcing
         logits, logits_sub, att_weights, att_weights_sub = self._decode_train_joint(
-            enc_out, enc_out_sub, ys, ys_sub, y_lens, y_lens_sub)
+            xs, xs_sub, ys, ys_sub, y_lens, y_lens_sub)
 
         # Output smoothing
         if self.logits_temperature != 1:
@@ -412,7 +412,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         ##################################################
         if self.ctc_loss_weight_sub > 0:
             ctc_loss_sub = self._compute_ctc_loss(
-                enc_out_sub, ys_sub, x_lens_sub, y_lens_sub, is_sub_task=True)
+                xs_sub, ys_sub, x_lens_sub, y_lens_sub, is_sub_task=True)
             # NOTE: including modifying inputs_seq_len_sub
 
             ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub / batch_size
