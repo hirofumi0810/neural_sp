@@ -18,4 +18,4 @@ PYTHON=/home/lab5/inaguma/.pyenv/versions/anaconda3-4.1.1/envs/`hostname`/bin/py
 gpu_index=$1
 
 # Background job version
-CUDA_VISIBLE_DEVICES=$gpu_index $PYTHON test_hierarchical_ctc.py
+CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 $PYTHON test_hierarchical_ctc.py

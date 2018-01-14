@@ -130,11 +130,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         # Setting for MTL
         self.main_loss_weight = main_loss_weight
-        self._main_loss_weight = main_loss_weight
+        self.main_loss_weight_tmp = main_loss_weight
         self.sub_loss_weight = 1 - main_loss_weight - ctc_loss_weight_sub
-        self._sub_loss_weight = 1 - main_loss_weight - ctc_loss_weight_sub
+        self.sub_loss_weight_tmp = 1 - main_loss_weight - ctc_loss_weight_sub
         self.ctc_loss_weight_sub = ctc_loss_weight_sub
-        self._ctc_loss_weight_sub = ctc_loss_weight_sub
+        self.ctc_loss_weight_sub_tmp = ctc_loss_weight_sub
         if curriculum_training and scheduled_sampling_ramp_max_step == 0:
             raise ValueError('Set scheduled_sampling_ramp_max_step.')
         self.curriculum_training = curriculum_training
@@ -277,17 +277,16 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
             # Gaussian noise injection
             if self.weight_noise_injection:
-                self._inject_weight_noise(mean=0., std=self.weight_noise_std)
+                self._inject_weight_noise(mean=0, std=self.weight_noise_std)
 
         # Encode acoustic features
-        enc_out, enc_out_sub, perm_idx = self._encode(
+        enc_out, _, enc_out_sub, x_lens_sub, perm_idx = self._encode(
             xs, x_lens, volatile=is_eval, is_multi_task=True)
 
         # Permutate indices
         if perm_idx is not None:
             ys = ys[perm_idx]
             ys_sub = ys_sub[perm_idx]
-            x_lens = x_lens[perm_idx]
             y_lens = y_lens[perm_idx]
             y_lens_sub = y_lens_sub[perm_idx]
 
@@ -299,15 +298,14 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         # Output smoothing
         if self.logits_temperature != 1:
-            logits /= self.logits_temperature
+            logits = logits / self.logits_temperature
 
         # Compute XE sequence loss in the main task
         batch_size, label_num, num_classes = logits.size()
         logits = logits.view((-1, num_classes))
         ys_1d = ys[:, 1:].contiguous().view(-1)
-        xe_loss_main = F.cross_entropy(
-            logits, ys_1d,
-            ignore_index=self.sos_index, size_average=False) * (1 - self.label_smoothing_prob)
+        loss_main = F.cross_entropy(
+            logits, ys_1d, ignore_index=self.sos_index, size_average=False)
         # NOTE: ys are padded by sos_index
 
         # Label smoothing (with uniform distribution)
@@ -317,7 +315,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 batch_size, label_num, num_classes)) / num_classes
             if self.use_cuda:
                 uniform = uniform.cuda()
-            xe_loss_main += F.kl_div(
+            loss_main = loss_main * (1 - self.label_smoothing_prob) + F.kl_div(
                 log_probs, uniform,
                 size_average=False, reduce=True) * self.label_smoothing_prob
 
@@ -326,8 +324,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             pass
             # TODO: sub taskも入れる？
 
-        xe_loss_main = xe_loss_main * self._main_loss_weight / batch_size
-        loss = xe_loss_main
+        loss_main = loss_main * self.main_loss_weight_tmp / batch_size
+        loss = loss_main.clone()
 
         ##################################################
         # Sub task (attention)
@@ -339,15 +337,15 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
             # Output smoothing
             if self.logits_temperature != 1:
-                logits_sub /= self.logits_temperature
+                logits_sub = logits_sub / self.logits_temperature
 
             # Compute XE sequence loss in the sub task
             batch_size, label_num_sub, num_classes_sub = logits_sub.size()
             logits_sub = logits_sub.view((-1, num_classes_sub))
             ys_sub_1d = ys_sub[:, 1:].contiguous().view(-1)
-            xe_loss_sub = F.cross_entropy(
+            loss_sub = F.cross_entropy(
                 logits_sub, ys_sub_1d,
-                ignore_index=self.sos_index_sub, size_average=False) * (1 - self.label_smoothing_prob)
+                ignore_index=self.sos_index_sub, size_average=False)
             # NOTE: ys are padded by sos_index_sub
 
             # Label smoothing (with uniform distribution)
@@ -357,60 +355,61 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     batch_size, label_num_sub, num_classes_sub)) / num_classes_sub
                 if self.use_cuda:
                     uniform_sub = uniform_sub.cuda()
-                xe_loss_sub += F.kl_div(
+                loss_sub = loss_sub * (1 - self.label_smoothing_prob) + F.kl_div(
                     log_probs_sub, uniform_sub,
                     size_average=False, reduce=True) * self.label_smoothing_prob
 
-            xe_loss_sub = xe_loss_sub * self._sub_loss_weight / batch_size
-            loss += xe_loss_sub
+            loss_sub = loss_sub * self.sub_loss_weight_tmp / batch_size
+            loss += loss_sub
 
         ##################################################
         # Sub task (CTC)
         ##################################################
         if self.ctc_loss_weight_sub > 0:
             ctc_loss_sub = self._compute_ctc_loss(
-                enc_out_sub, ys_sub, x_lens, y_lens_sub, is_sub_task=True)
-            # NOTE: including modifying inputs_seq_len_sub
+                enc_out_sub, ys_sub, x_lens_sub, y_lens_sub, is_sub_task=True)
 
-            ctc_loss_sub = ctc_loss_sub * self._ctc_loss_weight_sub / batch_size
+            ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub_tmp / batch_size
             loss += ctc_loss_sub
 
         if is_eval:
             loss = loss.data[0]
-            xe_loss_main = xe_loss_main.data[0]
-            xe_loss_sub = xe_loss_sub.data[0]
-            ctc_loss_sub = ctc_loss_sub.data[0]
+            loss_main = loss_main.data[0]
+            if self.sub_loss_weight > 0:
+                loss_sub = loss_sub.data[0]
+            if self.ctc_loss_weight_sub > 0:
+                ctc_loss_sub = ctc_loss_sub.data[0]
         else:
             self._step += 1
 
             # Curriculum training (gradually from char to word task)
             if self.curriculum_training:
                 # main
-                self._main_loss_weight = min(
+                self.main_loss_weight_tmp = min(
                     self.main_loss_weight,
-                    0.05 + self.main_loss_weight / self.scheduled_sampling_ramp_max_step * self._step)
+                    0.05 + self.main_loss_weight / self.sample_ramp_max_step * self._step)
                 # sub (attention)
-                self._sub_loss_weight = max(
+                self.sub_loss_weight_tmp = max(
                     self.sub_loss_weight,
-                    0.95 - (1 - self.sub_loss_weight) / self.scheduled_sampling_ramp_max_step * self._step)
+                    0.95 - (1 - self.sub_loss_weight) / self.sample_ramp_max_step * self._step)
                 # sub (CTC)
-                self._ctc_loss_weight_sub = max(
+                self.ctc_loss_weight_sub_tmp = max(
                     self.ctc_loss_weight_sub,
-                    0.95 - (1 - self.ctc_loss_weight_sub) / self.scheduled_sampling_ramp_max_step * self._step)
+                    0.95 - (1 - self.ctc_loss_weight_sub) / self.sample_ramp_max_step * self._step)
 
         if self.sub_loss_weight > self.ctc_loss_weight_sub:
-            return loss, xe_loss_main, xe_loss_sub
+            return loss, loss_main, loss_sub
         else:
-            return loss, xe_loss_main, ctc_loss_sub
+            return loss, loss_main, ctc_loss_sub
 
-    def decode(self, inputs, inputs_seq_len, beam_width=1,
-               max_decode_len=100, is_sub_task=False):
+    def decode(self, inputs, inputs_seq_len, beam_width,
+               max_decode_len, is_sub_task=False):
         """Decoding in the inference stage.
         Args:
             inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
             inputs_seq_len (np.ndarray): A tensor of size `[B]`
-            beam_width (int, optional): the size of beam
-            max_decode_len (int, optional): the length of output sequences
+            beam_width (int): the size of beam
+            max_decode_len (int): the length of output sequences
                 to stop prediction when EOS token have not been emitted
             is_sub_task (bool, optional):
         Returns:
@@ -427,15 +426,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         # Encode acoustic features
         if is_sub_task:
-            _, enc_out, perm_idx = self._encode(
+            _, _, enc_out, x_lens, perm_idx = self._encode(
                 xs, x_lens, volatile=True, is_multi_task=True)
         else:
-            enc_out, _, perm_idx = self._encode(
+            enc_out, x_lens, _, _, perm_idx = self._encode(
                 xs, x_lens, volatile=True, is_multi_task=True)
-
-        # Permutate indices
-        if perm_idx is not None:
-            x_lens = x_lens[perm_idx]
 
         if beam_width == 1:
             if is_sub_task:
@@ -456,15 +451,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     logits_ctc = self.fc_ctc_sub(enc_out)
                     logits_ctc = logits_ctc.view(batch_size, max_time, -1)
                     log_probs = F.log_softmax(logits_ctc, dim=-1)
-
-                    # Modify inputs_seq_len for reducing time resolution
-                    if self.encoder.conv is not None:
-                        for i in range(len(inputs_seq_len)):
-                            x_lens.data[i] = self.encoder.get_conv_out_size(
-                                x_lens.data[i], 1)
-                    x_lens /= 2 ** sum(
-                        self.subsample_list[:self.encoder_num_layers_sub])
-                    # NOTE: floor is not needed because x_lens is IntTensor
 
                     if beam_width == 1:
                         best_hyps = self._decode_ctc_greedy_np(

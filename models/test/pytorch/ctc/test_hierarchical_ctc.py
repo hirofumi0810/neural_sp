@@ -170,9 +170,9 @@ class TestCTC(unittest.TestCase):
             if (step + 1) % 10 == 0:
                 # Decode
                 labels_pred = model.decode(
-                    inputs, inputs_seq_len, beam_width=1)
+                    inputs, inputs_seq_len, beam_width=2)
                 labels_pred_sub = model.decode(
-                    inputs, inputs_seq_len, beam_width=1, is_sub_task=True)
+                    inputs, inputs_seq_len, beam_width=2, is_sub_task=True)
 
                 # Compute accuracy
                 str_true = idx2word(labels[0, :labels_seq_len[0]])

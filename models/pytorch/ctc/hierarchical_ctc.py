@@ -137,7 +137,7 @@ class HierarchicalCTC(CTC):
                 subsample_list=subsample_list,
                 subsample_type=subsample_type,
                 use_cuda=self.use_cuda,
-                batch_first=False,
+                batch_first=True,
                 merge_bidirectional=False,
                 num_stack=num_stack,
                 splice=splice,
@@ -171,9 +171,9 @@ class HierarchicalCTC(CTC):
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            ctc_loss (FloatTensor or float): A tensor of size `[1]`
-            ctc_loss_main (FloatTensor or float): A tensor of size `[1]`
-            ctc_loss_sub (FloatTensor or float): A tensor of size `[1]`
+            loss (FloatTensor or float): A tensor of size `[1]`
+            loss_main (FloatTensor or float): A tensor of size `[1]`
+            loss_sub (FloatTensor or float): A tensor of size `[1]`
         """
         # Wrap by Variable
         xs = np2var(inputs, use_cuda=self.use_cuda, backend='pytorch')
@@ -182,7 +182,6 @@ class HierarchicalCTC(CTC):
             labels_sub, dtype='int', use_cuda=False, backend='pytorch')
         x_lens = np2var(
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
-        x_lens_sub = x_lens.clone()
         y_lens = np2var(
             labels_seq_len, dtype='int', use_cuda=False, backend='pytorch')
         y_lens_sub = np2var(
@@ -199,17 +198,20 @@ class HierarchicalCTC(CTC):
 
             # Gaussian noise injection
             if self.weight_noise_injection:
-                self._inject_weight_noise(mean=0., std=self.weight_noise_std)
+                self._inject_weight_noise(mean=0, std=self.weight_noise_std)
 
         # Encode acoustic features
-        logits, logits_sub, perm_idx = self._encode(
+        logits, x_lens, logits_sub, x_lens_sub, perm_idx = self._encode(
             xs, x_lens, volatile=is_eval, is_multi_task=True)
+
+        # Convert to time-major
+        logits = logits.transpose(0, 1).contiguous()
+        logits_sub = logits_sub.transpose(0, 1).contiguous()
 
         # Permutate indices
         if perm_idx is not None:
             ys = ys[perm_idx.cpu()]
             ys_sub = ys_sub[perm_idx.cpu()]
-            x_lens = x_lens[perm_idx]
             y_lens = y_lens[perm_idx.cpu()]
             y_lens_sub = y_lens_sub[perm_idx.cpu()]
 
@@ -220,28 +222,16 @@ class HierarchicalCTC(CTC):
 
         # Output smoothing
         if self.logits_temperature != 1:
-            logits /= self.logits_temperature
-            logits_sub /= self.logits_temperature
-
-        # Modify x_lens for reducing time resolution
-        if self.encoder.conv is not None:
-            for i in range(len(inputs_seq_len)):
-                x_lens_sub.data[i] = self.encoder.get_conv_out_size(
-                    x_lens_sub.data[i], 1)
-            for i in range(len(inputs_seq_len)):
-                x_lens.data[i] = self.encoder.get_conv_out_size(
-                    x_lens.data[i], 1)
-        x_lens_sub /= 2 ** sum(self.subsample_list[:self.num_layers_sub])
-        x_lens /= 2 ** sum(self.subsample_list)
-        # NOTE: floor is not needed because x_lens is IntTensor
+            logits = logits / self.logits_temperature
+            logits_sub = logits_sub / self.logits_temperature
 
         ##################################################
         # Main task
         ##################################################
         # Compute CTC loss in the main task
         ctc_loss_fn = CTCLoss()
-        ctc_loss_main = ctc_loss_fn(logits, concatenated_labels,
-                                    x_lens.cpu(), y_lens)
+        loss_main = ctc_loss_fn(
+            logits, concatenated_labels, x_lens.cpu(), y_lens)
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
@@ -249,15 +239,16 @@ class HierarchicalCTC(CTC):
             log_probs = F.log_softmax(logits, dim=-1)
             uniform = Variable(torch.ones(
                 batch_size, label_num, num_classes)) / num_classes
-            ctc_loss_main += F.kl_div(log_probs.cpu(), uniform, size_average=False,
-                                      reduce=True) * self.label_smoothing_prob
+            loss_main = loss_main * (1 - self.label_smoothing_prob) + F.kl_div(
+                log_probs.cpu(), uniform,
+                size_average=False, reduce=True) * self.label_smoothing_prob
 
         ##################################################
         # Sub task
         ##################################################
         # Compute CTC loss in the sub task
-        ctc_loss_sub = ctc_loss_fn(logits_sub, concatenated_labels_sub,
-                                   x_lens_sub.cpu(), y_lens_sub)
+        loss_sub = ctc_loss_fn(
+            logits_sub, concatenated_labels_sub, x_lens_sub.cpu(), y_lens_sub)
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
@@ -265,23 +256,19 @@ class HierarchicalCTC(CTC):
             log_probs_sub = F.log_softmax(logits_sub, dim=-1)
             uniform = Variable(torch.ones(
                 batch_size, label_num_sub, num_classes_sub)) / num_classes_sub
-            ctc_loss_sub += F.kl_div(log_probs_sub.cpu(), uniform, size_average=False,
-                                     reduce=True) * self.label_smoothing_prob
-
-        # Total loss
-        ctc_loss_main = ctc_loss_main * self.main_loss_weight
-        ctc_loss_sub = ctc_loss_sub * (1 - self.main_loss_weight)
-        ctc_loss = ctc_loss_main + ctc_loss_sub
+            loss_sub = loss_sub * (1 - self.label_smoothing_prob) + F.kl_div(
+                log_probs_sub.cpu(), uniform,
+                size_average=False, reduce=True) * self.label_smoothing_prob
 
         # Average the loss by mini-batch
         batch_size = logits.size(1)
-        ctc_loss_main /= batch_size
-        ctc_loss_sub /= batch_size
-        ctc_loss /= batch_size
+        loss_main = loss_main * self.main_loss_weight / batch_size
+        loss_sub = loss_sub * (1 - self.main_loss_weight) / batch_size
+        loss = loss_main + loss_sub
 
         if is_eval:
-            ctc_loss = ctc_loss.data[0]
-            ctc_loss_main = ctc_loss_main.data[0]
-            ctc_loss_sub = ctc_loss_sub.data[0]
+            loss = loss.data[0]
+            loss_main = loss_main.data[0]
+            loss_sub = loss_sub.data[0]
 
-        return ctc_loss, ctc_loss_main, ctc_loss_sub
+        return loss, loss_main, loss_sub

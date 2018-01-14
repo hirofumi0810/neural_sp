@@ -14,10 +14,9 @@ import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from models.pytorch.linear import LinearND
-# from models.pytorch.encoders.cnn import CNNEncoder
-from models.pytorch.encoders.cnn_v2 import CNNEncoder
+from models.pytorch.encoders.cnn import CNNEncoder
 from models.pytorch.encoders.cnn_utils import ConvOutSize
-from utils.io.variable import var2np
+from utils.io.variable import var2np, np2var
 
 
 class RNNEncoder(nn.Module):
@@ -134,6 +133,7 @@ class RNNEncoder(nn.Module):
                                    conv_strides=conv_strides,
                                    poolings=poolings,
                                    dropout=dropout,
+                                   use_cuda=self.use_cuda,
                                    activation=activation,
                                    batch_norm=batch_norm)
             input_size = self.conv.output_size
@@ -212,15 +212,25 @@ class RNNEncoder(nn.Module):
                     `[B, T // sum(subsample_list), num_units (* num_directions)]`
                 else
                     `[T // sum(subsample_list), B, num_units (* num_directions)]`
+            x_lens ():
             OPTION:
-            xs_sub (FloatTensor):
-                if batch_first is True, a tensor of size
-                    `[B, T // sum(subsample_list), num_units (* num_directions)]`
-                else
-                    `[T // sum(subsample_list), B, num_units (* num_directions)]`
-            perm_indices (LongTensor):
+                xs_sub (FloatTensor):
+                    if batch_first is True, a tensor of size
+                        `[B, T // sum(subsample_list), num_units (* num_directions)]`
+                    else
+                        `[T // sum(subsample_list), B, num_units (* num_directions)]`
+                x_lens_sub ():
+            perm_idx (LongTensor):
         """
-        batch_size, max_time = xs.size()[:2]
+        batch_size = xs.size(0)
+
+        # Path through CNN layers before RNN layers
+        if self.conv is not None:
+            xs, x_lens = self.conv(xs, x_lens)
+
+        # Convert to the time-major
+        if not self.batch_first:
+            xs = xs.transpose(0, 1).contiguous()
 
         # Initialize hidden states (and memory cells) per mini-batch
         h_0 = _init_hidden(batch_size=batch_size,
@@ -232,22 +242,9 @@ class RNNEncoder(nn.Module):
                            volatile=volatile)
 
         # Sort xs by lengths in descending order
-        x_lens, perm_indices = x_lens.sort(dim=0, descending=True)
+        x_lens, perm_idx = x_lens.sort(dim=0, descending=True)
         x_lens = var2np(x_lens).tolist()
-        xs = xs[perm_indices]
-
-        # Path through CNN layers before RNN layers
-        if self.conv is not None:
-            xs = self.conv(xs)
-
-        # Convert to the time-major
-        if not self.batch_first:
-            xs = xs.transpose(0, 1).contiguous()
-
-        # Modify x_lens for reducing time resolution by CNN layers
-        if self.conv is not None:
-            x_lens = [self.get_conv_out_size(x, 1) for x in x_lens]
-            max_time = self.get_conv_out_size(max_time, 1)
+        xs = xs[perm_idx]
 
         res_outputs_list = []
         # NOTE: exclude residual connection from the raw inputs
@@ -266,8 +263,10 @@ class RNNEncoder(nn.Module):
 
                 # Unpack encoder outputs
                 xs_sub, unpacked_seq_len_sub = pad_packed_sequence(
-                    xs_sub, batch_first=self.batch_first, padding_value=0.0)
-                assert x_lens == unpacked_seq_len_sub
+                    xs_sub, batch_first=self.batch_first, padding_value=0)
+                # assert x_lens == unpacked_seq_len_sub
+                x_lens_sub = np2var(
+                    x_lens, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
 
             # NOTE: Exclude the last layer
             if i_layer != self.num_layers - 1:
@@ -275,8 +274,8 @@ class RNNEncoder(nn.Module):
 
                     # Unpack i_layer-th encoder outputs
                     xs, unpacked_seq_len = pad_packed_sequence(
-                        xs, batch_first=self.batch_first, padding_value=0.0)
-                    assert x_lens == unpacked_seq_len
+                        xs, batch_first=self.batch_first, padding_value=0)
+                    # assert x_lens == unpacked_seq_len
 
                     # Projection layer (affine transformation)
                     if self.num_proj > 0:
@@ -326,8 +325,10 @@ class RNNEncoder(nn.Module):
         # Unpack encoder outputs
         if isinstance(xs, torch.nn.utils.rnn.PackedSequence):
             xs, unpacked_seq_len = pad_packed_sequence(
-                xs, batch_first=self.batch_first, padding_value=0.0)
-            assert x_lens == unpacked_seq_len
+                xs, batch_first=self.batch_first, padding_value=0)
+            # assert x_lens == unpacked_seq_len
+        x_lens = np2var(
+            x_lens, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
 
         # Sum bidirectional outputs
         if self.bidirectional and self.merge_bidirectional:
@@ -341,9 +342,9 @@ class RNNEncoder(nn.Module):
             if self.bidirectional and self.merge_bidirectional:
                 xs_sub = xs_sub[:, :, :self.num_units] + \
                     xs_sub[:, :, self.num_units:]
-            return xs, xs_sub, perm_indices
+            return xs, x_lens, xs_sub, x_lens_sub, perm_idx
         else:
-            return xs, perm_indices
+            return xs, x_lens, perm_idx
 
 
 def _init_hidden(batch_size, rnn_type, num_units, num_directions,

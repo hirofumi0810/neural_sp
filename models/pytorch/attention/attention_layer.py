@@ -84,12 +84,12 @@ class AttentionMechanism(nn.Module):
                 "attention_type should be one of [%s], you provided %s." %
                 (", ".join(ATTENTION_TYPE), attention_type))
 
-    def forward(self, enc_outputs, dec_outputs, att_weights_step):
+    def forward(self, enc_out, dec_out, att_weights_step):
         """Forward computation.
         Args:
-            enc_outputs (FloatTensor): A tensor of size
+            enc_out (FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            dec_outputs (FloatTensor): A tensor of size
+            dec_out (FloatTensor): A tensor of size
                 `[B, 1, decoder_num_units]`
             att_weights_step (FloatTensor): A tensor of size `[B, T_in]`
         Returns:
@@ -97,14 +97,13 @@ class AttentionMechanism(nn.Module):
                 `[B, 1, encoder_num_units]`
             att_weights_step (FloatTensor): A tensor of size `[B, T_in]`
         """
-        batch_size, max_time = enc_outputs.size()[:2]
+        batch_size, max_time = enc_out.size()[:2]
 
         if self.attention_type == 'content':
             ###################################################################
             # energy = <v, tanh(W([h_de; h_en] + b))>
             ###################################################################
-            concat = torch.cat(
-                (enc_outputs, dec_outputs.expand_as(enc_outputs)), dim=2)
+            concat = torch.cat((enc_out, dec_out.expand_as(enc_out)), dim=2)
             energy = self.V(F.tanh(self.W(concat))).squeeze(2)
 
         elif self.attention_type == 'location':
@@ -124,8 +123,7 @@ class AttentionMechanism(nn.Module):
             conv_feat = conv_feat.transpose(1, 2).contiguous()
             # -> `[B, T_in, out_channels]`
 
-            concat = torch.cat(
-                (enc_outputs, dec_outputs.expand_as(enc_outputs)), dim=2)
+            concat = torch.cat((enc_out, dec_out.expand_as(enc_out)), dim=2)
             energy = self.V(
                 F.tanh(self.W(concat) + self.W_conv(conv_feat))).squeeze(2)
 
@@ -133,8 +131,8 @@ class AttentionMechanism(nn.Module):
             ###################################################################
             # energy = <W_keys(h_en), W_query(h_de)>
             ###################################################################
-            keys = self.W_keys(enc_outputs)
-            query = self.W_query(dec_outputs).transpose(1, 2)
+            keys = self.W_keys(enc_out)
+            query = self.W_query(dec_out).transpose(1, 2)
             energy = torch.bmm(keys, query).squeeze(2)
 
         elif self.attention_type == 'rnn_attention':
@@ -158,6 +156,6 @@ class AttentionMechanism(nn.Module):
 
         # Compute context vector (weighted sum of encoder outputs)
         context_vec = torch.sum(
-            enc_outputs * att_weights_step.unsqueeze(2), dim=1, keepdim=True)
+            enc_out * att_weights_step.unsqueeze(2), dim=1, keepdim=True)
 
         return context_vec, att_weights_step

@@ -29,6 +29,9 @@ class TestAttention(unittest.TestCase):
     def test(self):
         print("Attention Working check.")
 
+        # CNN encoder
+        self.check(encoder_type='cnn', decoder_type='lstm', batch_norm=True)
+
         # Initialize decoder state
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', init_dec_state='mean')
@@ -63,7 +66,7 @@ class TestAttention(unittest.TestCase):
 
         # Joint CTC-Attention
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', ctc_loss_weight=0.1)
+                   decoder_type='lstm', ctc_loss_weight=0.2)
 
         # word-level attention
         self.check(encoder_type='lstm', bidirectional=True,
@@ -89,7 +92,7 @@ class TestAttention(unittest.TestCase):
                    decoder_type='lstm', attention_type='dot_product')
 
     @measure_time
-    def check(self, encoder_type, bidirectional, decoder_type,
+    def check(self, encoder_type, decoder_type, bidirectional=False,
               attention_type='location', label_type='char',
               subsample=False, projection=False, init_dec_state='zero',
               ctc_loss_weight=0, conv=False, batch_norm=False,
@@ -112,7 +115,7 @@ class TestAttention(unittest.TestCase):
         print('  label_smoothing: %s' % str(label_smoothing))
         print('==================================================')
 
-        if conv:
+        if conv or encoder_type == 'cnn':
             # pattern 1
             # conv_channels = [32, 32]
             # conv_kernel_sizes = [[41, 11], [21, 11]]
@@ -132,7 +135,7 @@ class TestAttention(unittest.TestCase):
 
         # Load batch data
         splice = 1
-        num_stack = 1 if subsample or conv else 2
+        num_stack = 1 if subsample or conv or encoder_type == 'cnn' else 2
         inputs, labels, inputs_seq_len, labels_seq_len = generate_data(
             model_type='attention',
             label_type=label_type,
@@ -173,7 +176,7 @@ class TestAttention(unittest.TestCase):
             sharpening_factor=1,
             logits_temperature=1,
             sigmoid_smoothing=False,
-            coverage_weight=0.5,
+            coverage_weight=0,
             attention_conv_num_channels=10,
             attention_conv_width=201,
             num_stack=num_stack,

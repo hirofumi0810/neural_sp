@@ -129,7 +129,7 @@ class CTC(ModelBase):
                 subsample_list=subsample_list,
                 subsample_type=subsample_type,
                 use_cuda=self.use_cuda,
-                batch_first=False,
+                batch_first=True,
                 merge_bidirectional=False,
                 num_stack=num_stack,
                 splice=splice,
@@ -151,6 +151,7 @@ class CTC(ModelBase):
                 conv_strides=conv_strides,
                 poolings=poolings,
                 dropout=dropout,
+                use_cuda=self.use_cuda,
                 activation=activation,
                 batch_norm=batch_norm)
         else:
@@ -201,7 +202,7 @@ class CTC(ModelBase):
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            ctc_loss (FloatTensor or float): A tensor of size `[1]`
+            loss (FloatTensor or float): A tensor of size `[1]`
         """
         # Wrap by Variable
         xs = np2var(inputs, use_cuda=self.use_cuda, backend='pytorch')
@@ -221,15 +222,17 @@ class CTC(ModelBase):
 
             # Gaussian noise injection
             if self.weight_noise_injection:
-                self._inject_weight_noise(mean=0., std=self.weight_noise_std)
+                self._inject_weight_noise(mean=0, std=self.weight_noise_std)
 
         # Encode acoustic features
-        logits, perm_idx = self._encode(xs, x_lens, volatile=is_eval)
+        logits, x_lens, perm_idx = self._encode(xs, x_lens, volatile=is_eval)
+
+        # Convert to time-major
+        logits = logits.transpose(0, 1).contiguous()
 
         # Permutate indices
         if perm_idx is not None:
             ys = ys[perm_idx.cpu()]
-            x_lens = x_lens[perm_idx]
             y_lens = y_lens[perm_idx.cpu()]
 
         # Concatenate all labels for warpctc_pytorch
@@ -238,21 +241,11 @@ class CTC(ModelBase):
 
         # Output smoothing
         if self.logits_temperature != 1:
-            logits /= self.logits_temperature
-
-        # Modify x_lens for reducing time resolution
-        if self.encoder.conv is not None or self.encoder_type == 'cnn':
-            for i in range(len(x_lens)):
-                x_lens.data[i] = self.encoder.get_conv_out_size(
-                    x_lens.data[i], 1)
-        x_lens /= 2 ** sum(self.subsample_list)
-        # NOTE: floor is not needed because x_lens is IntTensor
+            logits = logits / self.logits_temperature
 
         # Compute CTC loss
         ctc_loss_fn = CTCLoss()
-        ctc_loss = ctc_loss_fn(
-            logits, concatenated_labels,
-            x_lens.cpu(), y_lens) * (1 - self.label_smoothing_prob)
+        loss = ctc_loss_fn(logits, concatenated_labels, x_lens.cpu(), y_lens)
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
@@ -260,17 +253,18 @@ class CTC(ModelBase):
             log_probs = F.log_softmax(logits, dim=-1)
             uniform = Variable(torch.ones(
                 batch_size, label_num, num_classes)) / num_classes
-            ctc_loss += F.kl_div(log_probs.cpu(), uniform, size_average=False,
-                                 reduce=True) * self.label_smoothing_prob
+            loss = loss * (1 - self.label_smoothing_prob) + F.kl_div(
+                log_probs.cpu(), uniform,
+                size_average=False, reduce=True) * self.label_smoothing_prob
 
         # Average the loss by mini-batch
         batch_size = logits.size(1)
-        ctc_loss /= batch_size
+        loss = loss / batch_size
 
         if is_eval:
-            ctc_loss = ctc_loss.data[0]
+            loss = loss.data[0]
 
-        return ctc_loss
+        return loss
 
     def _encode(self, xs, x_lens, volatile, is_multi_task=False):
         """Encode acoustic features.
@@ -282,24 +276,22 @@ class CTC(ModelBase):
             is_multi_task (bool, optional):
         Returns:
             logits (FloatTensor): A tensor of size
-                `[T, B, num_classes (including blank)]`
+                `[B, T, num_classes (including the blank class)]`
+            x_lens (IntTensor): A tensor of size `[B]`
             logits_sub (FloatTensor): A tensor of size
-                `[T, B, num_classes_sub (including blank)]`
+                `[B, T, num_classes_sub (including the blank class)]`
+            x_lens_sub (IntTensor): A tensor of size `[B]`
             perm_idx (LongTensor):
         """
         if is_multi_task:
-            enc_out, enc_out_sub, perm_idx = self.encoder(
+            enc_out, x_lens, enc_out_sub, x_lens_sub, perm_idx = self.encoder(
                 xs, x_lens, volatile)
         else:
             if self.encoder_type == 'cnn':
-                enc_out = self.encoder(xs)
-                # NOTE: `[B, T, feature_dim]`
-
-                # Convert to time-major
-                enc_out = enc_out.transpose(0, 1).contiguous()
+                enc_out, x_lens = self.encoder(xs, x_lens)
                 perm_idx = None
             else:
-                enc_out, perm_idx = self.encoder(xs, x_lens, volatile)
+                enc_out, x_lens, perm_idx = self.encoder(xs, x_lens, volatile)
 
         if len(self.fc_list) > 0:
             enc_out = self.fc_layers(enc_out)
@@ -307,9 +299,9 @@ class CTC(ModelBase):
 
         if is_multi_task:
             logits_sub = self.fc_sub(enc_out_sub)
-            return logits, logits_sub, perm_idx
+            return logits, x_lens, logits_sub, x_lens_sub, perm_idx
         else:
-            return logits, perm_idx
+            return logits, x_lens, perm_idx
 
     def posteriors(self, inputs, inputs_seq_len, temperature=1,
                    blank_prior=None, is_sub_task=False):
@@ -336,16 +328,13 @@ class CTC(ModelBase):
         # Encode acoustic features
         if hasattr(self, 'main_loss_weight'):
             if is_sub_task:
-                _, logits, perm_idx = self._encode(
+                _, _, logits, _, perm_idx = self._encode(
                     xs, x_lens, volatile=True, is_multi_task=True)
             else:
-                logits, _, perm_idx = self._encode(
+                logits, _, _, _, perm_idx = self._encode(
                     xs, x_lens, volatile=True, is_multi_task=True)
         else:
-            logits, perm_idx = self._encode(xs, x_lens, volatile=True)
-
-        # Convert to batch-major
-        logits = logits.transpose(0, 1)
+            logits, _, perm_idx = self._encode(xs, x_lens, volatile=True)
 
         probs = F.softmax(logits / temperature, dim=-1)
 
@@ -383,31 +372,13 @@ class CTC(ModelBase):
         # Encode acoustic features
         if hasattr(self, 'main_loss_weight'):
             if is_sub_task:
-                _, logits, perm_idx = self._encode(
+                _, _, logits, x_lens,  perm_idx = self._encode(
                     xs, x_lens, volatile=True, is_multi_task=True)
             else:
-                logits, _, perm_idx = self._encode(
+                logits, x_lens, _, _, perm_idx = self._encode(
                     xs, x_lens, volatile=True, is_multi_task=True)
         else:
-            logits, perm_idx = self._encode(xs, x_lens, volatile=True)
-
-        # Permutate indices
-        if perm_idx is not None:
-            x_lens = x_lens[perm_idx]
-
-        # Convert to batch-major
-        logits = logits.transpose(0, 1)
-
-        # Modify x_lens for reducing time resolution
-        if self.encoder.conv is not None or self.encoder_type == 'cnn':
-            for i in range(len(x_lens)):
-                x_lens.data[i] = self.encoder.get_conv_out_size(
-                    x_lens.data[i], 1)
-        if is_sub_task:
-            x_lens /= 2 ** sum(self.subsample_list[:self.num_layers_sub])
-        else:
-            x_lens /= 2 ** sum(self.subsample_list)
-        # NOTE: floor is not needed because x_lens is IntTensor
+            logits, x_lens, perm_idx = self._encode(xs, x_lens, volatile=True)
 
         log_probs = F.log_softmax(logits, dim=-1)
 

@@ -46,7 +46,6 @@ class TestCTC(unittest.TestCase):
                    dense_residual=True)
 
         # CNN-CTC
-        # self.check(encoder_type='cnn')
         self.check(encoder_type='cnn', batch_norm=True, activation='relu')
         self.check(encoder_type='cnn', batch_norm=True, activation='prelu')
         self.check(encoder_type='cnn', batch_norm=True, activation='hard_tanh')
@@ -200,7 +199,7 @@ class TestCTC(unittest.TestCase):
             if (step + 1) % 10 == 0:
                 # Decode
                 labels_pred = model.decode(
-                    inputs, inputs_seq_len, beam_width=100)
+                    inputs, inputs_seq_len, beam_width=2)
 
                 # Compute accuracy
                 if label_type == 'char':

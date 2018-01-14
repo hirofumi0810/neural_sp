@@ -12,7 +12,6 @@ try:
 except:
     raise ImportError('Install warpctc_pytorch.')
 
-import torch.nn as nn
 import torch.nn.functional as F
 
 from models.pytorch.linear import LinearND
@@ -143,17 +142,16 @@ class StudentCTC(CTC):
 
             # Gaussian noise injection
             if self.weight_noise_injection:
-                self._inject_weight_noise(mean=0., std=self.weight_noise_std)
+                self._inject_weight_noise(mean=0, std=self.weight_noise_std)
 
         # Encode acoustic features
-        logits, logits_xe, perm_idx = self._encode(
+        logits, logits_xe, x_lens, perm_idx = self._encode(
             xs, x_lens, volatile=is_eval)
 
         # Permutate indices
         if perm_idx is not None:
             ys = ys[perm_idx.cpu()]
             ys_xe = ys_xe[perm_idx.cpu()]
-            x_lens = x_lens[perm_idx]
             y_lens = y_lens[perm_idx.cpu()]
 
         # Concatenate all labels for warpctc_pytorch
@@ -162,35 +160,31 @@ class StudentCTC(CTC):
 
         # Output smoothing
         if self.logits_temperature != 1:
-            logits /= self.logits_temperature
-            logits_xe /= self.logits_temperature
+            logits = logits / self.logits_temperature
+            logits_xe = logits_xe / self.logits_temperature
 
-        # Modify inputs_seq_len for reducing time resolution
-        if self.encoder.conv is not None or self.encoder_type == 'cnn':
-            for i in range(len(inputs_seq_len)):
-                x_lens.data[i] = self.encoder.conv_out_size(x_lens.data[i], 1)
-        x_lens /= 2 ** sum(self.subsample_list)
-        # NOTE: floor is not needed because x_lens is IntTensor
-
-        # Compute CTC loss and XE loss
+        # Compute CTC loss (hard targets)
         ctc_loss_fn = CTCLoss()
         loss_main = ctc_loss_fn(
             logits, concatenated_labels, x_lens.cpu(), y_lens)
+
+        # Compute XE loss (soft targets)
         loss_xe = F.cross_entropy(logits_xe, labels_xe, size_average=False)
-        loss = loss_main * self.main_loss_weight + \
-            loss_xe * (1 - self.main_loss_weight)
 
         # TODO: label smoothing (with uniform distribution)
 
         # Average the loss by mini-batch
         batch_size = logits.size(1)
-        loss /= batch_size
+        loss_main = loss_main * self.main_loss_weight / batch_size
+        loss_xe = loss_xe * (1 - self.main_loss_weight) / batch_size
+        loss = loss_main + loss_xe
 
         if is_eval:
-            pass
+            loss = loss.data[0]
+            loss_main = loss_main.data[0]
+            loss_xe = loss_xe.data[0]
 
-        return (loss, loss_main * self.main_loss_weight / batch_size,
-                loss_xe * (1 - self.main_loss_weight) / batch_size)
+        return loss, loss_main, loss_xe
 
     def _encode(self, xs, x_lens, volatile):
         """Encode acoustic features.
@@ -201,25 +195,26 @@ class StudentCTC(CTC):
                 This should be used in inference model for memory efficiency.
         Returns:
             logits (FloatTensor): A tensor of size
-                `[T, B, num_classes (including blank)]`
+                `[B, T, num_classes (including the blank class)]`
             logits_xe (FloatTensor): A tensor of size
-                `[T, B, num_classes_sub (including blank)]`
+                `[B, T, num_classes_sub (including the blank class)]`
+            x_lens (IntTensor): A tensor of size `[B]`
             perm_idx (LongTensor):
         """
         if self.encoder_type == 'cnn':
             encoder_outputs = self.encoder(xs)
             # NOTE: `[B, T, feature_dim]`
-            encoder_outputs = encoder_outputs.transpose(0, 1).contiguous()
             perm_idx = None
         else:
-            encoder_outputs, perm_idx = self.encoder(xs, x_lens, volatile)
+            encoder_outputs, x_lens, perm_idx = self.encoder(
+                xs, x_lens, volatile)
 
         if len(self.fc_list) > 0:
             encoder_outputs = self.fc_layers(encoder_outputs)
         logits = self.fc(encoder_outputs)
         logits_xe = self.fc_xe(encoder_outputs)
 
-        return logits, logits_xe, perm_idx
+        return logits, logits_xe, x_lens, perm_idx
 
     def decode_xe(self, inputs, inputs_seq_len, beam_width=1,
                   max_decode_len=None, ):
@@ -238,21 +233,8 @@ class StudentCTC(CTC):
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True)
 
         # Encode acoustic features
-        _, logits_xe, perm_idx = self._encode(xs, x_lens, volatile=True)
-
-        # Permutate indices
-        if perm_idx is not None:
-            x_lens = x_lens[perm_idx]
-
-        # Convert to batch-major
-        logits_xe = logits_xe.transpose(0, 1)
-
-        # Modify inputs_seq_len for reducing time resolution
-        if self.encoder.conv is not None or self.encoder_type == 'cnn':
-            for i in range(len(inputs_seq_len)):
-                x_lens.data[i] = self.encoder.conv_out_size(x_lens.data[i], 1)
-        x_lens /= 2 ** sum(self.subsample_list)
-        # NOTE: floor is not needed because x_lens is IntTensor
+        _, logits_xe, x_lens, perm_idx = self._encode(
+            xs, x_lens, volatile=True)
 
         log_probs_xe = F.log_softmax(logits_xe, dim=logits_xe.dim() - 1)
 

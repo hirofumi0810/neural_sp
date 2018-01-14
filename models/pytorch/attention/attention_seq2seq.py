@@ -184,9 +184,9 @@ class AttentionSeq2seq(ModelBase):
         self.weight_noise_std = float(weight_noise_std)
         if scheduled_sampling_prob > 0 and scheduled_sampling_ramp_max_step == 0:
             raise ValueError
-        self.scheduled_sampling_prob = scheduled_sampling_prob
-        self._scheduled_sampling_prob = scheduled_sampling_prob
-        self.scheduled_sampling_ramp_max_step = scheduled_sampling_ramp_max_step
+        self.sample_prob = scheduled_sampling_prob
+        self._sample_prob = scheduled_sampling_prob
+        self.sample_ramp_max_step = scheduled_sampling_ramp_max_step
         self._step = 0
         self.label_smoothing_prob = label_smoothing_prob
 
@@ -230,11 +230,10 @@ class AttentionSeq2seq(ModelBase):
                 conv_strides=conv_strides,
                 poolings=poolings,
                 dropout=encoder_dropout,
-                activation=activation,
                 use_cuda=self.use_cuda,
+                activation=activation,
                 batch_norm=batch_norm)
-            raise NotImplementedError
-            # TODO: consider how to initialize decoder states
+            self.init_dec_state = 'zero'
         else:
             raise NotImplementedError
 
@@ -269,10 +268,14 @@ class AttentionSeq2seq(ModelBase):
         ##################################################
         # Bridge layer between the encoder and decoder
         ##################################################
-        if encoder_bidirectional or encoder_num_units != decoder_num_units:
+        if encoder_bidirectional or encoder_num_units != decoder_num_units or encoder_type == 'cnn':
             if encoder_bidirectional:
                 self.bridge = LinearND(
                     encoder_num_units * 2, decoder_num_units,
+                    dropout=decoder_dropout)
+            elif encoder_type == 'cnn':
+                self.bridge = LinearND(
+                    self.encoder.output_size, decoder_num_units,
                     dropout=decoder_dropout)
             else:
                 self.bridge = LinearND(encoder_num_units, decoder_num_units,
@@ -337,19 +340,18 @@ class AttentionSeq2seq(ModelBase):
 
             # Gaussian noise injection
             if self.weight_noise_injection:
-                self._inject_weight_noise(mean=0., std=self.weight_noise_std)
+                self._inject_weight_noise(mean=0, std=self.weight_noise_std)
 
         # Encode acoustic features
-        enc_out, perm_idx = self._encode(xs, x_lens, volatile=is_eval)
+        xs, x_lens, perm_idx = self._encode(xs, x_lens, volatile=is_eval)
 
         # Permutate indices
         if perm_idx is not None:
             ys = ys[perm_idx]
-            x_lens = x_lens[perm_idx]
             y_lens = y_lens[perm_idx]
 
         # Teacher-forcing
-        logits, att_weights = self._decode_train(enc_out, ys)
+        logits, att_weights = self._decode_train(xs, ys)
 
         # Output smoothing
         if self.logits_temperature != 1:
@@ -359,9 +361,8 @@ class AttentionSeq2seq(ModelBase):
         batch_size, label_num, num_classes = logits.size()
         logits = logits.view((-1, num_classes))
         ys_1d = ys[:, 1:].contiguous().view(-1)
-        xe_loss = F.cross_entropy(
-            logits, ys_1d,
-            ignore_index=self.sos_index, size_average=False) * (1 - self.label_smoothing_prob)
+        loss = F.cross_entropy(
+            logits, ys_1d, ignore_index=self.sos_index, size_average=False)
         # NOTE: ys are padded by sos_index
 
         # Label smoothing (with uniform distribution)
@@ -371,25 +372,22 @@ class AttentionSeq2seq(ModelBase):
                 batch_size, label_num, num_classes)) / num_classes
             if self.use_cuda:
                 uniform = uniform.cuda()
-            xe_loss += F.kl_div(
+            loss = loss * (1 - self.label_smoothing_prob) + F.kl_div(
                 log_probs, uniform,
                 size_average=False, reduce=True) * self.label_smoothing_prob
+            # TODO: uniformもlog-scaleに変換？？
 
         # Add coverage term
         if self.coverage_weight != 0:
-            pass
-
-        loss = xe_loss * (1 - self.ctc_loss_weight)
+            raise NotImplementedError
 
         # Auxiliary CTC loss (optional)
         if self.ctc_loss_weight > 0:
-            ctc_loss = self._compute_ctc_loss(
-                enc_out, ys, x_lens, y_lens)
-            # NOTE: including modifying inputs_seq_len
-            loss += ctc_loss * self.ctc_loss_weight
+            ctc_loss = self._compute_ctc_loss(xs, ys, x_lens, y_lens)
+            loss = loss * (1 - self.ctc_loss_weight) + \
+                ctc_loss * self.ctc_loss_weight
 
         # Average the loss by mini-batch
-        batch_size = enc_out.size(0)
         loss /= batch_size
 
         if is_eval:
@@ -398,16 +396,16 @@ class AttentionSeq2seq(ModelBase):
             self._step += 1
 
             # Update the probability of scheduled sampling
-            if self.scheduled_sampling_prob > 0:
-                self._scheduled_sampling_prob = min(
-                    self.scheduled_sampling_prob,
-                    self.scheduled_sampling_prob / self.scheduled_sampling_ramp_max_step * self._step)
+            if self.sample_prob > 0:
+                self._sample_prob = min(
+                    self.sample_prob,
+                    self.sample_prob / self.sample_ramp_max_step * self._step)
 
         return loss
 
     def _compute_ctc_loss(self, enc_out, ys, x_lens, y_lens,
                           is_sub_task=False):
-        """
+        """Compute CTC loss.
         Args:
             enc_out (FloatTensor): A tensor of size
                 `[B, T_in, decoder_num_units]`
@@ -423,7 +421,7 @@ class AttentionSeq2seq(ModelBase):
         else:
             logits_ctc = self.fc_ctc(enc_out)
 
-        # Convert to batch-major
+        # Convert to time-major
         logits_ctc = logits_ctc.transpose(0, 1)
 
         _x_lens = x_lens.clone()
@@ -435,18 +433,6 @@ class AttentionSeq2seq(ModelBase):
         # Concatenate all _ys for warpctc_pytorch
         # `[B, T_out]` -> `[1,]`
         concatenated_labels = _concatenate_labels(_ys, _y_lens)
-
-        # Modify _x_lens for reducing time resolution
-        if self.encoder.conv is not None or self.encoder_type == 'cnn':
-            for i in range(len(_x_lens)):
-                _x_lens.data[i] = self.encoder.get_conv_out_size(
-                    _x_lens.data[i], 1)
-        if is_sub_task:
-            _x_lens /= 2 ** sum(
-                self.subsample_list[:self.encoder_num_layers_sub])
-        else:
-            _x_lens /= 2 ** sum(self.subsample_list)
-        # NOTE: floor is not needed because _x_lens is IntTensor
 
         ctc_loss = ctc_loss_fn(logits_ctc, concatenated_labels.cpu(),
                                _x_lens.cpu(), _y_lens.cpu())
@@ -472,14 +458,18 @@ class AttentionSeq2seq(ModelBase):
             perm_idx (LongTensor):
         """
         if is_multi_task:
-            enc_out, enc_out_sub, perm_idx = self.encoder(
+            enc_out, x_lens, enc_out_sub, x_lens_sub, perm_idx = self.encoder(
                 xs, x_lens, volatile)
         else:
-            enc_out, perm_idx = self.encoder(xs, x_lens, volatile)
+            if self.encoder_type == 'cnn':
+                enc_out, x_lens = self.encoder(xs, x_lens)
+                perm_idx = None
+            else:
+                enc_out, x_lens, perm_idx = self.encoder(xs, x_lens, volatile)
         # NOTE: enc_out:
         # `[B, T_in, encoder_num_units * encoder_num_directions]`
-        # enc_out_sub: `[B, T_in, encoder_num_units *
-        # encoder_num_directions]`
+        # enc_out_sub:
+        # `[B, T_in, encoder_num_units * encoder_num_directions]`
 
         # Bridge between the encoder and decoder in the main task
         if self.is_bridge:
@@ -489,9 +479,9 @@ class AttentionSeq2seq(ModelBase):
             # Bridge between the encoder and decoder in the sub task
             if self.sub_loss_weight > 0 and self.is_bridge_sub:
                 enc_out_sub = self.bridge_sub(enc_out_sub)
-            return enc_out, enc_out_sub, perm_idx
+            return enc_out, x_lens, enc_out_sub, x_lens_sub, perm_idx
         else:
-            return enc_out, perm_idx
+            return enc_out, x_lens, perm_idx
 
     def _compute_coverage(self, att_weights):
         batch_size, max_time_outputs, max_time_inputs = att_weights.size()
@@ -529,8 +519,8 @@ class AttentionSeq2seq(ModelBase):
         att_weights = []
         for t in range(labels_max_seq_len - 1):
 
-            is_sample = self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random(
-            ) < self._scheduled_sampling_prob
+            is_sample = self.sample_prob > 0 and t > 0 and self._step > 0 and random.random(
+            ) < self._sample_prob
 
             if is_sub_task:
                 if is_sample:
@@ -697,18 +687,17 @@ class AttentionSeq2seq(ModelBase):
         # Encode acoustic features
         if hasattr(self, 'main_loss_weight'):
             if is_sub_task:
-                _, enc_out, perm_idx = self._encode(
+                _, _, enc_out, _, perm_idx = self._encode(
                     xs, x_lens, volatile=True, is_multi_task=True)
             else:
-                enc_out, _, perm_idx = self._encode(
+                enc_out, _, _, _, perm_idx = self._encode(
                     xs, x_lens, volatile=True, is_multi_task=True)
         else:
-            enc_out, perm_idx = self._encode(xs, x_lens, volatile=True)
+            enc_out, _, perm_idx = self._encode(xs, x_lens, volatile=True)
 
         # Permutate indices
         if perm_idx is not None:
             perm_idx = var2np(perm_idx)
-            x_lens = x_lens[perm_idx]
 
         # NOTE: assume beam_width == 1
         best_hyps, att_weights = self._decode_infer_greedy(
@@ -721,13 +710,13 @@ class AttentionSeq2seq(ModelBase):
 
         return best_hyps, att_weights
 
-    def decode(self, inputs, inputs_seq_len, beam_width=1, max_decode_len=100):
+    def decode(self, inputs, inputs_seq_len, beam_width, max_decode_len):
         """Decoding in the inference stage.
         Args:
             inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
             inputs_seq_len (np.ndarray): A tensor of size `[B]`
-            beam_width (int, optional): the size of beam
-            max_decode_len (int, optional): the length of output sequences
+            beam_width (int): the size of beam
+            max_decode_len (int): the length of output sequences
                 to stop prediction when EOS token have not been emitted
         Returns:
             best_hyps (np.ndarray): A tensor of size `[]`
@@ -742,23 +731,11 @@ class AttentionSeq2seq(ModelBase):
         self.eval()
 
         # Encode acoustic features
-        enc_out, perm_idx = self._encode(xs, x_lens, volatile=True)
-
-        # Permutate indices
-        if perm_idx is not None:
-            x_lens = x_lens[perm_idx]
+        enc_out, x_lens, perm_idx = self._encode(xs, x_lens, volatile=True)
 
         if beam_width == 1:
             best_hyps, _ = self._decode_infer_greedy(enc_out, max_decode_len)
         else:
-            # Modify x_lens for reducing time resolution
-            if self.encoder.conv is not None or self.encoder_type == 'cnn':
-                for i in range(len(x_lens)):
-                    x_lens.data[i] = self.encoder.get_conv_out_size(
-                        x_lens.data[i], 1)
-            x_lens /= 2 ** sum(self.subsample_list)
-            # NOTE: floor is not needed because x_lens is IntTensor
-
             best_hyps = self._decode_infer_beam(
                 enc_out, x_lens, beam_width, max_decode_len)
 
@@ -862,7 +839,7 @@ class AttentionSeq2seq(ModelBase):
                 to stop prediction when EOS token have not been emitted
             is_sub_task (bool, optional):
         Returns:
-            best_hyps (np.ndarray): A tensor of size `[B, T_out]`
+            best_hyps (np.ndarray): A tensor of size `[B]`
         """
         batch_size = enc_out.size(0)
 
@@ -983,7 +960,7 @@ class AttentionSeq2seq(ModelBase):
             inputs_seq_len (np.ndarray): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
         Returns:
-            best_hyps (np.ndarray): A tensor of size `[]`
+            best_hyps (np.ndarray): A tensor of size `[B]`
         """
         assert self.ctc_loss_weight > 0
         # TODO: add is_sub_task??
@@ -998,11 +975,7 @@ class AttentionSeq2seq(ModelBase):
         self.eval()
 
         # Encode acoustic features
-        enc_out, perm_idx = self._encode(xs, x_lens, volatile=True)
-
-        # Permutate indices
-        if perm_idx is not None:
-            x_lens = x_lens[perm_idx]
+        enc_out, x_lens, perm_idx = self._encode(xs, x_lens, volatile=True)
 
         # Path through the softmax layer
         batch_size, max_time = enc_out.size()[:2]
@@ -1011,14 +984,6 @@ class AttentionSeq2seq(ModelBase):
         logits_ctc = self.fc_ctc(enc_out)
         logits_ctc = logits_ctc.view(batch_size, max_time, -1)
         log_probs = F.log_softmax(logits_ctc, dim=-1)
-
-        # Modify x_lens for reducing time resolution
-        if self.encoder.conv is not None or self.encoder_type == 'cnn':
-            for i in range(len(x_lens)):
-                x_lens.data[i] = self.encoder.get_conv_out_size(
-                    x_lens.data[i], 1)
-        x_lens /= 2 ** sum(self.subsample_list)
-        # NOTE: floor is not needed because x_lens is IntTensor
 
         if beam_width == 1:
             best_hyps = self._decode_ctc_greedy_np(

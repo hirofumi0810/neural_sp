@@ -8,8 +8,7 @@ from __future__ import division
 from __future__ import print_function
 
 from models.pytorch.encoders.rnn import RNNEncoder
-# from models.pytorch.encoders.cnn import CNNEncoder
-from models.pytorch.encoders.cnn_v2 import CNNEncoder
+from models.pytorch.encoders.cnn import CNNEncoder
 
 # from models.pytorch.encoders.resnet import ResNetEncoder
 

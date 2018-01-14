@@ -339,17 +339,16 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
             # Gaussian noise injection
             if self.weight_noise_injection:
-                self._inject_weight_noise(mean=0., std=self.weight_noise_std)
+                self._inject_weight_noise(mean=0, std=self.weight_noise_std)
 
         # Encode acoustic features
-        enc_out, enc_out_sub, perm_idx = self._encode(
+        enc_out, _, enc_out_sub, x_lens_sub, perm_idx = self._encode(
             xs, x_lens, volatile=is_eval, is_multi_task=True)
 
         # Permutate indices
         if perm_idx is not None:
             ys = ys[perm_idx]
             ys_sub = ys_sub[perm_idx]
-            x_lens = x_lens[perm_idx]
             y_lens = y_lens[perm_idx]
             y_lens_sub = y_lens_sub[perm_idx]
 
@@ -359,25 +358,23 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         # Output smoothing
         if self.logits_temperature != 1:
-            logits /= self.logits_temperature
-            logits_sub /= self.logits_temperature
+            logits = logits / self.logits_temperature
+            logits_sub = logits_sub / self.logits_temperature
 
         # Compute XE sequence loss in the main task
         batch_size, label_num, num_classes = logits.size()
         logits = logits.view((-1, num_classes))
         ys_1d = ys[:, 1:].contiguous().view(-1)
-        xe_loss_main = F.cross_entropy(
-            logits, ys_1d,
-            ignore_index=self.sos_index, size_average=False) * (1 - self.label_smoothing_prob)
+        loss_main = F.cross_entropy(
+            logits, ys_1d, ignore_index=self.sos_index, size_average=False)
         # NOTE: ys are padded by sos_index
 
         # Compute XE sequence loss in the sub task
         batch_size, label_num_sub, num_classes_sub = logits_sub.size()
         logits_sub = logits_sub.view((-1, num_classes_sub))
         ys_sub_1d = ys_sub[:, 1:].contiguous().view(-1)
-        xe_loss_sub = F.cross_entropy(
-            logits_sub, ys_sub_1d,
-            ignore_index=self.sos_index_sub, size_average=False) * (1 - self.label_smoothing_prob)
+        loss_sub = F.cross_entropy(
+            logits_sub, ys_sub_1d, ignore_index=self.sos_index_sub, size_average=False)
         # NOTE: ys are padded by sos_index_sub
 
         # Label smoothing (with uniform distribution)
@@ -394,10 +391,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 uniform = uniform.cuda()
                 uniform_sub = uniform_sub.cuda()
 
-            xe_loss_main += F.kl_div(
+            loss_main = loss_main * (1 - self.label_smoothing_prob) + F.kl_div(
                 log_probs, uniform,
                 size_average=False, reduce=True) * self.label_smoothing_prob
-            xe_loss_sub += F.kl_div(
+            loss_sub = loss_sub * (1 - self.label_smoothing_prob) + F.kl_div(
                 log_probs_sub, uniform_sub,
                 size_average=False, reduce=True) * self.label_smoothing_prob
 
@@ -406,16 +403,16 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             pass
             # TODO: sub taskも入れる？
 
-        xe_loss_main = xe_loss_main * self.main_loss_weight / batch_size
-        xe_loss_sub = xe_loss_sub * self.sub_loss_weight / batch_size
-        loss = xe_loss_main + xe_loss_sub
+        loss_main = loss_main * self.main_loss_weight / batch_size
+        loss_sub = loss_sub * self.sub_loss_weight / batch_size
+        loss = loss_main + loss_sub
 
         ##################################################
         # Sub task (CTC)
         ##################################################
         if self.ctc_loss_weight_sub > 0:
             ctc_loss_sub = self._compute_ctc_loss(
-                enc_out_sub, ys_sub, x_lens, y_lens_sub, is_sub_task=True)
+                enc_out_sub, ys_sub, x_lens_sub, y_lens_sub, is_sub_task=True)
             # NOTE: including modifying inputs_seq_len_sub
 
             ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub / batch_size
@@ -423,18 +420,18 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         if is_eval:
             loss = loss.data[0]
-            xe_loss_main = xe_loss_main.data[0]
-            xe_loss_sub = xe_loss_sub.data[0]
+            loss_main = loss_main.data[0]
+            loss_sub = loss_sub.data[0]
         else:
             self._step += 1
 
             # Update the probability of scheduled sampling
-            if self.scheduled_sampling_prob > 0:
-                self._scheduled_sampling_prob = min(
-                    self.scheduled_sampling_prob,
-                    self.scheduled_sampling_prob / self.scheduled_sampling_ramp_max_step * self._step)
+            if self.sample_prob > 0:
+                self._sample_prob = min(
+                    self.sample_prob,
+                    self.sample_prob / self.sample_ramp_max_step * self._step)
 
-        return loss, xe_loss_main, xe_loss_sub
+        return loss, loss_main, loss_sub
 
     def _decode_train_joint(self, enc_out, enc_out_sub,
                             ys, ys_sub, y_lens, y_lens_sub):
@@ -495,8 +492,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             ys_sub_max_seq_len = ys_sub.size(1)
             for t in range(ys_sub_max_seq_len - 1):
 
-                is_sample = self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random(
-                ) < self._scheduled_sampling_prob
+                is_sample = self.sample_prob > 0 and t > 0 and self._step > 0 and random.random(
+                ) < self._sample_prob
 
                 if is_sample:
                     # Scheduled sampling
@@ -525,8 +522,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             ys_max_seq_len = ys.size(1)
             for t in range(ys_max_seq_len - 1):
 
-                is_sample = self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random(
-                ) < self._scheduled_sampling_prob
+                is_sample = self.sample_prob > 0 and t > 0 and self._step > 0 and random.random(
+                ) < self._sample_prob
 
                 if is_sample:
                     # Scheduled sampling
@@ -633,8 +630,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     char_embs = []
                     for i_char in range(char_lens[t]):  # loop of characters
 
-                        is_sample = self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random(
-                        ) < self._scheduled_sampling_prob
+                        is_sample = self.sample_prob > 0 and t > 0 and self._step > 0 and random.random(
+                        ) < self._sample_prob
 
                         if is_sample:
                             # Scheduled sampling
@@ -675,8 +672,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     ###############
                     if 0 < t < word_len - 2:
 
-                        is_sample = self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random(
-                        ) < self._scheduled_sampling_prob
+                        is_sample = self.sample_prob > 0 and t > 0 and self._step > 0 and random.random(
+                        ) < self._sample_prob
 
                         if is_sample:
                             # Scheduled sampling
@@ -717,8 +714,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     ########################################
                     # Decode by word-level decoder
                     ########################################
-                    is_sample = self.scheduled_sampling_prob > 0 and t > 0 and self._step > 0 and random.random(
-                    ) < self._scheduled_sampling_prob
+                    is_sample = self.sample_prob > 0 and t > 0 and self._step > 0 and random.random(
+                    ) < self._sample_prob
 
                     if is_sample:
                         # Scheduled sampling
@@ -846,31 +843,18 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
 
         # Encode acoustic features
-        enc_out, perm_idx = self._encode(xs, x_lens, volatile=True)
-
-        # Permutate indices
-        if perm_idx is not None:
-            perm_idx = var2np(perm_idx)
-            x_lens = x_lens[perm_idx]
+        enc_out, x_lens, perm_idx = self._encode(xs, x_lens, volatile=True)
 
         if beam_width == 1:
             best_hyps, att_weights = self._decode_infer_greedy(
                 enc_out, max_decode_len)
         else:
-            # Modify x_lens for reducing time resolution
-            if self.encoder.conv is not None or self.encoder_type == 'cnn':
-                for i in range(len(x_lens)):
-                    x_lens.data[i] = self.encoder.get_conv_out_size(
-                        x_lens.data[i], 1)
-            if sum(self.subsample_list) > 0:
-                x_lens /= sum(self.subsample_list) ** 2
-                # NOTE: floor is not needed because x_lens is IntTensor
-
             best_hyps, att_weights = self._decode_infer_beam(
                 enc_out, x_lens, beam_width, max_decode_len)
 
         # Permutate indices to the original order
         if perm_idx is not None:
+            perm_idx = var2np(perm_idx)
             best_hyps = best_hyps[perm_idx]
             att_weights = att_weights[perm_idx]
 
@@ -900,32 +884,19 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         # Encode acoustic features
         if is_sub_task:
-            _, enc_out, perm_idx = self._encode(
+            _, _, enc_out, _, perm_idx = self._encode(
                 xs, x_lens, volatile=True, is_multi_task=True)
         else:
-            enc_out, enc_out_sub, perm_idx = self._encode(
+            enc_out, _, enc_out_sub, _, perm_idx = self._encode(
                 xs, x_lens, volatile=True, is_multi_task=True)
-
-        # Permutate indices
-        if perm_idx is not None:
-            x_lens = x_lens[perm_idx]
 
         if beam_width == 1:
             if is_sub_task:
                 best_hyps, _ = self._decode_infer_greedy(
                     enc_out, max_decode_len, is_sub_task=True)
             else:
-                # Modify x_lens for reducing time resolution
-                if self.encoder.conv is not None or self.encoder_type == 'cnn':
-                    for i in range(len(x_lens)):
-                        x_lens.data[i] = self.encoder.get_conv_out_size(
-                            x_lens.data[i], 1)
-                if sum(self.subsample_list) > 0:
-                    x_lens /= sum(self.subsample_list) ** 2
-                    # NOTE: floor is not needed because x_lens is IntTensor
-
                 best_hyps, _, _, _ = self._decode_infer_greedy_joint(
-                    enc_out, enc_out_sub, x_lens, max_decode_len)
+                    enc_out, enc_out_sub, max_decode_len)
         else:
             raise NotImplementedError
 
@@ -938,15 +909,13 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         return best_hyps
 
-    def _decode_infer_greedy_joint(self, enc_out, enc_out_sub,
-                                   x_lens, max_decode_len):
+    def _decode_infer_greedy_joint(self, enc_out, enc_out_sub, max_decode_len):
         """Greedy decoding in the inference stage.
         Args:
             enc_out (FloatTensor): A tensor of size
                 `[B, T_in, decoder_num_units]`
             enc_out_sub (FloatTensor): A tensor of size
                 `[B, T_in, decoder_num_units_sub]`
-            x_lens (IntTensor): A tensor of size `[B]`
             max_decode_len (int): the length of output sequences
                 to stop prediction when EOS token have not been emitted
         Returns:
