@@ -17,12 +17,11 @@ import random
 import numpy as np
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
 from models.pytorch.base import ModelBase
-from models.pytorch.linear import LinearND
+from models.pytorch.linear import LinearND, Embedding
 from models.pytorch.encoders.load_encoder import load
 from models.pytorch.attention.rnn_decoder import RNNDecoder
 from models.pytorch.attention.attention_layer import AttentionMechanism
@@ -273,16 +272,21 @@ class AttentionSeq2seq(ModelBase):
         if encoder_bidirectional or encoder_num_units != decoder_num_units:
             if encoder_bidirectional:
                 self.bridge = LinearND(
-                    encoder_num_units * 2, decoder_num_units)
+                    encoder_num_units * 2, decoder_num_units,
+                    dropout=decoder_dropout)
             else:
-                self.bridge = LinearND(encoder_num_units, decoder_num_units)
+                self.bridge = LinearND(encoder_num_units, decoder_num_units,
+                                       dropout=decoder_dropout)
             self.is_bridge = True
         else:
             self.is_bridge = False
 
-        self.embed = nn.Embedding(self.num_classes, embedding_dim)
+        self.embed = Embedding(num_classes=self.num_classes,
+                               embedding_dim=embedding_dim,
+                               dropout=decoder_dropout)
 
-        self.proj_layer = LinearND(decoder_num_units * 2, decoder_num_units)
+        self.proj_layer = LinearND(decoder_num_units * 2, decoder_num_units,
+                                   dropout=decoder_dropout)
         self.fc = LinearND(decoder_num_units, self.num_classes - 1)
         # NOTE: <SOS> is removed because the decoder never predict <SOS> class
         # TODO: consider projection
@@ -357,8 +361,7 @@ class AttentionSeq2seq(ModelBase):
         ys_1d = ys[:, 1:].contiguous().view(-1)
         xe_loss = F.cross_entropy(
             logits, ys_1d,
-            ignore_index=self.sos_index,
-            size_average=False) * (1 - self.label_smoothing_prob)
+            ignore_index=self.sos_index, size_average=False) * (1 - self.label_smoothing_prob)
         # NOTE: ys are padded by sos_index
 
         # Label smoothing (with uniform distribution)
@@ -368,8 +371,9 @@ class AttentionSeq2seq(ModelBase):
                 batch_size, label_num, num_classes)) / num_classes
             if self.use_cuda:
                 uniform = uniform.cuda()
-            xe_loss += F.kl_div(log_probs, uniform, size_average=False,
-                                reduce=True) * self.label_smoothing_prob
+            xe_loss += F.kl_div(
+                log_probs, uniform,
+                size_average=False, reduce=True) * self.label_smoothing_prob
 
         # Add coverage term
         if self.coverage_weight != 0:

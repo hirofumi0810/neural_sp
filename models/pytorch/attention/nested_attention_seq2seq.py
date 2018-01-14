@@ -16,11 +16,10 @@ except:
 import random
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-from models.pytorch.linear import LinearND
+from models.pytorch.linear import LinearND, Embedding
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 from models.pytorch.encoders.load_encoder import load
 from models.pytorch.attention.rnn_decoder import RNNDecoder
@@ -229,37 +228,45 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         if encoder_bidirectional or encoder_num_units != decoder_num_units:
             if encoder_bidirectional:
                 self.bridge = LinearND(
-                    encoder_num_units * 2, decoder_num_units)
+                    encoder_num_units * 2, decoder_num_units,
+                    dropout=decoder_dropout)
             else:
-                self.bridge = LinearND(encoder_num_units, decoder_num_units)
-            self.bridge_init = LinearND(encoder_num_units, decoder_num_units)
+                self.bridge = LinearND(encoder_num_units, decoder_num_units,
+                                       dropout=decoder_dropout)
             self.is_bridge = True
         else:
             self.is_bridge = False
         if encoder_bidirectional or encoder_num_units != decoder_num_units_sub:
             if encoder_bidirectional:
                 self.bridge_sub = LinearND(
-                    encoder_num_units * 2, decoder_num_units_sub)
+                    encoder_num_units * 2, decoder_num_units_sub,
+                    dropout=decoder_dropout)
             else:
                 self.bridge_sub = LinearND(
-                    encoder_num_units, decoder_num_units_sub)
-            self.bridge_init_sub = LinearND(
-                encoder_num_units, decoder_num_units_sub)
+                    encoder_num_units, decoder_num_units_sub,
+                    dropout=decoder_dropout)
             self.is_bridge_sub = True
         else:
             self.is_bridge_sub = False
 
-        self.embed = nn.Embedding(self.num_classes, embedding_dim)
-        self.embed_sub = nn.Embedding(self.num_classes_sub, embedding_dim_sub)
+        self.embed = Embedding(num_classes=self.num_classes,
+                               embedding_dim=embedding_dim,
+                               dropout=decoder_dropout)
+        self.embed_sub = Embedding(num_classes=self.num_classes_sub,
+                                   embedding_dim=embedding_dim_sub,
+                                   dropout=decoder_dropout)
 
         if composition_case in ['hidden', 'hidden_embedding']:
             self.proj_layer = LinearND(
-                decoder_num_units * 2 + decoder_num_units_sub, decoder_num_units)
+                decoder_num_units * 2 + decoder_num_units_sub, decoder_num_units,
+                dropout=decoder_dropout)
         else:
             self.proj_layer = LinearND(
-                decoder_num_units * 2, decoder_num_units)
+                decoder_num_units * 2, decoder_num_units,
+                dropout=decoder_dropout)
         self.proj_layer_sub = LinearND(
-            decoder_num_units_sub * 2, decoder_num_units_sub)
+            decoder_num_units_sub * 2, decoder_num_units_sub,
+            dropout=decoder_dropout)
         self.fc = LinearND(decoder_num_units, self.num_classes - 1)
         self.fc_sub = LinearND(
             decoder_num_units_sub, self.num_classes_sub - 1)
@@ -361,8 +368,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         ys_1d = ys[:, 1:].contiguous().view(-1)
         xe_loss_main = F.cross_entropy(
             logits, ys_1d,
-            ignore_index=self.sos_index,
-            size_average=False) * (1 - self.label_smoothing_prob)
+            ignore_index=self.sos_index, size_average=False) * (1 - self.label_smoothing_prob)
         # NOTE: ys are padded by sos_index
 
         # Compute XE sequence loss in the sub task
@@ -371,8 +377,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         ys_sub_1d = ys_sub[:, 1:].contiguous().view(-1)
         xe_loss_sub = F.cross_entropy(
             logits_sub, ys_sub_1d,
-            ignore_index=self.sos_index_sub,
-            size_average=False) * (1 - self.label_smoothing_prob)
+            ignore_index=self.sos_index_sub, size_average=False) * (1 - self.label_smoothing_prob)
         # NOTE: ys are padded by sos_index_sub
 
         # Label smoothing (with uniform distribution)
@@ -389,10 +394,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 uniform = uniform.cuda()
                 uniform_sub = uniform_sub.cuda()
 
-            xe_loss_main += F.kl_div(log_probs, uniform, size_average=False,
-                                     reduce=True) * self.label_smoothing_prob
-            xe_loss_sub += F.kl_div(log_probs_sub, uniform_sub,
-                                    size_average=False, reduce=True) * self.label_smoothing_prob
+            xe_loss_main += F.kl_div(
+                log_probs, uniform,
+                size_average=False, reduce=True) * self.label_smoothing_prob
+            xe_loss_sub += F.kl_div(
+                log_probs_sub, uniform_sub,
+                size_average=False, reduce=True) * self.label_smoothing_prob
 
         # Add coverage term
         if self.coverage_weight != 0:
@@ -494,12 +501,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 if is_sample:
                     # Scheduled sampling
                     y_prev_sub = torch.max(logits_sub[-1], dim=2)[1]
-                    y_sub = self.embed_sub(y_prev_sub)
+                    y_prev_sub = self.embed_sub(y_prev_sub)
                 else:
                     # Teacher-forcing
-                    y_sub = self.embed_sub(ys_sub[:, t:t + 1])
+                    y_prev_sub = self.embed_sub(ys_sub[:, t:t + 1])
 
-                dec_in_sub = torch.cat([y_sub, context_vec_sub], dim=-1)
+                dec_in_sub = torch.cat([y_prev_sub, context_vec_sub], dim=-1)
                 dec_out_sub, dec_state_sub, context_vec_sub, att_weights_step_sub = self._decode_step(
                     enc_out=enc_out_sub,
                     dec_in=dec_in_sub,
@@ -524,12 +531,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 if is_sample:
                     # Scheduled sampling
                     y_prev = torch.max(logits[-1], dim=2)[1]
-                    y = self.embed(y_prev)
+                    y_prev = self.embed(y_prev)
                 else:
                     # Teacher-forcing
-                    y = self.embed(ys[:, t:t + 1])
+                    y_prev = self.embed(ys[:, t:t + 1])
 
-                dec_in = torch.cat([y, context_vec], dim=-1)
+                dec_in = torch.cat([y_prev, context_vec], dim=-1)
                 dec_out, dec_state, context_vec, att_weights_step = self._decode_step(
                     enc_out=enc_out,
                     dec_in=dec_in,
@@ -632,14 +639,14 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         if is_sample:
                             # Scheduled sampling
                             y_prev_sub = torch.max(logits_sub_i[-1], dim=2)[1]
-                            y_sub = self.embed_sub(y_prev_sub)
+                            y_prev_sub = self.embed_sub(y_prev_sub)
                         else:
                             # Teacher-forcing
-                            y_sub = self.embed_sub(
+                            y_prev_sub = self.embed_sub(
                                 ys_sub[i_batch:i_batch + 1, global_char_counter:global_char_counter + 1])
 
                         dec_in_sub = torch.cat(
-                            [y_sub, context_vec_sub], dim=-1)
+                            [y_prev_sub, context_vec_sub], dim=-1)
                         dec_out_sub, dec_state_sub, context_vec_sub, att_weights_step_sub = self._decode_step(
                             enc_out=enc_out_sub[i_batch: i_batch +
                                                 1, :max_time],
@@ -674,14 +681,14 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         if is_sample:
                             # Scheduled sampling
                             y_prev_sub = torch.max(logits_sub_i[-1], dim=2)[1]
-                            y_sub = self.embed_sub(y_prev_sub)
+                            y_prev_sub = self.embed_sub(y_prev_sub)
                         else:
                             # Teacher-forcing
-                            y_sub = self.embed_sub(
+                            y_prev_sub = self.embed_sub(
                                 ys_sub[i_batch:i_batch + 1, global_char_counter:global_char_counter + 1])
 
                         dec_in_sub = torch.cat(
-                            [y_sub, context_vec_sub], dim=-1)
+                            [y_prev_sub, context_vec_sub], dim=-1)
                         dec_out_sub, dec_state_sub, context_vec_sub, att_weights_step_sub = self._decode_step(
                             enc_out=enc_out_sub[i_batch: i_batch +
                                                 1, :max_time],
@@ -716,20 +723,20 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     if is_sample:
                         # Scheduled sampling
                         y_prev = torch.max(logits_i[-1], dim=2)[1]
-                        y = self.embed(y_prev)
+                        y_prev = self.embed(y_prev)
                     else:
                         # Teacher-forcing
-                        y = self.embed(ys[i_batch:i_batch + 1, t:t + 1])
+                        y_prev = self.embed(ys[i_batch:i_batch + 1, t:t + 1])
 
                     if self.composition_case in ['embedding', 'hidden_embedding']:
                         # Mix word embedding and word representation form C2W
-                        gate = F.sigmoid(self.gate_fn(y))
-                        y_composition = (1 - gate) * y + gate * word_repr
+                        gate = F.sigmoid(self.gate_fn(y_prev))
+                        y_composition = (1 - gate) * y_prev + gate * word_repr
                         # TODO: 足し算じゃなくて，concatでもいいかも
                         dec_in = torch.cat(
                             [y_composition, context_vec], dim=-1)
                     elif self.composition_case == 'multiscale':
-                        dec_in = torch.cat([y, context_vec], dim=-1)
+                        dec_in = torch.cat([y_prev, context_vec], dim=-1)
                         dec_in = torch.cat([dec_in, dec_out_sub], dim=-1)
 
                     dec_out, dec_state, context_vec, att_weights_step = self._decode_step(

@@ -166,12 +166,13 @@ class CTC(ModelBase):
                         bottle_input_size = num_units * self.num_directions
                     # if batch_norm:
                     #     fc_layers.append(nn.BatchNorm1d(bottle_input_size))
-                    fc_layers.append(LinearND(bottle_input_size, fc_list[i]))
+                    fc_layers.append(LinearND(bottle_input_size, fc_list[i],
+                                              dropout=dropout))
                 else:
                     # if batch_norm:
                     #     fc_layers.append(nn.BatchNorm1d(fc_list[i - 1]))
-                    fc_layers.append(LinearND(fc_list[i - 1], fc_list[i]))
-                fc_layers.append(nn.Dropout(p=dropout))
+                    fc_layers.append(LinearND(fc_list[i - 1], fc_list[i],
+                                              dropout=dropout))
             self.fc_layers = nn.Sequential(*fc_layers)
             # TODO: remove a bias term in the case of batch normalization
 

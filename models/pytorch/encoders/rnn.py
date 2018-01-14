@@ -128,15 +128,14 @@ class RNNEncoder(nn.Module):
         if len(conv_channels) > 0 and len(conv_channels) == len(conv_kernel_sizes) and len(conv_kernel_sizes) == len(conv_strides):
             assert num_stack == 1
             assert splice == 1
-            self.conv = CNNEncoder(
-                input_size,
-                conv_channels=conv_channels,
-                conv_kernel_sizes=conv_kernel_sizes,
-                conv_strides=conv_strides,
-                poolings=poolings,
-                dropout=dropout,
-                activation=activation,
-                batch_norm=batch_norm)
+            self.conv = CNNEncoder(input_size,
+                                   conv_channels=conv_channels,
+                                   conv_kernel_sizes=conv_kernel_sizes,
+                                   conv_strides=conv_strides,
+                                   poolings=poolings,
+                                   dropout=dropout,
+                                   activation=activation,
+                                   batch_norm=batch_norm)
             input_size = self.conv.output_size
             self.get_conv_out_size = ConvOutSize(self.conv.conv)
         else:
@@ -193,7 +192,8 @@ class RNNEncoder(nn.Module):
             self.rnns.append(rnn_i)
 
             if i_layer != self.num_layers - 1 and self.num_proj > 0:
-                proj_i = LinearND(num_units * self.num_directions, num_proj)
+                proj_i = LinearND(num_units * self.num_directions, num_proj,
+                                  dropout=dropout)
                 setattr(self, 'proj_l' + str(i_layer), proj_i)
                 if use_cuda:
                     proj_i = proj_i.cuda()

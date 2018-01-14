@@ -8,11 +8,10 @@ from __future__ import division
 from __future__ import print_function
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-from models.pytorch.linear import LinearND
+from models.pytorch.linear import LinearND, Embedding
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 from models.pytorch.encoders.load_encoder import load
 from models.pytorch.attention.rnn_decoder import RNNDecoder
@@ -206,17 +205,21 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             if encoder_bidirectional or encoder_num_units != decoder_num_units_sub:
                 if encoder_bidirectional:
                     self.bridge_sub = LinearND(
-                        encoder_num_units * 2, decoder_num_units_sub)
+                        encoder_num_units * 2, decoder_num_units_sub,
+                        dropout=decoder_dropout)
                 else:
                     self.bridge_sub = LinearND(
-                        encoder_num_units, decoder_num_units_sub)
+                        encoder_num_units, decoder_num_units_sub,
+                        dropout=decoder_dropout)
                 self.is_bridge_sub = True
 
-            self.embed_sub = nn.Embedding(
-                self.num_classes_sub, embedding_dim_sub)
+            self.embed_sub = Embedding(num_classes=self.num_classes_sub,
+                                       embedding_dim=embedding_dim_sub,
+                                       dropout=decoder_dropout)
 
             self.proj_layer_sub = LinearND(
-                decoder_num_units_sub * 2, decoder_num_units_sub)
+                decoder_num_units_sub * 2, decoder_num_units_sub,
+                dropout=decoder_dropout)
             self.fc_sub = LinearND(
                 decoder_num_units_sub, self.num_classes_sub - 1)
             # NOTE: <SOS> is removed because the decoder never predict <SOS>
@@ -304,8 +307,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         ys_1d = ys[:, 1:].contiguous().view(-1)
         xe_loss_main = F.cross_entropy(
             logits, ys_1d,
-            ignore_index=self.sos_index,
-            size_average=False) * (1 - self.label_smoothing_prob)
+            ignore_index=self.sos_index, size_average=False) * (1 - self.label_smoothing_prob)
         # NOTE: ys are padded by sos_index
 
         # Label smoothing (with uniform distribution)
@@ -316,7 +318,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             if self.use_cuda:
                 uniform = uniform.cuda()
             xe_loss_main += F.kl_div(
-                log_probs, uniform, size_average=False, reduce=True) * self.label_smoothing_prob
+                log_probs, uniform,
+                size_average=False, reduce=True) * self.label_smoothing_prob
 
         # Add coverage term
         if self.coverage_weight != 0:
@@ -344,8 +347,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             ys_sub_1d = ys_sub[:, 1:].contiguous().view(-1)
             xe_loss_sub = F.cross_entropy(
                 logits_sub, ys_sub_1d,
-                ignore_index=self.sos_index_sub,
-                size_average=False) * (1 - self.label_smoothing_prob)
+                ignore_index=self.sos_index_sub, size_average=False) * (1 - self.label_smoothing_prob)
             # NOTE: ys are padded by sos_index_sub
 
             # Label smoothing (with uniform distribution)
@@ -356,7 +358,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 if self.use_cuda:
                     uniform_sub = uniform_sub.cuda()
                 xe_loss_sub += F.kl_div(
-                    log_probs_sub, uniform_sub, size_average=False, reduce=True) * self.label_smoothing_prob
+                    log_probs_sub, uniform_sub,
+                    size_average=False, reduce=True) * self.label_smoothing_prob
 
             xe_loss_sub = xe_loss_sub * self._sub_loss_weight / batch_size
             loss += xe_loss_sub
@@ -468,8 +471,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                             var2np(log_probs), var2np(x_lens))
                     else:
                         best_hyps = self._decode_ctc_beam_np(
-                            var2np(log_probs), var2np(x_lens),
-                            beam_width=beam_width)
+                            var2np(log_probs), var2np(x_lens), beam_width=beam_width)
 
                     best_hyps = best_hyps - 1
                     # NOTE: index 0 is reserved for blank in warpctc_pytorch
@@ -481,8 +483,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 raise NotImplementedError
             else:
                 best_hyps, att_weights = self._decode_infer_beam(
-                    enc_out, x_lens,
-                    beam_width, max_decode_len)
+                    enc_out, x_lens, beam_width, max_decode_len)
 
         # Permutate indices to the original order
         if perm_idx is not None:

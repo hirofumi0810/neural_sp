@@ -54,13 +54,12 @@ class CNNEncoder(nn.Module):
         for i in range(len(conv_channels)):
 
             # Conv
-            conv = nn.Conv2d(
-                in_channels=in_c,
-                out_channels=conv_channels[i],
-                kernel_size=tuple(conv_kernel_sizes[i]),
-                stride=tuple(conv_strides[i]),
-                padding=tuple(conv_strides[i]),
-                bias=not batch_norm)
+            conv = nn.Conv2d(in_channels=in_c,
+                             out_channels=conv_channels[i],
+                             kernel_size=tuple(conv_kernel_sizes[i]),
+                             stride=tuple(conv_strides[i]),
+                             padding=tuple(conv_strides[i]),
+                             bias=not batch_norm)
             convs.append(conv)
             in_freq = math.floor(
                 (in_freq + 2 * conv.padding[0] - conv.kernel_size[0]) / conv.stride[0] + 1)
