@@ -501,8 +501,10 @@ class AttentionSeq2seq(ModelBase):
         # Initialize decoder state
         dec_state = self._init_decoder_state(enc_out)
 
-        # Initialize attention weights
-        att_weights_step = Variable(torch.zeros(batch_size, max_time))
+        # Initialize attention weights with uniform distribution
+        # att_weights_step = Variable(torch.zeros(batch_size, max_time))
+        att_weights_step = Variable(
+            torch.ones(batch_size, max_time)) / max_time
 
         # Initialize context vector
         context_vec = Variable(torch.zeros(batch_size, 1, enc_out.size(2)))
@@ -760,7 +762,9 @@ class AttentionSeq2seq(ModelBase):
         dec_state = self._init_decoder_state(enc_out, volatile=True)
 
         # Initialize attention weights
-        att_weights_step = Variable(torch.zeros(batch_size, max_time))
+        # att_weights_step = Variable(torch.zeros(batch_size, max_time))
+        att_weights_step = Variable(
+            torch.ones(batch_size, max_time)) / max_time
         att_weights_step.volatile = True
 
         # Initialize context vector
@@ -854,7 +858,8 @@ class AttentionSeq2seq(ModelBase):
                 enc_out[i_batch:i_batch + 1, :, :], volatile=True)
 
             # Initialize attention weights
-            att_weights_step = Variable(torch.zeros(1, max_time))
+            # att_weights_step = Variable(torch.zeros(1, max_time))
+            att_weights_step = Variable(torch.ones(1, max_time)) / max_time
             att_weights_step.volatile = True
 
             # Initialize context vector

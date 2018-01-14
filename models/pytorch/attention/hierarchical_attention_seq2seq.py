@@ -306,7 +306,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         ys_1d = ys[:, 1:].contiguous().view(-1)
         loss_main = F.cross_entropy(
             logits, ys_1d, ignore_index=self.sos_index, size_average=False)
-        # NOTE: ys are padded by sos_index
+        # NOTE: ys are padded by <SOS>
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
@@ -346,7 +346,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             loss_sub = F.cross_entropy(
                 logits_sub, ys_sub_1d,
                 ignore_index=self.sos_index_sub, size_average=False)
-            # NOTE: ys are padded by sos_index_sub
+            # NOTE: ys_sub are padded by <SOS>
 
             # Label smoothing (with uniform distribution)
             if self.label_smoothing_prob > 0:

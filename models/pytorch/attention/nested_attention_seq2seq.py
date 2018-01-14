@@ -367,7 +367,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         ys_1d = ys[:, 1:].contiguous().view(-1)
         loss_main = F.cross_entropy(
             logits, ys_1d, ignore_index=self.sos_index, size_average=False)
-        # NOTE: ys are padded by sos_index
+        # NOTE: ys are padded by <SOS>
 
         # Compute XE sequence loss in the sub task
         batch_size, label_num_sub, num_classes_sub = logits_sub.size()
@@ -375,7 +375,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         ys_sub_1d = ys_sub[:, 1:].contiguous().view(-1)
         loss_sub = F.cross_entropy(
             logits_sub, ys_sub_1d, ignore_index=self.sos_index_sub, size_average=False)
-        # NOTE: ys are padded by sos_index_sub
+        # NOTE: ys_sub are padded by <SOS>
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
@@ -471,10 +471,14 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             dec_state = self._init_decoder_state(enc_out)
             dec_state_sub = self._init_decoder_state(enc_out_sub)
 
-            # Initialize attention weights
-            att_weights_step = Variable(torch.zeros(batch_size, max_time))
+            # Initialize attention weights with uniform distribution
+            # att_weights_step = Variable(torch.zeros(batch_size, max_time))
+            # att_weights_step_sub = Variable(
+            #     torch.zeros(batch_size, max_time_sub))
+            att_weights_step = Variable(
+                torch.ones(batch_size, max_time)) / max_time
             att_weights_step_sub = Variable(
-                torch.zeros(batch_size, max_time_sub))
+                torch.oens(batch_size, max_time_sub)) / max_time_sub
 
             # Initialize context vector
             context_vec = Variable(torch.zeros(
@@ -584,9 +588,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 dec_state_sub = self._init_decoder_state(
                     enc_out_sub[i_batch:i_batch + 1, :max_time_sub])
 
-                # Initialize attention weights
-                att_weights_step = Variable(torch.zeros(1, max_time))
-                att_weights_step_sub = Variable(torch.zeros(1, max_time))
+                # Initialize attention weights with uniform distribution
+                # att_weights_step = Variable(torch.zeros(1, max_time))
+                # att_weights_step_sub = Variable(torch.zeros(1, max_time_sub))
+                att_weights_step = Variable(torch.ones(1, max_time)) / max_time
+                att_weights_step_sub = Variable(
+                    torch.ones(1, max_time_sub)) / max_time_sub
 
                 # Initialize context vector
                 if self.composition_case in ['embedding', 'multiscale']:
@@ -938,8 +945,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             # Initialize decoder state
             dec_state = self._init_decoder_state(enc_out, volatile=True)
 
-            # Initialize attention weights
-            att_weights_step = Variable(torch.zeros(batch_size, max_time))
+            # Initialize attention weights with uniform distribution
+            # att_weights_step = Variable(torch.zeros(batch_size, max_time))
+            att_weights_step = Variable(torch.ones(batch_size, max_time))
             att_weights_step.volatile = True
 
             # Initialize context vector
@@ -1026,9 +1034,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 dec_state_sub = self._init_decoder_state(
                     enc_out_sub[i_batch:i_batch + 1, :max_time_sub], volatile=True)
 
-                # Initialize attention weights
-                att_weights_step = Variable(torch.zeros(1, max_time))
-                att_weights_step_sub = Variable(torch.zeros(1, max_time))
+                # Initialize attention weights with uniform distribution
+                # att_weights_step = Variable(torch.zeros(1, max_time))
+                # att_weights_step_sub = Variable(torch.zeros(1, max_time_sub))
+                att_weights_step = Variable(torch.ones(1, max_time)) / max_time
+                att_weights_step_sub = Variable(
+                    torch.ones(1, max_time_sub)) / max_time_sub
                 att_weights_step.volatile = True
                 att_weights_step_sub.volatile = True
 
