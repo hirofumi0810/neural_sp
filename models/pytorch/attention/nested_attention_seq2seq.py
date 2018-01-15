@@ -132,6 +132,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         self.sos_index_sub = num_classes_sub + 1
         self.eos_index_sub = num_classes_sub
 
+        if embedding_dim == 0:
+            raise NotImplementedError
+
         # Setting for MTL
         self.main_loss_weight = main_loss_weight
         self.sub_loss_weight = 1 - main_loss_weight - ctc_loss_weight_sub
@@ -184,7 +187,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             decoder_input_size = embedding_dim + decoder_num_units + decoder_num_units_sub
 
         self.decoder = RNNDecoder(
-            embedding_dim=decoder_input_size,
+            input_size=decoder_input_size,
             rnn_type=decoder_type,
             num_units=decoder_num_units,
             num_layers=decoder_num_layers,
@@ -192,7 +195,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             use_cuda=self.use_cuda,
             batch_first=True)
         self.decoder_sub = RNNDecoder(
-            embedding_dim=embedding_dim_sub + decoder_num_units_sub,
+            input_size=decoder_num_units_sub + embedding_dim_sub,
             rnn_type=decoder_type,
             num_units=decoder_num_units_sub,
             num_layers=decoder_num_layers,
@@ -299,11 +302,19 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
             self.gate_fn = LinearND(embedding_dim, embedding_dim)
 
-        # Initialize all parameters with uniform distribution
-        self.init_weights(parameter_init)
+        # Initialize all weights with uniform distribution
+        self.init_weights(
+            parameter_init, distribution='uniform', ignore_keys=['bias'])
+
+        # Initialize all biases with 0
+        self.init_weights(0, distribution='uniform', keys=['bias'])
+
+        # Recurrent weights are orthogonalized
+        # self.init_weights(parameter_init, distribution='orthogonal',
+        #                   keys=['lstm', 'weight'], ignore_keys=['bias'])
 
         # Initialize bias in forget gate with 1
-        self.init_forget_gate_bias()
+        self.init_forget_gate_bias_with_one()
 
     def forward(self, inputs, labels, labels_sub, inputs_seq_len,
                 labels_seq_len, labels_seq_len_sub, is_eval=False):
@@ -382,8 +393,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
-            log_probs = F.log_softmax(logits, dim=-1)
-            log_probs_sub = F.log_softmax(logits_sub, dim=-1)
+            probs = F.softmax(logits, dim=-1)
+            probs_sub = F.softmax(logits_sub, dim=-1)
 
             uniform = Variable(torch.ones(
                 batch_size, label_num, num_classes)) / num_classes
@@ -395,10 +406,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 uniform_sub = uniform_sub.cuda()
 
             loss_main = loss_main * (1 - self.label_smoothing_prob) + F.kl_div(
-                log_probs, uniform,
+                probs, uniform,
                 size_average=False, reduce=True) * self.label_smoothing_prob
             loss_sub = loss_sub * (1 - self.label_smoothing_prob) + F.kl_div(
-                log_probs_sub, uniform_sub,
+                probs_sub, uniform_sub,
                 size_average=False, reduce=True) * self.label_smoothing_prob
 
         # Add coverage term

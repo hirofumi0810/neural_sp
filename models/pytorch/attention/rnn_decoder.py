@@ -13,7 +13,7 @@ import torch.nn as nn
 class RNNDecoder(nn.Module):
     """RNN decoder.
     Args:
-        embedding_dim (int): the dimension of input features
+        input_size (int): the dimension of decoder inputs
         rnn_type (string): lstm or gru or rnn
         num_units (int): the number of units in each layer
         num_layers (int): the number of layers
@@ -25,7 +25,7 @@ class RNNDecoder(nn.Module):
     """
 
     def __init__(self,
-                 embedding_dim,
+                 input_size,
                  rnn_type,
                  num_units,
                  num_layers,
@@ -37,7 +37,7 @@ class RNNDecoder(nn.Module):
 
         super(RNNDecoder, self).__init__()
 
-        self.embedding_dim = embedding_dim
+        self.input_size = input_size
         self.rnn_type = rnn_type
         self.num_units = num_units
         self.num_layers = num_layers
@@ -50,7 +50,7 @@ class RNNDecoder(nn.Module):
         self.rnns = []
         for i_layer in range(num_layers):
             if i_layer == 0:
-                decoder_input_size = embedding_dim
+                decoder_input_size = input_size
             else:
                 decoder_input_size = num_units
 
@@ -89,7 +89,7 @@ class RNNDecoder(nn.Module):
     def forward(self, y, dec_state, volatile=False):
         """Forward computation.
         Args:
-            y (FloatTensor): A tensor of size `[B, 1, embedding_dim]`
+            y (FloatTensor): A tensor of size `[B, 1, input_size]`
             dec_state (FloatTensor): A tensor of size
                 `[num_layers, B, num_units]`
             volatile (bool, optional): if True, the history will not be saved.

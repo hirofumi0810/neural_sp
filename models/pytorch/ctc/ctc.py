@@ -188,11 +188,19 @@ class CTC(ModelBase):
         # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
         # TODO: set space index
 
-        # Initialize all parameters with uniform distribution
-        self.init_weights(parameter_init)
+        # Initialize all weights with uniform distribution
+        self.init_weights(
+            parameter_init, distribution='uniform', ignore_keys=['bias'])
+
+        # Initialize all biases with 0
+        self.init_weights(0, distribution='uniform', keys=['bias'])
+
+        # Recurrent weights are orthogonalized
+        # self.init_weights(parameter_init, distribution='orthogonal',
+        #                   keys=['lstm', 'weight'], ignore_keys=['bias'])
 
         # Initialize bias in forget gate with 1
-        self.init_forget_gate_bias()
+        self.init_forget_gate_bias_with_one()
 
     def forward(self, inputs, labels, inputs_seq_len, labels_seq_len,
                 is_eval=False):
@@ -253,11 +261,11 @@ class CTC(ModelBase):
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
             batch_size, label_num, num_classes = logits.size()
-            log_probs = F.log_softmax(logits, dim=-1)
+            probs = F.softmax(logits, dim=-1)
             uniform = Variable(torch.ones(
                 batch_size, label_num, num_classes)) / num_classes
             loss = loss * (1 - self.label_smoothing_prob) + F.kl_div(
-                log_probs.cpu(), uniform,
+                probs.cpu(), uniform,
                 size_average=False, reduce=True) * self.label_smoothing_prob
 
         # Average the loss by mini-batch

@@ -21,7 +21,7 @@ from utils.measure_time_func import measure_time
 from utils.evaluation.edit_distance import compute_cer, compute_wer
 from utils.training.learning_rate_controller import Controller
 
-torch.manual_seed(2017)
+torch.manual_seed(1)
 
 
 class TestAttention(unittest.TestCase):
@@ -29,10 +29,26 @@ class TestAttention(unittest.TestCase):
     def test(self):
         print("Attention Working check.")
 
+        # Label smoothing
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', label_smoothing=True,
+                   decoder_input='embedding')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', label_smoothing=True,
+                   decoder_input='onehot')
+
+        # Decoder input
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', decoder_input='embedding')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', decoder_input='onehot')
+
         # CNN encoder
         self.check(encoder_type='cnn', decoder_type='lstm', batch_norm=True)
 
         # Initialize decoder state
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', init_dec_state='zero')
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', init_dec_state='mean')
         self.check(encoder_type='lstm', bidirectional=True,
@@ -47,10 +63,6 @@ class TestAttention(unittest.TestCase):
         # Projection layer
         self.check(encoder_type='lstm', bidirectional=False, projection=True,
                    decoder_type='lstm')
-
-        # Label smoothing
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', label_smoothing=True)
 
         # Residual LSTM encoder
         self.check(encoder_type='lstm', bidirectional=True,
@@ -94,9 +106,10 @@ class TestAttention(unittest.TestCase):
     @measure_time
     def check(self, encoder_type, decoder_type, bidirectional=False,
               attention_type='location', label_type='char',
-              subsample=False, projection=False, init_dec_state='zero',
+              subsample=False, projection=False, init_dec_state='final',
               ctc_loss_weight=0, conv=False, batch_norm=False,
-              residual=False, dense_residual=False, label_smoothing=False):
+              residual=False, dense_residual=False, label_smoothing=False,
+              decoder_input='embedding'):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
@@ -113,6 +126,7 @@ class TestAttention(unittest.TestCase):
         print('  residual: %s' % str(residual))
         print('  dense_residual: %s' % str(dense_residual))
         print('  label_smoothing: %s' % str(label_smoothing))
+        print('  decoder_input: %s' % str(decoder_input))
         print('==================================================')
 
         if conv or encoder_type == 'cnn':
@@ -166,9 +180,8 @@ class TestAttention(unittest.TestCase):
             decoder_num_units=256,
             decoder_num_layers=2,
             decoder_dropout=0.1,
-            embedding_dim=32,
+            embedding_dim=32 if decoder_input == 'embedding' else 0,
             num_classes=num_classes,
-            ctc_loss_weight=ctc_loss_weight,
             parameter_init=0.1,
             subsample_list=[] if subsample is False else [True, False],
             subsample_type='concat' if subsample is False else subsample,
@@ -177,6 +190,7 @@ class TestAttention(unittest.TestCase):
             logits_temperature=1,
             sigmoid_smoothing=False,
             coverage_weight=0,
+            ctc_loss_weight=ctc_loss_weight,
             attention_conv_num_channels=10,
             attention_conv_width=201,
             num_stack=num_stack,

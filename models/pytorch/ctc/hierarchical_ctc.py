@@ -155,11 +155,19 @@ class HierarchicalCTC(CTC):
         self.fc_sub = LinearND(
             num_units * self.num_directions, self.num_classes_sub)
 
-        # Initialize all parameters with uniform distribution
-        self.init_weights(parameter_init)
+        # Initialize all weights with uniform distribution
+        self.init_weights(
+            parameter_init, distribution='uniform', ignore_keys=['bias'])
+
+        # Initialize all biases with 0
+        self.init_weights(0, distribution='uniform', keys=['bias'])
+
+        # Recurrent weights are orthogonalized
+        # self.init_weights(parameter_init, distribution='orthogonal',
+        #                   keys=['lstm', 'weight'], ignore_keys=['bias'])
 
         # Initialize bias in forget gate with 1
-        self.init_forget_gate_bias()
+        self.init_forget_gate_bias_with_one()
 
     def forward(self, inputs, labels, labels_sub, inputs_seq_len,
                 labels_seq_len, labels_seq_len_sub, is_eval=False):
@@ -239,11 +247,11 @@ class HierarchicalCTC(CTC):
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
             batch_size, label_num, num_classes = logits.size()
-            log_probs = F.log_softmax(logits, dim=-1)
+            probs = F.softmax(logits, dim=-1)
             uniform = Variable(torch.ones(
                 batch_size, label_num, num_classes)) / num_classes
             loss_main = loss_main * (1 - self.label_smoothing_prob) + F.kl_div(
-                log_probs.cpu(), uniform,
+                probs.cpu(), uniform,
                 size_average=False, reduce=True) * self.label_smoothing_prob
 
         ##################################################
@@ -256,11 +264,11 @@ class HierarchicalCTC(CTC):
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
             label_num_sub, num_classes_sub = logits_sub.size()[1:]
-            log_probs_sub = F.log_softmax(logits_sub, dim=-1)
+            probs_sub = F.log_softmax(logits_sub, dim=-1)
             uniform = Variable(torch.ones(
                 batch_size, label_num_sub, num_classes_sub)) / num_classes_sub
             loss_sub = loss_sub * (1 - self.label_smoothing_prob) + F.kl_div(
-                log_probs_sub.cpu(), uniform,
+                probs_sub.cpu(), uniform,
                 size_average=False, reduce=True) * self.label_smoothing_prob
 
         # Average the loss by mini-batch

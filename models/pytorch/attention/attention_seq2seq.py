@@ -49,7 +49,8 @@ class AttentionSeq2seq(ModelBase):
         decoder_num_units (int): the number of units in each layer of the decoder
         decoder_num_layers (int): the number of layers of the decoder
         decoder_dropout (float): the probability to drop nodes of the decoder
-        embedding_dim (int): the dimension of the embedding in target spaces
+        embedding_dim (int): the dimension of the embedding in target spaces.
+            0 means that decoder inputs are represented by one-hot vectors.
         num_classes (int): the number of nodes in softmax layer
             (excluding <SOS> and <EOS> classes)
         parameter_init (float, optional): Range of uniform distribution to
@@ -115,8 +116,8 @@ class AttentionSeq2seq(ModelBase):
                  num_classes,
                  parameter_init=0.1,
                  subsample_list=[],
-                 subsample_type='concat',
-                 init_dec_state='zero',
+                 subsample_type='drop',
+                 init_dec_state='final',
                  sharpening_factor=1,
                  logits_temperature=1,
                  sigmoid_smoothing=False,
@@ -165,6 +166,12 @@ class AttentionSeq2seq(ModelBase):
         self.num_classes = num_classes + 2  # Add <SOS> and <EOS> class
         self.sos_index = num_classes + 1
         self.eos_index = num_classes
+
+        if embedding_dim == 0:
+            self.decoder_input = 'onehot'
+        else:
+            self.decoder_input = 'embedding'
+        # self.decoder_input = 'onehot_prob'
 
         # Setting for the attention
         if init_dec_state not in ['zero', 'mean', 'final']:
@@ -240,8 +247,16 @@ class AttentionSeq2seq(ModelBase):
         ####################
         # Decoder
         ####################
+        if self.decoder_input == 'embedding':
+            decoder_input_size = decoder_num_units + embedding_dim
+        elif self.decoder_input == 'onehot':
+            decoder_input_size = decoder_num_units + self.num_classes
+        elif self.decoder_input == 'onehot_prob':
+            decoder_input_size = decoder_num_units + self.num_classes * 2
+        else:
+            raise TypeError
         self.decoder = RNNDecoder(
-            embedding_dim=embedding_dim + decoder_num_units,
+            input_size=decoder_input_size,
             rnn_type=decoder_type,
             num_units=decoder_num_units,
             num_layers=decoder_num_layers,
@@ -284,15 +299,18 @@ class AttentionSeq2seq(ModelBase):
         else:
             self.is_bridge = False
 
-        self.embed = Embedding(num_classes=self.num_classes,
-                               embedding_dim=embedding_dim,
-                               dropout=decoder_dropout)
+        if self.decoder_input == 'embedding':
+            self.embed = Embedding(num_classes=self.num_classes,
+                                   embedding_dim=embedding_dim,
+                                   dropout=decoder_dropout)
 
         self.proj_layer = LinearND(decoder_num_units * 2, decoder_num_units,
                                    dropout=decoder_dropout)
-        self.fc = LinearND(decoder_num_units, self.num_classes - 1)
-        # NOTE: <SOS> is removed because the decoder never predict <SOS> class
-        # TODO: consider projection
+        if self.decoder_input == 'onehot_prob':
+            self.fc = LinearND(decoder_num_units, self.num_classes)
+        else:
+            self.fc = LinearND(decoder_num_units, self.num_classes - 1)
+            # NOTE: <SOS> is excluded because the decoder never predict <SOS>
 
         if ctc_loss_weight > 0:
             if self.is_bridge:
@@ -307,11 +325,19 @@ class AttentionSeq2seq(ModelBase):
             # NOTE: index 0 is reserved for blank in warpctc_pytorch
             # TODO: set space index
 
-        # Initialize all parameters with uniform distribution
-        self.init_weights(parameter_init)
+        # Initialize all weights with uniform distribution
+        self.init_weights(
+            parameter_init, distribution='uniform', ignore_keys=['bias'])
+
+        # Initialize all biases with 0
+        self.init_weights(0, distribution='uniform', keys=['bias'])
+
+        # Recurrent weights are orthogonalized
+        # self.init_weights(parameter_init, distribution='orthogonal',
+        #                   keys=['lstm', 'weight'], ignore_keys=['bias'])
 
         # Initialize bias in forget gate with 1
-        self.init_forget_gate_bias()
+        self.init_forget_gate_bias_with_one()
 
     def forward(self, inputs, labels, inputs_seq_len, labels_seq_len,
                 is_eval=False):
@@ -369,16 +395,15 @@ class AttentionSeq2seq(ModelBase):
         # NOTE: ys are padded by <SOS>
 
         # Label smoothing (with uniform distribution)
-        if self.label_smoothing_prob > 0:
-            log_probs = F.log_softmax(logits, dim=-1)
+        if self.label_smoothing_prob > 0 and self.decoder_input == 'embedding':
+            probs = F.softmax(logits, dim=-1)
             uniform = Variable(torch.ones(
                 batch_size, label_num, num_classes)) / num_classes
             if self.use_cuda:
                 uniform = uniform.cuda()
             loss = loss * (1 - self.label_smoothing_prob) + F.kl_div(
-                log_probs, uniform,
+                probs, uniform,
                 size_average=False, reduce=True) * self.label_smoothing_prob
-            # TODO: uniformもlog-scaleに変換？？
 
         # Add coverage term
         if self.coverage_weight != 0:
@@ -504,13 +529,25 @@ class AttentionSeq2seq(ModelBase):
         # Initialize decoder state
         dec_state = self._init_decoder_state(enc_out)
 
-        # Initialize attention weights with uniform distribution
+        # Initialize attention weights
         # att_weights_step = Variable(torch.zeros(batch_size, max_time))
         att_weights_step = Variable(
             torch.ones(batch_size, max_time)) / max_time
+        # NOTE: with uniform distribution
 
         # Initialize context vector
         context_vec = Variable(torch.zeros(batch_size, 1, enc_out.size(2)))
+
+        # Initialize logits
+        if self.decoder_input == 'onehot_prob':
+            if is_sub_task:
+                logits = Variable(torch.ones(
+                    batch_size, 1, self.num_classes_sub))
+            else:
+                logits = Variable(torch.ones(batch_size, 1, self.num_classes))
+            logits = logits / logits.size(2)
+            if self.use_cuda:
+                logits = logits.cuda()
 
         if self.use_cuda:
             att_weights_step = att_weights_step.cuda()
@@ -525,22 +562,34 @@ class AttentionSeq2seq(ModelBase):
 
             if is_sub_task:
                 if is_sample:
-                    # Scheduled sampling
-                    y_prev = torch.max(logits[-1], dim=2)[1]
-                    y_prev = self.embed_sub(y_prev)
+                    y = torch.max(logits[-1], dim=2)[1]  # scheduled sampling
                 else:
-                    # Teacher-forcing
-                    y_prev = self.embed_sub(ys[:, t:t + 1])
+                    y = ys[:, t:t + 1]  # teacher-forcing
+
+                if self.decoder_input == 'embedding':
+                    y = self.embed_sub(y)
+                else:
+                    y = to_onehot(y, n_dims=self.num_classes_sub).unsqueeze(1)
             else:
                 if is_sample:
-                    # Scheduled sampling
-                    y_prev = torch.max(logits[-1], dim=2)[1]
-                    y_prev = self.embed(y_prev)
+                    y = torch.max(logits[-1], dim=2)[1]  # scheduled sampling
                 else:
-                    # Teacher-forcing
-                    y_prev = self.embed(ys[:, t:t + 1])
+                    y = ys[:, t:t + 1]  # teacher-forcing
+                if self.decoder_input == 'embedding':
+                    y = self.embed(y)
+                else:
+                    y = to_onehot(y, n_dims=self.num_classes).unsqueeze(1)
 
-            dec_in = torch.cat([y_prev, context_vec], dim=-1)
+            # Label smoothing
+            if self.label_smoothing_prob > 0 and self.decoder_input != 'embedding':
+                y = y * (1 - self.label_smoothing_prob) + 1 / \
+                    y.size(2) * self.label_smoothing_prob
+
+            if self.decoder_input == 'onehot_prob':
+                prob = F.softmax(logits[-1], dim=-1)
+                y = torch.cat([y, prob], dim=-1)
+
+            dec_in = torch.cat([y, context_vec], dim=-1)
             dec_out, dec_state, context_vec, att_weights_step = self._decode_step(
                 enc_out=enc_out,
                 dec_in=dec_in,
@@ -764,15 +813,28 @@ class AttentionSeq2seq(ModelBase):
         # Initialize decoder state
         dec_state = self._init_decoder_state(enc_out, volatile=True)
 
-        # Initialize attention weights with uniform distribution
+        # Initialize attention weights
         # att_weights_step = Variable(torch.zeros(batch_size, max_time))
         att_weights_step = Variable(
             torch.ones(batch_size, max_time)) / max_time
+        # NOTE: with uniform distribution
         att_weights_step.volatile = True
 
         # Initialize context vector
         context_vec = Variable(torch.zeros(batch_size, 1, enc_out.size(2)))
         context_vec.volatile = True
+
+        # Initialize logits
+        if self.decoder_input == 'onehot_prob':
+            if is_sub_task:
+                logits = Variable(torch.ones(
+                    batch_size, 1, self.num_classes_sub))
+            else:
+                logits = Variable(torch.ones(batch_size, 1, self.num_classes))
+            logits = logits / logits.size(2)
+            logits.volatile = True
+            if self.use_cuda:
+                logits = logits.cuda()
 
         if self.use_cuda:
             att_weights_step = att_weights_step.cuda()
@@ -785,13 +847,21 @@ class AttentionSeq2seq(ModelBase):
 
         best_hyps = []
         att_weights = []
-
         for _ in range(max_decode_len):
 
             if is_sub_task:
-                y = self.embed_sub(y)
+                if self.decoder_input == 'embedding':
+                    y = self.embed_sub(y)
+                else:
+                    y = to_onehot(y, n_dims=self.num_classes_sub).unsqueeze(1)
             else:
-                y = self.embed(y)
+                if self.decoder_input == 'embedding':
+                    y = self.embed(y)
+                else:
+                    y = to_onehot(y, n_dims=self.num_classes).unsqueeze(1)
+            if self.decoder_input == 'onehot_prob':
+                prob = F.softmax(logits, dim=-1)
+                y = torch.cat([y, prob], dim=-1)
 
             dec_in = torch.cat([y, context_vec], dim=-1)
             dec_out, dec_state, context_vec, att_weights_step = self._decode_step(
@@ -854,20 +924,31 @@ class AttentionSeq2seq(ModelBase):
         for i_batch in range(batch_size):
 
             max_time = x_lens[i_batch].data[0]
-            # NOTE: already modified for reducing time resolution
 
             # Initialize decoder state
             dec_state = self._init_decoder_state(
                 enc_out[i_batch:i_batch + 1, :, :], volatile=True)
 
-            # Initialize attention weights with uniform distribution
+            # Initialize attention weights
             # att_weights_step = Variable(torch.zeros(1, max_time))
             att_weights_step = Variable(torch.ones(1, max_time)) / max_time
+            # NOTE: with uniform distribution
             att_weights_step.volatile = True
 
             # Initialize context vector
             context_vec = Variable(torch.zeros(1, 1, enc_out.size(2)))
             context_vec.volatile = True
+
+            # Initialize logits
+            if self.decoder_input == 'onehot_prob':
+                if is_sub_task:
+                    logits = Variable(torch.ones(1, 1, self.num_classes_sub))
+                else:
+                    logits = Variable(torch.ones(1, 1, self.num_classes))
+                logits = logits / logits.size(2)
+                logits.volatile = True
+                if self.use_cuda:
+                    logits = logits.cuda()
 
             if self.use_cuda:
                 att_weights_step = att_weights_step.cuda()
@@ -882,18 +963,27 @@ class AttentionSeq2seq(ModelBase):
             for t in range(max_decode_len):
                 new_beam = []
                 for i_beam in range(len(beam)):
-                    y_prev = beam[i_beam]['hyp'][-1] if t > 0 else sos
-                    y_prev = self._create_token(value=y_prev, batch_size=1)
-                    if is_sub_task:
-                        y_prev = self.embed_sub(y_prev)
-                    else:
-                        y_prev = self.embed(y_prev)
+                    idx_prev = beam[i_beam]['hyp'][-1] if t > 0 else sos
+                    y = self._create_token(value=idx_prev, batch_size=1)
 
-                    max_time = x_lens[i_batch].data[0]
-                    # NOTE: already modified for reducing time resolution
+                    if is_sub_task:
+                        if self.decoder_input == 'embedding':
+                            y = self.embed_sub(y)
+                        else:
+                            y = to_onehot(
+                                y, n_dims=self.num_classes_sub).unsqueeze(1)
+                    else:
+                        if self.decoder_input == 'embedding':
+                            y = self.embed(y)
+                        else:
+                            y = to_onehot(
+                                y, n_dims=self.num_classes).unsqueeze(1)
+                    if self.decoder_input == 'onehot_prob':
+                        prob = F.softmax(logits[-1], dim=-1)
+                        y = torch.cat([y, prob], dim=-1)
 
                     dec_in = torch.cat(
-                        [y_prev, beam[i_beam]['context_vec']], dim=-1)
+                        [y, beam[i_beam]['context_vec']], dim=-1)
                     dec_out, dec_state, context_vec, att_weights_step = self._decode_step(
                         enc_out=enc_out[i_batch:i_batch + 1, :max_time],
                         dec_in=dec_in,
@@ -1005,6 +1095,25 @@ class AttentionSeq2seq(ModelBase):
             best_hyps = best_hyps[perm_idx]
 
         return best_hyps
+
+
+def to_onehot(y, n_dims):
+    """Convert indices into one-hot encoding.
+    Args:
+        y (Variable): A tensor of size `[B, 1]`
+        n_dims (int):
+    Returns:
+        y (Variable): A tensor of size `[B, ]`
+    """
+    batch_size = y.size(0)
+    y_onehot = torch.FloatTensor(batch_size, n_dims).zero_()
+    y_onehot.scatter_(1, y.data.cpu(), 1)
+    y_onehot = Variable(y_onehot)
+    if y.is_cuda:
+        y_onehot = y_onehot.cuda()
+    # if y.volatile:
+    #     y_onehot.volatile = True
+    return y_onehot
 
 
 def _logsumexp(x, dim=None):

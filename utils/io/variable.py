@@ -5,6 +5,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numpy as np
 import torch
 import chainer
 
@@ -25,6 +26,9 @@ def np2var(array, use_cuda=False, volatile=False, dtype=None,
             chainer => list of `[T_i, input_size]`
     """
     if backend == 'pytorch':
+        if isinstance(array, list):
+            array = np.array(array)
+
         array = torch.from_numpy(array)
         if dtype is not None:
             if dtype == 'float':

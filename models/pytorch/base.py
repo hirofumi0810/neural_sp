@@ -41,13 +41,36 @@ class ModelBase(nn.Module):
     def forward(self, inputs):
         raise NotImplementedError
 
-    def init_weights(self, parameter_init):
+    def init_weights(self, parameter_init, distribution,
+                     keys=[None], ignore_keys=[None]):
+        """Initialize parameters.
+        Args:
+            parameter_init (float):
+            distribution (string): uniform or normal or orthogonal or constant
+            keys (list, optional):
+            ignore_keys (list, optional):
+        """
         for name, param in self.named_parameters():
-            nn.init.uniform(param.data,
-                            a=-parameter_init,
-                            b=parameter_init)
+            if keys != [None] and len(list(filter(lambda k: k in name, keys))) == 0:
+                continue
 
-    def init_forget_gate_bias(self):
+            if ignore_keys != [None] and len(list(filter(lambda k: k in name, ignore_keys))) > 0:
+                continue
+
+            if distribution == 'uniform':
+                nn.init.uniform(
+                    param.data, a=-parameter_init, b=parameter_init)
+            elif distribution == 'normal':
+                torch.nn.init.normal(param.data, mean=0, std=parameter_init)
+            elif distribution == 'orthogonal':
+                if param.dim() >= 2:
+                    torch.nn.init.orthogonal(param.data, gain=1)
+            elif distribution == 'constant':
+                torch.nn.init.constant(param.data, val=parameter_init)
+            else:
+                raise NotImplementedError
+
+    def init_forget_gate_bias_with_one(self):
         """Initialize bias in forget gate with 1. See detail in
             https://discuss.pytorch.org/t/set-forget-gate-bias-of-lstm/1745
         """

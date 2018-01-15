@@ -128,6 +128,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         self.sos_index_sub = num_classes_sub + 1
         self.eos_index_sub = num_classes_sub
 
+        if embedding_dim == 0:
+            self.decoder_input = 'onehot'
+        else:
+            self.decoder_input = 'embedding'
+
         # Setting for MTL
         self.main_loss_weight = main_loss_weight
         self.main_loss_weight_tmp = main_loss_weight
@@ -176,8 +181,16 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             ##############################
             # Decoder in the sub task
             ##############################
+            if self.decoder_input == 'embedding':
+                decoder_input_size = decoder_num_units_sub + embedding_dim
+            elif self.decoder_input == 'onehot':
+                decoder_input_size = decoder_num_units_sub + self.num_classes
+            elif self.decoder_input == 'onehot_prob':
+                decoder_input_size = decoder_num_units_sub + self.num_classes * 2
+            else:
+                raise TypeError
             self.decoder_sub = RNNDecoder(
-                embedding_dim=embedding_dim_sub + decoder_num_units_sub,
+                input_size=decoder_input_size,
                 rnn_type=decoder_type,
                 num_units=decoder_num_units_sub,
                 num_layers=decoder_num_layers,
@@ -213,9 +226,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                         dropout=decoder_dropout)
                 self.is_bridge_sub = True
 
-            self.embed_sub = Embedding(num_classes=self.num_classes_sub,
-                                       embedding_dim=embedding_dim_sub,
-                                       dropout=decoder_dropout)
+            if self.decoder_input == 'embedding':
+                self.embed_sub = Embedding(num_classes=self.num_classes_sub,
+                                           embedding_dim=embedding_dim_sub,
+                                           dropout=decoder_dropout)
 
             self.proj_layer_sub = LinearND(
                 decoder_num_units_sub * 2, decoder_num_units_sub,
@@ -237,11 +251,19 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             self._decode_ctc_greedy_np = GreedyDecoder(blank_index=0)
             self._decode_ctc_beam_np = BeamSearchDecoder(blank_index=0)
 
-        # Initialize all parameters with uniform distribution
-        self.init_weights(parameter_init)
+        # Initialize all weights with uniform distribution
+        self.init_weights(
+            parameter_init, distribution='uniform', ignore_keys=['bias'])
+
+        # Initialize all biases with 0
+        self.init_weights(0, distribution='uniform', keys=['bias'])
+
+        # Recurrent weights are orthogonalized
+        # self.init_weights(parameter_init, distribution='orthogonal',
+        #                   keys=['lstm', 'weight'], ignore_keys=['bias'])
 
         # Initialize bias in forget gate with 1
-        self.init_forget_gate_bias()
+        self.init_forget_gate_bias_with_one()
 
     def forward(self, inputs, labels, labels_sub, inputs_seq_len,
                 labels_seq_len, labels_seq_len_sub, is_eval=False):
@@ -313,13 +335,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
-            log_probs = F.log_softmax(logits, dim=-1)
+            probs = F.softmax(logits, dim=-1)
             uniform = Variable(torch.ones(
                 batch_size, label_num, num_classes)) / num_classes
             if self.use_cuda:
                 uniform = uniform.cuda()
             loss_main = loss_main * (1 - self.label_smoothing_prob) + F.kl_div(
-                log_probs, uniform,
+                probs, uniform,
                 size_average=False, reduce=True) * self.label_smoothing_prob
 
         # Add coverage term
@@ -353,13 +375,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
             # Label smoothing (with uniform distribution)
             if self.label_smoothing_prob > 0:
-                log_probs_sub = F.log_softmax(logits_sub, dim=-1)
+                probs_sub = F.softmax(logits_sub, dim=-1)
                 uniform_sub = Variable(torch.ones(
                     batch_size, label_num_sub, num_classes_sub)) / num_classes_sub
                 if self.use_cuda:
                     uniform_sub = uniform_sub.cuda()
                 loss_sub = loss_sub * (1 - self.label_smoothing_prob) + F.kl_div(
-                    log_probs_sub, uniform_sub,
+                    probs_sub, uniform_sub,
                     size_average=False, reduce=True) * self.label_smoothing_prob
 
             loss_sub = loss_sub * self.sub_loss_weight_tmp / batch_size
