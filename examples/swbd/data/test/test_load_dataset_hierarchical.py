@@ -102,8 +102,8 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
                 str_true = idx2word(labels[0][:labels_seq_len[0]])
                 str_true_sub = idx2char(labels_sub[0][:labels_seq_len_sub[0]])
 
-            print('----- %s (epoch: %.3f) -----' %
-                  (input_names[0], dataset.epoch_detail))
+            print('----- %s (epoch: %.3f, batch: %d) -----' %
+                  (input_names[0], dataset.epoch_detail, len(inputs)))
             print('=' * 20)
             print(str_true)
             print('-' * 10)

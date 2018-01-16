@@ -92,24 +92,16 @@ class Dataset(DatasetBase):
                                       vocab_file_path_sub=vocab_file_path_sub)
 
         # Load dataset file
-        dataset_path = join('/n/sd8/inaguma/corpus/librispeech/dataset',
-                            save_format, data_size, data_type, label_type + '.csv')
-        dataset_path_sub = join('/n/sd8/inaguma/corpus/librispeech/dataset',
-                                save_format, data_size, data_type, label_type_sub + '.csv')
+        dataset_path = join(
+            '/n/sd8/inaguma/corpus/librispeech/dataset',
+            save_format, data_size, data_type, label_type + '.csv')
+        dataset_path_sub = join(
+            '/n/sd8/inaguma/corpus/librispeech/dataset',
+            save_format, data_size, data_type, label_type_sub + '.csv')
         df = pd.read_csv(dataset_path)
         df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
         df_sub = pd.read_csv(dataset_path_sub)
         df_sub = df_sub.loc[:, ['frame_num', 'input_path', 'transcript']]
-
-        # Remove long utteraces (> 20s)
-        if data_type == 'train':
-            logger.info('Original utterance num (main): %d' % len(df))
-            logger.info('Original utterance num (sub): %d' % len(df_sub))
-            df = df[df.apply(lambda x: x['frame_num'] <= 2000, axis=1)]
-            df_sub = df_sub[df_sub.apply(
-                lambda x: x['frame_num'] <= 2000, axis=1)]
-            logger.info('Restricted utterance num (main): %d' % len(df))
-            logger.info('Restricted utterance num (sub): %d' % len(df_sub))
 
         # Sort paths to input & label
         if sort_utt:

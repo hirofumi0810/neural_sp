@@ -90,15 +90,19 @@ class Dataset(DatasetBase):
 
         # Load dataset file
         if data_type == 'dev':
-            dataset_path = join('/n/sd8/inaguma/corpus/swbd/dataset',
-                                save_format, data_size, 'train', label_type + '.csv')
-            dataset_path_sub = join('/n/sd8/inaguma/corpus/swbd/dataset',
-                                    save_format, data_size, 'train', label_type_sub + '.csv')
+            dataset_path = join(
+                '/n/sd8/inaguma/corpus/swbd/dataset',
+                save_format, data_size, 'train', label_type + '.csv')
+            dataset_path_sub = join(
+                '/n/sd8/inaguma/corpus/swbd/dataset',
+                save_format, data_size, 'train', label_type_sub + '.csv')
         else:
-            dataset_path = join('/n/sd8/inaguma/corpus/swbd/dataset',
-                                save_format, data_size, data_type, label_type + '.csv')
-            dataset_path_sub = join('/n/sd8/inaguma/corpus/swbd/dataset',
-                                    save_format, data_size, data_type, label_type_sub + '.csv')
+            dataset_path = join(
+                '/n/sd8/inaguma/corpus/swbd/dataset',
+                save_format, data_size, data_type, label_type + '.csv')
+            dataset_path_sub = join(
+                '/n/sd8/inaguma/corpus/swbd/dataset',
+                save_format, data_size, data_type, label_type_sub + '.csv')
         df = pd.read_csv(dataset_path)
         df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
         df_sub = pd.read_csv(dataset_path_sub)
@@ -110,11 +114,8 @@ class Dataset(DatasetBase):
             logger.info('Original utterance num (sub): %d' % len(df_sub))
             df = df[df.apply(lambda x: not(len(x['transcript'].split(' '))
                                            <= 3 and x['frame_num'] >= 1000), axis=1)]
-            df = df[df.apply(lambda x: x['frame_num'] <= 1580, axis=1)]
             df_sub = df_sub[df_sub.apply(lambda x: not(len(x['transcript'].split(' '))
                                                        <= 24 and x['frame_num'] >= 1000), axis=1)]
-            df_sub = df_sub[df_sub.apply(
-                lambda x: x['frame_num'] <= 1580, axis=1)]
             if data_type == 'dev':
                 df = df[:4000]
                 df_sub = df_sub[:4000]
@@ -122,7 +123,7 @@ class Dataset(DatasetBase):
             logger.info('Restricted utterance num (sub): %d' % len(df_sub))
 
         # Sort paths to input & label
-        if sort_utt:
+        if sort_utt and data_type != 'dev':
             df = df.sort_values(by='frame_num', ascending=not reverse)
             df_sub = df_sub.sort_values(by='frame_num', ascending=not reverse)
         else:

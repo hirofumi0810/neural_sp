@@ -86,7 +86,7 @@ class TestLoadDataset(unittest.TestCase):
             max_epoch=1, splice=splice,
             num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
-            sort_utt=sort_utt, reverse=False, sort_stop_epoch=sort_stop_epoch,
+            sort_utt=sort_utt, reverse=True, sort_stop_epoch=sort_stop_epoch,
             num_gpus=num_gpus, save_format='numpy',
             num_enque=None)
 
@@ -110,8 +110,8 @@ class TestLoadDataset(unittest.TestCase):
             else:
                 str_true = map_fn(labels[0][0:labels_seq_len[0]])
 
-            print('----- %s (epoch: %.3f) -----' %
-                  (input_names[0], dataset.epoch_detail))
+            print('----- %s (epoch: %.3f, batch: %d) -----' %
+                  (input_names[0], dataset.epoch_detail, len(inputs)))
             print(str_true)
             print('inputs_seq_len: %d' % inputs_seq_len[0])
             if not dataset.is_test:

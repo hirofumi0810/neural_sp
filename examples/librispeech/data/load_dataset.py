@@ -86,16 +86,11 @@ class Dataset(DatasetBase):
         super(Dataset, self).__init__(vocab_file_path=vocab_file_path)
 
         # Load dataset file
-        dataset_path = join('/n/sd8/inaguma/corpus/librispeech/dataset',
-                            save_format, data_size, data_type, label_type + '.csv')
+        dataset_path = join(
+            '/n/sd8/inaguma/corpus/librispeech/dataset',
+            save_format, data_size, data_type, label_type + '.csv')
         df = pd.read_csv(dataset_path)
         df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
-
-        # Remove long utteraces (> 20s)
-        if data_type == 'train':
-            logger.info('Original utterance num: %d' % len(df))
-            df = df[df.apply(lambda x: x['frame_num'] <= 2000, axis=1)]
-            logger.info('Restricted utterance num: %d' % len(df))
 
         # Sort paths to input & label
         if sort_utt:

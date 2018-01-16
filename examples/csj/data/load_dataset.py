@@ -86,27 +86,35 @@ class Dataset(DatasetBase):
 
         # Load dataset file
         if data_type == 'dev':
-            dataset_path = join('/n/sd8/inaguma/corpus/csj/dataset',
-                                save_format, data_size, 'train', label_type + '.csv')
+            dataset_path = join(
+                '/n/sd8/inaguma/corpus/csj/dataset',
+                save_format, data_size, 'train', label_type + '.csv')
         else:
-            dataset_path = join('/n/sd8/inaguma/corpus/csj/dataset',
-                                save_format, data_size, data_type, label_type + '.csv')
+            dataset_path = join(
+                '/n/sd8/inaguma/corpus/csj/dataset',
+                save_format, data_size, data_type, label_type + '.csv')
         df = pd.read_csv(dataset_path)
         df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
 
         # Remove inappropriate utteraces
         if not self.is_test:
             logger.info('Original utterance num: %d' % len(df))
-            # df = df[df.apply(lambda x: 20 <= x['frame_num'], axis=1)]
-            df = df[df.apply(lambda x: 40 <= x['frame_num'] <= 1800, axis=1)]
+            df = df[df.apply(lambda x: 40 <= x['frame_num'], axis=1)]
             # NOTE: 20s >: 11 utteraces
+            # NOTE: 19s >: 11 utteraces
             # NOTE: 18s >: 13 utteraces
+            # NOTE: 17s >: 18 utteraces
+            # NOTE: 16s >: 19 utteraces
+            # NOTE: 15s >: 27 utteraces
+            # NOTE: 14s >: 36 utteraces
+            # NOTE: 13s >: 51 utteraces
+            # NOTE: 12s >: 86 utteraces
             if data_type == 'dev':
                 df = df[:4000]
             logger.info('Restricted utterance num: %d' % len(df))
 
         # Sort paths to input & label
-        if sort_utt:
+        if sort_utt and data_type != 'dev':
             df = df.sort_values(by='frame_num', ascending=not reverse)
         else:
             df = df.sort_values(by='input_path', ascending=True)

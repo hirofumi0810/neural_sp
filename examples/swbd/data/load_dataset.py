@@ -84,11 +84,13 @@ class Dataset(DatasetBase):
 
         # Load dataset file
         if data_type == 'dev':
-            dataset_path = join('/n/sd8/inaguma/corpus/swbd/dataset',
-                                save_format, data_size, 'train', label_type + '.csv')
+            dataset_path = join(
+                '/n/sd8/inaguma/corpus/swbd/dataset',
+                save_format, data_size, 'train', label_type + '.csv')
         else:
-            dataset_path = join('/n/sd8/inaguma/corpus/swbd/dataset',
-                                save_format, data_size, data_type, label_type + '.csv')
+            dataset_path = join(
+                '/n/sd8/inaguma/corpus/swbd/dataset',
+                save_format, data_size, data_type, label_type + '.csv')
         df = pd.read_csv(dataset_path)
         df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
 
@@ -101,13 +103,12 @@ class Dataset(DatasetBase):
             else:
                 df = df[df.apply(lambda x: not(len(x['transcript'].split(' '))
                                                <= 24 and x['frame_num'] >= 1000), axis=1)]
-            df = df[df.apply(lambda x: x['frame_num'] <= 1580, axis=1)]
             if data_type == 'dev':
                 df = df[:4000]
             logger.info('Restricted utterance num: %d' % len(df))
 
         # Sort paths to input & label
-        if sort_utt:
+        if sort_utt and data_type != 'dev':
             df = df.sort_values(by='frame_num', ascending=not reverse)
         else:
             df = df.sort_values(by='input_path', ascending=True)

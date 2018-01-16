@@ -24,7 +24,6 @@ class Base(object):
         self._epoch = 0
         self.iteration = 0
         self.offset = 0
-        self._batch_size = self.batch_size
 
         # Setting for multiprocessing
         self.preloading_process = None
@@ -86,6 +85,10 @@ class Base(object):
         # Floating point version of epoch
         return self.iteration / len(self)
 
+    @property
+    def current_batch_size(self):
+        return self._current_batch_size
+
     def __next__(self, batch_size=None):
         """Generate each mini-batch.
         Args:
@@ -95,7 +98,7 @@ class Base(object):
             is_new_epoch (bool): If true, 1 epoch is finished
         """
         if batch_size is None:
-            batch_size = self._batch_size
+            batch_size = self.batch_size
 
         if self.num_enque is None:
             if self.max_epoch is not None and self._epoch >= self.max_epoch:
@@ -103,6 +106,7 @@ class Base(object):
             # NOTE: max_epoch == None means infinite loop
 
             data_indices, is_new_epoch = self.sample_index(batch_size)
+            self._current_batch_size = len(data_indices)
             batch = self.make_batch(data_indices)
             self.iteration += len(data_indices)
         else:
@@ -124,6 +128,7 @@ class Base(object):
                 self.is_new_epoch_list = []
                 for _ in range(self.num_enque):
                     data_indices, is_new_epoch = self.sample_index(batch_size)
+                    self._current_batch_size = len(data_indices)
                     self.data_indices_list.append(data_indices)
                     self.is_new_epoch_list.append(is_new_epoch)
                 self.preloading_process = Process(
@@ -163,13 +168,27 @@ class Base(object):
 
         if self.sort_utt or not self.shuffle:
             if len(self.rest) > batch_size:
-                data_indices = self.df[batch_size *
-                                       self.offset:batch_size * (self.offset + 1)].index
-                data_indices = list(data_indices)
-                self.rest -= set(list(data_indices))
+                min_frame_num_batch = self.df[self.offset:self.offset +
+                                              1]['frame_num'].values[0] * self.num_stack
+                if min_frame_num_batch <= 600:
+                    df_tmp = self.df[self.offset:self.offset + batch_size]
+                elif min_frame_num_batch <= 900:
+                    df_tmp = self.df[self.offset:self.offset + batch_size // 2]
+                elif min_frame_num_batch <= 1200:
+                    df_tmp = self.df[self.offset:self.offset + batch_size // 4]
+                elif min_frame_num_batch <= 1500:
+                    df_tmp = self.df[self.offset:self.offset + batch_size // 8]
+                elif min_frame_num_batch <= 2000:
+                    df_tmp = self.df[self.offset:self.offset +
+                                     batch_size // 16]
+                else:
+                    df_tmp = self.df[self.offset:self.offset + 1]
+
+                data_indices = list(df_tmp.index)
+                self.rest -= set(data_indices)
                 # NOTE: rest is in uttrance length order when sort_utt == True
                 # NOTE: otherwise in name length order when shuffle == False
-                self.offset += 1
+                self.offset += len(data_indices)
             else:
                 # Last mini-batch
                 data_indices = list(self.rest)
@@ -188,7 +207,6 @@ class Base(object):
             if len(self.rest) > batch_size:
                 data_indices = random.sample(list(self.rest), batch_size)
                 self.rest -= set(data_indices)
-                self.offset += 1
             else:
                 # Last mini-batch
                 data_indices = list(self.rest)
@@ -216,7 +234,6 @@ class Base(object):
         """Reset data counter and offset."""
         self.rest = set(list(self.df.index))
         self.offset = 0
-        self._batch_size = self.batch_size
 
     def load(self, path):
         ext = os.path.basename(path).split('.')[-1]

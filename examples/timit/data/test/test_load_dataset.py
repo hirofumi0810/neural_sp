@@ -99,8 +99,8 @@ class TestLoadDataset(unittest.TestCase):
                 str_true = map_fn(
                     labels[0][:labels_seq_len[0]])
 
-            print('----- %s ----- (epoch: %.3f)' %
-                  (input_names[0], dataset.epoch_detail))
+            print('----- %s (epoch: %.3f, batch: %d) -----' %
+                  (input_names[0], dataset.epoch_detail, len(inputs)))
             print(str_true)
             print('inputs_seq_len: %d' % inputs_seq_len[0])
             if not dataset.is_test:
