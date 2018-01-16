@@ -1,41 +1,44 @@
 param:
   # framework
   backend: pytorch
+  # backend: chainer
 
   # corpus
   corpus: csj
   label_type: word_freq5
-  label_type_sub: kanji_divide
   data_size: subset
 
   # features
   feature: fbank
   save_format: numpy
   input_channel: 80
-  use_delta: True
-  use_double_delta: True
+  use_delta: False
+  use_double_delta: False
   splice: 1
   num_stack: 3
   num_skip: 3
 
   # topology
-  model_type: nested_attention
+  model_type: attention
   encoder_type: lstm
   conv_channels: []
   conv_kernel_sizes: []
   conv_strides: []
   poolings: []
+  activation: relu
   batch_norm: False
   encoder_bidirectional: True
   encoder_residual: False
-  encoder_dense_residual: False
+  encoder_dense_residual: True  ###
   decoder_residual: False
   decoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 5
-  encoder_num_layers_sub: 4
+  encoder_num_layers: 8
   subsample_list:
+    - False
+    - False
+    - False
     - False
     - False
     - False
@@ -47,18 +50,15 @@ param:
   decoder_type: lstm
   decoder_num_units: 320
   decoder_num_layers: 1
-  decoder_num_units_sub: 320
-  decoder_num_layers_sub: 1
   embedding_dim: 128
-  embedding_dim_sub: 64
   attention_conv_num_channels: 10
   attention_conv_width: 201
 
   # optimization
-  batch_size: 20
+  batch_size: 32
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 50
+  num_epoch: 100
 
   # regularization
   parameter_init: 0.1
@@ -74,23 +74,18 @@ param:
   sigmoid_smoothing: False
   coverage_weight: 0
   scheduled_sampling_prob: 0.2
-  scheduled_sampling_ramp_max_step: 800000
+  scheduled_sampling_ramp_max_step: 400000
   label_smoothing_prob: 0.2
   weight_noise_std: 0
 
   # annealing
-  decay_start_epoch: 10
+  decay_start_epoch: 5
   decay_rate: 0.5
   decay_patient_epoch: 3
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
-  eval_start_epoch: 10
-  print_step: 2000
+  eval_start_epoch: 5
+  print_step: 1000
 
   # MTL
-  main_loss_weight: 0.8
-  ctc_loss_weight_sub: 0
-
-  # composition
-  composition_case: embedding
-  space_index: 2888
+  ctc_loss_weight: 0

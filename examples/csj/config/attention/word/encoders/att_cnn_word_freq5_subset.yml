@@ -1,6 +1,7 @@
 param:
   # framework
   backend: pytorch
+  # backend: chainer
 
   # corpus
   corpus: csj
@@ -11,33 +12,60 @@ param:
   feature: fbank
   save_format: numpy
   input_channel: 80
-  use_delta: False
-  use_double_delta: False
+  use_delta: True
+  use_double_delta: True
   splice: 1
-  num_stack: 3
-  num_skip: 3
+  num_stack: 1
+  num_skip: 1
 
   # topology
   model_type: attention
-  encoder_type: lstm
-  encoder_bidirectional: True
-  encoder_residual: True
+  encoder_type: cnn
+  conv_channels: [128, 128, 128, 128, 256, 256, 256, 256, 256, 256]
+  conv_kernel_sizes:
+    - [3, 5]
+    - [3, 5]
+    - [3, 5]
+    - [3, 5]
+    - [3, 5]
+    - [3, 5]
+    - [3, 5]
+    - [3, 5]
+    - [3, 5]
+    - [3, 5]
+  conv_strides:
+    - [1, 2]
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+  poolings:
+    - [3, 1]
+    - []
+    - []
+    - []
+    - []
+    - []
+    - []
+    - []
+    - []
+    - []
+  activation: prelu
+  batch_norm: True
+  encoder_bidirectional: False
+  encoder_residual: False
   encoder_dense_residual: False
   decoder_residual: False
   decoder_dense_residual: False
-  encoder_num_units: 320
+  encoder_num_units: 0
   encoder_num_proj: 0
-  encoder_num_layers: 10
+  encoder_num_layers: 0
   subsample_list:
-    - False
-    - False
-    - False
-    - False
-    - False
-    - False
-    - False
-    - False
-    - False
     - False
   subsample_type: drop
   attention_type: location
@@ -49,18 +77,11 @@ param:
   attention_conv_num_channels: 10
   attention_conv_width: 201
 
-  # CNN before RNN encoder
-  conv_channels: []
-  conv_kernel_sizes: []
-  conv_strides: []
-  poolings: []
-  batch_norm: False
-
   # optimization
-  batch_size: 30
+  batch_size: 16
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 100
+  num_epoch: 50
 
   # regularization
   parameter_init: 0.1
@@ -76,19 +97,18 @@ param:
   sigmoid_smoothing: False
   coverage_weight: 0
   scheduled_sampling_prob: 0.2
-  scheduled_sampling_ramp_max_step: 300000
-  # label_smoothing_prob: 0.1
-  label_smoothing_prob: 0
+  scheduled_sampling_ramp_max_step: 800000
+  label_smoothing_prob: 0.2
   weight_noise_std: 0
 
   # annealing
-  decay_start_epoch: 5
+  decay_start_epoch: 10
   decay_rate: 0.5
   decay_patient_epoch: 3
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
-  eval_start_epoch: 5
-  print_step: 1000
+  eval_start_epoch: 10
+  print_step: 2000
 
   # MTL
   ctc_loss_weight: 0

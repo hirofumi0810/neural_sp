@@ -1,26 +1,32 @@
 param:
   # framework
   backend: pytorch
+  # backend: chainer
 
   # corpus
   corpus: csj
   label_type: word_freq5
-  label_type_sub: kanji_divide
   data_size: subset
 
   # features
   feature: fbank
   save_format: numpy
   input_channel: 80
-  use_delta: False
-  use_double_delta: False
+  use_delta: True
+  use_double_delta: True
   splice: 1
   num_stack: 3
   num_skip: 3
 
   # topology
-  model_type: hierarchical_attention
+  model_type: attention
   encoder_type: lstm
+  conv_channels: []
+  conv_kernel_sizes: []
+  conv_strides: []
+  poolings: []
+  activation: relu
+  batch_norm: False
   encoder_bidirectional: True
   encoder_residual: False
   encoder_dense_residual: False
@@ -28,9 +34,12 @@ param:
   decoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 4
-  encoder_num_layers_sub: 3
+  encoder_num_layers: 8
   subsample_list:
+    - False
+    - False
+    - False
+    - False
     - False
     - False
     - False
@@ -41,25 +50,15 @@ param:
   decoder_type: lstm
   decoder_num_units: 320
   decoder_num_layers: 1
-  decoder_num_units_sub: 320
-  decoder_num_layers_sub: 1
   embedding_dim: 128
-  embedding_dim_sub: 64
   attention_conv_num_channels: 10
   attention_conv_width: 201
 
-  # CNN before RNN encoder
-  conv_channels: []
-  conv_kernel_sizes: []
-  conv_strides: []
-  poolings: []
-  batch_norm: False
-
   # optimization
-  batch_size: 15
+  batch_size: 32
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 50
+  num_epoch: 100
 
   # regularization
   parameter_init: 0.1
@@ -69,15 +68,14 @@ param:
   dropout_encoder: 0.2
   dropout_decoder: 0.1
   weight_decay: 1e-6
-  init_dec_state: zero
+  init_dec_state: final
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False
   coverage_weight: 0
   scheduled_sampling_prob: 0.2
-  scheduled_sampling_ramp_max_step: 450000
-  # label_smoothing_prob: 0.1
-  label_smoothing_prob: 0
+  scheduled_sampling_ramp_max_step: 400000
+  label_smoothing_prob: 0.2
   weight_noise_std: 0
 
   # annealing
@@ -90,7 +88,4 @@ param:
   print_step: 1000
 
   # MTL
-  main_loss_weight: 0.5
-  ctc_loss_weight_sub: 0.1
-  # ctc_loss_weight_sub: 0.25
-  curriculum_training: False
+  ctc_loss_weight: 0

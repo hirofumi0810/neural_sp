@@ -1,6 +1,7 @@
 param:
   # framework
   backend: pytorch
+  # backend: chainer
 
   # corpus
   corpus: csj
@@ -20,15 +21,22 @@ param:
   # topology
   model_type: attention
   encoder_type: lstm
+  conv_channels: []
+  conv_kernel_sizes: []
+  conv_strides: []
+  poolings: []
+  activation: relu
+  batch_norm: False
   encoder_bidirectional: True
   encoder_residual: False
   encoder_dense_residual: False
-  decoder_residual: False
+  decoder_residual: True  ###
   decoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 4
+  encoder_num_layers: 5
   subsample_list:
+    - False
     - False
     - False
     - False
@@ -37,24 +45,17 @@ param:
   attention_type: location
   attention_dim: 128
   decoder_type: lstm
-  decoder_num_units: 1024
-  decoder_num_layers: 1
+  decoder_num_units: 320
+  decoder_num_layers: 4  ###
   embedding_dim: 128
   attention_conv_num_channels: 10
   attention_conv_width: 201
 
-  # CNN before RNN encoder
-  conv_channels: []
-  conv_kernel_sizes: []
-  conv_strides: []
-  poolings: []
-  batch_norm: False
-
   # optimization
-  batch_size: 20
+  batch_size: 32
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 50
+  num_epoch: 100
 
   # regularization
   parameter_init: 0.1
@@ -64,24 +65,23 @@ param:
   dropout_encoder: 0.2
   dropout_decoder: 0.1
   weight_decay: 1e-6
-  init_dec_state: zero
+  init_dec_state: final
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False
   coverage_weight: 0
   scheduled_sampling_prob: 0.2
   scheduled_sampling_ramp_max_step: 400000
-  # label_smoothing_prob: 0.1
-  label_smoothing_prob: 0
+  label_smoothing_prob: 0.2
   weight_noise_std: 0
 
   # annealing
-  decay_start_epoch: 10
+  decay_start_epoch: 5
   decay_rate: 0.5
   decay_patient_epoch: 3
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
-  eval_start_epoch: 10
+  eval_start_epoch: 5
   print_step: 1000
 
   # MTL

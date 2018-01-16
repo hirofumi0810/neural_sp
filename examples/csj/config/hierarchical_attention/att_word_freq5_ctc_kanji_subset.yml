@@ -1,6 +1,7 @@
 param:
   # framework
   backend: pytorch
+  # backend: chainer
 
   # corpus
   corpus: csj
@@ -21,6 +22,12 @@ param:
   # topology
   model_type: hierarchical_attention
   encoder_type: lstm
+  conv_channels: []
+  conv_kernel_sizes: []
+  conv_strides: []
+  poolings: []
+  activation: relu
+  batch_norm: False
   encoder_bidirectional: True
   encoder_residual: False
   encoder_dense_residual: False
@@ -28,9 +35,10 @@ param:
   decoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 4
-  encoder_num_layers_sub: 3
+  encoder_num_layers: 5
+  encoder_num_layers_sub: 4
   subsample_list:
+    - False
     - False
     - False
     - False
@@ -48,15 +56,8 @@ param:
   attention_conv_num_channels: 10
   attention_conv_width: 201
 
-  # CNN before RNN encoder
-  conv_channels: []
-  conv_kernel_sizes: []
-  conv_strides: []
-  poolings: []
-  batch_norm: False
-
   # optimization
-  batch_size: 20
+  batch_size: 32
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 50
@@ -69,15 +70,14 @@ param:
   dropout_encoder: 0.2
   dropout_decoder: 0.1
   weight_decay: 1e-6
-  init_dec_state: zero
+  init_dec_state: final
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False
   coverage_weight: 0
   scheduled_sampling_prob: 0.2
   scheduled_sampling_ramp_max_step: 400000
-  # label_smoothing_prob: 0.1
-  label_smoothing_prob: 0
+  label_smoothing_prob: 0.2
   weight_noise_std: 0
 
   # annealing
@@ -90,7 +90,6 @@ param:
   print_step: 1000
 
   # MTL
-  main_loss_weight: 0.5
-  # main_loss_weight: 0.8
-  ctc_loss_weight_sub: 0.5
+  main_loss_weight: 0.8
+  ctc_loss_weight_sub: 0.2
   curriculum_training: False
