@@ -10,8 +10,7 @@ from __future__ import print_function
 import numpy as np
 from collections import defaultdict
 
-# LOG_0 = -float("inf")
-LOG_0 = -1e10
+LOG_0 = -float("inf")
 LOG_1 = 0
 
 
@@ -31,14 +30,14 @@ class BeamSearchDecoder(object):
         self._blank = blank_index
         self._space = space_index
 
-    def __call__(self, log_probs, inputs_seq_len, beam_width=1,
+    def __call__(self, log_probs, x_lens, beam_width=1,
                  alpha=0., beta=0.):
         """Performs inference for the given output probabilities.
         Args:
             log_probs (np.ndarray): The output log-scale probabilities
                 (e.g. post-softmax) for each time step.
                 A tensor of size `[B, T, num_classes]`
-            inputs_seq_len (np.ndarray): A tensor of size `[B]`
+            x_lens (np.ndarray): A tensor of size `[B]`
             beam_width (int): the size of beam
             alpha (float): language model weight
             beta (float): insertion bonus
@@ -54,7 +53,7 @@ class BeamSearchDecoder(object):
             # 1 for ending in blank and zero for ending in non-blank
             # (in log space).
             beam = [(tuple(), (LOG_1, LOG_0))]
-            time = inputs_seq_len[i_batch]
+            time = x_lens[i_batch]
 
             for t in range(time):
 

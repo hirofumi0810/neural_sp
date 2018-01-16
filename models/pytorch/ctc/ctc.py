@@ -9,12 +9,13 @@ from __future__ import print_function
 
 try:
     from warpctc_pytorch import CTCLoss
+    ctc_loss = CTCLoss()
 except ImportError:
     raise ImportError('Install warpctc_pytorch.')
-try:
-    import pytorch_ctc
-except ImportError:
-    raise ImportError('Install pytorch_ctc.')
+# try:
+#     import pytorch_ctc
+# except ImportError:
+#     raise ImportError('Install pytorch_ctc.')
 
 import numpy as np
 import torch
@@ -40,10 +41,10 @@ class CTC(ModelBase):
     Args:
         input_size (int): the dimension of input features
         encoder_type (string): the type of the encoder. Set lstm or gru or rnn.
-        bidirectional (bool): if True create a bidirectional encoder
-        num_units (int): the number of units in each layer
-        num_proj (int): the number of nodes in recurrent projection layer
-        num_layers (int): the number of layers of the encoder
+        encoder_bidirectional (bool): if True create a bidirectional encoder
+        encoder_num_units (int): the number of units in each layer
+        encoder_num_proj (int): the number of nodes in recurrent projection layer
+        encoder_num_layers (int): the number of layers of the encoder
         fc_list (list):
         dropout (float): the probability to drop nodes
         num_classes (int): the number of classes of target labels
@@ -73,16 +74,16 @@ class CTC(ModelBase):
     def __init__(self,
                  input_size,
                  encoder_type,
-                 bidirectional,
-                 num_units,
-                 num_proj,
-                 num_layers,
+                 encoder_bidirectional,
+                 encoder_num_units,
+                 encoder_num_proj,
+                 encoder_num_layers,
                  fc_list,
                  dropout,
                  num_classes,
                  parameter_init=0.1,
                  subsample_list=[],
-                 subsample_type='concat',
+                 subsample_type='drop',
                  logits_temperature=1,
                  num_stack=1,
                  splice=1,
@@ -102,7 +103,7 @@ class CTC(ModelBase):
         # Setting for the encoder
         self.input_size = input_size
         self.encoder_type = encoder_type
-        self.num_directions = 2 if bidirectional else 1
+        self.num_directions = 2 if encoder_bidirectional else 1
         self.fc_list = fc_list
         self.subsample_list = subsample_list
 
@@ -121,10 +122,10 @@ class CTC(ModelBase):
             self.encoder = load(encoder_type=encoder_type)(
                 input_size=input_size,
                 rnn_type=encoder_type,
-                bidirectional=bidirectional,
-                num_units=num_units,
-                num_proj=num_proj,
-                num_layers=num_layers,
+                bidirectional=encoder_bidirectional,
+                num_units=encoder_num_units,
+                num_proj=encoder_num_proj,
+                num_layers=encoder_num_layers,
                 dropout=dropout,
                 subsample_list=subsample_list,
                 subsample_type=subsample_type,
@@ -164,7 +165,7 @@ class CTC(ModelBase):
                     if encoder_type == 'cnn':
                         bottle_input_size = self.encoder.output_size
                     else:
-                        bottle_input_size = num_units * self.num_directions
+                        bottle_input_size = encoder_num_units * self.num_directions
                     # if batch_norm:
                     #     fc_layers.append(nn.BatchNorm1d(bottle_input_size))
                     fc_layers.append(LinearND(bottle_input_size, fc_list[i],
@@ -180,7 +181,7 @@ class CTC(ModelBase):
             self.fc = LinearND(fc_list[-1], self.num_classes)
         else:
             self.fc = LinearND(
-                num_units * self.num_directions, self.num_classes)
+                encoder_num_units * self.num_directions, self.num_classes)
 
         # Set CTC decoders
         self._decode_greedy_np = GreedyDecoder(blank_index=0)
@@ -255,17 +256,16 @@ class CTC(ModelBase):
             logits = logits / self.logits_temperature
 
         # Compute CTC loss
-        ctc_loss_fn = CTCLoss()
-        loss = ctc_loss_fn(logits, concatenated_labels, x_lens.cpu(), y_lens)
+        loss = ctc_loss(logits, concatenated_labels, x_lens.cpu(), y_lens)
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
             batch_size, label_num, num_classes = logits.size()
-            probs = F.softmax(logits, dim=-1)
-            uniform = Variable(torch.ones(
-                batch_size, label_num, num_classes)) / num_classes
+            log_probs = F.log_softmax(logits, dim=-1)
+            uniform = Variable(torch.FloatTensor(
+                batch_size, label_num, num_classes).fill_(np.log(1 / num_classes)))
             loss = loss * (1 - self.label_smoothing_prob) + F.kl_div(
-                probs.cpu(), uniform,
+                log_probs.cpu(), uniform,
                 size_average=False, reduce=True) * self.label_smoothing_prob
 
         # Average the loss by mini-batch
@@ -395,10 +395,12 @@ class CTC(ModelBase):
 
         if beam_width == 1:
             best_hyps = self._decode_greedy_np(
-                var2np(log_probs), var2np(x_lens))
+                var2np(log_probs, backend='pytorch'),
+                var2np(x_lens, backend='pytorch'))
         else:
             best_hyps = self._decode_beam_np(
-                var2np(log_probs), var2np(x_lens), beam_width=beam_width)
+                var2np(log_probs, backend='pytorch'),
+                var2np(x_lens, backend='pytorch'), beam_width=beam_width)
 
         # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
         best_hyps = best_hyps - 1

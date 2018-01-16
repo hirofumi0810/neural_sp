@@ -60,7 +60,7 @@ class RNNEncoder(nn.Module):
                  num_layers,
                  dropout,
                  subsample_list=[],
-                 subsample_type='concat',
+                 subsample_type='drop',
                  use_cuda=False,
                  batch_first=False,
                  merge_bidirectional=False,

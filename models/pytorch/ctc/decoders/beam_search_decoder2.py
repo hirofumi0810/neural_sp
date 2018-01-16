@@ -9,8 +9,7 @@ from __future__ import print_function
 
 import numpy as np
 
-# LOG_0 = -float("inf")
-LOG_0 = -1e10
+LOG_0 = -float("inf")
 LOG_1 = 0
 
 

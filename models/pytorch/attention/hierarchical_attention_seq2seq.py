@@ -7,6 +7,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.autograd import Variable
@@ -47,8 +48,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  num_classes_sub,  # ***
                  parameter_init=0.1,
                  subsample_list=[],
-                 subsample_type='concat',
-                 init_dec_state='zero',
+                 subsample_type='drop',
+                 init_dec_state='final',
                  sharpening_factor=1,
                  logits_temperature=1,
                  sigmoid_smoothing=False,
@@ -237,7 +238,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             self.fc_sub = LinearND(
                 decoder_num_units_sub, self.num_classes_sub - 1)
             # NOTE: <SOS> is removed because the decoder never predict <SOS>
-            # class
 
         if ctc_loss_weight_sub > 0:
             if self.is_bridge_sub:
@@ -335,13 +335,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
-            probs = F.softmax(logits, dim=-1)
-            uniform = Variable(torch.ones(
-                batch_size, label_num, num_classes)) / num_classes
+            log_probs = F.log_softmax(logits, dim=-1)
+            uniform = Variable(torch.FloatTensor(
+                batch_size, label_num, num_classes).fill_(np.log(1 / num_classes)))
             if self.use_cuda:
                 uniform = uniform.cuda()
             loss_main = loss_main * (1 - self.label_smoothing_prob) + F.kl_div(
-                probs, uniform,
+                log_probs, uniform,
                 size_average=False, reduce=True) * self.label_smoothing_prob
 
         # Add coverage term
@@ -375,13 +375,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
             # Label smoothing (with uniform distribution)
             if self.label_smoothing_prob > 0:
-                probs_sub = F.softmax(logits_sub, dim=-1)
-                uniform_sub = Variable(torch.ones(
-                    batch_size, label_num_sub, num_classes_sub)) / num_classes_sub
+                log_probs_sub = F.log_softmax(logits_sub, dim=-1)
+                uniform_sub = Variable(torch.FloatTensor(
+                    batch_size, label_num, num_classes_sub).fill_(np.log(1 / num_classes_sub)))
                 if self.use_cuda:
                     uniform_sub = uniform_sub.cuda()
                 loss_sub = loss_sub * (1 - self.label_smoothing_prob) + F.kl_div(
-                    probs_sub, uniform_sub,
+                    log_probs_sub, uniform_sub,
                     size_average=False, reduce=True) * self.label_smoothing_prob
 
             loss_sub = loss_sub * self.sub_loss_weight_tmp / batch_size
@@ -391,7 +391,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Sub task (CTC)
         ##################################################
         if self.ctc_loss_weight_sub > 0:
-            ctc_loss_sub = self._compute_ctc_loss(
+            ctc_loss_sub = self.compute_ctc_loss(
                 xs_sub, ys_sub, x_lens_sub, y_lens_sub, is_sub_task=True)
 
             ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub_tmp / batch_size

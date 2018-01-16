@@ -103,11 +103,11 @@ class TestCTC(unittest.TestCase):
         model = HierarchicalCTC(
             input_size=inputs.shape[-1] // splice // num_stack,   # 120
             encoder_type=encoder_type,
-            bidirectional=bidirectional,
-            num_units=256,
-            num_proj=256 if projection else 0,
-            num_layers=3,
-            num_layers_sub=2,
+            encoder_bidirectional=bidirectional,
+            encoder_num_units=256,
+            encoder_num_proj=256 if projection else 0,
+            encoder_num_layers=3,
+            encoder_num_layers_sub=2,
             fc_list=fc_list,
             dropout=0.1,
             main_loss_weight=0.5,

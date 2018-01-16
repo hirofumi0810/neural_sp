@@ -9,7 +9,7 @@ from __future__ import print_function
 
 try:
     from warpctc_pytorch import CTCLoss
-    ctc_loss_fn = CTCLoss()
+    ctc_loss = CTCLoss()
 except:
     raise ImportError('Install warpctc_pytorch.')
 
@@ -384,7 +384,7 @@ class AttentionSeq2seq(ModelBase):
 
         # Output smoothing
         if self.logits_temperature != 1:
-            logits /= self.logits_temperature
+            logits = logits / self.logits_temperature
 
         # Compute XE sequence loss
         batch_size, label_num, num_classes = logits.size()
@@ -396,13 +396,13 @@ class AttentionSeq2seq(ModelBase):
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0 and self.decoder_input == 'embedding':
-            probs = F.softmax(logits, dim=-1)
-            uniform = Variable(torch.ones(
-                batch_size, label_num, num_classes)) / num_classes
+            log_probs = F.log_softmax(logits, dim=-1)
+            uniform = Variable(torch.FloatTensor(
+                batch_size, label_num, num_classes).fill_(np.log(1 / num_classes)))
             if self.use_cuda:
                 uniform = uniform.cuda()
             loss = loss * (1 - self.label_smoothing_prob) + F.kl_div(
-                probs, uniform,
+                log_probs, uniform,
                 size_average=False, reduce=True) * self.label_smoothing_prob
 
         # Add coverage term
@@ -411,7 +411,7 @@ class AttentionSeq2seq(ModelBase):
 
         # Auxiliary CTC loss (optional)
         if self.ctc_loss_weight > 0:
-            ctc_loss = self._compute_ctc_loss(xs, ys, x_lens, y_lens)
+            ctc_loss = self.compute_ctc_loss(xs, ys, x_lens, y_lens)
             loss = loss * (1 - self.ctc_loss_weight) + \
                 ctc_loss * self.ctc_loss_weight
 
@@ -431,8 +431,7 @@ class AttentionSeq2seq(ModelBase):
 
         return loss
 
-    def _compute_ctc_loss(self, enc_out, ys, x_lens, y_lens,
-                          is_sub_task=False):
+    def compute_ctc_loss(self, enc_out, ys, x_lens, y_lens, is_sub_task=False):
         """Compute CTC loss.
         Args:
             enc_out (FloatTensor): A tensor of size
@@ -442,7 +441,7 @@ class AttentionSeq2seq(ModelBase):
             y_lens (IntTensor): A tensor of size `[B]`
             is_sub_task (bool, optional):
         Returns:
-            ctc_loss (FloatTensor): A tensor of size `[]`
+            loss (FloatTensor): A tensor of size `[1]`
         """
         if is_sub_task:
             logits_ctc = self.fc_ctc_sub(enc_out)
@@ -462,13 +461,13 @@ class AttentionSeq2seq(ModelBase):
         # `[B, T_out]` -> `[1,]`
         concatenated_labels = _concatenate_labels(_ys, _y_lens)
 
-        ctc_loss = ctc_loss_fn(logits_ctc, concatenated_labels.cpu(),
-                               _x_lens.cpu(), _y_lens.cpu())
+        loss = ctc_loss(logits_ctc, concatenated_labels.cpu(),
+                        _x_lens.cpu(), _y_lens.cpu())
 
         if self.use_cuda:
-            ctc_loss = ctc_loss.cuda()
+            loss = loss.cuda()
 
-        return ctc_loss
+        return loss
 
     def _encode(self, xs, x_lens, volatile, is_multi_task=False):
         """Encode acoustic features.

@@ -9,8 +9,13 @@ from __future__ import print_function
 
 try:
     from warpctc_pytorch import CTCLoss
+    ctc_loss = CTCLoss()
 except:
     raise ImportError('Install warpctc_pytorch.')
+# try:
+#     import pytorch_ctc
+# except ImportError:
+#     raise ImportError('Install pytorch_ctc.')
 
 import torch.nn.functional as F
 
@@ -28,10 +33,10 @@ class StudentCTC(CTC):
     Args:
         input_size (int): the dimension of input features
         encoder_type (string): the type of the encoder. Set lstm or gru or rnn.
-        bidirectional (bool): if True create a bidirectional encoder
-        num_units (int): the number of units in each layer
-        num_proj (int): the number of nodes in recurrent projection layer
-        num_layers (int): the number of layers of the encoder of the main task
+        encoder_bidirectional (bool): if True create a bidirectional encoder
+        encoder_num_units (int): the number of units in each layer
+        encoder_num_proj (int): the number of nodes in recurrent projection layer
+        encoder_num_layers (int): the number of layers of the encoder of the main task
         dropout (float): the probability to drop nodes
         main_loss_weight (float): A weight parameter for the main CTC loss
         num_classes (int): the number of classes of target labels of the main task
@@ -58,17 +63,17 @@ class StudentCTC(CTC):
     def __init__(self,
                  input_size,
                  encoder_type,
-                 bidirectional,
-                 num_units,
-                 num_proj,
-                 num_layers,
+                 encoder_bidirectional,
+                 encoder_num_units,
+                 encoder_num_proj,
+                 encoder_num_layers,
                  fc_list,
                  dropout,
                  main_loss_weight,  # ***
                  num_classes,
                  parameter_init=0.1,
                  subsample_list=[],
-                 subsample_type='concat',
+                 subsample_type='drop',
                  logits_temperature=1,
                  num_stack=1,
                  splice=1,
@@ -83,10 +88,10 @@ class StudentCTC(CTC):
         super(StudentCTC, self).__init__(
             input_size=input_size,
             encoder_type=encoder_type,
-            bidirectional=bidirectional,
-            num_units=num_units,
-            num_proj=num_proj,
-            num_layers=num_layers,
+            encoder_bidirectional=encoder_bidirectional,
+            encoder_num_units=encoder_num_units,
+            encoder_num_proj=encoder_num_proj,
+            encoder_num_layers=encoder_num_layers,
             dropout=dropout,
             num_classes=num_classes,
             parameter_init=parameter_init,
@@ -104,7 +109,7 @@ class StudentCTC(CTC):
             self.fc_xe = LinearND(fc_list[-1], self.num_classes)
         else:
             self.fc_xe = LinearND(
-                num_units * self.num_directions, self.num_classes)
+                encoder_num_units * self.num_directions, self.num_classes)
 
         # Initialize all weights with uniform distribution
         self.init_weights(
@@ -175,9 +180,7 @@ class StudentCTC(CTC):
             logits_xe = logits_xe / self.logits_temperature
 
         # Compute CTC loss (hard targets)
-        ctc_loss_fn = CTCLoss()
-        loss_main = ctc_loss_fn(
-            logits, concatenated_labels, x_lens.cpu(), y_lens)
+        loss_main = ctc_loss(logits, concatenated_labels, x_lens.cpu(), y_lens)
 
         # Compute XE loss (soft targets)
         loss_xe = F.cross_entropy(logits_xe, labels_xe, size_average=False)
