@@ -19,30 +19,59 @@ param:
 
   # topology
   model_type: ctc
-  encoder_type: lstm
-  encoder_bidirectional: True
+  encoder_type: cnn
+  encoder_bidirectional: False
   encoder_residual: False
   encoder_dense_residual: False
-  encoder_num_units: 256
+  encoder_num_units: 0
   encoder_num_proj: 0
-  encoder_num_layers: 5
+  encoder_num_layers: 0
   subsample_list:
     - False
-    - False
-    - False
-    - False
-    - False
   subsample_type: drop
-  fc_list: []
-  conv_channels: []
-  conv_kernel_sizes: []
-  conv_strides: []
-  poolings: []
-  activation: relu
-  batch_norm: False
+  fc_list: [1024, 1024, 1024]
+  conv_channels: [128, 128, 128, 128, 256, 256, 256, 256, 256, 256]
+  conv_kernel_sizes:
+    - [3, 5]
+    - [3, 5]
+    - [3, 5]
+    - [3, 5]
+    - [3, 5]
+    - [3, 5]
+    - [3, 5]
+    - [3, 5]
+    - [3, 5]
+    - [3, 5]
+  conv_strides:
+    - [1, 2]
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+  poolings:
+    - [3, 1]
+    - []
+    - []
+    - []
+    - []
+    - []
+    - []
+    - []
+    - []
+    - []
+  # activation: relu
+  activation: prelu
+  # activation: hard_tanh
+  # activation: maxout
+  batch_norm: True
 
   # optimization
-  batch_size: 64
+  batch_size: 16
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 100
@@ -65,4 +94,4 @@ param:
   sort_stop_epoch: 100
   not_improved_patient_epoch: 10
   eval_start_epoch: 10
-  print_step: 10
+  print_step: 40

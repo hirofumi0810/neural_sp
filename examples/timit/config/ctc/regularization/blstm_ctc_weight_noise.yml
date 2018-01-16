@@ -1,6 +1,7 @@
 param:
   # framework
   backend: pytorch
+  # backend: chainer
 
   # corpus
   corpus: timit
@@ -13,8 +14,8 @@ param:
   use_delta: True
   use_double_delta: True
   splice: 1
-  num_stack: 2
-  num_skip: 2
+  num_stack: 1
+  num_skip: 1
 
   # topology
   model_type: ctc
@@ -37,6 +38,7 @@ param:
   conv_kernel_sizes: []
   conv_strides: []
   poolings: []
+  activation: relu
   batch_norm: False
 
   # optimization
@@ -51,10 +53,10 @@ param:
   clip_grad_norm: 5.0
   clip_activation: 50
   dropout: 0.5
-  weight_decay: 1e-5
+  weight_decay: 1e-6
   logits_temperature: 1
-  label_smoothing_prob: 0.1
-  weight_noise_std: 0
+  label_smoothing_prob: 0
+  weight_noise_std: 1e-5  ###
 
   # annealing
   decay_start_epoch: 10

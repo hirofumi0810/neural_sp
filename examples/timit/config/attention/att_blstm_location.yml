@@ -1,6 +1,7 @@
 param:
   # framework
   backend: pytorch
+  # backend: chainer
 
   # corpus
   corpus: timit
@@ -29,11 +30,11 @@ param:
   encoder_num_layers: 4
   subsample_list:
     - False
-    - True
+    - False
     - False
     - False
   subsample_type: drop
-  attention_type: location
+  attention_type: location  ###
   attention_dim: 128
   decoder_type: lstm
   decoder_num_units: 256
@@ -47,6 +48,7 @@ param:
   conv_kernel_sizes: []
   conv_strides: []
   poolings: []
+  activation: relu
   batch_norm: False
 
   # optimization
@@ -63,16 +65,16 @@ param:
   clip_activation_decoder: 50
   dropout_encoder: 0.5
   dropout_decoder: 0.1
-  weight_decay: 1e-5
-  init_dec_state: zero
+  weight_decay: 1e-6
+  init_dec_state: final
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False
   coverage_weight: 0
-  scheduled_sampling_prob: 0
+  scheduled_sampling_prob: 0.2
   scheduled_sampling_ramp_max_step: 2000
-  label_smoothing_prob: 0
-  weight_noise_std: 1e-5
+  label_smoothing_prob: 0.2
+  weight_noise_std: 0
 
   # annealing
   decay_start_epoch: 10
