@@ -168,22 +168,30 @@ class Base(object):
 
         if self.sort_utt or not self.shuffle:
             if len(self.rest) > batch_size:
+                # Change batch size dynamically
                 min_frame_num_batch = self.df[self.offset:self.offset +
                                               1]['frame_num'].values[0] * self.num_stack
-                if min_frame_num_batch <= 600:
-                    df_tmp = self.df[self.offset:self.offset + batch_size]
-                elif min_frame_num_batch <= 900:
-                    df_tmp = self.df[self.offset:self.offset + batch_size // 2]
+                if min_frame_num_batch <= 900:
+                    batch_size_tmp = batch_size
                 elif min_frame_num_batch <= 1200:
-                    df_tmp = self.df[self.offset:self.offset + batch_size // 4]
+                    batch_size_tmp = batch_size // 2
                 elif min_frame_num_batch <= 1500:
-                    df_tmp = self.df[self.offset:self.offset + batch_size // 8]
-                elif min_frame_num_batch <= 2000:
-                    df_tmp = self.df[self.offset:self.offset +
-                                     batch_size // 16]
+                    batch_size_tmp = batch_size // 4
+                elif min_frame_num_batch <= 1500:
+                    batch_size_tmp = batch_size // 8
+                elif min_frame_num_batch <= 1800:
+                    batch_size_tmp = 8
+                elif min_frame_num_batch <= 2100:
+                    batch_size_tmp = 4
+                elif min_frame_num_batch <= 3000:
+                    batch_size_tmp = 2
                 else:
-                    df_tmp = self.df[self.offset:self.offset + 1]
+                    batch_size_tmp = 1
 
+                if batch_size_tmp < 1:
+                    batch_size_tmp = 1
+
+                df_tmp = self.df[self.offset:self.offset + batch_size_tmp]
                 data_indices = list(df_tmp.index)
                 self.rest -= set(data_indices)
                 # NOTE: rest is in uttrance length order when sort_utt == True

@@ -17,6 +17,7 @@ param:
   splice: 1
   num_stack: 3
   num_skip: 3
+  min_frame_num: 40
 
   # topology
   model_type: ctc

@@ -17,6 +17,7 @@ param:
   splice: 1
   num_stack: 1
   num_skip: 1
+  min_frame_num: 40
 
   # topology
   model_type: attention

@@ -25,6 +25,7 @@ class Dataset(DatasetBase):
                  batch_size, vocab_file_path,
                  max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
+                 min_frame_num=40,
                  shuffle=False, sort_utt=False, reverse=False,
                  sort_stop_epoch=None, num_gpus=1, save_format='numpy',
                  num_enque=None):
@@ -45,6 +46,8 @@ class Dataset(DatasetBase):
             splice (int, optional): frames to splice. Default is 1 frame.
             num_stack (int, optional): the number of frames to stack
             num_skip (int, optional): the number of frames to skip
+            min_frame_num (int, optional): Exclude utteraces shorter than
+                this value
             shuffle (bool, optional): if True, shuffle utterances. This is
                 disabled when sort_utt is True.
             sort_utt (bool, optional): if True, sort all utterances in the
@@ -99,7 +102,8 @@ class Dataset(DatasetBase):
         # Remove inappropriate utteraces
         if not self.is_test:
             logger.info('Original utterance num: %d' % len(df))
-            df = df[df.apply(lambda x: 40 <= x['frame_num'], axis=1)]
+            df = df[df.apply(lambda x: min_frame_num <=
+                             x['frame_num'], axis=1)]
             # NOTE: 20s >: 11 utteraces
             # NOTE: 19s >: 11 utteraces
             # NOTE: 18s >: 13 utteraces

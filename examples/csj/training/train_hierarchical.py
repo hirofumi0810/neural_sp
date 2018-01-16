@@ -120,6 +120,7 @@ def main():
         batch_size=params['batch_size'], max_epoch=params['num_epoch'],
         splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
+        min_frame_num=params['min_frame_num'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
         save_format=params['save_format'], num_enque=None)
     dev_data = Dataset(

@@ -57,9 +57,8 @@ def train_step(model, batch, clip_grad_norm, backend):
         del loss_train
 
     except RuntimeError as e:
-        logger.warning(' - Skip mini-batch!!!')
-        logger.warning(' - max_frame_num: %d' %
-                       max(inputs_seq_len) * model.num_stack)
+        logger.warning('!!!Skip mini-batch!!! (max_frame_num: %d)' %
+                       (max(inputs_seq_len) * model.num_stack))
 
     if loss_train_val == INF or loss_train_val == -INF:
         logger.warning(
@@ -117,9 +116,8 @@ def train_hierarchical_step(model, batch, clip_grad_norm, backend):
         del loss_train, loss_main_train, loss_sub_train
 
     except RuntimeError as e:
-        logger.warning(' - Skip mini-batch!!!')
-        logger.warning(' - max_frame_num: %d' %
-                       max(inputs_seq_len) * model.num_stack)
+        logger.warning('!!!Skip mini-batch!!! (max_frame_num: %d)' %
+                       (max(inputs_seq_len) * model.num_stack))
 
     if loss_train_val == INF or loss_train_val == -INF:
         logger.warning(
