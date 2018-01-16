@@ -12,6 +12,7 @@ class Controller(object):
     """Controll learning rate per epoch.
     Args:
         learning_rate_init (float): the initial learning rate
+        backend (string): pytorch or chainer
         decay_start_epoch (int): the epoch to start decay
         decay_rate (float): the rate to decay the current learning rate
         decay_patient_epoch (int): decay learning rate if results have not been
@@ -21,9 +22,11 @@ class Controller(object):
         worst_value (float): the worst value of evaluation
     """
 
-    def __init__(self, learning_rate_init, decay_start_epoch, decay_rate,
+    def __init__(self, learning_rate_init, backend,
+                 decay_start_epoch, decay_rate,
                  decay_patient_epoch=1, lower_better=True, worst_value=1):
         self.learning_rate_init = learning_rate_init
+        self.backend = backend
         self.decay_start_epoch = decay_start_epoch
         self.decay_rate = decay_rate
         self.decay_patient_epoch = decay_patient_epoch
@@ -63,8 +66,11 @@ class Controller(object):
                 self.not_improved_epoch = 0
                 learning_rate = learning_rate * self.decay_rate
 
-        # Update optimizer
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = learning_rate
+                # Update optimizer
+                if self.backend == 'pytorch':
+                    for param_group in optimizer.param_groups:
+                        param_group['lr'] = learning_rate
+                elif self.backend == 'chainer':
+                    optimizer.hyperparam.lr = learning_rate
 
         return optimizer, learning_rate

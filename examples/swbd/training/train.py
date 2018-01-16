@@ -7,6 +7,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import os
 from os.path import join, abspath
 import sys
 import time
@@ -18,8 +19,8 @@ from tensorboardX import SummaryWriter
 import logging
 
 import torch
-torch.manual_seed(123456)
-torch.cuda.manual_seed_all(123456)
+torch.manual_seed(1)
+torch.cuda.manual_seed_all(1)
 
 sys.path.append(abspath('../../../'))
 from models.load_model import load
@@ -91,6 +92,9 @@ def main():
     logger.addHandler(sh)
     logger.addHandler(fh)
 
+    logger.info('PID: %s' % os.getpid())
+    logger.info('USERNAME: %s' % os.uname()[1])
+
     # Load dataset
     vocab_file_path = '../metrics/vocab_files/' + \
         params['label_type'] + '_' + params['data_size'] + '.txt'
@@ -160,6 +164,7 @@ def main():
     # Define learning rate controller
     lr_controller = Controller(
         learning_rate_init=params['learning_rate'],
+        backend=params['backend'],
         decay_start_epoch=params['decay_start_epoch'],
         decay_rate=params['decay_rate'],
         decay_patient_epoch=params['decay_patient_epoch'],
@@ -183,13 +188,9 @@ def main():
     for step, (batch, is_new_epoch) in enumerate(train_data):
 
         # Compute loss in the training set (including parameter update)
-        batch_size_step = train_data._batch_size
-        model, loss_train_val, div_num = train_step(
+        model, loss_train_val = train_step(
             model, batch, params['clip_grad_norm'], backend=params['backend'])
         loss_train_val_mean += loss_train_val
-
-        # on-the-fly setting
-        train_data._batch_size = train_data.batch_size // div_num
 
         # Inject Gaussian noise to all parameters
         if float(params['weight_noise_std']) > 0 and learning_rate < float(params['learning_rate']):
@@ -219,7 +220,7 @@ def main():
                     tf_writer.add_histogram(
                         name + '/grad', var2np(param.grad.clone()), step + 1)
             elif params['backend'] == 'chainer':
-                for name, param in model.named_parameters():
+                for name, param in model.namedparams():
                     name = name[1:]
                     # tf_writer.add_histogram(
                     #     name, var2np(param.clone()), step + 1)
@@ -230,7 +231,7 @@ def main():
             logger.info("...Step:%d (epoch:%.3f): loss:%.3f (%.3f) / lr:%.5f / batch:%d (%.3f min)" %
                         (step + 1, train_data.epoch_detail,
                          loss_train_val_mean, loss_dev_val,
-                         learning_rate, batch_size_step, duration_step / 60))
+                         learning_rate, train_data.current_batch_size, duration_step / 60))
             start_time_step = time.time()
             loss_train_val_mean = 0.
 

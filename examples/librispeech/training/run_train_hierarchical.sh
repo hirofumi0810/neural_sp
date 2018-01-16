@@ -16,7 +16,7 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda-8.0/lib64:/usr/local/cud
 PYTHON=/home/lab5/inaguma/.pyenv/versions/anaconda3-4.1.1/envs/`hostname`/bin/python
 
 # Set path to save the model
-MODEL_SAVE_PATH="/n/sd8/inaguma/result/pytorch/librispeech"
+MODEL_SAVE_PATH="/n/sd8/inaguma/result"
 
 config_path=$1
 gpu_index=$2

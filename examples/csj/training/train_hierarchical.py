@@ -7,6 +7,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import os
 from os.path import join, abspath
 import sys
 import time
@@ -18,8 +19,8 @@ from tensorboardX import SummaryWriter
 import logging
 
 import torch
-torch.manual_seed(123456)
-torch.cuda.manual_seed_all(123456)
+torch.manual_seed(1)
+torch.cuda.manual_seed_all(1)
 
 sys.path.append(abspath('../../../'))
 from models.load_model import load
@@ -74,7 +75,8 @@ def main():
 
     # Set save path
     save_path = mkdir_join(
-        args.model_save_path, params['model_type'], params['backend'], 'csj',
+        args.model_save_path,  params['backend'], 'csj',
+        params['model_type'],
         params['label_type'] + '_' + params['label_type_sub'],
         params['data_size'], model.name)
     model.set_save_path(save_path)
@@ -95,6 +97,9 @@ def main():
     fh.setFormatter(formatter)
     logger.addHandler(sh)
     logger.addHandler(fh)
+
+    logger.info('PID: %s' % os.getpid())
+    logger.info('USERNAME: %s' % os.uname()[1])
 
     # Load dataset
     vocab_file_path = '../metrics/vocab_files/' + \
@@ -118,6 +123,7 @@ def main():
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
         save_format=params['save_format'], num_enque=None)
     dev_data = Dataset(
+        backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
@@ -131,6 +137,7 @@ def main():
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True, save_format=params['save_format'])
     eval1_data = Dataset(
+        backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
@@ -144,6 +151,7 @@ def main():
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         save_format=params['save_format'])
     eval2_data = Dataset(
+        backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
@@ -157,6 +165,7 @@ def main():
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         save_format=params['save_format'])
     eval3_data = Dataset(
+        backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
@@ -189,6 +198,7 @@ def main():
     # Define learning rate controller
     lr_controller = Controller(
         learning_rate_init=params['learning_rate'],
+        backend=params['backend'],
         decay_start_epoch=params['decay_start_epoch'],
         decay_rate=params['decay_rate'],
         decay_patient_epoch=params['decay_patient_epoch'],
@@ -212,15 +222,11 @@ def main():
     for step, (batch, is_new_epoch) in enumerate(train_data):
 
         # Compute loss in the training set (including parameter update)
-        batch_size_step = train_data._batch_size
-        model, loss_val_train, loss_main_val_train, loss_sub_val_train, div_num = train_hierarchical_step(
+        model, loss_val_train, loss_main_val_train, loss_sub_val_train = train_hierarchical_step(
             model, batch, params['clip_grad_norm'], backend=params['backend'])
         loss_train_val_mean += loss_val_train
         loss_main_train_val_mean += loss_main_val_train
         loss_sub_train_val_mean += loss_sub_val_train
-
-        # on-the-fly setting
-        train_data._batch_size = train_data.batch_size // div_num
 
         # Inject Gaussian noise to all parameters
         if float(params['weight_noise_std']) > 0 and learning_rate < float(params['learning_rate']):
@@ -263,7 +269,7 @@ def main():
                             name + '/grad', var2np(param.grad.clone()), step + 1)
                     # TODO: fix this
             elif params['backend'] == 'chainer':
-                for name, param in model.named_parameters():
+                for name, param in model.namedparams():
                     name = name[1:]
                     # tf_writer.add_histogram(
                     #     name, var2np(param.clone()), step + 1)
@@ -276,7 +282,7 @@ def main():
                         (step + 1, train_data.epoch_detail,
                          loss_main_train_val_mean, loss_sub_train_val_mean,
                          loss_main_dev_val, loss_sub_dev_val,
-                         learning_rate, batch_size_step, duration_step / 60))
+                         learning_rate, train_data.current_batch_size, duration_step / 60))
             start_time_step = time.time()
             loss_train_val_mean, loss_main_train_val_mean, loss_sub_train_val_mean = 0., 0., 0.
 
