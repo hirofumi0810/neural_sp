@@ -139,12 +139,12 @@ class TestCTC(unittest.TestCase):
                             patience_epoch=None)
 
         # Define learning rate controller
-        # lr_controller = Controller(
-        #     learning_rate_init=learning_rate,
-        #     decay_start_epoch=20,
-        #     decay_rate=0.9,
-        #     decay_patient_epoch=10,
-        #     lower_better=True)
+        # lr_controller = Controller(learning_rate_init=learning_rate,
+        #                            backend='chainer',
+        #                            decay_start_epoch=20,
+        #                            decay_rate=0.9,
+        #                            decay_patient_epoch=10,
+        #                            lower_better=True)
 
         # GPU setting
         model.set_cuda(deterministic=False, benchmark=True)
@@ -160,6 +160,7 @@ class TestCTC(unittest.TestCase):
                 inputs, labels, labels_sub,
                 inputs_seq_len, labels_seq_len, labels_seq_len_sub)
             loss.backward()
+            loss.unchain_backward()
             model.optimizer.update()
 
             # Inject Gaussian noise to all parameters
@@ -170,8 +171,6 @@ class TestCTC(unittest.TestCase):
                     inputs, inputs_seq_len, beam_width=1)
                 labels_pred_sub = model.decode(
                     inputs, inputs_seq_len, beam_width=1, is_sub_task=True)
-
-                print(labels_pred_sub)
 
                 # Compute accuracy
                 str_true = idx2word(labels[0, :labels_seq_len[0]])

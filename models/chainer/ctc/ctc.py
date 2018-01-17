@@ -17,8 +17,7 @@ from models.chainer.linear import LinearND
 from models.chainer.encoders.load_encoder import load
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
-# from models.pytorch.ctc.decoders.beam_search_decoder2 import
-# BeamSearchDecoder
+# from models.pytorch.ctc.decoders.beam_search_decoder2 import BeamSearchDecoder
 from utils.io.variable import np2var, var2np
 
 NEG_INF = -float("inf")
@@ -73,7 +72,7 @@ class CTC(ModelBase):
                  num_classes,
                  parameter_init=0.1,
                  subsample_list=[],
-                 subsample_type='concat',
+                 subsample_type='drop',
                  logits_temperature=1,
                  num_stack=1,
                  splice=1,
@@ -92,6 +91,7 @@ class CTC(ModelBase):
 
         # Setting for the encoder
         self.input_size = input_size
+        self.num_stack = num_stack
         self.encoder_type = encoder_type
         self.num_directions = 2 if bidirectional else 1
         self.fc_list = fc_list
@@ -99,7 +99,6 @@ class CTC(ModelBase):
 
         # Setting for CTC
         self.num_classes = num_classes + 1  # Add the blank class
-        self.blank_index = 0
         self.logits_temperature = logits_temperature
 
         # Setting for regualarization
@@ -112,14 +111,13 @@ class CTC(ModelBase):
             # Load the encoder
             if encoder_type in ['lstm', 'gru', 'rnn']:
                 self.encoder = load(encoder_type=encoder_type)(
-                    input_size=input_size,  # 120 or 123
+                    input_size=input_size,
                     rnn_type=encoder_type,
                     bidirectional=bidirectional,
                     num_units=num_units,
                     num_proj=num_proj,
                     num_layers=num_layers,
                     dropout=dropout,
-                    parameter_init=parameter_init,
                     subsample_list=subsample_list,
                     subsample_type=subsample_type,
                     use_cuda=self.use_cuda,
@@ -136,19 +134,18 @@ class CTC(ModelBase):
                     dense_residual=dense_residual)
             elif encoder_type == 'cnn':
                 raise NotImplementedError
-                # assert num_stack == 1
-                # assert splice == 1
-                # self.encoder = load(encoder_type=encoder_type)(
-                #     input_size=input_size,  # 120 or 123
-                #     conv_channels=conv_channels,
-                #     conv_kernel_sizes=conv_kernel_sizes,
-                #     conv_strides=conv_strides,
-                #     poolings=poolings,
-                #     dropout=dropout,
-                #     parameter_init=parameter_init,
-                #     activation=activation,
-                #     use_cuda=self.use_cuda,
-                #     batch_norm=batch_norm)
+                assert num_stack == 1
+                assert splice == 1
+                self.encoder = load(encoder_type=encoder_type)(
+                    input_size=input_size,
+                    conv_channels=conv_channels,
+                    conv_kernel_sizes=conv_kernel_sizes,
+                    conv_strides=conv_strides,
+                    poolings=poolings,
+                    dropout=dropout,
+                    use_cuda=self.use_cuda,
+                    activation=activation,
+                    batch_norm=batch_norm)
             else:
                 raise NotImplementedError
 
@@ -164,33 +161,39 @@ class CTC(ModelBase):
                         #     self.fc_layers.append(nn.BatchNorm1d(bottle_input_size))
                         self.fc_layers.append(
                             LinearND(bottle_input_size, fc_list[i],
-                                     dropout=dropout,
-                                     parameter_init=parameter_init,
-                                     use_cuda=self.use_cuda))
+                                     dropout=dropout, use_cuda=self.use_cuda))
                     else:
                         # if batch_norm:
                         #     self.fc_layers.append(nn.BatchNorm1d(fc_list[i - 1]))
                         self.fc_layers.append(
                             LinearND(fc_list[i - 1], fc_list[i],
-                                     dropout=dropout,
-                                     parameter_init=parameter_init,
-                                     use_cuda=self.use_cuda))
+                                     dropout=dropout, use_cuda=self.use_cuda))
                 # TODO: remove a bias term in the case of batch normalization
 
                 self.fc = LinearND(fc_list[-1], self.num_classes,
-                                   dropout=dropout,
-                                   parameter_init=parameter_init,
                                    use_cuda=self.use_cuda)
             else:
                 self.fc = LinearND(
                     num_units * self.num_directions, self.num_classes,
-                    dropout=dropout,
-                    parameter_init=parameter_init,
                     use_cuda=self.use_cuda)
 
+            # Initialize all weights with uniform distribution
+            self.init_weights(
+                parameter_init, distribution='uniform', ignore_keys=['bias'])
+
+            # Initialize all biases with 0
+            self.init_weights(0, distribution='uniform', keys=['bias'])
+
+            # Recurrent weights are orthogonalized
+            # self.init_weights(parameter_init, distribution='orthogonal',
+            #                   keys=['lstm', 'weight'], ignore_keys=['bias'])
+
+            # Initialize bias in forget gate with 1
+            self.init_forget_gate_bias_with_one()
+
         # Set CTC decoders
-        self._decode_greedy_np = GreedyDecoder(blank_index=self.blank_index)
-        self._decode_beam_np = BeamSearchDecoder(blank_index=self.blank_index)
+        self._decode_greedy_np = GreedyDecoder(blank_index=0)
+        self._decode_beam_np = BeamSearchDecoder(blank_index=0)
         # TODO: set space index
 
     def __call__(self, inputs, labels, inputs_seq_len, labels_seq_len,
@@ -208,7 +211,7 @@ class CTC(ModelBase):
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            ctc_loss (chainer.Variable or float): A tensor of size `[1]`
+            loss (chainer.Variable or float): A tensor of size `[1]`
         """
         # Wrap by Variable
         xs = np2var(inputs, use_cuda=self.use_cuda, backend='chainer')
@@ -226,11 +229,10 @@ class CTC(ModelBase):
             pass
 
         # Encode acoustic features
-        logits = self._encode(xs, x_lens)
+        logits, x_lens = self._encode(xs, x_lens)
 
         # Convert to time-major & list of Variable from Variable
         logits = F.separate(logits, axis=1)
-        # or
         # logits = F.transpose(logits, axes=(1, 0, 2))
         # logits = [t[0] for t in F.split_axis(logits, len(logits), axis=0)]
 
@@ -241,34 +243,28 @@ class CTC(ModelBase):
 
         # Output smoothing
         if self.logits_temperature != 1:
-            logits /= self.logits_temperature
-
-        # TODO: Modify x_lens for reducing time resolution
-        # if self.encoder.conv is not None or self.encoder_type == 'cnn':
-        #     for i in range(len(x_lens)):
-        #         x_lens.data[i] = self.encoder.get_conv_out_size(
-        #             x_lens.data[i], 1)
-        # x_lens /= 2 ** sum(self.subsample_list)
-        # NOTE: floor is not needed because x_lens is IntTensor
+            logits = logits / self.logits_temperature
 
         # Compute CTC loss
-        ctc_loss = F.connectionist_temporal_classification(
+        loss = F.connectionist_temporal_classification(
             x=logits,  # list of Variable
             t=ys,  # Variable
-            blank_symbol=self.blank_index,
+            blank_symbol=0,
             input_length=x_lens,
             label_length=y_lens,
             reduce='no')
 
         # TODO: Label smoothing (with uniform distribution)
+        if self.label_smoothing_prob > 0:
+            raise NotImplementedError
 
         # Average the loss by mini-batch
-        ctc_loss = F.sum(ctc_loss, axis=0) / len(inputs)
+        loss = F.sum(loss, axis=0) / len(inputs)
 
         if is_eval:
-            ctc_loss = ctc_loss.data
+            loss = loss.data
 
-        return ctc_loss
+        return loss
 
     def _encode(self, xs, x_lens, is_multi_task=False):
         """Encode acoustic features.
@@ -279,35 +275,33 @@ class CTC(ModelBase):
             is_multi_task (bool, optional):
         Returns:
             logits (): A tensor of size
-                `[B, T, num_classes (including blank)]`
+                `[B, T, num_classes (including the blank class)]`
+            x_lens (): A tensor of size `[B]`
             logits_sub (): A tensor of size
-                `[B, T, num_classes_sub (including blank)]`
+                `[B, T, num_classes_sub (including the blank class)]`
+            x_lens_sub (): A tensor of size `[B]`
         """
         if is_multi_task:
-            enc_outputs, enc_outputs_sub = self.encoder(xs, x_lens)
+            xs, x_lens, xs_sub, x_lens_sub = self.encoder(xs, x_lens)
         else:
-            if self.encoder_type == 'cnn':
-                enc_outputs = self.encoder(xs)
-                # NOTE: `[B, T, feature_dim]`
-            else:
-                enc_outputs = self.encoder(xs, x_lens)
+            xs, x_lens = self.encoder(xs, x_lens)
 
         # Concatenate
-        enc_outputs = F.pad_sequence(enc_outputs, padding=0)
+        xs = F.pad_sequence(xs, padding=0)
 
         if len(self.fc_list) > 0:
             for fc in self.fc_layers:
-                enc_outputs = fc(enc_outputs)
-        logits = self.fc(enc_outputs)
+                xs = fc(xs)
+        logits = self.fc(xs)
 
         if is_multi_task:
             # Concatenate
-            enc_outputs_sub = F.pad_sequence(enc_outputs_sub, padding=0)
+            xs_sub = F.pad_sequence(xs_sub, padding=0)
 
-            logits_sub = self.fc_sub(enc_outputs_sub)
-            return logits, logits_sub
+            logits_sub = self.fc_sub(xs_sub)
+            return logits, x_lens, logits_sub, x_lens_sub
         else:
-            return logits
+            return logits, x_lens
 
     def posteriors(self, inputs, inputs_seq_len, temperature=1,
                    blank_prior=None, is_sub_task=False):
@@ -348,22 +342,13 @@ class CTC(ModelBase):
             # Encode acoustic features
             if hasattr(self, 'main_loss_weight'):
                 if is_sub_task:
-                    _, logits = self._encode(xs, x_lens, is_multi_task=True)
+                    _, _, logits, x_lens = self._encode(
+                        xs, x_lens, is_multi_task=True)
                 else:
-                    logits, _ = self._encode(xs, x_lens, is_multi_task=True)
+                    logits, x_lens, _, _ = self._encode(
+                        xs, x_lens, is_multi_task=True)
             else:
-                logits = self._encode(xs, x_lens)
-
-            # Modify x_lens for reducing time resolution
-            # if self.encoder.conv is not None or self.encoder_type == 'cnn':
-            #     for i in range(len(x_lens)):
-            #         x_lens.data[i] = self.encoder.get_conv_out_size(
-            #             x_lens.data[i], 1)
-            # if is_sub_task:
-            #     x_lens /= 2 ** sum(self.subsample_list[:self.num_layers_sub])
-            # else:
-            #     x_lens /= 2 ** sum(self.subsample_list)
-            # NOTE: floor is not needed because x_lens is IntTensor
+                logits, x_lens = self._encode(xs, x_lens)
 
             log_probs = F.log_softmax(logits)
 
@@ -374,11 +359,9 @@ class CTC(ModelBase):
             else:
                 best_hyps = self._decode_beam_np(
                     var2np(log_probs, backend='chainer'),
-                    var2np(x_lens, backend='chainer'),
-                    beam_width=beam_width)
+                    var2np(x_lens, backend='chainer'), beam_width=beam_width)
 
             # NOTE: index 0 is reserved for the blank class
-            if self.blank_index == 0:
-                best_hyps = best_hyps - 1
+            best_hyps = best_hyps - 1
 
             return best_hyps

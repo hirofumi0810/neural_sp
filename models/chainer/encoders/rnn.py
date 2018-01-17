@@ -16,7 +16,6 @@ from chainer import initializers
 
 from models.chainer.linear import LinearND
 # from models.chainer.encoders.cnn import CNNEncoder
-# from models.chainer.encoders.cnn_v2 import CNNEncoder
 # from models.chainer.encoders.cnn_utils import ConvOutSize
 
 
@@ -30,8 +29,6 @@ class RNNEncoder(chainer.Chain):
         num_proj (int): the number of nodes in the projection layer
         num_layers (int): the number of layers
         dropout (float): the probability to drop nodes
-        parameter_init (float): the range of uniform distribution to
-            initialize weight parameters (>= 0)
         subsample_list (list): subsample in the corresponding layers (True)
             ex.) [False, True, True, False] means that downsample is conducted
                 in the 2nd and 3rd layers.
@@ -51,7 +48,6 @@ class RNNEncoder(chainer.Chain):
         dense_residual (bool, optional):
         num_layers_sub (int): the number of layers in the sub task
 
-        # use_peephole (bool): if True, use peephole connections
         # clip_activation (float): the range of activation clipping (> 0)
     """
 
@@ -63,9 +59,8 @@ class RNNEncoder(chainer.Chain):
                  num_proj,
                  num_layers,
                  dropout,
-                 parameter_init,
                  subsample_list=[],
-                 subsample_type='concat',
+                 subsample_type='drop',
                  use_cuda=False,
                  merge_bidirectional=False,
                  num_stack=1,
@@ -99,9 +94,7 @@ class RNNEncoder(chainer.Chain):
         self.num_layers = num_layers
         self.merge_bidirectional = merge_bidirectional
 
-        # TODO:
-        # self.use_peephole = use_peephole
-        # self.clip_activation = clip_activation
+        # TODO: self.clip_activation = clip_activation
 
         # Setting for hierarchical encoder
         self.num_layers_sub = num_layers_sub
@@ -130,25 +123,21 @@ class RNNEncoder(chainer.Chain):
         # NOTE: このレイヤの出力からres_outputs_listに入れていく
 
         with self.init_scope():
-            initializer = initializers.Uniform(scale=parameter_init)
-
             # Setting for CNNs before RNNs# Setting for CNNs before RNNs
             if len(conv_channels) > 0 and len(conv_channels) == len(conv_kernel_sizes) and len(conv_kernel_sizes) == len(conv_strides):
                 raise NotImplementedError
-
-                # assert num_stack == 1
-                # assert splice == 1
-                # self.conv = CNNEncoder(
-                #     input_size,
-                #     conv_channels=conv_channels,
-                #     conv_kernel_sizes=conv_kernel_sizes,
-                #     conv_strides=conv_strides,
-                #     poolings=poolings,
-                #     dropout=dropout,
-                #     parameter_init=parameter_init,
-                #     activation=activation,
-                #     use_cuda=use_cuda,
-                #     batch_norm=batch_norm)
+                assert num_stack == 1
+                assert splice == 1
+                # self.conv = CNNEncoder(input_size,
+                #                        conv_channels=conv_channels,
+                #                        conv_kernel_sizes=conv_kernel_sizes,
+                #                        conv_strides=conv_strides,
+                #                        poolings=poolings,
+                #                        dropout=dropout,
+                #                        parameter_init=parameter_init,
+                #                        activation=activation,
+                #                        use_cuda=use_cuda,
+                #                        batch_norm=batch_norm)
                 # input_size = self.conv.output_size
                 # self.get_conv_out_size = ConvOutSize(self.conv.conv)
             else:
@@ -157,7 +146,6 @@ class RNNEncoder(chainer.Chain):
 
             self.rnns = []
             self.projections = []
-
             for i_layer in range(num_layers):
                 if i_layer == 0:
                     encoder_input_size = input_size
@@ -172,59 +160,53 @@ class RNNEncoder(chainer.Chain):
 
                 if rnn_type == 'lstm':
                     if bidirectional:
-                        rnn_i = L.NStepBiLSTM(
-                            n_layers=1,
-                            in_size=encoder_input_size,
-                            out_size=num_units,
-                            dropout=dropout,
-                            initialW=initializer,
-                            initial_bias=None)
+                        rnn_i = L.NStepBiLSTM(n_layers=1,
+                                              in_size=encoder_input_size,
+                                              out_size=num_units,
+                                              dropout=dropout,
+                                              initialW=None,
+                                              initial_bias=None)
                     else:
-                        rnn_i = L.NStepLSTM(
-                            n_layers=1,
-                            in_size=encoder_input_size,
-                            out_size=num_units,
-                            dropout=dropout,
-                            initialW=initializer,
-                            initial_bias=None)
+                        rnn_i = L.NStepLSTM(n_layers=1,
+                                            in_size=encoder_input_size,
+                                            out_size=num_units,
+                                            dropout=dropout,
+                                            initialW=None,
+                                            initial_bias=None)
 
                 elif rnn_type == 'gru':
                     if bidirectional:
-                        rnn_i = L.NStepBiGRU(
-                            n_layers=1,
-                            in_size=encoder_input_size,
-                            out_size=num_units,
-                            dropout=dropout,
-                            initialW=initializer,
-                            initial_bias=None)
+                        rnn_i = L.NStepBiGRU(n_layers=1,
+                                             in_size=encoder_input_size,
+                                             out_size=num_units,
+                                             dropout=dropout,
+                                             initialW=None,
+                                             initial_bias=None)
                     else:
-                        rnn_i = L.NStepGRU(
-                            n_layers=1,
-                            in_size=encoder_input_size,
-                            out_size=num_units,
-                            dropout=dropout,
-                            initialW=initializer,
-                            initial_bias=None)
+                        rnn_i = L.NStepGRU(n_layers=1,
+                                           in_size=encoder_input_size,
+                                           out_size=num_units,
+                                           dropout=dropout,
+                                           initialW=None,
+                                           initial_bias=None)
 
                 elif rnn_type == 'rnn':
                     if bidirectional:
                         # rnn_i = L.NStepBiRNNReLU(
-                        rnn_i = L.NStepBiRNNTanh(
-                            n_layers=1,
-                            in_size=encoder_input_size,
-                            out_size=num_units,
-                            dropout=dropout,
-                            initialW=initializer,
-                            initial_bias=None)
+                        rnn_i = L.NStepBiRNNTanh(n_layers=1,
+                                                 in_size=encoder_input_size,
+                                                 out_size=num_units,
+                                                 dropout=dropout,
+                                                 initialW=None,
+                                                 initial_bias=None)
                     else:
                         # rnn_i = L.NStepRNNReLU(
-                        rnn_i = L.NStepRNNTanh(
-                            n_layers=1,
-                            in_size=encoder_input_size,
-                            out_size=num_units,
-                            dropout=dropout,
-                            initialW=initializer,
-                            initial_bias=None)
+                        rnn_i = L.NStepRNNTanh(n_layers=1,
+                                               in_size=encoder_input_size,
+                                               out_size=num_units,
+                                               dropout=dropout,
+                                               initialW=None,
+                                               initial_bias=None)
                 else:
                     raise ValueError(
                         'rnn_type must be "lstm" or "gru" or "rnn".')
@@ -240,8 +222,7 @@ class RNNEncoder(chainer.Chain):
                 if i_layer != self.num_layers - 1 and self.num_proj > 0:
                     proj_i = LinearND(
                         num_units * self.num_directions, num_proj,
-                        dropout=dropout,
-                        initializer=initializers.Uniform(scale=parameter_init))
+                        dropout=dropout, use_cuda=use_cuda)
                     setattr(self, 'proj_l' + str(i_layer), proj_i)
                     if use_cuda:
                         proj_i.to_gpu()
@@ -258,24 +239,20 @@ class RNNEncoder(chainer.Chain):
                 A list of tensors of size
                     `[T // sum(subsample_list), num_units (* num_directions)]`,
                     of length '[B]'
+            x_lens ():
             OPTION:
-            xs_sub (list of chainer.Variable):
-                A list of tensor of size
-                    `[T // sum(subsample_list), num_units (* num_directions)]`,
-                    of length `[B]`
+                xs_sub (list of chainer.Variable):
+                    A list of tensor of size
+                        `[T // sum(subsample_list), num_units (* num_directions)]`,
+                        of length `[B]`
+                x_lens_sub ():
         """
         # NOTE: automatically sort xs in descending order by length,
         # and transpose the sequence
 
         # Path through CNN layers before RNN layers
         # if self.conv is not None:
-        #     xs = self.conv(xs)
-
-        # Modify x_lens for reducing time resolution by CNN layers
-        # if self.conv is not None:
-        #     x_lens = [self.get_conv_out_size(
-        #         x, 1) for x in x_lens]
-        #     max_time = self.get_conv_out_size(max_time, 1)
+        #     xs, x_lens = self.conv(xs, x_lens)
 
         res_outputs_list = []
         # NOTE: exclude residual connection from the raw inputs
@@ -289,6 +266,7 @@ class RNNEncoder(chainer.Chain):
             # Pick up outputs in the sub task before the projection layer
             if self.num_layers_sub >= 1 and i_layer == self.num_layers_sub - 1:
                 xs_sub = xs
+                x_lens_sub = x_lens
 
             # NOTE: Exclude the last layer
             if i_layer != self.num_layers - 1:
@@ -338,6 +316,6 @@ class RNNEncoder(chainer.Chain):
             if self.bidirectional and self.merge_bidirectional:
                 xs_sub = [x[:, :self.num_units] + x[:, self.num_units:]
                           for x in xs_sub]
-            return xs, xs_sub
+            return xs, x_lens, xs_sub, x_lens_sub
         else:
-            return xs
+            return xs, x_lens

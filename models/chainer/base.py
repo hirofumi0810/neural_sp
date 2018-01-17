@@ -43,6 +43,42 @@ class ModelBase(chainer.Chain):
     def __call__(self):
         raise NotImplementedError
 
+    def init_weights(self, parameter_init, distribution,
+                     keys=[None], ignore_keys=[None]):
+        """Initialize parameters.
+        Args:
+            parameter_init (float):
+            distribution (string): uniform or normal or orthogonal or constant
+            keys (list, optional):
+            ignore_keys (list, optional):
+        """
+        for name, param in self.namedparams():
+            if keys != [None] and len(list(filter(lambda k: k in name, keys))) == 0:
+                continue
+
+            if ignore_keys != [None] and len(list(filter(lambda k: k in name, ignore_keys))) > 0:
+                continue
+
+            xp = cuda.get_array_module(param.data)
+            if distribution == 'uniform':
+                param.data[...] = xp.random.uniform(
+                    low=-parameter_init, high=parameter_init, size=param.data.shape)
+            elif distribution == 'normal':
+                param.data[...] = xp.random.norma(
+                    loc=0, scale=parameter_init, size=param.data.shape)
+            elif distribution == 'orthogonal':
+                raise NotImplementedError
+            elif distribution == 'constant':
+                param.data[...] = xp.asarray(parameter_init)
+            else:
+                raise NotImplementedError
+
+    def init_forget_gate_bias_with_one(self):
+        """Initialize bias in forget gate with 1."""
+        for name, param in self.namedparams():
+            if 'lstm' in name and ('b1' in name or 'b5' in name):
+                param.data[:] = 1.0
+
     def _inject_weight_noise(self, mean, std):
         raise NotImplementedError
 
@@ -171,7 +207,8 @@ class ModelBase(chainer.Chain):
         """
         model_path = join(save_path, 'model.epoch-' + str(epoch))
         serializers.save_npz(model_path, self)
-        serializers.save_npz('optimizer.epoch-' + str(epoch), self.optimizer)
+        serializers.save_npz(
+            join(save_path, 'optimizer.epoch-' + str(epoch)), self.optimizer)
 
         logger.info("=> Saved checkpoint (epoch:%d): %s" %
                     (epoch, model_path))

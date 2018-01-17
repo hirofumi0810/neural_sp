@@ -24,6 +24,8 @@ class TestCTC(unittest.TestCase):
     def test(self):
         print("CTC Working check.")
 
+        self.check(encoder_type='lstm', bidirectional=True)
+
         # Label smoothing
         # self.check(encoder_type='lstm', bidirectional=True,
         #            label_smoothing=True)
@@ -158,21 +160,23 @@ class TestCTC(unittest.TestCase):
 
         # Define optimizer
         learning_rate = 1e-3
-        model.set_optimizer('adam',
-                            learning_rate_init=learning_rate,
-                            weight_decay=1e-6,
-                            clip_grad_norm=5,
-                            lr_schedule=None,
-                            factor=None,
-                            patience_epoch=None)
+        model.set_optimizer(
+            # 'adam',
+            'adadelta',
+            learning_rate_init=learning_rate,
+            weight_decay=1e-6,
+            clip_grad_norm=5,
+            lr_schedule=None,
+            factor=None,
+            patience_epoch=None)
 
         # Define learning rate controller
-        # lr_controller = Controller(
-        #     learning_rate_init=learning_rate,
-        #     decay_start_epoch=20,
-        #     decay_rate=0.9,
-        #     decay_patient_epoch=10,
-        #     lower_better=True)
+        # lr_controller = Controller(learning_rate_init=learning_rate,
+        #                            backend='chainer',
+        #                            decay_start_epoch=20,
+        #                            decay_rate=0.9,
+        #                            decay_patient_epoch=10,
+        #                            lower_better=True)
 
         # GPU setting
         model.set_cuda(deterministic=False, benchmark=True)
@@ -184,8 +188,11 @@ class TestCTC(unittest.TestCase):
 
             # Step for parameter update
             model.optimizer.target.cleargrads()
+            for m in model.children():
+                m.cleargrads()
             loss = model(inputs, labels, inputs_seq_len, labels_seq_len)
             loss.backward()
+            loss.unchain_backward()
             model.optimizer.update()
 
             # Inject Gaussian noise to all parameters
