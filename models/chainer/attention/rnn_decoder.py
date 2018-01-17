@@ -8,13 +8,14 @@ from __future__ import division
 from __future__ import print_function
 
 import chainer
+from chainer import functions as F
 from chainer import links as L
 
 
 class RNNDecoder(chainer.Chain):
     """RNN decoder.
     Args:
-        embedding_dim (int): the dimension of input features
+        input_size (int): the dimension of decoder inputs
         rnn_type (string): lstm or gru or rnn
         num_units (int): the number of units in each layer
         num_layers (int): the number of layers
@@ -26,7 +27,7 @@ class RNNDecoder(chainer.Chain):
     """
 
     def __init__(self,
-                 embedding_dim,
+                 input_size,
                  rnn_type,
                  num_units,
                  num_layers,
@@ -37,7 +38,7 @@ class RNNDecoder(chainer.Chain):
 
         super(RNNDecoder, self).__init__()
 
-        self.embedding_dim = embedding_dim
+        self.input_size = input_size
         self.rnn_type = rnn_type
         self.num_units = num_units
         self.num_layers = num_layers
@@ -50,7 +51,7 @@ class RNNDecoder(chainer.Chain):
             self.rnns = []
             for i_layer in range(num_layers):
                 if i_layer == 0:
-                    decoder_input_size = embedding_dim
+                    decoder_input_size = input_size
                 else:
                     decoder_input_size = num_units
 
@@ -88,14 +89,18 @@ class RNNDecoder(chainer.Chain):
     def __call__(self, y, dec_state):
         """Forward computation.
         Args:
-            y (): A tensor of size `[B, 1, embedding_dim]`
-            dec_state (): A tensor of size
-                `[num_layers, B, num_units]`
+            y (chainer.Variable): A tensor of size `[B, 1, input_size]`
+            dec_state (chainer.Variable or tuple): A tensor of size
+                `[1, B, num_units]`
         Returns:
-            dec_out: if batch_first is True, a tensor of size `[B, 1, num_units]`
+            dec_out (chainer.Variable):
+                if batch_first is True, a tensor of size `[B, 1, num_units]`
                 else `[1, B, num_units]`
-            dec_state (Variable or tuple):
+            dec_state (chainer.Variable or tuple):
         """
+        # Convert to list of Variable
+        y = [t[0] for t in F.split_axis(y, len(y), axis=0)]
+
         dec_out = y
         res_outputs_list = []
         # NOTE: exclude residual connection from decoder's inputs
@@ -117,5 +122,8 @@ class RNNDecoder(chainer.Chain):
                         res_outputs_list = [dec_out]
                     elif self.dense_residual:
                         res_outputs_list.append(dec_out)
+
+        # Concatenate
+        dec_out = F.pad_sequence(dec_out, padding=-1)
 
         return dec_out, dec_state

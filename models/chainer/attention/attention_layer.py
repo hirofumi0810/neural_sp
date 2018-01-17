@@ -52,43 +52,48 @@ class AttentionMechanism(chainer.Chain):
         self.sharpening_factor = sharpening_factor
         self.sigmoid_smoothing = sigmoid_smoothing
 
-        if self.attention_type == 'content':
-            self.W = LinearND(decoder_num_units * 2, attention_dim,
-                              bias=True, use_cuda=use_cuda)  # NOTE
-            self.V = LinearND(attention_dim, 1,
-                              bias=False, use_cuda=use_cuda)
+        with self.init_scope():
+            if self.attention_type == 'content':
+                self.W = LinearND(decoder_num_units * 2, attention_dim,
+                                  bias=True, use_cuda=use_cuda)  # NOTE
+                self.V = LinearND(attention_dim, 1,
+                                  bias=False, use_cuda=use_cuda)
 
-        elif self.attention_type == 'location':
-            assert kernel_size % 2 == 1
-            self.conv = L.Convolution2D(
-                in_channels=1,
-                out_channels=out_channels,
-                ksize=(1, kernel_size),
-                stride=1,
-                pad=(0, kernel_size // 2),
-                nobias=False,
-                initialW=None,
-                initial_bias=None)
-            self.W = LinearND(decoder_num_units * 2, attention_dim,
-                              bias=True, use_cuda=use_cuda)  # NOTE
-            self.W_conv = LinearND(out_channels, attention_dim,
-                                   bias=False, use_cuda=use_cuda)
-            self.V = LinearND(attention_dim, 1,
-                              bias=False, use_cuda=use_cuda)
+            elif self.attention_type == 'location':
+                assert kernel_size % 2 == 1
+                self.conv = L.Convolution2D(
+                    in_channels=1,
+                    out_channels=out_channels,
+                    ksize=(1, kernel_size),
+                    stride=1,
+                    pad=(0, kernel_size // 2),
+                    nobias=False,
+                    initialW=None,
+                    initial_bias=None)
+                self.W = LinearND(decoder_num_units * 2, attention_dim,
+                                  bias=True, use_cuda=use_cuda)  # NOTE
+                self.W_conv = LinearND(out_channels, attention_dim,
+                                       bias=False, use_cuda=use_cuda)
+                self.V = LinearND(attention_dim, 1,
+                                  bias=False, use_cuda=use_cuda)
 
-        elif self.attention_type == 'dot_product':
-            self.W_keys = LinearND(decoder_num_units, attention_dim,
-                                   bias=False, use_cuda=use_cuda)
-            self.W_query = LinearND(decoder_num_units, attention_dim,
-                                    bias=False, use_cuda=use_cuda)
+            elif self.attention_type == 'dot_product':
+                self.W_keys = LinearND(decoder_num_units, attention_dim,
+                                       bias=False, use_cuda=use_cuda)
+                self.W_query = LinearND(decoder_num_units, attention_dim,
+                                        bias=False, use_cuda=use_cuda)
 
-        elif self.attention_type == 'rnn_attention':
-            raise NotImplementedError
+            elif self.attention_type == 'rnn_attention':
+                raise NotImplementedError
 
-        else:
-            raise TypeError(
-                "attention_type should be one of [%s], you provided %s." %
-                (", ".join(ATTENTION_TYPE), attention_type))
+            else:
+                raise TypeError(
+                    "attention_type should be one of [%s], you provided %s." %
+                    (", ".join(ATTENTION_TYPE), attention_type))
+
+            if use_cuda:
+                for c in self.children():
+                    c.to_gpu()
 
     def __call__(self, enc_out, dec_out, att_weights_step):
         """Forward computation.
@@ -150,12 +155,12 @@ class AttentionMechanism(chainer.Chain):
         if self.sigmoid_smoothing:
             att_weights_step = F.sigmoid(energy)
         else:
-            att_weights_step = F.softmax(energy, axis=-1)
+            att_weights_step = F.softmax(energy, axis=1)
 
         # Compute context vector (weighted sum of encoder outputs)
         batch_size, max_time = att_weights_step.shape
         context_vec = F.sum(enc_out * F.broadcast_to(
-            F.reshape(att_weights_step, (batch_size, max_time, 1)),
+            F.expand_dims(att_weights_step, axis=2),
             (batch_size, max_time, enc_out.shape[-1])),
             axis=1, keepdims=True)
 
