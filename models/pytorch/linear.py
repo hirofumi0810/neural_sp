@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""MLP layer (pytorch)."""
+"""MLP & embedding layer (pytorch)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -32,6 +32,12 @@ class LinearND(nn.Module):
             self.drop = nn.Dropout(p=dropout)
 
     def forward(self, xs):
+        """Forward computation.
+        Args:
+            xs ():
+        Returns:
+
+        """
         size = list(xs.size())
         outputs = xs.contiguous().view(
             (int(np.prod(size[:-1])), int(size[-1])))
@@ -44,13 +50,13 @@ class LinearND(nn.Module):
 
 class Embedding(nn.Module):
 
-    def __init__(self, num_classes, embedding_dim, dropout):
+    def __init__(self, num_classes, embedding_dim, dropout=0):
         """
         Args:
             num_classes (int): the number of nodes in softmax layer
                 (including <SOS> and <EOS> classes)
             embedding_dim (int): the dimension of the embedding in target spaces
-            dropout (float): the probability to drop nodes of the embedding
+            dropout (float, optional): the probability to drop nodes of the embedding
         """
         super(Embedding, self).__init__()
 

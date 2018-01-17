@@ -17,7 +17,7 @@ from chainer import Variable
 from chainer import cuda
 
 from models.chainer.base import ModelBase
-from models.chainer.linear import LinearND
+from models.chainer.linear import LinearND, Embedding
 from models.chainer.encoders.load_encoder import load
 from models.chainer.attention.rnn_decoder import RNNDecoder
 from models.chainer.attention.attention_layer import AttentionMechanism
@@ -269,8 +269,6 @@ class AttentionSeq2seq(ModelBase):
                 sigmoid_smoothing=sigmoid_smoothing,
                 out_channels=attention_conv_num_channels,
                 kernel_size=attention_conv_width)
-            # NOTE: encoder's outputs will be mapped to the same dimension as the
-            # decoder states
 
             ##################################################
             # Bridge layer between the encoder and decoder
@@ -293,16 +291,17 @@ class AttentionSeq2seq(ModelBase):
                 self.is_bridge = False
 
             if self.decoder_input == 'embedding':
-                self.embed = L.EmbedID(self.num_classes, embedding_dim,
-                                       initialW=None)
+                self.embed = Embedding(num_classes=self.num_classes,
+                                       embedding_dim=embedding_dim,
+                                       dropout=decoder_dropout,
+                                       use_cuda=self.use_cuda)
 
             self.proj_layer = LinearND(
                 decoder_num_units * 2, decoder_num_units,
                 dropout=decoder_dropout, use_cuda=self.use_cuda)
             self.fc = LinearND(decoder_num_units, self.num_classes - 1,
                                use_cuda=self.use_cuda)
-            # NOTE: <SOS> is removed because the decoder never predict <SOS> class
-            # TODO: consider projection
+            # NOTE: <SOS> is removed because the decoder never predict <SOS>
 
             if ctc_loss_weight > 0:
                 if self.is_bridge:
@@ -344,7 +343,7 @@ class AttentionSeq2seq(ModelBase):
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (Variable or float): A tensor of size `[1]`
+            loss (chainer.Variable or float): A tensor of size `[1]`
         """
         # Wrap by Variable
         xs = np2var(inputs,  use_cuda=self.use_cuda, backend='chainer')
@@ -362,7 +361,7 @@ class AttentionSeq2seq(ModelBase):
             pass
 
         # Encode acoustic features
-        xs = self._encode(xs, x_lens)
+        xs, x_lens = self._encode(xs, x_lens)
 
         # Teacher-forcing
         logits, att_weights = self._decode_train(xs, ys)
@@ -374,7 +373,7 @@ class AttentionSeq2seq(ModelBase):
         # Compute XE sequence loss
         batch_size, label_num, num_classes = logits.shape
         logits = logits.reshape((-1, num_classes))
-        ys_1d = ys[:, 1:].reshape(-1)
+        ys_1d = ys[:, 1:].reshape(-1)  # Exclude <SOS>
         loss = F.softmax_cross_entropy(
             logits, ys_1d,
             normalize=True, cache_score=True, class_weight=None,
@@ -468,9 +467,11 @@ class AttentionSeq2seq(ModelBase):
         Returns:
             xs (chainer.Variable): A tensor of size
                 `[B, T_in, decoder_num_units]`
+            x_lens ():
             OPTION:
                 xs_sub (chainer.Variable): A tensor of size
                     `[B, T_in, decoder_num_units]`
+                x_lens_sub ():
         """
         if is_multi_task:
             xs, x_lens, xs_sub, x_lens_sub = self.encoder(xs, x_lens)
@@ -487,12 +488,15 @@ class AttentionSeq2seq(ModelBase):
             xs = self.bridge(xs)
 
         if is_multi_task:
+            # Concatenate
+            xs_sub = F.pad_sequence(xs_sub, padding=0)
+
             # Bridge between the encoder and decoder in the sub task
             if self.sub_loss_weight > 0 and self.is_bridge_sub:
                 xs_sub = self.bridge_sub(xs_sub)
-            return xs, xs_sub
+            return xs, x_lens, xs_sub, x_lens_sub
         else:
-            return xs
+            return xs, x_lens
 
     def _compute_coverage(self, att_weights):
         batch_size, max_time_outputs, max_time_inputs = att_weights.shape
@@ -518,9 +522,11 @@ class AttentionSeq2seq(ModelBase):
         dec_state = self._init_decoder_state(enc_out)
 
         # Initialize attention weights
+        # att_weights_step = Variable(
+        #     xp.zeros((batch_size, max_time), dtype=np.float32))
         att_weights_step = Variable(
-            xp.zeros((batch_size, max_time), dtype=np.float32))
-        # TODO: with uniform distribution
+            xp.ones((batch_size, max_time), dtype=np.float32)) / max_time
+        # NOTE: with uniform distribution
 
         # Initialize context vector
         context_vec = Variable(
@@ -529,8 +535,6 @@ class AttentionSeq2seq(ModelBase):
         if self.use_cuda:
             att_weights_step.to_gpu()
             context_vec.to_gpu()
-            # att_weights_step = chainer.cuda.to_gpu(att_weights_step)
-            # context_vec = chainer.cuda.to_gpu(context_vec)
 
         logits = []
         att_weights = []
@@ -542,16 +546,14 @@ class AttentionSeq2seq(ModelBase):
             if is_sub_task:
                 if is_sample:
                     # Scheduled sampling
-                    y_prev = F.argmax(logits[-1], axis=2)
-                    y_prev = self.embed_sub(y_prev)
+                    y_prev = self.embed_sub(F.argmax(logits[-1], axis=2))
                 else:
                     # Teacher-forcing
                     y_prev = self.embed_sub(ys[:, t:t + 1])
             else:
                 if is_sample:
                     # Scheduled sampling
-                    y_prev = F.argmax(logits[-1], axis=2)
-                    y_prev = self.embed(y_prev)
+                    y_prev = self.embed(F.argmax(logits[-1], axis=2))
                 else:
                     # Teacher-forcing
                     y_prev = self.embed(ys[:, t:t + 1])
@@ -684,14 +686,13 @@ class AttentionSeq2seq(ModelBase):
             # Encode acoustic features
             if hasattr(self, 'main_loss_weight'):
                 if is_sub_task:
-                    _, enc_out, perm_idx = self._encode(
+                    _, _, enc_out, _, = self._encode(
                         xs, x_lens, is_multi_task=True)
                 else:
-                    enc_out, _, perm_idx = self._encode(
+                    enc_out, _, _, _ = self._encode(
                         xs, x_lens, is_multi_task=True)
             else:
-                enc_out, perm_idx = self._encode(
-                    xs, x_lens)
+                enc_out, _ = self._encode(xs, x_lens)
 
             # NOTE: assume beam_width == 1
             best_hyps, att_weights = self._decode_infer_greedy(
@@ -718,7 +719,7 @@ class AttentionSeq2seq(ModelBase):
                 inputs_seq_len, use_cuda=self.use_cuda, backend='chainer')
 
             # Encode acoustic features
-            enc_out = self._encode(xs, x_lens)
+            enc_out, x_lens = self._encode(xs, x_lens)
 
             if beam_width == 1:
                 best_hyps, _ = self._decode_infer_greedy(
@@ -748,9 +749,11 @@ class AttentionSeq2seq(ModelBase):
         dec_state = self._init_decoder_state(enc_out)
 
         # Initialize attention weights
+        # att_weights_step = Variable(
+        #     xp.zeros((batch_size, max_time), dtype=np.float32))
         att_weights_step = Variable(
-            xp.zeros((batch_size, max_time), dtype=np.float32))
-        # TODO: with uniform distribution
+            xp.ones((batch_size, max_time), dtype=np.float32)) / max_time
+        # NOTE: with uniform distribution
 
         # Initialize context vector
         context_vec = Variable(
@@ -854,9 +857,11 @@ class AttentionSeq2seq(ModelBase):
                 enc_out[i_batch:i_batch + 1, :, :])
 
             # Initialize attention weights
+            # att_weights_step = Variable(
+            #     xp.zeros((1, max_time), dtype=np.float32))
             att_weights_step = Variable(
-                xp.zeros((1, max_time), dtype=np.float32))
-            # TODO: with uniform distribution
+                xp.ones((1, max_time), dtype=np.float32)) / max_time
+            # NOTE: with uniform distribution
 
             # Initialize context vector
             context_vec = Variable(

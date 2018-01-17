@@ -148,6 +148,7 @@ class AttentionSeq2seq(ModelBase):
 
         # Setting for the encoder
         self.input_size = input_size
+        self.num_stack = num_stack
         self.encoder_type = encoder_type
         self.encoder_bidirectional = encoder_bidirectional
         self.encoder_num_directions = 2 if encoder_bidirectional else 1
@@ -277,20 +278,18 @@ class AttentionSeq2seq(ModelBase):
             sigmoid_smoothing=sigmoid_smoothing,
             out_channels=attention_conv_num_channels,
             kernel_size=attention_conv_width)
-        # NOTE: encoder's outputs will be mapped to the same dimension as the
-        # decoder states
 
         ##################################################
         # Bridge layer between the encoder and decoder
         ##################################################
         if encoder_bidirectional or encoder_num_units != decoder_num_units or encoder_type == 'cnn':
-            if encoder_bidirectional:
-                self.bridge = LinearND(
-                    encoder_num_units * 2, decoder_num_units,
-                    dropout=decoder_dropout)
-            elif encoder_type == 'cnn':
+            if encoder_type == 'cnn':
                 self.bridge = LinearND(
                     self.encoder.output_size, decoder_num_units,
+                    dropout=decoder_dropout)
+            elif encoder_bidirectional:
+                self.bridge = LinearND(
+                    encoder_num_units * 2, decoder_num_units,
                     dropout=decoder_dropout)
             else:
                 self.bridge = LinearND(encoder_num_units, decoder_num_units,
@@ -389,7 +388,7 @@ class AttentionSeq2seq(ModelBase):
         # Compute XE sequence loss
         batch_size, label_num, num_classes = logits.size()
         logits = logits.view((-1, num_classes))
-        ys_1d = ys[:, 1:].contiguous().view(-1)
+        ys_1d = ys[:, 1:].contiguous().view(-1)  # Exclude <SOS>
         loss = F.cross_entropy(
             logits, ys_1d, ignore_index=self.sos_index, size_average=False)
         # NOTE: ys are padded by <SOS>
@@ -416,7 +415,7 @@ class AttentionSeq2seq(ModelBase):
                 ctc_loss * self.ctc_loss_weight
 
         # Average the loss by mini-batch
-        loss /= batch_size
+        loss = loss / batch_size
 
         if is_eval:
             loss = loss.data[0]
@@ -479,7 +478,10 @@ class AttentionSeq2seq(ModelBase):
             is_multi_task (bool, optional):
         Returns:
             xs (FloatTensor): A tensor of size `[B, T_in, decoder_num_units]`
-            xs_sub (FloatTensor): A tensor of size `[B, T_in, decoder_num_units]`
+            x_lens ():
+            OPTION:
+                xs_sub (FloatTensor): A tensor of size `[B, T_in, decoder_num_units]`
+                x_lens_sub ():
             perm_idx (LongTensor):
         """
         if is_multi_task:
@@ -639,15 +641,12 @@ class AttentionSeq2seq(ModelBase):
             if self.init_dec_state == 'mean':
                 # Initialize with mean of all encoder outputs
                 h_0 = enc_out.mean(dim=1, keepdim=True)
-
-                # Convert to time-major
-                h_0 = h_0.transpose(0, 1).contiguous()
             elif self.init_dec_state == 'final':
                 # Initialize with the final encoder output (forward)
-                h_0 = enc_out[:, -1, :].unsqueeze(1)
+                h_0 = enc_out[:, -2:-1, :]
 
-                # Convert to time-major
-                h_0 = h_0.transpose(0, 1).contiguous()
+            # Convert to time-major
+            h_0 = h_0.transpose(0, 1).contiguous()
 
         if self.decoder_type == 'lstm':
             c_0 = Variable(torch.zeros(1, batch_size, self.decoder_num_units))
@@ -707,8 +706,6 @@ class AttentionSeq2seq(ModelBase):
         y.volatile = True
         if self.use_cuda:
             y = y.cuda()
-        # NOTE: y: `[B, 1]`
-
         return y
 
     def attention_weights(self, inputs, inputs_seq_len,
@@ -746,7 +743,7 @@ class AttentionSeq2seq(ModelBase):
 
         # Permutate indices
         if perm_idx is not None:
-            perm_idx = var2np(perm_idx)
+            perm_idx = var2np(perm_idx, backend='pytorch')
 
         # NOTE: assume beam_width == 1
         best_hyps, att_weights = self._decode_infer_greedy(
@@ -790,7 +787,7 @@ class AttentionSeq2seq(ModelBase):
 
         # Permutate indices to the original order
         if perm_idx is not None:
-            perm_idx = var2np(perm_idx)
+            perm_idx = var2np(perm_idx, backend='pytorch')
             best_hyps = best_hyps[perm_idx]
 
         return best_hyps
@@ -880,7 +877,7 @@ class AttentionSeq2seq(ModelBase):
 
             # Pick up 1-best
             _, y = torch.max(logits.squeeze(1), dim=1)
-            # NOTE: `[B, 1, num_classes]` -> `[B, num_classes]`
+            # logits: `[B, 1, num_classes]` -> `[B, num_classes]`
             y = y.unsqueeze(1)
             best_hyps.append(y)
             att_weights.append(att_weights_step)
@@ -894,8 +891,8 @@ class AttentionSeq2seq(ModelBase):
         att_weights = torch.stack(att_weights, dim=1)
 
         # Convert to numpy
-        best_hyps = var2np(best_hyps)
-        att_weights = var2np(att_weights)
+        best_hyps = var2np(best_hyps, backend='pytorch')
+        att_weights = var2np(att_weights, backend='pytorch')
 
         return best_hyps, att_weights
 
@@ -1072,25 +1069,26 @@ class AttentionSeq2seq(ModelBase):
 
         # Path through the softmax layer
         batch_size, max_time = enc_out.size()[:2]
-        enc_out = enc_out.contiguous()
-        enc_out = enc_out.view(batch_size * max_time, -1)
+        enc_out = enc_out.view(batch_size * max_time, -1).contiguous()
         logits_ctc = self.fc_ctc(enc_out)
         logits_ctc = logits_ctc.view(batch_size, max_time, -1)
         log_probs = F.log_softmax(logits_ctc, dim=-1)
 
         if beam_width == 1:
             best_hyps = self._decode_ctc_greedy_np(
-                var2np(log_probs), var2np(x_lens))
+                var2np(log_probs, backend='pytorch'),
+                var2np(x_lens, backend='pytorch'))
         else:
             best_hyps = self._decode_ctc_beam_np(
-                var2np(log_probs), var2np(x_lens), beam_width=beam_width)
+                var2np(log_probs, backend='pytorch'),
+                var2np(x_lens, backend='pytorch'), beam_width=beam_width)
 
         best_hyps = best_hyps - 1
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
         # Permutate indices to the original order
         if perm_idx is not None:
-            perm_idx = var2np(perm_idx)
+            perm_idx = var2np(perm_idx, backend='pytorch')
             best_hyps = best_hyps[perm_idx]
 
         return best_hyps
