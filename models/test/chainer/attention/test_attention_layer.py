@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Test the attention layer (pytorch)."""
+"""Test the attention layer (chainer)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -10,14 +10,12 @@ from __future__ import print_function
 import sys
 import unittest
 
-import torch
-from torch.autograd import Variable
+import numpy as np
+from chainer import Variable
 
 sys.path.append('../../../../')
-from models.pytorch.attention.attention_layer import AttentionMechanism
+from models.chainer.attention.attention_layer import AttentionMechanism
 from utils.measure_time_func import measure_time
-
-torch.manual_seed(1623)
 
 
 class TestAttentionLayer(unittest.TestCase):
@@ -46,23 +44,25 @@ class TestAttentionLayer(unittest.TestCase):
             decoder_num_units=decoder_num_units,
             attention_type=attention_type,
             attention_dim=128,
+            use_cuda=False,
             sharpening_factor=2,
             sigmoid_smoothing=False,
             out_channels=10,
             kernel_size=101)
 
-        enc_out = Variable(torch.randn(
-            (batch_size, max_time, encoder_num_units)))
-        dec_state_step = Variable(torch.randn(
-            (batch_size, 1, decoder_num_units)))
-        att_weights_step = Variable(torch.randn((batch_size, max_time)))
+        enc_out = Variable(np.random.randn(
+            batch_size, max_time, encoder_num_units).astype('f'))
+        dec_state_step = Variable(np.random.randn(
+            batch_size, 1, decoder_num_units).astype('f'))
+        att_weights_step = Variable(np.random.randn(
+            batch_size, max_time).astype('f'))
 
-        context_vec, att_weights_step = attend(enc_out,
-                                               dec_state_step,
-                                               att_weights_step)
+        context_vector, att_weights_step = attend(enc_out,
+                                                  dec_state_step,
+                                                  att_weights_step)
 
-        assert context_vec.size() == (batch_size, 1, encoder_num_units)
-        assert att_weights_step.size() == (batch_size, max_time)
+        assert context_vector.shape == (batch_size, 1, encoder_num_units)
+        assert att_weights_step.shape == (batch_size, max_time)
 
 
 if __name__ == '__main__':
