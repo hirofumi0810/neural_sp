@@ -20,8 +20,8 @@ from tensorboardX import SummaryWriter
 import logging
 
 import torch
-torch.manual_seed(1)
-torch.cuda.manual_seed_all(1)
+torch.manual_seed(1623)
+torch.cuda.manual_seed_all(1623)
 
 sys.path.append(abspath('../../../'))
 from models.load_model import load
@@ -186,7 +186,8 @@ def main():
     model.set_cuda(deterministic=False, benchmark=True)
 
     # Setting for tensorboard
-    tf_writer = SummaryWriter(model.save_path)
+    if params['backend'] == 'pytorch':
+        tf_writer = SummaryWriter(model.save_path)
 
     # Train model
     csv_steps, csv_loss_train, csv_loss_dev = [], [], []
@@ -227,22 +228,16 @@ def main():
             csv_loss_dev.append(loss_dev_val)
 
             # Logging by tensorboard
-            tf_writer.add_scalar('train/loss', loss_train_val_mean, step + 1)
-            tf_writer.add_scalar('dev/loss', loss_dev_val, step + 1)
             if params['backend'] == 'pytorch':
+                tf_writer.add_scalar(
+                    'train/loss', loss_train_val_mean, step + 1)
+                tf_writer.add_scalar('dev/loss', loss_dev_val, step + 1)
                 for name, param in model.named_parameters():
                     name = name.replace('.', '/')
                     tf_writer.add_histogram(
                         name, var2np(param.clone()), step + 1)
                     tf_writer.add_histogram(
                         name + '/grad', var2np(param.grad.clone()), step + 1)
-            elif params['backend'] == 'chainer':
-                for name, param in model.namedparams():
-                    name = name[1:]
-                    # tf_writer.add_histogram(
-                    #     name, var2np(param.clone()), step + 1)
-                    # tf_writer.add_histogram(
-                    #     name + '/grad', var2np(param.grad.clone()), step + 1)
 
             duration_step = time.time() - start_time_step
             logger.info("...Step:%d (epoch:%.3f): loss:%.3f (%.3f) / lr:%.5f / batch:%d (%.3f min)" %
@@ -394,7 +389,8 @@ def main():
     with open(join(model.save_path, 'complete.txt'), 'w') as f:
         f.write('')
 
-    tf_writer.close()
+    if params['backend'] == 'pytorch':
+        tf_writer.close()
 
 
 if __name__ == '__main__':
