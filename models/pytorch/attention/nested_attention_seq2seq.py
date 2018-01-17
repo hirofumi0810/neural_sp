@@ -198,7 +198,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             input_size=decoder_num_units_sub + embedding_dim_sub,
             rnn_type=decoder_type,
             num_units=decoder_num_units_sub,
-            num_layers=decoder_num_layers,
+            num_layers=decoder_num_layers_sub,
             dropout=decoder_dropout,
             use_cuda=self.use_cuda,
             batch_first=True)

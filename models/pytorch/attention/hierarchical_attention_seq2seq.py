@@ -129,11 +129,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         self.sos_index_sub = num_classes_sub + 1
         self.eos_index_sub = num_classes_sub
 
-        if embedding_dim == 0:
-            self.decoder_input = 'onehot'
-        else:
-            self.decoder_input = 'embedding'
-
         # Setting for MTL
         self.main_loss_weight = main_loss_weight
         self.main_loss_weight_tmp = main_loss_weight
@@ -183,18 +178,16 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # Decoder in the sub task
             ##############################
             if self.decoder_input == 'embedding':
-                decoder_input_size = decoder_num_units_sub + embedding_dim
+                decoder_input_size_sub = decoder_num_units_sub + embedding_dim_sub
             elif self.decoder_input == 'onehot':
-                decoder_input_size = decoder_num_units_sub + self.num_classes
-            elif self.decoder_input == 'onehot_prob':
-                decoder_input_size = decoder_num_units_sub + self.num_classes * 2
+                decoder_input_size_sub = decoder_num_units_sub + self.num_classes_sub
             else:
                 raise TypeError
             self.decoder_sub = RNNDecoder(
-                input_size=decoder_input_size,
+                input_size=decoder_input_size_sub,
                 rnn_type=decoder_type,
                 num_units=decoder_num_units_sub,
-                num_layers=decoder_num_layers,
+                num_layers=decoder_num_layers_sub,
                 dropout=decoder_dropout,
                 use_cuda=self.use_cuda,
                 batch_first=True,
