@@ -316,7 +316,7 @@ class AttentionSeq2seq(ModelBase):
                 # Set CTC decoders
                 self._decode_ctc_greedy_np = GreedyDecoder(blank_index=0)
                 self._decode_ctc_beam_np = BeamSearchDecoder(blank_index=0)
-                # NOTE: index 0 is reserved for blank in warpctc_pytorch
+                # NOTE: index 0 is reserved for the blank class
                 # TODO: set space index
 
             # Initialize all weights with uniform distribution
@@ -443,7 +443,7 @@ class AttentionSeq2seq(ModelBase):
         _x_lens = x_lens.clone()
         _ys = ys.clone()[:, 1:] + 1
         _y_lens = y_lens.clone() - 2
-        # NOTE: index 0 is reserved for blank
+        # NOTE: index 0 is reserved for the blank class
         # NOTE: Ignore <SOS> and <EOS>
 
         # Concatenate all _ys for warpctc_pytorch
@@ -917,15 +917,15 @@ class AttentionSeq2seq(ModelBase):
                     # NOTE: `[1 (B), 1, num_classes]` -> `[1 (B), num_classes]`
 
                     # Pick up the top-k scores
-                    indices_topk = xp.argsort(log_probs, axis=1)[
-                        0, ::-1][:beam_width]
+                    indices_topk = xp.argsort(log_probs.data, axis=1)[
+                        0, ::-1][:beam_width].get()
 
-                    for i in indices_topk.data:
-                        log_prob = log_probs[i_batch, i]
+                    for i in indices_topk:
+                        log_prob = log_probs.data[0, i]
                         new_hyp = beam[i_beam]['hyp'] + [i]
 
-                        new_score = xp.logaddexp(
-                            beam[i_beam]['score'], log_prob)
+                        new_score = np.logaddexp(
+                            beam[i_beam]['score'], log_prob.get())
 
                         new_beam.append({'hyp': new_hyp,
                                          'score': new_score,
@@ -967,62 +967,52 @@ class AttentionSeq2seq(ModelBase):
         assert self.ctc_loss_weight > 0
         # TODO: add is_sub_task??
 
-        # Wrap by Variable
-        xs = np2var(
-            inputs, use_cuda=self.use_cuda, backend='chainer')
-        x_lens = np2var(
-            inputs_seq_len, use_cuda=self.use_cuda, backend='chainer')
+        with chainer.no_backprop_mode(), chainer.using_config('train', False):
 
-        # Encode acoustic features
-        enc_out, perm_idx = self._encode(xs, x_lens)
+            # Wrap by Variable
+            xs = np2var(inputs, use_cuda=self.use_cuda, backend='chainer')
+            x_lens = np2var(
+                inputs_seq_len, use_cuda=self.use_cuda, backend='chainer')
 
-        # Permutate indices
-        if perm_idx is not None:
-            x_lens = x_lens[perm_idx]
+            # Encode acoustic features
+            enc_out, x_lens = self._encode(xs, x_lens)
 
-        # Path through the softmax layer
-        batch_size, max_time = enc_out.size()[:2]
-        enc_out = enc_out.contiguous()
-        enc_out = enc_out.view(batch_size * max_time, -1)
-        logits_ctc = self.fc_ctc(enc_out)
-        logits_ctc = logits_ctc.view(batch_size, max_time, -1)
-        log_probs = F.log_softmax(logits_ctc, dim=-1)
+            # Path through the softmax layer
+            batch_size, max_time = enc_out.shape[:2]
+            enc_out = enc_out.reshape(batch_size * max_time, -1)
+            logits_ctc = self.fc_ctc(enc_out)
+            logits_ctc = logits_ctc.reshape(batch_size, max_time, -1)
+            log_probs = F.log_softmax(logits_ctc)
 
         if beam_width == 1:
             best_hyps = self._decode_ctc_greedy_np(
-                var2np(log_probs), var2np(x_lens))
+                var2np(log_probs, backend='chainer'),
+                var2np(x_lens, backend='chainer'))
         else:
             best_hyps = self._decode_ctc_beam_np(
-                var2np(log_probs), var2np(x_lens), beam_width=beam_width)
+                var2np(log_probs, backend='chainer'),
+                var2np(x_lens, backend='chainer'), beam_width=beam_width)
 
         best_hyps = best_hyps - 1
-        # NOTE: index 0 is reserved for blank in warpctc_pytorch
-
-        # Permutate indices to the original order
-        if perm_idx is not None:
-            perm_idx = var2np(perm_idx)
-            best_hyps = best_hyps[perm_idx]
+        # NOTE: index 0 is reserved for the blank class
 
         return best_hyps
 
 
-def _logsumexp(x, dim=None):
-    """
+def to_onehot(y, n_dims):
+    """Convert indices into one-hot encoding.
     Args:
-        x (list):
-        dim (int, optional):
+        y (chainer.Variable): A tensor of size `[B, 1]`
+        n_dims (int):
     Returns:
-        (int) the summation of x in the log-scale
+        y (chainer.Variable): A tensor of size `[B, ]`
     """
-    if dim is None:
-        raise ValueError
-        # TODO: fix this
-
-    if isinstance(x, list):
-        x = torch.FloatTensor(x)
-
-    max_val, _ = torch.max(x, dim=dim)
-    max_val += torch.log(torch.sum(torch.exp(x - max_val),
-                                   dim=dim, keepdim=True))
-
-    return torch.squeeze(max_val, dim=dim).numpy().tolist()[0]
+    batch_size = y.size(0)
+    y_onehot = torch.FloatTensor(batch_size, n_dims).zero_()
+    y_onehot.scatter_(1, y.data.cpu(), 1)
+    y_onehot = Variable(y_onehot)
+    if y.is_cuda:
+        y_onehot = y_onehot.cuda()
+    # if y.volatile:
+    #     y_onehot.volatile = True
+    return y_onehot
