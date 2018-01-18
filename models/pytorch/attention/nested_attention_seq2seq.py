@@ -316,16 +316,15 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         # Initialize bias in forget gate with 1
         self.init_forget_gate_bias_with_one()
 
-    def forward(self, inputs, labels, labels_sub, inputs_seq_len,
-                labels_seq_len, labels_seq_len_sub, is_eval=False):
+    def forward(self, xs, ys, ys_sub, x_lens, y_lens, y_lens_sub, is_eval=False):
         """Forward computation.
         Args:
-            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
-            labels (np.ndarray): A tensor of size `[B, T_out]`
-            labels_sub (np.ndarray): A tensor of size `[B, T_out_sub]`
-            inputs_seq_len (np.ndarray): A tensor of size `[B]`
-            labels_seq_len (np.ndarray): A tensor of size `[B]`
-            labels_seq_len_sub (np.ndarray): A tensor of size `[B]`
+            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            ys (np.ndarray): A tensor of size `[B, T_out]`
+            ys_sub (np.ndarray): A tensor of size `[B, T_out_sub]`
+            x_lens (np.ndarray): A tensor of size `[B]`
+            y_lens (np.ndarray): A tensor of size `[B]`
+            y_lens_sub (np.ndarray): A tensor of size `[B]`
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
@@ -334,17 +333,17 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             xe_loss_sub (FloatTensor): A tensor of size `[1]`
         """
         # Wrap by Variable
-        xs = np2var(inputs, use_cuda=self.use_cuda, backend='pytorch')
+        xs = np2var(xs, use_cuda=self.use_cuda, backend='pytorch')
         ys = np2var(
-            labels, dtype='long', use_cuda=self.use_cuda, backend='pytorch')
+            ys, dtype='long', use_cuda=self.use_cuda, backend='pytorch')
         ys_sub = np2var(
-            labels_sub, dtype='long', use_cuda=self.use_cuda, backend='pytorch')
+            ys_sub, dtype='long', use_cuda=self.use_cuda, backend='pytorch')
         x_lens = np2var(
-            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
+            x_lens, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
         y_lens = np2var(
-            labels_seq_len, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
+            y_lens, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
         y_lens_sub = np2var(
-            labels_seq_len_sub, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
+            y_lens_sub, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
 
         if is_eval:
             self.eval()
@@ -376,29 +375,30 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             logits_sub = logits_sub / self.logits_temperature
 
         # Compute XE sequence loss in the main task
-        batch_size, label_num, num_classes = logits.size()
-        logits = logits.view((-1, num_classes))
-        ys_1d = ys[:, 1:].contiguous().view(-1)
         loss_main = F.cross_entropy(
-            logits, ys_1d, ignore_index=self.sos_index, size_average=False)
+            input=logits.view((-1, logits.size(2))),
+            target=ys[:, 1:].contiguous().view(-1),
+            ignore_index=self.sos_index, size_average=False)
         # NOTE: ys are padded by <SOS>
 
         # Compute XE sequence loss in the sub task
-        batch_size, label_num_sub, num_classes_sub = logits_sub.size()
-        logits_sub = logits_sub.view((-1, num_classes_sub))
-        ys_sub_1d = ys_sub[:, 1:].contiguous().view(-1)
         loss_sub = F.cross_entropy(
-            logits_sub, ys_sub_1d, ignore_index=self.sos_index_sub, size_average=False)
+            input=logits_sub.view((-1, logits_sub.size(2))),
+            target=ys_sub[:, 1:].contiguous().view(-1),
+            ignore_index=self.sos_index_sub, size_average=False)
         # NOTE: ys_sub are padded by <SOS>
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
+            batch_size, label_num, num_classes = logits.size()
             log_probs = F.log_softmax(logits, dim=-1)
             uniform = Variable(torch.FloatTensor(
                 batch_size, label_num, num_classes).fill_(np.log(1 / num_classes)))
+
+            batch_size, label_num_sub, num_classes_sub = logits_sub.size()
             log_probs_sub = F.log_softmax(logits_sub, dim=-1)
             uniform_sub = Variable(torch.FloatTensor(
-                batch_size, label_num, num_classes_sub).fill_(np.log(1 / num_classes_sub)))
+                batch_size, label_num_sub, num_classes_sub).fill_(np.log(1 / num_classes_sub)))
 
             if self.use_cuda:
                 uniform = uniform.cuda()
@@ -416,8 +416,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             pass
             # TODO: sub taskも入れる？
 
-        loss_main = loss_main * self.main_loss_weight / batch_size
-        loss_sub = loss_sub * self.sub_loss_weight / batch_size
+        loss_main = loss_main * self.main_loss_weight / len(xs)
+        loss_sub = loss_sub * self.sub_loss_weight / len(xs)
         loss = loss_main + loss_sub
 
         ##################################################
@@ -428,7 +428,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 xs_sub, ys_sub, x_lens_sub, y_lens_sub, is_sub_task=True)
             # NOTE: including modifying inputs_seq_len_sub
 
-            ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub / batch_size
+            ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub / len(xs)
             loss += ctc_loss_sub
 
         if is_eval:
@@ -842,12 +842,11 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         return dec_out, dec_state, context_vec, att_weights_step
 
-    def attention_weights(self, inputs, inputs_seq_len, beam_width=1,
-                          max_decode_len=100):
+    def attention_weights(self, xs, x_lens, beam_width=1, max_decode_len=100):
         """Get attention weights for visualization.
         Args:
-            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
-            inputs_seq_len (np.ndarray): A tensor of size `[B]`
+            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            x_lens (np.ndarray): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
             max_decode_len (int, optional): the length of output sequences
                 to stop prediction when EOS token have not been emitted
@@ -858,9 +857,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         """
         # Wrap by Variable
         xs = np2var(
-            inputs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
+            xs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
         x_lens = np2var(
-            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
+            x_lens, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
 
         # Encode acoustic features
         enc_out, x_lens, perm_idx = self._encode(xs, x_lens, volatile=True)
@@ -880,12 +879,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         return best_hyps, att_weights
 
-    def decode(self, inputs, inputs_seq_len, beam_width=1,
+    def decode(self, xs, x_lens, beam_width=1,
                max_decode_len=100, is_sub_task=False):
         """Decoding in the inference stage.
         Args:
-            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
-            inputs_seq_len (np.ndarray): A tensor of size `[B]`
+            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            x_lens (np.ndarray): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
             max_decode_len (int, optional): the length of output sequences
                 to stop prediction when EOS token have not been emitted
@@ -895,9 +894,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         """
         # Wrap by Variable
         xs = np2var(
-            inputs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
+            xs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
         x_lens = np2var(
-            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
+            x_lens, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
 
         # Change to evaluation mode
         self.eval()

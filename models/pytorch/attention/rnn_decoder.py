@@ -90,12 +90,13 @@ class RNNDecoder(nn.Module):
         """Forward computation.
         Args:
             y (FloatTensor): A tensor of size `[B, 1, input_size]`
-            dec_state (FloatTensor): A tensor of size
-                `[num_layers, B, num_units]`
+            dec_state (FloatTensor or tuple): A tensor of size
+                `[1, B, num_units]`
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            dec_out: if batch_first is True, a tensor of size `[B, 1, num_units]`
+            dec_out (FloatTensor):
+                if batch_first is True, a tensor of size `[B, 1, num_units]`
                 else `[1, B, num_units]`
             dec_state (FloatTensor or tuple):
         """

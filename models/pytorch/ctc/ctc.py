@@ -102,6 +102,7 @@ class CTC(ModelBase):
 
         # Setting for the encoder
         self.input_size = input_size
+        self.num_stack = num_stack
         self.encoder_type = encoder_type
         self.num_directions = 2 if encoder_bidirectional else 1
         self.fc_list = fc_list
@@ -183,12 +184,6 @@ class CTC(ModelBase):
             self.fc = LinearND(
                 encoder_num_units * self.num_directions, self.num_classes)
 
-        # Set CTC decoders
-        self._decode_greedy_np = GreedyDecoder(blank_index=0)
-        self._decode_beam_np = BeamSearchDecoder(blank_index=0)
-        # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
-        # TODO: set space index
-
         # Initialize all weights with uniform distribution
         self.init_weights(
             parameter_init, distribution='uniform', ignore_keys=['bias'])
@@ -202,6 +197,12 @@ class CTC(ModelBase):
 
         # Initialize bias in forget gate with 1
         self.init_forget_gate_bias_with_one()
+
+        # Set CTC decoders
+        self._decode_greedy_np = GreedyDecoder(blank_index=0)
+        self._decode_beam_np = BeamSearchDecoder(blank_index=0)
+        # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
+        # TODO: set space index
 
     def forward(self, inputs, labels, inputs_seq_len, labels_seq_len,
                 is_eval=False):
@@ -269,8 +270,7 @@ class CTC(ModelBase):
                 size_average=False, reduce=True) * self.label_smoothing_prob
 
         # Average the loss by mini-batch
-        batch_size = logits.size(1)
-        loss = loss / batch_size
+        loss = loss / len(xs)
 
         if is_eval:
             loss = loss.data[0]

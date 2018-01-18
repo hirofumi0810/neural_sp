@@ -21,7 +21,8 @@ from utils.measure_time_func import measure_time
 from utils.evaluation.edit_distance import compute_cer, compute_wer
 from utils.training.learning_rate_controller import Controller
 
-torch.manual_seed(2017)
+torch.manual_seed(1623)
+torch.cuda.manual_seed_all(1623)
 
 
 class TestCTC(unittest.TestCase):

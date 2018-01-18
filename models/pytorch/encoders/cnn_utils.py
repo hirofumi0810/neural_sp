@@ -35,7 +35,7 @@ class ConvOutSize(object):
             if type(m) in [nn.Conv2d, nn.MaxPool2d]:
                 size = math.floor(
                     (size + 2 * m.padding[dim] - m.kernel_size[dim]) / m.stride[dim] + 1)
-        assert size >= 1
+        # assert size >= 1
         return size
 
 

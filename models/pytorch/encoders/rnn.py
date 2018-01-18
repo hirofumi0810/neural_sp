@@ -266,6 +266,8 @@ class RNNEncoder(nn.Module):
                 xs_sub, unpacked_seq_len_sub = pad_packed_sequence(
                     xs_sub, batch_first=self.batch_first, padding_value=0)
                 # assert x_lens == unpacked_seq_len_sub
+
+                # Wrap by Variable again
                 x_lens_sub = np2var(
                     x_lens, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
 
@@ -328,6 +330,8 @@ class RNNEncoder(nn.Module):
             xs, unpacked_seq_len = pad_packed_sequence(
                 xs, batch_first=self.batch_first, padding_value=0)
             # assert x_lens == unpacked_seq_len
+
+        # Wrap by Variable again
         x_lens = np2var(
             x_lens, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
 
@@ -339,6 +343,7 @@ class RNNEncoder(nn.Module):
 
         # sub task (optional)
         if self.num_layers_sub >= 1:
+
             # Sum bidirectional outputs
             if self.bidirectional and self.merge_bidirectional:
                 xs_sub = xs_sub[:, :, :self.num_units] + \

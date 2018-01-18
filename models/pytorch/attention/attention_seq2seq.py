@@ -338,28 +338,27 @@ class AttentionSeq2seq(ModelBase):
         # Initialize bias in forget gate with 1
         self.init_forget_gate_bias_with_one()
 
-    def forward(self, inputs, labels, inputs_seq_len, labels_seq_len,
-                is_eval=False):
+    def forward(self, xs, ys, x_lens, y_lens, is_eval=False):
         """Forward computation.
         Args:
-            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
-            labels (np.ndarray): A tensor of size `[B, T_out]`
-            inputs_seq_len (np.ndarray): A tensor of size `[B]`
-            labels_seq_len (np.ndarray): A tensor of size `[B]`
+            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            ys (np.ndarray): A tensor of size `[B, T_out]`
+            x_lens (np.ndarray): A tensor of size `[B]`
+            y_lens (np.ndarray): A tensor of size `[B]`
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
             loss (FloatTensor or float): A tensor of size `[1]`
         """
         # Wrap by Variable
-        xs = np2var(inputs,  use_cuda=self.use_cuda, backend='pytorch')
+        xs = np2var(xs,  use_cuda=self.use_cuda, backend='pytorch')
         ys = np2var(
-            labels, dtype='long', use_cuda=self.use_cuda, backend='pytorch')
-        # NOTE: labels must be long
+            ys, dtype='long', use_cuda=self.use_cuda, backend='pytorch')
+        # NOTE: ys must be long
         x_lens = np2var(
-            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
+            x_lens, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
         y_lens = np2var(
-            labels_seq_len, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
+            y_lens, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
 
         if is_eval:
             self.eval()
@@ -386,15 +385,15 @@ class AttentionSeq2seq(ModelBase):
             logits = logits / self.logits_temperature
 
         # Compute XE sequence loss
-        batch_size, label_num, num_classes = logits.size()
-        logits = logits.view((-1, num_classes))
-        ys_1d = ys[:, 1:].contiguous().view(-1)  # Exclude <SOS>
         loss = F.cross_entropy(
-            logits, ys_1d, ignore_index=self.sos_index, size_average=False)
+            input=logits.view((-1, logits.size(2))),
+            target=ys[:, 1:].contiguous().view(-1),
+            ignore_index=self.sos_index, size_average=False)
         # NOTE: ys are padded by <SOS>
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0 and self.decoder_input == 'embedding':
+            batch_size, label_num, num_classes = logits.size()
             log_probs = F.log_softmax(logits, dim=-1)
             uniform = Variable(torch.FloatTensor(
                 batch_size, label_num, num_classes).fill_(np.log(1 / num_classes)))
@@ -415,7 +414,7 @@ class AttentionSeq2seq(ModelBase):
                 ctc_loss * self.ctc_loss_weight
 
         # Average the loss by mini-batch
-        loss = loss / batch_size
+        loss = loss / len(xs)
 
         if is_eval:
             loss = loss.data[0]
@@ -708,12 +707,11 @@ class AttentionSeq2seq(ModelBase):
             y = y.cuda()
         return y
 
-    def attention_weights(self, inputs, inputs_seq_len,
-                          max_decode_len=100, is_sub_task=False):
+    def attention_weights(self, xs, x_lens, max_decode_len=100, is_sub_task=False):
         """Get attention weights for visualization.
         Args:
-            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
-            inputs_seq_len (np.ndarray): A tensor of size `[B]`
+            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            x_lens (np.ndarray): A tensor of size `[B]`
             max_decode_len (int, optional): the length of output sequences
                 to stop prediction when EOS token have not been emitted
             is_sub_task (bool, optional):
@@ -723,9 +721,9 @@ class AttentionSeq2seq(ModelBase):
         """
         # Wrap by Variable
         xs = np2var(
-            inputs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
+            xs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
         x_lens = np2var(
-            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
+            x_lens, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
 
         # Change to evaluation mode
         self.eval()
@@ -756,11 +754,11 @@ class AttentionSeq2seq(ModelBase):
 
         return best_hyps, att_weights
 
-    def decode(self, inputs, inputs_seq_len, beam_width, max_decode_len):
+    def decode(self, xs, x_lens, beam_width, max_decode_len):
         """Decoding in the inference stage.
         Args:
-            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
-            inputs_seq_len (np.ndarray): A tensor of size `[B]`
+            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            x_lens (np.ndarray): A tensor of size `[B]`
             beam_width (int): the size of beam
             max_decode_len (int): the length of output sequences
                 to stop prediction when EOS token have not been emitted
@@ -769,9 +767,9 @@ class AttentionSeq2seq(ModelBase):
         """
         # Wrap by Variable
         xs = np2var(
-            inputs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
+            xs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
         x_lens = np2var(
-            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
+            x_lens, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
 
         # Change to evaluation mode
         self.eval()
@@ -1042,12 +1040,12 @@ class AttentionSeq2seq(ModelBase):
 
         return np.array(best_hyps)
 
-    def decode_ctc(self, inputs, inputs_seq_len, beam_width=1):
+    def decode_ctc(self, xs, x_lens, beam_width=1):
         """Decoding by the CTC layer in the inference stage.
             This is only used for Joint CTC-Attention model.
         Args:
-            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
-            inputs_seq_len (np.ndarray): A tensor of size `[B]`
+            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            x_lens (np.ndarray): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
@@ -1057,9 +1055,9 @@ class AttentionSeq2seq(ModelBase):
 
         # Wrap by Variable
         xs = np2var(
-            inputs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
+            xs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
         x_lens = np2var(
-            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
+            x_lens, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
 
         # Change to evaluation mode
         self.eval()

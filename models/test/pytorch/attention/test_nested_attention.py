@@ -21,7 +21,8 @@ from utils.measure_time_func import measure_time
 from utils.evaluation.edit_distance import compute_cer, compute_wer
 from utils.training.learning_rate_controller import Controller
 
-torch.manual_seed(2017)
+torch.manual_seed(1623)
+torch.cuda.manual_seed_all(1623)
 
 
 class TestNestedAttention(unittest.TestCase):
@@ -37,7 +38,7 @@ class TestNestedAttention(unittest.TestCase):
     @measure_time
     def check(self, composition_case,
               encoder_type='lstm', bidirectional=True, decoder_type='lstm',
-              attention_type='location', subsample=True,
+              attention_type='location', subsample=False,
               ctc_loss_weight=0, decoder_num_layers=2):
 
         print('==================================================')
@@ -91,7 +92,7 @@ class TestNestedAttention(unittest.TestCase):
             parameter_init=0.1,
             subsample_list=[] if not subsample else [True, False, False],
             subsample_type='drop',
-            init_dec_state='zero',
+            init_dec_state='final',
             sharpening_factor=1,
             logits_temperature=1,
             sigmoid_smoothing=False,

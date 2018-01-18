@@ -17,6 +17,8 @@ from models.test.data import generate_data
 from utils.io.variable import np2var
 from utils.measure_time_func import measure_time
 
+torch.manual_seed(1623)
+
 
 class TestPyramidRNNEncoders(unittest.TestCase):
 

@@ -21,7 +21,8 @@ from utils.measure_time_func import measure_time
 from utils.evaluation.edit_distance import compute_cer, compute_wer
 from utils.training.learning_rate_controller import Controller
 
-torch.manual_seed(2017)
+torch.manual_seed(1623)
+torch.cuda.manual_seed_all(1623)
 
 
 class TestHierarchicalAttention(unittest.TestCase):
@@ -72,7 +73,7 @@ class TestHierarchicalAttention(unittest.TestCase):
               subsample=False, projection=False,
               ctc_loss_weight_sub=0, conv=False, batch_norm=False,
               residual=False, dense_residual=False, label_smoothing=False,
-              curriculum_training=True):
+              curriculum_training=False):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
@@ -141,7 +142,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             parameter_init=0.1,
             subsample_list=[] if not subsample else [False, True, False],
             subsample_type='concat' if subsample is False else subsample,
-            init_dec_state='zero',
+            init_dec_state='final',
             sharpening_factor=1,
             logits_temperature=1,
             sigmoid_smoothing=False,

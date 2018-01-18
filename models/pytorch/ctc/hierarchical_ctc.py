@@ -275,9 +275,8 @@ class HierarchicalCTC(CTC):
                 size_average=False, reduce=True) * self.label_smoothing_prob
 
         # Average the loss by mini-batch
-        batch_size = logits.size(1)
-        loss_main = loss_main * self.main_loss_weight / batch_size
-        loss_sub = loss_sub * (1 - self.main_loss_weight) / batch_size
+        loss_main = loss_main * self.main_loss_weight / len(xs)
+        loss_sub = loss_sub * (1 - self.main_loss_weight) / len(xs)
         loss = loss_main + loss_sub
 
         if is_eval:

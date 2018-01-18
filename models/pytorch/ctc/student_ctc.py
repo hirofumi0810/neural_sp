@@ -188,9 +188,8 @@ class StudentCTC(CTC):
         # TODO: label smoothing (with uniform distribution)
 
         # Average the loss by mini-batch
-        batch_size = logits.size(1)
-        loss_main = loss_main * self.main_loss_weight / batch_size
-        loss_xe = loss_xe * (1 - self.main_loss_weight) / batch_size
+        loss_main = loss_main * self.main_loss_weight / len(xs)
+        loss_xe = loss_xe * (1 - self.main_loss_weight) / len(xs)
         loss = loss_main + loss_xe
 
         if is_eval:

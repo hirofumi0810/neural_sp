@@ -7,7 +7,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import os
 from os.path import join, isfile, basename
 from glob import glob
 
@@ -248,8 +247,7 @@ class ModelBase(nn.Module):
 
         model_path = join(save_path, 'model.epoch-' + str(epoch))
         if isfile(join(model_path)):
-            logger.info("=> Loading checkpoint (epoch:%d): %s" %
-                        (epoch, model_path))
+            print("=> Loading checkpoint (epoch:%d): %s" % (epoch, model_path))
             checkpoint = torch.load(
                 model_path, map_location=lambda storage, loc: storage)
         else:
