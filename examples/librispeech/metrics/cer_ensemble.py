@@ -38,18 +38,15 @@ def do_eval_cer(models, model_type, dataset, label_type, beam_width,
     # Reset data counter
     dataset.reset()
 
-    # Set batch size in the evaluation
-    if eval_batch_size is not None:
-        dataset.batch_size = eval_batch_size
-
     idx2char = Idx2char(
         vocab_file_path='../metrics/vocab_files/' +
         label_type + '_' + dataset.data_size + '.txt')
 
     cer_mean, wer_mean = 0, 0
     if progressbar:
-        pbar = tqdm(total=len(dataset))
-    for batch, is_new_epoch in dataset:
+        pbar = tqdm(total=len(dataset))  # TODO: fix this
+    while True:
+        batch, is_new_epoch = dataset.next(batch_size=eval_batch_size)
 
         if model_type in ['ctc', 'attention']:
             inputs, labels, inputs_seq_len, labels_seq_len, _ = batch
@@ -131,7 +128,7 @@ def do_eval_cer(models, model_type, dataset, label_type, beam_width,
                                     normalize=True)
 
             if progressbar:
-                pbar.update(1)
+                pbar.update(len(inputs))
 
         if is_new_epoch:
             break
@@ -139,7 +136,7 @@ def do_eval_cer(models, model_type, dataset, label_type, beam_width,
     if progressbar:
         pbar.close()
 
-    # Register original batch size
+    # Reset data counters
     dataset.reset()
 
     cer_mean /= len(dataset)

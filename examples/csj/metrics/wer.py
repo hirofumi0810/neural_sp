@@ -38,18 +38,15 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
     # Reset data counter
     dataset.reset()
 
-    # Set batch size in the evaluation
-    if eval_batch_size is not None:
-        dataset._batch_size = eval_batch_size
-
     idx2word = Idx2word(
         vocab_file_path='../metrics/vocab_files/' +
         label_type + '_' + data_size + '.txt')
 
     wer_mean = 0
     if progressbar:
-        pbar = tqdm(total=len(dataset))
-    for batch, is_new_epoch in dataset:
+        pbar = tqdm(total=len(dataset))  # TODO: fix this
+    while True:
+        batch, is_new_epoch = dataset.next(batch_size=eval_batch_size)
 
         # Decode
         if model_type in ['ctc', 'attention']:
@@ -114,7 +111,7 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
             # print('DEL: %d' % delete)
 
             if progressbar:
-                pbar.update(1)
+                pbar.update(len(inputs))
 
         if is_new_epoch:
             break
@@ -122,7 +119,7 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
     if progressbar:
         pbar.close()
 
-    # Register original batch size
+    # Reset data counters
     dataset.reset()
 
     wer_mean /= len(dataset)
