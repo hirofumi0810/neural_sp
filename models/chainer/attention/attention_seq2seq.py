@@ -332,26 +332,23 @@ class AttentionSeq2seq(ModelBase):
             # Initialize bias in forget gate with 1
             self.init_forget_gate_bias_with_one()
 
-    def __call__(self, inputs, labels, inputs_seq_len, labels_seq_len,
+    def __call__(self, xs, ys, x_lens, y_lens,
                  is_eval=False):
         """Forward computation.
         Args:
-            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
-            labels (np.ndarray): A tensor of size `[B, T_out]`
-            inputs_seq_len (np.ndarray): A tensor of size `[B]`
-            labels_seq_len (np.ndarray): A tensor of size `[B]`
+            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            ys (np.ndarray): A tensor of size `[B, T_out]`
+            x_lens (list or np.ndarray): A tensor of size `[B]`
+            y_lens (np.ndarray): A tensor of size `[B]`
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
             loss (chainer.Variable or float): A tensor of size `[1]`
         """
         # Wrap by Variable
-        xs = np2var(inputs,  use_cuda=self.use_cuda, backend='chainer')
-        ys = np2var(labels, use_cuda=self.use_cuda, backend='chainer')
-        x_lens = np2var(
-            inputs_seq_len, use_cuda=self.use_cuda, backend='chainer')
-        y_lens = np2var(
-            labels_seq_len, use_cuda=self.use_cuda, backend='chainer')
+        xs = np2var(xs,  use_cuda=self.use_cuda, backend='chainer')
+        ys = np2var(ys, use_cuda=self.use_cuda, backend='chainer')
+        y_lens = np2var(y_lens, use_cuda=self.use_cuda, backend='chainer')
 
         if is_eval:
             # TODO: add no_backprop_mode
@@ -402,10 +399,10 @@ class AttentionSeq2seq(ModelBase):
         #         ctc_loss * self.ctc_loss_weight
 
         # Average the loss by mini-batch
-        loss = F.sum(loss, axis=0) / len(inputs)
+        loss = F.sum(loss, axis=0) / len(xs)
 
         if is_eval:
-            loss = loss.data[0]
+            loss = loss.data
         else:
             self._step += 1
 
@@ -421,14 +418,14 @@ class AttentionSeq2seq(ModelBase):
                           is_sub_task=False):
         """
         Args:
-            enc_out (FloatTensor): A tensor of size
+            enc_out (Variable): A tensor of size
                 `[B, T_in, decoder_num_units]`
-            ys (LongTensor): A tensor of size `[B, T_out]`
-            x_lens (IntTensor): A tensor of size `[B]`
-            y_lens (IntTensor): A tensor of size `[B]`
+            ys (Variable): A tensor of size `[B, T_out]`
+            x_lens (np.ndarray): A tensor of size `[B]`
+            y_lens (variable): A tensor of size `[B]`
             is_sub_task (bool, optional):
         Returns:
-            ctc_loss (FloatTensor): A tensor of size `[]`
+            ctc_loss (Variable): A tensor of size `[]`
         """
         raise NotImplementedError
         if is_sub_task:
@@ -462,16 +459,16 @@ class AttentionSeq2seq(ModelBase):
         Args:
             xs (list of chainer.Variable):
                 A list of tensors of size `[T_in, input_size]`
-            x_lens (list of chainer.Variable): A list of tensors of size `[1]`
+            x_lens (np.ndarray): A tensor of size `[B]`
             is_multi_task (bool, optional):
         Returns:
             xs (chainer.Variable): A tensor of size
                 `[B, T_in, decoder_num_units]`
-            x_lens ():
+            x_lens (np.ndarray): A tensor of size `[B]`
             OPTION:
                 xs_sub (chainer.Variable): A tensor of size
                     `[B, T_in, decoder_num_units]`
-                x_lens_sub ():
+                x_lens_sub (np.ndarray): A tensor of size `[B]`
         """
         if is_multi_task:
             xs, x_lens, xs_sub, x_lens_sub = self.encoder(xs, x_lens)
@@ -662,12 +659,11 @@ class AttentionSeq2seq(ModelBase):
             y.to_gpu()
         return y
 
-    def attention_weights(self, inputs, inputs_seq_len,
-                          max_decode_len=100, is_sub_task=False):
+    def attention_weights(self, xs, x_lens, max_decode_len=100, is_sub_task=False):
         """Get attention weights for visualization.
         Args:
-            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
-            inputs_seq_len (np.ndarray): A tensor of size `[B]`
+            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            x_lens (np.ndarray): A tensor of size `[B]`
             max_decode_len (int, optional): the length of output sequences
                 to stop prediction when EOS token have not been emitted
             is_sub_task (bool, optional):
@@ -678,10 +674,7 @@ class AttentionSeq2seq(ModelBase):
         with chainer.no_backprop_mode(), chainer.using_config('train', False):
 
             # Wrap by Variable
-            xs = np2var(
-                inputs, use_cuda=self.use_cuda, backend='chainer')
-            x_lens = np2var(
-                inputs_seq_len, use_cuda=self.use_cuda, backend='chainer')
+            xs = np2var(xs, use_cuda=self.use_cuda, backend='chainer')
 
             # Encode acoustic features
             if hasattr(self, 'main_loss_weight'):
@@ -700,11 +693,11 @@ class AttentionSeq2seq(ModelBase):
 
         return best_hyps, att_weights
 
-    def decode(self, inputs, inputs_seq_len, beam_width=1, max_decode_len=100):
+    def decode(self, xs, x_lens, beam_width=1, max_decode_len=100):
         """Decoding in the inference stage.
         Args:
-            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
-            inputs_seq_len (np.ndarray): A tensor of size `[B]`
+            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            x_lens (np.ndarray): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
             max_decode_len (int, optional): the length of output sequences
                 to stop prediction when EOS token have not been emitted
@@ -712,11 +705,9 @@ class AttentionSeq2seq(ModelBase):
             best_hyps (np.ndarray): A tensor of size `[]`
         """
         with chainer.no_backprop_mode(), chainer.using_config('train', False):
+
             # Wrap by Variable
-            xs = np2var(
-                inputs, use_cuda=self.use_cuda, backend='chainer')
-            x_lens = np2var(
-                inputs_seq_len, use_cuda=self.use_cuda, backend='chainer')
+            xs = np2var(xs, use_cuda=self.use_cuda, backend='chainer')
 
             # Encode acoustic features
             enc_out, x_lens = self._encode(xs, x_lens)
@@ -832,7 +823,7 @@ class AttentionSeq2seq(ModelBase):
         Args:
             enc_out (chainer.Variable): A tensor of size
                 `[B, T_in, decoder_num_units]`
-            x_lens (chainer.Variable): A tensor of size `[B]`
+            x_lens (np.ndarray): A tensor of size `[B]`
             beam_width (int): the size of beam
             max_decode_len (int, optional): the length of output sequences
                 to stop prediction when EOS token have not been emitted
@@ -849,7 +840,7 @@ class AttentionSeq2seq(ModelBase):
         best_hyps = []
         for i_batch in range(batch_size):
 
-            max_time = int(x_lens[i_batch].data)
+            max_time = int(x_lens[i_batch])
             xp = cuda.get_array_module(enc_out)
 
             # Initialize decoder state
@@ -898,7 +889,7 @@ class AttentionSeq2seq(ModelBase):
                     else:
                         y_prev = self.embed(y_prev)
 
-                    max_time = int(x_lens[i_batch].data)
+                    max_time = int(x_lens[i_batch])
 
                     dec_in = F.concat(
                         [y_prev, beam[i_beam]['context_vec']], axis=-1)
@@ -991,12 +982,11 @@ class AttentionSeq2seq(ModelBase):
 
         if beam_width == 1:
             best_hyps = self._decode_ctc_greedy_np(
-                var2np(log_probs, backend='chainer'),
-                var2np(x_lens, backend='chainer'))
+                var2np(log_probs, backend='chainer'), x_lens)
         else:
             best_hyps = self._decode_ctc_beam_np(
                 var2np(log_probs, backend='chainer'),
-                var2np(x_lens, backend='chainer'), beam_width=beam_width)
+                x_lens, beam_width=beam_width)
 
         best_hyps = best_hyps - 1
         # NOTE: index 0 is reserved for the blank class

@@ -124,7 +124,7 @@ class AttentionMechanism(chainer.Chain):
             # energy = <v, tanh(W([h_de; h_en] + W_conv(f) + b))>
             ###################################################################
             conv_feat = F.squeeze(self.conv(
-                F.reshape(att_weights_step, (batch_size, 1, 1, max_time))), axis=2)
+                att_weights_step.reshape(batch_size, 1, 1, max_time)), axis=2)
             # -> `[B, out_channels, T_in]`
             conv_feat = F.transpose(conv_feat, axes=(0, 2, 1))
             # -> `[B, T_in, out_channels]`

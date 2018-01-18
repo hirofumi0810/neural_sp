@@ -194,32 +194,25 @@ class CTC(ModelBase):
         # Set CTC decoders
         self._decode_greedy_np = GreedyDecoder(blank_index=0)
         self._decode_beam_np = BeamSearchDecoder(blank_index=0)
+        # NOTE: index 0 is reserved for the blank class
         # TODO: set space index
 
-    def __call__(self, inputs, labels, inputs_seq_len, labels_seq_len,
-                 is_eval=False):
+    def __call__(self, xs, ys, x_lens, y_lens, is_eval=False):
         """Forward computation.
         Args:
-            inputs (list of np.ndarray):
-                A list of tensors of size `[T_in, input_size]`
-            labels (list of np.ndarray):
-                A list of tensors of size `[T_out]`
-            inputs_seq_len (list of np.ndarray):
-                A list of tensors of size `[1]`
-            labels_seq_len (list of np.ndarray):
-                A list of tensors of size `[1]`
+            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            ys (np.ndarray): A tensor of size `[B, T_out]`
+            x_lens (list or np.ndarray): A tensor of size `[B]`
+            y_lens (np.ndarray): A tensor of size `[B]`
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
             loss (chainer.Variable or float): A tensor of size `[1]`
         """
         # Wrap by Variable
-        xs = np2var(inputs, use_cuda=self.use_cuda, backend='chainer')
-        ys = np2var(labels, use_cuda=self.use_cuda, backend='chainer')
-        x_lens = np2var(
-            inputs_seq_len, use_cuda=self.use_cuda, backend='chainer')
-        y_lens = np2var(
-            labels_seq_len, use_cuda=self.use_cuda, backend='chainer')
+        xs = np2var(xs, use_cuda=self.use_cuda, backend='chainer')
+        ys = np2var(ys, use_cuda=self.use_cuda, backend='chainer')
+        y_lens = np2var(y_lens, use_cuda=self.use_cuda, backend='chainer')
 
         if is_eval:
             # TODO: add no_backprop_mode
@@ -259,7 +252,7 @@ class CTC(ModelBase):
             raise NotImplementedError
 
         # Average the loss by mini-batch
-        loss = F.sum(loss, axis=0) / len(inputs)
+        loss = F.sum(loss, axis=0) / len(xs)
 
         if is_eval:
             loss = loss.data
@@ -271,15 +264,16 @@ class CTC(ModelBase):
         Args:
             xs (list of chainer.Variable):
                 A list of tensors of size `[T_in, input_size]`
-            x_lens (list of chainer.Variable): A list of tensors of size `[1]`
+            x_lens (np.ndarray): A tensor of size `[B]`
             is_multi_task (bool, optional):
         Returns:
             logits (): A tensor of size
                 `[B, T, num_classes (including the blank class)]`
-            x_lens (): A tensor of size `[B]`
-            logits_sub (): A tensor of size
-                `[B, T, num_classes_sub (including the blank class)]`
-            x_lens_sub (): A tensor of size `[B]`
+            x_lens (np.ndarray): A tensor of size `[B]`
+            OPTION:
+                logits_sub (): A tensor of size
+                    `[B, T, num_classes_sub (including the blank class)]`
+                x_lens_sub (np.ndarray): A tensor of size `[B]`
         """
         if is_multi_task:
             xs, x_lens, xs_sub, x_lens_sub = self.encoder(xs, x_lens)
@@ -303,41 +297,44 @@ class CTC(ModelBase):
         else:
             return logits, x_lens
 
-    def posteriors(self, inputs, inputs_seq_len, temperature=1,
+    def posteriors(self, xs, x_lens, temperature=1,
                    blank_prior=None, is_sub_task=False):
         """Returns CTC posteriors (after the softmax layer).
         Args:
-            inputs (list of np.ndarray):
+            xs (list of np.ndarray):
                 A list of tensors of size `[B, T_in, input_size]`
-            inputs_seq_len (list of np.ndarray): A list of tensors of size `[B]`
+            x_lens (np.ndarray): A tensor of size `[B]`
             temperature (float, optional): the temperature parameter for the
                 softmax layer in the inference stage
             blank_prior (float, optional):
             is_sub_task (bool, optional):
         Returns:
-            probs (list of np.ndarray): A list of tensors of size `[B, T, num_classes]`
+            probs (np.ndarray): A list of tensors of size `[B, T, num_classes]`
         """
         with chainer.no_backprop_mode(), chainer.using_config('train', False):
+
+            # Wrap by Variable
+            xs = np2var(xs, use_cuda=self.use_cuda, backend='chainer')
+
             raise NotImplementedError
 
-    def decode(self, inputs, inputs_seq_len, beam_width=1,
+    def decode(self, xs, x_lens, beam_width=1,
                max_decode_len=None, is_sub_task=False):
         """
         Args:
-            inputs (list of np.ndarray):
+            xs (list of np.ndarray):
                 A list of tensors of size `[B, T_in, input_size]`
-            inputs_seq_len (list of np.ndarray): A list of tensors of size `[B]`
+            x_lens (np.ndarray): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
             max_decode_len: not used (to make CTC compatible with attention)
             is_sub_task (bool, optional):
         Returns:
-            best_hyps (list of np.ndarray):
+            best_hyps (np.ndarray):
         """
         with chainer.no_backprop_mode(), chainer.using_config('train', False):
+
             # Wrap by Variable
-            xs = np2var(inputs, use_cuda=self.use_cuda, backend='chainer')
-            x_lens = np2var(
-                inputs_seq_len, use_cuda=self.use_cuda, backend='chainer')
+            xs = np2var(xs, use_cuda=self.use_cuda, backend='chainer')
 
             # Encode acoustic features
             if hasattr(self, 'main_loss_weight'):
@@ -354,12 +351,11 @@ class CTC(ModelBase):
 
             if beam_width == 1:
                 best_hyps = self._decode_greedy_np(
-                    var2np(log_probs, backend='chainer'),
-                    var2np(x_lens, backend='chainer'))
+                    var2np(log_probs, backend='chainer'), x_lens)
             else:
                 best_hyps = self._decode_beam_np(
                     var2np(log_probs, backend='chainer'),
-                    var2np(x_lens, backend='chainer'), beam_width=beam_width)
+                    x_lens, beam_width=beam_width)
 
             # NOTE: index 0 is reserved for the blank class
             best_hyps = best_hyps - 1

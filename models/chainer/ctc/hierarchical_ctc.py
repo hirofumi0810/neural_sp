@@ -167,22 +167,15 @@ class HierarchicalCTC(CTC):
             # Initialize bias in forget gate with 1
             self.init_forget_gate_bias_with_one()
 
-    def __call__(self, inputs, labels, labels_sub, inputs_seq_len,
-                 labels_seq_len, labels_seq_len_sub, is_eval=False):
+    def __call__(self, xs, ys, ys_sub, x_lens, y_lens, y_lens_sub, is_eval=False):
         """Forward computation.
         Args:
-            inputs (list of np.ndarray):
-                A list of tensors of size `[T_in, input_size]`
-            labels (list of np.ndarray):
-                A list of tensors of size `[T_out]`
-            labels_sub (list of np.ndarray):
-                A list of tensors of size `[T_out_sub]`
-            inputs_seq_len (list of np.ndarray):
-                A list of tensors of size `[1]`
-            labels_seq_len (list of np.ndarray):
-                A list of tensors of size `[1]`
-            labels_seq_len_sub (list of np.ndarray):
-                A list of tensors of size `[1]`
+            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            ys (np.ndarray): A tensor of size `[B, T_out]`
+            ys_sub (np.ndarray): A tensor of size `[B, T_out_sub]`
+            x_lens (list or np.ndarray): A tensor of size `[B]`
+            y_lens (np.ndarray): A tensor of size `[B]`
+            y_lens_sub (np.ndarray): A tensor of size `[B]`
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
@@ -191,17 +184,12 @@ class HierarchicalCTC(CTC):
             loss_sub (chainer.Variable or float): A tensor of size `[1]`
         """
         # Wrap by Variable
-        xs = np2var(inputs, use_cuda=self.use_cuda, backend='chainer')
-        ys = np2var(labels, use_cuda=self.use_cuda, backend='chainer')
-        ys_sub = np2var(labels_sub, use_cuda=self.use_cuda, backend='chainer')
-        x_lens = np2var(
-            inputs_seq_len, use_cuda=self.use_cuda, backend='chainer')
-        x_lens_sub = np2var(
-            inputs_seq_len, use_cuda=self.use_cuda, backend='chainer')
-        y_lens = np2var(
-            labels_seq_len, use_cuda=self.use_cuda, backend='chainer')
+        xs = np2var(xs, use_cuda=self.use_cuda, backend='chainer')
+        ys = np2var(ys, use_cuda=self.use_cuda, backend='chainer')
+        ys_sub = np2var(ys_sub, use_cuda=self.use_cuda, backend='chainer')
+        y_lens = np2var(y_lens, use_cuda=self.use_cuda, backend='chainer')
         y_lens_sub = np2var(
-            labels_seq_len_sub, use_cuda=self.use_cuda, backend='chainer')
+            y_lens_sub, use_cuda=self.use_cuda, backend='chainer')
 
         if is_eval:
             # TODO: add no_backprop_mode
@@ -265,9 +253,9 @@ class HierarchicalCTC(CTC):
 
         # Average the loss by mini-batch
         loss_main = F.sum(loss_main, axis=0) * \
-            self.main_loss_weight / len(inputs)
+            self.main_loss_weight / len(xs)
         loss_sub = F.sum(loss_sub, axis=0) * \
-            (1 - self.main_loss_weight) / len(inputs)
+            (1 - self.main_loss_weight) / len(xs)
         loss = loss_main + loss_sub
 
         if is_eval:

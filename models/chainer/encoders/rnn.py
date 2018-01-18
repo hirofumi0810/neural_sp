@@ -12,7 +12,6 @@ import numpy as np
 import chainer
 from chainer import functions as F
 from chainer import links as L
-from chainer import initializers
 
 from models.chainer.linear import LinearND
 # from models.chainer.encoders.cnn import CNNEncoder
@@ -128,18 +127,18 @@ class RNNEncoder(chainer.Chain):
                 raise NotImplementedError
                 assert num_stack == 1
                 assert splice == 1
-                # self.conv = CNNEncoder(input_size,
-                #                        conv_channels=conv_channels,
-                #                        conv_kernel_sizes=conv_kernel_sizes,
-                #                        conv_strides=conv_strides,
-                #                        poolings=poolings,
-                #                        dropout=dropout,
-                #                        parameter_init=parameter_init,
-                #                        activation=activation,
-                #                        use_cuda=use_cuda,
-                #                        batch_norm=batch_norm)
-                # input_size = self.conv.output_size
-                # self.get_conv_out_size = ConvOutSize(self.conv.conv)
+                self.conv = CNNEncoder(input_size,
+                                       conv_channels=conv_channels,
+                                       conv_kernel_sizes=conv_kernel_sizes,
+                                       conv_strides=conv_strides,
+                                       poolings=poolings,
+                                       dropout=dropout,
+                                       parameter_init=parameter_init,
+                                       activation=activation,
+                                       use_cuda=use_cuda,
+                                       batch_norm=batch_norm)
+                input_size = self.conv.output_size
+                self.get_conv_out_size = ConvOutSize(self.conv.conv)
             else:
                 input_size = input_size * splice * num_stack
                 self.conv = None
@@ -233,26 +232,26 @@ class RNNEncoder(chainer.Chain):
         Args:
             xs (list of chainer.Variable): A list of tensors of size
                 `[T, input_size]`, of length '[B]'
-            x_lens (list): A list of length `[B]`
+            x_lens (np.ndarray): A list of length `[B]`
         Returns:
             xs (list of chainer.Variable):
                 A list of tensors of size
                     `[T // sum(subsample_list), num_units (* num_directions)]`,
                     of length '[B]'
-            x_lens ():
+            x_lens (np.ndarray): A list of length `[B]`
             OPTION:
                 xs_sub (list of chainer.Variable):
                     A list of tensor of size
                         `[T // sum(subsample_list), num_units (* num_directions)]`,
                         of length `[B]`
-                x_lens_sub ():
+                x_lens_sub (np.ndarray): A list of length `[B]`
         """
         # NOTE: automatically sort xs in descending order by length,
         # and transpose the sequence
 
         # Path through CNN layers before RNN layers
-        # if self.conv is not None:
-        #     xs, x_lens = self.conv(xs, x_lens)
+        if self.conv is not None:
+            xs, x_lens = self.conv(xs, x_lens)
 
         res_outputs_list = []
         # NOTE: exclude residual connection from the raw inputs
@@ -293,7 +292,8 @@ class RNNEncoder(chainer.Chain):
                                   for x in xs]
 
                         # Update x_lens
-                        x_lens = [x.shape[0] for x in xs]
+                        x_lens = np.array([x.shape[0]
+                                           for x in xs], dtype=np.int32)
 
                     # Residual connection
                     elif self.residual or self.dense_residual:
@@ -312,6 +312,7 @@ class RNNEncoder(chainer.Chain):
 
         # sub task (optional)
         if self.num_layers_sub >= 1:
+
             # Sum bidirectional outputs
             if self.bidirectional and self.merge_bidirectional:
                 xs_sub = [x[:, :self.num_units] + x[:, self.num_units:]

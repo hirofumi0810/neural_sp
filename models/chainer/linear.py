@@ -46,12 +46,12 @@ class LinearND(chainer.Chain):
 
         """
         size = list(xs.shape)
-        outputs = F.reshape(xs, (np.prod(size[:-1]), size[-1]))
+        outputs = xs.reshape(np.prod(size[:-1]), size[-1])
         outputs = self.fc(outputs)
         if self.dropout > 0:
             outputs = F.dropout(outputs, ratio=self.dropout)
         size[-1] = outputs.shape[-1]
-        return F.reshape(outputs, size)
+        return outputs.reshape(size)
 
 
 class Embedding(chainer.Chain):
