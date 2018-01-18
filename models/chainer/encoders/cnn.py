@@ -11,6 +11,8 @@ import chainer
 from chainer import functions as F
 from chainer import links as L
 
+from utils.io.variable import np2var
+
 
 class CNNEncoder(chainer.Chain):
     """CNN encoder.
@@ -99,11 +101,13 @@ class CNNEncoder(chainer.Chain):
         """Forward computation.
         Args:
             xs (chainer.Variable): A tensor of size `[B, T, input_size]`
-            x_lens (np.ndarray): A tensor of size `[B]`
+            x_lens (np.ndarray or chainer.Variable): A tensor of size `[B]`
         Returns:
             xs (chainer.Variable): A tensor of size `[B, T', feature_dim]`
-            x_lens (np.ndarray): A tensor of size `[B]`
+            x_lens (np.ndarray or chainer.Variable): A tensor of size `[B]`
         """
+        wrap_by_var = isinstance(x_lens, chainer.Variable)
+
         # Convert to Variable
         if isinstance(xs, list):
             xs = F.pad_sequence(xs, padding=0)
@@ -169,6 +173,8 @@ class CNNEncoder(chainer.Chain):
 
         # Update x_lens
         x_lens = [self.get_conv_out_size(x, 1) for x in x_lens]
+        if wrap_by_var:
+            x_lens = np2var(x_lens, use_cuda=self.use_cuda, backend='chainer')
 
         # Convert to list again
         xs = F.separate(xs, axis=0)

@@ -246,10 +246,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     encoder_num_units * self.encoder_num_directions, num_classes_sub + 1,
                     use_cuda=self.use_cuda)
 
+            self.blank_index = 0
+
             # Set CTC decoders
-            self._decode_ctc_greedy_np = GreedyDecoder(blank_index=0)
-            self._decode_ctc_beam_np = BeamSearchDecoder(blank_index=0)
-            # NOTE: index 0 is reserved for the blank class
+            self._decode_ctc_greedy_np = GreedyDecoder(
+                blank_index=self.blank_index)
+            self._decode_ctc_beam_np = BeamSearchDecoder(
+                blank_index=self.blank_index)
 
         # Initialize all weights with uniform distribution
         self.init_weights(
@@ -281,6 +284,43 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             loss_main (chainer.Variable or float): A tensor of size `[1]`
             loss_sub (chainer.Variable or float): A tensor of size `[1]`
         """
+        if is_eval:
+            with chainer.no_backprop_mode(), chainer.using_config('train', False):
+                loss, loss_main, loss_sub = self._forward(
+                    xs, ys, ys_sub, x_lens, y_lens, y_lens_sub)
+                loss = loss.data
+                loss_main = loss_main.data
+                loss_sub = loss_sub.data
+        else:
+            loss. loss_main, loss_sub = self._forward(
+                xs, ys, ys_sub, x_lens, y_lens, y_lens_sub)
+            # TODO: Gaussian noise injection
+
+            # Update the probability of scheduled sampling
+            self._step += 1
+            if self.sample_prob > 0:
+                self._sample_prob = min(
+                    self.sample_prob,
+                    self.sample_prob / self.sample_ramp_max_step * self._step)
+
+            # Curriculum training (gradually from char to word task)
+            if self.curriculum_training:
+                # main
+                self.main_loss_weight_tmp = min(
+                    self.main_loss_weight,
+                    0.05 + self.main_loss_weight / self.sample_ramp_max_step * self._step)
+                # sub (attention)
+                self.sub_loss_weight_tmp = max(
+                    self.sub_loss_weight,
+                    0.95 - (1 - self.sub_loss_weight) / self.sample_ramp_max_step * self._step)
+                # sub (CTC)
+                self.ctc_loss_weight_sub_tmp = max(
+                    self.ctc_loss_weight_sub,
+                    0.95 - (1 - self.ctc_loss_weight_sub) / self.sample_ramp_max_step * self._step)
+
+        return loss. loss_main, loss_sub
+
+    def _forward(self, xs, ys, ys_sub, x_lens, y_lens, y_lens_sub):
         # Wrap by Variable
         xs = np2var(xs, use_cuda=self.use_cuda, backend='chainer')
         ys = np2var(ys, use_cuda=self.use_cuda, backend='chainer')
@@ -288,13 +328,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         y_lens = np2var(y_lens, use_cuda=self.use_cuda, backend='chainer')
         y_lens_sub = np2var(
             y_lens_sub, use_cuda=self.use_cuda, backend='chainer')
-
-        if is_eval:
-            # TODO: add no_backprop_mode
-            pass
-        else:
-            # TODO: Gaussian noise injection
-            pass
 
         # Encode acoustic features
         xs, x_lens, xs_sub, x_lens_sub = self._encode(
@@ -313,10 +346,12 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Compute XE sequence loss in the main task
         loss_main = F.softmax_cross_entropy(
             x=logits.reshape((-1, logits.shape[2])),
-            t=ys[:, 1:].reshape(-1),
+            t=ys[:, 1:].reshape(-1),  # NOTE: Exclude <SOS>
             normalize=True, cache_score=True, class_weight=None,
             ignore_label=self.sos_index, reduce='no')
         # NOTE: ys are padded by <SOS>
+        # NOTE: len(loss_main) = batch_size * max_time
+        loss_main = F.sum(loss_main, axis=0) / len(xs)
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
@@ -335,8 +370,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             pass
             # TODO: add sub task？
 
-        loss_main = F.sum(loss_main, axis=0) * \
-            self.main_loss_weight_tmp / len(xs)
+        loss_main = loss_main * self.main_loss_weight_tmp
         # loss = loss_main.clone()
         loss = loss_main
 
@@ -355,10 +389,12 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # Compute XE sequence loss in the sub task
             loss_sub = F.softmax_cross_entropy(
                 x=logits_sub.reshape((-1, logits_sub.shape[2])),
-                t=ys_sub[:, 1:].reshape(-1),
+                t=ys_sub[:, 1:].reshape(-1),  # NOTE: Exclude <SOS>
                 normalize=True, cache_score=True, class_weight=None,
                 ignore_label=self.sos_index_sub, reduce='no')
             # NOTE: ys_sub are padded by <SOS>
+            # NOTE: len(loss_sub) = batch_size * max_time_sub
+            loss_sub = F.sum(loss_sub, axis=0) / len(xs)
 
             # Label smoothing (with uniform distribution)
             if self.label_smoothing_prob > 0:
@@ -372,44 +408,18 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             #         log_probs_sub, uniform_sub,
             # size_average=False, reduce=True) * self.label_smoothing_prob
 
-            loss_sub = F.sum(loss_sub, axis=0) * \
-                self.sub_loss_weight_tmp / len(xs)
+            loss_sub = loss_sub * self.sub_loss_weight_tmp
             loss += loss_sub
 
         ##################################################
         # Sub task (CTC)
         ##################################################
         # if self.ctc_loss_weight_sub > 0:
-        #     ctc_loss_sub = self.compute_ctc_loss(
-        #         xs_sub, ys_sub, x_lens_sub, y_lens_sub, is_sub_task=True)
-        #
-        #     ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub_tmp / batch_size
-        #     loss += ctc_loss_sub
+            ctc_loss_sub = self.compute_ctc_loss(
+                xs_sub, ys_sub, x_lens_sub, y_lens_sub, is_sub_task=True)
 
-        if is_eval:
-            loss = loss.data
-            loss_main = loss_main.data
-            if self.sub_loss_weight > 0:
-                loss_sub = loss_sub.data
-            # if self.ctc_loss_weight_sub > 0:
-            #     ctc_loss_sub = ctc_loss_sub.data
-        else:
-            self._step += 1
-
-            # Curriculum training (gradually from char to word task)
-            if self.curriculum_training:
-                # main
-                self.main_loss_weight_tmp = min(
-                    self.main_loss_weight,
-                    0.05 + self.main_loss_weight / self.sample_ramp_max_step * self._step)
-                # sub (attention)
-                self.sub_loss_weight_tmp = max(
-                    self.sub_loss_weight,
-                    0.95 - (1 - self.sub_loss_weight) / self.sample_ramp_max_step * self._step)
-                # sub (CTC)
-                self.ctc_loss_weight_sub_tmp = max(
-                    self.ctc_loss_weight_sub,
-                    0.95 - (1 - self.ctc_loss_weight_sub) / self.sample_ramp_max_step * self._step)
+            ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub_tmp
+            loss += ctc_loss_sub
 
         if self.sub_loss_weight > self.ctc_loss_weight_sub:
             return loss, loss_main, loss_sub
@@ -470,8 +480,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                 var2np(log_probs, backend='chainer'),
                                 x_lens, beam_width=beam_width)
 
-                        best_hyps = best_hyps - 1
-                        # NOTE: index 0 is reserved for the blank class
+                        if self.blank_index == 0:
+                            best_hyps = best_hyps - 1
+                            # NOTE: index 0 is reserved for the blank class
                 else:
                     best_hyps, _ = self._decode_infer_greedy(
                         enc_out, max_decode_len)

@@ -311,10 +311,13 @@ class AttentionSeq2seq(ModelBase):
                         encoder_num_units * self.encoder_num_directions, num_classes + 1,
                         use_cuda=self.use_cuda)
 
+                self.blank_index = 0
+
                 # Set CTC decoders
-                self._decode_ctc_greedy_np = GreedyDecoder(blank_index=0)
-                self._decode_ctc_beam_np = BeamSearchDecoder(blank_index=0)
-                # NOTE: index 0 is reserved for the blank class
+                self._decode_ctc_greedy_np = GreedyDecoder(
+                    blank_index=self.blank_index)
+                self._decode_ctc_beam_np = BeamSearchDecoder(
+                    blank_index=self.blank_index)
                 # TODO: set space index
 
             # Initialize all weights with uniform distribution
@@ -344,17 +347,27 @@ class AttentionSeq2seq(ModelBase):
         Returns:
             loss (chainer.Variable or float): A tensor of size `[1]`
         """
+        if is_eval:
+            with chainer.no_backprop_mode(), chainer.using_config('train', False):
+                loss = self._forward(xs, ys, x_lens, y_lens).data
+        else:
+            loss = self._forward(xs, ys, x_lens, y_lens)
+
+            # Update the probability of scheduled sampling
+            self._step += 1
+            if self.sample_prob > 0:
+                self._sample_prob = min(
+                    self.sample_prob,
+                    self.sample_prob / self.sample_ramp_max_step * self._step)
+
+        return loss
+
+    def _forward(self, xs, ys, x_lens, y_lens):
         # Wrap by Variable
         xs = np2var(xs,  use_cuda=self.use_cuda, backend='chainer')
         ys = np2var(ys, use_cuda=self.use_cuda, backend='chainer')
+        x_lens = np2var(x_lens, use_cuda=self.use_cuda, backend='chainer')
         y_lens = np2var(y_lens, use_cuda=self.use_cuda, backend='chainer')
-
-        if is_eval:
-            # TODO: add no_backprop_mode
-            pass
-        else:
-            # TODO: Gaussian noise injection
-            pass
 
         # Encode acoustic features
         xs, x_lens = self._encode(xs, x_lens)
@@ -369,10 +382,12 @@ class AttentionSeq2seq(ModelBase):
         # Compute XE sequence loss
         loss = F.softmax_cross_entropy(
             x=logits.reshape((-1, logits.shape[2])),
-            t=ys[:, 1:].reshape(-1),
+            t=ys[:, 1:].reshape(-1),  # NOTE: Exclude <SOS>
             normalize=True, cache_score=True, class_weight=None,
             ignore_label=self.sos_index, reduce='no')
         # NOTE: ys are padded by <SOS>
+        # NOTE: len(loss) = batch_size * max_time
+        loss = F.sum(loss, axis=0) / len(xs)
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0 and self.decoder_input == 'embedding':
@@ -391,64 +406,50 @@ class AttentionSeq2seq(ModelBase):
             raise NotImplementedError
 
         # Auxiliary CTC loss (optional)
-        # if self.ctc_loss_weight > 0:
-        #     ctc_loss = self.compute_ctc_loss(xs, ys, x_lens, y_lens)
-        #     loss = loss * (1 - self.ctc_loss_weight) + \
-        #         ctc_loss * self.ctc_loss_weight
-
-        # Average the loss by mini-batch
-        loss = F.sum(loss, axis=0) / len(xs)
-
-        if is_eval:
-            loss = loss.data
-        else:
-            self._step += 1
-
-            # Update the probability of scheduled sampling
-            if self.sample_prob > 0:
-                self._sample_prob = min(
-                    self.sample_prob,
-                    self.sample_prob / self.sample_ramp_max_step * self._step)
+        if self.ctc_loss_weight > 0:
+            ctc_loss = self.compute_ctc_loss(xs, ys, x_lens, y_lens)
+            loss = loss * (1 - self.ctc_loss_weight) + \
+                ctc_loss * self.ctc_loss_weight
 
         return loss
 
-    def _compute_ctc_loss(self, enc_out, ys, x_lens, y_lens,
-                          is_sub_task=False):
-        """
+    def compute_ctc_loss(self, enc_out, ys, x_lens, y_lens, is_sub_task=False):
+        """Compute CTC loss.
         Args:
-            enc_out (Variable): A tensor of size
+            enc_out (chainer.Variable): A tensor of size
                 `[B, T_in, decoder_num_units]`
-            ys (Variable): A tensor of size `[B, T_out]`
-            x_lens (np.ndarray): A tensor of size `[B]`
-            y_lens (variable): A tensor of size `[B]`
+            ys (chainer.Variable): A tensor of size `[B, T_out]`
+            x_lens (chainer.Variable): A tensor of size `[B]`
+            y_lens (chainer.Variable): A tensor of size `[B]`
             is_sub_task (bool, optional):
         Returns:
-            ctc_loss (Variable): A tensor of size `[]`
+            ctc_loss (chainer.Variable): A tensor of size `[B]`
         """
-        raise NotImplementedError
         if is_sub_task:
             logits_ctc = self.fc_ctc_sub(enc_out)
         else:
             logits_ctc = self.fc_ctc(enc_out)
 
-        # Convert to batch-major
-        logits_ctc = logits_ctc.transpose(1, 0, 2)
+        # Convert to time-major & list of Variable from Variable
+        logits_ctc = F.separate(logits_ctc, axis=1)
 
-        _x_lens = x_lens.clone()
-        _ys = ys.clone()[:, 1:] + 1
-        _y_lens = y_lens.clone() - 2
-        # NOTE: index 0 is reserved for the blank class
-        # NOTE: Ignore <SOS> and <EOS>
+        # Convert to Variable from list of Variable
+        # ys = F.pad_sequence(ys, padding=-1)  # 0 or -1?
+        # TODO: inputs to pad_sequence must be list of chainer.Variable
 
-        # Concatenate all _ys for warpctc_pytorch
-        # `[B, T_out]` -> `[1,]`
-        concatenated_labels = _concatenate_labels(_ys, _y_lens)
+        if self.blank_index == 0:
+            ys = ys + 1
+            # NOTE: index 0 is reserved for the blank class
 
-        ctc_loss = ctc_loss_fn(logits_ctc, concatenated_labels.cpu(),
-                               _x_lens.cpu(), _y_lens.cpu())
-
-        if self.use_cuda:
-            ctc_loss = ctc_loss.cuda()
+        # Compute CTC loss
+        ctc_loss = F.connectionist_temporal_classification(
+            x=logits_ctc,
+            t=ys[:, 1:-1],  # NOTE: Exclude <SOS> & last <EOS>
+            blank_symbol=self.blank_index,
+            input_length=x_lens,
+            label_length=y_lens - 2,  # NOTE: Ignore <SOS> and <EOS>
+            reduce='mean')
+        # ctc_loss = F.sum(ctc_loss, axis=0) / len(enc_out)
 
         return ctc_loss
 
@@ -912,14 +913,18 @@ class AttentionSeq2seq(ModelBase):
 
                     # Pick up the top-k scores
                     indices_topk = xp.argsort(log_probs.data, axis=1)[
-                        0, ::-1][:beam_width].get()
+                        0, ::-1][:beam_width]
+                    if xp != np:
+                        indices_topk = indices_topk.get()
 
                     for i in indices_topk:
                         log_prob = log_probs.data[0, i]
+                        if xp != np:
+                            log_prob = log_prob.get()
                         new_hyp = beam[i_beam]['hyp'] + [i]
 
                         new_score = np.logaddexp(
-                            beam[i_beam]['score'], log_prob.get())
+                            beam[i_beam]['score'], log_prob)
 
                         new_beam.append({'hyp': new_hyp,
                                          'score': new_score,
@@ -948,12 +953,12 @@ class AttentionSeq2seq(ModelBase):
 
         return np.array(best_hyps)
 
-    def decode_ctc(self, inputs, inputs_seq_len, beam_width=1):
+    def decode_ctc(self, xs, x_lens, beam_width=1):
         """Decoding by the CTC layer in the inference stage.
             This is only used for Joint CTC-Attention model.
         Args:
-            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
-            inputs_seq_len (np.ndarray): A tensor of size `[B]`
+            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            x_lens (np.ndarray): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
         Returns:
             best_hyps (np.ndarray): A tensor of size `[]`
@@ -964,9 +969,7 @@ class AttentionSeq2seq(ModelBase):
         with chainer.no_backprop_mode(), chainer.using_config('train', False):
 
             # Wrap by Variable
-            xs = np2var(inputs, use_cuda=self.use_cuda, backend='chainer')
-            x_lens = np2var(
-                inputs_seq_len, use_cuda=self.use_cuda, backend='chainer')
+            xs = np2var(xs, use_cuda=self.use_cuda, backend='chainer')
 
             # Encode acoustic features
             enc_out, x_lens = self._encode(xs, x_lens)

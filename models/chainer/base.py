@@ -7,7 +7,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import os
 from os.path import join, isfile, basename
 from glob import glob
 
@@ -219,25 +218,23 @@ class ModelBase(chainer.Chain):
             save_path (string):
             epoch (int):
         """
-        raise NotImplementedError
-        # serializers.load_npz('model.epoch-' + str(epoch), self)
+        if int(epoch) == -1:
+            models = [(int(basename(x).split('-')[-1]), x)
+                      for x in glob(join(save_path, 'model.*'))]
 
-        # if int(epoch) == -1:
-        #     models = [(int(basename(x).split('-')[-1]), x)
-        #               for x in glob(join(save_path, 'model.*'))]
-        #
-        #     if len(models) == 0:
-        #         raise ValueError
-        #
-        #     # Restore the model in the last eppch
-        #     epoch = sorted(models, key=lambda x: x[0])[-1][0]
-        #
-        # model_path = join(save_path, 'model.epoch-' + str(epoch))
-        # if isfile(join(model_path)):
-        #     logger.info("=> Loading checkpoint (epoch:%d): %s" %
-        #                 (epoch, model_path))
-        #     checkpoint = torch.load(
-        #         model_path, map_location=lambda storage, loc: storage)
-        # else:
-        #     raise ValueError("No checkpoint found at %s" % model_path)
-        # return checkpoint
+            if len(models) == 0:
+                raise ValueError
+
+            # Restore the model in the last eppch
+            epoch = sorted(models, key=lambda x: x[0])[-1][0]
+
+        model_path = join(save_path, 'model.epoch-' + str(epoch))
+        if isfile(join(model_path)):
+            print("=> Loading checkpoint (epoch:%d): %s" % (epoch, model_path))
+            # checkpoint = torch.load(
+            #     model_path, map_location=lambda storage, loc: storage)
+            checkpoint = serializers.load_npz(
+                'model.epoch-' + str(epoch), self)
+        else:
+            raise ValueError("No checkpoint found at %s" % model_path)
+        return checkpoint

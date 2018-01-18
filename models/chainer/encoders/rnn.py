@@ -15,6 +15,7 @@ from chainer import links as L
 
 from models.chainer.linear import LinearND
 from models.chainer.encoders.cnn import CNNEncoder
+from utils.io.variable import np2var
 
 
 class RNNEncoder(chainer.Chain):
@@ -91,6 +92,7 @@ class RNNEncoder(chainer.Chain):
         self.num_proj = num_proj if num_proj is not None else 0
         self.num_layers = num_layers
         self.merge_bidirectional = merge_bidirectional
+        self.use_cuda = use_cuda
 
         # TODO: self.clip_activation = clip_activation
 
@@ -220,22 +222,24 @@ class RNNEncoder(chainer.Chain):
         Args:
             xs (list of chainer.Variable): A list of tensors of size
                 `[T, input_size]`, of length '[B]'
-            x_lens (np.ndarray): A list of length `[B]`
+            x_lens (np.ndarray or chainer.Variable): A tensor of size `[B]`
         Returns:
             xs (list of chainer.Variable):
                 A list of tensors of size
                     `[T // sum(subsample_list), num_units (* num_directions)]`,
                     of length '[B]'
-            x_lens (np.ndarray): A list of length `[B]`
+            x_lens (np.ndarray): A tensor of size `[B]`
             OPTION:
                 xs_sub (list of chainer.Variable):
                     A list of tensor of size
                         `[T // sum(subsample_list), num_units (* num_directions)]`,
                         of length `[B]`
-                x_lens_sub (np.ndarray): A list of length `[B]`
+                x_lens_sub (np.ndarray or chainer.Variable): A tensor of size `[B]`
         """
         # NOTE: automatically sort xs in descending order by length,
         # and transpose the sequence
+
+        wrap_by_var = isinstance(x_lens, chainer.Variable)
 
         # Path through CNN layers before RNN layers
         if self.conv is not None:
@@ -254,6 +258,11 @@ class RNNEncoder(chainer.Chain):
             if self.num_layers_sub >= 1 and i_layer == self.num_layers_sub - 1:
                 xs_sub = xs
                 x_lens_sub = x_lens
+
+                # Wrap by Variable again
+                if wrap_by_var and not isinstance(x_lens_sub, chainer.Variable):
+                    x_lens_sub = np2var(
+                        x_lens_sub, use_cuda=self.use_cuda, backend='chainer')
 
             # NOTE: Exclude the last layer
             if i_layer != self.num_layers - 1:
@@ -293,6 +302,10 @@ class RNNEncoder(chainer.Chain):
                                 res_outputs_list = [xs]
                             elif self.dense_residual:
                                 res_outputs_list.append(xs)
+
+        # Wrap by Variable again
+        if wrap_by_var and not isinstance(x_lens, chainer.Variable):
+            x_lens = np2var(x_lens, use_cuda=self.use_cuda, backend='chainer')
 
         # Sum bidirectional outputs
         if self.bidirectional and self.merge_bidirectional:

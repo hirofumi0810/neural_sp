@@ -72,8 +72,8 @@ class TestAttention(unittest.TestCase):
                    decoder_type='lstm', conv=True, batch_norm=True)
 
         # Joint CTC-Attention
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            decoder_type='lstm', ctc_loss_weight=0.2)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', ctc_loss_weight=0.2)
 
         # word-level attention
         self.check(encoder_type='lstm', bidirectional=True,
