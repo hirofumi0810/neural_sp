@@ -155,10 +155,10 @@ class TestCTC(unittest.TestCase):
         for step in range(max_step):
 
             # Step for parameter update
-            model.optimizer.target.cleargrads()
             loss, loss_main, loss_sub = model(
-                xs, ys, ys_sub,
-                x_lens, y_lens, y_lens_sub)
+                xs, ys, ys_sub, x_lens, y_lens, y_lens_sub)
+            model.optimizer.target.cleargrads()
+            model.cleargrads()
             loss.backward()
             loss.unchain_backward()
             model.optimizer.update()

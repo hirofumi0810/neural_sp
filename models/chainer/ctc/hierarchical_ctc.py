@@ -7,6 +7,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import chainer
 from chainer import functions as F
 # from models.chainer.ctc.ctc_loss_from_chainer import
 # connectionist_temporal_classification as ctc
@@ -183,20 +184,29 @@ class HierarchicalCTC(CTC):
             loss_main (chainer.Variable or float): A tensor of size `[1]`
             loss_sub (chainer.Variable or float): A tensor of size `[1]`
         """
+        if is_eval:
+            with chainer.no_backprop_mode(), chainer.using_config('train', False):
+                loss, loss_main, loss_sub = self._forward(
+                    xs, ys, ys_sub, x_lens, y_lens, y_lens_sub)
+                loss = loss.data
+                loss_main = loss_main.data
+                loss_sub = loss_sub.data
+        else:
+            loss. loss_main, loss_sub = self._forward(
+                xs, ys, ys_sub, x_lens, y_lens, y_lens_sub)
+            # TODO: Gaussian noise injection
+
+        return loss. loss_main, loss_sub
+
+    def _forward(self, xs, ys, ys_sub, x_lens, y_lens, y_lens_sub):
         # Wrap by Variable
         xs = np2var(xs, use_cuda=self.use_cuda, backend='chainer')
         ys = np2var(ys, use_cuda=self.use_cuda, backend='chainer')
         ys_sub = np2var(ys_sub, use_cuda=self.use_cuda, backend='chainer')
+        x_lens = np2var(x_lens, use_cuda=self.use_cuda, backend='chainer')
         y_lens = np2var(y_lens, use_cuda=self.use_cuda, backend='chainer')
         y_lens_sub = np2var(
             y_lens_sub, use_cuda=self.use_cuda, backend='chainer')
-
-        if is_eval:
-            # TODO: add no_backprop_mode
-            pass
-        else:
-            # TODO: Gaussian noise injection
-            pass
 
         # Encode acoustic features
         logits, x_lens, logits_sub, x_lens_sub = self._encode(
@@ -212,11 +222,14 @@ class HierarchicalCTC(CTC):
         #     logits_sub, len(logits_sub), axis=0)]
 
         # Convert to Variable from list of Variable
-        ys = F.pad_sequence(ys, padding=-1)  # 0 or -1?
-        ys_sub = F.pad_sequence(ys_sub, padding=-1)  # 0 or -1?
-        ys = ys + 1
-        ys_sub = ys_sub + 1
-        # NOTE: index 0 is reserved for the blank class
+        # ys = F.pad_sequence(ys, padding=-1)  # 0 or -1?
+        # ys_sub = F.pad_sequence(ys_sub, padding=-1)  # 0 or -1?
+        # TODO: inputs to pad_sequence must be list of chainer.Variable
+
+        if self.blank_index == 0:
+            ys = ys + 1
+            ys_sub = ys_sub + 1
+            # NOTE: index 0 is reserved for the blank class
 
         # Output smoothing
         if self.logits_temperature != 1:
@@ -231,9 +244,9 @@ class HierarchicalCTC(CTC):
             x=logits,  # list of Variable
             t=ys,  # Variable
             blank_symbol=0,
-            input_length=x_lens,
-            label_length=y_lens,
-            reduce='no')
+            input_length=x_lens,  # Variable
+            label_length=y_lens,  # Variable
+            reduce='mean')
 
         # TODO: Label smoothing (with uniform distribution)
 
@@ -245,22 +258,15 @@ class HierarchicalCTC(CTC):
             x=logits_sub,  # list of Variable
             t=ys_sub,  # Variable
             blank_symbol=0,
-            input_length=x_lens_sub,
-            label_length=y_lens_sub,
-            reduce='no')
+            input_length=x_lens_sub,  # Variable
+            label_length=y_lens_sub,  # Variable
+            reduce='mean')
 
         # TODO: Label smoothing (with uniform distribution)
 
-        # Average the loss by mini-batch
-        loss_main = F.sum(loss_main, axis=0) * \
-            self.main_loss_weight / len(xs)
-        loss_sub = F.sum(loss_sub, axis=0) * \
-            (1 - self.main_loss_weight) / len(xs)
+        # Compute total loss
+        loss_main = loss_main self.main_loss_weight
+        loss_sub = loss_sub * (1 - self.main_loss_weight)
         loss = loss_main + loss_sub
-
-        if is_eval:
-            loss = loss.data
-            loss_main = loss_main.data
-            loss_sub = loss_sub.data
 
         return loss, loss_main, loss_sub

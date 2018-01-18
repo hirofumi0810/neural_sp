@@ -9,6 +9,7 @@ from __future__ import print_function
 
 import chainer
 from chainer import functions as F
+from chainer import links as L
 # from models.chainer.ctc.ctc_loss_from_chainer import
 # connectionist_temporal_classification as ctc
 
@@ -99,6 +100,7 @@ class CTC(ModelBase):
 
         # Setting for CTC
         self.num_classes = num_classes + 1  # Add the blank class
+        self.blank_index = num_classes
         self.logits_temperature = logits_temperature
 
         # Setting for regualarization
@@ -156,13 +158,17 @@ class CTC(ModelBase):
                         else:
                             bottle_input_size = num_units * self.num_directions
                         # if batch_norm:
-                        #     self.fc_layers.append(nn.BatchNorm1d(bottle_input_size))
+                        #     self.fc_layers.append(
+                        #         L.BatchNormalization(bottle_input_size))
+                        # TODO: to_gpu()
                         self.fc_layers.append(
                             LinearND(bottle_input_size, fc_list[i],
                                      dropout=dropout, use_cuda=self.use_cuda))
                     else:
                         # if batch_norm:
-                        #     self.fc_layers.append(nn.BatchNorm1d(fc_list[i - 1]))
+                        #     self.fc_layers.append(
+                        #         L.BatchNormalization(fc_list[i - 1]))
+                        # TODO: to_gpu()
                         self.fc_layers.append(
                             LinearND(fc_list[i - 1], fc_list[i],
                                      dropout=dropout, use_cuda=self.use_cuda))
@@ -190,9 +196,8 @@ class CTC(ModelBase):
             self.init_forget_gate_bias_with_one()
 
         # Set CTC decoders
-        self._decode_greedy_np = GreedyDecoder(blank_index=0)
-        self._decode_beam_np = BeamSearchDecoder(blank_index=0)
-        # NOTE: index 0 is reserved for the blank class
+        self._decode_greedy_np = GreedyDecoder(blank_index=self.blank_index)
+        self._decode_beam_np = BeamSearchDecoder(blank_index=self.blank_index)
         # TODO: set space index
 
     def __call__(self, xs, ys, x_lens, y_lens, is_eval=False):
@@ -200,24 +205,28 @@ class CTC(ModelBase):
         Args:
             xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
             ys (np.ndarray): A tensor of size `[B, T_out]`
-            x_lens (list or np.ndarray): A tensor of size `[B]`
+            x_lens (np.ndarray): A tensor of size `[B]`
             y_lens (np.ndarray): A tensor of size `[B]`
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
             loss (chainer.Variable or float): A tensor of size `[1]`
         """
+        if is_eval:
+            with chainer.no_backprop_mode(), chainer.using_config('train', False):
+                loss = self._forward(xs, ys, x_lens, y_lens).data
+        else:
+            loss = self._forward(xs, ys, x_lens, y_lens)
+            # TODO: Gaussian noise injection
+
+        return loss
+
+    def _forward(self, xs, ys, x_lens, y_lens):
         # Wrap by Variable
         xs = np2var(xs, use_cuda=self.use_cuda, backend='chainer')
         ys = np2var(ys, use_cuda=self.use_cuda, backend='chainer')
+        x_lens = np2var(x_lens, use_cuda=self.use_cuda, backend='chainer')
         y_lens = np2var(y_lens, use_cuda=self.use_cuda, backend='chainer')
-
-        if is_eval:
-            # TODO: add no_backprop_mode
-            pass
-        else:
-            # TODO: Gaussian noise injection
-            pass
 
         # Encode acoustic features
         logits, x_lens = self._encode(xs, x_lens)
@@ -228,9 +237,12 @@ class CTC(ModelBase):
         # logits = [t[0] for t in F.split_axis(logits, len(logits), axis=0)]
 
         # Convert to Variable from list of Variable
-        ys = F.pad_sequence(ys, padding=-1)  # 0 or -1?
-        ys = ys + 1
-        # NOTE: index 0 is reserved for the blank class
+        # ys = F.pad_sequence(ys, padding=-1)  # 0 or -1?
+        # TODO: inputs to pad_sequence must be list of chainer.Variable
+
+        if self.blank_index == 0:
+            ys = ys + 1
+            # NOTE: index 0 is reserved for the blank class
 
         # Output smoothing
         if self.logits_temperature != 1:
@@ -240,20 +252,14 @@ class CTC(ModelBase):
         loss = F.connectionist_temporal_classification(
             x=logits,  # list of Variable
             t=ys,  # Variable
-            blank_symbol=0,
-            input_length=x_lens,
-            label_length=y_lens,
-            reduce='no')
+            blank_symbol=self.blank_index,
+            input_length=x_lens,  # Variable
+            label_length=y_lens,  # Variable
+            reduce='mean')
 
         # TODO: Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
             raise NotImplementedError
-
-        # Average the loss by mini-batch
-        loss = F.sum(loss, axis=0) / len(xs)
-
-        if is_eval:
-            loss = loss.data
 
         return loss
 
@@ -262,7 +268,7 @@ class CTC(ModelBase):
         Args:
             xs (list of chainer.Variable):
                 A list of tensors of size `[T_in, input_size]`
-            x_lens (np.ndarray): A tensor of size `[B]`
+            x_lens (np.ndarray or chainer.Variable): A tensor of size `[B]`
             is_multi_task (bool, optional):
         Returns:
             logits (): A tensor of size
@@ -355,7 +361,8 @@ class CTC(ModelBase):
                     var2np(log_probs, backend='chainer'),
                     x_lens, beam_width=beam_width)
 
-            # NOTE: index 0 is reserved for the blank class
+        if self.blank_index == 0:
             best_hyps = best_hyps - 1
+            # NOTE: index 0 is reserved for the blank class
 
-            return best_hyps
+        return best_hyps
