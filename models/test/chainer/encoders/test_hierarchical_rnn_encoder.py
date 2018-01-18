@@ -39,12 +39,12 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
                    dense_residual=True)
 
         # Conv
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            conv=True)
-        # self.check(encoder_type='gru', bidirectional=True,
-        #            conv=True)
-        # self.check(encoder_type='rnn', bidirectional=True,
-        #            conv=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   conv=True)
+        self.check(encoder_type='gru', bidirectional=True,
+                   conv=True)
+        self.check(encoder_type='rnn', bidirectional=True,
+                   conv=True)
 
         # LSTM, GRU, RNN
         self.check(encoder_type='lstm')
@@ -99,22 +99,21 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
         batch_size = 4
         splice = 1
         num_stack = 1
-        inputs, _, inputs_seq_len, _ = generate_data(
-            model_type='ctc',
-            batch_size=batch_size,
-            num_stack=num_stack,
-            splice=splice,
-            backend='chainer')
+        xs, _, x_lens, _ = generate_data(model_type='ctc',
+                                         batch_size=batch_size,
+                                         num_stack=num_stack,
+                                         splice=splice,
+                                         backend='chainer')
 
         # Wrap by Variable
-        inputs = np2var(inputs, backend='chainer')
+        xs = np2var(xs, backend='chainer')
 
         # Load encoder
         encoder = load(encoder_type=encoder_type)
 
         # Initialize encoder
         encoder = encoder(
-            input_size=inputs[0].shape[-1] // splice // num_stack,  # 120
+            input_size=xs[0].shape[-1] // splice // num_stack,  # 120
             rnn_type=encoder_type,
             bidirectional=bidirectional,
             num_units=256,
@@ -122,7 +121,6 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
             num_layers=5,
             num_layers_sub=3,
             dropout=0.2,
-            parameter_init=0.1,
             subsample_list=[],
             merge_bidirectional=merge_bidirectional,
             splice=splice,
@@ -135,11 +133,11 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
             residual=residual,
             dense_residual=dense_residual)
 
-        max_time = inputs[0].shape[0]
+        max_time = xs[0].shape[0]
         if conv:
             max_time = encoder.conv.get_conv_out_size(max_time, 1)
 
-        outputs, outputs_sub = encoder(inputs, inputs_seq_len)
+        outputs, _,  outputs_sub, _ = encoder(xs, x_lens)
 
         print('----- outputs -----')
         print(

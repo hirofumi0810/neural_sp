@@ -133,9 +133,7 @@ class CTC(ModelBase):
                     residual=residual,
                     dense_residual=dense_residual)
             elif encoder_type == 'cnn':
-                raise NotImplementedError
-                assert num_stack == 1
-                assert splice == 1
+                assert num_stack == 1 and splice == 1
                 self.encoder = load(encoder_type=encoder_type)(
                     input_size=input_size,
                     conv_channels=conv_channels,

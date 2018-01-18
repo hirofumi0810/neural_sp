@@ -14,8 +14,7 @@ from chainer import functions as F
 from chainer import links as L
 
 from models.chainer.linear import LinearND
-# from models.chainer.encoders.cnn import CNNEncoder
-# from models.chainer.encoders.cnn_utils import ConvOutSize
+from models.chainer.encoders.cnn import CNNEncoder
 
 
 class RNNEncoder(chainer.Chain):
@@ -124,7 +123,6 @@ class RNNEncoder(chainer.Chain):
         with self.init_scope():
             # Setting for CNNs before RNNs# Setting for CNNs before RNNs
             if len(conv_channels) > 0 and len(conv_channels) == len(conv_kernel_sizes) and len(conv_kernel_sizes) == len(conv_strides):
-                raise NotImplementedError
                 assert num_stack == 1
                 assert splice == 1
                 self.conv = CNNEncoder(input_size,
@@ -133,12 +131,10 @@ class RNNEncoder(chainer.Chain):
                                        conv_strides=conv_strides,
                                        poolings=poolings,
                                        dropout=dropout,
-                                       parameter_init=parameter_init,
                                        activation=activation,
                                        use_cuda=use_cuda,
                                        batch_norm=batch_norm)
                 input_size = self.conv.output_size
-                self.get_conv_out_size = ConvOutSize(self.conv.conv)
             else:
                 input_size = input_size * splice * num_stack
                 self.conv = None
@@ -178,16 +174,12 @@ class RNNEncoder(chainer.Chain):
                         rnn_i = L.NStepBiGRU(n_layers=1,
                                              in_size=encoder_input_size,
                                              out_size=num_units,
-                                             dropout=dropout,
-                                             initialW=None,
-                                             initial_bias=None)
+                                             dropout=dropout)
                     else:
                         rnn_i = L.NStepGRU(n_layers=1,
                                            in_size=encoder_input_size,
                                            out_size=num_units,
-                                           dropout=dropout,
-                                           initialW=None,
-                                           initial_bias=None)
+                                           dropout=dropout)
 
                 elif rnn_type == 'rnn':
                     if bidirectional:
@@ -195,17 +187,13 @@ class RNNEncoder(chainer.Chain):
                         rnn_i = L.NStepBiRNNTanh(n_layers=1,
                                                  in_size=encoder_input_size,
                                                  out_size=num_units,
-                                                 dropout=dropout,
-                                                 initialW=None,
-                                                 initial_bias=None)
+                                                 dropout=dropout)
                     else:
                         # rnn_i = L.NStepRNNReLU(
                         rnn_i = L.NStepRNNTanh(n_layers=1,
                                                in_size=encoder_input_size,
                                                out_size=num_units,
-                                               dropout=dropout,
-                                               initialW=None,
-                                               initial_bias=None)
+                                               dropout=dropout)
                 else:
                     raise ValueError(
                         'rnn_type must be "lstm" or "gru" or "rnn".')

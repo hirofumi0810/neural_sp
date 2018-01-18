@@ -223,8 +223,7 @@ class AttentionSeq2seq(ModelBase):
                     residual=encoder_residual,
                     dense_residual=encoder_dense_residual)
             elif encoder_type == 'cnn':
-                assert num_stack == 1
-                assert splice == 1
+                assert num_stack == 1 and splice == 1
                 self.encoder = load(encoder_type=encoder_type)(
                     input_size=input_size,
                     conv_channels=conv_channels,
@@ -273,7 +272,7 @@ class AttentionSeq2seq(ModelBase):
             ##################################################
             # Bridge layer between the encoder and decoder
             ##################################################
-            if encoder_bidirectional or encoder_num_units != decoder_num_units:
+            if encoder_bidirectional or encoder_num_units != decoder_num_units or encoder_type == 'cnn':
                 if encoder_type == 'cnn':
                     self.bridge = LinearND(
                         self.encoder.output_size, decoder_num_units,
@@ -434,7 +433,7 @@ class AttentionSeq2seq(ModelBase):
             logits_ctc = self.fc_ctc(enc_out)
 
         # Convert to batch-major
-        logits_ctc = logits_ctc.transpose(0, 1)
+        logits_ctc = logits_ctc.transpose(1, 0, 2)
 
         _x_lens = x_lens.clone()
         _ys = ys.clone()[:, 1:] + 1
@@ -603,7 +602,7 @@ class AttentionSeq2seq(ModelBase):
                 h_0 = enc_out[:, -2:-1, :]
 
             # Convert to time-major
-            h_0 = F.transpose(h_0, axes=(1, 0, 2))
+            h_0 = h_0.transpose(1, 0, 2)
 
         if self.decoder_type == 'lstm':
             c_0 = None

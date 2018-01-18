@@ -191,7 +191,7 @@ def load(model_type, params, backend='pytorch'):
         if backend == 'pytorch':
             from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
         elif backend == 'chainer':
-            raise NotImplementedError
+            from models.chainer.attention.attention_seq2seq import AttentionSeq2seq
         else:
             raise TypeError
 
@@ -295,7 +295,7 @@ def load(model_type, params, backend='pytorch'):
         if backend == 'pytorch':
             from models.pytorch.ctc.hierarchical_ctc import HierarchicalCTC
         elif backend == 'chainer':
-            raise NotImplementedError
+            from models.chainer.ctc.hierarchical_ctc import HierarchicalCTC
         else:
             raise TypeError
 
@@ -384,7 +384,7 @@ def load(model_type, params, backend='pytorch'):
         if backend == 'pytorch':
             from models.pytorch.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
         elif backend == 'chainer':
-            raise NotImplementedError
+            from models.chainer.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
         else:
             raise TypeError
 

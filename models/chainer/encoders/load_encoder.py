@@ -8,8 +8,7 @@ from __future__ import division
 from __future__ import print_function
 
 from models.chainer.encoders.rnn import RNNEncoder
-# from models.chainer.encoders.cnn import CNNEncoder
-# from models.chainer.encoders.cnn_v2 import CNNEncoder
+from models.chainer.encoders.cnn import CNNEncoder
 
 # from models.chainer.encoders.resnet import ResNetEncoder
 
@@ -17,7 +16,7 @@ ENCODERS = {
     "lstm": RNNEncoder,
     "gru": RNNEncoder,
     "rnn": RNNEncoder,
-    # "cnn": CNNEncoder,
+    "cnn": CNNEncoder,
     # "resnet": ResNetEncoder,
 }
 

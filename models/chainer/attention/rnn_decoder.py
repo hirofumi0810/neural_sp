@@ -66,17 +66,13 @@ class RNNDecoder(chainer.Chain):
                     rnn_i = L.NStepGRU(n_layers=1,
                                        in_size=decoder_input_size,
                                        out_size=num_units,
-                                       dropout=dropout,
-                                       initialW=None,
-                                       initial_bias=None)
+                                       dropout=dropout)
                 elif rnn_type == 'rnn':
                     # rnn_i = L.NStepRNNReLU(
                     rnn_i = L.NStepRNNTanh(n_layers=1,
                                            in_size=decoder_input_size,
                                            out_size=num_units,
-                                           dropout=dropout,
-                                           initialW=None,
-                                           initial_bias=None)
+                                           dropout=dropout)
                 else:
                     raise ValueError(
                         'rnn_type must be "lstm" or "gru" or "rnn".')

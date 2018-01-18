@@ -40,12 +40,12 @@ class TestPyramidRNNEncoders(unittest.TestCase):
                    dense_residual=True)
 
         # Conv
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            conv=True)
-        # self.check(encoder_type='gru', bidirectional=True,
-        #            conv=True)
-        # self.check(encoder_type='rnn', bidirectional=True,
-        #            conv=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   conv=True)
+        self.check(encoder_type='gru', bidirectional=True,
+                   conv=True)
+        self.check(encoder_type='rnn', bidirectional=True,
+                   conv=True)
 
         # drop
         self.check(encoder_type='lstm', bidirectional=False,
@@ -122,15 +122,14 @@ class TestPyramidRNNEncoders(unittest.TestCase):
         batch_size = 4
         splice = 1
         num_stack = 1
-        inputs, _, inputs_seq_len, _ = generate_data(
-            model_type='ctc',
-            batch_size=batch_size,
-            num_stack=num_stack,
-            splice=splice,
-            backend='chainer')
+        xs, _, x_lens, _ = generate_data(model_type='ctc',
+                                         batch_size=batch_size,
+                                         num_stack=num_stack,
+                                         splice=splice,
+                                         backend='chainer')
 
         # Wrap by Variable
-        inputs = np2var(inputs, backend='chainer')
+        xs = np2var(xs, backend='chainer')
 
         # Load encoder
         encoder = load(encoder_type=encoder_type)
@@ -138,14 +137,13 @@ class TestPyramidRNNEncoders(unittest.TestCase):
         # Initialize encoder
         if encoder_type in ['lstm', 'gru', 'rnn']:
             encoder = encoder(
-                input_size=inputs[0].shape[-1] // splice // num_stack,  # 120
+                input_size=xs[0].shape[-1] // splice // num_stack,  # 120
                 rnn_type=encoder_type,
                 bidirectional=bidirectional,
                 num_units=256,
                 num_proj=256 if projection else 0,
                 num_layers=5,
                 dropout=0.2,
-                parameter_init=0.1,
                 subsample_list=[False, True, True, False, False],
                 subsample_type=subsample_type,
                 merge_bidirectional=merge_bidirectional,
@@ -161,7 +159,7 @@ class TestPyramidRNNEncoders(unittest.TestCase):
         else:
             raise NotImplementedError
 
-        max_time = inputs[0].shape[0]
+        max_time = xs[0].shape[0]
         if conv:
             max_time = encoder.conv.get_conv_out_size(max_time, 1)
         max_time /= (2 ** sum(encoder.subsample_list))
@@ -170,10 +168,10 @@ class TestPyramidRNNEncoders(unittest.TestCase):
         elif subsample_type == 'concat':
             max_time = int(max_time)
 
-        outputs = encoder(inputs, inputs_seq_len)
+        outputs, _ = encoder(xs, x_lens)
 
         print('----- outputs -----')
-        print((len(inputs), inputs[0].shape[0], inputs[0].shape[1]))
+        print((len(xs), xs[0].shape[0], xs[0].shape[1]))
         print((len(outputs), outputs[0].shape[0], outputs[0].shape[1]))
         num_directions = 2 if bidirectional and not merge_bidirectional else 1
         self.assertEqual(

@@ -126,7 +126,7 @@ class AttentionMechanism(chainer.Chain):
             conv_feat = F.squeeze(self.conv(
                 att_weights_step.reshape(batch_size, 1, 1, max_time)), axis=2)
             # -> `[B, out_channels, T_in]`
-            conv_feat = F.transpose(conv_feat, axes=(0, 2, 1))
+            conv_feat = conv_feat.transpose(0, 2, 1)
             # -> `[B, T_in, out_channels]`
             concat = F.concat(
                 [enc_out, F.broadcast_to(dec_out, enc_out.shape)], axis=2)
@@ -138,7 +138,7 @@ class AttentionMechanism(chainer.Chain):
             # energy = <W_keys(h_en), W_query(h_de)>
             ###################################################################
             keys = self.W_keys(enc_out)
-            query = F.transpose(self.W_query(dec_out), axes=(0, 2, 1))
+            query = self.W_query(dec_out).transpose(0, 2, 1)
             energy = F.squeeze(F.matmul(keys, query), axis=2)
 
         elif self.attention_type == 'rnn_attention':

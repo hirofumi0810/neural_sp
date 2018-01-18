@@ -31,10 +31,10 @@ class TestCTC(unittest.TestCase):
         #            label_smoothing=True)
 
         # Pyramidal encoder
-        # self.check(encoder_type='lstm', bidirectional=True, subsample=True)
+        self.check(encoder_type='lstm', bidirectional=True, subsample=True)
 
         # Projection
-        # self.check(encoder_type='lstm', bidirectional=False, projection=True)
+        self.check(encoder_type='lstm', bidirectional=False, projection=True)
 
         # Residual LSTM-CTC
         self.check(encoder_type='lstm', bidirectional=True,
@@ -43,21 +43,21 @@ class TestCTC(unittest.TestCase):
                    dense_residual=True)
 
         # CNN-CTC
-        # self.check(encoder_type='cnn')
-        # self.check(encoder_type='cnn', batch_norm=True, activation='relu')
-        # self.check(encoder_type='cnn', batch_norm=True, activation='prelu')
-        # self.check(encoder_type='cnn', batch_norm=True, activation='hard_tanh')
-        # self.check(encoder_type='cnn', batch_norm=True, activation='maxout')
+        self.check(encoder_type='cnn')
+        self.check(encoder_type='cnn', batch_norm=True, activation='relu')
+        self.check(encoder_type='cnn', batch_norm=True, activation='prelu')
+        self.check(encoder_type='cnn', batch_norm=True, activation='hard_tanh')
+        self.check(encoder_type='cnn', batch_norm=True, activation='maxout')
 
         # CLDNN-CTC
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            conv=True)
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            conv=True, batch_norm=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   conv=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   conv=True, batch_norm=True)
 
         # word-level CTC
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            label_type='word')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   label_type='word')
 
         # RNNs
         self.check(encoder_type='lstm', bidirectional=True)
@@ -113,13 +113,12 @@ class TestCTC(unittest.TestCase):
         # Load batch data
         splice = 1
         num_stack = 1 if subsample or conv or encoder_type == 'cnn' else 2
-        inputs, labels, inputs_seq_len, labels_seq_len = generate_data(
-            model_type='ctc',
-            label_type=label_type,
-            batch_size=2,
-            num_stack=num_stack,
-            splice=splice,
-            backend='chainer')
+        xs, ys, x_lens, y_lens = generate_data(model_type='ctc',
+                                               label_type=label_type,
+                                               batch_size=2,
+                                               num_stack=num_stack,
+                                               splice=splice,
+                                               backend='chainer')
 
         if label_type == 'char':
             num_classes = 27
@@ -128,7 +127,7 @@ class TestCTC(unittest.TestCase):
 
         # Load model
         model = CTC(
-            input_size=inputs[0].shape[-1] // splice // num_stack,  # 120
+            input_size=xs[0].shape[-1] // splice // num_stack,  # 120
             encoder_type=encoder_type,
             bidirectional=bidirectional,
             num_units=256,
@@ -188,29 +187,28 @@ class TestCTC(unittest.TestCase):
 
             # Step for parameter update
             model.optimizer.target.cleargrads()
-            for m in model.children():
-                m.cleargrads()
-            loss = model(inputs, labels, inputs_seq_len, labels_seq_len)
+            # for m in model.children():
+            #     m.cleargrads()
+            loss = model(xs, ys, x_lens, y_lens)
             loss.backward()
-            loss.unchain_backward()
+            # loss.unchain_backward()
             model.optimizer.update()
 
             # Inject Gaussian noise to all parameters
 
             if (step + 1) % 10 == 0:
                 # Decode
-                labels_pred = model.decode(
-                    inputs, inputs_seq_len, beam_width=1)
+                labels_pred = model.decode(xs, x_lens, beam_width=1)
 
                 # Compute accuracy
                 if label_type == 'char':
-                    str_true = idx2char(labels[0, :labels_seq_len[0]])
+                    str_true = idx2char(ys[0, :y_lens[0]])
                     str_pred = idx2char(labels_pred[0])
                     ler = compute_cer(ref=str_true.replace('_', ''),
                                       hyp=str_pred.replace('_', ''),
                                       normalize=True)
                 elif label_type == 'word':
-                    str_true = idx2word(labels[0, :labels_seq_len[0]])
+                    str_true = idx2word(ys[0, :y_lens[0]])
                     str_pred = idx2word(labels_pred[0])
                     ler = compute_wer(ref=str_true.split('_'),
                                       hyp=str_pred.split('_'),

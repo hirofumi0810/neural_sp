@@ -25,11 +25,11 @@ class TestCTC(unittest.TestCase):
         print("Hierarchical CTC Working check.")
 
         # Pyramidal encoder
-        # self.check(encoder_type='lstm', bidirectional=True, subsample='drop')
-        # self.check(encoder_type='lstm', bidirectional=True, subsample='concat')
+        self.check(encoder_type='lstm', bidirectional=True, subsample='drop')
+        self.check(encoder_type='lstm', bidirectional=True, subsample='concat')
 
         # projection layer
-        # self.check(encoder_type='lstm', bidirectional=False, projection=True)
+        self.check(encoder_type='lstm', bidirectional=False, projection=True)
 
         # Label smoothing
         # self.check(encoder_type='lstm', bidirectional=True,
@@ -42,10 +42,10 @@ class TestCTC(unittest.TestCase):
                    dense_residual=True)
 
         # CLDNN-CTC
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            conv=True)
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            conv=True, batch_norm=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   conv=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   conv=True, batch_norm=True)
 
         self.check(encoder_type='lstm', bidirectional=True)
 
@@ -83,7 +83,7 @@ class TestCTC(unittest.TestCase):
         # Load batch data
         num_stack = 1 if subsample or conv else 2
         splice = 1
-        inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub = generate_data(
+        xs, ys, ys_sub, x_lens, y_lens, y_lens_sub = generate_data(
             model_type='ctc',
             label_type='word_char',
             batch_size=2,
@@ -96,7 +96,7 @@ class TestCTC(unittest.TestCase):
 
         # Load model
         model = HierarchicalCTC(
-            input_size=inputs[0].shape[-1] // splice // num_stack,   # 120
+            input_size=xs[0].shape[-1] // splice // num_stack,   # 120
             encoder_type=encoder_type,
             bidirectional=bidirectional,
             num_units=256,
@@ -157,8 +157,8 @@ class TestCTC(unittest.TestCase):
             # Step for parameter update
             model.optimizer.target.cleargrads()
             loss, loss_main, loss_sub = model(
-                inputs, labels, labels_sub,
-                inputs_seq_len, labels_seq_len, labels_seq_len_sub)
+                xs, ys, ys_sub,
+                x_lens, y_lens, y_lens_sub)
             loss.backward()
             loss.unchain_backward()
             model.optimizer.update()
@@ -167,18 +167,17 @@ class TestCTC(unittest.TestCase):
 
             if (step + 1) % 10 == 0:
                 # Decode
-                labels_pred = model.decode(
-                    inputs, inputs_seq_len, beam_width=1)
+                labels_pred = model.decode(xs, x_lens, beam_width=1)
                 labels_pred_sub = model.decode(
-                    inputs, inputs_seq_len, beam_width=1, is_sub_task=True)
+                    xs, x_lens, beam_width=1, is_sub_task=True)
 
                 # Compute accuracy
-                str_true = idx2word(labels[0, :labels_seq_len[0]])
+                str_true = idx2word(ys[0, :y_lens[0]])
                 str_pred = idx2word(labels_pred[0])
                 ler = compute_wer(ref=str_true.split('_'),
                                   hyp=str_pred.split('_'),
                                   normalize=True)
-                str_true_sub = idx2char(labels_sub[0, :labels_seq_len_sub[0]])
+                str_true_sub = idx2char(ys_sub[0, :y_lens_sub[0]])
                 str_pred_sub = idx2char(labels_pred_sub[0])
                 ler_sub = compute_cer(ref=str_true_sub.replace('_', ''),
                                       hyp=str_pred_sub.replace('_', ''),
