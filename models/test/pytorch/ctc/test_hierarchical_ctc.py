@@ -13,6 +13,8 @@ import unittest
 
 import torch
 import torch.nn as nn
+torch.manual_seed(1623)
+torch.cuda.manual_seed_all(1623)
 
 sys.path.append('../../../../')
 from models.pytorch.ctc.hierarchical_ctc import HierarchicalCTC
@@ -20,9 +22,6 @@ from models.test.data import generate_data, idx2char, idx2word
 from utils.measure_time_func import measure_time
 from utils.evaluation.edit_distance import compute_cer, compute_wer
 from utils.training.learning_rate_controller import Controller
-
-torch.manual_seed(1623)
-torch.cuda.manual_seed_all(1623)
 
 
 class TestCTC(unittest.TestCase):
@@ -89,7 +88,7 @@ class TestCTC(unittest.TestCase):
         # Load batch data
         num_stack = 1 if subsample or conv else 2
         splice = 1
-        inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub = generate_data(
+        xs, ys, ys_sub, x_lens, y_lens, y_lens_sub = generate_data(
             model_type='ctc',
             label_type='word_char',
             batch_size=2,
@@ -102,7 +101,7 @@ class TestCTC(unittest.TestCase):
 
         # Load model
         model = HierarchicalCTC(
-            input_size=inputs.shape[-1] // splice // num_stack,   # 120
+            input_size=xs.shape[-1] // splice // num_stack,   # 120
             encoder_type=encoder_type,
             encoder_bidirectional=bidirectional,
             encoder_num_units=256,
@@ -162,26 +161,24 @@ class TestCTC(unittest.TestCase):
             # Step for parameter update
             model.optimizer.zero_grad()
             loss, loss_main, loss_sub = model(
-                inputs, labels, labels_sub,
-                inputs_seq_len, labels_seq_len, labels_seq_len_sub)
+                xs, ys, ys_sub, x_lens, y_lens, y_lens_sub)
             loss.backward()
             nn.utils.clip_grad_norm(model.parameters(), 5)
             model.optimizer.step()
 
             if (step + 1) % 10 == 0:
                 # Decode
-                labels_pred = model.decode(
-                    inputs, inputs_seq_len, beam_width=2)
+                labels_pred = model.decode(xs, x_lens, beam_width=2)
                 labels_pred_sub = model.decode(
-                    inputs, inputs_seq_len, beam_width=2, is_sub_task=True)
+                    xs, x_lens, beam_width=2, is_sub_task=True)
 
                 # Compute accuracy
-                str_true = idx2word(labels[0, :labels_seq_len[0]])
+                str_true = idx2word(ys[0, :y_lens[0]])
                 str_pred = idx2word(labels_pred[0])
                 ler = compute_wer(ref=str_true.split('_'),
                                   hyp=str_pred.split('_'),
                                   normalize=True)
-                str_true_sub = idx2char(labels_sub[0, :labels_seq_len_sub[0]])
+                str_true_sub = idx2char(ys_sub[0, :y_lens_sub[0]])
                 str_pred_sub = idx2char(labels_pred_sub[0])
                 ler_sub = compute_cer(ref=str_true_sub.replace('_', ''),
                                       hyp=str_pred_sub.replace('_', ''),

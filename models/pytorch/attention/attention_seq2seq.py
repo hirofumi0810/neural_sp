@@ -215,7 +215,6 @@ class AttentionSeq2seq(ModelBase):
                 dropout=encoder_dropout,
                 subsample_list=subsample_list,
                 subsample_type=subsample_type,
-                use_cuda=self.use_cuda,
                 batch_first=True,
                 merge_bidirectional=False,
                 num_stack=num_stack,
@@ -238,7 +237,6 @@ class AttentionSeq2seq(ModelBase):
                 conv_strides=conv_strides,
                 poolings=poolings,
                 dropout=encoder_dropout,
-                use_cuda=self.use_cuda,
                 activation=activation,
                 batch_norm=batch_norm)
             self.init_dec_state = 'zero'
@@ -262,7 +260,6 @@ class AttentionSeq2seq(ModelBase):
             num_units=decoder_num_units,
             num_layers=decoder_num_layers,
             dropout=decoder_dropout,
-            use_cuda=self.use_cuda,
             batch_first=True,
             residual=decoder_residual,
             dense_residual=decoder_dense_residual)

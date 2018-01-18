@@ -156,7 +156,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 dropout=encoder_dropout,
                 subsample_list=subsample_list,
                 subsample_type=subsample_type,
-                use_cuda=self.use_cuda,
                 batch_first=True,
                 merge_bidirectional=False,
                 num_stack=num_stack,
@@ -189,7 +188,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 num_units=decoder_num_units_sub,
                 num_layers=decoder_num_layers_sub,
                 dropout=decoder_dropout,
-                use_cuda=self.use_cuda,
                 batch_first=True,
                 residual=decoder_residual,
                 dense_residual=decoder_dense_residual)

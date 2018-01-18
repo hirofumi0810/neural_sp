@@ -17,8 +17,6 @@ sys.path.append('../../../../')
 from models.pytorch.attention.attention_layer import AttentionMechanism
 from utils.measure_time_func import measure_time
 
-torch.manual_seed(1623)
-
 
 class TestAttentionLayer(unittest.TestCase):
 

@@ -130,7 +130,6 @@ class CTC(ModelBase):
                 dropout=dropout,
                 subsample_list=subsample_list,
                 subsample_type=subsample_type,
-                use_cuda=self.use_cuda,
                 batch_first=True,
                 merge_bidirectional=False,
                 num_stack=num_stack,
@@ -153,7 +152,6 @@ class CTC(ModelBase):
                 conv_strides=conv_strides,
                 poolings=poolings,
                 dropout=dropout,
-                use_cuda=self.use_cuda,
                 activation=activation,
                 batch_norm=batch_norm)
         else:

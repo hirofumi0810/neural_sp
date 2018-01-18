@@ -13,6 +13,8 @@ import unittest
 
 import torch
 import torch.nn as nn
+torch.manual_seed(1623)
+torch.cuda.manual_seed_all(1623)
 
 sys.path.append('../../../../')
 from models.pytorch.ctc.ctc import CTC
@@ -20,9 +22,6 @@ from models.test.data import generate_data, idx2char, idx2word
 from utils.measure_time_func import measure_time
 from utils.evaluation.edit_distance import compute_cer, compute_wer
 from utils.training.learning_rate_controller import Controller
-
-torch.manual_seed(1623)
-torch.cuda.manual_seed_all(1623)
 
 
 class TestCTC(unittest.TestCase):
@@ -116,13 +115,12 @@ class TestCTC(unittest.TestCase):
         # Load batch data
         splice = 1
         num_stack = 1 if subsample or conv or encoder_type == 'cnn' else 2
-        inputs, labels, inputs_seq_len, labels_seq_len = generate_data(
-            model_type='ctc',
-            label_type=label_type,
-            batch_size=2,
-            num_stack=num_stack,
-            splice=splice,
-            backend='pytorch')
+        xs, ys, x_lens, y_lens = generate_data(model_type='ctc',
+                                               label_type=label_type,
+                                               batch_size=2,
+                                               num_stack=num_stack,
+                                               splice=splice,
+                                               backend='pytorch')
 
         if label_type == 'char':
             num_classes = 27
@@ -131,7 +129,7 @@ class TestCTC(unittest.TestCase):
 
         # Load model
         model = CTC(
-            input_size=inputs.shape[-1] // splice // num_stack,  # 120
+            input_size=xs.shape[-1] // splice // num_stack,  # 120
             encoder_type=encoder_type,
             encoder_bidirectional=bidirectional,
             encoder_num_units=256,
@@ -188,7 +186,7 @@ class TestCTC(unittest.TestCase):
 
             # Step for parameter update
             model.optimizer.zero_grad()
-            loss = model(inputs, labels, inputs_seq_len, labels_seq_len)
+            loss = model(xs, ys, x_lens, y_lens)
             loss.backward()
             nn.utils.clip_grad_norm(model.parameters(), 5)
             model.optimizer.step()
@@ -199,18 +197,17 @@ class TestCTC(unittest.TestCase):
 
             if (step + 1) % 10 == 0:
                 # Decode
-                labels_pred = model.decode(
-                    inputs, inputs_seq_len, beam_width=2)
+                labels_pred = model.decode(xs, x_lens, beam_width=2)
 
                 # Compute accuracy
                 if label_type == 'char':
-                    str_true = idx2char(labels[0, :labels_seq_len[0]])
+                    str_true = idx2char(ys[0, :y_lens[0]])
                     str_pred = idx2char(labels_pred[0])
                     ler = compute_cer(ref=str_true.replace('_', ''),
                                       hyp=str_pred.replace('_', ''),
                                       normalize=True)
                 elif label_type == 'word':
-                    str_true = idx2word(labels[0, :labels_seq_len[0]])
+                    str_true = idx2word(ys[0, :y_lens[0]])
                     str_pred = idx2word(labels_pred[0])
                     ler = compute_wer(ref=str_true.split('_'),
                                       hyp=str_pred.split('_'),

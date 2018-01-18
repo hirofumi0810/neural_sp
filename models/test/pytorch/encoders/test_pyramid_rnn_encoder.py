@@ -17,8 +17,6 @@ from models.test.data import generate_data
 from utils.io.variable import np2var
 from utils.measure_time_func import measure_time
 
-torch.manual_seed(1623)
-
 
 class TestPyramidRNNEncoders(unittest.TestCase):
 
@@ -153,16 +151,15 @@ class TestPyramidRNNEncoders(unittest.TestCase):
         batch_size = 4
         splice = 1
         num_stack = 1
-        inputs, _, inputs_seq_len, _ = generate_data(
-            model_type='ctc',
-            batch_size=batch_size,
-            num_stack=num_stack,
-            splice=splice,
-            backend='pytorch')
+        xs, _, x_lens, _ = generate_data(model_type='ctc',
+                                         batch_size=batch_size,
+                                         num_stack=num_stack,
+                                         splice=splice,
+                                         backend='pytorch')
 
         # Wrap by Variable
-        inputs = np2var(inputs, backend='pytorch')
-        inputs_seq_len = np2var(inputs_seq_len, backend='pytorch')
+        xs = np2var(xs, backend='pytorch')
+        x_lens = np2var(x_lens, backend='pytorch')
 
         # Load encoder
         encoder = load(encoder_type=encoder_type)
@@ -170,7 +167,7 @@ class TestPyramidRNNEncoders(unittest.TestCase):
         # Initialize encoder
         if encoder_type in ['lstm', 'gru', 'rnn']:
             encoder = encoder(
-                input_size=inputs.size(-1) // splice // num_stack,  # 120
+                input_size=xs.size(-1) // splice // num_stack,  # 120
                 rnn_type=encoder_type,
                 bidirectional=bidirectional,
                 num_units=256,
@@ -193,7 +190,7 @@ class TestPyramidRNNEncoders(unittest.TestCase):
         else:
             raise NotImplementedError
 
-        max_time = inputs.size(1)
+        max_time = xs.size(1)
         if conv:
             max_time = encoder.conv.get_conv_out_size(max_time, 1)
         max_time /= (2 ** sum(encoder.subsample_list))
@@ -202,10 +199,10 @@ class TestPyramidRNNEncoders(unittest.TestCase):
         elif subsample_type == 'concat':
             max_time = int(max_time)
 
-        outputs, perm_indices = encoder(inputs, inputs_seq_len)
+        outputs, _, perm_indices = encoder(xs, x_lens)
 
         print('----- outputs -----')
-        print(inputs.size())
+        print(xs.size())
         print(outputs.size())
         num_directions = 2 if bidirectional and not merge_bidirectional else 1
         if batch_first:

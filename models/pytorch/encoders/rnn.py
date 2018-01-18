@@ -15,7 +15,6 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from models.pytorch.linear import LinearND
 from models.pytorch.encoders.cnn import CNNEncoder
-from models.pytorch.encoders.cnn_utils import ConvOutSize
 from utils.io.variable import var2np, np2var
 
 
@@ -133,17 +132,13 @@ class RNNEncoder(nn.Module):
                                    conv_strides=conv_strides,
                                    poolings=poolings,
                                    dropout=dropout,
-                                   use_cuda=self.use_cuda,
                                    activation=activation,
                                    batch_norm=batch_norm)
             input_size = self.conv.output_size
-            self.get_conv_out_size = ConvOutSize(self.conv.conv)
         else:
             input_size = input_size * splice * num_stack
             self.conv = None
 
-        self.rnns = []
-        self.projections = []
         for i_layer in range(num_layers):
             if i_layer == 0:
                 encoder_input_size = input_size
@@ -188,17 +183,11 @@ class RNNEncoder(nn.Module):
                 setattr(self, 'p' + rnn_type + '_l' + str(i_layer), rnn_i)
             else:
                 setattr(self, rnn_type + '_l' + str(i_layer), rnn_i)
-            if use_cuda:
-                rnn_i = rnn_i.cuda()
-            self.rnns.append(rnn_i)
 
             if i_layer != self.num_layers - 1 and self.num_proj > 0:
                 proj_i = LinearND(num_units * self.num_directions, num_proj,
                                   dropout=dropout)
                 setattr(self, 'proj_l' + str(i_layer), proj_i)
-                if use_cuda:
-                    proj_i = proj_i.cuda()
-                self.projections.append(proj_i)
 
     def forward(self, xs, x_lens, volatile=False):
         """Forward computation.
@@ -224,14 +213,11 @@ class RNNEncoder(nn.Module):
             perm_idx (LongTensor):
         """
         batch_size = xs.size(0)
+        use_cuda = xs.is_cuda
 
         # Path through CNN layers before RNN layers
         if self.conv is not None:
             xs, x_lens = self.conv(xs, x_lens)
-
-        if not self.batch_first:
-            # Convert to the time-major
-            xs = xs.transpose(0, 1).contiguous()
 
         # Initialize hidden states (and memory cells) per mini-batch
         h_0 = _init_hidden(batch_size=batch_size,
@@ -239,13 +225,18 @@ class RNNEncoder(nn.Module):
                            num_units=self.num_units,
                            num_directions=self.num_directions,
                            num_layers=1,
-                           use_cuda=self.use_cuda,
+                           use_cuda=use_cuda,
                            volatile=volatile)
 
         # Sort xs by lengths in descending order
         x_lens, perm_idx = x_lens.sort(dim=0, descending=True)
         x_lens = var2np(x_lens).tolist()
         xs = xs[perm_idx]
+        # NOTE: batch-first yet here
+
+        if not self.batch_first:
+            # Convert to the time-major
+            xs = xs.transpose(0, 1).contiguous()
 
         res_outputs_list = []
         # NOTE: exclude residual connection from the raw inputs
@@ -256,7 +247,12 @@ class RNNEncoder(nn.Module):
                 xs = pack_padded_sequence(
                     xs, x_lens, batch_first=self.batch_first)
 
-            xs, _ = self.rnns[i_layer](xs, hx=h_0)
+            if self.subsample_list[i_layer]:
+                xs, _ = getattr(self, 'p' + self.rnn_type +
+                                '_l' + str(i_layer))(xs, hx=h_0)
+            else:
+                xs, _ = getattr(self, self.rnn_type + '_l' +
+                                str(i_layer))(xs, hx=h_0)
 
             # Pick up outputs in the sub task before the projection layer
             if self.num_layers_sub >= 1 and i_layer == self.num_layers_sub - 1:
@@ -269,7 +265,7 @@ class RNNEncoder(nn.Module):
 
                 # Wrap by Variable again
                 x_lens_sub = np2var(
-                    x_lens, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
+                    x_lens, dtype='int', use_cuda=use_cuda, backend='pytorch')
 
             # NOTE: Exclude the last layer
             if i_layer != self.num_layers - 1:
@@ -282,7 +278,7 @@ class RNNEncoder(nn.Module):
 
                     # Projection layer (affine transformation)
                     if self.num_proj > 0:
-                        xs = F.tanh(self.projections[i_layer](xs))
+                        xs = F.tanh(getattr(self, 'proj_l' + str(i_layer))(xs))
 
                     # Subsampling
                     if self.subsample_list[i_layer]:
@@ -333,7 +329,7 @@ class RNNEncoder(nn.Module):
 
         # Wrap by Variable again
         x_lens = np2var(
-            x_lens, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
+            x_lens, dtype='int', use_cuda=xs.is_cuda, backend='pytorch')
 
         # Sum bidirectional outputs
         if self.bidirectional and self.merge_bidirectional:

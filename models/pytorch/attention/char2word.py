@@ -19,6 +19,7 @@ class LSTMChar2Word(nn.Module):
         bidirectional (bool):
         char_embeddings (int):
         word_embedding_dim (int):
+        dropout (float, optional):
     """
 
     def __init__(self,
@@ -27,14 +28,12 @@ class LSTMChar2Word(nn.Module):
                  bidirectional,
                  char_embedding_dim,
                  word_embedding_dim,
-                 use_cuda,
                  dropout=0):
         super(LSTMChar2Word, self).__init__()
 
         self.num_units = num_units
         self.num_layers = num_layers
         self.num_directions = 2 if bidirectional else 1
-        self.use_cuda = use_cuda
 
         # Ling's (bidirectional) LSTM-based C2W composition model
         self.c2w_lstm = nn.LSTM(char_embedding_dim,
@@ -49,7 +48,7 @@ class LSTMChar2Word(nn.Module):
         self.W_bw = nn.Linear(num_units, word_embedding_dim)
 
     def forward(self, char_embeddings, volatile=False):
-        """
+        """Forward computation.
         Args:
             char_embeddings (FloatTensor): A tensor of size
                 `[1 (B), char_num, embedding_dim_sub]`
@@ -64,7 +63,7 @@ class LSTMChar2Word(nn.Module):
                            num_units=self.num_units,
                            num_directions=self.num_directions,
                            num_layers=self.num_layers,
-                           use_cuda=self.use_cuda,
+                           use_cuda=char_embeddings.is_cuda,
                            volatile=volatile)
 
         outputs, _ = self.c2w_lstm(char_embeddings, hx=h_0)

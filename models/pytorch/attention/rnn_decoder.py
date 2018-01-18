@@ -18,7 +18,6 @@ class RNNDecoder(nn.Module):
         num_units (int): the number of units in each layer
         num_layers (int): the number of layers
         dropout (float): the probability to drop nodes
-        use_cuda (bool): if True, use GPUs
         batch_first (bool): if True, batch-major computation will be performed
         residual (bool, optional):
         dense_residual (bool, optional):
@@ -30,7 +29,6 @@ class RNNDecoder(nn.Module):
                  num_units,
                  num_layers,
                  dropout,
-                 use_cuda,
                  batch_first,
                  residual=False,
                  dense_residual=False):
@@ -42,12 +40,10 @@ class RNNDecoder(nn.Module):
         self.num_units = num_units
         self.num_layers = num_layers
         self.dropout = dropout
-        self.use_cuda = use_cuda
         self.batch_first = batch_first
         self.residual = residual
         self.dense_residual = dense_residual
 
-        self.rnns = []
         for i_layer in range(num_layers):
             if i_layer == 0:
                 decoder_input_size = input_size
@@ -82,9 +78,6 @@ class RNNDecoder(nn.Module):
                 raise ValueError('rnn_type must be "lstm" or "gru" or "rnn".')
 
             setattr(self, rnn_type + '_l' + str(i_layer), rnn_i)
-            if use_cuda:
-                rnn_i = rnn_i.cuda()
-            self.rnns.append(rnn_i)
 
     def forward(self, y, dec_state, volatile=False):
         """Forward computation.
@@ -108,7 +101,7 @@ class RNNDecoder(nn.Module):
         res_outputs_list = []
         # NOTE: exclude residual connection from decoder's inputs
         for i_layer in range(self.num_layers):
-            dec_out, dec_state = self.rnns[i_layer](
+            dec_out, dec_state = getattr(self, self.rnn_type + '_l' + str(i_layer))(
                 dec_out, hx=dec_state)
 
             # Residual connection

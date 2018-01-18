@@ -23,7 +23,6 @@ class CNNEncoder(nn.Module):
         conv_strides (list, optional): strides in CNN layers
         poolings (list, optional): the size of poolings in CNN layers
         dropout (float): the probability to drop nodes
-        use_cuda (bool, optional): if True, use GPUs
         activation (string, optional): relu or prelu or hard_tanh or maxout
         batch_norm (bool, optional):
     """
@@ -35,16 +34,14 @@ class CNNEncoder(nn.Module):
                  conv_strides,
                  poolings,
                  dropout,
-                 use_cuda,
                  activation='relu',
                  batch_norm=False):
 
         super(CNNEncoder, self).__init__()
 
         self.input_size = input_size
-        self.input_channels = 3
+        self.input_channels = 1
         self.input_freq = input_size // self.input_channels
-        self.use_cuda = use_cuda
 
         assert input_size % self.input_channels == 0
         assert len(conv_channels) > 0
@@ -52,57 +49,60 @@ class CNNEncoder(nn.Module):
         assert len(conv_kernel_sizes) == len(conv_strides)
         assert len(conv_strides) == len(poolings)
 
-        convs = []
+        layers = []
         in_c = 1
         in_freq = input_size
-        for i in range(len(conv_channels)):
+        for i_layer in range(len(conv_channels)):
 
             # Conv
             conv = nn.Conv2d(in_channels=in_c,
-                             out_channels=conv_channels[i],
-                             kernel_size=tuple(conv_kernel_sizes[i]),
-                             stride=tuple(conv_strides[i]),
-                             padding=tuple(conv_strides[i]),
+                             out_channels=conv_channels[i_layer],
+                             kernel_size=tuple(conv_kernel_sizes[i_layer]),
+                             stride=tuple(conv_strides[i_layer]),
+                             padding=tuple(conv_strides[i_layer]),
                              bias=not batch_norm)
-            convs.append(conv)
+            layers.append(conv)
             in_freq = math.floor(
                 (in_freq + 2 * conv.padding[0] - conv.kernel_size[0]) / conv.stride[0] + 1)
 
             # Activation
             if activation == 'relu':
-                convs.append(nn.ReLU())
+                layers.append(nn.ReLU())
             elif activation == 'prelu':
-                convs.append(nn.PReLU(num_parameters=1, init=0.2))
+                layers.append(nn.PReLU(num_parameters=1, init=0.2))
             elif activation == 'hard_tanh':
-                convs.append(nn.Hardtanh(min_val=0, max_val=20, inplace=True))
+                layers.append(nn.Hardtanh(min_val=0, max_val=20, inplace=True))
             elif activation == 'maxout':
-                convs.append(Maxout(1, 1, 2))
+                layers.append(Maxout(1, 1, 2))
             else:
                 raise NotImplementedError
 
             # Max Pooling
-            if len(poolings[i]) > 0:
+            if len(poolings[i_layer]) > 0:
                 pool = nn.MaxPool2d(
-                    kernel_size=(poolings[i][0], poolings[i][0]),
-                    stride=(poolings[i][0], poolings[i][1]),
+                    kernel_size=(poolings[i_layer][0], poolings[i_layer][0]),
+                    stride=(poolings[i_layer][0], poolings[i_layer][1]),
                     # padding=(1, 1),
                     padding=(0, 0),  # default
                     ceil_mode=True)
-                convs.append(pool)
+                layers.append(pool)
                 in_freq = math.floor(
                     (in_freq + 2 * pool.padding[0] - pool.kernel_size[0]) / pool.stride[0] + 1)
 
             # Batch Normalization
             if batch_norm:
-                convs.append(nn.BatchNorm2d(conv_channels[i]))
-                # TODO: compare BN before ReLU and after ReLU
+                layers.append(nn.BatchNorm2d(conv_channels[i_layer]))
 
-            convs.append(nn.Dropout(p=dropout))
-            in_c = conv_channels[i]
+            # Dropout
+            if dropout > 0:
+                layers.append(nn.Dropout(p=dropout))
+            # TODO: compare BN before ReLU and after ReLU
 
-        self.conv = nn.Sequential(*convs)
+            in_c = conv_channels[i_layer]
 
-        self.get_conv_out_size = ConvOutSize(self.conv)
+        self.layers = nn.Sequential(*layers)
+
+        self.get_conv_out_size = ConvOutSize(self.layers)
         self.output_size = conv_channels[-1] * in_freq
 
     def forward(self, xs, x_lens):
@@ -116,14 +116,14 @@ class CNNEncoder(nn.Module):
         """
         batch_size, max_time, input_size = xs.size()
 
-        assert input_size == self.input_freq * self.input_channels
+        # assert input_size == self.input_freq * self.input_channels
 
         # Reshape to 4D tensor
         xs = xs.transpose(1, 2).contiguous()
         xs = xs.unsqueeze(1)
-        # NOTE: xs: `[B, in_ch, freq, time]`
+        # NOTE: xs: `[B, in_ch, freq (1), time]`
 
-        xs = self.conv(xs)
+        xs = self.layers(xs)
         # print(xs.size())
         # NOTE: xs: `[B, out_ch, new_freq, new_time]`
 
@@ -135,6 +135,6 @@ class CNNEncoder(nn.Module):
         # Update x_lens
         x_lens = [self.get_conv_out_size(x, 1) for x in x_lens]
         x_lens = np2var(
-            x_lens, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
+            x_lens, dtype='int', use_cuda=xs.is_cuda, backend='pytorch')
 
         return xs, x_lens

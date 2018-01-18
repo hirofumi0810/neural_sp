@@ -13,6 +13,8 @@ import unittest
 
 import torch
 import torch.nn as nn
+torch.manual_seed(1623)
+torch.cuda.manual_seed_all(1623)
 
 sys.path.append('../../../../')
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
@@ -20,9 +22,6 @@ from models.test.data import generate_data, idx2char, idx2word
 from utils.measure_time_func import measure_time
 from utils.evaluation.edit_distance import compute_cer, compute_wer
 from utils.training.learning_rate_controller import Controller
-
-torch.manual_seed(1623)
-torch.cuda.manual_seed_all(1623)
 
 
 class TestAttention(unittest.TestCase):
@@ -151,7 +150,7 @@ class TestAttention(unittest.TestCase):
         # Load batch data
         splice = 1
         num_stack = 1 if subsample or conv or encoder_type == 'cnn' else 2
-        inputs, labels, inputs_seq_len, labels_seq_len = generate_data(
+        xs, ys, x_lens, y_lens = generate_data(
             model_type='attention',
             label_type=label_type,
             batch_size=2,
@@ -168,7 +167,7 @@ class TestAttention(unittest.TestCase):
 
         # Load model
         model = AttentionSeq2seq(
-            input_size=inputs.shape[-1] // splice // num_stack,  # 120
+            input_size=xs.shape[-1] // splice // num_stack,  # 120
             encoder_type=encoder_type,
             encoder_bidirectional=bidirectional,
             encoder_num_units=256,
@@ -243,7 +242,7 @@ class TestAttention(unittest.TestCase):
 
             # Step for parameter update
             model.optimizer.zero_grad()
-            loss = model(inputs, labels, inputs_seq_len, labels_seq_len)
+            loss = model(xs, ys, x_lens, y_lens)
             loss.backward()
             nn.utils.clip_grad_norm(model.parameters(), 5)
             model.optimizer.step()
@@ -255,20 +254,20 @@ class TestAttention(unittest.TestCase):
             if (step + 1) % 10 == 0:
                 # Decode
                 labels_pred = model.decode(
-                    inputs, inputs_seq_len,
+                    xs, x_lens,
                     # beam_width=1,
                     beam_width=2,
                     max_decode_len=60)
 
                 # Compute accuracy
                 if label_type == 'char':
-                    str_true = map_fn(labels[0, :labels_seq_len[0]][1:-1])
+                    str_true = map_fn(ys[0, :y_lens[0]][1:-1])
                     str_pred = map_fn(labels_pred[0][0:-1]).split('>')[0]
                     ler = compute_cer(ref=str_true.replace('_', ''),
                                       hyp=str_pred.replace('_', ''),
                                       normalize=True)
                 elif label_type == 'word':
-                    str_true = map_fn(labels[0, : labels_seq_len[0]][1: -1])
+                    str_true = map_fn(ys[0, : y_lens[0]][1: -1])
                     str_pred = map_fn(labels_pred[0][0: -1]).split('>')[0]
                     ler = compute_wer(ref=str_true.split('_'),
                                       hyp=str_pred.split('_'),
@@ -286,7 +285,7 @@ class TestAttention(unittest.TestCase):
                 # Decode by theCTC decoder
                 if model.ctc_loss_weight >= 0.1:
                     labels_pred_ctc = model.decode_ctc(
-                        inputs, inputs_seq_len, beam_width=1)
+                        xs, x_lens, beam_width=1)
                     str_pred_ctc = map_fn(labels_pred_ctc[0])
                     print('Hyp (CTC): %s' % str_pred_ctc)
 

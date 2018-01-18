@@ -142,7 +142,6 @@ class HierarchicalCTC(CTC):
                 dropout=dropout,
                 subsample_list=subsample_list,
                 subsample_type=subsample_type,
-                use_cuda=self.use_cuda,
                 batch_first=True,
                 merge_bidirectional=False,
                 num_stack=num_stack,

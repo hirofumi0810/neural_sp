@@ -160,7 +160,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 dropout=encoder_dropout,
                 subsample_list=subsample_list,
                 subsample_type=subsample_type,
-                use_cuda=self.use_cuda,
                 batch_first=True,
                 merge_bidirectional=False,
                 num_stack=num_stack,
@@ -192,7 +191,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             num_units=decoder_num_units,
             num_layers=decoder_num_layers,
             dropout=decoder_dropout,
-            use_cuda=self.use_cuda,
             batch_first=True)
         self.decoder_sub = RNNDecoder(
             input_size=decoder_num_units_sub + embedding_dim_sub,
@@ -200,7 +198,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             num_units=decoder_num_units_sub,
             num_layers=decoder_num_layers_sub,
             dropout=decoder_dropout,
-            use_cuda=self.use_cuda,
             batch_first=True)
 
         ##############################
@@ -298,7 +295,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                                      bidirectional=True,
                                      char_embedding_dim=embedding_dim_sub,
                                      word_embedding_dim=embedding_dim,
-                                     use_cuda=self.use_cuda)
+                                     dropout=0)
 
             self.gate_fn = LinearND(embedding_dim, embedding_dim)
 
