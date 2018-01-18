@@ -367,18 +367,17 @@ class AttentionSeq2seq(ModelBase):
             logits = logits / self.logits_temperature
 
         # Compute XE sequence loss
-        batch_size, label_num, num_classes = logits.shape
-        logits = logits.reshape((-1, num_classes))
-        ys_1d = ys[:, 1:].reshape(-1)  # Exclude <SOS>
         loss = F.softmax_cross_entropy(
-            logits, ys_1d,
+            x=logits.reshape((-1, logits.shape[2])),
+            t=ys[:, 1:].reshape(-1),
             normalize=True, cache_score=True, class_weight=None,
             ignore_label=self.sos_index, reduce='no')
         # NOTE: ys are padded by <SOS>
 
         # Label smoothing (with uniform distribution)
-        # if self.label_smoothing_prob > 0 and self.decoder_input == 'embedding':
-        #     log_probs = F.log_softmax(logits, dim=-1)
+        if self.label_smoothing_prob > 0 and self.decoder_input == 'embedding':
+            batch_size, label_num, num_classes = logits.shape
+            log_probs = F.log_softmax(logits)
         #     uniform = Variable(torch.FloatTensor(
         #         batch_size, label_num, num_classes).fill_(np.log(1 / num_classes)))
         #     if self.use_cuda:

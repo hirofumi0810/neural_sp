@@ -1,0 +1,1 @@
+../../pytorch/attention/run_hierarchical_attention.sh
