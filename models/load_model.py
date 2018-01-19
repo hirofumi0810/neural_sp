@@ -19,18 +19,12 @@ def load(model_type, params, backend='pytorch'):
         model (nn.Module): An encoder class
     """
     # TODO: remove these
-    if 'residual' not in params.keys():
-        params['residual'] = False
-    if 'dense_residual' not in params.keys():
-        params['dense_residual'] = False
-    if 'encoder_residual' not in params.keys():
-        params['encoder_residual'] = False
-    if 'encoder_dense_residual' not in params.keys():
-        params['encoder_dense_residual'] = False
-    if 'decoder_residual' not in params.keys():
-        params['decoder_residual'] = False
-    if 'decoder_dense_residual' not in params.keys():
-        params['decoder_dense_residual'] = False
+    if 'parameter_init_distribution' not in params.keys():
+        params['parameter_init_distribution'] = 'uniform'
+    if 'recurrent_weight_orthogonal' not in params.keys():
+        params['recurrent_weight_orthogonal'] = False
+    if 'init_forget_gate_bias_with_one' not in params.keys():
+        params['init_forget_gate_bias_with_one'] = True
 
     model_name = params['encoder_type']
     if params['encoder_type'] in ['cnn', 'resnet']:
@@ -70,7 +64,10 @@ def load(model_type, params, backend='pytorch'):
             fc_list=params['fc_list'],
             dropout=params['dropout'],
             num_classes=params['num_classes'],
+            parameter_init_distribution=params['parameter_init_distribution'],
             parameter_init=params['parameter_init'],
+            recurrent_weight_orthogonal=params['recurrent_weight_orthogonal'],
+            init_forget_gate_bias_with_one=params['init_forget_gate_bias_with_one'],
             subsample_list=params['subsample_list'],
             subsample_type=params['subsample_type'],
             logits_temperature=params['logits_temperature'],
@@ -142,7 +139,10 @@ def load(model_type, params, backend='pytorch'):
             fc_list=params['fc_list'],
             dropout=params['dropout'],
             num_classes=params['num_classes'],
+            parameter_init_distribution=params['parameter_init_distribution'],
             parameter_init=params['parameter_init'],
+            recurrent_weight_orthogonal=params['recurrent_weight_orthogonal'],
+            init_forget_gate_bias_with_one=params['init_forget_gate_bias_with_one'],
             subsample_list=params['subsample_list'],
             subsample_type=params['subsample_type'],
             logits_temperature=params['logits_temperature'],
@@ -212,7 +212,10 @@ def load(model_type, params, backend='pytorch'):
             decoder_dropout=params['dropout_decoder'],
             embedding_dim=params['embedding_dim'],
             num_classes=params['num_classes'],
+            parameter_init_distribution=params['parameter_init_distribution'],
             parameter_init=params['parameter_init'],
+            recurrent_weight_orthogonal=params['recurrent_weight_orthogonal'],
+            init_forget_gate_bias_with_one=params['init_forget_gate_bias_with_one'],
             subsample_list=params['subsample_list'],
             subsample_type=params['subsample_type'],
             init_dec_state=params['init_dec_state'],
@@ -313,7 +316,10 @@ def load(model_type, params, backend='pytorch'):
             main_loss_weight=params['main_loss_weight'],
             num_classes=params['num_classes'],
             num_classes_sub=params['num_classes_sub'],
+            parameter_init_distribution=params['parameter_init_distribution'],
             parameter_init=params['parameter_init'],
+            recurrent_weight_orthogonal=params['recurrent_weight_orthogonal'],
+            init_forget_gate_bias_with_one=params['init_forget_gate_bias_with_one'],
             subsample_list=params['subsample_list'],
             subsample_type=params['subsample_type'],
             logits_temperature=params['logits_temperature'],
@@ -411,7 +417,10 @@ def load(model_type, params, backend='pytorch'):
             main_loss_weight=params['main_loss_weight'],
             num_classes=params['num_classes'],
             num_classes_sub=params['num_classes_sub'],
+            parameter_init_distribution=params['parameter_init_distribution'],
             parameter_init=params['parameter_init'],
+            recurrent_weight_orthogonal=params['recurrent_weight_orthogonal'],
+            init_forget_gate_bias_with_one=params['init_forget_gate_bias_with_one'],
             subsample_list=params['subsample_list'],
             subsample_type=params['subsample_type'],
             init_dec_state=params['init_dec_state'],
@@ -523,7 +532,10 @@ def load(model_type, params, backend='pytorch'):
             main_loss_weight=params['main_loss_weight'],
             num_classes=params['num_classes'],
             num_classes_sub=params['num_classes_sub'],
+            parameter_init_distribution=params['parameter_init_distribution'],
             parameter_init=params['parameter_init'],
+            recurrent_weight_orthogonal=params['recurrent_weight_orthogonal'],
+            init_forget_gate_bias_with_one=params['init_forget_gate_bias_with_one'],
             subsample_list=params['subsample_list'],
             subsample_type=params['subsample_type'],
             init_dec_state=params['init_dec_state'],

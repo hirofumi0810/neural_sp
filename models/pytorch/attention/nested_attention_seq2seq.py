@@ -56,7 +56,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                  main_loss_weight,  # ***
                  num_classes,
                  num_classes_sub,  # ***
+                 parameter_init_distribution='uniform',
                  parameter_init=0.1,
+                 recurrent_weight_orthogonal=False,
+                 init_forget_gate_bias_with_one=True,
                  subsample_list=[],
                  subsample_type='drop',
                  init_dec_state='final',
@@ -299,19 +302,24 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
             self.gate_fn = LinearND(embedding_dim, embedding_dim)
 
-        # Initialize all weights with uniform distribution
-        self.init_weights(
-            parameter_init, distribution='uniform', ignore_keys=['bias'])
+        # Initialize parameters
+        self.init_weights(parameter_init,
+                          distribution=parameter_init_distribution,
+                          ignore_keys=['bias'])
 
         # Initialize all biases with 0
-        self.init_weights(0, distribution='uniform', keys=['bias'])
+        self.init_weights(0,
+                          distribution=parameter_init_distribution,
+                          keys=['bias'])
 
         # Recurrent weights are orthogonalized
-        # self.init_weights(parameter_init, distribution='orthogonal',
-        #                   keys=['lstm', 'weight'], ignore_keys=['bias'])
+        if recurrent_weight_orthogonal:
+            self.init_weights(parameter_init, distribution='orthogonal',
+                              keys=['lstm', 'weight'], ignore_keys=['bias'])
 
         # Initialize bias in forget gate with 1
-        self.init_forget_gate_bias_with_one()
+        if init_forget_gate_bias_with_one:
+            self.init_forget_gate_bias_with_one()
 
     def forward(self, xs, ys, ys_sub, x_lens, y_lens, y_lens_sub, is_eval=False):
         """Forward computation.
@@ -433,9 +441,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             loss_main = loss_main.data[0]
             loss_sub = loss_sub.data[0]
         else:
-            self._step += 1
-
             # Update the probability of scheduled sampling
+            self._step += 1
             if self.sample_prob > 0:
                 self._sample_prob = min(
                     self.sample_prob,

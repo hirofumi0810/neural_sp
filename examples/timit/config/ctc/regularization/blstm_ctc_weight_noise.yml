@@ -20,6 +20,12 @@ param:
   # topology
   model_type: ctc
   encoder_type: lstm
+  conv_channels: []
+  conv_kernel_sizes: []
+  conv_strides: []
+  poolings: []
+  activation: relu
+  batch_norm: False
   bidirectional: True
   residual: False
   dense_residual: False
@@ -34,12 +40,6 @@ param:
     - False
   subsample_type: drop
   fc_list: []
-  conv_channels: []
-  conv_kernel_sizes: []
-  conv_strides: []
-  poolings: []
-  activation: relu
-  batch_norm: False
 
   # optimization
   batch_size: 64
@@ -48,8 +48,13 @@ param:
   num_epoch: 100
   convert_to_sgd_epoch: 100
 
-  # regularization
+  # initialization
+  parameter_init_distribution: uniform
   parameter_init: 0.1
+  recurrent_weight_orthogonal: True
+  init_forget_gate_bias_with_one: True
+
+  # regularization
   clip_grad_norm: 5.0
   clip_activation: 50
   dropout: 0.5

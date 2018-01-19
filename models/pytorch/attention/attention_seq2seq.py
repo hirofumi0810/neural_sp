@@ -53,8 +53,14 @@ class AttentionSeq2seq(ModelBase):
             0 means that decoder inputs are represented by one-hot vectors.
         num_classes (int): the number of nodes in softmax layer
             (excluding <SOS> and <EOS> classes)
+        parameter_init_distribution (string, optional): uniform or normal or
+            orthogonal or constant distribution
         parameter_init (float, optional): Range of uniform distribution to
             initialize weight parameters
+        recurrent_weight_orthogonal (bool, optional): if True, recurrent
+            weights are orthogonalized
+        init_forget_gate_bias_with_one (bool, optional): if True, initialize
+            the forget gate bias with 1
         subsample_list (list, optional): subsample in the corresponding layers (True)
             ex.) [False, True, True, False] means that subsample is conducted
                 in the 2nd and 3rd layers.
@@ -114,7 +120,10 @@ class AttentionSeq2seq(ModelBase):
                  decoder_dropout,
                  embedding_dim,
                  num_classes,
+                 parameter_init_distribution='uniform',
                  parameter_init=0.1,
+                 recurrent_weight_orthogonal=False,
+                 init_forget_gate_bias_with_one=True,
                  subsample_list=[],
                  subsample_type='drop',
                  init_dec_state='final',
@@ -228,8 +237,7 @@ class AttentionSeq2seq(ModelBase):
                 residual=encoder_residual,
                 dense_residual=encoder_dense_residual)
         elif encoder_type == 'cnn':
-            assert num_stack == 1
-            assert splice == 1
+            assert num_stack == 1 and splice == 1
             self.encoder = load(encoder_type=encoder_type)(
                 input_size=input_size,
                 conv_channels=conv_channels,
@@ -321,19 +329,24 @@ class AttentionSeq2seq(ModelBase):
             # NOTE: index 0 is reserved for blank in warpctc_pytorch
             # TODO: set space index
 
-        # Initialize all weights with uniform distribution
-        self.init_weights(
-            parameter_init, distribution='uniform', ignore_keys=['bias'])
+        # Initialize parameters
+        self.init_weights(parameter_init,
+                          distribution=parameter_init_distribution,
+                          ignore_keys=['bias'])
 
         # Initialize all biases with 0
-        self.init_weights(0, distribution='uniform', keys=['bias'])
+        self.init_weights(0,
+                          distribution=parameter_init_distribution,
+                          keys=['bias'])
 
         # Recurrent weights are orthogonalized
-        # self.init_weights(parameter_init, distribution='orthogonal',
-        #                   keys=['lstm', 'weight'], ignore_keys=['bias'])
+        if recurrent_weight_orthogonal:
+            self.init_weights(parameter_init, distribution='orthogonal',
+                              keys=['lstm', 'weight'], ignore_keys=['bias'])
 
         # Initialize bias in forget gate with 1
-        self.init_forget_gate_bias_with_one()
+        if init_forget_gate_bias_with_one:
+            self.init_forget_gate_bias_with_one()
 
     def forward(self, xs, ys, x_lens, y_lens, is_eval=False):
         """Forward computation.
@@ -387,6 +400,7 @@ class AttentionSeq2seq(ModelBase):
             target=ys[:, 1:].contiguous().view(-1),
             ignore_index=self.sos_index, size_average=False)
         # NOTE: ys are padded by <SOS>
+        # print(loss.size())
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0 and self.decoder_input == 'embedding':
@@ -416,9 +430,8 @@ class AttentionSeq2seq(ModelBase):
         if is_eval:
             loss = loss.data[0]
         else:
-            self._step += 1
-
             # Update the probability of scheduled sampling
+            self._step += 1
             if self.sample_prob > 0:
                 self._sample_prob = min(
                     self.sample_prob,
@@ -527,9 +540,9 @@ class AttentionSeq2seq(ModelBase):
         dec_state = self._init_decoder_state(enc_out)
 
         # Initialize attention weights
-        # att_weights_step = Variable(torch.zeros(batch_size, max_time))
-        att_weights_step = Variable(
-            torch.ones(batch_size, max_time)) / max_time
+        att_weights_step = Variable(torch.zeros(batch_size, max_time))
+        # att_weights_step = Variable(
+        #     torch.ones(batch_size, max_time)) / max_time
         # NOTE: with uniform distribution
 
         # Initialize context vector
@@ -805,9 +818,9 @@ class AttentionSeq2seq(ModelBase):
         dec_state = self._init_decoder_state(enc_out, volatile=True)
 
         # Initialize attention weights
-        # att_weights_step = Variable(torch.zeros(batch_size, max_time))
-        att_weights_step = Variable(
-            torch.ones(batch_size, max_time)) / max_time
+        att_weights_step = Variable(torch.zeros(batch_size, max_time))
+        # att_weights_step = Variable(
+        #     torch.ones(batch_size, max_time)) / max_time
         # NOTE: with uniform distribution
         att_weights_step.volatile = True
 
@@ -871,9 +884,8 @@ class AttentionSeq2seq(ModelBase):
                 logits = self.fc(attentional_vec)
 
             # Pick up 1-best
-            _, y = torch.max(logits.squeeze(1), dim=1)
+            y = torch.max(logits.squeeze(1), dim=1)[1].unsqueeze(1)
             # logits: `[B, 1, num_classes]` -> `[B, num_classes]`
-            y = y.unsqueeze(1)
             best_hyps.append(y)
             att_weights.append(att_weights_step)
 
@@ -921,8 +933,8 @@ class AttentionSeq2seq(ModelBase):
                 enc_out[i_batch:i_batch + 1, :, :], volatile=True)
 
             # Initialize attention weights
-            # att_weights_step = Variable(torch.zeros(1, max_time))
-            att_weights_step = Variable(torch.ones(1, max_time)) / max_time
+            att_weights_step = Variable(torch.zeros(1, max_time))
+            # att_weights_step = Variable(torch.ones(1, max_time)) / max_time
             # NOTE: with uniform distribution
             att_weights_step.volatile = True
 

@@ -61,8 +61,13 @@ param:
   learning_rate: 1e-3
   num_epoch: 100
 
-  # regularization
+  # initialization
+  parameter_init_distribution: uniform
   parameter_init: 0.1
+  recurrent_weight_orthogonal: True
+  init_forget_gate_bias_with_one: True
+
+  # regularization
   clip_grad_norm: 5.0
   clip_activation_encoder: 50
   clip_activation_decoder: 50
@@ -80,12 +85,12 @@ param:
   weight_noise_std: 0
 
   # annealing
-  decay_start_epoch: 10
+  decay_start_epoch: 5
   decay_rate: 0.5
   decay_patient_epoch: 3
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
-  eval_start_epoch: 10
+  eval_start_epoch: 5
   print_step: 1000
 
   # MTL

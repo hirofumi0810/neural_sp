@@ -20,6 +20,11 @@ param:
   # topology
   model_type: attention
   encoder_type: lstm
+  conv_channels: []
+  conv_kernel_sizes: []
+  conv_strides: []
+  poolings: []
+  batch_norm: False
   encoder_bidirectional: True
   encoder_residual: False
   encoder_dense_residual: False
@@ -43,14 +48,6 @@ param:
   attention_conv_num_channels: 10
   attention_conv_width: 201
 
-  # CNN before RNN encoder
-  conv_channels: []
-  conv_kernel_sizes: []
-  conv_strides: []
-  poolings: []
-  activation: relu
-  batch_norm: False
-
   # optimization
   batch_size: 64
   optimizer: adam
@@ -58,8 +55,13 @@ param:
   num_epoch: 100
   convert_to_sgd_epoch: 100
 
-  # regularization
+  # initialization
+  parameter_init_distribution: uniform
   parameter_init: 0.1
+  recurrent_weight_orthogonal: True
+  init_forget_gate_bias_with_one: True
+
+  # regularization
   clip_grad_norm: 5.0
   clip_activation_encoder: 50
   clip_activation_decoder: 50

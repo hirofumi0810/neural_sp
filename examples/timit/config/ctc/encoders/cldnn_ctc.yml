@@ -20,6 +20,18 @@ param:
   # topology
   model_type: ctc
   encoder_type: lstm
+  conv_channels: [32, 32]
+  conv_kernel_sizes:
+    - [41, 11]
+    - [21, 11]
+  conv_strides:
+    - [2, 2]
+    - [2, 1]
+  poolings:
+    - []
+    - []
+  activation: relu
+  batch_norm: False
   encoder_bidirectional: True
   encoder_residual: False
   encoder_dense_residual: False
@@ -34,18 +46,6 @@ param:
     - False
   subsample_type: drop
   fc_list: [896, 74]
-  conv_channels: [32, 32]
-  conv_kernel_sizes:
-    - [41, 11]
-    - [21, 11]
-  conv_strides:
-    - [2, 2]
-    - [2, 1]
-  poolings:
-    - []
-    - []
-  activation: relu
-  batch_norm: False
 
   # optimization
   batch_size: 32
@@ -54,8 +54,13 @@ param:
   num_epoch: 100
   convert_to_sgd_epoch: 100
 
-  # regularization
+  # initialization
+  parameter_init_distribution: uniform
   parameter_init: 0.1
+  recurrent_weight_orthogonal: True
+  init_forget_gate_bias_with_one: True
+
+  # regularization
   clip_grad_norm: 5.0
   clip_activation: 50
   dropout: 0.5
@@ -71,4 +76,4 @@ param:
   sort_stop_epoch: 100
   not_improved_patient_epoch: 10
   eval_start_epoch: 10
-  print_step: 30
+  print_step: 20

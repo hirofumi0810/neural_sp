@@ -48,8 +48,14 @@ class AttentionSeq2seq(ModelBase):
             0 means that decoder inputs are represented by one-hot vectors.
         num_classes (int): the number of nodes in softmax layer
             (excluding <SOS> and <EOS> classes)
+        parameter_init_distribution (string, optional): uniform or normal or
+            orthogonal or constant distribution
         parameter_init (float, optional): Range of uniform distribution to
             initialize weight parameters
+        recurrent_weight_orthogonal (bool, optional): if True, recurrent
+            weights are orthogonalized
+        init_forget_gate_bias_with_one (bool, optional): if True, initialize
+            the forget gate bias with 1
         subsample_list (list, optional): subsample in the corresponding layers (True)
             ex.) [False, True, True, False] means that subsample is conducted
                 in the 2nd and 3rd layers.
@@ -109,7 +115,10 @@ class AttentionSeq2seq(ModelBase):
                  decoder_dropout,
                  embedding_dim,
                  num_classes,
+                 parameter_init_distribution='uniform',
                  parameter_init=0.1,
+                 recurrent_weight_orthogonal=False,
+                 init_forget_gate_bias_with_one=True,
                  subsample_list=[],
                  subsample_type='drop',
                  init_dec_state='final',
@@ -320,19 +329,24 @@ class AttentionSeq2seq(ModelBase):
                     blank_index=self.blank_index)
                 # TODO: set space index
 
-            # Initialize all weights with uniform distribution
-            self.init_weights(
-                parameter_init, distribution='uniform', ignore_keys=['bias'])
+            # Initialize parameters
+            self.init_weights(parameter_init,
+                              distribution=parameter_init_distribution,
+                              ignore_keys=['bias'])
 
             # Initialize all biases with 0
-            self.init_weights(0, distribution='uniform', keys=['bias'])
+            self.init_weights(0,
+                              distribution=parameter_init_distribution,
+                              keys=['bias'])
 
             # Recurrent weights are orthogonalized
-            # self.init_weights(parameter_init, distribution='orthogonal',
-            #                   keys=['lstm', 'weight'], ignore_keys=['bias'])
+            if recurrent_weight_orthogonal:
+                self.init_weights(parameter_init, distribution='orthogonal',
+                                  keys=['lstm', 'weight'], ignore_keys=['bias'])
 
             # Initialize bias in forget gate with 1
-            self.init_forget_gate_bias_with_one()
+            if init_forget_gate_bias_with_one:
+                self.init_forget_gate_bias_with_one()
 
     def __call__(self, xs, ys, x_lens, y_lens,
                  is_eval=False):

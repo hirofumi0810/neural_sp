@@ -1,6 +1,7 @@
 param:
   # framework
   backend: pytorch
+  # backend: chainer
 
   # corpus
   corpus: librispeech
@@ -20,15 +21,6 @@ param:
   # topology
   model_type: ctc
   encoder_type: cnn
-  bidirectional: False
-  residual: False
-  dense_residual: False
-  num_units: 0
-  num_proj: 0
-  num_layers: 0
-  subsample_list: False
-  subsample_type: drop  
-  fc_list: [1024, 1024]
   conv_channels: [96, 96, 96, 192, 192, 192, 192, 384, 384, 384, 384]
   conv_kernel_sizes:
     - [3, 3]
@@ -67,6 +59,15 @@ param:
     - []
     - [2,2]
   batch_norm: True
+  encoder_bidirectional: False
+  encoder_residual: False
+  encoder_dense_residual: False
+  encoder_num_units: 0
+  encoder_num_proj: 0
+  encoder_num_layers: 0
+  subsample_list: False
+  subsample_type: drop
+  fc_list: [1024, 1024]
 
   # optimization
   batch_size: 20
@@ -74,21 +75,26 @@ param:
   learning_rate: 1e-3
   num_epoch: 100
 
-  # regularization
+  # initialization
+  parameter_init_distribution: uniform
   parameter_init: 0.1
+  recurrent_weight_orthogonal: True
+  init_forget_gate_bias_with_one: True
+
+  # regularization
   clip_grad_norm: 5.0
   clip_activation: 50
   dropout: 0.2
-  weight_decay: 1e-5
+  weight_decay: 1e-6
   logits_temperature: 1
   label_smoothing_prob: 0
   weight_noise_std: 0
 
   # annealing
-  decay_start_epoch: 40
+  decay_start_epoch: 20
   decay_rate: 0.5
   decay_patient_epoch: 3
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
-  eval_start_epoch: 40
+  eval_start_epoch: 20
   print_step: 200
