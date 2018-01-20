@@ -122,42 +122,38 @@ def plot(model, dataset, eval_batch_size=None, save_path=None,
 
     for batch, is_new_epoch in dataset:
 
-        inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub, input_names = batch
-
         # Get CTC probs
-        probs = model.posteriors(inputs, inputs_seq_len,
+        probs = model.posteriors(batch['xs'], batch['x_lens'],
                                  temperature=1)
-        probs_sub = model.posteriors(inputs, inputs_seq_len, is_sub_task=True,
+        probs_sub = model.posteriors(batch['xs'], batch['x_lens'], is_sub_task=True,
                                      temperature=1)
         # NOTE: probs: '[B, T, num_classes]'
         # NOTE: probs_sub: '[B, T, num_classes_sub]'
 
         # Decode
-        labels_pred = model.decode(
-            inputs, inputs_seq_len,
-            beam_width=1)
-        labels_pred_sub = model.decode(
-            inputs, inputs_seq_len,
-            beam_width=1,
-            is_sub_task=True)
+        labels_pred = model.decode(batch['xs'], batch['x_lens'],
+                                   beam_width=1)
+        labels_pred_sub = model.decode(batch['xs'], batch['x_lens'],
+                                       beam_width=1,
+                                       is_sub_task=True)
 
         # Visualize
-        for i_batch in range(inputs.shape[0]):
+        for i_batch in range(len(batch['xs'])):
 
             # Convert from list of index to string
             str_pred = idx2word(labels_pred[i_batch])
             str_pred_sub = idx2char(labels_pred_sub[i_batch])
 
-            speaker = input_names[i_batch].split('_')[0]
+            speaker = batch['input_names'][i_batch].split('_')[0]
             plot_hierarchical_ctc_probs(
-                probs[i_batch, :inputs_seq_len[i_batch], :],
-                probs_sub[i_batch, :inputs_seq_len[i_batch], :],
-                frame_num=inputs_seq_len[i_batch],
+                probs[i_batch, :batch['x_lens'][i_batch], :],
+                probs_sub[i_batch, :batch['x_lens'][i_batch], :],
+                frame_num=batch['x_lens'][i_batch],
                 num_stack=dataset.num_stack,
                 space_index=space_index,
                 str_pred=str_pred,
                 str_pred_sub=str_pred_sub,
-                save_path=mkdir_join(save_path, speaker, input_names[i_batch] + '.png'))
+                save_path=mkdir_join(save_path, speaker, batch['input_names'][i_batch] + '.png'))
 
         if is_new_epoch:
             break

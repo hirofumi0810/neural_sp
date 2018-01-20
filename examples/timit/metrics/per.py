@@ -44,12 +44,10 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
         '../metrics/vocab_files/' + hyp_label_type + '.txt')
     idx2phone_ref = Idx2phone(
         '../metrics/vocab_files/' + ref_label_type + '.txt')
-    map2phone39_hyp = Map2phone39(
-        label_type=hyp_label_type,
-        map_file_path='../metrics/phone2phone.txt')
-    map2phone39_ref = Map2phone39(
-        label_type=ref_label_type,
-        map_file_path='../metrics/phone2phone.txt')
+    map2phone39_hyp = Map2phone39(label_type=hyp_label_type,
+                                  map_file_path='../metrics/phone2phone.txt')
+    map2phone39_ref = Map2phone39(label_type=ref_label_type,
+                                  map_file_path='../metrics/phone2phone.txt')
 
     per_mean = 0
     if progressbar:
@@ -58,26 +56,25 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
         batch, is_new_epoch = dataset.next(batch_size=eval_batch_size)
 
         # Decode
-        inputs, labels, inputs_seq_len, labels_seq_len, _ = batch
-        labels_hyp = model.decode(inputs, inputs_seq_len,
+        labels_hyp = model.decode(batch['xs'], batch['x_lens'],
                                   beam_width=beam_width,
                                   max_decode_len=max_decode_len)
 
-        for i_batch in range(len(inputs)):
+        for i_batch in range(len(batch['xs'])):
             ##############################
             # Reference
             ##############################
             if dataset.is_test:
-                phone_ref_list = labels[i_batch][0].split(' ')
+                phone_ref_list = batch['ys'][i_batch][0].split(' ')
                 # NOTE: transcript is seperated by space(' ')
             else:
                 # Convert from index to phone (-> list of phone strings)
                 if model_type == 'ctc':
                     phone_ref_list = idx2phone_ref(
-                        labels[i_batch][:labels_seq_len[i_batch]]).split(' ')
+                        batch['ys'][i_batch][:batch['y_lens'][i_batch]]).split(' ')
                 elif model_type == 'attention':
                     phone_ref_list = idx2phone_ref(
-                        labels[i_batch][1:labels_seq_len[i_batch] - 1]).split(' ')
+                        batch['ys'][i_batch][1:batch['y_lens'][i_batch] - 1]).split(' ')
                     # NOTE: Exclude <SOS> and <EOS>
 
             ##############################
@@ -108,7 +105,7 @@ def do_eval_per(model, model_type, dataset, label_type, beam_width,
                                     normalize=True)
 
             if progressbar:
-                pbar.update(len(inputs))
+                pbar.update(len(batch['xs']))
 
         if is_new_epoch:
             break

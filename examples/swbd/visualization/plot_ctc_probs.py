@@ -116,29 +116,27 @@ def plot(model, dataset, eval_batch_size=None, save_path=None,
 
     for batch, is_new_epoch in dataset:
 
-        inputs, labels, inputs_seq_len, labels_seq_len, input_names = batch
-
         # Get CTC probs
-        probs = model.posteriors(inputs, inputs_seq_len, temperature=1)
+        probs = model.posteriors(batch['xs'], batch['x_lens'], temperature=1)
         # NOTE: probs: '[B, T, num_classes]'
 
         # Decode
-        labels_pred = model.decode(inputs, inputs_seq_len, beam_width=1)
+        labels_pred = model.decode(batch['xs'], batch['x_lens'], beam_width=1)
 
         # Visualize
-        for i_batch in range(inputs.shape[0]):
+        for i_batch in range(len(batch['xs'])):
 
             # Convert from list of index to string
             str_pred = map_fn(labels_pred[i_batch])
 
-            speaker = input_names[i_batch].split('_')[0]
+            speaker = batch['input_names'][i_batch].split('_')[0]
             plot_ctc_probs(
-                probs[i_batch, :inputs_seq_len[i_batch], :],
-                frame_num=inputs_seq_len[i_batch],
+                probs[i_batch, :batch['x_lens'][i_batch], :],
+                frame_num=batch['x_lens'][i_batch],
                 num_stack=dataset.num_stack,
                 space_index=space_index,
                 str_pred=str_pred,
-                save_path=mkdir_join(save_path, speaker, input_names[i_batch] + '.png'))
+                save_path=mkdir_join(save_path, speaker, batch['input_names'][i_batch] + '.png'))
 
         if is_new_epoch:
             break

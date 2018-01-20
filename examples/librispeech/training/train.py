@@ -214,13 +214,11 @@ def main():
 
             # Compute loss in the dev set
             if params['data_size'] in ['100h', '460h']:
-                inputs, labels, inputs_seq_len, labels_seq_len, _ = dev_clean_data.next()[
-                    0]
+                batch = dev_clean_data.next()[0]
             else:
-                inputs, labels, inputs_seq_len, labels_seq_len, _ = dev_other_data.next()[
-                    0]
+                batch = dev_other_data.next()[0]
             loss_dev_val = model(
-                inputs, labels, inputs_seq_len, labels_seq_len, is_eval=True)
+                batch['xs'], batch['ys'], batch['x_lens'], batch['y_lens'], is_eval=True)
 
             loss_train_val_mean /= params['print_step']
             csv_steps.append(step)
@@ -239,10 +237,11 @@ def main():
                         name + '/grad', var2np(param.grad), step + 1)
 
             duration_step = time.time() - start_time_step
-            logger.info("...Step:%d (epoch:%.3f): loss:%.3f (%.3f) / lr:%.5f / batch:%d (%.3f min)" %
+            logger.info("...Step:%d (epoch:%.3f): loss:%.3f (%.3f) / lr:%.5f / batch:%d / x_lens: %d (%.3f min)" %
                         (step + 1, train_data.epoch_detail,
                          loss_train_val_mean, loss_dev_val,
-                         learning_rate, train_data.current_batch_size, duration_step / 60))
+                         learning_rate, train_data.current_batch_size,
+                         max(batch['x_lens']), duration_step / 60))
             start_time_step = time.time()
             loss_train_val_mean = 0.
 

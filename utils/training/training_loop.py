@@ -11,10 +11,10 @@ import logging
 logger = logging.getLogger('training')
 import numpy as np
 
+import cupy
 import chainer
 import torch
 import torch.nn as nn
-import chainer
 
 INF = float("inf")
 
@@ -30,14 +30,13 @@ def train_step(model, batch, clip_grad_norm, backend):
         model (torch.nn.Module or chainer.Chain):
         loss_train_val (float):
     """
-    inputs, labels, inputs_seq_len, labels_seq_len, _ = batch
-
     loss_train_val = 0.
     try:
         # Step for parameter update
         if backend == 'pytorch':
             model.optimizer.zero_grad()
-            loss_train = model(inputs, labels, inputs_seq_len, labels_seq_len)
+            loss_train = model(batch['xs'], batch['ys'],
+                               batch['x_lens'], batch['y_lens'])
             loss_train.backward()
             if clip_grad_norm > 0:
                 nn.utils.clip_grad_norm(model.parameters(), clip_grad_norm)
@@ -48,8 +47,10 @@ def train_step(model, batch, clip_grad_norm, backend):
 
         elif backend == 'chainer':
             model.optimizer.target.cleargrads()
-            loss_train = model(inputs, labels, inputs_seq_len, labels_seq_len)
+            loss_train = model(batch['xs'], batch['ys'],
+                               batch['x_lens'], batch['y_lens'])
             loss_train.backward()
+            # loss.unchain_backward()
             model.optimizer.update()
 
             loss_train_val = loss_train.data
@@ -57,8 +58,15 @@ def train_step(model, batch, clip_grad_norm, backend):
         del loss_train
 
     except RuntimeError as e:
-        logger.warning('!!!Skip mini-batch!!! (max_frame_num: %d)' %
-                       (max(inputs_seq_len) * model.num_stack))
+        logger.warning('!!!Skip mini-batch!!! (max_frame_num: %d, batch: %d)' %
+                       (max(batch['x_lens']) * model.num_stack, len(batch['xs'])))
+        model.optimizer.zero_grad()
+        torch.cuda.empty_cache()
+
+    except cupy.cuda.runtime.CUDARuntimeError as e:
+        logger.warning('!!!Skip mini-batch!!! (max_frame_num: %d, batch: %d)' %
+                       (max(batch['x_lens']) * model.num_stack, len(batch['xs'])))
+        model.optimizer.target.cleargrads()
 
     if loss_train_val == INF or loss_train_val == -INF:
         logger.warning(
@@ -81,16 +89,14 @@ def train_hierarchical_step(model, batch, clip_grad_norm, backend):
         loss_main_train_val (float):
         loss_sub_train_val (float):
     """
-    inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub, _ = batch
-
     loss_train_val, loss_main_train_val, loss_sub_train_val = 0., 0., 0.
     try:
         # Step for parameter update
         if backend == 'pytorch':
             model.optimizer.zero_grad()
             loss_train, loss_main_train, loss_sub_train = model(
-                inputs, labels, labels_sub, inputs_seq_len,
-                labels_seq_len, labels_seq_len_sub)
+                batch['xs'], batch['ys'], batch['ys_sub'], batch['x_lens'],
+                batch['y_lens'], batch['y_lens_sub'])
             loss_train.backward()
             if clip_grad_norm > 0:
                 nn.utils.clip_grad_norm(model.parameters(), clip_grad_norm)
@@ -104,9 +110,10 @@ def train_hierarchical_step(model, batch, clip_grad_norm, backend):
         elif backend == 'chainer':
             model.optimizer.target.cleargrads()
             loss_train, loss_main_train, loss_sub_train = model(
-                inputs, labels, labels_sub,
-                inputs_seq_len, labels_seq_len, labels_seq_len_sub)
+                batch['xs'], batch['ys'], batch['ys_sub'],
+                batch['x_lens'], batch['y_lens'], batch['y_lens_sub'])
             loss_train.backward()
+            # loss.unchain_backward()
             model.optimizer.update()
 
             loss_train_val = loss_train.data
@@ -116,8 +123,15 @@ def train_hierarchical_step(model, batch, clip_grad_norm, backend):
         del loss_train, loss_main_train, loss_sub_train
 
     except RuntimeError as e:
-        logger.warning('!!!Skip mini-batch!!! (max_frame_num: %d)' %
-                       (max(inputs_seq_len) * model.num_stack))
+        logger.warning('!!!Skip mini-batch!!! (max_frame_num: %d, batch: %d)' %
+                       (max(batch['x_lens']) * model.num_stack, len(batch['xs'])))
+        model.optimizer.zero_grad()
+        torch.cuda.empty_cache()
+
+    except cupy.cuda.runtime.CUDARuntimeError as e:
+        logger.warning('!!!Skip mini-batch!!! (max_frame_num: %d, batch: %d)' %
+                       (max(batch['x_lens']) * model.num_stack, len(batch['xs'])))
+        model.optimizer.target.cleargrads()
 
     if loss_train_val == INF or loss_train_val == -INF:
         logger.warning(

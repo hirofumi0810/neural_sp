@@ -142,26 +142,24 @@ def plot(model, dataset, beam_width,
 
     for batch, is_new_epoch in dataset:
 
-        inputs, _, _, inputs_seq_len, _, _, input_names = batch
-
         # Decode
-        labels_pred, att_weights = model.attention_weights(
-            inputs, inputs_seq_len,
+        best_hyps, att_weights = model.attention_weights(
+            batch['xs'], batch['x_lens'],
             beam_width=beam_width,
             max_decode_len=max_decode_len)
-        labels_pred_sub, att_weights_sub = model.attention_weights(
-            inputs, inputs_seq_len,
+        best_hyps_sub, att_weights_sub = model.attention_weights(
+            batch['xs'], batch['x_lens'],
             beam_width=beam_width,
             max_decode_len=max_decode_len,
             is_sub_task=True)
 
-        for i_batch in range(inputs.shape[0]):
+        for i_batch in range(len(batch['xs'])):
 
             # Check if the sum of attention weights equals to 1
             # print(np.sum(att_weights[i_batch], axis=1))
 
-            str_pred = map_fn_main(labels_pred[i_batch]).split('>')[0]
-            str_pred_sub = map_fn_sub(labels_pred_sub[i_batch]).split('>')[0]
+            str_pred = map_fn_main(best_hyps[i_batch]).split('>')[0]
+            str_pred_sub = map_fn_sub(best_hyps_sub[i_batch]).split('>')[0]
             # NOTE: Trancate by <EOS>
 
             # Remove the last space
@@ -170,17 +168,17 @@ def plot(model, dataset, beam_width,
             if len(str_pred_sub) > 0 and str_pred_sub[-1] == ' ':
                 str_pred_sub = str_pred_sub[:-1]
 
-            speaker = input_names[i_batch].split('_')[0]
+            speaker = batch['input_names'][i_batch].split('_')[0]
             plot_hierarchical_attention_weights(
-                spectrogram=inputs[i_batch],
+                spectrogram=batch['xs'][i_batch],
                 attention_weights=att_weights[i_batch, :len(
-                    str_pred.split('_')), :inputs_seq_len[i_batch]],
+                    str_pred.split('_')), :batch['x_lens'][i_batch]],
                 attention_weights_sub=att_weights_sub[i_batch, :len(
-                    str_pred.split('_')), :inputs_seq_len[i_batch]],
+                    str_pred.split('_')), :batch['x_lens'][i_batch]],
                 label_list=str_pred.split('_'),
                 label_list_sub=str_pred_sub.split('_'),
                 save_path=mkdir_join(save_path, speaker,
-                                     input_names[i_batch] + '.png'),
+                                     batch['input_names'][i_batch] + '.png'),
                 fig_size=(20, 12))
             # TODO: consider subsample
 

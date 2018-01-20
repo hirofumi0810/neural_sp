@@ -119,37 +119,37 @@ def decode(model, model_type, dataset, beam_width,
 
     for batch, is_new_epoch in dataset:
 
-        inputs, labels, inputs_seq_len, labels_seq_len, input_names = batch
+        batch['xs'], batch['ys'], batch['x_lens'], labels_seq_len, batch['input_names'] = batch
 
         # Decode
-        labels_pred = model.decode(inputs, inputs_seq_len,
-                                   beam_width=beam_width,
-                                   max_decode_len=max_decode_len)
+        best_hyps = model.decode(batch['xs'], batch['x_lens'],
+                                 beam_width=beam_width,
+                                 max_decode_len=max_decode_len)
 
-        for i_batch in range(inputs.shape[0]):
-            print('----- wav: %s -----' % input_names[i_batch])
+        for i_batch in range(len(batch['xs'])):
+            print('----- wav: %s -----' % batch['input_names'][i_batch])
 
             ##############################
             # Reference
             ##############################
             if dataset.is_test:
-                str_true = labels[i_batch][0]
+                str_true = batch['ys'][i_batch][0]
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
                 if model_type == 'ctc':
                     str_true = map_fn(
-                        labels[i_batch][:labels_seq_len[i_batch]])
+                        batch['ys'][i_batch][:labels_seq_len[i_batch]])
                 elif model_type == 'attention':
                     str_true = map_fn(
-                        labels[i_batch][1:labels_seq_len[i_batch] - 1])
+                        batch['ys'][i_batch][1:labels_seq_len[i_batch] - 1])
                     # NOTE: Exclude <SOS> and <EOS>
 
             ##############################
             # Hypothesis
             ##############################
             # Convert from list of index to string
-            str_pred = map_fn(labels_pred[i_batch])
+            str_pred = map_fn(best_hyps[i_batch])
 
             if model_type == 'attention':
                 str_pred = str_pred.split('>')[0]

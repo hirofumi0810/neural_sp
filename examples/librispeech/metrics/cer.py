@@ -53,38 +53,39 @@ def do_eval_cer(model, model_type, dataset, label_type, beam_width,
 
         # Decode
         if model_type in ['ctc', 'attention']:
-            inputs, labels, inputs_seq_len, labels_seq_len, _ = batch
-            is_sub_task = False
+            best_hyps = model.decode(batch['xs'], batch['x_lens'],
+                                     beam_width=beam_width,
+                                     max_decode_len=max_decode_len)
+            ys = batch['ys']
+            y_lens = batch['y_lens']
         elif model_type in ['hierarchical_ctc', 'hierarchical_attention']:
-            inputs, _, labels, inputs_seq_len, _, labels_seq_len, _ = batch
-            is_sub_task = True
-        labels_hyp = model.decode(inputs, inputs_seq_len,
-                                  beam_width=beam_width,
-                                  max_decode_len=max_decode_len,
-                                  is_sub_task=is_sub_task)
+            best_hyps = model.decode(batch['xs'], batch['x_lens'],
+                                     beam_width=beam_width,
+                                     max_decode_len=max_decode_len,
+                                     is_sub_task=True)
+            ys = batch['ys_sub']
+            y_lens = batch['y_lens_sub']
 
-        for i_batch in range(len(inputs)):
+        for i_batch in range(len(batch['xs'])):
 
             ##############################
             # Reference
             ##############################
             if dataset.is_test:
-                str_ref = labels[i_batch][0]
+                str_ref = ys[i_batch][0]
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
                 if model_type in ['ctc', 'hierarchical_ctc']:
-                    str_ref = idx2char(
-                        labels[i_batch][:labels_seq_len[i_batch]])
+                    str_ref = idx2char(ys[i_batch][:y_lens[i_batch]])
                 elif model_type in ['attention', 'hierarchical_attention']:
-                    str_ref = idx2char(
-                        labels[i_batch][1:labels_seq_len[i_batch] - 1])
+                    str_ref = idx2char(ys[i_batch][1:y_lens[i_batch] - 1])
                     # NOTE: Exclude <SOS> and <EOS>
 
             ##############################
             # Hypothesis
             ##############################
-            str_hyp = idx2char(labels_hyp[i_batch])
+            str_hyp = idx2char(best_hyps[i_batch])
 
             if model_type in ['attention', 'hierarchical_attention']:
                 str_hyp = str_hyp.split('>')[0]
@@ -118,7 +119,7 @@ def do_eval_cer(model, model_type, dataset, label_type, beam_width,
                                     normalize=True)
 
             if progressbar:
-                pbar.update(len(inputs))
+                pbar.update(len(batch['xs']))
 
         if is_new_epoch:
             break

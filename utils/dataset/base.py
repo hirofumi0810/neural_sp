@@ -21,9 +21,11 @@ class Base(object):
 
     def __init__(self, *args, **kwargs):
         self.epoch = 0
-        self._epoch = 0
         self.iteration = 0
         self.offset = 0
+
+        # for multiprocessing
+        self._epoch = 0
 
         # Setting for multiprocessing
         self.preloading_process = None
@@ -101,7 +103,7 @@ class Base(object):
             batch_size = self.batch_size
 
         if self.num_enque is None:
-            if self.max_epoch is not None and self._epoch >= self.max_epoch:
+            if self.max_epoch is not None and self.epoch >= self.max_epoch:
                 raise StopIteration
             # NOTE: max_epoch == None means infinite loop
 
@@ -115,7 +117,7 @@ class Base(object):
                 self.preloading_process.terminate()
                 self.preloading_process.join()
 
-            if self.max_epoch is not None and self._epoch >= self.max_epoch:
+            if self.max_epoch is not None and self.epoch >= self.max_epoch:
                 # Clean up multiprocessing
                 self.preloading_process.terminate()
                 self.preloading_process.join()
@@ -167,30 +169,17 @@ class Base(object):
         is_new_epoch = False
 
         if self.sort_utt or not self.shuffle:
-            if len(self.rest) > batch_size:
+            if self.sort_utt:
                 # Change batch size dynamically
                 min_frame_num_batch = self.df[self.offset:self.offset +
-                                              1]['frame_num'].values[0] * self.num_stack
-                if min_frame_num_batch <= 900:
-                    batch_size_tmp = batch_size
-                elif min_frame_num_batch <= 1200:
-                    batch_size_tmp = batch_size // 2
-                elif min_frame_num_batch <= 1500:
-                    batch_size_tmp = batch_size // 4
-                elif min_frame_num_batch <= 1500:
-                    batch_size_tmp = batch_size // 8
-                elif min_frame_num_batch <= 1800:
-                    batch_size_tmp = 8
-                elif min_frame_num_batch <= 2100:
-                    batch_size_tmp = 4
-                elif min_frame_num_batch <= 3000:
-                    batch_size_tmp = 2
-                else:
-                    batch_size_tmp = 1
+                                              1]['frame_num'].values[0]
+                batch_size_tmp = self.select_batch_size(
+                    batch_size, min_frame_num_batch)
+                # NOTE: this depends on each corpus
+            else:
+                batch_size_tmp = batch_size
 
-                if batch_size_tmp < 1:
-                    batch_size_tmp = 1
-
+            if len(self.rest) > batch_size_tmp:
                 df_tmp = self.df[self.offset:self.offset + batch_size_tmp]
                 data_indices = list(df_tmp.index)
                 self.rest -= set(data_indices)
@@ -226,6 +215,9 @@ class Base(object):
                 random.shuffle(data_indices)
 
         return data_indices, is_new_epoch
+
+    def select_batch_size(self, batch_size, min_frame_num_batch):
+        raise NotImplementedError
 
     def reset(self):
         self._reset()
@@ -273,10 +265,10 @@ class Base(object):
             frame_num, sampPeriod, sampSize, parmKind = unpack(">IIHH", spam)
 
             # for debug
-            # logging.info(frame_num)  # frame num
-            # logging.info(sampPeriod)  # 10ms
-            # logging.info(sampSize)  # feature dim * 4 (byte)
-            # logging.info(parmKind)
+            # print(frame_num)  # frame num
+            # print(sampPeriod)  # 10ms
+            # print(sampSize)  # feature dim * 4 (byte)
+            # print(parmKind)
 
             # Read data
             feature_dim = int(sampSize / 4)
@@ -299,7 +291,7 @@ class Base(object):
             queue ():
             data_indices_list (np.ndarray):
         """
-        # logging.info("Pre-loading started.")
+        # print("Pre-loading started.")
         for i in range(len(data_indices_list)):
             queue.put(self.make_batch(data_indices_list[i]))
-        # logging.info("Pre-loading done.")
+        # print("Pre-loading done.")

@@ -97,20 +97,18 @@ def plot_probs(model, dataset, label_type, eval_batch_size=None,
 
     for batch, is_new_epoch in dataset:
 
-        inputs, _, inputs_seq_len, _, input_names = batch
-
         # Get CTC probs
-        probs = model.posteriors(inputs, inputs_seq_len, temperature=1)
+        probs = model.posteriors(batch['xs'], batch['x_lens'], temperature=1)
         # NOTE: probs: '[B, T, num_classes]'
 
         # Visualize
-        for i_batch in range(inputs.shape[0]):
+        for i_batch in range(batch['xs'].shape[0]):
 
             plot_ctc_probs(
-                probs[i_batch, :inputs_seq_len[i_batch], :],
-                frame_num=inputs_seq_len[i_batch],
+                probs[i_batch, : batch['x_lens'][i_batch], :],
+                frame_num=batch['x_lens'][i_batch],
                 num_stack=dataset.num_stack,
-                save_path=join(save_path, input_names[i_batch] + '.png'))
+                save_path=join(save_path, batch['input_names'][i_batch] + '.png'))
 
         if is_new_epoch:
             break

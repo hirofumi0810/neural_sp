@@ -197,13 +197,13 @@ def main():
     ler_dev_best = 1
     not_improved_epoch = 0
     learning_rate = float(params['learning_rate'])
-    loss_train_val_mean = 0.
+    loss_train_mean = 0.
     for step, (batch, is_new_epoch) in enumerate(train_data):
 
         # Compute loss in the training set (including parameter update)
-        model, loss_train_val = train_step(
+        model, loss_train = train_step(
             model, batch, params['clip_grad_norm'], backend=params['backend'])
-        loss_train_val_mean += loss_train_val
+        loss_train_mean += loss_train
 
         # Inject Gaussian noise to all parameters
         if float(params['weight_noise_std']) > 0 and learning_rate < float(params['learning_rate']):
@@ -212,21 +212,19 @@ def main():
         if (step + 1) % params['print_step'] == 0:
 
             # Compute loss in the dev set
-            inputs, labels, inputs_seq_len, labels_seq_len, _ = dev_data.next()[
-                0]
-            loss_dev_val = model(
-                inputs, labels, inputs_seq_len, labels_seq_len, is_eval=True)
+            batch = dev_data.next()[0]
+            loss_dev = model(
+                batch['xs'], batch['ys'], batch['x_lens'], batch['y_lens'], is_eval=True)
 
-            loss_train_val_mean /= params['print_step']
+            loss_train_mean /= params['print_step']
             csv_steps.append(step)
-            csv_loss_train.append(loss_train_val_mean)
-            csv_loss_dev.append(loss_dev_val)
+            csv_loss_train.append(loss_train_mean)
+            csv_loss_dev.append(loss_dev)
 
             # Logging by tensorboard
             if params['backend'] == 'pytorch':
-                tf_writer.add_scalar(
-                    'train/loss', loss_train_val_mean, step + 1)
-                tf_writer.add_scalar('dev/loss', loss_dev_val, step + 1)
+                tf_writer.add_scalar('train/loss', loss_train_mean, step + 1)
+                tf_writer.add_scalar('dev/loss', loss_dev, step + 1)
                 for name, param in model.named_parameters():
                     name = name.replace('.', '/')
                     tf_writer.add_histogram(name, var2np(param), step + 1)
@@ -234,12 +232,13 @@ def main():
                         name + '/grad', var2np(param.grad), step + 1)
 
             duration_step = time.time() - start_time_step
-            logger.info("...Step:%d (epoch:%.3f): loss:%.3f (%.3f) / lr:%.5f / batch:%d (%.3f min)" %
+            logger.info("...Step:%d (epoch:%.3f): loss:%.3f (%.3f) / lr:%.5f / batch:%d / x_lens: %d (%.3f min)" %
                         (step + 1, train_data.epoch_detail,
-                         loss_train_val_mean, loss_dev_val,
-                         learning_rate, train_data.current_batch_size, duration_step / 60))
+                         loss_train_mean, loss_dev,
+                         learning_rate, train_data.current_batch_size,
+                         max(batch['x_lens']), duration_step / 60))
             start_time_step = time.time()
-            loss_train_val_mean = 0.
+            loss_train_mean = 0.
 
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:

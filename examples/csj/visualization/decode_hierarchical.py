@@ -138,47 +138,45 @@ def decode(model, model_type, dataset, beam_width,
 
     for batch, is_new_epoch in dataset:
 
-        inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub, input_names = batch
-
         # Decode
-        labels_pred = model.decode(inputs, inputs_seq_len,
-                                   beam_width=beam_width,
-                                   max_decode_len=max_decode_len)
-        labels_pred_sub = model.decode(inputs, inputs_seq_len,
-                                       beam_width=beam_width,
-                                       max_decode_len=max_decode_len_sub,
-                                       is_sub_task=True)
+        best_hyps = model.decode(batch['xs'], batch['x_lens'],
+                                 beam_width=beam_width,
+                                 max_decode_len=max_decode_len)
+        best_hyps_sub = model.decode(batch['xs'], batch['x_lens'],
+                                     beam_width=beam_width,
+                                     max_decode_len=max_decode_len_sub,
+                                     is_sub_task=True)
 
-        for i_batch in range(inputs.shape[0]):
-            print('----- wav: %s -----' % input_names[i_batch])
+        for i_batch in range(len(batch['xs'])):
+            print('----- wav: %s -----' % batch['input_names'][i_batch])
 
             ##############################
             # Reference
             ##############################
             if dataset.is_test:
-                str_true = labels[i_batch][0]
-                str_true_sub = labels_sub[i_batch][0]
+                str_true = batch['ys'][i_batch][0]
+                str_true_sub = batch['ys_sub'][i_batch][0]
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
                 if model_type == 'hierarchical_ctc':
                     str_true = map_fn_main(
-                        labels[i_batch][:labels_seq_len[i_batch]])
+                        batch['ys'][i_batch][:batch['y_lens'][i_batch]])
                     str_true_sub = map_fn_main(
-                        labels_sub[i_batch][:labels_seq_len_sub[i_batch]])
+                        batch['ys_sub'][i_batch][:batch['y_lens_sub'][i_batch]])
                 elif model_type == 'hierarchical_attention':
                     str_true = map_fn_main(
-                        labels[i_batch][1:labels_seq_len[i_batch] - 1])
+                        batch['ys'][i_batch][1:batch['y_lens'][i_batch] - 1])
                     str_true_sub = map_fn_main(
-                        labels_sub[i_batch][1:labels_seq_len_sub[i_batch] - 1])
+                        batch['ys_sub'][i_batch][1:batch['y_lens_sub'][i_batch] - 1])
                     # NOTE: Exclude <SOS> and <EOS>
 
             ##############################
             # Hypothesis
             ##############################
             # Convert from list of index to string
-            str_pred = map_fn_main(labels_pred[i_batch])
-            str_pred_sub = map_fn_sub(labels_pred_sub[i_batch])
+            str_pred = map_fn_main(best_hyps[i_batch])
+            str_pred_sub = map_fn_sub(best_hyps_sub[i_batch])
 
             if model_type == 'hierarchical_attention':
                 str_pred = str_pred.split('>')[0]

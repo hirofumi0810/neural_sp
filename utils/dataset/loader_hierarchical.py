@@ -33,24 +33,25 @@ class DatasetBase(Base):
         return (feature, transcript, transcript_sub)
 
     def make_batch(self, data_indices):
-        """
+        """Create mini-batch per step.
         Args:
             data_indices (np.ndarray):
         Returns:
-            inputs: list of input data of size
-                `[num_gpus, B, T_in, input_size]`
-            labels: list of target labels in the main task, size
-                `[num_gpus, B, T_out]`
-            labels_sub: list of target labels in the sub task, size
-                `[num_gpus, B, T_out_sub]`
-            inputs_seq_len: list of length of inputs of size
-                `[num_gpus, B]`
-            labels_seq_len: list of length of target labels in the main
-                task, size `[num_gpus, B]`
-            labels_seq_len_sub: list of length of target labels in the sub
-                task, size `[num_gpus, B]`
-            input_names: list of file name of input data of size
-                `[num_gpus, B]`
+            batch (dict):
+                xs (np.ndarray): input data of size
+                    `[B, T_in, input_size]`
+                ys (np.ndarray): target labels in the main task of size
+                    `[B, T_out]`
+                ys_sub (np.ndarray): target labels in the sub task of size
+                    `[B, T_out_sub]`
+                x_lens (np.ndarray): lengths of inputs of of size
+                    `[B]`
+                y_lens (np.ndarray): lengths of target labels in the main task of size
+                    `[B]`
+                y_lens_sub (np.ndarray): lengths of target labels in the sub task of size
+                    `[B]`
+                input_names (np.ndarray): file names of input data of size
+                    `[B]`
         """
         # Load dataset in mini-batch
         input_path_list = np.array(self.df['input_path'][data_indices])
@@ -82,24 +83,24 @@ class DatasetBase(Base):
 
         # Initialization
         if self.backend == 'pytorch':
-            inputs = np.zeros(
+            xs = np.zeros(
                 (len(data_indices), max_frame_num, self.input_size * self.splice),
                 dtype=np.float32)
         elif self.backend == 'chainer':
-            inputs = [None] * len(data_indices)
+            xs = [None] * len(data_indices)
         if self.is_test:
-            labels = np.array(
+            ys = np.array(
                 [[self.pad_value] * max_label_num] * len(data_indices))
-            labels_sub = np.array(
+            ys_sub = np.array(
                 [[self.pad_value_sub] * max_labels_seq_len_sub] * len(data_indices))
         else:
-            labels = np.array(
+            ys = np.array(
                 [[self.pad_value] * max_label_num] * len(data_indices), dtype=np.int32)
-            labels_sub = np.array(
+            ys_sub = np.array(
                 [[self.pad_value_sub] * max_labels_seq_len_sub] * len(data_indices), dtype=np.int32)
-        inputs_seq_len = np.zeros((len(data_indices),), dtype=np.int32)
-        labels_seq_len = np.zeros((len(data_indices),), dtype=np.int32)
-        labels_seq_len_sub = np.zeros((len(data_indices),), dtype=np.int32)
+        x_lens = np.zeros((len(data_indices),), dtype=np.int32)
+        y_lens = np.zeros((len(data_indices),), dtype=np.int32)
+        y_lens_sub = np.zeros((len(data_indices),), dtype=np.int32)
         input_names = np.array(list(
             map(lambda path: basename(path).split('.')[0],
                 np.array(self.df['input_path'][data_indices]))))
@@ -131,14 +132,14 @@ class DatasetBase(Base):
                 data_i = do_splice(data_i, self.splice, self.num_stack)
 
             if self.backend == 'pytorch':
-                inputs[i_batch, :frame_num, :] = data_i
+                xs[i_batch, :frame_num, :] = data_i
             elif self.backend == 'chainer':
-                inputs[i_batch] = data_i
-            inputs_seq_len[i_batch] = frame_num
+                xs[i_batch] = data_i
+            x_lens[i_batch] = frame_num
             if self.is_test:
-                labels[i_batch, 0] = self.df['transcript'][data_indices[i_batch]]
-                labels_sub[i_batch,
-                           0] = self.df_sub['transcript'][data_indices[i_batch]]
+                ys[i_batch, 0] = self.df['transcript'][data_indices[i_batch]]
+                ys_sub[i_batch,
+                       0] = self.df_sub['transcript'][data_indices[i_batch]]
                 # NOTE: transcript is not tokenized
             else:
                 indices = list(map(int, str_indices_list[i_batch].split(' ')))
@@ -147,24 +148,31 @@ class DatasetBase(Base):
                 label_num = len(indices)
                 label_num_sub = len(indices_sub)
                 if self.model_type in ['hierarchical_attention', 'nested_attention']:
-                    labels[i_batch, 0] = self.sos_index
-                    labels[i_batch, 1:label_num + 1] = indices
-                    labels[i_batch, label_num + 1] = self.eos_index
-                    labels_seq_len[i_batch] = label_num + 2
+                    ys[i_batch, 0] = self.sos_index
+                    ys[i_batch, 1:label_num + 1] = indices
+                    ys[i_batch, label_num + 1] = self.eos_index
+                    y_lens[i_batch] = label_num + 2
                     # NOTE: include <SOS> and <EOS>
 
-                    labels_sub[i_batch, 0] = self.sos_index_sub
-                    labels_sub[i_batch, 1: label_num_sub + 1] = indices_sub
-                    labels_sub[i_batch, label_num_sub + 1] = self.eos_index_sub
-                    labels_seq_len_sub[i_batch] = label_num_sub + 2
+                    ys_sub[i_batch, 0] = self.sos_index_sub
+                    ys_sub[i_batch, 1: label_num_sub + 1] = indices_sub
+                    ys_sub[i_batch, label_num_sub + 1] = self.eos_index_sub
+                    y_lens_sub[i_batch] = label_num_sub + 2
                 elif self.model_type == 'hierarchical_ctc':
-                    labels[i_batch, 0:label_num] = indices
-                    labels_seq_len[i_batch] = label_num
+                    ys[i_batch, 0:label_num] = indices
+                    y_lens[i_batch] = label_num
 
-                    labels_sub[i_batch, 0: label_num_sub] = indices_sub
-                    labels_seq_len_sub[i_batch] = label_num_sub
+                    ys_sub[i_batch, 0: label_num_sub] = indices_sub
+                    y_lens_sub[i_batch] = label_num_sub
                 else:
                     raise TypeError
 
-        return (inputs, labels, labels_sub, inputs_seq_len,
-                labels_seq_len, labels_seq_len_sub, input_names)
+        batch = {'xs': xs,
+                 'ys': ys,
+                 'ys_sub': ys_sub,
+                 'x_lens': x_lens,
+                 'y_lens': y_lens,
+                 'y_lens_sub': y_lens_sub,
+                 'input_names': input_names}
+
+        return batch

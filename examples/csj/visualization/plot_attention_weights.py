@@ -115,18 +115,16 @@ def plot(model, dataset, max_decode_len,
 
     for batch, is_new_epoch in dataset:
 
-        inputs, _, inputs_seq_len, _, input_names = batch
-
         # Decode
-        labels_pred, att_weights = model.attention_weights(
-            inputs, inputs_seq_len, max_decode_len=max_decode_len)
+        best_hyps, att_weights = model.attention_weights(
+            batch['xs'], batch['x_lens'], max_decode_len=max_decode_len)
 
-        for i_batch in range(inputs.shape[0]):
+        for i_batch in range(len(batch['xs'])):
 
             # Check if the sum of attention weights equals to 1
             # print(np.sum(att_weights[i_batch], axis=1))
 
-            str_pred = map_fn(labels_pred[i_batch])
+            str_pred = map_fn(best_hyps[i_batch])
             eos = True if '>' in str_pred else False
 
             str_pred = str_pred.split('>')[0]
@@ -139,14 +137,14 @@ def plot(model, dataset, max_decode_len,
             if eos:
                 str_pred += '_>'
 
-            speaker = input_names[i_batch].split('_')[0]
+            speaker = batch['input_names'][i_batch].split('_')[0]
             plot_attention_weights(
-                spectrogram=inputs[i_batch],
+                spectrogram=batch['xs'][i_batch],
                 attention_weights=att_weights[i_batch, :len(
-                    str_pred.split('_')), :inputs_seq_len[i_batch]],
+                    str_pred.split('_')), :batch['x_lens'][i_batch]],
                 label_list=str_pred.split('_'),
                 save_path=mkdir_join(save_path, speaker,
-                                     input_names[i_batch] + '.png'),
+                                     batch['input_names'][i_batch] + '.png'),
                 fig_size=(20, 8))
 
         if is_new_epoch:
