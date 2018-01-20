@@ -196,9 +196,7 @@ class CTC(ModelBase):
                               ignore_keys=['bias'])
 
             # Initialize all biases with 0
-            self.init_weights(0,
-                              distribution=parameter_init_distribution,
-                              keys=['bias'])
+            self.init_weights(0, distribution='constant', keys=['bias'])
 
             # Recurrent weights are orthogonalized
             if recurrent_weight_orthogonal:

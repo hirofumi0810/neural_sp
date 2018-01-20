@@ -63,6 +63,7 @@ class ModelBase(chainer.Chain):
                 param.data[...] = xp.random.uniform(
                     low=-parameter_init, high=parameter_init, size=param.data.shape)
             elif distribution == 'normal':
+                assert parameter_init > 0
                 param.data[...] = xp.random.normal(
                     loc=0, scale=parameter_init, size=param.data.shape)
             elif distribution == 'orthogonal':

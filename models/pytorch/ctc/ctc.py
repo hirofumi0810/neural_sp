@@ -87,7 +87,10 @@ class CTC(ModelBase):
                  fc_list,
                  dropout,
                  num_classes,
+                 parameter_init_distribution='uniform',
                  parameter_init=0.1,
+                 recurrent_weight_orthogonal=False,
+                 init_forget_gate_bias_with_one=True,
                  subsample_list=[],
                  subsample_type='drop',
                  logits_temperature=1,
@@ -187,19 +190,22 @@ class CTC(ModelBase):
             self.fc = LinearND(
                 encoder_num_units * self.num_directions, self.num_classes)
 
-        # Initialize all weights with uniform distribution
-        self.init_weights(
-            parameter_init, distribution='uniform', ignore_keys=['bias'])
+        # Initialize parameters
+        self.init_weights(parameter_init,
+                          distribution=parameter_init_distribution,
+                          ignore_keys=['bias'])
 
         # Initialize all biases with 0
-        self.init_weights(0, distribution='uniform', keys=['bias'])
+        self.init_weights(0, distribution='constant', keys=['bias'])
 
         # Recurrent weights are orthogonalized
-        # self.init_weights(parameter_init, distribution='orthogonal',
-        #                   keys=['lstm', 'weight'], ignore_keys=['bias'])
+        if recurrent_weight_orthogonal:
+            self.init_weights(parameter_init, distribution='orthogonal',
+                              keys=['lstm', 'weight'], ignore_keys=['bias'])
 
         # Initialize bias in forget gate with 1
-        self.init_forget_gate_bias_with_one()
+        if init_forget_gate_bias_with_one:
+            self.init_forget_gate_bias_with_one()
 
         # Set CTC decoders
         self._decode_greedy_np = GreedyDecoder(blank_index=0)

@@ -60,6 +60,7 @@ class ModelBase(nn.Module):
                 nn.init.uniform(
                     param.data, a=-parameter_init, b=parameter_init)
             elif distribution == 'normal':
+                assert parameter_init > 0
                 torch.nn.init.normal(param.data, mean=0, std=parameter_init)
             elif distribution == 'orthogonal':
                 if param.dim() >= 2:
