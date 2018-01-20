@@ -6,7 +6,10 @@ param:
   # corpus
   corpus: csj
   label_type: word_freq5
-  data_size: fullset
+  label_type_sub: kanji_divide
+  data_size: subset
+  num_classes: 12588
+  num_classes_sub: 2888
 
   # features
   feature: fbank
@@ -20,7 +23,7 @@ param:
   min_frame_num: 40
 
   # topology
-  model_type: attention
+  model_type: hierarchical_ctc
   encoder_type: lstm
   conv_channels: []
   conv_kernel_sizes: []
@@ -31,11 +34,10 @@ param:
   encoder_bidirectional: True
   encoder_residual: False
   encoder_dense_residual: False
-  decoder_residual: False
-  decoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
   encoder_num_layers: 5
+  encoder_num_layers_sub: 4
   subsample_list:
     - False
     - False
@@ -43,17 +45,10 @@ param:
     - False
     - False
   subsample_type: drop
-  attention_type: location
-  attention_dim: 128
-  decoder_type: lstm
-  decoder_num_units: 320
-  decoder_num_layers: 1
-  embedding_dim: 128
-  attention_conv_num_channels: 10
-  attention_conv_width: 201
+  fc_list: []
 
   # optimization
-  batch_size: 64
+  batch_size: 32
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 50
@@ -61,34 +56,27 @@ param:
   # initialization
   parameter_init_distribution: uniform
   parameter_init: 0.1
-  recurrent_weight_orthogonal: True
+  recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
 
   # regularization
   clip_grad_norm: 5.0
-  clip_activation_encoder: 50
-  clip_activation_decoder: 50
-  dropout_encoder: 0.2
-  dropout_decoder: 0.1
+  clip_activation: 50
+  dropout: 0.2
   weight_decay: 1e-6
-  init_dec_state: final
-  sharpening_factor: 1.0
-  logits_temperature: 1.0
-  sigmoid_smoothing: False
-  coverage_weight: 0
-  scheduled_sampling_prob: 0.2
-  scheduled_sampling_ramp_max_step: 200000
-  label_smoothing_prob: 0.2
+  logits_temperature: 1
+  label_smoothing_prob: 0
   weight_noise_std: 0
 
   # annealing
   decay_start_epoch: 5
-  decay_rate: 0.5
-  decay_patient_epoch: 3
+  decay_rate: 0.9
+  decay_patient_epoch: 1
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
   eval_start_epoch: 5
-  print_step: 500
+  print_step: 1000
 
   # MTL
-  ctc_loss_weight: 0
+  main_loss_weight: 0.8
+  curriculum_training: False

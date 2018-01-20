@@ -9,7 +9,6 @@ from __future__ import print_function
 
 from os.path import join, abspath, isfile
 import sys
-import yaml
 import argparse
 from glob import glob
 
@@ -18,6 +17,7 @@ from models.load_model import load
 from examples.librispeech.data.load_dataset import Dataset
 from examples.librispeech.metrics.cer_ensemble import do_eval_cer
 from examples.librispeech.metrics.wer import do_eval_wer
+from utils.config import load_config
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--epoch', type=int, default=-1,
@@ -47,16 +47,8 @@ def main():
     for model_path in model_paths:
         if isfile(join(model_path, 'complete.txt')):
 
-            # Load config file
-            with open(join(model_path, 'config.yml'), "r") as f:
-                config = yaml.load(f)
-                params = config['param']
-
-            # Get voabulary number (excluding blank, <SOS>, <EOS> classes)
-            with open('../metrics/vocab_num.yml', "r") as f:
-                vocab_num = yaml.load(f)
-                params['num_classes'] = vocab_num[params['data_size']
-                                                  ][params['label_type']]
+            # Load a config file (.yml)
+            params = load_config(join(model_path, 'config.yml'))
 
             # Load model
             model = load(model_type=params['model_type'],

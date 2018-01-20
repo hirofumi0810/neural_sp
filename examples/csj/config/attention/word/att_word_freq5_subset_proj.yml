@@ -4,19 +4,9 @@ param:
   backend: pytorch
   # backend: chainer
 
-  # features
-  num_stack: 1
-  num_skip: 1
-
   # topology
+  encoder_num_proj: 320
   encoder_num_layers: 5
-  subsample_list:
-    - True
-    - True
-    - True
-    - False
-    - False
-  subsample_type: drop
 
   # optimization
   batch_size: 64

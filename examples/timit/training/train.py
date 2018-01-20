@@ -12,8 +12,6 @@ from os.path import join, abspath
 import sys
 import time
 from setproctitle import setproctitle
-import yaml
-import shutil
 import argparse
 from tensorboardX import SummaryWriter
 import logging
@@ -31,6 +29,7 @@ from utils.training.plot import plot_loss
 from utils.training.training_loop import train_step
 from utils.directory import mkdir_join, mkdir
 from utils.io.variable import var2np
+from utils.config import load_config, save_config
 
 MAX_DECODE_LEN_PHONE = 40
 
@@ -48,14 +47,7 @@ def main():
     args = parser.parse_args()
 
     # Load a config file (.yml)
-    with open(args.config_path, "r") as f:
-        config = yaml.load(f)
-        params = config['param']
-
-    # Get voabulary number (excluding blank, <SOS>, <EOS> classes)
-    with open('../metrics/vocab_num.yml', "r") as f:
-        vocab_num = yaml.load(f)
-        params['num_classes'] = vocab_num[params['label_type']]
+    params = load_config(args.config_path)
 
     # Load model
     model = load(model_type=params['model_type'],
@@ -73,7 +65,7 @@ def main():
     model.set_save_path(save_path)
 
     # Save config file
-    shutil.copyfile(args.config_path, join(model.save_path, 'config.yml'))
+    save_config(config_path=args.config_path, save_path=model.save_path)
 
     # Settig for logging
     logger = logging.getLogger('training')
@@ -88,6 +80,8 @@ def main():
     fh.setFormatter(formatter)
     logger.addHandler(sh)
     logger.addHandler(fh)
+
+    logger.info(params)
 
     logger.info('PID: %s' % os.getpid())
     logger.info('USERNAME: %s' % os.uname()[1])
@@ -173,11 +167,11 @@ def main():
     not_improved_epoch = 0
     learning_rate = float(params['learning_rate'])
     loss_train_mean = 0.
-    for step, (batch, is_new_epoch) in enumerate(train_data):
+    for step, (batch_train, is_new_epoch) in enumerate(train_data):
 
         # Compute loss in the training set (including parameter update)
         model, loss_train_val = train_step(
-            model, batch, params['clip_grad_norm'], backend=params['backend'])
+            model, batch_train, params['clip_grad_norm'], backend=params['backend'])
         loss_train_mean += loss_train_val
 
         # Inject Gaussian noise to all parameters
@@ -187,9 +181,9 @@ def main():
         if (step + 1) % params['print_step'] == 0:
 
             # Compute loss in the dev set
-            batch = dev_data.next()[0]
+            batch_dev = dev_data.next()[0]
             loss_dev = model(
-                batch['xs'], batch['ys'], batch['x_lens'], batch['y_lens'], is_eval=True)
+                batch_dev['xs'], batch_dev['ys'], batch_dev['x_lens'], batch_dev['y_lens'], is_eval=True)
 
             loss_train_mean /= params['print_step']
             csv_steps.append(step)
@@ -207,11 +201,11 @@ def main():
                         name + '/grad', var2np(param.grad), step + 1)
 
             duration_step = time.time() - start_time_step
-            logger.info("...Step:%d (epoch:%.3f): loss:%.3f (%.3f) / lr:%.5f / batch:%d / x_lens: %d (%.3f min)" %
+            logger.info("...Step:%d (epoch:%.3f): loss:%.3f (%.3f) / lr:%.5f / batch:%d / x_lens:%d (%.3f min)" %
                         (step + 1, train_data.epoch_detail,
                          loss_train_mean, loss_dev,
                          learning_rate, train_data.current_batch_size,
-                         max(batch['x_lens']), duration_step / 60))
+                         max(batch_train['x_lens']), duration_step / 60))
             start_time_step = time.time()
             loss_train_mean = 0.
 

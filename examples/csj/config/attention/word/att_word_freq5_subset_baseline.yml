@@ -7,6 +7,7 @@ param:
   corpus: csj
   label_type: word_freq5
   data_size: subset
+  num_classes: 12588
 
   # features
   feature: fbank
@@ -31,8 +32,6 @@ param:
   encoder_bidirectional: True
   encoder_residual: False
   encoder_dense_residual: False
-  decoder_residual: False
-  decoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
   encoder_num_layers: 5
@@ -46,6 +45,8 @@ param:
   attention_type: location
   attention_dim: 128
   decoder_type: lstm
+  decoder_residual: False
+  decoder_dense_residual: False
   decoder_num_units: 320
   decoder_num_layers: 1
   embedding_dim: 128
@@ -61,7 +62,7 @@ param:
   # initialization
   parameter_init_distribution: uniform
   parameter_init: 0.1
-  recurrent_weight_orthogonal: True
+  recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
 
   # regularization
@@ -71,7 +72,7 @@ param:
   dropout_encoder: 0.2
   dropout_decoder: 0.1
   weight_decay: 1e-6
-  init_dec_state: final
+  init_dec_state: zero
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False
@@ -83,8 +84,8 @@ param:
 
   # annealing
   decay_start_epoch: 5
-  decay_rate: 0.5
-  decay_patient_epoch: 3
+  decay_rate: 0.9
+  decay_patient_epoch: 1
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
   eval_start_epoch: 5

@@ -9,7 +9,6 @@ from __future__ import print_function
 
 from os.path import join, abspath
 import sys
-import yaml
 import argparse
 import re
 
@@ -18,6 +17,7 @@ from models.load_model import load
 from examples.librispeech.data.load_dataset_hierarchical import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
+from utils.config import load_config
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model_path', type=str,
@@ -39,18 +39,8 @@ def main():
 
     args = parser.parse_args()
 
-    # Load config file
-    with open(join(args.model_path, 'config.yml'), "r") as f:
-        config = yaml.load(f)
-        params = config['param']
-
-    # Get voabulary number (excluding blank, <SOS>, <EOS> classes)
-    with open('../metrics/vocab_num.yml', "r") as f:
-        vocab_num = yaml.load(f)
-        params['num_classes'] = vocab_num[params['data_size']
-                                          ][params['label_type']]
-        params['num_classes_sub'] = vocab_num[params['data_size']
-                                              ][params['label_type_sub']]
+    # Load a config file (.yml)
+    params = load_config(join(args.model_path, 'config.yml'))
 
     # Load model
     model = load(model_type=params['model_type'],

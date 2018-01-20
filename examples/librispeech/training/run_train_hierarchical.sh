@@ -1,5 +1,7 @@
 #!/bin/bash
 
+ROOT=../../../pytorch_speech_recognition
+
 # Select GPU
 if [ $# -ne 2 ]; then
   echo "Error: set GPU number & config path." 1>&2

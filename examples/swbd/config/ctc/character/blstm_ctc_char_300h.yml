@@ -7,6 +7,7 @@ param:
   corpus: switchboard
   label_type: character
   data_size: 300h
+  num_classes: 42
 
   # features
   feature: fbank
@@ -15,8 +16,8 @@ param:
   use_delta: True
   use_double_delta: True
   splice: 1
-  num_stack: 2
-  num_skip: 2
+  num_stack: 3
+  num_skip: 3
 
   # topology
   model_type: ctc
@@ -30,7 +31,7 @@ param:
   encoder_residual: False
   encoder_dense_residual: False
   encoder_num_units: 320
-  encoder_num_proj: 320
+  encoder_num_proj: 0
   encoder_num_layers: 4
   subsample_list:
     - False
@@ -44,12 +45,12 @@ param:
   batch_size: 40
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 100
+  num_epoch: 50
 
   # initialization
   parameter_init_distribution: uniform
   parameter_init: 0.1
-  recurrent_weight_orthogonal: True
+  recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
 
   # regularization
@@ -63,8 +64,8 @@ param:
 
   # annealing
   decay_start_epoch: 5
-  decay_rate: 0.5
-  decay_patient_epoch: 3
+  decay_rate: 0.9
+  decay_patient_epoch: 1
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
   eval_start_epoch: 5
