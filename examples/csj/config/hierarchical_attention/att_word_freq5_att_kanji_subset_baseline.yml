@@ -22,6 +22,7 @@ param:
   num_stack: 3
   num_skip: 3
   min_frame_num: 40
+  dynamic_batching: True
 
   # topology
   model_type: hierarchical_attention

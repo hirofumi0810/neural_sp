@@ -18,6 +18,7 @@ param:
   splice: 1
   num_stack: 3
   num_skip: 3
+  dynamic_batching: True
 
   # topology
   model_type: attention

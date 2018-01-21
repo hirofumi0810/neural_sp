@@ -8,14 +8,19 @@ param:
   data_size: fullset
   num_classes: 23178
 
+  # features
+  num_stack: 1
+  num_skip: 1
+
   # topology
   encoder_num_layers: 5
   subsample_list:
+    - True
+    - True
+    - True
     - False
     - False
-    - False
-    - False
-    - False
+  subsample_type: drop  
   decoder_num_layers: 1
 
   # optimization

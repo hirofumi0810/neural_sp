@@ -28,7 +28,7 @@ class Dataset(DatasetBase):
                  min_frame_num=40,
                  shuffle=False, sort_utt=False, reverse=False,
                  sort_stop_epoch=None, num_gpus=1, save_format='numpy',
-                 num_enque=None):
+                 num_enque=None, dynamic_batching=False):
         """A class for loading dataset.
         Args:
             backend (string): pytorch or chainer
@@ -59,6 +59,8 @@ class Dataset(DatasetBase):
             num_gpus (optional, int): the number of GPUs
             save_format (string, optional): numpy or htk
             num_enque (int, optional): the number of elements to enqueue
+            dynamic_batching (bool, optional): if True, batch size will be
+                chainged dynamically in training
         """
         if data_type in ['eval1', 'eval2', 'eval3']:
             self.is_test = True
@@ -84,6 +86,7 @@ class Dataset(DatasetBase):
         self.num_gpus = num_gpus
         self.save_format = save_format
         self.num_enque = num_enque
+        self.dynamic_batching = dynamic_batching
 
         super(Dataset, self).__init__(vocab_file_path=vocab_file_path)
 
@@ -102,17 +105,8 @@ class Dataset(DatasetBase):
         # Remove inappropriate utteraces
         if not self.is_test:
             logger.info('Original utterance num: %d' % len(df))
-            df = df[df.apply(lambda x: min_frame_num <=
-                             x['frame_num'], axis=1)]
-            # NOTE: 20s >: 11 utteraces
-            # NOTE: 19s >: 11 utteraces
-            # NOTE: 18s >: 13 utteraces
-            # NOTE: 17s >: 18 utteraces
-            # NOTE: 16s >: 19 utteraces
-            # NOTE: 15s >: 27 utteraces
-            # NOTE: 14s >: 36 utteraces
-            # NOTE: 13s >: 51 utteraces
-            # NOTE: 12s >: 86 utteraces
+            df = df[df.apply(
+                lambda x: min_frame_num <= x['frame_num'], axis=1)]
             if data_type == 'dev':
                 df = df[:4000]
             logger.info('Restricted utterance num: %d' % len(df))
@@ -125,3 +119,27 @@ class Dataset(DatasetBase):
 
         self.df = df
         self.rest = set(list(df.index))
+
+    def select_batch_size(self, batch_size, min_frame_num_batch):
+        if not self.dynamic_batching:
+            return batch_size
+
+        if min_frame_num_batch <= 300:
+            pass
+        elif min_frame_num_batch <= 600:
+            batch_size = int(batch_size / 1.5)
+        elif min_frame_num_batch <= 900:
+            batch_size = int(batch_size / 2)
+        elif min_frame_num_batch <= 1200:
+            batch_size = int(batch_size / 4)
+        elif min_frame_num_batch <= 1500:
+            batch_size = 4
+        elif min_frame_num_batch <= 1800:
+            batch_size = 2
+        else:
+            batch_size = 1
+
+        if batch_size < 1:
+            batch_size = 1
+
+        return batch_size

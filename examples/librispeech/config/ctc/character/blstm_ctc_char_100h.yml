@@ -18,6 +18,7 @@ param:
   splice: 1
   num_stack: 2
   num_skip: 2
+  dynamic_batching: True
 
   # topology
   model_type: ctc

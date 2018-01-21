@@ -12,10 +12,9 @@ param:
   num_classes_sub: 12588
 
   # topology
-  encoder_num_layers: 6
+  encoder_num_layers: 5
   encoder_num_layers_sub: 5
   subsample_list:
-    - False
     - False
     - False
     - False

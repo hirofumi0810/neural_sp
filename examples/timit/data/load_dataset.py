@@ -23,7 +23,8 @@ class Dataset(DatasetBase):
                  vocab_file_path, max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
                  shuffle=False, sort_utt=False, reverse=False,
-                 sort_stop_epoch=None, save_format='numpy', num_enque=None):
+                 sort_stop_epoch=None, save_format='numpy',
+                 num_enque=None, dynamic_batching=False):
         """A class for loading dataset.
         Args:
             backend (string): pytorch or chainer
@@ -50,6 +51,8 @@ class Dataset(DatasetBase):
                 will revert back to a random order
             save_format (string, optional): numpy or htk
             num_enque (int, optional): the number of elements to enqueue
+            dynamic_batching (bool, optional): if True, batch size will be
+                chainged dynamically in training
         """
         self.is_test = True if data_type == 'test' else False
 
@@ -71,6 +74,7 @@ class Dataset(DatasetBase):
         self.num_gpus = 1
         self.save_format = save_format
         self.num_enque = num_enque
+        self.dynamic_batching = dynamic_batching
 
         super(Dataset, self).__init__(vocab_file_path=vocab_file_path)
 
@@ -88,3 +92,9 @@ class Dataset(DatasetBase):
 
         self.df = df
         self.rest = set(list(df.index))
+
+    def select_batch_size(self, batch_size, min_frame_num_batch):
+        if not self.dynamic_batching:
+            return batch_size
+
+        return batch_size

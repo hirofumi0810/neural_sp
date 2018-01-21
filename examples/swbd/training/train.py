@@ -101,7 +101,8 @@ def main():
         max_epoch=params['num_epoch'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
-        save_format=params['save_format'], num_enque=None)
+        save_format=params['save_format'], num_enque=None,
+        dynamic_batching=params['dynamic_batching'])
     dev_data = Dataset(
         backend=params['backend'],
         input_channel=params['input_channel'],
@@ -183,10 +184,6 @@ def main():
         model, loss_train_val = train_step(
             model, batch_train, params['clip_grad_norm'], backend=params['backend'])
         loss_train_mean += loss_train_val
-
-        # Inject Gaussian noise to all parameters
-        if float(params['weight_noise_std']) > 0 and learning_rate < float(params['learning_rate']):
-            model.weight_noise_injection = True
 
         if (step + 1) % params['print_step'] == 0:
 
@@ -330,6 +327,21 @@ def main():
                     learning_rate=learning_rate,
                     epoch=train_data.epoch,
                     value=metric_dev_epoch)
+
+                if train_data.epoch == params['convert_to_sgd_epoch']:
+                    # Convert to fine-tuning stage
+                    model.set_optimizer(
+                        'sgd',
+                        learning_rate_init=learning_rate,
+                        weight_decay=float(params['weight_decay']),
+                        clip_grad_norm=params['clip_grad_norm'],
+                        lr_schedule=False,
+                        factor=params['decay_rate'],
+                        patience_epoch=params['decay_patient_epoch'])
+
+                    # Inject Gaussian noise to all parameters
+                    if float(params['weight_noise_std']) > 0:
+                        model.weight_noise_injection = True
 
             start_time_step = time.time()
             start_time_epoch = time.time()

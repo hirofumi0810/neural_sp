@@ -7,7 +7,7 @@ param:
   # features
   num_stack: 1
   num_skip: 1
-  
+
   # topology
   conv_channels: [64, 64, 128, 128]
   conv_kernel_sizes:
@@ -38,19 +38,13 @@ param:
     - False
 
   # optimization
-  batch_size: 32
+  batch_size: 10
   optimizer: adam
   learning_rate: 1e-3
   convert_to_sgd_epoch: 100
 
-  # initialization
-  parameter_init_distribution: uniform
-  parameter_init: 0.1
-  recurrent_weight_orthogonal: True
-  init_forget_gate_bias_with_one: True
-
   # regularization
-  scheduled_sampling_ramp_max_step: 4000
+  scheduled_sampling_ramp_max_step: 8000
 
   # annealing
-  print_step: 20
+  print_step: 40

@@ -17,10 +17,12 @@ param:
   splice: 1
   num_stack: 1
   num_skip: 1
+  dynamic_batching: False
 
   # topology
   model_type: attention
-  encoder_type: lstm
+  # encoder_type: lstm
+  encoder_type: gru
   conv_channels: []
   conv_kernel_sizes: []
   conv_strides: []
@@ -32,17 +34,17 @@ param:
   encoder_dense_residual: False
   encoder_num_units: 256
   encoder_num_proj: 0
-  encoder_num_layers: 4
+  encoder_num_layers: 3
   subsample_list:
     - False
     - False
     - False
-    - False
   subsample_type: drop
-  attention_type: location  ###
+  attention_type: location
   attention_dim: 128
   # attention_dim: 512
-  decoder_type: lstm
+  # decoder_type: lstm
+  decoder_type: gru
   decoder_residual: False
   decoder_dense_residual: False
   decoder_num_units: 256
@@ -55,9 +57,12 @@ param:
   batch_size: 32
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 100
-  # convert_to_sgd_epoch: 100
   convert_to_sgd_epoch: 20
+  # optimizer: adadelta
+  # learning_rate: 1.0
+  # convert_to_sgd_epoch: 100
+  num_epoch: 100
+
 
   # initialization
   parameter_init_distribution: uniform
@@ -80,7 +85,7 @@ param:
   scheduled_sampling_prob: 0.2
   scheduled_sampling_ramp_max_step: 4000
   label_smoothing_prob: 0.2
-  weight_noise_std: 0
+  weight_noise_std: 1e-9
 
   # annealing
   decay_start_epoch: 10

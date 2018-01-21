@@ -27,7 +27,7 @@ class Dataset(DatasetBase):
                  num_stack=1, num_skip=1,
                  shuffle=False, sort_utt=False, reverse=False,
                  sort_stop_epoch=None, num_gpus=1, save_format='numpy',
-                 num_enque=None):
+                 num_enque=None, dynamic_batching=False):
         """A class for loading dataset.
         Args:
             backend (string): pytorch or chainer
@@ -57,6 +57,8 @@ class Dataset(DatasetBase):
             num_gpus (int, optional): the number of GPUs
             save_format (string, optional): numpy or htk
             num_enque (int, optional): the number of elements to enqueue
+            dynamic_batching (bool, optional): if True, batch size will be
+                chainged dynamically in training
         """
         self.is_test = True if 'eval' in data_type else False
 
@@ -79,6 +81,7 @@ class Dataset(DatasetBase):
         self.num_gpus = num_gpus
         self.save_format = save_format
         self.num_enque = num_enque
+        self.dynamic_batching = dynamic_batching
 
         super(Dataset, self).__init__(vocab_file_path=vocab_file_path)
 
@@ -115,3 +118,23 @@ class Dataset(DatasetBase):
 
         self.df = df
         self.rest = set(list(df.index))
+
+    def select_batch_size(self, batch_size, min_frame_num_batch):
+        if not self.dynamic_batching:
+            return batch_size
+
+        if min_frame_num_batch <= 900:
+            pass
+        elif min_frame_num_batch <= 1200:
+            batch_size = int(batch_size / 1.5)
+        elif min_frame_num_batch <= 1500:
+            batch_size = int(batch_size / 2)
+        elif min_frame_num_batch <= 1700:
+            batch_size = 8
+        else:
+            batch_size = 1
+
+        if batch_size < 1:
+            batch_size = 1
+
+        return batch_size
