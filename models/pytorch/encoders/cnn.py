@@ -39,19 +39,21 @@ class CNNEncoder(nn.Module):
 
         super(CNNEncoder, self).__init__()
 
-        self.input_size = input_size
-        self.input_channels = 1
-        self.input_freq = input_size // self.input_channels
+        if input_size % 3 == 0:
+            self.input_freq = input_size // 3
+            self.input_channels = 3
+        else:
+            self.input_freq = input_size
+            self.input_channels = 1
 
-        assert input_size % self.input_channels == 0
         assert len(conv_channels) > 0
         assert len(conv_channels) == len(conv_kernel_sizes)
         assert len(conv_kernel_sizes) == len(conv_strides)
         assert len(conv_strides) == len(poolings)
 
         layers = []
-        in_c = 1
-        in_freq = input_size
+        in_c = self.input_channels
+        in_freq = self.input_freq
         for i_layer in range(len(conv_channels)):
 
             # Conv
@@ -79,12 +81,14 @@ class CNNEncoder(nn.Module):
 
             # Max Pooling
             if len(poolings[i_layer]) > 0:
-                pool = nn.MaxPool2d(
-                    kernel_size=(poolings[i_layer][0], poolings[i_layer][0]),
-                    stride=(poolings[i_layer][0], poolings[i_layer][1]),
-                    # padding=(1, 1),
-                    padding=(0, 0),  # default
-                    ceil_mode=True)
+                pool = nn.MaxPool2d(kernel_size=tuple(poolings[i_layer]),
+                                    stride=tuple(poolings[i_layer]),
+                                    # padding=(1, 1),
+                                    padding=(0, 0),  # default
+                                    ceil_mode=False)
+                # NOTE: If ceil_mode is False, remove last feature when the
+                # dimension of features are odd.
+
                 layers.append(pool)
                 in_freq = math.floor(
                     (in_freq + 2 * pool.padding[0] - pool.kernel_size[0]) / pool.stride[0] + 1)
@@ -108,7 +112,7 @@ class CNNEncoder(nn.Module):
     def forward(self, xs, x_lens):
         """Forward computation.
         Args:
-            xs (FloatTensor): A tensor of size `[B, T, input_size]`
+            xs (FloatTensor): A tensor of size `[B, T, input_size (+Δ, ΔΔ)]`
             x_lens (IntTensor): A tensor of size `[B]`
         Returns:
             xs (FloatTensor): A tensor of size `[B, T', feature_dim]`
@@ -120,9 +124,14 @@ class CNNEncoder(nn.Module):
 
         # Reshape to 4D tensor
         xs = xs.transpose(1, 2).contiguous()
-        xs = xs.unsqueeze(1)
-        # NOTE: xs: `[B, in_ch, freq (1), time]`
+        if self.input_channels == 3:
+            xs = xs.view(batch_size, 3, input_size // 3, max_time)
+            # NOTE: xs: `[B, in_ch (3), freq // 3, max_time]`
+        else:
+            xs = xs.unsqueeze(1)
+            # NOTE: xs: `[B, in_ch (1), freq, max_time]`
 
+        # print(xs.size())
         xs = self.layers(xs)
         # print(xs.size())
         # NOTE: xs: `[B, out_ch, new_freq, new_time]`

@@ -24,6 +24,9 @@ class TestAttention(unittest.TestCase):
     def test(self):
         print("Attention Working check.")
 
+        # CNN encoder
+        self.check(encoder_type='cnn', decoder_type='lstm', batch_norm=True)
+
         # Label smoothing
         # self.check(encoder_type='lstm', bidirectional=True,
         #            decoder_type='lstm', label_smoothing=True,
@@ -37,9 +40,6 @@ class TestAttention(unittest.TestCase):
                    decoder_type='lstm', decoder_input='embedding')
         # self.check(encoder_type='lstm', bidirectional=True,
         #            decoder_type='lstm', decoder_input='onehot')
-
-        # CNN encoder
-        self.check(encoder_type='cnn', decoder_type='lstm', batch_norm=True)
 
         # Initialize decoder state
         self.check(encoder_type='lstm', bidirectional=True,

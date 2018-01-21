@@ -81,8 +81,8 @@ def load(model_type, params, backend='pytorch'):
             batch_norm=params['batch_norm'],
             label_smoothing_prob=params['label_smoothing_prob'],
             weight_noise_std=params['weight_noise_std'],
-            residual=params['residual'],
-            dense_residual=params['dense_residual'])
+            encoder_residual=params['encoder_residual'],
+            encoder_dense_residual=params['encoder_dense_residual'])
 
         model.name = model_name
         if params['encoder_type'] not in ['cnn', 'resnet']:
@@ -111,9 +111,9 @@ def load(model_type, params, backend='pytorch'):
             model.name += '_noise' + str(params['weight_noise_std'])
         if params['encoder_type'] == 'cnn':
             model.name += '_' + params['activation']
-        if bool(params['residual']):
+        if bool(params['encoder_residual']):
             model.name += '_res'
-        if bool(params['dense_residual']):
+        if bool(params['encoder_dense_residual']):
             model.name += '_dense_res'
         model.name += '_input' + str(model.input_size)
 
@@ -155,8 +155,8 @@ def load(model_type, params, backend='pytorch'):
             activation=params['activation'],
             batch_norm=params['batch_norm'],
             weight_noise_std=params['weight_noise_std'],
-            residual=params['residual'],
-            dense_residual=params['dense_residual'])
+            encoder_residual=params['encoder_residual'],
+            encoder_dense_residual=params['encoder_dense_residual'])
 
         model.name = model_name
         if params['encoder_type'] not in ['cnn', 'resnet']:
@@ -181,9 +181,9 @@ def load(model_type, params, backend='pytorch'):
             model.name += '_temp' + str(params['logits_temperature'])
         if params['weight_noise_std'] != 0:
             model.name += '_noise' + str(params['weight_noise_std'])
-        if bool(params['residual']):
+        if bool(params['encoder_residual']):
             model.name += '_res'
-        if bool(params['dense_residual']):
+        if bool(params['encoder_dense_residual']):
             model.name += '_dense_res'
 
     elif model_type == 'attention':
@@ -333,8 +333,8 @@ def load(model_type, params, backend='pytorch'):
             batch_norm=params['batch_norm'],
             label_smoothing_prob=params['label_smoothing_prob'],
             weight_noise_std=params['weight_noise_std'],
-            residual=params['residual'],
-            dense_residual=params['dense_residual'])
+            encoder_residual=params['encoder_residual'],
+            encoder_dense_residual=params['encoder_dense_residual'])
 
         model.name = params['encoder_type']
         if len(params['conv_channels']) != 0:
@@ -376,9 +376,9 @@ def load(model_type, params, backend='pytorch'):
             model.name += '_labelsmooth' + str(params['label_smoothing_prob'])
         if params['weight_noise_std'] != 0:
             model.name += '_noise' + str(params['weight_noise_std'])
-        if bool(params['residual']):
+        if bool(params['encoder_residual']):
             model.name += '_res'
-        if bool(params['dense_residual']):
+        if bool(params['encoder_dense_residual']):
             model.name += '_dense_res'
         model.name += '_main' + str(params['main_loss_weight'])
 

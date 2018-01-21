@@ -55,7 +55,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  init_forget_gate_bias_with_one=True,
                  subsample_list=[],
                  subsample_type='drop',
-                 init_dec_state='final',
+                 init_dec_state='zero',
                  sharpening_factor=1,
                  logits_temperature=1,
                  sigmoid_smoothing=False,
@@ -268,7 +268,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Recurrent weights are orthogonalized
         if recurrent_weight_orthogonal:
             self.init_weights(parameter_init, distribution='orthogonal',
-                              keys=['lstm', 'weight'], ignore_keys=['bias'])
+                              keys=[encoder_type, 'weight'], ignore_keys=['bias'])
+            self.init_weights(parameter_init, distribution='orthogonal',
+                              keys=[decoder_type, 'weight'], ignore_keys=['bias'])
 
         # Initialize bias in forget gate with 1
         if init_forget_gate_bias_with_one:

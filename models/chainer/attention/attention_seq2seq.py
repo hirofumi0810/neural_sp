@@ -121,7 +121,7 @@ class AttentionSeq2seq(ModelBase):
                  init_forget_gate_bias_with_one=True,
                  subsample_list=[],
                  subsample_type='drop',
-                 init_dec_state='final',
+                 init_dec_state='zero',
                  sharpening_factor=1,
                  logits_temperature=1,
                  sigmoid_smoothing=False,
@@ -233,7 +233,7 @@ class AttentionSeq2seq(ModelBase):
                     dense_residual=encoder_dense_residual)
             elif encoder_type == 'cnn':
                 assert num_stack == 1 and splice == 1
-                self.encoder = load(encoder_type=encoder_type)(
+                self.encoder = load(encoder_type='cnn')(
                     input_size=input_size,
                     conv_channels=conv_channels,
                     conv_kernel_sizes=conv_kernel_sizes,
@@ -243,8 +243,12 @@ class AttentionSeq2seq(ModelBase):
                     use_cuda=self.use_cuda,
                     activation=activation,
                     batch_norm=batch_norm)
+                self.init_dec_state = 'zero'
             else:
                 raise NotImplementedError
+
+            if encoder_type != decoder_type:
+                self.init_dec_state = 'zero'
 
             ####################
             # Decoder
@@ -339,8 +343,11 @@ class AttentionSeq2seq(ModelBase):
 
             # Recurrent weights are orthogonalized
             if recurrent_weight_orthogonal:
+                if encoder_type != 'cnn':
+                    self.init_weights(parameter_init, distribution='orthogonal',
+                                      keys=[encoder_type, 'weight'], ignore_keys=['bias'])
                 self.init_weights(parameter_init, distribution='orthogonal',
-                                  keys=['lstm', 'weight'], ignore_keys=['bias'])
+                                  keys=[decoder_type, 'weight'], ignore_keys=['bias'])
 
             # Initialize bias in forget gate with 1
             if init_forget_gate_bias_with_one:

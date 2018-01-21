@@ -202,7 +202,7 @@ class RNNEncoder(nn.Module):
                     `[B, T // sum(subsample_list), num_units (* num_directions)]`
                 else
                     `[T // sum(subsample_list), B, num_units (* num_directions)]`
-            x_lens ():
+            x_lens (LongTensor): A tensor of size `[B]`
             OPTION:
                 xs_sub (FloatTensor):
                     if batch_first is True, a tensor of size
@@ -210,7 +210,7 @@ class RNNEncoder(nn.Module):
                     else
                         `[T // sum(subsample_list), B, num_units (* num_directions)]`
                 x_lens_sub ():
-            perm_idx (LongTensor):
+            perm_idx (LongTensor): A tensor of size `[B]`
         """
         batch_size = xs.size(0)
         use_cuda = xs.is_cuda

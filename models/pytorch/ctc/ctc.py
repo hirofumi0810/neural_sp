@@ -73,8 +73,8 @@ class CTC(ModelBase):
         batch_norm (bool, optional):
         label_smoothing_prob (float, optional):
         weight_noise_std (float, optional):
-        residual (bool, optional):
-        dense_residual (bool, optional):
+        encoder_residual (bool, optional):
+        encoder_dense_residual (bool, optional):
     """
 
     def __init__(self,
@@ -104,8 +104,8 @@ class CTC(ModelBase):
                  batch_norm=False,
                  label_smoothing_prob=0,
                  weight_noise_std=0,
-                 residual=False,
-                 dense_residual=False):
+                 encoder_residual=False,
+                 encoder_dense_residual=False):
 
         super(ModelBase, self).__init__()
 
@@ -149,11 +149,11 @@ class CTC(ModelBase):
                 poolings=poolings,
                 activation=activation,
                 batch_norm=batch_norm,
-                residual=residual,
-                dense_residual=dense_residual)
+                residual=encoder_residual,
+                dense_residual=encoder_dense_residual)
         elif encoder_type == 'cnn':
             assert num_stack == 1 and splice == 1
-            self.encoder = load(encoder_type=encoder_type)(
+            self.encoder = load(encoder_type='cnn')(
                 input_size=input_size,
                 conv_channels=conv_channels,
                 conv_kernel_sizes=conv_kernel_sizes,
@@ -199,9 +199,9 @@ class CTC(ModelBase):
         self.init_weights(0, distribution='constant', keys=['bias'])
 
         # Recurrent weights are orthogonalized
-        if recurrent_weight_orthogonal:
+        if recurrent_weight_orthogonal and encoder_type != 'cnn':
             self.init_weights(parameter_init, distribution='orthogonal',
-                              keys=['lstm', 'weight'], ignore_keys=['bias'])
+                              keys=[encoder_type, 'weight'], ignore_keys=['bias'])
 
         # Initialize bias in forget gate with 1
         if init_forget_gate_bias_with_one:
@@ -244,7 +244,7 @@ class CTC(ModelBase):
 
             # Gaussian noise injection
             if self.weight_noise_injection:
-                self._inject_weight_noise(mean=0, std=self.weight_noise_std)
+                self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
         # Encode acoustic features
         logits, x_lens, perm_idx = self._encode(xs, x_lens, volatile=is_eval)

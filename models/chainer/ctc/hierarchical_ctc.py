@@ -63,8 +63,8 @@ class HierarchicalCTC(CTC):
         batch_norm (bool, optional):
         label_smoothing_prob (float, optional):
         weight_noise_std (float, optional):
-        residual (bool, optional):
-        dense_residual (bool, optional):
+        encoder_residual (bool, optional):
+        encoder_dense_residual (bool, optional):
     """
 
     def __init__(self,
@@ -97,8 +97,8 @@ class HierarchicalCTC(CTC):
                  batch_norm=False,
                  label_smoothing_prob=0,
                  weight_noise_std=0,
-                 residual=False,
-                 dense_residual=False):
+                 encoder_residual=False,
+                 encoder_dense_residual=False):
 
         super(HierarchicalCTC, self).__init__(
             input_size=input_size,  # 120 or 123
@@ -154,8 +154,8 @@ class HierarchicalCTC(CTC):
                     poolings=poolings,
                     activation=activation,
                     batch_norm=batch_norm,
-                    residual=residual,
-                    dense_residual=dense_residual)
+                    residual=encoder_residual,
+                    dense_residual=encoder_dense_residual)
             else:
                 raise NotImplementedError
 

@@ -9,7 +9,7 @@ from __future__ import print_function
 
 try:
     from warpctc_pytorch import CTCLoss
-    ctc_loss = CTCLoss()
+    ctc = CTCLoss()
 except:
     raise ImportError('Install warpctc_pytorch.')
 
@@ -126,7 +126,7 @@ class AttentionSeq2seq(ModelBase):
                  init_forget_gate_bias_with_one=True,
                  subsample_list=[],
                  subsample_type='drop',
-                 init_dec_state='final',
+                 init_dec_state='zero',
                  sharpening_factor=1,
                  logits_temperature=1,
                  sigmoid_smoothing=False,
@@ -238,7 +238,7 @@ class AttentionSeq2seq(ModelBase):
                 dense_residual=encoder_dense_residual)
         elif encoder_type == 'cnn':
             assert num_stack == 1 and splice == 1
-            self.encoder = load(encoder_type=encoder_type)(
+            self.encoder = load(encoder_type='cnn')(
                 input_size=input_size,
                 conv_channels=conv_channels,
                 conv_kernel_sizes=conv_kernel_sizes,
@@ -250,6 +250,9 @@ class AttentionSeq2seq(ModelBase):
             self.init_dec_state = 'zero'
         else:
             raise NotImplementedError
+
+        if encoder_type != decoder_type:
+            self.init_dec_state = 'zero'
 
         ####################
         # Decoder
@@ -339,8 +342,11 @@ class AttentionSeq2seq(ModelBase):
 
         # Recurrent weights are orthogonalized
         if recurrent_weight_orthogonal:
+            if encoder_type != 'cnn':
+                self.init_weights(parameter_init, distribution='orthogonal',
+                                  keys=[encoder_type, 'weight'], ignore_keys=['bias'])
             self.init_weights(parameter_init, distribution='orthogonal',
-                              keys=['lstm', 'weight'], ignore_keys=['bias'])
+                              keys=[decoder_type, 'weight'], ignore_keys=['bias'])
 
         # Initialize bias in forget gate with 1
         if init_forget_gate_bias_with_one:
@@ -375,7 +381,7 @@ class AttentionSeq2seq(ModelBase):
 
             # Gaussian noise injection
             if self.weight_noise_injection:
-                self._inject_weight_noise(mean=0, std=self.weight_noise_std)
+                self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
         # Encode acoustic features
         xs, x_lens, perm_idx = self._encode(xs, x_lens, volatile=is_eval)
@@ -447,7 +453,7 @@ class AttentionSeq2seq(ModelBase):
             y_lens (IntTensor): A tensor of size `[B]`
             is_sub_task (bool, optional):
         Returns:
-            loss (FloatTensor): A tensor of size `[1]`
+            ctc_loss (FloatTensor): A tensor of size `[1]`
         """
         if is_sub_task:
             logits_ctc = self.fc_ctc_sub(enc_out)
@@ -457,23 +463,22 @@ class AttentionSeq2seq(ModelBase):
         # Convert to time-major
         logits_ctc = logits_ctc.transpose(0, 1)
 
-        _x_lens = x_lens.clone()
-        _ys = ys.clone()[:, 1:] + 1
-        _y_lens = y_lens.clone() - 2
+        # Concatenate all _ys for warpctc_pytorch
+        # `[B, T_out]` -> `[1,]`
+        concatenated_labels = _concatenate_labels(ys[:, 1:-1] + 1, y_lens - 2)
         # NOTE: index 0 is reserved for blank
         # NOTE: Ignore <SOS> and <EOS>
 
-        # Concatenate all _ys for warpctc_pytorch
-        # `[B, T_out]` -> `[1,]`
-        concatenated_labels = _concatenate_labels(_ys, _y_lens)
-
-        loss = ctc_loss(logits_ctc, concatenated_labels.cpu(),
-                        _x_lens.cpu(), _y_lens.cpu())
+        # Compute CTC loss
+        ctc_loss = ctc(logits_ctc,
+                       concatenated_labels.cpu(),
+                       x_lens.cpu(),
+                       y_lens.cpu() - 2)
 
         if self.use_cuda:
-            loss = loss.cuda()
+            ctc_loss = ctc_loss.cuda()
 
-        return loss
+        return ctc_loss
 
     def _encode(self, xs, x_lens, volatile, is_multi_task=False):
         """Encode acoustic features.

@@ -41,9 +41,13 @@ class CNNEncoder(chainer.Chain):
 
         super(CNNEncoder, self).__init__()
 
-        self.input_size = input_size
-        self.input_channels = 1
-        self.input_freq = input_size // self.input_channels
+        if input_size % 3 == 0:
+            self.input_freq = input_size // 3
+            self.input_channels = 3
+        else:
+            self.input_freq = input_size
+            self.input_channels = 1
+
         self.conv_channels = conv_channels
         self.poolings = poolings
         self.dropout = dropout
@@ -51,15 +55,14 @@ class CNNEncoder(chainer.Chain):
         self.activation = activation
         self.batch_norm = batch_norm
 
-        assert input_size % self.input_channels == 0
         assert len(conv_channels) > 0
         assert len(conv_channels) == len(conv_kernel_sizes)
         assert len(conv_kernel_sizes) == len(conv_strides)
         assert len(conv_strides) == len(poolings)
 
         with self.init_scope():
-            in_c = 1
-            in_freq = input_size
+            in_c = self.input_channels
+            in_freq = self.input_freq
             for i_layer in range(len(conv_channels)):
 
                 # Conv
@@ -118,8 +121,12 @@ class CNNEncoder(chainer.Chain):
 
         # Reshape to 4D tensor
         xs = F.swapaxes(xs, 1, 2)
-        xs = F.expand_dims(xs, axis=1)
-        # NOTE: xs: `[B, in_ch, freq (1), time]`
+        if self.input_channels == 3:
+            xs = xs.reshape(batch_size, 3, input_size // 3, max_time)
+            # NOTE: xs: `[B, in_ch (3), freq // 3, max_time]`
+        else:
+            xs = F.expand_dims(xs, axis=1)
+            # NOTE: xs: `[B, in_ch (1), freq, max_time]`
 
         for i_layer in range(len(self.conv_channels)):
 
@@ -144,10 +151,8 @@ class CNNEncoder(chainer.Chain):
             # Max Pooling
             if len(self.poolings[i_layer]) > 0:
                 xs = F.max_pooling_2d(xs,
-                                      ksize=(self.poolings[i_layer][0],
-                                             self.poolings[i_layer][0]),
-                                      stride=(self.poolings[i_layer][0],
-                                              self.poolings[i_layer][1]),
+                                      ksize=tuple(self.poolings[i_layer]),
+                                      stride=tuple(self.poolings[i_layer]),
                                       # pad=(1, 1),
                                       pad=(0, 0),  # default
                                       cover_all=False)
@@ -171,12 +176,17 @@ class CNNEncoder(chainer.Chain):
         xs = xs.transpose(0, 3, 2, 1)
         xs = xs.reshape(batch_size, time, freq * output_channels)
 
-        # Update x_lens
-        x_lens = [self.get_conv_out_size(x, 1) for x in x_lens]
         if wrap_by_var:
-            x_lens = np2var(x_lens, use_cuda=self.use_cuda, backend='chainer')
+            # Update x_lens
+            x_lens = [self.get_conv_out_size(x.data, 1) for x in x_lens]
 
-        # Convert to list again
+            # Wrap by Variable again
+            x_lens = np2var(x_lens, use_cuda=self.use_cuda, backend='chainer')
+        else:
+            # Update x_lens
+            x_lens = [self.get_conv_out_size(x, 1) for x in x_lens]
+
+            # Convert to list again
         xs = F.separate(xs, axis=0)
 
         return xs, x_lens
