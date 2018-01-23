@@ -8,19 +8,17 @@ from __future__ import division
 from __future__ import print_function
 
 import os
-from os.path import join, abspath
 import sys
 import time
 from setproctitle import setproctitle
 import argparse
 from tensorboardX import SummaryWriter
-import logging
 
 import torch
 torch.manual_seed(1623)
 torch.cuda.manual_seed_all(1623)
 
-sys.path.append(abspath('../../../'))
+sys.path.append(os.path.abspath('../../../'))
 from models.load_model import load
 from examples.csj.data.load_dataset_hierarchical import Dataset
 from examples.csj.metrics.cer import do_eval_cer
@@ -28,6 +26,7 @@ from examples.csj.metrics.wer import do_eval_wer
 from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
 from utils.training.training_loop import train_hierarchical_step
+from utils.training.logging import set_logger
 from utils.directory import mkdir_join, mkdir
 from utils.io.variable import var2np
 from utils.config import load_config, save_config
@@ -73,20 +72,8 @@ def main():
     # Save config file
     save_config(config_path=args.config_path, save_path=model.save_path)
 
-    # Settig for logging
-    logger = logging.getLogger('training')
-    sh = logging.StreamHandler()
-    sh.setLevel(logging.WARNING)
-    fh = logging.FileHandler(join(model.save_path, 'train.log'))
-    fh.setLevel(logging.DEBUG)
-    logger.setLevel(logging.DEBUG)
-    formatter = logging.Formatter(
-        '%(asctime)s line:%(lineno)d %(levelname)s:   %(message)s')
-    sh.setFormatter(formatter)
-    fh.setFormatter(formatter)
-    logger.addHandler(sh)
-    logger.addHandler(fh)
-
+    # Setting for logging
+    logger = set_logger(model.save_path)
     logger.info('PID: %s' % os.getpid())
     logger.info('USERNAME: %s' % os.uname()[1])
 
@@ -254,12 +241,13 @@ def main():
                     # TODO: fix this
 
             duration_step = time.time() - start_time_step
-            logger.info("...Step:%d (epoch:%.3f): loss:%.3f/%.3f/%.3f (%.3f/%.3f/%.3f) / lr:%.5f / batch:%d / x_lens:%d (%.3f min)" %
+            logger.info("...Step:%d(epoch:%.3f)/loss:%.3f/%.3f/%.3f(%.3f/%.3f/%.3f)/lr:%.5f/batch:%d/x_lens:%d(%.3f min)" %
                         (step + 1, train_data.epoch_detail,
                          loss_train_mean, loss_main_train_mean, loss_sub_train_mean,
                          loss_dev, loss_main_dev, loss_sub_dev,
                          learning_rate, train_data.current_batch_size,
-                         max(batch_train['x_lens']), duration_step / 60))
+                         max(batch_train['x_lens']) * params['num_stack'],
+                         duration_step / 60))
             start_time_step = time.time()
             loss_train_mean, loss_main_train_mean, loss_sub_train_mean = 0., 0., 0.
 
@@ -418,7 +406,7 @@ def main():
     logger.info('Total time: %.3f hour' % (duration_train / 3600))
 
     # Training was finished correctly
-    with open(join(model.save_path, 'complete.txt'), 'w') as f:
+    with open(os.path.join(model.save_path, 'complete.txt'), 'w') as f:
         f.write('')
 
     if params['backend'] == 'pytorch':
