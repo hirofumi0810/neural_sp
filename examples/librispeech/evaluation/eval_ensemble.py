@@ -55,13 +55,12 @@ def main():
                          params=params,
                          backend=params['backend'])
 
+            # Restore the saved model
+            model.load_checkpoint(save_path=args.model_path, epoch=-1)
+
             # GPU setting
             model.set_cuda(deterministic=False, benchmark=True)
 
-            # Restore the saved model
-            checkpoint = model.load_checkpoint(
-                save_path=model_path, epoch=-1)
-            model.load_state_dict(checkpoint['state_dict'])
             models.append(model)
 
     print('=' * 30)

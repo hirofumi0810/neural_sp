@@ -46,13 +46,11 @@ def main():
                  params=params,
                  backend=params['backend'])
 
+    # Restore the saved parameters
+    model.load_checkpoint(save_path=args.model_path, epoch=args.epoch)
+
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
-
-    # Restore the saved model
-    checkpoint = model.load_checkpoint(
-        save_path=args.model_path, epoch=args.epoch)
-    model.load_state_dict(checkpoint['state_dict'])
 
     # Load dataset
     vocab_file_path = '../metrics/vocab_files/' + \
@@ -100,6 +98,42 @@ def main():
         shuffle=False, save_format=params['save_format'])
 
     if params['label_type'] == 'pos':
+        pos_eval1 = do_eval_wer(
+            model=model,
+            model_type=params['model_type'],
+            dataset=eval1_data,
+            label_type=params['label_type'],
+            data_size=params['data_size'],
+            beam_width=args.beam_width,
+            max_decode_len=args.max_decode_len,
+            eval_batch_size=args.eval_batch_size,
+            progressbar=True)
+        print('  POS (eval1, main): %f %%' % (pos_eval1 * 100))
+        pos_eval2 = do_eval_wer(
+            model=model,
+            model_type=params['model_type'],
+            dataset=eval2_data,
+            label_type=params['label_type'],
+            data_size=params['data_size'],
+            beam_width=args.beam_width,
+            max_decode_len=args.max_decode_len,
+            eval_batch_size=args.eval_batch_size,
+            progressbar=True)
+        print('  POS (eval2, main): %f %%' % (pos_eval2 * 100))
+        pos_eval3 = do_eval_wer(
+            model=model,
+            model_type=params['model_type'],
+            dataset=eval3_data,
+            label_type=params['label_type'],
+            data_size=params['data_size'],
+            beam_width=args.beam_width,
+            max_decode_len=args.max_decode_len,
+            eval_batch_size=args.eval_batch_size,
+            progressbar=True)
+        print('  POS (eval3, main): %f %%' % (pos_eval3 * 100))
+        print('  POS (mean, sub): %f %%' %
+              ((pos_eval1 + pos_eval2 + pos_eval3) * 100 / 3))
+
         wer_eval1 = do_eval_wer(
             model=model,
             model_type=params['model_type'],

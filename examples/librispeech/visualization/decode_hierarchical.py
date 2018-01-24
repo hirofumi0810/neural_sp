@@ -47,13 +47,11 @@ def main():
                  params=params,
                  backend=params['backend'])
 
+    # Restore the saved parameters
+    model.load_checkpoint(save_path=args.model_path, epoch=args.epoch)
+
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
-
-    # Restore the saved model
-    checkpoint = model.load_checkpoint(
-        save_path=args.model_path, epoch=args.epoch)
-    model.load_state_dict(checkpoint['state_dict'])
 
     # Load dataset
     vocab_file_path = '../metrics/vocab_files/' + \
