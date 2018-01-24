@@ -9,6 +9,7 @@ from __future__ import print_function
 
 from os.path import join, isfile, basename
 from glob import glob
+import pickle
 
 import logging
 logger = logging.getLogger('training')
@@ -197,45 +198,80 @@ class ModelBase(chainer.Chain):
                 break
         self.save_path = mkdir(save_path_tmp)
 
-    def save_checkpoint(self, save_path, epoch):
+    def save_checkpoint(self, save_path, epoch, step, lr):
         """Save checkpoint.
         Args:
             save_path (string): path to save a model (directory)
-            epoch (int): the epoch to save the model
+            epoch (int): the currnet epoch
+            step (int): the current step
+            lr (float):
         Returns:
             model (string): path to the saved model (file)
         """
         model_path = join(save_path, 'model.epoch-' + str(epoch))
+
+        # Save parameters, optimizer, step index
         serializers.save_npz(model_path, self)
         serializers.save_npz(
             join(save_path, 'optimizer.epoch-' + str(epoch)), self.optimizer)
+        serializers.save_npz(join(save_path, 'step.epoch-' + str(epoch)), step)
+        serializers.save_npz(join(save_path, 'lr.epoch-' + str(epoch)), lr)
 
-        logger.info("=> Saved checkpoint (epoch:%d): %s" %
-                    (epoch, model_path))
+        # serializer = serializers.DictionarySerializer()
+        # pickled_params = np.frombuffer(pickle.dumps(params), dtype=np.uint8)
+        # serializer("hyper_parameters", pickled_params)
+        #
+        # serializer["model"].save(model)
+        #
+        # np.savez_compressed(filename, **serializer.target)
+        # checkpoint = {
+        #     "state_dict": self,
+        #     "optimizer": self.optimizer,
+        #     "epoch": epoch,
+        #     "step": step,
+        #     "lr": lr
+        # }
+        # serializers.DictionarySerializer(model_path, checkpoint)
 
-    def load_checkpoint(self, save_path, epoch):
+        logger.info("=> Saved checkpoint (epoch:%d): %s" % (epoch, model_path))
+
+    def load_checkpoint(self, save_path, epoch=-1, restart=False):
         """Load checkpoint.
         Args:
-            save_path (string):
-            epoch (int):
+            save_path (string): path to the saved models
+            epoch (int, optional): if -1 means the last saved model
+            restart (bool, optional): if True, restore the save optimizer
+        Returns:
+            epoch (int): the currnet epoch
+            step (int): the current step
+            lr (float):
         """
         if int(epoch) == -1:
+            # Restore the last saved model
             models = [(int(basename(x).split('-')[-1]), x)
                       for x in glob(join(save_path, 'model.*'))]
 
             if len(models) == 0:
                 raise ValueError
 
-            # Restore the model in the last eppch
             epoch = sorted(models, key=lambda x: x[0])[-1][0]
 
         model_path = join(save_path, 'model.epoch-' + str(epoch))
         if isfile(join(model_path)):
             print("=> Loading checkpoint (epoch:%d): %s" % (epoch, model_path))
-            # checkpoint = torch.load(
-            #     model_path, map_location=lambda storage, loc: storage)
-            checkpoint = serializers.load_npz(
-                'model.epoch-' + str(epoch), self)
+            raise NotImplementedError
+            # model = serializers.load_npz(
+            #     'model.epoch-' + str(epoch), self)
+            # checkpoint = serializers.load_npz(
+            #     'model.epoch-' + str(epoch), self)
+            #
+            # checkpoint = {
+            #     "state_dict": model,
+            #     "optimizer":,
+            #     "epoch": epoch,
+            #     "step": step
+            # }
         else:
             raise ValueError("No checkpoint found at %s" % model_path)
-        return checkpoint
+
+        return checkpoint['epoch'] + 1, checkpoint['step'] + 1, checkpoint['lr']

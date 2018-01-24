@@ -9,6 +9,7 @@ from __future__ import print_function
 
 from os.path import join, isfile, basename
 from glob import glob
+import numpy as np
 
 import logging
 logger = logging.getLogger('training')
@@ -80,11 +81,18 @@ class ModelBase(nn.Module):
                 start, end = n // 4, n // 2
                 param.data[start:end].fill_(1.)
 
-    def _inject_weight_noise(self, mean, std):
-        m = torch.distributions.Normal(
-            torch.Tensor([mean]), torch.Tensor([std]))
+    def inject_weight_noise(self, mean, std):
+        # m = torch.distributions.Normal(
+        #     torch.Tensor([mean]), torch.Tensor([std]))
+        # for name, param in self.named_parameters():
+        #     noise = m.sample()
+        #     if self.use_cuda:
+        #         noise = noise.cuda()
+        #     param.data += noise
+
         for name, param in self.named_parameters():
-            noise = m.sample()
+            noise = np.random.normal(loc=mean, scale=std, size=param.size())
+            noise = torch.FloatTensor(noise)
             if self.use_cuda:
                 noise = noise.cuda()
             param.data += noise
@@ -168,6 +176,16 @@ class ModelBase(nn.Module):
                                        momentum=0.9,
                                        weight_decay=weight_decay,
                                        nesterov=True)
+        elif optimizer == 'adadelta':
+            self.optimizer = optim.Adadelta(
+                self.parameters(),
+                # rho=0.9,  # default
+                rho=0.95,
+                # eps=1e-6,  # default
+                eps=1e-8,
+                lr=learning_rate_init,
+                weight_decay=weight_decay)
+
         else:
             self.optimizer = OPTIMIZER_CLS_NAMES[optimizer](
                 self.parameters(),
@@ -210,40 +228,49 @@ class ModelBase(nn.Module):
                 break
         self.save_path = mkdir(save_path_tmp)
 
-    def save_checkpoint(self, save_path, epoch):
+    def save_checkpoint(self, save_path, epoch, step, lr):
         """Save checkpoint.
         Args:
             save_path (string): path to save a model (directory)
-            epoch (int): the epoch to save the model
+            epoch (int): the currnet epoch
+            step (int): the current step
+            lr (float):
         Returns:
             model (string): path to the saved model (file)
         """
+        model_path = join(save_path, 'model.epoch-' + str(epoch))
+
+        # Save parameters, optimizer, step index
         checkpoint = {
             "state_dict": self.state_dict(),
             "optimizer": self.optimizer.state_dict(),
-            "epoch": epoch
+            "epoch": epoch,
+            "step": step,
+            "lr": lr
         }
-
-        model_path = join(save_path, 'model.epoch-' + str(epoch))
         torch.save(checkpoint, model_path)
 
-        logger.info("=> Saved checkpoint (epoch:%d): %s" %
-                    (epoch, model_path))
+        logger.info("=> Saved checkpoint (epoch:%d): %s" % (epoch, model_path))
 
-    def load_checkpoint(self, save_path, epoch):
+    def load_checkpoint(self, save_path, epoch=-1, restart=False):
         """Load checkpoint.
         Args:
-            save_path (string):
-            epoch (int):
+            save_path (string): path to the saved models
+            epoch (int, optional): if -1 means the last saved model
+            restart (bool, optional): if True, restore the save optimizer
+        Returns:
+            epoch (int): the currnet epoch
+            step (int): the current step
+            lr (float):
         """
         if int(epoch) == -1:
+            # Restore the last saved model
             models = [(int(basename(x).split('-')[-1]), x)
                       for x in glob(join(save_path, 'model.*'))]
 
             if len(models) == 0:
                 raise ValueError
 
-            # Restore the model in the last eppch
             epoch = sorted(models, key=lambda x: x[0])[-1][0]
 
         model_path = join(save_path, 'model.epoch-' + str(epoch))
@@ -251,6 +278,23 @@ class ModelBase(nn.Module):
             print("=> Loading checkpoint (epoch:%d): %s" % (epoch, model_path))
             checkpoint = torch.load(
                 model_path, map_location=lambda storage, loc: storage)
+
+            # Restore parameters
+            self.load_state_dict(checkpoint['state_dict'])
+
+            # Restore optimizer
+            if restart:
+                if hasattr(self, 'optimizer'):
+                    self.optimizer.load_state_dict(checkpoint['optimizer'])
+
+                    for state in self.optimizer.state.values():
+                        for k, v in state.items():
+                            if torch.is_tensor(v):
+                                state[k] = v.cuda()
+                    # NOTE: from https://github.com/pytorch/pytorch/issues/2830
+                else:
+                    raise ValueError('Set optimizer.')
         else:
             raise ValueError("No checkpoint found at %s" % model_path)
-        return checkpoint
+
+        return checkpoint['epoch'] + 1, checkpoint['step'] + 1, checkpoint['lr']

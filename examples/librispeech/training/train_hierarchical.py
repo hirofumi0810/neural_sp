@@ -8,7 +8,6 @@ from __future__ import division
 from __future__ import print_function
 
 import os
-from os.path import join, abspath
 import sys
 import time
 from setproctitle import setproctitle
@@ -20,7 +19,7 @@ import torch
 torch.manual_seed(1623)
 torch.cuda.manual_seed_all(1623)
 
-sys.path.append(abspath('../../../'))
+sys.path.append(os.path.abspath('../../../'))
 from models.load_model import load
 from examples.librispeech.data.load_dataset_hierarchical import Dataset
 from examples.librispeech.metrics.cer import do_eval_cer
@@ -39,10 +38,12 @@ MAX_DECODE_LEN_CHAR = 600
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', type=int, default=-1,
                     help='the index of GPU (negative value indicates CPU)')
-parser.add_argument('--config_path', type=str,
+parser.add_argument('--config_path', type=str, default=None,
                     help='path to the configuration file')
 parser.add_argument('--model_save_path', type=str,
                     help='path to save the model')
+parser.add_argument('--saved_model_path', type=str, default=None,
+                    help='path to the saved model to retrain')
 
 
 def main():
@@ -52,52 +53,92 @@ def main():
     ##################################################
     # MODEL
     ##################################################
-    # Load a config file (.yml)
-    params = load_config(args.config_path)
+    if args.model_save_path is not None:
+        # Load a config file (.yml)
+        params = load_config(args.config_path)
 
-    # Model setting
-    model = load(model_type=params['model_type'],
-                 params=params,
-                 backend=params['backend'])
+        # Model setting
+        model = load(model_type=params['model_type'],
+                     params=params,
+                     backend=params['backend'])
+
+        # Set save path
+        save_path = mkdir_join(
+            args.model_save_path, params['backend'], 'librispeech',
+            params['model_type'],
+            params['label_type'] + '_' + params['label_type_sub'],
+            params['data_size'], model.name)
+        model.set_save_path(save_path)
+
+        # Save config file
+        save_config(config_path=args.config_path, save_path=model.save_path)
+
+        # Setting for logging
+        logger = set_logger(model.save_path)
+
+        # Count total parameters
+        for name in sorted(list(model.num_params_dict.keys())):
+            num_params = model.num_params_dict[name]
+            logger.info("%s %d" % (name, num_params))
+        logger.info("Total %.3f M parameters" %
+                    (model.total_parameters / 1000000))
+
+        # Define optimizer
+        model.set_optimizer(
+            optimizer=params['optimizer'],
+            learning_rate_init=float(params['learning_rate']),
+            weight_decay=float(params['weight_decay']),
+            clip_grad_norm=params['clip_grad_norm'],
+            lr_schedule=False,
+            factor=params['decay_rate'],
+            patience_epoch=params['decay_patient_epoch'])
+
+        epoch, step = 1, 0
+        learning_rate = float(params['learning_rate'])
+
+    elif args.saved_model_path is not None:
+        # NOTE: Retrain the saved model from the last checkpoint
+
+        # Load a config file (.yml)
+        params = load_config(os.path.join(args.saved_model_path, 'config.yml'))
+
+        # Load model
+        model = load(model_type=params['model_type'],
+                     params=params,
+                     backend=params['backend'])
+
+        # Set save path
+        model.save_path = args.saved_model_path
+
+        # Setting for logging
+        logger = set_logger(model.save_path, restart=True)
+
+        # Define optimizer
+        model.set_optimizer(
+            optimizer=params['optimizer'],
+            learning_rate_init=float(params['learning_rate']),
+            weight_decay=float(params['weight_decay']),
+            clip_grad_norm=params['clip_grad_norm'],
+            lr_schedule=False,
+            factor=params['decay_rate'],
+            patience_epoch=params['decay_patient_epoch'])
+
+        # Restore the last saved model
+        epoch, step, learning_rate = model.load_checkpoint(
+            save_path=args.saved_model_path, epoch=-1, restart=True)
+
+    else:
+        raise ValueError("Set model_save_path or saved_model_path.")
+
+    # GPU setting
+    model.set_cuda(deterministic=False, benchmark=True)
+
+    logger.info('PID: %s' % os.getpid())
+    logger.info('USERNAME: %s' % os.uname()[1])
 
     # Set process name
     setproctitle('libri_' + params['model_type'] + '_' +
                  params['label_type'] + '_' + params['label_type_sub'] + '_' + params['data_size'])
-
-    # Set save path
-    save_path = mkdir_join(
-        args.model_save_path, params['backend'], 'librispeech',
-        params['model_type'],
-        params['label_type'] + '_' + params['label_type_sub'],
-        params['data_size'], model.name)
-    model.set_save_path(save_path)
-
-    # Save config file
-    save_config(config_path=args.config_path, save_path=model.save_path)
-
-    # Setting for logging
-    logger = set_logger(model.save_path)
-    logger.info('PID: %s' % os.getpid())
-    logger.info('USERNAME: %s' % os.uname()[1])
-
-    # Count total parameters
-    for name in sorted(list(model.num_params_dict.keys())):
-        num_params = model.num_params_dict[name]
-        logger.info("%s %d" % (name, num_params))
-    logger.info("Total %.3f M parameters" % (model.total_parameters / 1000000))
-
-    # Define optimizer
-    model.set_optimizer(
-        optimizer=params['optimizer'],
-        learning_rate_init=float(params['learning_rate']),
-        weight_decay=float(params['weight_decay']),
-        clip_grad_norm=params['clip_grad_norm'],
-        lr_schedule=False,
-        factor=params['decay_rate'],
-        patience_epoch=params['decay_patient_epoch'])
-
-    # GPU setting
-    model.set_cuda(deterministic=False, benchmark=True)
 
     ##################################################
     # DATSET
@@ -204,12 +245,11 @@ def main():
     start_time_step = time.time()
     ler_dev_best = 1
     not_improved_epoch = 0
-    learning_rate = float(params['learning_rate'])
     best_model = model
     loss_train_mean, loss_main_train_mean, loss_sub_train_mean = 0., 0., 0.
-    for step, (batch_train, is_new_epoch) in enumerate(train_data):
-
+    while True:
         # Compute loss in the training set (including parameter update)
+        batch_train, is_new_epoch = train_data.next()
         model, loss_train, loss_main_train, loss_sub_train = train_hierarchical_step(
             model, batch_train, params['clip_grad_norm'], backend=params['backend'])
         loss_train_mean += loss_train
@@ -260,20 +300,22 @@ def main():
                          duration_step / 60))
             start_time_step = time.time()
             loss_train_mean, loss_main_train_mean, loss_sub_train_mean = 0., 0., 0.
+        step += 1
 
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:
             duration_epoch = time.time() - start_time_epoch
             logger.info('===== EPOCH:%d (%.3f min) =====' %
-                        (train_data.epoch, duration_epoch / 60))
+                        (epoch, duration_epoch / 60))
 
             # Save fugure of loss
             plot_loss(csv_loss_train, csv_loss_dev, csv_steps,
                       save_path=model.save_path)
 
-            if train_data.epoch < params['eval_start_epoch']:
+            if epoch < params['eval_start_epoch']:
                 # Save the model
-                model.save_checkpoint(model.save_path, epoch=train_data.epoch)
+                model.save_checkpoint(model.save_path, epoch, step,
+                                      lr=learning_rate)
             else:
                 start_time_eval = time.time()
                 # dev
@@ -310,8 +352,8 @@ def main():
                     logger.info('■■■ ↑Best Score (WER)↑ ■■■')
 
                     # Save the model
-                    model.save_checkpoint(
-                        model.save_path, epoch=train_data.epoch)
+                    model.save_checkpoint(model.save_path, epoch, step,
+                                          lr=learning_rate)
                 else:
                     not_improved_epoch += 1
 
@@ -326,10 +368,10 @@ def main():
                 model.optimizer, learning_rate = lr_controller.decay_lr(
                     optimizer=model.optimizer,
                     learning_rate=learning_rate,
-                    epoch=train_data.epoch,
+                    epoch=epoch,
                     value=metric_epoch)
 
-                if train_data.epoch == params['convert_to_sgd_epoch']:
+                if epoch == params['convert_to_sgd_epoch']:
                     # Convert to fine-tuning stage
                     model.set_optimizer(
                         'sgd',
@@ -339,13 +381,18 @@ def main():
                         lr_schedule=False,
                         factor=params['decay_rate'],
                         patience_epoch=params['decay_patient_epoch'])
+                    logger.info('========== Convert to SGD ==========')
 
                     # Inject Gaussian noise to all parameters
                     if float(params['weight_noise_std']) > 0:
                         model.weight_noise_injection = True
 
+            if epoch == params['num_epoch']:
+                break
+
             start_time_step = time.time()
             start_time_epoch = time.time()
+            epoch += 1
 
     # Evaluate the best model (test)
     wer_test_clean = do_eval_wer(
@@ -389,7 +436,7 @@ def main():
     logger.info('Total time: %.3f hour' % (duration_train / 3600))
 
     # Training was finished correctly
-    with open(join(model.save_path, 'complete.txt'), 'w') as f:
+    with open(os.path.join(model.save_path, 'complete.txt'), 'w') as f:
         f.write('')
 
     if params['backend'] == 'pytorch':

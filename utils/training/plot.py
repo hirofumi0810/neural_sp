@@ -20,15 +20,16 @@ orange = '#D2691E'
 def plot_loss(train_losses, dev_losses, steps, save_path):
     """Save history of training & dev loss as figure.
     Args:
-        train_losses: list of train losses
-        dev_losses: list of dev losses
-        steps: list of steps
+        train_losses (list): train losses
+        dev_losses (list): dev losses
+        steps (list): steps
     """
     # Save as csv file
     loss_graph = np.column_stack((steps, train_losses, dev_losses))
-    if os.path.isfile(os.path.join(save_path, "ler.csv")):
-        os.remove(os.path.join(save_path, "ler.csv"))
+    if os.path.isfile(os.path.join(save_path, "loss.csv")):
+        os.remove(os.path.join(save_path, "loss.csv"))
     np.savetxt(os.path.join(save_path, "loss.csv"), loss_graph, delimiter=",")
+    # TODO: change to chainer reporter
 
     # TODO: error check for inf loss
 
@@ -47,9 +48,9 @@ def plot_loss(train_losses, dev_losses, steps, save_path):
 def plot_ler(train_lers, dev_lers, steps, label_type, save_path):
     """Save history of training & dev LERs as figure.
     Args:
-        train_lers: list of train losses
-        dev_lers: list of dev losses
-        steps: list of steps
+        train_lers (list): train losses
+        dev_lers (list): dev losses
+        steps (list): steps
     """
     if 'word' in label_type:
         name = 'WER'
