@@ -47,6 +47,9 @@ def main():
 
     args = parser.parse_args()
 
+    ##################################################
+    # MODEL
+    ##################################################
     # Load a config file (.yml)
     params = load_config(args.config_path)
 
@@ -73,6 +76,28 @@ def main():
     logger.info('PID: %s' % os.getpid())
     logger.info('USERNAME: %s' % os.uname()[1])
 
+    # Count total parameters
+    for name in sorted(list(model.num_params_dict.keys())):
+        num_params = model.num_params_dict[name]
+        logger.info("%s %d" % (name, num_params))
+    logger.info("Total %.3f M parameters" % (model.total_parameters / 1000000))
+
+    # Define optimizer
+    model.set_optimizer(
+        optimizer=params['optimizer'],
+        learning_rate_init=float(params['learning_rate']),
+        weight_decay=float(params['weight_decay']),
+        clip_grad_norm=params['clip_grad_norm'],
+        lr_schedule=False,
+        factor=params['decay_rate'],
+        patience_epoch=params['decay_patient_epoch'])
+
+    # GPU setting
+    model.set_cuda(deterministic=False, benchmark=True)
+
+    ##################################################
+    # DATSET
+    ##################################################
     # Load dataset
     vocab_file_path = '../metrics/vocab_files/' + \
         params['label_type'] + '_' + params['data_size'] + '.txt'
@@ -136,22 +161,9 @@ def main():
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         save_format=params['save_format'])
 
-    # Count total parameters
-    for name in sorted(list(model.num_params_dict.keys())):
-        num_params = model.num_params_dict[name]
-        logger.info("%s %d" % (name, num_params))
-    logger.info("Total %.3f M parameters" % (model.total_parameters / 1000000))
-
-    # Define optimizer
-    model.set_optimizer(
-        optimizer=params['optimizer'],
-        learning_rate_init=float(params['learning_rate']),
-        weight_decay=float(params['weight_decay']),
-        clip_grad_norm=params['clip_grad_norm'],
-        lr_schedule=False,
-        factor=params['decay_rate'],
-        patience_epoch=params['decay_patient_epoch'])
-
+    ##################################################
+    # TRAINING LOOP
+    ##################################################
     # Define learning rate controller
     lr_controller = Controller(
         learning_rate_init=params['learning_rate'],
@@ -160,9 +172,6 @@ def main():
         decay_rate=params['decay_rate'],
         decay_patient_epoch=params['decay_patient_epoch'],
         lower_better=True)
-
-    # GPU setting
-    model.set_cuda(deterministic=False, benchmark=True)
 
     # Setting for tensorboard
     if params['backend'] == 'pytorch':
@@ -207,7 +216,7 @@ def main():
                         name + '/grad', var2np(param.grad), step + 1)
 
             duration_step = time.time() - start_time_step
-            logger.info("...Step:%d(epoch:%.3f)/loss:%.3f(%.3f)/lr:%.5f/batch:%d/x_lens:%d(%.3f min)" %
+            logger.info("...Step:%d(epoch:%.3f) loss:%.3f(%.3f)/lr:%.5f/batch:%d/x_lens:%d (%.3f min)" %
                         (step + 1, train_data.epoch_detail,
                          loss_train_mean, loss_dev,
                          learning_rate, train_data.current_batch_size,
