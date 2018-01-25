@@ -22,7 +22,8 @@ class CNNEncoder(chainer.Chain):
         conv_kernel_sizes (list, optional): the size of kernels in CNN layers
         conv_strides (list, optional): strides in CNN layers
         poolings (list, optional): the size of poolings in CNN layers
-        dropout (float): the probability to drop nodes
+        dropout_input (float): the probability to drop nodes in input-hidden connection
+        dropout_hidden (float): the probability to drop nodes in hidden-hidden connection
         use_cuda (bool, optional): if True, use GPUs
         activation (string, optional): relu or prelu or hard_tanh or maxout
         batch_norm (bool, optional):
@@ -34,7 +35,8 @@ class CNNEncoder(chainer.Chain):
                  conv_kernel_sizes,
                  conv_strides,
                  poolings,
-                 dropout,
+                 dropout_input,
+                 dropout_hidden,
                  use_cuda,
                  activation='relu',
                  batch_norm=False):
@@ -50,7 +52,8 @@ class CNNEncoder(chainer.Chain):
 
         self.conv_channels = conv_channels
         self.poolings = poolings
-        self.dropout = dropout
+        self.dropout_input = dropout_input
+        self.dropout_hidden = dropout_hidden
         self.use_cuda = use_cuda
         self.activation = activation
         self.batch_norm = batch_norm
@@ -71,9 +74,7 @@ class CNNEncoder(chainer.Chain):
                                        ksize=tuple(conv_kernel_sizes[i_layer]),
                                        stride=tuple(conv_strides[i_layer]),
                                        pad=tuple(conv_strides[i_layer]),
-                                       nobias=batch_norm,
-                                       initialW=None,
-                                       initial_bias=None)
+                                       nobias=batch_norm)
                 setattr(self, 'conv_l' + str(i_layer), conv)
                 in_freq = chainer.utils.get_conv_outsize(in_freq,
                                                          k=conv_kernel_sizes[i_layer][0],
@@ -103,7 +104,8 @@ class CNNEncoder(chainer.Chain):
     def __call__(self, xs, x_lens):
         """Forward computation.
         Args:
-            xs (chainer.Variable): A tensor of size `[B, T, input_size]`
+            xs (chainer.Variable of list of chainer/Variable): A tensor of size
+                `[B, T, input_size]`
             x_lens (np.ndarray or chainer.Variable): A tensor of size `[B]`
         Returns:
             xs (chainer.Variable): A tensor of size `[B, T', feature_dim]`
@@ -118,6 +120,10 @@ class CNNEncoder(chainer.Chain):
         batch_size, max_time, input_size = xs.shape
 
         # assert input_size == self.input_freq * self.input_channels
+
+        # Dropout for inputs-hidden connection
+        if self.dropout_input > 0:
+            xs = F.dropout(xs, ratio=self.dropout_input)
 
         # Reshape to 4D tensor
         xs = F.swapaxes(xs, 1, 2)
@@ -163,9 +169,9 @@ class CNNEncoder(chainer.Chain):
             if self.batch_norm:
                 xs = getattr(self, 'bn_l' + str(i_layer))(xs)
 
-            # Dropout
-            if self.dropout > 0:
-                xs = F.dropout(xs, ratio=self.dropout)
+            # Dropout for hidden-hidden connection
+            if self.dropout_hidden > 0:
+                xs = F.dropout(xs, ratio=self.dropout_hidden)
             # TODO: compare BN before ReLU and after ReLU
 
             # print(xs.shape)

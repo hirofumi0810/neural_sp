@@ -27,7 +27,8 @@ class RNNEncoder(chainer.Chain):
         num_units (int): the number of units in each layer
         num_proj (int): the number of nodes in the projection layer
         num_layers (int): the number of layers
-        dropout (float): the probability to drop nodes
+        dropout_input (float): the probability to drop nodes in input-hidden connection
+        dropout_hidden (float): the probability to drop nodes in hidden-hidden connection
         subsample_list (list): subsample in the corresponding layers (True)
             ex.) [False, True, True, False] means that downsample is conducted
                 in the 2nd and 3rd layers.
@@ -57,7 +58,8 @@ class RNNEncoder(chainer.Chain):
                  num_units,
                  num_proj,
                  num_layers,
-                 dropout,
+                 dropout_input,
+                 dropout_hidden,
                  subsample_list=[],
                  subsample_type='drop',
                  use_cuda=False,
@@ -91,6 +93,8 @@ class RNNEncoder(chainer.Chain):
         self.num_units = num_units
         self.num_proj = num_proj if num_proj is not None else 0
         self.num_layers = num_layers
+        self.dropout_input = dropout_input
+        self.dropout_hidden = dropout_hidden
         self.merge_bidirectional = merge_bidirectional
         self.use_cuda = use_cuda
 
@@ -125,14 +129,14 @@ class RNNEncoder(chainer.Chain):
         with self.init_scope():
             # Setting for CNNs before RNNs# Setting for CNNs before RNNs
             if len(conv_channels) > 0 and len(conv_channels) == len(conv_kernel_sizes) and len(conv_kernel_sizes) == len(conv_strides):
-                assert num_stack == 1
-                assert splice == 1
+                assert num_stack == 1 and splice == 1
                 self.conv = CNNEncoder(input_size,
                                        conv_channels=conv_channels,
                                        conv_kernel_sizes=conv_kernel_sizes,
                                        conv_strides=conv_strides,
                                        poolings=poolings,
-                                       dropout=dropout,
+                                       dropout_input=0,
+                                       dropout_hidden=dropout_hidden,
                                        activation=activation,
                                        use_cuda=use_cuda,
                                        batch_norm=batch_norm)
@@ -160,28 +164,24 @@ class RNNEncoder(chainer.Chain):
                         rnn_i = L.NStepBiLSTM(n_layers=1,
                                               in_size=encoder_input_size,
                                               out_size=num_units,
-                                              dropout=dropout,
-                                              initialW=None,
-                                              initial_bias=None)
+                                              dropout=0)
                     else:
                         rnn_i = L.NStepLSTM(n_layers=1,
                                             in_size=encoder_input_size,
                                             out_size=num_units,
-                                            dropout=dropout,
-                                            initialW=None,
-                                            initial_bias=None)
+                                            dropout=0)
 
                 elif rnn_type == 'gru':
                     if bidirectional:
                         rnn_i = L.NStepBiGRU(n_layers=1,
                                              in_size=encoder_input_size,
                                              out_size=num_units,
-                                             dropout=dropout)
+                                             dropout=0)
                     else:
                         rnn_i = L.NStepGRU(n_layers=1,
                                            in_size=encoder_input_size,
                                            out_size=num_units,
-                                           dropout=dropout)
+                                           dropout=0)
 
                 elif rnn_type == 'rnn':
                     if bidirectional:
@@ -189,13 +189,13 @@ class RNNEncoder(chainer.Chain):
                         rnn_i = L.NStepBiRNNTanh(n_layers=1,
                                                  in_size=encoder_input_size,
                                                  out_size=num_units,
-                                                 dropout=dropout)
+                                                 dropout=0)
                     else:
                         # rnn_i = L.NStepRNNReLU(
                         rnn_i = L.NStepRNNTanh(n_layers=1,
                                                in_size=encoder_input_size,
                                                out_size=num_units,
-                                               dropout=dropout)
+                                               dropout=0)
                 else:
                     raise ValueError(
                         'rnn_type must be "lstm" or "gru" or "rnn".')
@@ -211,7 +211,7 @@ class RNNEncoder(chainer.Chain):
                 if i_layer != self.num_layers - 1 and self.num_proj > 0:
                     proj_i = LinearND(
                         num_units * self.num_directions, num_proj,
-                        dropout=dropout, use_cuda=use_cuda)
+                        dropout=dropout_hidden, use_cuda=use_cuda)
                     setattr(self, 'proj_l' + str(i_layer), proj_i)
                     if use_cuda:
                         proj_i.to_gpu()
@@ -241,6 +241,10 @@ class RNNEncoder(chainer.Chain):
 
         wrap_by_var = isinstance(x_lens, chainer.Variable)
 
+        # Dropout for inputs-hidden connection
+        if self.dropout_input > 0:
+            xs = [F.dropout(x, ratio=self.dropout_input) for x in xs]
+
         # Path through CNN layers before RNN layers
         if self.conv is not None:
             xs, x_lens = self.conv(xs, x_lens)
@@ -249,10 +253,15 @@ class RNNEncoder(chainer.Chain):
         # NOTE: exclude residual connection from the raw inputs
         for i_layer in range(self.num_layers):
 
+            # Path through RNN
             if self.rnn_type == 'lstm':
                 _, _, xs = self.rnns[i_layer](hx=None, cx=None, xs=xs)
             else:
                 _, xs = self.rnns[i_layer](hx=None, xs=xs)
+
+            # Dropout for hidden-hidden or hidden-output connection
+            if self.dropout_hidden > 0:
+                xs = [F.dropout(x, ratio=self.dropout_hidden) for x in xs]
 
             # Pick up outputs in the sub task before the projection layer
             if self.num_layers_sub >= 1 and i_layer == self.num_layers_sub - 1:

@@ -59,20 +59,18 @@ class RNNDecoder(chainer.Chain):
                     rnn_i = L.NStepLSTM(n_layers=1,
                                         in_size=decoder_input_size,
                                         out_size=num_units,
-                                        dropout=dropout,
-                                        initialW=None,
-                                        initial_bias=None)
+                                        dropout=0)
                 elif rnn_type == 'gru':
                     rnn_i = L.NStepGRU(n_layers=1,
                                        in_size=decoder_input_size,
                                        out_size=num_units,
-                                       dropout=dropout)
+                                       dropout=0)
                 elif rnn_type == 'rnn':
                     # rnn_i = L.NStepRNNReLU(
                     rnn_i = L.NStepRNNTanh(n_layers=1,
                                            in_size=decoder_input_size,
                                            out_size=num_units,
-                                           dropout=dropout)
+                                           dropout=0)
                 else:
                     raise ValueError(
                         'rnn_type must be "lstm" or "gru" or "rnn".')
@@ -109,15 +107,20 @@ class RNNDecoder(chainer.Chain):
                 dec_state, dec_out = self.rnns[i_layer](
                     hx=dec_state, xs=dec_out)
 
+            # Dropout for hidden-hidden or hidden-output connection
+            if self.dropout > 0:
+                dec_out = [F.dropout(o, ratio=self.dropout) for o in dec_out]
+
             # Residual connection
             if self.residual or self.dense_residual:
-                if self.residual or self.dense_residual:
-                    for outputs_lower in res_outputs_list:
-                        dec_out = dec_out + outputs_lower
-                    if self.residual:
-                        res_outputs_list = [dec_out]
-                    elif self.dense_residual:
-                        res_outputs_list.append(dec_out)
+                for outputs_lower in res_outputs_list:
+                    dec_out = dec_out + outputs_lower
+                    dec_out = [o + o_l for o,
+                               o_l in zip(dec_out, outputs_lower)]
+                if self.residual:
+                    res_outputs_list = [dec_out]
+                elif self.dense_residual:
+                    res_outputs_list.append(dec_out)
 
         # Concatenate
         dec_out = F.pad_sequence(dec_out, padding=-1)

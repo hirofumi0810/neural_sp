@@ -67,11 +67,19 @@ class TestCTC(unittest.TestCase):
         print('  label_smoothing: %s' % str(label_smoothing))
         print('==================================================')
 
-        if conv:
-            conv_channels = [32, 32]
-            conv_kernel_sizes = [[41, 11], [21, 11]]
-            conv_strides = [[2, 2], [2, 1]]
-            poolings = [[], []]
+        if conv or encoder_type == 'cnn':
+            # pattern 1
+            # conv_channels = [32, 32]
+            # conv_kernel_sizes = [[41, 11], [21, 11]]
+            # conv_strides = [[2, 2], [2, 1]]
+            # poolings = [[], []]
+
+            # pattern 2 (VGG like)
+            conv_channels = [64, 64]
+            conv_kernel_sizes = [[3, 3], [3, 3]]
+            conv_strides = [[1, 1], [1, 1]]
+            poolings = [[2, 2], [2, 2]]
+
             fc_list = [786, 786]
         else:
             conv_channels = []
@@ -104,8 +112,9 @@ class TestCTC(unittest.TestCase):
             num_layers=3,
             num_layers_sub=2,
             fc_list=fc_list,
-            dropout=0.1,
-            main_loss_weight=0.5,
+            dropout_input=0.1,
+            dropout_encoder=0.1,
+            main_loss_weight=0.8,
             num_classes=num_classes,
             num_classes_sub=num_classes_sub,
             parameter_init_distribution='uniform',
@@ -122,8 +131,8 @@ class TestCTC(unittest.TestCase):
             batch_norm=batch_norm,
             label_smoothing_prob=0.1 if label_smoothing else 0,
             weight_noise_std=0,
-            residual=residual,
-            dense_residual=dense_residual)
+            encoder_residual=residual,
+            encoder_dense_residual=dense_residual)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):

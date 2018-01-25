@@ -102,9 +102,12 @@ class CNNEncoder(nn.Module):
             if batch_norm:
                 layers.append(nn.BatchNorm2d(conv_channels[i_layer]))
 
-            # Dropout
+            # Dropout for hidden-hidden connection
             layers.append(nn.Dropout(p=dropout_hidden))
             # TODO: compare BN before ReLU and after ReLU
+
+            # TODO: try this
+            # layers.append(nn.Dropout2d(p=dropout_hidden))
 
             in_c = conv_channels[i_layer]
 

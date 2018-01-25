@@ -85,11 +85,18 @@ class TestHierarchicalAttention(unittest.TestCase):
         print('  curriculum_training: %s' % str(curriculum_training))
         print('==================================================')
 
-        if conv:
-            conv_channels = [32, 32]
-            conv_kernel_sizes = [[41, 11], [21, 11]]
-            conv_strides = [[2, 2], [2, 1]]
-            poolings = [[], []]
+        if conv or encoder_type == 'cnn':
+            # pattern 1
+            # conv_channels = [32, 32]
+            # conv_kernel_sizes = [[41, 11], [21, 11]]
+            # conv_strides = [[2, 2], [2, 1]]
+            # poolings = [[], []]
+
+            # pattern 2 (VGG like)
+            conv_channels = [64, 64]
+            conv_kernel_sizes = [[3, 3], [3, 3]]
+            conv_strides = [[1, 1], [1, 1]]
+            poolings = [[2, 2], [2, 2]]
         else:
             conv_channels = []
             conv_kernel_sizes = []
@@ -119,7 +126,6 @@ class TestHierarchicalAttention(unittest.TestCase):
             encoder_num_proj=256 if projection else 0,
             encoder_num_layers=3,
             encoder_num_layers_sub=2,
-            encoder_dropout=0.1,
             attention_type=attention_type,
             attention_dim=128,
             decoder_type=decoder_type,
@@ -127,10 +133,13 @@ class TestHierarchicalAttention(unittest.TestCase):
             decoder_num_layers=2,
             decoder_num_units_sub=256,
             decoder_num_layers_sub=1,
-            decoder_dropout=0.1,
             embedding_dim=64,
             embedding_dim_sub=32,
-            main_loss_weight=0.5,
+            dropout_input=0.1,
+            dropout_encoder=0.1,
+            dropout_decoder=0.1,
+            dropout_embedding=0.1,
+            main_loss_weight=0.8,
             num_classes=num_classes,
             num_classes_sub=num_classes_sub,
             parameter_init_distribution='uniform',

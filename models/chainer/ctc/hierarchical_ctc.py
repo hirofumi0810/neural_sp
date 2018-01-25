@@ -33,7 +33,8 @@ class HierarchicalCTC(CTC):
         num_layers (int): the number of layers of the encoder of the main task
         num_layers_sub (int): the number of layers of the encoder of the sub task
         fc_list (list):
-        dropout (float): the probability to drop nodes
+        dropout_input (float): the probability to drop nodes in input-hidden connection
+        dropout_encoder (float): the probability to drop nodes in hidden-hidden connection
         main_loss_weight (float): A weight parameter for the main CTC loss
         num_classes (int): the number of classes of target labels of the main task
             (excluding the blank class)
@@ -76,7 +77,8 @@ class HierarchicalCTC(CTC):
                  num_layers,
                  num_layers_sub,  # ***
                  fc_list,
-                 dropout,
+                 dropout_input,
+                 dropout_encoder,
                  main_loss_weight,  # ***
                  num_classes,
                  num_classes_sub,  # ***
@@ -107,7 +109,8 @@ class HierarchicalCTC(CTC):
             num_units=num_units,
             num_proj=num_proj,
             num_layers=num_layers,
-            dropout=dropout,
+            dropout_input=dropout_input,
+            dropout_encoder=dropout_encoder,
             num_classes=num_classes,
             parameter_init=parameter_init,
             subsample_list=subsample_list,
@@ -141,7 +144,8 @@ class HierarchicalCTC(CTC):
                     num_proj=num_proj,
                     num_layers=num_layers,
                     num_layers_sub=num_layers_sub,
-                    dropout=dropout,
+                    dropout_input=dropout_input,
+                    dropout_hidden=dropout_encoder,
                     subsample_list=subsample_list,
                     subsample_type=subsample_type,
                     use_cuda=self.use_cuda,
@@ -183,7 +187,7 @@ class HierarchicalCTC(CTC):
     def __call__(self, xs, ys, ys_sub, x_lens, y_lens, y_lens_sub, is_eval=False):
         """Forward computation.
         Args:
-            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            xs (list of np.ndarray): A tensor of size `[B, T_in, input_size]`
             ys (np.ndarray): A tensor of size `[B, T_out]`
             ys_sub (np.ndarray): A tensor of size `[B, T_out_sub]`
             x_lens (list or np.ndarray): A tensor of size `[B]`
@@ -204,11 +208,11 @@ class HierarchicalCTC(CTC):
                 loss_main = loss_main.data
                 loss_sub = loss_sub.data
         else:
-            loss. loss_main, loss_sub = self._forward(
+            loss, loss_main, loss_sub = self._forward(
                 xs, ys, ys_sub, x_lens, y_lens, y_lens_sub)
             # TODO: Gaussian noise injection
 
-        return loss. loss_main, loss_sub
+        return loss, loss_main, loss_sub
 
     def _forward(self, xs, ys, ys_sub, x_lens, y_lens, y_lens_sub):
         # Wrap by Variable
@@ -277,7 +281,7 @@ class HierarchicalCTC(CTC):
         # TODO: Label smoothing (with uniform distribution)
 
         # Compute total loss
-        loss_main = loss_main self.main_loss_weight
+        loss_main = loss_main * self.main_loss_weight
         loss_sub = loss_sub * (1 - self.main_loss_weight)
         loss = loss_main + loss_sub
 

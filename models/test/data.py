@@ -33,43 +33,44 @@ def _read_text(trans_path):
 
 def generate_data(model_type, label_type='char', batch_size=1,
                   num_stack=1, splice=1, backend='pytorch'):
-    """
+    """Generate dataset for unit test.
     Args:
         model_type (string): ctc or attention
         label_type (string, optional): char or word or word_char
         batch_size (int): the size of mini-batch
         splice (int): frames to splice. Default is 1 frame.
+        backend (string, optional): pytorch or chainer
     Returns:
-        inputs (np.ndarray or list): A tensor of size `[B, T, input_size]`
-        labels: `[B, max_label_seq_len]`
-        inputs_seq_len (np.ndarray or list): A tensor of size `[B]`
-        labels_seq_len: A tensor of size `[B]`
+        xs (np.ndarray): A tensor of size `[B, T, input_size]`
+        ys (np.ndarray): `[B, max_label_seq_len]`
+        x_lens (np.ndarray): A tensor of size `[B]`
+        y_lens (np.ndarray): A tensor of size `[B]`
     """
     # Make input data
-    inputs, inputs_seq_len = wav2feature(
+    _xs, x_lens = wav2feature(
         ['../../sample/LDC93S1.wav'] * batch_size,
         feature_type='logfbank', feature_dim=40,
         energy=False, delta1=True, delta2=True, dtype=np.float32)
 
-    max_frame_num = math.ceil(inputs_seq_len[0] / num_stack)
+    max_frame_num = math.ceil(x_lens[0] / num_stack)
     if backend == 'pytorch':
-        inputs_new = np.zeros((batch_size, max_frame_num, inputs.shape[-1] * num_stack * splice),
-                              dtype=np.float32)
+        xs = np.zeros((batch_size, max_frame_num, _xs.shape[-1] * num_stack * splice),
+                      dtype=np.float32)
     elif backend == 'chainer':
-        inputs_new = [None] * batch_size
+        xs = [None] * batch_size
 
     for i, i_batch in enumerate(range(batch_size)):
         # Frame stacking
         data_i = stack_frame(
-            inputs[i_batch], num_stack=num_stack, num_skip=num_stack,
+            _xs[i_batch], num_stack=num_stack, num_skip=num_stack,
             dtype=np.float32)
 
         # Splice
         data_i = do_splice(data_i, splice=splice, num_stack=num_stack,
                            dtype=np.float32)
 
-        inputs_new[i_batch] = data_i
-        inputs_seq_len[i_batch] = len(data_i)
+        xs[i_batch] = data_i
+        x_lens[i_batch] = len(data_i)
 
     # Make transcripts
     trans = _read_text('../../sample/LDC93S1.txt')
@@ -77,18 +78,16 @@ def generate_data(model_type, label_type='char', batch_size=1,
     if label_type == 'char':
         if model_type == 'attention':
             trans = SOS + trans + EOS
-        labels = np.array([char2idx(trans)] * batch_size, dtype=np.int32)
-        labels_seq_len = np.array(
-            [len(char2idx(trans))] * batch_size, dtype=np.int32)
-        return inputs_new, labels, inputs_seq_len, labels_seq_len
+        ys = np.array([char2idx(trans)] * batch_size, dtype=np.int32)
+        y_lens = np.array([len(char2idx(trans))] * batch_size, dtype=np.int32)
+        return xs, ys, x_lens, y_lens
 
     elif label_type == 'word':
         if model_type == 'attention':
             trans = SOS + SPACE + trans + SPACE + EOS
-        labels = np.array([word2idx(trans)] * batch_size, dtype=np.int32)
-        labels_seq_len = np.array(
-            [len(word2idx(trans))] * batch_size, dtype=np.int32)
-        return inputs_new, labels, inputs_seq_len, labels_seq_len
+        ys = np.array([word2idx(trans)] * batch_size, dtype=np.int32)
+        y_lens = np.array([len(word2idx(trans))] * batch_size, dtype=np.int32)
+        return xs, ys, x_lens, y_lens
 
     elif label_type == 'word_char':
         if model_type == 'attention':
@@ -97,14 +96,13 @@ def generate_data(model_type, label_type='char', batch_size=1,
         elif model_type == 'ctc':
             trans_word = trans
             trans_char = trans
-        labels = np.array([word2idx(trans_word)] * batch_size, dtype=np.int32)
-        labels_sub = np.array(
-            [char2idx(trans_char)] * batch_size, dtype=np.int32)
-        labels_seq_len = np.array(
+        ys = np.array([word2idx(trans_word)] * batch_size, dtype=np.int32)
+        ys_sub = np.array([char2idx(trans_char)] * batch_size, dtype=np.int32)
+        y_lens = np.array(
             [len(word2idx(trans_word))] * batch_size, dtype=np.int32)
         labels_seq_len_sub = np.array(
             [len(char2idx(trans_char))] * batch_size, dtype=np.int32)
-        return inputs_new, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub
+        return xs, ys, ys_sub, x_lens, y_lens, labels_seq_len_sub
 
     else:
         raise NotImplementedError

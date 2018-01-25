@@ -35,7 +35,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  encoder_num_proj,
                  encoder_num_layers,
                  encoder_num_layers_sub,  # ***
-                 encoder_dropout,
                  attention_type,
                  attention_dim,
                  decoder_type,
@@ -43,9 +42,12 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  decoder_num_layers,
                  decoder_num_units_sub,  # ***
                  decoder_num_layers_sub,  # ***
-                 decoder_dropout,
                  embedding_dim,
                  embedding_dim_sub,  # ***
+                 dropout_input,
+                 dropout_encoder,
+                 dropout_decoder,
+                 dropout_embedding,
                  main_loss_weight,  # ***
                  num_classes,
                  num_classes_sub,  # ***
@@ -88,14 +90,16 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             encoder_num_units=encoder_num_units,
             encoder_num_proj=encoder_num_proj,
             encoder_num_layers=encoder_num_layers,
-            encoder_dropout=encoder_dropout,
             attention_type=attention_type,
             attention_dim=attention_dim,
             decoder_type=decoder_type,
             decoder_num_units=decoder_num_units,
             decoder_num_layers=decoder_num_layers,
-            decoder_dropout=decoder_dropout,
             embedding_dim=embedding_dim,
+            dropout_input=dropout_input,
+            dropout_encoder=dropout_encoder,
+            dropout_decoder=dropout_decoder,
+            dropout_embedding=dropout_embedding,
             num_classes=num_classes,
             parameter_init=parameter_init,
             subsample_list=subsample_list,
@@ -159,7 +163,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 num_proj=encoder_num_proj,
                 num_layers=encoder_num_layers,
                 num_layers_sub=encoder_num_layers_sub,
-                dropout=encoder_dropout,
+                dropout_input=dropout_input,
+                dropout_hidden=dropout_encoder,
                 subsample_list=subsample_list,
                 subsample_type=subsample_type,
                 use_cuda=self.use_cuda,
@@ -193,7 +198,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 rnn_type=decoder_type,
                 num_units=decoder_num_units_sub,
                 num_layers=decoder_num_layers_sub,
-                dropout=decoder_dropout,
+                dropout=dropout_decoder,
                 use_cuda=self.use_cuda,
                 residual=decoder_residual,
                 dense_residual=decoder_dense_residual)
@@ -218,22 +223,22 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 if encoder_bidirectional:
                     self.bridge_sub = LinearND(
                         encoder_num_units * 2, decoder_num_units_sub,
-                        dropout=decoder_dropout, use_cuda=self.use_cuda)
+                        dropout=dropout_encoder, use_cuda=self.use_cuda)
                 else:
                     self.bridge_sub = LinearND(
                         encoder_num_units, decoder_num_units_sub,
-                        dropout=decoder_dropout, use_cuda=self.use_cuda)
+                        dropout=dropout_encoder, use_cuda=self.use_cuda)
                 self.is_bridge_sub = True
 
             if self.decoder_input == 'embedding':
                 self.embed_sub = Embedding(num_classes=self.num_classes_sub,
                                            embedding_dim=embedding_dim_sub,
-                                           dropout=decoder_dropout,
+                                           dropout=dropout_embedding,
                                            use_cuda=self.use_cuda)
 
             self.proj_layer_sub = LinearND(
                 decoder_num_units_sub * 2, decoder_num_units_sub,
-                dropout=decoder_dropout, use_cuda=self.use_cuda)
+                dropout=dropout_decoder, use_cuda=self.use_cuda)
             self.fc_sub = LinearND(
                 decoder_num_units_sub, self.num_classes_sub - 1,
                 use_cuda=self.use_cuda)
@@ -279,7 +284,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
     def __call__(self, xs, ys, ys_sub, x_lens, y_lens, y_lens_sub, is_eval=False):
         """Forward computation.
         Args:
-            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            xs (list of np.ndarray): A tensor of size `[B, T_in, input_size]`
             ys (np.ndarray): A tensor of size `[B, T_out]`
             ys_sub (np.ndarray): A tensor of size `[B, T_out_sub]`
             x_lens (np.ndarray): A tensor of size `[B]`
@@ -300,7 +305,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 loss_main = loss_main.data
                 loss_sub = loss_sub.data
         else:
-            loss. loss_main, loss_sub = self._forward(
+            loss, loss_main, loss_sub = self._forward(
                 xs, ys, ys_sub, x_lens, y_lens, y_lens_sub)
             # TODO: Gaussian noise injection
 
@@ -326,7 +331,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     self.ctc_loss_weight_sub,
                     0.95 - (1 - self.ctc_loss_weight_sub) / self.sample_ramp_max_step * self._step)
 
-        return loss. loss_main, loss_sub
+        return loss, loss_main, loss_sub
 
     def _forward(self, xs, ys, ys_sub, x_lens, y_lens, y_lens_sub):
         # Wrap by Variable
@@ -422,7 +427,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         ##################################################
         # Sub task (CTC)
         ##################################################
-        # if self.ctc_loss_weight_sub > 0:
+        if self.ctc_loss_weight_sub > 0:
             ctc_loss_sub = self.compute_ctc_loss(
                 xs_sub, ys_sub, x_lens_sub, y_lens_sub, is_sub_task=True)
 
@@ -438,7 +443,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                max_decode_len, is_sub_task=False):
         """Decoding in the inference stage.
         Args:
-            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            xs (list of np.ndarray): A tensor of size `[B, T_in, input_size]`
             x_lens (np.ndarray): A tensor of size `[B]`
             beam_width (int): the size of beam
             max_decode_len (int): the length of output sequences

@@ -36,7 +36,8 @@ class CTC(ModelBase):
         num_proj (int): the number of nodes in recurrent projection layer
         num_layers (int): the number of layers of the encoder
         fc_list (list):
-        dropout (float): the probability to drop nodes
+        dropout_input (float): the probability to drop nodes in input-hidden connection
+        dropout_encoder (float): the probability to drop nodes in hidden-hidden connection
         num_classes (int): the number of classes of target labels
             (excluding the blank class)
         parameter_init_distribution (string, optional): uniform or normal or
@@ -75,7 +76,8 @@ class CTC(ModelBase):
                  num_proj,
                  num_layers,
                  fc_list,
-                 dropout,
+                 dropout_input,
+                 dropout_encoder,
                  num_classes,
                  parameter_init_distribution='uniform',
                  parameter_init=0.1,
@@ -128,7 +130,8 @@ class CTC(ModelBase):
                     num_units=num_units,
                     num_proj=num_proj,
                     num_layers=num_layers,
-                    dropout=dropout,
+                    dropout_input=dropout_input,
+                    dropout_hidden=dropout_encoder,
                     subsample_list=subsample_list,
                     subsample_type=subsample_type,
                     use_cuda=self.use_cuda,
@@ -151,7 +154,8 @@ class CTC(ModelBase):
                     conv_kernel_sizes=conv_kernel_sizes,
                     conv_strides=conv_strides,
                     poolings=poolings,
-                    dropout=dropout,
+                    dropout_input=dropout_input,
+                    dropout_hidden=dropout_encoder,
                     use_cuda=self.use_cuda,
                     activation=activation,
                     batch_norm=batch_norm)
@@ -172,7 +176,7 @@ class CTC(ModelBase):
                         # TODO: to_gpu()
                         self.fc_layers.append(
                             LinearND(bottle_input_size, fc_list[i],
-                                     dropout=dropout, use_cuda=self.use_cuda))
+                                     dropout=dropout_encoder, use_cuda=self.use_cuda))
                     else:
                         # if batch_norm:
                         #     self.fc_layers.append(
@@ -180,7 +184,7 @@ class CTC(ModelBase):
                         # TODO: to_gpu()
                         self.fc_layers.append(
                             LinearND(fc_list[i - 1], fc_list[i],
-                                     dropout=dropout, use_cuda=self.use_cuda))
+                                     dropout=dropout_encoder, use_cuda=self.use_cuda))
                 # TODO: remove a bias term in the case of batch normalization
 
                 self.fc = LinearND(fc_list[-1], self.num_classes,
@@ -215,7 +219,7 @@ class CTC(ModelBase):
     def __call__(self, xs, ys, x_lens, y_lens, is_eval=False):
         """Forward computation.
         Args:
-            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            xs (list of np.ndarray): A tensor of size `[B, T_in, input_size]`
             ys (np.ndarray): A tensor of size `[B, T_out]`
             x_lens (np.ndarray): A tensor of size `[B]`
             y_lens (np.ndarray): A tensor of size `[B]`

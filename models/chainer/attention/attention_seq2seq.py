@@ -37,15 +37,18 @@ class AttentionSeq2seq(ModelBase):
         encoder_num_units (int): the number of units in each layer of the encoder
         encoder_num_proj (int): the number of nodes in the projection layer of the encoder
         encoder_num_layers (int): the number of layers of the encoder
-        encoder_dropout (float): the probability to drop nodes of the encoder
         attention_type (string): the type of attention
         attention_dim: (int) the dimension of the attention layer
         decoder_type (string): lstm or gru
         decoder_num_units (int): the number of units in each layer of the decoder
         decoder_num_layers (int): the number of layers of the decoder
-        decoder_dropout (float): the probability to drop nodes of the decoder
         embedding_dim (int): the dimension of the embedding in target spaces.
             0 means that decoder inputs are represented by one-hot vectors.
+        dropout_input (float): the probability to drop nodes in input-hidden connection
+        dropout_encoder (float): the probability to drop nodes in hidden-hidden
+            connection of the encoder
+        dropout_decoder (float): the probability to drop nodes of the decoder
+        dropout_embedding (float): the probability to drop nodes of the embedding layer
         num_classes (int): the number of nodes in softmax layer
             (excluding <SOS> and <EOS> classes)
         parameter_init_distribution (string, optional): uniform or normal or
@@ -106,14 +109,16 @@ class AttentionSeq2seq(ModelBase):
                  encoder_num_units,
                  encoder_num_proj,
                  encoder_num_layers,
-                 encoder_dropout,
                  attention_type,
                  attention_dim,
                  decoder_type,
                  decoder_num_units,
                  decoder_num_layers,
-                 decoder_dropout,
                  embedding_dim,
+                 dropout_input,
+                 dropout_encoder,
+                 dropout_decoder,
+                 dropout_embedding,
                  num_classes,
                  parameter_init_distribution='uniform',
                  parameter_init=0.1,
@@ -216,7 +221,8 @@ class AttentionSeq2seq(ModelBase):
                     num_units=encoder_num_units,
                     num_proj=encoder_num_proj,
                     num_layers=encoder_num_layers,
-                    dropout=encoder_dropout,
+                    dropout_input=dropout_input,
+                    dropout_hidden=dropout_encoder,
                     subsample_list=subsample_list,
                     subsample_type=subsample_type,
                     use_cuda=self.use_cuda,
@@ -239,7 +245,8 @@ class AttentionSeq2seq(ModelBase):
                     conv_kernel_sizes=conv_kernel_sizes,
                     conv_strides=conv_strides,
                     poolings=poolings,
-                    dropout=encoder_dropout,
+                    dropout_input=dropout_input,
+                    dropout_hidden=dropout_encoder,
                     use_cuda=self.use_cuda,
                     activation=activation,
                     batch_norm=batch_norm)
@@ -264,7 +271,7 @@ class AttentionSeq2seq(ModelBase):
                 rnn_type=decoder_type,
                 num_units=decoder_num_units,
                 num_layers=decoder_num_layers,
-                dropout=decoder_dropout,
+                dropout=dropout_decoder,
                 use_cuda=self.use_cuda,
                 residual=decoder_residual,
                 dense_residual=decoder_dense_residual)
@@ -289,15 +296,15 @@ class AttentionSeq2seq(ModelBase):
                 if encoder_type == 'cnn':
                     self.bridge = LinearND(
                         self.encoder.output_size, decoder_num_units,
-                        dropout=decoder_dropout, use_cuda=self.use_cuda)
+                        dropout=dropout_encoder, use_cuda=self.use_cuda)
                 elif encoder_bidirectional:
                     self.bridge = LinearND(
                         encoder_num_units * 2, decoder_num_units,
-                        dropout=decoder_dropout, use_cuda=self.use_cuda)
+                        dropout=dropout_encoder, use_cuda=self.use_cuda)
                 else:
                     self.bridge = LinearND(
                         encoder_num_units, decoder_num_units,
-                        dropout=decoder_dropout, use_cuda=self.use_cuda)
+                        dropout=dropout_encoder, use_cuda=self.use_cuda)
                 self.is_bridge = True
             else:
                 self.is_bridge = False
@@ -305,12 +312,12 @@ class AttentionSeq2seq(ModelBase):
             if self.decoder_input == 'embedding':
                 self.embed = Embedding(num_classes=self.num_classes,
                                        embedding_dim=embedding_dim,
-                                       dropout=decoder_dropout,
+                                       dropout=dropout_embedding,
                                        use_cuda=self.use_cuda)
 
             self.proj_layer = LinearND(
                 decoder_num_units * 2, decoder_num_units,
-                dropout=decoder_dropout, use_cuda=self.use_cuda)
+                dropout=dropout_decoder, use_cuda=self.use_cuda)
             self.fc = LinearND(decoder_num_units, self.num_classes - 1,
                                use_cuda=self.use_cuda)
             # NOTE: <SOS> is removed because the decoder never predict <SOS>
@@ -357,7 +364,7 @@ class AttentionSeq2seq(ModelBase):
                  is_eval=False):
         """Forward computation.
         Args:
-            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            xs (list of np.ndarray): A tensor of size `[B, T_in, input_size]`
             ys (np.ndarray): A tensor of size `[B, T_out]`
             x_lens (list or np.ndarray): A tensor of size `[B]`
             y_lens (np.ndarray): A tensor of size `[B]`
@@ -537,10 +544,10 @@ class AttentionSeq2seq(ModelBase):
         dec_state = self._init_decoder_state(enc_out)
 
         # Initialize attention weights
-        # att_weights_step = Variable(
-        #     xp.zeros((batch_size, max_time), dtype=np.float32))
         att_weights_step = Variable(
-            xp.ones((batch_size, max_time), dtype=np.float32)) / max_time
+            xp.zeros((batch_size, max_time), dtype=np.float32))
+        # att_weights_step = Variable(
+        #     xp.ones((batch_size, max_time), dtype=np.float32)) / max_time
         # NOTE: with uniform distribution
 
         # Initialize context vector
@@ -680,7 +687,7 @@ class AttentionSeq2seq(ModelBase):
     def attention_weights(self, xs, x_lens, max_decode_len=100, is_sub_task=False):
         """Get attention weights for visualization.
         Args:
-            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            xs (list of np.ndarray): A tensor of size `[B, T_in, input_size]`
             x_lens (np.ndarray): A tensor of size `[B]`
             max_decode_len (int, optional): the length of output sequences
                 to stop prediction when EOS token have not been emitted
@@ -714,7 +721,7 @@ class AttentionSeq2seq(ModelBase):
     def decode(self, xs, x_lens, beam_width=1, max_decode_len=100):
         """Decoding in the inference stage.
         Args:
-            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            xs (list of np.ndarray): A tensor of size `[B, T_in, input_size]`
             x_lens (np.ndarray): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
             max_decode_len (int, optional): the length of output sequences
@@ -758,10 +765,10 @@ class AttentionSeq2seq(ModelBase):
         dec_state = self._init_decoder_state(enc_out)
 
         # Initialize attention weights
-        # att_weights_step = Variable(
-        #     xp.zeros((batch_size, max_time), dtype=np.float32))
         att_weights_step = Variable(
-            xp.ones((batch_size, max_time), dtype=np.float32)) / max_time
+            xp.zeros((batch_size, max_time), dtype=np.float32))
+        # att_weights_step = Variable(
+        #     xp.ones((batch_size, max_time), dtype=np.float32)) / max_time
         # NOTE: with uniform distribution
 
         # Initialize context vector
@@ -866,10 +873,10 @@ class AttentionSeq2seq(ModelBase):
                 enc_out[i_batch:i_batch + 1, :, :])
 
             # Initialize attention weights
-            # att_weights_step = Variable(
-            #     xp.zeros((1, max_time), dtype=np.float32))
             att_weights_step = Variable(
-                xp.ones((1, max_time), dtype=np.float32)) / max_time
+                xp.zeros((1, max_time), dtype=np.float32))
+            # att_weights_step = Variable(
+            #     xp.ones((1, max_time), dtype=np.float32)) / max_time
             # NOTE: with uniform distribution
 
             # Initialize context vector
@@ -976,7 +983,7 @@ class AttentionSeq2seq(ModelBase):
         """Decoding by the CTC layer in the inference stage.
             This is only used for Joint CTC-Attention model.
         Args:
-            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            xs (list of np.ndarray): A tensor of size `[B, T_in, input_size]`
             x_lens (np.ndarray): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
         Returns:

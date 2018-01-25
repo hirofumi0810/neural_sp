@@ -38,9 +38,9 @@ class TestCTC(unittest.TestCase):
 
         # Residual LSTM-CTC
         self.check(encoder_type='lstm', bidirectional=True,
-                   residual=True)
+                   encoder_residual=True)
         self.check(encoder_type='lstm', bidirectional=True,
-                   dense_residual=True)
+                   encoder_dense_residual=True)
 
         # CNN-CTC
         self.check(encoder_type='cnn')
@@ -71,7 +71,8 @@ class TestCTC(unittest.TestCase):
     def check(self, encoder_type, bidirectional=False, label_type='char',
               subsample=False,  projection=False,
               conv=False, batch_norm=False, activation='relu',
-              residual=False, dense_residual=False, label_smoothing=False):
+              encoder_residual=False, encoder_dense_residual=False,
+              label_smoothing=False):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
@@ -82,26 +83,24 @@ class TestCTC(unittest.TestCase):
         print('  conv: %s' % str(conv))
         print('  batch_norm: %s' % str(batch_norm))
         print('  activation: %s' % activation)
-        print('  residual: %s' % str(residual))
-        print('  dense_residual: %s' % str(dense_residual))
+        print('  encoder_residual: %s' % str(encoder_residual))
+        print('  encoder_dense_residual: %s' % str(encoder_dense_residual))
         print('  label_smoothing: %s' % str(label_smoothing))
         print('==================================================')
 
         if conv or encoder_type == 'cnn':
-            conv_channels = [32, 32]
-
             # pattern 1
-            conv_kernel_sizes = [[41, 11], [21, 11]]
-            conv_strides = [[2, 2], [2, 1]]
+            # conv_channels = [32, 32]
+            # conv_kernel_sizes = [[41, 11], [21, 11]]
+            # conv_strides = [[2, 2], [2, 1]]
+            # poolings = [[], []]
 
-            # pattern 2
-            # conv_kernel_sizes = [[8, 5], [8, 5]]
-            # conv_strides = [[2, 2], [1, 1]]
+            # pattern 2 (VGG like)
+            conv_channels = [64, 64]
+            conv_kernel_sizes = [[3, 3], [3, 3]]
+            conv_strides = [[1, 1], [1, 1]]
+            poolings = [[2, 2], [2, 2]]
 
-            poolings = [[], []]
-            # poolings = [[2, 2], [2, 2]]  # not working
-            # poolings = [[2, 2], []]
-            # poolings = [[], [2, 2]]
             fc_list = [786, 786]
         else:
             conv_channels = []
@@ -134,7 +133,8 @@ class TestCTC(unittest.TestCase):
             num_proj=256 if projection else 0,
             num_layers=2,
             fc_list=fc_list,
-            dropout=0.1,
+            dropout_input=0.1,
+            dropout_encoder=0.1,
             num_classes=num_classes,
             parameter_init_distribution='uniform',
             parameter_init=0.1,
@@ -151,8 +151,8 @@ class TestCTC(unittest.TestCase):
             batch_norm=batch_norm,
             label_smoothing_prob=0.1 if label_smoothing else 0,
             weight_noise_std=0,
-            residual=residual,
-            dense_residual=dense_residual)
+            encoder_residual=encoder_residual,
+            encoder_dense_residual=encoder_dense_residual)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):
