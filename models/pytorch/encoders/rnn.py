@@ -144,59 +144,80 @@ class RNNEncoder(nn.Module):
             input_size = input_size * splice * num_stack
             self.conv = None
 
-        for i_layer in range(num_layers):
-            if i_layer == 0:
-                encoder_input_size = input_size
-            elif self.num_proj > 0:
-                encoder_input_size = num_proj
-                if subsample_type == 'concat' and i_layer > 0 and self.subsample_list[i_layer - 1]:
-                    encoder_input_size *= 2
-            else:
-                encoder_input_size = num_units * self.num_directions
-                if subsample_type == 'concat' and i_layer > 0 and self.subsample_list[i_layer - 1]:
-                    encoder_input_size *= 2
+        # Fast implementation without using torch.nn.utils.rnn.PackedSequence
+        if sum(self.subsample_list) == 0 and self.num_proj == 0 and not residual and not dense_residual and num_layers_sub == 0:
+            self.fast_impl = True
 
-            if rnn_type == 'lstm':
-                rnn_i = nn.LSTM(encoder_input_size,
-                                hidden_size=num_units,
-                                num_layers=1,
-                                bias=True,
-                                batch_first=batch_first,
-                                dropout=0,
-                                bidirectional=bidirectional)
-
-            elif rnn_type == 'gru':
-                rnn_i = nn.GRU(encoder_input_size,
+            self.rnn = nn.LSTM(input_size,
                                hidden_size=num_units,
-                               num_layers=1,
+                               num_layers=num_layers,
                                bias=True,
                                batch_first=batch_first,
-                               dropout=0,
+                               dropout=dropout_hidden,
                                bidirectional=bidirectional)
-            elif rnn_type == 'rnn':
-                rnn_i = nn.RNN(encoder_input_size,
-                               hidden_size=num_units,
-                               num_layers=1,
-                               bias=True,
-                               batch_first=batch_first,
-                               dropout=0,
-                               bidirectional=bidirectional)
-            else:
-                raise ValueError('rnn_type must be "lstm" or "gru" or "rnn".')
+            # NOTE: pytorch introduces a dropout layer on the outputs of
+            # each RNN layer EXCEPT the last layer
 
-            if self.subsample_list[i_layer]:
-                setattr(self, 'p' + rnn_type + '_l' + str(i_layer), rnn_i)
-            else:
-                setattr(self, rnn_type + '_l' + str(i_layer), rnn_i)
+            # Dropout for hidden-output connection
+            self.dropout_last = nn.Dropout(p=dropout_hidden)
 
-            # Dropout for hidden-hidden or hidden-output connection
-            setattr(self, 'dropout_l' + str(i_layer),
-                    nn.Dropout(p=dropout_hidden))
+        else:
+            self.fast_impl = False
 
-            if i_layer != self.num_layers - 1 and self.num_proj > 0:
-                proj_i = LinearND(num_units * self.num_directions, num_proj,
-                                  dropout=dropout_hidden)
-                setattr(self, 'proj_l' + str(i_layer), proj_i)
+            for i_layer in range(num_layers):
+                if i_layer == 0:
+                    encoder_input_size = input_size
+                elif self.num_proj > 0:
+                    encoder_input_size = num_proj
+                    if subsample_type == 'concat' and i_layer > 0 and self.subsample_list[i_layer - 1]:
+                        encoder_input_size *= 2
+                else:
+                    encoder_input_size = num_units * self.num_directions
+                    if subsample_type == 'concat' and i_layer > 0 and self.subsample_list[i_layer - 1]:
+                        encoder_input_size *= 2
+
+                if rnn_type == 'lstm':
+                    rnn_i = nn.LSTM(encoder_input_size,
+                                    hidden_size=num_units,
+                                    num_layers=1,
+                                    bias=True,
+                                    batch_first=batch_first,
+                                    dropout=0,
+                                    bidirectional=bidirectional)
+
+                elif rnn_type == 'gru':
+                    rnn_i = nn.GRU(encoder_input_size,
+                                   hidden_size=num_units,
+                                   num_layers=1,
+                                   bias=True,
+                                   batch_first=batch_first,
+                                   dropout=0,
+                                   bidirectional=bidirectional)
+                elif rnn_type == 'rnn':
+                    rnn_i = nn.RNN(encoder_input_size,
+                                   hidden_size=num_units,
+                                   num_layers=1,
+                                   bias=True,
+                                   batch_first=batch_first,
+                                   dropout=0,
+                                   bidirectional=bidirectional)
+                else:
+                    raise ValueError(
+                        'rnn_type must be "lstm" or "gru" or "rnn".')
+
+                if self.subsample_list[i_layer]:
+                    setattr(self, 'p' + rnn_type + '_l' + str(i_layer), rnn_i)
+                else:
+                    setattr(self, rnn_type + '_l' + str(i_layer), rnn_i)
+
+                # Dropout for hidden-hidden or hidden-output connection
+                setattr(self, 'dropout_l' + str(i_layer),
+                        nn.Dropout(p=dropout_hidden))
+
+                if i_layer != self.num_layers - 1 and self.num_proj > 0:
+                    proj_i = LinearND(num_units * self.num_directions, num_proj,
+                                      dropout=dropout_hidden)
+                    setattr(self, 'proj_l' + str(i_layer), proj_i)
 
     def forward(self, xs, x_lens, volatile=False):
         """Forward computation.
@@ -232,15 +253,6 @@ class RNNEncoder(nn.Module):
         if self.conv is not None:
             xs, x_lens = self.conv(xs, x_lens)
 
-        # Initialize hidden states (and memory cells) per mini-batch
-        h_0 = _init_hidden(batch_size=batch_size,
-                           rnn_type=self.rnn_type,
-                           num_units=self.num_units,
-                           num_directions=self.num_directions,
-                           num_layers=1,
-                           use_cuda=use_cuda,
-                           volatile=volatile)
-
         # Sort xs by lengths in descending order
         x_lens, perm_idx = x_lens.sort(dim=0, descending=True)
         x_lens = var2np(x_lens).tolist()
@@ -251,83 +263,120 @@ class RNNEncoder(nn.Module):
             # Convert to the time-major
             xs = xs.transpose(0, 1).contiguous()
 
-        res_outputs_list = []
-        # NOTE: exclude residual connection from the raw inputs
-        for i_layer in range(self.num_layers):
+        if self.fast_impl:
+            # Initialize hidden states (and memory cells) per mini-batch
+            h_0 = _init_hidden(batch_size=batch_size,
+                               rnn_type=self.rnn_type,
+                               num_units=self.num_units,
+                               num_directions=self.num_directions,
+                               num_layers=self.num_layers,
+                               use_cuda=use_cuda,
+                               volatile=volatile)
 
-            # Pack i_layer-th encoder xs
+            # Pack encoder inputs
             if not isinstance(xs, torch.nn.utils.rnn.PackedSequence):
                 xs = pack_padded_sequence(
                     xs, x_lens, batch_first=self.batch_first)
 
             # Path through RNN
-            if self.subsample_list[i_layer]:
-                xs, _ = getattr(self, 'p' + self.rnn_type +
-                                '_l' + str(i_layer))(xs, hx=h_0)
-            else:
-                xs, _ = getattr(self, self.rnn_type + '_l' +
-                                str(i_layer))(xs, hx=h_0)
+            xs, _ = self.rnn(xs, hx=h_0)
 
-            # Unpack i_layer-th encoder outputs
+            # Unpack encoder outputs
             xs, unpacked_seq_len = pad_packed_sequence(
                 xs, batch_first=self.batch_first, padding_value=0)
             # assert x_lens == unpacked_seq_len
 
-            # Dropout for hidden-hidden or hidden-output connection
-            xs = getattr(self, 'dropout_l' + str(i_layer))(xs)
+            # Dropout for hidden-output connection
+            xs = self.dropout_last(xs)
 
-            # Pick up outputs in the sub task before the projection layer
-            if self.num_layers_sub >= 1 and i_layer == self.num_layers_sub - 1:
-                xs_sub = xs
+        else:
+            # Initialize hidden states (and memory cells) per mini-batch
+            h_0 = _init_hidden(batch_size=batch_size,
+                               rnn_type=self.rnn_type,
+                               num_units=self.num_units,
+                               num_directions=self.num_directions,
+                               num_layers=1,
+                               use_cuda=use_cuda,
+                               volatile=volatile)
 
-                # Wrap by Variable again
-                x_lens_sub = np2var(
-                    x_lens, dtype='int', use_cuda=use_cuda, backend='pytorch')
+            res_outputs_list = []
+            # NOTE: exclude residual connection from the raw inputs
+            for i_layer in range(self.num_layers):
 
-            # NOTE: Exclude the last layer
-            if i_layer != self.num_layers - 1:
-                if self.residual or self.dense_residual or self.num_proj > 0 or self.subsample_list[i_layer]:
+                # Pack i_layer-th encoder xs
+                if not isinstance(xs, torch.nn.utils.rnn.PackedSequence):
+                    xs = pack_padded_sequence(
+                        xs, x_lens, batch_first=self.batch_first)
 
-                    # Projection layer (affine transformation)
-                    if self.num_proj > 0:
-                        xs = F.tanh(getattr(self, 'proj_l' + str(i_layer))(xs))
+                # Path through RNN
+                if self.subsample_list[i_layer]:
+                    xs, _ = getattr(self, 'p' + self.rnn_type +
+                                    '_l' + str(i_layer))(xs, hx=h_0)
+                else:
+                    xs, _ = getattr(self, self.rnn_type + '_l' +
+                                    str(i_layer))(xs, hx=h_0)
 
-                    # Subsampling
-                    if self.subsample_list[i_layer]:
-                        # Pick up features at odd time step
-                        if self.subsample_type == 'drop':
+                # Unpack i_layer-th encoder outputs
+                xs, unpacked_seq_len = pad_packed_sequence(
+                    xs, batch_first=self.batch_first, padding_value=0)
+                # assert x_lens == unpacked_seq_len
+
+                # Dropout for hidden-hidden or hidden-output connection
+                xs = getattr(self, 'dropout_l' + str(i_layer))(xs)
+
+                # Pick up outputs in the sub task before the projection layer
+                if self.num_layers_sub >= 1 and i_layer == self.num_layers_sub - 1:
+                    xs_sub = xs
+
+                    # Wrap by Variable again
+                    x_lens_sub = np2var(
+                        x_lens, dtype='int', use_cuda=use_cuda, backend='pytorch')
+
+                # NOTE: Exclude the last layer
+                if i_layer != self.num_layers - 1:
+                    if self.residual or self.dense_residual or self.num_proj > 0 or self.subsample_list[i_layer]:
+
+                        # Projection layer (affine transformation)
+                        if self.num_proj > 0:
+                            xs = F.tanh(
+                                getattr(self, 'proj_l' + str(i_layer))(xs))
+
+                        # Subsampling
+                        if self.subsample_list[i_layer]:
+                            # Pick up features at odd time step
+                            if self.subsample_type == 'drop':
+                                if self.batch_first:
+                                    xs = xs[:, ::2, :]
+                                else:
+                                    xs = xs[::2, :, :]
+
+                            # Concatenate the successive frames
+                            elif self.subsample_type == 'concat':
+                                if self.batch_first:
+                                    xs = [torch.cat([xs[:, t - 1:t, :], xs[:, t:t + 1, :]], dim=2)
+                                          for t in range(xs.size(1)) if (t + 1) % 2 == 0]
+                                    xs = torch.cat(xs, dim=1)
+                                else:
+                                    xs = [torch.cat([xs[t - 1:t, :, :], xs[t:t + 1, :, :]], dim=2)
+                                          for t in range(xs.size(0)) if (t + 1) % 2 == 0]
+                                    xs = torch.cat(xs, dim=0)
+
+                            # Update x_lens
                             if self.batch_first:
-                                xs = xs[:, ::2, :]
+                                x_lens = [x.size(0) for x in xs]
                             else:
-                                xs = xs[::2, :, :]
+                                x_lens = [xs[:, i].size(0)
+                                          for i in range(xs.size(1))]
 
-                        # Concatenate the successive frames
-                        elif self.subsample_type == 'concat':
-                            if self.batch_first:
-                                xs = [torch.cat([xs[:, t - 1:t, :], xs[:, t:t + 1, :]], dim=2)
-                                      for t in range(xs.size(1)) if (t + 1) % 2 == 0]
-                                xs = torch.cat(xs, dim=1)
-                            else:
-                                xs = [torch.cat([xs[t - 1:t, :, :], xs[t:t + 1, :, :]], dim=2)
-                                      for t in range(xs.size(0)) if (t + 1) % 2 == 0]
-                                xs = torch.cat(xs, dim=0)
-
-                        # Update x_lens
-                        if self.batch_first:
-                            x_lens = [x.size(0) for x in xs]
-                        else:
-                            x_lens = [xs[:, i].size(0)
-                                      for i in range(xs.size(1))]
-
-                    # Residual connection
-                    elif self.residual or self.dense_residual:
-                        if i_layer >= self.residual_start_layer - 1:
-                            for xs_lower in res_outputs_list:
-                                xs = xs + xs_lower
-                            if self.residual:
-                                res_outputs_list = [xs]
-                            elif self.dense_residual:
-                                res_outputs_list.append(xs)
+                        # Residual connection
+                        elif self.residual or self.dense_residual:
+                            if i_layer >= self.residual_start_layer - 1:
+                                for xs_lower in res_outputs_list:
+                                    xs = xs + xs_lower
+                                if self.residual:
+                                    res_outputs_list = [xs]
+                                elif self.dense_residual:
+                                    res_outputs_list.append(xs)
 
         # Wrap by Variable again
         x_lens = np2var(
