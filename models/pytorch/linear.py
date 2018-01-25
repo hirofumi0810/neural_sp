@@ -34,9 +34,9 @@ class LinearND(nn.Module):
     def forward(self, xs):
         """Forward computation.
         Args:
-            xs ():
+            xs (Variable, float): A tensor of size `[B, T, input_dim]`
         Returns:
-
+            xs (Variable, float): A tensor of size `[B, T, size[-1]]`
         """
         size = list(xs.size())
         outputs = xs.contiguous().view(
@@ -69,9 +69,9 @@ class Embedding(nn.Module):
     def forward(self, y):
         """Forward computation.
         Args:
-            y (LongTensor): A tensor of size `[B, 1]`
+            y (Variable, long): A tensor of size `[B, 1]`
         Returns:
-            y (FloatTensor): A tensor of size `[B, 1, embedding_dim]`
+            y (Variable, float): A tensor of size `[B, 1, embedding_dim]`
         """
         y = self.embed(y)
         if self.dropout > 0:

@@ -91,15 +91,15 @@ class AttentionMechanism(nn.Module):
     def forward(self, enc_out, dec_out, att_weights_step):
         """Forward computation.
         Args:
-            enc_out (FloatTensor): A tensor of size
+            enc_out (Variable, float): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            dec_out (FloatTensor): A tensor of size
+            dec_out (Variable, float): A tensor of size
                 `[B, 1, decoder_num_units]`
-            att_weights_step (FloatTensor): A tensor of size `[B, T_in]`
+            att_weights_step (Variable, float): A tensor of size `[B, T_in]`
         Returns:
-            context_vec (FloatTensor): A tensor of size
+            context_vec (Variable, float): A tensor of size
                 `[B, 1, encoder_num_units]`
-            att_weights_step (FloatTensor): A tensor of size `[B, T_in]`
+            att_weights_step (Variable, float): A tensor of size `[B, T_in]`
         """
         batch_size, max_time = enc_out.size()[:2]
 

@@ -224,7 +224,7 @@ class CTC(ModelBase):
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (FloatTensor or float): A tensor of size `[1]`
+            loss (Variable(float) or float): A tensor of size `[1]`
         """
         # Wrap by Variable
         xs = np2var(inputs, use_cuda=self.use_cuda, backend='pytorch')
@@ -272,7 +272,7 @@ class CTC(ModelBase):
         if self.label_smoothing_prob > 0:
             batch_size, label_num, num_classes = logits.size()
             log_probs = F.log_softmax(logits, dim=-1)
-            uniform = Variable(torch.FloatTensor(
+            uniform = Variable(torch.Variable, float(
                 batch_size, label_num, num_classes).fill_(np.log(1 / num_classes)))
             loss = loss * (1 - self.label_smoothing_prob) + F.kl_div(
                 log_probs.cpu(), uniform,
@@ -289,19 +289,19 @@ class CTC(ModelBase):
     def _encode(self, xs, x_lens, volatile, is_multi_task=False):
         """Encode acoustic features.
         Args:
-            xs (FloatTensor): A tensor of size `[B, T, input_size]`
-            x_lens (IntTensor): A tensor of size `[B]`
+            xs (Variable, float): A tensor of size `[B, T, input_size]`
+            x_lens (Variable, int): A tensor of size `[B]`
             volatile (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
             is_multi_task (bool, optional):
         Returns:
-            logits (FloatTensor): A tensor of size
+            logits (Variable, float): A tensor of size
                 `[B, T, num_classes (including the blank class)]`
-            x_lens (IntTensor): A tensor of size `[B]`
-            logits_sub (FloatTensor): A tensor of size
+            x_lens (Variable, int): A tensor of size `[B]`
+            logits_sub (Variable, float): A tensor of size
                 `[B, T, num_classes_sub (including the blank class)]`
-            x_lens_sub (IntTensor): A tensor of size `[B]`
-            perm_idx (LongTensor):
+            x_lens_sub (Variable, int): A tensor of size `[B]`
+            perm_idx (Variable, long):
         """
         if is_multi_task:
             xs, x_lens, xs_sub, x_lens_sub, perm_idx = self.encoder(
@@ -416,8 +416,7 @@ class CTC(ModelBase):
 
         # Permutate indices to the original order
         if perm_idx is not None:
-            perm_idx = var2np(perm_idx)
-            best_hyps = best_hyps[perm_idx]
+            best_hyps = best_hyps[var2np(perm_idx, backend='pytorch')]
 
         return best_hyps
 
@@ -452,8 +451,8 @@ class CTC(ModelBase):
 def _concatenate_labels(ys, y_lens):
     """Concatenate all labels in mini-batch and convert to a 1D tensor.
     Args:
-        ys (LongTensor): A tensor of size `[B, T_out]`
-        y_lens (IntTensor): A tensor of size `[B]`
+        ys (Variable, long): A tensor of size `[B, T_out]`
+        y_lens (Variable, int): A tensor of size `[B]`
     Returns:
         concatenated_labels (): A tensor of size `[all_label_num]`
     """

@@ -199,9 +199,9 @@ class HierarchicalCTC(CTC):
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (FloatTensor or float): A tensor of size `[1]`
-            loss_main (FloatTensor or float): A tensor of size `[1]`
-            loss_sub (FloatTensor or float): A tensor of size `[1]`
+            loss (Variable(float) or float): A tensor of size `[1]`
+            loss_main (Variable(float) or float): A tensor of size `[1]`
+            loss_sub (Variable(float) or float): A tensor of size `[1]`
         """
         # Wrap by Variable
         xs = np2var(inputs, use_cuda=self.use_cuda, backend='pytorch')

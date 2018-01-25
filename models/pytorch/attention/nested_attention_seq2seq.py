@@ -333,9 +333,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (FloatTensor): A tensor of size `[1]`
-            xe_loss_main (FloatTensor): A tensor of size `[1]`
-            xe_loss_sub (FloatTensor): A tensor of size `[1]`
+            loss (Variable(float) or float): A tensor of size `[1]`
+            xe_loss_main (Variable(float) or float): A tensor of size `[1]`
+            xe_loss_sub (Variable(float) or float): A tensor of size `[1]`
         """
         # Wrap by Variable
         xs = np2var(xs, use_cuda=self.use_cuda, backend='pytorch')

@@ -155,8 +155,7 @@ class TestAttention(unittest.TestCase):
             label_type=label_type,
             batch_size=2,
             num_stack=num_stack,
-            splice=splice,
-            backend='pytorch')
+            splice=splice)
 
         if label_type == 'char':
             num_classes = 27

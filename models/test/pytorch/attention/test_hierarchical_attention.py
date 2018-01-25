@@ -109,8 +109,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             label_type='word_char',
             batch_size=2,
             num_stack=num_stack,
-            splice=splice,
-            backend='pytorch')
+            splice=splice)
 
         num_classes = 11
         num_classes_sub = 27

@@ -42,9 +42,9 @@ class TestCTC(unittest.TestCase):
 
         # Residual LSTM-CTC
         self.check(encoder_type='lstm', bidirectional=True,
-                   residual=True)
+                   encoder_residual=True)
         self.check(encoder_type='lstm', bidirectional=True,
-                   dense_residual=True)
+                   encoder_dense_residual=True)
 
         # CLDNN-CTC
         self.check(encoder_type='lstm', bidirectional=True,
@@ -58,7 +58,8 @@ class TestCTC(unittest.TestCase):
     def check(self, encoder_type, bidirectional=False,
               subsample=False, projection=False,
               conv=False, batch_norm=False,
-              residual=False, dense_residual=False, label_smoothing=False):
+              encoder_residual=False, encoder_dense_residual=False,
+              label_smoothing=False):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
@@ -67,8 +68,8 @@ class TestCTC(unittest.TestCase):
         print('  subsample: %s' % str(subsample))
         print('  conv: %s' % str(conv))
         print('  batch_norm: %s' % str(batch_norm))
-        print('  residual: %s' % str(residual))
-        print('  dense_residual: %s' % str(dense_residual))
+        print('  encoder_residual: %s' % str(encoder_residual))
+        print('  encoder_dense_residual: %s' % str(encoder_dense_residual))
         print('  label_smoothing: %s' % str(label_smoothing))
         print('==================================================')
 
@@ -93,8 +94,7 @@ class TestCTC(unittest.TestCase):
             label_type='word_char',
             batch_size=2,
             num_stack=num_stack,
-            splice=splice,
-            backend='pytorch')
+            splice=splice)
 
         num_classes = 11
         num_classes_sub = 27
@@ -127,8 +127,8 @@ class TestCTC(unittest.TestCase):
             batch_norm=batch_norm,
             label_smoothing_prob=0.1 if label_smoothing else 0,
             weight_noise_std=0,
-            residual=residual,
-            dense_residual=dense_residual)
+            encoder_residual=encoder_residual,
+            encoder_dense_residual=encoder_dense_residual)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):

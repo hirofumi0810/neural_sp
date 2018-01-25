@@ -41,9 +41,9 @@ class TestCTC(unittest.TestCase):
 
         # Residual LSTM-CTC
         self.check(encoder_type='lstm', bidirectional=True,
-                   residual=True)
+                   encoder_residual=True)
         self.check(encoder_type='lstm', bidirectional=True,
-                   dense_residual=True)
+                   encoder_dense_residual=True)
 
         # CNN-CTC
         self.check(encoder_type='cnn', batch_norm=True, activation='relu')
@@ -73,7 +73,8 @@ class TestCTC(unittest.TestCase):
     def check(self, encoder_type, bidirectional=False, label_type='char',
               subsample=False,  projection=False,
               conv=False, batch_norm=False, activation='relu',
-              residual=False, dense_residual=False, label_smoothing=False):
+              encoder_residual=False, encoder_dense_residual=False,
+              label_smoothing=False):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
@@ -84,8 +85,8 @@ class TestCTC(unittest.TestCase):
         print('  conv: %s' % str(conv))
         print('  batch_norm: %s' % str(batch_norm))
         print('  activation: %s' % activation)
-        print('  residual: %s' % str(residual))
-        print('  dense_residual: %s' % str(dense_residual))
+        print('  encoder_residual: %s' % str(encoder_residual))
+        print('  encoder_dense_residual: %s' % str(encoder_dense_residual))
         print('  label_smoothing: %s' % str(label_smoothing))
         print('==================================================')
 
@@ -119,8 +120,7 @@ class TestCTC(unittest.TestCase):
                                                label_type=label_type,
                                                batch_size=2,
                                                num_stack=num_stack,
-                                               splice=splice,
-                                               backend='pytorch')
+                                               splice=splice)
 
         if label_type == 'char':
             num_classes = 27
@@ -153,8 +153,8 @@ class TestCTC(unittest.TestCase):
             batch_norm=batch_norm,
             label_smoothing_prob=0.1 if label_smoothing else 0,
             weight_noise_std=0,
-            residual=residual,
-            dense_residual=dense_residual)
+            encoder_residual=encoder_residual,
+            encoder_dense_residual=encoder_dense_residual)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):

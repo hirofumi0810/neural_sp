@@ -50,11 +50,11 @@ class LSTMChar2Word(nn.Module):
     def forward(self, char_embeddings, volatile=False):
         """Forward computation.
         Args:
-            char_embeddings (FloatTensor): A tensor of size
+            char_embeddings (Variable, float): A tensor of size
                 `[1 (B), char_num, embedding_dim_sub]`
             volatile (bool, optional):
         Returns:
-            word_repr (FloatTensor): A tensor of size
+            word_repr (Variable, float): A tensor of size
                 `[1 (B), 1, word_embedding_dim]`
         """
         # Initialize hidden states (and memory cells) per mini-batch

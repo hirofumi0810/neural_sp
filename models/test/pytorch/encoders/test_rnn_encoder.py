@@ -121,8 +121,7 @@ class TestRNNEncoders(unittest.TestCase):
         xs, _, x_lens, _ = generate_data(model_type='ctc',
                                          batch_size=batch_size,
                                          num_stack=num_stack,
-                                         splice=splice,
-                                         backend='pytorch')
+                                         splice=splice)
 
         # Wrap by Variable
         xs = np2var(xs, backend='pytorch')

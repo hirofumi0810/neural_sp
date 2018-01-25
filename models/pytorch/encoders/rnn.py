@@ -139,6 +139,9 @@ class RNNEncoder(nn.Module):
             input_size = input_size * splice * num_stack
             self.conv = None
 
+        # Dropout for input-hidden connection
+        self.dropout_input = nn.Dropout(p=0.2)
+
         for i_layer in range(num_layers):
             if i_layer == 0:
                 encoder_input_size = input_size
@@ -189,31 +192,37 @@ class RNNEncoder(nn.Module):
                                   dropout=dropout)
                 setattr(self, 'proj_l' + str(i_layer), proj_i)
 
+        # Dropout for the last layer
+        self.dropout_hidden_last = nn.Dropout(p=dropout)
+
     def forward(self, xs, x_lens, volatile=False):
         """Forward computation.
         Args:
-            xs (FloatTensor): A tensor of size `[B, T, input_size]`
-            x_lens (IntTensor or LongTensor): A tensor of size `[B]`
+            xs (Variable, float): A tensor of size `[B, T, input_size]`
+            x_lens (Variable, int): A tensor of size `[B]`
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            xs (FloatTensor):
+            xs (Variable, float):
                 if batch_first is True, a tensor of size
                     `[B, T // sum(subsample_list), num_units (* num_directions)]`
                 else
                     `[T // sum(subsample_list), B, num_units (* num_directions)]`
-            x_lens (LongTensor): A tensor of size `[B]`
+            x_lens (Variable, int): A tensor of size `[B]`
             OPTION:
-                xs_sub (FloatTensor):
+                xs_sub (Variable, float):
                     if batch_first is True, a tensor of size
                         `[B, T // sum(subsample_list), num_units (* num_directions)]`
                     else
                         `[T // sum(subsample_list), B, num_units (* num_directions)]`
-                x_lens_sub ():
-            perm_idx (LongTensor): A tensor of size `[B]`
+                x_lens_sub (Variable, int): A tensor of size `[B]`
+            perm_idx (Variable, int): A tensor of size `[B]`
         """
         batch_size = xs.size(0)
         use_cuda = xs.is_cuda
+
+        # Dropout for inputs-hidden connection
+        xs = self.dropout_input(xs)
 
         # Path through CNN layers before RNN layers
         if self.conv is not None:
@@ -326,6 +335,9 @@ class RNNEncoder(nn.Module):
             xs, unpacked_seq_len = pad_packed_sequence(
                 xs, batch_first=self.batch_first, padding_value=0)
             # assert x_lens == unpacked_seq_len
+
+        # Dropout for the last layer
+        xs = self.dropout_hidden_last(xs)
 
         # Wrap by Variable again
         x_lens = np2var(

@@ -82,16 +82,16 @@ class RNNDecoder(nn.Module):
     def forward(self, y, dec_state, volatile=False):
         """Forward computation.
         Args:
-            y (FloatTensor): A tensor of size `[B, 1, input_size]`
-            dec_state (FloatTensor or tuple): A tensor of size
+            y (Variable, float): A tensor of size `[B, 1, input_size]`
+            dec_state (Variable(float) or tuple): A tensor of size
                 `[1, B, num_units]`
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            dec_out (FloatTensor):
+            dec_out (Variable, float):
                 if batch_first is True, a tensor of size `[B, 1, num_units]`
                 else `[1, B, num_units]`
-            dec_state (FloatTensor or tuple):
+            dec_state (Variable(float) or tuple):
         """
         if not self.batch_first:
             # Reshape y to the time-major

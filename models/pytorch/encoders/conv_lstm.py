@@ -16,11 +16,13 @@ class ConvLSTMEncoder(nn.Module):
         super(ConvLSTMEncoder, self).__init__()
         self.arg = arg
 
-    def forward(self, inputs):
+    def forward(self, xs, x_lens):
         """Forward computation.
         Args:
-            inputs (FloatTensor): A tensor of size `[B, T, input_size]`
+            xs (Variable, float): A tensor of size `[B, T, input_size]`
+            x_lens (Variable, int):
         Returns:
-            outputs (FloatTensor): A tensor of size `[B, T', feature_dim]`
+            xs (Variable, float): A tensor of size `[B, T', feature_dim]`
+            x_lens (Variable, int):
         """
         raise NotImplementedError

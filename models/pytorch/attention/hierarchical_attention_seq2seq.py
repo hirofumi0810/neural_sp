@@ -277,9 +277,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (FloatTensor or float): A tensor of size `[1]`
-            loss_main (FloatTensor or float): A tensor of size `[1]`
-            loss_sub (FloatTensor or float): A tensor of size `[1]`
+            loss (Variable(float) or float): A tensor of size `[1]`
+            loss_main (Variable(float) or float): A tensor of size `[1]`
+            loss_sub (Variable(float) or float): A tensor of size `[1]`
         """
         # Wrap by Variable
         xs = np2var(xs, use_cuda=self.use_cuda, backend='pytorch')
@@ -504,7 +504,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         # Permutate indices to the original order
         if perm_idx is not None:
-            perm_idx = var2np(perm_idx)
-            best_hyps = best_hyps[perm_idx]
+            best_hyps = best_hyps[var2np(perm_idx, backend='pytorch')]
 
         return best_hyps
