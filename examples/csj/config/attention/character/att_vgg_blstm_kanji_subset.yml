@@ -1,16 +1,8 @@
-parent: ../config/attention/word/att_word_freq5_subset_baseline.yml
+parent: ../config/attention/character/att_blstm_kanji_subset.yml
 param:
   # framework
   backend: pytorch
   # backend: chainer
-
-  # corpus
-  label_type: kanji
-  num_classes: 2888
-  
-  # features
-  num_stack: 1
-  num_skip: 1
 
   # topology
   conv_channels: [64, 64, 128, 128]
@@ -30,15 +22,7 @@ param:
     - []
     - [2, 2]
   activation: relu
-  batch_norm: False
-  encoder_bidirectional: True
-  encoder_num_layers: 4
-  subsample_list:
-    - False
-    - False
-    - False
-    - False
-  embedding_dim: 64
+  batch_norm: True
 
   # optimization
   batch_size: 16

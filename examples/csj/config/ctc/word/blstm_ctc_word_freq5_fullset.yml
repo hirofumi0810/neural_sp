@@ -1,4 +1,4 @@
-parent: ../config/attention/word/att_word_freq5_subset_baseline.yml
+parent: ../config/ctc/word/blstm_ctc_word_freq5_subset.yml
 param:
   # framework
   backend: pytorch
@@ -15,19 +15,14 @@ param:
   # topology
   encoder_num_layers: 5
   subsample_list:
-    - True
-    - True
-    - True
     - False
     - False
-  subsample_type: drop  
-  decoder_num_layers: 1
+    - False
+    - False
+    - False
 
   # optimization
   batch_size: 64
-
-  # regularization
-  scheduled_sampling_ramp_max_step: 300000
 
   # annealing
   print_step: 1000

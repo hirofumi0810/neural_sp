@@ -46,7 +46,8 @@ class CTC(ModelBase):
         encoder_num_proj (int): the number of nodes in recurrent projection layer
         encoder_num_layers (int): the number of layers of the encoder
         fc_list (list):
-        dropout (float): the probability to drop nodes
+        dropout_input (float): the probability to drop nodes in input-hidden connection
+        dropout_encoder (float): the probability to drop nodes in hidden-hidden connection
         num_classes (int): the number of classes of target labels
             (excluding the blank class)
         parameter_init_distribution (string, optional): uniform or normal or
@@ -85,7 +86,8 @@ class CTC(ModelBase):
                  encoder_num_proj,
                  encoder_num_layers,
                  fc_list,
-                 dropout,
+                 dropout_input,
+                 dropout_encoder,
                  num_classes,
                  parameter_init_distribution='uniform',
                  parameter_init=0.1,
@@ -136,7 +138,8 @@ class CTC(ModelBase):
                 num_units=encoder_num_units,
                 num_proj=encoder_num_proj,
                 num_layers=encoder_num_layers,
-                dropout=dropout,
+                dropout_input=dropout_input,
+                dropout_hidden=dropout_encoder,
                 subsample_list=subsample_list,
                 subsample_type=subsample_type,
                 batch_first=True,
@@ -159,7 +162,8 @@ class CTC(ModelBase):
                 conv_kernel_sizes=conv_kernel_sizes,
                 conv_strides=conv_strides,
                 poolings=poolings,
-                dropout=dropout,
+                dropout_input=dropout_input,
+                dropout_hidden=dropout_encoder,
                 activation=activation,
                 batch_norm=batch_norm)
         else:
@@ -176,12 +180,12 @@ class CTC(ModelBase):
                     # if batch_norm:
                     #     fc_layers.append(nn.BatchNorm1d(bottle_input_size))
                     fc_layers.append(LinearND(bottle_input_size, fc_list[i],
-                                              dropout=dropout))
+                                              dropout=dropout_encoder))
                 else:
                     # if batch_norm:
                     #     fc_layers.append(nn.BatchNorm1d(fc_list[i - 1]))
                     fc_layers.append(LinearND(fc_list[i - 1], fc_list[i],
-                                              dropout=dropout))
+                                              dropout=dropout_encoder))
             self.fc_layers = nn.Sequential(*fc_layers)
             # TODO: remove a bias term in the case of batch normalization
 
@@ -224,7 +228,7 @@ class CTC(ModelBase):
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (Variable(float) or float): A tensor of size `[1]`
+            loss (torch.autograd.Variable(float) or float): A tensor of size `[1]`
         """
         # Wrap by Variable
         xs = np2var(inputs, use_cuda=self.use_cuda, backend='pytorch')
@@ -272,7 +276,7 @@ class CTC(ModelBase):
         if self.label_smoothing_prob > 0:
             batch_size, label_num, num_classes = logits.size()
             log_probs = F.log_softmax(logits, dim=-1)
-            uniform = Variable(torch.Variable, float(
+            uniform = Variable(torch.FloatTensor(
                 batch_size, label_num, num_classes).fill_(np.log(1 / num_classes)))
             loss = loss * (1 - self.label_smoothing_prob) + F.kl_div(
                 log_probs.cpu(), uniform,
@@ -289,19 +293,20 @@ class CTC(ModelBase):
     def _encode(self, xs, x_lens, volatile, is_multi_task=False):
         """Encode acoustic features.
         Args:
-            xs (Variable, float): A tensor of size `[B, T, input_size]`
-            x_lens (Variable, int): A tensor of size `[B]`
+            xs (torch.autograd.Variable, float): A tensor of size
+                `[B, T, input_size]`
+            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
             volatile (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
             is_multi_task (bool, optional):
         Returns:
-            logits (Variable, float): A tensor of size
+            logits (torch.autograd.Variable, float): A tensor of size
                 `[B, T, num_classes (including the blank class)]`
-            x_lens (Variable, int): A tensor of size `[B]`
-            logits_sub (Variable, float): A tensor of size
+            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            logits_sub (torch.autograd.Variable, float): A tensor of size
                 `[B, T, num_classes_sub (including the blank class)]`
-            x_lens_sub (Variable, int): A tensor of size `[B]`
-            perm_idx (Variable, long):
+            x_lens_sub (torch.autograd.Variable, int): A tensor of size `[B]`
+            perm_idx (torch.autograd.Variable, long): A tensor of size `[B]`
         """
         if is_multi_task:
             xs, x_lens, xs_sub, x_lens_sub, perm_idx = self.encoder(
@@ -451,8 +456,8 @@ class CTC(ModelBase):
 def _concatenate_labels(ys, y_lens):
     """Concatenate all labels in mini-batch and convert to a 1D tensor.
     Args:
-        ys (Variable, long): A tensor of size `[B, T_out]`
-        y_lens (Variable, int): A tensor of size `[B]`
+        ys (torch.autograd.Variable, long): A tensor of size `[B, T_out]`
+        y_lens (torch.autograd.Variable, int): A tensor of size `[B]`
     Returns:
         concatenated_labels (): A tensor of size `[all_label_num]`
     """

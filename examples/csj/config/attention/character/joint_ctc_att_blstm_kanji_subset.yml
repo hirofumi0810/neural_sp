@@ -1,0 +1,17 @@
+parent: ../config/attention/character/att_blstm_kanji_subset.yml
+param:
+  # framework
+  backend: pytorch
+  # backend: chainer
+
+  # optimization
+  batch_size: 20
+
+  # regularization
+  scheduled_sampling_ramp_max_step: 800000
+
+  # annealing
+  print_step: 2000
+
+  # MTL
+  ctc_loss_weight: 0.5

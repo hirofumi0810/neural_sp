@@ -46,6 +46,7 @@ param:
     - []
     - []
     - [2,2]
+  activation: relu
   batch_norm: True
   encoder_num_layers: 0
   subsample_list:

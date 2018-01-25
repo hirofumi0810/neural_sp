@@ -37,7 +37,8 @@ class StudentCTC(CTC):
         encoder_num_units (int): the number of units in each layer
         encoder_num_proj (int): the number of nodes in recurrent projection layer
         encoder_num_layers (int): the number of layers of the encoder of the main task
-        dropout (float): the probability to drop nodes
+        dropout_input (float): the probability to drop nodes in input-hidden connection
+        dropout_encoder (float): the probability to drop nodes in hidden-hidden connection
         main_loss_weight (float): A weight parameter for the main CTC loss
         num_classes (int): the number of classes of target labels of the main task
             (excluding a blank class)
@@ -74,7 +75,8 @@ class StudentCTC(CTC):
                  encoder_num_proj,
                  encoder_num_layers,
                  fc_list,
-                 dropout,
+                 dropout_input,
+                 dropout_encoder,
                  main_loss_weight,  # ***
                  num_classes,
                  parameter_init_distribution='uniform',
@@ -101,7 +103,8 @@ class StudentCTC(CTC):
             encoder_num_units=encoder_num_units,
             encoder_num_proj=encoder_num_proj,
             encoder_num_layers=encoder_num_layers,
-            dropout=dropout,
+            dropout_input=dropout_input,
+            dropout_hidden=dropout_encoder,
             num_classes=num_classes,
             parameter_init=parameter_init,
             subsample_list=subsample_list,
@@ -149,9 +152,9 @@ class StudentCTC(CTC):
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (Variable(float) or float): A tensor of size `[1]`
-            loss_main (Variable(float) or float): A tensor of size `[1]`
-            loss_sub (Variable(float) or float): A tensor of size `[1]`
+            loss (torch.autograd.Variable(float) or float): A tensor of size `[1]`
+            loss_main (torch.autograd.Variable(float) or float): A tensor of size `[1]`
+            loss_sub (torch.autograd.Variable(float) or float): A tensor of size `[1]`
         """
         # Wrap by Variable
         xs = np2var(inputs, use_cuda=self.use_cuda)
@@ -214,17 +217,18 @@ class StudentCTC(CTC):
     def _encode(self, xs, x_lens, volatile):
         """Encode acoustic features.
         Args:
-            xs (FloatTensor): A tensor of size `[B, T, input_size]`
-            x_lens (IntTensor): A tensor of size `[B]`
+            xs (torch.autograd.Variable, float): A tensor of size
+                `[B, T, input_size]`
+            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
             volatile (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            logits (FloatTensor): A tensor of size
+            logits (torch.autograd.Variable, float): A tensor of size
                 `[B, T, num_classes (including the blank class)]`
-            logits_xe (FloatTensor): A tensor of size
+            logits_xe (torch.autograd.Variable, float): A tensor of size
                 `[B, T, num_classes_sub (including the blank class)]`
-            x_lens (IntTensor): A tensor of size `[B]`
-            perm_idx (LongTensor):
+            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            perm_idx (torch.autograd.Variable, long): A tensor of size `[B]`
         """
         if self.encoder_type == 'cnn':
             encoder_outputs = self.encoder(xs)

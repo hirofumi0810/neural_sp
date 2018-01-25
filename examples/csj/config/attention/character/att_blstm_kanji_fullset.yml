@@ -1,0 +1,31 @@
+parent: ../config/attention/character/att_blstm_kanji_subset.yml
+param:
+  # framework
+  backend: pytorch
+  # backend: chainer
+
+  # corpus
+  data_size: fullset
+  num_classes: 3293
+
+  # features
+  num_stack: 1
+  num_skip: 1
+
+  # topology
+  encoder_num_layers: 4
+  subsample_list:
+    - True
+    - True
+    - True
+    - False
+  decoder_num_layers: 1
+
+  # optimization
+  batch_size: 32
+
+  # regularization
+  scheduled_sampling_ramp_max_step: 600000
+
+  # annealing
+  print_step: 2000

@@ -22,7 +22,8 @@ class CNNEncoder(nn.Module):
         conv_kernel_sizes (list, optional): the size of kernels in CNN layers
         conv_strides (list, optional): strides in CNN layers
         poolings (list, optional): the size of poolings in CNN layers
-        dropout (float): the probability to drop nodes
+        dropout_input (float): the probability to drop nodes in input-hidden connection
+        dropout_hidden (float): the probability to drop nodes in hidden-hidden connection
         activation (string, optional): relu or prelu or hard_tanh or maxout
         batch_norm (bool, optional):
     """
@@ -33,7 +34,8 @@ class CNNEncoder(nn.Module):
                  conv_kernel_sizes,
                  conv_strides,
                  poolings,
-                 dropout,
+                 dropout_input,
+                 dropout_hidden,
                  activation='relu',
                  batch_norm=False):
 
@@ -50,6 +52,9 @@ class CNNEncoder(nn.Module):
         assert len(conv_channels) == len(conv_kernel_sizes)
         assert len(conv_kernel_sizes) == len(conv_strides)
         assert len(conv_strides) == len(poolings)
+
+        # Dropout for input-hidden connection
+        self.dropout_input = nn.Dropout(p=dropout_input)
 
         layers = []
         in_c = self.input_channels
@@ -98,8 +103,7 @@ class CNNEncoder(nn.Module):
                 layers.append(nn.BatchNorm2d(conv_channels[i_layer]))
 
             # Dropout
-            if dropout > 0:
-                layers.append(nn.Dropout(p=dropout))
+            layers.append(nn.Dropout(p=dropout_hidden))
             # TODO: compare BN before ReLU and after ReLU
 
             in_c = conv_channels[i_layer]
@@ -112,16 +116,20 @@ class CNNEncoder(nn.Module):
     def forward(self, xs, x_lens):
         """Forward computation.
         Args:
-            xs (Variable, float): A tensor of size
+            xs (torch.autograd.Variable, float): A tensor of size
                 `[B, T, input_size (+Δ, ΔΔ)]`
-            x_lens (Variable, int): A tensor of size `[B]`
+            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
         Returns:
-            xs (Variable, float): A tensor of size `[B, T', feature_dim]`
-            x_lens (Variable, int): A tensor of size `[B]`
+            xs (torch.autograd.Variable, float): A tensor of size
+                `[B, T', feature_dim]`
+            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
         """
         batch_size, max_time, input_size = xs.size()
 
         # assert input_size == self.input_freq * self.input_channels
+
+        # Dropout for inputs-hidden connection
+        xs = self.dropout_input(xs)
 
         # Reshape to 4D tensor
         xs = xs.transpose(1, 2).contiguous()

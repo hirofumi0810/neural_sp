@@ -1,30 +1,27 @@
-parent: ../config/attention/word/att_blstm_word_freq5_subset.yml
+parent: ../config/attention/character/att_blstm_kanji_subset.yml
 param:
   # framework
   backend: pytorch
   # backend: chainer
 
-  # features
-  num_stack: 1
-  num_skip: 1
-  min_frame_num: 50
-
   # topology
   encoder_type: cnn
-  conv_channels: [128, 128, 128, 128, 256, 256, 256, 256, 256, 256]
+  conv_channels: [96, 96, 96, 192, 192, 192, 192, 384, 384, 384, 384]
   conv_kernel_sizes:
-    - [3, 5]
-    - [3, 5]
-    - [3, 5]
-    - [3, 5]
-    - [3, 5]
-    - [3, 5]
-    - [3, 5]
-    - [3, 5]
-    - [3, 5]
-    - [3, 5]
+    - [3, 3]
+    - [3, 3]
+    - [3, 3]
+    - [3, 3]
+    - [3, 3]
+    - [3, 3]
+    - [3, 3]
+    - [3, 3]
+    - [3, 3]
+    - [3, 3]
+    - [3, 3]
   conv_strides:
-    - [1, 2]
+    - [1, 1]
+    - [1, 1]
     - [1, 1]
     - [1, 1]
     - [1, 1]
@@ -35,30 +32,30 @@ param:
     - [1, 1]
     - [1, 1]
   poolings:
-    - [3, 1]
+    - []
+    - []
+    - [2,2]
     - []
     - []
     - []
+    - [2,2]
     - []
     - []
     - []
-    - []
-    - []
-    - []
-  activation: prelu
+    - [2,2]
+  activation: relu
   batch_norm: True
   encoder_num_layers: 0
   subsample_list:
     - False
 
   # optimization
-  batch_size: 10
+  batch_size: 16
   optimizer: adam
   learning_rate: 1e-3
 
   # regularization
-  init_dec_state: zero
-  scheduled_sampling_ramp_max_step: 1200000
+  scheduled_sampling_ramp_max_step: 800000
 
   # annealing
-  print_step: 3000
+  print_step: 2000

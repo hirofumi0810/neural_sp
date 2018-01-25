@@ -32,7 +32,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  encoder_num_proj,
                  encoder_num_layers,
                  encoder_num_layers_sub,  # ***
-                 encoder_dropout,
                  attention_type,
                  attention_dim,
                  decoder_type,
@@ -40,9 +39,12 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  decoder_num_layers,
                  decoder_num_units_sub,  # ***
                  decoder_num_layers_sub,  # ***
-                 decoder_dropout,
                  embedding_dim,
                  embedding_dim_sub,  # ***
+                 dropout_input,
+                 dropout_encoder,
+                 dropout_decoder,
+                 dropout_embedding,
                  main_loss_weight,  # ***
                  num_classes,
                  num_classes_sub,  # ***
@@ -85,14 +87,16 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             encoder_num_units=encoder_num_units,
             encoder_num_proj=encoder_num_proj,
             encoder_num_layers=encoder_num_layers,
-            encoder_dropout=encoder_dropout,
             attention_type=attention_type,
             attention_dim=attention_dim,
             decoder_type=decoder_type,
             decoder_num_units=decoder_num_units,
             decoder_num_layers=decoder_num_layers,
-            decoder_dropout=decoder_dropout,
             embedding_dim=embedding_dim,
+            dropout_input=dropout_input,
+            dropout_encoder=dropout_encoder,
+            dropout_decoder=dropout_decoder,
+            dropout_embedding=dropout_embedding,
             num_classes=num_classes,
             parameter_init=parameter_init,
             subsample_list=subsample_list,
@@ -156,7 +160,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 num_proj=encoder_num_proj,
                 num_layers=encoder_num_layers,
                 num_layers_sub=encoder_num_layers_sub,
-                dropout=encoder_dropout,
+                dropout_input=dropout_input,
+                dropout_hidden=dropout_encoder,
                 subsample_list=subsample_list,
                 subsample_type=subsample_type,
                 batch_first=True,
@@ -190,7 +195,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 rnn_type=decoder_type,
                 num_units=decoder_num_units_sub,
                 num_layers=decoder_num_layers_sub,
-                dropout=decoder_dropout,
+                dropout=dropout_decoder,
                 batch_first=True,
                 residual=decoder_residual,
                 dense_residual=decoder_dense_residual)
@@ -214,21 +219,21 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 if encoder_bidirectional:
                     self.bridge_sub = LinearND(
                         encoder_num_units * 2, decoder_num_units_sub,
-                        dropout=decoder_dropout)
+                        dropout=dropout_encoder)
                 else:
                     self.bridge_sub = LinearND(
                         encoder_num_units, decoder_num_units_sub,
-                        dropout=decoder_dropout)
+                        dropout=dropout_encoder)
                 self.is_bridge_sub = True
 
             if self.decoder_input == 'embedding':
                 self.embed_sub = Embedding(num_classes=self.num_classes_sub,
                                            embedding_dim=embedding_dim_sub,
-                                           dropout=decoder_dropout)
+                                           dropout=dropout_embedding)
 
             self.proj_layer_sub = LinearND(
                 decoder_num_units_sub * 2, decoder_num_units_sub,
-                dropout=decoder_dropout)
+                dropout=dropout_decoder)
             self.fc_sub = LinearND(
                 decoder_num_units_sub, self.num_classes_sub - 1)
             # NOTE: <SOS> is removed because the decoder never predict <SOS>
@@ -277,9 +282,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (Variable(float) or float): A tensor of size `[1]`
-            loss_main (Variable(float) or float): A tensor of size `[1]`
-            loss_sub (Variable(float) or float): A tensor of size `[1]`
+            loss (torch.autograd.Variable(float) or float): A tensor of size `[1]`
+            loss_main (torch.autograd.Variable(float) or float): A tensor of size `[1]`
+            loss_sub (torch.autograd.Variable(float) or float): A tensor of size `[1]`
         """
         # Wrap by Variable
         xs = np2var(xs, use_cuda=self.use_cuda, backend='pytorch')

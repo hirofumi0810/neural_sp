@@ -4,24 +4,29 @@ param:
   backend: pytorch
   # backend: chainer
 
+  # corpus
+  data_size: fullset
+  num_classes: 23178
+
+  # features
+  num_stack: 1
+  num_skip: 1
+
   # topology
-  encoder_residual: True
-  encoder_num_layers: 8
+  encoder_num_layers: 5
   subsample_list:
+    - True
+    - True
+    - True
     - False
     - False
-    - False
-    - False
-    - False
-    - False
-    - False
-    - False
+  decoder_num_layers: 1
 
   # optimization
-  batch_size: 32
+  batch_size: 64
 
   # regularization
-  scheduled_sampling_ramp_max_step: 400000
+  scheduled_sampling_ramp_max_step: 300000
 
   # annealing
   print_step: 1000

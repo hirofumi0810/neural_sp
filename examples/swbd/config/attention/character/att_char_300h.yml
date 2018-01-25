@@ -56,6 +56,7 @@ param:
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 50
+  convert_to_sgd_epoch: 50
 
   # initialization
   parameter_init_distribution: uniform
@@ -67,8 +68,10 @@ param:
   clip_grad_norm: 5.0
   clip_activation_encoder: 50
   clip_activation_decoder: 50
+  dropout_input: 0
   dropout_encoder: 0.2
   dropout_decoder: 0.1
+  dropout_embedding: 0.1
   weight_decay: 1e-6
   init_dec_state: zero
   sharpening_factor: 1.0

@@ -1,4 +1,4 @@
-parent: ../config/ctc/blstm_ctc_baseline.yml
+parent: ../config/ctc/blstm_ctc.yml
 param:
   # framework
   backend: pytorch
@@ -9,7 +9,7 @@ param:
 
   # optimization
   batch_size: 64
-  convert_to_sgd_epoch: 100
+  convert_to_sgd_epoch: 20
 
   # annealing
   print_step: 10

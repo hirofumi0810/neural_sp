@@ -25,25 +25,23 @@ class LinearND(nn.Module):
         """
         super(LinearND, self).__init__()
 
-        self.dropout = dropout
-
         self.fc = nn.Linear(*size, bias=bias)
-        if dropout > 0:
-            self.drop = nn.Dropout(p=dropout)
+        self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, xs):
         """Forward computation.
         Args:
-            xs (Variable, float): A tensor of size `[B, T, input_dim]`
+            xs (torch.autograd.Variable, float): A tensor of size
+                `[B, T, input_dim]`
         Returns:
-            xs (Variable, float): A tensor of size `[B, T, size[-1]]`
+            xs (torch.autograd.Variable, float): A tensor of size
+                `[B, T, size[-1]]`
         """
         size = list(xs.size())
         outputs = xs.contiguous().view(
             (int(np.prod(size[:-1])), int(size[-1])))
         outputs = self.fc(outputs)
-        if self.dropout > 0:
-            outputs = self.drop(outputs)
+        outputs = self.dropout(outputs)
         size[-1] = outputs.size()[-1]
         return outputs.view(size)
 
@@ -60,20 +58,17 @@ class Embedding(nn.Module):
         """
         super(Embedding, self).__init__()
 
-        self.dropout = dropout
-
         self.embed = nn.Embedding(num_classes, embedding_dim)
-        if dropout > 0:
-            self.drop = nn.Dropout(p=dropout)
+        self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, y):
         """Forward computation.
         Args:
-            y (Variable, long): A tensor of size `[B, 1]`
+            y (torch.autograd.Variable, long): A tensor of size `[B, 1]`
         Returns:
-            y (Variable, float): A tensor of size `[B, 1, embedding_dim]`
+            y (torch.autograd.Variable, float): A tensor of size
+                `[B, 1, embedding_dim]`
         """
         y = self.embed(y)
-        if self.dropout > 0:
-            y = self.drop(y)
+        y = self.dropout(y)
         return y

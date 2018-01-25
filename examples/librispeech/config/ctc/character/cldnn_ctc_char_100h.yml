@@ -16,7 +16,10 @@ param:
   conv_strides:
     - [2, 2]
     - [2, 1]
-  poolings: [[], []]
+  poolings:
+    - []
+    - []
+  activation: relu
   batch_norm: True  ###
   encoder_num_units: 320
   encoder_num_proj: 0

@@ -42,15 +42,18 @@ class AttentionSeq2seq(ModelBase):
         encoder_num_units (int): the number of units in each layer of the encoder
         encoder_num_proj (int): the number of nodes in the projection layer of the encoder
         encoder_num_layers (int): the number of layers of the encoder
-        encoder_dropout (float): the probability to drop nodes of the encoder
         attention_type (string): the type of attention
         attention_dim: (int) the dimension of the attention layer
         decoder_type (string): lstm or gru
         decoder_num_units (int): the number of units in each layer of the decoder
         decoder_num_layers (int): the number of layers of the decoder
-        decoder_dropout (float): the probability to drop nodes of the decoder
         embedding_dim (int): the dimension of the embedding in target spaces.
             0 means that decoder inputs are represented by one-hot vectors.
+        dropout_input (float): the probability to drop nodes in input-hidden connection
+        dropout_encoder (float): the probability to drop nodes in hidden-hidden
+            connection of the encoder
+        dropout_decoder (float): the probability to drop nodes of the decoder
+        dropout_embedding (float): the probability to drop nodes of the embedding layer
         num_classes (int): the number of nodes in softmax layer
             (excluding <SOS> and <EOS> classes)
         parameter_init_distribution (string, optional): uniform or normal or
@@ -111,14 +114,16 @@ class AttentionSeq2seq(ModelBase):
                  encoder_num_units,
                  encoder_num_proj,
                  encoder_num_layers,
-                 encoder_dropout,
                  attention_type,
                  attention_dim,
                  decoder_type,
                  decoder_num_units,
                  decoder_num_layers,
-                 decoder_dropout,
                  embedding_dim,
+                 dropout_input,
+                 dropout_encoder,
+                 dropout_decoder,
+                 dropout_embedding,
                  num_classes,
                  parameter_init_distribution='uniform',
                  parameter_init=0.1,
@@ -221,7 +226,8 @@ class AttentionSeq2seq(ModelBase):
                 num_units=encoder_num_units,
                 num_proj=encoder_num_proj,
                 num_layers=encoder_num_layers,
-                dropout=encoder_dropout,
+                dropout_input=dropout_input,
+                dropout_hidden=dropout_encoder,
                 subsample_list=subsample_list,
                 subsample_type=subsample_type,
                 batch_first=True,
@@ -244,7 +250,8 @@ class AttentionSeq2seq(ModelBase):
                 conv_kernel_sizes=conv_kernel_sizes,
                 conv_strides=conv_strides,
                 poolings=poolings,
-                dropout=encoder_dropout,
+                dropout_input=dropout_input,
+                dropout_hidden=dropout_encoder,
                 activation=activation,
                 batch_norm=batch_norm)
             self.init_dec_state = 'zero'
@@ -270,7 +277,7 @@ class AttentionSeq2seq(ModelBase):
             rnn_type=decoder_type,
             num_units=decoder_num_units,
             num_layers=decoder_num_layers,
-            dropout=decoder_dropout,
+            dropout=dropout_decoder,
             batch_first=True,
             residual=decoder_residual,
             dense_residual=decoder_dense_residual)
@@ -294,14 +301,14 @@ class AttentionSeq2seq(ModelBase):
             if encoder_type == 'cnn':
                 self.bridge = LinearND(
                     self.encoder.output_size, decoder_num_units,
-                    dropout=decoder_dropout)
+                    dropout=dropout_encoder)
             elif encoder_bidirectional:
                 self.bridge = LinearND(
                     encoder_num_units * 2, decoder_num_units,
-                    dropout=decoder_dropout)
+                    dropout=dropout_encoder)
             else:
                 self.bridge = LinearND(encoder_num_units, decoder_num_units,
-                                       dropout=decoder_dropout)
+                                       dropout=dropout_encoder)
             self.is_bridge = True
         else:
             self.is_bridge = False
@@ -309,10 +316,10 @@ class AttentionSeq2seq(ModelBase):
         if self.decoder_input == 'embedding':
             self.embed = Embedding(num_classes=self.num_classes,
                                    embedding_dim=embedding_dim,
-                                   dropout=decoder_dropout)
+                                   dropout=dropout_embedding)
 
         self.proj_layer = LinearND(decoder_num_units * 2, decoder_num_units,
-                                   dropout=decoder_dropout)
+                                   dropout=dropout_decoder)
         if self.decoder_input == 'onehot_prob':
             self.fc = LinearND(decoder_num_units, self.num_classes)
         else:
@@ -362,7 +369,7 @@ class AttentionSeq2seq(ModelBase):
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (Variable(float) or float): A tensor of size `[1]`
+            loss (torch.autograd.Variable(float) or float): A tensor of size `[1]`
         """
         # Wrap by Variable
         xs = np2var(xs,  use_cuda=self.use_cuda, backend='pytorch')
@@ -446,14 +453,14 @@ class AttentionSeq2seq(ModelBase):
     def compute_ctc_loss(self, enc_out, ys, x_lens, y_lens, is_sub_task=False):
         """Compute CTC loss.
         Args:
-            enc_out (Variable, float): A tensor of size
+            enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, decoder_num_units]`
-            ys (Variable, long): A tensor of size `[B, T_out]`
-            x_lens (Variable, int): A tensor of size `[B]`
-            y_lens (Variable, int): A tensor of size `[B]`
+            ys (torch.autograd.Variable, long): A tensor of size `[B, T_out]`
+            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            y_lens (torch.autograd.Variable, int): A tensor of size `[B]`
             is_sub_task (bool, optional):
         Returns:
-            ctc_loss (Variable, float): A tensor of size `[1]`
+            ctc_loss (torch.autograd.Variable, float): A tensor of size `[1]`
         """
         if is_sub_task:
             logits_ctc = self.fc_ctc_sub(enc_out)
@@ -483,18 +490,21 @@ class AttentionSeq2seq(ModelBase):
     def _encode(self, xs, x_lens, volatile, is_multi_task=False):
         """Encode acoustic features.
         Args:
-            xs (Variable, float): A tensor of size `[B, T_in, input_size]`
-            x_lens (Variable, int): A tensor of size `[B]`
+            xs (torch.autograd.Variable, float): A tensor of size
+                `[B, T_in, input_size]`
+            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
             volatile (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
             is_multi_task (bool, optional):
         Returns:
-            xs (Variable, float): A tensor of size `[B, T_in, decoder_num_units]`
-            x_lens ():
+            xs (torch.autograd.Variable, float): A tensor of size
+                `[B, T_in, decoder_num_units]`
+            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
             OPTION:
-                xs_sub (Variable, float): A tensor of size `[B, T_in, decoder_num_units]`
-                x_lens_sub ():
-            perm_idx (Variable, long):
+                xs_sub (torch.autograd.Variable, float): A tensor of size
+                    `[B, T_in, decoder_num_units]`
+                x_lens_sub (torch.autograd.Variable, int): A tensor of size `[B]`
+            perm_idx (torch.autograd.Variable, long): A tensor of size `[B]`
         """
         if is_multi_task:
             xs, x_lens, xs_sub, x_lens_sub, perm_idx = self.encoder(
@@ -527,13 +537,14 @@ class AttentionSeq2seq(ModelBase):
     def _decode_train(self, enc_out, ys, is_sub_task=False):
         """Decoding in the training stage.
         Args:
-            enc_out (Variable, float): A tensor of size
+            enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, decoder_num_units]`
-            ys (Variable, long): A tensor of size `[B, T_out]`
+            ys (torch.autograd.Variable, long): A tensor of size `[B, T_out]`
             is_sub_task (bool, optional):
         Returns:
-            logits (Variable, float): A tensor of size `[B, T_out, num_classes]`
-            att_weights (Variable, float): A tensor of size
+            logits (torch.autograd.Variable, float): A tensor of size
+                `[B, T_out, num_classes]`
+            att_weights (torch.autograd.Variable, float): A tensor of size
                 `[B, T_out, T_in]`
         """
         batch_size, max_time = enc_out.size()[:2]
@@ -629,12 +640,12 @@ class AttentionSeq2seq(ModelBase):
     def _init_decoder_state(self, enc_out, volatile=False):
         """Initialize decoder state.
         Args:
-            enc_out (Variable, float): A tensor of size
+            enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, decoder_num_units]`
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            dec_state (Variable(float) or tuple): A tensor of size
+            dec_state (torch.autograd.Variable(float) or tuple): A tensor of size
                 `[1, B, decoder_num_units]`
         """
         batch_size = enc_out.size(0)
@@ -673,22 +684,24 @@ class AttentionSeq2seq(ModelBase):
                      att_weights_step, is_sub_task=False):
         """Decoding step.
         Args:
-            enc_out (Variable, float): A tensor of size
+            enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, decoder_num_units]`
-            dec_in (Variable, float): A tensor of size
+            dec_in (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, embedding_dim + decoder_num_units]`
-            dec_state (Variable(float) or tuple): A tensor of size
+            dec_state (torch.autograd.Variable(float) or tuple): A tensor of size
                 `[decoder_num_layers, B, decoder_num_units]`
-            att_weights_step (Variable, float): A tensor of size `[B, T_in]`
+            att_weights_step (torch.autograd.Variable, float): A tensor of size
+                `[B, T_in]`
             is_sub_task (bool, optional):
         Returns:
-            dec_out (Variable, float): A tensor of size
+            dec_out (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, decoder_num_units]`
-            dec_state (Variable, float): A tensor of size
+            dec_state (torch.autograd.Variable, float): A tensor of size
                 `[decoder_num_layers, B, decoder_num_units]`
-            content_vec (Variable, float): A tensor of size
+            content_vec (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, decoder_num_units]`
-            att_weights_step (Variable, float): A tensor of size `[B, T_in]`
+            att_weights_step (torch.autograd.Variable, float): A tensor of size
+                `[B, T_in]`
         """
         if is_sub_task:
             dec_out, dec_state = self.decoder_sub(dec_in, dec_state)
@@ -803,7 +816,7 @@ class AttentionSeq2seq(ModelBase):
     def _decode_infer_greedy(self, enc_out, max_decode_len, is_sub_task=False):
         """Greedy decoding in the inference stage.
         Args:
-            enc_out (Variable, float): A tensor of size
+            enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, decoder_num_units]`
             max_decode_len (int): the length of output sequences
                 to stop prediction when EOS token have not been emitted
@@ -904,9 +917,9 @@ class AttentionSeq2seq(ModelBase):
                            beam_width, max_decode_len, is_sub_task=False):
         """Beam search decoding in the inference stage.
         Args:
-            enc_out (Variable, float): A tensor of size
+            enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, decoder_num_units]`
-            x_lens (Variable, int): A tensor of size `[B]`
+            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
             beam_width (int): the size of beam
             max_decode_len (int, optional): the length of output sequences
                 to stop prediction when EOS token have not been emitted
@@ -1098,10 +1111,10 @@ class AttentionSeq2seq(ModelBase):
 def to_onehot(y, n_dims):
     """Convert indices into one-hot encoding.
     Args:
-        y (Variable, long): A tensor of size `[B, 1]`
+        y (torch.autograd.Variable, long): A tensor of size `[B, 1]`
         n_dims (int):
     Returns:
-        y (Variable, float): A tensor of size `[B, ]`
+        y (torch.autograd.Variable, float): A tensor of size `[]`
     """
     batch_size = y.size(0)
     y_onehot = torch.FloatTensor(batch_size, n_dims).zero_()

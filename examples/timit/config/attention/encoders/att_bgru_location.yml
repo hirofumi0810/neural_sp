@@ -1,9 +1,0 @@
-parent: ../config/attention/att_baseline.yml
-param:
-  # framework
-  backend: pytorch
-  # backend: chainer
-
-  # topology
-  encoder_type: gru
-  decoder_type: gru

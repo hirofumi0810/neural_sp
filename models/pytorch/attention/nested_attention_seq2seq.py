@@ -42,7 +42,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                  encoder_num_proj,
                  encoder_num_layers,
                  encoder_num_layers_sub,  # ***
-                 encoder_dropout,
                  attention_type,
                  attention_dim,
                  decoder_type,
@@ -50,9 +49,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                  decoder_num_layers,
                  decoder_num_units_sub,  # ***
                  decoder_num_layers_sub,  # ***
-                 decoder_dropout,
                  embedding_dim,
                  embedding_dim_sub,  # ***
+                 dropout_input,
+                 dropout_encoder,
+                 dropout_decoder,
+                 dropout_embedding,
                  main_loss_weight,  # ***
                  num_classes,
                  num_classes_sub,  # ***
@@ -93,14 +95,16 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             encoder_num_units=encoder_num_units,
             encoder_num_proj=encoder_num_proj,
             encoder_num_layers=encoder_num_layers,
-            encoder_dropout=encoder_dropout,
             attention_type=attention_type,
             attention_dim=attention_dim,
             decoder_type=decoder_type,
             decoder_num_units=decoder_num_units,
             decoder_num_layers=decoder_num_layers,
-            decoder_dropout=decoder_dropout,
             embedding_dim=embedding_dim,
+            dropout_input=dropout_input,
+            dropout_encoder=dropout_encoder,
+            dropout_decoder=dropout_decoder,
+            dropout_embedding=dropout_embedding,
             num_classes=num_classes,
             parameter_init=parameter_init,
             subsample_list=subsample_list,
@@ -160,7 +164,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 num_proj=encoder_num_proj,
                 num_layers=encoder_num_layers,
                 num_layers_sub=encoder_num_layers_sub,
-                dropout=encoder_dropout,
+                dropout_input=dropout_input,
+                dropout_hidden=dropout_encoder,
                 subsample_list=subsample_list,
                 subsample_type=subsample_type,
                 batch_first=True,
@@ -193,14 +198,14 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             rnn_type=decoder_type,
             num_units=decoder_num_units,
             num_layers=decoder_num_layers,
-            dropout=decoder_dropout,
+            dropout=dropout_decoder,
             batch_first=True)
         self.decoder_sub = RNNDecoder(
             input_size=decoder_num_units_sub + embedding_dim_sub,
             rnn_type=decoder_type,
             num_units=decoder_num_units_sub,
             num_layers=decoder_num_layers_sub,
-            dropout=decoder_dropout,
+            dropout=dropout_decoder,
             batch_first=True)
 
         ##############################
@@ -232,10 +237,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             if encoder_bidirectional:
                 self.bridge = LinearND(
                     encoder_num_units * 2, decoder_num_units,
-                    dropout=decoder_dropout)
+                    dropout=dropout_encoder)
             else:
                 self.bridge = LinearND(encoder_num_units, decoder_num_units,
-                                       dropout=decoder_dropout)
+                                       dropout=dropout_encoder)
             self.is_bridge = True
         else:
             self.is_bridge = False
@@ -243,33 +248,33 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             if encoder_bidirectional:
                 self.bridge_sub = LinearND(
                     encoder_num_units * 2, decoder_num_units_sub,
-                    dropout=decoder_dropout)
+                    dropout=dropout_encoder)
             else:
                 self.bridge_sub = LinearND(
                     encoder_num_units, decoder_num_units_sub,
-                    dropout=decoder_dropout)
+                    dropout=dropout_encoder)
             self.is_bridge_sub = True
         else:
             self.is_bridge_sub = False
 
         self.embed = Embedding(num_classes=self.num_classes,
                                embedding_dim=embedding_dim,
-                               dropout=decoder_dropout)
+                               dropout=dropout_embedding)
         self.embed_sub = Embedding(num_classes=self.num_classes_sub,
                                    embedding_dim=embedding_dim_sub,
-                                   dropout=decoder_dropout)
+                                   dropout=dropout_embedding)
 
         if composition_case in ['hidden', 'hidden_embedding']:
             self.proj_layer = LinearND(
                 decoder_num_units * 2 + decoder_num_units_sub, decoder_num_units,
-                dropout=decoder_dropout)
+                dropout=dropout_decoder)
         else:
             self.proj_layer = LinearND(
                 decoder_num_units * 2, decoder_num_units,
-                dropout=decoder_dropout)
+                dropout=dropout_decoder)
         self.proj_layer_sub = LinearND(
             decoder_num_units_sub * 2, decoder_num_units_sub,
-            dropout=decoder_dropout)
+            dropout=dropout_decoder)
         self.fc = LinearND(decoder_num_units, self.num_classes - 1)
         self.fc_sub = LinearND(
             decoder_num_units_sub, self.num_classes_sub - 1)
@@ -299,7 +304,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                                      char_embedding_dim=embedding_dim_sub,
                                      word_embedding_dim=embedding_dim,
                                      dropout=0)
-
             self.gate_fn = LinearND(embedding_dim, embedding_dim)
 
         # Initialize parameters
@@ -333,9 +337,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (Variable(float) or float): A tensor of size `[1]`
-            xe_loss_main (Variable(float) or float): A tensor of size `[1]`
-            xe_loss_sub (Variable(float) or float): A tensor of size `[1]`
+            loss (torch.autograd.Variable(float) or float): A tensor of size `[1]`
+            xe_loss_main (torch.autograd.Variable(float) or float): A tensor of size `[1]`
+            xe_loss_sub (torch.autograd.Variable(float) or float): A tensor of size `[1]`
         """
         # Wrap by Variable
         xs = np2var(xs, use_cuda=self.use_cuda, backend='pytorch')
@@ -454,21 +458,22 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                             ys, ys_sub, y_lens, y_lens_sub):
         """Decoding of composition models in the training stage.
         Args:
-            enc_out (FloatTensor): A tensor of size
+            enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, decoder_num_units]`
-            enc_out_sub (FloatTensor): A tensor of size
+            enc_out_sub (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, decoder_num_units_sub]`
-            ys (LongTensor): A tensor of size `[B, T_out]`
-            ys_sub (LongTensor): A tensor of size `[B, T_out_sub]`
-            y_lens (np.ndarray): A tensor of size `[B]`
-            y_lens_sub (np.ndarray): A tensor of size `[B]`
+            ys (torch.autograd.Variable, long): A tensor of size `[B, T_out]`
+            ys_sub (torch.autograd.Variable, long): A tensor of size `[B, T_out_sub]`
+            y_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            y_lens_sub (torch.autograd.Variable, int): A tensor of size `[B]`
         Returns:
-            logits (FloatTensor): A tensor of size `[B, T_out, num_classes]`
-            logits_sub (FloatTensor): A tensor of size
+            logits (torch.autograd.Variable, float): A tensor of size
+                `[B, T_out, num_classes]`
+            logits_sub (torch.autograd.Variable, float): A tensor of size
                 `[B, T_out_sub, num_classes_sub]`
-            att_weights (FloatTensor): A tensor of size
+            att_weights (torch.autograd.Variable, float): A tensor of size
                 `[B, T_out, T_in]`
-            att_weights_sub (FloatTensor): A tensor of size
+            att_weights_sub (torch.autograd.Variable, float): A tensor of size
                 `[B, T_out_sub, T_in]`
         """
         batch_size = enc_out.size(0)
@@ -818,22 +823,24 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                      att_weights_step, is_sub_task=False):
         """Decoding step.
         Args:
-            enc_out (FloatTensor): A tensor of size
+            enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            dec_in (FloatTensor): A tensor of size
+            dec_in (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, embedding_dim + decoder_num_units]`
-            dec_state (FloatTensor): A tensor of size
+            dec_state (torch.autograd.Variable, float): A tensor of size
                 `[decoder_num_layers, B, decoder_num_units]`
-            att_weights_step (FloatTensor): A tensor of size `[B, T_in]`
+            att_weights_step (torch.autograd.Variable, float): A tensor of size
+                `[B, T_in]`
             is_sub_task (bool, optional):
         Returns:
-            dec_out (FloatTensor): A tensor of size
+            dec_out (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, decoder_num_units]`
-            dec_state (FloatTensor): A tensor of size
+            dec_state (torch.autograd.Variable, float): A tensor of size
                 `[decoder_num_layers, B, decoder_num_units]`
-            content_vector (FloatTensor): A tensor of size
+            content_vector (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, encoder_num_units]`
-            att_weights_step (FloatTensor): A tensor of size `[B, T_in]`
+            att_weights_step (torch.autograd.Variable, float): A tensor of size
+                `[B, T_in]`
         """
         if is_sub_task:
             dec_out, dec_state = self.decoder_sub(dec_in, dec_state)
@@ -935,9 +942,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
     def _decode_infer_greedy_joint(self, enc_out, enc_out_sub, max_decode_len):
         """Greedy decoding in the inference stage.
         Args:
-            enc_out (FloatTensor): A tensor of size
+            enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, decoder_num_units]`
-            enc_out_sub (FloatTensor): A tensor of size
+            enc_out_sub (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, decoder_num_units_sub]`
             max_decode_len (int): the length of output sequences
                 to stop prediction when EOS token have not been emitted

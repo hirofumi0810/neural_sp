@@ -27,7 +27,8 @@ class RNNEncoder(nn.Module):
         num_units (int): the number of units in each layer
         num_proj (int): the number of nodes in the projection layer
         num_layers (int): the number of layers
-        dropout (float): the probability to drop nodes
+        dropout_input (float): the probability to drop nodes in input-hidden connection
+        dropout_hidden (float): the probability to drop nodes in hidden-hidden connection
         subsample_list (list): subsample in the corresponding layers (True)
             ex.) [False, True, True, False] means that downsample is conducted
                 in the 2nd and 3rd layers.
@@ -57,7 +58,8 @@ class RNNEncoder(nn.Module):
                  num_units,
                  num_proj,
                  num_layers,
-                 dropout,
+                 dropout_input,
+                 dropout_hidden,
                  subsample_list=[],
                  subsample_type='drop',
                  use_cuda=False,
@@ -122,25 +124,25 @@ class RNNEncoder(nn.Module):
         self.residual_start_layer = subsample_last_layer + 1
         # NOTE: このレイヤの出力からres_outputs_listに入れていく
 
+        # Dropout for input-hidden connection
+        self.dropout_input = nn.Dropout(p=dropout_input)
+
         # Setting for CNNs before RNNs
         if len(conv_channels) > 0 and len(conv_channels) == len(conv_kernel_sizes) and len(conv_kernel_sizes) == len(conv_strides):
-            assert num_stack == 1
-            assert splice == 1
+            assert num_stack == 1 and splice == 1
             self.conv = CNNEncoder(input_size,
                                    conv_channels=conv_channels,
                                    conv_kernel_sizes=conv_kernel_sizes,
                                    conv_strides=conv_strides,
                                    poolings=poolings,
-                                   dropout=dropout,
+                                   dropout_input=0,
+                                   dropout_hidden=dropout_hidden,
                                    activation=activation,
                                    batch_norm=batch_norm)
             input_size = self.conv.output_size
         else:
             input_size = input_size * splice * num_stack
             self.conv = None
-
-        # Dropout for input-hidden connection
-        self.dropout_input = nn.Dropout(p=0.2)
 
         for i_layer in range(num_layers):
             if i_layer == 0:
@@ -160,7 +162,7 @@ class RNNEncoder(nn.Module):
                                 num_layers=1,
                                 bias=True,
                                 batch_first=batch_first,
-                                dropout=dropout,
+                                dropout=0,
                                 bidirectional=bidirectional)
 
             elif rnn_type == 'gru':
@@ -169,7 +171,7 @@ class RNNEncoder(nn.Module):
                                num_layers=1,
                                bias=True,
                                batch_first=batch_first,
-                               dropout=dropout,
+                               dropout=0,
                                bidirectional=bidirectional)
             elif rnn_type == 'rnn':
                 rnn_i = nn.RNN(encoder_input_size,
@@ -177,7 +179,7 @@ class RNNEncoder(nn.Module):
                                num_layers=1,
                                bias=True,
                                batch_first=batch_first,
-                               dropout=dropout,
+                               dropout=0,
                                bidirectional=bidirectional)
             else:
                 raise ValueError('rnn_type must be "lstm" or "gru" or "rnn".')
@@ -187,36 +189,38 @@ class RNNEncoder(nn.Module):
             else:
                 setattr(self, rnn_type + '_l' + str(i_layer), rnn_i)
 
+            # Dropout for hidden-hidden or hidden-output connection
+            setattr(self, 'dropout_l' + str(i_layer),
+                    nn.Dropout(p=dropout_hidden))
+
             if i_layer != self.num_layers - 1 and self.num_proj > 0:
                 proj_i = LinearND(num_units * self.num_directions, num_proj,
-                                  dropout=dropout)
+                                  dropout=dropout_hidden)
                 setattr(self, 'proj_l' + str(i_layer), proj_i)
-
-        # Dropout for the last layer
-        self.dropout_hidden_last = nn.Dropout(p=dropout)
 
     def forward(self, xs, x_lens, volatile=False):
         """Forward computation.
         Args:
-            xs (Variable, float): A tensor of size `[B, T, input_size]`
-            x_lens (Variable, int): A tensor of size `[B]`
+            xs (torch.autograd.Variable, float): A tensor of size
+                `[B, T, input_size]`
+            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            xs (Variable, float):
+            xs (torch.autograd.Variable, float):
                 if batch_first is True, a tensor of size
                     `[B, T // sum(subsample_list), num_units (* num_directions)]`
                 else
                     `[T // sum(subsample_list), B, num_units (* num_directions)]`
-            x_lens (Variable, int): A tensor of size `[B]`
+            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
             OPTION:
-                xs_sub (Variable, float):
+                xs_sub (torch.autograd.Variable, float):
                     if batch_first is True, a tensor of size
                         `[B, T // sum(subsample_list), num_units (* num_directions)]`
                     else
                         `[T // sum(subsample_list), B, num_units (* num_directions)]`
-                x_lens_sub (Variable, int): A tensor of size `[B]`
-            perm_idx (Variable, int): A tensor of size `[B]`
+                x_lens_sub (torch.autograd.Variable, int): A tensor of size `[B]`
+            perm_idx (torch.autograd.Variable, int): A tensor of size `[B]`
         """
         batch_size = xs.size(0)
         use_cuda = xs.is_cuda
@@ -256,6 +260,7 @@ class RNNEncoder(nn.Module):
                 xs = pack_padded_sequence(
                     xs, x_lens, batch_first=self.batch_first)
 
+            # Path through RNN
             if self.subsample_list[i_layer]:
                 xs, _ = getattr(self, 'p' + self.rnn_type +
                                 '_l' + str(i_layer))(xs, hx=h_0)
@@ -263,14 +268,17 @@ class RNNEncoder(nn.Module):
                 xs, _ = getattr(self, self.rnn_type + '_l' +
                                 str(i_layer))(xs, hx=h_0)
 
+            # Unpack i_layer-th encoder outputs
+            xs, unpacked_seq_len = pad_packed_sequence(
+                xs, batch_first=self.batch_first, padding_value=0)
+            # assert x_lens == unpacked_seq_len
+
+            # Dropout for hidden-hidden or hidden-output connection
+            xs = getattr(self, 'dropout_l' + str(i_layer))(xs)
+
             # Pick up outputs in the sub task before the projection layer
             if self.num_layers_sub >= 1 and i_layer == self.num_layers_sub - 1:
                 xs_sub = xs
-
-                # Unpack encoder outputs
-                xs_sub, unpacked_seq_len_sub = pad_packed_sequence(
-                    xs_sub, batch_first=self.batch_first, padding_value=0)
-                # assert x_lens == unpacked_seq_len_sub
 
                 # Wrap by Variable again
                 x_lens_sub = np2var(
@@ -279,11 +287,6 @@ class RNNEncoder(nn.Module):
             # NOTE: Exclude the last layer
             if i_layer != self.num_layers - 1:
                 if self.residual or self.dense_residual or self.num_proj > 0 or self.subsample_list[i_layer]:
-
-                    # Unpack i_layer-th encoder outputs
-                    xs, unpacked_seq_len = pad_packed_sequence(
-                        xs, batch_first=self.batch_first, padding_value=0)
-                    # assert x_lens == unpacked_seq_len
 
                     # Projection layer (affine transformation)
                     if self.num_proj > 0:
@@ -325,19 +328,6 @@ class RNNEncoder(nn.Module):
                                 res_outputs_list = [xs]
                             elif self.dense_residual:
                                 res_outputs_list.append(xs)
-
-                    # Pack i_layer-th encoder outputs again
-                    xs = pack_padded_sequence(
-                        xs, x_lens, batch_first=self.batch_first)
-
-        # Unpack encoder outputs
-        if isinstance(xs, torch.nn.utils.rnn.PackedSequence):
-            xs, unpacked_seq_len = pad_packed_sequence(
-                xs, batch_first=self.batch_first, padding_value=0)
-            # assert x_lens == unpacked_seq_len
-
-        # Dropout for the last layer
-        xs = self.dropout_hidden_last(xs)
 
         # Wrap by Variable again
         x_lens = np2var(

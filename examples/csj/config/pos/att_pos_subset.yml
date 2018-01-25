@@ -1,18 +1,16 @@
-parent: ../config/attention/word/att_blstm_word_freq5_subset.yml
+parent: ../config/attention/word/att_word_freq5_subset_baseline.yml
 param:
   # framework
   backend: pytorch
   # backend: chainer
 
+  # corpus
+  label_type: pos
+  data_size: subset
+  num_classes: 16
+
   # topology
-  encoder_num_layers: 6
-  subsample_list:
-    - False
-    - False
-    - False
-    - False
-    - False
-    - False
+  embedding_dim: 8
 
   # optimization
   batch_size: 64

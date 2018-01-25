@@ -8,24 +8,16 @@ from __future__ import division
 from __future__ import print_function
 
 
-def load(model_type, params, backend='pytorch'):
+def load(model_type, params, backend):
     """Load an encoder.
     Args:
         model_type (string): ctc or student_ctc or attention or
-            hierarchical_ctc or hierarchical_attention or
-        params (dict):
-        backend (string, optional): pytorch or chainer
+            hierarchical_ctc or hierarchical_attention or nested_attention
+        params (dict): dict of hyperparameters
+        backend (string): pytorch or chainer
     Returns:
         model (nn.Module): An encoder class
     """
-    # TODO: remove these
-    if 'parameter_init_distribution' not in params.keys():
-        params['parameter_init_distribution'] = 'uniform'
-    if 'recurrent_weight_orthogonal' not in params.keys():
-        params['recurrent_weight_orthogonal'] = False
-    if 'init_forget_gate_bias_with_one' not in params.keys():
-        params['init_forget_gate_bias_with_one'] = True
-
     model_name = params['encoder_type']
     if params['encoder_type'] in ['cnn', 'resnet']:
         for c in params['conv_channels']:
@@ -38,9 +30,9 @@ def load(model_type, params, backend='pytorch'):
             model_name = 'conv_'
             for c in params['conv_channels']:
                 model_name += str(c) + '_'
-            model_name = model_name + name_tmp
-    if bool(params['batch_norm']):
-        model_name += '_bn'
+            if bool(params['batch_norm']):
+                model_name += 'bn_'
+            model_name += name_tmp
 
     if model_type == 'ctc':
         if 'activation' not in params.keys():
@@ -62,7 +54,8 @@ def load(model_type, params, backend='pytorch'):
             encoder_num_proj=params['encoder_num_proj'],
             encoder_num_layers=params['encoder_num_layers'],
             fc_list=params['fc_list'],
-            dropout=params['dropout'],
+            dropout_input=params['dropout_input'],
+            dropout_encoder=params['dropout_encoder'],
             num_classes=params['num_classes'],
             parameter_init_distribution=params['parameter_init_distribution'],
             parameter_init=params['parameter_init'],
@@ -101,8 +94,11 @@ def load(model_type, params, backend='pytorch'):
                 model.name += '_' + str(l)
         model.name += '_' + params['optimizer']
         model.name += '_lr' + str(params['learning_rate'])
-        if params['dropout'] != 0:
-            model.name += '_drop' + str(params['dropout'])
+        if params['dropout_encoder'] != 0:
+            model.name += '_drop'
+            if params['dropout_input'] != 0:
+                model.name += 'en' + str(params['dropout_input'])
+            model.name += 'en' + str(params['dropout_encoder'])
         if params['logits_temperature'] != 1:
             model.name += '_temp' + str(params['logits_temperature'])
         if params['label_smoothing_prob'] > 0:
@@ -137,7 +133,8 @@ def load(model_type, params, backend='pytorch'):
             encoder_num_proj=params['encoder_num_proj'],
             encoder_num_layers=params['encoder_num_layers'],
             fc_list=params['fc_list'],
-            dropout=params['dropout'],
+            dropout_input=params['dropout_input'],
+            dropout_encoder=params['dropout_encoder'],
             num_classes=params['num_classes'],
             parameter_init_distribution=params['parameter_init_distribution'],
             parameter_init=params['parameter_init'],
@@ -175,8 +172,11 @@ def load(model_type, params, backend='pytorch'):
                 model.name += '_' + str(l)
         model.name += '_' + params['optimizer']
         model.name += '_lr' + str(params['learning_rate'])
-        if params['dropout'] != 0:
-            model.name += '_drop' + str(params['dropout'])
+        if params['dropout_encoder'] != 0:
+            model.name += '_drop'
+            if params['dropout_input'] != 0:
+                model.name += 'en' + str(params['dropout_input'])
+            model.name += 'en' + str(params['dropout_encoder'])
         if params['logits_temperature'] != 1:
             model.name += '_temp' + str(params['logits_temperature'])
         if params['weight_noise_std'] != 0:
@@ -203,14 +203,16 @@ def load(model_type, params, backend='pytorch'):
             encoder_num_units=params['encoder_num_units'],
             encoder_num_proj=params['encoder_num_proj'],
             encoder_num_layers=params['encoder_num_layers'],
-            encoder_dropout=params['dropout_encoder'],
             attention_type=params['attention_type'],
             attention_dim=params['attention_dim'],
             decoder_type=params['decoder_type'],
             decoder_num_units=params['decoder_num_units'],
             decoder_num_layers=params['decoder_num_layers'],
-            decoder_dropout=params['dropout_decoder'],
             embedding_dim=params['embedding_dim'],
+            dropout_input=params['dropout_input'],
+            dropout_encoder=params['dropout_encoder'],
+            dropout_decoder=params['dropout_decoder'],
+            dropout_embedding=params['dropout_embedding'],
             num_classes=params['num_classes'],
             parameter_init_distribution=params['parameter_init_distribution'],
             parameter_init=params['parameter_init'],
@@ -261,10 +263,14 @@ def load(model_type, params, backend='pytorch'):
         model.name += '_' + params['attention_type']
         if params['dropout_encoder'] != 0 or params['dropout_decoder'] != 0:
             model.name += '_drop'
+            if params['dropout_input'] != 0:
+                model.name += 'en' + str(params['dropout_input'])
             if params['dropout_encoder'] != 0:
                 model.name += 'en' + str(params['dropout_encoder'])
             if params['dropout_decoder'] != 0:
                 model.name += 'de' + str(params['dropout_decoder'])
+            if params['dropout_embedding'] != 0:
+                model.name += 'en' + str(params['dropout_embedding'])
         if params['sharpening_factor'] != 1:
             model.name += '_sharp' + str(params['sharpening_factor'])
         if params['logits_temperature'] != 1:
@@ -312,7 +318,8 @@ def load(model_type, params, backend='pytorch'):
             encoder_num_layers=params['encoder_num_layers'],
             num_layers_sub=params['num_layers_sub'],
             fc_list=params['fc_list'],
-            dropout=params['dropout'],
+            dropout_input=params['dropout_input'],
+            dropout_encoder=params['dropout_encoder'],
             main_loss_weight=params['main_loss_weight'],
             num_classes=params['num_classes'],
             num_classes_sub=params['num_classes_sub'],
@@ -368,8 +375,11 @@ def load(model_type, params, backend='pytorch'):
                 model.name += '_' + str(l)
         model.name += '_' + params['optimizer']
         model.name += '_lr' + str(params['learning_rate'])
-        if params['dropout'] != 0:
-            model.name += '_drop' + str(params['dropout'])
+        if params['dropout_encoder'] != 0:
+            model.name += '_drop'
+            if params['dropout_input'] != 0:
+                model.name += 'en' + str(params['dropout_input'])
+            model.name += 'en' + str(params['dropout_encoder'])
         if params['logits_temperature'] != 1:
             model.name += '_temp' + str(params['logits_temperature'])
         if params['label_smoothing_prob'] > 0:
@@ -403,7 +413,6 @@ def load(model_type, params, backend='pytorch'):
             encoder_num_proj=params['encoder_num_proj'],
             encoder_num_layers=params['encoder_num_layers'],
             encoder_num_layers_sub=params['encoder_num_layers_sub'],
-            encoder_dropout=params['dropout_encoder'],
             attention_type=params['attention_type'],
             attention_dim=params['attention_dim'],
             decoder_type=params['decoder_type'],
@@ -411,9 +420,12 @@ def load(model_type, params, backend='pytorch'):
             decoder_num_layers=params['decoder_num_layers'],
             decoder_num_units_sub=params['decoder_num_units_sub'],
             decoder_num_layers_sub=params['decoder_num_layers_sub'],
-            decoder_dropout=params['dropout_decoder'],
             embedding_dim=params['embedding_dim'],
             embedding_dim_sub=params['embedding_dim_sub'],
+            dropout_input=params['dropout_input'],
+            dropout_encoder=params['dropout_encoder'],
+            dropout_decoder=params['dropout_decoder'],
+            dropout_embedding=params['dropout_embedding'],
             main_loss_weight=params['main_loss_weight'],
             num_classes=params['num_classes'],
             num_classes_sub=params['num_classes_sub'],
@@ -468,10 +480,14 @@ def load(model_type, params, backend='pytorch'):
         model.name += '_' + params['attention_type']
         if params['dropout_encoder'] != 0 or params['dropout_decoder'] != 0:
             model.name += '_drop'
+            if params['dropout_input'] != 0:
+                model.name += 'en' + str(params['dropout_input'])
             if params['dropout_encoder'] != 0:
                 model.name += 'en' + str(params['dropout_encoder'])
             if params['dropout_decoder'] != 0:
                 model.name += 'de' + str(params['dropout_decoder'])
+            if params['dropout_embedding'] != 0:
+                model.name += 'en' + str(params['dropout_embedding'])
         if params['sharpening_factor'] != 1:
             model.name += '_sharp' + str(params['sharpening_factor'])
         if params['logits_temperature'] != 1:
@@ -518,7 +534,6 @@ def load(model_type, params, backend='pytorch'):
             encoder_num_proj=params['encoder_num_proj'],
             encoder_num_layers=params['encoder_num_layers'],
             encoder_num_layers_sub=params['encoder_num_layers_sub'],
-            encoder_dropout=params['dropout_encoder'],
             attention_type=params['attention_type'],
             attention_dim=params['attention_dim'],
             decoder_type=params['decoder_type'],
@@ -526,9 +541,12 @@ def load(model_type, params, backend='pytorch'):
             decoder_num_layers=params['decoder_num_layers'],
             decoder_num_units_sub=params['decoder_num_units_sub'],
             decoder_num_layers_sub=params['decoder_num_layers_sub'],
-            decoder_dropout=params['dropout_decoder'],
             embedding_dim=params['embedding_dim'],
             embedding_dim_sub=params['embedding_dim_sub'],
+            dropout_input=params['dropout_input'],
+            dropout_encoder=params['dropout_encoder'],
+            dropout_decoder=params['dropout_decoder'],
+            dropout_embedding=params['dropout_embedding'],
             main_loss_weight=params['main_loss_weight'],
             num_classes=params['num_classes'],
             num_classes_sub=params['num_classes_sub'],
@@ -580,10 +598,14 @@ def load(model_type, params, backend='pytorch'):
         model.name += '_' + params['attention_type']
         if params['dropout_encoder'] != 0 or params['dropout_decoder'] != 0:
             model.name += '_drop'
+            if params['dropout_input'] != 0:
+                model.name += 'en' + str(params['dropout_input'])
             if params['dropout_encoder'] != 0:
                 model.name += 'en' + str(params['dropout_encoder'])
             if params['dropout_decoder'] != 0:
                 model.name += 'de' + str(params['dropout_decoder'])
+            if params['dropout_embedding'] != 0:
+                model.name += 'en' + str(params['dropout_embedding'])
         if params['sharpening_factor'] != 1:
             model.name += '_sharp' + str(params['sharpening_factor'])
         if params['logits_temperature'] != 1:

@@ -43,7 +43,8 @@ class HierarchicalCTC(CTC):
         encoder_num_layers (int): the number of layers of the encoder of the main task
         encoder_num_layers_sub (int): the number of layers of the encoder of the sub task
         fc_list (list):
-        dropout (float): the probability to drop nodes
+        dropout_input (float): the probability to drop nodes in input-hidden connection
+        dropout_encoder (float): the probability to drop nodes in hidden-hidden connection
         main_loss_weight (float): A weight parameter for the main CTC loss
         num_classes (int): the number of classes of target labels of the main task
             (excluding the blank class)
@@ -86,7 +87,8 @@ class HierarchicalCTC(CTC):
                  encoder_num_layers,
                  encoder_num_layers_sub,  # ***
                  fc_list,
-                 dropout,
+                 dropout_input,
+                 dropout_encoder,
                  main_loss_weight,  # ***
                  num_classes,
                  num_classes_sub,  # ***
@@ -117,7 +119,8 @@ class HierarchicalCTC(CTC):
             encoder_num_units=encoder_num_units,
             encoder_num_proj=encoder_num_proj,
             encoder_num_layers=encoder_num_layers,
-            dropout=dropout,
+            dropout_input=dropout_input,
+            dropout_hidden=dropout_hidden,
             num_classes=num_classes,
             parameter_init=parameter_init,
             subsample_list=subsample_list,
@@ -148,7 +151,8 @@ class HierarchicalCTC(CTC):
                 num_proj=encoder_num_proj,
                 num_layers=encoder_num_layers,
                 num_layers_sub=encoder_num_layers_sub,
-                dropout=dropout,
+                dropout_input=dropout_input,
+                dropout_hidden=dropout_encoder,
                 subsample_list=subsample_list,
                 subsample_type=subsample_type,
                 batch_first=True,
@@ -199,9 +203,9 @@ class HierarchicalCTC(CTC):
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (Variable(float) or float): A tensor of size `[1]`
-            loss_main (Variable(float) or float): A tensor of size `[1]`
-            loss_sub (Variable(float) or float): A tensor of size `[1]`
+            loss (torch.autograd.Variable(float) or float): A tensor of size `[1]`
+            loss_main (torch.autograd.Variable(float) or float): A tensor of size `[1]`
+            loss_sub (torch.autograd.Variable(float) or float): A tensor of size `[1]`
         """
         # Wrap by Variable
         xs = np2var(inputs, use_cuda=self.use_cuda, backend='pytorch')

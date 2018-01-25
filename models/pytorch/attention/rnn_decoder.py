@@ -56,7 +56,7 @@ class RNNDecoder(nn.Module):
                                 num_layers=1,
                                 bias=True,
                                 batch_first=batch_first,
-                                dropout=dropout,
+                                dropout=0,
                                 bidirectional=False)
             elif rnn_type == 'gru':
                 rnn_i = nn.GRU(decoder_input_size,
@@ -64,7 +64,7 @@ class RNNDecoder(nn.Module):
                                num_layers=1,
                                bias=True,
                                batch_first=batch_first,
-                               dropout=dropout,
+                               dropout=0,
                                bidirectional=False)
             elif rnn_type == 'rnn':
                 rnn_i = nn.RNN(decoder_input_size,
@@ -72,26 +72,30 @@ class RNNDecoder(nn.Module):
                                num_layers=1,
                                bias=True,
                                batch_first=batch_first,
-                               dropout=dropout,
+                               dropout=0,
                                bidirectional=False)
             else:
                 raise ValueError('rnn_type must be "lstm" or "gru" or "rnn".')
 
             setattr(self, rnn_type + '_l' + str(i_layer), rnn_i)
 
+            # Dropout for hidden-hidden or hidden-output connection
+            setattr(self, 'dropout_l' + str(i_layer), nn.Dropout(p=dropout))
+
     def forward(self, y, dec_state, volatile=False):
         """Forward computation.
         Args:
-            y (Variable, float): A tensor of size `[B, 1, input_size]`
-            dec_state (Variable(float) or tuple): A tensor of size
+            y (torch.autograd.Variable, float): A tensor of size
+                `[B, 1, input_size]`
+            dec_state (torch.autograd.Variable(float) or tuple): A tensor of size
                 `[1, B, num_units]`
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            dec_out (Variable, float):
+            dec_out (torch.autograd.Variable, float):
                 if batch_first is True, a tensor of size `[B, 1, num_units]`
                 else `[1, B, num_units]`
-            dec_state (Variable(float) or tuple):
+            dec_state (torch.autograd.Variable(float) or tuple):
         """
         if not self.batch_first:
             # Reshape y to the time-major
@@ -103,6 +107,9 @@ class RNNDecoder(nn.Module):
         for i_layer in range(self.num_layers):
             dec_out, dec_state = getattr(self, self.rnn_type + '_l' + str(i_layer))(
                 dec_out, hx=dec_state)
+
+            # Dropout for hidden-hidden or hidden-output connection
+            dec_out = getattr(self, 'dropout_l' + str(i_layer))(dec_out)
 
             # Residual connection
             if self.residual or self.dense_residual:
