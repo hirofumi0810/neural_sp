@@ -48,12 +48,63 @@ def main():
     args = parser.parse_args()
 
     ##################################################
-    # MODEL
+    # DATSET
     ##################################################
     if args.model_save_path is not None:
         # Load a config file (.yml)
         params = load_config(args.config_path)
+    # NOTE: Retrain the saved model from the last checkpoint
+    elif args.saved_model_path is not None:
+        params = load_config(os.path.join(args.saved_model_path, 'config.yml'))
+    else:
+        raise ValueError("Set model_save_path or saved_model_path.")
 
+    # Load dataset
+    vocab_file_path_train = '../metrics/vocab_files/' + \
+        params['label_type'] + '.txt'
+    vocab_file_path_eval = '../metrics/vocab_files/phone39.txt'
+    train_data = Dataset(
+        backend=params['backend'],
+        input_channel=params['input_channel'],
+        use_delta=params['use_delta'],
+        use_double_delta=params['use_double_delta'],
+        model_type=params['model_type'],
+        data_type='train', label_type=params['label_type'],
+        vocab_file_path=vocab_file_path_train,
+        batch_size=params['batch_size'],
+        max_epoch=params['num_epoch'], splice=params['splice'],
+        num_stack=params['num_stack'], num_skip=params['num_skip'],
+        sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
+        save_format=params['save_format'], num_enque=None,
+        dynamic_batching=params['dynamic_batching'])
+    params['num_classes'] = train_data.num_classes
+    dev_data = Dataset(
+        backend=params['backend'],
+        input_channel=params['input_channel'],
+        use_delta=params['use_delta'],
+        use_double_delta=params['use_double_delta'],
+        model_type=params['model_type'],
+        data_type='dev', label_type=params['label_type'],
+        vocab_file_path=vocab_file_path_train,
+        batch_size=params['batch_size'], splice=params['splice'],
+        num_stack=params['num_stack'], num_skip=params['num_skip'],
+        shuffle=True, save_format=params['save_format'])
+    test_data = Dataset(
+        backend=params['backend'],
+        input_channel=params['input_channel'],
+        use_delta=params['use_delta'],
+        use_double_delta=params['use_double_delta'],
+        model_type=params['model_type'],
+        data_type='test', label_type='phone39',
+        vocab_file_path=vocab_file_path_eval,
+        batch_size=1, splice=params['splice'],
+        num_stack=params['num_stack'], num_skip=params['num_skip'],
+        save_format=params['save_format'])
+
+    ##################################################
+    # MODEL
+    ##################################################
+    if args.model_save_path is not None:
         # Model setting
         model = load(model_type=params['model_type'],
                      params=params,
@@ -91,12 +142,8 @@ def main():
         epoch, step = 1, 0
         learning_rate = float(params['learning_rate'])
 
+    # NOTE: Retrain the saved model from the last checkpoint
     elif args.saved_model_path is not None:
-        # NOTE: Retrain the saved model from the last checkpoint
-
-        # Load a config file (.yml)
-        params = load_config(os.path.join(args.saved_model_path, 'config.yml'))
-
         # Load model
         model = load(model_type=params['model_type'],
                      params=params,
@@ -125,6 +172,8 @@ def main():
     else:
         raise ValueError("Set model_save_path or saved_model_path.")
 
+    train_data.epoch = epoch - 1
+
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
@@ -133,50 +182,6 @@ def main():
 
     # Set process name
     setproctitle('timit_' + params['model_type'] + '_' + params['label_type'])
-
-    ##################################################
-    # DATSET
-    ##################################################
-    # Load dataset
-    vocab_file_path_train = '../metrics/vocab_files/' + \
-        params['label_type'] + '.txt'
-    vocab_file_path_eval = '../metrics/vocab_files/phone39.txt'
-    train_data = Dataset(
-        backend=params['backend'],
-        input_channel=params['input_channel'],
-        use_delta=params['use_delta'],
-        use_double_delta=params['use_double_delta'],
-        model_type=params['model_type'],
-        data_type='train', label_type=params['label_type'],
-        vocab_file_path=vocab_file_path_train,
-        batch_size=params['batch_size'],
-        max_epoch=params['num_epoch'], splice=params['splice'],
-        num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
-        save_format=params['save_format'], num_enque=None,
-        dynamic_batching=params['dynamic_batching'])
-    dev_data = Dataset(
-        backend=params['backend'],
-        input_channel=params['input_channel'],
-        use_delta=params['use_delta'],
-        use_double_delta=params['use_double_delta'],
-        model_type=params['model_type'],
-        data_type='dev', label_type=params['label_type'],
-        vocab_file_path=vocab_file_path_train,
-        batch_size=params['batch_size'], splice=params['splice'],
-        num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=True, save_format=params['save_format'])
-    test_data = Dataset(
-        backend=params['backend'],
-        input_channel=params['input_channel'],
-        use_delta=params['use_delta'],
-        use_double_delta=params['use_double_delta'],
-        model_type=params['model_type'],
-        data_type='test', label_type='phone39',
-        vocab_file_path=vocab_file_path_eval,
-        batch_size=1, splice=params['splice'],
-        num_stack=params['num_stack'], num_skip=params['num_skip'],
-        save_format=params['save_format'])
 
     ##################################################
     # TRAINING LOOP

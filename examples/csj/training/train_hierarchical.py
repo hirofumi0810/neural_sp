@@ -51,98 +51,17 @@ def main():
     args = parser.parse_args()
 
     ##################################################
-    # MODEL
+    # DATSET
     ##################################################
     if args.model_save_path is not None:
         # Load a config file (.yml)
         params = load_config(args.config_path)
-
-        # Model setting
-        model = load(model_type=params['model_type'],
-                     params=params,
-                     backend=params['backend'])
-
-        # Set save path
-        save_path = mkdir_join(
-            args.model_save_path,  params['backend'], 'csj',
-            params['model_type'],
-            params['label_type'] + '_' + params['label_type_sub'],
-            params['data_size'], model.name)
-        model.set_save_path(save_path)
-
-        # Save config file
-        save_config(config_path=args.config_path, save_path=model.save_path)
-
-        # Setting for logging
-        logger = set_logger(model.save_path)
-
-        # Count total parameters
-        for name in sorted(list(model.num_params_dict.keys())):
-            num_params = model.num_params_dict[name]
-            logger.info("%s %d" % (name, num_params))
-        logger.info("Total %.3f M parameters" %
-                    (model.total_parameters / 1000000))
-
-        # Define optimizer
-        model.set_optimizer(
-            optimizer=params['optimizer'],
-            learning_rate_init=float(params['learning_rate']),
-            weight_decay=float(params['weight_decay']),
-            clip_grad_norm=params['clip_grad_norm'],
-            lr_schedule=False,
-            factor=params['decay_rate'],
-            patience_epoch=params['decay_patient_epoch'])
-
-        epoch, step = 1, 0
-        learning_rate = float(params['learning_rate'])
-
+    # NOTE: Retrain the saved model from the last checkpoint
     elif args.saved_model_path is not None:
-        # NOTE: Retrain the saved model from the last checkpoint
-
-        # Load a config file (.yml)
         params = load_config(os.path.join(args.saved_model_path, 'config.yml'))
-
-        # Load model
-        model = load(model_type=params['model_type'],
-                     params=params,
-                     backend=params['backend'])
-
-        # Set save path
-        model.save_path = args.saved_model_path
-
-        # Setting for logging
-        logger = set_logger(model.save_path, restart=True)
-
-        # Define optimizer
-        model.set_optimizer(
-            optimizer=params['optimizer'],
-            learning_rate_init=float(params['learning_rate']),
-            weight_decay=float(params['weight_decay']),
-            clip_grad_norm=params['clip_grad_norm'],
-            lr_schedule=False,
-            factor=params['decay_rate'],
-            patience_epoch=params['decay_patient_epoch'])
-
-        # Restore the last saved model
-        epoch, step, learning_rate = model.load_checkpoint(
-            save_path=args.saved_model_path, epoch=-1, restart=True)
-
     else:
         raise ValueError("Set model_save_path or saved_model_path.")
 
-    # GPU setting
-    model.set_cuda(deterministic=False, benchmark=True)
-
-    logger.info('PID: %s' % os.getpid())
-    logger.info('USERNAME: %s' % os.uname()[1])
-
-    # Set process name
-    setproctitle('csj_' + params['model_type'] + '_' +
-                 params['label_type'] + '_' + params['label_type_sub'] + '_' + params['data_size'])
-
-    ##################################################
-    # DATSET
-    ##################################################
     # Load dataset
     vocab_file_path = '../metrics/vocab_files/' + \
         params['label_type'] + '_' + params['data_size'] + '.txt'
@@ -166,6 +85,8 @@ def main():
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
         save_format=params['save_format'], num_enque=None,
         dynamic_batching=params['dynamic_batching'])
+    params['num_classes'] = train_data.num_classes
+    params['num_classes_sub'] = train_data.num_classes_sub
     dev_data = Dataset(
         backend=params['backend'],
         input_channel=params['input_channel'],
@@ -222,6 +143,91 @@ def main():
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         save_format=params['save_format'])
+
+    ##################################################
+    # MODEL
+    ##################################################
+    if args.model_save_path is not None:
+        # Model setting
+        model = load(model_type=params['model_type'],
+                     params=params,
+                     backend=params['backend'])
+
+        # Set save path
+        save_path = mkdir_join(
+            args.model_save_path,  params['backend'], 'csj',
+            params['model_type'],
+            params['label_type'] + '_' + params['label_type_sub'],
+            params['data_size'], model.name)
+        model.set_save_path(save_path)
+
+        # Save config file
+        save_config(config_path=args.config_path, save_path=model.save_path)
+
+        # Setting for logging
+        logger = set_logger(model.save_path)
+
+        # Count total parameters
+        for name in sorted(list(model.num_params_dict.keys())):
+            num_params = model.num_params_dict[name]
+            logger.info("%s %d" % (name, num_params))
+        logger.info("Total %.3f M parameters" %
+                    (model.total_parameters / 1000000))
+
+        # Define optimizer
+        model.set_optimizer(
+            optimizer=params['optimizer'],
+            learning_rate_init=float(params['learning_rate']),
+            weight_decay=float(params['weight_decay']),
+            clip_grad_norm=params['clip_grad_norm'],
+            lr_schedule=False,
+            factor=params['decay_rate'],
+            patience_epoch=params['decay_patient_epoch'])
+
+        epoch, step = 1, 0
+        learning_rate = float(params['learning_rate'])
+
+    # NOTE: Retrain the saved model from the last checkpoint
+    elif args.saved_model_path is not None:
+        # Load model
+        model = load(model_type=params['model_type'],
+                     params=params,
+                     backend=params['backend'])
+
+        # Set save path
+        model.save_path = args.saved_model_path
+
+        # Setting for logging
+        logger = set_logger(model.save_path, restart=True)
+
+        # Define optimizer
+        model.set_optimizer(
+            optimizer=params['optimizer'],
+            learning_rate_init=float(params['learning_rate']),
+            weight_decay=float(params['weight_decay']),
+            clip_grad_norm=params['clip_grad_norm'],
+            lr_schedule=False,
+            factor=params['decay_rate'],
+            patience_epoch=params['decay_patient_epoch'])
+
+        # Restore the last saved model
+        epoch, step, learning_rate = model.load_checkpoint(
+            save_path=args.saved_model_path, epoch=-1, restart=True)
+
+    else:
+        raise ValueError("Set model_save_path or saved_model_path.")
+
+    train_data.epoch = epoch - 1
+
+    # GPU setting
+    model.set_cuda(deterministic=False, benchmark=True)
+
+    logger.info('PID: %s' % os.getpid())
+    logger.info('USERNAME: %s' % os.uname()[1])
+
+    # Set process name
+    setproctitle('csj_' + params['model_type'] + '_' +
+                 params['label_type'] + '_' + params['label_type_sub'] + '_' + params['data_size'])
 
     ##################################################
     # TRAINING LOOP
@@ -300,6 +306,7 @@ def main():
                          duration_step / 60))
             start_time_step = time.time()
             loss_train_mean, loss_main_train_mean, loss_sub_train_mean = 0., 0., 0.
+        step += 1
 
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:
