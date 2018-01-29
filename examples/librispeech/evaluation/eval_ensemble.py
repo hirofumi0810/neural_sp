@@ -43,33 +43,8 @@ def main():
 
     args = parser.parse_args()
 
-    models = []
-    for model_path in model_paths:
-        if isfile(join(model_path, 'complete.txt')):
-
-            # Load a config file (.yml)
-            params = load_config(join(model_path, 'config.yml'))
-
-            # Load model
-            model = load(model_type=params['model_type'],
-                         params=params,
-                         backend=params['backend'])
-
-            # Restore the saved model
-            model.load_checkpoint(save_path=args.model_path, epoch=-1)
-
-            # GPU setting
-            model.set_cuda(deterministic=False, benchmark=True)
-
-            models.append(model)
-
-    print('=' * 30)
-    print('  frame stack %d' % int(params['num_stack']))
-    print('  beam width: %d' % args.beam_width)
-    print('  ensemble: %d' % len(models))
-    print('  temperature (training): %d' % params['logits_temperature'])
-    print('  temperature (inference): %d' % args.temperature)
-    print('=' * 30)
+    # Load a config file (.yml)
+    params = load_config(join(model_paths[0], 'config.yml'), is_eval=True)
 
     # Load dataset
     vocab_file_path = '../metrics/vocab_files/' + \
@@ -96,6 +71,35 @@ def main():
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=False, save_format=params['save_format'])
+
+    models = []
+    for model_path in model_paths:
+        if isfile(join(model_path, 'complete.txt')):
+            # Load a config file (.yml)
+            params = load_config(join(model_path, 'config.yml'), is_eval=True)
+
+            params['num_classes'] = test_clean_data.num_classes
+
+            # Load model
+            model = load(model_type=params['model_type'],
+                         params=params,
+                         backend=params['backend'])
+
+            # Restore the saved model
+            model.load_checkpoint(save_path=args.model_path, epoch=-1)
+
+            # GPU setting
+            model.set_cuda(deterministic=False, benchmark=True)
+
+            models.append(model)
+
+    print('=' * 30)
+    print('  frame stack %d' % int(params['num_stack']))
+    print('  beam width: %d' % args.beam_width)
+    print('  ensemble: %d' % len(models))
+    print('  temperature (training): %d' % params['logits_temperature'])
+    print('  temperature (inference): %d' % args.temperature)
+    print('=' * 30)
 
     print('=== Test Data Evaluation ===')
     if 'char' in params['label_type']:

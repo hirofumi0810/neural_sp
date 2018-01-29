@@ -39,18 +39,7 @@ def main():
     args = parser.parse_args()
 
     # Load a config file (.yml)
-    params = load_config(join(args.model_path, 'config.yml'))
-
-    # Load model
-    model = load(model_type=params['model_type'],
-                 params=params,
-                 backend=params['backend'])
-
-    # Restore the saved parameters
-    model.load_checkpoint(save_path=args.model_path, epoch=args.epoch)
-
-    # GPU setting
-    model.set_cuda(deterministic=False, benchmark=True)
+    params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
     vocab_file_path = '../metrics/vocab_files/' + \
@@ -96,6 +85,19 @@ def main():
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=False, save_format=params['save_format'])
+    params['num_classes'] = eval1_data.num_classes
+    params['num_classes_sub'] = eval1_data.num_classes_sub
+
+    # Load model
+    model = load(model_type=params['model_type'],
+                 params=params,
+                 backend=params['backend'])
+
+    # Restore the saved parameters
+    model.load_checkpoint(save_path=args.model_path, epoch=args.epoch)
+
+    # GPU setting
+    model.set_cuda(deterministic=False, benchmark=True)
 
     if params['label_type'] == 'pos':
         pos_eval1 = do_eval_wer(
