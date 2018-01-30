@@ -114,9 +114,10 @@ def do_eval_cer(model, model_type, dataset, label_type, beam_width,
             # print('DEL: %d' % delete)
 
             # Compute CER
-            cer_mean += compute_cer(ref=str_ref,
-                                    hyp=str_hyp,
+            cer_mean += compute_cer(ref=str_ref.replace('_', ''),
+                                    hyp=str_hyp.replace('_', ''),
                                     normalize=True)
+            # NOTE: remove space
 
             if progressbar:
                 pbar.update(len(batch['xs']))

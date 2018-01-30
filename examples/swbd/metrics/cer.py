@@ -109,26 +109,24 @@ def do_eval_cer(model, model_type, dataset, label_type, beam_width,
             # print('\n' + str_ref)
             # print(str_hyp)
 
-            word_list_ref = str_ref.split('_')
-            word_list_hyp = str_hyp.split('_')
-
             # Compute WER
             if len(str_ref) > 0:
-                wer_mean += compute_wer(ref=word_list_ref,
-                                        hyp=word_list_hyp,
+                # Compute WER
+                wer_mean += compute_wer(ref=str_ref.split('_'),
+                                        hyp=str_hyp.split('_'),
                                         normalize=True)
-                # if len(str_hyp) > 0:
-                #     substitute, insert, delete = wer_align(
-                #         ref=word_list_ref,
-                #         hyp=word_list_hyp)
-                #     print('SUB: %d' % substitute)
-                #     print('INS: %d' % insert)
-                #     print('DEL: %d' % delete)
+                # substitute, insert, delete = wer_align(
+                #     ref=str_hyp.split('_'),
+                #     hyp=str_ref.split('_'))
+                # print('SUB: %d' % substitute)
+                # print('INS: %d' % insert)
+                # print('DEL: %d' % delete)
 
                 # Compute CER
-                cer_mean += compute_cer(ref='_'.join(word_list_ref),
-                                        hyp='_'.join(word_list_hyp),
+                cer_mean += compute_cer(ref=str_ref.replace('_', ''),
+                                        hyp=str_hyp.replace('_', ''),
                                         normalize=True)
+                # NOTE: remove space
             else:
                 skip_utt_num += 1
 

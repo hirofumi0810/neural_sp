@@ -15,8 +15,8 @@ from utils.evaluation.edit_distance import compute_wer, wer_align
 
 
 def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
-                max_decode_len, eval_batch_size=None,
-                progressbar=False, is_pos=False):
+                max_decode_len, eval_batch_size=None, progressbar=False,
+                is_pos=False):
     """Evaluate trained model by Character Error Rate.
     Args:
         model: the model to evaluate
@@ -38,9 +38,11 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
     # Reset data counter
     dataset.reset()
 
-    idx2word = Idx2word(
-        vocab_file_path='../metrics/vocab_files/' +
-        label_type + '_' + data_size + '.txt')
+    idx2word = Idx2word(vocab_file_path='../metrics/vocab_files/' +
+                        label_type + '_' + data_size + '.txt')
+    if is_pos:
+        idx2pos = Idx2word(
+            vocab_file_path='../metrics/vocab_files/pos_' + data_size + '.txt')
 
     wer_mean = 0
     if progressbar:
@@ -59,6 +61,7 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
             if is_pos:
                 ys = batch['ys_sub']
                 y_lens = batch['y_lens_sub']
+                ys_pos = batch['ys']
             else:
                 ys = batch['ys']
                 y_lens = batch['y_lens']
@@ -66,6 +69,11 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
                                      beam_width=beam_width,
                                      max_decode_len=max_decode_len,
                                      is_sub_task=is_pos)
+            if is_pos:
+                best_hyps_pos = model.decode(batch['xs'], batch['x_lens'],
+                                             beam_width=beam_width,
+                                             max_decode_len=max_decode_len,
+                                             is_sub_task=False)
 
         for i_batch in range(len(batch['xs'])):
 
@@ -95,6 +103,9 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
                 if len(str_hyp) > 0 and str_hyp[-1] == '_':
                     str_hyp = str_hyp[:-1]
 
+            # TODO: fix POS tag (nan -> 'nan')
+            str_ref = str(str_ref)
+
             # Remove noise labels
             str_ref = re.sub(r'[NZ]+', '', str_ref)
             str_hyp = re.sub(r'[NZ]+', '', str_hyp)
@@ -109,6 +120,40 @@ def do_eval_wer(model, model_type, dataset, label_type, data_size, beam_width,
             # print('SUB: %d' % substitute)
             # print('INS: %d' % insert)
             # print('DEL: %d' % delete)
+
+            ##############################
+            # Compute POS accuracy
+            ##############################
+            # if is_pos:
+            #     ##############################
+            #     # Reference
+            #     ##############################
+            #     if dataset.is_test:
+            #         str_ref_pos = ys_pos[i_batch][0]
+            #         # NOTE: transcript is seperated by space('_')
+            #     else:
+            #         # Convert from list of index to string
+            #         if model_type in ['ctc', 'hierarchical_ctc']:
+            #             str_ref_pos = idx2pos(ys[i_batch][:y_lens[i_batch]])
+            #         elif model_type in ['attention', 'hierarchical_attention', 'nested_attention']:
+            #             str_ref_pos = idx2pos(
+            #                 ys[i_batch][1:y_lens[i_batch] - 1])
+            #             # NOTE: Exclude <SOS> and <EOS>
+            #
+            #     ##############################
+            #     # Hypothesis
+            #     ##############################
+            #     str_hyp_pos = idx2pos(best_hyps_pos[i_batch])
+            #     if model_type in ['attention', 'hierarchical_attention', 'nested_attention']:
+            #         str_hyp_pos = str_hyp_pos.split('>')[0]
+            #         # NOTE: Trancate by the first <EOS>
+            #
+            #         # Remove the last space
+            #         if len(str_hyp_pos) > 0 and str_hyp_pos[-1] == '_':
+            #             str_hyp_pos = str_hyp_pos[:-1]
+            #
+            #     print('ref: %s' % str_ref_pos)
+            #     print('hyp: %s' % str_hyp_pos)
 
             if progressbar:
                 pbar.update(len(batch['xs']))

@@ -15,8 +15,7 @@ from utils.evaluation.edit_distance import compute_cer
 
 
 def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
-                max_decode_len, eval_batch_size=None,
-                progressbar=False):
+                max_decode_len, eval_batch_size=None, progressbar=False):
     """Evaluate trained model by Character Error Rate.
     Args:
         model: the model to evaluate
@@ -37,9 +36,8 @@ def do_eval_cer(model, model_type, dataset, label_type, data_size, beam_width,
     # Reset data counter
     dataset.reset()
 
-    idx2char = Idx2char(
-        vocab_file_path='../metrics/vocab_files/' +
-        label_type + '_' + data_size + '.txt')
+    idx2char = Idx2char(vocab_file_path='../metrics/vocab_files/' +
+                        label_type + '_' + data_size + '.txt')
 
     cer_mean = 0
     if progressbar:
