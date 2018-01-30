@@ -38,18 +38,7 @@ def main():
     args = parser.parse_args()
 
     # Load a config file (.yml)
-    params = load_config(join(args.model_path, 'config.yml'))
-
-    # Load model
-    model = load(model_type=params['model_type'],
-                 params=params,
-                 backend=params['backend'])
-
-    # Restore the saved parameters
-    model.load_checkpoint(save_path=args.model_path, epoch=args.epoch)
-
-    # GPU setting
-    model.set_cuda(deterministic=False, benchmark=True)
+    params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
     vocab_file_path = '../metrics/vocab_files/' + \
@@ -67,6 +56,18 @@ def main():
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, reverse=True, save_format=params['save_format'])
+    params['num_classes'] = test_data.num_classes
+
+    # Load model
+    model = load(model_type=params['model_type'],
+                 params=params,
+                 backend=params['backend'])
+
+    # Restore the saved parameters
+    model.load_checkpoint(save_path=args.model_path, epoch=args.epoch)
+
+    # GPU setting
+    model.set_cuda(deterministic=False, benchmark=True)
 
     # Visualize
     decode(model=model,
@@ -111,8 +112,6 @@ def decode(model, model_type, dataset, beam_width,
 
     for batch, is_new_epoch in dataset:
 
-        batch['xs'], batch['ys', batch['x_lens'], labels_seq_len, batch['input_names'] = batch
-
         # Decode
         labels_pred = model.decode(batch['xs'], batch['x_lens'],
                                    beam_width=beam_width,
@@ -125,44 +124,44 @@ def decode(model, model_type, dataset, beam_width,
             # Reference
             ##############################
             if dataset.is_test:
-                str_true = batch['ys'[i_batch][0]
+                str_ref = batch['ys'[i_batch][0]
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
                 if model_type == 'ctc':
-                    str_true = map_fn(
-                        batch['ys'[i_batch][:labels_seq_len[i_batch]])
+                    str_ref= map_fn(
+                        batch['ys'[i_batch][:batch['y_lens'][i_batch]])
                 elif model_type == 'attention':
-                    str_true = map_fn(
-                        batch['ys'[i_batch][1:labels_seq_len[i_batch] - 1])
+                    str_ref= map_fn(
+                        batch['ys'[i_batch][1:batch['y_lens'][i_batch] - 1])
                     # NOTE: Exclude <SOS> and <EOS>
 
             ##############################
             # Hypothesis
             ##############################
             # Convert from list of index to string
-            str_pred = map_fn(labels_pred[i_batch])
+            str_hyp= map_fn(labels_pred[i_batch])
 
             if model_type == 'attention':
-                str_pred = str_pred.split('>')[0]
+                str_hyp= str_hyp.split('>')[0]
                 # NOTE: Trancate by the first <EOS>
 
                 # Remove the last space
-                if len(str_pred) > 0 and str_pred[-1] == '_':
-                    str_pred = str_pred[:-1]
+                if len(str_hyp) > 0 and str_hyp[-1] == '_':
+                    str_hyp= str_hyp[:-1]
 
             # Remove consecutive spaces
-            str_pred = re.sub(r'[_]+', '_', str_pred)
+            str_hyp= re.sub(r'[_]+', '_', str_hyp)
 
             ##############################
             # Post-proccessing
             ##############################
             # Remove garbage labels
-            str_true = re.sub(r'[\'<>]+', '', str_true)
-            str_pred = re.sub(r'[\'<>]+', '', str_pred)
+            str_ref= re.sub(r'[\'<>]+', '', str_ref)
+            str_hyp= re.sub(r'[\'<>]+', '', str_hyp)
 
-            print('Ref: %s' % str_true.replace('_', ' '))
-            print('Hyp: %s' % str_pred.replace('_', ' '))
+            print('Ref: %s' % str_ref.replace('_', ' '))
+            print('Hyp: %s' % str_hyp.replace('_', ' '))
 
         if is_new_epoch:
             break

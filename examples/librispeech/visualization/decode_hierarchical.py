@@ -40,18 +40,7 @@ def main():
     args = parser.parse_args()
 
     # Load a config file (.yml)
-    params = load_config(join(args.model_path, 'config.yml'))
-
-    # Load model
-    model = load(model_type=params['model_type'],
-                 params=params,
-                 backend=params['backend'])
-
-    # Restore the saved parameters
-    model.load_checkpoint(save_path=args.model_path, epoch=args.epoch)
-
-    # GPU setting
-    model.set_cuda(deterministic=False, benchmark=True)
+    params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
     vocab_file_path = '../metrics/vocab_files/' + \
@@ -73,6 +62,19 @@ def main():
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, reverse=True, save_format=params['save_format'])
+    params['num_classes'] = test_data.num_classes
+    params['num_classes_sub'] = test_data.num_classes_sub
+
+    # Load model
+    model = load(model_type=params['model_type'],
+                 params=params,
+                 backend=params['backend'])
+
+    # Restore the saved parameters
+    model.load_checkpoint(save_path=args.model_path, epoch=args.epoch)
+
+    # GPU setting
+    model.set_cuda(deterministic=False, benchmark=True)
 
     # Visualize
     decode(model=model,
@@ -139,15 +141,15 @@ def decode(model, model_type, dataset, beam_width,
             # Reference
             ##############################
             if dataset.is_test:
-                str_true = batch['ys'[i_batch][0]
+                str_ref = batch['ys'[i_batch][0]
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
                 if model_type == 'hierarchical_ctc':
-                    str_true = idx2word(
+                    str_ref= idx2word(
                         batch['ys'[i_batch][:batch['y_lens'][i_batch]])
                 elif model_type == 'hierarchical_attention':
-                    str_true = idx2word(
+                    str_ref= idx2word(
                         batch['ys'[i_batch][1:batch['y_lens'][i_batch] - 1])
                     # NOTE: Exclude <SOS> and <EOS>
 
@@ -155,34 +157,34 @@ def decode(model, model_type, dataset, beam_width,
             # Hypothesis
             ##############################
             # Convert from list of index to string
-            str_pred = idx2word(labels_pred[i_batch])
-            str_pred_sub = idx2char(labels_pred_sub[i_batch])
+            str_hyp= idx2word(labels_pred[i_batch])
+            str_hyp_sub= idx2char(labels_pred_sub[i_batch])
 
             if model_type == 'hierarchical_attention':
-                str_pred = str_pred.split('>')[0]
-                str_pred_sub = str_pred_sub.split('>')[0]
+                str_hyp= str_hyp.split('>')[0]
+                str_hyp_sub= str_hyp_sub.split('>')[0]
                 # NOTE: Trancate by the first <EOS>
 
                 # Remove the last space
-                if len(str_pred) > 0 and str_pred[-1] == '_':
-                    str_pred = str_pred[:-1]
-                if len(str_pred_sub) > 0 and str_pred_sub[-1] == '_':
-                    str_pred_sub = str_pred_sub[:-1]
+                if len(str_hyp) > 0 and str_hyp[-1] == '_':
+                    str_hyp= str_hyp[:-1]
+                if len(str_hyp_sub) > 0 and str_hyp_sub[-1] == '_':
+                    str_hyp_sub= str_hyp_sub[:-1]
 
             # Remove consecutive spaces
-            str_pred_sub = re.sub(r'[_]+', '_', str_pred_sub)
+            str_hyp_sub= re.sub(r'[_]+', '_', str_hyp_sub)
 
             ##############################
             # Post-proccessing
             ##############################
             # Remove garbage labels
-            str_true = re.sub(r'[\'<>]+', '', str_true)
-            str_pred = re.sub(r'[\'<>]+', '', str_pred)
-            str_pred_sub = re.sub(r'[\'<>]+', '', str_pred_sub)
+            str_ref= re.sub(r'[\'<>]+', '', str_ref)
+            str_hyp= re.sub(r'[\'<>]+', '', str_hyp)
+            str_hyp_sub= re.sub(r'[\'<>]+', '', str_hyp_sub)
 
-            print('Ref       : %s' % str_true.replace('_', ' '))
-            print('Hyp (word): %s' % str_pred.replace('_', ' '))
-            print('Hyp (char): %s' % str_pred_sub.replace('_', ' '))
+            print('Ref       : %s' % str_ref.replace('_', ' '))
+            print('Hyp (word): %s' % str_hyp.replace('_', ' '))
+            print('Hyp (char): %s' % str_hyp_sub.replace('_', ' '))
 
         if is_new_epoch:
             break
