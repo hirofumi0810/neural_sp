@@ -10,6 +10,7 @@ from __future__ import print_function
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.autograd import Variable
 
 from models.pytorch.linear import LinearND
 
@@ -51,8 +52,8 @@ class AttentionMechanism(nn.Module):
         self.sigmoid_smoothing = sigmoid_smoothing
 
         if self.attention_type == 'content':
-            self.W = LinearND(decoder_num_units * 2, attention_dim,
-                              bias=True)  # NOTE
+            self.W_enc = LinearND(decoder_num_units, attention_dim, bias=True)
+            self.W_dec = LinearND(decoder_num_units, attention_dim, bias=False)
             self.V = LinearND(attention_dim, 1, bias=False)
 
         elif self.attention_type == 'location':
@@ -69,8 +70,10 @@ class AttentionMechanism(nn.Module):
                                   stride=1,
                                   padding=(0, kernel_size // 2),
                                   bias=False)
-            self.W = LinearND(decoder_num_units * 2,
-                              attention_dim, bias=True)  # NOTE
+            self.W_enc = LinearND(decoder_num_units,
+                                  attention_dim, bias=True)
+            self.W_dec = LinearND(decoder_num_units,
+                                  attention_dim, bias=False)
             self.W_conv = LinearND(out_channels, attention_dim, bias=False)
             self.V = LinearND(attention_dim, 1, bias=False)
 
@@ -88,18 +91,19 @@ class AttentionMechanism(nn.Module):
                 "attention_type should be one of [%s], you provided %s." %
                 (", ".join(ATTENTION_TYPE), attention_type))
 
-    def forward(self, enc_out, dec_out, att_weights_step):
+    def forward(self, enc_out, x_lens, dec_out, att_weights_step):
         """Forward computation.
         Args:
-            enc_out (Variable, float): A tensor of size
+            enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            dec_out (Variable, float): A tensor of size
+            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            dec_out (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, decoder_num_units]`
-            att_weights_step (Variable, float): A tensor of size `[B, T_in]`
+            att_weights_step (torch.autograd.Variable, float): A tensor of size `[B, T_in]`
         Returns:
-            context_vec (Variable, float): A tensor of size
+            context_vec (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, encoder_num_units]`
-            att_weights_step (Variable, float): A tensor of size `[B, T_in]`
+            att_weights_step (torch.autograd.Variable, float): A tensor of size `[B, T_in]`
         """
         batch_size, max_time = enc_out.size()[:2]
 
@@ -107,8 +111,8 @@ class AttentionMechanism(nn.Module):
             ###################################################################
             # energy = <v, tanh(W([h_de; h_en] + b))>
             ###################################################################
-            concat = torch.cat([enc_out, dec_out.expand_as(enc_out)], dim=2)
-            energy = self.V(F.tanh(self.W(concat))).squeeze(2)
+            energy = self.V(F.tanh(self.W_enc(enc_out) +
+                                   self.W_dec(dec_out.expand_as(enc_out)))).squeeze(2)
 
         elif self.attention_type == 'location':
             ###################################################################
@@ -126,9 +130,8 @@ class AttentionMechanism(nn.Module):
             conv_feat = conv_feat.transpose(1, 2).contiguous()
             # -> `[B, T_in, out_channels]`
 
-            concat = torch.cat([enc_out, dec_out.expand_as(enc_out)], dim=2)
             energy = self.V(
-                F.tanh(self.W(concat) + self.W_conv(conv_feat))).squeeze(2)
+                F.tanh(self.W_enc(enc_out) + self.W_dec(dec_out.expand_as(enc_out)) + self.W_conv(conv_feat))).squeeze(2)
 
         elif self.attention_type == 'dot_product':
             ###################################################################
@@ -144,8 +147,17 @@ class AttentionMechanism(nn.Module):
         else:
             raise NotImplementedError
 
+        # Mask attention distribution
+        energy_mask = Variable(torch.ones(batch_size, max_time))
+        if enc_out.is_cuda:
+            energy_mask = energy_mask.cuda()
+        for x_len in x_lens:
+            if x_len.data[0] < max_time:
+                energy_mask[:, x_len.data[0]:] = 0
+        energy *= energy_mask
+
         # Sharpening
-        energy = energy * self.sharpening_factor
+        energy *= self.sharpening_factor
         # NOTE: energy: `[B, T_in]`
 
         # log_t = math.log(energy.size()[1])

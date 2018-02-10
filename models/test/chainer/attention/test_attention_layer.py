@@ -52,12 +52,14 @@ class TestAttentionLayer(unittest.TestCase):
 
         enc_out = Variable(np.random.randn(
             batch_size, max_time, encoder_num_units).astype('f'))
+        x_lens = Variable(np.ones(batch_size)) * max_time
         dec_state_step = Variable(np.random.randn(
             batch_size, 1, decoder_num_units).astype('f'))
         att_weights_step = Variable(np.random.randn(
             batch_size, max_time).astype('f'))
 
         context_vector, att_weights_step = attend(enc_out,
+                                                  x_lens,
                                                   dec_state_step,
                                                   att_weights_step)
 

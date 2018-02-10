@@ -51,11 +51,13 @@ class TestAttentionLayer(unittest.TestCase):
 
         enc_out = Variable(torch.randn(
             (batch_size, max_time, encoder_num_units)))
+        x_lens = Variable(torch.ones(batch_size)) * max_time
         dec_state_step = Variable(torch.randn(
             (batch_size, 1, decoder_num_units)))
         att_weights_step = Variable(torch.randn((batch_size, max_time)))
 
         context_vec, att_weights_step = attend(enc_out,
+                                               x_lens,
                                                dec_state_step,
                                                att_weights_step)
 

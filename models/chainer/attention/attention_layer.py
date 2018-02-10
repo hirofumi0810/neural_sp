@@ -7,9 +7,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numpy as np
 import chainer
 from chainer import functions as F
 from chainer import links as L
+from chainer import Variable
 
 from models.chainer.linear import LinearND
 
@@ -49,13 +51,16 @@ class AttentionMechanism(chainer.Chain):
         self.decoder_num_units = decoder_num_units
         self.attention_type = attention_type
         self.attention_dim = attention_dim
+        self.use_cuda = use_cuda
         self.sharpening_factor = sharpening_factor
         self.sigmoid_smoothing = sigmoid_smoothing
 
         with self.init_scope():
             if self.attention_type == 'content':
-                self.W = LinearND(decoder_num_units * 2, attention_dim,
-                                  bias=True, use_cuda=use_cuda)  # NOTE
+                self.W_enc = LinearND(decoder_num_units, attention_dim,
+                                      bias=True, use_cuda=use_cuda)
+                self.W_dec = LinearND(decoder_num_units, attention_dim,
+                                      bias=False, use_cuda=use_cuda)
                 self.V = LinearND(attention_dim, 1,
                                   bias=False, use_cuda=use_cuda)
 
@@ -70,8 +75,10 @@ class AttentionMechanism(chainer.Chain):
                     nobias=False,
                     initialW=None,
                     initial_bias=None)
-                self.W = LinearND(decoder_num_units * 2, attention_dim,
-                                  bias=True, use_cuda=use_cuda)  # NOTE
+                self.W_enc = LinearND(decoder_num_units, attention_dim,
+                                      bias=True, use_cuda=use_cuda)
+                self.W_dec = LinearND(decoder_num_units, attention_dim,
+                                      bias=False, use_cuda=use_cuda)
                 self.W_conv = LinearND(out_channels, attention_dim,
                                        bias=False, use_cuda=use_cuda)
                 self.V = LinearND(attention_dim, 1,
@@ -95,11 +102,12 @@ class AttentionMechanism(chainer.Chain):
                 for c in self.children():
                     c.to_gpu()
 
-    def __call__(self, enc_out, dec_out, att_weights_step):
+    def __call__(self, enc_out, x_lens, dec_out, att_weights_step):
         """Forward computation.
         Args:
             enc_out (chainer.Variable): A tensor of size
                 `[B, T_in, encoder_num_units]`
+            x_lens (chainer.Variable): A tensor of size `[B]`
             dec_out (chainer.Variable): A tensor of size
                 `[B, 1, decoder_num_units]`
             att_weights_step (chainer.Variable): A tensor of size `[B, T_in]`
@@ -114,9 +122,8 @@ class AttentionMechanism(chainer.Chain):
             ###################################################################
             # energy = <v, tanh(W([h_de; h_en] + b))>
             ###################################################################
-            concat = F.concat(
-                [enc_out, F.broadcast_to(dec_out, enc_out.shape)], axis=2)
-            energy = F.squeeze(self.V(F.tanh(self.W(concat))), axis=2)
+            energy = F.squeeze(self.V(F.tanh(self.W_enc(
+                enc_out) + self.W_dec(F.broadcast_to(dec_out, enc_out.shape)))), axis=2)
 
         elif self.attention_type == 'location':
             ###################################################################
@@ -128,10 +135,9 @@ class AttentionMechanism(chainer.Chain):
             # -> `[B, out_channels, T_in]`
             conv_feat = conv_feat.transpose(0, 2, 1)
             # -> `[B, T_in, out_channels]`
-            concat = F.concat(
-                [enc_out, F.broadcast_to(dec_out, enc_out.shape)], axis=2)
+
             energy = F.squeeze(
-                self.V(F.tanh(self.W(concat) + self.W_conv(conv_feat))), axis=2)
+                self.V(F.tanh(self.W_enc(enc_out) + self.W_dec(F.broadcast_to(dec_out, enc_out.shape)) + self.W_conv(conv_feat))), axis=2)
 
         elif self.attention_type == 'dot_product':
             ###################################################################
@@ -146,6 +152,16 @@ class AttentionMechanism(chainer.Chain):
 
         else:
             raise NotImplementedError
+
+        # Mask attention distribution
+        energy_mask = Variable(
+            np.ones((batch_size, max_time), dtype=np.float32))
+        if self.use_cuda:
+            energy_mask.to_gpu()
+        for x_len in x_lens:
+            if x_len < max_time:
+                energy_mask[:, x_len.data:] = 0
+        energy *= energy_mask
 
         # Sharpening
         energy = energy * self.sharpening_factor
