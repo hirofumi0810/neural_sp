@@ -8,14 +8,12 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-
 import chainer
 from chainer import functions as F
-from chainer import links as L
-from chainer import Variable
-from chainer import cuda
 
-from models.chainer.linear import LinearND, Embedding
+# from models.chainer.linear import LinearND, Embedding
+from models.chainer.linear import LinearND, Embedding_LS
+from models.pytorch.criterion import cross_entropy_label_smoothing
 from models.chainer.attention.attention_seq2seq import AttentionSeq2seq
 from models.chainer.encoders.load_encoder import load
 from models.chainer.attention.rnn_decoder import RNNDecoder
@@ -127,6 +125,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             encoder_dense_residual=encoder_dense_residual,
             decoder_residual=decoder_residual,
             decoder_dense_residual=decoder_dense_residual)
+        self.model_type = 'hierarchical_attention'
 
         # Setting for the encoder
         self.encoder_num_layers_sub = encoder_num_layers_sub
@@ -187,14 +186,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             ##############################
             # Decoder in the sub task
             ##############################
-            if self.decoder_input == 'embedding':
-                decoder_input_size_sub = decoder_num_units_sub + embedding_dim_sub
-            elif self.decoder_input == 'onehot':
-                decoder_input_size_sub = decoder_num_units_sub + self.num_classes_sub
-            else:
-                raise TypeError
             self.decoder_sub = RNNDecoder(
-                input_size=decoder_input_size_sub,
+                input_size=decoder_num_units_sub + embedding_dim_sub,
                 rnn_type=decoder_type,
                 num_units=decoder_num_units_sub,
                 num_layers=decoder_num_layers_sub,
@@ -230,19 +223,23 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                         dropout=dropout_encoder, use_cuda=self.use_cuda)
                 self.is_bridge_sub = True
 
-            if self.decoder_input == 'embedding':
-                self.embed_sub = Embedding(num_classes=self.num_classes_sub,
-                                           embedding_dim=embedding_dim_sub,
-                                           dropout=dropout_embedding,
-                                           use_cuda=self.use_cuda)
+            # self.embed_sub = Embedding(num_classes=self.num_classes_sub,
+            #                            embedding_dim=embedding_dim_sub,
+            #                            dropout=dropout_embedding,
+            #                            use_cuda=self.use_cuda)
+            self.embed_sub = Embedding_LS(
+                num_classes=self.num_classes_sub,
+                embedding_dim=embedding_dim_sub,
+                dropout=dropout_embedding,
+                label_smoothing_prob=label_smoothing_prob,
+                use_cuda=self.use_cuda)
 
             self.proj_layer_sub = LinearND(
                 decoder_num_units_sub * 2, decoder_num_units_sub,
                 dropout=dropout_decoder, use_cuda=self.use_cuda)
             self.fc_sub = LinearND(
-                decoder_num_units_sub, self.num_classes_sub - 1,
+                decoder_num_units_sub, self.num_classes_sub,
                 use_cuda=self.use_cuda)
-            # NOTE: <SOS> is removed because the decoder never predict <SOS>
 
         if ctc_loss_weight_sub > 0:
             if self.is_bridge_sub:
@@ -321,15 +318,15 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 # main
                 self.main_loss_weight_tmp = min(
                     self.main_loss_weight,
-                    0.05 + self.main_loss_weight / self.sample_ramp_max_step * self._step)
+                    0.0 + self.main_loss_weight / self.sample_ramp_max_step * self._step)
                 # sub (attention)
                 self.sub_loss_weight_tmp = max(
                     self.sub_loss_weight,
-                    0.95 - (1 - self.sub_loss_weight) / self.sample_ramp_max_step * self._step)
+                    1.0 - (1 - self.sub_loss_weight) / self.sample_ramp_max_step * self._step)
                 # sub (CTC)
                 self.ctc_loss_weight_sub_tmp = max(
                     self.ctc_loss_weight_sub,
-                    0.95 - (1 - self.ctc_loss_weight_sub) / self.sample_ramp_max_step * self._step)
+                    1.0 - (1 - self.ctc_loss_weight_sub) / self.sample_ramp_max_step * self._step)
 
         return loss, loss_main, loss_sub
 
@@ -350,15 +347,15 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Main task
         ##################################################
         # Teacher-forcing
-        logits, att_weights = self._decode_train(xs, ys)
+        logits_main, att_weights = self._decode_train(xs, x_lens, ys)
 
         # Output smoothing
         if self.logits_temperature != 1:
-            logits = logits / self.logits_temperature
+            logits_main /= self.logits_temperature
 
         # Compute XE sequence loss in the main task
         loss_main = F.softmax_cross_entropy(
-            x=logits.reshape((-1, logits.shape[2])),
+            x=logits_main.reshape((-1, logits_main.shape[2])),
             t=ys[:, 1:].reshape(-1),  # NOTE: Exclude <SOS>
             normalize=True, cache_score=True, class_weight=None,
             ignore_label=self.sos_index, reduce='no')
@@ -368,24 +365,24 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
-            batch_size, label_num, num_classes = logits.shape
-            log_probs = F.log_softmax(logits)
-        #     uniform = Variable(torch.FloatTensor(
-        #         batch_size, label_num, num_classes).fill_(np.log(1 / num_classes)))
-        #     if self.use_cuda:
-        #         uniform = uniform.cuda()
-        #     loss_main = loss_main * (1 - self.label_smoothing_prob) + F.kl_div(
-        #         log_probs, uniform,
-        #         size_average=False, reduce=True) * self.label_smoothing_prob
+            # XE
+            xe_loss_ls_main = cross_entropy_label_smoothing(
+                logits_main, ys[:, 1:],  # NOTE: Exclude first <SOS>
+                label_smoothing_prob=self.label_smoothing_prob,
+                distribution='uniform',
+                size_average=False) / len(xs)
+            loss_main = loss_main * (1 - self.label_smoothing_prob) + \
+                xe_loss_ls_main
+            # print(xe_loss_ls_main)
 
         # Add coverage term
         if self.coverage_weight != 0:
-            pass
-            # TODO: add sub task？
+            raise NotImplementedError
+            # TODO: sub taskも入れる？
 
         loss_main = loss_main * self.main_loss_weight_tmp
-        # loss = loss_main.clone()
         loss = loss_main
+        # TODO: copy?
 
         ##################################################
         # Sub task (attention)
@@ -393,11 +390,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         if self.sub_loss_weight > 0:
             # Teacher-forcing
             logits_sub, att_weights_sub = self._decode_train(
-                xs_sub, ys_sub, is_sub_task=True)
+                xs_sub, x_lens_sub, ys_sub, is_sub_task=True)
 
             # Output smoothing
             if self.logits_temperature != 1:
-                logits_sub = logits_sub / self.logits_temperature
+                logits_sub /= self.logits_temperature
 
             # Compute XE sequence loss in the sub task
             loss_sub = F.softmax_cross_entropy(
@@ -411,15 +408,15 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
             # Label smoothing (with uniform distribution)
             if self.label_smoothing_prob > 0:
-                batch_size, label_num_sub, num_classes_sub = logits_sub.shape
-                log_probs_sub = F.log_softmax(logits_sub)
-            #     uniform_sub = Variable(torch.FloatTensor(
-            #         batch_size, label_num, num_classes_sub).fill_(np.log(1 / num_classes_sub)))
-            #     if self.use_cuda:
-            #         uniform_sub = uniform_sub.cuda()
-            #     loss_sub = loss_sub * (1 - self.label_smoothing_prob) + F.kl_div(
-            #         log_probs_sub, uniform_sub,
-            # size_average=False, reduce=True) * self.label_smoothing_prob
+                # XE
+                xe_loss_ls_sub = cross_entropy_label_smoothing(
+                    logits_sub, ys_sub[:, 1:],  # NOTE: Exclude first <SOS>
+                    label_smoothing_prob=self.label_smoothing_prob,
+                    distribution='uniform',
+                    size_average=False) / len(xs)
+                loss_sub = loss_sub * (1 - self.label_smoothing_prob) + \
+                    xe_loss_ls_sub
+                # print(xe_loss_ls_sub)
 
             loss_sub = loss_sub * self.sub_loss_weight_tmp
             loss += loss_sub
@@ -428,19 +425,35 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Sub task (CTC)
         ##################################################
         if self.ctc_loss_weight_sub > 0:
+            logits_ctc_sub = self.fc_ctc_sub(xs_sub)
+
             ctc_loss_sub = self.compute_ctc_loss(
-                xs_sub, ys_sub, x_lens_sub, y_lens_sub, is_sub_task=True)
+                logits_ctc_sub, ys_sub, x_lens_sub, y_lens_sub,
+                size_average=False)
+            ctc_loss_sub = F.sum(ctc_loss_sub, axis=0) / len(xs)
+
+            # Label smoothing (with uniform distribution)
+            if self.label_smoothing_prob > 0:
+                # XE
+                xe_loss_ls_ctc_sub = cross_entropy_label_smoothing(
+                    logits_ctc_sub,
+                    ys=None,
+                    label_smoothing_prob=self.label_smoothing_prob,
+                    distribution='uniform',
+                    size_average=False) / len(xs)
+                ctc_loss_sub = ctc_loss_sub * (1 - self.label_smoothing_prob) + \
+                    xe_loss_ls_ctc_sub
+                # print(xe_loss_ls_ctc_sub)
 
             ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub_tmp
             loss += ctc_loss_sub
 
         if self.sub_loss_weight > self.ctc_loss_weight_sub:
             return loss, loss_main, loss_sub
-        # else:
-        #     return loss, loss_main, ctc_loss_sub
+        else:
+            return loss, loss_main, ctc_loss_sub
 
-    def decode(self, xs, x_lens, beam_width,
-               max_decode_len, is_sub_task=False):
+    def decode(self, xs, x_lens, beam_width, max_decode_len, is_sub_task=False):
         """Decoding in the inference stage.
         Args:
             xs (list of np.ndarray): A tensor of size `[B, T_in, input_size]`
@@ -451,6 +464,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             is_sub_task (bool, optional):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
+            perm_idx (np.ndarray): For interface with pytorch, not used
         """
         with chainer.no_backprop_mode(), chainer.using_config('train', False):
 
@@ -472,7 +486,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                         # Decode by attention decoder
                         ########################################
                         best_hyps, _ = self._decode_infer_greedy(
-                            enc_out, max_decode_len, is_sub_task=True)
+                            enc_out, x_lens, max_decode_len, is_sub_task=True)
                     else:
                         ########################################
                         # Decode by CTC decoder
@@ -494,11 +508,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                 x_lens, beam_width=beam_width)
 
                         if self.blank_index == 0:
-                            best_hyps = best_hyps - 1
+                            best_hyps -= 1
                             # NOTE: index 0 is reserved for the blank class
                 else:
                     best_hyps, _ = self._decode_infer_greedy(
-                        enc_out, max_decode_len)
+                        enc_out, x_lens, max_decode_len)
             else:
                 if is_sub_task:
                     raise NotImplementedError
@@ -506,4 +520,5 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     best_hyps, att_weights = self._decode_infer_beam(
                         enc_out, x_lens, beam_width, max_decode_len)
 
-        return best_hyps
+        perm_idx = np.arange(0, len(xs), 1)
+        return best_hyps, perm_idx

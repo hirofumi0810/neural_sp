@@ -7,6 +7,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import os
 from os.path import join, isfile, basename
 from glob import glob
 import pickle
@@ -198,17 +199,30 @@ class ModelBase(chainer.Chain):
                 break
         self.save_path = mkdir(save_path_tmp)
 
-    def save_checkpoint(self, save_path, epoch, step, lr):
+    def save_checkpoint(self, save_path, epoch, step, lr, metric_dev_best):
         """Save checkpoint.
         Args:
             save_path (string): path to save a model (directory)
             epoch (int): the currnet epoch
             step (int): the current step
             lr (float):
+            metric_dev_best (float):
         Returns:
             model (string): path to the saved model (file)
         """
         model_path = join(save_path, 'model.epoch-' + str(epoch))
+
+        # Remove old checkpoints
+        for path in glob(join(save_path, 'model.epoch-*')):
+            os.remove(path)
+        for path in glob(join(save_path, 'optimizer.epoch-*')):
+            os.remove(path)
+        for path in glob(join(save_path, 'step.epoch-*')):
+            os.remove(path)
+        for path in glob(join(save_path, 'lr.epoch-*')):
+            os.remove(path)
+        for path in glob(join(save_path, 'metric_dev_best.epoch-*')):
+            os.remove(path)
 
         # Save parameters, optimizer, step index
         serializers.save_npz(model_path, self)
@@ -216,20 +230,21 @@ class ModelBase(chainer.Chain):
             join(save_path, 'optimizer.epoch-' + str(epoch)), self.optimizer)
         serializers.save_npz(join(save_path, 'step.epoch-' + str(epoch)), step)
         serializers.save_npz(join(save_path, 'lr.epoch-' + str(epoch)), lr)
+        serializers.save_npz(
+            join(save_path, 'metric_dev_best.epoch-' + str(epoch)), metric_dev_best)
 
         # serializer = serializers.DictionarySerializer()
         # pickled_params = np.frombuffer(pickle.dumps(params), dtype=np.uint8)
         # serializer("hyper_parameters", pickled_params)
-        #
         # serializer["model"].save(model)
-        #
         # np.savez_compressed(filename, **serializer.target)
         # checkpoint = {
         #     "state_dict": self,
         #     "optimizer": self.optimizer,
         #     "epoch": epoch,
         #     "step": step,
-        #     "lr": lr
+        #     "lr": lr,
+        #     "metric_dev_best": metric_dev_best
         # }
         # serializers.DictionarySerializer(model_path, checkpoint)
 
@@ -245,6 +260,7 @@ class ModelBase(chainer.Chain):
             epoch (int): the currnet epoch
             step (int): the current step
             lr (float):
+            metric_dev_best (float):
         """
         if int(epoch) == -1:
             # Restore the last saved model
@@ -259,19 +275,17 @@ class ModelBase(chainer.Chain):
         model_path = join(save_path, 'model.epoch-' + str(epoch))
         if isfile(join(model_path)):
             print("=> Loading checkpoint (epoch:%d): %s" % (epoch, model_path))
-            raise NotImplementedError
-            # model = serializers.load_npz(
-            #     'model.epoch-' + str(epoch), self)
-            # checkpoint = serializers.load_npz(
-            #     'model.epoch-' + str(epoch), self)
-            #
-            # checkpoint = {
-            #     "state_dict": model,
-            #     "optimizer":,
-            #     "epoch": epoch,
-            #     "step": step
-            # }
+
+            self = serializers.load_npz(
+                'model.epoch-' + str(epoch), self)
+            self.optimizer = serializers.load_npz(
+                'optimizer.epoch-' + str(epoch), self)
+            step = serializers.load_npz('step.epoch-' + str(epoch), self)
+            lr = serializers.load_npz('lr.epoch-' + str(epoch), self)
+            metric_dev_best = serializers.load_npz(
+                'metric_dev_best.epoch-' + str(epoch), self)
+
         else:
             raise ValueError("No checkpoint found at %s" % model_path)
 
-        return checkpoint['epoch'] + 1, checkpoint['step'] + 1, checkpoint['lr']
+        return (epoch + 1, step + 1, lr, metric_dev_best)

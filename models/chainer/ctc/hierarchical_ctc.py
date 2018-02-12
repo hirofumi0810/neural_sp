@@ -14,6 +14,7 @@ from chainer import functions as F
 
 from models.chainer.ctc.ctc import CTC
 from models.chainer.linear import LinearND
+from models.chainer.criterion import cross_entropy_label_smoothing
 from models.chainer.encoders.load_encoder import load
 from utils.io.variable import np2var
 
@@ -120,6 +121,7 @@ class HierarchicalCTC(CTC):
             batch_norm=batch_norm,
             label_smoothing_prob=label_smoothing_prob,
             weight_noise_std=weight_noise_std)
+        self.model_type = 'hierarchical_ctc'
 
         # Setting for the encoder
         self.num_layers_sub = num_layers_sub
@@ -225,14 +227,19 @@ class HierarchicalCTC(CTC):
             y_lens_sub, use_cuda=self.use_cuda, backend='chainer')
 
         # Encode acoustic features
-        logits, x_lens, logits_sub, x_lens_sub = self._encode(
+        logits_main, x_lens, logits_sub, x_lens_sub = self._encode(
             xs, x_lens, is_multi_task=True)
 
+        # Output smoothing
+        if self.logits_temperature != 1:
+            logits_main /= self.logits_temperature
+            logits_sub /= self.logits_temperature
+
         # Convert to time-major & list of Variable from Variable
-        logits = F.separate(logits, axis=1)
+        logits_main = F.separate(logits_main, axis=1)
         logits_sub = F.separate(logits_sub, axis=1)
-        # logits = F.transpose(logits, axes=(1, 0, 2))
-        # logits = [t[0] for t in F.split_axis(logits, len(logits), axis=0)]
+        # logits_main = F.transpose(logits_main, axes=(1, 0, 2))
+        # logits_main = [t[0] for t in F.split_axis(logits_main, len(logits_main), axis=0)]
         # logits_sub = F.transpose(logits_sub, axes=(1, 0, 2))
         # logits_sub = [t[0] for t in F.split_axis(
         #     logits_sub, len(logits_sub), axis=0)]
@@ -247,38 +254,45 @@ class HierarchicalCTC(CTC):
             ys_sub = ys_sub + 1
             # NOTE: index 0 is reserved for the blank class
 
-        # Output smoothing
-        if self.logits_temperature != 1:
-            logits = logits / self.logits_temperature
-            logits_sub = logits_sub / self.logits_temperature
-
-        ##################################################
-        # Main task
-        ##################################################
-        # Compute CTC loss in the main task
+        # Compute CTC loss in the main & sub task
         loss_main = F.connectionist_temporal_classification(
-            x=logits,  # list of Variable
+            x=logits_main,  # list of Variable
             t=ys,  # Variable
             blank_symbol=0,
             input_length=x_lens,  # Variable
             label_length=y_lens,  # Variable
-            reduce='mean')
-
-        # TODO: Label smoothing (with uniform distribution)
-
-        ##################################################
-        # Sub task
-        ##################################################
-        # Compute CTC loss in the sub task
+            reduce='no')
+        loss_main = F.sum(loss_main, axis=0) / len(xs)
         loss_sub = F.connectionist_temporal_classification(
             x=logits_sub,  # list of Variable
             t=ys_sub,  # Variable
             blank_symbol=0,
             input_length=x_lens_sub,  # Variable
             label_length=y_lens_sub,  # Variable
-            reduce='mean')
+            reduce='no')
+        loss_sub = F.sum(loss_sub, axis=0) / len(xs)
 
-        # TODO: Label smoothing (with uniform distribution)
+        # Label smoothing (with uniform distribution)
+        if self.label_smoothing_prob > 0:
+            # XE
+            xe_loss_ls_main = cross_entropy_label_smoothing(
+                F.pad_sequence(logits_main, padding=0),
+                ys=None,
+                label_smoothing_prob=self.label_smoothing_prob,
+                distribution='uniform',
+                size_average=False) / len(xs)
+            loss_main = loss_main * \
+                (1 - self.label_smoothing_prob) + xe_loss_ls_main
+            # print(xe_loss_ls_main)
+            xe_loss_ls_sub = cross_entropy_label_smoothing(
+                F.pad_sequence(logits_sub, padding=0),
+                ys=None,
+                label_smoothing_prob=self.label_smoothing_prob,
+                distribution='uniform',
+                size_average=False) / len(xs)
+            loss_sub = loss_sub * \
+                (1 - self.label_smoothing_prob) + xe_loss_ls_sub
+            # print(xe_loss_ls_sub)
 
         # Compute total loss
         loss_main = loss_main * self.main_loss_weight

@@ -222,19 +222,22 @@ class RNNEncoder(chainer.Chain):
         Args:
             xs (list of chainer.Variable): A list of tensors of size
                 `[T, input_size]`, of length '[B]'
-            x_lens (np.ndarray or chainer.Variable): A tensor of size `[B]`
+            x_lens (np.ndarray or chainer.Variable (int)):
+                A tensor of size `[B]`
         Returns:
             xs (list of chainer.Variable):
                 A list of tensors of size
                     `[T // sum(subsample_list), num_units (* num_directions)]`,
                     of length '[B]'
-            x_lens (np.ndarray): A tensor of size `[B]`
+            x_lens (np.ndarray or chainer.Variable (int)):
+                A tensor of size `[B]`
             OPTION:
                 xs_sub (list of chainer.Variable):
                     A list of tensor of size
                         `[T // sum(subsample_list), num_units (* num_directions)]`,
                         of length `[B]`
-                x_lens_sub (np.ndarray or chainer.Variable): A tensor of size `[B]`
+                x_lens_sub (np.ndarray or chainer.Variable (int)):
+                    A tensor of size `[B]`
         """
         # NOTE: automatically sort xs in descending order by length,
         # and transpose the sequence

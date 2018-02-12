@@ -7,14 +7,14 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numpy as np
 import chainer
 from chainer import functions as F
-from chainer import links as L
-# from models.chainer.ctc.ctc_loss_from_chainer import
-# connectionist_temporal_classification as ctc
+from models.chainer.ctc.ctc_loss_from_chainer import connectionist_temporal_classification
 
 from models.chainer.base import ModelBase
 from models.chainer.linear import LinearND
+from models.chainer.criterion import cross_entropy_label_smoothing
 from models.chainer.encoders.load_encoder import load
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
@@ -100,6 +100,7 @@ class CTC(ModelBase):
                  encoder_dense_residual=False):
 
         super(ModelBase, self).__init__()
+        self.model_type = 'ctc'
 
         # Setting for the encoder
         self.input_size = input_size
@@ -247,6 +248,10 @@ class CTC(ModelBase):
         # Encode acoustic features
         logits, x_lens = self._encode(xs, x_lens)
 
+        # Output smoothing
+        if self.logits_temperature != 1:
+            logits /= self.logits_temperature
+
         # Convert to time-major & list of Variable from Variable
         logits = F.separate(logits, axis=1)
         # logits = F.transpose(logits, axes=(1, 0, 2))
@@ -260,22 +265,26 @@ class CTC(ModelBase):
             ys = ys + 1
             # NOTE: index 0 is reserved for the blank class
 
-        # Output smoothing
-        if self.logits_temperature != 1:
-            logits = logits / self.logits_temperature
-
         # Compute CTC loss
-        loss = F.connectionist_temporal_classification(
+        loss = connectionist_temporal_classification(
             x=logits,  # list of Variable
             t=ys,  # Variable
             blank_symbol=self.blank_index,
             input_length=x_lens,  # Variable
             label_length=y_lens,  # Variable
-            reduce='mean')
+            reduce='no')
+        loss = F.sum(loss, axis=0) / len(xs)
 
         # TODO: Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
-            raise NotImplementedError
+            xe_loss_ls = cross_entropy_label_smoothing(
+                F.pad_sequence(logits, padding=0),
+                ys=None,
+                label_smoothing_prob=self.label_smoothing_prob,
+                distribution='uniform',
+                size_average=False) / len(xs)
+            loss = loss * (1 - self.label_smoothing_prob) + xe_loss_ls
+            # print(xe_loss_ls)
 
         return loss
 
@@ -336,7 +345,24 @@ class CTC(ModelBase):
             # Wrap by Variable
             xs = np2var(xs, use_cuda=self.use_cuda, backend='chainer')
 
-            raise NotImplementedError
+            # Encode acoustic features
+            if hasattr(self, 'main_loss_weight'):
+                if is_sub_task:
+                    _, _, logits, _ = self._encode(
+                        xs, x_lens, is_multi_task=True)
+                else:
+                    logits, _, _, _ = self._encode(
+                        xs, x_lens, is_multi_task=True)
+            else:
+                logits, _ = self._encode(xs, x_lens)
+
+            probs = F.softmax(logits / temperature)
+
+            # Divide by blank prior
+            if blank_prior is not None:
+                raise NotImplementedError
+
+            return var2np(probs, backend='chainer')
 
     def decode(self, xs, x_lens, beam_width=1,
                max_decode_len=None, is_sub_task=False):
@@ -349,7 +375,8 @@ class CTC(ModelBase):
             max_decode_len: not used (to make CTC compatible with attention)
             is_sub_task (bool, optional):
         Returns:
-            best_hyps (np.ndarray):
+            best_hyps (np.ndarray): A tensor of size `[B]`
+            perm_idx (np.ndarray): For interface with pytorch, not used
         """
         with chainer.no_backprop_mode(), chainer.using_config('train', False):
 
@@ -367,18 +394,30 @@ class CTC(ModelBase):
             else:
                 logits, x_lens = self._encode(xs, x_lens)
 
-            log_probs = F.log_softmax(logits)
-
             if beam_width == 1:
                 best_hyps = self._decode_greedy_np(
-                    var2np(log_probs, backend='chainer'), x_lens)
+                    var2np(logits, backend='chainer'), x_lens)
             else:
                 best_hyps = self._decode_beam_np(
-                    var2np(log_probs, backend='chainer'),
+                    var2np(F.log_softmax(logits), backend='chainer'),
                     x_lens, beam_width=beam_width)
 
         if self.blank_index == 0:
-            best_hyps = best_hyps - 1
+            best_hyps -= 1
             # NOTE: index 0 is reserved for the blank class
 
-        return best_hyps
+        perm_idx = np.arange(0, len(xs), 1)
+        return best_hyps, perm_idx
+
+    def decode_from_probs(self, probs, x_lens, beam_width=1,
+                          max_decode_len=None):
+        """
+        Args:
+            probs (np.ndarray):
+            x_lens (np.ndarray):
+            beam_width (int, optional):
+            max_decode_len (int, optional):
+        Returns:
+            best_hyps (np.ndarray): A tensor of size `[B]`
+        """
+        raise NotImplementedError

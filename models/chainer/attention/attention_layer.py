@@ -154,14 +154,14 @@ class AttentionMechanism(chainer.Chain):
             raise NotImplementedError
 
         # Mask attention distribution
-        energy_mask = Variable(
-            np.ones((batch_size, max_time), dtype=np.float32))
-        if self.use_cuda:
-            energy_mask.to_gpu()
-        for x_len in x_lens:
-            if x_len < max_time:
-                energy_mask[:, x_len.data:] = 0
-        energy *= energy_mask
+        # energy_mask = Variable(
+        #     np.ones((batch_size, max_time), dtype=np.float32))
+        # if self.use_cuda:
+        #     energy_mask.to_gpu()
+        # for x_len in x_lens:
+        #     if x_len < max_time:
+        #         energy_mask[:, x_len.data:] = 0
+        # energy *= energy_mask
 
         # Sharpening
         energy = energy * self.sharpening_factor
