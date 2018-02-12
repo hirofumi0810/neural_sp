@@ -7,6 +7,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import os
 from os.path import join, isfile, basename
 from glob import glob
 import numpy as np
@@ -228,17 +229,22 @@ class ModelBase(nn.Module):
                 break
         self.save_path = mkdir(save_path_tmp)
 
-    def save_checkpoint(self, save_path, epoch, step, lr):
+    def save_checkpoint(self, save_path, epoch, step, lr, metric_dev_best):
         """Save checkpoint.
         Args:
             save_path (string): path to save a model (directory)
             epoch (int): the currnet epoch
             step (int): the current step
             lr (float):
+            metric_dev_best (float):
         Returns:
             model (string): path to the saved model (file)
         """
         model_path = join(save_path, 'model.epoch-' + str(epoch))
+
+        # Remove old checkpoints
+        for path in glob(join(save_path, 'model.epoch-*')):
+            os.remove(path)
 
         # Save parameters, optimizer, step index
         checkpoint = {
@@ -246,7 +252,8 @@ class ModelBase(nn.Module):
             "optimizer": self.optimizer.state_dict(),
             "epoch": epoch,
             "step": step,
-            "lr": lr
+            "lr": lr,
+            "metric_dev_best": metric_dev_best
         }
         torch.save(checkpoint, model_path)
 
@@ -262,6 +269,7 @@ class ModelBase(nn.Module):
             epoch (int): the currnet epoch
             step (int): the current step
             lr (float):
+            metric_dev_best (float)
         """
         if int(epoch) == -1:
             # Restore the last saved model
@@ -297,4 +305,5 @@ class ModelBase(nn.Module):
         else:
             raise ValueError("No checkpoint found at %s" % model_path)
 
-        return checkpoint['epoch'] + 1, checkpoint['step'] + 1, checkpoint['lr']
+        return (checkpoint['epoch'] + 1, checkpoint['step'] + 1,
+                checkpoint['lr'], checkpoint['metric_dev_best'])

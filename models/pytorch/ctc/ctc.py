@@ -25,6 +25,7 @@ import torch.nn.functional as F
 
 from models.pytorch.base import ModelBase
 from models.pytorch.linear import LinearND
+from models.pytorch.criterion import kl_div_label_smoothing, cross_entropy_label_smoothing
 from models.pytorch.encoders.load_encoder import load
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
@@ -110,6 +111,7 @@ class CTC(ModelBase):
                  encoder_dense_residual=False):
 
         super(ModelBase, self).__init__()
+        self.model_type = 'ctc'
 
         # Setting for the encoder
         self.input_size = input_size
@@ -144,6 +146,8 @@ class CTC(ModelBase):
                 subsample_type=subsample_type,
                 batch_first=True,
                 merge_bidirectional=False,
+                # pack_sequence=False if init_dec_state == 'zero' else True,
+                pack_sequence=True,
                 num_stack=num_stack,
                 splice=splice,
                 conv_channels=conv_channels,
@@ -217,26 +221,25 @@ class CTC(ModelBase):
         # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
         # TODO: set space index
 
-    def forward(self, inputs, labels, inputs_seq_len, labels_seq_len,
-                is_eval=False):
+    def forward(self, xs, ys, x_lens, y_lens, is_eval=False):
         """Forward computation.
         Args:
-            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
-            labels (np.ndarray): A tensor of size `[B, T_out]`
-            inputs_seq_len (np.ndarray): A tensor of size `[B]`
-            labels_seq_len (np.ndarray): A tensor of size `[B]`
+            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            ys (np.ndarray): A tensor of size `[B, T_out]`
+            x_lens (np.ndarray): A tensor of size `[B]`
+            y_lens (np.ndarray): A tensor of size `[B]`
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
             loss (torch.autograd.Variable(float) or float): A tensor of size `[1]`
         """
         # Wrap by Variable
-        xs = np2var(inputs, use_cuda=self.use_cuda, backend='pytorch')
-        ys = np2var(labels, dtype='int', use_cuda=False, backend='pytorch')
+        xs = np2var(xs, use_cuda=self.use_cuda, backend='pytorch')
+        ys = np2var(ys, dtype='int', use_cuda=False, backend='pytorch')
         x_lens = np2var(
-            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
+            x_lens, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
         y_lens = np2var(
-            labels_seq_len, dtype='int', use_cuda=False, backend='pytorch')
+            y_lens, dtype='int', use_cuda=False, backend='pytorch')
 
         # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
         ys = ys + 1
@@ -253,6 +256,10 @@ class CTC(ModelBase):
         # Encode acoustic features
         logits, x_lens, perm_idx = self._encode(xs, x_lens, volatile=is_eval)
 
+        # Output smoothing
+        if self.logits_temperature != 1:
+            logits /= self.logits_temperature
+
         # Convert to time-major
         logits = logits.transpose(0, 1).contiguous()
 
@@ -265,25 +272,32 @@ class CTC(ModelBase):
         # `[B, T_out]` -> `[1,]`
         concatenated_labels = _concatenate_labels(ys, y_lens)
 
-        # Output smoothing
-        if self.logits_temperature != 1:
-            logits = logits / self.logits_temperature
-
         # Compute CTC loss
-        loss = ctc_loss(logits, concatenated_labels, x_lens.cpu(), y_lens)
+        loss = ctc_loss(logits, concatenated_labels,
+                        x_lens.cpu(), y_lens) / len(xs)
+        if self.use_cuda:
+            loss = loss.cuda()
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
-            batch_size, label_num, num_classes = logits.size()
-            log_probs = F.log_softmax(logits, dim=-1)
-            uniform = Variable(torch.FloatTensor(
-                batch_size, label_num, num_classes).fill_(np.log(1 / num_classes)))
-            loss = loss * (1 - self.label_smoothing_prob) + F.kl_div(
-                log_probs.cpu(), uniform,
-                size_average=False, reduce=True) * self.label_smoothing_prob
+            # KL
+            # kl_loss_ls = kl_div_label_smoothing(
+            #     logits,
+            #     label_smoothing_prob=self.label_smoothing_prob,
+            #     distribution='uniform',
+            #     size_average=False) / len(xs)
+            # loss = loss * (1 - self.label_smoothing_prob) + kl_loss_ls
+            # print(kl_loss_ls)
 
-        # Average the loss by mini-batch
-        loss = loss / len(xs)
+            # XE
+            xe_loss_ls = cross_entropy_label_smoothing(
+                logits,
+                ys=None,
+                label_smoothing_prob=self.label_smoothing_prob,
+                distribution='uniform',
+                size_average=False) / len(xs)
+            loss = loss * (1 - self.label_smoothing_prob) + xe_loss_ls
+            # print(xe_loss_ls)
 
         if is_eval:
             loss = loss.data[0]
@@ -328,12 +342,12 @@ class CTC(ModelBase):
         else:
             return logits, x_lens, perm_idx
 
-    def posteriors(self, inputs, inputs_seq_len, temperature=1,
+    def posteriors(self, xs, x_lens, temperature=1,
                    blank_prior=None, is_sub_task=False):
         """Returns CTC posteriors (after the softmax layer).
         Args:
-            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
-            inputs_seq_len (np.ndarray): A tensor of size `[B]`
+            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            x_lens (np.ndarray): A tensor of size `[B]`
             temperature (float, optional): the temperature parameter for the
                 softmax layer in the inference stage
             blank_prior (float, optional):
@@ -343,9 +357,9 @@ class CTC(ModelBase):
         """
         # Wrap by Variable
         xs = np2var(
-            inputs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
+            xs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
         x_lens = np2var(
-            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
+            x_lens, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
 
         # Change to evaluation mode
         self.eval()
@@ -371,25 +385,26 @@ class CTC(ModelBase):
         if perm_idx is not None:
             probs = probs[perm_idx]
 
-        return var2np(probs)
+        return var2np(probs, backend='pytorch')
 
-    def decode(self, inputs, inputs_seq_len, beam_width=1,
+    def decode(self, xs, x_lens, beam_width=1,
                max_decode_len=None, is_sub_task=False):
         """
         Args:
-            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
-            inputs_seq_len (np.ndarray): A tensor of size `[B]`
+            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            x_lens (np.ndarray): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
             max_decode_len: not used (to make CTC compatible with attention)
             is_sub_task (bool, optional):
         Returns:
-            best_hyps (np.ndarray):
+            best_hyps (np.ndarray): A tensor of size `[B]`
+            perm_idx (np.ndarray): A tensor of size `[B]`
         """
         # Wrap by Variable
         xs = np2var(
-            inputs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
+            xs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
         x_lens = np2var(
-            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
+            x_lens, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
 
         # Change to evaluation mode
         self.eval()
@@ -397,7 +412,7 @@ class CTC(ModelBase):
         # Encode acoustic features
         if hasattr(self, 'main_loss_weight'):
             if is_sub_task:
-                _, _, logits, x_lens,  perm_idx = self._encode(
+                _, _, logits, x_lens, perm_idx = self._encode(
                     xs, x_lens, volatile=True, is_multi_task=True)
             else:
                 logits, x_lens, _, _, perm_idx = self._encode(
@@ -405,32 +420,32 @@ class CTC(ModelBase):
         else:
             logits, x_lens, perm_idx = self._encode(xs, x_lens, volatile=True)
 
-        log_probs = F.log_softmax(logits, dim=-1)
-
         if beam_width == 1:
             best_hyps = self._decode_greedy_np(
-                var2np(log_probs, backend='pytorch'),
+                var2np(logits, backend='pytorch'),
                 var2np(x_lens, backend='pytorch'))
         else:
             best_hyps = self._decode_beam_np(
-                var2np(log_probs, backend='pytorch'),
+                var2np(F.log_softmax(logits, dim=-1), backend='pytorch'),
                 var2np(x_lens, backend='pytorch'), beam_width=beam_width)
 
         # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
-        best_hyps = best_hyps - 1
+        best_hyps -= 1
 
         # Permutate indices to the original order
-        if perm_idx is not None:
-            best_hyps = best_hyps[var2np(perm_idx, backend='pytorch')]
+        if perm_idx is None:
+            perm_idx = np.arange(0, len(xs), 1)
+        else:
+            perm_idx = var2np(perm_idx, backend='pytorch')
 
-        return best_hyps
+        return best_hyps, perm_idx
 
-    def decode_from_probs(self, probs, inputs_seq_len, beam_width=1,
+    def decode_from_probs(self, probs, x_lens, beam_width=1,
                           max_decode_len=None):
         """
         Args:
             probs (np.ndarray):
-            inputs_seq_len (np.ndarray):
+            x_lens (np.ndarray):
             beam_width (int, optional):
             max_decode_len (int, optional):
         Returns:
@@ -442,13 +457,13 @@ class CTC(ModelBase):
         log_probs = np.log(probs + 1e-10)
 
         if beam_width == 1:
-            best_hyps = self._decode_greedy_np(log_probs, inputs_seq_len)
+            best_hyps = self._decode_greedy_np(log_probs, x_lens)
         else:
             best_hyps = self._decode_beam_np(
-                log_probs, inputs_seq_len, beam_width=beam_width)
+                log_probs, x_lens, beam_width=beam_width)
 
         # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
-        best_hyps = best_hyps - 1
+        best_hyps -= 1
 
         return best_hyps
 

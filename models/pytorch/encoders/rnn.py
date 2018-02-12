@@ -37,6 +37,7 @@ class RNNEncoder(nn.Module):
         batch_first (bool, optional): if True, batch-major computation will be
             performed
         merge_bidirectional (bool, optional): if True, sum bidirectional outputs
+        pack_sequence (bool, optional):
         num_stack (int, optional): the number of frames to stack
         splice (int, optional): frames to splice. Default is 1 frame.
         conv_channels (list, optional): the number of channles in CNN layers
@@ -65,6 +66,7 @@ class RNNEncoder(nn.Module):
                  use_cuda=False,
                  batch_first=False,
                  merge_bidirectional=False,
+                 pack_sequence=True,
                  num_stack=1,
                  splice=1,
                  conv_channels=[],
@@ -97,6 +99,7 @@ class RNNEncoder(nn.Module):
         self.use_cuda = use_cuda
         self.batch_first = batch_first
         self.merge_bidirectional = merge_bidirectional
+        self.pack_sequence = pack_sequence
 
         # Setting for hierarchical encoder
         self.num_layers_sub = num_layers_sub
@@ -148,13 +151,32 @@ class RNNEncoder(nn.Module):
         if sum(self.subsample_list) == 0 and self.num_proj == 0 and not residual and not dense_residual and num_layers_sub == 0:
             self.fast_impl = True
 
-            self.rnn = nn.LSTM(input_size,
-                               hidden_size=num_units,
-                               num_layers=num_layers,
-                               bias=True,
-                               batch_first=batch_first,
-                               dropout=dropout_hidden,
-                               bidirectional=bidirectional)
+            if rnn_type == 'lstm':
+                rnn = nn.LSTM(input_size,
+                              hidden_size=num_units,
+                              num_layers=num_layers,
+                              bias=True,
+                              batch_first=batch_first,
+                              dropout=dropout_hidden,
+                              bidirectional=bidirectional)
+            elif rnn_type == 'gru':
+                rnn = nn.GRU(input_size,
+                             hidden_size=num_units,
+                             num_layers=num_layers,
+                             bias=True,
+                             batch_first=batch_first,
+                             dropout=dropout_hidden,
+                             bidirectional=bidirectional)
+            elif rnn_type == 'rnn':
+                rnn = nn.RNN(input_size,
+                             hidden_size=num_units,
+                             num_layers=num_layers,
+                             bias=True,
+                             batch_first=batch_first,
+                             dropout=dropout_hidden,
+                             bidirectional=bidirectional)
+
+            setattr(self, rnn_type, rnn)
             # NOTE: pytorch introduces a dropout layer on the outputs of
             # each RNN layer EXCEPT the last layer
 
@@ -254,10 +276,13 @@ class RNNEncoder(nn.Module):
             xs, x_lens = self.conv(xs, x_lens)
 
         # Sort xs by lengths in descending order
-        x_lens, perm_idx = x_lens.sort(dim=0, descending=True)
+        if self.pack_sequence:
+            x_lens, perm_idx = x_lens.sort(dim=0, descending=True)
+            xs = xs[perm_idx]
+            # NOTE: batch-first yet here
+        else:
+            perm_idx = None
         x_lens = var2np(x_lens).tolist()
-        xs = xs[perm_idx]
-        # NOTE: batch-first yet here
 
         if not self.batch_first:
             # Convert to the time-major
@@ -274,17 +299,20 @@ class RNNEncoder(nn.Module):
                                volatile=volatile)
 
             # Pack encoder inputs
-            if not isinstance(xs, torch.nn.utils.rnn.PackedSequence):
-                xs = pack_padded_sequence(
-                    xs, x_lens, batch_first=self.batch_first)
+            if self.pack_sequence:
+                if not isinstance(xs, torch.nn.utils.rnn.PackedSequence):
+                    xs = pack_padded_sequence(
+                        xs, x_lens, batch_first=self.batch_first)
 
             # Path through RNN
-            xs, _ = self.rnn(xs, hx=h_0)
+            xs, _ = getattr(self, self.rnn_type)(xs, hx=h_0)
+            # TODO: fix this in case of GRU
 
             # Unpack encoder outputs
-            xs, unpacked_seq_len = pad_packed_sequence(
-                xs, batch_first=self.batch_first, padding_value=0)
-            # assert x_lens == unpacked_seq_len
+            if self.pack_sequence:
+                xs, unpacked_seq_len = pad_packed_sequence(
+                    xs, batch_first=self.batch_first, padding_value=0)
+                # assert x_lens == unpacked_seq_len
 
             # Dropout for hidden-output connection
             xs = self.dropout_last(xs)
@@ -303,10 +331,13 @@ class RNNEncoder(nn.Module):
             # NOTE: exclude residual connection from the raw inputs
             for i_layer in range(self.num_layers):
 
+                torch.cuda.empty_cache()
+
                 # Pack i_layer-th encoder xs
-                if not isinstance(xs, torch.nn.utils.rnn.PackedSequence):
-                    xs = pack_padded_sequence(
-                        xs, x_lens, batch_first=self.batch_first)
+                if self.pack_sequence:
+                    if not isinstance(xs, torch.nn.utils.rnn.PackedSequence):
+                        xs = pack_padded_sequence(
+                            xs, x_lens, batch_first=self.batch_first)
 
                 # Path through RNN
                 if self.subsample_list[i_layer]:
@@ -317,9 +348,10 @@ class RNNEncoder(nn.Module):
                                     str(i_layer))(xs, hx=h_0)
 
                 # Unpack i_layer-th encoder outputs
-                xs, unpacked_seq_len = pad_packed_sequence(
-                    xs, batch_first=self.batch_first, padding_value=0)
-                # assert x_lens == unpacked_seq_len
+                if self.pack_sequence:
+                    xs, unpacked_seq_len = pad_packed_sequence(
+                        xs, batch_first=self.batch_first, padding_value=0)
+                    # assert x_lens == unpacked_seq_len
 
                 # Dropout for hidden-hidden or hidden-output connection
                 xs = getattr(self, 'dropout_l' + str(i_layer))(xs)
@@ -414,15 +446,14 @@ def _init_hidden(batch_size, rnn_type, num_units, num_directions,
             This should be used in inference model for memory efficiency.
     Returns:
         if rnn_type is 'lstm', return a tuple of tensors (h_0, c_0).
-            h_0: A tensor of size
+            h_0 (torch.autograd.Variable, float): A tensor of size
                 `[num_layers * num_directions, batch_size, num_units]`
-            c_0: A tensor of size
+            c_0 (torch.autograd.Variable, float): A tensor of size
                 `[num_layers * num_directions, batch_size, num_units]`
         otherwise return h_0.
     """
     h_0 = Variable(torch.zeros(
         num_layers * num_directions, batch_size, num_units))
-
     if volatile:
         h_0.volatile = True
     if use_cuda:
@@ -431,7 +462,6 @@ def _init_hidden(batch_size, rnn_type, num_units, num_directions,
     if rnn_type == 'lstm':
         c_0 = Variable(torch.zeros(
             num_layers * num_directions, batch_size, num_units))
-
         if volatile:
             c_0.volatile = True
         if use_cuda:

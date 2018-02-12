@@ -30,8 +30,15 @@ class TestHierarchicalAttention(unittest.TestCase):
         print("Hierarchical Attention Working check.")
 
         # Curriculum training
+        # self.check(encoder_type='lstm', bidirectional=True,
+        #            decoder_type='lstm', curriculum_training=True)
+
+        # Label smoothing
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', curriculum_training=True)
+                   decoder_type='lstm', label_smoothing=True,
+                   ctc_loss_weight_sub=0.2)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', label_smoothing=True)
 
         # Pyramidal encoder
         self.check(encoder_type='lstm', bidirectional=True,
@@ -42,10 +49,6 @@ class TestHierarchicalAttention(unittest.TestCase):
         # Projection layer
         self.check(encoder_type='lstm', bidirectional=False, projection=True,
                    decoder_type='lstm')
-
-        # Label smoothing
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', label_smoothing=True)
 
         # Residual LSTM encoder
         self.check(encoder_type='lstm', bidirectional=True,
@@ -61,7 +64,7 @@ class TestHierarchicalAttention(unittest.TestCase):
 
         # Word attention + char CTC
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', ctc_loss_weight_sub=0.5)
+                   decoder_type='lstm', ctc_loss_weight_sub=0.2)
 
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm')
@@ -217,26 +220,26 @@ class TestHierarchicalAttention(unittest.TestCase):
 
             if (step + 1) % 10 == 0:
                 # Decode
-                labels_pred = model.decode(
+                best_hyps, perm_idx = model.decode(
                     xs, x_lens, beam_width=1, max_decode_len=30)
-                labels_pred_sub = model.decode(
+                best_hyps_sub, perm_idx_sub = model.decode(
                     xs, x_lens, beam_width=1, max_decode_len=60,
                     is_sub_task=True)
 
                 # Compute accuracy
-                str_pred = idx2word(labels_pred[0][0:-1]).split('>')[0]
+                str_pred = idx2word(best_hyps[0][0:-1]).split('>')[0]
                 str_true = idx2word(ys[0][1:-1])
                 ler = compute_wer(ref=str_true.split('_'),
                                   hyp=str_pred.split('_'),
                                   normalize=True)
-                str_pred_sub = idx2char(labels_pred_sub[0][0:-1]).split('>')[0]
+                str_pred_sub = idx2char(best_hyps_sub[0][0:-1]).split('>')[0]
                 str_true_sub = idx2char(ys_sub[0][1:-1])
                 ler_sub = compute_cer(ref=str_true_sub.replace('_', ''),
                                       hyp=str_pred_sub.replace('_', ''),
                                       normalize=True)
 
                 duration_step = time.time() - start_time_step
-                print('Step %d: loss = %.3f (%.3f/%.3f) / ler (main) = %.3f / ler (sub) = %.3f / lr = %.5f (%.3f sec)' %
+                print('Step %d: loss=%.3f(%.3f/%.3f) / ler (main/sub)=%.3f/%.3f / lr=%.5f (%.3f sec)' %
                       (step + 1, loss.data[0], loss_main.data[0], loss_sub.data[0],
                        ler, ler_sub, learning_rate, duration_step))
                 start_time_step = time.time()

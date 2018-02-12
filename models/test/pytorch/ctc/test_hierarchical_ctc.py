@@ -29,16 +29,16 @@ class TestCTC(unittest.TestCase):
     def test(self):
         print("Hierarchical CTC Working check.")
 
+        # Label smoothing
+        self.check(encoder_type='lstm', bidirectional=True,
+                   label_smoothing=True)
+
         # Pyramidal encoder
         self.check(encoder_type='lstm', bidirectional=True, subsample='drop')
         self.check(encoder_type='lstm', bidirectional=True, subsample='concat')
 
         # projection layer
         self.check(encoder_type='lstm', bidirectional=False, projection=True)
-
-        # Label smoothing
-        self.check(encoder_type='lstm', bidirectional=True,
-                   label_smoothing=True)
 
         # Residual LSTM-CTC
         self.check(encoder_type='lstm', bidirectional=True,
@@ -180,24 +180,24 @@ class TestCTC(unittest.TestCase):
 
             if (step + 1) % 10 == 0:
                 # Decode
-                labels_pred = model.decode(xs, x_lens, beam_width=2)
-                labels_pred_sub = model.decode(
+                best_hyps, _ = model.decode(xs, x_lens, beam_width=2)
+                best_hyps_sub, _ = model.decode(
                     xs, x_lens, beam_width=2, is_sub_task=True)
 
                 # Compute accuracy
                 str_true = idx2word(ys[0, :y_lens[0]])
-                str_pred = idx2word(labels_pred[0])
+                str_pred = idx2word(best_hyps[0])
                 ler = compute_wer(ref=str_true.split('_'),
                                   hyp=str_pred.split('_'),
                                   normalize=True)
                 str_true_sub = idx2char(ys_sub[0, :y_lens_sub[0]])
-                str_pred_sub = idx2char(labels_pred_sub[0])
+                str_pred_sub = idx2char(best_hyps_sub[0])
                 ler_sub = compute_cer(ref=str_true_sub.replace('_', ''),
                                       hyp=str_pred_sub.replace('_', ''),
                                       normalize=True)
 
                 duration_step = time.time() - start_time_step
-                print('Step %d: loss = %.3f (%.3f/%.3f) / ler = %.3f (%.3f) / lr = %.5f (%.3f sec)' %
+                print('Step %d: loss=%.3f(%.3f/%.3f) / ler (main/sub)=%.3f/%.3f / lr=%.5f (%.3f sec)' %
                       (step + 1, loss.data[0], loss_main.data[0], loss_sub.data[0],
                        ler, ler_sub, learning_rate, duration_step))
                 start_time_step = time.time()

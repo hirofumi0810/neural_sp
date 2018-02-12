@@ -10,7 +10,6 @@ from __future__ import print_function
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
 
 from models.pytorch.linear import LinearND
 
@@ -148,13 +147,13 @@ class AttentionMechanism(nn.Module):
             raise NotImplementedError
 
         # Mask attention distribution
-        energy_mask = Variable(torch.ones(batch_size, max_time))
-        if enc_out.is_cuda:
-            energy_mask = energy_mask.cuda()
-        for x_len in x_lens:
-            if x_len.data[0] < max_time:
-                energy_mask[:, x_len.data[0]:] = 0
-        energy *= energy_mask
+        # energy_mask = Variable(torch.ones(batch_size, max_time))
+        # if enc_out.is_cuda:
+        #     energy_mask = energy_mask.cuda()
+        # for x_len in x_lens:
+        #     if x_len.data[0] < max_time:
+        #         energy_mask[:, x_len.data[0]:] = 0
+        # energy *= energy_mask
 
         # Sharpening
         energy *= self.sharpening_factor

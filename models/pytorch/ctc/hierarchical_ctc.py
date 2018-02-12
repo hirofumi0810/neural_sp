@@ -17,13 +17,9 @@ except:
 # except ImportError:
 #     raise ImportError('Install pytorch_ctc.')
 
-import numpy as np
-import torch
-import torch.nn.functional as F
-from torch.autograd import Variable
-
 from models.pytorch.ctc.ctc import CTC, _concatenate_labels
 from models.pytorch.linear import LinearND
+from models.pytorch.criterion import kl_div_label_smoothing, cross_entropy_label_smoothing
 from models.pytorch.encoders.load_encoder import load
 from utils.io.variable import np2var
 
@@ -120,7 +116,7 @@ class HierarchicalCTC(CTC):
             encoder_num_proj=encoder_num_proj,
             encoder_num_layers=encoder_num_layers,
             dropout_input=dropout_input,
-            dropout_hidden=dropout_hidden,
+            dropout_encoder=dropout_encoder,
             num_classes=num_classes,
             parameter_init=parameter_init,
             subsample_list=subsample_list,
@@ -130,6 +126,7 @@ class HierarchicalCTC(CTC):
             batch_norm=batch_norm,
             label_smoothing_prob=label_smoothing_prob,
             weight_noise_std=weight_noise_std)
+        self.model_type = 'hierarchical_ctc'
 
         # Setting for the encoder
         self.encoder_num_layers_sub = encoder_num_layers_sub
@@ -157,6 +154,8 @@ class HierarchicalCTC(CTC):
                 subsample_type=subsample_type,
                 batch_first=True,
                 merge_bidirectional=False,
+                # pack_sequence=False if init_dec_state == 'zero' else True,
+                pack_sequence=True,
                 num_stack=num_stack,
                 splice=splice,
                 conv_channels=conv_channels,
@@ -190,16 +189,16 @@ class HierarchicalCTC(CTC):
         if init_forget_gate_bias_with_one:
             self.init_forget_gate_bias_with_one()
 
-    def forward(self, inputs, labels, labels_sub, inputs_seq_len,
-                labels_seq_len, labels_seq_len_sub, is_eval=False):
+    def forward(self, xs, ys, ys_sub, x_lens, y_lens, y_lens_sub,
+                is_eval=False):
         """Forward computation.
         Args:
-            inputs (np.ndarray): A tensor of size `[B, T_in, input_size]`
-            labels (np.ndarray): A tensor of size `[B, T_out]`
-            labels_sub (np.ndarray): A tensor of size `[B, T_out_sub]`
-            inputs_seq_len (np.ndarray): A tensor of size `[B]`
-            labels_seq_len (np.ndarray): A tensor of size `[B]`
-            labels_seq_len_sub (np.ndarray): A tensor of size `[B]`
+            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            ys (np.ndarray): A tensor of size `[B, T_out]`
+            ys_sub (np.ndarray): A tensor of size `[B, T_out_sub]`
+            x_lens (np.ndarray): A tensor of size `[B]`
+            y_lens (np.ndarray): A tensor of size `[B]`
+            y_lens_sub (np.ndarray): A tensor of size `[B]`
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
@@ -208,20 +207,18 @@ class HierarchicalCTC(CTC):
             loss_sub (torch.autograd.Variable(float) or float): A tensor of size `[1]`
         """
         # Wrap by Variable
-        xs = np2var(inputs, use_cuda=self.use_cuda, backend='pytorch')
-        ys = np2var(labels, dtype='int', use_cuda=False, backend='pytorch')
-        ys_sub = np2var(
-            labels_sub, dtype='int', use_cuda=False, backend='pytorch')
-        x_lens = np2var(
-            inputs_seq_len, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
-        y_lens = np2var(
-            labels_seq_len, dtype='int', use_cuda=False, backend='pytorch')
-        y_lens_sub = np2var(
-            labels_seq_len_sub, dtype='int', use_cuda=False, backend='pytorch')
+        xs = np2var(xs, use_cuda=self.use_cuda, backend='pytorch')
+        ys = np2var(ys, dtype='int', use_cuda=False, backend='pytorch')
+        ys_sub = np2var(ys_sub, dtype='int', use_cuda=False, backend='pytorch')
+        x_lens = np2var(x_lens, dtype='int',
+                        use_cuda=self.use_cuda, backend='pytorch')
+        y_lens = np2var(y_lens, dtype='int', use_cuda=False, backend='pytorch')
+        y_lens_sub = np2var(y_lens_sub, dtype='int',
+                            use_cuda=False, backend='pytorch')
 
+        # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
         ys = ys + 1
         ys_sub = ys_sub + 1
-        # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
 
         if is_eval:
             self.eval()
@@ -233,11 +230,16 @@ class HierarchicalCTC(CTC):
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
         # Encode acoustic features
-        logits, x_lens, logits_sub, x_lens_sub, perm_idx = self._encode(
+        logits_main, x_lens, logits_sub, x_lens_sub, perm_idx = self._encode(
             xs, x_lens, volatile=is_eval, is_multi_task=True)
 
+        # Output smoothing
+        if self.logits_temperature != 1:
+            logits_main /= self.logits_temperature
+            logits_sub /= self.logits_temperature
+
         # Convert to time-major
-        logits = logits.transpose(0, 1).contiguous()
+        logits_main = logits_main.transpose(0, 1).contiguous()
         logits_sub = logits_sub.transpose(0, 1).contiguous()
 
         # Permutate indices
@@ -252,46 +254,58 @@ class HierarchicalCTC(CTC):
         concatenated_labels = _concatenate_labels(ys, y_lens)
         concatenated_labels_sub = _concatenate_labels(ys_sub, y_lens_sub)
 
-        # Output smoothing
-        if self.logits_temperature != 1:
-            logits = logits / self.logits_temperature
-            logits_sub = logits_sub / self.logits_temperature
-
-        ##################################################
-        # Main task
-        ##################################################
-        # Compute CTC loss in the main task
-        loss_main = ctc_loss(logits, concatenated_labels, x_lens.cpu(), y_lens)
-
-        # Label smoothing (with uniform distribution)
-        if self.label_smoothing_prob > 0:
-            batch_size, label_num, num_classes = logits.size()
-            log_probs = F.log_softmax(logits, dim=-1)
-            uniform = Variable(torch.FloatTensor(
-                batch_size, label_num, num_classes).fill_(np.log(1 / num_classes)))
-            loss_main = loss_main * (1 - self.label_smoothing_prob) + self.kl_div(
-                log_probs.cpu(), uniform) * self.label_smoothing_prob
-
-        ##################################################
-        # Sub task
-        ##################################################
-        # Compute CTC loss in the sub task
+        # Compute CTC loss in the main & sub task
+        loss_main = ctc_loss(
+            logits_main, concatenated_labels, x_lens.cpu(), y_lens) / len(xs)
         loss_sub = ctc_loss(
-            logits_sub, concatenated_labels_sub, x_lens_sub.cpu(), y_lens_sub)
+            logits_sub, concatenated_labels_sub, x_lens_sub.cpu(), y_lens_sub) / len(xs)
+        if self.use_cuda:
+            loss_main = loss_main.cuda()
+            loss_sub = loss_sub.cuda()
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
-            label_num_sub, num_classes_sub = logits_sub.size()[1:]
-            log_probs_sub = F.log_softmax(logits_sub, dim=-1)
-            uniform_sub = Variable(torch.FloatTensor(
-                batch_size, label_num, num_classes_sub).fill_(np.log(1 / num_classes_sub)))
-            loss_sub = loss_sub * (1 - self.label_smoothing_prob) + F.kl_div(
-                log_probs_sub.cpu(), uniform_sub,
-                size_average=False, reduce=True) * self.label_smoothing_prob
+            # KL
+            # kl_loss_ls_main = kl_div_label_smoothing(
+            #     logits_main,
+            #     label_smoothing_prob=self.label_smoothing_prob,
+            #     distribution='uniform',
+            #     size_average=False) / len(xs)
+            # loss_main = loss_main * (1 - self.label_smoothing_prob) + \
+            #     kl_loss_ls_main
+            # print(kl_loss_ls_main)
+            # kl_loss_ls_sub = kl_div_label_smoothing(
+            #     logits_sub,
+            #     label_smoothing_prob=self.label_smoothing_prob,
+            #     distribution='uniform',
+            #     size_average=False) / len(xs)
+            # loss_sub = loss_sub * (1 - self.label_smoothing_prob) + \
+            #     kl_loss_ls_sub
+            # print(kl_loss_ls_sub)
 
-        # Average the loss by mini-batch
-        loss_main = loss_main * self.main_loss_weight / len(xs)
-        loss_sub = loss_sub * (1 - self.main_loss_weight) / len(xs)
+            # XE
+            xe_loss_ls_main = cross_entropy_label_smoothing(
+                logits_main,
+                ys=None,
+                label_smoothing_prob=self.label_smoothing_prob,
+                distribution='uniform',
+                size_average=False) / len(xs)
+            loss_main = loss_main * \
+                (1 - self.label_smoothing_prob) + xe_loss_ls_main
+            # print(xe_loss_ls_main)
+            xe_loss_ls_sub = cross_entropy_label_smoothing(
+                logits_sub,
+                ys=None,
+                label_smoothing_prob=self.label_smoothing_prob,
+                distribution='uniform',
+                size_average=False) / len(xs)
+            loss_sub = loss_sub * \
+                (1 - self.label_smoothing_prob) + xe_loss_ls_sub
+            # print(xe_loss_ls_sub)
+
+        # Compute total loss
+        loss_main = loss_main * self.main_loss_weight
+        loss_sub = loss_sub * (1 - self.main_loss_weight)
         loss = loss_main + loss_sub
 
         if is_eval:

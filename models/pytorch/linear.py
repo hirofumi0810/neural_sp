@@ -8,6 +8,7 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
+import torch
 import torch.nn as nn
 
 
@@ -72,3 +73,70 @@ class Embedding(nn.Module):
         y = self.embed(y)
         y = self.dropout(y)
         return y
+
+
+class Embedding_LS(nn.Module):
+
+    def __init__(self, num_classes, embedding_dim, dropout=0,
+                 label_smoothing_prob=0.):
+        """
+        Args:
+            num_classes (int): the number of nodes in softmax layer
+                (including <SOS> and <EOS> classes)
+            embedding_dim (int): the dimension of the embedding in target spaces
+            dropout (float, optional): the probability to drop nodes of the embedding
+            label_smoothing_prob (float, optional):
+        """
+        super(Embedding_LS, self).__init__()
+
+        self.num_classes = num_classes
+        self.label_smoothing_prob = label_smoothing_prob
+
+        self.embed = LinearND(num_classes, embedding_dim,
+                              bias=False,
+                              dropout=dropout)
+
+    def forward(self, y):
+        """Forward computation.
+        Args:
+            y (torch.autograd.Variable, long): A tensor of size
+                `[B, 1]`
+        Returns:
+            y (torch.autograd.Variable, float): A tensor of size
+                `[B, 1, embedding_dim]`
+        """
+        # Convert to one-hot labels
+        y = to_onehot(y, self.num_classes)
+        # y: `[B, 1, num_classes]`
+
+        # Label smoothing
+        if self.label_smoothing_prob > 0:
+            y = y * (1 - self.label_smoothing_prob) + 1 / \
+                y.size(2) * self.label_smoothing_prob
+
+        y = self.embed(y)
+        return y
+
+
+def to_onehot(y, num_classes):
+    """Convert indices into one-hot encoding.
+    Args:
+        y (torch.autograd.Variable, long): Indices of labels.
+            A tensor of size `[B, 1]`.
+        num_classes (int): the number of classes
+    Returns:
+        y (torch.autograd.Variable, float): A tensor of size
+            `[B, 1, num_classes]`
+    """
+    batch_size = y.size(0)
+    y_onehot = torch.FloatTensor(batch_size, num_classes).zero_()
+    y_onehot.scatter_(1, y.data.cpu(), 1)
+    y_onehot = torch.autograd.Variable(y_onehot).unsqueeze(1)
+    if y.is_cuda:
+        y_onehot = y_onehot.cuda()
+
+    # TODO: fix bugs
+    # if y.volatile:
+    #     y_onehot.volatile = True
+
+    return y_onehot

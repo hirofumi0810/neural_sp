@@ -199,24 +199,24 @@ class TestCTC(unittest.TestCase):
 
             if (step + 1) % 10 == 0:
                 # Decode
-                labels_pred = model.decode(xs, x_lens, beam_width=2)
+                best_hyps, _ = model.decode(xs, x_lens, beam_width=2)
 
                 # Compute accuracy
                 if label_type == 'char':
                     str_true = idx2char(ys[0, :y_lens[0]])
-                    str_pred = idx2char(labels_pred[0])
+                    str_pred = idx2char(best_hyps[0])
                     ler = compute_cer(ref=str_true.replace('_', ''),
                                       hyp=str_pred.replace('_', ''),
                                       normalize=True)
                 elif label_type == 'word':
                     str_true = idx2word(ys[0, :y_lens[0]])
-                    str_pred = idx2word(labels_pred[0])
+                    str_pred = idx2word(best_hyps[0])
                     ler = compute_wer(ref=str_true.split('_'),
                                       hyp=str_pred.split('_'),
                                       normalize=True)
 
                 duration_step = time.time() - start_time_step
-                print('Step %d: loss = %.3f / ler = %.3f / lr = %.5f (%.3f sec)' %
+                print('Step %d: loss=%.3f / ler=%.3f / lr=%.5f (%.3f sec)' %
                       (step + 1, loss.data[0], ler, learning_rate, duration_step))
                 start_time_step = time.time()
 

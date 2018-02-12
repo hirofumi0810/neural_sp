@@ -97,12 +97,12 @@ def load(model_type, params, backend):
         if params['dropout_encoder'] != 0:
             model.name += '_drop'
             if params['dropout_input'] != 0:
-                model.name += 'en' + str(params['dropout_input'])
+                model.name += 'in' + str(params['dropout_input'])
             model.name += 'en' + str(params['dropout_encoder'])
         if params['logits_temperature'] != 1:
             model.name += '_temp' + str(params['logits_temperature'])
         if params['label_smoothing_prob'] > 0:
-            model.name += '_labelsmooth' + str(params['label_smoothing_prob'])
+            model.name += '_ls' + str(params['label_smoothing_prob'])
         if params['weight_noise_std'] != 0:
             model.name += '_noise' + str(params['weight_noise_std'])
         if params['encoder_type'] == 'cnn':
@@ -175,7 +175,7 @@ def load(model_type, params, backend):
         if params['dropout_encoder'] != 0:
             model.name += '_drop'
             if params['dropout_input'] != 0:
-                model.name += 'en' + str(params['dropout_input'])
+                model.name += 'in' + str(params['dropout_input'])
             model.name += 'en' + str(params['dropout_encoder'])
         if params['logits_temperature'] != 1:
             model.name += '_temp' + str(params['logits_temperature'])
@@ -264,13 +264,13 @@ def load(model_type, params, backend):
         if params['dropout_encoder'] != 0 or params['dropout_decoder'] != 0:
             model.name += '_drop'
             if params['dropout_input'] != 0:
-                model.name += 'en' + str(params['dropout_input'])
+                model.name += 'in' + str(params['dropout_input'])
             if params['dropout_encoder'] != 0:
                 model.name += 'en' + str(params['dropout_encoder'])
             if params['dropout_decoder'] != 0:
                 model.name += 'de' + str(params['dropout_decoder'])
             if params['dropout_embedding'] != 0:
-                model.name += 'en' + str(params['dropout_embedding'])
+                model.name += 'emb' + str(params['dropout_embedding'])
         if params['sharpening_factor'] != 1:
             model.name += '_sharp' + str(params['sharpening_factor'])
         if params['logits_temperature'] != 1:
@@ -282,19 +282,19 @@ def load(model_type, params, backend):
         if params['ctc_loss_weight'] > 0:
             model.name += '_ctc' + str(params['ctc_loss_weight'])
         if params['scheduled_sampling_prob'] > 0:
-            model.name += '_scheduled' + str(params['scheduled_sampling_prob'])
+            model.name += '_ss' + str(params['scheduled_sampling_prob'])
         if params['label_smoothing_prob'] > 0:
-            model.name += '_labelsmooth' + str(params['label_smoothing_prob'])
+            model.name += '_ls' + str(params['label_smoothing_prob'])
         if params['weight_noise_std'] != 0:
             model.name += '_noise' + str(params['weight_noise_std'])
         if bool(params['encoder_residual']):
             model.name += '_encres'
         elif bool(params['encoder_dense_residual']):
-            model.name += '_encdenseres'
+            model.name += '_encdense'
         if bool(params['decoder_residual']):
             model.name += '_decres'
         elif bool(params['decoder_dense_residual']):
-            model.name += '_decdenseres'
+            model.name += '_decdense'
         model.name += '_input' + str(model.input_size)
 
     elif params['model_type'] == 'hierarchical_ctc':
@@ -316,7 +316,7 @@ def load(model_type, params, backend):
             encoder_num_units=params['encoder_num_units'],
             encoder_num_proj=params['encoder_num_proj'],
             encoder_num_layers=params['encoder_num_layers'],
-            num_layers_sub=params['num_layers_sub'],
+            encoder_num_layers_sub=params['encoder_num_layers_sub'],
             fc_list=params['fc_list'],
             dropout_input=params['dropout_input'],
             dropout_encoder=params['dropout_encoder'],
@@ -361,7 +361,7 @@ def load(model_type, params, backend):
         if params['encoder_type'] not in ['cnn', 'resnet']:
             model.name += str(params['encoder_num_units']) + 'H'
             model.name += str(params['encoder_num_layers']) + 'L'
-            model.name += str(params['num_layers_sub']) + 'L'
+            model.name += str(params['encoder_num_layers_sub']) + 'L'
             if params['encoder_num_proj'] != 0:
                 model.name += '_proj' + str(params['encoder_num_proj'])
             if sum(params['subsample_list']) > 0:
@@ -378,12 +378,12 @@ def load(model_type, params, backend):
         if params['dropout_encoder'] != 0:
             model.name += '_drop'
             if params['dropout_input'] != 0:
-                model.name += 'en' + str(params['dropout_input'])
+                model.name += 'in' + str(params['dropout_input'])
             model.name += 'en' + str(params['dropout_encoder'])
         if params['logits_temperature'] != 1:
             model.name += '_temp' + str(params['logits_temperature'])
         if params['label_smoothing_prob'] > 0:
-            model.name += '_labelsmooth' + str(params['label_smoothing_prob'])
+            model.name += '_ls' + str(params['label_smoothing_prob'])
         if params['weight_noise_std'] != 0:
             model.name += '_noise' + str(params['weight_noise_std'])
         if bool(params['encoder_residual']):
@@ -481,13 +481,13 @@ def load(model_type, params, backend):
         if params['dropout_encoder'] != 0 or params['dropout_decoder'] != 0:
             model.name += '_drop'
             if params['dropout_input'] != 0:
-                model.name += 'en' + str(params['dropout_input'])
+                model.name += 'in' + str(params['dropout_input'])
             if params['dropout_encoder'] != 0:
                 model.name += 'en' + str(params['dropout_encoder'])
             if params['dropout_decoder'] != 0:
                 model.name += 'de' + str(params['dropout_decoder'])
             if params['dropout_embedding'] != 0:
-                model.name += 'en' + str(params['dropout_embedding'])
+                model.name += 'emb' + str(params['dropout_embedding'])
         if params['sharpening_factor'] != 1:
             model.name += '_sharp' + str(params['sharpening_factor'])
         if params['logits_temperature'] != 1:
@@ -499,19 +499,19 @@ def load(model_type, params, backend):
         if params['ctc_loss_weight_sub'] > 0:
             model.name += '_ctcsub' + str(params['ctc_loss_weight_sub'])
         if params['scheduled_sampling_prob'] > 0:
-            model.name += '_scheduled' + str(params['scheduled_sampling_prob'])
+            model.name += '_ss' + str(params['scheduled_sampling_prob'])
         if params['label_smoothing_prob'] > 0:
-            model.name += '_labelsmooth' + str(params['label_smoothing_prob'])
+            model.name += '_ls' + str(params['label_smoothing_prob'])
         if params['weight_noise_std'] != 0:
             model.name += '_noise' + str(params['weight_noise_std'])
         if bool(params['encoder_residual']):
             model.name += '_encres'
         elif bool(params['encoder_dense_residual']):
-            model.name += '_encdenseres'
+            model.name += '_encdense'
         if bool(params['decoder_residual']):
             model.name += '_decres'
         elif bool(params['decoder_dense_residual']):
-            model.name += '_decdenseres'
+            model.name += '_decdense'
         model.name += '_main' + str(params['main_loss_weight'])
         if bool(params['curriculum_training']):
             model.name += '_curriculum'
@@ -599,13 +599,13 @@ def load(model_type, params, backend):
         if params['dropout_encoder'] != 0 or params['dropout_decoder'] != 0:
             model.name += '_drop'
             if params['dropout_input'] != 0:
-                model.name += 'en' + str(params['dropout_input'])
+                model.name += 'in' + str(params['dropout_input'])
             if params['dropout_encoder'] != 0:
                 model.name += 'en' + str(params['dropout_encoder'])
             if params['dropout_decoder'] != 0:
                 model.name += 'de' + str(params['dropout_decoder'])
             if params['dropout_embedding'] != 0:
-                model.name += 'en' + str(params['dropout_embedding'])
+                model.name += 'emb' + str(params['dropout_embedding'])
         if params['sharpening_factor'] != 1:
             model.name += '_sharp' + str(params['sharpening_factor'])
         if params['logits_temperature'] != 1:
@@ -617,9 +617,9 @@ def load(model_type, params, backend):
         if params['ctc_loss_weight_sub'] > 0:
             model.name += '_ctcsub' + str(params['ctc_loss_weight_sub'])
         if params['scheduled_sampling_prob'] > 0:
-            model.name += '_scheduled' + str(params['scheduled_sampling_prob'])
+            model.name += '_ss' + str(params['scheduled_sampling_prob'])
         if params['label_smoothing_prob'] > 0:
-            model.name += '_labelsmooth' + str(params['label_smoothing_prob'])
+            model.name += '_ls' + str(params['label_smoothing_prob'])
         if params['weight_noise_std'] != 0:
             model.name += '_noise' + str(params['weight_noise_std'])
         model.name += '_main' + str(params['main_loss_weight'])
