@@ -21,9 +21,8 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 
 from models.pytorch.base import ModelBase
-# from models.pytorch.linear import LinearND, Embedding
-from models.pytorch.linear import LinearND, Embedding_LS
-from models.pytorch.criterion import kl_div_label_smoothing, cross_entropy_label_smoothing
+from models.pytorch.criterion import cross_entropy_label_smoothing
+from models.pytorch.linear import LinearND, Embedding, Embedding_LS, to_onehot
 from models.pytorch.encoders.load_encoder import load
 from models.pytorch.attention.rnn_decoder import RNNDecoder
 from models.pytorch.attention.attention_layer import AttentionMechanism
@@ -304,14 +303,17 @@ class AttentionSeq2seq(ModelBase):
         else:
             self.is_bridge = False
 
-        # self.embed = Embedding(num_classes=self.num_classes,
-        #                        embedding_dim=embedding_dim,
-        #                        dropout=dropout_embedding)
-        self.embed = Embedding_LS(
-            num_classes=self.num_classes,
-            embedding_dim=embedding_dim,
-            dropout=dropout_embedding,
-            label_smoothing_prob=label_smoothing_prob)
+        if label_smoothing_prob > 0:
+            self.embed = Embedding_LS(
+                num_classes=self.num_classes,
+                embedding_dim=embedding_dim,
+                dropout=dropout_embedding,
+                label_smoothing_prob=label_smoothing_prob)
+        else:
+            self.embed = Embedding(
+                num_classes=self.num_classes,
+                embedding_dim=embedding_dim,
+                dropout=dropout_embedding)
 
         self.proj_layer = LinearND(decoder_num_units * 2, decoder_num_units,
                                    dropout=dropout_decoder)
@@ -406,23 +408,13 @@ class AttentionSeq2seq(ModelBase):
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
-            # KL
-            # kl_loss_ls = kl_div_label_smoothing(
-            #     logits,
-            #     label_smoothing_prob=self.label_smoothing_prob,
-            #     distribution='uniform',
-            #     size_average=False) / len(xs)
-            # loss = loss * (1 - self.label_smoothing_prob) + kl_loss_ls
-            # print(kl_loss_ls)
-
-            # XE
-            xe_loss_ls = cross_entropy_label_smoothing(
-                logits, ys[:, 1:],  # NOTE: Exclude first <SOS>
+            loss_ls = cross_entropy_label_smoothing(
+                logits,
                 label_smoothing_prob=self.label_smoothing_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)
-            loss = loss * (1 - self.label_smoothing_prob) + xe_loss_ls
-            # print(xe_loss_ls)
+            loss = loss * (1 - self.label_smoothing_prob) + loss_ls
+            # print(loss_ls)
 
         # Add coverage term
         if self.coverage_weight != 0:
@@ -431,33 +423,8 @@ class AttentionSeq2seq(ModelBase):
         # Auxiliary CTC loss (optional)
         if self.ctc_loss_weight > 0:
             logits_ctc = self.fc_ctc(xs)
-
             ctc_loss = self.compute_ctc_loss(
                 logits_ctc, ys, x_lens, y_lens, size_average=False) / len(xs)
-
-            # Label smoothing (with uniform distribution)
-            if self.label_smoothing_prob > 0:
-                # KL
-                # kl_loss_ls_ctc = kl_div_label_smoothing(
-                #     logits_ctc,
-                #     label_smoothing_prob=self.label_smoothing_prob,
-                #     distribution='uniform',
-                #     size_average=False) / len(xs)
-                # ctc_loss = ctc_loss * (1 - self.label_smoothing_prob) + \
-                #     kl_loss_ls_ctc
-                # print(kl_loss_ls_ctc)
-
-                # XE
-                xe_loss_ls_ctc = cross_entropy_label_smoothing(
-                    logits_ctc,
-                    ys=None,
-                    label_smoothing_prob=self.label_smoothing_prob,
-                    distribution='uniform',
-                    size_average=False) / len(xs)
-                ctc_loss = ctc_loss * (1 - self.label_smoothing_prob) + \
-                    xe_loss_ls_ctc
-                # print(xe_loss_ls_ctc)
-
             loss = loss * (1 - self.ctc_loss_weight) + \
                 ctc_loss * self.ctc_loss_weight
 
@@ -500,11 +467,26 @@ class AttentionSeq2seq(ModelBase):
                        x_lens.cpu(),
                        y_lens.cpu() - 2)  # NOTE: Ignore <SOS> and <EOS>
 
-        if size_average:
-            ctc_loss /= len(logits)
-
         if self.use_cuda:
             ctc_loss = ctc_loss.cuda()
+
+        # TODO: Label smoothing (with uniform distribution)
+        # if self.label_smoothing_prob > 0:
+        #     # Convert to batch-major
+        #     logits_ctc = logits_ctc.transpose(0, 1)
+        #
+        #     # XE
+        #     loss_ls_ctc = cross_entropy_label_smoothing(
+        #         logits_ctc,
+        #         label_smoothing_prob=self.label_smoothing_prob,
+        #         distribution='uniform',
+        #         size_average=False)
+        #     ctc_loss = ctc_loss * (1 - self.label_smoothing_prob) + \
+        #         loss_ls_ctc
+        #     # print(loss_ls_ctc)
+
+        if size_average:
+            ctc_loss /= len(x_lens)
 
         return ctc_loss
 
@@ -740,6 +722,9 @@ class AttentionSeq2seq(ModelBase):
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
             att_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
         """
+        if is_sub_task and self.sub_loss_weight == 0:
+            raise ValueError
+
         # Wrap by Variable
         xs = np2var(
             xs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')

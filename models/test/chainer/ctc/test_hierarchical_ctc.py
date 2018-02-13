@@ -24,16 +24,16 @@ class TestCTC(unittest.TestCase):
     def test(self):
         print("Hierarchical CTC Working check.")
 
+        # Label smoothing
+        self.check(encoder_type='lstm', bidirectional=True,
+                   label_smoothing=True)
+
         # Pyramidal encoder
         self.check(encoder_type='lstm', bidirectional=True, subsample='drop')
         self.check(encoder_type='lstm', bidirectional=True, subsample='concat')
 
         # projection layer
         self.check(encoder_type='lstm', bidirectional=False, projection=True)
-
-        # Label smoothing
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            label_smoothing=True)
 
         # Residual LSTM-CTC
         self.check(encoder_type='lstm', bidirectional=True,
@@ -178,6 +178,10 @@ class TestCTC(unittest.TestCase):
             # Inject Gaussian noise to all parameters
 
             if (step + 1) % 10 == 0:
+                # Compute loss
+                loss, loss_main, loss_sub = model(
+                    xs, ys, ys_sub, x_lens, y_lens, y_lens_sub, is_eval=True)
+
                 # Decode
                 best_hyps, _ = model.decode(xs, x_lens, beam_width=1)
                 best_hyps_sub, _ = model.decode(
@@ -197,7 +201,7 @@ class TestCTC(unittest.TestCase):
 
                 duration_step = time.time() - start_time_step
                 print('Step %d: loss=%.3f(%.3f/%.3f) / ler (main/sub)=%.3f/%.3f / lr=%.5f (%.3f sec)' %
-                      (step + 1, loss.data, loss_main.data, loss_sub.data,
+                      (step + 1, loss, loss_main, loss_sub,
                        ler, ler_sub, learning_rate, duration_step))
                 start_time_step = time.time()
 

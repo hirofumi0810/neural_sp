@@ -69,6 +69,7 @@ class AttentionMechanism(nn.Module):
                                   stride=1,
                                   padding=(0, kernel_size // 2),
                                   bias=False)
+
             self.W_enc = LinearND(decoder_num_units,
                                   attention_dim, bias=True)
             self.W_dec = LinearND(decoder_num_units,
@@ -129,8 +130,9 @@ class AttentionMechanism(nn.Module):
             conv_feat = conv_feat.transpose(1, 2).contiguous()
             # -> `[B, T_in, out_channels]`
 
-            energy = self.V(
-                F.tanh(self.W_enc(enc_out) + self.W_dec(dec_out.expand_as(enc_out)) + self.W_conv(conv_feat))).squeeze(2)
+            energy = self.V(F.tanh(self.W_enc(enc_out) +
+                                   self.W_dec(dec_out.expand_as(enc_out)) +
+                                   self.W_conv(conv_feat))).squeeze(2)
 
         elif self.attention_type == 'dot_product':
             ###################################################################

@@ -246,7 +246,7 @@ class ModelBase(nn.Module):
         for path in glob(join(save_path, 'model.epoch-*')):
             os.remove(path)
 
-        # Save parameters, optimizer, step index
+        # Save parameters, optimizer, step index etc.
         checkpoint = {
             "state_dict": self.state_dict(),
             "optimizer": self.optimizer.state_dict(),

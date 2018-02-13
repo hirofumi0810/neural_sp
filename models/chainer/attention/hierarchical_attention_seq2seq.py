@@ -11,9 +11,8 @@ import numpy as np
 import chainer
 from chainer import functions as F
 
-# from models.chainer.linear import LinearND, Embedding
-from models.chainer.linear import LinearND, Embedding_LS
-from models.pytorch.criterion import cross_entropy_label_smoothing
+from models.chainer.linear import LinearND, Embedding, Embedding_LS
+from models.chainer.criterion import cross_entropy_label_smoothing
 from models.chainer.attention.attention_seq2seq import AttentionSeq2seq
 from models.chainer.encoders.load_encoder import load
 from models.chainer.attention.rnn_decoder import RNNDecoder
@@ -223,16 +222,19 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                         dropout=dropout_encoder, use_cuda=self.use_cuda)
                 self.is_bridge_sub = True
 
-            # self.embed_sub = Embedding(num_classes=self.num_classes_sub,
-            #                            embedding_dim=embedding_dim_sub,
-            #                            dropout=dropout_embedding,
-            #                            use_cuda=self.use_cuda)
-            self.embed_sub = Embedding_LS(
-                num_classes=self.num_classes_sub,
-                embedding_dim=embedding_dim_sub,
-                dropout=dropout_embedding,
-                label_smoothing_prob=label_smoothing_prob,
-                use_cuda=self.use_cuda)
+            if label_smoothing_prob > 0:
+                self.embed_sub = Embedding_LS(
+                    num_classes=self.num_classes_sub,
+                    embedding_dim=embedding_dim_sub,
+                    dropout=dropout_embedding,
+                    label_smoothing_prob=label_smoothing_prob,
+                    use_cuda=self.use_cuda)
+            else:
+                self.embed_sub = Embedding(
+                    num_classes=self.num_classes_sub,
+                    embedding_dim=embedding_dim_sub,
+                    dropout=dropout_embedding,
+                    use_cuda=self.use_cuda)
 
             self.proj_layer_sub = LinearND(
                 decoder_num_units_sub * 2, decoder_num_units_sub,
@@ -366,14 +368,14 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
             # XE
-            xe_loss_ls_main = cross_entropy_label_smoothing(
-                logits_main, ys[:, 1:],  # NOTE: Exclude first <SOS>
+            loss_ls_main = cross_entropy_label_smoothing(
+                logits_main,
                 label_smoothing_prob=self.label_smoothing_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)
             loss_main = loss_main * (1 - self.label_smoothing_prob) + \
-                xe_loss_ls_main
-            # print(xe_loss_ls_main)
+                loss_ls_main
+            # print(loss_ls_main)
 
         # Add coverage term
         if self.coverage_weight != 0:
@@ -385,7 +387,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # TODO: copy?
 
         ##################################################
-        # Sub task (attention)
+        # Sub task (attention, optional)
         ##################################################
         if self.sub_loss_weight > 0:
             # Teacher-forcing
@@ -409,42 +411,29 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # Label smoothing (with uniform distribution)
             if self.label_smoothing_prob > 0:
                 # XE
-                xe_loss_ls_sub = cross_entropy_label_smoothing(
-                    logits_sub, ys_sub[:, 1:],  # NOTE: Exclude first <SOS>
+                loss_ls_sub = cross_entropy_label_smoothing(
+                    logits_sub,
                     label_smoothing_prob=self.label_smoothing_prob,
                     distribution='uniform',
                     size_average=False) / len(xs)
                 loss_sub = loss_sub * (1 - self.label_smoothing_prob) + \
-                    xe_loss_ls_sub
-                # print(xe_loss_ls_sub)
+                    loss_ls_sub
+                # print(loss_ls_sub)
 
             loss_sub = loss_sub * self.sub_loss_weight_tmp
             loss += loss_sub
 
         ##################################################
-        # Sub task (CTC)
+        # Sub task (CTC, optional)
         ##################################################
         if self.ctc_loss_weight_sub > 0:
-            logits_ctc_sub = self.fc_ctc_sub(xs_sub)
+            x_lens_sub = np2var(
+                x_lens_sub, use_cuda=self.use_cuda, backend='chainer')
 
+            logits_ctc_sub = self.fc_ctc_sub(xs_sub)
             ctc_loss_sub = self.compute_ctc_loss(
                 logits_ctc_sub, ys_sub, x_lens_sub, y_lens_sub,
-                size_average=False)
-            ctc_loss_sub = F.sum(ctc_loss_sub, axis=0) / len(xs)
-
-            # Label smoothing (with uniform distribution)
-            if self.label_smoothing_prob > 0:
-                # XE
-                xe_loss_ls_ctc_sub = cross_entropy_label_smoothing(
-                    logits_ctc_sub,
-                    ys=None,
-                    label_smoothing_prob=self.label_smoothing_prob,
-                    distribution='uniform',
-                    size_average=False) / len(xs)
-                ctc_loss_sub = ctc_loss_sub * (1 - self.label_smoothing_prob) + \
-                    xe_loss_ls_ctc_sub
-                # print(xe_loss_ls_ctc_sub)
-
+                size_average=False) / len(xs)
             ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub_tmp
             loss += ctc_loss_sub
 

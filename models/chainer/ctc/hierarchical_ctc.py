@@ -9,8 +9,7 @@ from __future__ import print_function
 
 import chainer
 from chainer import functions as F
-# from models.chainer.ctc.ctc_loss_from_chainer import
-# connectionist_temporal_classification as ctc
+from models.chainer.ctc.ctc_loss_from_chainer import connectionist_temporal_classification
 
 from models.chainer.ctc.ctc import CTC
 from models.chainer.linear import LinearND
@@ -255,21 +254,21 @@ class HierarchicalCTC(CTC):
             # NOTE: index 0 is reserved for the blank class
 
         # Compute CTC loss in the main & sub task
-        loss_main = F.connectionist_temporal_classification(
+        loss_main = connectionist_temporal_classification(
             x=logits_main,  # list of Variable
             t=ys,  # Variable
             blank_symbol=0,
             input_length=x_lens,  # Variable
             label_length=y_lens,  # Variable
             reduce='no')
-        loss_main = F.sum(loss_main, axis=0) / len(xs)
-        loss_sub = F.connectionist_temporal_classification(
+        loss_sub = connectionist_temporal_classification(
             x=logits_sub,  # list of Variable
             t=ys_sub,  # Variable
             blank_symbol=0,
             input_length=x_lens_sub,  # Variable
             label_length=y_lens_sub,  # Variable
             reduce='no')
+        loss_main = F.sum(loss_main, axis=0) / len(xs)
         loss_sub = F.sum(loss_sub, axis=0) / len(xs)
 
         # Label smoothing (with uniform distribution)
@@ -277,19 +276,19 @@ class HierarchicalCTC(CTC):
             # XE
             xe_loss_ls_main = cross_entropy_label_smoothing(
                 F.pad_sequence(logits_main, padding=0),
-                ys=None,
                 label_smoothing_prob=self.label_smoothing_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)
-            loss_main = loss_main * \
-                (1 - self.label_smoothing_prob) + xe_loss_ls_main
             # print(xe_loss_ls_main)
+
             xe_loss_ls_sub = cross_entropy_label_smoothing(
                 F.pad_sequence(logits_sub, padding=0),
-                ys=None,
                 label_smoothing_prob=self.label_smoothing_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)
+            # print(xe_loss_ls_sub)
+            loss_main = loss_main * \
+                (1 - self.label_smoothing_prob) + xe_loss_ls_main
             loss_sub = loss_sub * \
                 (1 - self.label_smoothing_prob) + xe_loss_ls_sub
             # print(xe_loss_ls_sub)

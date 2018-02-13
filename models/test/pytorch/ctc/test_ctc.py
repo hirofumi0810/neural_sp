@@ -198,6 +198,9 @@ class TestCTC(unittest.TestCase):
                 model.weight_noise_injection = True
 
             if (step + 1) % 10 == 0:
+                # Compute loss
+                loss = model(xs, ys, x_lens, y_lens, is_eval=True)
+
                 # Decode
                 best_hyps, _ = model.decode(xs, x_lens, beam_width=2)
 
@@ -217,7 +220,7 @@ class TestCTC(unittest.TestCase):
 
                 duration_step = time.time() - start_time_step
                 print('Step %d: loss=%.3f / ler=%.3f / lr=%.5f (%.3f sec)' %
-                      (step + 1, loss.data[0], ler, learning_rate, duration_step))
+                      (step + 1, loss, ler, learning_rate, duration_step))
                 start_time_step = time.time()
 
                 # Visualize

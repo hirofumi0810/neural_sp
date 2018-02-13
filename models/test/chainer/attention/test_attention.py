@@ -26,6 +26,9 @@ class TestAttention(unittest.TestCase):
 
         # Joint CTC-Attention
         self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', label_smoothing=True,
+                   ctc_loss_weight=0.2)
+        self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', ctc_loss_weight=0.2)
 
         # Label smoothing
@@ -169,6 +172,7 @@ class TestAttention(unittest.TestCase):
             parameter_init_distribution='uniform',
             parameter_init=0.1,
             recurrent_weight_orthogonal=False,
+            # recurrent_weight_orthogonal=True,
             init_forget_gate_bias_with_one=True,
             subsample_list=[] if subsample is False else [True, False],
             subsample_type='concat' if subsample is False else subsample,
@@ -238,6 +242,9 @@ class TestAttention(unittest.TestCase):
             # Inject Gaussian noise to all parameters
 
             if (step + 1) % 10 == 0:
+                # Compute loss
+                loss = model(xs, ys, x_lens, y_lens, is_eval=True)
+
                 # Decode
                 best_hyps, _ = model.decode(xs, x_lens,
                                             # beam_width=1,
@@ -260,7 +267,7 @@ class TestAttention(unittest.TestCase):
 
                 duration_step = time.time() - start_time_step
                 print('Step %d: loss=%.3f / ler=%.3f / lr=%.5f (%.3f sec)' %
-                      (step + 1, loss.data, ler, learning_rate, duration_step))
+                      (step + 1, loss, ler, learning_rate, duration_step))
                 start_time_step = time.time()
 
                 # Visualize

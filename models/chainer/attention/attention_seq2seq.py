@@ -14,10 +14,10 @@ import chainer
 from chainer import functions as F
 from chainer import Variable
 from chainer import cuda
+from models.chainer.ctc.ctc_loss_from_chainer import connectionist_temporal_classification
 
 from models.chainer.base import ModelBase
-# from models.chainer.linear import LinearND, Embedding
-from models.chainer.linear import LinearND, Embedding_LS
+from models.chainer.linear import LinearND, Embedding, Embedding_LS
 from models.chainer.criterion import cross_entropy_label_smoothing
 from models.chainer.encoders.load_encoder import load
 from models.chainer.attention.rnn_decoder import RNNDecoder
@@ -300,16 +300,18 @@ class AttentionSeq2seq(ModelBase):
             else:
                 self.is_bridge = False
 
-            # self.embed = Embedding(num_classes=self.num_classes,
-            #                        embedding_dim=embedding_dim,
-            #                        dropout=dropout_embedding,
-            #                        use_cuda=self.use_cuda)
-            self.embed = Embedding_LS(
-                num_classes=self.num_classes,
-                embedding_dim=embedding_dim,
-                dropout=dropout_embedding,
-                label_smoothing_prob=label_smoothing_prob,
-                use_cuda=self.use_cuda)
+            if label_smoothing_prob > 0:
+                self.embed = Embedding_LS(
+                    num_classes=self.num_classes,
+                    embedding_dim=embedding_dim,
+                    dropout=dropout_embedding,
+                    label_smoothing_prob=label_smoothing_prob,
+                    use_cuda=self.use_cuda)
+            else:
+                self.embed = Embedding(num_classes=self.num_classes,
+                                       embedding_dim=embedding_dim,
+                                       dropout=dropout_embedding,
+                                       use_cuda=self.use_cuda)
 
             self.proj_layer = LinearND(
                 decoder_num_units * 2, decoder_num_units,
@@ -411,13 +413,13 @@ class AttentionSeq2seq(ModelBase):
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
-            xe_loss_ls = cross_entropy_label_smoothing(
-                logits, ys[:, 1:],  # NOTE: Exclude first <SOS>
+            loss_ls = cross_entropy_label_smoothing(
+                logits,
                 label_smoothing_prob=self.label_smoothing_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)
-            loss = loss * (1 - self.label_smoothing_prob) + xe_loss_ls
-            # print(xe_loss_ls)
+            loss = loss * (1 - self.label_smoothing_prob) + loss_ls
+            # print(loss_ls)
 
         # Add coverage term
         if self.coverage_weight != 0:
@@ -425,26 +427,11 @@ class AttentionSeq2seq(ModelBase):
 
         # Auxiliary CTC loss (optional)
         if self.ctc_loss_weight > 0:
-            logits_ctc = self.fc_ctc(xs)
-
             x_lens = np2var(x_lens, use_cuda=self.use_cuda, backend='chainer')
+
+            logits_ctc = self.fc_ctc(xs)
             ctc_loss = self.compute_ctc_loss(
-                logits_ctc, ys, x_lens, y_lens, size_average=False)
-            ctc_loss = F.sum(ctc_loss, axis=0) / len(xs)
-
-            # Label smoothing (with uniform distribution)
-            if self.label_smoothing_prob > 0:
-                # XE
-                xe_loss_ls_ctc = cross_entropy_label_smoothing(
-                    logits_ctc,
-                    ys=None,
-                    label_smoothing_prob=self.label_smoothing_prob,
-                    distribution='uniform',
-                    size_average=False) / len(xs)
-                ctc_loss = ctc_loss * (1 - self.label_smoothing_prob) + \
-                    xe_loss_ls_ctc
-                # print(xe_loss_ls_ctc)
-
+                logits_ctc, ys, x_lens, y_lens, size_average=False) / len(xs)
             loss = loss * (1 - self.ctc_loss_weight) + \
                 ctc_loss * self.ctc_loss_weight
 
@@ -462,30 +449,36 @@ class AttentionSeq2seq(ModelBase):
             size_average (bool, optional):
         Returns:
             ctc_loss (chainer.Variable):
-                if size_average is True, A tensor of size `[1]` else `[B]`
+                if size_average is True, A tensor of size `[1]`
         """
-        # Convert to time-major & list of Variable from Variable
-        logits_ctc = F.separate(logits_ctc, axis=1)
-
-        # Convert to Variable from list of Variable
-        # ys = F.pad_sequence(ys, padding=-1)  # 0 or -1?
-        # TODO: inputs to pad_sequence must be list of chainer.Variable
-
         if self.blank_index == 0:
-            ys = ys + 1
             # NOTE: index 0 is reserved for the blank class
+            ys = ys + 1
 
         # Compute CTC loss
-        ctc_loss = F.connectionist_temporal_classification(
-            x=logits_ctc,
+        ctc_loss = connectionist_temporal_classification(
+            x=F.separate(logits_ctc, axis=1),  # list of Variable
             t=ys[:, 1:-1],  # NOTE: Exclude first <SOS> & last <EOS>
             blank_symbol=self.blank_index,
-            input_length=x_lens,
-            label_length=y_lens - 2,  # NOTE: Ignore <SOS> and <EOS>
+            input_length=x_lens,  # Variable
+            label_length=y_lens - 2,  # NOTE: Ignore <SOS> & <EOS>
             reduce='no')
+        ctc_loss = F.sum(ctc_loss, axis=0)
+
+        # TODO: Label smoothing (with uniform distribution)
+        # if self.label_smoothing_prob > 0:
+        #     # XE
+        #     loss_ls_ctc = cross_entropy_label_smoothing(
+        #         logits_ctc,
+        #         label_smoothing_prob=self.label_smoothing_prob,
+        #         distribution='uniform',
+        #         size_average=False)
+        #     ctc_loss = ctc_loss * (1 - self.label_smoothing_prob) + \
+        #         loss_ls_ctc
+        #     # print(loss_ls_ctc)
 
         if size_average:
-            ctc_loss = F.sum(ctc_loss, axis=0) / len(logits_ctc)
+            ctc_loss /= len(x_lens)
 
         return ctc_loss
 

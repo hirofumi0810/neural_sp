@@ -29,13 +29,16 @@ class TestAttention(unittest.TestCase):
     def test(self):
         print("Attention Working check.")
 
+        # Joint CTC-Attention
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', label_smoothing=True,
+                   ctc_loss_weight=0.2)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', ctc_loss_weight=0.2)
+
         # Label smoothing
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', label_smoothing=True)
-
-        # Joint CTC-Attention
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', ctc_loss_weight=0.2)
 
         # CNN encoder
         self.check(encoder_type='cnn', decoder_type='lstm', batch_norm=True)
@@ -244,6 +247,9 @@ class TestAttention(unittest.TestCase):
                 model.weight_noise_injection = True
 
             if (step + 1) % 10 == 0:
+                # Compute loss
+                loss = model(xs, ys, x_lens, y_lens, is_eval=True)
+
                 # Decode
                 best_hyps, perm_idx = model.decode(
                     xs, x_lens,
@@ -267,7 +273,7 @@ class TestAttention(unittest.TestCase):
 
                 duration_step = time.time() - start_time_step
                 print('Step %d: loss=%.3f / ler=%.3f / lr=%.5f (%.3f sec)' %
-                      (step + 1, loss.data[0], ler, learning_rate, duration_step))
+                      (step + 1, loss, ler, learning_rate, duration_step))
                 start_time_step = time.time()
 
                 # Visualize

@@ -265,43 +265,24 @@ class HierarchicalCTC(CTC):
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
-            # KL
-            # kl_loss_ls_main = kl_div_label_smoothing(
-            #     logits_main,
-            #     label_smoothing_prob=self.label_smoothing_prob,
-            #     distribution='uniform',
-            #     size_average=False) / len(xs)
-            # loss_main = loss_main * (1 - self.label_smoothing_prob) + \
-            #     kl_loss_ls_main
-            # print(kl_loss_ls_main)
-            # kl_loss_ls_sub = kl_div_label_smoothing(
-            #     logits_sub,
-            #     label_smoothing_prob=self.label_smoothing_prob,
-            #     distribution='uniform',
-            #     size_average=False) / len(xs)
-            # loss_sub = loss_sub * (1 - self.label_smoothing_prob) + \
-            #     kl_loss_ls_sub
-            # print(kl_loss_ls_sub)
-
             # XE
-            xe_loss_ls_main = cross_entropy_label_smoothing(
+            loss_ls_main = cross_entropy_label_smoothing(
                 logits_main,
-                ys=None,
                 label_smoothing_prob=self.label_smoothing_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)
             loss_main = loss_main * \
-                (1 - self.label_smoothing_prob) + xe_loss_ls_main
-            # print(xe_loss_ls_main)
-            xe_loss_ls_sub = cross_entropy_label_smoothing(
+                (1 - self.label_smoothing_prob) + loss_ls_main
+            # print(loss_ls_main)
+
+            loss_ls_sub = cross_entropy_label_smoothing(
                 logits_sub,
-                ys=None,
                 label_smoothing_prob=self.label_smoothing_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)
             loss_sub = loss_sub * \
-                (1 - self.label_smoothing_prob) + xe_loss_ls_sub
-            # print(xe_loss_ls_sub)
+                (1 - self.label_smoothing_prob) + loss_ls_sub
+            # print(loss_ls_sub)
 
         # Compute total loss
         loss_main = loss_main * self.main_loss_weight

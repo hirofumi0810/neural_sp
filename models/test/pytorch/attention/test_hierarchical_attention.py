@@ -219,6 +219,10 @@ class TestHierarchicalAttention(unittest.TestCase):
             model.optimizer.step()
 
             if (step + 1) % 10 == 0:
+                # Compute loss
+                loss, loss_main, loss_sub = model(
+                    xs, ys, ys_sub, x_lens, y_lens, y_lens_sub, is_eval=True)
+
                 # Decode
                 best_hyps, perm_idx = model.decode(
                     xs, x_lens, beam_width=1, max_decode_len=30)
@@ -240,7 +244,7 @@ class TestHierarchicalAttention(unittest.TestCase):
 
                 duration_step = time.time() - start_time_step
                 print('Step %d: loss=%.3f(%.3f/%.3f) / ler (main/sub)=%.3f/%.3f / lr=%.5f (%.3f sec)' %
-                      (step + 1, loss.data[0], loss_main.data[0], loss_sub.data[0],
+                      (step + 1, loss, loss_main, loss_sub,
                        ler, ler_sub, learning_rate, duration_step))
                 start_time_step = time.time()
 

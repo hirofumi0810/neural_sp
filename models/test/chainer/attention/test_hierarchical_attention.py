@@ -28,6 +28,13 @@ class TestHierarchicalAttention(unittest.TestCase):
         # self.check(encoder_type='lstm', bidirectional=True,
         #            decoder_type='lstm', curriculum_training=True)
 
+        # Label smoothing
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', label_smoothing=True,
+                   ctc_loss_weight_sub=0.2)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', label_smoothing=True)
+
         # Pyramidal encoder
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', subsample='drop')
@@ -37,10 +44,6 @@ class TestHierarchicalAttention(unittest.TestCase):
         # Projection layer
         self.check(encoder_type='lstm', bidirectional=False, projection=True,
                    decoder_type='lstm')
-
-        # Label smoothing
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            decoder_type='lstm', label_smoothing=True)
 
         # Residual LSTM encoder
         self.check(encoder_type='lstm', bidirectional=True,
@@ -55,8 +58,8 @@ class TestHierarchicalAttention(unittest.TestCase):
                    decoder_type='lstm', conv=True, batch_norm=True)
 
         # Word attention + char CTC
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            decoder_type='lstm', ctc_loss_weight_sub=0.5)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', ctc_loss_weight_sub=0.2)
 
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm')
@@ -213,6 +216,10 @@ class TestHierarchicalAttention(unittest.TestCase):
             model.optimizer.update()
 
             if (step + 1) % 10 == 0:
+                # Compute loss
+                loss, loss_main, loss_sub = model(
+                    xs, ys, ys_sub, x_lens, y_lens, y_lens_sub, is_eval=True)
+
                 # Decode
                 best_hyps, _ = model.decode(
                     xs, x_lens, beam_width=1, max_decode_len=30)
@@ -234,7 +241,7 @@ class TestHierarchicalAttention(unittest.TestCase):
 
                 duration_step = time.time() - start_time_step
                 print('Step %d: loss=%.3f(%.3f/%.3f) / ler (main/sub)=%.3f/%.3f / lr=%.5f (%.3f sec)' %
-                      (step + 1, loss.data, loss_main.data, loss_sub.data,
+                      (step + 1, loss, loss_main, loss_sub,
                        ler, ler_sub, learning_rate, duration_step))
                 start_time_step = time.time()
 

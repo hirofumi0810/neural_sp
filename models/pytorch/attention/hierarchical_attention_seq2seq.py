@@ -10,8 +10,7 @@ from __future__ import print_function
 import numpy as np
 import torch.nn.functional as F
 
-# from models.pytorch.linear import LinearND, Embedding
-from models.pytorch.linear import LinearND, Embedding_LS
+from models.pytorch.linear import LinearND, Embedding, Embedding_LS
 from models.pytorch.criterion import kl_div_label_smoothing, cross_entropy_label_smoothing
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 from models.pytorch.encoders.load_encoder import load
@@ -223,14 +222,17 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                         dropout=dropout_encoder)
                 self.is_bridge_sub = True
 
-            # self.embed_sub = Embedding(num_classes=self.num_classes_sub,
-            #                            embedding_dim=embedding_dim_sub,
-            #                            dropout=dropout_embedding)
-            self.embed_sub = Embedding_LS(
-                num_classes=self.num_classes_sub,
-                embedding_dim=embedding_dim_sub,
-                dropout=dropout_embedding,
-                label_smoothing_prob=label_smoothing_prob)
+            if label_smoothing_prob > 0:
+                self.embed_sub = Embedding_LS(
+                    num_classes=self.num_classes_sub,
+                    embedding_dim=embedding_dim_sub,
+                    dropout=dropout_embedding,
+                    label_smoothing_prob=label_smoothing_prob)
+            else:
+                self.embed_sub = Embedding(
+                    num_classes=self.num_classes_sub,
+                    embedding_dim=embedding_dim_sub,
+                    dropout=dropout_embedding)
 
             self.proj_layer_sub = LinearND(
                 decoder_num_units_sub * 2, decoder_num_units_sub,
@@ -333,29 +335,19 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             input=logits_main.view((-1, logits_main.size(2))),
             target=ys[:, 1:].contiguous().view(-1),
             ignore_index=self.sos_index, size_average=False) / len(xs)
+        # NOTE: Exclude first <SOS>
         # NOTE: ys are padded by <SOS>
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
-            # KL
-            # kl_loss_ls_main = kl_div_label_smoothing(
-            #     logits_main,
-            #     label_smoothing_prob=self.label_smoothing_prob,
-            #     distribution='uniform',
-            #     size_average=False) / len(xs)
-            # loss_main = loss_main * (1 - self.label_smoothing_prob) + \
-            #     kl_loss_ls_main
-            # print(kl_loss_ls_main)
-
-            # XE
-            xe_loss_ls_main = cross_entropy_label_smoothing(
-                logits_main, ys[:, 1:],  # NOTE: Exclude first <SOS>
+            loss_ls_main = cross_entropy_label_smoothing(
+                logits_main,
                 label_smoothing_prob=self.label_smoothing_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)
             loss_main = loss_main * (1 - self.label_smoothing_prob) + \
-                xe_loss_ls_main
-            # print(xe_loss_ls_main)
+                loss_ls_main
+            # print(loss_ls_main)
 
         # Add coverage term
         if self.coverage_weight != 0:
@@ -366,7 +358,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         loss = loss_main.clone()
 
         ##################################################
-        # Sub task (attention)
+        # Sub task (attention, optional)
         ##################################################
         if self.sub_loss_weight > 0:
             # Teacher-forcing
@@ -387,62 +379,26 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
             # Label smoothing (with uniform distribution)
             if self.label_smoothing_prob > 0:
-                # KL
-                # kl_loss_ls_sub = kl_div_label_smoothing(
-                #     logits_sub,
-                #     label_smoothing_prob=self.label_smoothing_prob,
-                #     distribution='uniform',
-                #     size_average=False) / len(xs)
-                # loss_sub = loss_sub * (1 - self.label_smoothing_prob) + \
-                #     kl_loss_ls_sub
-                # print(kl_loss_ls_sub)
-
-                # XE
-                xe_loss_ls_sub = cross_entropy_label_smoothing(
-                    logits_sub, ys_sub[:, 1:],  # NOTE: Exclude first <SOS>
+                loss_ls_sub = cross_entropy_label_smoothing(
+                    logits_sub,
                     label_smoothing_prob=self.label_smoothing_prob,
                     distribution='uniform',
                     size_average=False) / len(xs)
                 loss_sub = loss_sub * (1 - self.label_smoothing_prob) + \
-                    xe_loss_ls_sub
-                # print(xe_loss_ls_sub)
+                    loss_ls_sub
+                # print(loss_ls_sub)
 
             loss_sub = loss_sub * self.sub_loss_weight_tmp
             loss += loss_sub
 
         ##################################################
-        # Sub task (CTC)
+        # Sub task (CTC, optional)
         ##################################################
         if self.ctc_loss_weight_sub > 0:
             logits_ctc_sub = self.fc_ctc_sub(xs_sub)
-
             ctc_loss_sub = self.compute_ctc_loss(
                 logits_ctc_sub, ys_sub, x_lens_sub, y_lens_sub,
                 size_average=False) / len(xs)
-
-            # Label smoothing (with uniform distribution)
-            if self.label_smoothing_prob > 0:
-                # KL
-                # kl_loss_ls_ctc_sub = kl_div_label_smoothing(
-                #     logits_ctc_sub,
-                #     label_smoothing_prob=self.label_smoothing_prob,
-                #     distribution='uniform',
-                #     size_average=False) / len(xs)
-                # ctc_loss_sub = ctc_loss_sub * (1 - self.label_smoothing_prob) + \
-                #     kl_loss_ls_ctc_sub
-                # print(kl_loss_ls_ctc_sub)
-
-                # XE
-                xe_loss_ls_ctc_sub = cross_entropy_label_smoothing(
-                    logits_ctc_sub,
-                    ys=None,
-                    label_smoothing_prob=self.label_smoothing_prob,
-                    distribution='uniform',
-                    size_average=False) / len(xs)
-                ctc_loss_sub = ctc_loss_sub * (1 - self.label_smoothing_prob) + \
-                    xe_loss_ls_ctc_sub
-                # print(xe_loss_ls_ctc_sub)
-
             ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub_tmp
             loss += ctc_loss_sub
 
@@ -550,7 +506,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             if is_sub_task:
                 raise NotImplementedError
             else:
-                best_hyps, att_weights = self._decode_infer_beam(
+                best_hyps = self._decode_infer_beam(
                     enc_out, x_lens, beam_width, max_decode_len)
 
         # Permutate indices to the original order

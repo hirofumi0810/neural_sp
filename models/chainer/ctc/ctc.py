@@ -279,7 +279,6 @@ class CTC(ModelBase):
         if self.label_smoothing_prob > 0:
             xe_loss_ls = cross_entropy_label_smoothing(
                 F.pad_sequence(logits, padding=0),
-                ys=None,
                 label_smoothing_prob=self.label_smoothing_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)

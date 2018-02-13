@@ -15,6 +15,7 @@ import pickle
 import logging
 logger = logging.getLogger('training')
 
+import numpy as np
 import chainer
 from chainer import optimizers
 from chainer import serializers
@@ -69,7 +70,16 @@ class ModelBase(chainer.Chain):
                 param.data[...] = xp.random.normal(
                     loc=0, scale=parameter_init, size=param.data.shape)
             elif distribution == 'orthogonal':
-                raise NotImplementedError
+                flat_shape = (len(param.data), int(
+                    np.prod(param.data.shape[1:])))
+                a = np.random.normal(size=flat_shape)
+                # we do not have cupy.linalg.svd for now
+                u, _, v = np.linalg.svd(a, full_matrices=False)
+                # TODO: fix bugs
+                # pick the one with the correct shape
+                q = u if u.shape == flat_shape else v
+                param.data[...] = xp.asarray(q.reshape(param.data.shape))
+                param.data *= 1.1
             elif distribution == 'constant':
                 param.data[...] = xp.asarray(parameter_init)
             else:
@@ -215,38 +225,29 @@ class ModelBase(chainer.Chain):
         # Remove old checkpoints
         for path in glob(join(save_path, 'model.epoch-*')):
             os.remove(path)
-        for path in glob(join(save_path, 'optimizer.epoch-*')):
-            os.remove(path)
-        for path in glob(join(save_path, 'step.epoch-*')):
-            os.remove(path)
-        for path in glob(join(save_path, 'lr.epoch-*')):
-            os.remove(path)
-        for path in glob(join(save_path, 'metric_dev_best.epoch-*')):
-            os.remove(path)
 
-        # Save parameters, optimizer, step index
-        serializers.save_npz(model_path, self)
-        serializers.save_npz(
-            join(save_path, 'optimizer.epoch-' + str(epoch)), self.optimizer)
-        serializers.save_npz(join(save_path, 'step.epoch-' + str(epoch)), step)
-        serializers.save_npz(join(save_path, 'lr.epoch-' + str(epoch)), lr)
-        serializers.save_npz(
-            join(save_path, 'metric_dev_best.epoch-' + str(epoch)), metric_dev_best)
+        checkpoint = {
+            "epoch": epoch,
+            "step": step,
+            "lr": lr,
+            "metric_dev_best": metric_dev_best
+        }
 
-        # serializer = serializers.DictionarySerializer()
-        # pickled_params = np.frombuffer(pickle.dumps(params), dtype=np.uint8)
-        # serializer("hyper_parameters", pickled_params)
-        # serializer["model"].save(model)
-        # np.savez_compressed(filename, **serializer.target)
-        # checkpoint = {
-        #     "state_dict": self,
-        #     "optimizer": self.optimizer,
-        #     "epoch": epoch,
-        #     "step": step,
-        #     "lr": lr,
-        #     "metric_dev_best": metric_dev_best
-        # }
-        # serializers.DictionarySerializer(model_path, checkpoint)
+        # Save parameters, optimizer, step index etc.
+        # serializers.save_npz(model_path, self)
+        # serializers.save_npz(
+        #     join(save_path, 'optimizer.epoch-' + str(epoch)), self.optimizer)
+
+        serializer = serializers.DictionarySerializer()
+
+        pickled_params = np.frombuffer(
+            pickle.dumps(checkpoint), dtype=np.uint8)
+        serializer("checkpoint", pickled_params)
+
+        serializer["model"].save(self)
+        serializer["optimizer"].save(self.optimizer)
+
+        np.savez_compressed(model_path, **serializer.target)
 
         logger.info("=> Saved checkpoint (epoch:%d): %s" % (epoch, model_path))
 
@@ -276,16 +277,23 @@ class ModelBase(chainer.Chain):
         if isfile(join(model_path)):
             print("=> Loading checkpoint (epoch:%d): %s" % (epoch, model_path))
 
-            self = serializers.load_npz(
-                'model.epoch-' + str(epoch), self)
-            self.optimizer = serializers.load_npz(
-                'optimizer.epoch-' + str(epoch), self)
-            step = serializers.load_npz('step.epoch-' + str(epoch), self)
-            lr = serializers.load_npz('lr.epoch-' + str(epoch), self)
-            metric_dev_best = serializers.load_npz(
-                'metric_dev_best.epoch-' + str(epoch), self)
+            # self = serializers.load_npz(
+            #     'model.epoch-' + str(epoch), self)
+            # self.optimizer = serializers.load_npz(
+            #     'optimizer.epoch-' + str(epoch), self)
+
+            with np.load(model_path) as f:
+                deserializer = serializers.NpzDeserializer(f)
+
+                pickled_params = deserializer("checkpoint", None)
+                checkpoint = pickle.loads(pickled_params.tobytes())
+                # type: HyperParameters
+
+                deserializer["model"].load(self)
+                deserializer["optimizer"].load(self.optimizer)
 
         else:
             raise ValueError("No checkpoint found at %s" % model_path)
 
-        return (epoch + 1, step + 1, lr, metric_dev_best)
+        return (checkpoint['epoch'] + 1, checkpoint['step'] + 1,
+                checkpoint['lr'], checkpoint['metric_dev_best'])

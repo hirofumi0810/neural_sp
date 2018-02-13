@@ -280,24 +280,14 @@ class CTC(ModelBase):
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
-            # KL
-            # kl_loss_ls = kl_div_label_smoothing(
-            #     logits,
-            #     label_smoothing_prob=self.label_smoothing_prob,
-            #     distribution='uniform',
-            #     size_average=False) / len(xs)
-            # loss = loss * (1 - self.label_smoothing_prob) + kl_loss_ls
-            # print(kl_loss_ls)
-
             # XE
-            xe_loss_ls = cross_entropy_label_smoothing(
+            loss_ls = cross_entropy_label_smoothing(
                 logits,
-                ys=None,
                 label_smoothing_prob=self.label_smoothing_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)
-            loss = loss * (1 - self.label_smoothing_prob) + xe_loss_ls
-            # print(xe_loss_ls)
+            loss = loss * (1 - self.label_smoothing_prob) + loss_ls
+            # print(loss_ls)
 
         if is_eval:
             loss = loss.data[0]
