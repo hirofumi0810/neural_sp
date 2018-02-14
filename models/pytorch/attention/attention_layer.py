@@ -31,6 +31,8 @@ class AttentionMechanism(nn.Module):
             This is used for location-based attention.
         kernel_size (int, optional): the size of kernel.
             This must be the odd number.
+        encoder_num_units (int, optional): the number of units in each layer of the
+            encoder
     """
 
     def __init__(self,
@@ -40,10 +42,15 @@ class AttentionMechanism(nn.Module):
                  sharpening_factor=1,
                  sigmoid_smoothing=False,
                  out_channels=10,
-                 kernel_size=201):
+                 kernel_size=201,
+                 encoder_num_units=None):
 
         super(AttentionMechanism, self).__init__()
 
+        if encoder_num_units is None:
+            self.encoder_num_units = decoder_num_units
+        else:
+            self.encoder_num_units = encoder_num_units
         self.decoder_num_units = decoder_num_units
         self.attention_type = attention_type
         self.attention_dim = attention_dim
@@ -51,7 +58,8 @@ class AttentionMechanism(nn.Module):
         self.sigmoid_smoothing = sigmoid_smoothing
 
         if self.attention_type == 'content':
-            self.W_enc = LinearND(decoder_num_units, attention_dim, bias=True)
+            self.W_enc = LinearND(self.encoder_num_units,
+                                  attention_dim, bias=True)
             self.W_dec = LinearND(decoder_num_units, attention_dim, bias=False)
             self.V = LinearND(attention_dim, 1, bias=False)
 
@@ -70,7 +78,7 @@ class AttentionMechanism(nn.Module):
                                   padding=(0, kernel_size // 2),
                                   bias=False)
 
-            self.W_enc = LinearND(decoder_num_units,
+            self.W_enc = LinearND(self.encoder_num_units,
                                   attention_dim, bias=True)
             self.W_dec = LinearND(decoder_num_units,
                                   attention_dim, bias=False)
@@ -78,7 +86,7 @@ class AttentionMechanism(nn.Module):
             self.V = LinearND(attention_dim, 1, bias=False)
 
         elif self.attention_type == 'dot_product':
-            self.W_keys = LinearND(decoder_num_units, attention_dim,
+            self.W_keys = LinearND(self.encoder_num_units, attention_dim,
                                    bias=False)
             self.W_query = LinearND(decoder_num_units, attention_dim,
                                     bias=False)
@@ -111,8 +119,10 @@ class AttentionMechanism(nn.Module):
             ###################################################################
             # energy = <v, tanh(W([h_de; h_en] + b))>
             ###################################################################
+            dec_out = dec_out.expand_as(torch.zeros(
+                (batch_size, max_time, dec_out.size(2))))
             energy = self.V(F.tanh(self.W_enc(enc_out) +
-                                   self.W_dec(dec_out.expand_as(enc_out)))).squeeze(2)
+                                   self.W_dec(dec_out))).squeeze(2)
 
         elif self.attention_type == 'location':
             ###################################################################
@@ -130,8 +140,10 @@ class AttentionMechanism(nn.Module):
             conv_feat = conv_feat.transpose(1, 2).contiguous()
             # -> `[B, T_in, out_channels]`
 
+            dec_out = dec_out.expand_as(torch.zeros(
+                (batch_size, max_time, dec_out.size(2))))
             energy = self.V(F.tanh(self.W_enc(enc_out) +
-                                   self.W_dec(dec_out.expand_as(enc_out)) +
+                                   self.W_dec(dec_out) +
                                    self.W_conv(conv_feat))).squeeze(2)
 
         elif self.attention_type == 'dot_product':

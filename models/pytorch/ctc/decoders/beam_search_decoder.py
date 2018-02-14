@@ -42,7 +42,10 @@ class BeamSearchDecoder(object):
             alpha (float): language model weight
             beta (float): insertion bonus
         Returns:
-            best_hyps (np.ndarray): Best path hypothesis (the output label sequence)
+            best_hyps (np.ndarray): Best path hypothesis.
+                A tensor of size `[B, labels_max_seq_len]`
+            best_hyps_lens (np.ndarray): Lengths of best path hypothesis.
+                A tensor of size `[B]`
         """
         batch_size, _, num_classes = log_probs.shape
         best_hyps = []

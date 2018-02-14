@@ -468,45 +468,43 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 enc_out, x_lens, _, _ = self._encode(
                     xs, x_lens, is_multi_task=True)
 
-            if beam_width == 1:
-                if is_sub_task:
-                    if self.sub_loss_weight > self.ctc_loss_weight_sub:
-                        ########################################
-                        # Decode by attention decoder
-                        ########################################
+            if is_sub_task:
+                # Decode by attention decoder
+                if self.sub_loss_weight > self.ctc_loss_weight_sub:
+                    if beam_width == 1:
                         best_hyps, _ = self._decode_infer_greedy(
                             enc_out, x_lens, max_decode_len, is_sub_task=True)
                     else:
-                        ########################################
-                        # Decode by CTC decoder
-                        ########################################
-                        # Path through the softmax layer
-                        batch_size, max_time = enc_out.shape[:2]
-                        enc_out = enc_out.reshape(batch_size * max_time, -1)
-                        logits_ctc = self.fc_ctc_sub(enc_out)
-                        logits_ctc = logits_ctc.reshape(
-                            batch_size, max_time, -1)
-                        log_probs = F.log_softmax(logits_ctc)
+                        best_hyps = self._decode_infer_beam(
+                            enc_out, x_lens, beam_width, max_decode_len, is_sub_task=True)
 
-                        if beam_width == 1:
-                            best_hyps = self._decode_ctc_greedy_np(
-                                var2np(log_probs, backend='chainer'), x_lens)
-                        else:
-                            best_hyps = self._decode_ctc_beam_np(
-                                var2np(log_probs, backend='chainer'),
-                                x_lens, beam_width=beam_width)
-
-                        if self.blank_index == 0:
-                            best_hyps -= 1
-                            # NOTE: index 0 is reserved for the blank class
+                # Decode by CTC decoder
                 else:
+                    # Path through the softmax layer
+                    batch_size, max_time = enc_out.shape[:2]
+                    enc_out = enc_out.reshape(batch_size * max_time, -1)
+                    logits_ctc = self.fc_ctc_sub(enc_out)
+                    logits_ctc = logits_ctc.reshape(
+                        batch_size, max_time, -1)
+                    log_probs = F.log_softmax(logits_ctc)
+
+                    if beam_width == 1:
+                        best_hyps = self._decode_ctc_greedy_np(
+                            var2np(log_probs, backend='chainer'), x_lens)
+                    else:
+                        best_hyps = self._decode_ctc_beam_np(
+                            var2np(log_probs, backend='chainer'),
+                            x_lens, beam_width=beam_width)
+
+                    if self.blank_index == 0:
+                        # NOTE: index 0 is reserved for the blank class
+                        best_hyps -= 1
+            else:
+                if beam_width == 1:
                     best_hyps, _ = self._decode_infer_greedy(
                         enc_out, x_lens, max_decode_len)
-            else:
-                if is_sub_task:
-                    raise NotImplementedError
                 else:
-                    best_hyps, att_weights = self._decode_infer_beam(
+                    best_hyps = self._decode_infer_beam(
                         enc_out, x_lens, beam_width, max_decode_len)
 
         perm_idx = np.arange(0, len(xs), 1)
