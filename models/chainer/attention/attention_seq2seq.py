@@ -134,7 +134,7 @@ class AttentionSeq2seq(ModelBase):
                  coverage_weight=0,
                  ctc_loss_weight=0,
                  attention_conv_num_channels=10,
-                 attention_conv_width=101,
+                 attention_conv_width=201,
                  num_stack=1,
                  splice=1,
                  conv_channels=[],
@@ -540,25 +540,15 @@ class AttentionSeq2seq(ModelBase):
             att_weights (chainer.Variable): A tensor of size
                 `[B, T_out, T_in]`
         """
-        batch_size, max_time = enc_out.shape[:2]
+        batch_size, max_time, decoder_num_units = enc_out.shape
         labels_max_seq_len = ys.shape[1]
 
-        # Initialize decoder state
+        # Initialize decoder state, decoder output, attention_weights
         dec_state = self._init_decoder_state(enc_out)
-
-        # Initialize attention weights
-        att_weights_step = Variable(
-            np.zeros((batch_size, max_time), dtype=np.float32))
-        # att_weights_step = Variable(
-        #     np.ones((batch_size, max_time), dtype=np.float32)) / max_time
-
-        # Initialize context vector
-        context_vec = Variable(
-            np.zeros((batch_size, 1, enc_out.shape[2]), dtype=np.float32))
-
-        if self.use_cuda:
-            att_weights_step.to_gpu()
-            context_vec.to_gpu()
+        dec_out = self._zero_init(
+            (batch_size, 1, decoder_num_units), dtype=np.float32)
+        att_weights_step = self._zero_init(
+            (batch_size, max_time), dtype=np.float32)
 
         logits = []
         att_weights = []
@@ -582,18 +572,19 @@ class AttentionSeq2seq(ModelBase):
                     # teacher-forcing
                     y = self.embed(ys[:, t:t + 1])
 
-            dec_in = F.concat([y, context_vec], axis=-1)
             dec_out, dec_state, context_vec, att_weights_step = self._decode_step(
                 enc_out=enc_out,
                 x_lens=x_lens,
-                dec_in=dec_in,
+                y=y,
                 dec_state=dec_state,
+                dec_out=dec_out,
                 att_weights_step=att_weights_step,
                 is_sub_task=is_sub_task)
 
             concat = F.concat([dec_out, context_vec], axis=-1)
             if is_sub_task:
-                # logits_step = self.fc_sub(F.tanh(self.proj_layer_sub(concat)))
+                # logits_step =
+                # self.fc_sub(F.tanh(self.proj_layer_sub(concat)))
                 logits_step = self.fc_sub(self.proj_layer_sub(concat))
             else:
                 # logits_step = self.fc(F.tanh(self.proj_layer(concat)))
@@ -610,6 +601,19 @@ class AttentionSeq2seq(ModelBase):
 
         return logits, att_weights
 
+    def _zero_init(self, size, dtype=np.float32):
+        """Initialize a variable with zero.
+        Args:
+            size (tuple):
+            dtype ():
+        Returns:
+            zero_var (chainer.Variable, float):
+        """
+        zero_var = Variable(np.zeros(size, dtype=dtype))
+        if self.use_cuda:
+            zero_var.to_gpu()
+        return zero_var
+
     def _init_decoder_state(self, enc_out):
         """Initialize decoder state.
         Args:
@@ -620,7 +624,7 @@ class AttentionSeq2seq(ModelBase):
                 `[1, B, decoder_num_units]`
         """
         if self.init_dec_state == 'zero' or self.encoder_type != self.decoder_type:
-            # Initialize zero state
+            # Initialize with zero state
             h_0 = None
         else:
             if self.init_dec_state == 'mean':
@@ -641,17 +645,19 @@ class AttentionSeq2seq(ModelBase):
 
         return dec_state
 
-    def _decode_step(self, enc_out, x_lens, dec_in, dec_state,
+    def _decode_step(self, enc_out, x_lens, y, dec_state, dec_out,
                      att_weights_step, is_sub_task=False):
         """Decoding step.
         Args:
             enc_out (chainer.Variable): A tensor of size
                 `[B, T_in, decoder_num_units]`
             x_lens (np.ndarray): A tensor of size `[B]`
-            dec_in (chainer.Variable): A tensor of size
-                `[B, 1, embedding_dim + decoder_num_units]`
+            y (chainer.Variable): A tensor of size
+                `[B, 1, embedding_dim]`
             dec_state (chainer.Variable or tuple): A tensor of size
                 `[decoder_num_layers, B, decoder_num_units]`
+            dec_out (chainer.Variable, float): A tensor of size
+                `[B, 1, decoder_num_units]`
             att_weights_step (chainer.Variable): A tensor of size `[B, T_in]`
             is_sub_task (bool, optional):
         Returns:
@@ -664,13 +670,15 @@ class AttentionSeq2seq(ModelBase):
             att_weights_step (chainer.Variable): A tensor of size `[B, T_in]`
         """
         if is_sub_task:
-            dec_out, dec_state = self.decoder_sub(dec_in, dec_state)
             context_vec, att_weights_step = self.attend_sub(
                 enc_out, x_lens, dec_out, att_weights_step)
+            dec_in = F.concat([y, context_vec], axis=-1)
+            dec_out, dec_state = self.decoder_sub(dec_in, dec_state)
         else:
-            dec_out, dec_state = self.decoder(dec_in, dec_state)
             context_vec, att_weights_step = self.attend(
                 enc_out, x_lens, dec_out, att_weights_step)
+            dec_in = F.concat([y, context_vec], axis=-1)
+            dec_out, dec_state = self.decoder(dec_in, dec_state)
 
         return dec_out, dec_state, context_vec, att_weights_step
 
@@ -688,12 +696,12 @@ class AttentionSeq2seq(ModelBase):
             y.to_gpu()
         return y
 
-    def attention_weights(self, xs, x_lens, max_decode_len=100, is_sub_task=False):
+    def attention_weights(self, xs, x_lens, max_decode_len, is_sub_task=False):
         """Get attention weights for visualization.
         Args:
             xs (list of np.ndarray): A tensor of size `[B, T_in, input_size]`
             x_lens (np.ndarray): A tensor of size `[B]`
-            max_decode_len (int, optional): the length of output sequences
+            max_decode_len (int): the length of output sequences
                 to stop prediction when EOS token have not been emitted
             is_sub_task (bool, optional):
         Returns:
@@ -765,24 +773,14 @@ class AttentionSeq2seq(ModelBase):
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
             att_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
         """
-        batch_size, max_time = enc_out.shape[:2]
+        batch_size, max_time, decoder_num_units = enc_out.shape
 
-        # Initialize decoder state
+        # Initialize decoder state, decoder output, attention_weights
         dec_state = self._init_decoder_state(enc_out)
-
-        # Initialize attention weights
-        att_weights_step = Variable(
-            np.zeros((batch_size, max_time), dtype=np.float32))
-        # att_weights_step = Variable(
-        #     np.ones((batch_size, max_time), dtype=np.float32)) / max_time
-
-        # Initialize context vector
-        context_vec = Variable(
-            np.zeros((batch_size, 1, enc_out.shape[2]), dtype=np.float32))
-
-        if self.use_cuda:
-            att_weights_step.to_gpu()
-            context_vec.to_gpu()
+        dec_out = self._zero_init(
+            (batch_size, 1, decoder_num_units), dtype=np.float32)
+        att_weights_step = self._zero_init(
+            (batch_size, max_time), dtype=np.float32)
 
         # Start from <SOS>
         sos = self.sos_index_sub if is_sub_task else self.sos_index
@@ -798,12 +796,12 @@ class AttentionSeq2seq(ModelBase):
             else:
                 y = self.embed(y)
 
-            dec_in = F.concat([y, context_vec], axis=-1)
             dec_out, dec_state, context_vec, att_weights_step = self._decode_step(
                 enc_out=enc_out,
                 x_lens=x_lens,
-                dec_in=dec_in,
+                y=y,
                 dec_state=dec_state,
+                dec_out=dec_out,
                 att_weights_step=att_weights_step,
                 is_sub_task=is_sub_task)
 
@@ -850,7 +848,7 @@ class AttentionSeq2seq(ModelBase):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
         """
-        batch_size = enc_out.shape[0]
+        batch_size, _, decoder_num_units = enc_out.shape
 
         # Start from <SOS>
         sos = self.sos_index_sub if is_sub_task else self.sos_index
@@ -862,30 +860,20 @@ class AttentionSeq2seq(ModelBase):
             frame_num = int(x_lens[i_batch])
             xp = cuda.get_array_module(enc_out)
 
-            # Initialize decoder state
+            # Initialize decoder state, decoder output, attention_weights
             dec_state = self._init_decoder_state(
                 enc_out[i_batch:i_batch + 1, :, :])
-
-            # Initialize attention weights
-            att_weights_step = Variable(
-                np.zeros((1, frame_num), dtype=np.float32))
-            # att_weights_step = Variable(
-            #     np.ones((1, frame_num), dtype=np.float32)) / frame_num
-
-            # Initialize context vector
-            context_vec = Variable(
-                np.zeros((1, 1, enc_out.shape[2]), dtype=np.float32))
-
-            if self.use_cuda:
-                att_weights_step.to_gpu()
-                context_vec.to_gpu()
+            dec_out = self._zero_init(
+                (1, 1, decoder_num_units), dtype=np.float32)
+            att_weights_step = self._zero_init(
+                (1, frame_num), dtype=np.float32)
 
             complete = []
             beam = [{'hyp': [],
                      'score': LOG_1,
                      'dec_state': dec_state,
-                     'att_weights_step': att_weights_step,
-                     'context_vec': context_vec}]
+                     'dec_out': dec_out,
+                     'att_weights_step': att_weights_step}]
             for t in range(max_decode_len):
                 new_beam = []
                 for i_beam in range(len(beam)):
@@ -896,13 +884,12 @@ class AttentionSeq2seq(ModelBase):
                     else:
                         y = self.embed(y)
 
-                    dec_in = F.concat(
-                        [y, beam[i_beam]['context_vec']], axis=-1)
                     dec_out, dec_state, context_vec, att_weights_step = self._decode_step(
                         enc_out=enc_out[i_batch:i_batch + 1, :frame_num],
                         x_lens=x_lens[i_batch:i_batch + 1],
-                        dec_in=dec_in,
+                        y=y,
                         dec_state=beam[i_beam]['dec_state'],
+                        dec_out=beam[i_beam]['dec_out'],
                         att_weights_step=beam[i_beam]['att_weights_step'],
                         is_sub_task=is_sub_task)
 
@@ -937,8 +924,8 @@ class AttentionSeq2seq(ModelBase):
                         new_beam.append({'hyp': new_hyp,
                                          'score': new_score,
                                          'dec_state': dec_state,
-                                         'att_weights_step': att_weights_step,
-                                         'context_vec': context_vec})
+                                         'dec_out': dec_out,
+                                         'att_weights_step': att_weights_step})
 
                 new_beam = sorted(
                     new_beam, key=lambda x: x['score'], reverse=True)

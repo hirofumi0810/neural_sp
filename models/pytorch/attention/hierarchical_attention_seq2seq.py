@@ -11,7 +11,7 @@ import numpy as np
 import torch.nn.functional as F
 
 from models.pytorch.linear import LinearND, Embedding, Embedding_LS
-from models.pytorch.criterion import kl_div_label_smoothing, cross_entropy_label_smoothing
+from models.pytorch.criterion import cross_entropy_label_smoothing
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 from models.pytorch.encoders.load_encoder import load
 from models.pytorch.attention.rnn_decoder import RNNDecoder
@@ -60,7 +60,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  coverage_weight=0,
                  ctc_loss_weight_sub=0,  # ***
                  attention_conv_num_channels=10,
-                 attention_conv_width=101,
+                 attention_conv_width=201,
                  num_stack=1,
                  splice=1,
                  conv_channels=[],
@@ -184,7 +184,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         self.is_bridge_sub = False
         if self.sub_loss_weight > 0:
             ##############################
-            # Decoder in the sub task
+            # Decoder (sub)
             ##############################
             self.decoder_sub = RNNDecoder(
                 input_size=decoder_num_units_sub + embedding_dim_sub,
@@ -197,7 +197,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 dense_residual=decoder_dense_residual)
 
             ###################################
-            # Attention layer in the sub task
+            # Attention layer (sub)
             ###################################
             self.attend_sub = AttentionMechanism(
                 decoder_num_units=decoder_num_units_sub,
@@ -209,7 +209,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 kernel_size=attention_conv_width)
 
             #################################################################
-            # Bridge layer between the encoder and decoder in the sub task
+            # Bridge layer between the encoder and decoder (sub)
             #################################################################
             if encoder_bidirectional or encoder_num_units != decoder_num_units_sub:
                 if encoder_bidirectional:
@@ -369,7 +369,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             if self.logits_temperature != 1:
                 logits_sub /= self.logits_temperature
 
-            # Compute XE sequence loss in the sub task
+            # Compute XE sequence loss (sub)
             loss_sub = F.cross_entropy(
                 input=logits_sub.view((-1, logits_sub.size(2))),
                 target=ys_sub[:, 1:].contiguous().view(-1),
