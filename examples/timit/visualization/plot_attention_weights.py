@@ -103,12 +103,12 @@ def plot_attention(model, dataset, max_decode_len,
             batch['xs'], batch['x_lens'], max_decode_len=max_decode_len)
         # NOTE: attention_weights: `[B, T_out, T_in]`
 
-        for i_batch in range(len(batch['xs'])):
+        for b in range(len(batch['xs'])):
 
             # Check if the sum of attention weights equals to 1
-            # print(np.sum(attention_weights[i_batch], axis=1))
+            # print(np.sum(attention_weights[b], axis=1))
 
-            str_pred = idx2phone(best_hyps[i_batch])
+            str_pred = idx2phone(best_hyps[b])
             eos = True if '>' in str_pred else False
 
             str_pred = str_pred.split('>')[0]
@@ -122,13 +122,14 @@ def plot_attention(model, dataset, max_decode_len,
                 str_pred += ' >'
 
             plot_attention_weights(
-                spectrogram=batch['xs'][i_batch],
-                attention_weights=attention_weights[i_batch, :len(
-                    str_pred.split(' ')), :batch['x_lens'][i_batch] - 1],
+                attention_weights[b, :len(
+                    str_pred.split(' ')), :batch['x_lens'][b] - 1],
+                frame_num=batch['x_lens'][b],
+                num_stack=dataset.num_stack,
                 label_list=str_pred.split(' '),
-                save_path=join(
-                    save_path, batch['input_names'][i_batch] + '.png'),
-                fig_size=(14, 7))
+                spectrogram=batch['xs'][b, :, :40],
+                save_path=join(save_path, batch['input_names'][b] + '.png'),
+                figsize=(14, 7))
 
         if is_new_epoch:
             break

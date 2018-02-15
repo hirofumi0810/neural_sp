@@ -141,6 +141,7 @@ def main():
 
         epoch, step = 1, 0
         learning_rate = float(params['learning_rate'])
+        metric_dev_best = 1
 
     # NOTE: Retrain the saved model from the last checkpoint
     elif args.saved_model_path is not None:
@@ -166,7 +167,7 @@ def main():
             patience_epoch=params['decay_patient_epoch'])
 
         # Restore the last saved model
-        epoch, step, learning_rate = model.load_checkpoint(
+        epoch, step, learning_rate, metric_dev_best = model.load_checkpoint(
             save_path=args.saved_model_path, epoch=-1, restart=True)
 
     else:
@@ -204,7 +205,6 @@ def main():
     start_time_train = time.time()
     start_time_epoch = time.time()
     start_time_step = time.time()
-    per_dev_best = 1
     not_improved_epoch = 0
     loss_train_mean = 0.
     while True:
@@ -260,39 +260,41 @@ def main():
             if epoch < params['eval_start_epoch']:
                 # Save the model
                 model.save_checkpoint(model.save_path, epoch, step,
-                                      lr=learning_rate)
+                                      learning_rate, metric_dev_best)
             else:
                 start_time_eval = time.time()
                 # dev
-                per_dev_epoch = do_eval_per(
+                per_dev_epoch, sub, ins, dele = do_eval_per(
                     model=model,
-                    model_type=params['model_type'],
                     dataset=dev_data,
-                    label_type=params['label_type'],
                     beam_width=1,
                     max_decode_len=MAX_DECODE_LEN_PHONE,
                     eval_batch_size=1)
                 logger.info('  PER (dev): %f %%' % (per_dev_epoch * 100))
+                logger.info('    Substitution: %d' % sub)
+                logger.info('    Insertion: %d' % ins)
+                logger.info('    Deletion: %d' % dele)
 
-                if per_dev_epoch < per_dev_best:
-                    per_dev_best = per_dev_epoch
+                if per_dev_epoch < metric_dev_best:
+                    metric_dev_best = per_dev_epoch
                     not_improved_epoch = 0
                     logger.info('■■■ ↑Best Score (PER)↑ ■■■')
 
                     # Save the model
                     model.save_checkpoint(model.save_path, epoch, step,
-                                          lr=learning_rate)
+                                          learning_rate, metric_dev_best)
 
                     # test
-                    per_test = do_eval_per(
+                    per_test, sub, ins, dele = do_eval_per(
                         model=model,
-                        model_type=params['model_type'],
                         dataset=test_data,
-                        label_type=params['label_type'],
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_PHONE,
                         eval_batch_size=1)
                     logger.info('  PER (test): %f %%' % (per_test * 100))
+                    logger.info('    Substitution: %d' % sub)
+                    logger.info('    Insertion: %d' % ins)
+                    logger.info('    Deletion: %d' % dele)
                 else:
                     not_improved_epoch += 1
 

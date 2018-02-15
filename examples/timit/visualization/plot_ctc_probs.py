@@ -65,16 +65,16 @@ def main():
     # Visualize
     plot_probs(model=model,
                dataset=test_data,
-               label_type=params['label_type'],
                eval_batch_size=args.eval_batch_size,
                save_path=mkdir_join(args.model_path, 'ctc_probs'))
 
 
-def plot_probs(model, dataset, label_type, eval_batch_size=None,
+def plot_probs(model, dataset, eval_batch_size=None,
                save_path=None):
-    """
+    """Plot CTC posteriors.
     Args:
-        dataset ():
+        model: model to evaluate
+        dataset: An instance of a `Dataset` class
         eval_batch_size (int, optional): the batch size when evaluating the model
         save_path (string): path to save figures of CTC posteriors
     """
@@ -83,7 +83,7 @@ def plot_probs(model, dataset, label_type, eval_batch_size=None,
         dataset.batch_size = eval_batch_size
 
     # Clean directory
-    if isdir(save_path):
+    if save_path is not None and isdir(save_path):
         shutil.rmtree(save_path)
         mkdir(save_path)
 
@@ -94,13 +94,14 @@ def plot_probs(model, dataset, label_type, eval_batch_size=None,
         # NOTE: probs: '[B, T, num_classes]'
 
         # Visualize
-        for i_batch in range(batch['xs'].shape[0]):
-
+        for b in range(len(batch['xs'])):
             plot_ctc_probs(
-                probs[i_batch, : batch['x_lens'][i_batch], :],
-                frame_num=batch['x_lens'][i_batch],
+                probs[b, : batch['x_lens'][b], :],
+                frame_num=batch['x_lens'][b],
                 num_stack=dataset.num_stack,
-                save_path=join(save_path, batch['input_names'][i_batch] + '.png'))
+                spectrogram=batch['xs'][b, :, :40],
+                save_path=join(save_path, batch['input_names'][b] + '.png'),
+                figsize=(14, 7))
 
         if is_new_epoch:
             break

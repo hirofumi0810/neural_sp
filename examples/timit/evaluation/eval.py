@@ -39,7 +39,7 @@ def main():
     params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
-    vocab_file_path = '../metrics/vocab_files/phone39.txt'
+    vocab_file_path = '../metrics/vocab_files/' + params['label_type'] + '.txt'
     test_data = Dataset(
         backend=params['backend'],
         input_channel=params['input_channel'],
@@ -47,7 +47,7 @@ def main():
         use_double_delta=params['use_double_delta'],
         model_type=params['model_type'],
         data_type='test',
-        label_type='phone39',
+        label_type=params['label_type'],
         vocab_file_path=vocab_file_path,
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
@@ -65,16 +65,17 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
-    per_test = do_eval_per(
+    per_test, substitution, insertion, deletion = do_eval_per(
         model=model,
-        model_type=params['model_type'],
         dataset=test_data,
-        label_type=params['label_type'],
         beam_width=args.beam_width,
         max_decode_len=args.max_decode_len,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
     print('  PER (test): %f %%' % (per_test * 100))
+    print('    Substitution: %d' % substitution)
+    print('    Insertion: %d' % insertion)
+    print('    Deletion: %d' % deletion)
 
 
 if __name__ == '__main__':

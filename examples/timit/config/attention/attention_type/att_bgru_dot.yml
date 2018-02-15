@@ -1,8 +1,8 @@
-parent: ../config/attention/att_baseline.yml
+parent: ../config/attention/att_bgru.yml
 param:
   # framework
   backend: pytorch
   # backend: chainer
 
   # topology
-  attention_type: content
+  attention_type: dot_product

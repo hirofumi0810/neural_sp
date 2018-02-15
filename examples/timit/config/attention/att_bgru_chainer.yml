@@ -1,0 +1,9 @@
+parent: ../config/attention/att_bgru.yml
+param:
+  # framework
+  backend: chainer
+
+  attention_type: content
+
+  # initialization
+  recurrent_weight_orthogonal: False

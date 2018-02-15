@@ -17,6 +17,7 @@ from examples.timit.data.load_dataset import Dataset
 from utils.io.labels.phone import Idx2phone
 from utils.io.variable import np2var, var2np
 from utils.config import load_config
+from utils.evaluation.edit_distance import compute_wer
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model_path', type=str,
@@ -68,9 +69,7 @@ def main():
 
     # Visualize
     decode(model=model,
-           model_type=params['model_type'],
            dataset=test_data,
-           label_type=params['label_type'],
            beam_width=args.beam_width,
            max_decode_len=args.max_decode_len,
            eval_batch_size=args.eval_batch_size,
@@ -78,14 +77,12 @@ def main():
     # save_path=args.model_path)
 
 
-def decode(model, model_type, dataset, label_type, beam_width,
+def decode(model, dataset, beam_width,
            max_decode_len, eval_batch_size=None, save_path=None):
     """Visualize label outputs.
     Args:
         model: the model to evaluate
-        model_type (string): ctc or attention
         dataset: An instance of a `Dataset` class
-        label_type (string): phone39 or phone48 or phone61
         beam_width: (int): the size of beam
         max_decode_len (int): the length of output sequences
             to stop prediction when EOS token have not been emitted.
@@ -97,7 +94,8 @@ def decode(model, model_type, dataset, label_type, beam_width,
     if eval_batch_size is not None:
         dataset.batch_size = eval_batch_size
 
-    idx2phone = Idx2phone('../metrics/vocab_files/' + label_type + '.txt')
+    idx2phone = Idx2phone('../metrics/vocab_files/' +
+                          dataset.label_type + '.txt')
 
     if save_path is not None:
         sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
@@ -105,45 +103,62 @@ def decode(model, model_type, dataset, label_type, beam_width,
     for batch, is_new_epoch in dataset:
 
         # Decode
-        best_hyps = model.decode(batch['xs'], batch['x_lens'],
-                                 beam_width=beam_width,
-                                 max_decode_len=max_decode_len)
+        best_hyps, perm_idx = model.decode(batch['xs'], batch['x_lens'],
+                                           beam_width=beam_width,
+                                           max_decode_len=max_decode_len)
+        if model.ctc_loss_weight > 0:
+            best_hyps_ctc, perm_idx = model.decode_ctc(
+                batch['xs'], batch['x_lens'], beam_width=beam_width)
 
-        for i_batch in range(len(batch['xs'])):
-            print('----- wav: %s -----' % batch['input_names'][i_batch])
+        ys = batch['ys'][perm_idx]
+        y_lens = batch['y_lens'][perm_idx]
 
+        for b in range(len(batch['xs'])):
             ##############################
             # Reference
             ##############################
             if dataset.is_test:
-                str_true = batch['ys'][i_batch][0]
+                str_ref = ys[b][0]
                 # NOTE: transcript is seperated by space(' ')
             else:
                 # Convert from list of index to string
-                if model_type == 'ctc':
-                    str_true = idx2phone(
-                        batch['ys'][i_batch][: batch['y_lens'][i_batch]])
-                elif model_type == 'attention':
-                    str_true = idx2phone(
-                        batch['ys'][i_batch][1: batch['y_lens'][i_batch] - 1])
+                if model.model_type == 'ctc':
+                    str_ref = idx2phone(ys[b][: y_lens[b]])
+                elif model.model_type == 'attention':
+                    str_ref = idx2phone(ys[b][1: y_lens[b] - 1])
                     # NOTE: Exclude <SOS> and <EOS>
 
             ##############################
             # Hypothesis
             ##############################
             # Convert from list of index to string
-            str_pred = idx2phone(best_hyps[i_batch])
+            str_hyp = idx2phone(best_hyps[b])
 
-            if model_type == 'attention':
-                str_pred = str_pred.split('>')[0]
+            if model.model_type == 'attention':
+                str_hyp = str_hyp.split('>')[0]
                 # NOTE: Trancate by the first <EOS>
 
                 # Remove the last space
-                if len(str_pred) > 0 and str_pred[-1] == ' ':
-                    str_pred = str_pred[:-1]
+                if len(str_hyp) > 0 and str_hyp[-1] == ' ':
+                    str_hyp = str_hyp[:-1]
 
-            print('Ref: %s' % str_true)
-            print('Hyp: %s' % str_pred)
+            print('----- wav: %s -----' % batch['input_names'][b])
+            print('Ref      : %s' % str_ref)
+            print('Hyp      : %s' % str_hyp)
+            if model.ctc_loss_weight > 0:
+                str_hyp_ctc = idx2phone(best_hyps_ctc[b])
+                print('Hyp (CTC): %s' % str_hyp_ctc)
+
+            # Compute PER
+            per, _, _, _ = compute_wer(ref=str_ref.split(' '),
+                                       hyp=str_hyp.split(' '),
+                                       normalize=True)
+            print('PER: %f' % per)
+            if model.ctc_loss_weight > 0:
+                per_ctc, _, _, _ = compute_wer(ref=str_ref.split(' '),
+                                               hyp=str_hyp_ctc.split(' '),
+                                               normalize=True)
+                print('PER (CTC): %f' % per_ctc)
 
         if is_new_epoch:
             break

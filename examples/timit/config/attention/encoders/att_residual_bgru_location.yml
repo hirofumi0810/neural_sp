@@ -1,11 +1,11 @@
-parent: ../config/attention/att_baseline.yml
+parent: ../config/attention/att_bgru.yml
 param:
   # framework
   backend: pytorch
   # backend: chainer
 
   # topology
-  encoder_dense_residual: True
+  encoder_residual: True
 
   # optimization
   batch_size: 64

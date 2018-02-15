@@ -5,4 +5,4 @@ param:
   # backend: chainer
 
   # regularization
-  weight_noise_std: 1e-5
+  weight_noise_std: 1e-9
