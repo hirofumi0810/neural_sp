@@ -89,77 +89,76 @@ def main():
     model.set_cuda(deterministic=False, benchmark=True)
 
     if 'word' in params['label_type']:
-        wer_eval1 = do_eval_wer(
+        wer_eval1, df_wer_eval1 = do_eval_wer(
             model=model,
-            model_type=params['model_type'],
             dataset=eval1_data,
-            label_type=params['label_type'],
-            data_size=params['data_size'],
             beam_width=args.beam_width,
             max_decode_len=args.max_decode_len,
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  WER (eval1): %f %%' % (wer_eval1 * 100))
-        wer_eval2 = do_eval_wer(
+        print(df_wer_eval1)
+        wer_eval2, df_wer_eval2 = do_eval_wer(
             model=model,
-            model_type=params['model_type'],
             dataset=eval2_data,
-            label_type=params['label_type'],
-            data_size=params['data_size'],
             beam_width=args.beam_width,
             max_decode_len=args.max_decode_len,
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  WER (eval2): %f %%' % (wer_eval2 * 100))
-        wer_eval3 = do_eval_wer(
+        print(df_wer_eval2)
+        wer_eval3, df_wer_eval3 = do_eval_wer(
             model=model,
-            model_type=params['model_type'],
             dataset=eval3_data,
-            label_type=params['label_type'],
-            data_size=params['data_size'],
             beam_width=args.beam_width,
             max_decode_len=args.max_decode_len,
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  WER (eval3): %f %%' % (wer_eval3 * 100))
+        print(df_wer_eval3)
+
         print('  WER (mean): %f %%' %
               ((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3))
     else:
-        cer_eval1 = do_eval_cer(
+        cer_eval1, wer_eval1, df_cer_eval1 = do_eval_cer(
             model=model,
-            model_type=params['model_type'],
             dataset=eval1_data,
-            label_type=params['label_type'],
-            data_size=params['data_size'],
             beam_width=args.beam_width,
             max_decode_len=args.max_decode_len,
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  CER (eval1): %f %%' % (cer_eval1 * 100))
-        cer_eval2 = do_eval_cer(
+        if params['label_type'] == 'kanji_divide':
+            print('  WER (eval1): %f %%' % (wer_eval1 * 100))
+        print(df_cer_eval1)
+        cer_eval2, wer_eval2, df_cer_eval2 = do_eval_cer(
             model=model,
-            model_type=params['model_type'],
             dataset=eval2_data,
-            label_type=params['label_type'],
-            data_size=params['data_size'],
             beam_width=args.beam_width,
             max_decode_len=args.max_decode_len,
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  CER (eval2): %f %%' % (cer_eval2 * 100))
-        cer_eval3 = do_eval_cer(
+        if params['label_type'] == 'kanji_divide':
+            print('  WER (eval2): %f %%' % (wer_eval2 * 100))
+        print(df_cer_eval2)
+        cer_eval3, wer_eval3, df_cer_eval3 = do_eval_cer(
             model=model,
-            model_type=params['model_type'],
             dataset=eval3_data,
-            label_type=params['label_type'],
-            data_size=params['data_size'],
             beam_width=args.beam_width,
             max_decode_len=args.max_decode_len,
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  CER (eval3): %f %%' % (cer_eval3 * 100))
+        if params['label_type'] == 'kanji_divide':
+            print('  WER (eval3): %f %%' % (wer_eval3 * 100))
+        print(df_cer_eval3)
+
         print('  CER (mean): %f %%' %
               ((cer_eval1 + cer_eval2 + cer_eval3) * 100 / 3))
+        if params['label_type'] == 'kanji_divide':
+            print('  WER (mean): %f %%' %
+                  ((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3))
 
 
 if __name__ == '__main__':

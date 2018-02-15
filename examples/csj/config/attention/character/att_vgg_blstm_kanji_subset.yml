@@ -1,8 +1,12 @@
-parent: ../config/attention/character/att_blstm_kanji_subset.yml
+parent: ../config/attention/word/att_blstm_word_freq5_subset.yml
 param:
   # framework
   backend: pytorch
   # backend: chainer
+
+  # corpus
+  label_type: kanji
+  data_size: subset
 
   # topology
   conv_channels: [64, 64, 128, 128]
@@ -23,11 +27,19 @@ param:
     - [2, 2]
   activation: relu
   batch_norm: True
+  encoder_num_layers: 4
+  subsample_list:
+    - True
+    - True
+    - True
+    - False
+  decoder_num_layers: 1
+  embedding_dim: 64
+
+  embedding_dim: 64
 
   # optimization
   batch_size: 16
-  optimizer: adam
-  learning_rate: 1e-3
 
   # regularization
   scheduled_sampling_ramp_max_step: 800000

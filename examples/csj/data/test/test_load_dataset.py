@@ -21,37 +21,40 @@ class TestLoadDataset(unittest.TestCase):
     def test(self):
 
         # framework
-        self.check(label_type='kanji', data_type='train', backend='chainer')
-        self.check(label_type='kanji', data_type='train', backend='pytorch')
+        self.check(label_type='word_freq5',
+                   data_type='train', backend='chainer')
+        # self.check(label_type='word_freq5',
+        #            data_type='train', backend='pytorch')
+
+        raise ValueError
 
         # data_type
-        self.check(label_type='kanji', data_type='dev')
-        self.check(label_type='kanji', data_type='eval1')
-        self.check(label_type='kanji', data_type='eval2')
-        self.check(label_type='kanji', data_type='eval3')
+        self.check(label_type='word_freq5', data_type='dev')
+        self.check(label_type='word_freq5', data_type='eval1')
+        self.check(label_type='word_freq5', data_type='eval2')
+        self.check(label_type='word_freq5', data_type='eval3')
 
         # label_type
         self.check(label_type='word_freq1')
-        self.check(label_type='word_freq5')
         self.check(label_type='word_freq10')
         self.check(label_type='word_freq15')
+        self.check(label_type='kanji')
         self.check(label_type='kanji_divide')
         self.check(label_type='kana')
         self.check(label_type='kana_divide')
 
         # sort
-        self.check(label_type='kanji', sort_utt=True)
-        self.check(label_type='kanji', sort_utt=True,
-                   sort_stop_epoch=True)
+        self.check(label_type='word_freq5',
+                   sort_utt=True, sort_stop_epoch=True)
 
         # frame stacking
-        self.check(label_type='kanji', frame_stacking=True)
+        self.check(label_type='word_freq5', frame_stacking=True)
 
         # splicing
-        self.check(label_type='kanji', splice=11)
+        self.check(label_type='word_freq5', splice=11)
 
         # multi-GPU
-        self.check(label_type='kanji', num_gpus=8)
+        # self.check(label_type='word_freq5', num_gpus=8)
 
     @measure_time
     def check(self, label_type, data_type='dev', data_size='subset', backend='pytorch',
@@ -87,8 +90,7 @@ class TestLoadDataset(unittest.TestCase):
             num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
             sort_utt=sort_utt, reverse=True, sort_stop_epoch=sort_stop_epoch,
-            num_gpus=num_gpus, save_format='numpy',
-            num_enque=None)
+            num_gpus=num_gpus, save_format='numpy', num_enque=None)
 
         print('=> Loading mini-batch...')
         if 'word' in label_type:
@@ -96,29 +98,27 @@ class TestLoadDataset(unittest.TestCase):
         else:
             map_fn = Idx2char(vocab_file_path)
 
-        for data, is_new_epoch in dataset:
-            inputs, labels, inputs_seq_len, labels_seq_len, input_names = data
-
+        for batch, is_new_epoch in dataset:
             if data_type == 'train' and backend == 'pytorch':
-                for i in range(len(inputs)):
-                    if inputs.shape[1] < labels.shape[1]:
+                for i in range(len(batch['xs'])):
+                    if batch['xs'].shape[1] < batch['ys'].shape[1]:
                         raise ValueError(
                             'input length must be longer than label length.')
 
             if dataset.is_test:
-                str_true = labels[0][0]
+                str_true = batch['ys'][0][0]
             else:
-                str_true = map_fn(labels[0][0:labels_seq_len[0]])
+                str_true = map_fn(batch['ys'][0][0:batch['y_lens'][0]])
 
             print('----- %s (epoch: %.3f, batch: %d) -----' %
-                  (input_names[0], dataset.epoch_detail, len(inputs)))
+                  (batch['input_names'][0], dataset.epoch_detail, len(batch['xs'])))
             print(str_true)
-            print('inputs_seq_len: %d' % inputs_seq_len[0])
+            print('inputs_seq_len: %d' % (batch['x_lens'][0] * num_stack))
             if not dataset.is_test:
-                print('labels_seq_len: %d' % labels_seq_len[0])
+                print('labels_seq_len: %d' % batch['y_lens'][0])
 
-            if dataset.epoch_detail >= 0.05:
-                break
+            # if dataset.epoch_detail >= 0.05:
+            #     break
 
 
 if __name__ == '__main__':

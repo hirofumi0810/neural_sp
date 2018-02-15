@@ -6,6 +6,7 @@ param:
 
   # corpus
   data_size: fullset
+  label_type: kanji_divide
 
   # topology
   encoder_num_layers: 6

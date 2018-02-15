@@ -83,8 +83,7 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
             num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
             sort_utt=sort_utt, reverse=True, sort_stop_epoch=sort_stop_epoch,
-            num_gpus=num_gpus, save_format='numpy',
-            num_enque=None)
+            num_gpus=num_gpus, save_format='numpy', num_enque=None)
 
         print('=> Loading mini-batch...')
         if 'word' in label_type:
@@ -98,33 +97,32 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
         else:
             map_fn_sub = Idx2char(vocab_file_path_sub)
 
-        for data, is_new_epoch in dataset:
-            inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub, input_names = data
-
+        for batch, is_new_epoch in dataset:
             if data_type == 'train' and backend == 'pytorch':
-                for i in range(len(inputs)):
-                    if inputs.shape[1] < labels.shape[1]:
+                for i in range(len(batch['xs'])):
+                    if batch['xs'].shape[1] < batch['ys'].shape[1]:
                         raise ValueError(
                             'input length must be longer than label length.')
 
             if dataset.is_test:
-                str_true = labels[0][0]
-                str_true_sub = labels_sub[0][0]
+                str_true = batch['ys'][0][0]
+                str_true_sub = batch['ys_sub'][0][0]
             else:
-                str_true = map_fn(labels[0][:labels_seq_len[0]])
+                str_true = map_fn(batch['ys'][0][:batch['y_lens'][0]])
                 str_true_sub = map_fn_sub(
-                    labels_sub[0][:labels_seq_len_sub[0]])
+                    batch['ys_sub'][0][:batch['y_lens_sub'][0]])
 
             print('----- %s (epoch: %.3f, batch: %d) -----' %
-                  (input_names[0], dataset.epoch_detail, len(inputs)))
+                  (batch['input_names'][0], dataset.epoch_detail, len(batch['xs'])))
             print('=' * 20)
             print(str_true)
             print('-' * 10)
             print(str_true_sub)
-            print('inputs_seq_len: %d' % inputs_seq_len[0])
+            print('inputs_seq_len: %d' % (batch['x_lens'][0] * num_stack))
             if not dataset.is_test:
-                print('labels_seq_len (word): %d' % labels_seq_len.data[0])
-                print('labels_seq_len (char): %d' % labels_seq_len_sub.data[0])
+                print('labels_seq_len (word): %d' % batch['y_lens'].data[0])
+                print('labels_seq_len (char): %d' %
+                      batch['y_lens_sub'].data[0])
 
             if dataset.epoch_detail >= 0.01:
                 break

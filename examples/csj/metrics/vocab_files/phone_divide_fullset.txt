@@ -34,5 +34,4 @@ u
 w
 y
 z
-NZ
 sil

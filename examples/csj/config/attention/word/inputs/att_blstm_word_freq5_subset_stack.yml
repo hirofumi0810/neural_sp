@@ -5,24 +5,14 @@ param:
   # backend: chainer
 
   # features
-  num_stack: 1
-  num_skip: 1
+  num_stack: 3
+  num_skip: 3
 
   # topology
   encoder_num_layers: 5
   subsample_list:
-    - True
-    - True
-    - True
     - False
     - False
-  subsample_type: drop
-
-  # optimization
-  batch_size: 64
-
-  # regularization
-  scheduled_sampling_ramp_max_step: 200000
-
-  # annealing
-  print_step: 500
+    - False
+    - False
+    - False

@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Train the model (CSJ corpus)."""
+"""Train the hierarchical model (CSJ corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -186,6 +186,7 @@ def main():
 
         epoch, step = 1, 0
         learning_rate = float(params['learning_rate'])
+        metric_dev_best = 1
 
     # NOTE: Retrain the saved model from the last checkpoint
     elif args.saved_model_path is not None:
@@ -211,7 +212,7 @@ def main():
             patience_epoch=params['decay_patient_epoch'])
 
         # Restore the last saved model
-        epoch, step, learning_rate = model.load_checkpoint(
+        epoch, step, learning_rate, metric_dev_best = model.load_checkpoint(
             save_path=args.saved_model_path, epoch=-1, restart=True)
 
     else:
@@ -250,7 +251,6 @@ def main():
     start_time_train = time.time()
     start_time_epoch = time.time()
     start_time_step = time.time()
-    wer_dev_best = 1
     not_improved_epoch = 0
     loss_train_mean, loss_main_train_mean, loss_sub_train_mean = 0., 0., 0.
     while True:
@@ -321,106 +321,50 @@ def main():
             if epoch < params['eval_start_epoch']:
                 # Save the model
                 model.save_checkpoint(model.save_path, epoch, step,
-                                      lr=learning_rate)
+                                      learning_rate, metric_dev_best)
             else:
                 start_time_eval = time.time()
                 # dev
-                if params['label_type'] == 'pos':
-                    wer_dev_epoch = do_eval_wer(
-                        model=model,
-                        model_type=params['model_type'],
-                        dataset=dev_data,
-                        label_type=params['label_type_sub'],
-                        data_size=params['data_size'],
-                        beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_WORD,
-                        eval_batch_size=1,
-                        is_pos=True)
-                else:
-                    wer_dev_epoch = do_eval_wer(
-                        model=model,
-                        model_type=params['model_type'],
-                        dataset=dev_data,
-                        label_type=params['label_type'],
-                        data_size=params['data_size'],
-                        beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_WORD,
-                        eval_batch_size=1)
+                wer_dev_epoch, _ = do_eval_wer(
+                    model=model,
+                    dataset=dev_data,
+                    beam_width=1,
+                    max_decode_len=MAX_DECODE_LEN_WORD,
+                    eval_batch_size=1)
                 logger.info('  WER (dev): %f %%' % (wer_dev_epoch * 100))
 
-                if wer_dev_epoch < wer_dev_best:
-                    wer_dev_best = wer_dev_epoch
+                if wer_dev_epoch < metric_dev_best:
+                    metric_dev_best = wer_dev_epoch
                     not_improved_epoch = 0
                     logger.info('■■■ ↑Best Score (WER)↑ ■■■')
 
                     # Save the model
                     model.save_checkpoint(model.save_path, epoch, step,
-                                          lr=learning_rate)
+                                          learning_rate, metric_dev_best)
 
                     # test
-                    if params['label_type'] == 'pos':
-                        wer_eval1 = do_eval_wer(
-                            model=model,
-                            model_type=params['model_type'],
-                            dataset=eval1_data,
-                            label_type=params['label_type_sub'],
-                            data_size=params['data_size'],
-                            beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_WORD,
-                            eval_batch_size=1,
-                            is_pos=True)
-                        wer_eval2 = do_eval_wer(
-                            model=model,
-                            model_type=params['model_type'],
-                            dataset=eval2_data,
-                            label_type=params['label_type_sub'],
-                            data_size=params['data_size'],
-                            beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_WORD,
-                            eval_batch_size=1,
-                            is_pos=True)
-                        wer_eval3 = do_eval_wer(
-                            model=model,
-                            model_type=params['model_type'],
-                            dataset=eval3_data,
-                            label_type=params['label_type_sub'],
-                            data_size=params['data_size'],
-                            beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_WORD,
-                            eval_batch_size=1,
-                            is_pos=True)
-                    else:
-                        wer_eval1 = do_eval_wer(
-                            model=model,
-                            model_type=params['model_type'],
-                            dataset=eval1_data,
-                            label_type=params['label_type'],
-                            data_size=params['data_size'],
-                            beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_WORD,
-                            eval_batch_size=1)
-                        wer_eval2 = do_eval_wer(
-                            model=model,
-                            model_type=params['model_type'],
-                            dataset=eval2_data,
-                            label_type=params['label_type'],
-                            data_size=params['data_size'],
-                            beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_WORD,
-                            eval_batch_size=1)
-                        wer_eval3 = do_eval_wer(
-                            model=model,
-                            model_type=params['model_type'],
-                            dataset=eval3_data,
-                            label_type=params['label_type'],
-                            data_size=params['data_size'],
-                            beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_WORD,
-                            eval_batch_size=1)
+                    wer_eval1, _ = do_eval_wer(
+                        model=model,
+                        dataset=eval1_data,
+                        beam_width=1,
+                        max_decode_len=MAX_DECODE_LEN_WORD,
+                        eval_batch_size=1)
                     logger.info('  WER (eval1, main): %f %%' %
                                 (wer_eval1 * 100))
+                    wer_eval2, _ = do_eval_wer(
+                        model=model,
+                        dataset=eval2_data,
+                        beam_width=1,
+                        max_decode_len=MAX_DECODE_LEN_WORD,
+                        eval_batch_size=1)
                     logger.info('  WER (eval2, main): %f %%' %
                                 (wer_eval2 * 100))
+                    wer_eval3, _ = do_eval_wer(
+                        model=model,
+                        dataset=eval3_data,
+                        beam_width=1,
+                        max_decode_len=MAX_DECODE_LEN_WORD,
+                        eval_batch_size=1)
                     logger.info('  WER (eval3, main): %f %%' %
                                 (wer_eval3 * 100))
                     logger.info('  WER (mean, main): %f %%' %

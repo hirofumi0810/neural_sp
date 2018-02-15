@@ -1,8 +1,0 @@
-parent: ../config/hierarchical_attention/att_word_freq5_att_kanji_subset_baseline.yml
-param:
-  # framework
-  backend: pytorch
-  # backend: chainer
-
-  # corpus
-  label_type_sub: kana_divide

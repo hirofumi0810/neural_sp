@@ -32,19 +32,17 @@ param:
   encoder_num_proj: 0
   encoder_num_layers: 5
   subsample_list:
-    - False
-    - False
+    - True
+    - True
     - False
     - False
     - False
 
   # optimization
-  batch_size: 16
-  optimizer: adam
-  learning_rate: 1e-3
+  batch_size: 32
 
   # regularization
-  scheduled_sampling_ramp_max_step: 800000
+  scheduled_sampling_ramp_max_step: 500000
 
   # annealing
   print_step: 2000

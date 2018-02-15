@@ -9,10 +9,10 @@ param:
   decoder_num_layers: 4
 
   # optimization
-  batch_size: 32
+  batch_size: 64
 
   # regularization
-  scheduled_sampling_ramp_max_step: 400000
+  scheduled_sampling_ramp_max_step: 250000
 
   # annealing
   print_step: 1000

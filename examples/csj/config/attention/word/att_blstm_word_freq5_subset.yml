@@ -6,18 +6,14 @@ param:
   # corpus
   corpus: csj
   data_size: subset
-  # label_type: word_freq5
-  # num_classes: 12588
-  label_type: word_freq1
-  num_classes: 37053
-
+  label_type: word_freq5
 
   # features
   feature: fbank
   save_format: numpy
   input_channel: 80
-  use_delta: True
-  use_double_delta: True
+  use_delta: False
+  use_double_delta: False
   splice: 1
   num_stack: 1
   num_skip: 1
@@ -38,6 +34,7 @@ param:
   encoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
+  # encoder_num_proj: 320
   encoder_num_layers: 5
   subsample_list:
     - True
@@ -58,11 +55,11 @@ param:
   attention_conv_width: 201
 
   # optimization
-  batch_size: 64
+  batch_size: 128
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 30
-  convert_to_sgd_epoch: 20
+  num_epoch: 50
+  convert_to_sgd_epoch: 40
 
   # initialization
   parameter_init_distribution: uniform
@@ -75,6 +72,9 @@ param:
   clip_activation_encoder: 50
   clip_activation_decoder: 50
   dropout_input: 0
+  # dropout_encoder: 0.3
+  # dropout_decoder: 0.2
+  # dropout_embedding: 0.2
   dropout_encoder: 0.2
   dropout_decoder: 0.1
   dropout_embedding: 0.1
@@ -85,14 +85,14 @@ param:
   sigmoid_smoothing: False
   coverage_weight: 0
   scheduled_sampling_prob: 0.2
-  scheduled_sampling_ramp_max_step: 200000
-  label_smoothing_prob: 0.2
+  scheduled_sampling_ramp_max_step: 125000
+  label_smoothing_prob: 0.1
   weight_noise_std: 0
 
   # annealing
   decay_start_epoch: 5
-  decay_rate: 0.9
-  decay_patient_epoch: 0
+  decay_rate: 0.75
+  decay_patient_epoch: 1
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
   eval_start_epoch: 5

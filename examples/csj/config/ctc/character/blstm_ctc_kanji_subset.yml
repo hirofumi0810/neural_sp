@@ -5,8 +5,8 @@ param:
   # backend: chainer
 
   # corpus
-  label_type: kanji
-  num_classes: 2888
+  data_size: subset
+  label_type: kanji_divide
 
   # topology
   encoder_num_layers: 4
@@ -15,9 +15,3 @@ param:
     - False
     - False
     - False
-
-  # optimization
-  batch_size: 64
-
-  # annealing
-  print_step: 500

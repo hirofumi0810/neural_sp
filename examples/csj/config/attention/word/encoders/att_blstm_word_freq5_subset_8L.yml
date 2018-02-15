@@ -7,9 +7,9 @@ param:
   # topology
   encoder_num_layers: 8
   subsample_list:
-    - False
-    - False
-    - False
+    - True
+    - True
+    - True
     - False
     - False
     - False
@@ -17,10 +17,10 @@ param:
     - False
 
   # optimization
-  batch_size: 32
+  batch_size: 64
 
   # regularization
-  scheduled_sampling_ramp_max_step: 400000
+  scheduled_sampling_ramp_max_step: 250000
 
   # annealing
   print_step: 1000
