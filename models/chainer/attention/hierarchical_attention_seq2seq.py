@@ -180,6 +180,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         else:
             raise NotImplementedError
 
+        if self.init_dec_state != 'zero':
+            self.W_dec_init_sub = LinearND(
+                decoder_num_units_sub, decoder_num_units_sub)
+
         self.is_bridge_sub = False
         if self.sub_loss_weight > 0:
             ##############################
@@ -292,9 +296,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (chainer.Variable or float): A tensor of size `[1]`
-            loss_main (chainer.Variable or float): A tensor of size `[1]`
-            loss_sub (chainer.Variable or float): A tensor of size `[1]`
+            loss (chainer.Variable(float) or float): A tensor of size `[1]`
+            loss_main (chainer.Variable(float) or float): A tensor of size `[1]`
+            loss_sub (chainer.Variable(float) or float): A tensor of size `[1]`
         """
         if is_eval:
             with chainer.no_backprop_mode(), chainer.using_config('train', False):

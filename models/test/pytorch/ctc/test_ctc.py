@@ -37,6 +37,7 @@ class TestCTC(unittest.TestCase):
         self.check(encoder_type='lstm', bidirectional=True, subsample=True)
 
         # Projection layer
+        self.check(encoder_type='lstm', bidirectional=True, projection=True)
         self.check(encoder_type='lstm', bidirectional=False, projection=True)
 
         # Residual LSTM-CTC

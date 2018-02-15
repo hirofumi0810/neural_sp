@@ -181,6 +181,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         else:
             raise NotImplementedError
 
+        if self.init_dec_state != 'zero':
+            self.W_dec_init_sub = LinearND(
+                decoder_num_units_sub, decoder_num_units_sub)
+
         self.is_bridge_sub = False
         if self.sub_loss_weight > 0:
             ##############################

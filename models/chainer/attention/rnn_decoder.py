@@ -83,14 +83,14 @@ class RNNDecoder(chainer.Chain):
     def __call__(self, y, dec_state):
         """Forward computation.
         Args:
-            y (chainer.Variable): A tensor of size `[B, 1, input_size]`
-            dec_state (chainer.Variable or tuple): A tensor of size
+            y (chainer.Variablem float): A tensor of size `[B, 1, embedding_dim]`
+            dec_state (chainer.Variable(float) or tuple): A tensor of size
                 `[1, B, num_units]`
         Returns:
-            dec_out (chainer.Variable):
+            dec_out (chainer.Variable, float):
                 if batch_first is True, a tensor of size `[B, 1, num_units]`
                 else `[1, B, num_units]`
-            dec_state (chainer.Variable or tuple):
+            dec_state (chainer.Variable(float) or tuple):
         """
         # Convert to list of Variable
         y = [t[0] for t in F.split_axis(y, len(y), axis=0)]

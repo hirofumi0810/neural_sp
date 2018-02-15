@@ -259,6 +259,9 @@ class AttentionSeq2seq(ModelBase):
         if encoder_type != decoder_type:
             self.init_dec_state = 'zero'
 
+        if self.init_dec_state != 'zero':
+            self.W_dec_init = LinearND(decoder_num_units, decoder_num_units)
+
         ####################
         # Decoder
         ####################
@@ -555,8 +558,9 @@ class AttentionSeq2seq(ModelBase):
         labels_max_seq_len = ys.size(1)
 
         # Initialize decoder state, decoder output, attention_weights
-        dec_state = self._init_decoder_state(enc_out)
+        dec_state = self._init_decoder_state(enc_out, is_sub_task=is_sub_task)
         dec_out = self._zero_init((batch_size, 1, decoder_num_units))
+        context_vec = self._zero_init((batch_size, 1, decoder_num_units))
         att_weights_step = self._zero_init((batch_size, max_time))
 
         logits = []
@@ -587,6 +591,7 @@ class AttentionSeq2seq(ModelBase):
                 y=y,
                 dec_state=dec_state,
                 dec_out=dec_out,
+                context_vec=context_vec,
                 att_weights_step=att_weights_step,
                 is_sub_task=is_sub_task)
 
@@ -609,62 +614,9 @@ class AttentionSeq2seq(ModelBase):
 
         return logits, att_weights
 
-    def _zero_init(self, size, volatile=False):
-        """Initialize a variable with zero.
-        Args:
-            size (tuple):
-            volatile (bool, optional):
-        Returns:
-            zero_var (torch.autograd.Variable, float):
-        """
-        zero_var = Variable(torch.zeros(size))
-        if volatile:
-            zero_var.volatile = True
-        if self.use_cuda:
-            zero_var = zero_var.cuda()
-        return zero_var
-
-    def _init_decoder_state(self, enc_out, volatile=False):
-        """Initialize decoder state.
-        Args:
-            enc_out (torch.autograd.Variable, float): A tensor of size
-                `[B, T_in, decoder_num_units]`
-            volatile (bool, optional): if True, the history will not be saved.
-                This should be used in inference model for memory efficiency.
-        Returns:
-            dec_state (torch.autograd.Variable(float) or tuple): A tensor of size
-                `[1, B, decoder_num_units]`
-        """
-        batch_size, _, decoder_num_units = enc_out.size()
-
-        if self.init_dec_state == 'zero' or self.encoder_type != self.decoder_type:
-            # Initialize with zero state
-            h_0 = self._zero_init(
-                (1, batch_size, decoder_num_units), volatile=volatile)
-        else:
-            if self.init_dec_state == 'mean':
-                # Initialize with mean of all encoder outputs
-                h_0 = enc_out.mean(dim=1, keepdim=True)
-            elif self.init_dec_state == 'final':
-                # Initialize with the final encoder output (forward)
-                h_0 = enc_out[:, -2:-1, :]
-
-            # Convert to time-major
-            h_0 = h_0.transpose(0, 1).contiguous()
-
-        if self.decoder_type == 'lstm':
-            # Initialize with zero state
-            c_0 = self._zero_init(
-                (1, batch_size, decoder_num_units), volatile=volatile)
-            dec_state = (h_0, c_0)
-        else:
-            dec_state = h_0
-
-        return dec_state
-
     def _decode_step(self, enc_out, x_lens, y, dec_state, dec_out,
-                     att_weights_step, is_sub_task=False):
-        """Decoding step.
+                     context_vec, att_weights_step, is_sub_task=False):
+        """Decoding at each decoder time step.
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, decoder_num_units]`
@@ -674,6 +626,8 @@ class AttentionSeq2seq(ModelBase):
             dec_state (torch.autograd.Variable(float) or tuple): A tensor of size
                 `[decoder_num_layers, B, decoder_num_units]`
             dec_out (torch.autograd.Variable, float): A tensor of size
+                `[B, 1, decoder_num_units]`
+            content_vec (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, decoder_num_units]`
             att_weights_step (torch.autograd.Variable, float):
                 A tensor of size `[B, T_in]`
@@ -689,17 +643,81 @@ class AttentionSeq2seq(ModelBase):
                 `[B, T_in]`
         """
         if is_sub_task:
-            context_vec, att_weights_step = self.attend_sub(
-                enc_out, x_lens, dec_out, att_weights_step)
             dec_in = torch.cat([y, context_vec], dim=-1)
             dec_out, dec_state = self.decoder_sub(dec_in, dec_state)
-        else:
-            context_vec, att_weights_step = self.attend(
+            context_vec, att_weights_step = self.attend_sub(
                 enc_out, x_lens, dec_out, att_weights_step)
+        else:
             dec_in = torch.cat([y, context_vec], dim=-1)
             dec_out, dec_state = self.decoder(dec_in, dec_state)
+            context_vec, att_weights_step = self.attend(
+                enc_out, x_lens, dec_out, att_weights_step)
 
         return dec_out, dec_state, context_vec, att_weights_step
+
+    def _zero_init(self, size, volatile=False):
+        """Initialize a variable with zero.
+        Args:
+            size (tuple):
+            volatile (bool, optional):
+        Returns:
+            zero_var (torch.autograd.Variable, float):
+        """
+        zero_var = Variable(torch.zeros(size))
+        if volatile:
+            zero_var.volatile = True
+        if self.use_cuda:
+            zero_var = zero_var.cuda()
+        return zero_var
+
+    def _init_decoder_state(self, enc_out, volatile=False, is_sub_task=False):
+        """Initialize decoder state.
+        Args:
+            enc_out (torch.autograd.Variable, float): A tensor of size
+                `[B, T_in, decoder_num_units]`
+            volatile (bool, optional): if True, the history will not be saved.
+                This should be used in inference model for memory efficiency.
+            is_sub_task (bool, optional):
+        Returns:
+            dec_state (torch.autograd.Variable(float) or tuple): A tensor of size
+                `[1, B, decoder_num_units]`
+        """
+        batch_size, _, decoder_num_units = enc_out.size()
+
+        if self.init_dec_state == 'zero' or self.encoder_type != self.decoder_type:
+            # Initialize with zero state
+            h_0 = self._zero_init(
+                (1, batch_size, decoder_num_units), volatile=volatile)
+        else:
+            if self.init_dec_state == 'mean':
+                # Initialize with mean of all encoder outputs
+                h_0 = enc_out.mean(dim=1, keepdim=True)
+            elif self.init_dec_state == 'final':
+                if self.encoder_bidirectional:
+                    # Initialize with the final encoder output (backward)
+                    h_0 = enc_out[:, -1, :].unsqueeze(1)
+                else:
+                    # Initialize with the final encoder output (forward)
+                    h_0 = enc_out[:, -2, :].unsqueeze(1)
+
+            # Path through the linear layer
+            if is_sub_task:
+                h_0 = self.W_dec_init_sub(h_0)
+            else:
+                h_0 = self.W_dec_init(h_0)
+
+            # Convert to time-major
+            h_0 = h_0.transpose(0, 1).contiguous()
+
+        if self.decoder_type == 'lstm':
+            # Initialize memory cell with zero state
+            c_0 = self._zero_init(
+                (1, batch_size, decoder_num_units), volatile=volatile)
+            dec_state = (h_0, c_0)
+        else:
+            dec_state = h_0
+
+        return dec_state
 
     def _create_token(self, value, batch_size):
         """Create 1 token per batch dimension.
@@ -821,8 +839,11 @@ class AttentionSeq2seq(ModelBase):
         batch_size, max_time, decoder_num_units = enc_out.size()
 
         # Initialize decoder state
-        dec_state = self._init_decoder_state(enc_out, volatile=True)
+        dec_state = self._init_decoder_state(
+            enc_out, volatile=True, is_sub_task=is_sub_task)
         dec_out = self._zero_init(
+            (batch_size, 1, decoder_num_units), volatile=True)
+        context_vec = self._zero_init(
             (batch_size, 1, decoder_num_units), volatile=True)
         att_weights_step = self._zero_init(
             (batch_size, max_time), volatile=True)
@@ -847,6 +868,7 @@ class AttentionSeq2seq(ModelBase):
                 y=y,
                 dec_state=dec_state,
                 dec_out=dec_out,
+                context_vec=context_vec,
                 att_weights_step=att_weights_step,
                 is_sub_task=is_sub_task)
 
@@ -899,13 +921,13 @@ class AttentionSeq2seq(ModelBase):
         eos = self.eos_index_sub if is_sub_task else self.eos_index
 
         best_hyps = []
-        for i_batch in range(batch_size):
-            frame_num = x_lens[i_batch].data[0]
+        for b in range(batch_size):
+            frame_num = x_lens[b].data[0]
 
             # Initialize decoder state, decoder output, attention_weights
             dec_state = self._init_decoder_state(
-                enc_out[i_batch:i_batch + 1, :, :], volatile=True)
-            dec_out = self._zero_init((1, 1, decoder_num_units))
+                enc_out[b:b + 1, :, :], volatile=True, is_sub_task=is_sub_task)
+            dec_out = self._zero_init((1, 1, decoder_num_units), volatile=True)
             att_weights_step = self._zero_init((1, frame_num), volatile=True)
 
             complete = []
@@ -925,12 +947,17 @@ class AttentionSeq2seq(ModelBase):
                     else:
                         y = self.embed(y)
 
+                    # Compute context vector
+                    context_vec = torch.sum(
+                        enc_out[b: b + 1] * att_weights_step.unsqueeze(2), dim=1, keepdim=True)
+
                     dec_out, dec_state, context_vec, att_weights_step = self._decode_step(
-                        enc_out=enc_out[i_batch:i_batch + 1, :frame_num],
-                        x_lens=x_lens[i_batch:i_batch + 1],
+                        enc_out=enc_out[b:b + 1, :frame_num],
+                        x_lens=x_lens[b:b + 1],
                         y=y,
                         dec_state=beam[i_beam]['dec_state'],
                         dec_out=beam[i_beam]['dec_out'],
+                        context_vec=context_vec,
                         att_weights_step=beam[i_beam]['att_weights_step'],
                         is_sub_task=is_sub_task)
 

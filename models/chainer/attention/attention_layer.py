@@ -122,8 +122,9 @@ class AttentionMechanism(chainer.Chain):
             ###################################################################
             # energy = <v, tanh(W([h_de; h_en] + b))>
             ###################################################################
-            energy = F.squeeze(self.V(F.tanh(self.W_enc(
-                enc_out) + self.W_dec(F.broadcast_to(dec_out, enc_out.shape)))), axis=2)
+            energy = F.squeeze(self.V(F.tanh(
+                self.W_enc(enc_out) +
+                self.W_dec(F.broadcast_to(dec_out, enc_out.shape)))), axis=2)
 
         elif self.attention_type == 'location':
             ###################################################################
@@ -136,8 +137,10 @@ class AttentionMechanism(chainer.Chain):
             conv_feat = conv_feat.transpose(0, 2, 1)
             # -> `[B, T_in, out_channels]`
 
-            energy = F.squeeze(
-                self.V(F.tanh(self.W_enc(enc_out) + self.W_dec(F.broadcast_to(dec_out, enc_out.shape)) + self.W_conv(conv_feat))), axis=2)
+            energy = F.squeeze(self.V(F.tanh(
+                self.W_enc(enc_out) +
+                self.W_dec(F.broadcast_to(dec_out, enc_out.shape)) +
+                self.W_conv(conv_feat))), axis=2)
 
         elif self.attention_type == 'dot_product':
             ###################################################################

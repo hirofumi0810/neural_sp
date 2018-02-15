@@ -29,6 +29,14 @@ class TestAttention(unittest.TestCase):
     def test(self):
         print("Attention Working check.")
 
+        # Initialize decoder state
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', init_dec_state='final')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', init_dec_state='mean')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', init_dec_state='zero')
+
         # Joint CTC-Attention
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', label_smoothing=True,
@@ -42,14 +50,6 @@ class TestAttention(unittest.TestCase):
 
         # CNN encoder
         self.check(encoder_type='cnn', decoder_type='lstm', batch_norm=True)
-
-        # Initialize decoder state
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', init_dec_state='zero')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', init_dec_state='mean')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', init_dec_state='final')
 
         # Pyramidal encoder
         self.check(encoder_type='lstm', bidirectional=True,

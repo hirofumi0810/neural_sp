@@ -155,7 +155,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             init_forget_gate_bias_with_one=True,
             subsample_list=[] if not subsample else [False, True, False],
             subsample_type='concat' if subsample is False else subsample,
-            init_dec_state='final',
+            init_dec_state='zero',
             sharpening_factor=1,
             logits_temperature=1,
             sigmoid_smoothing=False,

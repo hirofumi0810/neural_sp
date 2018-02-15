@@ -254,6 +254,10 @@ class AttentionSeq2seq(ModelBase):
             if encoder_type != decoder_type:
                 self.init_dec_state = 'zero'
 
+            if self.init_dec_state != 'zero':
+                self.W_dec_init = LinearND(
+                    decoder_num_units, decoder_num_units)
+
             ####################
             # Decoder
             ####################
@@ -367,7 +371,7 @@ class AttentionSeq2seq(ModelBase):
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (chainer.Variable or float): A tensor of size `[1]`
+            loss (chainer.Variable(float) or float): A tensor of size `[1]`
         """
         if is_eval:
             with chainer.no_backprop_mode(), chainer.using_config('train', False):
@@ -441,14 +445,14 @@ class AttentionSeq2seq(ModelBase):
                          size_average=False):
         """Compute CTC loss.
         Args:
-            logits_ctc (chainer.Variable): A tensor of size
+            logits_ctc (chainer.Variable, float): A tensor of size
                 `[B, T_in, decoder_num_units]`
-            ys (chainer.Variable): A tensor of size `[B, T_out]`
-            x_lens (chainer.Variable): A tensor of size `[B]`
-            y_lens (chainer.Variable): A tensor of size `[B]`
+            ys (chainer.Variable, int): A tensor of size `[B, T_out]`
+            x_lens (chainer.Variable, int): A tensor of size `[B]`
+            y_lens (chainer.Variable, int): A tensor of size `[B]`
             size_average (bool, optional):
         Returns:
-            ctc_loss (chainer.Variable):
+            ctc_loss (chainer.Variable, float):
                 if size_average is True, A tensor of size `[1]`
         """
         if self.blank_index == 0:
@@ -485,16 +489,16 @@ class AttentionSeq2seq(ModelBase):
     def _encode(self, xs, x_lens, is_multi_task=False):
         """Encode acoustic features.
         Args:
-            xs (list of chainer.Variable):
+            xs (list of chainer.Variable(float)):
                 A list of tensors of size `[T_in, input_size]`
             x_lens (np.ndarray): A tensor of size `[B]`
             is_multi_task (bool, optional):
         Returns:
-            xs (chainer.Variable): A tensor of size
+            xs (chainer.Variable, float): A tensor of size
                 `[B, T_in, decoder_num_units]`
             x_lens (np.ndarray): A tensor of size `[B]`
             OPTION:
-                xs_sub (chainer.Variable): A tensor of size
+                xs_sub (chainer.Variable, float): A tensor of size
                     `[B, T_in, decoder_num_units]`
                 x_lens_sub (np.ndarray): A tensor of size `[B]`
         """
@@ -530,22 +534,24 @@ class AttentionSeq2seq(ModelBase):
     def _decode_train(self, enc_out, x_lens, ys, is_sub_task=False):
         """Decoding in the training stage.
         Args:
-            enc_out (chainer.Variable): A tensor of size
+            enc_out (chainer.Variable, float): A tensor of size
                 `[B, T_in, decoder_num_units]`
             x_lens (np.ndarray): A tensor of size `[B]`
-            ys (chainer.Variable): A tensor of size `[B, T_out]`
+            ys (chainer.Variable, int): A tensor of size `[B, T_out]`
             is_sub_task (bool, optional):
         Returns:
-            logits (chainer.Variable): A tensor of size `[B, T_out, num_classes]`
-            att_weights (chainer.Variable): A tensor of size
+            logits (chainer.Variable, float): A tensor of size `[B, T_out, num_classes]`
+            att_weights (chainer.Variable, float): A tensor of size
                 `[B, T_out, T_in]`
         """
         batch_size, max_time, decoder_num_units = enc_out.shape
         labels_max_seq_len = ys.shape[1]
 
         # Initialize decoder state, decoder output, attention_weights
-        dec_state = self._init_decoder_state(enc_out)
+        dec_state = self._init_decoder_state(enc_out, is_sub_task=is_sub_task)
         dec_out = self._zero_init(
+            (batch_size, 1, decoder_num_units), dtype=np.float32)
+        context_vec = self._zero_init(
             (batch_size, 1, decoder_num_units), dtype=np.float32)
         att_weights_step = self._zero_init(
             (batch_size, max_time), dtype=np.float32)
@@ -578,6 +584,7 @@ class AttentionSeq2seq(ModelBase):
                 y=y,
                 dec_state=dec_state,
                 dec_out=dec_out,
+                context_vec=context_vec,
                 att_weights_step=att_weights_step,
                 is_sub_task=is_sub_task)
 
@@ -601,73 +608,31 @@ class AttentionSeq2seq(ModelBase):
 
         return logits, att_weights
 
-    def _zero_init(self, size, dtype=np.float32):
-        """Initialize a variable with zero.
-        Args:
-            size (tuple):
-            dtype ():
-        Returns:
-            zero_var (chainer.Variable, float):
-        """
-        zero_var = Variable(np.zeros(size, dtype=dtype))
-        if self.use_cuda:
-            zero_var.to_gpu()
-        return zero_var
-
-    def _init_decoder_state(self, enc_out):
-        """Initialize decoder state.
-        Args:
-            enc_out (chainer.Variable): A tensor of size
-                `[B, T_in, decoder_num_units]`
-        Returns:
-            dec_state (chainer.Variable or tuple): A tensor of size
-                `[1, B, decoder_num_units]`
-        """
-        if self.init_dec_state == 'zero' or self.encoder_type != self.decoder_type:
-            # Initialize with zero state
-            h_0 = None
-        else:
-            if self.init_dec_state == 'mean':
-                # Initialize with mean of all encoder outputs
-                h_0 = F.mean(enc_out, axis=1, keepdims=True)
-            elif self.init_dec_state == 'final':
-                # Initialize with the final encoder output (forward)
-                h_0 = enc_out[:, -2:-1, :]
-
-            # Convert to time-major
-            h_0 = h_0.transpose(1, 0, 2)
-
-        if self.decoder_type == 'lstm':
-            c_0 = None
-            dec_state = (h_0, c_0)
-        else:
-            dec_state = h_0
-
-        return dec_state
-
     def _decode_step(self, enc_out, x_lens, y, dec_state, dec_out,
-                     att_weights_step, is_sub_task=False):
+                     context_vec, att_weights_step, is_sub_task=False):
         """Decoding step.
         Args:
-            enc_out (chainer.Variable): A tensor of size
+            enc_out (chainer.Variable, float): A tensor of size
                 `[B, T_in, decoder_num_units]`
             x_lens (np.ndarray): A tensor of size `[B]`
-            y (chainer.Variable): A tensor of size
+            y (chainer.Variable, float): A tensor of size
                 `[B, 1, embedding_dim]`
-            dec_state (chainer.Variable or tuple): A tensor of size
+            dec_state (chainer.Variable(float) or tuple): A tensor of size
                 `[decoder_num_layers, B, decoder_num_units]`
             dec_out (chainer.Variable, float): A tensor of size
                 `[B, 1, decoder_num_units]`
-            att_weights_step (chainer.Variable): A tensor of size `[B, T_in]`
+            content_vector (chainer.Variable, float): A tensor of size
+                `[B, 1, decoder_num_units]`
+            att_weights_step (chainer.Variable, float): A tensor of size `[B, T_in]`
             is_sub_task (bool, optional):
         Returns:
-            dec_out (chainer.Variable): A tensor of size
+            dec_out (chainer.Variable, float): A tensor of size
                 `[B, 1, decoder_num_units]`
-            dec_state (chainer.Variable): A tensor of size
+            dec_state (chainer.Variable, float): A tensor of size
                 `[decoder_num_layers, B, decoder_num_units]`
-            content_vector (chainer.Variable): A tensor of size
+            content_vector (chainer.Variable, float): A tensor of size
                 `[B, 1, decoder_num_units]`
-            att_weights_step (chainer.Variable): A tensor of size `[B, T_in]`
+            att_weights_step (chainer.Variable, float): A tensor of size `[B, T_in]`
         """
         if is_sub_task:
             context_vec, att_weights_step = self.attend_sub(
@@ -682,13 +647,69 @@ class AttentionSeq2seq(ModelBase):
 
         return dec_out, dec_state, context_vec, att_weights_step
 
+    def _zero_init(self, size, dtype=np.float32):
+        """Initialize a variable with zero.
+        Args:
+            size (tuple):
+            dtype ():
+        Returns:
+            zero_var (chainer.Variable, float):
+        """
+        zero_var = Variable(np.zeros(size, dtype=dtype))
+        if self.use_cuda:
+            zero_var.to_gpu()
+        return zero_var
+
+    def _init_decoder_state(self, enc_out, is_sub_task=False):
+        """Initialize decoder state.
+        Args:
+            enc_out (chainer.Variable, float): A tensor of size
+                `[B, T_in, decoder_num_units]`
+            is_sub_task (bool, optional):
+        Returns:
+            dec_state (chainer.Variable(float) or tuple): A tensor of size
+                `[1, B, decoder_num_units]`
+        """
+        if self.init_dec_state == 'zero' or self.encoder_type != self.decoder_type:
+            # Initialize with zero state
+            h_0 = None
+        else:
+            if self.init_dec_state == 'mean':
+                # Initialize with mean of all encoder outputs
+                h_0 = F.mean(enc_out, axis=1, keepdims=True)
+            elif self.init_dec_state == 'final':
+                if self.encoder_bidirectional:
+                    # Initialize with the final encoder output (backward)
+                    h_0 = F.expand_dims(enc_out[:, -1, :], axis=1)
+                else:
+                    # Initialize with the final encoder output (forward)
+                    h_0 = F.expand_dims(enc_out[:, -2, :], axis=1)
+
+            # Path through the linear layer
+            if is_sub_task:
+                h_0 = self.W_dec_init_sub(h_0)
+            else:
+                h_0 = self.W_dec_init(h_0)
+
+            # Convert to time-major
+            h_0 = h_0.transpose(1, 0, 2)
+
+        if self.decoder_type == 'lstm':
+            # Initialize memory cell with zero state
+            c_0 = None
+            dec_state = (h_0, c_0)
+        else:
+            dec_state = h_0
+
+        return dec_state
+
     def _create_token(self, value, batch_size):
         """Create 1 token per batch dimension.
         Args:
             value (int): the  value to pad
             batch_size (int): the size of mini-batch
         Returns:
-            y (LongTensor): A tensor of size `[B, 1]`
+            y (chainer.Variable, int): A tensor of size `[B, 1]`
         """
         y = Variable(
             np.full((batch_size, 1), fill_value=value, dtype=np.int32))
@@ -763,7 +784,7 @@ class AttentionSeq2seq(ModelBase):
     def _decode_infer_greedy(self, enc_out, x_lens, max_decode_len, is_sub_task=False):
         """Greedy decoding in the inference stage.
         Args:
-            enc_out (chainer.Variable): A tensor of size
+            enc_out (chainer.Variable, float): A tensor of size
                 `[B, T_in, decoder_num_units]`
             x_lens (np.ndarray): A tensor of size `[B]`
             max_decode_len (int): the length of output sequences
@@ -776,8 +797,10 @@ class AttentionSeq2seq(ModelBase):
         batch_size, max_time, decoder_num_units = enc_out.shape
 
         # Initialize decoder state, decoder output, attention_weights
-        dec_state = self._init_decoder_state(enc_out)
+        dec_state = self._init_decoder_state(enc_out, is_sub_task=is_sub_task)
         dec_out = self._zero_init(
+            (batch_size, 1, decoder_num_units), dtype=np.float32)
+        context_vec = self._zero_init(
             (batch_size, 1, decoder_num_units), dtype=np.float32)
         att_weights_step = self._zero_init(
             (batch_size, max_time), dtype=np.float32)
@@ -802,6 +825,7 @@ class AttentionSeq2seq(ModelBase):
                 y=y,
                 dec_state=dec_state,
                 dec_out=dec_out,
+                context_vec=context_vec,
                 att_weights_step=att_weights_step,
                 is_sub_task=is_sub_task)
 
@@ -838,7 +862,7 @@ class AttentionSeq2seq(ModelBase):
                            beam_width, max_decode_len, is_sub_task=False):
         """Beam search decoding in the inference stage.
         Args:
-            enc_out (chainer.Variable): A tensor of size
+            enc_out (chainer.Variable, float): A tensor of size
                 `[B, T_in, decoder_num_units]`
             x_lens (np.ndarray): A tensor of size `[B]`
             beam_width (int): the size of beam
@@ -855,14 +879,13 @@ class AttentionSeq2seq(ModelBase):
         eos = self.eos_index_sub if is_sub_task else self.eos_index
 
         best_hyps = []
-        for i_batch in range(batch_size):
-
-            frame_num = int(x_lens[i_batch])
+        for b in range(batch_size):
+            frame_num = int(x_lens[b])
             xp = cuda.get_array_module(enc_out)
 
             # Initialize decoder state, decoder output, attention_weights
             dec_state = self._init_decoder_state(
-                enc_out[i_batch:i_batch + 1, :, :])
+                enc_out[b:b + 1, :, :], is_sub_task=is_sub_task)
             dec_out = self._zero_init(
                 (1, 1, decoder_num_units), dtype=np.float32)
             att_weights_step = self._zero_init(
@@ -879,17 +902,25 @@ class AttentionSeq2seq(ModelBase):
                 for i_beam in range(len(beam)):
                     y = beam[i_beam]['hyp'][-1] if t > 0 else sos
                     y = self._create_token(value=y, batch_size=1)
+
                     if is_sub_task:
                         y = self.embed_sub(y)
                     else:
                         y = self.embed(y)
 
+                    # Compute context vector
+                    context_vec = F.sum(enc_out[b: b + 1] * F.broadcast_to(
+                        F.expand_dims(att_weights_step, axis=2),
+                        (1, frame_num, enc_out.shape[-1])),
+                        axis=1, keepdims=True)
+
                     dec_out, dec_state, context_vec, att_weights_step = self._decode_step(
-                        enc_out=enc_out[i_batch:i_batch + 1, :frame_num],
-                        x_lens=x_lens[i_batch:i_batch + 1],
+                        enc_out=enc_out[b:b + 1, :frame_num],
+                        x_lens=x_lens[b:b + 1],
                         y=y,
                         dec_state=beam[i_beam]['dec_state'],
                         dec_out=beam[i_beam]['dec_out'],
+                        context_vec=context_vec,
                         att_weights_step=beam[i_beam]['att_weights_step'],
                         is_sub_task=is_sub_task)
 
