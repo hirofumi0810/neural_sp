@@ -157,24 +157,21 @@ class AttentionMechanism(chainer.Chain):
             raise NotImplementedError
 
         # Mask attention distribution
-        # energy_mask = Variable(
-        #     np.ones((batch_size, max_time), dtype=np.float32))
-        # if self.use_cuda:
-        #     energy_mask.to_gpu()
-        # for x_len in x_lens:
-        #     if x_len < max_time:
-        #         energy_mask[:, x_len.data:] = 0
-        # energy *= energy_mask
-
-        # Sharpening
-        energy = energy * self.sharpening_factor
-        # NOTE: energy: `[B, T_in]`
+        energy_mask = Variable(
+            np.ones((batch_size, max_time), dtype=np.float32))
+        if self.use_cuda:
+            energy_mask.to_gpu()
+        for b in range(batch_size):
+            if x_lens[b] < max_time:
+                energy_mask[b, x_lens[b]:] = 0
+        energy *= energy_mask
 
         # Compute attention weights
         if self.sigmoid_smoothing:
-            att_weights_step = F.sigmoid(energy)
+            att_weights_step = F.sigmoid(energy * self.sharpening_factor)
         else:
-            att_weights_step = F.softmax(energy, axis=1)
+            att_weights_step = F.softmax(
+                energy * self.sharpening_factor, axis=1)
 
         # Compute context vector (weighted sum of encoder outputs)
         batch_size, max_time = att_weights_step.shape
