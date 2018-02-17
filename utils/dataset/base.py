@@ -34,13 +34,16 @@ class Base(object):
 
         # Read the vocabulary file
         vocab_count = 0
+        self.vocab_file_path = kwargs['vocab_file_path']
         with open(kwargs['vocab_file_path'], 'r') as f:
             for line in f:
-                vocab_count += 1
+                if line.strip() != '':
+                    vocab_count += 1
         self.num_classes = vocab_count
 
         if 'vocab_file_path_sub' in kwargs.keys():
             vocab_count_sub = 0
+            self.vocab_file_path_sub = kwargs['vocab_file_path_sub']
             with open(kwargs['vocab_file_path_sub'], 'r') as f:
                 for line in f:
                     vocab_count_sub += 1
@@ -85,7 +88,8 @@ class Base(object):
     @property
     def epoch_detail(self):
         # Floating point version of epoch
-        return self.iteration / len(self)
+        # return self.iteration / len(self)
+        return self.epoch + self.offset / len(self)
 
     @property
     def current_batch_size(self):
@@ -198,7 +202,9 @@ class Base(object):
 
             # Shuffle data in the mini-batch
             # random.shuffle(data_indices)
-            # NOTE: stop shuffle now!!!
+
+            # Sort in the descending order for pytorch
+            data_indices = data_indices[::-1]
         else:
             # Randomly sample uttrances
             if len(self.rest) > batch_size:

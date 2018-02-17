@@ -62,7 +62,8 @@ class DatasetBase(Base):
 
         # Compute max target label length in mini-batch
         max_label_num = max(
-            map(lambda x: len(x.split(' ')), str_indices_list)) + 2
+            map(lambda x: len(str(x).split(' ')), str_indices_list)) + 2
+        # TODO: fix POS tag (nan -> 'nan')
         # NOTE: add <SOS> and <EOS>
 
         # Initialization

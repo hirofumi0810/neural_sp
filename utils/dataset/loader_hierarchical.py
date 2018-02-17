@@ -147,7 +147,13 @@ class DatasetBase(Base):
                     map(int, str_indices_list_sub[i_batch].split(' ')))
                 label_num = len(indices)
                 label_num_sub = len(indices_sub)
-                if self.model_type in ['hierarchical_attention', 'nested_attention']:
+                if self.model_type == 'hierarchical_ctc':
+                    ys[i_batch, 0:label_num] = indices
+                    y_lens[i_batch] = label_num
+
+                    ys_sub[i_batch, 0: label_num_sub] = indices_sub
+                    y_lens_sub[i_batch] = label_num_sub
+                else:
                     ys[i_batch, 0] = self.sos_index
                     ys[i_batch, 1:label_num + 1] = indices
                     ys[i_batch, label_num + 1] = self.eos_index
@@ -158,14 +164,6 @@ class DatasetBase(Base):
                     ys_sub[i_batch, 1: label_num_sub + 1] = indices_sub
                     ys_sub[i_batch, label_num_sub + 1] = self.eos_index_sub
                     y_lens_sub[i_batch] = label_num_sub + 2
-                elif self.model_type == 'hierarchical_ctc':
-                    ys[i_batch, 0:label_num] = indices
-                    y_lens[i_batch] = label_num
-
-                    ys_sub[i_batch, 0: label_num_sub] = indices_sub
-                    y_lens_sub[i_batch] = label_num_sub
-                else:
-                    raise TypeError
 
         batch = {'xs': xs,
                  'ys': ys,
