@@ -1,1 +1,0 @@
-../../librispeech/training/run_retrain.sh

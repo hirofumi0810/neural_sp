@@ -96,26 +96,24 @@ class TestLoadDataset(unittest.TestCase):
         else:
             map_fn = Idx2char(vocab_file_path)
 
-        for data, is_new_epoch in dataset:
-            inputs, labels, inputs_seq_len, labels_seq_len, input_names = data
-
+        for batch, is_new_epoch in dataset:
             if data_type == 'train' and backend == 'pytorch':
-                for i in range(len(inputs)):
-                    if inputs.shape[1] < labels.shape[1]:
+                for i in range(len(batch['xs'])):
+                    if batch['xs'].shape[1] < batch['ys'].shape[1]:
                         raise ValueError(
                             'input length must be longer than label length.')
 
             if dataset.is_test:
-                str_true = labels[0][0]
+                str_true = batch['ys'][0][0]
             else:
-                str_true = map_fn(labels[0][:labels_seq_len[0]])
+                str_true = map_fn(batch['ys'][0][1:batch['y_lens'][0]])
 
             print('----- %s (epoch: %.3f, batch: %d) -----' %
-                  (input_names[0], dataset.epoch_detail, len(inputs)))
+                  (batch['input_names'][0], dataset.epoch_detail, len(batch['xs'])))
             print(str_true)
-            print('inputs_seq_len: %d' % inputs_seq_len[0])
+            print('x_lens: %d' % (batch['x_lens'][0] * num_stack))
             if not dataset.is_test:
-                print('labels_seq_len: %d' % labels_seq_len[0])
+                print('y_lens: %d' % batch['y_lens'][0])
 
             if dataset.epoch_detail >= 1:
                 break

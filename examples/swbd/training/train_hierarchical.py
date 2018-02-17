@@ -170,6 +170,7 @@ def main():
 
         epoch, step = 1, 0
         learning_rate = float(params['learning_rate'])
+        metric_dev_best = 1
 
     # NOTE: Retrain the saved model from the last checkpoint
     elif args.saved_model_path is not None:
@@ -195,7 +196,7 @@ def main():
             patience_epoch=params['decay_patient_epoch'])
 
         # Restore the last saved model
-        epoch, step, learning_rate = model.load_checkpoint(
+        epoch, step, learning_rate, metric_dev_best = model.load_checkpoint(
             save_path=args.saved_model_path, epoch=-1, restart=True)
 
     else:
@@ -234,7 +235,6 @@ def main():
     start_time_train = time.time()
     start_time_epoch = time.time()
     start_time_step = time.time()
-    ler_dev_best = 1
     not_improved_epoch = 0
     loss_train_mean, loss_main_train_mean, loss_sub_train_mean = 0., 0., 0.
     while True:
@@ -302,70 +302,64 @@ def main():
             if epoch < params['eval_start_epoch']:
                 # Save the model
                 model.save_checkpoint(model.save_path, epoch, step,
-                                      lr=learning_rate)
+                                      learning_rate, metric_dev_best)
             else:
                 start_time_eval = time.time()
                 # dev
-                wer_dev_epoch = do_eval_wer(
+                wer_dev_epoch, _ = do_eval_wer(
                     model=model,
-                    model_type=params['model_type'],
                     dataset=dev_data,
-                    label_type=params['label_type'],
                     beam_width=1,
                     max_decode_len=MAX_DECODE_LEN_WORD,
                     eval_batch_size=1)
                 logger.info('  WER (dev): %f %%' % (wer_dev_epoch * 100))
 
-                if wer_dev_epoch < ler_dev_best:
-                    ler_dev_best = wer_dev_epoch
+                if wer_dev_epoch < metric_dev_best:
+                    metric_dev_best = wer_dev_epoch
                     not_improved_epoch = 0
                     logger.info('■■■ ↑Best Score (WER)↑ ■■■')
 
                     # Save the model
                     model.save_checkpoint(model.save_path, epoch, step,
-                                          lr=learning_rate)
+                                          learning_rate, metric_dev_best)
 
                     # test
-                    wer_test_swbd = do_eval_wer(
+                    wer_eval2000_swbd, _ = do_eval_wer(
                         model=model,
-                        model_type=params['model_type'],
                         dataset=eval2000_swbd_data,
-                        label_type=params['label_type'],
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_WORD,
                         eval_batch_size=1)
                     logger.info('  WER (SWB, main): %f %%' %
-                                (wer_test_swbd * 100))
-                    cer_eval2000_swbd, _ = do_eval_cer(
+                                (wer_eval2000_swbd * 100))
+                    # cer_eval2000_swbd, _, _ = do_eval_cer(
+                    #     model=model,
+                    #     dataset=eval2000_swbd_data,
+                    #     beam_width=1,
+                    #     max_decode_len=MAX_DECODE_LEN_CHAR,
+                    #     eval_batch_size=1)
+                    # logger.info('  CER (SWB, sub): %f %%' %
+                    #             (cer_eval2000_swbd * 100))
+                    wer_eval2000_ch, _ = do_eval_wer(
                         model=model,
-                        model_type=params['model_type'],
-                        dataset=eval2000_swbd_data,
-                        label_type=params['label_type_sub'],
-                        beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_CHAR,
-                        eval_batch_size=1)
-                    logger.info('  CER (SWB, sub): %f %%' %
-                                (cer_eval2000_swbd * 100))
-                    wer_eval2000_ch = do_eval_wer(
-                        model=model,
-                        model_type=params['model_type'],
                         dataset=eval2000_ch_data,
-                        label_type=params['label_type'],
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_WORD,
                         eval_batch_size=1)
                     logger.info('  WER (CHE, main): %f %%' %
                                 (wer_eval2000_ch * 100))
-                    cer_eval2000_ch, _ = do_eval_cer(
-                        model=model,
-                        model_type=params['model_type'],
-                        dataset=eval2000_ch_data,
-                        label_type=params['label_type_sub'],
-                        beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_CHAR,
-                        eval_batch_size=1)
-                    logger.info('  CER (CHE, sub): %f %%' %
-                                (cer_eval2000_ch * 100))
+                    # cer_eval2000_ch, _, _ = do_eval_cer(
+                    #     model=model,
+                    #     dataset=eval2000_ch_data,
+                    #     beam_width=1,
+                    #     max_decode_len=MAX_DECODE_LEN_CHAR,
+                    #     eval_batch_size=1)
+                    # logger.info('  CER (CHE, sub): %f %%' %
+                    #             (cer_eval2000_ch * 100))
+                    logger.info('  WER (mean, main): %f %%' %
+                                ((wer_eval2000_swbd + wer_eval2000_ch) * 100 / 2))
+                    # logger.info('  CER (mean, main): %f %%' %
+                    #             ((cer_eval2000_swbd + cer_eval2000_ch) * 100 / 2))
                 else:
                     not_improved_epoch += 1
 
