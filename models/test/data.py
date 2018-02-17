@@ -126,7 +126,7 @@ def char2idx(transcript):
         if char == SPACE:
             index_list.append(0)
         elif char == SOS:
-            index_list.append(last_idx + 2)
+            index_list.append(-1)
         elif char == EOS:
             index_list.append(last_idx + 1)
         else:
@@ -153,7 +153,7 @@ def idx2char(indices):
     for idx in indices:
         if idx == 0:
             char_list.append(SPACE)
-        elif idx == last_idx + 2:
+        elif idx == -1:
             char_list.append(SOS)
         elif idx == last_idx + 1:
             char_list.append(EOS)
@@ -184,7 +184,7 @@ def word2idx(transcript):
         for idx, word in enumerate(sorted(list(vocab))):
             word_dict[word] = idx
             f.write('%s\n' % word)
-        word_dict[SOS] = len(vocab) + 1
+        word_dict[SOS] = -1
         word_dict[EOS] = len(vocab)
         f.write('%s\n' % EOS)
         f.write('%s\n' % SOS)

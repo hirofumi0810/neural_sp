@@ -24,6 +24,13 @@ class TestAttention(unittest.TestCase):
     def test(self):
         print("Attention Working check.")
 
+        # Joint CTC-Attention
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', label_smoothing=True,
+                   ctc_loss_weight=0.2)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', ctc_loss_weight=0.2)
+
         # Initialize decoder state
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', init_dec_state='final')
@@ -31,13 +38,6 @@ class TestAttention(unittest.TestCase):
                    decoder_type='lstm', init_dec_state='mean')
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', init_dec_state='zero')
-
-        # Joint CTC-Attention
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', label_smoothing=True,
-                   ctc_loss_weight=0.2)
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', ctc_loss_weight=0.2)
 
         # Label smoothing
         self.check(encoder_type='lstm', bidirectional=True,
@@ -261,9 +261,9 @@ class TestAttention(unittest.TestCase):
                 elif label_type == 'word':
                     str_true = map_fn(ys[0, : y_lens[0]][1: -1])
                     str_pred = map_fn(best_hyps[0][0: -1]).split('>')[0]
-                    ler = compute_wer(ref=str_true.split('_'),
-                                      hyp=str_pred.split('_'),
-                                      normalize=True)
+                    ler, _, _, _ = compute_wer(ref=str_true.split('_'),
+                                               hyp=str_pred.split('_'),
+                                               normalize=True)
 
                 duration_step = time.time() - start_time_step
                 print('Step %d: loss=%.3f / ler=%.3f / lr=%.5f (%.3f sec)' %

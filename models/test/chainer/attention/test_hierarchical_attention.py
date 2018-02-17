@@ -230,9 +230,9 @@ class TestHierarchicalAttention(unittest.TestCase):
                 # Compute accuracy
                 str_pred = idx2word(best_hyps[0][0:-1]).split('>')[0]
                 str_true = idx2word(ys[0][1:-1])
-                ler = compute_wer(ref=str_true.split('_'),
-                                  hyp=str_pred.split('_'),
-                                  normalize=True)
+                ler, _, _, _ = compute_wer(ref=str_true.split('_'),
+                                           hyp=str_pred.split('_'),
+                                           normalize=True)
                 str_pred_sub = idx2char(best_hyps_sub[0][0:-1]).split('>')[0]
                 str_true_sub = idx2char(ys_sub[0][1:-1])
                 ler_sub = compute_cer(ref=str_true_sub.replace('_', ''),

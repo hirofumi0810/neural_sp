@@ -133,8 +133,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         self.decoder_num_layers_sub = decoder_num_layers_sub
         self.embedding_dim_sub = embedding_dim_sub
         self.num_classes_sub = num_classes_sub + 2  # Add <SOS> and <EOS> class
-        self.sos_index_sub = num_classes_sub + 1
-        self.eos_index_sub = num_classes_sub
+        self.sos_index_sub = 0
+        self.eos_index_sub = num_classes_sub + 1
 
         # Setting for MTL
         self.main_loss_weight = main_loss_weight
@@ -304,6 +304,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         y_lens_sub = np2var(
             y_lens_sub, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
 
+        # NOTE: index 0 is reserved for blank and <SOS>
+        ys = ys + 1
+        ys_sub = ys_sub + 1
+
         if is_eval:
             self.eval()
         else:
@@ -426,15 +430,15 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 # main
                 self.main_loss_weight_tmp = min(
                     self.main_loss_weight,
-                    0.0 + self.main_loss_weight / self.sample_ramp_max_step * self._step)
+                    0.0 + self.main_loss_weight / self.sample_ramp_max_step * self._step * 2)
                 # sub (attention)
                 self.sub_loss_weight_tmp = max(
                     self.sub_loss_weight,
-                    1.0 - (1 - self.sub_loss_weight) / self.sample_ramp_max_step * self._step)
+                    1.0 - (1 - self.sub_loss_weight) / self.sample_ramp_max_step * self._step * 2)
                 # sub (CTC)
                 self.ctc_loss_weight_sub_tmp = max(
                     self.ctc_loss_weight_sub,
-                    1.0 - (1 - self.ctc_loss_weight_sub) / self.sample_ramp_max_step * self._step)
+                    1.0 - (1 - self.ctc_loss_weight_sub) / self.sample_ramp_max_step * self._step * 2)
 
         if self.sub_loss_weight > self.ctc_loss_weight_sub:
             return loss, loss_main, loss_sub
@@ -500,9 +504,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                         var2np(log_probs, backend='pytorch'),
                         var2np(x_lens, backend='pytorch'),
                         beam_width=beam_width)
-
-                # NOTE: index 0 is reserved for blank in warpctc_pytorch
-                best_hyps -= 1
         else:
             if beam_width == 1:
                 best_hyps, _ = self._decode_infer_greedy(
@@ -510,6 +511,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             else:
                 best_hyps = self._decode_infer_beam(
                     enc_out, x_lens, beam_width, max_decode_len)
+
+        # NOTE: index 0 is reserved for the blank and <SOS>
+        best_hyps -= 1
 
         # Permutate indices to the original order
         if perm_idx is None:

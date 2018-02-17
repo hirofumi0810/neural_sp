@@ -333,6 +333,7 @@ class AttentionSeq2seq(ModelBase):
                         use_cuda=self.use_cuda)
 
                 self.blank_index = 0
+                # NOTE: do not change
 
                 # Set CTC decoders
                 self._decode_ctc_greedy_np = GreedyDecoder(
@@ -395,6 +396,9 @@ class AttentionSeq2seq(ModelBase):
         # x_lens = np2var(x_lens, use_cuda=self.use_cuda, backend='chainer')
         y_lens = np2var(y_lens, use_cuda=self.use_cuda, backend='chainer')
 
+        # NOTE: index 0 is reserved for blank and <SOS>
+        ys = ys + 1
+
         # Encode acoustic features
         xs, x_lens = self._encode(xs, x_lens)
 
@@ -455,10 +459,6 @@ class AttentionSeq2seq(ModelBase):
             ctc_loss (chainer.Variable, float):
                 if size_average is True, A tensor of size `[1]`
         """
-        if self.blank_index == 0:
-            # NOTE: index 0 is reserved for the blank class
-            ys = ys + 1
-
         # Compute CTC loss
         ctc_loss = connectionist_temporal_classification(
             x=F.separate(logits_ctc, axis=1),  # list of Variable
@@ -778,6 +778,9 @@ class AttentionSeq2seq(ModelBase):
                 best_hyps = self._decode_infer_beam(
                     enc_out, x_lens, beam_width, max_decode_len)
 
+        # NOTE: index 0 is reserved for <SOS>
+        best_hyps -= 1
+
         perm_idx = np.arange(0, len(xs), 1)
         return best_hyps, perm_idx
 
@@ -1015,9 +1018,8 @@ class AttentionSeq2seq(ModelBase):
                 var2np(F.log_softmax(logits_ctc), backend='chainer'),
                 x_lens, beam_width=beam_width)
 
-        if self.blank_index == 0:
-            # NOTE: index 0 is reserved for the blank class
-            best_hyps -= 1
+        # NOTE: index 0 is reserved for the blank
+        best_hyps -= 1
 
         perm_idx = np.arange(0, len(xs), 1)
         return best_hyps, perm_idx

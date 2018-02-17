@@ -181,8 +181,8 @@ class AttentionSeq2seq(ModelBase):
         self.decoder_num_layers = decoder_num_layers
         self.embedding_dim = embedding_dim
         self.num_classes = num_classes + 2  # Add <SOS> and <EOS> class
-        self.sos_index = num_classes + 1
-        self.eos_index = num_classes
+        self.sos_index = 0
+        self.eos_index = num_classes + 1
 
         # Setting for the attention
         if init_dec_state not in ['zero', 'mean', 'final']:
@@ -377,6 +377,9 @@ class AttentionSeq2seq(ModelBase):
         y_lens = np2var(
             y_lens, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
 
+        # NOTE: index 0 is reserved for blank and <SOS>
+        ys = ys + 1
+
         if is_eval:
             self.eval()
         else:
@@ -460,8 +463,7 @@ class AttentionSeq2seq(ModelBase):
 
         # Concatenate all _ys for warpctc_pytorch
         # `[B, T_out]` -> `[1,]`
-        concatenated_labels = _concatenate_labels(ys[:, 1:-1] + 1, y_lens - 2)
-        # NOTE: index 0 is reserved for blank
+        concatenated_labels = _concatenate_labels(ys[:, 1:-1], y_lens - 2)
         # NOTE: Ignore fitst <SOS> and last <EOS>
 
         # Compute CTC loss
@@ -784,7 +786,8 @@ class AttentionSeq2seq(ModelBase):
 
         return best_hyps, att_weights
 
-    def decode(self, xs, x_lens, beam_width, max_decode_len):
+    def decode(self, xs, x_lens, beam_width, max_decode_len,
+               length_penalty=0.1, coverage_penalty=0.1):
         """Decoding in the inference stage.
         Args:
             xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
@@ -792,6 +795,8 @@ class AttentionSeq2seq(ModelBase):
             beam_width (int): the size of beam
             max_decode_len (int): the length of output sequences
                 to stop prediction when EOS token have not been emitted
+            length_penalty (float, optional):
+            coverage_penalty (float, optional):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
             perm_idx (np.ndarray): A tensor of size `[B]`
@@ -813,7 +818,11 @@ class AttentionSeq2seq(ModelBase):
                 enc_out, x_lens, max_decode_len)
         else:
             best_hyps = self._decode_infer_beam(
-                enc_out, x_lens, beam_width, max_decode_len)
+                enc_out, x_lens, beam_width, max_decode_len,
+                length_penalty, coverage_penalty)
+
+        # NOTE: index 0 is reserved for <SOS>
+        best_hyps -= 1
 
         # Permutate indices to the original order
         if perm_idx is None:
@@ -823,7 +832,8 @@ class AttentionSeq2seq(ModelBase):
 
         return best_hyps, perm_idx
 
-    def _decode_infer_greedy(self, enc_out, x_lens, max_decode_len, is_sub_task=False):
+    def _decode_infer_greedy(self, enc_out, x_lens, max_decode_len,
+                             is_sub_task=False):
         """Greedy decoding in the inference stage.
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
@@ -900,8 +910,8 @@ class AttentionSeq2seq(ModelBase):
 
         return best_hyps, att_weights
 
-    def _decode_infer_beam(self, enc_out, x_lens,
-                           beam_width, max_decode_len, is_sub_task=False):
+    def _decode_infer_beam(self, enc_out, x_lens, beam_width, max_decode_len,
+                           length_penalty, coverage_penalty, is_sub_task=False):
         """Beam search decoding in the inference stage.
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
@@ -910,6 +920,8 @@ class AttentionSeq2seq(ModelBase):
             beam_width (int): the size of beam
             max_decode_len (int, optional): the length of output sequences
                 to stop prediction when EOS token have not been emitted
+            length_penalty (float):
+            coverage_penalty (float):
             is_sub_task (bool, optional):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
@@ -949,7 +961,7 @@ class AttentionSeq2seq(ModelBase):
 
                     # Compute context vector
                     context_vec = torch.sum(
-                        enc_out[b: b + 1] * att_weights_step.unsqueeze(2), dim=1, keepdim=True)
+                        enc_out[b: b + 1, :frame_num] * att_weights_step.unsqueeze(2), dim=1, keepdim=True)
 
                     dec_out, dec_state, context_vec, att_weights_step = self._decode_step(
                         enc_out=enc_out[b:b + 1, :frame_num],
@@ -979,22 +991,20 @@ class AttentionSeq2seq(ModelBase):
                         log_probs, k=beam_width, dim=-1,
                         largest=True, sorted=True)
 
-                    for i, log_prob in zip(indices_topk.data[0], log_probs_topk.data[0]):
-                        new_hyp = beam[i_beam]['hyp'] + [i]
-
+                    for c, log_prob in zip(indices_topk.data[0], log_probs_topk.data[0]):
                         # numpy
                         new_score = np.logaddexp(
-                            beam[i_beam]['score'], log_prob)
+                            beam[i_beam]['score'], log_prob) + length_penalty
 
                         # torch
-                        # new_score = _logsumexp(
-                        #     [beam[i_beam]['score'], log_prob], dim=0)
+                        # new_score = _logsumexp([beam[i_beam]['score'], log_prob], dim=0)
 
-                        new_beam.append({'hyp': new_hyp,
-                                         'score': new_score,
-                                         'dec_state': dec_state,
-                                         'dec_out': dec_out,
-                                         'att_weights_step': att_weights_step})
+                        new_beam.append(
+                            {'hyp': beam[i_beam]['hyp'] + [c],
+                             'score': new_score,
+                             'dec_state': dec_state,
+                             'dec_out': dec_out,
+                             'att_weights_step': att_weights_step})
 
                 new_beam = sorted(
                     new_beam, key=lambda x: x['score'], reverse=True)

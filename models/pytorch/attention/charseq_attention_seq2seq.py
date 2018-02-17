@@ -374,6 +374,10 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
         y_lens_sub = np2var(
             y_lens_sub, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
 
+        # NOTE: index 0 is reserved for blank and <SOS>
+        ys = ys + 1
+        ys_sub = ys_sub + 1
+
         if is_eval:
             self.eval()
         else:
@@ -499,15 +503,15 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
                 # main
                 self.main_loss_weight_tmp = min(
                     self.main_loss_weight,
-                    0.0 + self.main_loss_weight / self.sample_ramp_max_step * self._step)
+                    0.0 + self.main_loss_weight / self.sample_ramp_max_step * self._step * 2)
                 # sub (attention)
                 self.sub_loss_weight_tmp = max(
                     self.sub_loss_weight,
-                    1.0 - (1 - self.sub_loss_weight) / self.sample_ramp_max_step * self._step)
+                    1.0 - (1 - self.sub_loss_weight) / self.sample_ramp_max_step * self._step * 2)
                 # sub (CTC)
                 self.ctc_loss_weight_sub_tmp = max(
                     self.ctc_loss_weight_sub,
-                    1.0 - (1 - self.ctc_loss_weight_sub) / self.sample_ramp_max_step * self._step)
+                    1.0 - (1 - self.ctc_loss_weight_sub) / self.sample_ramp_max_step * self._step * 2)
 
         if self.sub_loss_weight > self.ctc_loss_weight_sub:
             return loss, loss_main, loss_sub
@@ -546,21 +550,23 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
 
             # Path through character embedding
             ys_sub_emb = []
-            for t in range(ys_sub.size(1)):
+            for t in range(1, ys_sub.size(1), 1):
                 y_sub_emb = self.embed_sub(ys_sub[:, t:t + 1])
                 ys_sub_emb.append(y_sub_emb)
             ys_sub_emb = torch.cat(ys_sub_emb, dim=1)
-            # ys_sub_emb: `[B, T, embedding_dim_sub]`
+            # ys_sub_emb: `[B, T_out - 1, embedding_dim_sub]`
+            # NOTE: Exclude <SOS>
 
             y_mask = self._zero_init(ys_sub_emb.size())
-            for y_len_sub in y_lens_sub:
-                if y_len_sub.data[0] < max(y_lens_sub.data):
+            labels_max_seq_len_sub = ys_sub.size(1)
+            for y_len_sub in y_lens_sub - 1:
+                if y_len_sub.data[0] < labels_max_seq_len_sub - 1:
                     y_mask[:, y_len_sub.data[0]:] = 1
             ys_sub_emb *= y_mask
 
             # Encode characters
             char_enc_out, _, _ = self.encoder_charseq(
-                ys_sub_emb, y_lens_sub, volatile=False)
+                ys_sub_emb, y_lens_sub - 1, volatile=False)
             char_repr = self.char2word(char_enc_out)
 
         logits = []
@@ -692,10 +698,8 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
                     var2np(x_lens, backend='pytorch'),
                     beam_width=beam_width)
 
-            # NOTE: index 0 is reserved for blank in warpctc_pytorch
-            best_hyps_sub_tmp -= 1
-
-            # NOTE: best_hyps_sub_tmp are padded by 0 now
+        # NOTE: index 0 is reserved for blank and <SOS>
+        best_hyps_sub_tmp -= 1
 
         if is_sub_task:
             best_hyps = best_hyps_sub_tmp
@@ -732,6 +736,9 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
                 #     max_decode_len=max_decode_len,
                 #     ys_sub=best_hyps_sub,
                 #     y_lens_sub=best_hyps_sub_lens)
+
+            # NOTE: index 0 is reserved for blank and <SOS>
+            best_hyps -= 1
 
             best_hyps_sub = var2np(best_hyps_sub, backend='pytorch')
 
