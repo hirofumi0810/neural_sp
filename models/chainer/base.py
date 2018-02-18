@@ -265,15 +265,15 @@ class ModelBase(chainer.Chain):
         """
         if int(epoch) == -1:
             # Restore the last saved model
-            models = [(int(basename(x).split('-')[-1]), x)
+            epochs = [(int(basename(x).split('-')[-1].split('.')[0]), x)
                       for x in glob(join(save_path, 'model.*'))]
 
-            if len(models) == 0:
+            if len(epochs) == 0:
                 raise ValueError
 
-            epoch = sorted(models, key=lambda x: x[0])[-1][0]
+            epoch = sorted(epochs, key=lambda x: x[0])[-1][0]
 
-        model_path = join(save_path, 'model.epoch-' + str(epoch))
+        model_path = join(save_path, 'model.epoch-' + str(epoch) + '.npz')
         if isfile(join(model_path)):
             print("=> Loading checkpoint (epoch:%d): %s" % (epoch, model_path))
 
@@ -290,7 +290,11 @@ class ModelBase(chainer.Chain):
                 # type: HyperParameters
 
                 deserializer["model"].load(self)
-                deserializer["optimizer"].load(self.optimizer)
+                if restart:
+                    if hasattr(self, 'optimizer'):
+                        deserializer["optimizer"].load(self.optimizer)
+                    else:
+                        raise ValueError('Set optimizer.')
 
         else:
             raise ValueError("No checkpoint found at %s" % model_path)

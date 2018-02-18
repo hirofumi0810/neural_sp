@@ -273,13 +273,13 @@ class ModelBase(nn.Module):
         """
         if int(epoch) == -1:
             # Restore the last saved model
-            models = [(int(basename(x).split('-')[-1]), x)
+            epochs = [(int(basename(x).split('-')[-1]), x)
                       for x in glob(join(save_path, 'model.*'))]
 
-            if len(models) == 0:
+            if len(epochs) == 0:
                 raise ValueError
 
-            epoch = sorted(models, key=lambda x: x[0])[-1][0]
+            epoch = sorted(epochs, key=lambda x: x[0])[-1][0]
 
         model_path = join(save_path, 'model.epoch-' + str(epoch))
         if isfile(join(model_path)):
