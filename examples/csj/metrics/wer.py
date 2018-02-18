@@ -17,7 +17,7 @@ from utils.evaluation.edit_distance import compute_wer
 
 def do_eval_wer(model, dataset, beam_width, max_decode_len,
                 eval_batch_size=None, progressbar=False):
-    """Evaluate trained model by Character Error Rate.
+    """Evaluate trained model by Word Error Rate.
     Args:
         model: the model to evaluate
         dataset: An instance of a `Dataset' class
@@ -28,38 +28,34 @@ def do_eval_wer(model, dataset, beam_width, max_decode_len,
         eval_batch_size (int, optional): the batch size when evaluating the model
         progressbar (bool, optional): if True, visualize the progressbar
     Returns:
-        wer_mean (float): An average of WER
-        df_wer ():
+        wer (float): Word error rate
+        df_wer (pd.DataFrame): dataframe of substitution, insertion, and deletion
     """
     # Reset data counter
     dataset.reset()
 
     idx2word = Idx2word(vocab_file_path=dataset.vocab_file_path)
 
-    wer_mean = 0
-    substitution, insertion, deletion, = 0, 0, 0
+    wer = 0
+    sub, ins, dele, = 0, 0, 0
+    num_words = 0
     if progressbar:
         pbar = tqdm(total=len(dataset))  # TODO: fix this
     while True:
         batch, is_new_epoch = dataset.next(batch_size=eval_batch_size)
 
         # Decode
-        if model.model_type in ['ctc', 'attention']:
-            best_hyps, perm_idx = model.decode(batch['xs'], batch['x_lens'],
-                                               beam_width=beam_width,
-                                               max_decode_len=max_decode_len)
-        elif model.model_type in ['hierarchical_ctc', 'hierarchical_attention']:
-            best_hyps, perm_idx = model.decode(batch['xs'], batch['x_lens'],
-                                               beam_width=beam_width,
-                                               max_decode_len=max_decode_len,
-                                               is_sub_task=False)
-        elif model.model_type == 'charseq_attention':
+        if model.model_type == 'charseq_attention':
             best_hyps, _, perm_idx = model.decode(
                 batch['xs'], batch['x_lens'],
                 beam_width=beam_width,
                 max_decode_len=max_decode_len,
-                max_decode_len_sub=100,  # TODO: fix this
-                is_sub_task=False)
+                max_decode_len_sub=100)
+        else:
+            best_hyps, perm_idx = model.decode(
+                batch['xs'], batch['x_lens'],
+                beam_width=beam_width,
+                max_decode_len=max_decode_len)
 
         ys = batch['ys'][perm_idx]
         y_lens = batch['y_lens'][perm_idx]
@@ -103,14 +99,20 @@ def do_eval_wer(model, dataset, beam_width, max_decode_len,
             # print('HYP: %s' % str_hyp)
 
             # Compute WER
-            wer_b, sub_b, ins_b, del_b = compute_wer(
-                ref=str_ref.split('_'),
-                hyp=str_hyp.split('_'),
-                normalize=True)
-            wer_mean += wer_b
-            substitution += sub_b
-            insertion += ins_b
-            deletion += del_b
+            try:
+                wer_b, sub_b, ins_b, del_b = compute_wer(
+                    ref=str_ref.split('_'),
+                    hyp=str_hyp.split('_'),
+                    normalize=False)
+                wer += wer_b
+                sub += sub_b
+                ins += ins_b
+                dele += del_b
+                num_words += len(str_ref.split('_'))
+            except:
+                # print('REF: %s' % str_ref)
+                # print('HYP: %s' % str_hyp)
+                pass
 
             if progressbar:
                 pbar.update(1)
@@ -124,11 +126,13 @@ def do_eval_wer(model, dataset, beam_width, max_decode_len,
     # Reset data counters
     dataset.reset()
 
-    wer_mean /= len(dataset)
+    wer /= num_words
+    sub /= num_words
+    ins /= num_words
+    dele /= num_words
 
     df_wer = pd.DataFrame(
-        {'SUB': [substitution], 'INS': [insertion], 'DEL': [deletion]},
-        columns=['SUB', 'INS', 'DEL'],
-        index=['WER'])
+        {'SUB': [sub * 100], 'INS': [ins * 100], 'DEL': [dele * 100]},
+        columns=['SUB', 'INS', 'DEL'], index=['WER'])
 
-    return wer_mean, df_wer
+    return wer, df_wer

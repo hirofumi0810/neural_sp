@@ -29,19 +29,19 @@ def do_eval_per(model, dataset, beam_width,
         eval_batch_size (int, optional): the batch size when evaluating the model
         progressbar (bool, optional): if True, visualize the progressbar
     Returns:
-        per_mean (float): An average of PER
-        df_per ():
+        per (float): Phone error rate
+        df_per (pd.DataFrame): dataframe of substitution, insertion, and deletion
     """
     # Reset data counter
     dataset.reset()
 
-    idx2phone = Idx2phone(
-        '../metrics/vocab_files/' + dataset.label_type + '.txt')
+    idx2phone = Idx2phone(vocab_file_path=dataset.vocab_file_path)
     map2phone39 = Map2phone39(label_type=dataset.label_type,
                               map_file_path='../metrics/phone2phone.txt')
 
-    per_mean = 0
-    substitution, insertion, deletion, = 0, 0, 0
+    per = 0
+    sub, ins, dele = 0, 0, 0
+    num_phones = 0
     if progressbar:
         pbar = tqdm(total=len(dataset))  # TODO: fix this
     while True:
@@ -95,11 +95,12 @@ def do_eval_per(model, dataset, beam_width,
             per_b, sub_b, ins_b, del_b = compute_wer(
                 ref=phone_ref_list,
                 hyp=phone_hyp_list,
-                normalize=True)
-            per_mean += per_b
-            substitution += sub_b
-            insertion += ins_b
-            deletion += del_b
+                normalize=False)
+            per += per_b
+            sub += sub_b
+            ins += ins_b
+            dele += del_b
+            num_phones += len(phone_ref_list)
 
             if progressbar:
                 pbar.update(1)
@@ -113,11 +114,13 @@ def do_eval_per(model, dataset, beam_width,
     # Reset data counters
     dataset.reset()
 
-    per_mean /= len(dataset)
+    per /= num_phones
+    sub /= num_phones
+    ins /= num_phones
+    dele /= num_phones
 
     df_per = pd.DataFrame(
-        {'SUB': [substitution], 'INS': [insertion], 'DEL': [deletion]},
-        columns=['SUB', 'INS', 'DEL'],
-        index=['PER'])
+        {'SUB': [sub * 100], 'INS': [ins * 100], 'DEL': [dele * 100]},
+        columns=['SUB', 'INS', 'DEL'], index=['PER'])
 
-    return per_mean, df_per
+    return per, df_per

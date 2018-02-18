@@ -9,20 +9,18 @@ from __future__ import print_function
 
 import re
 from tqdm import tqdm
+import pandas as pd
 
 from utils.io.labels.character import Idx2char
-from utils.evaluation.edit_distance import compute_cer, compute_wer, wer_align
+from utils.evaluation.edit_distance import compute_wer
 
 
-def do_eval_cer(model, model_type, dataset, label_type, beam_width,
-                max_decode_len, eval_batch_size=None, progressbar=False):
+def do_eval_cer(model, dataset, beam_width, max_decode_len,
+                eval_batch_size=None, progressbar=False):
     """Evaluate trained model by Character Error Rate.
     Args:
         model: the model to evaluate
-        model_type (string): ctc or attention or hierarchical_ctc or
-            hierarchical_attention
         dataset: An instance of a `Dataset' class
-        label_type (string): character or character_capital_divide
         beam_width: (int): the size of beam
         max_decode_len (int): the length of output sequences
             to stop prediction when EOS token have not been emitted.
@@ -30,41 +28,40 @@ def do_eval_cer(model, model_type, dataset, label_type, beam_width,
         eval_batch_size (int, optional): the batch size when evaluating the model
         progressbar (bool, optional): if True, visualize the progressbar
     Returns:
-        cer_mean (float): An average of CER
-        wer_mean (float): An average of WER
+        wer (float): Word error rate
+        cer (float): Character error rate
+        df_wer_cer (pd.DataFrame): dataframe of substitution, insertion, and deletion
     """
     # Reset data counter
     dataset.reset()
 
-    if label_type == 'character':
-        idx2char = Idx2char(
-            vocab_file_path='../metrics/vocab_files/character_' + dataset.data_size + '.txt')
-    elif label_type == 'character_capital_divide':
-        idx2char = Idx2char(
-            vocab_file_path='../metrics/vocab_files/character_capital_divide_' +
-            dataset.data_size + '.txt',
-            capital_divide=True)
+    idx2char = Idx2char(
+        vocab_file_path=dataset.vocab_file_path,
+        capital_divide=(dataset.label_type == 'character_capital_divide'))
 
-    cer_mean, wer_mean = 0, 0
+    cer, wer = 0, 0
+    sub_char, ins_char, del_char = 0, 0, 0
+    sub_word, ins_word, del_word = 0, 0, 0
+    num_words, num_chars = 0, 0
     if progressbar:
         pbar = tqdm(total=len(dataset))  # TODO: fix this
     while True:
         batch, is_new_epoch = dataset.next(batch_size=eval_batch_size)
 
         # Decode
-        if model_type in ['ctc', 'attention']:
-            best_hyps = model.decode(batch['xs'], batch['x_lens'],
-                                     beam_width=beam_width,
-                                     max_decode_len=max_decode_len)
-            ys = batch['ys']
-            y_lens = batch['y_lens']
-        elif model_type in ['hierarchical_ctc', 'hierarchical_attention']:
-            best_hyps = model.decode(batch['xs'], batch['x_lens'],
-                                     beam_width=beam_width,
-                                     max_decode_len=max_decode_len,
-                                     is_sub_task=True)
-            ys = batch['ys_sub']
-            y_lens = batch['y_lens_sub']
+        if model.model_type in ['ctc', 'attention']:
+            best_hyps, perm_idx = model.decode(batch['xs'], batch['x_lens'],
+                                               beam_width=beam_width,
+                                               max_decode_len=max_decode_len)
+            ys = batch['ys'][perm_idx]
+            y_lens = batch['y_lens'][perm_idx]
+        elif 'attention' in model.model_type:
+            best_hyps, perm_idx = model.decode(batch['xs'], batch['x_lens'],
+                                               beam_width=beam_width,
+                                               max_decode_len=max_decode_len,
+                                               is_sub_task=True)
+            ys = batch['ys_sub'][perm_idx]
+            y_lens = batch['y_lens_sub'][perm_idx]
 
         for i_batch in range(len(batch['xs'])):
 
@@ -76,9 +73,9 @@ def do_eval_cer(model, model_type, dataset, label_type, beam_width,
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
-                if model_type in ['ctc', 'hierarchical_ctc']:
+                if model.model_type in ['ctc', 'hierarchical_ctc']:
                     str_ref = idx2char(ys[i_batch][:y_lens[i_batch]])
-                elif model_type in ['attention', 'hierarchical_attention']:
+                elif 'attention' in model.model_type:
                     str_ref = idx2char(ys[i_batch][1:y_lens[i_batch] - 1])
                     # NOTE: Exclude <SOS> and <EOS>
 
@@ -86,10 +83,13 @@ def do_eval_cer(model, model_type, dataset, label_type, beam_width,
             # Hypothesis
             ##############################
             str_hyp = idx2char(best_hyps[i_batch])
-
-            if model_type in ['attention', 'hierarchical_attention']:
+            if 'attention' in model.model_type:
                 str_hyp = str_hyp.split('>')[0]
                 # NOTE: Trancate by the first <EOS>
+
+                # Remove the last space
+                if len(str_hyp) > 0 and str_hyp[-1] == '_':
+                    str_hyp = str_hyp[:-1]
 
             # Remove consecutive spaces
             str_hyp = re.sub(r'[_]+', '_', str_hyp)
@@ -103,24 +103,29 @@ def do_eval_cer(model, model_type, dataset, label_type, beam_width,
             # TODO: WER計算するときに消していい？
 
             # Compute WER
-            wer_mean += compute_wer(ref=str_ref.split('_'),
-                                    hyp=str_hyp.split('_'),
-                                    normalize=True)
-            # substitute, insert, delete = wer_align(
-            #     ref=str_hyp.split('_'),
-            #     hyp=str_ref.split('_'))
-            # print('SUB: %d' % substitute)
-            # print('INS: %d' % insert)
-            # print('DEL: %d' % delete)
+            wer_b, sub_b, ins_b, del_b = compute_wer(
+                ref=str_ref.split('_'),
+                hyp=str_hyp.split('_'),
+                normalize=False)
+            wer += wer_b
+            sub_word += sub_b
+            ins_word += ins_b
+            del_word += del_b
+            num_words += len(str_ref.split('_'))
 
             # Compute CER
-            cer_mean += compute_cer(ref=str_ref.replace('_', ''),
-                                    hyp=str_hyp.replace('_', ''),
-                                    normalize=True)
-            # NOTE: remove space
+            cer_b, sub_b, ins_b, del_b = compute_wer(
+                ref=list(str_ref.replace('_', '')),
+                hyp=list(str_hyp.replace('_', '')),
+                normalize=False)
+            cer += cer_b
+            sub_char += sub_b
+            ins_char += ins_b
+            del_char += del_b
+            num_chars += len(str_ref.replace('_', ''))
 
             if progressbar:
-                pbar.update(len(batch['xs']))
+                pbar.update(1)
 
         if is_new_epoch:
             break
@@ -131,7 +136,19 @@ def do_eval_cer(model, model_type, dataset, label_type, beam_width,
     # Reset data counters
     dataset.reset()
 
-    cer_mean /= len(dataset)
-    wer_mean /= len(dataset)
+    wer /= num_words
+    cer /= num_chars
+    sub_char /= num_chars
+    ins_char /= num_chars
+    del_char /= num_chars
+    sub_word /= num_words
+    ins_word /= num_words
+    del_word /= num_words
 
-    return cer_mean, wer_mean
+    df_wer_cer = pd.DataFrame(
+        {'SUB': [sub_char * 100, sub_word * 100],
+         'INS': [ins_char * 100, ins_word * 100],
+         'DEL': [del_char * 100, del_word * 100]},
+        columns=['SUB', 'INS', 'DEL'], index=['CER', 'WER'])
+
+    return cer, wer, df_wer_cer
