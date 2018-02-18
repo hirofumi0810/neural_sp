@@ -15,7 +15,7 @@ sys.path.append('../../../../')
 from models.chainer.ctc.ctc import CTC
 from models.test.data import generate_data, idx2char, idx2word
 from utils.measure_time_func import measure_time
-from utils.evaluation.edit_distance import compute_cer, compute_wer
+from utils.evaluation.edit_distance import compute_wer
 # from utils.training.learning_rate_controller import Controller
 
 
@@ -206,16 +206,17 @@ class TestCTC(unittest.TestCase):
 
                 # Compute accuracy
                 if label_type == 'char':
-                    str_true = idx2char(ys[0, :y_lens[0]])
-                    str_pred = idx2char(best_hyps[0])
-                    ler = compute_cer(ref=str_true.replace('_', ''),
-                                      hyp=str_pred.replace('_', ''),
-                                      normalize=True)
+                    str_ref = idx2char(ys[0, :y_lens[0]])
+                    str_hyp = idx2char(best_hyps[0])
+                    ler, _, _, _ = compute_wer(
+                        ref=list(str_ref.replace('_', '')),
+                        hyp=list(str_hyp.replace('_', '')),
+                        normalize=True)
                 elif label_type == 'word':
-                    str_true = idx2word(ys[0, :y_lens[0]])
-                    str_pred = idx2word(best_hyps[0])
-                    ler, _, _, _ = compute_wer(ref=str_true.split('_'),
-                                               hyp=str_pred.split('_'),
+                    str_ref = idx2word(ys[0, :y_lens[0]])
+                    str_hyp = idx2word(best_hyps[0])
+                    ler, _, _, _ = compute_wer(ref=str_ref.split('_'),
+                                               hyp=str_hyp.split('_'),
                                                normalize=True)
 
                 duration_step = time.time() - start_time_step
@@ -224,8 +225,8 @@ class TestCTC(unittest.TestCase):
                 start_time_step = time.time()
 
                 # Visualize
-                print('Ref: %s' % str_true)
-                print('Hyp: %s' % str_pred)
+                print('Ref: %s' % str_ref)
+                print('Hyp: %s' % str_hyp)
 
                 if ler < 0.05:
                     print('Modle is Converged.')

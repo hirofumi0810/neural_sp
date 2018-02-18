@@ -262,10 +262,10 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
                 dropout=dropout_embedding,
                 label_smoothing_prob=label_smoothing_prob)
         else:
-            self.embed_sub = Embedding(
-                num_classes=self.num_classes_sub,
-                embedding_dim=embedding_dim_sub,
-                dropout=dropout_embedding)
+            self.embed_sub = Embedding(num_classes=self.num_classes_sub,
+                                       embedding_dim=embedding_dim_sub,
+                                       dropout=dropout_embedding,
+                                       ignore_index=self.sos_index_sub)
 
         self.is_bridge_sub = False
         if self.sub_loss_weight > 0:
@@ -326,7 +326,9 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
             self._decode_ctc_beam_np = BeamSearchDecoder(blank_index=0)
             # NOTE: index 0 is reserved for the blank class
 
+        ##################################################
         # Initialize parameters
+        ##################################################
         self.init_weights(parameter_init,
                           distribution=parameter_init_distribution,
                           ignore_keys=['bias'])
@@ -336,10 +338,14 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
 
         # Recurrent weights are orthogonalized
         if recurrent_weight_orthogonal:
-            self.init_weights(parameter_init, distribution='orthogonal',
-                              keys=[encoder_type, 'weight'], ignore_keys=['bias'])
-            self.init_weights(parameter_init, distribution='orthogonal',
-                              keys=[decoder_type, 'weight'], ignore_keys=['bias'])
+            self.init_weights(parameter_init,
+                              distribution='orthogonal',
+                              keys=[encoder_type, 'weight'],
+                              ignore_keys=['bias'])
+            self.init_weights(parameter_init,
+                              distribution='orthogonal',
+                              keys=[decoder_type, 'weight'],
+                              ignore_keys=['bias'])
 
         # Initialize bias in forget gate with 1
         if init_forget_gate_bias_with_one:
@@ -421,6 +427,7 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
         if self.label_smoothing_prob > 0:
             loss_ls_main = cross_entropy_label_smoothing(
                 logits_main,
+                y_lens=y_lens - 1,  # Exclude <SOS>
                 label_smoothing_prob=self.label_smoothing_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)
@@ -462,6 +469,7 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
             if self.label_smoothing_prob > 0:
                 loss_ls_sub = cross_entropy_label_smoothing(
                     logits_sub,
+                    y_lens=y_lens_sub - 1,  # Exclude <SOS>
                     label_smoothing_prob=self.label_smoothing_prob,
                     distribution='uniform',
                     size_average=False) / len(xs)
@@ -551,8 +559,7 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
             # Path through character embedding
             ys_sub_emb = []
             for t in range(1, ys_sub.size(1), 1):
-                y_sub_emb = self.embed_sub(ys_sub[:, t:t + 1])
-                ys_sub_emb.append(y_sub_emb)
+                ys_sub_emb.append(self.embed_sub(ys_sub[:, t:t + 1]))
             ys_sub_emb = torch.cat(ys_sub_emb, dim=1)
             # ys_sub_emb: `[B, T_out - 1, embedding_dim_sub]`
             # NOTE: Exclude <SOS>
@@ -788,8 +795,7 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
             # Path through character embedding
             ys_sub_emb = []
             for t in range(ys_sub.size(1)):
-                y_sub_emb = self.embed_sub(ys_sub[:, t:t + 1])
-                ys_sub_emb.append(y_sub_emb)
+                ys_sub_emb.append(self.embed_sub(ys_sub[:, t:t + 1]))
             ys_sub_emb = torch.cat(ys_sub_emb, dim=1)
             # ys_sub_emb: `[B, T, embedding_dim_sub]`
 

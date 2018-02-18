@@ -49,17 +49,19 @@ class LinearND(nn.Module):
 
 class Embedding(nn.Module):
 
-    def __init__(self, num_classes, embedding_dim, dropout=0):
-        """
+    def __init__(self, num_classes, embedding_dim, dropout=0, ignore_index=-1):
+        """Embedding layer.
         Args:
             num_classes (int): the number of nodes in softmax layer
                 (including <SOS> and <EOS> classes)
             embedding_dim (int): the dimension of the embedding in target spaces
             dropout (float, optional): the probability to drop nodes of the embedding
+            ignore_index (int, optional):
         """
         super(Embedding, self).__init__()
 
-        self.embed = nn.Embedding(num_classes, embedding_dim)
+        self.embed = nn.Embedding(num_classes, embedding_dim,
+                                  padding_idx=ignore_index)
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, y):
@@ -79,7 +81,7 @@ class Embedding_LS(nn.Module):
 
     def __init__(self, num_classes, embedding_dim, dropout=0,
                  label_smoothing_prob=0.):
-        """
+        """Embedding layer with label smoothing.
         Args:
             num_classes (int): the number of nodes in softmax layer
                 (including <SOS> and <EOS> classes)

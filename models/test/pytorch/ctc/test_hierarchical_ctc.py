@@ -20,7 +20,7 @@ sys.path.append('../../../../')
 from models.pytorch.ctc.hierarchical_ctc import HierarchicalCTC
 from models.test.data import generate_data, idx2char, idx2word
 from utils.measure_time_func import measure_time
-from utils.evaluation.edit_distance import compute_cer, compute_wer
+from utils.evaluation.edit_distance import compute_wer
 from utils.training.learning_rate_controller import Controller
 
 
@@ -189,29 +189,30 @@ class TestCTC(unittest.TestCase):
                     xs, x_lens, beam_width=2, is_sub_task=True)
 
                 # Compute accuracy
-                str_true = idx2word(ys[0, :y_lens[0]])
-                str_pred = idx2word(best_hyps[0])
-                ler = compute_wer(ref=str_true.split('_'),
-                                  hyp=str_pred.split('_'),
-                                  normalize=True)
-                str_true_sub = idx2char(ys_sub[0, :y_lens_sub[0]])
-                str_pred_sub = idx2char(best_hyps_sub[0])
-                ler_sub = compute_cer(ref=str_true_sub.replace('_', ''),
-                                      hyp=str_pred_sub.replace('_', ''),
-                                      normalize=True)
+                str_ref = idx2word(ys[0, :y_lens[0]])
+                str_hyp = idx2word(best_hyps[0])
+                wer, _, _, _ = compute_wer(ref=str_ref.split('_'),
+                                           hyp=str_hyp.split('_'),
+                                           normalize=True)
+                str_ref_sub = idx2char(ys_sub[0, :y_lens_sub[0]])
+                str_hyp_sub = idx2char(best_hyps_sub[0])
+                cer, _, _, _ = compute_wer(
+                    ref=list(str_ref_sub.replace('_', '')),
+                    hyp=list(str_hyp_sub.replace('_', '')),
+                    normalize=True)
 
                 duration_step = time.time() - start_time_step
-                print('Step %d: loss=%.3f(%.3f/%.3f) / ler (main/sub)=%.3f/%.3f / lr=%.5f (%.3f sec)' %
+                print('Step %d: loss=%.3f(%.3f/%.3f) / wer=%.3f / cer=%.3f / lr=%.5f (%.3f sec)' %
                       (step + 1, loss, loss_main, loss_sub,
-                       ler, ler_sub, learning_rate, duration_step))
+                       wer, cer, learning_rate, duration_step))
                 start_time_step = time.time()
 
                 # Visualize
-                print('Ref: %s' % str_true)
-                print('Hyp (word): %s' % str_pred)
-                print('Hyp (char): %s' % str_pred_sub)
+                print('Ref: %s' % str_ref)
+                print('Hyp (word): %s' % str_hyp)
+                print('Hyp (char): %s' % str_hyp_sub)
 
-                if ler_sub < 0.1:
+                if cer < 0.1:
                     print('Modle is Converged.')
                     break
 
@@ -220,7 +221,7 @@ class TestCTC(unittest.TestCase):
                     optimizer=model.optimizer,
                     learning_rate=learning_rate,
                     epoch=step,
-                    value=ler)
+                    value=wer)
 
 
 if __name__ == "__main__":

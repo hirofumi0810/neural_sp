@@ -30,7 +30,7 @@ LOG_1 = 0
 
 
 class AttentionSeq2seq(ModelBase):
-    """The Attention-besed model.
+    """Attention-based sequence-to-sequence model.
     Args:
         input_size (int): the dimension of input features
         encoder_type (string): the type of the encoder. Set lstm or gru or rnn.
@@ -315,6 +315,7 @@ class AttentionSeq2seq(ModelBase):
                 self.embed = Embedding(num_classes=self.num_classes,
                                        embedding_dim=embedding_dim,
                                        dropout=dropout_embedding,
+                                       ignore_index=self.sos_index,
                                        use_cuda=self.use_cuda)
 
             self.proj_layer = LinearND(
@@ -325,11 +326,11 @@ class AttentionSeq2seq(ModelBase):
 
             if ctc_loss_weight > 0:
                 if self.is_bridge:
-                    self.fc_ctc = LinearND(decoder_num_units, self.num_classes - 2 + 1,
+                    self.fc_ctc = LinearND(decoder_num_units, num_classes + 1,
                                            use_cuda=self.use_cuda)
                 else:
                     self.fc_ctc = LinearND(
-                        encoder_num_units * self.encoder_num_directions, self.num_classes - 2 + 1,
+                        encoder_num_units * self.encoder_num_directions, num_classes + 1,
                         use_cuda=self.use_cuda)
 
                 self.blank_index = 0
@@ -342,7 +343,9 @@ class AttentionSeq2seq(ModelBase):
                     blank_index=self.blank_index)
                 # TODO: set space index
 
+            ##################################################
             # Initialize parameters
+            ##################################################
             self.init_weights(parameter_init,
                               distribution=parameter_init_distribution,
                               ignore_keys=['bias'])
@@ -353,10 +356,14 @@ class AttentionSeq2seq(ModelBase):
             # Recurrent weights are orthogonalized
             if recurrent_weight_orthogonal:
                 if encoder_type != 'cnn':
-                    self.init_weights(parameter_init, distribution='orthogonal',
-                                      keys=[encoder_type, 'weight'], ignore_keys=['bias'])
-                self.init_weights(parameter_init, distribution='orthogonal',
-                                  keys=[decoder_type, 'weight'], ignore_keys=['bias'])
+                    self.init_weights(parameter_init,
+                                      distribution='orthogonal',
+                                      keys=[encoder_type, 'weight'],
+                                      ignore_keys=['bias'])
+                self.init_weights(parameter_init,
+                                  distribution='orthogonal',
+                                  keys=[decoder_type, 'weight'],
+                                  ignore_keys=['bias'])
 
             # Initialize bias in forget gate with 1
             if init_forget_gate_bias_with_one:
@@ -423,6 +430,7 @@ class AttentionSeq2seq(ModelBase):
         if self.label_smoothing_prob > 0:
             loss_ls = cross_entropy_label_smoothing(
                 logits,
+                y_lens=y_lens - 1,  # Exclude <SOS>
                 label_smoothing_prob=self.label_smoothing_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)
@@ -469,17 +477,18 @@ class AttentionSeq2seq(ModelBase):
             reduce='no')
         ctc_loss = F.sum(ctc_loss, axis=0)
 
-        # TODO: Label smoothing (with uniform distribution)
-        # if self.label_smoothing_prob > 0:
-        #     # XE
-        #     loss_ls_ctc = cross_entropy_label_smoothing(
-        #         logits_ctc,
-        #         label_smoothing_prob=self.label_smoothing_prob,
-        #         distribution='uniform',
-        #         size_average=False)
-        #     ctc_loss = ctc_loss * (1 - self.label_smoothing_prob) + \
-        #         loss_ls_ctc
-        #     # print(loss_ls_ctc)
+        # Label smoothing (with uniform distribution)
+        if self.label_smoothing_prob > 0:
+            # XE
+            loss_ls_ctc = cross_entropy_label_smoothing(
+                logits_ctc,
+                y_lens=x_lens,  # NOTE: CTC is frame-synchronous
+                label_smoothing_prob=self.label_smoothing_prob,
+                distribution='uniform',
+                size_average=False)
+            ctc_loss = ctc_loss * (1 - self.label_smoothing_prob) + \
+                loss_ls_ctc
+            # print(loss_ls_ctc)
 
         if size_average:
             ctc_loss /= len(x_lens)

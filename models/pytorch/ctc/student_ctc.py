@@ -113,6 +113,7 @@ class StudentCTC(CTC):
             logits_temperature=logits_temperature,
             batch_norm=batch_norm,
             weight_noise_std=weight_noise_std)
+        self.model_type = 'student_ctc'
 
         # Weight parameter for MTL with XE loss
         self.main_loss_weight = main_loss_weight

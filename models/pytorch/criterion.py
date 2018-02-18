@@ -48,12 +48,13 @@ def kl_div_label_smoothing(logits, label_smoothing_prob,
     return kl_loss
 
 
-def cross_entropy_label_smoothing(logits, label_smoothing_prob,
+def cross_entropy_label_smoothing(logits, y_lens, label_smoothing_prob,
                                   distribution='uniform', size_average=False):
     """Cross entropy loss for label smoothing.
     Args:
         logits (torch.autograd.Variable, float):
             A tensor of size `[B, T, num_classes]`
+        y_lens (torch.autograd.Variable, int): A tensor of size `[B]`
         label_smoothing_prob (float, optional):
         distribution (string, optional): uniform
         size_average (bool, optional):
@@ -70,8 +71,8 @@ def cross_entropy_label_smoothing(logits, label_smoothing_prob,
 
     log_probs = F.log_softmax(logits, dim=-1)
 
-    xe_loss = sum([(- dist * log_probs[:, t:t + 1]).sum()
-                   for t in range(label_num)])
+    xe_loss = sum([(- dist * log_probs[b, :y_lens[b].data[0]]).sum()
+                   for b in range(batch_size)])
 
     if size_average:
         xe_loss /= batch_size

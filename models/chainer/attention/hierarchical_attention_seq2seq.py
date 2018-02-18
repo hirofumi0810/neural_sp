@@ -234,11 +234,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     label_smoothing_prob=label_smoothing_prob,
                     use_cuda=self.use_cuda)
             else:
-                self.embed_sub = Embedding(
-                    num_classes=self.num_classes_sub,
-                    embedding_dim=embedding_dim_sub,
-                    dropout=dropout_embedding,
-                    use_cuda=self.use_cuda)
+                self.embed_sub = Embedding(num_classes=self.num_classes_sub,
+                                           embedding_dim=embedding_dim_sub,
+                                           dropout=dropout_embedding,
+                                           ignore_index=self.sos_index_sub,
+                                           use_cuda=self.use_cuda)
 
             self.proj_layer_sub = LinearND(
                 decoder_num_units_sub * 2, decoder_num_units_sub,
@@ -265,7 +265,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             self._decode_ctc_beam_np = BeamSearchDecoder(
                 blank_index=self.blank_index)
 
+        ##################################################
         # Initialize parameters
+        ##################################################
         self.init_weights(parameter_init,
                           distribution=parameter_init_distribution,
                           ignore_keys=['bias'])
@@ -275,10 +277,14 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         # Recurrent weights are orthogonalized
         if recurrent_weight_orthogonal:
-            self.init_weights(parameter_init, distribution='orthogonal',
-                              keys=[encoder_type, 'weight'], ignore_keys=['bias'])
-            self.init_weights(parameter_init, distribution='orthogonal',
-                              keys=[decoder_type, 'weight'], ignore_keys=['bias'])
+            self.init_weights(parameter_init,
+                              distribution='orthogonal',
+                              keys=[encoder_type, 'weight'],
+                              ignore_keys=['bias'])
+            self.init_weights(parameter_init,
+                              distribution='orthogonal',
+                              keys=[decoder_type, 'weight'],
+                              ignore_keys=['bias'])
 
         # Initialize bias in forget gate with 1
         if init_forget_gate_bias_with_one:
@@ -378,6 +384,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # XE
             loss_ls_main = cross_entropy_label_smoothing(
                 logits_main,
+                y_lens=y_lens - 1,  # Exclude <SOS>
                 label_smoothing_prob=self.label_smoothing_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)
@@ -421,6 +428,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 # XE
                 loss_ls_sub = cross_entropy_label_smoothing(
                     logits_sub,
+                    y_lens=y_lens_sub - 1,  # Exclude <SOS>
                     label_smoothing_prob=self.label_smoothing_prob,
                     distribution='uniform',
                     size_average=False) / len(xs)

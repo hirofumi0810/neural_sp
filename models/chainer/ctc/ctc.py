@@ -207,8 +207,10 @@ class CTC(ModelBase):
 
             # Recurrent weights are orthogonalized
             if recurrent_weight_orthogonal and encoder_type != 'cnn':
-                self.init_weights(parameter_init, distribution='orthogonal',
-                                  keys=[encoder_type, 'weight'], ignore_keys=['bias'])
+                self.init_weights(parameter_init,
+                                  distribution='orthogonal',
+                                  keys=[encoder_type, 'weight'],
+                                  ignore_keys=['bias'])
 
             # Initialize bias in forget gate with 1
             if init_forget_gate_bias_with_one:
@@ -254,22 +256,13 @@ class CTC(ModelBase):
         if self.logits_temperature != 1:
             logits /= self.logits_temperature
 
-        # Convert to time-major & list of Variable from Variable
-        logits = F.separate(logits, axis=1)
-        # logits = F.transpose(logits, axes=(1, 0, 2))
-        # logits = [t[0] for t in F.split_axis(logits, len(logits), axis=0)]
-
-        # Convert to Variable from list of Variable
-        # ys = F.pad_sequence(ys, padding=-1)  # 0 or -1?
-        # TODO: inputs to pad_sequence must be list of chainer.Variable
-
         if self.blank_index == 0:
-            ys = ys + 1
             # NOTE: index 0 is reserved for the blank class
+            ys = ys + 1
 
         # Compute CTC loss
         loss = connectionist_temporal_classification(
-            x=logits,  # list of Variable
+            x=F.separate(logits, axis=1),  # list of Variable
             t=ys,  # Variable
             blank_symbol=self.blank_index,
             input_length=x_lens,  # Variable
@@ -277,10 +270,12 @@ class CTC(ModelBase):
             reduce='no')
         loss = F.sum(loss, axis=0) / len(xs)
 
-        # TODO: Label smoothing (with uniform distribution)
+        # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
+            # XE
             xe_loss_ls = cross_entropy_label_smoothing(
-                F.pad_sequence(logits, padding=0),
+                logits,
+                y_lens=x_lens,  # NOTE: CTC is frame-synchronous
                 label_smoothing_prob=self.label_smoothing_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)

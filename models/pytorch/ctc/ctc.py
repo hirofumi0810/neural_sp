@@ -25,7 +25,7 @@ import torch.nn.functional as F
 
 from models.pytorch.base import ModelBase
 from models.pytorch.linear import LinearND
-from models.pytorch.criterion import kl_div_label_smoothing, cross_entropy_label_smoothing
+from models.pytorch.criterion import cross_entropy_label_smoothing
 from models.pytorch.encoders.load_encoder import load
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
@@ -198,7 +198,9 @@ class CTC(ModelBase):
             self.fc = LinearND(
                 encoder_num_units * self.num_directions, self.num_classes)
 
+        ##################################################
         # Initialize parameters
+        ##################################################
         self.init_weights(parameter_init,
                           distribution=parameter_init_distribution,
                           ignore_keys=['bias'])
@@ -208,8 +210,10 @@ class CTC(ModelBase):
 
         # Recurrent weights are orthogonalized
         if recurrent_weight_orthogonal and encoder_type != 'cnn':
-            self.init_weights(parameter_init, distribution='orthogonal',
-                              keys=[encoder_type, 'weight'], ignore_keys=['bias'])
+            self.init_weights(parameter_init,
+                              distribution='orthogonal',
+                              keys=[encoder_type, 'weight'],
+                              ignore_keys=['bias'])
 
         # Initialize bias in forget gate with 1
         if init_forget_gate_bias_with_one:
@@ -260,9 +264,6 @@ class CTC(ModelBase):
         if self.logits_temperature != 1:
             logits /= self.logits_temperature
 
-        # Convert to time-major
-        logits = logits.transpose(0, 1).contiguous()
-
         # Permutate indices
         if perm_idx is not None:
             ys = ys[perm_idx.cpu()]
@@ -273,7 +274,8 @@ class CTC(ModelBase):
         concatenated_labels = _concatenate_labels(ys, y_lens)
 
         # Compute CTC loss
-        loss = ctc_loss(logits, concatenated_labels,
+        loss = ctc_loss(logits.transpose(0, 1).contiguous(),  # time-major
+                        concatenated_labels,
                         x_lens.cpu(), y_lens) / len(xs)
         if self.use_cuda:
             loss = loss.cuda()
@@ -283,6 +285,7 @@ class CTC(ModelBase):
             # XE
             loss_ls = cross_entropy_label_smoothing(
                 logits,
+                y_lens=x_lens,  # NOTE: CTC is frame-synchronous
                 label_smoothing_prob=self.label_smoothing_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)

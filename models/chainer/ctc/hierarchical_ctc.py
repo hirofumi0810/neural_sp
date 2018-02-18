@@ -181,8 +181,10 @@ class HierarchicalCTC(CTC):
 
             # Recurrent weights are orthogonalized
             if recurrent_weight_orthogonal:
-                self.init_weights(parameter_init, distribution='orthogonal',
-                                  keys=['lstm', 'weight'], ignore_keys=['bias'])
+                self.init_weights(parameter_init,
+                                  distribution='orthogonal',
+                                  keys=['lstm', 'weight'],
+                                  ignore_keys=['bias'])
 
             # Initialize bias in forget gate with 1
             if init_forget_gate_bias_with_one:
@@ -237,20 +239,6 @@ class HierarchicalCTC(CTC):
             logits_main /= self.logits_temperature
             logits_sub /= self.logits_temperature
 
-        # Convert to time-major & list of Variable from Variable
-        logits_main = F.separate(logits_main, axis=1)
-        logits_sub = F.separate(logits_sub, axis=1)
-        # logits_main = F.transpose(logits_main, axes=(1, 0, 2))
-        # logits_main = [t[0] for t in F.split_axis(logits_main, len(logits_main), axis=0)]
-        # logits_sub = F.transpose(logits_sub, axes=(1, 0, 2))
-        # logits_sub = [t[0] for t in F.split_axis(
-        #     logits_sub, len(logits_sub), axis=0)]
-
-        # Convert to Variable from list of Variable
-        # ys = F.pad_sequence(ys, padding=-1)  # 0 or -1?
-        # ys_sub = F.pad_sequence(ys_sub, padding=-1)  # 0 or -1?
-        # TODO: inputs to pad_sequence must be list of chainer.Variable
-
         if self.blank_index == 0:
             ys = ys + 1
             ys_sub = ys_sub + 1
@@ -258,14 +246,14 @@ class HierarchicalCTC(CTC):
 
         # Compute CTC loss in the main & sub task
         loss_main = connectionist_temporal_classification(
-            x=logits_main,  # list of Variable
+            x=F.separate(logits_main, axis=1),  # list of Variable
             t=ys,  # Variable
             blank_symbol=0,
             input_length=x_lens,  # Variable
             label_length=y_lens,  # Variable
             reduce='no')
         loss_sub = connectionist_temporal_classification(
-            x=logits_sub,  # list of Variable
+            x=F.separate(logits_sub, axis=1),  # list of Variable
             t=ys_sub,  # Variable
             blank_symbol=0,
             input_length=x_lens_sub,  # Variable
@@ -278,14 +266,16 @@ class HierarchicalCTC(CTC):
         if self.label_smoothing_prob > 0:
             # XE
             xe_loss_ls_main = cross_entropy_label_smoothing(
-                F.pad_sequence(logits_main, padding=0),
+                logits_main,
+                y_lens=x_lens,  # NOTE: CTC is frame-synchronous
                 label_smoothing_prob=self.label_smoothing_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)
             # print(xe_loss_ls_main)
 
             xe_loss_ls_sub = cross_entropy_label_smoothing(
-                F.pad_sequence(logits_sub, padding=0),
+                logits_sub,
+                y_lens=x_lens_sub,  # NOTE: CTC is frame-synchronous
                 label_smoothing_prob=self.label_smoothing_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)
@@ -294,7 +284,6 @@ class HierarchicalCTC(CTC):
                 (1 - self.label_smoothing_prob) + xe_loss_ls_main
             loss_sub = loss_sub * \
                 (1 - self.label_smoothing_prob) + xe_loss_ls_sub
-            # print(xe_loss_ls_sub)
 
         # Compute total loss
         loss_main = loss_main * self.main_loss_weight

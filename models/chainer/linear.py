@@ -42,9 +42,9 @@ class LinearND(chainer.Chain):
     def __call__(self, xs):
         """Forward computation.
         Args:
-            xs (chainer.Variable):
+            xs (chainer.Variable): A tensor of size `[B, T, input_dim]`
         Returns:
-
+            xs (chainer.Variable): A tensor of size `[B, T, size[-1]]`
         """
         size = list(xs.shape)
         outputs = xs.reshape(np.prod(size[:-1]), size[-1])
@@ -57,13 +57,15 @@ class LinearND(chainer.Chain):
 
 class Embedding(chainer.Chain):
 
-    def __init__(self, num_classes, embedding_dim, dropout=0, use_cuda=False):
-        """
+    def __init__(self, num_classes, embedding_dim, dropout=0, ignore_index=-1,
+                 use_cuda=False):
+        """Embedding layer.
         Args:
             num_classes (int): the number of nodes in softmax layer
                 (including <SOS> and <EOS> classes)
             embedding_dim (int): the dimension of the embedding in target spaces
             dropout (float, optional): the probability to drop nodes of the embedding
+            ignore_index (int, optional):
             use_cuda (bool, optional): if True, use GPUs
         """
         super(Embedding, self).__init__()
@@ -72,7 +74,8 @@ class Embedding(chainer.Chain):
 
         with self.init_scope():
             self.embed = L.EmbedID(num_classes, embedding_dim,
-                                   initialW=None)
+                                   initialW=None,
+                                   ignore_label=ignore_index)
             if use_cuda:
                 self.embed.to_gpu()
 
@@ -93,7 +96,7 @@ class Embedding_LS(chainer.Chain):
 
     def __init__(self, num_classes, embedding_dim, dropout=0,
                  label_smoothing_prob=0., use_cuda=False):
-        """
+        """Embedding layer with label smoothing.
         Args:
             num_classes (int): the number of nodes in softmax layer
                 (including <SOS> and <EOS> classes)

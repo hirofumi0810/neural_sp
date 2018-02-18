@@ -20,7 +20,7 @@ sys.path.append('../../../../')
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 from models.test.data import generate_data, idx2char, idx2word
 from utils.measure_time_func import measure_time
-from utils.evaluation.edit_distance import compute_cer, compute_wer
+from utils.evaluation.edit_distance import compute_wer
 from utils.training.learning_rate_controller import Controller
 
 
@@ -31,9 +31,6 @@ class TestAttention(unittest.TestCase):
 
         # Joint CTC-Attention
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', label_smoothing=True,
-                   ctc_loss_weight=0.2)
-        self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', ctc_loss_weight=0.2)
 
         # Initialize decoder state
@@ -43,10 +40,6 @@ class TestAttention(unittest.TestCase):
                    decoder_type='lstm', init_dec_state='mean')
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', init_dec_state='zero')
-
-        # Label smoothing
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', label_smoothing=True)
 
         # CNN encoder
         self.check(encoder_type='cnn', decoder_type='lstm', batch_norm=True)
@@ -101,7 +94,7 @@ class TestAttention(unittest.TestCase):
               attention_type='location', label_type='char',
               subsample=False, projection=False, init_dec_state='final',
               ctc_loss_weight=0, conv=False, batch_norm=False,
-              residual=False, dense_residual=False, label_smoothing=False):
+              residual=False, dense_residual=False):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
@@ -117,7 +110,6 @@ class TestAttention(unittest.TestCase):
         print('  batch_norm: %s' % str(batch_norm))
         print('  residual: %s' % str(residual))
         print('  dense_residual: %s' % str(dense_residual))
-        print('  label_smoothing: %s' % str(label_smoothing))
         print('==================================================')
 
         if conv or encoder_type == 'cnn':
@@ -197,7 +189,7 @@ class TestAttention(unittest.TestCase):
             batch_norm=batch_norm,
             scheduled_sampling_prob=0.1,
             scheduled_sampling_ramp_max_step=200,
-            label_smoothing_prob=0.1 if label_smoothing else 0,
+            label_smoothing_prob=0.1,  # default
             weight_noise_std=1e-9,
             encoder_residual=residual,
             encoder_dense_residual=dense_residual,
@@ -259,16 +251,17 @@ class TestAttention(unittest.TestCase):
 
                 # Compute accuracy
                 if label_type == 'char':
-                    str_true = map_fn(ys[0, :y_lens[0]][1:-1])
-                    str_pred = map_fn(best_hyps[0][0:-1]).split('>')[0]
-                    ler = compute_cer(ref=str_true.replace('_', ''),
-                                      hyp=str_pred.replace('_', ''),
-                                      normalize=True)
+                    str_ref = map_fn(ys[0, :y_lens[0]][1:-1])
+                    str_hyp = map_fn(best_hyps[0][0:-1]).split('>')[0]
+                    ler, _, _, _ = compute_wer(
+                        ref=list(str_ref.replace('_', '')),
+                        hyp=list(str_hyp.replace('_', '')),
+                        normalize=True)
                 elif label_type == 'word':
-                    str_true = map_fn(ys[0, : y_lens[0]][1: -1])
-                    str_pred = map_fn(best_hyps[0][0: -1]).split('>')[0]
-                    ler, _, _, _ = compute_wer(ref=str_true.split('_'),
-                                               hyp=str_pred.split('_'),
+                    str_ref = map_fn(ys[0, : y_lens[0]][1: -1])
+                    str_hyp = map_fn(best_hyps[0][0: -1]).split('>')[0]
+                    ler, _, _, _ = compute_wer(ref=str_ref.split('_'),
+                                               hyp=str_hyp.split('_'),
                                                normalize=True)
 
                 duration_step = time.time() - start_time_step
@@ -277,8 +270,8 @@ class TestAttention(unittest.TestCase):
                 start_time_step = time.time()
 
                 # Visualize
-                print('Ref: %s' % str_true)
-                print('Hyp: %s' % str_pred)
+                print('Ref: %s' % str_ref)
+                print('Hyp: %s' % str_hyp)
 
                 # Decode by theCTC decoder
                 if model.ctc_loss_weight >= 0.1:

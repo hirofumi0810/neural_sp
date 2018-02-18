@@ -20,7 +20,7 @@ sys.path.append('../../../../')
 from models.pytorch.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
 from models.test.data import generate_data, idx2char, idx2word
 from utils.measure_time_func import measure_time
-from utils.evaluation.edit_distance import compute_cer, compute_wer
+from utils.evaluation.edit_distance import compute_wer
 from utils.training.learning_rate_controller import Controller
 
 
@@ -33,12 +33,9 @@ class TestHierarchicalAttention(unittest.TestCase):
         # self.check(encoder_type='lstm', bidirectional=True,
         #            decoder_type='lstm', curriculum_training=True)
 
-        # Label smoothing
+        # Word attention + char CTC
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', label_smoothing=True,
-                   ctc_loss_weight_sub=0.2)
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', label_smoothing=True)
+                   decoder_type='lstm', ctc_loss_weight_sub=0.2)
 
         # Pyramidal encoder
         self.check(encoder_type='lstm', bidirectional=True,
@@ -62,20 +59,14 @@ class TestHierarchicalAttention(unittest.TestCase):
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', conv=True, batch_norm=True)
 
-        # Word attention + char CTC
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', ctc_loss_weight_sub=0.2)
-
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm')
 
     @measure_time
     def check(self, encoder_type, bidirectional, decoder_type,
-              attention_type='location',
-              subsample=False, projection=False,
+              attention_type='location', subsample=False, projection=False,
               ctc_loss_weight_sub=0, conv=False, batch_norm=False,
-              residual=False, dense_residual=False, label_smoothing=False,
-              curriculum_training=False):
+              residual=False, dense_residual=False, curriculum_training=False):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
@@ -89,7 +80,6 @@ class TestHierarchicalAttention(unittest.TestCase):
         print('  batch_norm: %s' % str(batch_norm))
         print('  residual: %s' % str(residual))
         print('  dense_residual: %s' % str(dense_residual))
-        print('  label_smoothing: %s' % str(label_smoothing))
         print('  curriculum_training: %s' % str(curriculum_training))
         print('==================================================')
 
@@ -171,7 +161,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             batch_norm=batch_norm,
             scheduled_sampling_prob=0.1,
             scheduled_sampling_ramp_max_step=200,
-            label_smoothing_prob=0.1 if label_smoothing else 0,
+            label_smoothing_prob=0.1,  # default
             weight_noise_std=0,
             encoder_residual=residual,
             encoder_dense_residual=dense_residual,
@@ -226,34 +216,35 @@ class TestHierarchicalAttention(unittest.TestCase):
                 # Decode
                 best_hyps, perm_idx = model.decode(
                     xs, x_lens, beam_width=1, max_decode_len=30)
-                best_hyps_sub, perm_idx_sub = model.decode(
+                best_hyps_sub, _ = model.decode(
                     xs, x_lens, beam_width=1, max_decode_len=60,
                     is_sub_task=True)
 
                 # Compute accuracy
-                str_pred = idx2word(best_hyps[0][0:-1]).split('>')[0]
-                str_true = idx2word(ys[0][1:-1])
-                ler, _, _, _ = compute_wer(ref=str_true.split('_'),
-                                           hyp=str_pred.split('_'),
+                str_hyp = idx2word(best_hyps[0][0:-1]).split('>')[0]
+                str_ref = idx2word(ys[0][1:-1])
+                wer, _, _, _ = compute_wer(ref=str_ref.split('_'),
+                                           hyp=str_hyp.split('_'),
                                            normalize=True)
-                str_pred_sub = idx2char(best_hyps_sub[0][0:-1]).split('>')[0]
-                str_true_sub = idx2char(ys_sub[0][1:-1])
-                ler_sub = compute_cer(ref=str_true_sub.replace('_', ''),
-                                      hyp=str_pred_sub.replace('_', ''),
-                                      normalize=True)
+                str_hyp_sub = idx2char(best_hyps_sub[0][0:-1]).split('>')[0]
+                str_ref_sub = idx2char(ys_sub[0][1:-1])
+                cer, _, _, _ = compute_wer(
+                    ref=list(str_ref_sub.replace('_', '')),
+                    hyp=list(str_hyp_sub.replace('_', '')),
+                    normalize=True)
 
                 duration_step = time.time() - start_time_step
-                print('Step %d: loss=%.3f(%.3f/%.3f) / ler (main/sub)=%.3f/%.3f / lr=%.5f (%.3f sec)' %
+                print('Step %d: loss=%.3f(%.3f/%.3f) / wer=%.3f / cer=%.3f / lr=%.5f (%.3f sec)' %
                       (step + 1, loss, loss_main, loss_sub,
-                       ler, ler_sub, learning_rate, duration_step))
+                       wer, cer, learning_rate, duration_step))
                 start_time_step = time.time()
 
                 # Visualize
-                print('Ref: %s' % str_true)
-                print('Hyp (word): %s' % str_pred)
-                print('Hyp (char): %s' % str_pred_sub)
+                print('Ref: %s' % str_ref)
+                print('Hyp (word): %s' % str_hyp)
+                print('Hyp (char): %s' % str_hyp_sub)
 
-                if ler_sub < 0.1:
+                if cer < 0.1:
                     print('Modle is Converged.')
                     break
 
@@ -262,7 +253,7 @@ class TestHierarchicalAttention(unittest.TestCase):
                     optimizer=model.optimizer,
                     learning_rate=learning_rate,
                     epoch=step,
-                    value=ler)
+                    value=wer)
 
 
 if __name__ == "__main__":
