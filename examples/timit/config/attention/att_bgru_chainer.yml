@@ -7,3 +7,7 @@ param:
 
   # initialization
   recurrent_weight_orthogonal: False
+
+  # MTL
+  ctc_loss_weight: 0
+  # ctc_loss_weight: 0.2

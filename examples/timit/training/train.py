@@ -95,7 +95,7 @@ def main():
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         model_type=params['model_type'],
-        data_type='test', label_type='phone39',
+        data_type='test', label_type=params['label_type'],
         vocab_file_path=vocab_file_path_eval,
         batch_size=1, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
@@ -264,16 +264,13 @@ def main():
             else:
                 start_time_eval = time.time()
                 # dev
-                per_dev_epoch, sub, ins, dele = do_eval_per(
+                per_dev_epoch, _ = do_eval_per(
                     model=model,
                     dataset=dev_data,
                     beam_width=1,
                     max_decode_len=MAX_DECODE_LEN_PHONE,
                     eval_batch_size=1)
                 logger.info('  PER (dev): %f %%' % (per_dev_epoch * 100))
-                logger.info('    Substitution: %d' % sub)
-                logger.info('    Insertion: %d' % ins)
-                logger.info('    Deletion: %d' % dele)
 
                 if per_dev_epoch < metric_dev_best:
                     metric_dev_best = per_dev_epoch
@@ -285,16 +282,13 @@ def main():
                                           learning_rate, metric_dev_best)
 
                     # test
-                    per_test, sub, ins, dele = do_eval_per(
+                    per_test, _ = do_eval_per(
                         model=model,
                         dataset=test_data,
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_PHONE,
                         eval_batch_size=1)
                     logger.info('  PER (test): %f %%' % (per_test * 100))
-                    logger.info('    Substitution: %d' % sub)
-                    logger.info('    Insertion: %d' % ins)
-                    logger.info('    Deletion: %d' % dele)
                 else:
                     not_improved_epoch += 1
 

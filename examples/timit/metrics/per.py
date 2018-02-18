@@ -8,8 +8,7 @@ from __future__ import division
 from __future__ import print_function
 
 from tqdm import tqdm
-import logging
-logger = logging.getLogger('training')
+import pandas as pd
 
 from examples.timit.metrics.mapping import Map2phone39
 from utils.io.labels.phone import Idx2phone
@@ -31,9 +30,7 @@ def do_eval_per(model, dataset, beam_width,
         progressbar (bool, optional): if True, visualize the progressbar
     Returns:
         per_mean (float): An average of PER
-        substitution (int): the number of substitution
-        insertion (int): the number of insertion
-        deletion (int): the number of deletion
+        df_per ():
     """
     # Reset data counter
     dataset.reset()
@@ -67,8 +64,7 @@ def do_eval_per(model, dataset, beam_width,
             else:
                 # Convert from index to phone (-> list of phone strings)
                 if model.model_type == 'ctc':
-                    phone_ref_list = idx2phone(
-                        ys[b][:y_lens[b]]).split(' ')
+                    phone_ref_list = idx2phone(ys[b][:y_lens[b]]).split(' ')
                 elif model.model_type == 'attention':
                     phone_ref_list = idx2phone(
                         ys[b][1:y_lens[b] - 1]).split(' ')
@@ -119,4 +115,9 @@ def do_eval_per(model, dataset, beam_width,
 
     per_mean /= len(dataset)
 
-    return per_mean, substitution, insertion, deletion
+    df_per = pd.DataFrame(
+        {'SUB': [substitution], 'INS': [insertion], 'DEL': [deletion]},
+        columns=['SUB', 'INS', 'DEL'],
+        index=['PER'])
+
+    return per_mean, df_per

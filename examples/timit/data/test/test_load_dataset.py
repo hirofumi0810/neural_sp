@@ -94,14 +94,14 @@ class TestLoadDataset(unittest.TestCase):
             if dataset.is_test:
                 str_true = batch['ys'][0][0]
             else:
-                str_true = map_fn(batch['ys'][0][:batch['y_lens'][0]])
+                str_true = map_fn(batch['ys'][0][1:batch['y_lens'][0]])
 
             print('----- %s (epoch: %.3f, batch: %d) -----' %
                   (batch['input_names'][0], dataset.epoch_detail, len(batch['xs'])))
             print(str_true)
-            print('inputs_seq_len: %d' % (batch['x_lens'][0] * num_stack))
+            print('x_lens: %d' % (batch['x_lens'][0] * num_stack))
             if not dataset.is_test:
-                print('labels_seq_len: %d' % batch['y_lens'][0])
+                print('y_lens: %d' % batch['y_lens'][0])
 
 
 if __name__ == '__main__':

@@ -72,7 +72,7 @@ param:
   dropout_input: 0.2
   dropout_encoder: 0.5
   dropout_decoder: 0.2
-  dropout_embedding: 0.2
+  dropout_embedding: 0
   weight_decay: 1e-6
   init_dec_state: zero
   sharpening_factor: 1.0
@@ -95,3 +95,4 @@ param:
 
   # MTL
   ctc_loss_weight: 0
+  # ctc_loss_weight: 0.2

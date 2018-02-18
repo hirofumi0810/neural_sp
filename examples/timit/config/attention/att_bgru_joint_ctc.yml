@@ -1,4 +1,0 @@
-parent: ../config/attention/att_bgru.yml
-param:
-  # MTL
-  ctc_loss_weight: 0.1

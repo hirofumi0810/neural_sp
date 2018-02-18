@@ -65,7 +65,7 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
-    per_test, substitution, insertion, deletion = do_eval_per(
+    per_test, df_per_test = do_eval_per(
         model=model,
         dataset=test_data,
         beam_width=args.beam_width,
@@ -73,9 +73,7 @@ def main():
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
     print('  PER (test): %f %%' % (per_test * 100))
-    print('    Substitution: %d' % substitution)
-    print('    Insertion: %d' % insertion)
-    print('    Deletion: %d' % deletion)
+    print(df_per_test)
 
 
 if __name__ == '__main__':

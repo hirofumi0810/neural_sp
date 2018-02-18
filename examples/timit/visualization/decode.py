@@ -153,12 +153,12 @@ def decode(model, dataset, beam_width,
             per, _, _, _ = compute_wer(ref=str_ref.split(' '),
                                        hyp=str_hyp.split(' '),
                                        normalize=True)
-            print('PER: %f' % per)
+            print('PER: %f %%' % (per * 100))
             if model.ctc_loss_weight > 0:
                 per_ctc, _, _, _ = compute_wer(ref=str_ref.split(' '),
                                                hyp=str_hyp_ctc.split(' '),
                                                normalize=True)
-                print('PER (CTC): %f' % per_ctc)
+                print('PER (CTC): %f %%' % (per_ctc * 100))
 
         if is_new_epoch:
             break
