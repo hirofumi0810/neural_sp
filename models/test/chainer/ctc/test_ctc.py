@@ -127,10 +127,10 @@ class TestCTC(unittest.TestCase):
         model = CTC(
             input_size=xs[0].shape[-1] // splice // num_stack,  # 120
             encoder_type=encoder_type,
-            bidirectional=bidirectional,
-            num_units=256,
-            num_proj=256 if projection else 0,
-            num_layers=2,
+            encoder_bidirectional=bidirectional,
+            encoder_num_units=256,
+            encoder_num_proj=256 if projection else 0,
+            encoder_num_layers=2,
             fc_list=fc_list,
             dropout_input=0.1,
             dropout_encoder=0.1,
@@ -214,9 +214,9 @@ class TestCTC(unittest.TestCase):
                 elif label_type == 'word':
                     str_true = idx2word(ys[0, :y_lens[0]])
                     str_pred = idx2word(best_hyps[0])
-                    ler = compute_wer(ref=str_true.split('_'),
-                                      hyp=str_pred.split('_'),
-                                      normalize=True)
+                    ler, _, _, _ = compute_wer(ref=str_true.split('_'),
+                                               hyp=str_pred.split('_'),
+                                               normalize=True)
 
                 duration_step = time.time() - start_time_step
                 print('Step %d: loss=%.3f / ler=%.3f / lr=%.5f (%.3f sec)' %

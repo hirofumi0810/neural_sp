@@ -27,11 +27,11 @@ class HierarchicalCTC(CTC):
     Args:
         input_size (int): the dimension of input features
         encoder_type (string): the type of the encoder. Set lstm or gru or rnn.
-        bidirectional (bool): if True create a bidirectional encoder
-        num_units (int): the number of units in each layer
-        num_proj (int): the number of nodes in recurrent projection layer
-        num_layers (int): the number of layers of the encoder of the main task
-        num_layers_sub (int): the number of layers of the encoder of the sub task
+        encoder_bidirectional (bool): if True create a bidirectional encoder
+        encoder_num_units (int): the number of units in each layer
+        encoder_num_proj (int): the number of nodes in recurrent projection layer
+        encoder_num_layers (int): the number of layers of the encoder of the main task
+        encoder_num_layers_sub (int): the number of layers of the encoder of the sub task
         fc_list (list):
         dropout_input (float): the probability to drop nodes in input-hidden connection
         dropout_encoder (float): the probability to drop nodes in hidden-hidden connection
@@ -71,11 +71,12 @@ class HierarchicalCTC(CTC):
     def __init__(self,
                  input_size,
                  encoder_type,
-                 bidirectional,
-                 num_units,
-                 num_proj,
-                 num_layers,
-                 num_layers_sub,  # ***
+                 encoder_type,
+                 encoder_bidirectional,
+                 encoder_num_units,
+                 encoder_num_proj,
+                 encoder_num_layers,
+                 encoder_num_layers_sub,  # ***
                  fc_list,
                  dropout_input,
                  dropout_encoder,
@@ -103,12 +104,12 @@ class HierarchicalCTC(CTC):
                  encoder_dense_residual=False):
 
         super(HierarchicalCTC, self).__init__(
-            input_size=input_size,  # 120 or 123
+            input_size=input_size,
             encoder_type=encoder_type,
-            bidirectional=bidirectional,
-            num_units=num_units,
-            num_proj=num_proj,
-            num_layers=num_layers,
+            encoder_bidirectional=encoder_bidirectional,
+            encoder_num_units=encoder_num_units,
+            encoder_num_proj=encoder_num_proj,
+            encoder_num_layers=encoder_num_layers,
             dropout_input=dropout_input,
             dropout_encoder=dropout_encoder,
             num_classes=num_classes,
@@ -123,7 +124,7 @@ class HierarchicalCTC(CTC):
         self.model_type = 'hierarchical_ctc'
 
         # Setting for the encoder
-        self.num_layers_sub = num_layers_sub
+        self.encoder_num_layers_sub = encoder_num_layers_sub
 
         # Setting for CTC
         self.num_classes_sub = num_classes_sub + 1  # Add the blank class
@@ -140,11 +141,11 @@ class HierarchicalCTC(CTC):
                 self.encoder = load(encoder_type=encoder_type)(
                     input_size=input_size,  # 120 or 123
                     rnn_type=encoder_type,
-                    bidirectional=bidirectional,
-                    num_units=num_units,
-                    num_proj=num_proj,
-                    num_layers=num_layers,
-                    num_layers_sub=num_layers_sub,
+                    bidirectional=encoder_bidirectional,
+                    num_units=encoder_num_units,
+                    num_proj=encoder_num_proj,
+                    num_layers=encoder_num_layers,
+                    num_layers_sub=encoder_num_layers_sub,
                     dropout_input=dropout_input,
                     dropout_hidden=dropout_encoder,
                     subsample_list=subsample_list,
@@ -165,10 +166,12 @@ class HierarchicalCTC(CTC):
                 raise NotImplementedError
 
             self.fc_sub = LinearND(
-                num_units * self.num_directions, self.num_classes_sub,
+                encoder_num_units * self.num_directions, self.num_classes_sub,
                 use_cuda=self.use_cuda)
 
+            ##################################################
             # Initialize parameters
+            ##################################################
             self.init_weights(parameter_init,
                               distribution=parameter_init_distribution,
                               ignore_keys=['bias'])
@@ -197,9 +200,9 @@ class HierarchicalCTC(CTC):
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (chainer.Variable or float): A tensor of size `[1]`
-            loss_main (chainer.Variable or float): A tensor of size `[1]`
-            loss_sub (chainer.Variable or float): A tensor of size `[1]`
+            loss (chainer.Variable(float) or float): A tensor of size `[1]`
+            loss_main (chainer.Variable(float) or float): A tensor of size `[1]`
+            loss_sub (chainer.Variable(float) or float): A tensor of size `[1]`
         """
         if is_eval:
             with chainer.no_backprop_mode(), chainer.using_config('train', False):

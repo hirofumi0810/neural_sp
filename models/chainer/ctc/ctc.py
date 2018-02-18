@@ -31,10 +31,10 @@ class CTC(ModelBase):
     Args:
         input_size (int): the dimension of input features
         encoder_type (string): the type of the encoder. Set lstm or gru or rnn.
-        bidirectional (bool): if True create a bidirectional encoder
-        num_units (int): the number of units in each layer
-        num_proj (int): the number of nodes in recurrent projection layer
-        num_layers (int): the number of layers of the encoder
+        encoder_bidirectional (bool): if True create a bidirectional encoder
+        encoder_num_units (int): the number of units in each layer
+        encoder_num_proj (int): the number of nodes in recurrent projection layer
+        encoder_num_layers (int): the number of layers of the encoder
         fc_list (list):
         dropout_input (float): the probability to drop nodes in input-hidden connection
         dropout_encoder (float): the probability to drop nodes in hidden-hidden connection
@@ -71,10 +71,10 @@ class CTC(ModelBase):
     def __init__(self,
                  input_size,
                  encoder_type,
-                 bidirectional,
-                 num_units,
-                 num_proj,
-                 num_layers,
+                 encoder_bidirectional,
+                 encoder_num_units,
+                 encoder_num_proj,
+                 encoder_num_layers,
                  fc_list,
                  dropout_input,
                  dropout_encoder,
@@ -106,7 +106,7 @@ class CTC(ModelBase):
         self.input_size = input_size
         self.num_stack = num_stack
         self.encoder_type = encoder_type
-        self.num_directions = 2 if bidirectional else 1
+        self.num_directions = 2 if encoder_bidirectional else 1
         self.fc_list = fc_list
         self.subsample_list = subsample_list
 
@@ -127,10 +127,10 @@ class CTC(ModelBase):
                 self.encoder = load(encoder_type=encoder_type)(
                     input_size=input_size,
                     rnn_type=encoder_type,
-                    bidirectional=bidirectional,
-                    num_units=num_units,
-                    num_proj=num_proj,
-                    num_layers=num_layers,
+                    bidirectional=encoder_bidirectional,
+                    num_units=encoder_num_units,
+                    num_proj=encoder_num_proj,
+                    num_layers=encoder_num_layers,
                     dropout_input=dropout_input,
                     dropout_hidden=dropout_encoder,
                     subsample_list=subsample_list,
@@ -170,7 +170,7 @@ class CTC(ModelBase):
                         if encoder_type == 'cnn':
                             bottle_input_size = self.encoder.output_size
                         else:
-                            bottle_input_size = num_units * self.num_directions
+                            bottle_input_size = encoder_num_units * self.num_directions
                         # if batch_norm:
                         #     self.fc_layers.append(
                         #         L.BatchNormalization(bottle_input_size))
@@ -192,10 +192,12 @@ class CTC(ModelBase):
                                    use_cuda=self.use_cuda)
             else:
                 self.fc = LinearND(
-                    num_units * self.num_directions, self.num_classes,
+                    encoder_num_units * self.num_directions, self.num_classes,
                     use_cuda=self.use_cuda)
 
+            ##################################################
             # Initialize parameters
+            ##################################################
             self.init_weights(parameter_init,
                               distribution=parameter_init_distribution,
                               ignore_keys=['bias'])
@@ -227,7 +229,7 @@ class CTC(ModelBase):
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (chainer.Variable or float): A tensor of size `[1]`
+            loss (chainer.Variable(float) or float): A tensor of size `[1]`
         """
         if is_eval:
             with chainer.no_backprop_mode(), chainer.using_config('train', False):
@@ -290,16 +292,16 @@ class CTC(ModelBase):
     def _encode(self, xs, x_lens, is_multi_task=False):
         """Encode acoustic features.
         Args:
-            xs (list of chainer.Variable):
+            xs (list of chainer.Variable(float)):
                 A list of tensors of size `[T_in, input_size]`
-            x_lens (np.ndarray or chainer.Variable): A tensor of size `[B]`
+            x_lens (np.ndarray): A tensor of size `[B]`
             is_multi_task (bool, optional):
         Returns:
-            logits (): A tensor of size
+            logits (chainer.Variable, float): A tensor of size
                 `[B, T, num_classes (including the blank class)]`
             x_lens (np.ndarray): A tensor of size `[B]`
             OPTION:
-                logits_sub (): A tensor of size
+                logits_sub (chainer.Variable, float): A tensor of size
                     `[B, T, num_classes_sub (including the blank class)]`
                 x_lens_sub (np.ndarray): A tensor of size `[B]`
         """
