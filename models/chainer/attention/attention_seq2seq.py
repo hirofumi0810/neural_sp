@@ -176,8 +176,8 @@ class AttentionSeq2seq(ModelBase):
         self.decoder_num_layers = decoder_num_layers
         self.embedding_dim = embedding_dim
         self.num_classes = num_classes + 2  # Add <SOS> and <EOS> class
-        self.sos_index = num_classes + 1
-        self.eos_index = num_classes
+        self.sos_index = 0
+        self.eos_index = num_classes + 1
 
         # Setting for the attention
         if init_dec_state not in ['zero', 'mean', 'final']:

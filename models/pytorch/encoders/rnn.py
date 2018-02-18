@@ -280,6 +280,7 @@ class RNNEncoder(nn.Module):
             x_lens, perm_idx = x_lens.sort(dim=0, descending=True)
             xs = xs[perm_idx]
             # NOTE: batch-first yet here
+            # NOTE: must be descending order for pack_padded_sequence
         else:
             perm_idx = None
         x_lens = var2np(x_lens).tolist()
@@ -306,7 +307,6 @@ class RNNEncoder(nn.Module):
 
             # Path through RNN
             xs, _ = getattr(self, self.rnn_type)(xs, hx=h_0)
-            # TODO: fix this in case of GRU
 
             # Unpack encoder outputs
             if self.pack_sequence:

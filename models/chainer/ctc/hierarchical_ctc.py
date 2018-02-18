@@ -71,7 +71,6 @@ class HierarchicalCTC(CTC):
     def __init__(self,
                  input_size,
                  encoder_type,
-                 encoder_type,
                  encoder_bidirectional,
                  encoder_num_units,
                  encoder_num_proj,

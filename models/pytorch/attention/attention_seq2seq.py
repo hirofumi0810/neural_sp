@@ -466,16 +466,13 @@ class AttentionSeq2seq(ModelBase):
         Returns:
             ctc_loss (torch.autograd.Variable, float): A tensor of size `[1]`
         """
-        # Convert to time-major
-        logits_ctc = logits_ctc.transpose(0, 1)
-
         # Concatenate all _ys for warpctc_pytorch
         # `[B, T_out]` -> `[1,]`
         concatenated_labels = _concatenate_labels(ys[:, 1:-1], y_lens - 2)
         # NOTE: Ignore fitst <SOS> and last <EOS>
 
         # Compute CTC loss
-        ctc_loss = ctc(logits_ctc,
+        ctc_loss = ctc(logits_ctc.transpose(0, 1),  # time-major
                        concatenated_labels.cpu(),
                        x_lens.cpu(),
                        y_lens.cpu() - 2)  # NOTE: Ignore <SOS> and <EOS>
@@ -485,9 +482,6 @@ class AttentionSeq2seq(ModelBase):
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
-            # Convert to batch-major
-            logits_ctc = logits_ctc.transpose(0, 1)
-
             # XE
             loss_ls_ctc = cross_entropy_label_smoothing(
                 logits_ctc,
