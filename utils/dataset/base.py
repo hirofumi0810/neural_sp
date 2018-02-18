@@ -63,11 +63,13 @@ class Base(object):
 
     @property
     def sos_index(self):
-        return self.num_classes + 1
+        # return self.num_classes + 1
+        return -1
 
     @property
     def sos_index_sub(self):
-        return self.num_classes_sub + 1
+        # return self.num_classes_sub + 1
+        return -1
 
     @property
     def eos_index(self):

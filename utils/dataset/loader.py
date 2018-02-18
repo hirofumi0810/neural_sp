@@ -104,17 +104,19 @@ class DatasetBase(Base):
 
             # Frame stacking
             if self.num_stack > 1:
-                data_i = stack_frame(data_i, self.num_stack, self.num_skip)
+                data_i = stack_frame(data_i, self.num_stack, self.num_skip,
+                                     dtype=np.float32)
             frame_num = data_i.shape[0]
 
             # Splicing
             if self.splice > 1:
-                data_i = do_splice(data_i, self.splice, self.num_stack)
+                data_i = do_splice(data_i, self.splice, self.num_stack,
+                                   dtype=np.float32)
 
             if self.backend == 'pytorch':
                 xs[i_batch, :frame_num, :] = data_i
             elif self.backend == 'chainer':
-                xs[i_batch] = data_i
+                xs[i_batch] = data_i.astype(np.float32)
             x_lens[i_batch] = frame_num
             if self.is_test:
                 ys[i_batch, 0] = self.df['transcript'][data_indices[i_batch]]
