@@ -21,6 +21,7 @@ from models.chainer.linear import LinearND, Embedding, Embedding_LS
 from models.chainer.criterion import cross_entropy_label_smoothing
 from models.chainer.encoders.load_encoder import load
 from models.chainer.attention.rnn_decoder import RNNDecoder
+# from models.chainer.attention.rnn_decoder_nstep import RNNDecoder
 from models.chainer.attention.attention_layer import AttentionMechanism
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
@@ -678,17 +679,29 @@ class AttentionSeq2seq(ModelBase):
         Returns:
             dec_state (list or tuple of list):
         """
-        if is_sub_task:
-            cx_list = [None] * self.decoder_num_layers_sub
-            hx_list = [None] * self.decoder_num_layers_sub
+        batch_size, _, decoder_num_units = enc_out.shape
+
+        if self.decoder_type == 'lstm':
+            if is_sub_task:
+                cx_list = [None] * self.decoder_num_layers_sub
+                hx_list = [None] * self.decoder_num_layers_sub
+            else:
+                cx_list = [None] * self.decoder_num_layers
+                hx_list = [None] * self.decoder_num_layers
         else:
-            cx_list = [None] * self.decoder_num_layers
-            hx_list = [None] * self.decoder_num_layers
+            xp = cuda.get_array_module(enc_out)
+            zero_state = self._zero_init(
+                (batch_size, decoder_num_units), xp=xp, dtype=np.float32)
+            if is_sub_task:
+                hx_list = [zero_state] * self.decoder_num_layers_sub
+            else:
+                hx_list = [zero_state] * self.decoder_num_layers
 
         if self.init_dec_state != 'zero' and self.encoder_type == self.decoder_type:
             if self.init_dec_state == 'mean':
                 # Initialize with mean of all encoder outputs
                 h_0 = F.mean(enc_out, axis=1, keepdims=False)
+
             elif self.init_dec_state == 'final':
                 if self.encoder_bidirectional:
                     # Initialize with the final encoder output (backward)
@@ -711,6 +724,49 @@ class AttentionSeq2seq(ModelBase):
             dec_state = hx_list
 
         return dec_state
+
+    # def _init_decoder_state(self, enc_out, is_sub_task=False):
+    #     """Initialize decoder state.
+    #     Args:
+    #         enc_out (chainer.Variable, float): A tensor of size
+    #             `[B, T_in, decoder_num_units]`
+    #         is_sub_task (bool, optional):
+    #     Returns:
+    #         dec_state (chainer.Variable(float) or tuple): A tensor of size
+    #             `[1, B, decoder_num_units]`
+    #     """
+    #     if self.init_dec_state == 'zero' or self.encoder_type != self.decoder_type:
+    #         # Initialize with zero state
+    #         h_0 = None
+    #     else:
+    #         if self.init_dec_state == 'mean':
+    #             # Initialize with mean of all encoder outputs
+    #             h_0 = F.mean(enc_out, axis=1, keepdims=True)
+    #         elif self.init_dec_state == 'final':
+    #             if self.encoder_bidirectional:
+    #                 # Initialize with the final encoder output (backward)
+    #                 h_0 = F.expand_dims(enc_out[:, -1, :], axis=1)
+    #             else:
+    #                 # Initialize with the final encoder output (forward)
+    #                 h_0 = F.expand_dims(enc_out[:, -2, :], axis=1)
+    #
+    #         # Path through the linear layer
+    #         if is_sub_task:
+    #             h_0 = self.W_dec_init_sub(h_0)
+    #         else:
+    #             h_0 = self.W_dec_init(h_0)
+    #
+    #         # Convert to time-major
+    #         h_0 = h_0.transpose(1, 0, 2)
+    #
+    #     if self.decoder_type == 'lstm':
+    #         # Initialize memory cell with zero state
+    #         c_0 = None
+    #         dec_state = (h_0, c_0)
+    #     else:
+    #         dec_state = h_0
+    #
+    #     return dec_state
 
     def _create_token(self, value, batch_size):
         """Create 1 token per batch dimension.
