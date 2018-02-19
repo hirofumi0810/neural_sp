@@ -51,7 +51,7 @@ class TestAttention(unittest.TestCase):
                    decoder_type='lstm', subsample='concat')
 
         # Projection layer
-        self.check(encoder_type='lstm', bidirectional=False, projection=True,
+        self.check(encoder_type='lstm', bidirectional=True, projection=True,
                    decoder_type='lstm')
 
         # Residual LSTM encoder
@@ -92,7 +92,7 @@ class TestAttention(unittest.TestCase):
     @measure_time
     def check(self, encoder_type, decoder_type, bidirectional=False,
               attention_type='location', label_type='char',
-              subsample=False, projection=False, init_dec_state='final',
+              subsample=False, projection=False, init_dec_state='zero',
               ctc_loss_weight=0, conv=False, batch_norm=False,
               residual=False, dense_residual=False):
 
@@ -245,24 +245,27 @@ class TestAttention(unittest.TestCase):
                 # Decode
                 best_hyps, perm_idx = model.decode(
                     xs, x_lens,
-                    # beam_width=1,
-                    beam_width=2,
+                    beam_width=1,
+                    # beam_width=2,
                     max_decode_len=60)
 
                 # Compute accuracy
-                if label_type == 'char':
-                    str_ref = map_fn(ys[0, :y_lens[0]][1:-1])
-                    str_hyp = map_fn(best_hyps[0][0:-1]).split('>')[0]
-                    ler, _, _, _ = compute_wer(
-                        ref=list(str_ref.replace('_', '')),
-                        hyp=list(str_hyp.replace('_', '')),
-                        normalize=True)
-                elif label_type == 'word':
-                    str_ref = map_fn(ys[0, : y_lens[0]][1: -1])
-                    str_hyp = map_fn(best_hyps[0][0: -1]).split('>')[0]
-                    ler, _, _, _ = compute_wer(ref=str_ref.split('_'),
-                                               hyp=str_hyp.split('_'),
-                                               normalize=True)
+                try:
+                    if label_type == 'char':
+                        str_ref = map_fn(ys[0, :y_lens[0]][1:-1])
+                        str_hyp = map_fn(best_hyps[0][0:-1]).split('>')[0]
+                        ler, _, _, _ = compute_wer(
+                            ref=list(str_ref.replace('_', '')),
+                            hyp=list(str_hyp.replace('_', '')),
+                            normalize=True)
+                    elif label_type == 'word':
+                        str_ref = map_fn(ys[0, : y_lens[0]][1: -1])
+                        str_hyp = map_fn(best_hyps[0][0: -1]).split('>')[0]
+                        ler, _, _, _ = compute_wer(ref=str_ref.split('_'),
+                                                   hyp=str_hyp.split('_'),
+                                                   normalize=True)
+                except:
+                    ler = 1
 
                 duration_step = time.time() - start_time_step
                 print('Step %d: loss=%.3f / ler=%.3f / lr=%.5f (%.3f sec)' %

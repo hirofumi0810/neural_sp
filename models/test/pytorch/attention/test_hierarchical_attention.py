@@ -30,8 +30,8 @@ class TestHierarchicalAttention(unittest.TestCase):
         print("Hierarchical Attention Working check.")
 
         # Curriculum training
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            decoder_type='lstm', curriculum_training=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', curriculum_training=True)
 
         # Word attention + char CTC
         self.check(encoder_type='lstm', bidirectional=True,
@@ -44,7 +44,7 @@ class TestHierarchicalAttention(unittest.TestCase):
                    decoder_type='lstm', subsample='concat')
 
         # Projection layer
-        self.check(encoder_type='lstm', bidirectional=False, projection=True,
+        self.check(encoder_type='lstm', bidirectional=True, projection=True,
                    decoder_type='lstm')
 
         # Residual LSTM encoder
@@ -143,7 +143,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             parameter_init=0.1,
             recurrent_weight_orthogonal=False,
             init_forget_gate_bias_with_one=True,
-            subsample_list=[] if not subsample else [False, True, False],
+            subsample_list=[] if not subsample else [True, True, False],
             subsample_type='concat' if subsample is False else subsample,
             init_dec_state='zero',
             sharpening_factor=1,
@@ -221,17 +221,22 @@ class TestHierarchicalAttention(unittest.TestCase):
                     is_sub_task=True)
 
                 # Compute accuracy
-                str_hyp = idx2word(best_hyps[0][0:-1]).split('>')[0]
-                str_ref = idx2word(ys[0][1:-1])
-                wer, _, _, _ = compute_wer(ref=str_ref.split('_'),
-                                           hyp=str_hyp.split('_'),
-                                           normalize=True)
-                str_hyp_sub = idx2char(best_hyps_sub[0][0:-1]).split('>')[0]
-                str_ref_sub = idx2char(ys_sub[0][1:-1])
-                cer, _, _, _ = compute_wer(
-                    ref=list(str_ref_sub.replace('_', '')),
-                    hyp=list(str_hyp_sub.replace('_', '')),
-                    normalize=True)
+                try:
+                    str_hyp = idx2word(best_hyps[0][0:-1]).split('>')[0]
+                    str_ref = idx2word(ys[0][1:-1])
+                    wer, _, _, _ = compute_wer(ref=str_ref.split('_'),
+                                               hyp=str_hyp.split('_'),
+                                               normalize=True)
+                    str_hyp_sub = idx2char(
+                        best_hyps_sub[0][0:-1]).split('>')[0]
+                    str_ref_sub = idx2char(ys_sub[0][1:-1])
+                    cer, _, _, _ = compute_wer(
+                        ref=list(str_ref_sub.replace('_', '')),
+                        hyp=list(str_hyp_sub.replace('_', '')),
+                        normalize=True)
+                except:
+                    wer = 1
+                    cer = 1
 
                 duration_step = time.time() - start_time_step
                 print('Step %d: loss=%.3f(%.3f/%.3f) / wer=%.3f / cer=%.3f / lr=%.5f (%.3f sec)' %

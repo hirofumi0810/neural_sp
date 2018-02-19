@@ -271,7 +271,6 @@ class AttentionSeq2seq(ModelBase):
             num_units=decoder_num_units,
             num_layers=decoder_num_layers,
             dropout=dropout_decoder,
-            batch_first=True,
             residual=decoder_residual,
             dense_residual=decoder_dense_residual)
 
@@ -481,17 +480,17 @@ class AttentionSeq2seq(ModelBase):
             ctc_loss = ctc_loss.cuda()
 
         # Label smoothing (with uniform distribution)
-        if self.label_smoothing_prob > 0:
-            # XE
-            loss_ls_ctc = cross_entropy_label_smoothing(
-                logits_ctc,
-                y_lens=x_lens,  # NOTE: CTC is frame-synchronous
-                label_smoothing_prob=self.label_smoothing_prob,
-                distribution='uniform',
-                size_average=False)
-            ctc_loss = ctc_loss * (1 - self.label_smoothing_prob) + \
-                loss_ls_ctc
-            # print(loss_ls_ctc)
+        # if self.label_smoothing_prob > 0:
+        #     # XE
+        #     loss_ls_ctc = cross_entropy_label_smoothing(
+        #         logits_ctc,
+        #         y_lens=x_lens,  # NOTE: CTC is frame-synchronous
+        #         label_smoothing_prob=self.label_smoothing_prob,
+        #         distribution='uniform',
+        #         size_average=False)
+        #     ctc_loss = ctc_loss * (1 - self.label_smoothing_prob) + \
+        #         loss_ls_ctc
+        #     # print(loss_ls_ctc)
 
         if size_average:
             ctc_loss /= len(x_lens)
@@ -602,11 +601,11 @@ class AttentionSeq2seq(ModelBase):
 
             concat = torch.cat([dec_out, context_vec], dim=-1)
             if is_sub_task:
-                # logits_step = self.fc(F.tanh(self.proj_layer_sub(concat)))
-                logits_step = self.fc_sub(self.proj_layer_sub(concat))
+                logits_step = self.fc_sub(F.tanh(self.proj_layer_sub(concat)))
+                # logits_step = self.fc_sub(self.proj_layer_sub(concat))
             else:
-                # logits_step = self.fc(F.tanh(self.proj_layer(concat)))
-                logits_step = self.fc(self.proj_layer(concat))
+                logits_step = self.fc(F.tanh(self.proj_layer(concat)))
+                # logits_step = self.fc(self.proj_layer(concat))
 
             logits.append(logits_step)
             att_weights.append(att_weights_step)
@@ -684,26 +683,39 @@ class AttentionSeq2seq(ModelBase):
                 This should be used in inference model for memory efficiency.
             is_sub_task (bool, optional):
         Returns:
-            dec_state (torch.autograd.Variable(float) or tuple): A tensor of size
-                `[1, B, decoder_num_units]`
+            dec_state (list or tuple of list):
         """
         batch_size, _, decoder_num_units = enc_out.size()
 
-        if self.init_dec_state == 'zero' or self.encoder_type != self.decoder_type:
-            # Initialize with zero state
-            h_0 = self._zero_init(
-                (1, batch_size, decoder_num_units), volatile=volatile)
+        zero_state = self._zero_init(
+            (batch_size, decoder_num_units),
+            volatile=volatile)
+
+        if self.decoder_type == 'lstm':
+            if is_sub_task:
+                hx_list = [zero_state] * self.decoder_num_layers_sub
+                cx_list = [zero_state] * self.decoder_num_layers_sub
+            else:
+                hx_list = [zero_state] * self.decoder_num_layers
+                cx_list = [zero_state] * self.decoder_num_layers
         else:
+            if is_sub_task:
+                hx_list = [zero_state] * self.decoder_num_layers_sub
+            else:
+                hx_list = [zero_state] * self.decoder_num_layers
+
+        if self.init_dec_state != 'zero' and self.encoder_type == self.decoder_type:
             if self.init_dec_state == 'mean':
                 # Initialize with mean of all encoder outputs
-                h_0 = enc_out.mean(dim=1, keepdim=True)
+                h_0 = enc_out.mean(dim=1, keepdim=False)
+
             elif self.init_dec_state == 'final':
                 if self.encoder_bidirectional:
                     # Initialize with the final encoder output (backward)
-                    h_0 = enc_out[:, -1, :].unsqueeze(1)
+                    h_0 = enc_out[:, -1, :]
                 else:
                     # Initialize with the final encoder output (forward)
-                    h_0 = enc_out[:, -2, :].unsqueeze(1)
+                    h_0 = enc_out[:, -2, :]
 
             # Path through the linear layer
             if is_sub_task:
@@ -711,16 +723,12 @@ class AttentionSeq2seq(ModelBase):
             else:
                 h_0 = self.W_dec_init(h_0)
 
-            # Convert to time-major
-            h_0 = h_0.transpose(0, 1).contiguous()
+            hx_list[0] = h_0
 
         if self.decoder_type == 'lstm':
-            # Initialize memory cell with zero state
-            c_0 = self._zero_init(
-                (1, batch_size, decoder_num_units), volatile=volatile)
-            dec_state = (h_0, c_0)
+            dec_state = (hx_list, cx_list)
         else:
-            dec_state = h_0
+            dec_state = hx_list
 
         return dec_state
 
@@ -887,11 +895,11 @@ class AttentionSeq2seq(ModelBase):
 
             concat = torch.cat([dec_out, context_vec], dim=-1)
             if is_sub_task:
-                # logits = self.fc_sub(F.tanh(self.proj_layer_sub(concat)))
-                logits = self.fc_sub(self.proj_layer_sub(concat))
+                logits = self.fc_sub(F.tanh(self.proj_layer_sub(concat)))
+                # logits = self.fc_sub(self.proj_layer_sub(concat))
             else:
-                # logits = self.fc(F.tanh(self.proj_layer(concat)))
-                logits = self.fc(self.proj_layer(concat))
+                logits = self.fc(F.tanh(self.proj_layer(concat)))
+                # logits = self.fc(self.proj_layer(concat))
 
             # Pick up 1-best
             y = torch.max(logits.squeeze(1), dim=1)[1].unsqueeze(1)
@@ -978,12 +986,12 @@ class AttentionSeq2seq(ModelBase):
 
                     concat = torch.cat([dec_out, context_vec], dim=-1)
                     if is_sub_task:
-                        # logits = self.fc_sub(
-                        #     F.tanh(self.proj_layer_sub(concat)))
-                        logits = self.fc_sub(self.proj_layer_sub(concat))
+                        logits = self.fc_sub(
+                            F.tanh(self.proj_layer_sub(concat)))
+                        # logits = self.fc_sub(self.proj_layer_sub(concat))
                     else:
-                        # logits = self.fc(F.tanh(self.proj_layer(concat)))
-                        logits = self.fc(self.proj_layer(concat))
+                        logits = self.fc(F.tanh(self.proj_layer(concat)))
+                        # logits = self.fc(self.proj_layer(concat))
 
                     # Path through the softmax layer & convert to log-scale
                     log_probs = F.log_softmax(logits.squeeze(1), dim=-1)

@@ -66,6 +66,12 @@ class AttentionMechanism(nn.Module):
 
         elif self.attention_type == 'location':
             assert kernel_size % 2 == 1
+
+            self.W_enc = LinearND(self.encoder_num_units,
+                                  attention_dim, bias=True)
+            self.W_dec = LinearND(decoder_num_units,
+                                  attention_dim, bias=False)
+            self.W_conv = LinearND(out_channels, attention_dim, bias=False)
             # self.conv = nn.Conv1d(in_channels=1,
             #                       out_channels=out_channels,
             #                       kernel_size=kernel_size,
@@ -78,12 +84,6 @@ class AttentionMechanism(nn.Module):
                                   stride=1,
                                   padding=(0, kernel_size // 2),
                                   bias=False)
-
-            self.W_enc = LinearND(self.encoder_num_units,
-                                  attention_dim, bias=True)
-            self.W_dec = LinearND(decoder_num_units,
-                                  attention_dim, bias=False)
-            self.W_conv = LinearND(out_channels, attention_dim, bias=False)
             self.V = LinearND(attention_dim, 1, bias=False)
 
         elif self.attention_type == 'dot_product':

@@ -196,7 +196,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 num_units=decoder_num_units_sub,
                 num_layers=decoder_num_layers_sub,
                 dropout=dropout_decoder,
-                batch_first=True,
                 residual=decoder_residual,
                 dense_residual=decoder_dense_residual)
 
