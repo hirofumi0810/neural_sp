@@ -93,7 +93,8 @@ class RNNDecoder(chainer.Chain):
             dec_state (chainer.Variable(float) or tuple):
         """
         # Convert to list of Variable
-        y = [t[0] for t in F.split_axis(y, len(y), axis=0)]
+        # y = [t[0] for t in F.split_axis(y, len(y), axis=0)]
+        y = F.separate(y, axis=0)
 
         dec_out = y
         res_outputs_list = []
@@ -123,6 +124,7 @@ class RNNDecoder(chainer.Chain):
                     res_outputs_list.append(dec_out)
 
         # Concatenate
-        dec_out = F.pad_sequence(dec_out, padding=-1)
+        # dec_out = F.pad_sequence(dec_out, padding=-1)
+        dec_out = F.pad_sequence(dec_out, padding=0)
 
         return dec_out, dec_state

@@ -244,19 +244,22 @@ class TestAttention(unittest.TestCase):
                                             max_decode_len=60)
 
                 # Compute accuracy
-                if label_type == 'char':
-                    str_ref = map_fn(ys[0, :y_lens[0]][1:-1])
-                    str_hyp = map_fn(best_hyps[0][0:-1]).split('>')[0]
-                    ler, _, _, _ = compute_wer(
-                        ref=list(str_ref.replace('_', '')),
-                        hyp=list(str_hyp.replace('_', '')),
-                        normalize=True)
-                elif label_type == 'word':
-                    str_ref = map_fn(ys[0, : y_lens[0]][1: -1])
-                    str_hyp = map_fn(best_hyps[0][0: -1]).split('>')[0]
-                    ler, _, _, _ = compute_wer(ref=str_ref.split('_'),
-                                               hyp=str_hyp.split('_'),
-                                               normalize=True)
+                try:
+                    if label_type == 'char':
+                        str_ref = map_fn(ys[0, :y_lens[0]][1:-1])
+                        str_hyp = map_fn(best_hyps[0][0:-1]).split('>')[0]
+                        ler, _, _, _ = compute_wer(
+                            ref=list(str_ref.replace('_', '')),
+                            hyp=list(str_hyp.replace('_', '')),
+                            normalize=True)
+                    elif label_type == 'word':
+                        str_ref = map_fn(ys[0, : y_lens[0]][1: -1])
+                        str_hyp = map_fn(best_hyps[0][0: -1]).split('>')[0]
+                        ler, _, _, _ = compute_wer(ref=str_ref.split('_'),
+                                                   hyp=str_hyp.split('_'),
+                                                   normalize=True)
+                except:
+                    ler = 1
 
                 duration_step = time.time() - start_time_step
                 print('Step %d: loss=%.3f / ler=%.3f / lr=%.5f (%.3f sec)' %

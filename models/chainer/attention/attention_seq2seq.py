@@ -398,7 +398,7 @@ class AttentionSeq2seq(ModelBase):
 
     def _forward(self, xs, ys, x_lens, y_lens):
         # Wrap by Variable
-        xs = np2var(xs,  use_cuda=self.use_cuda, backend='chainer')
+        xs = np2var(xs, use_cuda=self.use_cuda, backend='chainer')
         ys = np2var(ys, use_cuda=self.use_cuda, backend='chainer')
         # x_lens = np2var(x_lens, use_cuda=self.use_cuda, backend='chainer')
         y_lens = np2var(y_lens, use_cuda=self.use_cuda, backend='chainer')
@@ -478,17 +478,17 @@ class AttentionSeq2seq(ModelBase):
         ctc_loss = F.sum(ctc_loss, axis=0)
 
         # Label smoothing (with uniform distribution)
-        if self.label_smoothing_prob > 0:
-            # XE
-            loss_ls_ctc = cross_entropy_label_smoothing(
-                logits_ctc,
-                y_lens=x_lens,  # NOTE: CTC is frame-synchronous
-                label_smoothing_prob=self.label_smoothing_prob,
-                distribution='uniform',
-                size_average=False)
-            ctc_loss = ctc_loss * (1 - self.label_smoothing_prob) + \
-                loss_ls_ctc
-            # print(loss_ls_ctc)
+        # if self.label_smoothing_prob > 0:
+        #     # XE
+        #     loss_ls_ctc = cross_entropy_label_smoothing(
+        #         logits_ctc,
+        #         y_lens=x_lens,  # NOTE: CTC is frame-synchronous
+        #         label_smoothing_prob=self.label_smoothing_prob,
+        #         distribution='uniform',
+        #         size_average=False)
+        #     ctc_loss = ctc_loss * (1 - self.label_smoothing_prob) + \
+        #         loss_ls_ctc
+        #     # print(loss_ls_ctc)
 
         if size_average:
             ctc_loss /= len(x_lens)
@@ -558,12 +558,13 @@ class AttentionSeq2seq(ModelBase):
 
         # Initialize decoder state, decoder output, attention_weights
         dec_state = self._init_decoder_state(enc_out, is_sub_task=is_sub_task)
+        xp = cuda.get_array_module(enc_out)
         dec_out = self._zero_init(
-            (batch_size, 1, decoder_num_units), dtype=np.float32)
+            (batch_size, 1, decoder_num_units), xp=xp, dtype=np.float32)
         context_vec = self._zero_init(
-            (batch_size, 1, decoder_num_units), dtype=np.float32)
+            (batch_size, 1, decoder_num_units), xp=xp, dtype=np.float32)
         att_weights_step = self._zero_init(
-            (batch_size, max_time), dtype=np.float32)
+            (batch_size, max_time), xp=xp, dtype=np.float32)
 
         logits = []
         att_weights = []
@@ -656,17 +657,16 @@ class AttentionSeq2seq(ModelBase):
 
         return dec_out, dec_state, context_vec, att_weights_step
 
-    def _zero_init(self, size, dtype=np.float32):
+    def _zero_init(self, size, xp, dtype=np.float32):
         """Initialize a variable with zero.
         Args:
             size (tuple):
+            xp: numpy or cupy
             dtype ():
         Returns:
             zero_var (chainer.Variable, float):
         """
-        zero_var = Variable(np.zeros(size, dtype=dtype))
-        if self.use_cuda:
-            zero_var.to_gpu()
+        zero_var = Variable(xp.zeros(size, dtype=dtype))
         return zero_var
 
     def _init_decoder_state(self, enc_out, is_sub_task=False):
@@ -810,12 +810,13 @@ class AttentionSeq2seq(ModelBase):
 
         # Initialize decoder state, decoder output, attention_weights
         dec_state = self._init_decoder_state(enc_out, is_sub_task=is_sub_task)
+        xp = cuda.get_array_module(enc_out)
         dec_out = self._zero_init(
-            (batch_size, 1, decoder_num_units), dtype=np.float32)
+            (batch_size, 1, decoder_num_units), xp=xp, dtype=np.float32)
         context_vec = self._zero_init(
-            (batch_size, 1, decoder_num_units), dtype=np.float32)
+            (batch_size, 1, decoder_num_units), xp=xp, dtype=np.float32)
         att_weights_step = self._zero_init(
-            (batch_size, max_time), dtype=np.float32)
+            (batch_size, max_time), xp=xp, dtype=np.float32)
 
         # Start from <SOS>
         sos = self.sos_index_sub if is_sub_task else self.sos_index
@@ -898,10 +899,11 @@ class AttentionSeq2seq(ModelBase):
             # Initialize decoder state, decoder output, attention_weights
             dec_state = self._init_decoder_state(
                 enc_out[b:b + 1, :, :], is_sub_task=is_sub_task)
+            xp = cuda.get_array_module(enc_out)
             dec_out = self._zero_init(
-                (1, 1, decoder_num_units), dtype=np.float32)
+                (1, 1, decoder_num_units), xp=xp, dtype=np.float32)
             att_weights_step = self._zero_init(
-                (1, frame_num), dtype=np.float32)
+                (1, frame_num), xp=xp, dtype=np.float32)
 
             complete = []
             beam = [{'hyp': [],

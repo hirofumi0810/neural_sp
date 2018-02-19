@@ -12,6 +12,7 @@ import chainer
 from chainer import functions as F
 from chainer import links as L
 from chainer import Variable
+from chainer import cuda
 
 from models.chainer.linear import LinearND
 
@@ -66,21 +67,21 @@ class AttentionMechanism(chainer.Chain):
 
             elif self.attention_type == 'location':
                 assert kernel_size % 2 == 1
-                self.conv = L.Convolution2D(
-                    in_channels=1,
-                    out_channels=out_channels,
-                    ksize=(1, kernel_size),
-                    stride=1,
-                    pad=(0, kernel_size // 2),
-                    nobias=False,
-                    initialW=None,
-                    initial_bias=None)
+
                 self.W_enc = LinearND(decoder_num_units, attention_dim,
                                       bias=True, use_cuda=use_cuda)
                 self.W_dec = LinearND(decoder_num_units, attention_dim,
                                       bias=False, use_cuda=use_cuda)
                 self.W_conv = LinearND(out_channels, attention_dim,
                                        bias=False, use_cuda=use_cuda)
+                self.conv = L.Convolution2D(in_channels=1,
+                                            out_channels=out_channels,
+                                            ksize=(1, kernel_size),
+                                            stride=1,
+                                            pad=(0, kernel_size // 2),
+                                            nobias=True,
+                                            initialW=None,
+                                            initial_bias=None)
                 self.V = LinearND(attention_dim, 1,
                                   bias=False, use_cuda=use_cuda)
 
@@ -157,13 +158,12 @@ class AttentionMechanism(chainer.Chain):
             raise NotImplementedError
 
         # Mask attention distribution
-        energy_mask = np.ones((batch_size, max_time), dtype=np.float32)
+        xp = cuda.get_array_module(enc_out)
+        energy_mask = xp.ones((batch_size, max_time), dtype=np.float32)
         for b in range(batch_size):
             if x_lens[b] < max_time:
                 energy_mask[b, x_lens[b]:] = 0
         energy_mask = Variable(energy_mask)
-        if self.use_cuda:
-            energy_mask.to_gpu()
         energy *= energy_mask
 
         # Compute attention weights
