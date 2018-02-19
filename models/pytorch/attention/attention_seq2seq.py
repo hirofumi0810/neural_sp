@@ -24,7 +24,8 @@ from models.pytorch.base import ModelBase
 from models.pytorch.criterion import cross_entropy_label_smoothing
 from models.pytorch.linear import LinearND, Embedding, Embedding_LS
 from models.pytorch.encoders.load_encoder import load
-from models.pytorch.attention.rnn_decoder import RNNDecoder
+# from models.pytorch.attention.rnn_decoder import RNNDecoder
+from models.pytorch.attention.rnn_decoder_nstep import RNNDecoder
 from models.pytorch.attention.attention_layer import AttentionMechanism
 from models.pytorch.ctc.ctc import _concatenate_labels
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
@@ -567,6 +568,10 @@ class AttentionSeq2seq(ModelBase):
         context_vec = self._zero_init((batch_size, 1, decoder_num_units))
         att_weights_step = self._zero_init((batch_size, max_time))
 
+        # Start from <SOS>
+        sos = self.sos_index_sub if is_sub_task else self.sos_index
+        y = self._create_token(value=sos, batch_size=batch_size)
+
         logits = []
         att_weights = []
         for t in range(labels_max_seq_len - 1):
@@ -688,8 +693,7 @@ class AttentionSeq2seq(ModelBase):
         batch_size, _, decoder_num_units = enc_out.size()
 
         zero_state = self._zero_init(
-            (batch_size, decoder_num_units),
-            volatile=volatile)
+            (batch_size, decoder_num_units), volatile=volatile)
 
         if self.decoder_type == 'lstm':
             if is_sub_task:
@@ -732,17 +736,68 @@ class AttentionSeq2seq(ModelBase):
 
         return dec_state
 
-    def _create_token(self, value, batch_size):
+    # def _init_decoder_state(self, enc_out, volatile=False, is_sub_task=False):
+    #     """Initialize decoder state.
+    #     Args:
+    #         enc_out (torch.autograd.Variable, float): A tensor of size
+    #             `[B, T_in, decoder_num_units]`
+    #         volatile (bool, optional): if True, the history will not be saved.
+    #             This should be used in inference model for memory efficiency.
+    #         is_sub_task (bool, optional):
+    #     Returns:
+    #         dec_state (torch.autograd.Variable(float) or tuple): A tensor of size
+    #             `[1, B, decoder_num_units]`
+    #     """
+    #     batch_size, _, decoder_num_units = enc_out.size()
+    #
+    #     if self.init_dec_state == 'zero' or self.encoder_type != self.decoder_type:
+    #         # Initialize with zero state
+    #         h_0 = self._zero_init(
+    #             (1, batch_size, decoder_num_units), volatile=volatile)
+    #     else:
+    #         if self.init_dec_state == 'mean':
+    #             # Initialize with mean of all encoder outputs
+    #             h_0 = enc_out.mean(dim=1, keepdim=True)
+    #         elif self.init_dec_state == 'final':
+    #             if self.encoder_bidirectional:
+    #                 # Initialize with the final encoder output (backward)
+    #                 h_0 = enc_out[:, -1, :].unsqueeze(1)
+    #             else:
+    #                 # Initialize with the final encoder output (forward)
+    #                 h_0 = enc_out[:, -2, :].unsqueeze(1)
+    #
+    #         # Path through the linear layer
+    #         if is_sub_task:
+    #             h_0 = self.W_dec_init_sub(h_0)
+    #         else:
+    #             h_0 = self.W_dec_init(h_0)
+    #
+    #         # Convert to time-major
+    #         h_0 = h_0.transpose(0, 1).contiguous()
+    #
+    #     if self.decoder_type == 'lstm':
+    #         # Initialize memory cell with zero state
+    #         c_0 = self._zero_init(
+    #             (1, batch_size, decoder_num_units), volatile=volatile)
+    #         dec_state = (h_0, c_0)
+    #     else:
+    #         dec_state = h_0
+    #
+    #     return dec_state
+
+    def _create_token(self, value, batch_size, volatile=False):
         """Create 1 token per batch dimension.
         Args:
             value (int): the  value to pad
             batch_size (int): the size of mini-batch
+            volatile (bool): if True, the history will not be saved.
+                This should be used in inference model for memory efficiency.
         Returns:
             y (torch.autograd.Variable, long): A tensor of size `[B, 1]`
         """
-        y = Variable(torch.LongTensor(batch_size, 1).fill_(
-            value), requires_grad=False)
-        y.volatile = True
+        y = Variable(torch.LongTensor(batch_size, 1).fill_(value))
+        if volatile:
+            y.volatile = True
         if self.use_cuda:
             y = y.cuda()
         return y

@@ -45,13 +45,21 @@ class RNNDecoder(nn.Module):
             decoder_input_size = input_size if l == 0 else num_units
 
             if rnn_type == 'lstm':
-                rnn_i = nn.LSTMCell(input_size=decoder_input_size,
-                                    hidden_size=num_units,
-                                    bias=True)
+                rnn_i = nn.LSTM(decoder_input_size,
+                                hidden_size=num_units,
+                                num_layers=1,
+                                bias=True,
+                                batch_first=True,
+                                dropout=0,
+                                bidirectional=False)
             elif rnn_type == 'gru':
-                rnn_i = nn.GRUCell(input_size=decoder_input_size,
-                                   hidden_size=num_units,
-                                   bias=True)
+                rnn_i = nn.GRU(decoder_input_size,
+                               hidden_size=num_units,
+                               num_layers=1,
+                               bias=True,
+                               batch_first=True,
+                               dropout=0,
+                               bidirectional=False)
             else:
                 raise ValueError('rnn_type must be "lstm" or "gru".')
 
@@ -60,54 +68,36 @@ class RNNDecoder(nn.Module):
             # Dropout for hidden-hidden or hidden-output connection
             setattr(self, 'dropout_l' + str(l), nn.Dropout(p=dropout))
 
-    def forward(self, dec_in, dec_state):
+    def forward(self, y, dec_state):
         """Forward computation.
         Args:
-            dec_in (torch.autograd.Variable, float): A tensor of size
-                `[B, 1, embedding_dim + encoder_num_units (decoder_num_units)]`
-            dec_state (torch.autograd.Variable(float) or tuple):
+            y (torch.autograd.Variable, float): A tensor of size
+                `[B, 1, input_size]`
+            dec_state (torch.autograd.Variable(float) or tuple): A tensor of size
+                `[1, B, num_units]`
         Returns:
             dec_out (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, num_units]`
             dec_state (torch.autograd.Variable(float) or tuple):
         """
-        if self.rnn_type == 'lstm':
-            hx_list, cx_list = dec_state
-        elif self.rnn_type == 'gru':
-            hx_list = dec_state
-
-        dec_in = dec_in.squeeze(1)
+        dec_out = y
+        res_outputs_list = []
         # NOTE: exclude residual connection from decoder's inputs
         for l in range(self.num_layers):
-            if self.rnn_type == 'lstm':
-                if l == 0:
-                    hx_list[l], cx_list[l] = getattr(self, 'lstm_l0')(
-                        dec_in, (hx_list[l], cx_list[l]))
-                else:
-                    hx_list[l], cx_list[l] = getattr(self, 'lstm_l' + str(l))(
-                        hx_list[l - 1], (hx_list[l], cx_list[l]))
-            elif self.rnn_type == 'gru':
-                if l == 0:
-                    hx_list[l] = getattr(self, 'gru_l0')(dec_in, hx_list[l])
-                else:
-                    hx_list[l] = getattr(self, 'gru_l' + str(l))(
-                        hx_list[l - 1], hx_list[l])
+            dec_out, dec_state = getattr(self, self.rnn_type + '_l' + str(l))(
+                dec_out, hx=dec_state)
 
             # Dropout for hidden-hidden or hidden-output connection
-            hx_list[l] = getattr(self, 'dropout_l' + str(l))(hx_list[l])
+            dec_out = getattr(self, 'dropout_l' + str(l))(dec_out)
 
             # Residual connection
-            if l > 0 and self.residual or self.dense_residual:
-                if self.residual:
-                    hx_list[l] += sum(hx_list[l - 1])
-                elif self.dense_residual:
-                    hx_list[l] += sum(hx_list[:l])
-
-        dec_out = hx_list[-1].unsqueeze(1)
-
-        if self.rnn_type == 'lstm':
-            dec_state = (hx_list, cx_list)
-        elif self.rnn_type == 'gru':
-            dec_state = hx_list
+            if self.residual or self.dense_residual:
+                if self.residual or self.dense_residual:
+                    for outputs_lower in res_outputs_list:
+                        dec_out = dec_out + outputs_lower
+                    if self.residual:
+                        res_outputs_list = [dec_out]
+                    elif self.dense_residual:
+                        res_outputs_list.append(dec_out)
 
         return dec_out, dec_state
