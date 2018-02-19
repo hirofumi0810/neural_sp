@@ -256,7 +256,8 @@ class AttentionSeq2seq(ModelBase):
 
             if self.init_dec_state != 'zero':
                 self.W_dec_init = LinearND(
-                    decoder_num_units, decoder_num_units)
+                    decoder_num_units, decoder_num_units,
+                    use_cuda=self.use_cuda)
 
             ####################
             # Decoder
@@ -333,8 +334,8 @@ class AttentionSeq2seq(ModelBase):
                         encoder_num_units * self.encoder_num_directions, num_classes + 1,
                         use_cuda=self.use_cuda)
 
+                # self.blank_index = num_classes
                 self.blank_index = 0
-                # NOTE: do not change
 
                 # Set CTC decoders
                 self._decode_ctc_greedy_np = GreedyDecoder(
@@ -419,7 +420,7 @@ class AttentionSeq2seq(ModelBase):
         # Compute XE sequence loss
         loss = F.softmax_cross_entropy(
             x=logits.reshape((-1, logits.shape[2])),
-            t=ys[:, 1:].reshape(-1),  # NOTE: Exclude first <SOS>
+            t=F.flatten(ys[:, 1:]),  # NOTE: Exclude <SOS>
             normalize=True, cache_score=True, class_weight=None,
             ignore_label=self.sos_index, reduce='no')
         # NOTE: ys are padded by <SOS>
@@ -600,12 +601,11 @@ class AttentionSeq2seq(ModelBase):
 
             concat = F.concat([dec_out, context_vec], axis=-1)
             if is_sub_task:
-                # logits_step =
-                # self.fc_sub(F.tanh(self.proj_layer_sub(concat)))
-                logits_step = self.fc_sub(self.proj_layer_sub(concat))
+                logits_step = self.fc_sub(F.tanh(self.proj_layer_sub(concat)))
+                # logits_step = self.fc_sub(self.proj_layer_sub(concat))
             else:
-                # logits_step = self.fc(F.tanh(self.proj_layer(concat)))
-                logits_step = self.fc(self.proj_layer(concat))
+                logits_step = self.fc(F.tanh(self.proj_layer(concat)))
+                # logits_step = self.fc(self.proj_layer(concat))
 
             logits.append(logits_step)
             att_weights.append(att_weights_step)
@@ -676,23 +676,26 @@ class AttentionSeq2seq(ModelBase):
                 `[B, T_in, decoder_num_units]`
             is_sub_task (bool, optional):
         Returns:
-            dec_state (chainer.Variable(float) or tuple): A tensor of size
-                `[1, B, decoder_num_units]`
+            dec_state (list or tuple of list):
         """
-        if self.init_dec_state == 'zero' or self.encoder_type != self.decoder_type:
-            # Initialize with zero state
-            h_0 = None
+        if is_sub_task:
+            cx_list = [None] * self.decoder_num_layers_sub
+            hx_list = [None] * self.decoder_num_layers_sub
         else:
+            cx_list = [None] * self.decoder_num_layers
+            hx_list = [None] * self.decoder_num_layers
+
+        if self.init_dec_state != 'zero' and self.encoder_type == self.decoder_type:
             if self.init_dec_state == 'mean':
                 # Initialize with mean of all encoder outputs
-                h_0 = F.mean(enc_out, axis=1, keepdims=True)
+                h_0 = F.mean(enc_out, axis=1, keepdims=False)
             elif self.init_dec_state == 'final':
                 if self.encoder_bidirectional:
                     # Initialize with the final encoder output (backward)
-                    h_0 = F.expand_dims(enc_out[:, -1, :], axis=1)
+                    h_0 = enc_out[:, -1, :]
                 else:
                     # Initialize with the final encoder output (forward)
-                    h_0 = F.expand_dims(enc_out[:, -2, :], axis=1)
+                    h_0 = enc_out[:, -2, :]
 
             # Path through the linear layer
             if is_sub_task:
@@ -700,15 +703,12 @@ class AttentionSeq2seq(ModelBase):
             else:
                 h_0 = self.W_dec_init(h_0)
 
-            # Convert to time-major
-            h_0 = h_0.transpose(1, 0, 2)
+            hx_list[0] = h_0
 
         if self.decoder_type == 'lstm':
-            # Initialize memory cell with zero state
-            c_0 = None
-            dec_state = (h_0, c_0)
+            dec_state = (hx_list, cx_list)
         else:
-            dec_state = h_0
+            dec_state = hx_list
 
         return dec_state
 
@@ -844,11 +844,11 @@ class AttentionSeq2seq(ModelBase):
 
             concat = F.concat([dec_out, context_vec], axis=-1)
             if is_sub_task:
-                # logits = self.fc_sub( F.tanh(self.proj_layer_sub(concat)))
-                logits = self.fc_sub(self.proj_layer_sub(concat))
+                logits = self.fc_sub(F.tanh(self.proj_layer_sub(concat)))
+                # logits = self.fc_sub(self.proj_layer_sub(concat))
             else:
-                # logits = self.fc( F.tanh(self.proj_layer(concat)))
-                logits = self.fc(self.proj_layer(concat))
+                logits = self.fc(F.tanh(self.proj_layer(concat)))
+                # logits = self.fc(self.proj_layer(concat))
 
             # Pick up 1-best
             y = F.argmax(F.squeeze(logits, axis=1), axis=1)
@@ -940,12 +940,12 @@ class AttentionSeq2seq(ModelBase):
 
                     concat = F.concat([dec_out, context_vec], axis=-1)
                     if is_sub_task:
-                        # logits = self.fc_sub(
-                        #     F.tanh(self.proj_layer_sub(concat)))
-                        logits = self.fc_sub(self.proj_layer_sub(concat))
+                        logits = self.fc_sub(
+                            F.tanh(self.proj_layer_sub(concat)))
+                        # logits = self.fc_sub(self.proj_layer_sub(concat))
                     else:
-                        # logits = self.fc(F.tanh(self.proj_layer(concat)))
-                        logits = self.fc(self.proj_layer(concat))
+                        logits = self.fc(F.tanh(self.proj_layer(concat)))
+                        # logits = self.fc(self.proj_layer(concat))
 
                     # Path through the softmax layer & convert to log-scale
                     log_probs = F.log_softmax(F.squeeze(logits, axis=1))

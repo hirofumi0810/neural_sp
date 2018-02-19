@@ -24,6 +24,20 @@ class TestAttention(unittest.TestCase):
     def test(self):
         print("Attention Working check.")
 
+        # Initialize decoder state
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', init_dec_state='final')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', init_dec_state='mean')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', init_dec_state='zero')
+
+        # Residual connection
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', residual=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', dense_residual=True)
+
         # Joint CTC-Attention
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', ctc_loss_weight=0.2)
@@ -46,14 +60,8 @@ class TestAttention(unittest.TestCase):
                    decoder_type='lstm', subsample='concat')
 
         # Projection layer
-        self.check(encoder_type='lstm', bidirectional=False, projection=True,
+        self.check(encoder_type='lstm', bidirectional=True, projection=True,
                    decoder_type='lstm')
-
-        # Residual LSTM encoder
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', residual=True)
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', dense_residual=True)
 
         # CLDNN encoder
         self.check(encoder_type='lstm', bidirectional=True,
@@ -87,7 +95,7 @@ class TestAttention(unittest.TestCase):
     @measure_time
     def check(self, encoder_type, decoder_type, bidirectional=False,
               attention_type='location', label_type='char',
-              subsample=False, projection=False, init_dec_state='final',
+              subsample=False, projection=False, init_dec_state='zero',
               ctc_loss_weight=0, conv=False, batch_norm=False,
               residual=False, dense_residual=False):
 
@@ -147,13 +155,13 @@ class TestAttention(unittest.TestCase):
             input_size=xs[0].shape[-1] // splice // num_stack,  # 120
             encoder_type=encoder_type,
             encoder_bidirectional=bidirectional,
-            encoder_num_units=256,
-            encoder_num_proj=256 if projection else 0,
+            encoder_num_units=320,
+            encoder_num_proj=320 if projection else 0,
             encoder_num_layers=2,
             attention_type=attention_type,
-            attention_dim=128,
+            attention_dim=320,
             decoder_type=decoder_type,
-            decoder_num_units=256,
+            decoder_num_units=320,
             decoder_num_layers=2,
             embedding_dim=32,
             dropout_input=0.1,
@@ -239,8 +247,8 @@ class TestAttention(unittest.TestCase):
 
                 # Decode
                 best_hyps, _ = model.decode(xs, x_lens,
-                                            # beam_width=1,
-                                            beam_width=2,
+                                            beam_width=1,
+                                            # beam_width=2,
                                             max_decode_len=60)
 
                 # Compute accuracy

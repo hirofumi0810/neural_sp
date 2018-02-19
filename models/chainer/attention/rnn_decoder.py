@@ -16,7 +16,7 @@ class RNNDecoder(chainer.Chain):
     """RNN decoder.
     Args:
         input_size (int): the dimension of decoder inputs
-        rnn_type (string): lstm or gru or rnn
+        rnn_type (string): lstm or gru
         num_units (int): the number of units in each layer
         num_layers (int): the number of layers
         dropout (float): the probability to drop nodes
@@ -48,83 +48,74 @@ class RNNDecoder(chainer.Chain):
         self.dense_residual = dense_residual
 
         with self.init_scope():
-            self.rnns = []
-            for i_layer in range(num_layers):
-                if i_layer == 0:
-                    decoder_input_size = input_size
-                else:
-                    decoder_input_size = num_units
+            for l in range(num_layers):
+                decoder_input_size = input_size if l == 0 else num_units
 
                 if rnn_type == 'lstm':
-                    rnn_i = L.NStepLSTM(n_layers=1,
-                                        in_size=decoder_input_size,
-                                        out_size=num_units,
-                                        dropout=0)
+                    rnn_i = L.StatelessLSTM(
+                        in_size=decoder_input_size,
+                        out_size=num_units)
                 elif rnn_type == 'gru':
-                    rnn_i = L.NStepGRU(n_layers=1,
-                                       in_size=decoder_input_size,
-                                       out_size=num_units,
-                                       dropout=0)
-                elif rnn_type == 'rnn':
-                    # rnn_i = L.NStepRNNReLU(
-                    rnn_i = L.NStepRNNTanh(n_layers=1,
-                                           in_size=decoder_input_size,
-                                           out_size=num_units,
-                                           dropout=0)
+                    rnn_i = L.StatelessGRU(
+                        in_size=decoder_input_size,
+                        out_size=num_units)
                 else:
-                    raise ValueError(
-                        'rnn_type must be "lstm" or "gru" or "rnn".')
+                    raise ValueError('rnn_type must be "lstm" or "gru".')
 
-                setattr(self, rnn_type + '_l' + str(i_layer), rnn_i)
                 if use_cuda:
                     rnn_i.to_gpu()
-                self.rnns.append(rnn_i)
 
-    def __call__(self, y, dec_state):
+                setattr(self, rnn_type + '_l' + str(l), rnn_i)
+
+    def __call__(self, dec_in, dec_state):
         """Forward computation.
         Args:
-            y (chainer.Variablem float): A tensor of size `[B, 1, embedding_dim]`
-            dec_state (chainer.Variable(float) or tuple): A tensor of size
-                `[1, B, num_units]`
+            dec_in (chainer.Variable, float): A tensor of size
+                `[B, 1, embedding_dim + encoder_num_units (decoder_num_units)]`
+            dec_state (chainer.Variable(float) or tuple):
         Returns:
-            dec_out (chainer.Variable, float):
-                if batch_first is True, a tensor of size `[B, 1, num_units]`
-                else `[1, B, num_units]`
+            dec_out (chainer.Variable, float): A tensor of size
+                `[B, 1, num_units]`
             dec_state (chainer.Variable(float) or tuple):
         """
-        # Convert to list of Variable
-        # y = [t[0] for t in F.split_axis(y, len(y), axis=0)]
-        y = F.separate(y, axis=0)
+        if self.rnn_type == 'lstm':
+            hx_list, cx_list = dec_state
+        elif self.rnn_type == 'gru':
+            hx_list = dec_state
 
-        dec_out = y
-        res_outputs_list = []
+        dec_in = F.squeeze(dec_in, axis=1)
         # NOTE: exclude residual connection from decoder's inputs
-        for i_layer in range(self.num_layers):
+        for l in range(self.num_layers):
             if self.rnn_type == 'lstm':
-                hx, cx, dec_out = self.rnns[i_layer](
-                    hx=dec_state[0], cx=dec_state[1], xs=dec_out)
-                dec_state = (hx, cx)
-            else:
-                dec_state, dec_out = self.rnns[i_layer](
-                    hx=dec_state, xs=dec_out)
+                if l == 0:
+                    cx_list[l], hx_list[l] = getattr(self, 'lstm_l0')(
+                        cx_list[l], hx_list[l], dec_in)
+                else:
+                    cx_list[l], hx_list[l] = getattr(self, 'lstm_l' + str(l))(
+                        cx_list[l], hx_list[l], hx_list[l - 1])
+            elif self.rnn_type == 'gru':
+                if l == 0:
+                    hx_list[l] = getattr(self, 'gru_l0')(hx_list[l], dec_in)
+                else:
+                    hx_list[l] = getattr(self, 'gru_l' + str(l))(
+                        hx_list[l], hx_list[l - 1])
 
             # Dropout for hidden-hidden or hidden-output connection
             if self.dropout > 0:
-                dec_out = [F.dropout(o, ratio=self.dropout) for o in dec_out]
+                hx_list[l] = F.dropout(hx_list[l], ratio=self.dropout)
 
             # Residual connection
-            if self.residual or self.dense_residual:
-                for outputs_lower in res_outputs_list:
-                    dec_out = dec_out + outputs_lower
-                    dec_out = [o + o_l for o,
-                               o_l in zip(dec_out, outputs_lower)]
+            if l > 0 and self.residual or self.dense_residual:
                 if self.residual:
-                    res_outputs_list = [dec_out]
+                    hx_list[l] += sum(hx_list[l - 1])
                 elif self.dense_residual:
-                    res_outputs_list.append(dec_out)
+                    hx_list[l] += sum(hx_list[:l])
 
-        # Concatenate
-        # dec_out = F.pad_sequence(dec_out, padding=-1)
-        dec_out = F.pad_sequence(dec_out, padding=0)
+        dec_out = F.expand_dims(hx_list[-1], axis=1)
+
+        if self.rnn_type == 'lstm':
+            dec_state = hx_list, cx_list
+        elif self.rnn_type == 'gru':
+            dec_state = hx_list
 
         return dec_out, dec_state
