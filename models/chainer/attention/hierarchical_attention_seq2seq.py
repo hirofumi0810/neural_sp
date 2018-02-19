@@ -148,147 +148,152 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             raise ValueError('Set scheduled_sampling_ramp_max_step.')
         self.curriculum_training = curriculum_training
 
-        #########################
-        # Encoder
-        # NOTE: overide encoder
-        #########################
-        if encoder_type in ['lstm', 'gru', 'rnn']:
-            self.encoder = load(encoder_type=encoder_type)(
-                input_size=input_size,
-                rnn_type=encoder_type,
-                bidirectional=encoder_bidirectional,
-                num_units=encoder_num_units,
-                num_proj=encoder_num_proj,
-                num_layers=encoder_num_layers,
-                num_layers_sub=encoder_num_layers_sub,
-                dropout_input=dropout_input,
-                dropout_hidden=dropout_encoder,
-                subsample_list=subsample_list,
-                subsample_type=subsample_type,
-                use_cuda=self.use_cuda,
-                merge_bidirectional=False,
-                num_stack=num_stack,
-                splice=splice,
-                conv_channels=conv_channels,
-                conv_kernel_sizes=conv_kernel_sizes,
-                conv_strides=conv_strides,
-                poolings=poolings,
-                activation=activation,
-                batch_norm=batch_norm,
-                residual=encoder_residual,
-                dense_residual=encoder_dense_residual)
-        else:
-            raise NotImplementedError
+        with self.init_scope():
+            # Overide encoder
+            delattr(self, 'encoder')
 
-        if self.init_dec_state != 'zero':
-            self.W_dec_init_sub = LinearND(
-                decoder_num_units_sub, decoder_num_units_sub)
+            #########################
+            # Encoder
+            #########################
+            if encoder_type in ['lstm', 'gru', 'rnn']:
+                self.encoder = load(encoder_type=encoder_type)(
+                    input_size=input_size,
+                    rnn_type=encoder_type,
+                    bidirectional=encoder_bidirectional,
+                    num_units=encoder_num_units,
+                    num_proj=encoder_num_proj,
+                    num_layers=encoder_num_layers,
+                    num_layers_sub=encoder_num_layers_sub,
+                    dropout_input=dropout_input,
+                    dropout_hidden=dropout_encoder,
+                    subsample_list=subsample_list,
+                    subsample_type=subsample_type,
+                    use_cuda=self.use_cuda,
+                    merge_bidirectional=False,
+                    num_stack=num_stack,
+                    splice=splice,
+                    conv_channels=conv_channels,
+                    conv_kernel_sizes=conv_kernel_sizes,
+                    conv_strides=conv_strides,
+                    poolings=poolings,
+                    activation=activation,
+                    batch_norm=batch_norm,
+                    residual=encoder_residual,
+                    dense_residual=encoder_dense_residual)
+            else:
+                raise NotImplementedError
 
-        self.is_bridge_sub = False
-        if self.sub_loss_weight > 0:
-            ##############################
-            # Decoder (sub)
-            ##############################
-            self.decoder_sub = RNNDecoder(
-                input_size=decoder_num_units_sub + embedding_dim_sub,
-                rnn_type=decoder_type,
-                num_units=decoder_num_units_sub,
-                num_layers=decoder_num_layers_sub,
-                dropout=dropout_decoder,
-                use_cuda=self.use_cuda,
-                residual=decoder_residual,
-                dense_residual=decoder_dense_residual)
+            if self.init_dec_state != 'zero':
+                self.W_dec_init_sub = LinearND(
+                    decoder_num_units_sub, decoder_num_units_sub,
+                    use_cuda=self.use_cuda)
 
-            ###################################
-            # Attention layer (sub)
-            ###################################
-            self.attend_sub = AttentionMechanism(
-                decoder_num_units=decoder_num_units_sub,
-                attention_type=attention_type,
-                attention_dim=attention_dim,
-                use_cuda=self.use_cuda,
-                sharpening_factor=sharpening_factor,
-                sigmoid_smoothing=sigmoid_smoothing,
-                out_channels=attention_conv_num_channels,
-                kernel_size=attention_conv_width)
+            self.is_bridge_sub = False
+            if self.sub_loss_weight > 0:
+                ##############################
+                # Decoder (sub)
+                ##############################
+                self.decoder_sub = RNNDecoder(
+                    input_size=decoder_num_units_sub + embedding_dim_sub,
+                    rnn_type=decoder_type,
+                    num_units=decoder_num_units_sub,
+                    num_layers=decoder_num_layers_sub,
+                    dropout=dropout_decoder,
+                    use_cuda=self.use_cuda,
+                    residual=decoder_residual,
+                    dense_residual=decoder_dense_residual)
 
-            #################################################################
-            # Bridge layer between the encoder and decoder (sub)
-            #################################################################
-            if encoder_bidirectional or encoder_num_units != decoder_num_units_sub:
-                if encoder_bidirectional:
-                    self.bridge_sub = LinearND(
-                        encoder_num_units * 2, decoder_num_units_sub,
-                        dropout=dropout_encoder, use_cuda=self.use_cuda)
+                ###################################
+                # Attention layer (sub)
+                ###################################
+                self.attend_sub = AttentionMechanism(
+                    decoder_num_units=decoder_num_units_sub,
+                    attention_type=attention_type,
+                    attention_dim=attention_dim,
+                    use_cuda=self.use_cuda,
+                    sharpening_factor=sharpening_factor,
+                    sigmoid_smoothing=sigmoid_smoothing,
+                    out_channels=attention_conv_num_channels,
+                    kernel_size=attention_conv_width)
+
+                ###############################################################
+                # Bridge layer between the encoder and decoder (sub)
+                ###############################################################
+                if encoder_bidirectional or encoder_num_units != decoder_num_units_sub:
+                    if encoder_bidirectional:
+                        self.bridge_sub = LinearND(
+                            encoder_num_units * 2, decoder_num_units_sub,
+                            dropout=dropout_encoder, use_cuda=self.use_cuda)
+                    else:
+                        self.bridge_sub = LinearND(
+                            encoder_num_units, decoder_num_units_sub,
+                            dropout=dropout_encoder, use_cuda=self.use_cuda)
+                    self.is_bridge_sub = True
+
+                if label_smoothing_prob > 0:
+                    self.embed_sub = Embedding_LS(
+                        num_classes=self.num_classes_sub,
+                        embedding_dim=embedding_dim_sub,
+                        dropout=dropout_embedding,
+                        label_smoothing_prob=label_smoothing_prob,
+                        use_cuda=self.use_cuda)
                 else:
-                    self.bridge_sub = LinearND(
-                        encoder_num_units, decoder_num_units_sub,
-                        dropout=dropout_encoder, use_cuda=self.use_cuda)
-                self.is_bridge_sub = True
+                    self.embed_sub = Embedding(num_classes=self.num_classes_sub,
+                                               embedding_dim=embedding_dim_sub,
+                                               dropout=dropout_embedding,
+                                               ignore_index=self.sos_index_sub,
+                                               use_cuda=self.use_cuda)
 
-            if label_smoothing_prob > 0:
-                self.embed_sub = Embedding_LS(
-                    num_classes=self.num_classes_sub,
-                    embedding_dim=embedding_dim_sub,
-                    dropout=dropout_embedding,
-                    label_smoothing_prob=label_smoothing_prob,
-                    use_cuda=self.use_cuda)
-            else:
-                self.embed_sub = Embedding(num_classes=self.num_classes_sub,
-                                           embedding_dim=embedding_dim_sub,
-                                           dropout=dropout_embedding,
-                                           ignore_index=self.sos_index_sub,
-                                           use_cuda=self.use_cuda)
-
-            self.proj_layer_sub = LinearND(
-                decoder_num_units_sub * 2, decoder_num_units_sub,
-                dropout=dropout_decoder, use_cuda=self.use_cuda)
-            self.fc_sub = LinearND(
-                decoder_num_units_sub, self.num_classes_sub,
-                use_cuda=self.use_cuda)
-
-        if ctc_loss_weight_sub > 0:
-            if self.is_bridge_sub:
-                self.fc_ctc_sub = LinearND(
-                    decoder_num_units_sub, num_classes_sub + 1,
-                    use_cuda=self.use_cuda)
-            else:
-                self.fc_ctc_sub = LinearND(
-                    encoder_num_units * self.encoder_num_directions, num_classes_sub + 1,
+                self.proj_layer_sub = LinearND(
+                    decoder_num_units_sub * 2, decoder_num_units_sub,
+                    dropout=dropout_decoder, use_cuda=self.use_cuda)
+                self.fc_sub = LinearND(
+                    decoder_num_units_sub, self.num_classes_sub,
                     use_cuda=self.use_cuda)
 
-            self.blank_index = 0
+            if ctc_loss_weight_sub > 0:
+                if self.is_bridge_sub:
+                    self.fc_ctc_sub = LinearND(
+                        decoder_num_units_sub, num_classes_sub + 1,
+                        use_cuda=self.use_cuda)
+                else:
+                    self.fc_ctc_sub = LinearND(
+                        encoder_num_units * self.encoder_num_directions, num_classes_sub + 1,
+                        use_cuda=self.use_cuda)
 
-            # Set CTC decoders
-            self._decode_ctc_greedy_np = GreedyDecoder(
-                blank_index=self.blank_index)
-            self._decode_ctc_beam_np = BeamSearchDecoder(
-                blank_index=self.blank_index)
+                # self.blank_index = num_classes_sub
+                self.blank_index = 0
 
-        ##################################################
-        # Initialize parameters
-        ##################################################
-        self.init_weights(parameter_init,
-                          distribution=parameter_init_distribution,
-                          ignore_keys=['bias'])
+                # Set CTC decoders
+                self._decode_ctc_greedy_np = GreedyDecoder(
+                    blank_index=self.blank_index)
+                self._decode_ctc_beam_np = BeamSearchDecoder(
+                    blank_index=self.blank_index)
 
-        # Initialize all biases with 0
-        self.init_weights(0, distribution='constant', keys=['bias'])
-
-        # Recurrent weights are orthogonalized
-        if recurrent_weight_orthogonal:
+            ##################################################
+            # Initialize parameters
+            ##################################################
             self.init_weights(parameter_init,
-                              distribution='orthogonal',
-                              keys=[encoder_type, 'weight'],
-                              ignore_keys=['bias'])
-            self.init_weights(parameter_init,
-                              distribution='orthogonal',
-                              keys=[decoder_type, 'weight'],
+                              distribution=parameter_init_distribution,
                               ignore_keys=['bias'])
 
-        # Initialize bias in forget gate with 1
-        if init_forget_gate_bias_with_one:
-            self.init_forget_gate_bias_with_one()
+            # Initialize all biases with 0
+            self.init_weights(0, distribution='constant', keys=['bias'])
+
+            # Recurrent weights are orthogonalized
+            if recurrent_weight_orthogonal:
+                self.init_weights(parameter_init,
+                                  distribution='orthogonal',
+                                  keys=[encoder_type, 'weight'],
+                                  ignore_keys=['bias'])
+                self.init_weights(parameter_init,
+                                  distribution='orthogonal',
+                                  keys=[decoder_type, 'weight'],
+                                  ignore_keys=['bias'])
+
+            # Initialize bias in forget gate with 1
+            if init_forget_gate_bias_with_one:
+                self.init_forget_gate_bias_with_one()
 
     def __call__(self, xs, ys, ys_sub, x_lens, y_lens, y_lens_sub, is_eval=False):
         """Forward computation.
@@ -372,7 +377,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Compute XE sequence loss in the main task
         loss_main = F.softmax_cross_entropy(
             x=logits_main.reshape((-1, logits_main.shape[2])),
-            t=ys[:, 1:].reshape(-1),  # NOTE: Exclude <SOS>
+            t=F.flatten(ys[:, 1:]),  # NOTE: Exclude <SOS>
             normalize=True, cache_score=True, class_weight=None,
             ignore_label=self.sos_index, reduce='no')
         # NOTE: ys are padded by <SOS>
@@ -416,7 +421,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # Compute XE sequence loss (sub)
             loss_sub = F.softmax_cross_entropy(
                 x=logits_sub.reshape((-1, logits_sub.shape[2])),
-                t=ys_sub[:, 1:].reshape(-1),  # NOTE: Exclude <SOS>
+                t=F.flatten(ys_sub[:, 1:]),  # NOTE: Exclude <SOS>
                 normalize=True, cache_score=True, class_weight=None,
                 ignore_label=self.sos_index_sub, reduce='no')
             # NOTE: ys_sub are padded by <SOS>
