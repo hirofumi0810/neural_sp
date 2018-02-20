@@ -5,9 +5,8 @@ param:
 
   # corpus
   corpus: switchboard
-  label_type: character
   data_size: 300h
-  num_classes: 42
+  label_type: character
 
   # features
   feature: fbank
@@ -16,8 +15,8 @@ param:
   use_delta: True
   use_double_delta: True
   splice: 1
-  num_stack: 3
-  num_skip: 3
+  num_stack: 1
+  num_skip: 1
   dynamic_batching: True
 
   # topology
@@ -37,9 +36,9 @@ param:
   encoder_num_proj: 0
   encoder_num_layers: 4
   subsample_list:
-    - False
-    - False
-    - False
+    - True
+    - True
+    - True
     - False
   subsample_type: drop
   attention_type: location
@@ -52,11 +51,11 @@ param:
   attention_conv_width: 201
 
   # optimization
-  batch_size: 30
+  batch_size: 64
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 50
-  convert_to_sgd_epoch: 50
+  convert_to_sgd_epoch: 40
 
   # initialization
   parameter_init_distribution: uniform
@@ -71,7 +70,7 @@ param:
   dropout_input: 0
   dropout_encoder: 0.2
   dropout_decoder: 0.1
-  dropout_embedding: 0.1
+  dropout_embedding: 0
   weight_decay: 1e-6
   init_dec_state: zero
   sharpening_factor: 1.0
@@ -80,17 +79,17 @@ param:
   coverage_weight: 0
   scheduled_sampling_prob: 0.2
   scheduled_sampling_ramp_max_step: 300000
-  label_smoothing_prob: 0.2
+  label_smoothing_prob: 0.1
   weight_noise_std: 0
 
   # annealing
   decay_start_epoch: 5
-  decay_rate: 0.9
+  decay_rate: 0.75
   decay_patient_epoch: 1
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
   eval_start_epoch: 5
-  print_step: 2000
+  print_step: 1000
 
   # MTL
   ctc_loss_weight: 0

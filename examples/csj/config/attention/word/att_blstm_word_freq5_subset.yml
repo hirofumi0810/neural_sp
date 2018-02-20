@@ -1,7 +1,6 @@
 param:
   # framework
   backend: pytorch
-  # backend: chainer
 
   # corpus
   corpus: csj
@@ -72,12 +71,9 @@ param:
   clip_activation_encoder: 50
   clip_activation_decoder: 50
   dropout_input: 0
-  # dropout_encoder: 0.3
-  # dropout_decoder: 0.2
-  # dropout_embedding: 0.2
   dropout_encoder: 0.2
   dropout_decoder: 0.1
-  dropout_embedding: 0.1
+  dropout_embedding: 0
   weight_decay: 1e-6
   init_dec_state: zero
   sharpening_factor: 1.0

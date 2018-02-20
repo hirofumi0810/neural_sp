@@ -63,16 +63,15 @@ def main():
         raise ValueError("Set model_save_path or saved_model_path.")
 
     # Load dataset
-    vocab_file_path = '../metrics/vocab_files/' + \
-        params['label_type'] + '_' + params['data_size'] + '.txt'
-    vocab_file_path_sub = '../metrics/vocab_files/' + \
-        params['label_type_sub'] + '_' + params['data_size'] + '.txt'
+    vocab_file_path = os.path.abspath(
+        '../metrics/vocab_files/' + params['label_type'] + '_' + params['data_size'] + '.txt')
+    vocab_file_path_sub = os.path.abspath(
+        '../metrics/vocab_files/' + params['label_type_sub'] + '_' + params['data_size'] + '.txt')
     train_data = Dataset(
         backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
-        model_type=params['model_type'],
         data_type='train', data_size=params['data_size'],
         label_type=params['label_type'],
         label_type_sub=params['label_type_sub'],
@@ -92,7 +91,6 @@ def main():
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
-        model_type=params['model_type'],
         data_type='dev', data_size=params['data_size'],
         label_type=params['label_type'],
         label_type_sub=params['label_type_sub'],
@@ -106,7 +104,6 @@ def main():
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
-        model_type=params['model_type'],
         data_type='eval1', data_size=params['data_size'],
         label_type=params['label_type'],
         label_type_sub=params['label_type_sub'],
@@ -120,7 +117,6 @@ def main():
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
-        model_type=params['model_type'],
         data_type='eval2', data_size=params['data_size'],
         label_type=params['label_type'],
         label_type_sub=params['label_type_sub'],
@@ -134,7 +130,6 @@ def main():
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
-        model_type=params['model_type'],
         data_type='eval3', data_size=params['data_size'],
         label_type=params['label_type'],
         label_type_sub=params['label_type_sub'],

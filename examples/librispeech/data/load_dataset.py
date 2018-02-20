@@ -21,7 +21,7 @@ from utils.dataset.loader import DatasetBase
 class Dataset(DatasetBase):
 
     def __init__(self, backend, input_channel, use_delta, use_double_delta,
-                 model_type, data_type, data_size, label_type,
+                 data_type, data_size, label_type,
                  batch_size, vocab_file_path,
                  max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
@@ -34,7 +34,6 @@ class Dataset(DatasetBase):
             input_channel (int): the number of channels of acoustics
             use_delta (bool): if True, use the delta feature
             use_double_delta (bool): if True, use the acceleration feature
-            model_type (string): attention or ctc
             data_type (string): train or dev_clean or dev_other or test_clean
                 or test_other
             data_size (string): 100h or 460h or 960h
@@ -69,7 +68,6 @@ class Dataset(DatasetBase):
         self.input_channel = input_channel
         self.use_delta = use_delta
         self.use_double_delta = use_double_delta
-        self.model_type = model_type
         self.data_type = data_type
         self.data_size = data_size
         self.label_type = label_type
@@ -108,16 +106,38 @@ class Dataset(DatasetBase):
         if not self.dynamic_batching:
             return batch_size
 
-        if min_frame_num_batch <= 900:
+        if self.data_size == '100h':
+            if min_frame_num_batch <= 1200:
+                pass
+            elif min_frame_num_batch <= 1500:
+                batch_size = int(batch_size / 1.5)
+            elif min_frame_num_batch <= 1600:
+                batch_size = int(batch_size / 2)
+            elif min_frame_num_batch <= 1700:
+                batch_size = int(batch_size / 4)
+            elif min_frame_num_batch <= 1720:
+                batch_size = 8
+            elif min_frame_num_batch <= 1740:
+                batch_size = 4
+            elif min_frame_num_batch <= 1800:
+                batch_size = 2
+            else:
+                batch_size = 1
+
+        elif self.data_size == '460h':
             pass
-        elif min_frame_num_batch <= 1200:
-            batch_size = int(batch_size / 1.5)
-        elif min_frame_num_batch <= 1500:
-            batch_size = int(batch_size / 2)
-        elif min_frame_num_batch <= 1700:
-            batch_size = 8
-        else:
-            batch_size = 1
+
+        elif self.data_size == '960h':
+            if min_frame_num_batch <= 900:
+                pass
+            elif min_frame_num_batch <= 1200:
+                batch_size = int(batch_size / 1.5)
+            elif min_frame_num_batch <= 1500:
+                batch_size = int(batch_size / 2)
+            elif min_frame_num_batch <= 1700:
+                batch_size = 8
+            else:
+                batch_size = 1
 
         if batch_size < 1:
             batch_size = 1

@@ -62,30 +62,8 @@ class Base(object):
         return self
 
     @property
-    def sos_index(self):
-        # return self.num_classes + 1
-        return -1
-
-    @property
-    def sos_index_sub(self):
-        # return self.num_classes_sub + 1
-        return -1
-
-    @property
-    def eos_index(self):
-        return self.num_classes
-
-    @property
-    def eos_index_sub(self):
-        return self.num_classes_sub
-
-    @property
     def pad_value(self):
-        return self.sos_index if not self.is_test else None
-
-    @property
-    def pad_value_sub(self):
-        return self.sos_index_sub if not self.is_test else None
+        return -1 if not self.is_test else None
 
     @property
     def epoch_detail(self):

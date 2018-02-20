@@ -6,4 +6,3 @@ param:
 
   # corpus
   label_type: character_capital_divide
-  num_classes: 89

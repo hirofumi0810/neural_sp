@@ -17,6 +17,7 @@ from examples.csj.data.load_dataset_hierarchical import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
 from utils.config import load_config
+from utils.evaluation.edit_distance import compute_wer
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model_path', type=str,
@@ -51,9 +52,8 @@ def main():
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
-        model_type=params['model_type'],
-        data_type='eval1',
-        # data_type='eval2',
+        # data_type='eval1',
+        data_type='eval2',
         # data_type='eval3',
         data_size=params['data_size'],
         label_type=params['label_type'], label_type_sub=params['label_type_sub'],
@@ -78,7 +78,6 @@ def main():
 
     # Visualize
     decode(model=model,
-           model_type=params['model_type'],
            dataset=test_data,
            beam_width=args.beam_width,
            max_decode_len=args.max_decode_len,
@@ -88,13 +87,12 @@ def main():
     # save_path=args.model_path)
 
 
-def decode(model, model_type, dataset, beam_width,
+def decode(model, dataset, beam_width,
            max_decode_len, max_decode_len_sub,
            eval_batch_size=None, save_path=None):
     """Visualize label outputs.
     Args:
         model: the model to evaluate
-        model_type (string): hierarchical_ctc or hierarchical_attention
         dataset: An instance of a `Dataset` class
         beam_width: (int): the size of beam
         max_decode_len (int): the length of output sequences
@@ -108,20 +106,12 @@ def decode(model, model_type, dataset, beam_width,
     if eval_batch_size is not None:
         dataset.batch_size = eval_batch_size
 
-    if dataset.label_type == 'pos':
-        map_fn_main = Idx2word(
-            vocab_file_path='../metrics/vocab_files/' +
-            dataset.label_type + '_' + dataset.data_size + '.txt')
-        map_fn_sub = Idx2word(
-            vocab_file_path='../metrics/vocab_files/' +
-            dataset.label_type_sub + '_' + dataset.data_size + '.txt')
-    else:
-        map_fn_main = Idx2word(
-            vocab_file_path='../metrics/vocab_files/' +
-            dataset.label_type + '_' + dataset.data_size + '.txt')
-        map_fn_sub = Idx2char(
-            vocab_file_path='../metrics/vocab_files/' +
-            dataset.label_type_sub + '_' + dataset.data_size + '.txt')
+    idx2word = Idx2word(
+        vocab_file_path='../metrics/vocab_files/' +
+        dataset.label_type + '_' + dataset.data_size + '.txt')
+    idx2char = Idx2char(
+        vocab_file_path='../metrics/vocab_files/' +
+        dataset.label_type_sub + '_' + dataset.data_size + '.txt')
 
     if save_path is not None:
         sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
@@ -129,60 +119,74 @@ def decode(model, model_type, dataset, beam_width,
     for batch, is_new_epoch in dataset:
 
         # Decode
-        best_hyps = model.decode(batch['xs'], batch['x_lens'],
-                                 beam_width=beam_width,
-                                 max_decode_len=max_decode_len)
-        best_hyps_sub = model.decode(batch['xs'], batch['x_lens'],
-                                     beam_width=beam_width,
-                                     max_decode_len=max_decode_len_sub,
-                                     is_sub_task=True)
+        if model.model_type == 'charseq_attention':
+            best_hyps, best_hyps_sub, perm_idx = model.decode(
+                batch['xs'], batch['x_lens'],
+                beam_width=beam_width,
+                max_decode_len=max_decode_len,
+                max_decode_len_sub=100)
+        else:
+            best_hyps, perm_idx = model.decode(
+                batch['xs'], batch['x_lens'],
+                beam_width=beam_width,
+                max_decode_len=max_decode_len)
+            best_hyps_sub, perm_idx = model.decode(
+                batch['xs'], batch['x_lens'],
+                beam_width=beam_width,
+                max_decode_len=max_decode_len_sub,
+                is_sub_task=True)
 
-        for i_batch in range(len(batch['xs'])):
-            print('----- wav: %s -----' % batch['input_names'][i_batch])
+        ys = batch['ys'][perm_idx]
+        y_lens = batch['y_lens'][perm_idx]
+        ys_sub = batch['ys_sub'][perm_idx]
+        y_lens_sub = batch['y_lens_sub'][perm_idx]
+
+        for b in range(len(batch['xs'])):
+            print('----- wav: %s -----' % batch['input_names'][b])
 
             ##############################
             # Reference
             ##############################
             if dataset.is_test:
-                str_true = batch['ys'][i_batch][0]
-                str_true_sub = batch['ys_sub'][i_batch][0]
+                str_ref = ys[b][0]
+                str_ref_sub = ys_sub[b][0]
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
-                if model_type == 'hierarchical_ctc':
-                    str_true = map_fn_main(
-                        batch['ys'][i_batch][:batch['y_lens'][i_batch]])
-                    str_true_sub = map_fn_main(
-                        batch['ys_sub'][i_batch][:batch['y_lens_sub'][i_batch]])
-                elif model_type == 'hierarchical_attention':
-                    str_true = map_fn_main(
-                        batch['ys'][i_batch][1:batch['y_lens'][i_batch] - 1])
-                    str_true_sub = map_fn_main(
-                        batch['ys_sub'][i_batch][1:batch['y_lens_sub'][i_batch] - 1])
-                    # NOTE: Exclude <SOS> and <EOS>
+                str_ref = idx2word(ys[b][: y_lens[b]])
+                str_ref_sub = idx2word(ys_sub[b][:y_lens_sub[b]])
 
             ##############################
             # Hypothesis
             ##############################
             # Convert from list of index to string
-            str_pred = map_fn_main(best_hyps[i_batch])
-            str_pred_sub = map_fn_sub(best_hyps_sub[i_batch])
+            str_hyp = idx2word(best_hyps[b])
+            str_hyp_sub = idx2char(best_hyps_sub[b])
 
-            if model_type == 'hierarchical_attention':
-                str_pred = str_pred.split('>')[0]
-                str_pred_sub = str_pred_sub.split('>')[0]
+            if model.model_type != 'hierarchical_ctc':
+                str_hyp = str_hyp.split('>')[0]
+                str_hyp_sub = str_hyp_sub.split('>')[0]
                 # NOTE: Trancate by the first <EOS>
 
                 # Remove the last space
-                if len(str_pred) > 0 and str_pred[-1] == '_':
-                    str_pred = str_pred[:-1]
-                if len(str_pred_sub) > 0 and str_pred_sub[-1] == '_':
-                    str_pred_sub = str_pred_sub[:-1]
+                if len(str_hyp) > 0 and str_hyp[-1] == '_':
+                    str_hyp = str_hyp[:-1]
+                if len(str_hyp_sub) > 0 and str_hyp_sub[-1] == '_':
+                    str_hyp_sub = str_hyp_sub[:-1]
 
-            print('Ref (main): %s' % str_true.replace('_', ' '))
-            print('Hyp (main): %s' % str_pred.replace('_', ' '))
-            print('Ref (sub): %s' % str_true_sub.replace('_', ' '))
-            print('Hyp (sub): %s' % str_pred_sub.replace('_', ' '))
+            print('Ref: %s' % str_ref.replace('_', ' '))
+            print('Hyp (main): %s' % str_hyp.replace('_', ' '))
+            # print('Ref (sub): %s' % str_ref_sub.replace('_', ' '))
+            print('Hyp (sub): %s' % str_hyp_sub.replace('_', ' '))
+
+            wer, _, _, _ = compute_wer(ref=str_ref.split('_'),
+                                       hyp=str_hyp.split('_'),
+                                       normalize=True)
+            print('WER: %f %%' % (wer * 100))
+            cer, _, _, _ = compute_wer(ref=list(str_ref_sub.replace('_', '')),
+                                       hyp=list(str_hyp_sub.replace('_', '')),
+                                       normalize=True)
+            print('CER: %f %%' % (cer * 100))
 
         if is_new_epoch:
             break

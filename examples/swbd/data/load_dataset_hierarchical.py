@@ -21,7 +21,7 @@ from utils.dataset.loader_hierarchical import DatasetBase
 class Dataset(DatasetBase):
 
     def __init__(self, backend, input_channel, use_delta, use_double_delta,
-                 model_type, data_type, data_size,
+                 data_type, data_size,
                  label_type, label_type_sub,
                  batch_size, vocab_file_path, vocab_file_path_sub,
                  max_epoch=None, splice=1,
@@ -35,7 +35,6 @@ class Dataset(DatasetBase):
             input_channel (int): the number of channels of acoustics
             use_delta (bool): if True, use the delta feature
             use_double_delta (bool): if True, use the acceleration feature
-            model_type (string): hierarchical_ctc or hierarchical_attention
             data_type (string): train or dev_clean or dev_other or test_clean
                 or test_other
             data_size (string): 300h or 2000h
@@ -70,7 +69,6 @@ class Dataset(DatasetBase):
         self.input_channel = input_channel
         self.use_delta = use_delta
         self.use_double_delta = use_double_delta
-        self.model_type = model_type
         self.data_type = data_type
         self.data_size = data_size
         self.label_type = label_type

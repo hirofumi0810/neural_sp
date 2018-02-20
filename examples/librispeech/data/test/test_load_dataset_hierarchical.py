@@ -71,7 +71,6 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
         dataset = Dataset(
             backend=backend,
             input_channel=40, use_delta=True, use_double_delta=True,
-            model_type='hierarchical_attention',
             data_type=data_type, data_size=data_size,
             label_type=label_type, label_type_sub=label_type_sub,
             batch_size=64,
@@ -88,34 +87,33 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
         idx2word = Idx2word(vocab_file_path, space_mark=' ')
         idx2char = Idx2char(vocab_file_path_sub)
 
-        for data, is_new_epoch in dataset:
-            inputs, labels, labels_sub, inputs_seq_len, labels_seq_len, labels_seq_len_sub, input_names = data
-
+        for batch, is_new_epoch in dataset:
             if data_type == 'train' and backend == 'pytorch':
-                for i in range(len(inputs)):
-                    if inputs.shape[1] < labels.shape[1]:
+                for i in range(len(batch['xs'])):
+                    if batch['xs'].shape[1] < batch['ys'].shape[1]:
                         raise ValueError(
                             'input length must be longer than label length.')
 
             if dataset.is_test:
-                str_true = labels[0][0]
-                str_true_sub = labels[0][0]
+                str_ref = batch['ys'][0][0]
+                str_ref_sub = batch['ys_sub'][0][0]
             else:
-                str_true = idx2word(labels[0][:labels_seq_len[0]])
-                str_true_sub = idx2char(labels_sub[0][:labels_seq_len_sub[0]])
+                str_ref = idx2word(batch['ys'][0][:batch['y_lens'][0]])
+                str_ref_sub = idx2char(
+                    batch['ys_sub'][0][:batch['y_lens_sub'][0]])
 
             print('----- %s (epoch: %.3f, batch: %d) -----' %
-                  (input_names[0], dataset.epoch_detail, len(inputs)))
+                  (batch['input_names'][0], dataset.epoch_detail, len(batch['xs'])))
             print('=' * 20)
-            print(str_true)
+            print(str_ref)
             print('-' * 10)
-            print(str_true_sub)
-            print('inputs_seq_len: %d' % inputs_seq_len[0])
+            print(str_ref_sub)
+            print('x_lens: %d' % (batch['x_lens'][0] * num_stack))
             if not dataset.is_test:
-                print('labels_seq_len (word): %d' % labels_seq_len.data[0])
-                print('labels_seq_len (char): %d' % labels_seq_len_sub.data[0])
+                print('y_lens (word): %d' % batch['y_lens'][0])
+                print('y_lens_sub (char): %d' % batch['y_lens_sub'][0])
 
-            if dataset.epoch_detail >= 0.1:
+            if dataset.epoch_detail >= 0.01:
                 break
 
 

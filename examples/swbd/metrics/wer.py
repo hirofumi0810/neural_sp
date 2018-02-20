@@ -75,11 +75,7 @@ def do_eval_wer(model, dataset, beam_width, max_decode_len,
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
-                if model.model_type in ['ctc', 'hierarchical_ctc']:
-                    str_ref = idx2word(ys[b][:y_lens[b]])
-                elif 'attention' in model.model_type:
-                    str_ref = idx2word(ys[b][1:y_lens[b] - 1])
-                    # NOTE: Exclude <SOS> and <EOS>
+                str_ref = idx2word(ys[b][:y_lens[b]])
 
             ##############################
             # Hypothesis
@@ -99,11 +95,16 @@ def do_eval_wer(model, dataset, beam_width, max_decode_len,
             str_ref = fix_trans(str_ref, glm)
             str_hyp = fix_trans(str_hyp, glm)
 
+            if len(str_ref) == 0:
+                if progressbar:
+                    pbar.update(1)
+                continue
+
             # print('REF: %s' % str_ref)
             # print('HYP: %s' % str_hyp)
 
-            # Compute WER
-            if len(str_ref) > 0:
+            try:
+                # Compute WER
                 wer_b, sub_b, ins_b, del_b = compute_wer(
                     ref=str_ref.split('_'),
                     hyp=str_hyp.split('_'),
@@ -113,6 +114,10 @@ def do_eval_wer(model, dataset, beam_width, max_decode_len,
                 ins += ins_b
                 dele += del_b
                 num_words += len(str_ref.split('_'))
+            except:
+                # print('REF: %s' % str_ref)
+                # print('HYP: %s' % str_hyp)
+                pass
 
             if progressbar:
                 pbar.update(1)

@@ -47,7 +47,6 @@ def main():
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
-        model_type=params['model_type'],
         data_type='test_clean',
         # data_type='test_other',
         data_size=params['data_size'],
@@ -106,17 +105,17 @@ def plot_attention(model, dataset, max_decode_len,
     for batch, is_new_epoch in dataset:
 
         # Decode
-        labels_pred, att_weights = model.attention_weights(
+        best_hyps, att_weights = model.attention_weights(
             batch['xs'], batch['x_lens'], max_decode_len=max_decode_len)
         # NOTE: attention_weights: `[B, T_out, T_in]`
 
         # Visualize
-        for i_batch in range(len(batch['xs'])):
+        for b in range(len(batch['xs'])):
 
             # Check if the sum of attention weights equals to 1
-            # print(np.sum(att_weights[i_batch], axis=1))
+            # print(np.sum(att_weights[b], axis=1))
 
-            str_pred = map_fn(labels_pred[i_batch])
+            str_pred = map_fn(best_hyps[b])
             eos = True if '>' in str_pred else False
 
             str_pred = str_pred.split('>')[0]
@@ -129,15 +128,14 @@ def plot_attention(model, dataset, max_decode_len,
             if eos:
                 str_pred += '_>'
 
-            speaker = batch['input_names'][i_batch].split('_')[0]
+            speaker = batch['input_names'][b].split('_')[0]
             plot_attention_weights(
-                spectrogram=inputs[i_batch],
-                attention_weights=att_weights[i_batch, :len(
-                    str_pred.split('_')), :batch['x_lens'][i_batch]],
+                attention_weights=att_weights[b, :len(
+                    str_pred.split('_')), :batch['x_lens'][b]],
                 label_list=str_pred.split('_'),
                 save_path=mkdir_join(save_path, speaker,
-                                     batch['input_names'][i_batch] + '.png'),
-                fig_size=(14, 7))
+                                     batch['input_names'][b] + '.png'),
+                figsize=(20, 8))
 
         if is_new_epoch:
             break

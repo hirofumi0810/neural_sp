@@ -45,7 +45,6 @@ def main():
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
-        model_type=params['model_type'],
         data_type='test_clean',
         # data_type='test_other',
         data_size=params['data_size'],
@@ -112,22 +111,22 @@ def plot(model, dataset, eval_batch_size=None, save_path=None,
         # NOTE: probs: '[B, T, num_classes]'
 
         # Decode
-        labels_pred = model.decode(batch['xs'], batch['x_lens'], beam_width=1)
+        best_hyps _ = model.decode(batch['xs'], batch['x_lens'], beam_width=1)
 
         # Visualize
-        for i_batch in range(len(batch['xs'])):
+        for b in range(len(batch['xs'])):
 
             # Convert from list of index to string
-            str_pred = map_fn(labels_pred[i_batch])
+            str_pred = map_fn(best_hyps[b])
 
-            speaker, book = batch['input_names'][i_batch].split('-')[:2]
+            speaker, book = batch['input_names'][b].split('-')[:2]
             plot_ctc_probs(
-                probs[i_batch, :batch['x_lens'][i_batch], :],
-                frame_num=batch['x_lens'][i_batch],
+                probs[b, :batch['x_lens'][b], :],
+                frame_num=batch['x_lens'][b],
                 num_stack=dataset.num_stack,
                 space_index=space_index,
                 str_pred=str_pred,
-                save_path=mkdir_join(save_path, speaker, book, batch['input_names'][i_batch] + '.png'))
+                save_path=mkdir_join(save_path, speaker, book, batch['input_names'][b] + '.png'))
 
         if is_new_epoch:
             break

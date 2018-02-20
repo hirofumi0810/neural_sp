@@ -47,7 +47,6 @@ def main():
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
-        model_type=params['model_type'],
         data_type='test',
         label_type=params['label_type'],
         vocab_file_path=vocab_file_path,
@@ -122,11 +121,7 @@ def decode(model, dataset, beam_width,
                 # NOTE: transcript is seperated by space(' ')
             else:
                 # Convert from list of index to string
-                if model.model_type == 'ctc':
-                    str_ref = idx2phone(ys[b][: y_lens[b]])
-                elif model.model_type == 'attention':
-                    str_ref = idx2phone(ys[b][1: y_lens[b] - 1])
-                    # NOTE: Exclude <SOS> and <EOS>
+                str_ref = idx2phone(ys[b][: y_lens[b]])
 
             ##############################
             # Hypothesis

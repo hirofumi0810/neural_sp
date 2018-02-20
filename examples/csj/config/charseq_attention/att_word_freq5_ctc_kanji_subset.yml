@@ -1,0 +1,18 @@
+parent: ../config/charseq_attention/att_word_freq5_att_kanji_subset.yml
+param:
+  # framework
+  backend: pytorch
+  # backend: chainer
+
+  # corpus
+  data_size: subset
+  label_type: word_freq5
+  label_type_sub: kanji_divide
+
+  # MTL
+  main_loss_weight: 0.8
+  ctc_loss_weight_sub: 0.2
+  curriculum_training: False
+  composition_case: fine_grained_gating
+  # composition_case: scalar_gating
+  # composition_case: concat

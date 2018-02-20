@@ -60,17 +60,15 @@ def main():
         raise ValueError("Set model_save_path or saved_model_path.")
 
     # Load dataset
-    vocab_file_path_train = '../metrics/vocab_files/' + \
-        params['label_type'] + '.txt'
-    vocab_file_path_eval = '../metrics/vocab_files/phone39.txt'
+    vocab_file_path = os.path.abspath(
+        '../metrics/vocab_files/' + params['label_type'] + '.txt')
     train_data = Dataset(
         backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
-        model_type=params['model_type'],
         data_type='train', label_type=params['label_type'],
-        vocab_file_path=vocab_file_path_train,
+        vocab_file_path=vocab_file_path,
         batch_size=params['batch_size'],
         max_epoch=params['num_epoch'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
@@ -83,9 +81,8 @@ def main():
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
-        model_type=params['model_type'],
         data_type='dev', label_type=params['label_type'],
-        vocab_file_path=vocab_file_path_train,
+        vocab_file_path=vocab_file_path,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True, save_format=params['save_format'])
@@ -94,9 +91,8 @@ def main():
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
-        model_type=params['model_type'],
         data_type='test', label_type=params['label_type'],
-        vocab_file_path=vocab_file_path_eval,
+        vocab_file_path=vocab_file_path,
         batch_size=1, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         save_format=params['save_format'])

@@ -9,18 +9,36 @@ param:
   num_skip: 1
 
   # topology
-  conv_channels: [32, 32]
+  # conv_channels: [32, 32]
+  # conv_kernel_sizes:
+  #   - [41, 11]
+  #   - [21, 11]
+  # conv_strides:
+  #   - [2, 2]
+  #   - [2, 1]
+  # poolings:
+  #   - []
+  #   - []
+  conv_channels: [64, 64, 128, 128]
   conv_kernel_sizes:
-    - [41, 11]
-    - [21, 11]
+    - [3, 3]
+    - [3, 3]
+    - [3, 3]
+    - [3, 3]
   conv_strides:
-    - [2, 2]
-    - [2, 1]
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
   poolings:
     - []
+    - [2, 2]
     - []
+    - [2, 2]
   activation: relu
-  batch_norm: True  ###
+  # batch_norm: True
+  batch_norm: False
+  encoder_bidirectional: False
   encoder_num_units: 320
   encoder_num_proj: 0
   encoder_num_layers: 3

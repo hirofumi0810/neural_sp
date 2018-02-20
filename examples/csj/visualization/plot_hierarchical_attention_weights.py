@@ -55,7 +55,6 @@ def main():
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
-        model_type=params['model_type'],
         data_type='eval1',
         # data_type='eval2',
         # data_type='eval3',
@@ -168,8 +167,9 @@ def plot(model, dataset, beam_width,
                 label_list_sub=str_pred_sub.split('_'),
                 save_path=mkdir_join(save_path, speaker,
                                      batch['input_names'][i_batch] + '.png'),
-                fig_size=(20, 12))
+                figsize=(20, 12))
             # TODO: consider subsample
+            # TODO: add spectrogram
 
         if is_new_epoch:
             break

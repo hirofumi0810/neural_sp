@@ -7,7 +7,6 @@ param:
   corpus: librispeech
   label_type: character
   data_size: 100h
-  num_classes: 28
 
   # features
   feature: fbank
@@ -27,6 +26,7 @@ param:
   conv_kernel_sizes: []
   conv_strides: []
   poolings: []
+  activation: relu
   batch_norm: False
   encoder_bidirectional: True
   encoder_residual: False
@@ -67,7 +67,7 @@ param:
 
   # annealing
   decay_start_epoch: 20
-  decay_rate: 0.9
+  decay_rate: 0.75
   decay_patient_epoch: 1
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5

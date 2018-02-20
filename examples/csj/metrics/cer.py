@@ -57,7 +57,7 @@ def do_eval_cer(model, dataset, beam_width, max_decode_len,
                                                max_decode_len=max_decode_len)
             ys = batch['ys'][perm_idx]
             y_lens = batch['y_lens'][perm_idx]
-        elif 'attention' in model.model_type:
+        else:
             best_hyps, perm_idx = model.decode(batch['xs'], batch['x_lens'],
                                                beam_width=beam_width,
                                                max_decode_len=max_decode_len,
@@ -76,11 +76,7 @@ def do_eval_cer(model, dataset, beam_width, max_decode_len,
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
-                if model.model_type in ['ctc', 'hierarchical_ctc']:
-                    str_ref = idx2char(ys[b][:y_lens[b]])
-                elif 'attention' in model.model_type:
-                    str_ref = idx2char(ys[b][1:y_lens[b] - 1])
-                    # NOTE: Exclude <SOS> and <EOS>
+                str_ref = idx2char(ys[b][:y_lens[b]])
 
             ##############################
             # Hypothesis
@@ -91,8 +87,8 @@ def do_eval_cer(model, dataset, beam_width, max_decode_len,
                 # NOTE: Trancate by the first <EOS>
 
             # Remove garbage labels
-            str_ref = re.sub(r'[NZー・<>]+', '', str_ref)
-            str_hyp = re.sub(r'[NZー・<>]+', '', str_hyp)
+            str_ref = re.sub(r'[NZー・>]+', '', str_ref)
+            str_hyp = re.sub(r'[NZー・>]+', '', str_hyp)
 
             # Remove consecutive spaces
             str_hyp = re.sub(r'[_]+', '_', str_hyp)

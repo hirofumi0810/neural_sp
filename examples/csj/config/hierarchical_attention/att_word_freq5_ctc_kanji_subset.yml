@@ -2,13 +2,6 @@ parent: ../config/hierarchical_attention/att_word_freq5_att_kanji_subset.yml
 param:
   # framework
   backend: pytorch
-  # backend: chainer
-
-  # corpus
-  data_size: subset
-  label_type: word_freq5
-  label_type_sub: kanji_divide
-  # label_type_sub: kana_divide
 
   # MTL
   main_loss_weight: 0.8

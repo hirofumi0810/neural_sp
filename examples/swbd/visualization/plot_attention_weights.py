@@ -46,7 +46,6 @@ def main():
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
-        model_type=params['model_type'],
         data_type='eval2000_swbd',
         # data_type='eval2000_ch',
         data_size=params['data_size'],

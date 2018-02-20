@@ -61,11 +61,7 @@ def do_eval_wer(model, dataset, beam_width, max_decode_len,
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
-                if model.model_type in ['ctc', 'hierarchical_ctc']:
-                    str_ref = idx2word(ys[b][:y_lens[b]])
-                elif 'attention' in model.model_type:
-                    str_ref = idx2word(ys[b][1:y_lens[b] - 1])
-                    # NOTE: Exclude <SOS> and <EOS>
+                str_ref = idx2word(ys[b][:y_lens[b]])
 
             ##############################
             # Hypothesis
@@ -83,8 +79,8 @@ def do_eval_wer(model, dataset, beam_width, max_decode_len,
             # Post-proccessing
             ##############################
             # Remove garbage labels
-            str_ref = re.sub(r'[\'<>]+', '', str_ref)
-            str_hyp = re.sub(r'[\'<>]+', '', str_hyp)
+            str_ref = re.sub(r'[\'>]+', '', str_ref)
+            str_hyp = re.sub(r'[\'>]+', '', str_hyp)
             # TODO: WER計算するときに消していい？
 
             # Compute WER

@@ -21,27 +21,23 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
     def test(self):
 
         # framework
-        self.check(label_type='pos', label_type_sub='word_freq5',
+        self.check(label_type='word_freq5', label_type_sub='kanji_divide',
                    data_type='train', backend='chainer')
-        self.check(label_type='pos', label_type_sub='word_freq5',
-                   data_type='train', backend='pytorch')
 
         # data_type
-        self.check(label_type='kanji', label_type_sub='kana',
+        self.check(label_type='word_freq5', label_type_sub='kanji_divide',
                    data_type='train')
-        self.check(label_type='word_freq5', label_type_sub='kana',
-                   data_type='train')
-        self.check(label_type='word_freq5', label_type_sub='kana',
+        self.check(label_type='word_freq5', label_type_sub='kanji_divide',
                    data_type='dev')
-        self.check(label_type='word_freq5', label_type_sub='kana',
+        self.check(label_type='word_freq5', label_type_sub='kanji_divide',
                    data_type='eval1')
-        self.check(label_type='word_freq5', label_type_sub='kana',
+        self.check(label_type='word_freq5', label_type_sub='kanji_divide',
                    data_type='eval2')
-        self.check(label_type='word_freq5', label_type_sub='kana',
+        self.check(label_type='word_freq5', label_type_sub='kanji_divide',
                    data_type='eval3')
 
         # label_type
-        self.check(label_type='word_freq5', label_type_sub='kanji')
+        self.check(label_type='kanji_divide', label_type_sub='kana_divide')
 
     @measure_time
     def check(self, label_type, label_type_sub, data_type='dev',
@@ -73,7 +69,6 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
         dataset = Dataset(
             backend=backend,
             input_channel=80, use_delta=True, use_double_delta=True,
-            model_type='hierarchical_attention',
             data_type=data_type, data_size=data_size,
             label_type=label_type, label_type_sub=label_type_sub,
             batch_size=64,
@@ -81,6 +76,7 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
             vocab_file_path_sub=vocab_file_path_sub,
             max_epoch=1, splice=splice,
             num_stack=num_stack, num_skip=num_skip,
+            min_frame_num=40,
             shuffle=shuffle,
             sort_utt=sort_utt, reverse=True, sort_stop_epoch=sort_stop_epoch,
             num_gpus=num_gpus, save_format='numpy', num_enque=None)
@@ -118,13 +114,13 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
             print(str_true)
             print('-' * 10)
             print(str_true_sub)
-            print('inputs_seq_len: %d' % (batch['x_lens'][0] * num_stack))
+            print('x_lens: %d' % (batch['x_lens'][0] * num_stack))
             if not dataset.is_test:
-                print('labels_seq_len (word): %d' % batch['y_lens'].data[0])
-                print('labels_seq_len (char): %d' %
+                print('y_lens (word): %d' % batch['y_lens'].data[0])
+                print('y_lens_sub (char): %d' %
                       batch['y_lens_sub'].data[0])
 
-            if dataset.epoch_detail >= 0.01:
+            if dataset.epoch_detail >= 0.1:
                 break
 
 

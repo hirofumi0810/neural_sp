@@ -79,7 +79,6 @@ class TestLoadDataset(unittest.TestCase):
         dataset = Dataset(
             backend=backend,
             input_channel=40, use_delta=True, use_double_delta=True,
-            model_type='attention',
             data_type=data_type, data_size=data_size,
             label_type=label_type, batch_size=64,
             vocab_file_path=vocab_file_path,
@@ -104,13 +103,13 @@ class TestLoadDataset(unittest.TestCase):
                             'input length must be longer than label length.')
 
             if dataset.is_test:
-                str_true = batch['ys'][0][0]
+                str_ref = batch['ys'][0][0]
             else:
-                str_true = map_fn(batch['ys'][0][1:batch['y_lens'][0]])
+                str_ref = map_fn(batch['ys'][0][:batch['y_lens'][0]])
 
             print('----- %s (epoch: %.3f, batch: %d) -----' %
                   (batch['input_names'][0], dataset.epoch_detail, len(batch['xs'])))
-            print(str_true)
+            print(str_ref)
             print('x_lens: %d' % (batch['x_lens'][0] * num_stack))
             if not dataset.is_test:
                 print('y_lens: %d' % batch['y_lens'][0])

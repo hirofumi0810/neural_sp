@@ -1,14 +1,12 @@
 param:
   # framework
   backend: pytorch
-  # backend: chainer
 
   # corpus
   corpus: csj
   data_size: subset
   label_type: word_freq5
-  # label_type_sub: kanji_divide
-  label_type_sub: kana_divide
+  label_type_sub: kanji_divide
 
   # features
   feature: fbank
@@ -39,7 +37,8 @@ param:
   encoder_num_units: 320
   encoder_num_proj: 0
   encoder_num_layers: 5
-  encoder_num_layers_sub: 4
+  # encoder_num_layers_sub: 4
+  encoder_num_layers_sub: 5
   subsample_list:
     - True
     - True
@@ -60,7 +59,6 @@ param:
   attention_conv_width: 201
 
   # optimization
-  # batch_size: 64
   batch_size: 128
   optimizer: adam
   learning_rate: 1e-3
@@ -78,9 +76,9 @@ param:
   clip_activation_encoder: 50
   clip_activation_decoder: 50
   dropout_input: 0
-  dropout_encoder: 0.3
-  dropout_decoder: 0.2
-  dropout_embedding: 0.2
+  dropout_encoder: 0.2
+  dropout_decoder: 0.1
+  dropout_embedding: 0
   weight_decay: 1e-6
   init_dec_state: zero
   sharpening_factor: 1.0
@@ -88,8 +86,8 @@ param:
   sigmoid_smoothing: False
   coverage_weight: 0
   scheduled_sampling_prob: 0.2
-  scheduled_sampling_ramp_max_step: 250000
-  label_smoothing_prob: 0.2
+  scheduled_sampling_ramp_max_step: 125000
+  label_smoothing_prob: 0.1
   weight_noise_std: 0
 
   # annealing

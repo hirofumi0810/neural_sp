@@ -6,11 +6,9 @@ param:
 
   # corpus
   label_type: word_freq5
-  num_classes: 11178
 
   # topology
   encoder_num_units: 320
-  encoder_num_proj: 0
   encoder_num_layers: 5
   subsample_list:
     - False
@@ -20,7 +18,7 @@ param:
     - False
 
   # optimization
-  batch_size: 20
+  batch_size: 32
 
   # annealing
   print_step: 2000

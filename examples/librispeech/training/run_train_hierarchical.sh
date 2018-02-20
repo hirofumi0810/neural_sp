@@ -31,3 +31,9 @@ nohup $PYTHON train_hierarchical.py \
   --gpu $gpu_index \
   --config_path $config_path \
   --model_save_path $MODEL_SAVE_PATH > log/$filename".log" &
+
+# CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+# $PYTHON train_hierarchical.py \
+#   --gpu $gpu_index \
+#   --config_path $config_path \
+#   --model_save_path $MODEL_SAVE_PATH

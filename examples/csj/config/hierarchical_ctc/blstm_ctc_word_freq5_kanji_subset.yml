@@ -5,10 +5,9 @@ param:
 
   # corpus
   corpus: csj
+  data_size: subset
   label_type: word_freq5
   label_type_sub: kanji_divide
-  # label_type_sub: kana_divide
-  data_size: subset
 
   # features
   feature: fbank

@@ -4,9 +4,9 @@ param:
 
   # corpus
   corpus: csj
+  data_size: subset
   label_type: word_freq5
   label_type_sub: kanji_divide
-  data_size: subset
 
   # features
   feature: fbank
@@ -75,22 +75,22 @@ param:
   dropout_input: 0
   dropout_encoder: 0.2
   dropout_decoder: 0.1
-  dropout_embedding: 0.1
+  dropout_embedding: 0
   weight_decay: 1e-6
-  init_dec_state: final
+  init_dec_state: zero
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False
   coverage_weight: 0
   scheduled_sampling_prob: 0.2
   scheduled_sampling_ramp_max_step: 800000
-  label_smoothing_prob: 0.2
+  label_smoothing_prob: 0.1
   weight_noise_std: 0
 
   # annealing
   decay_start_epoch: 5
-  decay_rate: 0.5
-  decay_patient_epoch: 3
+  decay_rate: 0.75
+  decay_patient_epoch: 1
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
   eval_start_epoch: 5

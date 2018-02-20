@@ -22,8 +22,13 @@ gpu_index=$2
 filename=$(basename $saved_model_path | awk -F. '{print $1}')
 
 mkdir -p log
-#
+
 CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
 nohup $PYTHON train.py \
   --gpu $gpu_index \
   --saved_model_path $saved_model_path > log/$filename".log" &
+
+# CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+# $PYTHON train.py \
+#   --gpu $gpu_index \
+#   --saved_model_path $saved_model_path

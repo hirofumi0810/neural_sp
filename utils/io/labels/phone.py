@@ -27,8 +27,7 @@ class Phone2idx(object):
                 self.map_dict[phone] = vocab_count
                 vocab_count += 1
 
-        # Add <SOS> & <EOS>
-        self.map_dict['<'] = vocab_count + 1
+        # Add <EOS>
         self.map_dict['>'] = vocab_count
 
     def __call__(self, str_phone):
@@ -64,8 +63,7 @@ class Idx2phone(object):
                 self.map_dict[vocab_count] = phone
                 vocab_count += 1
 
-        # Add <SOS> & <EOS>
-        self.map_dict[vocab_count + 1] = '<'
+        # Add <EOS>
         self.map_dict[vocab_count] = '>'
 
     def __call__(self, index_list):

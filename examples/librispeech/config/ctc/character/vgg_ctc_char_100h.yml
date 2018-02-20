@@ -9,6 +9,7 @@ param:
   num_skip: 1
 
   # topology
+  encoder_type: cnn
   conv_channels: [96, 96, 96, 192, 192, 192, 192, 384, 384, 384, 384]
   conv_kernel_sizes:
     - [3, 3]
@@ -47,7 +48,7 @@ param:
     - []
     - [2,2]
   activation: relu
-  batch_norm: True
+  batch_norm: False
   encoder_num_layers: 0
   subsample_list:
     - False

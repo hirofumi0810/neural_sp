@@ -65,7 +65,7 @@ def do_eval_cer(model, dataset, beam_width, max_decode_len,
                                                max_decode_len=max_decode_len)
             ys = batch['ys'][perm_idx]
             y_lens = batch['y_lens'][perm_idx]
-        elif 'attention' in model.model_type:
+        else:
             best_hyps, perm_idx = model.decode(batch['xs'], batch['x_lens'],
                                                beam_width=beam_width,
                                                max_decode_len=max_decode_len,
@@ -83,11 +83,7 @@ def do_eval_cer(model, dataset, beam_width, max_decode_len,
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
-                if model.model_type in ['ctc', 'hierarchical_ctc']:
-                    str_ref = idx2char(ys[b][:y_lens[b]])
-                elif 'attention' in model.model_type:
-                    str_ref = idx2char(ys[b][1:y_lens[b] - 1])
-                    # NOTE: Exclude <SOS> and <EOS>
+                str_ref = idx2char(ys[b][:y_lens[b]])
 
             ##############################
             # Hypothesis
@@ -107,11 +103,15 @@ def do_eval_cer(model, dataset, beam_width, max_decode_len,
             str_ref = fix_trans(str_ref, glm)
             str_hyp = fix_trans(str_hyp, glm)
 
+            if len(str_ref) == 0:
+                if progressbar:
+                    pbar.update(1)
+                continue
+
             # print('REF: %s' % str_ref)
             # print('HYP: %s' % str_hyp)
 
-            # Compute WER
-            if len(str_ref) > 0:
+            try:
                 # Compute WER
                 wer_b, sub_b, ins_b, del_b = compute_wer(
                     ref=str_ref.split('_'),
@@ -133,6 +133,10 @@ def do_eval_cer(model, dataset, beam_width, max_decode_len,
                 ins_char += ins_b
                 del_char += del_b
                 num_chars += len(str_ref.replace('_', ''))
+            except:
+                # print('REF: %s' % str_ref)
+                # print('HYP: %s' % str_hyp)
+                pass
 
             if progressbar:
                 pbar.update(1)

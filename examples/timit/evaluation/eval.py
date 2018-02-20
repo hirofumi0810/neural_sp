@@ -45,7 +45,6 @@ def main():
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
-        model_type=params['model_type'],
         data_type='test',
         label_type=params['label_type'],
         vocab_file_path=vocab_file_path,

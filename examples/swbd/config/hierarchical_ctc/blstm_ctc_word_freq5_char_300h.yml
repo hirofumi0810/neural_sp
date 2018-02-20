@@ -5,11 +5,9 @@ param:
 
   # corpus
   corpus: switchboard
+  data_size: 300h
   label_type: word_freq5
   label_type_sub: character
-  data_size: 300h
-  num_classes: 11178
-  num_classes_sub: 42
 
   # features
   feature: fbank
@@ -47,11 +45,11 @@ param:
   fc_list: []
 
   # optimization
-  batch_size: 20
+  batch_size: 32
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 50
-  convert_to_sgd_epoch: 50
+  convert_to_sgd_epoch: 40
 
   # initialization
   parameter_init_distribution: uniform
@@ -71,7 +69,7 @@ param:
 
   # annealing
   decay_start_epoch: 5
-  decay_rate: 0.9
+  decay_rate: 0.75
   decay_patient_epoch: 1
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5

@@ -27,8 +27,7 @@ class Word2idx(object):
                 self.map_dict[word] = vocab_count
                 vocab_count += 1
 
-        # Add <SOS> & <EOS>
-        self.map_dict['<'] = vocab_count + 1
+        # Add <EOS>
         self.map_dict['>'] = vocab_count
 
     def __call__(self, str_word):
@@ -71,8 +70,7 @@ class Idx2word(object):
                 self.map_dict[vocab_count] = word
                 vocab_count += 1
 
-        # Add <SOS> & <EOS>
-        self.map_dict[vocab_count + 1] = '<'
+        # Add <EOS>
         self.map_dict[vocab_count] = '>'
 
     def __call__(self, index_list):

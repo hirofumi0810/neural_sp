@@ -86,14 +86,14 @@ class DatasetBase(Base):
                 np.array(self.df['input_path'][data_indices]))))
 
         # Set values of each data in mini-batch
-        for i_batch in range(len(data_indices)):
+        for b in range(len(data_indices)):
             # Load input data
             try:
                 data_i_tmp = self.load(
-                    input_path_list[i_batch].replace(
+                    input_path_list[b].replace(
                         '/n/sd8/inaguma/corpus', '/data/inaguma'))
             except:
-                data_i_tmp = self.load(input_path_list[i_batch])
+                data_i_tmp = self.load(input_path_list[b])
 
             if self.use_double_delta:
                 data_i = data_i_tmp
@@ -114,27 +114,17 @@ class DatasetBase(Base):
                                    dtype=np.float32)
 
             if self.backend == 'pytorch':
-                xs[i_batch, :frame_num, :] = data_i
+                xs[b, :frame_num, :] = data_i
             elif self.backend == 'chainer':
-                xs[i_batch] = data_i.astype(np.float32)
-            x_lens[i_batch] = frame_num
+                xs[b] = data_i.astype(np.float32)
+            x_lens[b] = frame_num
             if self.is_test:
-                ys[i_batch, 0] = self.df['transcript'][data_indices[i_batch]]
+                ys[b, 0] = self.df['transcript'][data_indices[b]]
                 # NOTE: transcript is not tokenized
             else:
-                indices = list(map(int, str_indices_list[i_batch].split(' ')))
-                label_num = len(indices)
-                if self.model_type == 'attention':
-                    ys[i_batch, 0] = self.sos_index
-                    ys[i_batch, 1:label_num + 1] = indices
-                    ys[i_batch, label_num + 1] = self.eos_index
-                    y_lens[i_batch] = label_num + 2
-                    # NOTE: include <SOS> and <EOS>
-                elif self.model_type == 'ctc':
-                    ys[i_batch, 0:label_num] = indices
-                    y_lens[i_batch] = label_num
-                else:
-                    raise TypeError
+                indices = list(map(int, str_indices_list[b].split(' ')))
+                ys[b, :len(indices)] = indices
+                y_lens[b] = len(indices)
 
         batch = {'xs': xs,
                  'ys': ys,

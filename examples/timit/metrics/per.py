@@ -63,12 +63,7 @@ def do_eval_per(model, dataset, beam_width,
                 # NOTE: transcript is seperated by space(' ')
             else:
                 # Convert from index to phone (-> list of phone strings)
-                if model.model_type == 'ctc':
-                    phone_ref_list = idx2phone(ys[b][:y_lens[b]]).split(' ')
-                elif model.model_type == 'attention':
-                    phone_ref_list = idx2phone(
-                        ys[b][1:y_lens[b] - 1]).split(' ')
-                    # NOTE: Exclude <SOS> and <EOS>
+                phone_ref_list = idx2phone(ys[b][:y_lens[b]]).split(' ')
 
             ##############################
             # Hypothesis
@@ -92,15 +87,20 @@ def do_eval_per(model, dataset, beam_width,
                 phone_hyp_list = map2phone39(phone_hyp_list)
 
             # Compute PER
-            per_b, sub_b, ins_b, del_b = compute_wer(
-                ref=phone_ref_list,
-                hyp=phone_hyp_list,
-                normalize=False)
-            per += per_b
-            sub += sub_b
-            ins += ins_b
-            dele += del_b
-            num_phones += len(phone_ref_list)
+            try:
+                per_b, sub_b, ins_b, del_b = compute_wer(
+                    ref=phone_ref_list,
+                    hyp=phone_hyp_list,
+                    normalize=False)
+                per += per_b
+                sub += sub_b
+                ins += ins_b
+                dele += del_b
+                num_phones += len(phone_ref_list)
+            except:
+                # print('REF: %s' % ' '.join(phone_ref_list))
+                # print('HYP: %s' % str_hyp)
+                pass
 
             if progressbar:
                 pbar.update(1)

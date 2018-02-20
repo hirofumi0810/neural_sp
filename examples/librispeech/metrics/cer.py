@@ -55,7 +55,7 @@ def do_eval_cer(model, dataset, beam_width, max_decode_len,
                                                max_decode_len=max_decode_len)
             ys = batch['ys'][perm_idx]
             y_lens = batch['y_lens'][perm_idx]
-        elif 'attention' in model.model_type:
+        else:
             best_hyps, perm_idx = model.decode(batch['xs'], batch['x_lens'],
                                                beam_width=beam_width,
                                                max_decode_len=max_decode_len,
@@ -63,26 +63,22 @@ def do_eval_cer(model, dataset, beam_width, max_decode_len,
             ys = batch['ys_sub'][perm_idx]
             y_lens = batch['y_lens_sub'][perm_idx]
 
-        for i_batch in range(len(batch['xs'])):
+        for b in range(len(batch['xs'])):
 
             ##############################
             # Reference
             ##############################
             if dataset.is_test:
-                str_ref = ys[i_batch][0]
+                str_ref = ys[b][0]
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
-                if model.model_type in ['ctc', 'hierarchical_ctc']:
-                    str_ref = idx2char(ys[i_batch][:y_lens[i_batch]])
-                elif 'attention' in model.model_type:
-                    str_ref = idx2char(ys[i_batch][1:y_lens[i_batch] - 1])
-                    # NOTE: Exclude <SOS> and <EOS>
+                str_ref = idx2char(ys[b][:y_lens[b]])
 
             ##############################
             # Hypothesis
             ##############################
-            str_hyp = idx2char(best_hyps[i_batch])
+            str_hyp = idx2char(best_hyps[b])
             if 'attention' in model.model_type:
                 str_hyp = str_hyp.split('>')[0]
                 # NOTE: Trancate by the first <EOS>
@@ -98,8 +94,8 @@ def do_eval_cer(model, dataset, beam_width, max_decode_len,
             # Post-proccessing
             ##############################
             # Remove garbage labels
-            str_ref = re.sub(r'[\'<>]+', '', str_ref)
-            str_hyp = re.sub(r'[\'<>]+', '', str_hyp)
+            str_ref = re.sub(r'[\'>]+', '', str_ref)
+            str_hyp = re.sub(r'[\'>]+', '', str_hyp)
             # TODO: WER計算するときに消していい？
 
             # Compute WER

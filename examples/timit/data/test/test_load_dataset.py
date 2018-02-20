@@ -30,8 +30,8 @@ class TestLoadDataset(unittest.TestCase):
 
         # label_type
         self.check(label_type='phone61')
-        self.check(label_type='character')
-        self.check(label_type='character_capital_divide')
+        self.check(label_type='phone48')
+        self.check(label_type='phone39')
 
         # sort
         self.check(label_type='phone61', sort_utt=True)
@@ -68,7 +68,6 @@ class TestLoadDataset(unittest.TestCase):
         dataset = Dataset(
             backend=backend,
             input_channel=41, use_delta=True, use_double_delta=True,
-            model_type='attention',
             data_type=data_type, label_type=label_type,
             vocab_file_path=vocab_file_path,
             batch_size=64, max_epoch=2,
@@ -94,7 +93,7 @@ class TestLoadDataset(unittest.TestCase):
             if dataset.is_test:
                 str_true = batch['ys'][0][0]
             else:
-                str_true = map_fn(batch['ys'][0][1:batch['y_lens'][0]])
+                str_true = map_fn(batch['ys'][0][:batch['y_lens'][0]])
 
             print('----- %s (epoch: %.3f, batch: %d) -----' %
                   (batch['input_names'][0], dataset.epoch_detail, len(batch['xs'])))

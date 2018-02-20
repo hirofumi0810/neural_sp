@@ -38,8 +38,7 @@ class Char2idx(object):
                 self.map_dict[char] = vocab_count
                 vocab_count += 1
 
-        # Add <SOS> & <EOS>
-        self.map_dict['<'] = vocab_count + 1
+        # Add <EOS>
         self.map_dict['>'] = vocab_count
 
     def __call__(self, str_char):
@@ -105,13 +104,15 @@ class Idx2char(object):
         capital_divide (bool, optional): if True, words will be divided by
             capital letters. This is used for English.
         remove_list (list, optional): characters to neglect
+        return_list (bool, optional): if True, return list of characters
     """
 
     def __init__(self, vocab_file_path, space_mark='_', capital_divide=False,
-                 remove_list=[]):
+                 remove_list=[], return_list=False):
         self.space_mark = space_mark
         self.capital_divide = capital_divide
         self.remove_list = remove_list
+        self.return_list = return_list
 
         # Read the vocabulary file
         self.map_dict = {}
@@ -124,8 +125,7 @@ class Idx2char(object):
                 self.map_dict[vocab_count] = char
                 vocab_count += 1
 
-        # Add <SOS> & <EOS>
-        self.map_dict[vocab_count + 1] = '<'
+        # Add <EOS>
         self.map_dict[vocab_count] = '>'
 
     def __call__(self, index_list):
@@ -145,8 +145,15 @@ class Idx2char(object):
                     char_list += [self.space_mark, _char_list[i].lower()]
                 else:
                     char_list += [_char_list[i].lower()]
+
+            if self.return_list:
+                return char_list
+
             str_char = ''.join(char_list)
         else:
+            if self.return_list:
+                return _char_list
+
             str_char = ''.join(_char_list)
 
         return str_char

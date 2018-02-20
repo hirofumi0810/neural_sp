@@ -19,7 +19,7 @@ from utils.dataset.loader import DatasetBase
 class Dataset(DatasetBase):
 
     def __init__(self, backend, input_channel, use_delta, use_double_delta,
-                 model_type, data_type, label_type, batch_size,
+                 data_type, label_type, batch_size,
                  vocab_file_path, max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
                  shuffle=False, sort_utt=False, reverse=False,
@@ -31,10 +31,8 @@ class Dataset(DatasetBase):
             input_channel (int): the number of channels of acoustics
             use_delta (bool): if True, use the delta feature
             use_double_delta (bool): if True, use the acceleration feature
-            model_type (string): ctc or attention
             data_type (string): train or dev or test
-            label_type (string): phone39 or phone48 or phone61 or
-                character or character_capital_divide
+            label_type (string): phone39 or phone48 or phone61
             batch_size (int): the size of mini-batch
             vocab_file_path (string): path to the vocabulary file
             max_epoch (int, optional): the max epoch. None means infinite loop.
@@ -60,7 +58,6 @@ class Dataset(DatasetBase):
         self.input_channel = input_channel
         self.use_delta = use_delta
         self.use_double_delta = use_double_delta
-        self.model_type = model_type
         self.data_type = data_type
         self.label_type = label_type
         self.batch_size = batch_size

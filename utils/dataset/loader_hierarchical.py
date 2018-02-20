@@ -92,12 +92,12 @@ class DatasetBase(Base):
             ys = np.array(
                 [[self.pad_value] * max_label_num] * len(data_indices))
             ys_sub = np.array(
-                [[self.pad_value_sub] * max_labels_seq_len_sub] * len(data_indices))
+                [[self.pad_value] * max_labels_seq_len_sub] * len(data_indices))
         else:
             ys = np.array(
                 [[self.pad_value] * max_label_num] * len(data_indices), dtype=np.int32)
             ys_sub = np.array(
-                [[self.pad_value_sub] * max_labels_seq_len_sub] * len(data_indices), dtype=np.int32)
+                [[self.pad_value] * max_labels_seq_len_sub] * len(data_indices), dtype=np.int32)
         x_lens = np.zeros((len(data_indices),), dtype=np.int32)
         y_lens = np.zeros((len(data_indices),), dtype=np.int32)
         y_lens_sub = np.zeros((len(data_indices),), dtype=np.int32)
@@ -106,14 +106,14 @@ class DatasetBase(Base):
                 np.array(self.df['input_path'][data_indices]))))
 
         # Set values of each data in mini-batch
-        for i_batch in range(len(data_indices)):
+        for b in range(len(data_indices)):
             # Load input data
             try:
                 data_i_tmp = self.load(
-                    input_path_list[i_batch].replace(
+                    input_path_list[b].replace(
                         '/n/sd8/inaguma/corpus', '/data/inaguma'))
             except:
-                data_i_tmp = self.load(input_path_list[i_batch])
+                data_i_tmp = self.load(input_path_list[b])
 
             if self.use_double_delta:
                 data_i = data_i_tmp
@@ -134,38 +134,22 @@ class DatasetBase(Base):
                                    dtype=np.float32)
 
             if self.backend == 'pytorch':
-                xs[i_batch, :frame_num, :] = data_i
+                xs[b, :frame_num, :] = data_i
             elif self.backend == 'chainer':
-                xs[i_batch] = data_i.astype(np.float32)
-            x_lens[i_batch] = frame_num
+                xs[b] = data_i.astype(np.float32)
+            x_lens[b] = frame_num
             if self.is_test:
-                ys[i_batch, 0] = self.df['transcript'][data_indices[i_batch]]
-                ys_sub[i_batch,
-                       0] = self.df_sub['transcript'][data_indices[i_batch]]
+                ys[b, 0] = self.df['transcript'][data_indices[b]]
+                ys_sub[b, 0] = self.df_sub['transcript'][data_indices[b]]
                 # NOTE: transcript is not tokenized
             else:
-                indices = list(map(int, str_indices_list[i_batch].split(' ')))
+                indices = list(map(int, str_indices_list[b].split(' ')))
                 indices_sub = list(
-                    map(int, str_indices_list_sub[i_batch].split(' ')))
-                label_num = len(indices)
-                label_num_sub = len(indices_sub)
-                if self.model_type == 'hierarchical_ctc':
-                    ys[i_batch, 0:label_num] = indices
-                    y_lens[i_batch] = label_num
-
-                    ys_sub[i_batch, 0: label_num_sub] = indices_sub
-                    y_lens_sub[i_batch] = label_num_sub
-                else:
-                    ys[i_batch, 0] = self.sos_index
-                    ys[i_batch, 1:label_num + 1] = indices
-                    ys[i_batch, label_num + 1] = self.eos_index
-                    y_lens[i_batch] = label_num + 2
-                    # NOTE: include <SOS> and <EOS>
-
-                    ys_sub[i_batch, 0] = self.sos_index_sub
-                    ys_sub[i_batch, 1: label_num_sub + 1] = indices_sub
-                    ys_sub[i_batch, label_num_sub + 1] = self.eos_index_sub
-                    y_lens_sub[i_batch] = label_num_sub + 2
+                    map(int, str_indices_list_sub[b].split(' ')))
+                ys[b, :len(indices)] = indices
+                y_lens[b] = len(indices)
+                ys_sub[b, :len(indices_sub)] = indices_sub
+                y_lens_sub[b] = len(indices_sub)
 
         batch = {'xs': xs,
                  'ys': ys,
