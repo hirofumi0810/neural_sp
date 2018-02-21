@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Test Hierarchical attention + character sequence attention (pytorch)."""
+"""Test nested attention-besed models with word-character composition (pytorch)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -17,68 +17,67 @@ torch.manual_seed(1623)
 torch.cuda.manual_seed_all(1623)
 
 sys.path.append('../../../../')
-from models.pytorch.attention.charseq_attention_seq2seq import CharseqAttentionSeq2seq
+from models.pytorch.attention.nested_attention_seq2seq import NestedAttentionSeq2seq
 from models.test.data import generate_data, idx2char, idx2word
 from utils.measure_time_func import measure_time
 from utils.evaluation.edit_distance import compute_cer, compute_wer
 from utils.training.learning_rate_controller import Controller
 
 
-class TestCharseqAttention(unittest.TestCase):
+class TestNestedAttention(unittest.TestCase):
 
     def test(self):
-        print("Hierarchical Attention Working check.")
+        print("Nested Attention Working check.")
 
-        # Curriculum training
-        # self.check(composition_case='fine_grained_gating',
-        #            ctc_loss_weight_sub=0.2, curriculum_training=True)
-
-        # Composition case (word attn + char attn)
-        # self.check(composition_case='fine_grained_gating',
-        #            ctc_loss_weight_sub=0.2)
-        # self.check(composition_case='scalar_gating',
-        #            ctc_loss_weight_sub=0.2)
-        # self.check(composition_case='concat',
-        #            ctc_loss_weight_sub=0.2)
-
-        # Composition case (word attn + char attn)
-        self.check(composition_case='fine_grained_gating')
-        self.check(composition_case='scalar_gating')
-        self.check(composition_case='concat')
+        # self.check(composition_case='hidden')
+        self.check(composition_case='embedding')
+        self.check(composition_case='hidden_embedding')
+        self.check(composition_case='multiscale')
 
     @measure_time
-    def check(self, composition_case, ctc_loss_weight_sub=0,
-              curriculum_training=False):
+    def check(self, composition_case,
+              encoder_type='lstm', bidirectional=True, decoder_type='lstm',
+              attention_type='location', subsample=False,
+              ctc_loss_weight=0, decoder_num_layers=2):
 
         print('==================================================')
-        print('  ctc_loss_weight_sub: %s' % str(ctc_loss_weight_sub))
-        print('  curriculum_training: %s' % str(curriculum_training))
-        print('  composition_case: %s' % str(composition_case))
+        print('  composition_case: %s' % composition_case)
+        print('  encoder_type: %s' % encoder_type)
+        print('  bidirectional: %s' % str(bidirectional))
+        print('  decoder_type: %s' % decoder_type)
+        print('  attention_type: %s' % attention_type)
+        print('  subsample: %s' % str(subsample))
+        print('  ctc_loss_weight: %s' % str(ctc_loss_weight))
+        print('  decoder_num_layers: %s' % str(decoder_num_layers))
         print('==================================================')
 
         # Load batch data
+        num_stack = 1 if subsample else 2
         splice = 1
-        num_stack = 1
         xs, ys, ys_sub, x_lens, y_lens, y_lens_sub = generate_data(
+            model_type='attention',
             label_type='word_char',
             batch_size=2,
             num_stack=num_stack,
             splice=splice)
 
+        num_classes = 11
+        num_classes_sub = 27
+
         # Load model
-        model = CharseqAttentionSeq2seq(
+        model = NestedAttentionSeq2seq(
             input_size=xs.shape[-1] // splice // num_stack,  # 120
-            encoder_type='lstm',
-            encoder_bidirectional=True,
+            encoder_type=encoder_type,
+            encoder_bidirectional=bidirectional,
             encoder_num_units=256,
-            encoder_num_proj=0,
+            encoder_num_proj=256,
             encoder_num_layers=3,
             encoder_num_layers_sub=2,
-            attention_type='location',
+            attention_type=attention_type,
             attention_dim=128,
-            decoder_type='lstm',
+            decoder_type=decoder_type,
             decoder_num_units=256,
-            decoder_num_layers=2,
+            decoder_num_layers=decoder_num_layers,
             decoder_num_units_sub=256,
             decoder_num_layers_sub=1,
             embedding_dim=64,
@@ -87,24 +86,24 @@ class TestCharseqAttention(unittest.TestCase):
             dropout_encoder=0.1,
             dropout_decoder=0.1,
             dropout_embedding=0.1,
-            main_loss_weight=0.8,
-            num_classes=11,
-            num_classes_sub=27,
+            main_loss_weight=0.1,
+            num_classes=num_classes,
+            num_classes_sub=num_classes_sub,
             parameter_init_distribution='uniform',
             parameter_init=0.1,
             recurrent_weight_orthogonal=False,
             init_forget_gate_bias_with_one=True,
-            subsample_list=[False, True, False],
+            subsample_list=[] if not subsample else [True, False, False],
             subsample_type='drop',
-            init_dec_state='zero',
+            init_dec_state='final',
             sharpening_factor=1,
             logits_temperature=1,
             sigmoid_smoothing=False,
-            ctc_loss_weight_sub=ctc_loss_weight_sub,
+            ctc_loss_weight_sub=0.1,
             attention_conv_num_channels=10,
-            attention_conv_width=201,
+            attention_conv_width=101,
             num_stack=num_stack,
-            splice=1,
+            splice=splice,
             conv_channels=[],
             conv_kernel_sizes=[],
             conv_strides=[],
@@ -112,14 +111,11 @@ class TestCharseqAttention(unittest.TestCase):
             batch_norm=False,
             scheduled_sampling_prob=0.1,
             scheduled_sampling_ramp_max_step=200,
-            label_smoothing_prob=0.1,
+            # label_smoothing_prob=0.1,
+            label_smoothing_prob=0,
             weight_noise_std=0,
-            encoder_residual=False,
-            encoder_dense_residual=False,
-            decoder_residual=False,
-            decoder_dense_residual=False,
-            curriculum_training=curriculum_training,
-            composition_case=composition_case)
+            composition_case=composition_case,
+            space_index=0)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):
@@ -161,33 +157,30 @@ class TestCharseqAttention(unittest.TestCase):
             model.optimizer.step()
 
             if (step + 1) % 10 == 0:
-                # Compute loss
-                loss, loss_main, loss_sub = model(
-                    xs, ys, ys_sub, x_lens, y_lens, y_lens_sub, is_eval=True)
+                model.main_loss_weight = 0.1 + (1 - 0.1) / max_step * step
 
                 # Decode
-                best_hyps, best_hyps_sub, perm_idx = model.decode(
-                    xs, x_lens, beam_width=1, max_decode_len=30,
-                    max_decode_len_sub=60)
+                best_hyps, perm_idx = model.decode(
+                    xs, x_lens, beam_width=1, max_decode_len=30)
                 best_hyps_sub, perm_idx_sub = model.decode(
                     xs, x_lens, beam_width=1, max_decode_len=60,
                     is_sub_task=True)
 
                 # Compute accuracy
-                str_pred = idx2word(best_hyps[0][:-1]).split('>')[0]
-                str_true = idx2word(ys[0])
+                str_pred = idx2word(best_hyps[0][0:-1]).split('>')[0]
+                str_true = idx2word(ys[0][1:-1])
                 ler, _, _, _ = compute_wer(ref=str_true.split('_'),
                                            hyp=str_pred.split('_'),
                                            normalize=True)
-                str_pred_sub = idx2char(best_hyps_sub[0][:-1]).split('>')[0]
-                str_true_sub = idx2char(ys_sub[0])
+                str_pred_sub = idx2char(best_hyps_sub[0][0:-1]).split('>')[0]
+                str_true_sub = idx2char(ys_sub[0][1:-1])
                 ler_sub = compute_cer(ref=str_true_sub.replace('_', ''),
                                       hyp=str_pred_sub.replace('_', ''),
                                       normalize=True)
 
                 duration_step = time.time() - start_time_step
-                print('Step %d: loss=%.3f(%.3f/%.3f) / ler (main/sub)=%.3f/%.3f / lr=%.5f (%.3f sec)' %
-                      (step + 1, loss, loss_main, loss_sub,
+                print('Step %d: loss = %.3f (%.3f/%.3f) / ler (main) = %.3f / ler (sub) = %.3f / lr = %.5f (%.3f sec)' %
+                      (step + 1, loss.data[0], loss_main.data[0], loss_sub.data[0],
                        ler, ler_sub, learning_rate, duration_step))
                 start_time_step = time.time()
 
@@ -199,7 +192,6 @@ class TestCharseqAttention(unittest.TestCase):
                 if ler_sub < 0.1:
                     print('Modle is Converged.')
                     break
-
                 # Update learning rate
                 model.optimizer, learning_rate = lr_controller.decay_lr(
                     optimizer=model.optimizer,

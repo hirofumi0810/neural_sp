@@ -100,7 +100,6 @@ class TestHierarchicalAttention(unittest.TestCase):
         splice = 1
         num_stack = 1 if subsample or conv else 2
         xs, ys, ys_sub, x_lens, y_lens, y_lens_sub = generate_data(
-            model_type='attention',
             label_type='word_char',
             batch_size=2,
             num_stack=num_stack,
@@ -117,7 +116,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             encoder_bidirectional=bidirectional,
             encoder_num_units=320,
             encoder_num_proj=320 if projection else 0,
-            encoder_num_layers=2,
+            encoder_num_layers=3,
             encoder_num_layers_sub=2,
             attention_type=attention_type,
             attention_dim=128,
@@ -139,7 +138,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             parameter_init=0.1,
             recurrent_weight_orthogonal=False,
             init_forget_gate_bias_with_one=True,
-            subsample_list=[] if not subsample else [True, False],
+            subsample_list=[] if not subsample else [True, True, False],
             subsample_type='concat' if subsample is False else subsample,
             init_dec_state='final',
             sharpening_factor=1,
@@ -219,14 +218,13 @@ class TestHierarchicalAttention(unittest.TestCase):
 
                 # Compute accuracy
                 try:
-                    str_hyp = idx2word(best_hyps[0][0:-1]).split('>')[0]
-                    str_ref = idx2word(ys[0][1:-1])
+                    str_hyp = idx2word(best_hyps[0][:-1]).split('>')[0]
+                    str_ref = idx2word(ys[0])
                     wer, _, _, _ = compute_wer(ref=str_ref.split('_'),
                                                hyp=str_hyp.split('_'),
                                                normalize=True)
-                    str_hyp_sub = idx2char(
-                        best_hyps_sub[0][0:-1]).split('>')[0]
-                    str_ref_sub = idx2char(ys_sub[0][1:-1])
+                    str_hyp_sub = idx2char(best_hyps_sub[0][:-1]).split('>')[0]
+                    str_ref_sub = idx2char(ys_sub[0])
                     cer, _, _, _ = compute_wer(
                         ref=list(str_ref_sub.replace('_', '')),
                         hyp=list(str_hyp_sub.replace('_', '')),

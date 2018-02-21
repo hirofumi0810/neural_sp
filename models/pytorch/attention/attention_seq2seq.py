@@ -8,8 +8,7 @@ from __future__ import division
 from __future__ import print_function
 
 try:
-    from warpctc_pytorch import CTCLoss
-    ctc = CTCLoss()
+    import warpctc_pytorch
 except:
     raise ImportError('Install warpctc_pytorch.')
 
@@ -19,6 +18,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.autograd import Variable
+from torch.nn.modules.loss import _assert_no_grad
 
 from models.pytorch.base import ModelBase
 from models.pytorch.criterion import cross_entropy_label_smoothing
@@ -33,6 +33,54 @@ from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
 from utils.io.variable import np2var, var2np
 
 LOG_1 = 0
+CURRICULUM_TRAINING = [None, 'weight',
+                       'weight_ramp', 'probabilistic', 'pretrain']
+
+
+# [Referrence]
+# https://github.com/espnet/espnet/blob/master/src/nets/e2e_asr_attctc_th.py
+
+class _ChainerLikeCTC(warpctc_pytorch._CTC):
+    @staticmethod
+    def forward(ctx, acts, labels, act_lens, label_lens):
+        is_cuda = True if acts.is_cuda else False
+        acts = acts.contiguous()
+        loss_func = warpctc_pytorch.gpu_ctc if is_cuda else warpctc_pytorch.cpu_ctc
+        grads = torch.zeros(acts.size()).type_as(acts)
+        minibatch_size = acts.size(1)
+        costs = torch.zeros(minibatch_size).cpu()
+        loss_func(acts,
+                  grads,
+                  labels,
+                  label_lens,
+                  act_lens,
+                  minibatch_size,
+                  costs)
+        # modified only here from original
+        # costs = torch.FloatTensor([costs.sum()]) / acts.size(1)
+        costs = torch.FloatTensor([costs.sum()])
+        ctx.grads = Variable(grads)
+        ctx.grads /= ctx.grads.size(1)
+
+        return costs
+
+
+def chainer_like_ctc_loss(acts, labels, act_lens, label_lens):
+    """Chainer like CTC Loss
+    acts: Tensor of (seqLength x batch x outputDim) containing output from network
+    labels: 1 dimensional Tensor containing all the targets of the batch in one sequence
+    act_lens: Tensor of size (batch) containing size of each output sequence from the network
+    act_lens: Tensor of (batch) containing label length of each example
+    """
+    assert len(labels.size()) == 1  # labels must be 1 dimensional
+    _assert_no_grad(labels)
+    _assert_no_grad(act_lens)
+    _assert_no_grad(label_lens)
+    return _ChainerLikeCTC.apply(acts, labels, act_lens, label_lens)
+
+
+warpctc = warpctc_pytorch.CTCLoss()
+chainer_like_warpctc = chainer_like_ctc_loss
 
 
 class AttentionSeq2seq(ModelBase):
@@ -107,6 +155,8 @@ class AttentionSeq2seq(ModelBase):
         encoder_dense_residual (bool, optional):
         decoder_residual (bool, optional):
         decoder_dense_residual (bool, optional):
+        curriculum_training (bool, optional): None or weight or weight_ramp
+            or probabilistic or pretrain
     """
 
     def __init__(self,
@@ -156,7 +206,8 @@ class AttentionSeq2seq(ModelBase):
                  encoder_residual=False,
                  encoder_dense_residual=False,
                  decoder_residual=False,
-                 decoder_dense_residual=False):
+                 decoder_dense_residual=False,
+                 curriculum_training=None):
 
         super(ModelBase, self).__init__()
         self.model_type = 'attention'
@@ -167,9 +218,9 @@ class AttentionSeq2seq(ModelBase):
         self.input_size = input_size
         self.num_stack = num_stack
         self.encoder_type = encoder_type
-        self.encoder_bidirectional = encoder_bidirectional
-        self.encoder_num_directions = 2 if encoder_bidirectional else 1
         self.encoder_num_units = encoder_num_units
+        if encoder_bidirectional:
+            self.encoder_num_units *= 2
         self.encoder_num_proj = encoder_num_proj
         self.encoder_num_layers = encoder_num_layers
         self.subsample_list = subsample_list
@@ -181,9 +232,10 @@ class AttentionSeq2seq(ModelBase):
         self.decoder_num_units = decoder_num_units
         self.decoder_num_layers = decoder_num_layers
         self.embedding_dim = embedding_dim
-        self.num_classes = num_classes + 2  # Add <SOS> and <EOS> class
-        self.sos_index = 0
-        self.eos_index = num_classes + 1
+        self.num_classes = num_classes + 1  # Add <EOS> class
+        self.sos_index = num_classes
+        self.eos_index = num_classes
+        # NOTE: <SOS> and <EOS> have the same index
 
         # Setting for the attention
         if init_dec_state not in ['zero', 'mean', 'final']:
@@ -209,12 +261,18 @@ class AttentionSeq2seq(ModelBase):
         self._step = 0
         self.label_smoothing_prob = label_smoothing_prob
 
-        # Joint CTC-Attention
+        # Setting for MTL
         self.ctc_loss_weight = ctc_loss_weight
+        self.ctc_loss_weight_tmp = ctc_loss_weight
+        if curriculum_training and scheduled_sampling_ramp_max_step == 0:
+            raise ValueError('Set scheduled_sampling_ramp_max_step.')
+        if curriculum_training not in CURRICULUM_TRAINING:
+            raise ValueError
+        self.curriculum_training = curriculum_training
 
-        ####################
+        ##############################
         # Encoder
-        ####################
+        ##############################
         if encoder_type in ['lstm', 'gru', 'rnn']:
             self.encoder = load(encoder_type=encoder_type)(
                 input_size=input_size,
@@ -261,13 +319,14 @@ class AttentionSeq2seq(ModelBase):
             self.init_dec_state = 'zero'
 
         if self.init_dec_state != 'zero':
-            self.W_dec_init = LinearND(decoder_num_units, decoder_num_units)
+            self.W_dec_init = LinearND(
+                self.encoder_num_units, decoder_num_units)
 
-        ####################
+        ##############################
         # Decoder
-        ####################
+        ##############################
         self.decoder = RNNDecoder(
-            input_size=decoder_num_units + embedding_dim,
+            input_size=self.encoder_num_units + embedding_dim,
             rnn_type=decoder_type,
             num_units=decoder_num_units,
             num_layers=decoder_num_layers,
@@ -279,6 +338,7 @@ class AttentionSeq2seq(ModelBase):
         # Attention layer
         ##############################
         self.attend = AttentionMechanism(
+            encoder_num_units=self.encoder_num_units,
             decoder_num_units=decoder_num_units,
             attention_type=attention_type,
             attention_dim=attention_dim,
@@ -290,45 +350,52 @@ class AttentionSeq2seq(ModelBase):
         ##################################################
         # Bridge layer between the encoder and decoder
         ##################################################
-        if encoder_bidirectional or encoder_num_units != decoder_num_units or encoder_type == 'cnn':
-            if encoder_type == 'cnn':
-                self.bridge = LinearND(
-                    self.encoder.output_size, decoder_num_units,
-                    dropout=dropout_encoder)
-            elif encoder_bidirectional:
-                self.bridge = LinearND(
-                    encoder_num_units * 2, decoder_num_units,
-                    dropout=dropout_encoder)
-            else:
-                self.bridge = LinearND(encoder_num_units, decoder_num_units,
-                                       dropout=dropout_encoder)
+        self.is_bridge = False
+        if encoder_type == 'cnn':
+            self.bridge = LinearND(
+                self.encoder.output_size, decoder_num_units,
+                dropout=dropout_encoder)
             self.is_bridge = True
-        else:
-            self.is_bridge = False
+        elif encoder_num_units != decoder_num_units and attention_type == 'dot_product':
+            self.bridge = LinearND(
+                self.encoder_num_units, decoder_num_units,
+                dropout=dropout_encoder)
+            self.is_bridge = True
 
+        ##############################
+        # Embedding
+        ##############################
         if label_smoothing_prob > 0:
-            self.embed = Embedding_LS(
-                num_classes=self.num_classes,
-                embedding_dim=embedding_dim,
-                dropout=dropout_embedding,
-                label_smoothing_prob=label_smoothing_prob)
+            self.embed = Embedding_LS(num_classes=self.num_classes,
+                                      embedding_dim=embedding_dim,
+                                      dropout=dropout_embedding,
+                                      label_smoothing_prob=label_smoothing_prob)
         else:
             self.embed = Embedding(num_classes=self.num_classes,
                                    embedding_dim=embedding_dim,
-                                   dropout=dropout_embedding,
-                                   ignore_index=self.sos_index)
+                                   dropout=dropout_embedding)
 
-        self.proj_layer = LinearND(decoder_num_units * 2, decoder_num_units,
-                                   dropout=dropout_decoder)
+        ##############################
+        # Output layer
+        ##############################
+        self.W_d = LinearND(decoder_num_units, decoder_num_units,
+                            dropout=dropout_decoder)
+        self.W_c = LinearND(self.encoder_num_units, decoder_num_units,
+                            dropout=dropout_decoder)
+        # self.W_y = LinearND(embedding_dim, decoder_num_units,
+        #                     dropout=dropout_decoder)
         self.fc = LinearND(decoder_num_units, self.num_classes)
 
+        ##############################
+        # CTC
+        ##############################
         if ctc_loss_weight > 0:
             if self.is_bridge:
                 self.fc_ctc = LinearND(
                     decoder_num_units, num_classes + 1)
             else:
                 self.fc_ctc = LinearND(
-                    encoder_num_units * self.encoder_num_directions, num_classes + 1)
+                    self.encoder_num_units, num_classes + 1)
 
             # Set CTC decoders
             self._decode_ctc_greedy_np = GreedyDecoder(blank_index=0)
@@ -365,7 +432,7 @@ class AttentionSeq2seq(ModelBase):
         """Forward computation.
         Args:
             xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
-            ys (np.ndarray): A tensor of size `[B, T_out]`
+            ys (np.ndarray): A tensor of size `[B, T_out]`, which should be padded with -1.
             x_lens (np.ndarray): A tensor of size `[B]`
             y_lens (np.ndarray): A tensor of size `[B]`
             is_eval (bool): if True, the history will not be saved.
@@ -373,18 +440,32 @@ class AttentionSeq2seq(ModelBase):
         Returns:
             loss (torch.autograd.Variable(float) or float): A tensor of size `[1]`
         """
+        # NOTE: ys is padded with -1 here
+        # ys_in is padded with <EOS> in order to convert to one-hot vector,
+        # and added <SOS> before the first token
+        # ys_out is padded with -1, and added <EOS> after the last token
+        ys_in = self._create_var((ys.shape[0], ys.shape[1] + 1),
+                                 fill_value=self.eos_index, dtype='long')
+        ys_out = self._create_var((ys.shape[0], ys.shape[1] + 1),
+                                  fill_value=-1, dtype='long')
+        for b in range(len(xs)):
+            ys_in.data[b, 0] = self.sos_index
+            ys_in.data[b, 1:y_lens[b] + 1] = torch.from_numpy(
+                ys[b, :y_lens[b]])
+
+            ys_out.data[b, :y_lens[b]] = torch.from_numpy(ys[b, :y_lens[b]])
+            ys_out.data[b, y_lens[b]] = self.eos_index
+
+        if self.use_cuda:
+            ys_in = ys_in.cuda()
+            ys_out = ys_out.cuda()
+
         # Wrap by Variable
         xs = np2var(xs, use_cuda=self.use_cuda, backend='pytorch')
-        ys = np2var(
-            ys, dtype='long', use_cuda=self.use_cuda, backend='pytorch')
-        # NOTE: ys must be long
         x_lens = np2var(
             x_lens, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
         y_lens = np2var(
             y_lens, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
-
-        # NOTE: index 0 is reserved for blank and <SOS>
-        ys = ys + 1
 
         if is_eval:
             self.eval()
@@ -400,46 +481,23 @@ class AttentionSeq2seq(ModelBase):
 
         # Permutate indices
         if perm_idx is not None:
-            ys = ys[perm_idx]
+            ys_in = ys_in[perm_idx]
+            ys_out = ys_out[perm_idx]
             y_lens = y_lens[perm_idx]
 
-        # Teacher-forcing
-        logits, att_weights = self._decode_train(xs, x_lens, ys)
-
-        # Output smoothing
-        if self.logits_temperature != 1:
-            logits /= self.logits_temperature
-
-        # Compute XE sequence loss
-        loss = F.cross_entropy(
-            input=logits.view((-1, logits.size(2))),
-            target=ys[:, 1:].contiguous().view(-1),
-            ignore_index=self.sos_index, size_average=False) / len(xs)
-        # NOTE: Exclude first <SOS>
-        # NOTE: ys are padded by <SOS>
-
-        # Label smoothing (with uniform distribution)
-        if self.label_smoothing_prob > 0:
-            loss_ls = cross_entropy_label_smoothing(
-                logits,
-                y_lens=y_lens - 1,  # Exclude <SOS>
-                label_smoothing_prob=self.label_smoothing_prob,
-                distribution='uniform',
-                size_average=False) / len(xs)
-            loss = loss * (1 - self.label_smoothing_prob) + loss_ls
-            # print(loss_ls)
-
-        # Add coverage term
-        if self.coverage_weight != 0:
-            raise NotImplementedError
+        # Compute XE loss
+        loss = self.compute_xe_loss(
+            xs, ys_in, ys_out, x_lens, y_lens, size_average=True)
 
         # Auxiliary CTC loss (optional)
-        if self.ctc_loss_weight > 0:
-            logits_ctc = self.fc_ctc(xs)
+        if self.ctc_loss_weight_tmp > 0:
             ctc_loss = self.compute_ctc_loss(
-                logits_ctc, ys, x_lens, y_lens, size_average=False) / len(xs)
-            loss = loss * (1 - self.ctc_loss_weight) + \
-                ctc_loss * self.ctc_loss_weight
+                xs, ys_in[:, 1:] + 1,
+                x_lens, y_lens, size_average=True)
+            # NOTE: exclude <SOS>
+            # NOTE: index 0 is reserved for blank in warpctc_pytorch
+            loss = loss * (1 - self.ctc_loss_weight_tmp) + \
+                ctc_loss * self.ctc_loss_weight_tmp
 
         if is_eval:
             loss = loss.data[0]
@@ -451,52 +509,132 @@ class AttentionSeq2seq(ModelBase):
                     self.sample_prob,
                     self.sample_prob / self.sample_ramp_max_step * self._step)
 
+            # Curriculum training (gradually from char to word task)
+            if self.curriculum_training is not None:
+                self.ctc_loss_weight_tmp = max(
+                    self.ctc_loss_weight,
+                    1.0 - (1 - self.ctc_loss_weight) / self.sample_ramp_max_step * self._step * 2)
+
         return loss
 
-    def compute_ctc_loss(self, logits_ctc, ys, x_lens, y_lens,
-                         size_average=False):
-        """Compute CTC loss.
+    def curriculum_training(self):
+        if self.curriculum_training is None:
+            pass
+        elif self.curriculum_training == 'weight':
+            pass
+        elif self.curriculum_training == 'weight_ramp':
+            pass
+        elif self.curriculum_training == 'probabilistic':
+            pass
+        elif self.curriculum_training == 'pretrain':
+            pass
+
+    def compute_xe_loss(self, enc_out, ys_in, ys_out, x_lens, y_lens,
+                        is_sub_task=False, size_average=False):
+        """Compute XE loss.
         Args:
-            logits_ctc (torch.autograd.Variable, float): A tensor of size
-                `[B, T_in, decoder_num_units]`
-            ys (torch.autograd.Variable, long): A tensor of size `[B, T_out]`
+            enc_out (torch.autograd.Variable, float): A tensor of size
+                `[B, T_in, encoder_num_units]`
+            ys_in (torch.autograd.Variable, long): A tensor of size
+                `[B, T_out]`, which includes <SOS>
+            ys_out (torch.autograd.Variable, long): A tensor of size
+                `[B, T_out]`, which includes <EOS>
             x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
             y_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            is_sub_task (bool, optional):
             size_average (bool, optional):
         Returns:
-            ctc_loss (torch.autograd.Variable, float): A tensor of size `[1]`
+            loss (torch.autograd.Variable, float): A tensor of size `[1]`
+        """
+        # Teacher-forcing
+        logits, att_weights = self._decode_train(
+            enc_out, x_lens, ys_in, is_sub_task=is_sub_task)
+
+        # Output smoothing
+        if self.logits_temperature != 1:
+            logits /= self.logits_temperature
+
+        # Compute XE sequence loss
+        loss = F.cross_entropy(
+            input=logits.view((-1, logits.size(2))),
+            target=ys_out.view(-1),
+            ignore_index=-1, size_average=False) / len(enc_out)
+        # NOTE: ys_in are padded by <SOS>
+
+        # Label smoothing (with uniform distribution)
+        if self.label_smoothing_prob > 0:
+            loss_ls = cross_entropy_label_smoothing(
+                logits,
+                y_lens=y_lens + 1,  # Add <EOS>
+                label_smoothing_prob=self.label_smoothing_prob,
+                distribution='uniform',
+                size_average=True)
+            loss = loss * (1 - self.label_smoothing_prob) + loss_ls
+            # print(loss_ls)
+
+        # Add coverage term
+        if self.coverage_weight != 0:
+            raise NotImplementedError
+
+        return loss
+
+    def compute_ctc_loss(self, enc_out, ys, x_lens, y_lens,
+                         is_sub_task=False, size_average=False):
+        """Compute CTC loss.
+        Args:
+            enc_out (torch.autograd.Variable, float): A tensor of size
+                `[B, T_in, encoder_num_units]`
+            ys (torch.autograd.Variable, long): A tensor of size `[B, T_out]`,
+                which includes <SOS> nor <EOS>
+            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            y_lens (torch.autograd.Variable, int): A tensor of size `[B]`,
+                which includes <SOS> nor <EOS>
+            is_sub_task (bool, optional):
+            size_average (bool, optional):
+        Returns:
+            loss (torch.autograd.Variable, float): A tensor of size `[1]`
         """
         # Concatenate all _ys for warpctc_pytorch
         # `[B, T_out]` -> `[1,]`
-        concatenated_labels = _concatenate_labels(ys[:, 1:-1], y_lens - 2)
-        # NOTE: Ignore fitst <SOS> and last <EOS>
+        concatenated_labels = _concatenate_labels(ys, y_lens)
+
+        # Path through the fully-connected layer
+        if is_sub_task:
+            logits = self.fc_ctc_sub(enc_out)
+        else:
+            logits = self.fc_ctc(enc_out)
 
         # Compute CTC loss
-        ctc_loss = ctc(logits_ctc.transpose(0, 1),  # time-major
-                       concatenated_labels.cpu(),
-                       x_lens.cpu(),
-                       y_lens.cpu() - 2)  # NOTE: Ignore <SOS> and <EOS>
+        # loss = warpctc(logits.transpose(0, 1),  # time-major
+        #                concatenated_labels.cpu(),
+        #                x_lens.cpu(),
+        #                y_lens.cpu())
+
+        loss = chainer_like_warpctc(logits.transpose(0, 1),  # time-major
+                                    concatenated_labels.cpu(),
+                                    x_lens.cpu(),
+                                    y_lens.cpu())
 
         if self.use_cuda:
-            ctc_loss = ctc_loss.cuda()
+            loss = loss.cuda()
 
         # Label smoothing (with uniform distribution)
         # if self.label_smoothing_prob > 0:
         #     # XE
-        #     loss_ls_ctc = cross_entropy_label_smoothing(
-        #         logits_ctc,
+        #     loss_ls = cross_entropy_label_smoothing(
+        #         logits,
         #         y_lens=x_lens,  # NOTE: CTC is frame-synchronous
         #         label_smoothing_prob=self.label_smoothing_prob,
         #         distribution='uniform',
         #         size_average=False)
-        #     ctc_loss = ctc_loss * (1 - self.label_smoothing_prob) + \
-        #         loss_ls_ctc
-        #     # print(loss_ls_ctc)
+        #     loss = loss * (1 - self.label_smoothing_prob) + \
+        #         loss_ls
+        #     # print(loss_ls)
 
         if size_average:
-            ctc_loss /= len(x_lens)
+            loss /= len(x_lens)
 
-        return ctc_loss
+        return loss
 
     def _encode(self, xs, x_lens, volatile, is_multi_task=False):
         """Encode acoustic features.
@@ -537,6 +675,7 @@ class AttentionSeq2seq(ModelBase):
             # Bridge between the encoder and decoder in the sub task
             if self.sub_loss_weight > 0 and self.is_bridge_sub:
                 xs_sub = self.bridge_sub(xs_sub)
+
             return xs, x_lens, xs_sub, x_lens_sub, perm_idx
         else:
             return xs, x_lens, perm_idx
@@ -549,9 +688,10 @@ class AttentionSeq2seq(ModelBase):
         """Decoding in the training stage.
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
-                `[B, T_in, decoder_num_units]`
+                `[B, T_in, encoder_num_units]`
             x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
-            ys (torch.autograd.Variable, long): A tensor of size `[B, T_out]`
+            ys (torch.autograd.Variable, long): A tensor of size `[B, T_out]`,
+                which should be padded with <EOS>.
             is_sub_task (bool, optional):
         Returns:
             logits (torch.autograd.Variable, float): A tensor of size
@@ -559,40 +699,32 @@ class AttentionSeq2seq(ModelBase):
             att_weights (torch.autograd.Variable, float): A tensor of size
                 `[B, T_out, T_in]`
         """
-        batch_size, max_time, decoder_num_units = enc_out.size()
-        labels_max_seq_len = ys.size(1)
+        batch_size, max_time = enc_out.size()[:2]
 
         # Initialize decoder state, decoder output, attention_weights
         dec_state = self._init_decoder_state(enc_out, is_sub_task=is_sub_task)
-        dec_out = self._zero_init((batch_size, 1, decoder_num_units))
-        context_vec = self._zero_init((batch_size, 1, decoder_num_units))
-        att_weights_step = self._zero_init((batch_size, max_time))
-
-        # Start from <SOS>
-        sos = self.sos_index_sub if is_sub_task else self.sos_index
-        y = self._create_token(value=sos, batch_size=batch_size)
+        dec_out = self._create_var((batch_size, 1, self.decoder_num_units))
+        context_vec = self._create_var((batch_size, 1, self.encoder_num_units))
+        att_weights_step = self._create_var((batch_size, max_time))
 
         logits = []
         att_weights = []
-        for t in range(labels_max_seq_len - 1):
+        for t in range(ys.size(1)):
 
             is_sample = self.sample_prob > 0 and t > 0 and self._step > 0 and random.random(
             ) < self._sample_prob
 
-            if is_sub_task:
-                if is_sample:
-                    # scheduled sampling
-                    y = self.embed_sub(torch.max(logits[-1], dim=2)[1])
-                else:
-                    # teacher-forcing
-                    y = self.embed_sub(ys[:, t:t + 1])
+            if is_sample:
+                # scheduled sampling
+                y = torch.max(logits[-1], dim=2)[1]
             else:
-                if is_sample:
-                    # scheduled sampling
-                    y = self.embed(torch.max(logits[-1], dim=2)[1])
-                else:
-                    # teacher-forcing
-                    y = self.embed(ys[:, t:t + 1])
+                # teacher-forcing
+                y = ys[:, t:t + 1]
+
+            if is_sub_task:
+                y = self.embed_sub(y)
+            else:
+                y = self.embed(y)
 
             dec_out, dec_state, context_vec, att_weights_step = self._decode_step(
                 enc_out=enc_out,
@@ -604,13 +736,14 @@ class AttentionSeq2seq(ModelBase):
                 att_weights_step=att_weights_step,
                 is_sub_task=is_sub_task)
 
-            concat = torch.cat([dec_out, context_vec], dim=-1)
             if is_sub_task:
-                logits_step = self.fc_sub(F.tanh(self.proj_layer_sub(concat)))
-                # logits_step = self.fc_sub(self.proj_layer_sub(concat))
+                logits_step = self.fc_sub(F.tanh(
+                    self.W_d_sub(dec_out) + self.W_c_sub(context_vec)))
             else:
-                logits_step = self.fc(F.tanh(self.proj_layer(concat)))
-                # logits_step = self.fc(self.proj_layer(concat))
+                logits_step = self.fc(F.tanh(
+                    self.W_d(dec_out) + self.W_c(context_vec)))
+                # logits_step = self.fc(F.tanh(
+                #     self.W_d(dec_out) + self.W_c(context_vec) + self.W_y(y)))
 
             logits.append(logits_step)
             att_weights.append(att_weights_step)
@@ -628,7 +761,7 @@ class AttentionSeq2seq(ModelBase):
         """Decoding at each decoder time step.
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
-                `[B, T_in, decoder_num_units]`
+                `[B, T_in, encoder_num_units]`
             x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
             y (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, embedding_dim]`
@@ -637,7 +770,7 @@ class AttentionSeq2seq(ModelBase):
             dec_out (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, decoder_num_units]`
             content_vec (torch.autograd.Variable, float): A tensor of size
-                `[B, 1, decoder_num_units]`
+                `[B, 1, encoder_num_units]`
             att_weights_step (torch.autograd.Variable, float):
                 A tensor of size `[B, T_in]`
             is_sub_task (bool, optional):
@@ -647,7 +780,7 @@ class AttentionSeq2seq(ModelBase):
             dec_state (torch.autograd.Variable, float): A tensor of size
                 `[decoder_num_layers, B, decoder_num_units]`
             content_vec (torch.autograd.Variable, float): A tensor of size
-                `[B, 1, decoder_num_units]`
+                `[B, 1, encoder_num_units]`
             att_weights_step (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in]`
         """
@@ -664,107 +797,59 @@ class AttentionSeq2seq(ModelBase):
 
         return dec_out, dec_state, context_vec, att_weights_step
 
-    def _zero_init(self, size, volatile=False):
+    def _create_var(self, size, fill_value=0, dtype='float', volatile=False):
         """Initialize a variable with zero.
         Args:
             size (tuple):
+            fill_value (int or float, optional):
+            dtype (string): long or float
             volatile (bool, optional):
         Returns:
-            zero_var (torch.autograd.Variable, float):
+            var (torch.autograd.Variable, float):
         """
-        zero_var = Variable(torch.zeros(size))
+        var = Variable(torch.zeros(size).fill_(fill_value))
+        if dtype == 'long':
+            var = var.long()
         if volatile:
-            zero_var.volatile = True
+            var.volatile = True
         if self.use_cuda:
-            zero_var = zero_var.cuda()
-        return zero_var
-
-    def _init_decoder_state(self, enc_out, volatile=False, is_sub_task=False):
-        """Initialize decoder state.
-        Args:
-            enc_out (torch.autograd.Variable, float): A tensor of size
-                `[B, T_in, decoder_num_units]`
-            volatile (bool, optional): if True, the history will not be saved.
-                This should be used in inference model for memory efficiency.
-            is_sub_task (bool, optional):
-        Returns:
-            dec_state (list or tuple of list):
-        """
-        batch_size, _, decoder_num_units = enc_out.size()
-
-        zero_state = self._zero_init(
-            (batch_size, decoder_num_units), volatile=volatile)
-
-        if self.decoder_type == 'lstm':
-            if is_sub_task:
-                hx_list = [zero_state] * self.decoder_num_layers_sub
-                cx_list = [zero_state] * self.decoder_num_layers_sub
-            else:
-                hx_list = [zero_state] * self.decoder_num_layers
-                cx_list = [zero_state] * self.decoder_num_layers
-        else:
-            if is_sub_task:
-                hx_list = [zero_state] * self.decoder_num_layers_sub
-            else:
-                hx_list = [zero_state] * self.decoder_num_layers
-
-        if self.init_dec_state != 'zero' and self.encoder_type == self.decoder_type:
-            if self.init_dec_state == 'mean':
-                # Initialize with mean of all encoder outputs
-                h_0 = enc_out.mean(dim=1, keepdim=False)
-
-            elif self.init_dec_state == 'final':
-                if self.encoder_bidirectional:
-                    # Initialize with the final encoder output (backward)
-                    h_0 = enc_out[:, -1, :]
-                else:
-                    # Initialize with the final encoder output (forward)
-                    h_0 = enc_out[:, -2, :]
-
-            # Path through the linear layer
-            if is_sub_task:
-                h_0 = self.W_dec_init_sub(h_0)
-            else:
-                h_0 = self.W_dec_init(h_0)
-
-            hx_list[0] = h_0
-
-        if self.decoder_type == 'lstm':
-            dec_state = (hx_list, cx_list)
-        else:
-            dec_state = hx_list
-
-        return dec_state
+            var = var.cuda()
+        return var
 
     # def _init_decoder_state(self, enc_out, volatile=False, is_sub_task=False):
     #     """Initialize decoder state.
     #     Args:
     #         enc_out (torch.autograd.Variable, float): A tensor of size
-    #             `[B, T_in, decoder_num_units]`
+    #             `[B, T_in, encoder_num_units]`
     #         volatile (bool, optional): if True, the history will not be saved.
     #             This should be used in inference model for memory efficiency.
     #         is_sub_task (bool, optional):
     #     Returns:
-    #         dec_state (torch.autograd.Variable(float) or tuple): A tensor of size
-    #             `[1, B, decoder_num_units]`
+    #         dec_state (list or tuple of list):
     #     """
-    #     batch_size, _, decoder_num_units = enc_out.size()
+    #     zero_state = self._create_var(
+    #         (enc_out.size(0), self.decoder_num_units), volatile=volatile)
     #
-    #     if self.init_dec_state == 'zero' or self.encoder_type != self.decoder_type:
-    #         # Initialize with zero state
-    #         h_0 = self._zero_init(
-    #             (1, batch_size, decoder_num_units), volatile=volatile)
+    #     if self.decoder_type == 'lstm':
+    #         if is_sub_task:
+    #             hx_list = [zero_state] * self.decoder_num_layers_sub
+    #             cx_list = [zero_state] * self.decoder_num_layers_sub
+    #         else:
+    #             hx_list = [zero_state] * self.decoder_num_layers
+    #             cx_list = [zero_state] * self.decoder_num_layers
     #     else:
+    #         if is_sub_task:
+    #             hx_list = [zero_state] * self.decoder_num_layers_sub
+    #         else:
+    #             hx_list = [zero_state] * self.decoder_num_layers
+    #
+    #     if self.init_dec_state != 'zero' and self.encoder_type == self.decoder_type:
     #         if self.init_dec_state == 'mean':
     #             # Initialize with mean of all encoder outputs
-    #             h_0 = enc_out.mean(dim=1, keepdim=True)
+    #             h_0 = enc_out.mean(dim=1, keepdim=False)
     #         elif self.init_dec_state == 'final':
-    #             if self.encoder_bidirectional:
-    #                 # Initialize with the final encoder output (backward)
-    #                 h_0 = enc_out[:, -1, :].unsqueeze(1)
-    #             else:
-    #                 # Initialize with the final encoder output (forward)
-    #                 h_0 = enc_out[:, -2, :].unsqueeze(1)
+    #             # Initialize with the final encoder output
+    #             h_0 = enc_out[:, -1, :]
     #
     #         # Path through the linear layer
     #         if is_sub_task:
@@ -772,35 +857,59 @@ class AttentionSeq2seq(ModelBase):
     #         else:
     #             h_0 = self.W_dec_init(h_0)
     #
-    #         # Convert to time-major
-    #         h_0 = h_0.transpose(0, 1).contiguous()
+    #         hx_list[0] = h_0
     #
     #     if self.decoder_type == 'lstm':
-    #         # Initialize memory cell with zero state
-    #         c_0 = self._zero_init(
-    #             (1, batch_size, decoder_num_units), volatile=volatile)
-    #         dec_state = (h_0, c_0)
+    #         dec_state = (hx_list, cx_list)
     #     else:
-    #         dec_state = h_0
+    #         dec_state = hx_list
     #
     #     return dec_state
 
-    def _create_token(self, value, batch_size, volatile=False):
-        """Create 1 token per batch dimension.
+    def _init_decoder_state(self, enc_out, volatile=False, is_sub_task=False):
+        """Initialize decoder state (Nstep ver.).
         Args:
-            value (int): the  value to pad
-            batch_size (int): the size of mini-batch
-            volatile (bool): if True, the history will not be saved.
+            enc_out (torch.autograd.Variable, float): A tensor of size
+                `[B, T_in, encoder_num_units]`
+            volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
+            is_sub_task (bool, optional):
         Returns:
-            y (torch.autograd.Variable, long): A tensor of size `[B, 1]`
+            dec_state (torch.autograd.Variable(float) or tuple): A tensor of size
+                `[1, B, decoder_num_units]`
         """
-        y = Variable(torch.LongTensor(batch_size, 1).fill_(value))
-        if volatile:
-            y.volatile = True
-        if self.use_cuda:
-            y = y.cuda()
-        return y
+        batch_size = enc_out.size(0)
+
+        if self.init_dec_state == 'zero' or self.encoder_type != self.decoder_type:
+            # Initialize with zero state
+            h_0 = self._create_var(
+                (1, batch_size, self.decoder_num_units), volatile=volatile)
+        else:
+            if self.init_dec_state == 'mean':
+                # Initialize with mean of all encoder outputs
+                h_0 = enc_out.mean(dim=1, keepdim=True)
+            elif self.init_dec_state == 'final':
+                # Initialize with the final encoder output
+                h_0 = enc_out[:, -1, :].unsqueeze(1)
+
+            # Path through the linear layer
+            if is_sub_task:
+                h_0 = self.W_dec_init_sub(h_0)
+            else:
+                h_0 = self.W_dec_init(h_0)
+
+            # Convert to time-major
+            h_0 = h_0.transpose(0, 1).contiguous()
+
+        if self.decoder_type == 'lstm':
+            # Initialize memory cell with zero state
+            c_0 = self._create_var(
+                (1, batch_size, self.decoder_num_units), volatile=volatile)
+            dec_state = (h_0, c_0)
+        else:
+            dec_state = h_0
+
+        return dec_state
 
     def attention_weights(self, xs, x_lens, max_decode_len, is_sub_task=False):
         """Get attention weights for visualization.
@@ -887,9 +996,6 @@ class AttentionSeq2seq(ModelBase):
                 enc_out, x_lens, beam_width, max_decode_len,
                 length_penalty, coverage_penalty)
 
-        # NOTE: index 0 is reserved for <SOS>
-        best_hyps -= 1
-
         # Permutate indices to the original order
         if perm_idx is None:
             perm_idx = np.arange(0, len(xs), 1)
@@ -903,7 +1009,7 @@ class AttentionSeq2seq(ModelBase):
         """Greedy decoding in the inference stage.
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
-                `[B, T_in, decoder_num_units]`
+                `[B, T_in, encoder_num_units]`
             x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
             max_decode_len (int): the length of output sequences
                 to stop prediction when EOS token have not been emitted
@@ -912,22 +1018,22 @@ class AttentionSeq2seq(ModelBase):
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
             att_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
         """
-        batch_size, max_time, decoder_num_units = enc_out.size()
+        batch_size, max_time = enc_out.size()[:2]
 
         # Initialize decoder state
         dec_state = self._init_decoder_state(
             enc_out, volatile=True, is_sub_task=is_sub_task)
-        dec_out = self._zero_init(
-            (batch_size, 1, decoder_num_units), volatile=True)
-        context_vec = self._zero_init(
-            (batch_size, 1, decoder_num_units), volatile=True)
-        att_weights_step = self._zero_init(
+        dec_out = self._create_var(
+            (batch_size, 1, self.decoder_num_units), volatile=True)
+        context_vec = self._create_var(
+            (batch_size, 1, self.encoder_num_units), volatile=True)
+        att_weights_step = self._create_var(
             (batch_size, max_time), volatile=True)
 
         # Start from <SOS>
         sos = self.sos_index_sub if is_sub_task else self.sos_index
         eos = self.eos_index_sub if is_sub_task else self.eos_index
-        y = self._create_token(value=sos, batch_size=batch_size)
+        y = self._create_var((batch_size, 1), fill_value=sos, dtype='long')
 
         best_hyps = []
         att_weights = []
@@ -948,13 +1054,14 @@ class AttentionSeq2seq(ModelBase):
                 att_weights_step=att_weights_step,
                 is_sub_task=is_sub_task)
 
-            concat = torch.cat([dec_out, context_vec], dim=-1)
             if is_sub_task:
-                logits = self.fc_sub(F.tanh(self.proj_layer_sub(concat)))
-                # logits = self.fc_sub(self.proj_layer_sub(concat))
+                logits = self.fc_sub(F.tanh(
+                    self.W_d_sub(dec_out) + self.W_c_sub(context_vec)))
             else:
-                logits = self.fc(F.tanh(self.proj_layer(concat)))
-                # logits = self.fc(self.proj_layer(concat))
+                logits = self.fc(F.tanh(
+                    self.W_d(dec_out) + self.W_c(context_vec)))
+                # logits = self.fc(F.tanh(
+                #     self.W_d(dec_out) + self.W_c(context_vec) + self.W_y(y)))
 
             # Pick up 1-best
             y = torch.max(logits.squeeze(1), dim=1)[1].unsqueeze(1)
@@ -981,7 +1088,7 @@ class AttentionSeq2seq(ModelBase):
         """Beam search decoding in the inference stage.
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
-                `[B, T_in, decoder_num_units]`
+                `[B, T_in, encoder_num_units]`
             x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
             beam_width (int): the size of beam
             max_decode_len (int, optional): the length of output sequences
@@ -992,24 +1099,23 @@ class AttentionSeq2seq(ModelBase):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
         """
-        batch_size, _, decoder_num_units = enc_out.size()
-
         # Start from <SOS>
         sos = self.sos_index_sub if is_sub_task else self.sos_index
         eos = self.eos_index_sub if is_sub_task else self.eos_index
 
         best_hyps = []
-        for b in range(batch_size):
+        for b in range(enc_out.size(0)):
             frame_num = x_lens[b].data[0]
 
             # Initialize decoder state, decoder output, attention_weights
             dec_state = self._init_decoder_state(
                 enc_out[b:b + 1, :, :], volatile=True, is_sub_task=is_sub_task)
-            dec_out = self._zero_init((1, 1, decoder_num_units), volatile=True)
-            att_weights_step = self._zero_init((1, frame_num), volatile=True)
+            dec_out = self._create_var(
+                (1, 1, self.decoder_num_units), volatile=True)
+            att_weights_step = self._create_var((1, frame_num), volatile=True)
 
             complete = []
-            beam = [{'hyp': [],
+            beam = [{'hyp': [sos],
                      'score': LOG_1,
                      'dec_state': dec_state,
                      'dec_out': dec_out,
@@ -1017,8 +1123,8 @@ class AttentionSeq2seq(ModelBase):
             for t in range(max_decode_len):
                 new_beam = []
                 for i_beam in range(len(beam)):
-                    idx_prev = beam[i_beam]['hyp'][-1] if t > 0 else sos
-                    y = self._create_token(value=idx_prev, batch_size=1)
+                    y = self._create_var(
+                        (1, 1), fill_value=beam[i_beam]['hyp'][-1], dtype='long')
 
                     if is_sub_task:
                         y = self.embed_sub(y)
@@ -1027,7 +1133,9 @@ class AttentionSeq2seq(ModelBase):
 
                     # Compute context vector
                     context_vec = torch.sum(
-                        enc_out[b: b + 1, :frame_num] * att_weights_step.unsqueeze(2), dim=1, keepdim=True)
+                        enc_out[b: b + 1, :frame_num] *
+                        att_weights_step.unsqueeze(2),
+                        dim=1, keepdim=True)
 
                     dec_out, dec_state, context_vec, att_weights_step = self._decode_step(
                         enc_out=enc_out[b:b + 1, :frame_num],
@@ -1039,14 +1147,15 @@ class AttentionSeq2seq(ModelBase):
                         att_weights_step=beam[i_beam]['att_weights_step'],
                         is_sub_task=is_sub_task)
 
-                    concat = torch.cat([dec_out, context_vec], dim=-1)
                     if is_sub_task:
-                        logits = self.fc_sub(
-                            F.tanh(self.proj_layer_sub(concat)))
-                        # logits = self.fc_sub(self.proj_layer_sub(concat))
+                        logits = self.fc_sub(F.tanh(
+                            self.W_d_sub(dec_out) + self.W_c_sub(context_vec)))
                     else:
-                        logits = self.fc(F.tanh(self.proj_layer(concat)))
-                        # logits = self.fc(self.proj_layer(concat))
+                        logits = self.fc(F.tanh(
+                            self.W_d(dec_out) + self.W_c(context_vec)))
+                        # logits = self.fc(F.tanh(
+                        # self.W_d(dec_out) + self.W_c(context_vec) +
+                        # self.W_y(y)))
 
                     # Path through the softmax layer & convert to log-scale
                     log_probs = F.log_softmax(logits.squeeze(1), dim=-1)
@@ -1089,23 +1198,25 @@ class AttentionSeq2seq(ModelBase):
                 complete, key=lambda x: x['score'], reverse=True)
             if len(complete) == 0:
                 complete = beam
-            best_hyps.append(np.array(complete[0]['hyp']))
+            best_hyps.append(np.array(complete[0]['hyp'][1:]))
+            # NOTE: Exclude <SOS>
 
         return np.array(best_hyps)
 
-    def decode_ctc(self, xs, x_lens, beam_width=1):
+    def decode_ctc(self, xs, x_lens, beam_width=1, is_sub_task=False):
         """Decoding by the CTC layer in the inference stage.
             This is only used for Joint CTC-Attention model.
         Args:
             xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
             x_lens (np.ndarray): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
+            is_sub_task (bool, optional):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
-        assert self.ctc_loss_weight > 0
-        # TODO: add is_sub_task??
+        # assert self.ctc_loss_weight > 0
+        # TODO: add is_sub_task
 
         # Wrap by Variable
         xs = np2var(
@@ -1117,12 +1228,20 @@ class AttentionSeq2seq(ModelBase):
         self.eval()
 
         # Encode acoustic features
-        enc_out, x_lens, perm_idx = self._encode(xs, x_lens, volatile=True)
+        if is_sub_task:
+            _, _, enc_out, x_lens, perm_idx = self._encode(
+                xs, x_lens, volatile=True, is_multi_task=True)
+        else:
+            enc_out, x_lens, perm_idx = self._encode(
+                xs, x_lens, volatile=True)
 
         # Path through the softmax layer
         batch_size, max_time = enc_out.size()[:2]
         enc_out = enc_out.view(batch_size * max_time, -1).contiguous()
-        logits_ctc = self.fc_ctc(enc_out)
+        if is_sub_task:
+            logits_ctc = self.fc_ctc_sub(enc_out)
+        else:
+            logits_ctc = self.fc_ctc(enc_out)
         logits_ctc = logits_ctc.view(batch_size, max_time, -1)
 
         if beam_width == 1:

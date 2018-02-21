@@ -29,11 +29,11 @@ class TestCTC(unittest.TestCase):
                    label_smoothing=True)
 
         # Pyramidal encoder
-        self.check(encoder_type='lstm', bidirectional=True, subsample='drop')
-        self.check(encoder_type='lstm', bidirectional=True, subsample='concat')
+        self.check(encoder_type='lstm', bidirectional=True, subsample=True)
 
-        # projection layer
-        self.check(encoder_type='lstm', bidirectional=False, projection=True)
+        # TODO: Projection
+        # self.check(encoder_type='lstm', bidirectional=True, projection=True)
+        # self.check(encoder_type='lstm', bidirectional=False, projection=True)
 
         # Residual LSTM-CTC
         self.check(encoder_type='lstm', bidirectional=True,
@@ -92,7 +92,6 @@ class TestCTC(unittest.TestCase):
         num_stack = 1 if subsample or conv else 2
         splice = 1
         xs, ys, ys_sub, x_lens, y_lens, y_lens_sub = generate_data(
-            model_type='ctc',
             label_type='word_char',
             batch_size=2,
             num_stack=num_stack,
@@ -188,29 +187,34 @@ class TestCTC(unittest.TestCase):
                     xs, x_lens, beam_width=1, is_sub_task=True)
 
                 # Compute accuracy
-                str_true = idx2word(ys[0, :y_lens[0]])
-                str_pred = idx2word(best_hyps[0])
-                ler, _, _, _ = compute_wer(ref=str_true.split('_'),
-                                           hyp=str_pred.split('_'),
-                                           normalize=True)
-                str_true_sub = idx2char(ys_sub[0, :y_lens_sub[0]])
-                str_pred_sub = idx2char(best_hyps_sub[0])
-                ler_sub = compute_cer(ref=str_true_sub.replace('_', ''),
-                                      hyp=str_pred_sub.replace('_', ''),
-                                      normalize=True)
+                try:
+                    str_ref = idx2word(ys[0, :y_lens[0]])
+                    str_hyp = idx2word(best_hyps[0])
+                    wer, _, _, _ = compute_wer(ref=str_ref.split('_'),
+                                               hyp=str_hyp.split('_'),
+                                               normalize=True)
+                    str_ref_sub = idx2char(ys_sub[0, :y_lens_sub[0]])
+                    str_hyp_sub = idx2char(best_hyps_sub[0])
+                    cer, _, _, _ = compute_wer(
+                        ref=list(str_ref_sub.replace('_', '')),
+                        hyp=list(str_hyp_sub.replace('_', '')),
+                        normalize=True)
+                except:
+                    wer = 1
+                    cer = 1
 
                 duration_step = time.time() - start_time_step
-                print('Step %d: loss=%.3f(%.3f/%.3f) / ler (main/sub)=%.3f/%.3f / lr=%.5f (%.3f sec)' %
+                print('Step %d: loss=%.3f(%.3f/%.3f) / wer=%.3f / cer=%.3f / lr=%.5f (%.3f sec)' %
                       (step + 1, loss, loss_main, loss_sub,
-                       ler, ler_sub, learning_rate, duration_step))
+                       wer, cer, learning_rate, duration_step))
                 start_time_step = time.time()
 
                 # Visualize
-                print('Ref: %s' % str_true)
-                print('Hyp (word): %s' % str_pred)
-                print('Hyp (char): %s' % str_pred_sub)
+                print('Ref: %s' % str_ref)
+                print('Hyp (word): %s' % str_hyp)
+                print('Hyp (char): %s' % str_hyp_sub)
 
-                if ler_sub < 0.1:
+                if cer < 0.1:
                     print('Modle is Converged.')
                     break
 

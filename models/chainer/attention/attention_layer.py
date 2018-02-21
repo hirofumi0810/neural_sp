@@ -22,6 +22,8 @@ ATTENTION_TYPE = ['content', 'location', 'dot_product', 'rnn_attention']
 class AttentionMechanism(chainer.Chain):
     """Attention layer.
     Args:
+        encoder_num_units (int): the number of units in each layer of the
+            encoder
         decoder_num_units (int): the number of units in each layer of the
             decoder
         attention_type (string): the type of attention
@@ -38,6 +40,7 @@ class AttentionMechanism(chainer.Chain):
     """
 
     def __init__(self,
+                 encoder_num_units,
                  decoder_num_units,
                  attention_type,
                  attention_dim,
@@ -49,7 +52,6 @@ class AttentionMechanism(chainer.Chain):
 
         super(AttentionMechanism, self).__init__()
 
-        self.decoder_num_units = decoder_num_units
         self.attention_type = attention_type
         self.attention_dim = attention_dim
         self.use_cuda = use_cuda
@@ -58,7 +60,7 @@ class AttentionMechanism(chainer.Chain):
 
         with self.init_scope():
             if self.attention_type == 'content':
-                self.W_enc = LinearND(decoder_num_units, attention_dim,
+                self.W_enc = LinearND(encoder_num_units, attention_dim,
                                       bias=True, use_cuda=use_cuda)
                 self.W_dec = LinearND(decoder_num_units, attention_dim,
                                       bias=False, use_cuda=use_cuda)
@@ -68,12 +70,13 @@ class AttentionMechanism(chainer.Chain):
             elif self.attention_type == 'location':
                 assert kernel_size % 2 == 1
 
-                self.W_enc = LinearND(decoder_num_units, attention_dim,
+                self.W_enc = LinearND(encoder_num_units, attention_dim,
                                       bias=True, use_cuda=use_cuda)
                 self.W_dec = LinearND(decoder_num_units, attention_dim,
                                       bias=False, use_cuda=use_cuda)
                 self.W_conv = LinearND(out_channels, attention_dim,
                                        bias=False, use_cuda=use_cuda)
+                # TODO: add 1D convolution
                 self.conv = L.Convolution2D(in_channels=1,
                                             out_channels=out_channels,
                                             ksize=(1, kernel_size),
@@ -125,7 +128,7 @@ class AttentionMechanism(chainer.Chain):
             ###################################################################
             energy = F.squeeze(self.V(F.tanh(
                 self.W_enc(enc_out) +
-                self.W_dec(F.broadcast_to(dec_out, enc_out.shape)))), axis=2)
+                self.W_dec(F.broadcast_to(dec_out, (dec_out.shape[0], enc_out.shape[1], dec_out.shape[2]))))), axis=2)
 
         elif self.attention_type == 'location':
             ###################################################################
@@ -140,7 +143,7 @@ class AttentionMechanism(chainer.Chain):
 
             energy = F.squeeze(self.V(F.tanh(
                 self.W_enc(enc_out) +
-                self.W_dec(F.broadcast_to(dec_out, enc_out.shape)) +
+                self.W_dec(F.broadcast_to(dec_out, (dec_out.shape[0], enc_out.shape[1], dec_out.shape[2]))) +
                 self.W_conv(conv_feat))), axis=2)
 
         elif self.attention_type == 'dot_product':
@@ -160,6 +163,7 @@ class AttentionMechanism(chainer.Chain):
         # Mask attention distribution
         xp = cuda.get_array_module(enc_out)
         energy_mask = xp.ones((batch_size, max_time), dtype=np.float32)
+        # energy_mask = xp.ones((batch_size, max_time), dtype=xp.float32)
         for b in range(batch_size):
             if x_lens[b] < max_time:
                 energy_mask[b, x_lens[b]:] = 0

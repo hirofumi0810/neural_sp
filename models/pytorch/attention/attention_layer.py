@@ -20,6 +20,8 @@ ATTENTION_TYPE = ['content', 'location', 'dot_product', 'rnn_attention']
 class AttentionMechanism(nn.Module):
     """Attention layer.
     Args:
+        encoder_num_units (int): the number of units in each layer of the
+            encoder
         decoder_num_units (int): the number of units in each layer of the
             decoder
         attention_type (string): the type of attention
@@ -32,34 +34,27 @@ class AttentionMechanism(nn.Module):
             This is used for location-based attention.
         kernel_size (int, optional): the size of kernel.
             This must be the odd number.
-        encoder_num_units (int, optional): the number of units in each layer of the
-            encoder
     """
 
     def __init__(self,
+                 encoder_num_units,
                  decoder_num_units,
                  attention_type,
                  attention_dim,
                  sharpening_factor=1,
                  sigmoid_smoothing=False,
                  out_channels=10,
-                 kernel_size=201,
-                 encoder_num_units=None):
+                 kernel_size=201):
 
         super(AttentionMechanism, self).__init__()
 
-        if encoder_num_units is None:
-            self.encoder_num_units = decoder_num_units
-        else:
-            self.encoder_num_units = encoder_num_units
-        self.decoder_num_units = decoder_num_units
         self.attention_type = attention_type
         self.attention_dim = attention_dim
         self.sharpening_factor = sharpening_factor
         self.sigmoid_smoothing = sigmoid_smoothing
 
         if self.attention_type == 'content':
-            self.W_enc = LinearND(self.encoder_num_units,
+            self.W_enc = LinearND(encoder_num_units,
                                   attention_dim, bias=True)
             self.W_dec = LinearND(decoder_num_units, attention_dim, bias=False)
             self.V = LinearND(attention_dim, 1, bias=False)
@@ -67,7 +62,7 @@ class AttentionMechanism(nn.Module):
         elif self.attention_type == 'location':
             assert kernel_size % 2 == 1
 
-            self.W_enc = LinearND(self.encoder_num_units,
+            self.W_enc = LinearND(encoder_num_units,
                                   attention_dim, bias=True)
             self.W_dec = LinearND(decoder_num_units,
                                   attention_dim, bias=False)
@@ -87,7 +82,7 @@ class AttentionMechanism(nn.Module):
             self.V = LinearND(attention_dim, 1, bias=False)
 
         elif self.attention_type == 'dot_product':
-            self.W_keys = LinearND(self.encoder_num_units, attention_dim,
+            self.W_keys = LinearND(decoder_num_units, attention_dim,
                                    bias=False)
             self.W_query = LinearND(decoder_num_units, attention_dim,
                                     bias=False)
@@ -108,11 +103,13 @@ class AttentionMechanism(nn.Module):
             x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
             dec_out (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, decoder_num_units]`
-            att_weights_step (torch.autograd.Variable, float): A tensor of size `[B, T_in]`
+            att_weights_step (torch.autograd.Variable, float): A tensor of size
+                `[B, T_in]`
         Returns:
             context_vec (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, encoder_num_units]`
-            att_weights_step (torch.autograd.Variable, float): A tensor of size `[B, T_in]`
+            att_weights_step (torch.autograd.Variable, float): A tensor of size
+                `[B, T_in]`
         """
         batch_size, max_time = enc_out.size()[:2]
 
@@ -167,7 +164,7 @@ class AttentionMechanism(nn.Module):
             energy_mask = energy_mask.cuda()
         for b in range(batch_size):
             if x_lens[b].data[0] < max_time:
-                energy_mask[b, x_lens[b].data[0]:] = 0
+                energy_mask.data[b, x_lens[b].data[0]:] = 0
         energy *= energy_mask
 
         # Compute attention weights

@@ -422,7 +422,6 @@ class RNNEncoder(nn.Module):
 
         # sub task (optional)
         if self.num_layers_sub >= 1:
-
             # Sum bidirectional outputs
             if self.bidirectional and self.merge_bidirectional:
                 xs_sub = xs_sub[:, :, :self.num_units] + \

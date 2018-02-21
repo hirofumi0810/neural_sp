@@ -76,18 +76,20 @@ class CNNEncoder(chainer.Chain):
                                        pad=tuple(conv_strides[i_layer]),
                                        nobias=batch_norm)
                 setattr(self, 'conv_l' + str(i_layer), conv)
-                in_freq = chainer.utils.get_conv_outsize(in_freq,
-                                                         k=conv_kernel_sizes[i_layer][0],
-                                                         s=conv_strides[i_layer][0],
-                                                         p=conv_strides[i_layer][0])
+                in_freq = chainer.utils.get_conv_outsize(
+                    in_freq,
+                    k=conv_kernel_sizes[i_layer][0],
+                    s=conv_strides[i_layer][0],
+                    p=conv_strides[i_layer][0])
                 # NOTE: this is frequency-dimension
 
                 # Max Pooling
                 if len(poolings[i_layer]) > 0:
-                    in_freq = chainer.utils.get_conv_outsize(in_freq,
-                                                             k=poolings[i_layer][0],
-                                                             s=poolings[i_layer][0],
-                                                             p=0)
+                    in_freq = chainer.utils.get_conv_outsize(
+                        in_freq,
+                        k=poolings[i_layer][0],
+                        s=poolings[i_layer][0],
+                        p=0)
 
                 # Batch Normalization
                 if batch_norm:

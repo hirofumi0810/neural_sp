@@ -74,7 +74,6 @@ class Embedding(chainer.Chain):
 
         with self.init_scope():
             self.embed = L.EmbedID(num_classes, embedding_dim,
-                                   initialW=None,
                                    ignore_label=ignore_index)
             if use_cuda:
                 self.embed.to_gpu()
@@ -127,24 +126,22 @@ class Embedding_LS(chainer.Chain):
             y (chainer.Variable): A tensor of size `[B, 1, embedding_dim]`
         """
         # Convert to one-hot labels
-        y = to_onehot(y, self.num_classes, self.use_cuda)
+        y = to_onehot(
+            y, self.num_classes, self.label_smoothing_prob, self.use_cuda)
         # y: `[B, 1, num_classes]`
 
-        # Label smoothing
-        if self.label_smoothing_prob > 0:
-            y = y * (1 - self.label_smoothing_prob) + 1 / \
-                y.shape[2] * self.label_smoothing_prob
-
         y = self.embed(y)
+
         return y
 
 
-def to_onehot(y, num_classes, use_cuda=False):
+def to_onehot(y, num_classes, label_smoothing_prob=0, use_cuda=False):
     """Convert indices into one-hot encoding.
     Args:
         y (chainer.Variable, int): Indices of labels.
             A tensor of size `[B, 1]`.
         num_classes (int): the number of classes
+        label_smoothing_prob (float, optional):
         use_cuda (bool, optional): if True, use GPUs
     Returns:
         y (chainer.Variable, float): A tensor of size
@@ -157,6 +154,11 @@ def to_onehot(y, num_classes, use_cuda=False):
     if use_cuda:
         y_onehot.to_gpu()
     y_onehot = y_onehot.reshape(batch_size, 1, num_classes)
+
+    # Label smoothing
+    if label_smoothing_prob > 0:
+        y = y * (1 - label_smoothing_prob) + 1 / \
+            num_classes * label_smoothing_prob
 
     # TODO: fix bugs
     # if y.volatile:

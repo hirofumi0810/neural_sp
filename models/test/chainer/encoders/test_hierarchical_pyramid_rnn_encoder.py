@@ -122,8 +122,7 @@ class TestPyramidRNNEncoders(unittest.TestCase):
         batch_size = 4
         splice = 1
         num_stack = 1
-        xs, _, x_lens, _ = generate_data(model_type='ctc',
-                                         batch_size=batch_size,
+        xs, _, x_lens, _ = generate_data(batch_size=batch_size,
                                          num_stack=num_stack,
                                          splice=splice,
                                          backend='chainer')

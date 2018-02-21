@@ -335,7 +335,7 @@ def load(model_type, params, backend):
             encoder_residual=params['encoder_residual'],
             encoder_dense_residual=params['encoder_dense_residual'])
 
-        model.name = params['encoder_type']
+        model.name = model_name
         if len(params['conv_channels']) != 0:
             if params['encoder_type'] in ['cnn', 'resnet']:
                 for c in params['conv_channels']:
@@ -383,11 +383,9 @@ def load(model_type, params, backend):
         if bool(params['encoder_dense_residual']):
             model.name += '_dense_res'
         model.name += '_main' + str(params['main_loss_weight'])
+        model.name += '_input' + str(model.input_size)
 
     elif params['model_type'] == 'hierarchical_attention':
-        if 'curriculum_training' not in params.keys():
-            params['curriculum_training'] = False
-        # TODO: remove this
 
         if backend == 'pytorch':
             from models.pytorch.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
@@ -505,6 +503,7 @@ def load(model_type, params, backend):
         model.name += '_main' + str(params['main_loss_weight'])
         if bool(params['curriculum_training']):
             model.name += '_curriculum'
+        model.name += '_input' + str(model.input_size)
 
     elif params['model_type'] == 'nested_attention':
 

@@ -13,7 +13,6 @@ from utils.io.inputs.frame_stacking import stack_frame
 from utils.io.inputs.feature_extraction import wav2feature
 
 SPACE = '_'
-SOS = '<'
 EOS = '>'
 
 
@@ -31,11 +30,10 @@ def _read_text(trans_path):
     return transcript
 
 
-def generate_data(model_type, label_type='char', batch_size=1,
+def generate_data(label_type='char', batch_size=1,
                   num_stack=1, splice=1, backend='pytorch'):
     """Generate dataset for unit test.
     Args:
-        model_type (string): ctc or attention
         label_type (string, optional): char or word or word_char
         batch_size (int): the size of mini-batch
         splice (int): frames to splice. Default is 1 frame.
@@ -59,50 +57,38 @@ def generate_data(model_type, label_type='char', batch_size=1,
     elif backend == 'chainer':
         xs = [None] * batch_size
 
-    for i, i_batch in enumerate(range(batch_size)):
+    for b in range(batch_size):
         # Frame stacking
-        data_i = stack_frame(
-            _xs[i_batch], num_stack=num_stack, num_skip=num_stack,
-            dtype=np.float32)
+        data_i = stack_frame(_xs[b], num_stack=num_stack, num_skip=num_stack,
+                             dtype=np.float32)
 
         # Splice
         data_i = do_splice(data_i, splice=splice, num_stack=num_stack,
                            dtype=np.float32)
 
-        xs[i_batch] = data_i
-        x_lens[i_batch] = len(data_i)
+        xs[b] = data_i
+        x_lens[b] = len(data_i)
 
     # Make transcripts
     trans = _read_text('../../sample/LDC93S1.txt')
     trans = trans.replace('.', '').replace(' ', SPACE)
     if label_type == 'char':
-        if model_type == 'attention':
-            trans = SOS + trans + EOS
         ys = np.array([char2idx(trans)] * batch_size, dtype=np.int32)
         y_lens = np.array([len(char2idx(trans))] * batch_size, dtype=np.int32)
         return xs, ys, x_lens, y_lens
 
     elif label_type == 'word':
-        if model_type == 'attention':
-            trans = SOS + SPACE + trans + SPACE + EOS
         ys = np.array([word2idx(trans)] * batch_size, dtype=np.int32)
         y_lens = np.array([len(word2idx(trans))] * batch_size, dtype=np.int32)
         return xs, ys, x_lens, y_lens
 
     elif label_type == 'word_char':
-        if model_type == 'attention':
-            trans_word = SOS + SPACE + trans + SPACE + EOS
-            trans_char = SOS + trans + EOS
-        elif model_type == 'ctc':
-            trans_word = trans
-            trans_char = trans
-        ys = np.array([word2idx(trans_word)] * batch_size, dtype=np.int32)
-        ys_sub = np.array([char2idx(trans_char)] * batch_size, dtype=np.int32)
-        y_lens = np.array(
-            [len(word2idx(trans_word))] * batch_size, dtype=np.int32)
-        labels_seq_len_sub = np.array(
-            [len(char2idx(trans_char))] * batch_size, dtype=np.int32)
-        return xs, ys, ys_sub, x_lens, y_lens, labels_seq_len_sub
+        ys = np.array([word2idx(trans)] * batch_size, dtype=np.int32)
+        ys_sub = np.array([char2idx(trans)] * batch_size, dtype=np.int32)
+        y_lens = np.array([len(word2idx(trans))] * batch_size, dtype=np.int32)
+        y_lens_sub = np.array(
+            [len(char2idx(trans))] * batch_size, dtype=np.int32)
+        return xs, ys, ys_sub, x_lens, y_lens, y_lens_sub
 
     else:
         raise NotImplementedError
@@ -125,8 +111,6 @@ def char2idx(transcript):
     for char in char_list:
         if char == SPACE:
             index_list.append(0)
-        elif char == SOS:
-            index_list.append(-1)
         elif char == EOS:
             index_list.append(last_idx + 1)
         else:
@@ -153,8 +137,6 @@ def idx2char(indices):
     for idx in indices:
         if idx == 0:
             char_list.append(SPACE)
-        elif idx == -1:
-            char_list.append(SOS)
         elif idx == last_idx + 1:
             char_list.append(EOS)
         else:
@@ -175,7 +157,7 @@ def word2idx(transcript):
     # Register word dict
     vocab = set([])
     for word in word_list:
-        if word in [SOS, EOS]:
+        if word in [EOS]:
             continue
         vocab.add(word)
 
@@ -184,10 +166,8 @@ def word2idx(transcript):
         for idx, word in enumerate(sorted(list(vocab))):
             word_dict[word] = idx
             f.write('%s\n' % word)
-        word_dict[SOS] = -1
         word_dict[EOS] = len(vocab)
         f.write('%s\n' % EOS)
-        f.write('%s\n' % SOS)
 
     index_list = []
     for word in word_list:

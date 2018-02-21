@@ -24,20 +24,6 @@ class TestAttention(unittest.TestCase):
     def test(self):
         print("Attention Working check.")
 
-        # Initialize decoder state
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', init_dec_state='final')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', init_dec_state='mean')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', init_dec_state='zero')
-
-        # Residual connection
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', residual=True)
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', dense_residual=True)
-
         # Joint CTC-Attention
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', ctc_loss_weight=0.2)
@@ -62,6 +48,12 @@ class TestAttention(unittest.TestCase):
         # Projection layer
         self.check(encoder_type='lstm', bidirectional=True, projection=True,
                    decoder_type='lstm')
+
+        # Residual connection
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', residual=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', dense_residual=True)
 
         # CLDNN encoder
         self.check(encoder_type='lstm', bidirectional=True,
@@ -136,12 +128,12 @@ class TestAttention(unittest.TestCase):
         # Load batch data
         splice = 1
         num_stack = 1 if subsample or conv or encoder_type == 'cnn' else 2
-        xs, ys, x_lens, y_lens = generate_data(model_type='attention',
-                                               label_type=label_type,
-                                               batch_size=2,
-                                               num_stack=num_stack,
-                                               splice=splice,
-                                               backend='chainer')
+        xs, ys, x_lens, y_lens = generate_data(
+            label_type=label_type,
+            batch_size=2,
+            num_stack=num_stack,
+            splice=splice,
+            backend='chainer')
 
         if label_type == 'char':
             num_classes = 27
@@ -193,7 +185,8 @@ class TestAttention(unittest.TestCase):
             batch_norm=batch_norm,
             scheduled_sampling_prob=0.1,
             scheduled_sampling_ramp_max_step=200,
-            label_smoothing_prob=0.1,  # default
+            label_smoothing_prob=0.1,
+            # label_smoothing_prob=0,
             weight_noise_std=0,
             encoder_residual=residual,
             encoder_dense_residual=dense_residual,
@@ -254,15 +247,15 @@ class TestAttention(unittest.TestCase):
                 # Compute accuracy
                 try:
                     if label_type == 'char':
-                        str_ref = map_fn(ys[0, :y_lens[0]][1:-1])
-                        str_hyp = map_fn(best_hyps[0][0:-1]).split('>')[0]
+                        str_ref = map_fn(ys[0])
+                        str_hyp = map_fn(best_hyps[0][:-1]).split('>')[0]
                         ler, _, _, _ = compute_wer(
                             ref=list(str_ref.replace('_', '')),
                             hyp=list(str_hyp.replace('_', '')),
                             normalize=True)
                     elif label_type == 'word':
-                        str_ref = map_fn(ys[0, : y_lens[0]][1: -1])
-                        str_hyp = map_fn(best_hyps[0][0: -1]).split('>')[0]
+                        str_ref = map_fn(ys[0])
+                        str_hyp = map_fn(best_hyps[0][:-1]).split('>')[0]
                         ler, _, _, _ = compute_wer(ref=str_ref.split('_'),
                                                    hyp=str_hyp.split('_'),
                                                    normalize=True)

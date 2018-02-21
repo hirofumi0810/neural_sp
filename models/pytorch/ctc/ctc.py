@@ -117,7 +117,9 @@ class CTC(ModelBase):
         self.input_size = input_size
         self.num_stack = num_stack
         self.encoder_type = encoder_type
-        self.num_directions = 2 if encoder_bidirectional else 1
+        self.encoder_num_units = encoder_num_units
+        if encoder_bidirectional:
+            self.encoder_num_units *= 2
         self.fc_list = fc_list
         self.subsample_list = subsample_list
 
@@ -180,7 +182,7 @@ class CTC(ModelBase):
                     if encoder_type == 'cnn':
                         bottle_input_size = self.encoder.output_size
                     else:
-                        bottle_input_size = encoder_num_units * self.num_directions
+                        bottle_input_size = self.encoder_num_units
                     # if batch_norm:
                     #     fc_layers.append(nn.BatchNorm1d(bottle_input_size))
                     fc_layers.append(LinearND(bottle_input_size, fc_list[i],
@@ -195,8 +197,7 @@ class CTC(ModelBase):
 
             self.fc = LinearND(fc_list[-1], self.num_classes)
         else:
-            self.fc = LinearND(
-                encoder_num_units * self.num_directions, self.num_classes)
+            self.fc = LinearND(self.encoder_num_units, self.num_classes)
 
         ##################################################
         # Initialize parameters

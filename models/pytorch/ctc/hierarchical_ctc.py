@@ -169,8 +169,7 @@ class HierarchicalCTC(CTC):
         else:
             raise NotImplementedError
 
-        self.fc_sub = LinearND(
-            encoder_num_units * self.num_directions, self.num_classes_sub)
+        self.fc_sub = LinearND(self.encoder_num_units, self.num_classes_sub)
 
         ##################################################
         # Initialize parameters

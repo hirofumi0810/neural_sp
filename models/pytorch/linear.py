@@ -108,24 +108,21 @@ class Embedding_LS(nn.Module):
                 `[B, 1, embedding_dim]`
         """
         # Convert to one-hot labels
-        y = to_onehot(y, self.num_classes)
+        y = to_onehot(y, self.num_classes, self.label_smoothing_prob)
         # y: `[B, 1, num_classes]`
 
-        # Label smoothing
-        if self.label_smoothing_prob > 0:
-            y = y * (1 - self.label_smoothing_prob) + 1 / \
-                y.size(2) * self.label_smoothing_prob
-
         y = self.embed(y)
+
         return y
 
 
-def to_onehot(y, num_classes):
+def to_onehot(y, num_classes, label_smoothing_prob=0):
     """Convert indices into one-hot encoding.
     Args:
         y (torch.autograd.Variable, long): Indices of labels.
             A tensor of size `[B, 1]`.
         num_classes (int): the number of classes
+        label_smoothing_prob (float, optional):
     Returns:
         y (torch.autograd.Variable, float): A tensor of size
             `[B, 1, num_classes]`
@@ -136,6 +133,11 @@ def to_onehot(y, num_classes):
     y_onehot = torch.autograd.Variable(y_onehot).unsqueeze(1)
     if y.is_cuda:
         y_onehot = y_onehot.cuda()
+
+    # Label smoothing
+    if label_smoothing_prob > 0:
+        y = y * (1 - label_smoothing_prob) + 1 / \
+            num_classes * label_smoothing_prob
 
     # TODO: fix bugs
     # if y.volatile:

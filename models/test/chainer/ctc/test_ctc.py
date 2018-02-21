@@ -111,12 +111,12 @@ class TestCTC(unittest.TestCase):
         # Load batch data
         splice = 1
         num_stack = 1 if subsample or conv or encoder_type == 'cnn' else 2
-        xs, ys, x_lens, y_lens = generate_data(model_type='ctc',
-                                               label_type=label_type,
-                                               batch_size=2,
-                                               num_stack=num_stack,
-                                               splice=splice,
-                                               backend='chainer')
+        xs, ys, x_lens, y_lens = generate_data(
+            label_type=label_type,
+            batch_size=2,
+            num_stack=num_stack,
+            splice=splice,
+            backend='chainer')
 
         if label_type == 'char':
             num_classes = 27
@@ -162,8 +162,8 @@ class TestCTC(unittest.TestCase):
         # Define optimizer
         learning_rate = 1e-3
         model.set_optimizer(
-            # 'adam',
-            'adadelta',
+            'adam',
+            # 'adadelta',
             learning_rate_init=learning_rate,
             weight_decay=1e-6,
             clip_grad_norm=5,
@@ -205,19 +205,22 @@ class TestCTC(unittest.TestCase):
                 best_hyps, _ = model.decode(xs, x_lens, beam_width=1)
 
                 # Compute accuracy
-                if label_type == 'char':
-                    str_ref = idx2char(ys[0, :y_lens[0]])
-                    str_hyp = idx2char(best_hyps[0])
-                    ler, _, _, _ = compute_wer(
-                        ref=list(str_ref.replace('_', '')),
-                        hyp=list(str_hyp.replace('_', '')),
-                        normalize=True)
-                elif label_type == 'word':
-                    str_ref = idx2word(ys[0, :y_lens[0]])
-                    str_hyp = idx2word(best_hyps[0])
-                    ler, _, _, _ = compute_wer(ref=str_ref.split('_'),
-                                               hyp=str_hyp.split('_'),
-                                               normalize=True)
+                try:
+                    if label_type == 'char':
+                        str_ref = idx2char(ys[0, :y_lens[0]])
+                        str_hyp = idx2char(best_hyps[0])
+                        ler, _, _, _ = compute_wer(
+                            ref=list(str_ref.replace('_', '')),
+                            hyp=list(str_hyp.replace('_', '')),
+                            normalize=True)
+                    elif label_type == 'word':
+                        str_ref = idx2word(ys[0, :y_lens[0]])
+                        str_hyp = idx2word(best_hyps[0])
+                        ler, _, _, _ = compute_wer(ref=str_ref.split('_'),
+                                                   hyp=str_hyp.split('_'),
+                                                   normalize=True)
+                except:
+                    ler = 1
 
                 duration_step = time.time() - start_time_step
                 print('Step %d: loss=%.3f / ler=%.3f / lr=%.5f (%.3f sec)' %

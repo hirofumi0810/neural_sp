@@ -106,13 +106,14 @@ class CTC(ModelBase):
         self.input_size = input_size
         self.num_stack = num_stack
         self.encoder_type = encoder_type
-        self.num_directions = 2 if encoder_bidirectional else 1
+        self.encoder_num_units = encoder_num_units
+        if encoder_bidirectional:
+            self.encoder_num_units *= 2
         self.fc_list = fc_list
         self.subsample_list = subsample_list
 
         # Setting for CTC
         self.num_classes = num_classes + 1  # Add the blank class
-        self.blank_index = num_classes
         self.logits_temperature = logits_temperature
 
         # Setting for regualarization
@@ -170,14 +171,15 @@ class CTC(ModelBase):
                         if encoder_type == 'cnn':
                             bottle_input_size = self.encoder.output_size
                         else:
-                            bottle_input_size = encoder_num_units * self.num_directions
+                            bottle_input_size = self.encoder_num_units
                         # if batch_norm:
                         #     self.fc_layers.append(
                         #         L.BatchNormalization(bottle_input_size))
                         # TODO: to_gpu()
                         self.fc_layers.append(
                             LinearND(bottle_input_size, fc_list[i],
-                                     dropout=dropout_encoder, use_cuda=self.use_cuda))
+                                     dropout=dropout_encoder,
+                                     use_cuda=self.use_cuda))
                     else:
                         # if batch_norm:
                         #     self.fc_layers.append(
@@ -185,15 +187,15 @@ class CTC(ModelBase):
                         # TODO: to_gpu()
                         self.fc_layers.append(
                             LinearND(fc_list[i - 1], fc_list[i],
-                                     dropout=dropout_encoder, use_cuda=self.use_cuda))
+                                     dropout=dropout_encoder,
+                                     use_cuda=self.use_cuda))
                 # TODO: remove a bias term in the case of batch normalization
 
                 self.fc = LinearND(fc_list[-1], self.num_classes,
                                    use_cuda=self.use_cuda)
             else:
-                self.fc = LinearND(
-                    encoder_num_units * self.num_directions, self.num_classes,
-                    use_cuda=self.use_cuda)
+                self.fc = LinearND(self.encoder_num_units, self.num_classes,
+                                   use_cuda=self.use_cuda)
 
             ##################################################
             # Initialize parameters
@@ -215,6 +217,9 @@ class CTC(ModelBase):
             # Initialize bias in forget gate with 1
             if init_forget_gate_bias_with_one:
                 self.init_forget_gate_bias_with_one()
+
+        # self.blank_index = num_classes
+        self.blank_index = 0
 
         # Set CTC decoders
         self._decode_greedy_np = GreedyDecoder(blank_index=self.blank_index)

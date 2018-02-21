@@ -165,7 +165,7 @@ class HierarchicalCTC(CTC):
                 raise NotImplementedError
 
             self.fc_sub = LinearND(
-                encoder_num_units * self.num_directions, self.num_classes_sub,
+                self.encoder_num_units, self.num_classes_sub,
                 use_cuda=self.use_cuda)
 
             ##################################################
@@ -188,6 +188,8 @@ class HierarchicalCTC(CTC):
             # Initialize bias in forget gate with 1
             if init_forget_gate_bias_with_one:
                 self.init_forget_gate_bias_with_one()
+
+            self.blank_index = 0
 
     def __call__(self, xs, ys, ys_sub, x_lens, y_lens, y_lens_sub, is_eval=False):
         """Forward computation.
@@ -239,9 +241,9 @@ class HierarchicalCTC(CTC):
             logits_sub /= self.logits_temperature
 
         if self.blank_index == 0:
+            # NOTE: index 0 is reserved for the blank class
             ys = ys + 1
             ys_sub = ys_sub + 1
-            # NOTE: index 0 is reserved for the blank class
 
         # Compute CTC loss in the main & sub task
         loss_main = connectionist_temporal_classification(

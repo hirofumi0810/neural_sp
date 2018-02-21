@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Nested attention-based sequence-to-sequence model."""
+"""Nested attention-based sequence-to-sequence model (pytorch)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -14,15 +14,17 @@ except:
     raise ImportError('Install warpctc_pytorch.')
 
 import random
+import numpy as np
 
 import torch
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-from models.pytorch.linear import LinearND, Embedding
+from models.pytorch.linear import LinearND, Embedding, Embedding_LS
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 from models.pytorch.encoders.load_encoder import load
-from models.pytorch.attention.rnn_decoder import RNNDecoder
+# from models.pytorch.attention.rnn_decoder import RNNDecoder
+from models.pytorch.attention.rnn_decoder_nstep import RNNDecoder
 from models.pytorch.attention.attention_layer import AttentionMechanism
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
@@ -68,11 +70,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                  sharpening_factor=1,
                  logits_temperature=1,
                  sigmoid_smoothing=False,
-                 input_feeding=False,
                  coverage_weight=0,
                  ctc_loss_weight_sub=0,
                  attention_conv_num_channels=10,
-                 attention_conv_width=101,
+                 attention_conv_width=201,
                  num_stack=1,
                  splice=1,
                  conv_channels=[],
@@ -85,6 +86,11 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                  scheduled_sampling_ramp_max_step=0,
                  label_smoothing_prob=0,
                  weight_noise_std=0,
+                 encoder_residual=False,
+                 encoder_dense_residual=False,
+                 decoder_residual=False,
+                 decoder_dense_residual=False,
+                 curriculum_training=False,
                  composition_case=None,  # ***
                  space_index=None):  # ***
 
@@ -126,7 +132,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             scheduled_sampling_prob=scheduled_sampling_prob,
             scheduled_sampling_ramp_max_step=scheduled_sampling_ramp_max_step,
             label_smoothing_prob=label_smoothing_prob,
-            weight_noise_std=weight_noise_std)
+            weight_noise_std=weight_noise_std,
+            encoder_residual=encoder_residual,
+            encoder_dense_residual=encoder_dense_residual,
+            decoder_residual=decoder_residual,
+            decoder_dense_residual=decoder_dense_residual)
+        self.model_type = 'nested_attention'
 
         # Setting for the encoder
         self.encoder_num_layers_sub = encoder_num_layers_sub
@@ -139,14 +150,17 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         self.sos_index_sub = num_classes_sub + 1
         self.eos_index_sub = num_classes_sub
 
-        if embedding_dim == 0:
-            raise NotImplementedError
-
         # Setting for MTL
         self.main_loss_weight = main_loss_weight
+        self.main_loss_weight_tmp = main_loss_weight
         self.sub_loss_weight = 1 - main_loss_weight - ctc_loss_weight_sub
+        self.sub_loss_weight_tmp = 1 - main_loss_weight - ctc_loss_weight_sub
         self.ctc_loss_weight_sub = ctc_loss_weight_sub
-        assert self.sub_loss_weight > 0
+        self.ctc_loss_weight_sub_tmp = ctc_loss_weight_sub
+        if curriculum_training and scheduled_sampling_ramp_max_step == 0:
+            raise ValueError('Set scheduled_sampling_ramp_max_step.')
+        self.curriculum_training = curriculum_training
+        # assert self.sub_loss_weight > 0
 
         # Setting for composition
         self.composition_case = composition_case
@@ -170,6 +184,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 subsample_type=subsample_type,
                 batch_first=True,
                 merge_bidirectional=False,
+                # pack_sequence=False if init_dec_state == 'zero' else True,
+                pack_sequence=True,
                 num_stack=num_stack,
                 splice=splice,
                 conv_channels=conv_channels,
@@ -177,7 +193,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 conv_strides=conv_strides,
                 poolings=poolings,
                 activation=activation,
-                batch_norm=batch_norm)
+                batch_norm=batch_norm,
+                residual=encoder_residual,
+                dense_residual=encoder_dense_residual)
         else:
             raise NotImplementedError
 
@@ -186,11 +204,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         ####################
         if composition_case == 'embedding':
             decoder_input_size = embedding_dim + decoder_num_units
-        elif composition_case == 'hidden':
-            decoder_input_size = embedding_dim + decoder_num_units + decoder_num_units_sub
-        elif composition_case == 'hidden_embedding':
-            decoder_input_size = embedding_dim + decoder_num_units + decoder_num_units_sub
         elif composition_case == 'multiscale':
+            decoder_input_size = embedding_dim + decoder_num_units + decoder_num_units_sub
+        elif composition_case == 'char_seq_attend':
             decoder_input_size = embedding_dim + decoder_num_units + decoder_num_units_sub
 
         self.decoder = RNNDecoder(
@@ -199,14 +215,18 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             num_units=decoder_num_units,
             num_layers=decoder_num_layers,
             dropout=dropout_decoder,
-            batch_first=True)
+            batch_first=True,
+            residual=decoder_residual,
+            dense_residual=decoder_dense_residual)
         self.decoder_sub = RNNDecoder(
             input_size=decoder_num_units_sub + embedding_dim_sub,
             rnn_type=decoder_type,
             num_units=decoder_num_units_sub,
             num_layers=decoder_num_layers_sub,
             dropout=dropout_decoder,
-            batch_first=True)
+            batch_first=True,
+            residual=decoder_residual,
+            dense_residual=decoder_dense_residual)
 
         ##############################
         # Attention layer
@@ -227,8 +247,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             sigmoid_smoothing=sigmoid_smoothing,
             out_channels=attention_conv_num_channels,
             kernel_size=attention_conv_width)
-        # NOTE: encoder's outputs will be mapped to the same dimension as the
-        # decoder states
 
         ##################################################
         # Bridge layer between the encoder and decoder
@@ -244,6 +262,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             self.is_bridge = True
         else:
             self.is_bridge = False
+
         if encoder_bidirectional or encoder_num_units != decoder_num_units_sub:
             if encoder_bidirectional:
                 self.bridge_sub = LinearND(
@@ -257,29 +276,36 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         else:
             self.is_bridge_sub = False
 
-        self.embed = Embedding(num_classes=self.num_classes,
-                               embedding_dim=embedding_dim,
-                               dropout=dropout_embedding)
-        self.embed_sub = Embedding(num_classes=self.num_classes_sub,
-                                   embedding_dim=embedding_dim_sub,
-                                   dropout=dropout_embedding)
-
-        if composition_case in ['hidden', 'hidden_embedding']:
-            self.proj_layer = LinearND(
-                decoder_num_units * 2 + decoder_num_units_sub, decoder_num_units,
-                dropout=dropout_decoder)
+        if label_smoothing_prob > 0:
+            self.embed = Embedding_LS(
+                num_classes=self.num_classes,
+                embedding_dim=embedding_dim,
+                dropout=dropout_embedding,
+                label_smoothing_prob=label_smoothing_prob)
+            self.embed_sub = Embedding_LS(
+                num_classes=self.num_classes_sub,
+                embedding_dim=embedding_dim_sub,
+                dropout=dropout_embedding,
+                label_smoothing_prob=label_smoothing_prob)
         else:
-            self.proj_layer = LinearND(
-                decoder_num_units * 2, decoder_num_units,
-                dropout=dropout_decoder)
+            self.embed = Embedding(
+                num_classes=self.num_classes,
+                embedding_dim=embedding_dim,
+                dropout=dropout_embedding)
+            self.embed_sub = Embedding(
+                num_classes=self.num_classes_sub,
+                embedding_dim=embedding_dim_sub,
+                dropout=dropout_embedding)
+
+        self.proj_layer = LinearND(
+            decoder_num_units * 2, decoder_num_units,
+            dropout=dropout_decoder)
         self.proj_layer_sub = LinearND(
             decoder_num_units_sub * 2, decoder_num_units_sub,
             dropout=dropout_decoder)
-        self.fc = LinearND(decoder_num_units, self.num_classes - 1)
-        self.fc_sub = LinearND(
-            decoder_num_units_sub, self.num_classes_sub - 1)
-        # NOTE: <SOS> is removed because the decoder never predict <SOS> class
-        # TODO: consider projection
+
+        self.fc = LinearND(decoder_num_units, self.num_classes)
+        self.fc_sub = LinearND(decoder_num_units_sub, self.num_classes_sub)
 
         if ctc_loss_weight_sub > 0:
             if self.is_bridge_sub:
@@ -294,7 +320,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             self._decode_ctc_beam_np = BeamSearchDecoder(blank_index=0)
             # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
-        if composition_case in ['embedding', 'hidden_embedding', 'multiscale']:
+        if composition_case in ['embedding', 'multiscale']:
             ##############################
             # C2W model
             ##############################
@@ -305,6 +331,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                                      word_embedding_dim=embedding_dim,
                                      dropout=0)
             self.gate_fn = LinearND(embedding_dim, embedding_dim)
+        elif composition_case == 'char_seq_attend':
+            pass
 
         # Initialize parameters
         self.init_weights(parameter_init,
@@ -338,8 +366,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 This should be used in inference model for memory efficiency.
         Returns:
             loss (torch.autograd.Variable(float) or float): A tensor of size `[1]`
-            xe_loss_main (torch.autograd.Variable(float) or float): A tensor of size `[1]`
-            xe_loss_sub (torch.autograd.Variable(float) or float): A tensor of size `[1]`
+            loss_main (torch.autograd.Variable(float) or float): A tensor of size `[1]`
+            loss_sub (torch.autograd.Variable(float) or float): A tensor of size `[1]`
         """
         # Wrap by Variable
         xs = np2var(xs, use_cuda=self.use_cuda, backend='pytorch')
@@ -375,17 +403,17 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             y_lens_sub = y_lens_sub[perm_idx]
 
         # Teacher-forcing
-        logits, logits_sub, att_weights, att_weights_sub = self._decode_train_joint(
+        logits_main, logits_sub, att_weights, att_weights_sub = self._decode_train_joint(
             xs, xs_sub, ys, ys_sub, y_lens, y_lens_sub)
 
         # Output smoothing
         if self.logits_temperature != 1:
-            logits = logits / self.logits_temperature
-            logits_sub = logits_sub / self.logits_temperature
+            logits_main /= self.logits_temperature
+            logits_sub /= self.logits_temperature
 
         # Compute XE sequence loss in the main task
         loss_main = F.cross_entropy(
-            input=logits.view((-1, logits.size(2))),
+            input=logits_main.view((-1, logits_main.size(2))),
             target=ys[:, 1:].contiguous().view(-1),
             ignore_index=self.sos_index, size_average=False)
         # NOTE: ys are padded by <SOS>
@@ -398,27 +426,27 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         # NOTE: ys_sub are padded by <SOS>
 
         # Label smoothing (with uniform distribution)
-        if self.label_smoothing_prob > 0:
-            batch_size, label_num, num_classes = logits.size()
-            log_probs = F.log_softmax(logits, dim=-1)
-            uniform = Variable(torch.FloatTensor(
-                batch_size, label_num, num_classes).fill_(np.log(1 / num_classes)))
-
-            batch_size, label_num_sub, num_classes_sub = logits_sub.size()
-            log_probs_sub = F.log_softmax(logits_sub, dim=-1)
-            uniform_sub = Variable(torch.FloatTensor(
-                batch_size, label_num_sub, num_classes_sub).fill_(np.log(1 / num_classes_sub)))
-
-            if self.use_cuda:
-                uniform = uniform.cuda()
-                uniform_sub = uniform_sub.cuda()
-
-            loss_main = loss_main * (1 - self.label_smoothing_prob) + F.kl_div(
-                log_probs, uniform,
-                size_average=False, reduce=True) * self.label_smoothing_prob
-            loss_sub = loss_sub * (1 - self.label_smoothing_prob) + F.kl_div(
-                log_probs_sub, uniform_sub,
-                size_average=False, reduce=True) * self.label_smoothing_prob
+        # if self.label_smoothing_prob > 0:
+        #     batch_size, label_num, num_classes = logits_main.size()
+        #     log_probs = F.log_softmax(logits_main, dim=-1)
+        #     uniform = Variable(torch.FloatTensor(
+        #         batch_size, label_num, num_classes).fill_(np.log(1 / num_classes)))
+        #
+        #     batch_size, label_num_sub, num_classes_sub = logits_sub.size()
+        #     log_probs_sub = F.log_softmax(logits_sub, dim=-1)
+        #     uniform_sub = Variable(torch.FloatTensor(
+        #         batch_size, label_num_sub, num_classes_sub).fill_(np.log(1 / num_classes_sub)))
+        #
+        #     if self.use_cuda:
+        #         uniform = uniform.cuda()
+        #         uniform_sub = uniform_sub.cuda()
+        #
+        #     loss_main = loss_main * (1 - self.label_smoothing_prob) + F.kl_div(
+        #         log_probs, uniform,
+        #         size_average=False, reduce=True) * self.label_smoothing_prob
+        #     loss_sub = loss_sub * (1 - self.label_smoothing_prob) + F.kl_div(
+        #         log_probs_sub, uniform_sub,
+        #         size_average=False, reduce=True) * self.label_smoothing_prob
 
         # Add coverage term
         if self.coverage_weight != 0:
@@ -901,7 +929,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 to stop prediction when EOS token have not been emitted
             is_sub_task (bool, optional):
         Returns:
-            best_hyps (np.ndarray): A tensor of size `[]`
+            best_hyps (np.ndarray): A tensor of size `[B]`
+            perm_idx (np.ndarray): A tensor of size `[B]`
         """
         # Wrap by Variable
         xs = np2var(
@@ -932,12 +961,13 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         if is_sub_task or self.composition_case == 'hidden':
             # Permutate indices to the original order
-            if perm_idx is not None:
-                perm_idx = var2np(perm_idx)
-                best_hyps = best_hyps[perm_idx]
+            if perm_idx is None:
+                perm_idx = np.arange(0, len(xs), 1)
+            else:
+                perm_idx = var2np(perm_idx, backend='pytorch')
         # TODO: fix this
 
-        return best_hyps
+        return best_hyps, perm_idx
 
     def _decode_infer_greedy_joint(self, enc_out, enc_out_sub, max_decode_len):
         """Greedy decoding in the inference stage.
