@@ -19,7 +19,6 @@ from models.pytorch.attention.rnn_decoder_nstep import RNNDecoder
 from models.pytorch.attention.attention_layer import AttentionMechanism
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
-from utils.io.variable import np2var, var2np
 
 
 class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
@@ -337,13 +336,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             ys_sub_out = ys_sub_out.cuda()
 
         # Wrap by Variable
-        xs = np2var(xs, use_cuda=self.use_cuda, backend='pytorch')
-        x_lens = np2var(
-            x_lens, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
-        y_lens = np2var(
-            y_lens, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
-        y_lens_sub = np2var(
-            y_lens_sub, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
+        xs = self.np2var(xs)
+        x_lens = self.np2var(x_lens, dtype='int')
+        y_lens = self.np2var(y_lens, dtype='int')
+        y_lens_sub = self.np2var(y_lens_sub, dtype='int')
 
         if is_eval:
             self.eval()
@@ -458,10 +454,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 xs, x_lens, beam_width, is_sub_task=True)
         else:
             # Wrap by Variable
-            xs = np2var(
-                xs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
-            x_lens = np2var(
-                x_lens, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
+            xs = self.np2var(xs, volatile=True)
+            x_lens = self.np2var(x_lens, dtype='int', volatile=True)
 
             # Encode acoustic features
             if is_sub_task:
@@ -485,6 +479,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             if perm_idx is None:
                 perm_idx = np.arange(0, len(xs), 1)
             else:
-                perm_idx = var2np(perm_idx, backend='pytorch')
+                perm_idx = self.var2np(perm_idx)
 
         return best_hyps, perm_idx

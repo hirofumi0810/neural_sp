@@ -219,15 +219,16 @@ class TestHierarchicalAttention(unittest.TestCase):
                     xs, x_lens, beam_width=1, max_decode_len=60,
                     is_sub_task=True)
 
+                str_hyp = idx2word(best_hyps[0][:-1]).split('>')[0]
+                str_ref = idx2word(ys[0])
+                str_hyp_sub = idx2char(best_hyps_sub[0][:-1]).split('>')[0]
+                str_ref_sub = idx2char(ys_sub[0])
+
                 # Compute accuracy
                 try:
-                    str_hyp = idx2word(best_hyps[0][:-1]).split('>')[0]
-                    str_ref = idx2word(ys[0])
                     wer, _, _, _ = compute_wer(ref=str_ref.split('_'),
                                                hyp=str_hyp.split('_'),
                                                normalize=True)
-                    str_hyp_sub = idx2char(best_hyps_sub[0][:-1]).split('>')[0]
-                    str_ref_sub = idx2char(ys_sub[0])
                     cer, _, _, _ = compute_wer(
                         ref=list(str_ref_sub.replace('_', '')),
                         hyp=list(str_hyp_sub.replace('_', '')),

@@ -30,7 +30,6 @@ from models.pytorch.encoders.load_encoder import load
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
 # from models.pytorch.ctc.decoders.beam_search_decoder2 import BeamSearchDecoder
-from utils.io.variable import np2var, var2np
 
 NEG_INF = -float("inf")
 LOG_0 = NEG_INF
@@ -239,12 +238,10 @@ class CTC(ModelBase):
             loss (torch.autograd.Variable(float) or float): A tensor of size `[1]`
         """
         # Wrap by Variable
-        xs = np2var(xs, use_cuda=self.use_cuda, backend='pytorch')
-        ys = np2var(ys, dtype='int', use_cuda=False, backend='pytorch')
-        x_lens = np2var(
-            x_lens, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
-        y_lens = np2var(
-            y_lens, dtype='int', use_cuda=False, backend='pytorch')
+        xs = self.np2var(xs)
+        ys = self.np2var(ys, dtype='int', cpu=True)
+        x_lens = self.np2var(x_lens, dtype='int')
+        y_lens = self.np2var(y_lens, dtype='int', cpu=True)
 
         # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
         ys = ys + 1
@@ -350,10 +347,8 @@ class CTC(ModelBase):
             probs (np.ndarray): A tensor of size `[B, T, num_classes]`
         """
         # Wrap by Variable
-        xs = np2var(
-            xs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
-        x_lens = np2var(
-            x_lens, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
+        xs = self.np2var(xs, volatile=True)
+        x_lens = self.np2var(x_lens, dtype='int', volatile=True)
 
         # Change to evaluation mode
         self.eval()
@@ -379,7 +374,7 @@ class CTC(ModelBase):
         if perm_idx is not None:
             probs = probs[perm_idx]
 
-        return var2np(probs, backend='pytorch')
+        return self.var2np(probs)
 
     def decode(self, xs, x_lens, beam_width=1,
                max_decode_len=None, is_sub_task=False):
@@ -395,10 +390,8 @@ class CTC(ModelBase):
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
         # Wrap by Variable
-        xs = np2var(
-            xs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
-        x_lens = np2var(
-            x_lens, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
+        xs = self.np2var(xs, volatile=True)
+        x_lens = self.np2var(x_lens, dtype='int', volatile=True)
 
         # Change to evaluation mode
         self.eval()
@@ -416,12 +409,11 @@ class CTC(ModelBase):
 
         if beam_width == 1:
             best_hyps = self._decode_greedy_np(
-                var2np(logits, backend='pytorch'),
-                var2np(x_lens, backend='pytorch'))
+                self.var2np(logits), self.var2np(x_lens))
         else:
             best_hyps = self._decode_beam_np(
-                var2np(F.log_softmax(logits, dim=-1), backend='pytorch'),
-                var2np(x_lens, backend='pytorch'), beam_width=beam_width)
+                self.var2np(F.log_softmax(logits, dim=-1)),
+                self.var2np(x_lens), beam_width=beam_width)
 
         # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
         best_hyps -= 1
@@ -430,7 +422,7 @@ class CTC(ModelBase):
         if perm_idx is None:
             perm_idx = np.arange(0, len(xs), 1)
         else:
-            perm_idx = var2np(perm_idx, backend='pytorch')
+            perm_idx = self.var2np(perm_idx)
 
         return best_hyps, perm_idx
 

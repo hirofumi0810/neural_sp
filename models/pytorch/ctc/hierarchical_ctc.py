@@ -21,7 +21,6 @@ from models.pytorch.ctc.ctc import CTC, _concatenate_labels
 from models.pytorch.linear import LinearND
 from models.pytorch.criterion import cross_entropy_label_smoothing
 from models.pytorch.encoders.load_encoder import load
-from utils.io.variable import np2var
 
 NEG_INF = -float("inf")
 LOG_0 = NEG_INF
@@ -210,14 +209,12 @@ class HierarchicalCTC(CTC):
             loss_sub (torch.autograd.Variable(float) or float): A tensor of size `[1]`
         """
         # Wrap by Variable
-        xs = np2var(xs, use_cuda=self.use_cuda, backend='pytorch')
-        ys = np2var(ys, dtype='int', use_cuda=False, backend='pytorch')
-        ys_sub = np2var(ys_sub, dtype='int', use_cuda=False, backend='pytorch')
-        x_lens = np2var(x_lens, dtype='int',
-                        use_cuda=self.use_cuda, backend='pytorch')
-        y_lens = np2var(y_lens, dtype='int', use_cuda=False, backend='pytorch')
-        y_lens_sub = np2var(y_lens_sub, dtype='int',
-                            use_cuda=False, backend='pytorch')
+        xs = self.np2var(xs)
+        ys = self.np2var(ys, dtype='int', cpu=True)
+        ys_sub = self.np2var(ys_sub, dtype='int', cpu=True)
+        x_lens = self.np2var(x_lens, dtype='int')
+        y_lens = self.np2var(y_lens, dtype='int', cpu=True)
+        y_lens_sub = self.np2var(y_lens_sub, dtype='int', cpu=True)
 
         # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
         ys = ys + 1

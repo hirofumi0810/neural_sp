@@ -7,6 +7,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numpy as np
+
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -15,7 +17,6 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from models.pytorch.linear import LinearND
 from models.pytorch.encoders.cnn import CNNEncoder
-from utils.io.variable import var2np, np2var
 
 
 class RNNEncoder(nn.Module):
@@ -283,7 +284,8 @@ class RNNEncoder(nn.Module):
             # NOTE: must be descending order for pack_padded_sequence
         else:
             perm_idx = None
-        x_lens = var2np(x_lens).tolist()
+        x_lens = x_lens.data.cpu().numpy().tolist()
+        # x_lens = x_lens.data.cpu()
 
         if not self.batch_first:
             # Convert to the time-major
@@ -361,8 +363,10 @@ class RNNEncoder(nn.Module):
                     xs_sub = xs
 
                     # Wrap by Variable again
-                    x_lens_sub = np2var(
-                        x_lens, dtype='int', use_cuda=use_cuda, backend='pytorch')
+                    x_lens_sub = Variable(
+                        torch.from_numpy(np.array(x_lens)).int(), requires_grad=False)
+                    if use_cuda:
+                        x_lens_sub = x_lens_sub.cuda()
 
                 # NOTE: Exclude the last layer
                 if i_layer != self.num_layers - 1:
@@ -395,10 +399,10 @@ class RNNEncoder(nn.Module):
 
                             # Update x_lens
                             if self.batch_first:
-                                x_lens = [x.size(0) for x in xs]
+                                x_lens = np.array([x.size(0) for x in xs])
                             else:
-                                x_lens = [xs[:, i].size(0)
-                                          for i in range(xs.size(1))]
+                                x_lens = np.array([xs[:, i].size(0)
+                                                   for i in range(xs.size(1))])
 
                         # Residual connection
                         elif self.residual or self.dense_residual:
@@ -411,8 +415,10 @@ class RNNEncoder(nn.Module):
                                     res_outputs_list.append(xs)
 
         # Wrap by Variable again
-        x_lens = np2var(
-            x_lens, dtype='int', use_cuda=xs.is_cuda, backend='pytorch')
+        x_lens = Variable(torch.from_numpy(
+            np.array(x_lens)).int(), requires_grad=False)
+        if use_cuda:
+            x_lens = x_lens.cuda()
 
         # Sum bidirectional outputs
         if self.bidirectional and self.merge_bidirectional:

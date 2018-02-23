@@ -22,7 +22,6 @@ from models.pytorch.attention.rnn_decoder_nstep import RNNDecoder
 from models.pytorch.attention.attention_layer import AttentionMechanism
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
-from utils.io.variable import np2var, var2np
 
 LOG_1 = 0
 
@@ -83,8 +82,8 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
                  encoder_dense_residual=False,
                  decoder_residual=False,
                  decoder_dense_residual=False,
-                 curriculum_training=False,
-                 composition_case='fine_grained_gating'):
+                 curriculum_training=False,  # ***
+                 composition_case='fine_grained_gating'):  # ***
 
         super(CharseqAttentionSeq2seq, self).__init__(
             input_size=input_size,
@@ -407,13 +406,10 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
             ys_sub_out = ys_sub_out.cuda()
 
         # Wrap by Variable
-        xs = np2var(xs, use_cuda=self.use_cuda, backend='pytorch')
-        x_lens = np2var(
-            x_lens, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
-        y_lens = np2var(
-            y_lens, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
-        y_lens_sub = np2var(
-            y_lens_sub, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
+        xs = self.np2var(xs)
+        x_lens = self.np2var(x_lens, dtype='int')
+        y_lens = self.np2var(y_lens, dtype='int')
+        y_lens_sub = self.np2var(y_lens_sub, dtype='int')
 
         if is_eval:
             self.eval()
@@ -640,6 +636,9 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
                 elif self.composition_case == 'concat':
                     y = torch.cat([y, char_context_vec], dim=-1)
 
+                # TODO: char_context_vecを出力に使う
+                # TODO: 前の出力単語とこれをcomposite
+
             dec_out, dec_state, context_vec, att_weights_step = self._decode_step(
                 enc_out=enc_out,
                 x_lens=x_lens,
@@ -668,6 +667,92 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
 
         return logits, att_weights
 
+    def attention_weights(self, xs, x_lens, max_decode_len, max_decode_len_sub,
+                          beam_width=1):
+        """Get attention weights for visualization.
+        Args:
+            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
+            x_lens (np.ndarray): A tensor of size `[B]`
+            max_decode_len (int): the length of output sequences
+                to stop prediction when EOS token have not been emitted
+
+            is_sub_task (bool, optional):
+        Returns:
+            best_hyps (np.ndarray): A tensor of size `[B, T_out]`
+            best_hyps_sub (np.ndarray): A tensor of size `[B, T_out_sub]`
+            att_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
+            char_att_weights (np.ndarray): A tensor of size
+                `[B, T_out, T_out_sub]`
+        """
+        # Wrap by Variable
+        xs = self.np2var(xs, volatile=True)
+        x_lens = self.np2var(x_lens, dtype='int', volatile=True)
+
+        # Encode acoustic features
+        enc_out, x_lens, enc_out_sub, x_lens_sub, perm_idx = self._encode(
+            xs, x_lens, volatile=True, is_multi_task=True)
+
+        # Change to evaluation mode
+        self.eval()
+
+        # At first, decode by character-based decoder
+        if self.ctc_loss_weight_sub > self.sub_loss_weight:
+            # Decode by CTC decoder
+
+            # Path through the softmax layer
+            batch_size, max_time_sub = enc_out_sub.size()[:2]
+            enc_out_sub = enc_out_sub.view(
+                batch_size * max_time_sub, -1).contiguous()
+            logits_ctc_sub = self.fc_ctc_sub(enc_out_sub)
+            logits_ctc_sub = logits_ctc_sub.view(batch_size, max_time_sub, -1)
+
+            if beam_width == 1:
+                best_hyps_sub = self._decode_ctc_greedy_np(
+                    self.var2np(logits_ctc_sub),
+                    self.var2np(x_lens_sub))
+            else:
+                best_hyps_sub = self._decode_ctc_beam_np(
+                    self.var2np(F.log_softmax(logits_ctc_sub, dim=-1),
+                                ),
+                    self.var2np(x_lens_sub), beam_width=beam_width)
+
+            # NOTE: index 0 is reserved for blank in warpctc_pytorch
+            best_hyps_sub -= 1
+        else:
+            # Decode by attention decoder
+            if beam_width == 1:
+                best_hyps_sub, _ = self._decode_infer_greedy(
+                    enc_out_sub, x_lens_sub, max_decode_len, is_sub_task=True)
+            else:
+                best_hyps_sub, _ = self._decode_infer_beam(
+                    enc_out_sub, x_lens_sub, max_decode_len, is_sub_task=True)
+
+        y_lens_sub = np2var(
+            np.array([len(y) for y in best_hyps_sub]),
+            dtype='int', use_cuda=self.use_cuda, volatile=True)
+        # assert max(y_lens_sub.data) > 0
+
+        ys_sub = self._create_var(
+            (len(xs), max(y_lens_sub.data)), dtype='long')
+        for b in range(len(xs)):
+            ys_sub.data[b, :len(best_hyps_sub[b])] = torch.from_numpy(
+                best_hyps_sub[b])
+
+        # Next, decode by word-based decoder with character outputs
+        best_hyps, att_weights, char_att_weights = self._decode_infer_greedy(
+            enc_out, x_lens,
+            max_decode_len=max_decode_len,
+            ys_sub=ys_sub,
+            y_lens_sub=y_lens_sub)
+
+        # Permutate indices to the original order
+        if perm_idx is None:
+            perm_idx = np.arange(0, len(xs), 1)
+        else:
+            perm_idx = self.var2np(perm_idx)
+
+        return best_hyps, best_hyps_sub, att_weights, char_att_weights
+
     def decode(self, xs, x_lens, beam_width, max_decode_len,
                max_decode_len_sub=None, is_sub_task=False):
         """Decoding in the inference stage.
@@ -685,10 +770,8 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
         # Wrap by Variable
-        xs = np2var(
-            xs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
-        x_lens = np2var(
-            x_lens, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
+        xs = self.np2var(xs, volatile=True)
+        x_lens = self.np2var(x_lens, dtype='int', volatile=True)
 
         # Encode acoustic features
         if is_sub_task:
@@ -714,13 +797,12 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
 
             if beam_width == 1:
                 best_hyps_sub = self._decode_ctc_greedy_np(
-                    var2np(logits_ctc_sub, backend='pytorch'),
-                    var2np(x_lens_sub, backend='pytorch'))
+                    self.var2np(logits_ctc_sub),
+                    self.var2np(x_lens_sub))
             else:
                 best_hyps_sub = self._decode_ctc_beam_np(
-                    var2np(F.log_softmax(logits_ctc_sub, dim=-1),
-                           backend='pytorch'),
-                    var2np(x_lens_sub, backend='pytorch'), beam_width=beam_width)
+                    self.var2np(F.log_softmax(logits_ctc_sub, dim=-1)),
+                    self.var2np(x_lens_sub), beam_width=beam_width)
 
             # NOTE: index 0 is reserved for blank in warpctc_pytorch
             best_hyps_sub -= 1
@@ -738,7 +820,7 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
         else:
             y_lens_sub = np2var(
                 np.array([len(y) for y in best_hyps_sub]),
-                dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
+                dtype='int', use_cuda=self.use_cuda, volatile=True)
             # assert max(y_lens_sub.data) > 0
 
             ys_sub = self._create_var(
@@ -749,7 +831,7 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
 
             # Next, decode by word-based decoder with character outputs
             if beam_width == 1:
-                best_hyps, _ = self._decode_infer_greedy(
+                best_hyps, _, _ = self._decode_infer_greedy(
                     enc_out, x_lens,
                     max_decode_len=max_decode_len,
                     ys_sub=ys_sub,
@@ -761,7 +843,7 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
         if perm_idx is None:
             perm_idx = np.arange(0, len(xs), 1)
         else:
-            perm_idx = var2np(perm_idx, backend='pytorch')
+            perm_idx = self.var2np(perm_idx)
 
         if is_sub_task:
             return best_hyps, perm_idx
@@ -777,13 +859,16 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
             x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
             max_decode_len (int): the length of output sequences
                 to stop prediction when EOS token have not been emitted
-            ys_sub ():
-            y_lens_sub ():
+            ys_sub (torch.autograd.Variable(float), optional):
+                A tensor of size `[B, T_out_sub]`
+            y_lens_sub (torch.autograd.Variable(int), optional):
+                A tensor of size `[B]`
             is_sub_task (bool, optional):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
-            # best_hyps_lens (np.ndarray): A tensor of size `[B]`
             att_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
+            char_att_weights (np.ndarray): A tensor of size
+                `[B, T_out, T_in_char]`
         """
         batch_size, max_time = enc_out.size()[:2]
 
@@ -824,6 +909,7 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
 
         best_hyps = []
         att_weights = []
+        char_att_weights = []
         for _ in range(max_decode_len):
 
             if is_sub_task:
@@ -868,6 +954,8 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
             # logits: `[B, 1, num_classes]` -> `[B, num_classes]`
             best_hyps.append(y)
             att_weights.append(att_weights_step)
+            if not is_sub_task:
+                char_att_weights.append(char_att_weights_step)
 
             # Break if <EOS> is outputed in all mini-batch
             if torch.sum(y.data == eos) == y.numel():
@@ -878,7 +966,13 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
         att_weights = torch.stack(att_weights, dim=1)
 
         # Convert to numpy
-        best_hyps = var2np(best_hyps, backend='pytorch')
-        att_weights = var2np(att_weights, backend='pytorch')
+        best_hyps = self.var2np(best_hyps)
+        att_weights = self.var2np(att_weights)
 
-        return best_hyps, att_weights
+        if not is_sub_task:
+            char_att_weights = torch.stack(char_att_weights, dim=1)
+            char_att_weights = self.var2np(char_att_weights)
+
+            return best_hyps, att_weights, char_att_weights
+        else:
+            return best_hyps, att_weights

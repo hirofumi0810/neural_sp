@@ -30,7 +30,6 @@ from models.pytorch.attention.attention_layer import AttentionMechanism
 from models.pytorch.ctc.ctc import _concatenate_labels
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
-from utils.io.variable import np2var, var2np
 
 LOG_1 = 0
 CURRICULUM_TRAINING = [None, 'weight',
@@ -461,11 +460,9 @@ class AttentionSeq2seq(ModelBase):
             ys_out = ys_out.cuda()
 
         # Wrap by Variable
-        xs = np2var(xs, use_cuda=self.use_cuda, backend='pytorch')
-        x_lens = np2var(
-            x_lens, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
-        y_lens = np2var(
-            y_lens, dtype='int', use_cuda=self.use_cuda, backend='pytorch')
+        xs = self.np2var(xs)
+        x_lens = self.np2var(x_lens, dtype='int')
+        y_lens = self.np2var(y_lens, dtype='int')
 
         if is_eval:
             self.eval()
@@ -726,15 +723,15 @@ class AttentionSeq2seq(ModelBase):
             else:
                 y = self.embed(y)
 
-            dec_out, dec_state, context_vec, att_weights_step = self._decode_step(
-                enc_out=enc_out,
-                x_lens=x_lens,
-                y=y,
-                dec_state=dec_state,
-                dec_out=dec_out,
-                context_vec=context_vec,
-                att_weights_step=att_weights_step,
-                is_sub_task=is_sub_task)
+            dec_in = torch.cat([y, context_vec], dim=-1)
+            if is_sub_task:
+                dec_out, dec_state = self.decoder_sub(dec_in, dec_state)
+                context_vec, att_weights_step = self.attend_sub(
+                    enc_out, x_lens, dec_out, att_weights_step)
+            else:
+                dec_out, dec_state = self.decoder(dec_in, dec_state)
+                context_vec, att_weights_step = self.attend(
+                    enc_out, x_lens, dec_out, att_weights_step)
 
             if is_sub_task:
                 logits_step = self.fc_sub(F.tanh(
@@ -755,47 +752,6 @@ class AttentionSeq2seq(ModelBase):
         # coverage, so do not convert to numpy yet.
 
         return logits, att_weights
-
-    def _decode_step(self, enc_out, x_lens, y, dec_state, dec_out,
-                     context_vec, att_weights_step, is_sub_task=False):
-        """Decoding at each decoder time step.
-        Args:
-            enc_out (torch.autograd.Variable, float): A tensor of size
-                `[B, T_in, encoder_num_units]`
-            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
-            y (torch.autograd.Variable, float): A tensor of size
-                `[B, 1, embedding_dim]`
-            dec_state (torch.autograd.Variable(float) or tuple): A tensor of size
-                `[decoder_num_layers, B, decoder_num_units]`
-            dec_out (torch.autograd.Variable, float): A tensor of size
-                `[B, 1, decoder_num_units]`
-            content_vec (torch.autograd.Variable, float): A tensor of size
-                `[B, 1, encoder_num_units]`
-            att_weights_step (torch.autograd.Variable, float):
-                A tensor of size `[B, T_in]`
-            is_sub_task (bool, optional):
-        Returns:
-            dec_out (torch.autograd.Variable, float): A tensor of size
-                `[B, 1, decoder_num_units]`
-            dec_state (torch.autograd.Variable, float): A tensor of size
-                `[decoder_num_layers, B, decoder_num_units]`
-            content_vec (torch.autograd.Variable, float): A tensor of size
-                `[B, 1, encoder_num_units]`
-            att_weights_step (torch.autograd.Variable, float): A tensor of size
-                `[B, T_in]`
-        """
-        if is_sub_task:
-            dec_in = torch.cat([y, context_vec], dim=-1)
-            dec_out, dec_state = self.decoder_sub(dec_in, dec_state)
-            context_vec, att_weights_step = self.attend_sub(
-                enc_out, x_lens, dec_out, att_weights_step)
-        else:
-            dec_in = torch.cat([y, context_vec], dim=-1)
-            dec_out, dec_state = self.decoder(dec_in, dec_state)
-            context_vec, att_weights_step = self.attend(
-                enc_out, x_lens, dec_out, att_weights_step)
-
-        return dec_out, dec_state, context_vec, att_weights_step
 
     def _create_var(self, size, fill_value=0, dtype='float', volatile=False):
         """Initialize a variable with zero.
@@ -927,10 +883,8 @@ class AttentionSeq2seq(ModelBase):
             raise ValueError
 
         # Wrap by Variable
-        xs = np2var(
-            xs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
-        x_lens = np2var(
-            x_lens, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
+        xs = self.np2var(xs, volatile=True)
+        x_lens = self.np2var(x_lens, dtype='int', volatile=True)
 
         # Change to evaluation mode
         self.eval()
@@ -948,7 +902,7 @@ class AttentionSeq2seq(ModelBase):
 
         # Permutate indices
         if perm_idx is not None:
-            perm_idx = var2np(perm_idx, backend='pytorch')
+            perm_idx = self.p(perm_idx)
 
         # NOTE: assume beam_width == 1
         best_hyps, att_weights = self._decode_infer_greedy(
@@ -977,10 +931,8 @@ class AttentionSeq2seq(ModelBase):
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
         # Wrap by Variable
-        xs = np2var(
-            xs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
-        x_lens = np2var(
-            x_lens, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
+        xs = self.np2var(xs, volatile=True)
+        x_lens = self.np2var(x_lens, dtype='int', volatile=True)
 
         # Change to evaluation mode
         self.eval()
@@ -1000,7 +952,7 @@ class AttentionSeq2seq(ModelBase):
         if perm_idx is None:
             perm_idx = np.arange(0, len(xs), 1)
         else:
-            perm_idx = var2np(perm_idx, backend='pytorch')
+            perm_idx = self.p(perm_idx)
 
         return best_hyps, perm_idx
 
@@ -1044,15 +996,15 @@ class AttentionSeq2seq(ModelBase):
             else:
                 y = self.embed(y)
 
-            dec_out, dec_state, context_vec, att_weights_step = self._decode_step(
-                enc_out=enc_out,
-                x_lens=x_lens,
-                y=y,
-                dec_state=dec_state,
-                dec_out=dec_out,
-                context_vec=context_vec,
-                att_weights_step=att_weights_step,
-                is_sub_task=is_sub_task)
+            dec_in = torch.cat([y, context_vec], dim=-1)
+            if is_sub_task:
+                dec_out, dec_state = self.decoder_sub(dec_in, dec_state)
+                context_vec, att_weights_step = self.attend_sub(
+                    enc_out, x_lens, dec_out, att_weights_step)
+            else:
+                dec_out, dec_state = self.decoder(dec_in, dec_state)
+                context_vec, att_weights_step = self.attend(
+                    enc_out, x_lens, dec_out, att_weights_step)
 
             if is_sub_task:
                 logits = self.fc_sub(F.tanh(
@@ -1078,8 +1030,8 @@ class AttentionSeq2seq(ModelBase):
         att_weights = torch.stack(att_weights, dim=1)
 
         # Convert to numpy
-        best_hyps = var2np(best_hyps, backend='pytorch')
-        att_weights = var2np(att_weights, backend='pytorch')
+        best_hyps = self.var2np(best_hyps)
+        att_weights = self.var2np(att_weights)
 
         return best_hyps, att_weights
 
@@ -1137,15 +1089,21 @@ class AttentionSeq2seq(ModelBase):
                         att_weights_step.unsqueeze(2),
                         dim=1, keepdim=True)
 
-                    dec_out, dec_state, context_vec, att_weights_step = self._decode_step(
-                        enc_out=enc_out[b:b + 1, :frame_num],
-                        x_lens=x_lens[b:b + 1],
-                        y=y,
-                        dec_state=beam[i_beam]['dec_state'],
-                        dec_out=beam[i_beam]['dec_out'],
-                        context_vec=context_vec,
-                        att_weights_step=beam[i_beam]['att_weights_step'],
-                        is_sub_task=is_sub_task)
+                    dec_in = torch.cat([y, context_vec], dim=-1)
+                    if is_sub_task:
+                        dec_out, dec_state = self.decoder_sub(
+                            dec_in, beam[i_beam]['dec_state'])
+                        context_vec, att_weights_step = self.attend_sub(
+                            enc_out[b:b + 1, :frame_num],
+                            x_lens[b:b + 1],
+                            dec_out, beam[i_beam]['att_weights_step'])
+                    else:
+                        dec_out, dec_state = self.decoder(
+                            dec_in, beam[i_beam]['dec_state'])
+                        context_vec, att_weights_step = self.attend(
+                            enc_out[b:b + 1, :frame_num],
+                            x_lens[b:b + 1],
+                            dec_out, beam[i_beam]['att_weights_step'])
 
                     if is_sub_task:
                         logits = self.fc_sub(F.tanh(
@@ -1219,10 +1177,8 @@ class AttentionSeq2seq(ModelBase):
         # TODO: add is_sub_task
 
         # Wrap by Variable
-        xs = np2var(
-            xs, use_cuda=self.use_cuda, volatile=True, backend='pytorch')
-        x_lens = np2var(
-            x_lens, dtype='int', use_cuda=self.use_cuda, volatile=True, backend='pytorch')
+        xs = self.np2var(xs, volatile=True)
+        x_lens = self.np2var(x_lens, dtype='int', volatile=True)
 
         # Change to evaluation mode
         self.eval()
@@ -1246,12 +1202,11 @@ class AttentionSeq2seq(ModelBase):
 
         if beam_width == 1:
             best_hyps = self._decode_ctc_greedy_np(
-                var2np(logits_ctc, backend='pytorch'),
-                var2np(x_lens, backend='pytorch'))
+                self.var2np(logits_ctc), self.var2np(x_lens))
         else:
             best_hyps = self._decode_ctc_beam_np(
-                var2np(F.log_softmax(logits_ctc, dim=-1), backend='pytorch'),
-                var2np(x_lens, backend='pytorch'), beam_width=beam_width)
+                self.var2np(F.log_softmax(logits_ctc, dim=-1)),
+                self.var2np(x_lens), beam_width=beam_width)
 
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
         best_hyps -= 1
@@ -1260,7 +1215,7 @@ class AttentionSeq2seq(ModelBase):
         if perm_idx is None:
             perm_idx = np.arange(0, len(xs), 1)
         else:
-            perm_idx = var2np(perm_idx, backend='pytorch')
+            perm_idx = self.var2np(perm_idx)
 
         return best_hyps, perm_idx
 

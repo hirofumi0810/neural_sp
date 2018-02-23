@@ -8,10 +8,13 @@ from __future__ import division
 from __future__ import print_function
 
 import math
+import numpy as np
+
+import torch
 import torch.nn as nn
+from torch.autograd import Variable
 
 from models.pytorch.encoders.cnn_utils import ConvOutSize, Maxout
-from utils.io.variable import np2var
 
 
 class CNNEncoder(nn.Module):
@@ -154,8 +157,9 @@ class CNNEncoder(nn.Module):
         xs = xs.view(batch_size, time, freq * output_channels)
 
         # Update x_lens
-        x_lens = [self.get_conv_out_size(x, 1) for x in x_lens]
-        x_lens = np2var(
-            x_lens, dtype='int', use_cuda=xs.is_cuda, backend='pytorch')
+        x_lens = np.array([self.get_conv_out_size(x, 1) for x in x_lens])
+        x_lens = Variable(torch.from_numpy(x_lens), requires_grad=False)
+        if xs.is_cuda:
+            x_lens = x_lens.cuda()
 
         return xs, x_lens

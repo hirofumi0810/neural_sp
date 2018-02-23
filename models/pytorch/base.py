@@ -307,3 +307,53 @@ class ModelBase(nn.Module):
 
         return (checkpoint['epoch'] + 1, checkpoint['step'] + 1,
                 checkpoint['lr'], checkpoint['metric_dev_best'])
+
+    def np2var(self, array, volatile=False, dtype=None, cpu=False):
+        """Convert form np.ndarray to Variable.
+        Args:
+            array (np.ndarray): A tensor of any sizes
+            volatile (bool, optional): if True, the history will not be saved.
+                This should be used in inference model for memory efficiency.
+            type (string, optional): float or long or int
+            cpu (bool, optional):
+        Returns:
+            array (torch.autograd.Variable):
+        """
+        if isinstance(array, list):
+            array = np.array(array)
+
+        array = torch.from_numpy(array)
+        if dtype is not None:
+            if dtype == 'float':
+                array = array.float()
+            elif dtype == 'long':
+                array = array.long()
+            elif dtype == 'int':
+                array = array.int()
+
+        array = torch.autograd.Variable(array, requires_grad=False)
+
+        if volatile:
+            array.volatile = True
+        if not cpu and self.use_cuda:
+            array = array.cuda()
+
+        return array
+
+    def var2np(self, var):
+        """Convert form Variable to np.ndarray.
+        Args:
+            var (torch.autograd.Variable):
+        Returns:
+            np.ndarray
+        """
+        return var.data.cpu().numpy()
+
+    def tensor2np(self, x):
+        """Convert tensor to np.ndarray.
+        Args:
+            x (torch.FloatTensor):
+        Returns:
+            np.ndarray
+        """
+        return x.cpu().numpy()
