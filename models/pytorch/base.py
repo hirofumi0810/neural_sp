@@ -308,12 +308,10 @@ class ModelBase(nn.Module):
         return (checkpoint['epoch'] + 1, checkpoint['step'] + 1,
                 checkpoint['lr'], checkpoint['metric_dev_best'])
 
-    def np2var(self, array, volatile=False, dtype=None, cpu=False):
+    def np2var(self, array, dtype=None, cpu=False):
         """Convert form np.ndarray to Variable.
         Args:
             array (np.ndarray): A tensor of any sizes
-            volatile (bool, optional): if True, the history will not be saved.
-                This should be used in inference model for memory efficiency.
             type (string, optional): float or long or int
             cpu (bool, optional):
         Returns:
@@ -333,7 +331,7 @@ class ModelBase(nn.Module):
 
         array = torch.autograd.Variable(array, requires_grad=False)
 
-        if volatile:
+        if not self.training:
             array.volatile = True
         if not cpu and self.use_cuda:
             array = array.cuda()

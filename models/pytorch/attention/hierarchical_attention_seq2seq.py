@@ -133,8 +133,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         self.decoder_num_layers_sub = decoder_num_layers_sub
         self.embedding_dim_sub = embedding_dim_sub
         self.num_classes_sub = num_classes_sub + 1  # Add <EOS> class
-        self.sos_index_sub = num_classes_sub
-        self.eos_index_sub = num_classes_sub
+        self.sos_sub = num_classes_sub
+        self.eos_sub = num_classes_sub
         # NOTE: <SOS> and <EOS> have the same index
 
         # Setting for MTL
@@ -186,7 +186,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             self.W_dec_init_sub = LinearND(
                 self.encoder_num_units, decoder_num_units_sub)
 
-        self.is_bridge_sub = False
         if self.sub_loss_weight > 0:
             ##############################
             # Decoder (sub)
@@ -212,15 +211,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 sigmoid_smoothing=sigmoid_smoothing,
                 out_channels=attention_conv_num_channels,
                 kernel_size=attention_conv_width)
-
-            #################################################################
-            # Bridge layer between the encoder and decoder (sub)
-            #################################################################
-            if encoder_num_units != decoder_num_units_sub and attention_type == 'dot_product':
-                self.bridge_sub = LinearND(
-                    self.encoder_num_units, decoder_num_units_sub,
-                    dropout=dropout_encoder)
-                self.is_bridge_sub = True
 
             ##############################
             # Embedding (sub)
@@ -249,12 +239,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # CTC (sub)
         ##############################
         if ctc_loss_weight_sub > 0:
-            if self.is_bridge_sub:
-                self.fc_ctc_sub = LinearND(
-                    decoder_num_units_sub, num_classes_sub + 1)
-            else:
-                self.fc_ctc_sub = LinearND(
-                    self.encoder_num_units, num_classes_sub + 1)
+            self.fc_ctc_sub = LinearND(
+                self.encoder_num_units, num_classes_sub + 1)
 
             # Set CTC decoders
             self._decode_ctc_greedy_np = GreedyDecoder(blank_index=0)
@@ -302,32 +288,41 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             loss_main (torch.autograd.Variable(float) or float): A tensor of size `[1]`
             loss_sub (torch.autograd.Variable(float) or float): A tensor of size `[1]`
         """
+        if is_eval:
+            self.eval()
+        else:
+            self.train()
+
+            # Gaussian noise injection
+            if self.weight_noise_injection:
+                self.inject_weight_noise(mean=0, std=self.weight_noise_std)
+
         # NOTE: ys and ys_sub are padded with -1 here
         # ys_in and ys_sub_in areb padded with <EOS> in order to convert to
         # one-hot vector, and added <SOS> before the first token
         # ys_out and ys_sub_out are padded with -1, and added <EOS>
         # after the last token
         ys_in = self._create_var((ys.shape[0], ys.shape[1] + 1),
-                                 fill_value=self.eos_index, dtype='long')
+                                 fill_value=self.eos, dtype='long')
         ys_sub_in = self._create_var((ys_sub.shape[0], ys_sub.shape[1] + 1),
-                                     fill_value=self.eos_index_sub, dtype='long')
+                                     fill_value=self.eos_sub, dtype='long')
         ys_out = self._create_var((ys.shape[0], ys.shape[1] + 1),
                                   fill_value=-1, dtype='long')
         ys_sub_out = self._create_var((ys_sub.shape[0], ys_sub.shape[1] + 1),
                                       fill_value=-1, dtype='long')
         for b in range(len(xs)):
-            ys_in.data[b, 0] = self.sos_index
+            ys_in.data[b, 0] = self.sos
             ys_in.data[b, 1:y_lens[b] + 1] = torch.from_numpy(
                 ys[b, :y_lens[b]])
-            ys_sub_in.data[b, 0] = self.sos_index_sub
+            ys_sub_in.data[b, 0] = self.sos_sub
             ys_sub_in.data[b, 1:y_lens_sub[b] + 1] = torch.from_numpy(
                 ys_sub[b, :y_lens_sub[b]])
 
             ys_out.data[b, :y_lens[b]] = torch.from_numpy(ys[b, :y_lens[b]])
-            ys_out.data[b, y_lens[b]] = self.eos_index
+            ys_out.data[b, y_lens[b]] = self.eos
             ys_sub_out.data[b, :y_lens_sub[b]] = torch.from_numpy(
                 ys_sub[b, :y_lens_sub[b]])
-            ys_sub_out.data[b, y_lens_sub[b]] = self.eos_index_sub
+            ys_sub_out.data[b, y_lens_sub[b]] = self.eos_sub
 
         if self.use_cuda:
             ys_in = ys_in.cuda()
@@ -341,18 +336,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         y_lens = self.np2var(y_lens, dtype='int')
         y_lens_sub = self.np2var(y_lens_sub, dtype='int')
 
-        if is_eval:
-            self.eval()
-        else:
-            self.train()
-
-            # Gaussian noise injection
-            if self.weight_noise_injection:
-                self.inject_weight_noise(mean=0, std=self.weight_noise_std)
-
         # Encode acoustic features
         xs, x_lens, xs_sub, x_lens_sub, perm_idx = self._encode(
-            xs, x_lens, volatile=is_eval, is_multi_task=True)
+            xs, x_lens, is_multi_task=True)
 
         # Permutate indices
         if perm_idx is not None:
@@ -454,16 +440,16 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 xs, x_lens, beam_width, is_sub_task=True)
         else:
             # Wrap by Variable
-            xs = self.np2var(xs, volatile=True)
-            x_lens = self.np2var(x_lens, dtype='int', volatile=True)
+            xs = self.np2var(xs)
+            x_lens = self.np2var(x_lens, dtype='int')
 
             # Encode acoustic features
             if is_sub_task:
                 _, _, enc_out, x_lens, perm_idx = self._encode(
-                    xs, x_lens, volatile=True, is_multi_task=True)
+                    xs, x_lens, is_multi_task=True)
             else:
                 enc_out, x_lens, _, _, perm_idx = self._encode(
-                    xs, x_lens, volatile=True, is_multi_task=True)
+                    xs, x_lens, is_multi_task=True)
 
             # Decode by attention decoder
             if beam_width == 1:

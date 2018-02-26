@@ -158,7 +158,7 @@ class CNNEncoder(nn.Module):
 
         # Update x_lens
         x_lens = np.array([self.get_conv_out_size(x, 1) for x in x_lens])
-        x_lens = Variable(torch.from_numpy(x_lens), requires_grad=False)
+        x_lens = Variable(torch.from_numpy(x_lens).int(), requires_grad=False)
         if xs.is_cuda:
             x_lens = x_lens.cuda()
 

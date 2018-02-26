@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Test Hierarchical attention + character sequence attention (pytorch)."""
+"""Test nested attention models v2 (pytorch)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -17,7 +17,7 @@ torch.manual_seed(1623)
 torch.cuda.manual_seed_all(1623)
 
 sys.path.append('../../../../')
-from models.pytorch.attention.charseq_attention_seq2seq import CharseqAttentionSeq2seq
+from models.pytorch.attention.nested_attention_seq2seq_v2 import NestedAttentionSeq2seq
 from models.test.data import generate_data, idx2char, idx2word
 from utils.measure_time_func import measure_time
 from utils.evaluation.edit_distance import compute_cer, compute_wer
@@ -34,17 +34,17 @@ class TestCharseqAttention(unittest.TestCase):
         #            ctc_loss_weight_sub=0.2, curriculum_training=True)
 
         # Composition case (word attn + char attn)
-        # self.check(composition_case='fine_grained_gating',
-        #            ctc_loss_weight_sub=0.2)
-        # self.check(composition_case='scalar_gating',
-        #            ctc_loss_weight_sub=0.2)
-        # self.check(composition_case='concat',
-        #            ctc_loss_weight_sub=0.2)
-
-        # Composition case (word attn + char attn)
         self.check(composition_case='fine_grained_gating')
         self.check(composition_case='scalar_gating')
         self.check(composition_case='concat')
+
+        # Composition case (word attn + char attn + char CTC)
+        self.check(composition_case='fine_grained_gating',
+                   ctc_loss_weight_sub=0.1)
+        self.check(composition_case='scalar_gating',
+                   ctc_loss_weight_sub=0.1)
+        self.check(composition_case='concat',
+                   ctc_loss_weight_sub=0.1)
 
     @measure_time
     def check(self, composition_case, ctc_loss_weight_sub=0,
@@ -66,7 +66,7 @@ class TestCharseqAttention(unittest.TestCase):
             splice=splice)
 
         # Load model
-        model = CharseqAttentionSeq2seq(
+        model = NestedAttentionSeq2seq(
             input_size=xs.shape[-1] // splice // num_stack,  # 120
             encoder_type='lstm',
             encoder_bidirectional=True,
@@ -173,30 +173,36 @@ class TestCharseqAttention(unittest.TestCase):
                     xs, x_lens, beam_width=1, max_decode_len=60,
                     is_sub_task=True)
 
+                str_hyp = idx2word(best_hyps[0][:-1]).split('>')[0]
+                str_ref = idx2word(ys[0])
+                str_hyp_sub = idx2char(best_hyps_sub[0][:-1]).split('>')[0]
+                str_ref_sub = idx2char(ys_sub[0])
+
                 # Compute accuracy
-                str_pred = idx2word(best_hyps[0][:-1]).split('>')[0]
-                str_true = idx2word(ys[0])
-                ler, _, _, _ = compute_wer(ref=str_true.split('_'),
-                                           hyp=str_pred.split('_'),
-                                           normalize=True)
-                str_pred_sub = idx2char(best_hyps_sub[0][:-1]).split('>')[0]
-                str_true_sub = idx2char(ys_sub[0])
-                ler_sub = compute_cer(ref=str_true_sub.replace('_', ''),
-                                      hyp=str_pred_sub.replace('_', ''),
-                                      normalize=True)
+                try:
+                    wer, _, _, _ = compute_wer(ref=str_ref.split('_'),
+                                               hyp=str_hyp.split('_'),
+                                               normalize=True)
+                    cer, _, _, _ = compute_wer(
+                        ref=list(str_ref_sub.replace('_', '')),
+                        hyp=list(str_hyp_sub.replace('_', '')),
+                        normalize=True)
+                except:
+                    wer = 1
+                    cer = 1
 
                 duration_step = time.time() - start_time_step
-                print('Step %d: loss=%.3f(%.3f/%.3f) / ler (main/sub)=%.3f/%.3f / lr=%.5f (%.3f sec)' %
+                print('Step %d: loss=%.3f(%.3f/%.3f) / wer=%.3f / cer=%.3f / lr=%.5f (%.3f sec)' %
                       (step + 1, loss, loss_main, loss_sub,
-                       ler, ler_sub, learning_rate, duration_step))
+                       wer, cer, learning_rate, duration_step))
                 start_time_step = time.time()
 
                 # Visualize
-                print('Ref: %s' % str_true)
-                print('Hyp (word): %s' % str_pred)
-                print('Hyp (char): %s' % str_pred_sub)
+                print('Ref: %s' % str_ref)
+                print('Hyp (word): %s' % str_hyp)
+                print('Hyp (char): %s' % str_hyp_sub)
 
-                if ler_sub < 0.1:
+                if cer < 0.1:
                     print('Modle is Converged.')
                     break
 
@@ -205,7 +211,7 @@ class TestCharseqAttention(unittest.TestCase):
                     optimizer=model.optimizer,
                     learning_rate=learning_rate,
                     epoch=step,
-                    value=ler)
+                    value=wer)
 
 
 if __name__ == "__main__":

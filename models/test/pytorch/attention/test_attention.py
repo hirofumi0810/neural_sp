@@ -249,18 +249,17 @@ class TestAttention(unittest.TestCase):
                     beam_width=2,
                     max_decode_len=60)
 
+                str_ref = map_fn(ys[0])
+                str_hyp = map_fn(best_hyps[0][:-1]).split('>')[0]
+
                 # Compute accuracy
                 try:
                     if label_type == 'char':
-                        str_ref = map_fn(ys[0])
-                        str_hyp = map_fn(best_hyps[0][:-1]).split('>')[0]
                         ler, _, _, _ = compute_wer(
                             ref=list(str_ref.replace('_', '')),
                             hyp=list(str_hyp.replace('_', '')),
                             normalize=True)
                     elif label_type == 'word':
-                        str_ref = map_fn(ys[0])
-                        str_hyp = map_fn(best_hyps[0][:-1]).split('>')[0]
                         ler, _, _, _ = compute_wer(ref=str_ref.split('_'),
                                                    hyp=str_hyp.split('_'),
                                                    normalize=True)

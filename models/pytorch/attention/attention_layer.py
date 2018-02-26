@@ -82,7 +82,7 @@ class AttentionMechanism(nn.Module):
             self.V = LinearND(attention_dim, 1, bias=False)
 
         elif self.attention_type == 'dot_product':
-            self.W_keys = LinearND(decoder_num_units, attention_dim,
+            self.W_keys = LinearND(encoder_num_units, attention_dim,
                                    bias=False)
             self.W_query = LinearND(decoder_num_units, attention_dim,
                                     bias=False)

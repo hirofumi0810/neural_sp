@@ -208,6 +208,15 @@ class HierarchicalCTC(CTC):
             loss_main (torch.autograd.Variable(float) or float): A tensor of size `[1]`
             loss_sub (torch.autograd.Variable(float) or float): A tensor of size `[1]`
         """
+        if is_eval:
+            self.eval()
+        else:
+            self.train()
+
+            # Gaussian noise injection
+            if self.weight_noise_injection:
+                self.inject_weight_noise(mean=0, std=self.weight_noise_std)
+
         # Wrap by Variable
         xs = self.np2var(xs)
         ys = self.np2var(ys, dtype='int', cpu=True)
@@ -220,18 +229,9 @@ class HierarchicalCTC(CTC):
         ys = ys + 1
         ys_sub = ys_sub + 1
 
-        if is_eval:
-            self.eval()
-        else:
-            self.train()
-
-            # Gaussian noise injection
-            if self.weight_noise_injection:
-                self.inject_weight_noise(mean=0, std=self.weight_noise_std)
-
         # Encode acoustic features
         logits_main, x_lens, logits_sub, x_lens_sub, perm_idx = self._encode(
-            xs, x_lens, volatile=is_eval, is_multi_task=True)
+            xs, x_lens, is_multi_task=True)
 
         # Output smoothing
         if self.logits_temperature != 1:

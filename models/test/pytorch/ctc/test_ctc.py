@@ -123,8 +123,10 @@ class TestCTC(unittest.TestCase):
 
         if label_type == 'char':
             num_classes = 27
+            map_fn = idx2char
         elif label_type == 'word':
             num_classes = 11
+            map_fn = idx2word
 
         # Load model
         model = CTC(
@@ -205,18 +207,17 @@ class TestCTC(unittest.TestCase):
                 # Decode
                 best_hyps, _ = model.decode(xs, x_lens, beam_width=2)
 
+                str_ref = map_fn(ys[0, :y_lens[0]])
+                str_hyp = map_fn(best_hyps[0])
+
                 # Compute accuracy
                 try:
                     if label_type == 'char':
-                        str_ref = idx2char(ys[0, :y_lens[0]])
-                        str_hyp = idx2char(best_hyps[0])
                         ler, _, _, _ = compute_wer(
                             ref=list(str_ref.replace('_', '')),
                             hyp=list(str_hyp.replace('_', '')),
                             normalize=True)
                     elif label_type == 'word':
-                        str_ref = idx2word(ys[0, :y_lens[0]])
-                        str_hyp = idx2word(best_hyps[0])
                         ler, _, _, _ = compute_wer(ref=str_ref.split('_'),
                                                    hyp=str_hyp.split('_'),
                                                    normalize=True)

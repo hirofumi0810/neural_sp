@@ -7,6 +7,3 @@ __pycache__
 log
 warp-ctc
 pytorch-ctc
-
-# test model
-*.epoch-*

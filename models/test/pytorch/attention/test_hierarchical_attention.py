@@ -214,9 +214,15 @@ class TestHierarchicalAttention(unittest.TestCase):
 
                 # Decode
                 best_hyps, perm_idx = model.decode(
-                    xs, x_lens, beam_width=1, max_decode_len=30)
+                    xs, x_lens,
+                    beam_width=1,
+                    #  beam_width=2,
+                    max_decode_len=30)
                 best_hyps_sub, _ = model.decode(
-                    xs, x_lens, beam_width=1, max_decode_len=60,
+                    xs, x_lens,
+                    beam_width=1,
+                    # beam_width=2,
+                    max_decode_len=60,
                     is_sub_task=True)
 
                 str_hyp = idx2word(best_hyps[0][:-1]).split('>')[0]

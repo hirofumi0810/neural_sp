@@ -237,15 +237,6 @@ class CTC(ModelBase):
         Returns:
             loss (torch.autograd.Variable(float) or float): A tensor of size `[1]`
         """
-        # Wrap by Variable
-        xs = self.np2var(xs)
-        ys = self.np2var(ys, dtype='int', cpu=True)
-        x_lens = self.np2var(x_lens, dtype='int')
-        y_lens = self.np2var(y_lens, dtype='int', cpu=True)
-
-        # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
-        ys = ys + 1
-
         if is_eval:
             self.eval()
         else:
@@ -255,8 +246,17 @@ class CTC(ModelBase):
             if self.weight_noise_injection:
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
+        # Wrap by Variable
+        xs = self.np2var(xs)
+        ys = self.np2var(ys, dtype='int', cpu=True)
+        x_lens = self.np2var(x_lens, dtype='int')
+        y_lens = self.np2var(y_lens, dtype='int', cpu=True)
+
+        # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
+        ys = ys + 1
+
         # Encode acoustic features
-        logits, x_lens, perm_idx = self._encode(xs, x_lens, volatile=is_eval)
+        logits, x_lens, perm_idx = self._encode(xs, x_lens)
 
         # Output smoothing
         if self.logits_temperature != 1:
@@ -295,14 +295,12 @@ class CTC(ModelBase):
 
         return loss
 
-    def _encode(self, xs, x_lens, volatile, is_multi_task=False):
+    def _encode(self, xs, x_lens, is_multi_task=False):
         """Encode acoustic features.
         Args:
             xs (torch.autograd.Variable, float): A tensor of size
                 `[B, T, input_size]`
             x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
-            volatile (bool): if True, the history will not be saved.
-                This should be used in inference model for memory efficiency.
             is_multi_task (bool, optional):
         Returns:
             logits (torch.autograd.Variable, float): A tensor of size
@@ -315,13 +313,14 @@ class CTC(ModelBase):
         """
         if is_multi_task:
             xs, x_lens, xs_sub, x_lens_sub, perm_idx = self.encoder(
-                xs, x_lens, volatile)
+                xs, x_lens, volatile=not self.training)
         else:
             if self.encoder_type == 'cnn':
                 xs, x_lens = self.encoder(xs, x_lens)
                 perm_idx = None
             else:
-                xs, x_lens, perm_idx = self.encoder(xs, x_lens, volatile)
+                xs, x_lens, perm_idx = self.encoder(
+                    xs, x_lens, volatile=not self.training)
 
         if len(self.fc_list) > 0:
             xs = self.fc_layers(xs)
@@ -346,23 +345,23 @@ class CTC(ModelBase):
         Returns:
             probs (np.ndarray): A tensor of size `[B, T, num_classes]`
         """
-        # Wrap by Variable
-        xs = self.np2var(xs, volatile=True)
-        x_lens = self.np2var(x_lens, dtype='int', volatile=True)
-
         # Change to evaluation mode
         self.eval()
+
+        # Wrap by Variable
+        xs = self.np2var(xs)
+        x_lens = self.np2var(x_lens, dtype='int')
 
         # Encode acoustic features
         if hasattr(self, 'main_loss_weight'):
             if is_sub_task:
                 _, _, logits, _, perm_idx = self._encode(
-                    xs, x_lens, volatile=True, is_multi_task=True)
+                    xs, x_lens, is_multi_task=True)
             else:
                 logits, _, _, _, perm_idx = self._encode(
-                    xs, x_lens, volatile=True, is_multi_task=True)
+                    xs, x_lens, is_multi_task=True)
         else:
-            logits, _, perm_idx = self._encode(xs, x_lens, volatile=True)
+            logits, _, perm_idx = self._encode(xs, x_lens)
 
         probs = F.softmax(logits / temperature, dim=-1)
 
@@ -389,23 +388,23 @@ class CTC(ModelBase):
             best_hyps (np.ndarray): A tensor of size `[B]`
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
-        # Wrap by Variable
-        xs = self.np2var(xs, volatile=True)
-        x_lens = self.np2var(x_lens, dtype='int', volatile=True)
-
         # Change to evaluation mode
         self.eval()
+
+        # Wrap by Variable
+        xs = self.np2var(xs)
+        x_lens = self.np2var(x_lens, dtype='int')
 
         # Encode acoustic features
         if hasattr(self, 'main_loss_weight'):
             if is_sub_task:
                 _, _, logits, x_lens, perm_idx = self._encode(
-                    xs, x_lens, volatile=True, is_multi_task=True)
+                    xs, x_lens, is_multi_task=True)
             else:
                 logits, x_lens, _, _, perm_idx = self._encode(
-                    xs, x_lens, volatile=True, is_multi_task=True)
+                    xs, x_lens, is_multi_task=True)
         else:
-            logits, x_lens, perm_idx = self._encode(xs, x_lens, volatile=True)
+            logits, x_lens, perm_idx = self._encode(xs, x_lens)
 
         if beam_width == 1:
             best_hyps = self._decode_greedy_np(

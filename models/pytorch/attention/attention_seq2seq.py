@@ -232,8 +232,8 @@ class AttentionSeq2seq(ModelBase):
         self.decoder_num_layers = decoder_num_layers
         self.embedding_dim = embedding_dim
         self.num_classes = num_classes + 1  # Add <EOS> class
-        self.sos_index = num_classes
-        self.eos_index = num_classes
+        self.sos = num_classes
+        self.eos = num_classes
         # NOTE: <SOS> and <EOS> have the same index
 
         # Setting for the attention
@@ -355,11 +355,6 @@ class AttentionSeq2seq(ModelBase):
                 self.encoder.output_size, decoder_num_units,
                 dropout=dropout_encoder)
             self.is_bridge = True
-        elif encoder_num_units != decoder_num_units and attention_type == 'dot_product':
-            self.bridge = LinearND(
-                self.encoder_num_units, decoder_num_units,
-                dropout=dropout_encoder)
-            self.is_bridge = True
 
         ##############################
         # Embedding
@@ -439,21 +434,32 @@ class AttentionSeq2seq(ModelBase):
         Returns:
             loss (torch.autograd.Variable(float) or float): A tensor of size `[1]`
         """
+        if is_eval:
+            self.eval()
+        else:
+            self.train()
+
+            # Gaussian noise injection
+            if self.weight_noise_injection:
+                self.inject_weight_noise(mean=0, std=self.weight_noise_std)
+
         # NOTE: ys is padded with -1 here
         # ys_in is padded with <EOS> in order to convert to one-hot vector,
         # and added <SOS> before the first token
         # ys_out is padded with -1, and added <EOS> after the last token
         ys_in = self._create_var((ys.shape[0], ys.shape[1] + 1),
-                                 fill_value=self.eos_index, dtype='long')
+                                 fill_value=self.eos, dtype='long',
+                                 volatile=not self.training)
         ys_out = self._create_var((ys.shape[0], ys.shape[1] + 1),
-                                  fill_value=-1, dtype='long')
+                                  fill_value=-1, dtype='long',
+                                  volatile=not self.training)
         for b in range(len(xs)):
-            ys_in.data[b, 0] = self.sos_index
+            ys_in.data[b, 0] = self.sos
             ys_in.data[b, 1:y_lens[b] + 1] = torch.from_numpy(
                 ys[b, :y_lens[b]])
 
             ys_out.data[b, :y_lens[b]] = torch.from_numpy(ys[b, :y_lens[b]])
-            ys_out.data[b, y_lens[b]] = self.eos_index
+            ys_out.data[b, y_lens[b]] = self.eos
 
         if self.use_cuda:
             ys_in = ys_in.cuda()
@@ -464,17 +470,8 @@ class AttentionSeq2seq(ModelBase):
         x_lens = self.np2var(x_lens, dtype='int')
         y_lens = self.np2var(y_lens, dtype='int')
 
-        if is_eval:
-            self.eval()
-        else:
-            self.train()
-
-            # Gaussian noise injection
-            if self.weight_noise_injection:
-                self.inject_weight_noise(mean=0, std=self.weight_noise_std)
-
         # Encode acoustic features
-        xs, x_lens, perm_idx = self._encode(xs, x_lens, volatile=is_eval)
+        xs, x_lens, perm_idx = self._encode(xs, x_lens)
 
         # Permutate indices
         if perm_idx is not None:
@@ -633,46 +630,42 @@ class AttentionSeq2seq(ModelBase):
 
         return loss
 
-    def _encode(self, xs, x_lens, volatile, is_multi_task=False):
+    def _encode(self, xs, x_lens, is_multi_task=False):
         """Encode acoustic features.
         Args:
             xs (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, input_size]`
             x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
-            volatile (bool): if True, the history will not be saved.
-                This should be used in inference model for memory efficiency.
             is_multi_task (bool, optional):
         Returns:
             xs (torch.autograd.Variable, float): A tensor of size
-                `[B, T_in, decoder_num_units]`
+                `[B, T_in, encoder_num_units]`
             x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
             OPTION:
                 xs_sub (torch.autograd.Variable, float): A tensor of size
-                    `[B, T_in, decoder_num_units]`
+                    `[B, T_in, encoder_num_units]`
                 x_lens_sub (torch.autograd.Variable, int): A tensor of size `[B]`
             perm_idx (torch.autograd.Variable, long): A tensor of size `[B]`
         """
         if is_multi_task:
             xs, x_lens, xs_sub, x_lens_sub, perm_idx = self.encoder(
-                xs, x_lens, volatile)
+                xs, x_lens, volatile=not self.training)
         else:
             if self.encoder_type == 'cnn':
                 xs, x_lens = self.encoder(xs, x_lens)
                 perm_idx = None
             else:
-                xs, x_lens, perm_idx = self.encoder(xs, x_lens, volatile)
+                xs, x_lens, perm_idx = self.encoder(
+                    xs, x_lens, volatile=not self.training)
         # NOTE: xs: `[B, T_in, encoder_num_units * encoder_num_directions]`
         # xs_sub: `[B, T_in, encoder_num_units * encoder_num_directions]`
 
         # Bridge between the encoder and decoder in the main task
         if self.is_bridge:
             xs = self.bridge(xs)
+            # NOTE: this is used for CNN encoder
 
         if is_multi_task:
-            # Bridge between the encoder and decoder in the sub task
-            if self.sub_loss_weight > 0 and self.is_bridge_sub:
-                xs_sub = self.bridge_sub(xs_sub)
-
             return xs, x_lens, xs_sub, x_lens_sub, perm_idx
         else:
             return xs, x_lens, perm_idx
@@ -696,13 +689,13 @@ class AttentionSeq2seq(ModelBase):
             att_weights (torch.autograd.Variable, float): A tensor of size
                 `[B, T_out, T_in]`
         """
-        batch_size, max_time = enc_out.size()[:2]
+        batch_size = enc_out.size(0)
 
         # Initialize decoder state, decoder output, attention_weights
         dec_state = self._init_decoder_state(enc_out, is_sub_task=is_sub_task)
         dec_out = self._create_var((batch_size, 1, self.decoder_num_units))
         context_vec = self._create_var((batch_size, 1, self.encoder_num_units))
-        att_weights_step = self._create_var((batch_size, max_time))
+        att_weights_step = self._create_var((batch_size, enc_out.size(1)))
 
         logits = []
         att_weights = []
@@ -772,19 +765,17 @@ class AttentionSeq2seq(ModelBase):
             var = var.cuda()
         return var
 
-    # def _init_decoder_state(self, enc_out, volatile=False, is_sub_task=False):
+    # def _init_decoder_state(self, enc_out, is_sub_task=False):
     #     """Initialize decoder state.
     #     Args:
     #         enc_out (torch.autograd.Variable, float): A tensor of size
     #             `[B, T_in, encoder_num_units]`
-    #         volatile (bool, optional): if True, the history will not be saved.
-    #             This should be used in inference model for memory efficiency.
     #         is_sub_task (bool, optional):
     #     Returns:
     #         dec_state (list or tuple of list):
     #     """
-    #     zero_state = self._create_var(
-    #         (enc_out.size(0), self.decoder_num_units), volatile=volatile)
+    #     zero_state = self._create_var((enc_out.size(0), self.decoder_num_units),
+    #                                   volatile=not self.training)
     #
     #     if self.decoder_type == 'lstm':
     #         if is_sub_task:
@@ -822,13 +813,11 @@ class AttentionSeq2seq(ModelBase):
     #
     #     return dec_state
 
-    def _init_decoder_state(self, enc_out, volatile=False, is_sub_task=False):
+    def _init_decoder_state(self, enc_out, is_sub_task=False):
         """Initialize decoder state (Nstep ver.).
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            volatile (bool, optional): if True, the history will not be saved.
-                This should be used in inference model for memory efficiency.
             is_sub_task (bool, optional):
         Returns:
             dec_state (torch.autograd.Variable(float) or tuple): A tensor of size
@@ -838,8 +827,8 @@ class AttentionSeq2seq(ModelBase):
 
         if self.init_dec_state == 'zero' or self.encoder_type != self.decoder_type:
             # Initialize with zero state
-            h_0 = self._create_var(
-                (1, batch_size, self.decoder_num_units), volatile=volatile)
+            h_0 = self._create_var((1, batch_size, self.decoder_num_units),
+                                   volatile=not self.training)
         else:
             if self.init_dec_state == 'mean':
                 # Initialize with mean of all encoder outputs
@@ -859,8 +848,8 @@ class AttentionSeq2seq(ModelBase):
 
         if self.decoder_type == 'lstm':
             # Initialize memory cell with zero state
-            c_0 = self._create_var(
-                (1, batch_size, self.decoder_num_units), volatile=volatile)
+            c_0 = self._create_var((1, batch_size, self.decoder_num_units),
+                                   volatile=not self.training)
             dec_state = (h_0, c_0)
         else:
             dec_state = h_0
@@ -882,23 +871,23 @@ class AttentionSeq2seq(ModelBase):
         if is_sub_task and self.sub_loss_weight == 0:
             raise ValueError
 
-        # Wrap by Variable
-        xs = self.np2var(xs, volatile=True)
-        x_lens = self.np2var(x_lens, dtype='int', volatile=True)
-
         # Change to evaluation mode
         self.eval()
+
+        # Wrap by Variable
+        xs = self.np2var(xs)
+        x_lens = self.np2var(x_lens, dtype='int')
 
         # Encode acoustic features
         if hasattr(self, 'main_loss_weight'):
             if is_sub_task:
                 _, _, enc_out, _, perm_idx = self._encode(
-                    xs, x_lens, volatile=True, is_multi_task=True)
+                    xs, x_lens, is_multi_task=True)
             else:
                 enc_out, _, _, _, perm_idx = self._encode(
-                    xs, x_lens, volatile=True, is_multi_task=True)
+                    xs, x_lens, is_multi_task=True)
         else:
-            enc_out, _, perm_idx = self._encode(xs, x_lens, volatile=True)
+            enc_out, _, perm_idx = self._encode(xs, x_lens)
 
         # Permutate indices
         if perm_idx is not None:
@@ -930,15 +919,15 @@ class AttentionSeq2seq(ModelBase):
             best_hyps (np.ndarray): A tensor of size `[B]`
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
-        # Wrap by Variable
-        xs = self.np2var(xs, volatile=True)
-        x_lens = self.np2var(x_lens, dtype='int', volatile=True)
-
         # Change to evaluation mode
         self.eval()
 
+        # Wrap by Variable
+        xs = self.np2var(xs)
+        x_lens = self.np2var(x_lens, dtype='int')
+
         # Encode acoustic features
-        enc_out, x_lens, perm_idx = self._encode(xs, x_lens, volatile=True)
+        enc_out, x_lens, perm_idx = self._encode(xs, x_lens)
 
         if beam_width == 1:
             best_hyps, _ = self._decode_infer_greedy(
@@ -952,7 +941,7 @@ class AttentionSeq2seq(ModelBase):
         if perm_idx is None:
             perm_idx = np.arange(0, len(xs), 1)
         else:
-            perm_idx = self.p(perm_idx)
+            perm_idx = self.var2np(perm_idx)
 
         return best_hyps, perm_idx
 
@@ -970,21 +959,20 @@ class AttentionSeq2seq(ModelBase):
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
             att_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
         """
-        batch_size, max_time = enc_out.size()[:2]
+        batch_size = enc_out.size(0)
 
         # Initialize decoder state
-        dec_state = self._init_decoder_state(
-            enc_out, volatile=True, is_sub_task=is_sub_task)
+        dec_state = self._init_decoder_state(enc_out, is_sub_task=is_sub_task)
         dec_out = self._create_var(
             (batch_size, 1, self.decoder_num_units), volatile=True)
         context_vec = self._create_var(
             (batch_size, 1, self.encoder_num_units), volatile=True)
-        att_weights_step = self._create_var(
-            (batch_size, max_time), volatile=True)
+        att_weights_step = self._create_var((
+            batch_size, enc_out.size(1)), volatile=True)
 
         # Start from <SOS>
-        sos = self.sos_index_sub if is_sub_task else self.sos_index
-        eos = self.eos_index_sub if is_sub_task else self.eos_index
+        sos = self.sos_sub if is_sub_task else self.sos
+        eos = self.eos_sub if is_sub_task else self.eos
         y = self._create_var((batch_size, 1), fill_value=sos, dtype='long')
 
         best_hyps = []
@@ -1007,17 +995,17 @@ class AttentionSeq2seq(ModelBase):
                     enc_out, x_lens, dec_out, att_weights_step)
 
             if is_sub_task:
-                logits = self.fc_sub(F.tanh(
+                logits_step = self.fc_sub(F.tanh(
                     self.W_d_sub(dec_out) + self.W_c_sub(context_vec)))
             else:
-                logits = self.fc(F.tanh(
+                logits_step = self.fc(F.tanh(
                     self.W_d(dec_out) + self.W_c(context_vec)))
-                # logits = self.fc(F.tanh(
+                # logits_step = self.fc(F.tanh(
                 #     self.W_d(dec_out) + self.W_c(context_vec) + self.W_y(y)))
 
             # Pick up 1-best
-            y = torch.max(logits.squeeze(1), dim=1)[1].unsqueeze(1)
-            # logits: `[B, 1, num_classes]` -> `[B, num_classes]`
+            y = torch.max(logits_step.squeeze(1), dim=1)[1].unsqueeze(1)
+            # logits_step: `[B, 1, num_classes]` -> `[B, num_classes]`
             best_hyps.append(y)
             att_weights.append(att_weights_step)
 
@@ -1052,8 +1040,8 @@ class AttentionSeq2seq(ModelBase):
             best_hyps (np.ndarray): A tensor of size `[B]`
         """
         # Start from <SOS>
-        sos = self.sos_index_sub if is_sub_task else self.sos_index
-        eos = self.eos_index_sub if is_sub_task else self.eos_index
+        sos = self.sos_sub if is_sub_task else self.sos
+        eos = self.eos_sub if is_sub_task else self.eos
 
         best_hyps = []
         for b in range(enc_out.size(0)):
@@ -1061,7 +1049,7 @@ class AttentionSeq2seq(ModelBase):
 
             # Initialize decoder state, decoder output, attention_weights
             dec_state = self._init_decoder_state(
-                enc_out[b:b + 1, :, :], volatile=True, is_sub_task=is_sub_task)
+                enc_out[b:b + 1, :, :], is_sub_task=is_sub_task)
             dec_out = self._create_var(
                 (1, 1, self.decoder_num_units), volatile=True)
             att_weights_step = self._create_var((1, frame_num), volatile=True)
@@ -1106,17 +1094,17 @@ class AttentionSeq2seq(ModelBase):
                             dec_out, beam[i_beam]['att_weights_step'])
 
                     if is_sub_task:
-                        logits = self.fc_sub(F.tanh(
+                        logits_step = self.fc_sub(F.tanh(
                             self.W_d_sub(dec_out) + self.W_c_sub(context_vec)))
                     else:
-                        logits = self.fc(F.tanh(
+                        logits_step = self.fc(F.tanh(
                             self.W_d(dec_out) + self.W_c(context_vec)))
-                        # logits = self.fc(F.tanh(
+                        # logits_step = self.fc(F.tanh(
                         # self.W_d(dec_out) + self.W_c(context_vec) +
                         # self.W_y(y)))
 
                     # Path through the softmax layer & convert to log-scale
-                    log_probs = F.log_softmax(logits.squeeze(1), dim=-1)
+                    log_probs = F.log_softmax(logits_step.squeeze(1), dim=-1)
                     # NOTE: `[1 (B), 1, num_classes]` -> `[1 (B), num_classes]`
 
                     # Pick up the top-k scores
@@ -1176,20 +1164,19 @@ class AttentionSeq2seq(ModelBase):
         # assert self.ctc_loss_weight > 0
         # TODO: add is_sub_task
 
-        # Wrap by Variable
-        xs = self.np2var(xs, volatile=True)
-        x_lens = self.np2var(x_lens, dtype='int', volatile=True)
-
         # Change to evaluation mode
         self.eval()
+
+        # Wrap by Variable
+        xs = self.np2var(xs)
+        x_lens = self.np2var(x_lens, dtype='int')
 
         # Encode acoustic features
         if is_sub_task:
             _, _, enc_out, x_lens, perm_idx = self._encode(
-                xs, x_lens, volatile=True, is_multi_task=True)
+                xs, x_lens, is_multi_task=True)
         else:
-            enc_out, x_lens, perm_idx = self._encode(
-                xs, x_lens, volatile=True)
+            enc_out, x_lens, perm_idx = self._encode(xs, x_lens)
 
         # Path through the softmax layer
         batch_size, max_time = enc_out.size()[:2]

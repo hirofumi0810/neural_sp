@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Hierarchical attention + character sequence attention (pytorch)."""
+"""Nested attention-based sequence-to-sequence model (pytorch)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -26,7 +26,7 @@ from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
 LOG_1 = 0
 
 
-class CharseqAttentionSeq2seq(AttentionSeq2seq):
+class NestedAttentionSeq2seq(AttentionSeq2seq):
 
     def __init__(self,
                  input_size,
@@ -85,7 +85,7 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
                  curriculum_training=False,  # ***
                  composition_case='fine_grained_gating'):  # ***
 
-        super(CharseqAttentionSeq2seq, self).__init__(
+        super(NestedAttentionSeq2seq, self).__init__(
             input_size=input_size,
             encoder_type=encoder_type,
             encoder_bidirectional=encoder_bidirectional,
@@ -129,7 +129,7 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
             encoder_dense_residual=encoder_dense_residual,
             decoder_residual=decoder_residual,
             decoder_dense_residual=decoder_dense_residual)
-        self.model_type = 'charseq_attention'
+        self.model_type = 'nested_attention'
 
         # Setting for the encoder
         self.encoder_num_layers_sub = encoder_num_layers_sub
@@ -139,26 +139,20 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
         self.decoder_num_layers_sub = decoder_num_layers_sub
         self.embedding_dim_sub = embedding_dim_sub
         self.num_classes_sub = num_classes_sub + 2  # Add <EOS> class
-        self.sos_index_sub = num_classes_sub
-        self.eos_index_sub = num_classes_sub
+        self.sos_sub = num_classes_sub
+        self.eos_sub = num_classes_sub
 
         # Setting for MTL
         self.main_loss_weight = main_loss_weight
         self.main_loss_weight_tmp = main_loss_weight
         self.sub_loss_weight = 1 - main_loss_weight - ctc_loss_weight_sub
         self.sub_loss_weight_tmp = 1 - main_loss_weight - ctc_loss_weight_sub
+        assert self.sub_loss_weight > 0
         self.ctc_loss_weight_sub = ctc_loss_weight_sub
         self.ctc_loss_weight_sub_tmp = ctc_loss_weight_sub
         if curriculum_training and scheduled_sampling_ramp_max_step == 0:
             raise ValueError('Set scheduled_sampling_ramp_max_step.')
         self.curriculum_training = curriculum_training
-
-        if self.sub_loss_weight > 0 and self.sub_loss_weight >= self.ctc_loss_weight:
-            self.sub_decoder = 'attention'
-        elif self.ctc_loss_weight_sub > 0 and self.ctc_loss_weight > self.sub_loss_weight:
-            self.sub_decoder = 'ctc'
-        else:
-            raise ValueError
 
         assert composition_case in [
             'fine_grained_gating', 'scalar_gating', 'concat']
@@ -202,45 +196,6 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
             self.W_dec_init_sub = LinearND(
                 self.encoder_num_units, decoder_num_units_sub)
 
-        ###################################
-        # Encoder (character sequence)
-        ###################################
-        self.encoder_charseq = load(encoder_type='lstm')(
-            input_size=embedding_dim_sub,
-            rnn_type='lstm',
-            bidirectional=True,
-            num_units=decoder_num_units,
-            num_proj=0,
-            num_layers=1,
-            dropout_input=0,
-            dropout_hidden=dropout_encoder,
-            batch_first=True,
-            merge_bidirectional=False,
-            pack_sequence=True)
-        # TODO: try CNN
-        self.char2word = LinearND(decoder_num_units * 2, embedding_dim)
-
-        ########################################
-        # Attention layer (character sequence)
-        ########################################
-        self.attend_charseq = AttentionMechanism(
-            encoder_num_units=embedding_dim,
-            decoder_num_units=decoder_num_units,
-            # attention_type='location',
-            attention_type='content',
-            # attention_type='dot_product',
-            attention_dim=attention_dim,
-            sharpening_factor=sharpening_factor,
-            sigmoid_smoothing=sigmoid_smoothing,
-            out_channels=attention_conv_num_channels,
-            kernel_size=attention_conv_width)
-        # TODO: fix bugs in location
-
-        if composition_case == 'fine_grained_gating':
-            self.gate_fn = LinearND(embedding_dim, embedding_dim)
-        elif composition_case == 'scalar_gating':
-            self.gate_fn = LinearND(embedding_dim, 1)
-
         ####################
         # Decoder
         ####################
@@ -270,61 +225,78 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
                                        dropout=dropout_embedding,
                                        ignore_index=-1)
 
-        self.is_bridge_sub = False
-        if self.sub_loss_weight > 0:
-            ##############################
-            # Decoder (sub)
-            ##############################
-            self.decoder_sub = RNNDecoder(
-                input_size=self.encoder_num_units + embedding_dim_sub,
-                rnn_type=decoder_type,
-                num_units=decoder_num_units_sub,
-                num_layers=decoder_num_layers_sub,
-                dropout=dropout_decoder,
-                residual=decoder_residual,
-                dense_residual=decoder_dense_residual)
+        ##############################
+        # Decoder (sub)
+        ##############################
+        self.decoder_sub = RNNDecoder(
+            input_size=self.encoder_num_units + embedding_dim_sub,
+            rnn_type=decoder_type,
+            num_units=decoder_num_units_sub,
+            num_layers=decoder_num_layers_sub,
+            dropout=dropout_decoder,
+            residual=decoder_residual,
+            dense_residual=decoder_dense_residual)
 
-            ###################################
-            # Attention layer (sub)
-            ###################################
-            self.attend_sub = AttentionMechanism(
-                encoder_num_units=self.encoder_num_units,
-                decoder_num_units=decoder_num_units_sub,
-                attention_type=attention_type,
-                attention_dim=attention_dim,
-                sharpening_factor=sharpening_factor,
-                sigmoid_smoothing=sigmoid_smoothing,
-                out_channels=attention_conv_num_channels,
-                kernel_size=attention_conv_width)
+        ###################################
+        # Attention layer (sub)
+        ###################################
+        self.attend_sub = AttentionMechanism(
+            encoder_num_units=self.encoder_num_units,
+            decoder_num_units=decoder_num_units_sub,
+            attention_type=attention_type,
+            attention_dim=attention_dim,
+            sharpening_factor=sharpening_factor,
+            sigmoid_smoothing=sigmoid_smoothing,
+            out_channels=attention_conv_num_channels,
+            kernel_size=attention_conv_width)
 
-            #################################################################
-            # Bridge layer between the encoder and decoder (sub)
-            #################################################################
-            if encoder_num_units != decoder_num_units_sub and attention_type == 'dot_product':
-                self.bridge_sub = LinearND(
-                    self.encoder_num_units, decoder_num_units_sub,
-                    dropout=dropout_encoder)
-                self.is_bridge_sub = True
+        ##############################
+        # Output layer (sub)
+        ##############################
+        self.W_d_sub = LinearND(decoder_num_units_sub, decoder_num_units_sub,
+                                dropout=dropout_decoder)
+        self.W_c_sub = LinearND(self.encoder_num_units, decoder_num_units_sub,
+                                dropout=dropout_decoder)
+        self.fc_sub = LinearND(decoder_num_units_sub, self.num_classes_sub)
 
-            ##############################
-            # Output layer (sub)
-            ##############################
-            self.W_d_sub = LinearND(decoder_num_units_sub, decoder_num_units_sub,
-                                    dropout=dropout_decoder)
-            self.W_c_sub = LinearND(self.encoder_num_units, decoder_num_units_sub,
-                                    dropout=dropout_decoder)
-            self.fc_sub = LinearND(decoder_num_units_sub, self.num_classes_sub)
+        ########################################
+        # Attention layer (to the character model)
+        ########################################
+        self.attend_charrepr = AttentionMechanism(
+            encoder_num_units=decoder_num_units_sub,
+            decoder_num_units=decoder_num_units,
+            attention_type='location',
+            # attention_type='content',
+            # attention_type='dot_product',
+            attention_dim=attention_dim,
+            sharpening_factor=sharpening_factor,
+            sigmoid_smoothing=sigmoid_smoothing,
+            out_channels=attention_conv_num_channels,
+            kernel_size=attention_conv_width)
+        # TODO: fix bugs in location
+
+        self.char2word = LinearND(embedding_dim_sub, embedding_dim)
+
+        if composition_case == 'fine_grained_gating':
+            self.gate_fn_emb = LinearND(embedding_dim, embedding_dim)
+            self.gate_fn_output = LinearND(
+                decoder_num_units, decoder_num_units)
+            assert decoder_num_units == decoder_num_units_sub
+        elif composition_case == 'scalar_gating':
+            self.gate_fn_emb = LinearND(embedding_dim, 1)
+            self.gate_fn_output = LinearND(
+                decoder_num_units, 1)
+            assert decoder_num_units == decoder_num_units_sub
+        elif composition_case == 'concat':
+            self.fc = LinearND(
+                decoder_num_units + decoder_num_units_sub, self.num_classes)
 
         ##############################
         # CTC (sub)
         ##############################
         if ctc_loss_weight_sub > 0:
-            if self.is_bridge_sub:
-                self.fc_ctc_sub = LinearND(
-                    decoder_num_units_sub, num_classes_sub + 1)
-            else:
-                self.fc_ctc_sub = LinearND(
-                    self.encoder_num_units, num_classes_sub + 1)
+            self.fc_ctc_sub = LinearND(
+                self.encoder_num_units, num_classes_sub + 1)
 
             # Set CTC decoders
             self._decode_ctc_greedy_np = GreedyDecoder(blank_index=0)
@@ -372,32 +344,41 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
             loss_main (torch.autograd.Variable(float) or float): A tensor of size `[1]`
             loss_sub (torch.autograd.Variable(float) or float): A tensor of size `[1]`
         """
+        if is_eval:
+            self.eval()
+        else:
+            self.train()
+
+            # Gaussian noise injection
+            if self.weight_noise_injection:
+                self.inject_weight_noise(mean=0, std=self.weight_noise_std)
+
         # NOTE: ys and ys_sub are padded with -1 here
         # ys_in and ys_sub_in areb padded with <EOS> in order to convert to
         # one-hot vector, and added <SOS> before the first token
         # ys_out and ys_sub_out are padded with -1, and added <EOS>
         # after the last token
         ys_in = self._create_var((ys.shape[0], ys.shape[1] + 1),
-                                 fill_value=self.eos_index, dtype='long')
+                                 fill_value=self.eos, dtype='long')
         ys_sub_in = self._create_var((ys_sub.shape[0], ys_sub.shape[1] + 1),
-                                     fill_value=self.eos_index_sub, dtype='long')
+                                     fill_value=self.eos_sub, dtype='long')
         ys_out = self._create_var((ys.shape[0], ys.shape[1] + 1),
                                   fill_value=-1, dtype='long')
         ys_sub_out = self._create_var((ys_sub.shape[0], ys_sub.shape[1] + 1),
                                       fill_value=-1, dtype='long')
         for b in range(len(xs)):
-            ys_in.data[b, 0] = self.sos_index
+            ys_in.data[b, 0] = self.sos
             ys_in.data[b, 1:y_lens[b] + 1] = torch.from_numpy(
                 ys[b, :y_lens[b]])
-            ys_sub_in.data[b, 0] = self.sos_index_sub
+            ys_sub_in.data[b, 0] = self.sos_sub
             ys_sub_in.data[b, 1:y_lens_sub[b] + 1] = torch.from_numpy(
                 ys_sub[b, :y_lens_sub[b]])
 
             ys_out.data[b, :y_lens[b]] = torch.from_numpy(ys[b, :y_lens[b]])
-            ys_out.data[b, y_lens[b]] = self.eos_index
+            ys_out.data[b, y_lens[b]] = self.eos
             ys_sub_out.data[b, :y_lens_sub[b]] = torch.from_numpy(
                 ys_sub[b, :y_lens_sub[b]])
-            ys_sub_out.data[b, y_lens_sub[b]] = self.eos_index_sub
+            ys_sub_out.data[b, y_lens_sub[b]] = self.eos_sub
 
         if self.use_cuda:
             ys_in = ys_in.cuda()
@@ -411,18 +392,9 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
         y_lens = self.np2var(y_lens, dtype='int')
         y_lens_sub = self.np2var(y_lens_sub, dtype='int')
 
-        if is_eval:
-            self.eval()
-        else:
-            self.train()
-
-            # Gaussian noise injection
-            if self.weight_noise_injection:
-                self.inject_weight_noise(mean=0, std=self.weight_noise_std)
-
         # Encode acoustic features
         xs, x_lens, xs_sub, x_lens_sub, perm_idx = self._encode(
-            xs, x_lens, volatile=is_eval, is_multi_task=True)
+            xs, x_lens, is_multi_task=True)
 
         # Permutate indices
         if perm_idx is not None:
@@ -435,28 +407,17 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
             y_lens_sub = y_lens_sub[perm_idx]
 
         ##################################################
-        # Main task
+        # Main + Sub task (attention)
         ##################################################
         # Compute XE loss
-        loss_main = self.compute_xe_loss(
+        loss_main, loss_sub = self.compute_xe_loss(
             xs, ys_in, ys_out, x_lens, y_lens,
-            ys_sub_in=ys_sub_in, y_lens_sub=y_lens_sub,
+            xs_sub, ys_sub_in, ys_sub_out, x_lens_sub, y_lens_sub,
             size_average=True)
 
         loss_main = loss_main * self.main_loss_weight_tmp
-        loss = loss_main.clone()
-
-        ##################################################
-        # Sub task (attention, optional)
-        ##################################################
-        if self.sub_loss_weight > 0:
-            # Compute XE loss
-            loss_sub = self.compute_xe_loss(
-                xs_sub, ys_sub_in, ys_sub_out, x_lens_sub, y_lens_sub,
-                is_sub_task=True, size_average=True)
-
-            loss_sub = loss_sub * self.sub_loss_weight_tmp
-            loss += loss_sub
+        loss_sub = loss_sub * self.sub_loss_weight_tmp
+        loss = loss_main + loss_sub
 
         ##################################################
         # Sub task (CTC, optional)
@@ -471,10 +432,7 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
         if is_eval:
             loss = loss.data[0]
             loss_main = loss_main.data[0]
-            if self.sub_loss_weight > 0:
-                loss_sub = loss_sub.data[0]
-            if self.ctc_loss_weight_sub > 0:
-                ctc_loss_sub = ctc_loss_sub.data[0]
+            loss_sub = loss_sub.data[0]
         else:
             # Update the probability of scheduled sampling
             self._step += 1
@@ -498,14 +456,11 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
                     self.ctc_loss_weight_sub,
                     1.0 - (1 - self.ctc_loss_weight_sub) / self.sample_ramp_max_step * self._step * 2)
 
-        if self.sub_loss_weight > self.ctc_loss_weight_sub:
-            return loss, loss_main, loss_sub
-        else:
-            return loss, loss_main, ctc_loss_sub
+        return loss, loss_main, loss_sub
 
     def compute_xe_loss(self, enc_out, ys_in, ys_out, x_lens, y_lens,
-                        ys_sub_in=None, y_lens_sub=None,
-                        is_sub_task=False, size_average=False):
+                        enc_out_sub, ys_in_sub, ys_out_sub, x_lens_sub, y_lens_sub,
+                        size_average=False):
         """Compute XE loss.
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
@@ -516,29 +471,41 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
                 `[B, T_out]`, which includes <EOS>
             x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
             y_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+
+            enc_out_sub (torch.autograd.Variable, float): A tensor of size
+                `[B, T_in_sub, encoder_num_units]`
             ys_sub_in (torch.autograd.Variable, long): A tensor of size
                 `[B, T_out_sub]`, which includes <SOS>
+            ys_out_sub (torch.autograd.Variable, long): A tensor of size
+                `[B, T_out_sub]`, which includes <EOS>
+            x_lens_sub (torch.autograd.Variable, int): A tensor of size `[B]`
             y_lens_sub (torch.autograd.Variable, int): A tensor of size `[B]`
-            is_sub_task (bool, optional):
+
             size_average (bool, optional):
         Returns:
             loss (torch.autograd.Variable, float): A tensor of size `[1]`
+            loss_sub (torch.autograd.Variable, float): A tensor of size `[1]`
         """
         # Teacher-forcing
-        logits, att_weights = self._decode_train(
+        logits, att_weights, logits_sub, att_weights_sub = self._decode_train(
             enc_out, x_lens, ys_in,
-            ys_sub=ys_sub_in, y_lens_sub=y_lens_sub,
-            is_sub_task=is_sub_task)
+            enc_out_sub, x_lens_sub, ys_in_sub, y_lens_sub)
 
         # Output smoothing
         if self.logits_temperature != 1:
             logits /= self.logits_temperature
+            logits_sub /= self.logits_temperature
 
         # Compute XE sequence loss
         loss = F.cross_entropy(
             input=logits.view((-1, logits.size(2))),
             target=ys_out.view(-1),
             ignore_index=-1, size_average=False) / len(enc_out)
+
+        loss_sub = F.cross_entropy(
+            input=logits_sub.view((-1, logits_sub.size(2))),
+            target=ys_out_sub.view(-1),
+            ignore_index=-1, size_average=False) / len(enc_out_sub)
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
@@ -551,56 +518,114 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
             loss = loss * (1 - self.label_smoothing_prob) + loss_ls
             # print(loss_ls)
 
+            loss_ls_sub = cross_entropy_label_smoothing(
+                logits_sub,
+                y_lens=y_lens_sub + 1,  # Add <EOS>
+                label_smoothing_prob=self.label_smoothing_prob,
+                distribution='uniform',
+                size_average=True)
+            loss_sub = loss_sub * (1 - self.label_smoothing_prob) + loss_ls_sub
+            # print(loss_ls_sub)
+
         # Add coverage term
         if self.coverage_weight != 0:
             raise NotImplementedError
 
-        return loss
+        return loss, loss_sub
 
     def _decode_train(self, enc_out, x_lens, ys,
-                      ys_sub=None, y_lens_sub=None, is_sub_task=False):
+                      enc_out_sub, x_lens_sub, ys_sub, y_lens_sub):
         """Decoding in the training stage.
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, encoder_num_units]`
             x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
             ys (torch.autograd.Variable, long): A tensor of size `[B, T_out]`
+
+            enc_out_sub (torch.autograd.Variable, float): A tensor of size
+                `[B, T_in_sub, encoder_num_units]`
+            x_lens_sub (torch.autograd.Variable, int): A tensor of size `[B]`
             ys_sub (torch.autograd.Variable, long): A tensor of size `[B, T_out_sub]`
-            y_lens_sub (torch.auto.Variable, int, optional): A tensor of size `[B]`
-            is_sub_task (bool, optional):
+            y_lens_sub (torch.autograd.Variable, long): A tensor of size `[B]`
         Returns:
             logits (torch.autograd.Variable, float): A tensor of size
                 `[B, T_out, num_classes]`
             att_weights (torch.autograd.Variable, float): A tensor of size
                 `[B, T_out, T_in]`
+            logits_sub (torch.autograd.Variable, float): A tensor of size
+                `[B, T_out_sub, num_classes_sub]`
+            att_weights_sub (torch.autograd.Variable, float): A tensor of size
+                `[B, T_out_sub, T_in_sub]`
         """
-        batch_size, max_time = enc_out.size()[:2]
+        batch_size = enc_out.size(0)
 
-        # Initialize decoder state, decoder output, attention_weights
+        ##################################################
+        # At first, compute logits of the character model
+        ##################################################
+        # Initialization for the character model
+        dec_state_sub = self._init_decoder_state(enc_out_sub, is_sub_task=True)
+        dec_out_sub = self._create_var(
+            (batch_size, 1, self.decoder_num_units_sub))
+        context_vec_sub = self._create_var(
+            (batch_size, 1, self.encoder_num_units))
+        att_weights_step_sub = self._create_var(
+            (batch_size, enc_out_sub.size(1)))
+
+        char_embs = []
+        char_outputs = []
+        logits_sub = []
+        att_weights_sub = []
+        for t in range(ys_sub.size(1)):
+
+            is_sample = self.sample_prob > 0 and t > 0 and self._step > 0 and random.random(
+            ) < self._sample_prob
+
+            if is_sample:
+                # scheduled sampling
+                y_sub = torch.max(logits_sub[-1], dim=2)[1]
+            else:
+                # teacher-forcing
+                y_sub = ys_sub[:, t:t + 1]
+
+            y_sub = self.embed_sub(y_sub)
+            char_embs.append(y_sub)
+
+            dec_in_sub = torch.cat([y_sub, context_vec_sub], dim=-1)
+            dec_out_sub, dec_state_sub = self.decoder_sub(
+                dec_in_sub, dec_state_sub)
+
+            context_vec_sub, att_weights_step_sub = self.attend_sub(
+                enc_out_sub, x_lens_sub, dec_out_sub, att_weights_step_sub)
+
+            logits_step_sub = self.W_d_sub(
+                dec_out_sub) + self.W_c_sub(context_vec_sub)
+            char_outputs.append(logits_step_sub)
+            logits_step_sub = self.fc_sub(F.tanh(logits_step_sub))
+
+            logits_sub.append(logits_step_sub)
+            att_weights_sub.append(att_weights_step_sub)
+
+        # Concatenate in T_out-dimension
+        char_embs = torch.cat(char_embs, dim=1)
+        char_outputs = torch.cat(char_outputs, dim=1)
+        logits_sub = torch.cat(logits_sub, dim=1)
+        att_weights_sub = torch.stack(att_weights_sub, dim=1)
+
+        ##################################################
+        # Next, compute logits of the word model
+        ##################################################
+        # Initialization for the word model
         dec_state = self._init_decoder_state(enc_out)
         dec_out = self._create_var((batch_size, 1, self.decoder_num_units))
         context_vec = self._create_var((batch_size, 1, self.encoder_num_units))
-        att_weights_step = self._create_var((batch_size, max_time))
-        if not is_sub_task:
-            # Path through character embedding
-            chars_emb = []
-            for c in range(ys_sub.size(1)):
-                chars_emb.append(self.embed_sub(ys_sub[:, c:c + 1]))
-            chars_emb = torch.cat(chars_emb, dim=1)
-            # chars_emb: `[B, T_out, embedding_dim_sub]`
+        att_weights_step = self._create_var((batch_size, enc_out.size(1)))
 
-            char_mask = self._create_var(chars_emb.size())
-            for b in range(batch_size):
-                char_mask.data[:, :y_lens_sub[b].data[0]] = 1
-            chars_emb *= char_mask
-
-            # Encode characters
-            char_enc_out, _, _ = self.encoder_charseq(
-                chars_emb, y_lens_sub, volatile=False)
-            char_repr = self.char2word(char_enc_out)
-
-            # Initialize attention weights for characters
-            char_att_weights_step = self._create_var(tuple(ys_sub.size()))
+        char_outputs_context_vec = self._create_var(
+            (batch_size, 1, self.decoder_num_units_sub))
+        char_embs_context_vec = self._create_var(
+            (batch_size, 1, self.embedding_dim_sub))
+        char_outputs_att_weights_step = self._create_var(
+            (batch_size, ys_sub.size(1)))
 
         logits = []
         att_weights = []
@@ -616,45 +641,44 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
                 # teacher-forcing
                 y = ys[:, t:t + 1]
 
-            if is_sub_task:
-                y = self.embed_sub(y)
-            else:
-                y = self.embed(y)
+            y = self.embed(y)
 
-            if not is_sub_task:
-                # Compute attention weights and context vector for characters
-                char_context_vec, char_att_weights_step = self.attend_charseq(
-                    char_repr, y_lens_sub, dec_out, char_att_weights_step)
-                # NOTE: char_context_vec is a word representation
+            # Compute word representation from character embeddings
+            char_embs_context_vec = torch.sum(
+                char_embs * char_outputs_att_weights_step.unsqueeze(2), dim=1, keepdim=True)
+            word_repr = self.char2word(char_embs_context_vec)
 
-                # Compose with word embedding
-                if self.composition_case in ['fine_grained_gating', 'scalar_gating']:
-                    gate = F.sigmoid(self.gate_fn(y))
-                    y = gate * y + (1 - gate) * char_context_vec
-                    # char_context_vec: `[B, 1, word_embedding_dim]`
-                    # y: `[B, 1, word_embedding_dim]`
-                elif self.composition_case == 'concat':
-                    y = torch.cat([y, char_context_vec], dim=-1)
+            # Compose PREVIOUS word embedding and character emebddings via
+            # gating mechanism
+            if self.composition_case in ['fine_grained_gating', 'scalar_gating']:
+                gate_emb = F.sigmoid(self.gate_fn_emb(y))
+                y = (1 - gate_emb) * y + gate_emb * word_repr
+            elif self.composition_case == 'concat':
+                y = torch.cat([y, word_repr], dim=-1)
 
-                # TODO: char_context_vecを出力に使う
-                # TODO: 前の出力単語とこれをcomposite
+            # Update the word-level decoder
+            dec_in = torch.cat([y, context_vec], dim=-1)
+            dec_out, dec_state = self.decoder(dec_in, dec_state)
 
-            dec_out, dec_state, context_vec, att_weights_step = self._decode_step(
-                enc_out=enc_out,
-                x_lens=x_lens,
-                y=y,
-                dec_state=dec_state,
-                dec_out=dec_out,
-                context_vec=context_vec,
-                att_weights_step=att_weights_step,
-                is_sub_task=is_sub_task)
+            # Compute attention weights for word-level encoder states
+            context_vec, att_weights_step = self.attend(
+                enc_out, x_lens, dec_out, att_weights_step)
 
-            if is_sub_task:
-                logits_step = self.fc_sub(F.tanh(
-                    self.W_d_sub(dec_out) + self.W_c_sub(context_vec)))
-            else:
-                logits_step = self.fc(F.tanh(
-                    self.W_d(dec_out) + self.W_c(context_vec)))
+            # Compute attention weights for outputs of the character model
+            char_outputs_context_vec, char_outputs_att_weights_step = self.attend_charrepr(
+                char_outputs, y_lens_sub, dec_out, char_outputs_att_weights_step)
+
+            # Compute outputs from word-level decoder states, context vector,
+            # and outputs of the character model
+            word_outputs = self.W_d(dec_out) + self.W_c(context_vec)
+            if self.composition_case in ['fine_grained_gating', 'scalar_gating']:
+                gate_output = F.sigmoid(self.gate_fn_output(word_outputs))
+                word_outputs = (1 - gate_output) * word_outputs + \
+                    gate_output * char_outputs_context_vec
+            elif self.composition_case == 'concat':
+                word_outputs = torch.cat(
+                    [word_outputs, char_outputs_context_vec], dim=-1)
+            logits_step = self.fc(F.tanh(word_outputs))
 
             logits.append(logits_step)
             att_weights.append(att_weights_step)
@@ -665,7 +689,7 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
         # NOTE; att_weights in the training stage may be used for computing the
         # coverage, so do not convert to numpy yet.
 
-        return logits, att_weights
+        return logits, att_weights, logits_sub, att_weights_sub
 
     def attention_weights(self, xs, x_lens, max_decode_len, max_decode_len_sub,
                           beam_width=1):
@@ -684,16 +708,16 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
             char_att_weights (np.ndarray): A tensor of size
                 `[B, T_out, T_out_sub]`
         """
+        # Change to evaluation mode
+        self.eval()
+
         # Wrap by Variable
-        xs = self.np2var(xs, volatile=True)
-        x_lens = self.np2var(x_lens, dtype='int', volatile=True)
+        xs = self.np2var(xs)
+        x_lens = self.np2var(x_lens, dtype='int')
 
         # Encode acoustic features
         enc_out, x_lens, enc_out_sub, x_lens_sub, perm_idx = self._encode(
-            xs, x_lens, volatile=True, is_multi_task=True)
-
-        # Change to evaluation mode
-        self.eval()
+            xs, x_lens, is_multi_task=True)
 
         # At first, decode by character-based decoder
         if self.ctc_loss_weight_sub > self.sub_loss_weight:
@@ -712,8 +736,7 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
                     self.var2np(x_lens_sub))
             else:
                 best_hyps_sub = self._decode_ctc_beam_np(
-                    self.var2np(F.log_softmax(logits_ctc_sub, dim=-1),
-                                ),
+                    self.var2np(F.log_softmax(logits_ctc_sub, dim=-1)),
                     self.var2np(x_lens_sub), beam_width=beam_width)
 
             # NOTE: index 0 is reserved for blank in warpctc_pytorch
@@ -727,9 +750,8 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
                 best_hyps_sub, _ = self._decode_infer_beam(
                     enc_out_sub, x_lens_sub, max_decode_len, is_sub_task=True)
 
-        y_lens_sub = np2var(
-            np.array([len(y) for y in best_hyps_sub]),
-            dtype='int', use_cuda=self.use_cuda, volatile=True)
+        y_lens_sub = self.np2var(np.array([len(y) for y in best_hyps_sub]),
+                                 dtype='int')
         # assert max(y_lens_sub.data) > 0
 
         ys_sub = self._create_var(
@@ -769,73 +791,35 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
             best_hyps_sub (np.ndarray): A tensor of size `[B]`
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
-        # Wrap by Variable
-        xs = self.np2var(xs, volatile=True)
-        x_lens = self.np2var(x_lens, dtype='int', volatile=True)
-
-        # Encode acoustic features
-        if is_sub_task:
-            _, _, enc_out_sub, x_lens_sub, perm_idx = self._encode(
-                xs, x_lens, volatile=True, is_multi_task=True)
-        else:
-            enc_out, x_lens, enc_out_sub, x_lens_sub, perm_idx = self._encode(
-                xs, x_lens, volatile=True, is_multi_task=True)
-
         # Change to evaluation mode
         self.eval()
 
-        # At first, decode by character-based decoder
-        if self.ctc_loss_weight_sub > self.sub_loss_weight:
-            # Decode by CTC decoder
+        # Wrap by Variable
+        xs = self.np2var(xs)
+        x_lens = self.np2var(x_lens, dtype='int')
 
-            # Path through the softmax layer
-            batch_size, max_time_sub = enc_out_sub.size()[:2]
-            enc_out_sub = enc_out_sub.view(
-                batch_size * max_time_sub, -1).contiguous()
-            logits_ctc_sub = self.fc_ctc_sub(enc_out_sub)
-            logits_ctc_sub = logits_ctc_sub.view(batch_size, max_time_sub, -1)
-
-            if beam_width == 1:
-                best_hyps_sub = self._decode_ctc_greedy_np(
-                    self.var2np(logits_ctc_sub),
-                    self.var2np(x_lens_sub))
-            else:
-                best_hyps_sub = self._decode_ctc_beam_np(
-                    self.var2np(F.log_softmax(logits_ctc_sub, dim=-1)),
-                    self.var2np(x_lens_sub), beam_width=beam_width)
-
-            # NOTE: index 0 is reserved for blank in warpctc_pytorch
-            best_hyps_sub -= 1
-        else:
-            # Decode by attention decoder
-            if beam_width == 1:
-                best_hyps_sub, _ = self._decode_infer_greedy(
-                    enc_out_sub, x_lens_sub, max_decode_len, is_sub_task=True)
-            else:
-                best_hyps_sub, _ = self._decode_infer_beam(
-                    enc_out_sub, x_lens_sub, max_decode_len, is_sub_task=True)
-
+        # Encode acoustic features
         if is_sub_task:
-            best_hyps = best_hyps_sub
-        else:
-            y_lens_sub = np2var(
-                np.array([len(y) for y in best_hyps_sub]),
-                dtype='int', use_cuda=self.use_cuda, volatile=True)
-            # assert max(y_lens_sub.data) > 0
+            _, _, enc_out, x_lens, perm_idx = self._encode(
+                xs, x_lens, is_multi_task=True)
 
-            ys_sub = self._create_var(
-                (len(xs), max(y_lens_sub.data)), dtype='long')
-            for b in range(len(xs)):
-                ys_sub.data[b, :len(best_hyps_sub[b])] = torch.from_numpy(
-                    best_hyps_sub[b])
+            if beam_width == 1:
+                best_hyps, _ = self._decode_infer_greedy(
+                    enc_out, x_lens, max_decode_len, is_sub_task=True)
+            else:
+                best_hyps, _ = self._decode_infer_beam(
+                    enc_out, x_lens, max_decode_len, is_sub_task=True)
+        else:
+            enc_out, x_lens, enc_out_sub, x_lens_sub, perm_idx = self._encode(
+                xs, x_lens, is_multi_task=True)
 
             # Next, decode by word-based decoder with character outputs
             if beam_width == 1:
-                best_hyps, _, _ = self._decode_infer_greedy(
-                    enc_out, x_lens,
+                best_hyps, _, best_hyps_sub, _ = self._decode_infer_greedy_joint(
+                    enc_out, x_lens, enc_out_sub, x_lens_sub,
+                    beam_width=1,
                     max_decode_len=max_decode_len,
-                    ys_sub=ys_sub,
-                    y_lens_sub=y_lens_sub)
+                    max_decode_len_sub=max_decode_len_sub)
             else:
                 raise NotImplementedError
 
@@ -850,115 +834,169 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
         else:
             return best_hyps, best_hyps_sub, perm_idx
 
-    def _decode_infer_greedy(self, enc_out, x_lens, max_decode_len,
-                             ys_sub=None, y_lens_sub=None, is_sub_task=False):
+    def _decode_infer_greedy_joint(self, enc_out, x_lens,
+                                   enc_out_sub, x_lens_sub, beam_width,
+                                   max_decode_len, max_decode_len_sub):
         """Greedy decoding in the inference stage.
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, encoder_num_units]`
             x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            enc_out_sub (torch.autograd.Variable, float): A tensor of size
+                `[B, T_in_sub, encoder_num_units]`
+            x_lens_sub (torch.autograd.Variable, int): A tensor of size `[B]`
+            beam_width (int): the size of beam
             max_decode_len (int): the length of output sequences
                 to stop prediction when EOS token have not been emitted
-            ys_sub (torch.autograd.Variable(float), optional):
-                A tensor of size `[B, T_out_sub]`
-            y_lens_sub (torch.autograd.Variable(int), optional):
-                A tensor of size `[B]`
-            is_sub_task (bool, optional):
+            max_decode_len_sub (int): the length of output sequences
+                to stop prediction when EOS token have not been emitted
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
             att_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
-            char_att_weights (np.ndarray): A tensor of size
-                `[B, T_out, T_in_char]`
+            best_hyps_sub (np.ndarray): A tensor of size `[B, T_out_sub]`
+            att_weights_sub (np.ndarray): A tensor of size `[B, T_out_sub, T_in]`
+            char_outputs_att_weights (np.ndarray): A tensor of size
+                `[B, T_out, T_out_sub]`
         """
-        batch_size, max_time = enc_out.size()[:2]
+        batch_size = enc_out.size(0)
 
-        # Initialize decoder state
-        dec_state = self._init_decoder_state(enc_out, volatile=True)
+        ##################################################
+        # At first, decode by the character model
+        ##################################################
+        # Initialization for the character model
+        dec_state_sub = self._init_decoder_state(enc_out_sub, is_sub_task=True)
+        dec_out_sub = self._create_var(
+            (batch_size, 1, self.decoder_num_units_sub), volatile=True)
+        context_vec_sub = self._create_var(
+            (batch_size, 1, self.encoder_num_units), volatile=True)
+        att_weights_step_sub = self._create_var(
+            (batch_size, enc_out_sub.size(1)), volatile=True)
+
+        # Start from <SOS>
+        y_sub = self._create_var(
+            (batch_size, 1), fill_value=self.sos_sub, dtype='long')
+
+        char_embs = []
+        char_outputs = []
+        att_weights_sub = []
+        best_hyps_sub = []
+        y_lens_sub = np.zeros((batch_size,))
+        for t in range(max_decode_len_sub):
+
+            y_sub = self.embed_sub(y_sub)
+            char_embs.append(y_sub)
+
+            dec_in_sub = torch.cat([y_sub, context_vec_sub], dim=-1)
+            dec_out_sub, dec_state_sub = self.decoder_sub(
+                dec_in_sub, dec_state_sub)
+
+            context_vec_sub, att_weights_step_sub = self.attend_sub(
+                enc_out_sub, x_lens_sub, dec_out_sub, att_weights_step_sub)
+
+            logits_step_sub = self.W_d_sub(
+                dec_out_sub) + self.W_c_sub(context_vec_sub)
+            char_outputs.append(logits_step_sub)
+            logits_step_sub = self.fc_sub(F.tanh(logits_step_sub))
+
+            # Pick up 1-best
+            y_sub = torch.max(logits_step_sub.squeeze(1), dim=1)[
+                1].unsqueeze(1)
+            # logits_step: `[B, 1, num_classes_sub]` -> `[B, num_classes_sub]`
+            best_hyps_sub.append(y_sub)
+            att_weights_sub.append(att_weights_step_sub)
+
+            for b in range(batch_size):
+                if y_lens_sub[b] == 0 and y_sub.data[b] == self.eos_sub:
+                    y_lens_sub[b] = t + 1
+
+            # Break if <EOS> is outputed in all mini-batch
+            if torch.sum(y_sub.data == self.eos_sub) == y_sub.numel():
+                break
+
+        # Concatenate in T_out dimension
+        char_embs = torch.cat(char_embs, dim=1)
+        char_outputs = torch.cat(char_outputs, dim=1)
+        best_hyps_sub = torch.cat(best_hyps_sub, dim=1)
+        att_weights_sub = torch.stack(att_weights_sub, dim=1)
+
+        ##################################################
+        # Next, compute logits of the word model
+        ##################################################
+        # Initialization for the word model
+        dec_state = self._init_decoder_state(enc_out)
         dec_out = self._create_var(
             (batch_size, 1, self.decoder_num_units), volatile=True)
         context_vec = self._create_var(
             (batch_size, 1, self.encoder_num_units), volatile=True)
         att_weights_step = self._create_var(
-            (batch_size, max_time), volatile=True)
-        if not is_sub_task:
-            # Path through character embedding
-            chars_emb = []
-            for c in range(ys_sub.size(1)):
-                chars_emb.append(self.embed_sub(ys_sub[:, c:c + 1]))
-            chars_emb = torch.cat(chars_emb, dim=1)
-            # chars_emb: `[B, T_out, embedding_dim_sub]`
+            (batch_size, enc_out.size(1)), volatile=True)
 
-            char_mask = self._create_var(chars_emb.size(), volatile=True)
-            for b in range(batch_size):
-                char_mask.data[:, :y_lens_sub[b].data[0]] = 1
-            chars_emb *= char_mask
+        char_outputs_context_vec = self._create_var(
+            (batch_size, 1, self.decoder_num_units_sub), volatile=True)
+        char_embs_context_vec = self._create_var(
+            (batch_size, 1, self.embedding_dim_sub), volatile=True)
+        char_outputs_att_weights_step = self._create_var(
+            (batch_size, char_outputs.size(1)), volatile=True)
 
-            # Encode characters
-            char_enc_out, y_lens_sub, _ = self.encoder_charseq(
-                chars_emb, y_lens_sub, volatile=True)
-            char_repr = self.char2word(char_enc_out)
-
-            # Initialize attention weights for characters
-            char_att_weights_step = self._create_var(
-                tuple(ys_sub.size()), volatile=True)
+        y_lens_sub = self.np2var(y_lens_sub + 1, dtype='int')
+        # NOTE: add <SOS>
+        # assert max(y_lens_sub.data) > 0
 
         # Start from <SOS>
-        sos = self.sos_index_sub if is_sub_task else self.sos_index
-        eos = self.eos_index_sub if is_sub_task else self.eos_index
-        y = self._create_var((batch_size, 1), fill_value=sos, dtype='long')
+        y = self._create_var(
+            (batch_size, 1), fill_value=self.sos, dtype='long')
 
         best_hyps = []
         att_weights = []
-        char_att_weights = []
         for _ in range(max_decode_len):
 
-            if is_sub_task:
-                y = self.embed_sub(y)
-            else:
-                y = self.embed(y)
+            y = self.embed(y)
 
-            if not is_sub_task:
-                # Compute attention weights and context vector for characters
-                char_context_vec, char_att_weights_step = self.attend_charseq(
-                    char_repr, y_lens_sub, dec_out, char_att_weights_step)
-                # NOTE: char_context_vec is a word representation
+            # Compute word representation from character embeddings
+            char_embs_context_vec = torch.sum(
+                char_embs * char_outputs_att_weights_step.unsqueeze(2), dim=1, keepdim=True)
+            word_repr = self.char2word(char_embs_context_vec)
 
-                # Compose with word embedding
-                if self.composition_case in ['fine_grained_gating', 'scalar_gating']:
-                    gate = F.sigmoid(self.gate_fn(y))
-                    y = gate * y + (1 - gate) * char_context_vec
-                    # char_context_vec: `[B, 1, word_embedding_dim]`
-                    # y: `[B, 1, word_embedding_dim]`
-                elif self.composition_case == 'concat':
-                    y = torch.cat([y, char_context_vec], dim=-1)
+            # Compose PREVIOUS word embedding and character emebddings via
+            # gating mechanism
+            if self.composition_case in ['fine_grained_gating', 'scalar_gating']:
+                gate_emb = F.sigmoid(self.gate_fn_emb(y))
+                y = (1 - gate_emb) * y + gate_emb * word_repr
+            elif self.composition_case == 'concat':
+                y = torch.cat([y, word_repr], dim=-1)
 
-            dec_out, dec_state, context_vec, att_weights_step = self._decode_step(
-                enc_out=enc_out,
-                x_lens=x_lens,
-                y=y,
-                dec_state=dec_state,
-                dec_out=dec_out,
-                context_vec=context_vec,
-                att_weights_step=att_weights_step,
-                is_sub_task=is_sub_task)
+            # Update the word-level decoder
+            dec_in = torch.cat([y, context_vec], dim=-1)
+            dec_out, dec_state = self.decoder(dec_in, dec_state)
 
-            if is_sub_task:
-                logits = self.fc_sub(F.tanh(
-                    self.W_d_sub(dec_out) + self.W_c_sub(context_vec)))
-            else:
-                logits = self.fc(F.tanh(
-                    self.W_d(dec_out) + self.W_c(context_vec)))
+            # Compute attention weights for word-level encoder states
+            context_vec, att_weights_step = self.attend(
+                enc_out, x_lens, dec_out, att_weights_step)
+
+            # Compute attention weights for outputs of the character model
+            char_outputs_context_vec, char_outputs_att_weights_step = self.attend_charrepr(
+                char_outputs, y_lens_sub, dec_out, char_outputs_att_weights_step)
+
+            # Compute outputs from word-level decoder states, context vector,
+            # and outputs of the character model
+            word_outputs = self.W_d(dec_out) + self.W_c(context_vec)
+            if self.composition_case in ['fine_grained_gating', 'scalar_gating']:
+                gate_output = F.sigmoid(self.gate_fn_output(word_outputs))
+                word_outputs = (1 - gate_output) * word_outputs + \
+                    gate_output * char_outputs_context_vec
+            elif self.composition_case == 'concat':
+                word_outputs = torch.cat(
+                    [word_outputs, char_outputs_context_vec], dim=-1)
+            logits_step = self.fc(F.tanh(word_outputs))
 
             # Pick up 1-best
-            y = torch.max(logits.squeeze(1), dim=1)[1].unsqueeze(1)
-            # logits: `[B, 1, num_classes]` -> `[B, num_classes]`
+            y = torch.max(logits_step.squeeze(1), dim=1)[1].unsqueeze(1)
+            # logits_step: `[B, 1, num_classes]` -> `[B, num_classes]`
             best_hyps.append(y)
             att_weights.append(att_weights_step)
-            if not is_sub_task:
-                char_att_weights.append(char_att_weights_step)
 
             # Break if <EOS> is outputed in all mini-batch
-            if torch.sum(y.data == eos) == y.numel():
+            if torch.sum(y.data == self.eos) == y.numel():
                 break
 
         # Concatenate in T_out dimension
@@ -969,10 +1007,4 @@ class CharseqAttentionSeq2seq(AttentionSeq2seq):
         best_hyps = self.var2np(best_hyps)
         att_weights = self.var2np(att_weights)
 
-        if not is_sub_task:
-            char_att_weights = torch.stack(char_att_weights, dim=1)
-            char_att_weights = self.var2np(char_att_weights)
-
-            return best_hyps, att_weights, char_att_weights
-        else:
-            return best_hyps, att_weights
+        return best_hyps, att_weights, best_hyps_sub, att_weights_sub

@@ -3,7 +3,7 @@
 # Select GPU
 if [ $# -ne 1 ]; then
   echo "Error: set GPU index." 1>&2
-  echo "Usage: ./run_nested_attention.sh gpu_index" 1>&2
+  echo "Usage: ./run_nested_attention_v2.sh gpu_index" 1>&2
   exit 1
 fi
 
@@ -18,4 +18,4 @@ PYTHON=/home/lab5/inaguma/.pyenv/versions/anaconda3-4.1.1/envs/`hostname`/bin/py
 gpu_index=$1
 
 # Background job version
-CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 $PYTHON test_nested_attention.py
+CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 $PYTHON test_nested_attention_v2.py
