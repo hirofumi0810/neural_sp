@@ -1,5 +1,5 @@
 if [ -z $KALDI_ROOT ]; then
-    export KALDI_ROOT="/home/lab5/inaguma/tool/kaldi"
+  export KALDI_ROOT="/home/lab5/inaguma/tool/kaldi"
 fi
 
 export PATH=$PWD/utils/:$KALDI_ROOT/tools/openfst/bin:$PWD:$PATH

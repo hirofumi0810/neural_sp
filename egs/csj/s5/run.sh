@@ -18,10 +18,20 @@
 . ./path.sh
 set -e # exit on error
 
-#: << '#SKIP'
+if [ $# -ne 2 ]; then
+  echo "Error: set GPU number & config path." 1>&2
+  echo "Usage: ./run.sh path_to_config_file gpu_index" 1>&2
+  exit 1
+fi
 
-use_dev=true # Use the first 4k sentences from training data as dev set. (39 speakers.)
 
+echo ============================================================================
+echo "                                   CSJ                                     "
+echo ============================================================================
+
+stage=2
+
+### Set path to original data
 CSJDATATOP="/n/rd25/mimura/corpus/CSJ"
 #CSJDATATOP=/db/laputa1/$CSJDATA_SAVEPATH/processed/public/CSJ ## CSJ database top directory.
 CSJVER=dvd  ## Set your CSJ format (dvd or usb).
@@ -34,39 +44,269 @@ CSJVER=dvd  ## Set your CSJ format (dvd or usb).
             ##            e.g. $ ls $CSJDATATOP(USB) => 00README.txt DOC MORPH ... WAV fileList.csv
             ## Case merl :MERL setup. Neccesary directory is WAV and sdb
 
+### Select data size
 DATASIZE=subset
 # DATASIZE=aps
 # DATASIZE=fullset
 # DATASIZE=all
-export CSJDATA_SAVEPATH=/home/lab5/inaguma/corpus/csj/kaldi/$DATASIZE
 
-if [ ! -e $CSJDATA_SAVEPATH/csj-data/.done_make_all ]; then
- echo "CSJ transcription file does not exist"
- #local/csj_make_trans/csj_autorun.sh <RESOUCE_DIR> <MAKING_PLACE(no change)> || exit 1;
- local/csj_make_trans/csj_autorun.sh $CSJDATATOP $CSJDATA_SAVEPATH/csj-data $CSJVER
+### Set path to save dataset
+CSJDATA_SAVEPATH="/n/sd8/inaguma/corpus/csj/kaldi"
+
+### Select one tool to extract features (HTK is the fastest)
+TOOL='htk'
+# TOOL='python_speech_features'
+# TOOL='librosa'
+
+# NOTE: set when using HTK toolkit
+HCOPY_PATH='/home/lab5/inaguma/htk-3.4/bin/HCopy'
+
+### Configuration of feature extranction
+FEATURE_TYPE='fbank'
+# FEATURE_TYPE='mfcc'
+# FEATURE_TYPE='wav'
+CHANNELS=80
+WINDOW=0.025
+SLIDE=0.01
+ENERGY=0
+DELTA=1
+DELTADELTA=1
+# NORMALIZE='global'
+NORMALIZE='speaker'
+# NORMALIZE='utterance'
+# NORMALIZE='no'
+# NOTE: normalize in [-1, 1] in case of wav
+
+
+# Set path to CUDA
+export PATH=$PATH:/usr/local/cuda-8.0/bin
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda-8.0/lib64:/usr/local/cuda-8.0/extras/CUPTI/lib64
+
+# Set path to python
+# PYTHON=/home/lab5/inaguma/.pyenv/versions/anaconda3-4.1.1/bin/python
+PYTHON=/home/lab5/inaguma/.pyenv/versions/anaconda3-4.1.1/envs/`hostname`/bin/python
+
+# Set path to save the model
+MODEL_SAVE_PATH="/n/sd8/inaguma/result"
+
+
+
+echo ============================================================================
+echo "                           Data Preparation                               "
+echo ============================================================================
+export CSJDATA_SAVEPATH=$CSJDATA_SAVEPATH/$DATASIZE
+if [ $stage -le 0 ]; then
+  rm -rf $CSJDATA_SAVEPATH/local
+  if [ ! -e $CSJDATA_SAVEPATH/csj-data/.done_make_all ]; then
+   echo "CSJ transcription file does not exist"
+   #local/csj_make_trans/csj_autorun.sh <RESOUCE_DIR> <MAKING_PLACE(no change)> || exit 1;
+   local/csj_make_trans/csj_autorun.sh $CSJDATATOP $CSJDATA_SAVEPATH/csj-data $CSJVER
+  fi
+  wait
+
+  [ ! -e $CSJDATA_SAVEPATH/csj-data/.done_make_all ]\
+      && echo "Not finished processing CSJ data" && exit 1;
+
+  # Prepare Corpus of Spontaneous Japanese (CSJ) data.
+  # Processing CSJ data to KALDI format based on switchboard recipe.
+  # local/csj_data_prep.sh <SPEECH_and_TRANSCRIPTION_DATA_DIRECTORY> [ <mode_number> ]
+  # mode_number can be 0, 1, 2, 3 (0=default using "Academic lecture" and "other" data,
+  #                                1=using "Academic lecture" data,
+  #                                2=using All data except for "dialog" data, 3=using All data )
+  if [ $DATASIZE = 'subset' ]; then
+    local/csj_data_prep.sh $CSJDATA_SAVEPATH/csj-data  # subset (240h)
+  elif [ $DATASIZE = 'aps' ]; then
+    local/csj_data_prep.sh $CSJDATA_SAVEPATH/csj-data 1  # aps
+  elif [ $DATASIZE = 'fullset' ]; then
+    local/csj_data_prep.sh $CSJDATA_SAVEPATH/csj-data 2  # fullset (586h)
+  elif [ $DATASIZE = 'all' ]; then
+    local/csj_data_prep.sh $CSJDATA_SAVEPATH/csj-data 3  # all
+  fi
+
+  local/csj_prepare_dict.sh
+
+  # Data preparation and formatting for evaluation set.
+  # CSJ has 3 types of evaluation data
+  #local/csj_eval_data_prep.sh <SPEECH_and_TRANSCRIPTION_DATA_DIRECTORY_ABOUT_EVALUATION_DATA> <EVAL_NUM>
+  for eval_num in eval1 eval2 eval3 ; do
+      local/csj_eval_data_prep.sh $CSJDATA_SAVEPATH/csj-data/eval $eval_num
+  done
+
+  # Use the first 4k sentences from training data as dev set. (39 speakers.)
+  # NOTE: when we trained the LM, we used the 1st 10k sentences as dev set,
+  # so the 1st 4k won't have been used in the LM training data.
+  # However, they will be in the lexicon, plus speakers may overlap,
+  # so it's still not quite equivalent to a test set.
+  utils/subset_data_dir.sh --first $CSJDATA_SAVEPATH/train 4000 $CSJDATA_SAVEPATH/dev # 6hr 31min
+  n=$[`cat $CSJDATA_SAVEPATH/train/segments | wc -l` - 4000]
+  utils/subset_data_dir.sh --last $CSJDATA_SAVEPATH/train $n $CSJDATA_SAVEPATH/train_nodev
+
+  # Now-- there are 162k utterances (240hr 8min), and we want to start the
+  # monophone training on relatively short utterances (easier to align), but want
+  # to exclude the shortest ones.
+  # Therefore, we first take the 100k shortest ones;
+  # remove most of the repeated utterances, and
+  # then take 10k random utterances from those (about 8hr 9mins)
+  # utils/subset_data_dir.sh --shortest $CSJDATA_SAVEPATH/train_nodev 100000 $CSJDATA_SAVEPATH/train_100kshort
+  # utils/subset_data_dir.sh $CSJDATA_SAVEPATH/train_100kshort 30000 $CSJDATA_SAVEPATH/train_30kshort
+
+  # Take the first 100k utterances (about half the data); we'll use
+  # this for later stages of training.
+  utils/subset_data_dir.sh --first $CSJDATA_SAVEPATH/train_nodev 100000 $CSJDATA_SAVEPATH/train_100k
+  utils/data/remove_dup_utts.sh 200 $CSJDATA_SAVEPATH/train_100k $CSJDATA_SAVEPATH/train_100k_tmp  # 147hr 6min
+  rm -rf $CSJDATA_SAVEPATH/train_100k
+  mv $CSJDATA_SAVEPATH/train_100k_tmp $CSJDATA_SAVEPATH/train_100k
+
+  # Finally, the full training set:
+  rm -rf $CSJDATA_SAVEPATH/train
+  utils/data/remove_dup_utts.sh 300 $CSJDATA_SAVEPATH/train_nodev $CSJDATA_SAVEPATH/train  # 233hr 36min
+  rm -rf $CSJDATA_SAVEPATH/train_nodev
+
+  echo "Finish data preparation (stage: 0)."
 fi
-wait
 
-[ ! -e $CSJDATA_SAVEPATH/csj-data/.done_make_all ]\
-    && echo "Not finished processing CSJ data" && exit 1;
+# Calculate the amount of utterance segmentations.
+# perl -ne 'split; $s+=($_[3]-$_[2]); END{$h=int($s/3600); $r=($s-$h*3600); $m=int($r/60); $r-=$m*60; printf "%.1f sec -- %d:%d:%.1f\n", $s, $h, $m, $r;}' $CSJDATA_SAVEPATH/train/segments
+# perl -ne 'split; $s+=($_[3]-$_[2]); END{$h=int($s/3600); $r=($s-$h*3600); $m=int($r/60); $r-=$m*60; printf "%.1f sec -- %d:%d:%.1f\n", $s, $h, $m, $r;}' $CSJDATA_SAVEPATH/eval1/segments
+# perl -ne 'split; $s+=($_[3]-$_[2]); END{$h=int($s/3600); $r=($s-$h*3600); $m=int($r/60); $r-=$m*60; printf "%.1f sec -- %d:%d:%.1f\n", $s, $h, $m, $r;}' $CSJDATA_SAVEPATH/eval2/segments
+# perl -ne 'split; $s+=($_[3]-$_[2]); END{$h=int($s/3600); $r=($s-$h*3600); $m=int($r/60); $r-=$m*60; printf "%.1f sec -- %d:%d:%.1f\n", $s, $h, $m, $r;}' $CSJDATA_SAVEPATH/eval3/segments
 
-# Prepare Corpus of Spontaneous Japanese (CSJ) data.
-# Processing CSJ data to KALDI format based on switchboard recipe.
-# local/csj_data_prep.sh <SPEECH_and_TRANSCRIPTION_DATA_DIRECTORY> [ <mode_number> ]
-# mode_number can be 0, 1, 2, 3 (0=default using "Academic lecture" and "other" data,
-#                                1=using "Academic lecture" data,
-#                                2=using All data except for "dialog" data, 3=using All data )
-if [ $DATASIZE = 'subset' ]; then
-  local/csj_data_prep.sh $CSJDATA_SAVEPATH/csj-data  # subset (240h)
-elif [ $DATASIZE = 'aps' ]; then
-  local/csj_data_prep.sh $CSJDATA_SAVEPATH/csj-data 1  # aps
-elif [ $DATASIZE = 'fullset' ]; then
-  local/csj_data_prep.sh $CSJDATA_SAVEPATH/csj-data 2  # fullset (586h)
-elif [ $DATASIZE = 'all' ]; then
-  local/csj_data_prep.sh $CSJDATA_SAVEPATH/csj-data 3  # all
+
+
+echo ============================================================================
+echo "                        Feature extranction                               "
+echo ============================================================================
+if [ $stage -le 1 ]; then
+  if [ $TOOL = 'htk' ]; then
+    # Make a config file to covert from wav to htk file
+    python local/make_htk_config.py \
+        --data_save_path $CSJDATA_SAVEPATH \
+        --config_save_path ./conf \
+        --feature_type $FEATURE_TYPE \
+        --channels $CHANNELS \
+        --window $WINDOW \
+        --slide $SLIDE \
+        --energy $ENERGY \
+        --delta $DELTA \
+        --deltadelta $DELTADELTA
+
+    declare -A file_number
+    if [ $DATASIZE = 'subset' ]; then
+      # file_number["train"]=986
+      file_number["train"]=947
+    elif [ $DATASIZE = 'aps' ]; then
+      file_number["train"]=967
+    elif [ $DATASIZE = 'fullset' ]; then
+      file_number["train"]=3212
+    elif [ $DATASIZE = 'all' ]; then
+      exit 1
+      file_number["train"]=3212
+    fi
+    file_number["dev"]=39
+    file_number["eval1"]=10
+    file_number["eval2"]=10
+    file_number["eval3"]=10
+
+    # Convert from wav to htk files
+    for data_type in train dev eval1 eval2 eval3 ; do
+      mkdir -p $CSJDATA_SAVEPATH/$data_type/htk
+
+      htk_paths=$(find $CSJDATA_SAVEPATH/$data_type/htk -iname '*.htk')
+      htk_file_num=$(find $CSJDATA_SAVEPATH/$data_type/htk -iname '*.htk' | wc -l)
+
+      if [ $htk_file_num -ne ${file_number[$data_type]} ]; then
+        $HCOPY_PATH -T 1 -C ./conf/$FEATURE_TYPE.conf -S $CSJDATA_SAVEPATH/$data_type/wav2htk.scp
+      fi
+    done
+  else
+    if ! which sox >&/dev/null; then
+      echo "This script requires you to first install sox";
+      exit 1;
+    fi
+  fi
+
+  python local/feature_extraction.py \
+    --data_save_path $CSJDATA_SAVEPATH \
+    --tool $TOOL \
+    --normalize $NORMALIZE \
+    --feature_type $FEATURE_TYPE \
+    --channels $CHANNELS \
+    --window $WINDOW \
+    --slide $SLIDE \
+    --energy $ENERGY \
+    --delta $DELTA \
+    --deltadelta $DELTADELTA
+
+  echo "Finish feature extranction (stage: 1)."
 fi
 
-local/csj_prepare_dict.sh
+# TODO: create dastaset.csv
+
+
+
+echo ============================================================================
+echo "                            Create dataset                                "
+echo ============================================================================
+if [ $stage -le 2 ]; then
+
+  echo "Finish creating dataset (stage: 2)."
+fi
+
+
+echo OK.
+exit 1
+
+
+
+echo ============================================================================
+echo "                             Training stage                               "
+echo ============================================================================
+if [ $stage -le 3 ]; then
+  config_path=$1
+  gpu_index=$2
+  filename=$(basename $config_path | awk -F. '{print $1}')
+
+
+  mkdir -p log
+
+  # CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+  # nohup $PYTHON train.py \
+  #   --gpu $gpu_index \
+  #   --config_path $config_path \
+  #   --model_save_path $MODEL_SAVE_PATH > log/$filename".log" &
+
+  CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+  $PYTHON train.py \
+    --gpu $gpu_index \
+    --config_path $config_path \
+    --model_save_path $MODEL_SAVE_PATH
+
+  echo "Finish model training (stage: 3)."
+fi
+
+
+
+# echo ============================================================================
+# echo "                             LM training                                 "
+# echo ============================================================================
+# if [ $stage -le 4 ]; then
+#
+#   echo "Finish LM training (stage: 4)."
+# fi
+
+
+
+# echo ============================================================================
+# echo "                              Rescoring                                   "
+# echo ============================================================================
+# if [ $stage -le 5 ]; then
+#
+#   echo "Finish rescoring (stage: 5)."
+# fi
+
+
+echo "Done."
+
 
 # utils/prepare_lang.sh --num-sil-states 4 $CSJDATA_SAVEPATH/local/dict_nosp "<unk>" $CSJDATA_SAVEPATH/local/lang_nosp $CSJDATA_SAVEPATH/lang_nosp
 
@@ -80,190 +320,6 @@ local/csj_prepare_dict.sh
 # utils/format_lm_sri.sh --srilm-opts "$srilm_opts" \
 #   $CSJDATA_SAVEPATH/lang_nosp $LM $CSJDATA_SAVEPATH/local/dict_nosp/lexicon.txt $CSJDATA_SAVEPATH/lang_nosp_csj_tg
 
-# Data preparation and formatting for evaluation set.
-# CSJ has 3 types of evaluation data
-#local/csj_eval_data_prep.sh <SPEECH_and_TRANSCRIPTION_DATA_DIRECTORY_ABOUT_EVALUATION_DATA> <EVAL_NUM>
-for eval_num in eval1 eval2 eval3 ; do
-    local/csj_eval_data_prep.sh $CSJDATA_SAVEPATH/csj-data/eval $eval_num
-done
-
-echo "OK."
-exit 1
-
-# Now make MFCC features.
-# mfccdir should be some place with a largish disk where you
-# want to store MFCC features.
-mfccdir=mfcc
-
-for x in train eval1 eval2 eval3; do
-  steps/make_mfcc.sh --nj 50 --cmd "$train_cmd" \
-    $CSJDATA_SAVEPATH/$x exp/make_mfcc/$x $mfccdir
-  steps/compute_cmvn_stats.sh $CSJDATA_SAVEPATH/$x exp/make_mfcc/$x $mfccdir
-  utils/fix_data_dir.sh $CSJDATA_SAVEPATH/$x
-done
-
-echo "Finish creating MFCCs"
-
-#SKIP
-
-##### Training and Decoding steps start from here #####
-
-# Use the first 4k sentences as dev set.  Note: when we trained the LM, we used
-# the 1st 10k sentences as dev set, so the 1st 4k won't have been used in the
-# LM training data.   However, they will be in the lexicon, plus speakers
-# may overlap, so it's still not quite equivalent to a test set.
-
-if $use_dev ;then
-    dev_set=train_dev
-    utils/subset_data_dir.sh --first $CSJDATA_SAVEPATH/train 4000 $CSJDATA_SAVEPATH/$dev_set # 6hr 31min
-    n=$[`cat $CSJDATA_SAVEPATH/train/segments | wc -l` - 4000]
-    utils/subset_data_dir.sh --last $CSJDATA_SAVEPATH/train $n $CSJDATA_SAVEPATH/train_nodev
-else
-    cp -r $CSJDATA_SAVEPATH/train $CSJDATA_SAVEPATH/train_nodev
-fi
-
-# Calculate the amount of utterance segmentations.
-# perl -ne 'split; $s+=($_[3]-$_[2]); END{$h=int($s/3600); $r=($s-$h*3600); $m=int($r/60); $r-=$m*60; printf "%.1f sec -- %d:%d:%.1f\n", $s, $h, $m, $r;}' $CSJDATA_SAVEPATH/train/segments
-
-# Now-- there are 162k utterances (240hr 8min), and we want to start the
-# monophone training on relatively short utterances (easier to align), but want
-# to exclude the shortest ones.
-# Therefore, we first take the 100k shortest ones;
-# remove most of the repeated utterances, and
-# then take 10k random utterances from those (about 8hr 9mins)
-utils/subset_data_dir.sh --shortest $CSJDATA_SAVEPATH/train_nodev 100000 $CSJDATA_SAVEPATH/train_100kshort
-utils/subset_data_dir.sh $CSJDATA_SAVEPATH/train_100kshort 30000 $CSJDATA_SAVEPATH/train_30kshort
-
-# Take the first 100k utterances (about half the data); we'll use
-# this for later stages of training.
-utils/subset_data_dir.sh --first $CSJDATA_SAVEPATH/train_nodev 100000 $CSJDATA_SAVEPATH/train_100k
-utils/$CSJDATA_SAVEPATH/remove_dup_utts.sh 200 $CSJDATA_SAVEPATH/train_100k $CSJDATA_SAVEPATH/train_100k_nodup  # 147hr 6min
-
-# Finally, the full training set:
-utils/$CSJDATA_SAVEPATH/remove_dup_utts.sh 300 $CSJDATA_SAVEPATH/train_nodev $CSJDATA_SAVEPATH/train_nodup  # 233hr 36min
-
-## Starting basic training on MFCC features
-steps/train_mono.sh --nj 50 --cmd "$train_cmd" \
-  $CSJDATA_SAVEPATH/train_30kshort $CSJDATA_SAVEPATH/lang_nosp exp/mono
-
-steps/align_si.sh --nj 50 --cmd "$train_cmd" \
-  $CSJDATA_SAVEPATH/train_100k_nodup $CSJDATA_SAVEPATH/lang_nosp exp/mono exp/mono_ali
-
-steps/train_deltas.sh --cmd "$train_cmd" \
-  3200 30000 $CSJDATA_SAVEPATH/train_100k_nodup $CSJDATA_SAVEPATH/lang_nosp exp/mono_ali exp/tri1
-
-graph_dir=exp/tri1/graph_csj_tg
-$train_cmd $graph_dir/mkgraph.log \
-    utils/mkgraph.sh $CSJDATA_SAVEPATH/lang_nosp_csj_tg exp/tri1 $graph_dir
-for eval_num in eval1 eval2 eval3 $dev_set ; do
-    steps/decode_si.sh --nj 10 --cmd "$decode_cmd" --config conf/decode.config \
-	$graph_dir $CSJDATA_SAVEPATH/$eval_num exp/tri1/decode_${eval_num}_csj
-done
-
-steps/align_si.sh --nj 50 --cmd "$train_cmd" \
-  $CSJDATA_SAVEPATH/train_100k_nodup $CSJDATA_SAVEPATH/lang_nosp exp/tri1 exp/tri1_ali
-
-steps/train_deltas.sh --cmd "$train_cmd" \
-  4000 70000 $CSJDATA_SAVEPATH/train_100k_nodup $CSJDATA_SAVEPATH/lang_nosp exp/tri1_ali exp/tri2
-
-# The previous mkgraph might be writing to this file.  If the previous mkgraph
-# is not running, you can remove this loop and this mkgraph will create it.
-while [ ! -s $CSJDATA_SAVEPATH/lang_nosp_csj_tg/tmp/CLG_3_1.fst ]; do sleep 60; done
-sleep 20; # in case still writing.
-graph_dir=exp/tri2/graph_csj_tg
-$train_cmd $graph_dir/mkgraph.log \
-    utils/mkgraph.sh $CSJDATA_SAVEPATH/lang_nosp_csj_tg exp/tri2 $graph_dir
-for eval_num in eval1 eval2 eval3 $dev_set ; do
-    steps/decode.sh --nj 10 --cmd "$decode_cmd" --config conf/decode.config \
-	$graph_dir $CSJDATA_SAVEPATH/$eval_num exp/tri2/decode_${eval_num}_csj
-done
-
-# From now, we start with the LDA+MLLT system
-steps/align_si.sh --nj 50 --cmd "$train_cmd" \
-  $CSJDATA_SAVEPATH/train_100k_nodup $CSJDATA_SAVEPATH/lang_nosp exp/tri2 exp/tri2_ali_100k_nodup
-
-# From now, we start using all of the data (except some duplicates of common
-# utterances, which don't really contribute much).
-steps/align_si.sh --nj 50 --cmd "$train_cmd" \
-  $CSJDATA_SAVEPATH/train_nodup $CSJDATA_SAVEPATH/lang_nosp exp/tri2 exp/tri2_ali_nodup
-
-# Do another iteration of LDA+MLLT training, on all the data.
-steps/train_lda_mllt.sh --cmd "$train_cmd" \
-  6000 140000 $CSJDATA_SAVEPATH/train_nodup $CSJDATA_SAVEPATH/lang_nosp exp/tri2_ali_nodup exp/tri3
-
-graph_dir=exp/tri3/graph_csj_tg
-$train_cmd $graph_dir/mkgraph.log \
-    utils/mkgraph.sh $CSJDATA_SAVEPATH/lang_nosp_csj_tg exp/tri3 $graph_dir
-for eval_num in eval1 eval2 eval3 $dev_set ; do
-    steps/decode.sh --nj 10 --cmd "$decode_cmd" --config conf/decode.config \
-	$graph_dir $CSJDATA_SAVEPATH/$eval_num exp/tri3/decode_${eval_num}_csj_nosp
-done
-
-# Now we compute the pronunciation and silence probabilities from training data,
-# and re-create the lang directory.
-steps/get_prons.sh --cmd "$train_cmd" $CSJDATA_SAVEPATH/train_nodup $CSJDATA_SAVEPATH/lang_nosp exp/tri3
-utils/dict_dir_add_pronprobs.sh --max-normalize true \
-  $CSJDATA_SAVEPATH/local/dict_nosp exp/tri3/pron_counts_nowb.txt exp/tri3/sil_counts_nowb.txt \
-  exp/tri3/pron_bigram_counts_nowb.txt $CSJDATA_SAVEPATH/local/dict
-
-utils/prepare_lang.sh $CSJDATA_SAVEPATH/local/dict "<unk>" $CSJDATA_SAVEPATH/local/lang $CSJDATA_SAVEPATH/lang
-LM=$CSJDATA_SAVEPATH/local/lm/csj.o3g.kn.gz
-srilm_opts="-subset -prune-lowprobs -unk -tolower -order 3"
-utils/format_lm_sri.sh --srilm-opts "$srilm_opts" \
-  $CSJDATA_SAVEPATH/lang $LM $CSJDATA_SAVEPATH/local/dict/lexicon.txt $CSJDATA_SAVEPATH/lang_csj_tg
-
-graph_dir=exp/tri3/graph_csj_tg
-$train_cmd $graph_dir/mkgraph.log \
-    utils/mkgraph.sh $CSJDATA_SAVEPATH/lang_csj_tg exp/tri3 $graph_dir
-for eval_num in eval1 eval2 eval3 $dev_set ; do
-    steps/decode.sh --nj 10 --cmd "$decode_cmd" --config conf/decode.config \
-        $graph_dir $CSJDATA_SAVEPATH/$eval_num exp/tri3/decode_${eval_num}_csj
-done
-
-
-# Train tri4, which is LDA+MLLT+SAT, on all the (nodup) data.
-steps/align_fmllr.sh --nj 50 --cmd "$train_cmd" \
-  $CSJDATA_SAVEPATH/train_nodup $CSJDATA_SAVEPATH/lang exp/tri3 exp/tri3_ali_nodup
-
-steps/train_sat.sh  --cmd "$train_cmd" \
-  11500 200000 $CSJDATA_SAVEPATH/train_nodup $CSJDATA_SAVEPATH/lang exp/tri3_ali_nodup exp/tri4
-
-graph_dir=exp/tri4/graph_csj_tg
-$train_cmd $graph_dir/mkgraph.log \
-    utils/mkgraph.sh $CSJDATA_SAVEPATH/lang_csj_tg exp/tri4 $graph_dir
-for eval_num in eval1 eval2 eval3 $dev_set ; do
-    steps/decode_fmllr.sh --nj 10 --cmd "$decode_cmd" --config conf/decode.config \
-	$graph_dir $CSJDATA_SAVEPATH/$eval_num exp/tri4/decode_${eval_num}_csj
-done
-
-steps/align_fmllr.sh --nj 50 --cmd "$train_cmd" \
-  $CSJDATA_SAVEPATH/train_nodup $CSJDATA_SAVEPATH/lang exp/tri4 exp/tri4_ali_nodup || exit 1
-
-# You can execute DNN training script [e.g. local/chain/run_dnn.sh] from here.
-
-# MMI training
-# local/run_mmi.sh
-
-# this will help find issues with the lexicon.
-# steps/cleanup/debug_lexicon.sh --nj 300 --cmd "$train_cmd" $CSJDATA_SAVEPATH/train_nodev $CSJDATA_SAVEPATH/lang exp/tri4 $CSJDATA_SAVEPATH/local/dict/lexicon.txt exp/debug_lexicon
-
-# SGMM system
-# local/run_sgmm2.sh
-
-#SKIP
-
-##### Start DNN training #####
-# Karel's DNN recipe on top of fMLLR features
-# local/nnet/run_dnn.sh
-
-# nnet3 TDNN+Chain
-local/chain/run_tdnn.sh
-
-# nnet3 TDNN recipe
-# local/nnet3/run_tdnn.sh
-
-##### Start RNN-LM training for rescoring #####
-# local/csj_run_rnnlm.sh
 
 # getting results (see RESULTS file)
 # for eval_num in eval1 eval2 eval3 $dev_set ; do
