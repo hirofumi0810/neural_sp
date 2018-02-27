@@ -26,12 +26,10 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str, help='path to save data')
 
 parser.add_argument('--tool', type=str,
-                    choices=['python_speech_features', 'librosa'])
+                    choices=['htk', 'python_speech_features', 'librosa', 'wav'])
 parser.add_argument('--normalize', type=str,
                     choices=['global', 'speaker', 'utterance', 'no'])
 
-parser.add_argument('--feature_type', type=str,
-                    choices=['fbank', 'mfcc', 'wav'])
 parser.add_argument('--channels', type=int,
                     help='the number of frequency channels')
 parser.add_argument('--window', type=float, default=0.025,
@@ -47,7 +45,7 @@ args = parser.parse_args()
 
 
 CONFIG = {
-    'feature_type': args.feature_type,
+    'feature_type': 'fbank',
     'channels': args.channels,
     'sampling_rate': 16000,
     'window': args.window,
@@ -101,45 +99,39 @@ def main():
                     wav_path = line.split(' ')[2]
                     spk2audio[speaker] = wav_path
 
-        if not isfile(join(feature_save_path, data_type, '.done_feature_extraction')):
-            if args.feature_type == 'wav':
-                raise NotImplementedError
-                # Split WAV files per utterance
-                # split_wav(wav_paths=wav_paths,
-                #           speaker_dict=speaker_dict_dict[data_type],
-                #           save_path=mkdir_join(feature_save_path, data_type))
+        if args.feature_type == 'wav':
+            raise NotImplementedError
+            # Split WAV files per utterance
+            # split_wav(wav_paths=wav_paths,
+            #           speaker_dict=speaker_dict_dict[data_type],
+            #           save_path=mkdir_join(feature_save_path, data_type))
 
+        else:
+            if data_type == 'train':
+                global_mean_male, global_std_male = None, None
+                global_mean_female, global_std_female = None, None
             else:
-                if data_type == 'train':
-                    global_mean_male, global_std_male = None, None
-                    global_mean_female, global_std_female = None, None
-                else:
-                    # Load statistics over train dataset
-                    global_mean_male = np.load(
-                        join(feature_save_path, 'train/feature/global_mean_male.npy'))
-                    global_std_male = np.load(
-                        join(feature_save_path, 'train/feature/global_std_male.npy'))
-                    global_mean_female = np.load(
-                        join(feature_save_path, 'train/feature/global_mean_female.npy'))
-                    global_std_female = np.load(
-                        join(feature_save_path, 'train/feature/global_std_female.npy'))
+                # Load statistics over train dataset
+                global_mean_male = np.load(
+                    join(feature_save_path, 'train/feature/global_mean_male.npy'))
+                global_std_male = np.load(
+                    join(feature_save_path, 'train/feature/global_std_male.npy'))
+                global_mean_female = np.load(
+                    join(feature_save_path, 'train/feature/global_mean_female.npy'))
+                global_std_female = np.load(
+                    join(feature_save_path, 'train/feature/global_std_female.npy'))
 
-                read_audio(data_type=data_type,
-                           spk2audio=spk2audio,
-                           segment_dict=segment_dict,
-                           tool=args.tool,
-                           config=CONFIG,
-                           normalize=args.normalize,
-                           save_path=feature_save_path,
-                           global_mean_male=global_mean_male,
-                           global_std_male=global_std_male,
-                           global_mean_female=global_mean_female,
-                           global_std_female=global_std_female)
-
-            # Make a confirmation file to prove that dataset was saved
-            # correctly
-            with open(join(feature_save_path, data_type, '.done_feature_extraction'), 'w') as f:
-                f.write('')
+            read_audio(data_type=data_type,
+                       spk2audio=spk2audio,
+                       segment_dict=segment_dict,
+                       tool=args.tool,
+                       config=CONFIG,
+                       normalize=args.normalize,
+                       save_path=feature_save_path,
+                       global_mean_male=global_mean_male,
+                       global_std_male=global_std_male,
+                       global_mean_female=global_mean_female,
+                       global_std_female=global_std_female)
 
 
 def read_audio(data_type, spk2audio, segment_dict, tool, config, normalize,

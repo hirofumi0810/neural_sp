@@ -20,7 +20,6 @@ parser.add_argument('--htk_save_path', type=str, help='path to save HTK files')
 parser.add_argument('--config_save_path', type=str,
                     help='path to save the configuration file')
 
-parser.add_argument('--feature_type', type=str, choices=['fbank', 'mfcc'])
 parser.add_argument('--channels', type=int,
                     help='the number of frequency channels')
 parser.add_argument('--window', type=float, default=0.025,
@@ -39,7 +38,7 @@ def main():
 
     # HTK settings
     save_config(audio_file_type='wav',
-                feature_type=args.feature_type,
+                feature_type='fbank',
                 channels=args.channels,
                 config_save_path=args.config_save_path,
                 sampling_rate=16000,
