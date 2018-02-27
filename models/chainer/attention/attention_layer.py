@@ -89,7 +89,7 @@ class AttentionMechanism(chainer.Chain):
                                   bias=False, use_cuda=use_cuda)
 
             elif self.attention_type == 'dot_product':
-                self.W_keys = LinearND(decoder_num_units, attention_dim,
+                self.W_keys = LinearND(encoder_num_units, attention_dim,
                                        bias=False, use_cuda=use_cuda)
                 self.W_query = LinearND(decoder_num_units, attention_dim,
                                         bias=False, use_cuda=use_cuda)

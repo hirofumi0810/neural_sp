@@ -12,10 +12,11 @@ import numpy as np
 import chainer
 from chainer import functions as F
 from chainer import links as L
+from chainer import Variable
+from chainer import cuda
 
 from models.chainer.linear import LinearND
 from models.chainer.encoders.cnn import CNNEncoder
-from utils.io.variable import np2var
 
 
 class RNNEncoder(chainer.Chain):
@@ -147,16 +148,16 @@ class RNNEncoder(chainer.Chain):
 
             self.rnns = []
             self.projections = []
-            for i_layer in range(num_layers):
-                if i_layer == 0:
+            for l in range(num_layers):
+                if l == 0:
                     encoder_input_size = input_size
                 elif self.num_proj > 0:
                     encoder_input_size = num_proj
-                    if subsample_type == 'concat' and i_layer > 0 and self.subsample_list[i_layer - 1]:
+                    if subsample_type == 'concat' and l > 0 and self.subsample_list[l - 1]:
                         encoder_input_size *= 2
                 else:
                     encoder_input_size = num_units * self.num_directions
-                    if subsample_type == 'concat' and i_layer > 0 and self.subsample_list[i_layer - 1]:
+                    if subsample_type == 'concat' and l > 0 and self.subsample_list[l - 1]:
                         encoder_input_size *= 2
 
                 if rnn_type == 'lstm':
@@ -200,19 +201,19 @@ class RNNEncoder(chainer.Chain):
                     raise ValueError(
                         'rnn_type must be "lstm" or "gru" or "rnn".')
 
-                if self.subsample_list[i_layer]:
-                    setattr(self, 'p' + rnn_type + '_l' + str(i_layer), rnn_i)
+                if self.subsample_list[l]:
+                    setattr(self, 'p' + rnn_type + '_l' + str(l), rnn_i)
                 else:
-                    setattr(self, rnn_type + '_l' + str(i_layer), rnn_i)
+                    setattr(self, rnn_type + '_l' + str(l), rnn_i)
                 if use_cuda:
                     rnn_i.to_gpu()
                 self.rnns.append(rnn_i)
 
-                if i_layer != self.num_layers - 1 and self.num_proj > 0:
+                if l != self.num_layers - 1 and self.num_proj > 0:
                     proj_i = LinearND(
                         num_units * self.num_directions, num_proj,
                         dropout=dropout_hidden, use_cuda=use_cuda)
-                    setattr(self, 'proj_l' + str(i_layer), proj_i)
+                    setattr(self, 'proj_l' + str(l), proj_i)
                     if use_cuda:
                         proj_i.to_gpu()
                     self.projections.append(proj_i)
@@ -242,7 +243,7 @@ class RNNEncoder(chainer.Chain):
         # NOTE: automatically sort xs in descending order by length,
         # and transpose the sequence
 
-        wrap_by_var = isinstance(x_lens, chainer.Variable)
+        wrap_by_var = isinstance(x_lens, Variable)
 
         # Dropout for inputs-hidden connection
         if self.dropout_input > 0:
@@ -254,42 +255,42 @@ class RNNEncoder(chainer.Chain):
 
         res_outputs_list = []
         # NOTE: exclude residual connection from the raw inputs
-        for i_layer in range(self.num_layers):
+        for l in range(self.num_layers):
 
             # Path through RNN
             if self.rnn_type == 'lstm':
-                _, _, xs = self.rnns[i_layer](hx=None, cx=None, xs=xs)
+                _, _, xs = self.rnns[l](hx=None, cx=None, xs=xs)
             else:
-                _, xs = self.rnns[i_layer](hx=None, xs=xs)
+                _, xs = self.rnns[l](hx=None, xs=xs)
 
             # Dropout for hidden-hidden or hidden-output connection
             if self.dropout_hidden > 0:
                 xs = [F.dropout(x, ratio=self.dropout_hidden) for x in xs]
 
             # Pick up outputs in the sub task before the projection layer
-            if self.num_layers_sub >= 1 and i_layer == self.num_layers_sub - 1:
+            if self.num_layers_sub >= 1 and l == self.num_layers_sub - 1:
                 xs_sub = xs
                 x_lens_sub = x_lens
 
                 # Wrap by Variable again
-                if wrap_by_var and not isinstance(x_lens_sub, chainer.Variable):
-                    x_lens_sub = np2var(
-                        x_lens_sub, use_cuda=self.use_cuda, backend='chainer')
+                if wrap_by_var and not isinstance(x_lens_sub, Variable):
+                    x_lens_sub = Variable(
+                        cuda.to_gpu(x_lens_sub), requires_grad=False)
 
             # NOTE: Exclude the last layer
-            if i_layer != self.num_layers - 1:
-                if self.residual or self.dense_residual or self.num_proj > 0 or self.subsample_list[i_layer]:
+            if l != self.num_layers - 1:
+                if self.residual or self.dense_residual or self.num_proj > 0 or self.subsample_list[l]:
 
                     # Projection layer (affine transformation)
                     if self.num_proj > 0:
                         # Convert to 2D tensor
                         xs = F.vstack(xs)
-                        xs = F.tanh(self.projections[i_layer](xs))
+                        xs = F.tanh(self.projections[l](xs))
                         # Reshape back to 3D tensor
                         xs = F.split_axis(xs, np.cumsum(x_lens)[:-1], axis=0)
 
                     # Subsampling
-                    if self.subsample_list[i_layer]:
+                    if self.subsample_list[l]:
                         # Pick up features at odd time step
                         if self.subsample_type == 'drop':
                             xs = [x[::2, :] for x in xs]
@@ -306,7 +307,7 @@ class RNNEncoder(chainer.Chain):
 
                     # Residual connection
                     elif self.residual or self.dense_residual:
-                        if i_layer >= self.residual_start_layer - 1:
+                        if l >= self.residual_start_layer - 1:
                             for xs_lower in res_outputs_list:
                                 xs = [x + x_l for x,
                                       x_l in zip(xs, xs_lower)]
@@ -316,8 +317,9 @@ class RNNEncoder(chainer.Chain):
                                 res_outputs_list.append(xs)
 
         # Wrap by Variable again
-        if wrap_by_var and not isinstance(x_lens, chainer.Variable):
-            x_lens = np2var(x_lens, use_cuda=self.use_cuda, backend='chainer')
+        if wrap_by_var and not isinstance(x_lens, Variable):
+            x_lens = Variable(
+                cuda.to_gpu(x_lens), requires_grad=False)
 
         # Sum bidirectional outputs
         if self.bidirectional and self.merge_bidirectional:

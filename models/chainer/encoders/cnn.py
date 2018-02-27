@@ -10,8 +10,8 @@ from __future__ import print_function
 import chainer
 from chainer import functions as F
 from chainer import links as L
-
-from utils.io.variable import np2var
+from chainer import Variable
+from chainer import cuda
 
 
 class CNNEncoder(chainer.Chain):
@@ -66,37 +66,37 @@ class CNNEncoder(chainer.Chain):
         with self.init_scope():
             in_c = self.input_channels
             in_freq = self.input_freq
-            for i_layer in range(len(conv_channels)):
+            for l in range(len(conv_channels)):
 
                 # Conv
                 conv = L.Convolution2D(in_channels=in_c,
-                                       out_channels=conv_channels[i_layer],
-                                       ksize=tuple(conv_kernel_sizes[i_layer]),
-                                       stride=tuple(conv_strides[i_layer]),
-                                       pad=tuple(conv_strides[i_layer]),
+                                       out_channels=conv_channels[l],
+                                       ksize=tuple(conv_kernel_sizes[l]),
+                                       stride=tuple(conv_strides[l]),
+                                       pad=tuple(conv_strides[l]),
                                        nobias=batch_norm)
-                setattr(self, 'conv_l' + str(i_layer), conv)
+                setattr(self, 'conv_l' + str(l), conv)
                 in_freq = chainer.utils.get_conv_outsize(
                     in_freq,
-                    k=conv_kernel_sizes[i_layer][0],
-                    s=conv_strides[i_layer][0],
-                    p=conv_strides[i_layer][0])
+                    k=conv_kernel_sizes[l][0],
+                    s=conv_strides[l][0],
+                    p=conv_strides[l][0])
                 # NOTE: this is frequency-dimension
 
                 # Max Pooling
-                if len(poolings[i_layer]) > 0:
+                if len(poolings[l]) > 0:
                     in_freq = chainer.utils.get_conv_outsize(
                         in_freq,
-                        k=poolings[i_layer][0],
-                        s=poolings[i_layer][0],
+                        k=poolings[l][0],
+                        s=poolings[l][0],
                         p=0)
 
                 # Batch Normalization
                 if batch_norm:
-                    setattr(self, 'bn_l' + str(i_layer),
-                            L.BatchNormalization(conv_channels[i_layer]))
+                    setattr(self, 'bn_l' + str(l),
+                            L.BatchNormalization(conv_channels[l]))
 
-                in_c = conv_channels[i_layer]
+                in_c = conv_channels[l]
 
         self.get_conv_out_size = ConvOutSize(conv_kernel_sizes,
                                              conv_strides,
@@ -113,7 +113,7 @@ class CNNEncoder(chainer.Chain):
             xs (chainer.Variable): A tensor of size `[B, T', feature_dim]`
             x_lens (np.ndarray or chainer.Variable): A tensor of size `[B]`
         """
-        wrap_by_var = isinstance(x_lens, chainer.Variable)
+        wrap_by_var = isinstance(x_lens, Variable)
 
         # Convert to Variable
         if isinstance(xs, list):
@@ -136,10 +136,10 @@ class CNNEncoder(chainer.Chain):
             xs = F.expand_dims(xs, axis=1)
             # NOTE: xs: `[B, in_ch (1), freq, max_time]`
 
-        for i_layer in range(len(self.conv_channels)):
+        for l in range(len(self.conv_channels)):
 
             # Conv
-            xs = getattr(self, 'conv_l' + str(i_layer))(xs)
+            xs = getattr(self, 'conv_l' + str(l))(xs)
 
             # Activation
             if self.activation == 'relu':
@@ -157,10 +157,10 @@ class CNNEncoder(chainer.Chain):
                 raise NotImplementedError
 
             # Max Pooling
-            if len(self.poolings[i_layer]) > 0:
+            if len(self.poolings[l]) > 0:
                 xs = F.max_pooling_2d(xs,
-                                      ksize=tuple(self.poolings[i_layer]),
-                                      stride=tuple(self.poolings[i_layer]),
+                                      ksize=tuple(self.poolings[l]),
+                                      stride=tuple(self.poolings[l]),
                                       # pad=(1, 1),
                                       pad=(0, 0),  # default
                                       cover_all=False)
@@ -169,7 +169,7 @@ class CNNEncoder(chainer.Chain):
 
             # Batch Normalization
             if self.batch_norm:
-                xs = getattr(self, 'bn_l' + str(i_layer))(xs)
+                xs = getattr(self, 'bn_l' + str(l))(xs)
 
             # Dropout for hidden-hidden connection
             if self.dropout_hidden > 0:
@@ -189,7 +189,7 @@ class CNNEncoder(chainer.Chain):
             x_lens = [self.get_conv_out_size(x.data, 1) for x in x_lens]
 
             # Wrap by Variable again
-            x_lens = np2var(x_lens, use_cuda=self.use_cuda, backend='chainer')
+            x_lens = Variable(cuda.to_gpu(x_lens), requires_grad=False)
         else:
             # Update x_lens
             x_lens = [self.get_conv_out_size(x, 1) for x in x_lens]
@@ -219,18 +219,18 @@ class ConvOutSize(object):
         Returns:
             size (int):
         """
-        for i_layer in range(len(self.conv_kernel_sizes)):
+        for l in range(len(self.conv_kernel_sizes)):
             size = chainer.utils.get_conv_outsize(
                 size,
-                k=self.conv_kernel_sizes[i_layer][dim],
-                s=self.conv_strides[i_layer][dim],
-                p=self.conv_strides[i_layer][dim])
+                k=self.conv_kernel_sizes[l][dim],
+                s=self.conv_strides[l][dim],
+                p=self.conv_strides[l][dim])
 
-            if len(self.poolings[i_layer]) > 0:
+            if len(self.poolings[l]) > 0:
                 size = chainer.utils.get_conv_outsize(
                     size,
-                    k=self.poolings[i_layer][dim],
-                    s=self.poolings[i_layer][dim],
+                    k=self.poolings[l][dim],
+                    s=self.poolings[l][dim],
                     p=0)
 
         # assert size >= 1

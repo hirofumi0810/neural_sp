@@ -73,7 +73,7 @@ def cross_entropy_label_smoothing(logits, y_lens, label_smoothing_prob,
 
     log_probs = F.log_softmax(logits)
 
-    xe_loss = sum([F.sum(- (dist * log_probs[b, y_lens[b].data]))
+    xe_loss = sum([F.sum(- (dist * log_probs[b, :y_lens[b].data]))
                    for b in range(batch_size)])
 
     if size_average:

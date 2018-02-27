@@ -9,10 +9,8 @@ from __future__ import print_function
 
 import numpy as np
 import chainer
-from chainer import functions as F
 
 from models.chainer.linear import LinearND, Embedding, Embedding_LS
-from models.chainer.criterion import cross_entropy_label_smoothing
 from models.chainer.attention.attention_seq2seq import AttentionSeq2seq
 from models.chainer.encoders.load_encoder import load
 from models.chainer.attention.rnn_decoder import RNNDecoder
@@ -20,7 +18,6 @@ from models.chainer.attention.rnn_decoder import RNNDecoder
 from models.chainer.attention.attention_layer import AttentionMechanism
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
-from utils.io.variable import np2var, var2np
 
 
 class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
@@ -135,8 +132,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         self.decoder_num_layers_sub = decoder_num_layers_sub
         self.embedding_dim_sub = embedding_dim_sub
         self.num_classes_sub = num_classes_sub + 1  # Add <EOS> class
-        self.sos_index_sub = num_classes_sub
-        self.eos_index_sub = num_classes_sub
+        self.sos_sub = num_classes_sub
+        self.eos_sub = num_classes_sub
         # NOTE: <SOS> and <EOS> have the same index
 
         # Setting for MTL
@@ -190,7 +187,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     self.encoder_num_units, decoder_num_units_sub,
                     use_cuda=self.use_cuda)
 
-            self.is_bridge_sub = False
             if self.sub_loss_weight > 0:
                 ##############################
                 # Decoder (sub)
@@ -219,15 +215,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     out_channels=attention_conv_num_channels,
                     kernel_size=attention_conv_width)
 
-                ###############################################################
-                # Bridge layer between the encoder and decoder (sub)
-                ###############################################################
-                if encoder_num_units != decoder_num_units_sub and attention_type == 'dot_product':
-                    self.bridge_sub = LinearND(
-                        self.encoder_num_units, decoder_num_units_sub,
-                        dropout=dropout_encoder, use_cuda=self.use_cuda)
-                    self.is_bridge_sub = True
-
                 ##############################
                 # Embedding (sub)
                 ##############################
@@ -241,7 +228,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     self.embed_sub = Embedding(num_classes=self.num_classes_sub,
                                                embedding_dim=embedding_dim_sub,
                                                dropout=dropout_embedding,
-                                               ignore_index=self.sos_index_sub,
+                                               ignore_index=self.sos_sub,
                                                use_cuda=self.use_cuda)
 
                 ##############################
@@ -261,14 +248,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # CTC (sub)
             ##############################
             if ctc_loss_weight_sub > 0:
-                if self.is_bridge_sub:
-                    self.fc_ctc_sub = LinearND(
-                        decoder_num_units_sub, num_classes_sub + 1,
-                        use_cuda=self.use_cuda)
-                else:
-                    self.fc_ctc_sub = LinearND(
-                        self.encoder_num_units, num_classes_sub + 1,
-                        use_cuda=self.use_cuda)
+                self.fc_ctc_sub = LinearND(
+                    self.encoder_num_units, num_classes_sub + 1,
+                    use_cuda=self.use_cuda)
 
                 # self.blank_index = num_classes_sub
                 self.blank_index = 0
@@ -363,35 +345,32 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # ys_out and ys_sub_out are padded with -1, and added <EOS>
         # after the last token
         ys_in = np.full((ys.shape[0], ys.shape[1] + 1),
-                        fill_value=self.eos_index, dtype=np.int32)
+                        fill_value=self.eos, dtype=np.int32)
         ys_sub_in = np.full((ys_sub.shape[0], ys_sub.shape[1] + 1),
-                            fill_value=self.eos_index_sub, dtype=np.int32)
+                            fill_value=self.eos_sub, dtype=np.int32)
         ys_out = np.full((ys.shape[0], ys.shape[1] + 1),
                          fill_value=-1, dtype=np.int32)
         ys_sub_out = np.full((ys_sub.shape[0], ys_sub.shape[1] + 1),
                              fill_value=-1, dtype=np.int32)
         for b in range(len(xs)):
-            ys_in[b, 0] = self.sos_index
+            ys_in[b, 0] = self.sos
             ys_in[b, 1:y_lens[b] + 1] = ys[b, :y_lens[b]]
-            ys_sub_in[b, 0] = self.sos_index_sub
+            ys_sub_in[b, 0] = self.sos_sub
             ys_sub_in[b, 1:y_lens_sub[b] + 1] = ys_sub[b, :y_lens_sub[b]]
 
             ys_out[b, :y_lens[b]] = ys[b, :y_lens[b]]
-            ys_out[b, y_lens[b]] = self.eos_index
+            ys_out[b, y_lens[b]] = self.eos
             ys_sub_out[b, :y_lens_sub[b]] = ys_sub[b, :y_lens_sub[b]]
-            ys_sub_out[b, y_lens_sub[b]] = self.eos_index_sub
+            ys_sub_out[b, y_lens_sub[b]] = self.eos_sub
 
         # Wrap by Variable
-        xs = np2var(xs, use_cuda=self.use_cuda, backend='chainer')
-        ys_in = np2var(ys_in, use_cuda=self.use_cuda, backend='chainer')
-        ys_out = np2var(ys_out, use_cuda=self.use_cuda, backend='chainer')
-        ys_sub_in = np2var(
-            ys_sub_in, use_cuda=self.use_cuda, backend='chainer')
-        ys_sub_out = np2var(
-            ys_sub_out, use_cuda=self.use_cuda, backend='chainer')
-        y_lens = np2var(y_lens, use_cuda=self.use_cuda, backend='chainer')
-        y_lens_sub = np2var(
-            y_lens_sub, use_cuda=self.use_cuda, backend='chainer')
+        xs = self.np2var(xs)
+        ys_in = self.np2var(ys_in)
+        ys_out = self.np2var(ys_out)
+        ys_sub_in = self.np2var(ys_sub_in)
+        ys_sub_out = self.np2var(ys_sub_out)
+        y_lens = self.np2var(y_lens)
+        y_lens_sub = self.np2var(y_lens_sub)
 
         # Encode acoustic features
         xs, x_lens, xs_sub, x_lens_sub = self._encode(
@@ -424,8 +403,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Sub task (CTC, optional)
         ##################################################
         if self.ctc_loss_weight_sub > 0:
-            x_lens_sub = np2var(
-                x_lens_sub, use_cuda=self.use_cuda, backend='chainer')
+            x_lens_sub = self.np2var(x_lens_sub)
 
             ctc_loss_sub = self.compute_ctc_loss(
                 xs_sub, ys_sub_in[:, 1:] + 1,
@@ -460,7 +438,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     xs, x_lens, beam_width, is_sub_task=True)
             else:
                 # Wrap by Variable
-                xs = np2var(xs, use_cuda=self.use_cuda, backend='chainer')
+                xs = self.np2var(xs)
 
                 # Encode acoustic features
                 if is_sub_task:

@@ -119,20 +119,24 @@ class ModelBase(chainer.Chain):
         Args:
             gpu_id (int)
             deterministic (bool, optional):
-            benchmark (bool, optional):
+            benchmark (bool, optional): not used
         """
         if self.use_cuda:
-            # if benchmark:
-            #     torch.backends.cudnn.benchmark = True
-            #     logger.info('GPU mode (benchmark)')
-            # elif deterministic:
-            #     logger.info('GPU deterministic mode (no cudnn)')
-            #     torch.backends.cudnn.enabled = False
-            #     # NOTE: this is slower than GPU mode.
-            # else:
-            #     logger.info('GPU mode')
+            chainer.config.type_check = False
+
+            if deterministic:
+                chainer.config.cudnn_deterministic = True
+                logger.info('GPU deterministic mode (no cudnn)')
+            else:
+                chainer.config.cudnn_deterministic = False
+                logger.info('GPU mode')
             cuda.get_device_from_id(gpu_id).use()
             self.to_gpu()
+
+            if not chainer.cuda.available:
+                raise ValueError('cuda is not available')
+            if not chainer.cuda.cudnn_enabled:
+                raise ValueError('cudnn is not available')
         else:
             logger.info('CPU mode')
 
@@ -277,11 +281,6 @@ class ModelBase(chainer.Chain):
         if isfile(join(model_path)):
             print("=> Loading checkpoint (epoch:%d): %s" % (epoch, model_path))
 
-            # self = serializers.load_npz(
-            #     'model.epoch-' + str(epoch), self)
-            # self.optimizer = serializers.load_npz(
-            #     'optimizer.epoch-' + str(epoch), self)
-
             with np.load(model_path) as f:
                 deserializer = serializers.NpzDeserializer(f)
 
@@ -301,3 +300,42 @@ class ModelBase(chainer.Chain):
 
         return (checkpoint['epoch'] + 1, checkpoint['step'] + 1,
                 checkpoint['lr'], checkpoint['metric_dev_best'])
+
+    def np2var(self, array, use_cuda=False, volatile=False, dtype=None):
+        """Convert form np.ndarray to Variable.
+        Args:
+            array (np.ndarray): A tensor of any sizes
+            use_cuda (bool, optional): if True, use CUDA
+            volatile (bool, optional): if True, the history will not be saved.
+                This should be used in inference model for memory efficiency.
+            type (string, optional): float or long or int
+            backend (string, optional): pytorch or chainer
+        Returns:
+            array (chainer.Variable or list of chainer.Variable):
+                pytorch => A tensor of size `[B, T, input_size]`
+                chainer => list of `[T_i, input_size]`
+        """
+        if self.use_cuda:
+            if isinstance(array, list):
+                array = [chainer.Variable(chainer.cuda.to_gpu(a), requires_grad=False)
+                         for a in array]
+            else:
+                array = chainer.Variable(
+                    chainer.cuda.to_gpu(array), requires_grad=False)
+        else:
+            if isinstance(array, list):
+                array = [chainer.Variable(a, requires_grad=False)
+                         for a in array]
+            else:
+                array = chainer.Variable(array, requires_grad=False)
+
+        return array
+
+    def var2np(slef, var):
+        """Convert form Variable to np.ndarray.
+        Args:
+            var (chainer.Variable):
+        Returns:
+            np.ndarray
+        """
+        return chainer.cuda.to_cpu(var.data)

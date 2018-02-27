@@ -15,7 +15,6 @@ from models.chainer.ctc.ctc import CTC
 from models.chainer.linear import LinearND
 from models.chainer.criterion import cross_entropy_label_smoothing
 from models.chainer.encoders.load_encoder import load
-from utils.io.variable import np2var
 
 NEG_INF = -float("inf")
 LOG_0 = NEG_INF
@@ -223,13 +222,12 @@ class HierarchicalCTC(CTC):
 
     def _forward(self, xs, ys, ys_sub, x_lens, y_lens, y_lens_sub):
         # Wrap by Variable
-        xs = np2var(xs, use_cuda=self.use_cuda, backend='chainer')
-        ys = np2var(ys, use_cuda=self.use_cuda, backend='chainer')
-        ys_sub = np2var(ys_sub, use_cuda=self.use_cuda, backend='chainer')
-        x_lens = np2var(x_lens, use_cuda=self.use_cuda, backend='chainer')
-        y_lens = np2var(y_lens, use_cuda=self.use_cuda, backend='chainer')
-        y_lens_sub = np2var(
-            y_lens_sub, use_cuda=self.use_cuda, backend='chainer')
+        xs = self.np2var(xs)
+        ys = self.np2var(ys)
+        ys_sub = self.np2var(ys_sub)
+        x_lens = self.np2var(x_lens)
+        y_lens = self.np2var(y_lens)
+        y_lens_sub = self.np2var(y_lens_sub)
 
         # Encode acoustic features
         logits_main, x_lens, logits_sub, x_lens_sub = self._encode(

@@ -18,8 +18,8 @@ from models.chainer.criterion import cross_entropy_label_smoothing
 from models.chainer.encoders.load_encoder import load
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
-# from models.pytorch.ctc.decoders.beam_search_decoder2 import BeamSearchDecoder
-from utils.io.variable import np2var, var2np
+# from models.pytorch.ctc.decoders.beam_search_decoder2 import
+# BeamSearchDecoder
 
 NEG_INF = -float("inf")
 LOG_0 = NEG_INF
@@ -249,10 +249,10 @@ class CTC(ModelBase):
 
     def _forward(self, xs, ys, x_lens, y_lens):
         # Wrap by Variable
-        xs = np2var(xs, use_cuda=self.use_cuda, backend='chainer')
-        ys = np2var(ys, use_cuda=self.use_cuda, backend='chainer')
-        x_lens = np2var(x_lens, use_cuda=self.use_cuda, backend='chainer')
-        y_lens = np2var(y_lens, use_cuda=self.use_cuda, backend='chainer')
+        xs = self.np2var(xs)
+        ys = self.np2var(ys)
+        x_lens = self.np2var(x_lens)
+        y_lens = self.np2var(y_lens)
 
         # Encode acoustic features
         logits, x_lens = self._encode(xs, x_lens)
@@ -339,12 +339,12 @@ class CTC(ModelBase):
             blank_prior (float, optional):
             is_sub_task (bool, optional):
         Returns:
-            probs (np.ndarray): A list of tensors of size `[B, T, num_classes]`
+            probs (np.ndarray): A tensor of size `[B, T, num_classes]`
         """
         with chainer.no_backprop_mode(), chainer.using_config('train', False):
 
             # Wrap by Variable
-            xs = np2var(xs, use_cuda=self.use_cuda, backend='chainer')
+            xs = self.np2var(xs)
 
             # Encode acoustic features
             if hasattr(self, 'main_loss_weight'):
@@ -363,7 +363,7 @@ class CTC(ModelBase):
             if blank_prior is not None:
                 raise NotImplementedError
 
-            return var2np(probs, backend='chainer')
+            return self.var2np(probs)
 
     def decode(self, xs, x_lens, beam_width=1,
                max_decode_len=None, is_sub_task=False):
@@ -382,7 +382,7 @@ class CTC(ModelBase):
         with chainer.no_backprop_mode(), chainer.using_config('train', False):
 
             # Wrap by Variable
-            xs = np2var(xs, use_cuda=self.use_cuda, backend='chainer')
+            xs = self.np2var(xs)
 
             # Encode acoustic features
             if hasattr(self, 'main_loss_weight'):
@@ -397,10 +397,10 @@ class CTC(ModelBase):
 
             if beam_width == 1:
                 best_hyps = self._decode_greedy_np(
-                    var2np(logits, backend='chainer'), x_lens)
+                    self.var2np(logits), x_lens)
             else:
                 best_hyps = self._decode_beam_np(
-                    var2np(F.log_softmax(logits), backend='chainer'),
+                    self.var2np(F.log_softmax(logits, dim=-1)),
                     x_lens, beam_width=beam_width)
 
         if self.blank_index == 0:
