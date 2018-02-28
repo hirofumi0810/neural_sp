@@ -448,11 +448,9 @@ class AttentionSeq2seq(ModelBase):
         # and added <SOS> before the first token
         # ys_out is padded with -1, and added <EOS> after the last token
         ys_in = self._create_var((ys.shape[0], ys.shape[1] + 1),
-                                 fill_value=self.eos, dtype='long',
-                                 volatile=not self.training)
+                                 fill_value=self.eos, dtype='long')
         ys_out = self._create_var((ys.shape[0], ys.shape[1] + 1),
-                                  fill_value=-1, dtype='long',
-                                  volatile=not self.training)
+                                  fill_value=-1, dtype='long')
         for b in range(len(xs)):
             ys_in.data[b, 0] = self.sos
             ys_in.data[b, 1:y_lens[b] + 1] = torch.from_numpy(
@@ -713,27 +711,30 @@ class AttentionSeq2seq(ModelBase):
 
             if is_sub_task:
                 y = self.embed_sub(y)
-            else:
-                y = self.embed(y)
+                dec_in = torch.cat([y, context_vec], dim=-1)
 
-            dec_in = torch.cat([y, context_vec], dim=-1)
-            if is_sub_task:
+                # Update decoder states
                 dec_out, dec_state = self.decoder_sub(dec_in, dec_state)
+
+                # Compute attention distributions
                 context_vec, att_weights_step = self.attend_sub(
                     enc_out, x_lens, dec_out, att_weights_step)
-            else:
-                dec_out, dec_state = self.decoder(dec_in, dec_state)
-                context_vec, att_weights_step = self.attend(
-                    enc_out, x_lens, dec_out, att_weights_step)
 
-            if is_sub_task:
                 logits_step = self.fc_sub(F.tanh(
                     self.W_d_sub(dec_out) + self.W_c_sub(context_vec)))
             else:
+                y = self.embed(y)
+                dec_in = torch.cat([y, context_vec], dim=-1)
+
+                # Update decoder states
+                dec_out, dec_state = self.decoder(dec_in, dec_state)
+
+                # Compute attention distributions
+                context_vec, att_weights_step = self.attend(
+                    enc_out, x_lens, dec_out, att_weights_step)
+
                 logits_step = self.fc(F.tanh(
                     self.W_d(dec_out) + self.W_c(context_vec)))
-                # logits_step = self.fc(F.tanh(
-                #     self.W_d(dec_out) + self.W_c(context_vec) + self.W_y(y)))
 
             logits.append(logits_step)
             att_weights.append(att_weights_step)
@@ -981,27 +982,30 @@ class AttentionSeq2seq(ModelBase):
 
             if is_sub_task:
                 y = self.embed_sub(y)
-            else:
-                y = self.embed(y)
+                dec_in = torch.cat([y, context_vec], dim=-1)
 
-            dec_in = torch.cat([y, context_vec], dim=-1)
-            if is_sub_task:
+                # Update decoder states
                 dec_out, dec_state = self.decoder_sub(dec_in, dec_state)
+
+                # Compute attention distributions
                 context_vec, att_weights_step = self.attend_sub(
                     enc_out, x_lens, dec_out, att_weights_step)
-            else:
-                dec_out, dec_state = self.decoder(dec_in, dec_state)
-                context_vec, att_weights_step = self.attend(
-                    enc_out, x_lens, dec_out, att_weights_step)
 
-            if is_sub_task:
                 logits_step = self.fc_sub(F.tanh(
                     self.W_d_sub(dec_out) + self.W_c_sub(context_vec)))
             else:
+                y = self.embed(y)
+                dec_in = torch.cat([y, context_vec], dim=-1)
+
+                # Update decoder states
+                dec_out, dec_state = self.decoder(dec_in, dec_state)
+
+                # Compute attention distributions
+                context_vec, att_weights_step = self.attend(
+                    enc_out, x_lens, dec_out, att_weights_step)
+
                 logits_step = self.fc(F.tanh(
                     self.W_d(dec_out) + self.W_c(context_vec)))
-                # logits_step = self.fc(F.tanh(
-                #     self.W_d(dec_out) + self.W_c(context_vec) + self.W_y(y)))
 
             # Pick up 1-best
             y = torch.max(logits_step.squeeze(1), dim=1)[1].unsqueeze(1)
@@ -1047,7 +1051,7 @@ class AttentionSeq2seq(ModelBase):
         for b in range(enc_out.size(0)):
             frame_num = x_lens[b].data[0]
 
-            # Initialize decoder state, decoder output, attention_weights
+            # Initialization per utterance
             dec_state = self._init_decoder_state(
                 enc_out[b:b + 1, :, :], is_sub_task=is_sub_task)
             dec_out = self._create_var(
@@ -1064,44 +1068,47 @@ class AttentionSeq2seq(ModelBase):
                 new_beam = []
                 for i_beam in range(len(beam)):
                     y = self._create_var(
-                        (1, 1), fill_value=beam[i_beam]['hyp'][-1], dtype='long')
-
-                    if is_sub_task:
-                        y = self.embed_sub(y)
-                    else:
-                        y = self.embed(y)
+                        (1, 1), fill_value=beam[i_beam]['hyp'][-1],
+                        dtype='long')
 
                     # Compute context vector
                     context_vec = torch.sum(
                         enc_out[b: b + 1, :frame_num] *
-                        att_weights_step.unsqueeze(2),
+                        beam[i_beam]['att_weights_step'].unsqueeze(2),
                         dim=1, keepdim=True)
 
-                    dec_in = torch.cat([y, context_vec], dim=-1)
                     if is_sub_task:
+                        y = self.embed_sub(y)
+                        dec_in = torch.cat([y, context_vec], dim=-1)
+
+                        # Update decoder states
                         dec_out, dec_state = self.decoder_sub(
                             dec_in, beam[i_beam]['dec_state'])
+
+                        # Compute attention distributions
                         context_vec, att_weights_step = self.attend_sub(
                             enc_out[b:b + 1, :frame_num],
                             x_lens[b:b + 1],
                             dec_out, beam[i_beam]['att_weights_step'])
+
+                        logits_step = self.fc_sub(F.tanh(
+                            self.W_d_sub(dec_out) + self.W_c_sub(context_vec)))
                     else:
+                        y = self.embed(y)
+                        dec_in = torch.cat([y, context_vec], dim=-1)
+
+                        # Update decoder states
                         dec_out, dec_state = self.decoder(
                             dec_in, beam[i_beam]['dec_state'])
+
+                        # Compute attention distributions
                         context_vec, att_weights_step = self.attend(
                             enc_out[b:b + 1, :frame_num],
                             x_lens[b:b + 1],
                             dec_out, beam[i_beam]['att_weights_step'])
 
-                    if is_sub_task:
-                        logits_step = self.fc_sub(F.tanh(
-                            self.W_d_sub(dec_out) + self.W_c_sub(context_vec)))
-                    else:
                         logits_step = self.fc(F.tanh(
                             self.W_d(dec_out) + self.W_c(context_vec)))
-                        # logits_step = self.fc(F.tanh(
-                        # self.W_d(dec_out) + self.W_c(context_vec) +
-                        # self.W_y(y)))
 
                     # Path through the softmax layer & convert to log-scale
                     log_probs = F.log_softmax(logits_step.squeeze(1), dim=-1)
