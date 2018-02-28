@@ -7,3 +7,6 @@ __pycache__
 log
 warp-ctc
 pytorch-ctc
+
+examples/*/steps
+examples/*/utils
