@@ -4,9 +4,10 @@
 __pycache__
 .dropbox.attr
 .ftpconfig
-log
 warp-ctc
 pytorch-ctc
 
+vocab
+log
 examples/*/steps
 examples/*/utils
