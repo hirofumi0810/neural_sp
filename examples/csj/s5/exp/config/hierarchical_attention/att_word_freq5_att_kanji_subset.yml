@@ -1,0 +1,105 @@
+param:
+  # framework
+  backend: pytorch
+
+  # corpus
+  corpus: csj
+  data_size: subset
+  label_type: word_freq5
+  label_type_sub: kanji_divide
+
+  # features
+  feature: fbank
+  save_format: numpy
+  input_channel: 80
+  use_delta: False
+  use_double_delta: False
+  splice: 1
+  num_stack: 1
+  num_skip: 1
+  min_frame_num: 40
+  dynamic_batching: True
+
+  # topology
+  model_type: hierarchical_attention
+  encoder_type: lstm
+  conv_channels: []
+  conv_kernel_sizes: []
+  conv_strides: []
+  poolings: []
+  activation: relu
+  batch_norm: False
+  encoder_bidirectional: True
+  encoder_residual: False
+  encoder_dense_residual: False
+  decoder_residual: False
+  decoder_dense_residual: False
+  encoder_num_units: 320
+  encoder_num_proj: 0
+  encoder_num_layers: 5
+  # encoder_num_layers_sub: 4
+  encoder_num_layers_sub: 5
+  subsample_list:
+    - True
+    - True
+    - True
+    - False
+    - False
+  subsample_type: drop
+  attention_type: location
+  attention_dim: 128
+  decoder_type: lstm
+  decoder_num_units: 320
+  decoder_num_layers: 1
+  decoder_num_units_sub: 320
+  decoder_num_layers_sub: 1
+  embedding_dim: 128
+  embedding_dim_sub: 64
+  attention_conv_num_channels: 10
+  attention_conv_width: 201
+
+  # optimization
+  batch_size: 128
+  optimizer: adam
+  learning_rate: 1e-3
+  num_epoch: 50
+  convert_to_sgd_epoch: 40
+
+  # initialization
+  parameter_init_distribution: uniform
+  parameter_init: 0.1
+  recurrent_weight_orthogonal: False
+  init_forget_gate_bias_with_one: True
+
+  # regularization
+  clip_grad_norm: 5.0
+  clip_activation_encoder: 50
+  clip_activation_decoder: 50
+  dropout_input: 0
+  dropout_encoder: 0.2
+  dropout_decoder: 0.2
+  dropout_embedding: 0.2
+  weight_decay: 1e-6
+  init_dec_state: zero
+  sharpening_factor: 1.0
+  logits_temperature: 1.0
+  sigmoid_smoothing: False
+  coverage_weight: 0
+  scheduled_sampling_prob: 0.2
+  scheduled_sampling_ramp_max_step: 125000
+  label_smoothing_prob: 0.1
+  weight_noise_std: 0
+
+  # annealing
+  decay_start_epoch: 5
+  decay_rate: 0.75
+  decay_patient_epoch: 1
+  sort_stop_epoch: 100
+  not_improved_patient_epoch: 5
+  eval_start_epoch: 5
+  print_step: 500
+
+  # MTL
+  main_loss_weight: 0.8
+  ctc_loss_weight_sub: 0
+  curriculum_training: False
