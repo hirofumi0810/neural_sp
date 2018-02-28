@@ -270,7 +270,8 @@ def main():
                     dataset=dev_data,
                     beam_width=1,
                     max_decode_len=MAX_DECODE_LEN_PHONE,
-                    eval_batch_size=1)
+                    eval_batch_size=1,
+                    map_file_path='./conf/phones.60-48-39.map')
                 logger.info('  PER (dev): %.3f %%' % (per_dev_epoch * 100))
 
                 if per_dev_epoch < metric_dev_best:
@@ -288,7 +289,8 @@ def main():
                         dataset=test_data,
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_PHONE,
-                        eval_batch_size=1)
+                        eval_batch_size=1,
+                        map_file_path='./conf/phones.60-48-39.map')
                     logger.info('  PER (test): %.3f %%' % (per_test * 100))
                 else:
                     not_improved_epoch += 1
@@ -324,10 +326,8 @@ def main():
                         model.weight_noise_injection = True
 
             pbar_epoch = tqdm(total=len(train_data))
-            print('=' * 30)
-            print('          EPOCH:%d (%.3f min)          ' %
+            print('========== EPOCH:%d (%.3f min) ==========' %
                   (epoch, duration_epoch / 60))
-            print('=' * 30)
 
             if epoch == params['num_epoch']:
                 break

@@ -1,15 +1,15 @@
-parent: ../config/ctc/blstm_ctc.yml
+parent: ./conf/attention/att_bgru.yml
 param:
   # framework
   backend: pytorch
   # backend: chainer
 
   # topology
-  encoder_residual: True
+  encoder_dense_residual: True
 
   # optimization
   batch_size: 64
-  convert_to_sgd_epoch: 20
+  convert_to_sgd_epoch: 100
 
   # annealing
   print_step: 10

@@ -14,7 +14,7 @@ from utils.io.labels.phone import Idx2phone
 from utils.evaluation.edit_distance import compute_wer
 
 
-def do_eval_per(model, dataset, beam_width, max_decode_len,
+def do_eval_per(model, dataset, beam_width, max_decode_len, map_file_path,
                 eval_batch_size=None, progressbar=False):
     """Evaluate trained model by Phone Error Rate.
     Args:
@@ -24,6 +24,7 @@ def do_eval_per(model, dataset, beam_width, max_decode_len,
         max_decode_len (int): the length of output sequences
             to stop prediction when EOS token have not been emitted.
             This is used for seq2seq models.
+        map_file_path (string): path to phones.60-48-39.map
         eval_batch_size (int, optional): the batch size when evaluating the model
         progressbar (bool, optional): if True, visualize the progressbar
     Returns:
@@ -35,7 +36,7 @@ def do_eval_per(model, dataset, beam_width, max_decode_len,
 
     idx2phone = Idx2phone(vocab_file_path=dataset.vocab_file_path)
     map2phone39 = Map2phone39(label_type=dataset.label_type,
-                              map_file_path='./conf/phones.60-48-39.map')
+                              map_file_path=map_file_path)
 
     per = 0
     sub, ins, dele = 0, 0, 0
@@ -68,6 +69,7 @@ def do_eval_per(model, dataset, beam_width, max_decode_len,
             ##############################
             # Convert from index to phone (-> list of phone strings)
             str_hyp = idx2phone(best_hyps[b])
+            print(str_hyp)
 
             if model.model_type == 'attention':
                 str_hyp = str_hyp.split('>')[0]
@@ -97,7 +99,7 @@ def do_eval_per(model, dataset, beam_width, max_decode_len,
                 num_phones += len(phone_ref_list)
             except:
                 # print('REF: %s' % ' '.join(phone_ref_list))
-                # print('HYP: %s' % str_hyp)
+                # print('HYP: %s' % ' '.join(phone_hyp_list))
                 pass
 
             if progressbar:

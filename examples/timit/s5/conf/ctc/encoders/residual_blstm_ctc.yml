@@ -1,11 +1,11 @@
-parent: ../config/ctc/blstm_ctc.yml
+parent: ./conf/ctc/blstm_ctc.yml
 param:
   # framework
   backend: pytorch
   # backend: chainer
 
   # topology
-  encoder_dense_residual: True
+  encoder_residual: True
 
   # optimization
   batch_size: 64

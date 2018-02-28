@@ -1,4 +1,4 @@
-parent: ../config/attention/att_bgru.yml
+parent: ./conf/attention/att_bgru.yml
 param:
   # framework
   backend: pytorch

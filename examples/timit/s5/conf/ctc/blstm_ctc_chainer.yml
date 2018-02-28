@@ -1,4 +1,4 @@
-parent: ../config/ctc/blstm_ctc.yml
+parent: ./conf/ctc/blstm_ctc.yml
 param:
   # framework
   backend: chainer

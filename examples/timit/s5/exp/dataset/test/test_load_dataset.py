@@ -9,7 +9,7 @@ import os
 import sys
 import unittest
 
-sys.path.append(os.path.abspath('../../../../../'))
+sys.path.append(os.path.abspath('../../../../../../'))
 from examples.timit.s5.exp.dataset.load_dataset import Dataset
 from utils.io.labels.phone import Idx2phone
 from utils.measure_time_func import measure_time
@@ -60,7 +60,7 @@ class TestLoadDataset(unittest.TestCase):
         print('  splice: %d' % splice)
         print('========================================')
 
-        vocab_file_path = '../../vocab/' + label_type + '.txt'
+        vocab_file_path = '../../../vocab/' + label_type + '.txt'
 
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1

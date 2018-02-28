@@ -70,7 +70,8 @@ def main():
         beam_width=args.beam_width,
         max_decode_len=args.max_decode_len,
         eval_batch_size=args.eval_batch_size,
-        progressbar=True)
+        progressbar=True,
+        map_file_path='../../conf/phones.60-48-39.map')
     print('  PER (test): %.3f %%' % (per_test * 100))
     print(df_per_test)
 

@@ -1,4 +1,4 @@
-parent: ../config/attention/att_bgru.yml
+parent: ./conf/ctc/blstm_ctc.yml
 param:
   # framework
   backend: pytorch
@@ -23,7 +23,7 @@ param:
     - [3, 5]
     - [3, 5]
   conv_strides:
-    - [1, 2]
+    - [1, 1]
     - [1, 1]
     - [1, 1]
     - [1, 1]
@@ -44,20 +44,22 @@ param:
     - []
     - []
     - []
+  # activation: relu
   activation: prelu
+  # activation: hard_tanh
+  # activation: maxout
   batch_norm: True
+  # batch_norm: False
   encoder_num_layers: 0
   subsample_list:
     - False
+  fc_list: [1024, 1024, 1024]
 
   # optimization
-  batch_size: 16
+  batch_size: 10
   optimizer: adam
   learning_rate: 1e-3
-  convert_to_sgd_epoch: 20
-
-  # regularization
-  scheduled_sampling_ramp_max_step: 8000
+  convert_to_sgd_epoch: 50
 
   # annealing
-  print_step: 40
+  print_step: 50

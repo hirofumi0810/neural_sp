@@ -1,8 +1,8 @@
-parent: ../config/ctc/blstm_ctc.yml
+parent: ./conf/ctc/blstm_ctc.yml
 param:
   # framework
   backend: pytorch
   # backend: chainer
 
   # regularization
-  weight_noise_std: 1e-9
+  label_smoothing_prob: 0.1

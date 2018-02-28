@@ -75,8 +75,8 @@ def main():
     # save_path=args.model_path)
 
 
-def decode(model, dataset, beam_width,
-           max_decode_len, eval_batch_size=None, save_path=None):
+def decode(model, dataset, beam_width, max_decode_len,
+           eval_batch_size=None, save_path=None):
     """Visualize label outputs.
     Args:
         model: the model to evaluate
@@ -92,8 +92,7 @@ def decode(model, dataset, beam_width,
     if eval_batch_size is not None:
         dataset.batch_size = eval_batch_size
 
-    idx2phone = Idx2phone('../metrics/vocab_files/' +
-                          dataset.label_type + '.txt')
+    idx2phone = Idx2phone(dataset.vocab_file_path)
 
     if save_path is not None:
         sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
