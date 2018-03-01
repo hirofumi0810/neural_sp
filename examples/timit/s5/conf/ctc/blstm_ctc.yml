@@ -9,6 +9,8 @@ param:
   # features
   feature: fbank
   tool: htk
+  # tool: python_speech_features
+  # tool: librosa
   input_channel: 41
   use_delta: True
   use_double_delta: True

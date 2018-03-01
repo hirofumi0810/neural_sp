@@ -1,13 +1,13 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*
 
+"""librosa based feature extraction.
+        See details in https://github.com/librosa/librosa
+"""
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-
-"""librosa based feature extraction.
-        https://github.com/librosa/librosa
-"""
 
 import librosa
 import subprocess
@@ -16,7 +16,7 @@ import numpy as np
 
 def wav2feature(wav_path, feature_type='logfbank', feature_dim=40,
                 use_energy=True, use_delta1=True, use_delta2=True,
-                window=0.025, slide=0.01, dtype=np.float64):
+                window=0.025, slide=0.01, dtype=np.float32):
     """Read wav file & convert to MFCC or log mel filterbank features.
     Args:
         wav_path (string): the path to a wav file
@@ -27,7 +27,7 @@ def wav2feature(wav_path, feature_type='logfbank', feature_dim=40,
         use_delta2 (bool, optional): if True, add delta delta features
         window (float, optional): window width to extract features
         slide (float, optional): extract features per 'slide'
-        dtype (optional): default is np.float64
+        dtype (optional): default is np.float32
     Returns:
         feat (np.ndarray): A tensor of size `[T, feature_dim]`
     """

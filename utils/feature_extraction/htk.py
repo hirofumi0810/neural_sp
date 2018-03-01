@@ -81,7 +81,7 @@ def save_config(audio_file_type, feature_type, channels, config_save_path,
         delta (bool, optional): if True, delta features are also extracted
         deltadelta (bool, optional): if True, double delta features are also extracted
 """
-    with open(join(config_save_path, feature_type + '.conf'), 'w') as f:
+    with open(config_save_path, 'w') as f:
         if audio_file_type not in ['nist', 'wav']:
             raise ValueError('audio_file_type must be nist or wav.')
         f.write('SOURCEFORMAT = %s\n' % audio_file_type.upper())

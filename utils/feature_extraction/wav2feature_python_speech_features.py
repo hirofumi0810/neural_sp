@@ -1,13 +1,13 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*
 
+"""python_speech_features based feature extraction.
+        See details in https://github.com/jameslyons/python_speech_features
+"""
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-
-"""python_speech_features based feature extraction.
-        https://github.com/jameslyons/python_speech_features
-"""
 
 import subprocess
 import numpy as np
@@ -17,7 +17,7 @@ from python_speech_features import mfcc, fbank
 
 def wav2feature(wav_path, feature_type='fbank', feature_dim=40,
                 use_energy=True, use_delta1=True, use_delta2=True,
-                window=0.025, slide=0.01, dtype=np.float64):
+                window=0.025, slide=0.01, dtype=np.float32):
     """Read wav file & convert to MFCC or log mel filterbank features.
     Args:
         wav_path (string): the path to a wav file
@@ -28,7 +28,7 @@ def wav2feature(wav_path, feature_type='fbank', feature_dim=40,
         use_delta2 (bool, optional): if True, add delta delta features
         window (float, optional): window width to extract features
         slide (float, optional): extract features per 'slide'
-        dtype (optional): default is np.float64
+        dtype (optional): default is np.float32
     Returns:
         feat (np.ndarray): A tensor of size `[T, feature_dim]`
     """
@@ -42,7 +42,7 @@ def wav2feature(wav_path, feature_type='fbank', feature_dim=40,
         fs, audio = scipy.io.wavfile.read(wav_path)
     except ValueError:
         # Read NIST file
-        wav_path_tmp = './tmp.wav'
+        wav_path_tmp = '/tmp//tmp.wav'
         # result = subprocess.call(['sph2pipe', '-f', 'wav', wav_path, wav_path_tmp])
         result = subprocess.call(['sox', wav_path, '-t', 'wav', wav_path_tmp])
 

@@ -15,7 +15,7 @@ echo ===========================================================================
 echo "                                  TIMIT                                    "
 echo ============================================================================
 
-stage=3
+stage=1
 
 ### Set path to original data
 #timit=/export/corpora5/LDC/LDC93S1/timit/TIMIT # @JHU
@@ -128,10 +128,14 @@ if [ $stage -le 2 ]; then
   echo "                            Create dataset                                "
   echo ============================================================================
 
-  python local/make_dataset_csv.py \
-    --data_save_path $DATA_SAVEPATH \
-    --phone_map_file_path ./conf/phones.60-48-39.map \
-    --tool $TOOL
+  if [ ! -e $DATA_SAVEPATH/dataset/$TOOL/.done_dataset ]; then
+    python local/make_dataset_csv.py \
+      --data_save_path $DATA_SAVEPATH \
+      --phone_map_file_path ./conf/phones.60-48-39.map \
+      --tool $TOOL
+    touch $DATA_SAVEPATH/dataset/$TOOL/.done_dataset
+  fi
+
   echo "Finish creating dataset (stage: 2)."
 fi
 

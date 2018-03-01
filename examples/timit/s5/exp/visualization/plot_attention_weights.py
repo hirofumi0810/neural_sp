@@ -91,8 +91,7 @@ def plot_attention(model, dataset, max_decode_len,
         shutil.rmtree(save_path)
         mkdir(save_path)
 
-    idx2phone = Idx2phone(
-        vocab_file_path='../metrics/vocab_files/' + dataset.label_type + '.txt')
+    idx2phone = Idx2phone(dataset.vocab_file_path)
 
     for batch, is_new_epoch in dataset:
 

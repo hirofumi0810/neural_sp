@@ -69,7 +69,6 @@ def do_eval_per(model, dataset, beam_width, max_decode_len, map_file_path,
             ##############################
             # Convert from index to phone (-> list of phone strings)
             str_hyp = idx2phone(best_hyps[b])
-            print(str_hyp)
 
             if model.model_type == 'attention':
                 str_hyp = str_hyp.split('>')[0]

@@ -38,7 +38,7 @@ def main():
         print(' ' * 20 + data_type)
         print('=' * 50)
 
-        # Convert to index
+        # Convert transcript to index
         print('=> Processing transcripts...')
         trans_dict = read_text(
             text_path=join(args.data_save_path, data_type, 'text'),
@@ -62,26 +62,25 @@ def main():
         for utt_idx, trans_list in tqdm(trans_dict.items()):
             if args.tool == 'wav':
                 raise NotImplementedError
-                feature_utt_save_path = join(
+                feat_utt_save_path = join(
                     args.data_save_path, 'feature', args.tool, data_type, utt_idx + '.wav')
                 # frame_num =
             else:
-                feature_utt_save_path = join(
+                feat_utt_save_path = join(
                     args.data_save_path, 'feature', args.tool, data_type, utt_idx + '.npy')
                 frame_num = frame_num_dict[utt_idx]
 
-            if not isfile(feature_utt_save_path):
-                raise ValueError(
-                    'There is no file: %s' % feature_utt_save_path)
+            if not isfile(feat_utt_save_path):
+                raise ValueError('There is no file: %s' % feat_utt_save_path)
 
             phone61_indices, phone48_indices, phone39_indices = trans_list
 
             df_phone61 = add_element(
-                df_phone61, [frame_num, feature_utt_save_path, phone61_indices])
+                df_phone61, [frame_num, feat_utt_save_path, phone61_indices])
             df_phone48 = add_element(
-                df_phone48, [frame_num, feature_utt_save_path, phone48_indices])
+                df_phone48, [frame_num, feat_utt_save_path, phone48_indices])
             df_phone39 = add_element(
-                df_phone39, [frame_num, feature_utt_save_path, phone39_indices])
+                df_phone39, [frame_num, feat_utt_save_path, phone39_indices])
 
         df_phone61.to_csv(join(csv_save_path, 'phone61.csv'))
         df_phone48.to_csv(join(csv_save_path, 'phone48.csv'))
@@ -109,7 +108,7 @@ def read_text(text_path, vocab_save_path, data_type, phone_map_file_path):
     """
     print('=====> Reading target labels...')
 
-    # Make the mapping file (from phone to index)
+    # Make the phone mapping file (from phone to index)
     phone61_set, phone48_set, phone39_set = set([]), set([]), set([])
     to_phone48, to_phone39, = {}, {}
     with open(phone_map_file_path, 'r') as f:
@@ -127,11 +126,12 @@ def read_text(text_path, vocab_save_path, data_type, phone_map_file_path):
                 to_phone48[line[0]] = ''
                 to_phone39[line[0]] = ''
 
+    # Make vocabulary files
     phone61_vocab_path = mkdir_join(vocab_save_path, 'phone61.txt')
     phone48_vocab_path = mkdir_join(vocab_save_path, 'phone48.txt')
     phone39_vocab_path = mkdir_join(vocab_save_path, 'phone39.txt')
 
-    # Save mapping file
+    # Save vocabulary files
     if data_type == 'train':
         with open(phone61_vocab_path, 'w') as f:
             for phone in sorted(list(phone61_set)):
@@ -184,7 +184,8 @@ def read_text(text_path, vocab_save_path, data_type, phone_map_file_path):
     phone2idx_39 = Phone2idx(phone39_vocab_path)
     for utt_idx, [trans_phone61, trans_phone48, trans_phone39] in tqdm(trans_dict.items()):
         if data_type == 'test':
-            trans_dict[utt_idx] = [trans_phone61, trans_phone48, trans_phone39]
+            pass
+            # trans_dict[utt_idx] = [trans_phone61, trans_phone48, trans_phone39]
             # NOTE: save as it is
         else:
             phone61_indices = phone2idx_61(trans_phone61)

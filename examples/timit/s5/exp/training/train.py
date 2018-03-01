@@ -209,7 +209,7 @@ def main():
         # Compute loss in the training set (including parameter update)
         batch_train, is_new_epoch = train_data.next()
         model, loss_train_val = train_step(
-            model, batch_train, params['clip_grad_norm'], backend=params['backend'])
+            model, batch_train, params['clip_grad_norm'], params['backend'])
         loss_train_mean += loss_train_val
 
         pbar_epoch.update(len(batch_train['xs']))
@@ -219,7 +219,8 @@ def main():
             # Compute loss in the dev set
             batch_dev = dev_data.next()[0]
             loss_dev = model(
-                batch_dev['xs'], batch_dev['ys'], batch_dev['x_lens'], batch_dev['y_lens'], is_eval=True)
+                batch_dev['xs'], batch_dev['ys'],
+                batch_dev['x_lens'], batch_dev['y_lens'], is_eval=True)
 
             loss_train_mean /= params['print_step']
             csv_steps.append(step)
@@ -277,7 +278,7 @@ def main():
                 if per_dev_epoch < metric_dev_best:
                     metric_dev_best = per_dev_epoch
                     not_improved_epoch = 0
-                    logger.info('■■■ ↑Best Score (PER)↑ ■■■')
+                    logger.info(u'■■■ ↑Best Score (PER)↑ ■■■')
 
                     # Save the model
                     model.save_checkpoint(model.save_path, epoch, step,

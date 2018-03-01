@@ -6,6 +6,7 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
+import codecs
 
 
 class Phone2idx(object):
@@ -19,7 +20,7 @@ class Phone2idx(object):
         # Read the vocabulary file
         self.map_dict = {}
         vocab_count = 0
-        with open(vocab_file_path, 'r') as f:
+        with codecs.open(vocab_file_path, 'r', 'utf-8') as f:
             for line in f:
                 phone = line.strip()
                 if phone in remove_list:
@@ -55,7 +56,7 @@ class Idx2phone(object):
         # Read the vocabulary file
         self.map_dict = {}
         vocab_count = 0
-        with open(vocab_file_path, 'r') as f:
+        with codecs.open(vocab_file_path, 'r', 'utf-8') as f:
             for line in f:
                 phone = line.strip()
                 if phone in remove_list:

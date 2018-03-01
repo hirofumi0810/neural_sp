@@ -15,7 +15,7 @@ from utils.feature_extraction.wav2feature_python_speech_features import wav2feat
 from utils.feature_extraction.wav2feature_librosa import wav2feature as w2f_librosa
 
 
-def segment(audio_path, speaker, utterance_dict, is_training,
+def segment(audio_path, speaker, utt_dict, is_training,
             sil_duration=0., tool='htk', config=None, mean=None,
             dtype=np.float32):
     """Segment each HTK or WAV file into utterances. Normalization will not be
@@ -23,7 +23,7 @@ def segment(audio_path, speaker, utterance_dict, is_training,
     Args:
         audio_path (string): path to a HTK or WAV file
         speaker (string): speaker name
-        utterance_dict (dict): dictionary of utterance information
+        utt_dict (dict): dictionary of utterance information
             key (string) => utterance index
             value (list) => [start_frame, end_frame]
         sil_duration (float): duration of silence at both ends. Default is 0.
@@ -32,11 +32,11 @@ def segment(audio_path, speaker, utterance_dict, is_training,
         mean (np.ndarray):  A mean vector over the file
         dtype (optional): default is np.float64
     Returns:
-        input_data_dict (dict):
+        feat_dict (dict):
             key (string) => utt_idx
             value (np.ndarray )=> a feature vector of size
                 `(frame_num, feature_dim)`
-        input_data_utt_sum (np.ndarray): A sum of feature vectors of a speaker
+        feat_utt_sum (np.ndarray): A sum of feature vectors of a speaker
         mean (np.ndarray): A mean vector over the file
         stddev (np.ndarray): A stddev vector over the file
         total_frame_num_file (int): total frame num of the target speaker's utterances
@@ -46,48 +46,46 @@ def segment(audio_path, speaker, utterance_dict, is_training,
 
     # Read the HTK or WAV file
     if tool == 'htk':
-        features, _, _ = read_htk(audio_path)
+        feat, _, _ = read_htk(audio_path)
     elif tool == 'python_speech_features':
-        features = w2f_psf(
-            audio_path,
-            feature_type=config['feature_type'],
-            feature_dim=config['channels'],
-            use_energy=config['energy'],
-            use_delta1=config['delta'],
-            use_delta2=config['deltadelta'],
-            window=config['window'],
-            slide=config['slide'])
+        feat = w2f_psf(audio_path,
+                       feature_type=config['feature_type'],
+                       feature_dim=config['channels'],
+                       use_energy=config['energy'],
+                       use_delta1=config['delta'],
+                       use_delta2=config['deltadelta'],
+                       window=config['window'],
+                       slide=config['slide'])
     elif tool == 'librosa':
-        features = w2f_librosa(
-            audio_path,
-            feature_type=config['feature_type'],
-            feature_dim=config['channels'],
-            use_energy=config['energy'],
-            use_delta1=config['delta'],
-            use_delta2=config['deltadelta'],
-            window=config['window'],
-            slide=config['slide'])
+        feat = w2f_librosa(audio_path,
+                           feature_type=config['feature_type'],
+                           feature_dim=config['channels'],
+                           use_energy=config['energy'],
+                           use_delta1=config['delta'],
+                           use_delta2=config['deltadelta'],
+                           window=config['window'],
+                           slide=config['slide'])
 
-    assert isinstance(utterance_dict, OrderedDict)
-    # NOTE: utterance_dict must be an instance of OrderedDict
+    assert isinstance(utt_dict, OrderedDict)
+    # NOTE: utt_dict must be an instance of OrderedDict
 
     # Divide into each utterance
-    feature_dim = features.shape[1]
-    input_data_dict = {}
+    feat_dim = feat.shape[1]
+    feat_dict = {}
     total_frame_num_file = 0
     end_frame_pre = 0
-    utt_num = len(utterance_dict.keys())
-    input_data_utt_sum = np.zeros((feature_dim,), dtype=dtype)
-    stddev = np.zeros((feature_dim,), dtype=dtype)
-    # keys = sorted(list(utterance_dict.keys()))
-    keys = list(utterance_dict.keys())
+    utt_num = len(utt_dict.keys())
+    feat_utt_sum = np.zeros((feat_dim,), dtype=dtype)
+    stddev = np.zeros((feat_dim,), dtype=dtype)
+    # keys = sorted(list(utt_dict.keys()))
+    keys = list(utt_dict.keys())
     for i, utt_idx in enumerate(keys):
-        utt_info = utterance_dict[utt_idx]
+        utt_info = utt_dict[utt_idx]
         start_frame, end_frame = utt_info[0], utt_info[1]
 
         # Check timestamp
         if start_frame > end_frame:
-            print(utterance_dict)
+            print(utt_dict)
             print('Warning: time stamp is reversed.')
             print('speaker index: %s' % speaker)
             print('utterance index: %s' % utt_idx)
@@ -102,8 +100,8 @@ def segment(audio_path, speaker, utterance_dict, is_training,
             else:
                 start_frame_extend = 0
 
-            if len(utterance_dict) != 1:
-                start_frame_next = utterance_dict[keys[i + 1]][0]
+            if len(utt_dict) != 1:
+                start_frame_next = utt_dict[keys[i + 1]][0]
                 if end_frame > start_frame_next:
                     print('Warning: utterances are overlapping.')
                     print('speaker index: %s' % speaker)
@@ -128,10 +126,10 @@ def segment(audio_path, speaker, utterance_dict, is_training,
                 start_frame_extend = start_frame - \
                     int((start_frame - end_frame_pre) / 2)
 
-            if features.shape[0] - end_frame >= sil_duration:
+            if feat.shape[0] - end_frame >= sil_duration:
                 end_frame_extend = end_frame + sil_duration
             else:
-                end_frame_extend = features.shape[0]  # last frame
+                end_frame_extend = feat.shape[0]  # last frame
 
         # Check other utterances
         else:
@@ -141,7 +139,7 @@ def segment(audio_path, speaker, utterance_dict, is_training,
                 start_frame_extend = start_frame - \
                     int((start_frame - end_frame_pre) / 2)
 
-            start_frame_next = utterance_dict[keys[i + 1]][0]
+            start_frame_next = utt_dict[keys[i + 1]][0]
             if end_frame > start_frame_next:
                 print('Warning: utterances are overlapping.')
                 print('speaker index: %s' % speaker)
@@ -155,15 +153,14 @@ def segment(audio_path, speaker, utterance_dict, is_training,
                 end_frame_extend = end_frame + \
                     int((start_frame_next - end_frame) / 2)
 
-        input_data_utt = features[start_frame_extend:end_frame_extend]
-        input_data_utt_sum += np.sum(input_data_utt, axis=0)
+        feat_utt = feat[start_frame_extend:end_frame_extend]
+        feat_utt_sum += np.sum(feat_utt, axis=0)
         total_frame_num_file += (end_frame_extend - start_frame_extend)
-        input_data_dict[str(utt_idx)] = input_data_utt
+        feat_dict[str(utt_idx)] = feat_utt
 
         # For computing stddev over the file
         if mean is not None:
-            stddev += np.sum(
-                np.abs(input_data_utt - mean) ** 2, axis=0)
+            stddev += np.sum(np.abs(feat_utt - mean) ** 2, axis=0)
 
         # Update
         end_frame_pre = end_frame
@@ -174,9 +171,9 @@ def segment(audio_path, speaker, utterance_dict, is_training,
             stddev = np.sqrt(stddev / (total_frame_num_file - 1))
         else:
             # Compute mean over the file
-            mean = input_data_utt_sum / total_frame_num_file
+            mean = feat_utt_sum / total_frame_num_file
             stddev = None
     else:
         mean, stddev = None, None
 
-    return input_data_dict, input_data_utt_sum, mean, stddev, total_frame_num_file
+    return feat_dict, feat_utt_sum, mean, stddev, total_frame_num_file

@@ -187,119 +187,119 @@ def read_audio(data_type, audio_paths, tool, config, normalize,
             else:
                 speaker = audio_path.split('/')[-2]
                 utt_idx = basename(audio_path).split('.')[0]
-                utt_idx = speaker + '_' + speaker
+                utt_idx = speaker + '_' + utt_idx
             gender = utt_idx[0]  # f (female) or m (male)
 
             if tool == 'htk':
-                features_utt, sampPeriod, parmKind = read(audio_path)
+                feat_utt, sampPeriod, parmKind = read(audio_path)
             elif tool == 'python_speech_features':
-                features_utt = w2f_psf(
-                    audio_path,
-                    feature_type=config['feature_type'],
-                    feature_dim=config['channels'],
-                    use_energy=config['energy'],
-                    use_delta1=config['delta'],
-                    use_delta2=config['deltadelta'],
-                    window=config['window'],
-                    slide=config['slide'])
+                feat_utt = w2f_psf(audio_path,
+                                   feature_type=config['feature_type'],
+                                   feature_dim=config['channels'],
+                                   use_energy=config['energy'],
+                                   use_delta1=config['delta'],
+                                   use_delta2=config['deltadelta'],
+                                   window=config['window'],
+                                   slide=config['slide'])
             elif tool == 'librosa':
-                features_utt = w2f_librosa(
-                    audio_path,
-                    feature_type=config['feature_type'],
-                    feature_dim=config['channels'],
-                    use_energy=config['energy'],
-                    use_delta1=config['delta'],
-                    use_delta2=config['deltadelta'],
-                    window=config['window'],
-                    slide=config['slide'])
+                feat_utt = w2f_librosa(audio_path,
+                                       feature_type=config['feature_type'],
+                                       feature_dim=config['channels'],
+                                       use_energy=config['energy'],
+                                       use_delta1=config['delta'],
+                                       use_delta2=config['deltadelta'],
+                                       window=config['window'],
+                                       slide=config['slide'])
 
-            frame_num, feature_dim = features_utt.shape
+            frame_num, feat_dim = feat_utt.shape
+            feat_utt_sum = np.sum(feat_utt, axis=0)
 
             if i == 0:
                 # Initialize global statistics
-                global_mean_male = np.zeros((feature_dim,), dtype=dtype)
-                global_mean_female = np.zeros((feature_dim,), dtype=dtype)
-                global_std_male = np.zeros((feature_dim,), dtype=dtype)
-                global_std_female = np.zeros((feature_dim,), dtype=dtype)
+                global_mean_male = np.zeros((feat_dim,), dtype=dtype)
+                global_mean_female = np.zeros((feat_dim,), dtype=dtype)
+                global_std_male = np.zeros((feat_dim,), dtype=dtype)
+                global_std_female = np.zeros((feat_dim,), dtype=dtype)
 
             # For computing global mean
             if gender == 'm':
                 audio_paths_male.append(audio_path)
-                global_mean_male += np.sum(features_utt, axis=0)
+                global_mean_male += feat_utt_sum
                 total_frame_num_male += frame_num
             elif gender == 'f':
                 audio_paths_female.append(audio_path)
-                global_mean_female += np.sum(features_utt, axis=0)
+                global_mean_female += feat_utt_sum
                 total_frame_num_female += frame_num
             else:
-                raise ValueError
+                raise ValueError('gender is m or f.')
 
             # For computing speaker mean & stddev
             if normalize == 'speaker':
-                # Initialization
+                # Initialize speaker statistics
                 if speaker not in total_frame_num_dict.keys():
                     total_frame_num_dict[speaker] = 0
-                    speaker_mean_dict[speaker] = np.zeros((feature_dim,),
-                                                          dtype=dtype)
-                    speaker_std_dict[speaker] = np.zeros((feature_dim,),
-                                                         dtype=dtype)
-
+                    speaker_mean_dict[speaker] = np.zeros(
+                        (feat_dim,), dtype=dtype)
+                    speaker_std_dict[speaker] = np.zeros(
+                        (feat_dim,), dtype=dtype)
                 total_frame_num_dict[speaker] += frame_num
-                speaker_mean_dict[speaker] += np.sum(features_utt, axis=0)
+                speaker_mean_dict[speaker] += feat_utt_sum
 
         print('=====> Computing global mean & stddev...')
         # Compute global mean per gender
         global_mean_male /= total_frame_num_male
         global_mean_female /= total_frame_num_female
 
-        for i, audio_path in enumerate(tqdm(audio_paths)):
+        # Compute speaker mean
+        if normalize == 'speaker':
+            for speaker in speaker_mean_dict.keys():
+                speaker_mean_dict[speaker] /= total_frame_num_dict[speaker]
+
+        for audio_path in tqdm(audio_paths):
             if tool == 'htk':
                 utt_idx = basename(audio_path).split('.')[0]
                 speaker = utt_idx.split('_')[0]
             else:
                 speaker = audio_path.split('/')[-2]
                 utt_idx = basename(audio_path).split('.')[0]
-                utt_idx = speaker + '_' + speaker
+                utt_idx = speaker + '_' + utt_idx
             gender = utt_idx[0]  # f (female) or m (male)
 
             if tool == 'htk':
-                features_utt, sampPeriod, parmKind = read(audio_path)
+                feat_utt, sampPeriod, parmKind = read(audio_path)
             elif tool == 'python_speech_features':
-                features_utt = w2f_psf(
-                    audio_path,
-                    feature_type=config['feature_type'],
-                    feature_dim=config['channels'],
-                    use_energy=config['energy'],
-                    use_delta1=config['delta'],
-                    use_delta2=config['deltadelta'],
-                    window=config['window'],
-                    slide=config['slide'])
+                feat_utt = w2f_psf(audio_path,
+                                   feature_type=config['feature_type'],
+                                   feature_dim=config['channels'],
+                                   use_energy=config['energy'],
+                                   use_delta1=config['delta'],
+                                   use_delta2=config['deltadelta'],
+                                   window=config['window'],
+                                   slide=config['slide'])
             elif tool == 'librosa':
-                features_utt = w2f_librosa(
-                    audio_path,
-                    feature_type=config['feature_type'],
-                    feature_dim=config['channels'],
-                    use_energy=config['energy'],
-                    use_delta1=config['delta'],
-                    use_delta2=config['deltadelta'],
-                    window=config['window'],
-                    slide=config['slide'])
-
-            # For computing speaker stddev
-            if normalize == 'speaker':
-                speaker_std_dict[speaker] += np.sum(
-                    np.abs(features_utt -
-                           speaker_mean_dict[speaker]) ** 2, axis=0)
+                feat_utt = w2f_librosa(audio_path,
+                                       feature_type=config['feature_type'],
+                                       feature_dim=config['channels'],
+                                       use_energy=config['energy'],
+                                       use_delta1=config['delta'],
+                                       use_delta2=config['deltadelta'],
+                                       window=config['window'],
+                                       slide=config['slide'])
 
             # For computing global stddev
             if gender == 'm':
                 global_std_male += np.sum(
-                    np.abs(features_utt - global_mean_male) ** 2, axis=0)
+                    np.abs(feat_utt - global_mean_male) ** 2, axis=0)
             elif gender == 'f':
                 global_std_female += np.sum(
-                    np.abs(features_utt - global_mean_female) ** 2, axis=0)
+                    np.abs(feat_utt - global_mean_female) ** 2, axis=0)
             else:
-                raise ValueError
+                raise ValueError('gender is m or f.')
+
+            # For computing speaker stddev
+            if normalize == 'speaker':
+                speaker_std_dict[speaker] += np.sum(
+                    np.abs(feat_utt - speaker_mean_dict[speaker]) ** 2, axis=0)
 
         # Compute speaker stddev
         if normalize == 'speaker':
@@ -313,96 +313,85 @@ def read_audio(data_type, audio_paths, tool, config, normalize,
         global_std_female = np.sqrt(
             global_std_female / (total_frame_num_female - 1))
 
-        if save_path is not None:
-            # Save global mean & stddev per gender
-            np.save(join(save_path, 'global_mean_male.npy'),
-                    global_mean_male)
-            np.save(join(save_path, 'global_mean_female.npy'),
-                    global_mean_female)
-            np.save(join(save_path, 'global_std_male.npy'),
-                    global_std_male)
-            np.save(join(save_path, 'global_std_female.npy'),
-                    global_std_female)
+        # Save global mean & stddev per gender
+        np.save(join(save_path, 'global_mean_male.npy'), global_mean_male)
+        np.save(join(save_path, 'global_mean_female.npy'),
+                global_mean_female)
+        np.save(join(save_path, 'global_std_male.npy'), global_std_male)
+        np.save(join(save_path, 'global_std_female.npy'), global_std_female)
 
     # Loop 2: Normalization and saving
     print('=====> Normalization...')
     frame_num_dict = {}
     # sampPeriod, parmKind = None, None
-    for i, audio_path in enumerate(tqdm(audio_paths)):
+    for audio_path in tqdm(audio_paths):
         if tool == 'htk':
             utt_idx = basename(audio_path).split('.')[0]
             speaker = utt_idx.split('_')[0]
         else:
             speaker = audio_path.split('/')[-2]
             utt_idx = basename(audio_path).split('.')[0]
-            utt_idx = speaker + '_' + speaker
+            utt_idx = speaker + '_' + utt_idx
         gender = utt_idx[0]  # f (female) or m (male)
 
         if tool == 'htk':
-            features_utt, sampPeriod, parmKind = read(audio_path)
+            feat_utt, sampPeriod, parmKind = read(audio_path)
         elif tool == 'python_speech_features':
-            features_utt = w2f_psf(
-                audio_path,
-                feature_type=config['feature_type'],
-                feature_dim=config['channels'],
-                use_energy=config['energy'],
-                use_delta1=config['delta'],
-                use_delta2=config['deltadelta'],
-                window=config['window'],
-                slide=config['slide'])
+            feat_utt = w2f_psf(audio_path,
+                               feature_type=config['feature_type'],
+                               feature_dim=config['channels'],
+                               use_energy=config['energy'],
+                               use_delta1=config['delta'],
+                               use_delta2=config['deltadelta'],
+                               window=config['window'],
+                               slide=config['slide'])
         elif tool == 'librosa':
-            features_utt = w2f_librosa(
-                audio_path,
-                feature_type=config['feature_type'],
-                feature_dim=config['channels'],
-                use_energy=config['energy'],
-                use_delta1=config['delta'],
-                use_delta2=config['deltadelta'],
-                window=config['window'],
-                slide=config['slide'])
+            feat_utt = w2f_librosa(audio_path,
+                                   feature_type=config['feature_type'],
+                                   feature_dim=config['channels'],
+                                   use_energy=config['energy'],
+                                   use_delta1=config['delta'],
+                                   use_delta2=config['deltadelta'],
+                                   window=config['window'],
+                                   slide=config['slide'])
 
         if normalize == 'no':
             pass
         elif normalize == 'global' or not data_type == 'train':
             # Normalize by mean & stddev over the training set per gender
             if gender == 'm':
-                features_utt -= global_mean_male
-                features_utt /= global_std_male
+                feat_utt -= global_mean_male
+                feat_utt /= global_std_male
             elif gender == 'f':
-                features_utt -= global_mean_female
-                features_utt /= global_std_female
+                feat_utt -= global_mean_female
+                feat_utt /= global_std_female
             else:
-                raise ValueError
+                raise ValueError('gender is m or f.')
         elif normalize == 'speaker':
             # Normalize by mean & stddev per speaker
-            features_utt = (
-                features_utt - speaker_mean_dict[speaker]) / speaker_std_dict[speaker]
+            feat_utt = (
+                feat_utt - speaker_mean_dict[speaker]) / speaker_std_dict[speaker]
         elif normalize == 'utterance':
             # Normalize by mean & stddev per utterance
-            utt_mean = np.mean(features_utt, axis=0, dtype=dtype)
-            utt_std = np.std(features_utt, axis=0, dtype=dtype)
-            features_utt = (features_utt - utt_mean) / utt_std
-        else:
-            raise ValueError
+            utt_mean = np.mean(feat_utt, axis=0, dtype=dtype)
+            utt_std = np.std(feat_utt, axis=0, dtype=dtype)
+            feat_utt = (feat_utt - utt_mean) / utt_std
 
-        frame_num_dict[utt_idx] = features_utt.shape[0]
+        frame_num_dict[utt_idx] = feat_utt.shape[0]
 
-        if save_path is not None:
-            # Save input features
-            input_data_save_path = mkdir_join(save_path, utt_idx + '.npy')
-            np.save(input_data_save_path, features_utt)
+        # Save input features
+        np.save(mkdir_join(save_path, utt_idx + '.npy'), feat_utt)
 
-            # if sampPeriod is None:
-            #     _, sampPeriod, parmKind = read(audio_path)
-            # write(features_utt,
-            #       htk_path=mkdir_join(save_path, speaker, utt_idx + '.htk'),
-            #       sampPeriod=sampPeriod,
-            #       parmKind=parmKind)
+        # if sampPeriod is None:
+        #     _, sampPeriod, parmKind = read(audio_path)
+        # write(feat_utt,
+        #       htk_path=mkdir_join(save_path, utt_idx + '.htk'),
+        #       sampPeriod=sampPeriod,
+        #       parmKind=parmKind)
 
-    if save_path is not None:
-        # Save the frame number dictionary
-        with open(join(save_path, 'frame_num.pickle'), 'wb') as f:
-            pickle.dump(frame_num_dict, f)
+    # Save the frame number dictionary
+    with open(join(save_path, 'frame_num.pickle'), 'wb') as f:
+        pickle.dump(frame_num_dict, f)
 
     return (global_mean_male, global_mean_female,
             global_std_male, global_std_female, frame_num_dict)
