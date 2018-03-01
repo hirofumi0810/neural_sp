@@ -114,7 +114,6 @@ def main():
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
-        model_type=params['model_type'],
         data_type='test_other', data_size=params['data_size'],
         label_type=params['label_type'], vocab_file_path=vocab_file_path,
         batch_size=params['batch_size'], splice=params['splice'],
@@ -293,9 +292,7 @@ def main():
                 if 'word' in params['label_type']:
                     metric_dev_clean_epoch = do_eval_wer(
                         model=model,
-                        model_type=params['model_type'],
                         dataset=dev_clean_data,
-                        label_type=params['label_type'],
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_WORD,
                         eval_batch_size=1)
@@ -303,9 +300,7 @@ def main():
                                 (metric_dev_clean_epoch * 100))
                     metric_dev_other_epoch = do_eval_wer(
                         model=model,
-                        model_type=params['model_type'],
                         dataset=dev_other_data,
-                        label_type=params['label_type'],
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_WORD,
                         eval_batch_size=1)
@@ -314,9 +309,7 @@ def main():
                 else:
                     metric_dev_clean_epoch, _ = do_eval_cer(
                         model=model,
-                        model_type=params['model_type'],
                         dataset=dev_clean_data,
-                        label_type=params['label_type'],
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_CHAR,
                         eval_batch_size=1)
@@ -324,9 +317,7 @@ def main():
                                 (metric_dev_clean_epoch * 100))
                     metric_dev_other_epoch, _ = do_eval_cer(
                         model=model,
-                        model_type=params['model_type'],
                         dataset=dev_other_data,
-                        label_type=params['label_type'],
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_CHAR,
                         eval_batch_size=1)
@@ -391,18 +382,14 @@ def main():
     if 'word' in params['label_type']:
         wer_test_clean = do_eval_wer(
             model=best_model,
-            model_type=params['model_type'],
             dataset=test_clean_data,
-            label_type=params['label_type'],
             beam_width=1,
             max_decode_len=MAX_DECODE_LEN_WORD,
             eval_batch_size=1)
         logger.info('  WER (test-clean): %f %%' % (wer_test_clean * 100))
         wer_test_other = do_eval_wer(
             model=best_model,
-            model_type=params['model_type'],
             dataset=test_other_data,
-            label_type=params['label_type'],
             beam_width=1,
             max_decode_len=MAX_DECODE_LEN_WORD,
             eval_batch_size=1)
@@ -410,9 +397,7 @@ def main():
     else:
         cer_test_clean, wer_test_clean = do_eval_cer(
             model=best_model,
-            model_type=params['model_type'],
             dataset=test_clean_data,
-            label_type=params['label_type'],
             beam_width=1,
             max_decode_len=MAX_DECODE_LEN_CHAR,
             eval_batch_size=1)
@@ -420,9 +405,7 @@ def main():
         logger.info('  WER (test-clean): %f %%' % (wer_test_clean * 100))
         cer_test_other, wer_test_other = do_eval_cer(
             model=best_model,
-            model_type=params['model_type'],
             dataset=test_other_data,
-            label_type=params['label_type'],
             beam_width=1,
             max_decode_len=MAX_DECODE_LEN_CHAR,
             eval_batch_size=1)

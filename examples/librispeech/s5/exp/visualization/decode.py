@@ -115,7 +115,7 @@ def decode(model, dataset, beam_width, max_decode_len,
                                            beam_width=beam_width,
                                            max_decode_len=max_decode_len)
 
-        if model.ctc_loss_weight > 0:
+        if model.model_type == 'attention' and model.ctc_loss_weight > 0:
             best_hyps_ctc, perm_idx = model.decode_ctc(
                 batch['xs'], batch['x_lens'], beam_width=beam_width)
 
@@ -151,13 +151,14 @@ def decode(model, dataset, beam_width, max_decode_len,
             ##############################
             # Post-proccessing
             ##############################
-            str_ref = fix_trans(str_ref, glm)
-            str_hyp = fix_trans(str_hyp, glm)
+            # Remove garbage labels
+            str_ref = re.sub(r'[\'>]+', '', str_ref)
+            str_hyp = re.sub(r'[\'>]+', '', str_hyp)
 
             print('----- wav: %s -----' % batch['input_names'][b])
             print('Ref: %s' % str_ref.replace('_', ' '))
             print('Hyp: %s' % str_hyp.replace('_', ' '))
-            if model.ctc_loss_weight > 0:
+            if model.model_type == 'attention' and model.ctc_loss_weight > 0:
                 str_hyp_ctc = map_fn(best_hyps_ctc[b])
                 print('Hyp (CTC): %s' % str_hyp_ctc)
 
@@ -177,7 +178,7 @@ def decode(model, dataset, beam_width, max_decode_len,
                                            hyp=str_hyp.split('_'),
                                            normalize=True)
                 print('CER: %f %%' % (cer * 100))
-                if model.ctc_loss_weight > 0:
+                if model.model_type == 'attention' and model.ctc_loss_weight > 0:
                     cer_ctc, _, _, _ = compute_wer(
                         ref=list(str_ref.replace('_', '')),
                         hyp=list(str_hyp.replace('_', '')),

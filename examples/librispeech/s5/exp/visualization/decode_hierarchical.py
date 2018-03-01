@@ -176,8 +176,8 @@ def decode(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
             # Post-proccessing
             ##############################
             # Remove garbage labels
-            str_ref = re.sub(r'[\'<>]+', '', str_ref)
-            str_hyp = re.sub(r'[\'<>]+', '', str_hyp)
+            str_ref = re.sub(r'[\'>]+', '', str_ref)
+            str_hyp = re.sub(r'[\'>]+', '', str_hyp)
 
             print('----- wav: %s -----' % batch['input_names'][b])
             print('Ref: %s' % str_ref.replace('_', ' '))

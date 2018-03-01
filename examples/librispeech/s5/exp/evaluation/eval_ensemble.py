@@ -99,13 +99,10 @@ def main():
     print('  temperature (inference): %d' % args.temperature)
     print('=' * 30)
 
-    print('=== Test Data Evaluation ===')
     if 'char' in params['label_type']:
         cer_test_clean, wer_test_clean = do_eval_cer(
             models=models,
-            model_type=params['model_type'],
             dataset=test_clean_data,
-            label_type=params['label_type'],
             beam_width=args.beam_width,
             max_decode_len=args.max_decode_len,
             eval_batch_size=args.eval_batch_size,
@@ -115,9 +112,7 @@ def main():
         print('  WER (clean): %f %%' % (wer_test_clean * 100))
         cer_test_other, wer_test_other = do_eval_cer(
             models=models,
-            model_type=params['model_type'],
             dataset=test_other_data,
-            label_type=params['label_type'],
             beam_width=args.beam_width,
             max_decode_len=args.max_decode_len,
             eval_batch_size=args.eval_batch_size,
