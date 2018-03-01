@@ -1,0 +1,8 @@
+parent: ../config/ctc/character/blstm_ctc_char_300h.yml
+param:
+  # framework
+  backend: pytorch
+  # backend: chainer
+
+  # corpus
+  label_type: character_capital_divide

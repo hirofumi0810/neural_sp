@@ -1,0 +1,14 @@
+parent: ../config/hierarchical_attention/att_word_freq5_att_char_300h.yml
+param:
+  # framework
+  backend: pytorch
+  # backend: chainer
+
+  # corpus
+  data_size: 300h
+  label_type: word_freq5
+  label_type_sub: character
+
+  # MTL
+  main_loss_weight: 0.8
+  ctc_loss_weight_sub: 0.2
