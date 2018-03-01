@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Formatting the Mississippi State dictionary for use in Edinburgh. Differs 
+# Formatting the Mississippi State dictionary for use in Edinburgh. Differs
 # from the one in Kaldi s5 recipe in that it uses lower-case --Arnab (Jan 2013)
 
 # To be run from one directory above this script.
@@ -10,8 +10,8 @@
 #check existing directories
 [ $# != 0 ] && echo "Usage: local/swbd1_data_prep.sh" && exit 1;
 
-srcdir=data/local/train  # This is where we downloaded some stuff..
-dir=data/local/dict
+srcdir=$FISHERDATA_SAVEPATH/local/train  # This is where we downloaded some stuff..
+dir=$FISHERDATA_SAVEPATH/local/dict
 mkdir -p $dir
 srcdict=$srcdir/swb_ms98_transcriptions/sw-ms98-dict.text
 
@@ -20,7 +20,7 @@ srcdict=$srcdir/swb_ms98_transcriptions/sw-ms98-dict.text
 
 #(2a) Dictionary preparation:
 # Pre-processing (Lower-case, remove comments)
-grep -v '^#' $srcdict | tr '[A-Z]' '[a-z]' | awk 'NF>0' | sort > $dir/lexicon1.txt || exit 1; 
+grep -v '^#' $srcdict | tr '[A-Z]' '[a-z]' | awk 'NF>0' | sort > $dir/lexicon1.txt || exit 1;
 
 cat $dir/lexicon1.txt | awk '{ for(n=2;n<=NF;n++){ phones[$n] = 1; }} END{for (p in phones) print p;}' | \
   grep -v sil > $dir/nonsilence_phones.txt  || exit 1;
@@ -53,7 +53,7 @@ echo -n >$dir/extra_questions.txt
 # becomes
 # -B-
 # Also, curly braces, which appear to be used for "nonstandard"
-# words or non-words, are removed, e.g. 
+# words or non-words, are removed, e.g.
 # {WOLMANIZED} W OW L M AX N AY Z D
 # -> WOLMANIZED
 # Also, mispronounced words, e.g.
@@ -77,4 +77,3 @@ ln -sf lexicon3.txt lexicon.txt # This is the final lexicon.
 popd >&/dev/null
 
 echo Prepared input dictionary and phone-sets for Switchboard phase 1.
-

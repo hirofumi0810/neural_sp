@@ -9,5 +9,5 @@ pytorch-ctc
 
 vocab
 log
-examples/*/steps
-examples/*/utils
+examples/*/*/steps
+examples/*/*/utils
