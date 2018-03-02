@@ -60,15 +60,13 @@ class TestLoadDataset(unittest.TestCase):
         print('  splice: %d' % splice)
         print('========================================')
 
-        vocab_file_path = '../../../vocab/' + label_type + '.txt'
-
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
+            data_save_path='/n/sd8/inaguma/corpus/timit/kaldi',
             backend=backend,
             input_channel=41, use_delta=True, use_double_delta=True,
             data_type=data_type, label_type=label_type,
-            vocab_file_path=vocab_file_path,
             batch_size=64, max_epoch=2,
             splice=splice, num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
@@ -77,7 +75,7 @@ class TestLoadDataset(unittest.TestCase):
             num_enque=None)
 
         print('=> Loading mini-batch...')
-        idx2phone = Idx2phone(vocab_file_path)
+        idx2phone = Idx2phone(dataset.vocab_file_path)
 
         for batch, is_new_epoch in dataset:
             if data_type == 'train' and backend == 'pytorch':

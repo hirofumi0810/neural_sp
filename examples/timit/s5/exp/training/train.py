@@ -27,7 +27,7 @@ from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
 from utils.training.training_loop import train_step
 from utils.training.logging import set_logger
-from utils.directory import mkdir_join, mkdir
+from utils.directory import mkdir_join
 from utils.config import load_config, save_config
 
 MAX_DECODE_LEN_PHONE = 40
@@ -41,6 +41,7 @@ parser.add_argument('--model_save_path', type=str,
                     help='path to save the model')
 parser.add_argument('--saved_model_path', type=str, default=None,
                     help='path to the saved model to retrain')
+parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
 
 def main():
@@ -60,15 +61,13 @@ def main():
         raise ValueError("Set model_save_path or saved_model_path.")
 
     # Load dataset
-    vocab_file_path = os.path.abspath(
-        './vocab/' + params['label_type'] + '.txt')
     train_data = Dataset(
+        data_save_path=args.data_save_path,
         backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         data_type='train', label_type=params['label_type'],
-        vocab_file_path=vocab_file_path,
         batch_size=params['batch_size'],
         max_epoch=params['num_epoch'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
@@ -76,22 +75,22 @@ def main():
         tool=params['tool'], num_enque=None,
         dynamic_batching=params['dynamic_batching'])
     dev_data = Dataset(
+        data_save_path=args.data_save_path,
         backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         data_type='dev', label_type=params['label_type'],
-        vocab_file_path=vocab_file_path,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True, tool=params['tool'])
     test_data = Dataset(
+        data_save_path=args.data_save_path,
         backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         data_type='test', label_type=params['label_type'],
-        vocab_file_path=vocab_file_path,
         batch_size=1, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         tool=params['tool'])
@@ -278,7 +277,7 @@ def main():
                 if per_dev_epoch < metric_dev_best:
                     metric_dev_best = per_dev_epoch
                     not_improved_epoch = 0
-                    logger.info(u'■■■ ↑Best Score (PER)↑ ■■■')
+                    logger.info('||||| Best Score (PER) |||||')
 
                     # Save the model
                     model.save_checkpoint(model.save_path, epoch, step,

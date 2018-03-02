@@ -16,11 +16,12 @@ echo "                                  TIMIT                                   
 echo ============================================================================
 
 stage=1
+resta=false
 
 ### Set path to original data
 #timit=/export/corpora5/LDC/LDC93S1/timit/TIMIT # @JHU
 # timit=/mnt/matylda2/data/TIMIT/timit # @BUT
-timit='/n/sd8/inaguma/corpus/timit/data'
+timit="/n/sd8/inaguma/corpus/timit/data"
 
 ### Set path to save dataset
 export DATA_SAVEPATH="/n/sd8/inaguma/corpus/timit/kaldi"
@@ -29,11 +30,11 @@ export DATA_SAVEPATH="/n/sd8/inaguma/corpus/timit/kaldi"
 MODEL_SAVEPATH="/n/sd8/inaguma/result/timit"
 
 ### Select one tool to extract features (HTK is the fastest)
-# TOOL='kaldi'
-TOOL='htk'
-# TOOL='python_speech_features'
-# TOOL='librosa'
-# TOOL='wav'
+# TOOL=kaldi
+TOOL=htk
+# TOOL=python_speech_features
+# TOOL=librosa
+# TOOL=wav
 
 ### Configuration of feature extranction
 CHANNELS=40
@@ -42,10 +43,10 @@ SLIDE=0.01
 ENERGY=1
 DELTA=1
 DELTADELTA=1
-# NORMALIZE='global'
-NORMALIZE='speaker'
-# NORMALIZE='utterance'
-# NORMALIZE='no'
+# NORMALIZE=global
+NORMALIZE=speaker
+# NORMALIZE=utterance
+# NORMALIZE=no
 # NOTE: normalize in [-1, 1] in case of wav
 
 
@@ -132,7 +133,7 @@ if [ $stage -le 2 ]; then
     python local/make_dataset_csv.py \
       --data_save_path $DATA_SAVEPATH \
       --phone_map_file_path ./conf/phones.60-48-39.map \
-      --tool $TOOL
+      --tool $TOOL || exit 1;
     touch $DATA_SAVEPATH/dataset/$TOOL/.done_dataset
   fi
 
@@ -149,20 +150,37 @@ if [ $stage -le 3 ]; then
   gpu_index=$2
   filename=$(basename $config_path | awk -F. '{print $1}')
 
-  mkdir -p exp/training/log
+  mkdir -p log
   mkdir -p $MODEL_SAVEPATH
 
-  # CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-  # nohup $PYTHON exp/training/train.py \
-  #   --gpu $gpu_index \
-  #   --config_path $config_path \
-  #   --model_save_path $MODEL_SAVEPATH > exp/training/log/$filename".log" &
+  echo "Start training..."
 
-  CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-  $PYTHON exp/training/train.py \
-    --gpu $gpu_index \
-    --config_path $config_path \
-    --model_save_path $MODEL_SAVEPATH || exit 1;
+  if $restart; then
+    CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+    nohup $PYTHON exp/training/train.py \
+      --gpu $gpu_index \
+      --saved_model_path $saved_model_path > log/$filename".log" &
+
+    # CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+    # $PYTHON exp/training/train.py \
+    #   --gpu $gpu_index \
+    #   --saved_model_path $saved_model_path || exit 1;
+
+  else
+    CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+    nohup $PYTHON exp/training/train.py \
+      --gpu $gpu_index \
+      --config_path $config_path \
+      --model_save_path $MODEL_SAVEPATH \
+      --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+
+    # CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+    # $PYTHON exp/training/train.py \
+    #   --gpu $gpu_index \
+    #   --config_path $config_path \
+    #   --model_save_path $MODEL_SAVEPATH \
+    #   --data_save_path $DATA_SAVEPATH　|| exit 1;
+  fi
 
   echo "Finish model training (stage: 3)."
 fi

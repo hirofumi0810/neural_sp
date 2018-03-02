@@ -11,7 +11,7 @@ from os.path import join, abspath
 import sys
 import argparse
 
-sys.path.append(abspath('../../../../../'))
+sys.path.append(abspath('../../../'))
 from models.load_model import load
 from examples.timit.s5.exp.dataset.load_dataset import Dataset
 from utils.io.labels.phone import Idx2phone
@@ -30,6 +30,7 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
 parser.add_argument('--max_decode_len', type=int, default=40,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
+parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
 
 def main():
@@ -40,18 +41,18 @@ def main():
     params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
-    vocab_file_path = '../../vocab/' + params['label_type'] + '.txt'
     test_data = Dataset(
+        data_save_path=args.data_save_path,
         backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         data_type='test',
         label_type=params['label_type'],
-        vocab_file_path=vocab_file_path,
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, reverse=True, tool=params['tool'])
+
     params['num_classes'] = test_data.num_classes
 
     # Load model

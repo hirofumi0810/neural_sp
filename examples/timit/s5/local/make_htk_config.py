@@ -16,7 +16,6 @@ from utils.feature_extraction.htk import save_config
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str, help='path to save data')
-parser.add_argument('--htk_save_path', type=str, help='path to save HTK files')
 parser.add_argument('--config_save_path', type=str,
                     help='path to save the configuration file')
 

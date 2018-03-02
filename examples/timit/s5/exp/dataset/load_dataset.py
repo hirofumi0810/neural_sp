@@ -18,15 +18,17 @@ from utils.dataset.loader import DatasetBase
 
 class Dataset(DatasetBase):
 
-    def __init__(self, backend, input_channel, use_delta, use_double_delta,
-                 data_type, label_type, batch_size,
-                 vocab_file_path, max_epoch=None, splice=1,
+    def __init__(self, data_save_path,
+                 backend, input_channel, use_delta, use_double_delta,
+                 data_type, label_type,
+                 batch_size, max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
                  shuffle=False, sort_utt=False, reverse=False,
                  sort_stop_epoch=None, tool='htk',
                  num_enque=None, dynamic_batching=False):
         """A class for loading dataset.
         Args:
+            data_save_path (string): path to saved data
             backend (string): pytorch or chainer
             input_channel (int): the number of channels of acoustics
             use_delta (bool): if True, use the delta feature
@@ -34,7 +36,6 @@ class Dataset(DatasetBase):
             data_type (string): train or dev or test
             label_type (string): phone39 or phone48 or phone61
             batch_size (int): the size of mini-batch
-            vocab_file_path (string): path to the vocabulary file
             max_epoch (int, optional): the max epoch. None means infinite loop.
             splice (int, optional): frames to splice. Default is 1 frame.
             num_stack (int, optional): the number of frames to stack
@@ -72,12 +73,14 @@ class Dataset(DatasetBase):
         self.tool = tool
         self.num_enque = num_enque
         self.dynamic_batching = dynamic_batching
+        self.vocab_file_path = join(
+            data_save_path, 'vocab', label_type + '.txt')
 
-        super(Dataset, self).__init__(vocab_file_path=vocab_file_path)
+        super(Dataset, self).__init__(vocab_file_path=self.vocab_file_path)
 
         # Load dataset file
-        dataset_path = join('/n/sd8/inaguma/corpus/timit/kaldi/dataset',
-                            tool, data_type, label_type + '.csv')
+        dataset_path = join(
+            data_save_path, 'dataset', tool, data_type, label_type + '.csv')
         df = pd.read_csv(dataset_path)
         df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
 

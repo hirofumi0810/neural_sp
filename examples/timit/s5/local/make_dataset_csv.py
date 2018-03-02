@@ -42,7 +42,7 @@ def main():
         print('=> Processing transcripts...')
         trans_dict = read_text(
             text_path=join(args.data_save_path, data_type, 'text'),
-            vocab_save_path=mkdir_join('.', 'vocab'),
+            vocab_save_path=mkdir_join(args.data_save_path, 'vocab'),
             data_type=data_type,
             phone_map_file_path=args.phone_map_file_path)
 
@@ -50,6 +50,7 @@ def main():
         print('=> Saving dataset files...')
         csv_save_path = mkdir_join(
             args.data_save_path, 'dataset', args.tool, data_type)
+
         df_columns = ['frame_num', 'input_path', 'transcript']
         df_phone61 = pd.DataFrame([], columns=df_columns)
         df_phone48 = pd.DataFrame([], columns=df_columns)
