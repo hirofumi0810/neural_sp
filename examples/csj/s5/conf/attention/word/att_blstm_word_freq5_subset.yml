@@ -92,7 +92,7 @@ param:
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
   eval_start_epoch: 5
-  print_step: 500
+  print_step: 200
 
   # MTL
   ctc_loss_weight: 0

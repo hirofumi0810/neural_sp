@@ -20,6 +20,7 @@ echo ===========================================================================
 stage=3
 hierarchical_model=false
 # hierarchical_model=true
+restart=false
 
 ### Set path to original data
 CSJDATATOP="/n/rd25/mimura/corpus/CSJ"
@@ -211,7 +212,7 @@ if [ $stage -le 2 ]; then
   if [ ! -e $DATA_SAVEPATH/dataset/$TOOL/.done_dataset ]; then
     python local/make_dataset_csv.py \
       --data_save_path $DATA_SAVEPATH \
-      --tool $TOOL
+      --tool $TOOL || exit 1;
     touch $DATA_SAVEPATH/dataset/$TOOL/.done_dataset
   fi
 
@@ -228,38 +229,66 @@ if [ $stage -le 3 ]; then
   gpu_index=$2
   filename=$(basename $config_path | awk -F. '{print $1}')
 
-  mkdir -p exp/training/log
+  mkdir -p log
   mkdir -p $MODEL_SAVEPATH
 
-  if $hierarchical_model; then
-    # CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-    # nohup $PYTHON exp/training/train_hierarchical.py \
-    #   --gpu $gpu_index \
-    #   --config_path $config_path \
-    #   --model_save_path $MODEL_SAVEPATH \
-    #   --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+  echo "Start training..."
 
-    CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-    $PYTHON exp/training/train_hierarchical.py \
-      --gpu $gpu_index \
-      --config_path $config_path \
-      --model_save_path $MODEL_SAVEPATH \
-      --data_save_path $DATA_SAVEPATH || exit 1;
+  if $hierarchical_model; then
+    if $restart; then
+      CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+      nohup $PYTHON exp/training/train_hierarchical.py \
+        --gpu $gpu_index \
+        --saved_model_path $saved_model_path > log/$filename".log" &
+
+      # CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+      # nohup $PYTHON exp/training/train_hierarchical.py \
+      #   --gpu $gpu_index \
+      #   --saved_model_path $saved_model_path || exit 1;
+
+    else
+      CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+      nohup $PYTHON exp/training/train_hierarchical.py \
+        --gpu $gpu_index \
+        --config_path $config_path \
+        --model_save_path $MODEL_SAVEPATH \
+        --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+
+      # CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+      # $PYTHON exp/training/train_hierarchical.py \
+      #   --gpu $gpu_index \
+      #   --config_path $config_path \
+      #   --model_save_path $MODEL_SAVEPATH \
+      #   --data_save_path $DATA_SAVEPATH || exit 1;
+    fi
 
   else
-    # CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-    # nohup $PYTHON exp/training/train.py \
-    #   --gpu $gpu_index \
-    #   --config_path $config_path \
-    #   --model_save_path $MODEL_SAVEPATH \
-    #   --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+    if $restart; then
+      CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+      nohup $PYTHON exp/training/train.py \
+        --gpu $gpu_index \
+        --saved_model_path $saved_model_path > log/$filename".log" &
 
-    CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-    $PYTHON exp/training/train.py \
-      --gpu $gpu_index \
-      --config_path $config_path \
-      --model_save_path $MODEL_SAVEPATH \
-      --data_save_path $DATA_SAVEPATH　|| exit 1;
+      # CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+      # $PYTHON exp/training/train.py \
+      #   --gpu $gpu_index \
+      #   --saved_model_path $saved_model_path || exit 1;
+
+    else
+      CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+      nohup $PYTHON exp/training/train.py \
+        --gpu $gpu_index \
+        --config_path $config_path \
+        --model_save_path $MODEL_SAVEPATH \
+        --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+
+      # CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+      # $PYTHON exp/training/train.py \
+      #   --gpu $gpu_index \
+      #   --config_path $config_path \
+      #   --model_save_path $MODEL_SAVEPATH \
+      #   --data_save_path $DATA_SAVEPATH　|| exit 1;
+    fi
   fi
 
   echo "Finish model training (stage: 3)."

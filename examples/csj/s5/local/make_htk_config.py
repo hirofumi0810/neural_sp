@@ -16,7 +16,6 @@ from utils.feature_extraction.htk import save_config
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str, help='path to save data')
-parser.add_argument('--htk_save_path', type=str, help='path to save HTK files')
 parser.add_argument('--config_save_path', type=str,
                     help='path to save the configuration file')
 
@@ -53,7 +52,8 @@ def main():
         with open(join(args.data_save_path, data_type, 'wav.scp')) as f:
             for line in f:
                 line = line.strip()
-                wav_paths.append(line.split(' ')[2])
+                wav_path = line.split(' ')[2]
+                wav_paths.append(wav_path)
 
         with open(join(args.data_save_path, data_type, 'wav2htk.scp'), 'w') as f:
             for wav_path in wav_paths:

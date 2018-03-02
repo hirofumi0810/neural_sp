@@ -22,8 +22,7 @@ class Dataset(DatasetBase):
 
     def __init__(self, data_save_path,
                  backend, input_channel, use_delta, use_double_delta,
-                 data_type, data_size,
-                 label_type, label_type_sub,
+                 data_type, data_size, label_type, label_type_sub,
                  batch_size, max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
                  min_frame_num=40,
@@ -58,7 +57,7 @@ class Dataset(DatasetBase):
             sort_stop_epoch (int, optional): After sort_stop_epoch, training
                 will revert back to a random order
             num_gpus (optional, int): the number of GPUs
-            stool (string, optional): htk or librosa or python_speech_features
+            tool (string, optional): htk or librosa or python_speech_features
             num_enque (int, optional): the number of elements to enqueue
             dynamic_batching (bool, optional): if True, batch size will be
                 chainged dynamically in training
@@ -145,10 +144,14 @@ class Dataset(DatasetBase):
         if self.data_size == 'subset':
             if min_frame_num_batch <= 300:
                 batch_size = batch_size * 2
-            elif min_frame_num_batch <= 1600:
+            elif min_frame_num_batch <= 900:
                 pass
-            elif min_frame_num_batch <= 1700:
+            elif min_frame_num_batch <= 1200:
+                batch_size = int(batch_size / 1.5)
+            elif min_frame_num_batch <= 1600:
                 batch_size = int(batch_size / 2)
+            elif min_frame_num_batch <= 1700:
+                batch_size = int(batch_size / 4)
             else:
                 batch_size = 8
         elif self.data_size == 'fullset':

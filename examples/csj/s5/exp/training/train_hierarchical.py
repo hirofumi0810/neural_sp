@@ -143,7 +143,7 @@ def main():
 
         # Set save path
         save_path = mkdir_join(
-            args.model_save_path,  params['backend'], 'csj',
+            args.model_save_path,  params['backend'],
             params['model_type'],
             params['label_type'] + '_' + params['label_type_sub'],
             params['data_size'], model.name)
@@ -324,12 +324,12 @@ def main():
                     beam_width=1,
                     max_decode_len=MAX_DECODE_LEN_WORD,
                     eval_batch_size=1)
-                logger.info('  WER (dev): %f %%' % (wer_dev_epoch * 100))
+                logger.info('  WER (dev): %.3f %%' % (wer_dev_epoch * 100))
 
                 if wer_dev_epoch < metric_dev_best:
                     metric_dev_best = wer_dev_epoch
                     not_improved_epoch = 0
-                    logger.info('■■■ Best Score (WER) ■■■')
+                    logger.info('||||| Best Score (WER) |||||')
 
                     # Save the model
                     model.save_checkpoint(model.save_path, epoch, step,
@@ -342,7 +342,7 @@ def main():
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_WORD,
                         eval_batch_size=1)
-                    logger.info('  WER (eval1, main): %f %%' %
+                    logger.info('  WER (eval1, main): %.3f %%' %
                                 (wer_eval1 * 100))
                     wer_eval2, _ = do_eval_wer(
                         model=model,
@@ -350,7 +350,7 @@ def main():
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_WORD,
                         eval_batch_size=1)
-                    logger.info('  WER (eval2, main): %f %%' %
+                    logger.info('  WER (eval2, main): %.3f %%' %
                                 (wer_eval2 * 100))
                     wer_eval3, _ = do_eval_wer(
                         model=model,
@@ -358,9 +358,9 @@ def main():
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_WORD,
                         eval_batch_size=1)
-                    logger.info('  WER (eval3, main): %f %%' %
+                    logger.info('  WER (eval3, main): %.3f %%' %
                                 (wer_eval3 * 100))
-                    logger.info('  WER (mean, main): %f %%' %
+                    logger.info('  WER (mean, main): %.3f %%' %
                                 ((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3))
                 else:
                     not_improved_epoch += 1

@@ -97,7 +97,7 @@ def main():
         max_decode_len=args.max_decode_len,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
-    print('  WER (eval1, main): %f %%' % (wer_eval1 * 100))
+    print('  WER (eval1, main): %.3f %%' % (wer_eval1 * 100))
     print(df_wer_eval1)
     wer_eval2, df_wer_eval2 = do_eval_wer(
         model=model,
@@ -106,7 +106,7 @@ def main():
         max_decode_len=args.max_decode_len,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
-    print('  WER (eval2, main): %f %%' % (wer_eval2 * 100))
+    print('  WER (eval2, main): %.3f %%' % (wer_eval2 * 100))
     print(df_wer_eval2)
     wer_eval3, df_wer_eval3 = do_eval_wer(
         model=model,
@@ -115,10 +115,10 @@ def main():
         max_decode_len=args.max_decode_len,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
-    print('  WER (eval3, main): %f %%' % (wer_eval3 * 100))
+    print('  WER (eval3, main): %.3f %%' % (wer_eval3 * 100))
     print(df_wer_eval3)
 
-    print('  WER (mean, main): %f %%' %
+    print('  WER (mean, main): %.3f %%' %
           ((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3))
 
     cer_eval1, wer_eval1_sub, df_cer_eval1 = do_eval_cer(
@@ -128,9 +128,9 @@ def main():
         max_decode_len=args.max_decode_len_sub,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
-    print('  CER (eval1, sub): %f %%' % (cer_eval1 * 100))
+    print('  CER (eval1, sub): %.3f %%' % (cer_eval1 * 100))
     if params['label_type_sub'] == 'kanji_divide':
-        print('  WER (eval1, sub): %f %%' % (wer_eval1_sub * 100))
+        print('  WER (eval1, sub): %.3f %%' % (wer_eval1_sub * 100))
     print(df_cer_eval1)
     cer_eval2, wer_eval2_sub, df_cer_eval2 = do_eval_cer(
         model=model,
@@ -139,9 +139,9 @@ def main():
         max_decode_len=args.max_decode_len_sub,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
-    print('  CER (eval2, sub): %f %%' % (cer_eval2 * 100))
+    print('  CER (eval2, sub): %.3f %%' % (cer_eval2 * 100))
     if params['label_type_sub'] == 'kanji_divide':
-        print('  WER (eval2, sub): %f %%' % (wer_eval2_sub * 100))
+        print('  WER (eval2, sub): %.3f %%' % (wer_eval2_sub * 100))
     print(df_cer_eval2)
     cer_eval3, wer_eval3_sub, df_cer_eval3 = do_eval_cer(
         model=model,
@@ -150,15 +150,15 @@ def main():
         max_decode_len=args.max_decode_len_sub,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
-    print('  CER (eval3, sub): %f %%' % (cer_eval3 * 100))
+    print('  CER (eval3, sub): %.3f %%' % (cer_eval3 * 100))
     if params['label_type_sub'] == 'kanji_divide':
-        print('  WER (eval3, sub): %f %%' % (wer_eval3_sub * 100))
+        print('  WER (eval3, sub): %.3f %%' % (wer_eval3_sub * 100))
     print(df_cer_eval3)
 
-    print('  CER (mean, sub): %f %%' %
+    print('  CER (mean, sub): %.3f %%' %
           ((cer_eval1 + cer_eval2 + cer_eval3) * 100 / 3))
     if params['label_type_sub'] == 'kanji_divide':
-        print('  WER (mean, sub): %f %%' %
+        print('  WER (mean, sub): %.3f %%' %
               ((wer_eval1_sub + wer_eval2_sub + wer_eval3_sub) * 100 / 3))
 
 

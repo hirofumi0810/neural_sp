@@ -136,7 +136,7 @@ def main():
 
         # Set save path
         save_path = mkdir_join(
-            args.model_save_path, params['backend'], 'csj',
+            args.model_save_path, params['backend'],
             params['model_type'], params['label_type'], params['data_size'], model.name)
         model.set_save_path(save_path)
 
@@ -301,7 +301,7 @@ def main():
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_WORD,
                         eval_batch_size=1)
-                    logger.info('  WER (dev): %f %%' %
+                    logger.info('  WER (dev): %.3f %%' %
                                 (metric_dev_epoch * 100))
                 else:
                     metric_dev_epoch, wer_dev_epoch, _ = do_eval_cer(
@@ -310,14 +310,14 @@ def main():
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_CHAR,
                         eval_batch_size=1)
-                    logger.info('  CER (dev): %f %%' %
+                    logger.info('  CER (dev): %.3f %%' %
                                 (metric_dev_epoch * 100))
-                    logger.info('  WER (dev): %f %%' % (wer_dev_epoch * 100))
+                    logger.info('  WER (dev): %.3f %%' % (wer_dev_epoch * 100))
 
                 if metric_dev_epoch < metric_dev_best:
                     metric_dev_best = metric_dev_epoch
                     not_improved_epoch = 0
-                    logger.info('■■■ Best Score ■■■')
+                    logger.info('||||| Best Score |||||')
 
                     # Save the model
                     model.save_checkpoint(model.save_path, epoch, step,
@@ -331,22 +331,25 @@ def main():
                             beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_CHAR,
                             eval_batch_size=1)
-                        logger.info('  WER (eval1): %f %%' % (wer_eval1 * 100))
+                        logger.info('  WER (eval1): %.3f %%' %
+                                    (wer_eval1 * 100))
                         wer_eval2, _ = do_eval_wer(
                             model=model,
                             dataset=eval2_data,
                             beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_CHAR,
                             eval_batch_size=1)
-                        logger.info('  WER (eval2): %f %%' % (wer_eval2 * 100))
+                        logger.info('  WER (eval2): %.3f %%' %
+                                    (wer_eval2 * 100))
                         wer_eval3, _ = do_eval_wer(
                             model=model,
                             dataset=eval3_data,
                             beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_CHAR,
                             eval_batch_size=1)
-                        logger.info('  WER (eval3): %f %%' % (wer_eval3 * 100))
-                        logger.info('  WER (mean): %f %%' %
+                        logger.info('  WER (eval3): %.3f %%' %
+                                    (wer_eval3 * 100))
+                        logger.info('  WER (mean): %.3f %%' %
                                     ((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3))
                     else:
                         cer_eval1, wer_eval1, _ = do_eval_cer(
@@ -355,7 +358,7 @@ def main():
                             beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_CHAR,
                             eval_batch_size=1)
-                        logger.info('  CER / WER (eval1): %f %% / %f %%' %
+                        logger.info('  CER / WER (eval1): %.3f %% / %.3f %%' %
                                     ((cer_eval1 * 100), (wer_eval1 * 100)))
                         cer_eval2, wer_eval2, _ = do_eval_cer(
                             model=model,
@@ -363,7 +366,7 @@ def main():
                             beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_CHAR,
                             eval_batch_size=1)
-                        logger.info('  CER / WER (eval2): %f %% / %f %%' %
+                        logger.info('  CER / WER (eval2): %.3f %% / %.3f %%' %
                                     ((cer_eval2 * 100), (wer_eval2 * 100)))
                         cer_eval3, wer_eval3, _ = do_eval_cer(
                             model=model,
@@ -371,9 +374,9 @@ def main():
                             beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_CHAR,
                             eval_batch_size=1)
-                        logger.info('  CER / WER (eval3): %f %% / %f %%' %
+                        logger.info('  CER / WER (eval3): %.3f %% / %.3f %%' %
                                     ((cer_eval3 * 100), (wer_eval3 * 100)))
-                        logger.info('  CER / WER (mean): %f %% / %f %%' %
+                        logger.info('  CER / WER (mean): %.3f %% / %.3f %%' %
                                     (((cer_eval1 + cer_eval2 + cer_eval3) * 100 / 3),
                                      ((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3)))
                 else:

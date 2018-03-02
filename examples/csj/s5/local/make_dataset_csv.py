@@ -291,7 +291,6 @@ def read_text(text_path, vocab_save_path, data_type,
                     word_dict[word] += 1
 
                 word_set.add(word)
-                # for c in word:
                 kanji_set |= set(list(word))
 
             for pos in trans_pos.split(SPACE):

@@ -1,0 +1,8 @@
+parent: ./conf/attention/word/att_blstm_word_freq5_subset.yml
+param:
+  # framework
+  backend: pytorch
+  # backend: chainer
+
+  # corpus
+  label_type: word15

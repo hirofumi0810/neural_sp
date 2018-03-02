@@ -87,7 +87,7 @@ class TestLoadDataset(unittest.TestCase):
 
         print('=> Loading mini-batch...')
         if 'word' in label_type:
-            map_fn = Idx2word(dataset.vocab_file_path, space_mark='_')
+            map_fn = Idx2word(dataset.vocab_file_path)
         else:
             map_fn = Idx2char(dataset.vocab_file_path)
 

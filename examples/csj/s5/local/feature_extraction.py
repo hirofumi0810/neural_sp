@@ -135,8 +135,9 @@ def main():
 
 
 def read_audio(data_type, spk2audio, segment_dict, tool, config, normalize,
-               save_path, global_mean_male=None, global_mean_female=None,
-               global_std_male=None, global_std_female=None, dtype=np.float32):
+               save_path, global_mean_male=None, global_std_male=None,
+               global_mean_female=None, global_std_female=None,
+               dtype=np.float32):
     """Read HTK or WAV files.
     Args:
         data_type (string):
@@ -166,18 +167,6 @@ def read_audio(data_type, spk2audio, segment_dict, tool, config, normalize,
         global_std_female (np.ndarray, optional): global standard deviation of
             female over the training set
         dtype (optional): the type of data, default is np.float32
-    Returns:
-        global_mean_male (np.ndarray): global mean of male over the
-            training set
-        global_std_male (np.ndarray): global standard deviation of male
-            over the training set
-        global_mean_female (np.ndarray): global mean of female over the
-            training set
-        global_std_female (np.ndarray): global standard deviation of
-            female over the training set
-        frame_num_dict (dict):
-            key => utterance name
-            value => the number of frames
     """
     if data_type != 'train':
         if global_mean_male is None or global_mean_female is None:
@@ -343,9 +332,6 @@ def read_audio(data_type, spk2audio, segment_dict, tool, config, normalize,
     # Save the frame number dictionary
     with open(join(save_path, 'frame_num.pickle'), 'wb') as f:
         pickle.dump(frame_num_dict, f)
-
-    return (global_mean_male, global_mean_female,
-            global_std_male, global_std_female, frame_num_dict)
 
 
 if __name__ == '__main__':

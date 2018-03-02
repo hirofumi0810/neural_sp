@@ -126,6 +126,8 @@ class Dataset(DatasetBase):
         if self.data_size == 'subset':
             if min_frame_num_batch <= 300:
                 batch_size = batch_size * 2
+            elif min_frame_num_batch <= 600:
+                batch_size = int(batch_size * 1.5)
             elif min_frame_num_batch <= 1600:
                 pass
             elif min_frame_num_batch <= 1700:
