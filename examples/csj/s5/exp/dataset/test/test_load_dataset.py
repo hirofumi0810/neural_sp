@@ -9,8 +9,8 @@ import os
 import sys
 import unittest
 
-sys.path.append(os.path.abspath('../../../../'))
-from examples.csj.data.load_dataset import Dataset
+sys.path.append(os.path.abspath('../../../../../../'))
+from examples.csj.s5.exp.dataset.load_dataset import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
 from utils.measure_time_func import measure_time
@@ -21,36 +21,37 @@ class TestLoadDataset(unittest.TestCase):
     def test(self):
 
         # framework
-        self.check(label_type='word_freq5',
-                   data_type='train', backend='chainer')
+        # self.check(label_type='word5', data_type='train', backend='chainer')
 
         # data_type
-        self.check(label_type='word_freq5', data_type='dev')
-        self.check(label_type='word_freq5', data_type='eval1')
-        self.check(label_type='word_freq5', data_type='eval2')
-        self.check(label_type='word_freq5', data_type='eval3')
+        self.check(label_type='word5', data_type='dev')
+        self.check(label_type='word5', data_type='eval1')
+        self.check(label_type='word5', data_type='eval2')
+        self.check(label_type='word5', data_type='eval3')
 
         # label_type
-        self.check(label_type='word_freq1')
-        self.check(label_type='word_freq10')
-        self.check(label_type='word_freq15')
+        self.check(label_type='word1')
+        self.check(label_type='word10')
+        self.check(label_type='word15')
         self.check(label_type='kanji')
-        self.check(label_type='kanji_divide')
-        self.check(label_type='kana')
-        self.check(label_type='kana_divide')
+        self.check(label_type='kanji_wb')
+        # self.check(label_type='kana')
+        # self.check(label_type='kana_wb')
+        # self.check(label_type='phone')
+        # self.check(label_type='phone_wb')
+        self.check(label_type='pos')
 
         # sort
-        self.check(label_type='word_freq5',
-                   sort_utt=True, sort_stop_epoch=True)
+        self.check(label_type='word5', sort_utt=True, sort_stop_epoch=True)
 
         # frame stacking
-        self.check(label_type='word_freq5', frame_stacking=True)
+        self.check(label_type='word5', frame_stacking=True)
 
         # splicing
-        self.check(label_type='word_freq5', splice=11)
+        self.check(label_type='word5', splice=11)
 
         # multi-GPU
-        # self.check(label_type='word_freq5', num_gpus=8)
+        # self.check(label_type='word5', num_gpus=8)
 
     @measure_time
     def check(self, label_type, data_type='dev',
@@ -71,29 +72,24 @@ class TestLoadDataset(unittest.TestCase):
         print('  num_gpus: %d' % num_gpus)
         print('========================================')
 
-        vocab_file_path = '../../metrics/vocab_files/' + \
-            label_type + '_' + data_size + '.txt'
-
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
+            data_save_path='/n/sd8/inaguma/corpus/csj/kaldi/' + data_size,
             backend=backend,
             input_channel=80, use_delta=True, use_double_delta=True,
             data_type=data_type, data_size=data_size,
             label_type=label_type, batch_size=64,
-            vocab_file_path=vocab_file_path,
-            max_epoch=1, splice=splice,
-            num_stack=num_stack, num_skip=num_skip,
-            min_frame_num=40,
-            shuffle=shuffle,
-            sort_utt=sort_utt, reverse=True, sort_stop_epoch=sort_stop_epoch,
-            num_gpus=num_gpus, save_format='numpy', num_enque=None)
+            max_epoch=1, splice=splice, num_stack=num_stack, num_skip=num_skip,
+            min_frame_num=40, shuffle=shuffle,
+            sort_utt=sort_utt, reverse=False, sort_stop_epoch=sort_stop_epoch,
+            num_gpus=num_gpus, tool='htk', num_enque=None)
 
         print('=> Loading mini-batch...')
         if 'word' in label_type:
-            map_fn = Idx2word(vocab_file_path, space_mark='_')
+            map_fn = Idx2word(dataset.vocab_file_path, space_mark='_')
         else:
-            map_fn = Idx2char(vocab_file_path)
+            map_fn = Idx2char(dataset.vocab_file_path)
 
         for batch, is_new_epoch in dataset:
             if data_type == 'train' and backend == 'pytorch':

@@ -14,10 +14,9 @@ import shutil
 
 sys.path.append(abspath('../../../'))
 from models.load_model import load
-from examples.csj.data.load_dataset_hierarchical import Dataset
+from examples.csj.s5.exp.dataset.load_dataset_hierarchical import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
-from utils.io.variable import var2np
 from utils.directory import mkdir_join, mkdir
 from utils.visualization.attention import plot_hierarchical_attention_weights
 from utils.config import load_config
@@ -36,6 +35,7 @@ parser.add_argument('--max_decode_len', type=int, default=60,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
 parser.add_argument('--max_decode_len_sub', type=int, default=100,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
+parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
 
 def main():
@@ -46,11 +46,8 @@ def main():
     params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
-    vocab_file_path = '../metrics/vocab_files/' + \
-        params['label_type'] + '_' + params['data_size'] + '.txt'
-    vocab_file_path_sub = '../metrics/vocab_files/' + \
-        params['label_type_sub'] + '_' + params['data_size'] + '.txt'
     test_data = Dataset(
+        data_save_path=args.data_save_path,
         backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
@@ -60,11 +57,10 @@ def main():
         # data_type='eval3',
         data_size=params['data_size'],
         label_type=params['label_type'], label_type_sub=params['label_type_sub'],
-        vocab_file_path=vocab_file_path,
-        vocab_file_path_sub=vocab_file_path_sub,
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=True, reverse=True, save_format=params['save_format'])
+        sort_utt=True, reverse=True, tool=params['tool'])
+
     params['num_classes'] = test_data.num_classes
     params['num_classes_sub'] = test_data.num_classes_sub
 
@@ -90,8 +86,7 @@ def main():
     # save_path=None)
 
 
-def plot(model, dataset, beam_width,
-         max_decode_len, max_decode_len_sub,
+def plot(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
          eval_batch_size=None, save_path=None):
     """Visualize attention weights of Attetnion-based model.
     Args:
@@ -114,19 +109,11 @@ def plot(model, dataset, beam_width,
         mkdir(save_path)
 
     if dataset.label_type == 'pos':
-        map_fn_main = Idx2word(
-            vocab_file_path='../metrics/vocab_files/' +
-            dataset.label_type + '_' + dataset.data_size + '.txt')
-        map_fn_sub = Idx2word(
-            vocab_file_path='../metrics/vocab_files/' +
-            dataset.label_type_sub + '_' + dataset.data_size + '.txt')
+        map_fn_main = Idx2word(dataset.vocab_file_path)
+        map_fn_sub = Idx2word(dataset.vocab_file_path_sub)
     else:
-        map_fn_main = Idx2word(
-            vocab_file_path='../metrics/vocab_files/' +
-            dataset.label_type + '_' + dataset.data_size + '.txt')
-        map_fn_sub = Idx2char(
-            vocab_file_path='../metrics/vocab_files/' +
-            dataset.label_type_sub + '_' + dataset.data_size + '.txt')
+        map_fn_main = Idx2word(dataset.vocab_file_path)
+        map_fn_sub = Idx2char(dataset.vocab_file_path_sub)
 
     for batch, is_new_epoch in dataset:
 
@@ -151,9 +138,9 @@ def plot(model, dataset, beam_width,
             # NOTE: Trancate by <EOS>
 
             # Remove the last space
-            if len(str_pred) > 0 and str_pred[-1] == ' ':
+            if len(str_pred) > 0 and str_pred[-1] == '_':
                 str_pred = str_pred[:-1]
-            if len(str_pred_sub) > 0 and str_pred_sub[-1] == ' ':
+            if len(str_pred_sub) > 0 and str_pred_sub[-1] == '_':
                 str_pred_sub = str_pred_sub[:-1]
 
             speaker = batch['input_names'][i_batch].split('_')[0]

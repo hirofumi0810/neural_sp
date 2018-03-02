@@ -1,12 +1,11 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Make input features (CSJ corpus)."""
+"""Generate input features (CSJ corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-from __future__ import unicode_literals
 
 from os.path import join, basename
 import sys
@@ -142,6 +141,8 @@ def read_audio(data_type, spk2audio, segment_dict, tool, config, normalize,
     Args:
         data_type (string):
         spk2audio (dict):
+            key (string) =>
+            value () =>
         segment_dict (dict):
             key (string) =>
             value (dict) =>
@@ -202,7 +203,7 @@ def read_audio(data_type, spk2audio, segment_dict, tool, config, normalize,
             audio_path = spk2audio[speaker]
 
             # Divide each audio file into utterances
-            _, features_utt_sum, speaker_mean, _, total_frame_num_speaker = segment(
+            _, feat_utt_sum, speaker_mean, _, total_frame_num_speaker = segment(
                 audio_path,
                 speaker,
                 segment_dict[speaker],  # dict of utterances
@@ -213,24 +214,23 @@ def read_audio(data_type, spk2audio, segment_dict, tool, config, normalize,
 
             if i == 0:
                 # Initialize global statistics
-                feature_dim = features_utt_sum.shape[0]
-                global_mean_male = np.zeros((feature_dim,), dtype=dtype)
-                global_mean_female = np.zeros(
-                    (feature_dim,), dtype=dtype)
-                global_std_male = np.zeros((feature_dim,), dtype=dtype)
-                global_std_female = np.zeros((feature_dim,), dtype=dtype)
+                feat_dim = feat_utt_sum.shape[0]
+                global_mean_male = np.zeros((feat_dim,), dtype=dtype)
+                global_mean_female = np.zeros((feat_dim,), dtype=dtype)
+                global_std_male = np.zeros((feat_dim,), dtype=dtype)
+                global_std_female = np.zeros((feat_dim,), dtype=dtype)
 
             # For computing global mean
             if speaker[3] == 'M':
                 audio_paths_male.append(audio_path)
-                global_mean_male += features_utt_sum
+                global_mean_male += feat_utt_sum
                 total_frame_num_male += total_frame_num_speaker
             elif speaker[3] == 'F':
                 audio_paths_female.append(audio_path)
-                global_mean_female += features_utt_sum
+                global_mean_female += feat_utt_sum
                 total_frame_num_female += total_frame_num_speaker
             else:
-                raise ValueError
+                raise ValueError('gender is M or F.')
 
             # For computing speaker mean & stddev
             if normalize == 'speaker':
@@ -247,7 +247,7 @@ def read_audio(data_type, spk2audio, segment_dict, tool, config, normalize,
             audio_path = spk2audio[speaker]
 
             # Divide each audio into utterances
-            features_dict_speaker, _, _, _, _ = segment(
+            feat_dict_speaker, _, _, _, _ = segment(
                 audio_path,
                 speaker,
                 segment_dict[speaker],
@@ -258,15 +258,15 @@ def read_audio(data_type, spk2audio, segment_dict, tool, config, normalize,
 
             # For computing global stddev
             if speaker[3] == 'M':
-                for features_utt in features_dict_speaker.values():
+                for feat_utt in feat_dict_speaker.values():
                     global_std_male += np.sum(
-                        np.abs(features_utt - global_mean_male) ** 2, axis=0)
+                        np.abs(feat_utt - global_mean_male) ** 2, axis=0)
             elif speaker[3] == 'F':
-                for features_utt in features_dict_speaker.values():
+                for feat_utt in feat_dict_speaker.values():
                     global_std_female += np.sum(
-                        np.abs(features_utt - global_mean_female) ** 2, axis=0)
+                        np.abs(feat_utt - global_mean_female) ** 2, axis=0)
             else:
-                raise ValueError
+                raise ValueError('gender is M or F.')
 
         # Compute global stddev per gender
         global_std_male = np.sqrt(
@@ -274,16 +274,12 @@ def read_audio(data_type, spk2audio, segment_dict, tool, config, normalize,
         global_std_female = np.sqrt(
             global_std_female / (total_frame_num_female - 1))
 
-        if save_path is not None:
-            # Save global mean & stddev per gender
-            np.save(join(save_path, 'global_mean_male.npy'),
-                    global_mean_male)
-            np.save(join(save_path, 'global_mean_female.npy'),
-                    global_mean_female)
-            np.save(join(save_path, 'global_std_male.npy'),
-                    global_std_male)
-            np.save(join(save_path, 'global_std_female.npy'),
-                    global_std_female)
+        # Save global mean & stddev per gender
+        np.save(join(save_path, 'global_mean_male.npy'), global_mean_male)
+        np.save(join(save_path, 'global_mean_female.npy'),
+                global_mean_female)
+        np.save(join(save_path, 'global_std_male.npy'), global_std_male)
+        np.save(join(save_path, 'global_std_female.npy'), global_std_female)
 
     # Loop 2: Normalization and Saving
     print('=====> Normalization...')
@@ -298,7 +294,7 @@ def read_audio(data_type, spk2audio, segment_dict, tool, config, normalize,
             speaker_mean = None
 
         # Divide each audio into utterances
-        features_dict_speaker, _, speaker_mean, speaker_std, _ = segment(
+        feat_dict_speaker, _, speaker_mean, speaker_std, _ = segment(
             audio_path,
             speaker,
             segment_dict[speaker],
@@ -307,52 +303,46 @@ def read_audio(data_type, spk2audio, segment_dict, tool, config, normalize,
             tool=tool,
             config=config,
             mean=speaker_mean)  # for compute speaker stddev
-        # NOTE: features_dict_speaker have been not normalized yet
+        # NOTE: feat_dict_speaker have been not normalized yet
 
-        for utt_idx, features_utt in features_dict_speaker.items():
+        for utt_idx, feat_utt in feat_dict_speaker.items():
             if normalize == 'no':
                 pass
             elif normalize == 'global' or not data_type == 'train':
                 # Normalize by mean & stddev over the training set per gender
                 if speaker[3] == 'M':
-                    features_utt -= global_mean_male
-                    features_utt /= global_std_male
+                    feat_utt -= global_mean_male
+                    feat_utt /= global_std_male
                 elif speaker[3] == 'F':
-                    features_utt -= global_mean_female
-                    features_utt /= global_std_female
+                    feat_utt -= global_mean_female
+                    feat_utt /= global_std_female
                 else:
-                    raise ValueError
+                    raise ValueError('gender is M or F.')
             elif normalize == 'speaker':
                 # Normalize by mean & stddev per speaker
-                features_utt = (features_utt - speaker_mean) / speaker_std
+                feat_utt = (feat_utt - speaker_mean) / speaker_std
             elif normalize == 'utterance':
                 # Normalize by mean & stddev per utterance
-                utt_mean = np.mean(features_utt, axis=0, dtype=dtype)
-                utt_std = np.std(features_utt, axis=0, dtype=dtype)
-                features_utt = (features_utt - utt_mean) / utt_std
-            else:
-                raise ValueError
+                utt_mean = np.mean(feat_utt, axis=0, dtype=dtype)
+                utt_std = np.std(feat_utt, axis=0, dtype=dtype)
+                feat_utt = (feat_utt - utt_mean) / utt_std
 
-            frame_num_dict[speaker + '_' + utt_idx] = features_utt.shape[0]
+            frame_num_dict[utt_idx] = feat_utt.shape[0]
 
-            if save_path is not None:
-                # Save input features
-                input_data_save_path = mkdir_join(
-                    save_path, speaker, speaker + '_' + utt_idx + '.npy')
-                np.save(input_data_save_path, features_utt)
+            # Save input features
+            np.save(mkdir_join(save_path, speaker,
+                               utt_idx + '.npy'), feat_utt)
 
-                # if sampPeriod is None:
-                #     _, sampPeriod, parmKind = read(audio_path)
-                # write(features_utt,
-                #       htk_path=mkdir_join(
-                #           save_path, speaker, speaker + '_' + utt_idx + '.htk'),
-                #       sampPeriod=sampPeriod,
-                #       parmKind=parmKind)
+            # if sampPeriod is None:
+            #     _, sampPeriod, parmKind = read(audio_path)
+            # write(feat_utt,
+            #       htk_path=mkdir_join(save_path, speaker, utt_idx + '.htk'),
+            #       sampPeriod=sampPeriod,
+            #       parmKind=parmKind)
 
-    if save_path is not None:
-        # Save the frame number dictionary
-        with open(join(save_path, 'frame_num.pickle'), 'wb') as f:
-            pickle.dump(frame_num_dict, f)
+    # Save the frame number dictionary
+    with open(join(save_path, 'frame_num.pickle'), 'wb') as f:
+        pickle.dump(frame_num_dict, f)
 
     return (global_mean_male, global_mean_female,
             global_std_male, global_std_female, frame_num_dict)

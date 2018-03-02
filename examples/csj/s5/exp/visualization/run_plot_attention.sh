@@ -1,1 +1,0 @@
-../../librispeech/visualization/run_plot_attention.sh

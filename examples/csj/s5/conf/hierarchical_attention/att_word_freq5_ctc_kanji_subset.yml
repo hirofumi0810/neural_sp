@@ -1,0 +1,8 @@
+parent: ./conf/hierarchical_attention/att_word_freq5_att_kanji_subset.yml
+param:
+  # framework
+  backend: pytorch
+
+  # MTL
+  main_loss_weight: 0.8
+  ctc_loss_weight_sub: 0.2

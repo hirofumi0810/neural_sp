@@ -20,27 +20,27 @@ from utils.dataset.loader import DatasetBase
 
 class Dataset(DatasetBase):
 
-    def __init__(self, backend, input_channel, use_delta, use_double_delta,
+    def __init__(self, data_save_path,
+                 backend, input_channel, use_delta, use_double_delta,
                  data_type, data_size, label_type,
-                 batch_size, vocab_file_path,
-                 max_epoch=None, splice=1,
+                 batch_size, max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
                  min_frame_num=40,
                  shuffle=False, sort_utt=False, reverse=False,
-                 sort_stop_epoch=None, num_gpus=1, save_format='numpy',
+                 sort_stop_epoch=None, num_gpus=1, tool='htk',
                  num_enque=None, dynamic_batching=False):
         """A class for loading dataset.
         Args:
+            data_save_path (string): path to saved data
             backend (string): pytorch or chainer
             input_channel (int): the number of channels of acoustics
             use_delta (bool): if True, use the delta feature
             use_double_delta (bool): if True, use the acceleration feature
             data_type (string): train or dev or eval1 or eval2 or eval3
-            data_size (string): subset or fullset
-            label_type (string): kanji or kanji_divide or kana or kana_divide
-                or word_freq1 or word_freq5 or word_freq10 or word_freq15
+            data_size (string): subset or fullset or aps or all
+            label_type (string): kanji or kanji_wb or kana or kana_wb
+                or word1 or word5 or word10 or word15
             batch_size (int): the size of mini-batch
-            vocab_file_path (string): path to the vocabulary file
             max_epoch (int, optional): the max epoch. None means infinite loop.
             splice (int, optional): frames to splice. Default is 1 frame.
             num_stack (int, optional): the number of frames to stack
@@ -56,7 +56,7 @@ class Dataset(DatasetBase):
             sort_stop_epoch (int, optional): After sort_stop_epoch, training
                 will revert back to a random order
             num_gpus (optional, int): the number of GPUs
-            save_format (string, optional): numpy or htk
+            tool (string, optional): htk or librosa or python_speech_features
             num_enque (int, optional): the number of elements to enqueue
             dynamic_batching (bool, optional): if True, batch size will be
                 chainged dynamically in training
@@ -82,21 +82,24 @@ class Dataset(DatasetBase):
         self.sort_utt = sort_utt
         self.sort_stop_epoch = sort_stop_epoch
         self.num_gpus = num_gpus
-        self.save_format = save_format
+        self.tool = tool
         self.num_enque = num_enque
         self.dynamic_batching = dynamic_batching
 
-        super(Dataset, self).__init__(vocab_file_path=vocab_file_path)
+        try:
+            print(data_save_path)
+        except:
+            data_save_path = data_save_path[:-3]
+        # TODO: fix this
+
+        self.vocab_file_path = join(
+            data_save_path, 'vocab', label_type + '.txt')
+
+        super(Dataset, self).__init__(vocab_file_path=self.vocab_file_path)
 
         # Load dataset file
-        if data_type == 'dev':
-            dataset_path = join(
-                '/n/sd8/inaguma/corpus/csj/dataset',
-                save_format, data_size, 'train', label_type + '.csv')
-        else:
-            dataset_path = join(
-                '/n/sd8/inaguma/corpus/csj/dataset',
-                save_format, data_size, data_type, label_type + '.csv')
+        dataset_path = join(
+            data_save_path, 'dataset', tool, data_type, label_type + '.csv')
         df = pd.read_csv(dataset_path)
         df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
 
@@ -105,8 +108,6 @@ class Dataset(DatasetBase):
             logger.info('Original utterance num: %d' % len(df))
             df = df[df.apply(
                 lambda x: min_frame_num <= x['frame_num'], axis=1)]
-            if data_type == 'dev':
-                df = df[:4000]
             logger.info('Restricted utterance num: %d' % len(df))
 
         # Sort paths to input & label
@@ -122,20 +123,17 @@ class Dataset(DatasetBase):
         if not self.dynamic_batching:
             return batch_size
 
-        if min_frame_num_batch <= 300:
+        if self.data_size == 'subset':
+            if min_frame_num_batch <= 300:
+                batch_size = batch_size * 2
+            elif min_frame_num_batch <= 1600:
+                pass
+            elif min_frame_num_batch <= 1700:
+                batch_size = int(batch_size / 2)
+            else:
+                batch_size = 8
+        elif self.data_size == 'fullset':
             pass
-        elif min_frame_num_batch <= 600:
-            batch_size = int(batch_size / 2)
-        elif min_frame_num_batch <= 900:
-            batch_size = int(batch_size / 4)
-        elif min_frame_num_batch <= 1200:
-            batch_size = int(batch_size / 8)
-        elif min_frame_num_batch <= 1500:
-            batch_size = 4
-        elif min_frame_num_batch <= 1800:
-            batch_size = 2
-        else:
-            batch_size = 1
 
         if batch_size < 1:
             batch_size = 1

@@ -1,0 +1,31 @@
+parent: ./conf/attention/word/att_blstm_word_freq5_subset.yml
+param:
+  # framework
+  backend: pytorch
+  # backend: chainer
+
+  # corpus
+  label_type: kanji
+  data_size: subset
+
+  # optimization
+  batch_size: 20
+
+  # topology
+  encoder_num_layers: 4
+  subsample_list:
+    - True
+    - True
+    - True
+    - False
+  decoder_num_layers: 1
+  embedding_dim: 64
+
+  # regularization
+  scheduled_sampling_ramp_max_step: 800000
+
+  # annealing
+  print_step: 2000
+
+  # MTL
+  ctc_loss_weight: 0.5

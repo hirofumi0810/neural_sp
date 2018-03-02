@@ -17,8 +17,9 @@ echo ===========================================================================
 echo "                                   CSJ                                     "
 echo ============================================================================
 
-stage=1
+stage=3
 hierarchical_model=false
+# hierarchical_model=true
 
 ### Set path to original data
 CSJDATATOP="/n/rd25/mimura/corpus/CSJ"
@@ -39,18 +40,18 @@ DATASIZE=subset
 # DATASIZE=fullset
 # DATASIZE=all
 
-### Set path to save dataset
-export DATA_SAVEPATH="/n/sd8/inaguma/corpus/csj/kaldi"/$DATASIZE
-
 ### Set path to save the model
 MODEL_SAVEPATH="/n/sd8/inaguma/result/csj"
 
+### Set path to save dataset
+DATA_SAVEPATH="/n/sd8/inaguma/corpus/csj/kaldi"
+
 ### Select one tool to extract features (HTK is the fastest)
-# TOOL='kaldi'
-TOOL='htk'
-# TOOL='python_speech_features'
-# TOOL='librosa'
-# # TOOL='wav'
+# TOOL=kaldi
+TOOL=htk
+# TOOL=python_speech_features
+# TOOL=librosa
+# # TOOL=wav
 
 ### Configuration of feature extranction
 CHANNELS=80
@@ -59,13 +60,15 @@ SLIDE=0.01
 ENERGY=0
 DELTA=1
 DELTADELTA=1
-# NORMALIZE='global'
-NORMALIZE='speaker'
-# NORMALIZE='utterance'
-# NORMALIZE='no'
+# NORMALIZE=global
+NORMALIZE=speaker
+# NORMALIZE=utterance
+# NORMALIZE=no
 # NOTE: normalize in [-1, 1] in case of WAV
 
 
+export DATA_SAVEPATH=$DATA_SAVEPATH/$DATASIZE
+export DATA_DOWNLOADPATH=$DATA_SAVEPATH/data
 if [ $stage -le 0 ]; then
   echo ============================================================================
   echo "                           Data Preparation                               "
@@ -89,13 +92,13 @@ if [ $stage -le 0 ]; then
   # mode_number can be 0, 1, 2, 3 (0=default using "Academic lecture" and "other" data,
   #                                1=using "Academic lecture" data,
   #                                2=using All data except for "dialog" data, 3=using All data )
-  if [ $DATASIZE = 'subset' ]; then
+  if [ $DATASIZE = "subset" ]; then
     local/csj_data_prep.sh $DATA_SAVEPATH/csj-data || exit 1;  # subset (240h)
-  elif [ $DATASIZE = 'aps' ]; then
+  elif [ $DATASIZE = "aps" ]; then
     local/csj_data_prep.sh $DATA_SAVEPATH/csj-data 1 || exit 1;  # aps
-  elif [ $DATASIZE = 'fullset' ]; then
+  elif [ $DATASIZE = "fullset" ]; then
     local/csj_data_prep.sh $DATA_SAVEPATH/csj-data 2 || exit 1;  # fullset (586h)
-  elif [ $DATASIZE = 'all' ]; then
+  elif [ $DATASIZE = "all" ]; then
     local/csj_data_prep.sh $DATA_SAVEPATH/csj-data 3 || exit 1;  # all
   fi
 
@@ -134,6 +137,7 @@ fi
 
 # Calculate the amount of utterance segmentations.
 # perl -ne 'split; $s+=($_[3]-$_[2]); END{$h=int($s/3600); $r=($s-$h*3600); $m=int($r/60); $r-=$m*60; printf "%.1f sec -- %d:%d:%.1f\n", $s, $h, $m, $r;}' $DATA_SAVEPATH/train/segments
+# perl -ne 'split; $s+=($_[3]-$_[2]); END{$h=int($s/3600); $r=($s-$h*3600); $m=int($r/60); $r-=$m*60; printf "%.1f sec -- %d:%d:%.1f\n", $s, $h, $m, $r;}' $DATA_SAVEPATH/dev/segments
 # perl -ne 'split; $s+=($_[3]-$_[2]); END{$h=int($s/3600); $r=($s-$h*3600); $m=int($r/60); $r-=$m*60; printf "%.1f sec -- %d:%d:%.1f\n", $s, $h, $m, $r;}' $DATA_SAVEPATH/eval1/segments
 # perl -ne 'split; $s+=($_[3]-$_[2]); END{$h=int($s/3600); $r=($s-$h*3600); $m=int($r/60); $r-=$m*60; printf "%.1f sec -- %d:%d:%.1f\n", $s, $h, $m, $r;}' $DATA_SAVEPATH/eval2/segments
 # perl -ne 'split; $s+=($_[3]-$_[2]); END{$h=int($s/3600); $r=($s-$h*3600); $m=int($r/60); $r-=$m*60; printf "%.1f sec -- %d:%d:%.1f\n", $s, $h, $m, $r;}' $DATA_SAVEPATH/eval3/segments
@@ -144,14 +148,14 @@ if [ $stage -le 1 ]; then
   echo "                        Feature extranction                               "
   echo ============================================================================
 
-  if [ $TOOL = 'kaldi' ]; then
+  if [ $TOOL = "kaldi" ]; then
     for x in train dev eval1 eval2 eval3; do
       steps/make_fbank.sh --nj 8 --cmd run.pl $DATA_SAVEPATH/$x $DATA_SAVEPATH/make_fbank/$x $DATA_SAVEPATH/fbank || exit 1;
       steps/compute_cmvn_stats.sh $DATA_SAVEPATH/$x $DATA_SAVEPATH/make_fbank/$x $DATA_SAVEPATH/fbank || exit 1;
       utils/fix_data_dir.sh $DATA_SAVEPATH/$x || exit 1;
     done
 
-  elif [ $TOOL = 'htk' ]; then
+  elif [ $TOOL = "htk" ]; then
     # Make a config file to covert from wav to htk file
     python local/make_htk_config.py \
         --data_save_path $DATA_SAVEPATH \
@@ -164,7 +168,7 @@ if [ $stage -le 1 ]; then
         --deltadelta $DELTADELTA || exit 1;
 
     # Convert from wav to htk files
-    for data_type in train dev eval1 eval2 eval3 ; do
+    for data_type in train dev eval1 eval2 eval3; do
       mkdir -p $DATA_SAVEPATH/htk
       mkdir -p $DATA_SAVEPATH/htk/$data_type
 
@@ -204,10 +208,15 @@ if [ $stage -le 2 ]; then
   echo "                            Create dataset                                "
   echo ============================================================================
 
+  if [ ! -e $DATA_SAVEPATH/dataset/$TOOL/.done_dataset ]; then
+    python local/make_dataset_csv.py \
+      --data_save_path $DATA_SAVEPATH \
+      --tool $TOOL
+    touch $DATA_SAVEPATH/dataset/$TOOL/.done_dataset
+  fi
+
   echo "Finish creating dataset (stage: 2)."
 fi
-
-exit 1
 
 
 if [ $stage -le 3 ]; then
@@ -227,26 +236,30 @@ if [ $stage -le 3 ]; then
     # nohup $PYTHON exp/training/train_hierarchical.py \
     #   --gpu $gpu_index \
     #   --config_path $config_path \
-    #   --model_save_path $MODEL_SAVE_PATH > log/$filename".log" &
+    #   --model_save_path $MODEL_SAVEPATH \
+    #   --data_save_path $DATA_SAVEPATH > log/$filename".log" &
 
     CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
     $PYTHON exp/training/train_hierarchical.py \
       --gpu $gpu_index \
       --config_path $config_path \
-      --model_save_path $MODEL_SAVE_PATH
+      --model_save_path $MODEL_SAVEPATH \
+      --data_save_path $DATA_SAVEPATH || exit 1;
 
   else
     # CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
     # nohup $PYTHON exp/training/train.py \
     #   --gpu $gpu_index \
     #   --config_path $config_path \
-    #   --model_save_path $MODEL_SAVEPATH > log/$filename".log" &
+    #   --model_save_path $MODEL_SAVEPATH \
+    #   --data_save_path $DATA_SAVEPATH > log/$filename".log" &
 
     CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
     $PYTHON exp/training/train.py \
       --gpu $gpu_index \
       --config_path $config_path \
-      --model_save_path $MODEL_SAVEPATH || exit 1;
+      --model_save_path $MODEL_SAVEPATH \
+      --data_save_path $DATA_SAVEPATH　|| exit 1;
   fi
 
   echo "Finish model training (stage: 3)."

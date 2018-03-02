@@ -13,7 +13,7 @@ import shutil
 
 
 def load_config(config_path, is_eval=False):
-    """
+    """Load configure file.
     Args:
         config_path (string):
         is_eval (bool, option):
@@ -46,6 +46,12 @@ def load_config(config_path, is_eval=False):
 
 
 def save_config(config_path, save_path):
+    """Save configure file.
+    Args:
+        config_path (string):
+    Returns:
+        save_path (string):
+    """
 
     shutil.copyfile(config_path, join(save_path, 'config.yml'))
 

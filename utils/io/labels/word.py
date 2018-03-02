@@ -6,6 +6,7 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
+import codecs
 
 
 class Word2idx(object):
@@ -21,7 +22,7 @@ class Word2idx(object):
         # Read the vocablary file
         self.map_dict = {}
         vocab_count = 0
-        with open(vocab_file_path, 'r') as f:
+        with codecs.open(vocab_file_path, 'r', 'utf-8') as f:
             for line in f:
                 word = line.strip()
                 self.map_dict[word] = vocab_count
@@ -64,7 +65,7 @@ class Idx2word(object):
         # Read the vocabulary file
         self.map_dict = {}
         vocab_count = 0
-        with open(vocab_file_path, 'r') as f:
+        with codecs.open(vocab_file_path, 'r', 'utf-8') as f:
             for line in f:
                 word = line.strip()
                 self.map_dict[vocab_count] = word

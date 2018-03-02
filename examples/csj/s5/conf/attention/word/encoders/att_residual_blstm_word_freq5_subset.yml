@@ -1,0 +1,27 @@
+parent: ./conf/attention/word/att_blstm_word_freq5_subset.yml
+param:
+  # framework
+  backend: pytorch
+  # backend: chainer
+
+  # topology
+  encoder_residual: True
+  encoder_num_layers: 8
+  subsample_list:
+    - True
+    - True
+    - True
+    - False
+    - False
+    - False
+    - False
+    - False
+
+  # optimization
+  batch_size: 64
+
+  # regularization
+  scheduled_sampling_ramp_max_step: 250000
+
+  # annealing
+  print_step: 1000

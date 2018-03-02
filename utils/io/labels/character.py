@@ -6,6 +6,7 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
+import codecs
 
 
 class Char2idx(object):
@@ -30,7 +31,7 @@ class Char2idx(object):
         # Read the vocabulary file
         self.map_dict = {}
         vocab_count = 0
-        with open(vocab_file_path, 'r') as f:
+        with codecs.open(vocab_file_path, 'r', 'utf-8') as f:
             for line in f:
                 char = line.strip()
                 if char in remove_list:
@@ -72,6 +73,7 @@ class Char2idx(object):
                 # Final character
                 if not skip_flag:
                     index_list.append(self.map_dict[word[-1]])
+        # NOTE: capital_divide is prepared for English
 
         elif self.double_letter:
             skip_flag = False
@@ -83,15 +85,26 @@ class Char2idx(object):
                 if not skip_flag and str_char[i:i + 2] in self.map_dict.keys():
                     index_list.append(self.map_dict[str_char[i:i + 2]])
                     skip_flag = True
-                else:
+                elif str_char[i] in self.map_dict.keys():
                     index_list.append(self.map_dict[str_char[i]])
+                else:
+                    index_list.append(self.map_dict['OOV'])
 
             # Final character
             if not skip_flag:
-                index_list.append(self.map_dict[str_char[-1]])
+                if str_char[-1] in self.map_dict.keys():
+                    index_list.append(self.map_dict[str_char[-1]])
+                else:
+                    index_list.append(self.map_dict['OOV'])
+        # NOTE: double_letter is prepared for Japanese
 
         else:
-            index_list = list(map(lambda x: self.map_dict[x], list(str_char)))
+            for c in list(str_char):
+                if c in self.map_dict.keys():
+                    index_list.append(self.map_dict[c])
+                else:
+                    index_list.append(self.map_dict['OOV'])
+        # NOTE: OOV handling is prepared for Japanese and Chinese
 
         return np.array(index_list)
 
@@ -117,7 +130,7 @@ class Idx2char(object):
         # Read the vocabulary file
         self.map_dict = {}
         vocab_count = 0
-        with open(vocab_file_path, 'r') as f:
+        with codecs.open(vocab_file_path, 'r', 'utf-8') as f:
             for line in f:
                 char = line.strip()
                 if char in remove_list:

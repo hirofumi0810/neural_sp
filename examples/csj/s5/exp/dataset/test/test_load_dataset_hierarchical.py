@@ -9,8 +9,8 @@ import os
 import sys
 import unittest
 
-sys.path.append(os.path.abspath('../../../../'))
-from examples.csj.data.load_dataset_hierarchical import Dataset
+sys.path.append(os.path.abspath('../../../../../../'))
+from examples.csj.s5.exp.dataset.load_dataset_hierarchical import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
 from utils.measure_time_func import measure_time
@@ -21,23 +21,23 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
     def test(self):
 
         # framework
-        self.check(label_type='word_freq5', label_type_sub='kanji_divide',
-                   data_type='train', backend='chainer')
+        # self.check(label_type='word5', label_type_sub='kanji_wb',
+        #            data_type='train', backend='chainer')
 
         # data_type
-        self.check(label_type='word_freq5', label_type_sub='kanji_divide',
+        self.check(label_type='word5', label_type_sub='kanji_wb',
                    data_type='train')
-        self.check(label_type='word_freq5', label_type_sub='kanji_divide',
+        self.check(label_type='word5', label_type_sub='kanji_wb',
                    data_type='dev')
-        self.check(label_type='word_freq5', label_type_sub='kanji_divide',
+        self.check(label_type='word5', label_type_sub='kanji_wb',
                    data_type='eval1')
-        self.check(label_type='word_freq5', label_type_sub='kanji_divide',
+        self.check(label_type='word5', label_type_sub='kanji_wb',
                    data_type='eval2')
-        self.check(label_type='word_freq5', label_type_sub='kanji_divide',
+        self.check(label_type='word5', label_type_sub='kanji_wb',
                    data_type='eval3')
 
         # label_type
-        self.check(label_type='kanji_divide', label_type_sub='kana_divide')
+        self.check(label_type='kanji_wb', label_type_sub='kana_wb')
 
     @measure_time
     def check(self, label_type, label_type_sub, data_type='dev',
@@ -59,39 +59,31 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
         print('  num_gpus: %d' % num_gpus)
         print('========================================')
 
-        vocab_file_path = '../../metrics/vocab_files/' + \
-            label_type + '_' + data_size + '.txt'
-        vocab_file_path_sub = '../../metrics/vocab_files/' + \
-            label_type_sub + '_' + data_size + '.txt'
-
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
+            data_save_path='/n/sd8/inaguma/corpus/csj/kaldi/' + data_size,
             backend=backend,
             input_channel=80, use_delta=True, use_double_delta=True,
             data_type=data_type, data_size=data_size,
             label_type=label_type, label_type_sub=label_type_sub,
-            batch_size=64,
-            vocab_file_path=vocab_file_path,
-            vocab_file_path_sub=vocab_file_path_sub,
-            max_epoch=1, splice=splice,
+            batch_size=64, max_epoch=1, splice=splice,
             num_stack=num_stack, num_skip=num_skip,
-            min_frame_num=40,
-            shuffle=shuffle,
+            min_frame_num=40, shuffle=shuffle,
             sort_utt=sort_utt, reverse=True, sort_stop_epoch=sort_stop_epoch,
-            num_gpus=num_gpus, save_format='numpy', num_enque=None)
+            num_gpus=num_gpus, tool='htk', num_enque=None)
 
         print('=> Loading mini-batch...')
         if 'word' in label_type:
-            map_fn = Idx2word(vocab_file_path, space_mark='_')
+            map_fn = Idx2word(dataset.vocab_file_path, space_mark='_')
         elif 'pos' in label_type:
-            map_fn = Idx2word(vocab_file_path, space_mark='_')
+            map_fn = Idx2word(dataset.vocab_file_path, space_mark='_')
         else:
-            map_fn = Idx2char(vocab_file_path)
+            map_fn = Idx2char(dataset.vocab_file_path)
         if 'phone' in label_type_sub:
             raise NotImplementedError
         else:
-            map_fn_sub = Idx2char(vocab_file_path_sub)
+            map_fn_sub = Idx2char(dataset.vocab_file_path_sub)
 
         for batch, is_new_epoch in dataset:
             if data_type == 'train' and backend == 'pytorch':

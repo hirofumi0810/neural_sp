@@ -45,7 +45,7 @@ def do_eval_wer(model, dataset, beam_width, max_decode_len,
         batch, is_new_epoch = dataset.next(batch_size=eval_batch_size)
 
         # Decode
-        if model.model_type == 'charseq_attention':
+        if model.model_type == 'nested_attention':
             best_hyps, _, perm_idx = model.decode(
                 batch['xs'], batch['x_lens'],
                 beam_width=beam_width,
@@ -88,8 +88,13 @@ def do_eval_wer(model, dataset, beam_width, max_decode_len,
             str_ref = str(str_ref)
 
             # Remove noise labels
-            str_ref = re.sub(r'[NZ>]+', '', str_ref)
-            str_hyp = re.sub(r'[NZ>]+', '', str_hyp)
+            str_ref = re.sub(r'[@>]+', '', str_ref)
+            str_hyp = re.sub(r'[@>]+', '', str_hyp)
+            # NOTE: @ means <sp>
+
+            # Remove consecutive spaces
+            str_ref = re.sub(r'[_]+', '_', str_ref)
+            str_hyp = re.sub(r'[_]+', '_', str_hyp)
 
             # print('REF: %s' % str_ref)
             # print('HYP: %s' % str_hyp)

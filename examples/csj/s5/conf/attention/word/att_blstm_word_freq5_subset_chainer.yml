@@ -1,0 +1,14 @@
+parent: ./conf/attention/word/att_blstm_word_freq5_subset.yml
+param:
+  # framework
+  backend: chainer
+
+  attention_type: content
+
+  # batch_size: 128
+  # scheduled_sampling_ramp_max_step: 125000
+  # print_step: 500
+
+  batch_size: 64
+  scheduled_sampling_ramp_max_step: 250000
+  print_step: 1000

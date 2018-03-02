@@ -1,0 +1,21 @@
+parent: ./conf/ctc/word/blstm_ctc_word_freq5_subset.yml
+param:
+  # framework
+  backend: pytorch
+  # backend: chainer
+
+  # corpus
+  data_size: fullset
+
+  # topology
+  encoder_num_layers: 6
+  subsample_list:
+    - False
+    - False
+    - False
+    - False
+    - False
+    - False
+
+  # annealing
+  print_step: 1000

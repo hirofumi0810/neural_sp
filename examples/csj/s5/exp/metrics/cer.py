@@ -87,16 +87,18 @@ def do_eval_cer(model, dataset, beam_width, max_decode_len,
                 # NOTE: Trancate by the first <EOS>
 
             # Remove garbage labels
-            str_ref = re.sub(r'[NZー・>]+', '', str_ref)
-            str_hyp = re.sub(r'[NZー・>]+', '', str_hyp)
+            str_ref = re.sub(r'[@>]+', '', str_ref)
+            str_hyp = re.sub(r'[@>]+', '', str_hyp)
+            # NOTE: @ means <sp>
 
             # Remove consecutive spaces
+            str_ref = re.sub(r'[_]+', '_', str_ref)
             str_hyp = re.sub(r'[_]+', '_', str_hyp)
 
             # print('REF: %s' % str_ref)
             # print('HYP: %s' % str_hyp)
 
-            if dataset.label_type == 'kanji_divide' or (is_sub_task and dataset.label_type_sub == 'kanji_divide'):
+            if dataset.label_type == 'kanji_wb' or (is_sub_task and dataset.label_type_sub == 'kanji_wb'):
                 # Compute WER
                 wer_b, sub_b, ins_b, del_b = compute_wer(
                     ref=str_ref.split('_'),

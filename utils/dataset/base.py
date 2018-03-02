@@ -14,6 +14,7 @@ import numpy as np
 from struct import unpack
 from torch.multiprocessing import Queue, Process
 import logging
+import codecs
 logger = logging.getLogger('training')
 
 
@@ -34,8 +35,7 @@ class Base(object):
 
         # Read the vocabulary file
         vocab_count = 0
-        self.vocab_file_path = kwargs['vocab_file_path']
-        with open(kwargs['vocab_file_path'], 'r') as f:
+        with codecs.open(kwargs['vocab_file_path'], 'r', 'utf-8') as f:
             for line in f:
                 if line.strip() != '':
                     vocab_count += 1
@@ -43,8 +43,7 @@ class Base(object):
 
         if 'vocab_file_path_sub' in kwargs.keys():
             vocab_count_sub = 0
-            self.vocab_file_path_sub = kwargs['vocab_file_path_sub']
-            with open(kwargs['vocab_file_path_sub'], 'r') as f:
+            with codecs.open(kwargs['vocab_file_path_sub'], 'r', 'utf-8') as f:
                 for line in f:
                     vocab_count_sub += 1
             self.num_classes_sub = vocab_count_sub
