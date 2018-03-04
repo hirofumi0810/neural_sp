@@ -64,7 +64,7 @@ class RNNDecoder(nn.Module):
         """Forward computation.
         Args:
             dec_in (torch.autograd.Variable, float): A tensor of size
-                `[B, 1, embedding_dim + encoder_num_units (decoder_num_units)]`
+                `[B, 1, embedding_dim + encoder_num_units]`
             dec_state (torch.autograd.Variable(float) or tuple):
         Returns:
             dec_out (torch.autograd.Variable, float): A tensor of size

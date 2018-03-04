@@ -16,7 +16,7 @@ class RNNDecoder(chainer.Chain):
     """RNN decoder.
     Args:
         input_size (int): the dimension of decoder inputs
-        rnn_type (string): lstm or gru
+        rnn_type (string): lstm or stateless_lstm or gru
         num_units (int): the number of units in each layer
         num_layers (int): the number of layers
         dropout (float): the probability to drop nodes
@@ -51,48 +51,69 @@ class RNNDecoder(chainer.Chain):
             for l in range(num_layers):
                 decoder_input_size = input_size if l == 0 else num_units
 
-                if rnn_type == 'lstm':
-                    rnn_i = L.StatelessLSTM(
-                        in_size=decoder_input_size,
-                        out_size=num_units)
+                if rnn_type == 'stateless_lstm':
+                    rnn_i = L.StatelessLSTM(in_size=decoder_input_size,
+                                            out_size=num_units)
+                elif rnn_type == 'lstm':
+                    W = L.Linear(decoder_input_size, 4 * num_units)
+                    V = L.Linear(num_units, 4 * num_units)
                 elif rnn_type == 'gru':
-                    rnn_i = L.StatelessGRU(
-                        in_size=decoder_input_size,
-                        out_size=num_units)
+                    rnn_i = L.StatelessGRU(in_size=decoder_input_size,
+                                           out_size=num_units)
                 else:
-                    raise ValueError('rnn_type must be "lstm" or "gru".')
+                    raise ValueError(
+                        'rnn_type must be "stateless_lstm" or "lstm" or "gru".')
 
                 if use_cuda:
-                    rnn_i.to_gpu()
+                    if rnn_type == 'lstm':
+                        W.to_gpu()
+                        V.to_gpu()
+                    else:
+                        rnn_i.to_gpu()
 
-                setattr(self, rnn_type + '_l' + str(l), rnn_i)
+                if rnn_type == 'stateless_lstm':
+                    setattr(self,  'lstm_l' + str(l), rnn_i)
+                elif rnn_type == 'lstm':
+                    setattr(self, 'W_l' + str(l), W)
+                    setattr(self, 'V_l' + str(l), V)
+                else:
+                    setattr(self, rnn_type + '_l' + str(l), rnn_i)
 
     def __call__(self, dec_in, dec_state):
         """Forward computation.
         Args:
             dec_in (chainer.Variable, float): A tensor of size
-                `[B, 1, embedding_dim + encoder_num_units (decoder_num_units)]`
+                `[B, 1, embedding_dim + encoder_num_units]`
             dec_state (chainer.Variable(float) or tuple):
         Returns:
             dec_out (chainer.Variable, float): A tensor of size
                 `[B, 1, num_units]`
             dec_state (chainer.Variable(float) or tuple):
         """
-        if self.rnn_type == 'lstm':
-            hx_list, cx_list = dec_state
-        elif self.rnn_type == 'gru':
+        if self.rnn_type == 'gru':
             hx_list = dec_state
+        else:
+            hx_list, cx_list = dec_state
 
         dec_in = F.squeeze(dec_in, axis=1)
         # NOTE: exclude residual connection from decoder's inputs
         for l in range(self.num_layers):
-            if self.rnn_type == 'lstm':
+            if self.rnn_type == 'stateless_lstm':
                 if l == 0:
                     cx_list[l], hx_list[l] = getattr(self, 'lstm_l0')(
                         cx_list[l], hx_list[l], dec_in)
                 else:
                     cx_list[l], hx_list[l] = getattr(self, 'lstm_l' + str(l))(
                         cx_list[l], hx_list[l], hx_list[l - 1])
+            elif self.rnn_type == 'lstm':
+                if l == 0:
+                    x = getattr(self, 'W_l0')(dec_in) + \
+                        getattr(self, 'V_l0')(hx_list[l])
+                    cx_list[l], hx_list[l] = F.lstm(cx_list[l], x)
+                else:
+                    x = getattr(self, 'W_l' + str(l))(hx_list[l - 1]) + \
+                        getattr(self, 'V_l' + str(l))(hx_list[l])
+                    cx_list[l], hx_list[l] = F.lstm(cx_list[l], x)
             elif self.rnn_type == 'gru':
                 if l == 0:
                     hx_list[l] = getattr(self, 'gru_l0')(hx_list[l], dec_in)
@@ -113,9 +134,9 @@ class RNNDecoder(chainer.Chain):
 
         dec_out = F.expand_dims(hx_list[-1], axis=1)
 
-        if self.rnn_type == 'lstm':
-            dec_state = (hx_list, cx_list)
-        elif self.rnn_type == 'gru':
+        if self.rnn_type == 'gru':
             dec_state = hx_list
+        else:
+            dec_state = (hx_list, cx_list)
 
         return dec_out, dec_state

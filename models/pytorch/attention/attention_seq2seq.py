@@ -43,7 +43,7 @@ class _ChainerLikeCTC(warpctc_pytorch._CTC):
     @staticmethod
     def forward(ctx, acts, labels, act_lens, label_lens):
         is_cuda = True if acts.is_cuda else False
-        acts = acts.contiguous()
+        acts = acts.contiguous()  # `[T, B, num_classes]`
         loss_func = warpctc_pytorch.gpu_ctc if is_cuda else warpctc_pytorch.cpu_ctc
         grads = torch.zeros(acts.size()).type_as(acts)
         minibatch_size = acts.size(1)
@@ -58,6 +58,7 @@ class _ChainerLikeCTC(warpctc_pytorch._CTC):
         # modified only here from original
         # costs = torch.FloatTensor([costs.sum()]) / acts.size(1)
         costs = torch.FloatTensor([costs.sum()])
+        # NOTE: normalize by batch_size later
         ctx.grads = Variable(grads)
         ctx.grads /= ctx.grads.size(1)
 
@@ -71,10 +72,10 @@ def chainer_like_ctc_loss(acts, labels, act_lens, label_lens):
     act_lens: Tensor of size (batch) containing size of each output sequence from the network
     act_lens: Tensor of (batch) containing label length of each example
     """
-    assert len(labels.size()) == 1  # labels must be 1 dimensional
-    _assert_no_grad(labels)
-    _assert_no_grad(act_lens)
-    _assert_no_grad(label_lens)
+    # assert len(labels.size()) == 1  # labels must be 1 dimensional
+    # _assert_no_grad(labels)
+    # _assert_no_grad(act_lens)
+    # _assert_no_grad(label_lens)
     return _ChainerLikeCTC.apply(acts, labels, act_lens, label_lens)
 
 
@@ -539,7 +540,7 @@ class AttentionSeq2seq(ModelBase):
             loss (torch.autograd.Variable, float): A tensor of size `[1]`
         """
         # Teacher-forcing
-        logits, att_weights = self._decode_train(
+        logits, aw = self._decode_train(
             enc_out, x_lens, ys_in, is_sub_task=is_sub_task)
 
         # Output smoothing
@@ -624,7 +625,7 @@ class AttentionSeq2seq(ModelBase):
         #     # print(loss_ls)
 
         if size_average:
-            loss /= len(x_lens)
+            loss /= len(enc_out)
 
         return loss
 
@@ -668,8 +669,8 @@ class AttentionSeq2seq(ModelBase):
         else:
             return xs, x_lens, perm_idx
 
-    def _compute_coverage(self, att_weights):
-        batch_size, max_time_outputs, max_time_inputs = att_weights.size()
+    def _compute_coverage(self, aw):
+        batch_size, max_time_outputs, max_time_inputs = aw.size()
         raise NotImplementedError
 
     def _decode_train(self, enc_out, x_lens, ys, is_sub_task=False):
@@ -684,7 +685,7 @@ class AttentionSeq2seq(ModelBase):
         Returns:
             logits (torch.autograd.Variable, float): A tensor of size
                 `[B, T_out, num_classes]`
-            att_weights (torch.autograd.Variable, float): A tensor of size
+            aw (torch.autograd.Variable, float): A tensor of size
                 `[B, T_out, T_in]`
         """
         batch_size = enc_out.size(0)
@@ -693,10 +694,10 @@ class AttentionSeq2seq(ModelBase):
         dec_state = self._init_decoder_state(enc_out, is_sub_task=is_sub_task)
         dec_out = self._create_var((batch_size, 1, self.decoder_num_units))
         context_vec = self._create_var((batch_size, 1, self.encoder_num_units))
-        att_weights_step = self._create_var((batch_size, enc_out.size(1)))
+        aw_step = self._create_var((batch_size, enc_out.size(1)))
 
         logits = []
-        att_weights = []
+        aw = []
         for t in range(ys.size(1)):
 
             is_sample = self.sample_prob > 0 and t > 0 and self._step > 0 and random.random(
@@ -717,8 +718,8 @@ class AttentionSeq2seq(ModelBase):
                 dec_out, dec_state = self.decoder_sub(dec_in, dec_state)
 
                 # Compute attention distributions
-                context_vec, att_weights_step = self.attend_sub(
-                    enc_out, x_lens, dec_out, att_weights_step)
+                context_vec, aw_step = self.attend_sub(
+                    enc_out, x_lens, dec_out, aw_step)
 
                 logits_step = self.fc_sub(F.tanh(
                     self.W_d_sub(dec_out) + self.W_c_sub(context_vec)))
@@ -730,22 +731,22 @@ class AttentionSeq2seq(ModelBase):
                 dec_out, dec_state = self.decoder(dec_in, dec_state)
 
                 # Compute attention distributions
-                context_vec, att_weights_step = self.attend(
-                    enc_out, x_lens, dec_out, att_weights_step)
+                context_vec, aw_step = self.attend(
+                    enc_out, x_lens, dec_out, aw_step)
 
                 logits_step = self.fc(F.tanh(
                     self.W_d(dec_out) + self.W_c(context_vec)))
 
             logits.append(logits_step)
-            att_weights.append(att_weights_step)
+            aw.append(aw_step)
 
         # Concatenate in T_out-dimension
         logits = torch.cat(logits, dim=1)
-        att_weights = torch.stack(att_weights, dim=1)
-        # NOTE; att_weights in the training stage may be used for computing the
+        aw = torch.stack(aw, dim=1)
+        # NOTE; aw in the training stage may be used for computing the
         # coverage, so do not convert to numpy yet.
 
-        return logits, att_weights
+        return logits, aw
 
     def _create_var(self, size, fill_value=0, dtype='float', volatile=False):
         """Initialize a variable with zero.
@@ -867,7 +868,7 @@ class AttentionSeq2seq(ModelBase):
             is_sub_task (bool, optional):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
-            att_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
+            aw (np.ndarray): A tensor of size `[B, T_out, T_in]`
         """
         if is_sub_task and self.sub_loss_weight == 0:
             raise ValueError
@@ -892,21 +893,21 @@ class AttentionSeq2seq(ModelBase):
 
         # Permutate indices
         if perm_idx is not None:
-            perm_idx = self.p(perm_idx)
+            perm_idx = self.var2np(perm_idx)
 
         # NOTE: assume beam_width == 1
-        best_hyps, att_weights = self._decode_infer_greedy(
+        best_hyps, aw = self._decode_infer_greedy(
             enc_out, x_lens, max_decode_len, is_sub_task=is_sub_task)
 
         # Permutate indices to the original order
         if perm_idx is not None:
             best_hyps = best_hyps[perm_idx]
-            att_weights = att_weights[perm_idx]
+            aw = aw[perm_idx]
 
-        return best_hyps, att_weights
+        return best_hyps, aw
 
     def decode(self, xs, x_lens, beam_width, max_decode_len,
-               length_penalty=0.1, coverage_penalty=0.1):
+               length_penalty=0, coverage_penalty=0):
         """Decoding in the inference stage.
         Args:
             xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
@@ -958,7 +959,7 @@ class AttentionSeq2seq(ModelBase):
             is_sub_task (bool, optional):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
-            att_weights (np.ndarray): A tensor of size `[B, T_out, T_in]`
+            aw (np.ndarray): A tensor of size `[B, T_out, T_in]`
         """
         batch_size = enc_out.size(0)
 
@@ -968,7 +969,7 @@ class AttentionSeq2seq(ModelBase):
             (batch_size, 1, self.decoder_num_units), volatile=True)
         context_vec = self._create_var(
             (batch_size, 1, self.encoder_num_units), volatile=True)
-        att_weights_step = self._create_var((
+        aw_step = self._create_var((
             batch_size, enc_out.size(1)), volatile=True)
 
         # Start from <SOS>
@@ -977,7 +978,7 @@ class AttentionSeq2seq(ModelBase):
         y = self._create_var((batch_size, 1), fill_value=sos, dtype='long')
 
         best_hyps = []
-        att_weights = []
+        aw = []
         for _ in range(max_decode_len):
 
             if is_sub_task:
@@ -988,8 +989,8 @@ class AttentionSeq2seq(ModelBase):
                 dec_out, dec_state = self.decoder_sub(dec_in, dec_state)
 
                 # Compute attention distributions
-                context_vec, att_weights_step = self.attend_sub(
-                    enc_out, x_lens, dec_out, att_weights_step)
+                context_vec, aw_step = self.attend_sub(
+                    enc_out, x_lens, dec_out, aw_step)
 
                 logits_step = self.fc_sub(F.tanh(
                     self.W_d_sub(dec_out) + self.W_c_sub(context_vec)))
@@ -1001,8 +1002,8 @@ class AttentionSeq2seq(ModelBase):
                 dec_out, dec_state = self.decoder(dec_in, dec_state)
 
                 # Compute attention distributions
-                context_vec, att_weights_step = self.attend(
-                    enc_out, x_lens, dec_out, att_weights_step)
+                context_vec, aw_step = self.attend(
+                    enc_out, x_lens, dec_out, aw_step)
 
                 logits_step = self.fc(F.tanh(
                     self.W_d(dec_out) + self.W_c(context_vec)))
@@ -1011,7 +1012,7 @@ class AttentionSeq2seq(ModelBase):
             y = torch.max(logits_step.squeeze(1), dim=1)[1].unsqueeze(1)
             # logits_step: `[B, 1, num_classes]` -> `[B, num_classes]`
             best_hyps.append(y)
-            att_weights.append(att_weights_step)
+            aw.append(aw_step)
 
             # Break if <EOS> is outputed in all mini-batch
             if torch.sum(y.data == eos) == y.numel():
@@ -1019,13 +1020,13 @@ class AttentionSeq2seq(ModelBase):
 
         # Concatenate in T_out dimension
         best_hyps = torch.cat(best_hyps, dim=1)
-        att_weights = torch.stack(att_weights, dim=1)
+        aw = torch.stack(aw, dim=1)
 
         # Convert to numpy
         best_hyps = self.var2np(best_hyps)
-        att_weights = self.var2np(att_weights)
+        aw = self.var2np(aw)
 
-        return best_hyps, att_weights
+        return best_hyps, aw
 
     def _decode_infer_beam(self, enc_out, x_lens, beam_width, max_decode_len,
                            length_penalty, coverage_penalty, is_sub_task=False):
@@ -1056,14 +1057,14 @@ class AttentionSeq2seq(ModelBase):
                 enc_out[b:b + 1, :, :], is_sub_task=is_sub_task)
             dec_out = self._create_var(
                 (1, 1, self.decoder_num_units), volatile=True)
-            att_weights_step = self._create_var((1, frame_num), volatile=True)
+            aw_step = self._create_var((1, frame_num), volatile=True)
 
             complete = []
             beam = [{'hyp': [sos],
                      'score': LOG_1,
                      'dec_state': dec_state,
                      'dec_out': dec_out,
-                     'att_weights_step': att_weights_step}]
+                     'aw_step': aw_step}]
             for t in range(max_decode_len):
                 new_beam = []
                 for i_beam in range(len(beam)):
@@ -1074,7 +1075,7 @@ class AttentionSeq2seq(ModelBase):
                     # Compute context vector
                     context_vec = torch.sum(
                         enc_out[b: b + 1, :frame_num] *
-                        beam[i_beam]['att_weights_step'].unsqueeze(2),
+                        beam[i_beam]['aw_step'].unsqueeze(2),
                         dim=1, keepdim=True)
 
                     if is_sub_task:
@@ -1086,10 +1087,10 @@ class AttentionSeq2seq(ModelBase):
                             dec_in, beam[i_beam]['dec_state'])
 
                         # Compute attention distributions
-                        context_vec, att_weights_step = self.attend_sub(
+                        context_vec, aw_step = self.attend_sub(
                             enc_out[b:b + 1, :frame_num],
                             x_lens[b:b + 1],
-                            dec_out, beam[i_beam]['att_weights_step'])
+                            dec_out, beam[i_beam]['aw_step'])
 
                         logits_step = self.fc_sub(F.tanh(
                             self.W_d_sub(dec_out) + self.W_c_sub(context_vec)))
@@ -1102,10 +1103,10 @@ class AttentionSeq2seq(ModelBase):
                             dec_in, beam[i_beam]['dec_state'])
 
                         # Compute attention distributions
-                        context_vec, att_weights_step = self.attend(
+                        context_vec, aw_step = self.attend(
                             enc_out[b:b + 1, :frame_num],
                             x_lens[b:b + 1],
-                            dec_out, beam[i_beam]['att_weights_step'])
+                            dec_out, beam[i_beam]['aw_step'])
 
                         logits_step = self.fc(F.tanh(
                             self.W_d(dec_out) + self.W_c(context_vec)))
@@ -1132,7 +1133,7 @@ class AttentionSeq2seq(ModelBase):
                              'score': new_score,
                              'dec_state': dec_state,
                              'dec_out': dec_out,
-                             'att_weights_step': att_weights_step})
+                             'aw_step': aw_step})
 
                 new_beam = sorted(
                     new_beam, key=lambda x: x['score'], reverse=True)
