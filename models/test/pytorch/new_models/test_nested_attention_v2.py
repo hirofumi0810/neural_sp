@@ -29,31 +29,36 @@ class TestCharseqAttention(unittest.TestCase):
     def test(self):
         print("Hierarchical Attention Working check.")
 
-        # Curriculum training
-        # self.check(composition_case='fine_grained_gating',
-        #            ctc_loss_weight_sub=0.2, curriculum_training=True)
+        # how to use character-level decoder states
+        self.check(usage_dec_sub='update_decoder')
+        self.check(usage_dec_sub='all')
 
-        # Composition case (word attn + char attn)
-        self.check(composition_case='fine_grained_gating')
-        self.check(composition_case='scalar_gating')
-        self.check(composition_case='concat')
+        # gating of character-level decoder states
+        self.check(gate_dec_sub='scalar')
+        self.check(gate_dec_sub='elementwise')
 
-        # Composition case (word attn + char attn + char CTC)
-        self.check(composition_case='fine_grained_gating',
-                   ctc_loss_weight_sub=0.1)
-        self.check(composition_case='scalar_gating',
-                   ctc_loss_weight_sub=0.1)
-        self.check(composition_case='concat',
-                   ctc_loss_weight_sub=0.1)
+        # gating of embeddings
+        self.check(gate_embedding='concat')
+        self.check(gate_embedding='scalar')
+        self.check(gate_embedding='elementwise')
+
+        # attention_regularization
+        self.check(attention_regularization=True)
 
     @measure_time
-    def check(self, composition_case, ctc_loss_weight_sub=0,
+    def check(self, usage_dec_sub='update_decoder',
+              gate_dec_sub='no_gate', gate_embedding='no_gate',
+              attention_regularization=False,
+              main_loss_weight=0.5, ctc_loss_weight_sub=0,
               curriculum_training=False):
 
         print('==================================================')
+        print('  usage_dec_sub: %s' % usage_dec_sub)
+        print('  gate_dec_sub: %s' % gate_dec_sub)
+        print('  gate_embedding: %s' % gate_embedding)
+        print('  attention_regularization: %s' % str(attention_regularization))
         print('  ctc_loss_weight_sub: %s' % str(ctc_loss_weight_sub))
         print('  curriculum_training: %s' % str(curriculum_training))
-        print('  composition_case: %s' % str(composition_case))
         print('==================================================')
 
         # Load batch data
@@ -87,14 +92,14 @@ class TestCharseqAttention(unittest.TestCase):
             dropout_encoder=0.1,
             dropout_decoder=0.1,
             dropout_embedding=0.1,
-            main_loss_weight=0.8,
+            main_loss_weight=main_loss_weight,
             num_classes=11,
             num_classes_sub=27,
             parameter_init_distribution='uniform',
             parameter_init=0.1,
             recurrent_weight_orthogonal=False,
             init_forget_gate_bias_with_one=True,
-            subsample_list=[False, True, False],
+            subsample_list=[True, False, False],
             subsample_type='drop',
             init_dec_state='zero',
             sharpening_factor=1,
@@ -119,7 +124,10 @@ class TestCharseqAttention(unittest.TestCase):
             decoder_residual=False,
             decoder_dense_residual=False,
             curriculum_training=curriculum_training,
-            composition_case=composition_case)
+            usage_dec_sub=usage_dec_sub,
+            gate_dec_sub=gate_dec_sub,
+            gate_embedding=gate_embedding,
+            attention_regularization=attention_regularization)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):
