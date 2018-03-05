@@ -600,10 +600,7 @@ class AttentionSeq2seq(ModelBase):
         dec_state = self._init_decoder_state(enc_out, is_sub_task=is_sub_task)
         dec_out = self._create_var((batch_size, 1, self.decoder_num_units),
                                    dtype=np.float32)
-        context_vec = self._create_var((batch_size, 1, self.encoder_num_units),
-                                       dtype=np.float32)
-        aw_step = self._create_var((batch_size, max_time),
-                                   dtype=np.float32)
+        aw_step = self._create_var((batch_size, max_time), dtype=np.float32)
 
         logits = []
         aw = []
@@ -620,28 +617,26 @@ class AttentionSeq2seq(ModelBase):
                 y = ys[:, t:t + 1]
 
             if is_sub_task:
-                y = self.embed_sub(y)
-                dec_in = F.concat([y, context_vec], axis=-1)
-
-                # Update decoder states
-                dec_out, dec_state = self.decoder_sub(dec_in, dec_state)
-
                 # Compute attention distributions
                 context_vec, aw_step = self.attend_sub(
                     enc_out, x_lens, dec_out, aw_step)
 
+                # Update decoder states
+                y = self.embed_sub(y)
+                dec_in = F.concat([y, context_vec], axis=-1)
+                dec_out, dec_state = self.decoder_sub(dec_in, dec_state)
+
                 logits_step = self.fc_sub(F.tanh(
                     self.W_d_sub(dec_out) + self.W_c_sub(context_vec)))
             else:
-                y = self.embed(y)
-                dec_in = F.concat([y, context_vec], axis=-1)
-
-                # Update decoder states
-                dec_out, dec_state = self.decoder(dec_in, dec_state)
-
                 # Compute attention distributions
                 context_vec, aw_step = self.attend(
                     enc_out, x_lens, dec_out, aw_step)
+
+                # Update decoder states
+                y = self.embed(y)
+                dec_in = F.concat([y, context_vec], axis=-1)
+                dec_out, dec_state = self.decoder(dec_in, dec_state)
 
                 logits_step = self.fc(F.tanh(
                     self.W_d(dec_out) + self.W_c(context_vec)))
@@ -815,8 +810,6 @@ class AttentionSeq2seq(ModelBase):
         dec_state = self._init_decoder_state(enc_out, is_sub_task=is_sub_task)
         dec_out = self._create_var(
             (batch_size, 1, self.decoder_num_units), dtype=np.float32)
-        context_vec = self._create_var(
-            (batch_size, 1, self.encoder_num_units), dtype=np.float32)
         aw_step = self._create_var(
             (batch_size, enc_out.shape[1]), dtype=np.float32)
 
@@ -830,28 +823,27 @@ class AttentionSeq2seq(ModelBase):
         for _ in range(max_decode_len):
 
             if is_sub_task:
-                y = self.embed_sub(y)
-                dec_in = F.concat([y, context_vec], axis=-1)
-
-                # Update decoder states
-                dec_out, dec_state = self.decoder_sub(dec_in, dec_state)
 
                 # Compute attention distributions
                 context_vec, aw_step = self.attend_sub(
                     enc_out, x_lens, dec_out, aw_step)
 
+                # Update decoder states
+                y = self.embed_sub(y)
+                dec_in = F.concat([y, context_vec], axis=-1)
+                dec_out, dec_state = self.decoder_sub(dec_in, dec_state)
+
                 logits_step = self.fc_sub(F.tanh(
                     self.W_d_sub(dec_out) + self.W_c_sub(context_vec)))
             else:
-                y = self.embed(y)
-                dec_in = F.concat([y, context_vec], axis=-1)
-
-                # Update decoder states
-                dec_out, dec_state = self.decoder(dec_in, dec_state)
-
                 # Compute attention distributions
                 context_vec, aw_step = self.attend(
                     enc_out, x_lens, dec_out, aw_step)
+
+                # Update decoder states
+                y = self.embed(y)
+                dec_in = F.concat([y, context_vec], axis=-1)
+                dec_out, dec_state = self.decoder(dec_in, dec_state)
 
                 logits_step = self.fc(F.tanh(
                     self.W_d(dec_out) + self.W_c(context_vec)))
@@ -920,42 +912,33 @@ class AttentionSeq2seq(ModelBase):
                         (1, 1), fill_value=beam[i_beam]['hyp'][-1],
                         dtype=np.int32)
 
-                    # Compute context vector
-                    context_vec = F.sum(enc_out[b: b + 1] * F.broadcast_to(
-                        F.expand_dims(
-                            beam[i_beam]['aw_step'], axis=2),
-                        (1, frame_num, enc_out.shape[-1])),
-                        axis=1, keepdims=True)
-
                     if is_sub_task:
-                        y = self.embed_sub(y)
-                        dec_in = F.concat([y, context_vec], axis=-1)
-
-                        # Update decoder states
-                        dec_out, dec_state = self.decoder_sub(
-                            dec_in, beam[i_beam]['dec_state'])
-
                         # Compute attention distributions
                         context_vec, aw_step = self.attend_sub(
                             enc_out[b:b + 1, :frame_num],
                             x_lens[b:b + 1],
                             dec_out, beam[i_beam]['aw_step'])
 
+                        # Update decoder states
+                        y = self.embed_sub(y)
+                        dec_in = F.concat([y, context_vec], axis=-1)
+                        dec_out, dec_state = self.decoder_sub(
+                            dec_in, beam[i_beam]['dec_state'])
+
                         logits_step = self.fc_sub(F.tanh(
                             self.W_d_sub(dec_out) + self.W_c_sub(context_vec)))
                     else:
-                        y = self.embed(y)
-                        dec_in = F.concat([y, context_vec], axis=-1)
-
-                        # Update decoder states
-                        dec_out, dec_state = self.decoder(
-                            dec_in, beam[i_beam]['dec_state'])
-
                         # Compute attention distributions
                         context_vec, aw_step = self.attend(
                             enc_out[b:b + 1, :frame_num],
                             x_lens[b:b + 1],
                             dec_out, beam[i_beam]['aw_step'])
+
+                        # Update decoder states
+                        y = self.embed(y)
+                        dec_in = F.concat([y, context_vec], axis=-1)
+                        dec_out, dec_state = self.decoder(
+                            dec_in, beam[i_beam]['dec_state'])
 
                         logits_step = self.fc(F.tanh(
                             self.W_d(dec_out) + self.W_c(context_vec)))
