@@ -13,9 +13,9 @@ import argparse
 
 sys.path.append(abspath('../../../'))
 from models.load_model import load
-from examples.swbd.data.load_dataset_hierarchical import Dataset
-from examples.swbd.metrics.cer import do_eval_cer
-from examples.swbd.metrics.wer import do_eval_wer
+from examples.swbd.s5c.exp.dataset.load_dataset_hierarchical import Dataset
+from examples.swbd.s5c.exp.metrics.cer import do_eval_cer
+from examples.swbd.s5c.exp.metrics.wer import do_eval_wer
 from utils.config import load_config
 
 parser = argparse.ArgumentParser()
@@ -32,6 +32,7 @@ parser.add_argument('--max_decode_len', type=int, default=100,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
 parser.add_argument('--max_decode_len_sub', type=int, default=300,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
+parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
 
 def main():
@@ -42,34 +43,29 @@ def main():
     params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
-    vocab_file_path = '../metrics/vocab_files/' + \
-        params['label_type'] + '_' + params['data_size'] + '.txt'
-    vocab_file_path_sub = '../metrics/vocab_files/' + \
-        params['label_type_sub'] + '_' + params['data_size'] + '.txt'
     eval2000_swbd_data = Dataset(
+        data_save_path=args.data_save_path,
         backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         data_type='eval2000_swbd', data_size=params['data_size'],
         label_type=params['label_type'], label_type_sub=params['label_type_sub'],
-        vocab_file_path=vocab_file_path,
-        vocab_file_path_sub=vocab_file_path_sub,
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=False, save_format=params['save_format'])
+        sort_utt=False, tool=params['tool'])
     eval2000_ch_data = Dataset(
+        data_save_path=args.data_save_path,
         backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         data_type='eval2000_ch',  data_size=params['data_size'],
         label_type=params['label_type'], label_type_sub=params['label_type_sub'],
-        vocab_file_path=vocab_file_path,
-        vocab_file_path_sub=vocab_file_path_sub,
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=False, save_format=params['save_format'])
+        sort_utt=False, tool=params['tool'])
+
     params['num_classes'] = eval2000_swbd_data.num_classes
     params['num_classes_sub'] = eval2000_swbd_data.num_classes_sub
 
@@ -91,7 +87,7 @@ def main():
         max_decode_len=args.max_decode_len,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
-    print('  WER (SWB, main): %f %%' % (wer_eval2000_swbd * 100))
+    print('  WER (SWB, main): %.3f %%' % (wer_eval2000_swbd * 100))
     wer_eval2000_ch = do_eval_wer(
         model=model,
         dataset=eval2000_ch_data,
@@ -99,8 +95,8 @@ def main():
         max_decode_len=args.max_decode_len,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
-    print('  WER (CHE, main): %f %%' % (wer_eval2000_ch * 100))
-    print('  WER (mean, main): %f %%' %
+    print('  WER (CHE, main): %.3f %%' % (wer_eval2000_ch * 100))
+    print('  WER (mean, main): %.3f %%' %
           ((wer_eval2000_swbd + wer_eval2000_ch) * 100 / 2))
 
     cer_eval2000_swbd, _ = do_eval_cer(
@@ -110,7 +106,7 @@ def main():
         max_decode_len=args.max_decode_len_sub,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
-    print('  CER (SWB, sub): %f %%' % (cer_eval2000_swbd * 100))
+    print('  CER (SWB, sub): %.3f %%' % (cer_eval2000_swbd * 100))
     cer_eval2000_ch, _ = do_eval_cer(
         model=model,
         dataset=eval2000_ch_data,
@@ -118,8 +114,8 @@ def main():
         max_decode_len=args.max_decode_len_sub,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
-    print('  CER (CHE, sub): %f %%' % (cer_eval2000_ch * 100))
-    print('  CER (mean, sub): %f %%' %
+    print('  CER (CHE, sub): %.3f %%' % (cer_eval2000_ch * 100))
+    print('  CER (mean, sub): %.3f %%' %
           ((cer_eval2000_swbd + cer_eval2000_ch) * 100 / 2))
 
 

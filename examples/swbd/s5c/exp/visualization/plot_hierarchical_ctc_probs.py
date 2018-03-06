@@ -14,7 +14,7 @@ import shutil
 
 sys.path.append(abspath('../../../'))
 from models.load_model import load
-from examples.swbd.data.load_dataset_hierarchical import Dataset
+from examples.swbd.s5c.exp.dataset.load_dataset_hierarchical import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
 from utils.directory import mkdir_join, mkdir
@@ -28,6 +28,7 @@ parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
+parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
 
 def main():
@@ -38,22 +39,18 @@ def main():
     params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
-    vocab_file_path = '../metrics/vocab_files/' + \
-        params['label_type'] + '_' + params['data_size'] + '.txt'
-    vocab_file_path_sub = '../metrics/vocab_files/' + \
-        params['label_type_sub'] + '_' + params['data_size'] + '.txt'
     test_data = Dataset(
+        data_save_path=args.data_save_path,
         backend=params['backend'],
         model_type=params['model_type'],
         data_type='eval2000_swbd',
         # data_type='eval2000_ch',
         data_size=params['data_size'],
         label_type=params['label_type'], label_type_sub=params['label_type_sub'],
-        vocab_file_path=vocab_file_path,
-        vocab_file_path_sub=vocab_file_path_sub,
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=True, reverse=True, save_format=params['save_format'])
+        sort_utt=True, reverse=True, tool=params['tool'])
+
     params['num_classes'] = test_data.num_classes
     params['num_classes_sub'] = test_data.num_classes_sub
 
@@ -79,13 +76,12 @@ def main():
          space_index=space_index)
 
 
-def plot(model, dataset, eval_batch_size=None, save_path=None,
-         space_index=None):
+def plot(model, dataset, eval_batch_size, save_path=None, space_index=None):
     """
     Args:
         model: the model to evaluate
         dataset: An instance of a `Dataset` class
-        eval_batch_size (int, optional): the batch size when evaluating the model
+        eval_batch_size (int): the batch size when evaluating the model
         save_path (string): path to save figures of CTC posteriors
         space_index (int, optional):
     """
@@ -98,17 +94,9 @@ def plot(model, dataset, eval_batch_size=None, save_path=None,
         shutil.rmtree(save_path)
         mkdir(save_path)
 
-    idx2word = Idx2word(
-        vocab_file_path='../metrics/vocab_files/' +
-        dataset.label_type + '_' + dataset.data_size + '.txt')
-    if dataset.label_type_sub == 'character':
-        idx2char = Idx2char(
-            vocab_file_path='../metrics/vocab_files/character_' + dataset.data_size + '.txt')
-    elif dataset.label_type_sub == 'character_capital_divide':
-        idx2char = Idx2char(
-            vocab_file_path='../metrics/vocab_files/character_capital_divide_' +
-            dataset.data_size + '.txt',
-            capital_divide=True)
+    idx2word = Idx2word(dataset.vocab_file_path)
+    idx2char = Idx2char(dataset.vocab_file_path,
+                        capital_divide=dataset.label_type_sub == 'character_capital_divide')
 
     for batch, is_new_epoch in dataset:
 
@@ -121,29 +109,29 @@ def plot(model, dataset, eval_batch_size=None, save_path=None,
         # NOTE: probs_sub: '[B, T, num_classes_sub]'
 
         # Decode
-        labels_pred = model.decode(batch['xs'], batch['x_lens'],
-                                   beam_width=1)
-        labels_pred_sub = model.decode(batch['xs'], batch['x_lens'],
-                                       beam_width=1,
-                                       is_sub_task=True)
+        best_hyps = model.decode(batch['xs'], batch['x_lens'],
+                                 beam_width=1)
+        best_hyps_sub = model.decode(batch['xs'], batch['x_lens'],
+                                     beam_width=1,
+                                     is_sub_task=True)
 
         # Visualize
-        for i_batch in range(len(batch['xs'])):
+        for b in range(len(batch['xs'])):
 
             # Convert from list of index to string
-            str_pred = idx2word(labels_pred[i_batch])
-            str_pred_sub = idx2char(labels_pred_sub[i_batch])
+            str_hyp = idx2word(best_hyps[b])
+            str_hyp_sub = idx2char(best_hyps_sub[b])
 
-            speaker = batch['input_names'][i_batch].split('_')[0]
+            speaker = batch['input_names'][b].split('_')[0]
             plot_hierarchical_ctc_probs(
-                probs[i_batch, :batch['x_lens'][i_batch], :],
-                probs_sub[i_batch, :batch['x_lens'][i_batch], :],
-                frame_num=batch['x_lens'][i_batch],
+                probs[b, :batch['x_lens'][b], :],
+                probs_sub[b, :batch['x_lens'][b], :],
+                frame_num=batch['x_lens'][b],
                 num_stack=dataset.num_stack,
                 space_index=space_index,
-                str_pred=str_pred,
-                str_pred_sub=str_pred_sub,
-                save_path=mkdir_join(save_path, speaker, batch['input_names'][i_batch] + '.png'))
+                str_hyp=str_hyp,
+                str_hyp_sub=str_hyp_sub,
+                save_path=mkdir_join(save_path, speaker, batch['input_names'][b] + '.png'))
 
         if is_new_epoch:
             break

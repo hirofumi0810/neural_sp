@@ -13,6 +13,7 @@ import time
 from setproctitle import setproctitle
 import argparse
 from tensorboardX import SummaryWriter
+from tqdm import tqdm
 
 import torch
 torch.manual_seed(1623)
@@ -20,15 +21,14 @@ torch.cuda.manual_seed_all(1623)
 
 sys.path.append(os.path.abspath('../../../'))
 from models.load_model import load
-from examples.swbd.data.load_dataset_hierarchical import Dataset
-from examples.swbd.metrics.cer import do_eval_cer
-from examples.swbd.metrics.wer import do_eval_wer
+from examples.swbd.s5c.exp.dataset.load_dataset_hierarchical import Dataset
+from examples.swbd.s5c.exp.metrics.cer import do_eval_cer
+from examples.swbd.s5c.exp.metrics.wer import do_eval_wer
 from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
 from utils.training.training_loop import train_hierarchical_step
 from utils.training.logging import set_logger
-from utils.directory import mkdir_join, mkdir
-from utils.io.variable import var2np
+from utils.directory import mkdir_join
 from utils.config import load_config, save_config
 
 MAX_DECODE_LEN_WORD = 100
@@ -43,6 +43,7 @@ parser.add_argument('--model_save_path', type=str,
                     help='path to save the model')
 parser.add_argument('--saved_model_path', type=str, default=None,
                     help='path to the saved model to retrain')
+parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
 
 def main():
@@ -62,11 +63,8 @@ def main():
         raise ValueError("Set model_save_path or saved_model_path.")
 
     # Load dataset
-    vocab_file_path = os.path.abspath(
-        '../metrics/vocab_files/' + params['label_type'] + '_' + params['data_size'] + '.txt')
-    vocab_file_path_sub = os.path.abspath(
-        '../metrics/vocab_files/' + params['label_type_sub'] + '_' + params['data_size'] + '.txt')
     train_data = Dataset(
+        data_save_path=args.data_save_path,
         backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
@@ -74,17 +72,14 @@ def main():
         data_type='train', data_size=params['data_size'],
         label_type=params['label_type'],
         label_type_sub=params['label_type_sub'],
-        vocab_file_path=vocab_file_path,
-        vocab_file_path_sub=vocab_file_path_sub,
         batch_size=params['batch_size'],
         max_epoch=params['num_epoch'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
-        save_format=params['save_format'], num_enque=None,
+        tool=params['tool'], num_enque=None,
         dynamic_batching=params['dynamic_batching'])
-    params['num_classes'] = train_data.num_classes
-    params['num_classes_sub'] = train_data.num_classes_sub
     dev_data = Dataset(
+        data_save_path=args.data_save_path,
         backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
@@ -92,12 +87,11 @@ def main():
         data_type='dev', data_size=params['data_size'],
         label_type=params['label_type'],
         label_type_sub=params['label_type_sub'],
-        vocab_file_path=vocab_file_path,
-        vocab_file_path_sub=vocab_file_path_sub,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=True, save_format=params['save_format'])
+        shuffle=True, tool=params['tool'])
     eval2000_swbd_data = Dataset(
+        data_save_path=args.data_save_path,
         backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
@@ -105,12 +99,11 @@ def main():
         data_type='eval2000_swbd', data_size=params['data_size'],
         label_type=params['label_type'],
         label_type_sub=params['label_type_sub'],
-        vocab_file_path=vocab_file_path,
-        vocab_file_path_sub=vocab_file_path_sub,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        save_format=params['save_format'])
+        tool=params['tool'])
     eval2000_ch_data = Dataset(
+        data_save_path=args.data_save_path,
         backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
@@ -118,11 +111,12 @@ def main():
         data_type='eval2000_ch', data_size=params['data_size'],
         label_type=params['label_type'],
         label_type_sub=params['label_type_sub'],
-        vocab_file_path=vocab_file_path,
-        vocab_file_path_sub=vocab_file_path_sub,
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        save_format=params['save_format'])
+        tool=params['tool'])
+
+    params['num_classes'] = train_data.num_classes
+    params['num_classes_sub'] = train_data.num_classes_sub
 
     ##################################################
     # MODEL
@@ -135,7 +129,7 @@ def main():
 
         # Set save path
         save_path = mkdir_join(
-            args.model_save_path,  params['backend'], 'swbd',
+            args.model_save_path,  params['backend'],
             params['model_type'],
             params['label_type'] + '_' + params['label_type_sub'],
             params['data_size'], model.name)
@@ -233,6 +227,7 @@ def main():
     start_time_step = time.time()
     not_improved_epoch = 0
     loss_train_mean, loss_main_train_mean, loss_sub_train_mean = 0., 0., 0.
+    pbar_epoch = tqdm(total=len(train_data))
     while True:
         # Compute loss in the training set (including parameter update)
         batch_train, is_new_epoch = train_data.next()
@@ -241,6 +236,8 @@ def main():
         loss_train_mean += loss_train_val
         loss_main_train_mean += loss_main_train_val
         loss_sub_train_mean += loss_sub_train_val
+
+        pbar_epoch.update(len(batch_train['xs']))
 
         if (step + 1) % params['print_step'] == 0:
 
@@ -269,9 +266,10 @@ def main():
                 tf_writer.add_scalar('dev/loss_sub', loss_sub_dev, step + 1)
                 for name, param in model.named_parameters():
                     name = name.replace('.', '/')
-                    tf_writer.add_histogram(name, var2np(param), step + 1)
                     tf_writer.add_histogram(
-                        name + '/grad', var2np(param.grad), step + 1)
+                        name, param.data.cpu().numpy(), step + 1)
+                    tf_writer.add_histogram(
+                        name + '/grad', param.grad.data.cpu().numpy(), step + 1)
 
             duration_step = time.time() - start_time_step
             logger.info("...Step:%d(epoch:%.3f) loss:%.3f/%.3f/%.3f(%.3f/%.3f/%.3f)/lr:%.5f/batch:%d/x_lens:%d (%.3f min)" %
@@ -308,12 +306,12 @@ def main():
                     beam_width=1,
                     max_decode_len=MAX_DECODE_LEN_WORD,
                     eval_batch_size=1)
-                logger.info('  WER (dev): %f %%' % (wer_dev_epoch * 100))
+                logger.info('  WER (dev): %.3f %%' % (wer_dev_epoch * 100))
 
                 if wer_dev_epoch < metric_dev_best:
                     metric_dev_best = wer_dev_epoch
                     not_improved_epoch = 0
-                    logger.info('■■■ ↑Best Score (WER)↑ ■■■')
+                    logger.info('||||| Best Score (WER) |||||')
 
                     # Save the model
                     model.save_checkpoint(model.save_path, epoch, step,
@@ -326,7 +324,7 @@ def main():
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_WORD,
                         eval_batch_size=1)
-                    logger.info('  WER (SWB, main): %f %%' %
+                    logger.info('  WER (SWB, main): %.3f %%' %
                                 (wer_eval2000_swbd * 100))
                     # cer_eval2000_swbd, _, _ = do_eval_cer(
                     #     model=model,
@@ -334,7 +332,7 @@ def main():
                     #     beam_width=1,
                     #     max_decode_len=MAX_DECODE_LEN_CHAR,
                     #     eval_batch_size=1)
-                    # logger.info('  CER (SWB, sub): %f %%' %
+                    # logger.info('  CER (SWB, sub): %.3f %%' %
                     #             (cer_eval2000_swbd * 100))
                     wer_eval2000_ch, _ = do_eval_wer(
                         model=model,
@@ -342,7 +340,7 @@ def main():
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_WORD,
                         eval_batch_size=1)
-                    logger.info('  WER (CHE, main): %f %%' %
+                    logger.info('  WER (CHE, main): %.3f %%' %
                                 (wer_eval2000_ch * 100))
                     # cer_eval2000_ch, _, _ = do_eval_cer(
                     #     model=model,
@@ -350,11 +348,11 @@ def main():
                     #     beam_width=1,
                     #     max_decode_len=MAX_DECODE_LEN_CHAR,
                     #     eval_batch_size=1)
-                    # logger.info('  CER (CHE, sub): %f %%' %
+                    # logger.info('  CER (CHE, sub): %.3f %%' %
                     #             (cer_eval2000_ch * 100))
-                    logger.info('  WER (mean, main): %f %%' %
+                    logger.info('  WER (mean, main): %.3f %%' %
                                 ((wer_eval2000_swbd + wer_eval2000_ch) * 100 / 2))
-                    # logger.info('  CER (mean, main): %f %%' %
+                    # logger.info('  CER (mean, main): %.3f %%' %
                     #             ((cer_eval2000_swbd + cer_eval2000_ch) * 100 / 2))
                 else:
                     not_improved_epoch += 1
@@ -389,6 +387,10 @@ def main():
                     if float(params['weight_noise_std']) > 0:
                         model.weight_noise_injection = True
 
+            pbar_epoch = tqdm(total=len(train_data))
+            print('========== EPOCH:%d (%.3f min) ==========' %
+                  (epoch, duration_epoch / 60))
+
             if epoch == params['num_epoch']:
                 break
 
@@ -399,12 +401,12 @@ def main():
     duration_train = time.time() - start_time_train
     logger.info('Total time: %.3f hour' % (duration_train / 3600))
 
-    # Training was finished correctly
-    with open(os.path.join(model.save_path, 'complete.txt'), 'w') as f:
-        f.write('')
-
     if params['backend'] == 'pytorch':
         tf_writer.close()
+
+    # Training was finished correctly
+    with open(os.path.join(model.save_path, 'COMPLETE'), 'w') as f:
+        f.write('')
 
 
 if __name__ == '__main__':

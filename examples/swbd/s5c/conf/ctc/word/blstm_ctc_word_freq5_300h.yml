@@ -16,9 +16,3 @@ param:
     - False
     - False
     - False
-
-  # optimization
-  batch_size: 40
-
-  # annealing
-  print_step: 1000

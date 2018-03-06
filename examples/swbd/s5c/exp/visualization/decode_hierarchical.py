@@ -13,7 +13,7 @@ import argparse
 
 sys.path.append(abspath('../../../'))
 from models.load_model import load
-from examples.swbd.data.load_dataset_hierarchical import Dataset
+from examples.swbd.s5c.exp.dataset.load_dataset_hierarchical import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
 from examples.swbd.metrics.glm import GLM
@@ -35,6 +35,7 @@ parser.add_argument('--max_decode_len', type=int, default=100,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
 parser.add_argument('--max_decode_len_sub', type=int, default=300,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
+parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
 LAUGHTER = 'LA'
 NOISE = 'NZ'
@@ -50,11 +51,8 @@ def main():
     params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
-    vocab_file_path = '../metrics/vocab_files/' + \
-        params['label_type'] + '_' + params['data_size'] + '.txt'
-    vocab_file_path_sub = '../metrics/vocab_files/' + \
-        params['label_type_sub'] + '_' + params['data_size'] + '.txt'
     test_data = Dataset(
+        data_save_path=args.data_save_path,
         backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
@@ -63,13 +61,11 @@ def main():
         # data_type='eval2000_ch',
         data_size=params['data_size'],
         label_type=params['label_type'], label_type_sub=params['label_type_sub'],
-        vocab_file_path=vocab_file_path,
-        vocab_file_path_sub=vocab_file_path_sub,
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         # sort_utt=True, reverse=True,
-        sort_utt=False, reverse=False,
-        save_format=params['save_format'])
+        sort_utt=False, reverse=False, tool=params['tool'])
+
     params['num_classes'] = test_data.num_classes
     params['num_classes_sub'] = test_data.num_classes_sub
 
@@ -114,11 +110,8 @@ def decode(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
         dataset.batch_size = eval_batch_size
 
     idx2word = Idx2word(vocab_file_path=dataset.vocab_file_path)
-    if dataset.label_type_sub == 'character':
-        idx2char = Idx2char(vocab_file_path=dataset.vocab_file_path_sub)
-    elif dataset.label_type_sub == 'character_capital_divide':
-        idx2char = Idx2char(vocab_file_path=dataset.vocab_file_path_sub,
-                            capital_divide=True)
+    idx2char = Idx2char(vocab_file_path=dataset.vocab_file_path_sub,
+                        capital_divide=dataset.label_type_sub == 'character_capital_divide')
 
     # Read GLM file
     glm = GLM(

@@ -7,17 +7,15 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from os.path import join, basename
+from os.path import join, basename, isfile
 import sys
 import argparse
-import subprocess
 
 sys.path.append('../../../')
 from utils.feature_extraction.htk import save_config
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str, help='path to save data')
-parser.add_argument('--htk_save_path', type=str, help='path to save HTK files')
 parser.add_argument('--config_save_path', type=str,
                     help='path to save the configuration file')
 
@@ -51,22 +49,19 @@ def main():
 
     for data_type in ['train', 'dev', 'eval2000']:
         wav_paths = []
-        with open(join(args.data_save_path, data_type, 'wav.scp')) as f:
+        with open(join(args.data_save_path, data_type, 'wav.scp'), 'r') as f:
             for line in f:
                 line = line.strip()
-                wav_path = line.split(' ')[7]
+                speaker = line.split(' ')[0]
+                # sph_path = line.split(' ')[7]
+                if data_type == 'dev':
+                    wav_path = join(args.data_save_path,
+                                    'wav_1ch', 'train', speaker + '.wav')
+                else:
+                    wav_path = join(args.data_save_path,
+                                    'wav_1ch', data_type, speaker + '.wav')
+                assert isfile(wav_path)
                 wav_paths.append(wav_path)
-
-                # Split per channel
-                # result_A = subprocess.call(
-                #     ['$KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe', '-f', 'wav', '-p', '-c', '1',
-                #      join(args.data_save_path, 'wav', data_type, basename(wav_path).split('.')[0] + '-A.wav')])
-                # result_B = subprocess.call(
-                #     ['$KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe', '-f', 'wav', '-p', '-c', '2',
-                #      join(args.data_save_path, 'wav', data_type, basename(wav_path).split('.')[0] + '-B.wav')])
-                #
-                # if result_A != 0 or result_B != 0:
-                #     raise ValueError
 
         with open(join(args.data_save_path, data_type, 'wav2htk.scp'), 'w') as f:
             for wav_path in wav_paths:

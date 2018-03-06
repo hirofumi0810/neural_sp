@@ -14,7 +14,7 @@ import shutil
 
 sys.path.append(abspath('../../../'))
 from models.load_model import load
-from examples.swbd.data.load_dataset import Dataset
+from examples.swbd.s5c.exp.dataset.load_dataset import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
 from utils.directory import mkdir_join, mkdir
@@ -28,6 +28,7 @@ parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
+parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
 
 def main():
@@ -38,9 +39,8 @@ def main():
     params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
-    vocab_file_path = '../metrics/vocab_files/' + \
-        params['label_type'] + '_' + params['data_size'] + '.txt'
     test_data = Dataset(
+        data_save_path=args.data_save_path,
         backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
@@ -48,10 +48,11 @@ def main():
         data_type='eval2000_swbd',
         # data_type='eval2000_ch',
         data_size=params['data_size'],
-        label_type=params['label_type'], vocab_file_path=vocab_file_path,
+        label_type=params['label_type'],
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=True, reverse=True, save_format=params['save_format'])
+        sort_utt=True, reverse=True, tool=params['tool'])
+
     params['num_classes'] = test_data.num_classes
 
     # Load model
@@ -76,13 +77,12 @@ def main():
          space_index=space_index)
 
 
-def plot(model, dataset, eval_batch_size=None, save_path=None,
-         space_index=None):
+def plot(model, dataset, eval_batch_size, save_path=None, space_index=None):
     """
     Args:
         model: the model to evaluate
         dataset: An instance of a `Dataset` class
-        eval_batch_size (int, optional): the batch size when evaluating the model
+        eval_batch_size (int): the batch size when evaluating the model
         save_path (string): path to save figures of CTC posteriors
         space_index (int, optional):
     """
@@ -95,14 +95,11 @@ def plot(model, dataset, eval_batch_size=None, save_path=None,
         shutil.rmtree(save_path)
         mkdir(save_path)
 
-    vocab_file_path = '../metrics/vocab_files/' + \
-        dataset.label_type + '_' + dataset.data_size + '.txt'
-    if dataset.label_type == 'character':
-        map_fn = Idx2char(vocab_file_path)
-    elif dataset.label_type == 'character_capital_divide':
-        map_fn = Idx2char(vocab_file_path, capital_divide=True)
+    if 'char' in dataset.label_type:
+        map_fn = Idx2char(dataset.vocab_file_path,
+                          capital_divide=dataset.label_type == 'character_capital_divide')
     else:
-        map_fn = Idx2word(vocab_file_path)
+        map_fn = Idx2word(dataset.vocab_file_path)
 
     for batch, is_new_epoch in dataset:
 
@@ -111,22 +108,22 @@ def plot(model, dataset, eval_batch_size=None, save_path=None,
         # NOTE: probs: '[B, T, num_classes]'
 
         # Decode
-        labels_pred = model.decode(batch['xs'], batch['x_lens'], beam_width=1)
+        best_hyps = model.decode(batch['xs'], batch['x_lens'], beam_width=1)
 
         # Visualize
-        for i_batch in range(len(batch['xs'])):
+        for b in range(len(batch['xs'])):
 
             # Convert from list of index to string
-            str_pred = map_fn(labels_pred[i_batch])
+            str_hyp = map_fn(best_hyps[b])
 
-            speaker = batch['input_names'][i_batch].split('_')[0]
+            speaker = batch['input_names'][b].split('_')[0]
             plot_ctc_probs(
-                probs[i_batch, :batch['x_lens'][i_batch], :],
-                frame_num=batch['x_lens'][i_batch],
+                probs[b, :batch['x_lens'][b], :],
+                frame_num=batch['x_lens'][b],
                 num_stack=dataset.num_stack,
                 space_index=space_index,
-                str_pred=str_pred,
-                save_path=mkdir_join(save_path, speaker, batch['input_names'][i_batch] + '.png'))
+                str_hyp=str_hyp,
+                save_path=mkdir_join(save_path, speaker, batch['input_names'][b] + '.png'))
 
         if is_new_epoch:
             break

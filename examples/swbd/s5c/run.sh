@@ -17,27 +17,30 @@ echo ===========================================================================
 echo "                           Switchboard (300h)                             "
 echo ============================================================================
 
-stage=1
+stage=2
+hierarchical_model=false
+# hierarchical_model=true
+run_background=false
+restart=false
 
 ### Set path to original data
 SWBD_AUDIOPATH="/n/sd8/inaguma/corpus/swbd/data/LDC97S62"
-EVAL2000_AUDIOPATH='/n/sd8/inaguma/corpus/swbd/data/eval2000/LDC2002S09'
-EVAL2000_TRANSPATH='/n/sd8/inaguma/corpus/swbd/data/eval2000/LDC2002T43'
+EVAL2000_AUDIOPATH="/n/sd8/inaguma/corpus/swbd/data/eval2000/LDC2002S09"
+EVAL2000_TRANSPATH="/n/sd8/inaguma/corpus/swbd/data/eval2000/LDC2002T43"
 has_fisher=false
 
 ### Set path to save dataset
-export DATA_SAVEPATH="/n/sd8/inaguma/corpus/swbd/kaldi"
+DATA_SAVEPATH="/n/sd8/inaguma/corpus/swbd/kaldi"
 
 ### Set path to save the model
-MODEL_SAVEPATH="/n/sd8/inaguma/result"
-# MODEL_SAVEPATH="/n/sd8/inaguma/result/swbd"
+MODEL_SAVEPATH="/n/sd8/inaguma/result/swbd"
 
 ### Select one tool to extract features (HTK is the fastest)
-# TOOL = 'kaldi'
-TOOL='htk'
-# TOOL='python_speech_features'
-# TOOL='librosa'
-# # TOOL='wav'
+# TOOL=kaldi
+TOOL=htk
+# TOOL=python_speech_features
+# TOOL=librosa
+# # TOOL=wav
 
 ### Configuration of feature extranction
 CHANNELS=40
@@ -46,47 +49,48 @@ SLIDE=0.01
 ENERGY=0
 DELTA=1
 DELTADELTA=1
-# NORMALIZE='global'
-NORMALIZE='speaker'
-# NORMALIZE='utterance'
-# NORMALIZE='no'
+# NORMALIZE=global
+NORMALIZE=speaker
+# NORMALIZE=utterance
+# NORMALIZE=no
 # NOTE: normalize in [-1, 1] in case of wav
 
 
-# if [ ! -e ../tools/sph2pipe_v2.5/sph2pipe ]; then
-#   echo ============================================================================
-#   echo "                           Install sph2pipe                               "
-#   echo ============================================================================
-#
-#   # Install instructions for sph2pipe_v2.5.tar.gz
-#   if ! which wget >&/dev/null; then
-#     echo "This script requires you to first install wget";
-#     exit 1;
-#   fi
-#   if ! which automake >&/dev/null; then
-#     echo "Warning: automake not installed (IRSTLM installation will not work)"
-#     sleep 1
-#   fi
-#   if ! which libtoolize >&/dev/null && ! which glibtoolize >&/dev/null; then
-#     echo "Warning: libtoolize or glibtoolize not installed (IRSTLM installation probably will not work)"
-#     sleep 1
-#   fi
-#
-#   if [ ! -e ../tools/sph2pipe_v2.5.tar.gz ]; then
-#     wget -T 3 -t 3 http://www.openslr.org/resources/3/sph2pipe_v2.5.tar.gz -P ../tools
-#   else
-#     echo "sph2pipe_v2.5.tar.gz is already downloaded."
-#   fi
-#   tar -xovzf ../tools/sph2pipe_v2.5.tar.gz -C ../tools
-#   rm ../tools/sph2pipe_v2.5.tar.gz
-#   echo "Enter into ../tools/sph2pipe_v2.5 ..."
-#   cd ../tools/sph2pipe_v2.5
-#   gcc -o sph2pipe *.c -lm
-#   echo "Get out of ../tools/sph2pipe_v2.5 ..."
-#   cd ../../swbd
-# fi
+if [ ! -e $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe ]; then
+  echo ============================================================================
+  echo "                           Install sph2pipe                               "
+  echo ============================================================================
+  SWBD_REPO=`pwd`
+  # Install instructions for sph2pipe_v2.5.tar.gz
+  if ! which wget >&/dev/null; then
+    echo "This script requires you to first install wget";
+    exit 1;
+  fi
+  if ! which automake >&/dev/null; then
+    echo "Warning: automake not installed (IRSTLM installation will not work)"
+    sleep 1
+  fi
+  if ! which libtoolize >&/dev/null && ! which glibtoolize >&/dev/null; then
+    echo "Warning: libtoolize or glibtoolize not installed (IRSTLM installation probably will not work)"
+    sleep 1
+  fi
+
+  if [ ! -e KALDI_ROOT/tools/sph2pipe_v2.5.tar.gz ]; then
+    wget -T 3 -t 3 http://www.openslr.org/resources/3/sph2pipe_v2.5.tar.gz -P KALDI_ROOT/tools
+  else
+    echo "sph2pipe_v2.5.tar.gz is already downloaded."
+  fi
+  tar -xovzf KALDI_ROOT/tools/sph2pipe_v2.5.tar.gz -C $KALDI_ROOT/tools
+  rm $KALDI_ROOT/tools/sph2pipe_v2.5.tar.gz
+  echo "Enter into $KALDI_ROOT/tools/sph2pipe_v2.5 ..."
+  cd $KALDI_ROOT/tools/sph2pipe_v2.5
+  gcc -o sph2pipe *.c -lm
+  echo "Get out of $KALDI_ROOT/tools/sph2pipe_v2.5 ..."
+  cd $SWBD_REPO
+fi
 
 
+export DATA_SAVEPATH=$DATA_SAVEPATH/$DATASIZE
 if [ $stage -le 0 ]; then
   echo ============================================================================
   echo "                           Data Preparation                               "
@@ -149,25 +153,7 @@ if [ $stage -le 1 ]; then
   echo "                        Feature extranction                               "
   echo ============================================================================
 
-  # for data_type in train dev eval2000 ; do
-  #   swbd_sph_paths=$(find $SWBD_AUDIOPATH -iname '*.sph')
-  #   # find $SWBD_DIR/. -iname '*.sph' | sort >
-  #
-  #   for sph_path in $swbd_sph_paths ; do
-  #     file_name=$(basename $sph_path)
-  #     base=${file_name%.*}
-  #     ext=${file_name##*.}
-  #     wav_path_A=$DATA_SAVEPATH/wav/$data_type/$base"-A.wav"
-  #     wav_path_B=$DATA_SAVEPATH/wav/$data_type/$base"-B.wav"
-  #     echo "Converting from "$sph_path" to "$wav_path_A
-  #     ../tools/sph2pipe_v2.5/sph2pipe -f wav -p -c 1 $sph_path $wav_path_A
-  #     echo "Converting from "$sph_path" to "$wav_path_B
-  #     $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe -f wav -p -c 2 $sph_path $wav_path_B
-  #   done
-  # done
-
-
-  if [ $TOOL = 'kaldi' ]; then
+  if [ $TOOL = "kaldi" ]; then
     for x in train dev eval2000; do
       steps/make_fbank.sh --nj 8 --cmd run.pl $DATA_SAVEPATH/$x exp/make_fbank/$x $DATA_SAVEPATH/fbank || exit 1;
       steps/compute_cmvn_stats.sh $DATA_SAVEPATH/$x exp/make_fbank/$x $DATA_SAVEPATH/fbank || exit 1;
@@ -175,7 +161,41 @@ if [ $stage -le 1 ]; then
     done
 
   else
-    echo $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe
+    # Convert .sph (2ch) to .wav (1ch)
+    if [ ! -e $DATA_SAVEPATH/wav_1ch/.done_wav_1ch ]; then
+      # train, dev set
+      train_sph_paths=$(find $SWBD_AUDIOPATH/. -iname '*.sph')
+      mkdir -p $DATA_SAVEPATH/wav_1ch/train
+      for sph_path in $train_sph_paths ; do
+        file_name=$(basename $sph_path)
+        base=${file_name%.*}
+        ext=${file_name##*.}
+        wav_path_A=$DATA_SAVEPATH/wav_1ch/train/$base"-A.wav"
+        wav_path_B=$DATA_SAVEPATH/wav_1ch/train/$base"-B.wav"
+        echo "Converting from "$sph_path" to "$wav_path_A
+        $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe -f wav -p -c 1 $sph_path $wav_path_A || exit 1;
+        echo "Converting from "$sph_path" to "$wav_path_B
+        $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe -f wav -p -c 2 $sph_path $wav_path_B || exit 1;
+      done
+
+      # eval2000
+      eval2000_sph_paths=$(find $EVAL2000_AUDIOPATH/. -iname '*.sph')
+      mkdir -p $DATA_SAVEPATH/wav_1ch/eval2000
+      for sph_path in $eval2000_sph_paths ; do
+        file_name=$(basename $sph_path)
+        base=${file_name%.*}
+        ext=${file_name##*.}
+        wav_path_A=$DATA_SAVEPATH/wav_1ch/eval2000/$base"-A.wav"
+        wav_path_B=$DATA_SAVEPATH/wav_1ch/eval2000/$base"-B.wav"
+        echo "Converting from "$sph_path" to "$wav_path_A
+        $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe -f wav -p -c 1 $sph_path $wav_path_A || exit 1;
+        echo "Converting from "$sph_path" to "$wav_path_B
+        $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe -f wav -p -c 2 $sph_path $wav_path_B || exit 1;
+      done
+
+      touch $DATA_SAVEPATH/wav_1ch/.done_wav_1ch
+    fi
+
     # Make a config file to covert from wav to htk file
     # and split per channel
     python local/make_htk_config.py \
@@ -188,7 +208,7 @@ if [ $stage -le 1 ]; then
         --delta $DELTA \
         --deltadelta $DELTADELTA || exit 1;
 
-    if [ $TOOL = 'htk' ]; then
+    if [ $TOOL = "htk" ]; then
       # Convert from wav to htk files
       for data_type in train dev eval2000 ; do
         mkdir -p $DATA_SAVEPATH/htk
@@ -207,7 +227,6 @@ if [ $stage -le 1 ]; then
       fi
     fi
   fi
-  exit 1
 
   if [ ! -e $DATA_SAVEPATH/feature/$TOOL/.done_feature_extraction ]; then
     python local/feature_extraction.py \
@@ -232,10 +251,15 @@ if [ $stage -le 2 ]; then
   echo "                            Create dataset                                "
   echo ============================================================================
 
+  if [ ! -e $DATA_SAVEPATH/dataset/$TOOL/.done_dataset ]; then
+    python local/make_dataset_csv.py \
+      --data_save_path $DATA_SAVEPATH \
+      --tool $TOOL || exit 1;
+    touch $DATA_SAVEPATH/dataset/$TOOL/.done_dataset
+  fi
+
   echo "Finish creating dataset (stage: 2)."
 fi
-
-exit 1
 
 
 if [ $stage -le 3 ]; then
@@ -248,18 +272,71 @@ if [ $stage -le 3 ]; then
   filename=$(basename $config_path | awk -F. '{print $1}')
 
   mkdir -p log
+  mkdir -p $MODEL_SAVEPATH
 
-  # CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-  # nohup $PYTHON train.py \
-  #   --gpu $gpu_index \
-  #   --config_path $config_path \
-  #   --model_save_path $MODEL_SAVEPATH > log/$filename".log" &
+  echo "Start training..."
 
-  CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-  $PYTHON train.py \
-    --gpu $gpu_index \
-    --config_path $config_path \
-    --model_save_path $MODEL_SAVEPATH || exit 1;
+  if $hierarchical_model; then
+    if $restart; then
+      if $run_background; then
+        CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+        nohup $PYTHON exp/training/train_hierarchical.py \
+          --gpu $gpu_index \
+          --saved_model_path $saved_model_path > log/$filename".log" &
+      else
+        CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+        nohup $PYTHON exp/training/train_hierarchical.py \
+          --gpu $gpu_index \
+          --saved_model_path $saved_model_path || exit 1;
+      fi
+    else
+      if $run_background; then
+        CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+        nohup $PYTHON exp/training/train_hierarchical.py \
+          --gpu $gpu_index \
+          --config_path $config_path \
+          --model_save_path $MODEL_SAVEPATH \
+          --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+      else
+        CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+        $PYTHON exp/training/train_hierarchical.py \
+          --gpu $gpu_index \
+          --config_path $config_path \
+          --model_save_path $MODEL_SAVEPATH \
+          --data_save_path $DATA_SAVEPATH || exit 1;
+      fi
+    fi
+  else
+    if $restart; then
+      if $run_background; then
+        CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+        nohup $PYTHON exp/training/train.py \
+          --gpu $gpu_index \
+          --saved_model_path $saved_model_path > log/$filename".log" &
+      else
+        CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+        $PYTHON exp/training/train.py \
+          --gpu $gpu_index \
+          --saved_model_path $saved_model_path || exit 1;
+      fi
+    else
+      if $run_background; then
+        CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+        nohup $PYTHON exp/training/train.py \
+          --gpu $gpu_index \
+          --config_path $config_path \
+          --model_save_path $MODEL_SAVEPATH \
+          --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+      else
+        CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+        $PYTHON exp/training/train.py \
+          --gpu $gpu_index \
+          --config_path $config_path \
+          --model_save_path $MODEL_SAVEPATH \
+          --data_save_path $DATA_SAVEPATH　|| exit 1;
+      fi
+    fi
+  fi
 
   echo "Finish model training (stage: 3)."
 fi

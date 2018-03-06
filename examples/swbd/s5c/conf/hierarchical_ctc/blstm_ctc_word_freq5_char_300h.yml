@@ -45,11 +45,11 @@ param:
   fc_list: []
 
   # optimization
-  batch_size: 40
+  batch_size: 64
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 50
-  convert_to_sgd_epoch: 40
+  num_epoch: 30
+  convert_to_sgd_epoch: 20
 
   # initialization
   parameter_init_distribution: uniform
@@ -74,7 +74,7 @@ param:
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
   eval_start_epoch: 5
-  print_step: 1000
+  print_step: 200
 
   # MTL
   main_loss_weight: 0.8

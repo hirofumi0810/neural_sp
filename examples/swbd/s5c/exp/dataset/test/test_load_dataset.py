@@ -9,8 +9,8 @@ import os
 import sys
 import unittest
 
-sys.path.append(os.path.abspath('../../../../'))
-from examples.swbd.data.load_dataset import Dataset
+sys.path.append(os.path.abspath('../../../../../../'))
+from examples.swbd.s5c.exp.dataset.load_dataset import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
 from utils.measure_time_func import measure_time
@@ -21,10 +21,8 @@ class TestLoadDataset(unittest.TestCase):
     def test(self):
 
         # framework
-        self.check(label_type='character',
-                   data_type='train', backend='chainer')
-        self.check(label_type='character',
-                   data_type='train', backend='pytorch')
+        # self.check(label_type='character',
+        #            data_type='train', backend='chainer')
 
         # data_type
         self.check(label_type='character', data_type='dev')
@@ -32,10 +30,10 @@ class TestLoadDataset(unittest.TestCase):
         self.check(label_type='character', data_type='eval2000_ch')
 
         # label_type
-        self.check(label_type='word_freq1')
-        self.check(label_type='word_freq5')
-        self.check(label_type='word_freq10')
-        self.check(label_type='word_freq15')
+        self.check(label_type='word1')
+        self.check(label_type='word5')
+        self.check(label_type='word10')
+        self.check(label_type='word15')
         self.check(label_type='character_capital_divide')
 
         # sort
@@ -71,29 +69,26 @@ class TestLoadDataset(unittest.TestCase):
         print('  num_gpus: %d' % num_gpus)
         print('========================================')
 
-        vocab_file_path = '../../metrics/vocab_files/' + \
-            label_type + '_' + data_size + '.txt'
-
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
+            data_save_path='/n/sd8/inaguma/corpus/swbd/kaldi/' + data_size,
             backend=backend,
             input_channel=40, use_delta=True, use_double_delta=True,
             data_type=data_type, data_size=data_size,
             label_type=label_type, batch_size=64,
-            vocab_file_path=vocab_file_path,
             max_epoch=1, splice=splice,
             num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
             sort_utt=sort_utt, reverse=True, sort_stop_epoch=sort_stop_epoch,
-            num_gpus=num_gpus, save_format='numpy',
+            num_gpus=num_gpus, tool='htk',
             num_enque=None)
 
         print('=> Loading mini-batch...')
         if 'word' in label_type:
-            map_fn = Idx2word(vocab_file_path, space_mark=' ')
+            map_fn = Idx2word(dataset.vocab_file_path)
         else:
-            map_fn = Idx2char(vocab_file_path)
+            map_fn = Idx2char(dataset.vocab_file_path)
 
         for batch, is_new_epoch in dataset:
             if data_type == 'train' and backend == 'pytorch':

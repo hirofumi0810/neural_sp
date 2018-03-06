@@ -20,31 +20,26 @@ from utils.dataset.loader_hierarchical import DatasetBase
 
 class Dataset(DatasetBase):
 
-    def __init__(self, backend, input_channel, use_delta, use_double_delta,
-                 data_type, data_size,
-                 label_type, label_type_sub,
-                 batch_size, vocab_file_path, vocab_file_path_sub,
-                 max_epoch=None, splice=1,
+    def __init__(self, data_save_path,
+                 backend, input_channel, use_delta, use_double_delta,
+                 data_type, data_size, label_type, label_type_sub,
+                 batch_size, max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
                  shuffle=False, sort_utt=False, reverse=False,
-                 sort_stop_epoch=None, num_gpus=1, save_format='numpy',
+                 sort_stop_epoch=None, num_gpus=1, tool='htk',
                  num_enque=None, dynamic_batching=False):
         """A class for loading dataset.
         Args:
+            data_save_path (string): path to saved data
             backend (string): pytorch or chainer
             input_channel (int): the number of channels of acoustics
             use_delta (bool): if True, use the delta feature
             use_double_delta (bool): if True, use the acceleration feature
-            data_type (string): train or dev_clean or dev_other or test_clean
-                or test_other
+            data_type (string): train or dev or eval2000_swbd or eval2000_ch
             data_size (string): 300h or 2000h
-            label_type (string): word_freq1 or word_freq5 or word_freq10 or word_freq15
+            label_type (string): word1 or word5 or word10 or word15
             label_type_sub (string): characater or characater_capital_divide
             batch_size (int): the size of mini-batch
-            vocab_file_path (string): path to the vocabulary file in the main
-                task
-            vocab_file_path_sub (string): path to the vocabulary file in the
-                sub task
             max_epoch (int, optional): the max epoch. None means infinite loop.
             splice (int, optional): frames to splice. Default is 1 frame.
             num_stack (int, optional): the number of frames to stack
@@ -58,7 +53,7 @@ class Dataset(DatasetBase):
             sort_stop_epoch (int, optional): After sort_stop_epoch, training
                 will revert back to a random order
             num_gpus (int, optional): the number of GPUs
-            save_format (string, optional): numpy or htk
+            tool (string, optional): htk or librosa or python_speech_features
             num_enque (int, optional): the number of elements to enqueue
             dynamic_batching (bool, optional): if True, batch size will be
                 chainged dynamically in training
@@ -82,28 +77,23 @@ class Dataset(DatasetBase):
         self.sort_utt = sort_utt
         self.sort_stop_epoch = sort_stop_epoch
         self.num_gpus = num_gpus
-        self.save_format = save_format
+        self.tool = tool
         self.num_enque = num_enque
         self.dynamic_batching = dynamic_batching
 
-        super(Dataset, self).__init__(vocab_file_path=vocab_file_path,
-                                      vocab_file_path_sub=vocab_file_path_sub)
+        self.vocab_file_path = join(
+            data_save_path, 'vocab', label_type + '.txt')
+        self.vocab_file_path_sub = join(
+            data_save_path, 'vocab', label_type_sub + '.txt')
+
+        super(Dataset, self).__init__(vocab_file_path=self.vocab_file_path,
+                                      vocab_file_path_sub=self.vocab_file_path_sub)
 
         # Load dataset file
-        if data_type == 'dev':
-            dataset_path = join(
-                '/n/sd8/inaguma/corpus/swbd/dataset',
-                save_format, data_size, 'train', label_type + '.csv')
-            dataset_path_sub = join(
-                '/n/sd8/inaguma/corpus/swbd/dataset',
-                save_format, data_size, 'train', label_type_sub + '.csv')
-        else:
-            dataset_path = join(
-                '/n/sd8/inaguma/corpus/swbd/dataset',
-                save_format, data_size, data_type, label_type + '.csv')
-            dataset_path_sub = join(
-                '/n/sd8/inaguma/corpus/swbd/dataset',
-                save_format, data_size, data_type, label_type_sub + '.csv')
+        dataset_path = join(
+            data_save_path, 'dataset', tool, data_type, label_type + '.csv')
+        dataset_path_sub = join(
+            data_save_path, 'dataset', tool, data_type, label_type_sub + '.csv')
         df = pd.read_csv(dataset_path)
         df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
         df_sub = pd.read_csv(dataset_path_sub)
@@ -117,9 +107,6 @@ class Dataset(DatasetBase):
                                            <= 3 and x['frame_num'] >= 1000), axis=1)]
             df_sub = df_sub[df_sub.apply(lambda x: not(len(x['transcript'].split(' '))
                                                        <= 24 and x['frame_num'] >= 1000), axis=1)]
-            if data_type == 'dev':
-                df = df[:4000]
-                df_sub = df_sub[:4000]
             logger.info('Restricted utterance num (main): %d' % len(df))
             logger.info('Restricted utterance num (sub): %d' % len(df_sub))
 
