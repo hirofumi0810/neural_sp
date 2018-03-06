@@ -155,8 +155,7 @@ class AttentionSeq2seq(ModelBase):
         encoder_dense_residual (bool, optional):
         decoder_residual (bool, optional):
         decoder_dense_residual (bool, optional):
-        curriculum_training (bool, optional): None or weight or weight_ramp
-            or probabilistic or pretrain
+        decoding_order (string, optional): attend_spell or spell_attend
     """
 
     def __init__(self,
@@ -207,7 +206,7 @@ class AttentionSeq2seq(ModelBase):
                  encoder_dense_residual=False,
                  decoder_residual=False,
                  decoder_dense_residual=False,
-                 curriculum_training=None):
+                 decoding_order='spell_attend'):
 
         super(ModelBase, self).__init__()
         self.model_type = 'attention'
@@ -263,12 +262,8 @@ class AttentionSeq2seq(ModelBase):
 
         # Setting for MTL
         self.ctc_loss_weight = ctc_loss_weight
-        self.ctc_loss_weight_tmp = ctc_loss_weight
-        if curriculum_training and scheduled_sampling_ramp_max_step == 0:
-            raise ValueError('Set scheduled_sampling_ramp_max_step.')
-        if curriculum_training not in CURRICULUM_TRAINING:
-            raise ValueError
-        self.curriculum_training = curriculum_training
+
+        self.decoding_order = decoding_order
 
         ##############################
         # Encoder
@@ -483,14 +478,14 @@ class AttentionSeq2seq(ModelBase):
             xs, ys_in, ys_out, x_lens, y_lens, size_average=True)
 
         # Auxiliary CTC loss (optional)
-        if self.ctc_loss_weight_tmp > 0:
+        if self.ctc_loss_weight > 0:
             ctc_loss = self.compute_ctc_loss(
                 xs, ys_in[:, 1:] + 1,
                 x_lens, y_lens, size_average=True)
             # NOTE: exclude <SOS>
             # NOTE: index 0 is reserved for blank in warpctc_pytorch
-            loss = loss * (1 - self.ctc_loss_weight_tmp) + \
-                ctc_loss * self.ctc_loss_weight_tmp
+            loss = loss * (1 - self.ctc_loss_weight) + \
+                ctc_loss * self.ctc_loss_weight
 
         if is_eval:
             loss = loss.data[0]
@@ -502,25 +497,7 @@ class AttentionSeq2seq(ModelBase):
                     self.sample_prob,
                     self.sample_prob / self.sample_ramp_max_step * self._step)
 
-            # Curriculum training (gradually from char to word task)
-            if self.curriculum_training is not None:
-                self.ctc_loss_weight_tmp = max(
-                    self.ctc_loss_weight,
-                    1.0 - (1 - self.ctc_loss_weight) / self.sample_ramp_max_step * self._step * 2)
-
         return loss
-
-    def curriculum_training(self):
-        if self.curriculum_training is None:
-            pass
-        elif self.curriculum_training == 'weight':
-            pass
-        elif self.curriculum_training == 'weight_ramp':
-            pass
-        elif self.curriculum_training == 'probabilistic':
-            pass
-        elif self.curriculum_training == 'pretrain':
-            pass
 
     def compute_xe_loss(self, enc_out, ys_in, ys_out, x_lens, y_lens,
                         is_sub_task=False, size_average=False):
@@ -695,6 +672,10 @@ class AttentionSeq2seq(ModelBase):
         dec_out = self._create_var((batch_size, 1, self.decoder_num_units))
         aw_step = self._create_var((batch_size, enc_out.size(1)))
 
+        if self.decoding_order == 'spell_attend':
+            context_vec = self._create_var(
+                (batch_size, 1, self.encoder_num_units))
+
         logits = []
         aw = []
         for t in range(ys.size(1)):
@@ -710,26 +691,46 @@ class AttentionSeq2seq(ModelBase):
                 y = ys[:, t:t + 1]
 
             if is_sub_task:
-                # Compute attention distributions
-                context_vec, aw_step = self.attend_sub(
-                    enc_out, x_lens, dec_out, aw_step)
+                if self.decoding_order == 'attend_spell':
+                    # Compute attention distributions
+                    context_vec, aw_step = self.attend_sub(
+                        enc_out, x_lens, dec_out, aw_step)
 
-                # Update decoder states
-                y = self.embed_sub(y)
-                dec_in = torch.cat([y, context_vec], dim=-1)
-                dec_out, dec_state = self.decoder_sub(dec_in, dec_state)
+                    # Update decoder states
+                    y = self.embed_sub(y)
+                    dec_in = torch.cat([y, context_vec], dim=-1)
+                    dec_out, dec_state = self.decoder_sub(dec_in, dec_state)
+                elif self.decoding_order == 'spell_attend':
+                    # Update decoder states
+                    y = self.embed_sub(y)
+                    dec_in = torch.cat([y, context_vec], dim=-1)
+                    dec_out, dec_state = self.decoder_sub(dec_in, dec_state)
+
+                    # Compute attention distributions
+                    context_vec, aw_step = self.attend_sub(
+                        enc_out, x_lens, dec_out, aw_step)
 
                 logits_step = self.fc_sub(F.tanh(
                     self.W_d_sub(dec_out) + self.W_c_sub(context_vec)))
             else:
-                # Compute attention distributions
-                context_vec, aw_step = self.attend(
-                    enc_out, x_lens, dec_out, aw_step)
+                if self.decoding_order == 'attend_spell':
+                    # Compute attention distributions
+                    context_vec, aw_step = self.attend(
+                        enc_out, x_lens, dec_out, aw_step)
 
-                # Update decoder states
-                y = self.embed(y)
-                dec_in = torch.cat([y, context_vec], dim=-1)
-                dec_out, dec_state = self.decoder(dec_in, dec_state)
+                    # Update decoder states
+                    y = self.embed(y)
+                    dec_in = torch.cat([y, context_vec], dim=-1)
+                    dec_out, dec_state = self.decoder(dec_in, dec_state)
+                elif self.decoding_order == 'spell_attend':
+                    # Update decoder states
+                    y = self.embed(y)
+                    dec_in = torch.cat([y, context_vec], dim=-1)
+                    dec_out, dec_state = self.decoder(dec_in, dec_state)
+
+                    # Compute attention distributions
+                    context_vec, aw_step = self.attend(
+                        enc_out, x_lens, dec_out, aw_step)
 
                 logits_step = self.fc(F.tanh(
                     self.W_d(dec_out) + self.W_c(context_vec)))
@@ -866,6 +867,7 @@ class AttentionSeq2seq(ModelBase):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
             aw (np.ndarray): A tensor of size `[B, T_out, T_in]`
+            perm_idx (np.ndarray): A tensor of size `[B]`
         """
         if is_sub_task and self.sub_loss_weight == 0:
             raise ValueError
@@ -901,7 +903,7 @@ class AttentionSeq2seq(ModelBase):
             best_hyps = best_hyps[perm_idx]
             aw = aw[perm_idx]
 
-        return best_hyps, aw
+        return best_hyps, aw, perm_idx
 
     def decode(self, xs, x_lens, beam_width, max_decode_len,
                length_penalty=0, coverage_penalty=0):
@@ -964,10 +966,12 @@ class AttentionSeq2seq(ModelBase):
         dec_state = self._init_decoder_state(enc_out, is_sub_task=is_sub_task)
         dec_out = self._create_var(
             (batch_size, 1, self.decoder_num_units), volatile=True)
-        context_vec = self._create_var(
-            (batch_size, 1, self.encoder_num_units), volatile=True)
         aw_step = self._create_var((
             batch_size, enc_out.size(1)), volatile=True)
+
+        if self.decoding_order == 'spell_attend':
+            context_vec = self._create_var(
+                (batch_size, 1, self.encoder_num_units), volatile=True)
 
         # Start from <SOS>
         sos = self.sos_sub if is_sub_task else self.sos
@@ -979,26 +983,46 @@ class AttentionSeq2seq(ModelBase):
         for _ in range(max_decode_len):
 
             if is_sub_task:
-                # Compute attention distributions
-                context_vec, aw_step = self.attend_sub(
-                    enc_out, x_lens, dec_out, aw_step)
+                if self.decoding_order == 'attend_spell':
+                    # Compute attention distributions
+                    context_vec, aw_step = self.attend_sub(
+                        enc_out, x_lens, dec_out, aw_step)
 
-                # Update decoder states
-                y = self.embed_sub(y)
-                dec_in = torch.cat([y, context_vec], dim=-1)
-                dec_out, dec_state = self.decoder_sub(dec_in, dec_state)
+                    # Update decoder states
+                    y = self.embed_sub(y)
+                    dec_in = torch.cat([y, context_vec], dim=-1)
+                    dec_out, dec_state = self.decoder_sub(dec_in, dec_state)
+                elif self.decoding_order == 'spell_attend':
+                    # Update decoder states
+                    y = self.embed_sub(y)
+                    dec_in = torch.cat([y, context_vec], dim=-1)
+                    dec_out, dec_state = self.decoder_sub(dec_in, dec_state)
+
+                    # Compute attention distributions
+                    context_vec, aw_step = self.attend_sub(
+                        enc_out, x_lens, dec_out, aw_step)
 
                 logits_step = self.fc_sub(F.tanh(
                     self.W_d_sub(dec_out) + self.W_c_sub(context_vec)))
             else:
-                # Compute attention distributions
-                context_vec, aw_step = self.attend(
-                    enc_out, x_lens, dec_out, aw_step)
+                if self.decoding_order == 'attend_spell':
+                    # Compute attention distributions
+                    context_vec, aw_step = self.attend(
+                        enc_out, x_lens, dec_out, aw_step)
 
-                # Update decoder states
-                y = self.embed(y)
-                dec_in = torch.cat([y, context_vec], dim=-1)
-                dec_out, dec_state = self.decoder(dec_in, dec_state)
+                    # Update decoder states
+                    y = self.embed(y)
+                    dec_in = torch.cat([y, context_vec], dim=-1)
+                    dec_out, dec_state = self.decoder(dec_in, dec_state)
+                elif self.decoding_order == 'spell_attend':
+                    # Update decoder states
+                    y = self.embed(y)
+                    dec_in = torch.cat([y, context_vec], dim=-1)
+                    dec_out, dec_state = self.decoder(dec_in, dec_state)
+
+                    # Compute attention distributions
+                    context_vec, aw_step = self.attend(
+                        enc_out, x_lens, dec_out, aw_step)
 
                 logits_step = self.fc(F.tanh(
                     self.W_d(dec_out) + self.W_c(context_vec)))
@@ -1067,33 +1091,66 @@ class AttentionSeq2seq(ModelBase):
                         (1, 1), fill_value=beam[i_beam]['hyp'][-1],
                         dtype='long')
 
-                    if is_sub_task:
-                        # Compute attention distributions
-                        context_vec, aw_step = self.attend_sub(
-                            enc_out[b:b + 1, :frame_num],
-                            x_lens[b:b + 1],
-                            dec_out, beam[i_beam]['aw_step'])
+                    if self.decoding_order == 'spell_attend':
+                        # Compute context vector
+                        context_vec = torch.sum(
+                            enc_out[b: b + 1, :frame_num] *
+                            beam[i_beam]['aw_step'].unsqueeze(2),
+                            dim=1, keepdim=True)
 
-                        # Update decoder states
-                        y = self.embed_sub(y)
-                        dec_in = torch.cat([y, context_vec], dim=-1)
-                        dec_out, dec_state = self.decoder_sub(
-                            dec_in, beam[i_beam]['dec_state'])
+                    if is_sub_task:
+                        if self.decoding_order == 'attend_spell':
+                            # Compute attention distributions
+                            context_vec, aw_step = self.attend_sub(
+                                enc_out[b:b + 1, :frame_num],
+                                x_lens[b:b + 1],
+                                dec_out, beam[i_beam]['aw_step'])
+
+                            # Update decoder states
+                            y = self.embed_sub(y)
+                            dec_in = torch.cat([y, context_vec], dim=-1)
+                            dec_out, dec_state = self.decoder_sub(
+                                dec_in, beam[i_beam]['dec_state'])
+                        elif self.decoding_order == 'spell_attend':
+                            # Update decoder states
+                            y = self.embed_sub(y)
+                            dec_in = torch.cat([y, context_vec], dim=-1)
+                            dec_out, dec_state = self.decoder_sub(
+                                dec_in, beam[i_beam]['dec_state'])
+
+                            # Compute attention distributions
+                            context_vec, aw_step = self.attend_sub(
+                                enc_out[b:b + 1, :frame_num],
+                                x_lens[b:b + 1],
+                                dec_out, beam[i_beam]['aw_step'])
 
                         logits_step = self.fc_sub(F.tanh(
                             self.W_d_sub(dec_out) + self.W_c_sub(context_vec)))
                     else:
-                        # Compute attention distributions
-                        context_vec, aw_step = self.attend(
-                            enc_out[b:b + 1, :frame_num],
-                            x_lens[b:b + 1],
-                            dec_out, beam[i_beam]['aw_step'])
+                        if self.decoding_order == 'attend_spell':
+                            # Compute attention distributions
+                            context_vec, aw_step = self.attend(
+                                enc_out[b:b + 1, :frame_num],
+                                x_lens[b:b + 1],
+                                dec_out, beam[i_beam]['aw_step'])
 
-                        # Update decoder states
-                        y = self.embed(y)
-                        dec_in = torch.cat([y, context_vec], dim=-1)
-                        dec_out, dec_state = self.decoder(
-                            dec_in, beam[i_beam]['dec_state'])
+                            # Update decoder states
+                            y = self.embed(y)
+                            dec_in = torch.cat([y, context_vec], dim=-1)
+                            dec_out, dec_state = self.decoder(
+                                dec_in, beam[i_beam]['dec_state'])
+                        elif self.decoding_order == 'spell_attend':
+                            # Update decoder states
+                            y = self.embed(y)
+                            dec_in = torch.cat([y, context_vec], dim=-1)
+                            dec_out, dec_state = self.decoder(
+                                dec_in, beam[i_beam]['dec_state'])
+
+                            # Compute attention distributions
+                            context_vec, aw_step = self.attend(
+                                enc_out[b:b + 1, :frame_num],
+                                x_lens[b:b + 1],
+                                dec_out, beam[i_beam]['aw_step'])
 
                         logits_step = self.fc(F.tanh(
                             self.W_d(dec_out) + self.W_c(context_vec)))

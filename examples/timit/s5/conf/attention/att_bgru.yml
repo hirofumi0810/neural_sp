@@ -48,6 +48,8 @@ param:
   embedding_dim: 32
   attention_conv_num_channels: 10
   attention_conv_width: 201
+  # decoding_order: spell_attend
+  decoding_order: attend_spell
 
   # optimization
   batch_size: 64

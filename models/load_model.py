@@ -236,7 +236,8 @@ def load(model_type, params, backend):
             encoder_residual=params['encoder_residual'],
             encoder_dense_residual=params['encoder_dense_residual'],
             decoder_residual=params['decoder_residual'],
-            decoder_dense_residual=params['decoder_dense_residual'])
+            decoder_dense_residual=params['decoder_dense_residual'],
+            decoding_order=params['decoding_order'])
 
         model.name = model_name
         if params['encoder_type'] not in ['cnn', 'resnet']:
@@ -446,7 +447,8 @@ def load(model_type, params, backend):
             encoder_dense_residual=params['encoder_dense_residual'],
             decoder_residual=params['decoder_residual'],
             decoder_dense_residual=params['decoder_dense_residual'],
-            curriculum_training=params['curriculum_training'])
+            curriculum_training=params['curriculum_training'],
+            decoding_order=params['decoding_order'])
 
         model.name = model_name
         if params['encoder_type'] not in ['cnn', 'resnet']:
@@ -566,7 +568,11 @@ def load(model_type, params, backend):
             decoder_residual=params['decoder_residual'],
             decoder_dense_residual=params['decoder_dense_residual'],
             curriculum_training=params['curriculum_training'],
-            composition_case=params['composition_case'])
+            usage_dec_sub=params['usage_dec_sub'],
+            gate_dec_sub=params['gate_dec_sub'],
+            gate_embedding=params['gate_embedding'],
+            attention_regularization=params['attention_regularization'],
+            decoding_order=params['decoding_order'])
 
         model.name = model_name
         if params['encoder_type'] not in ['cnn', 'resnet']:
@@ -624,6 +630,12 @@ def load(model_type, params, backend):
         model.name += '_input' + str(model.input_size)
         if bool(params['curriculum_training']):
             model.name += '_curriculum'
-        model.name += '_' + params['composition_case']
+        model.name += '_' + params['usage_dec_sub']
+        if params['gate_dec_sub'] != 'no_gate':
+            model.name += '_gatedec_' + params['gate_dec_sub']
+        if params['gate_embedding'] != 'no_gate':
+            model.name += '_gateemb_' + params['gate_embedding']
+        if bool(params['attention_regularization']):
+            model.name += '_attreg'
 
     return model

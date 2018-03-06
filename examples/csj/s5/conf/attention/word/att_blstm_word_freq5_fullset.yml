@@ -8,20 +8,21 @@ param:
   data_size: fullset
 
   # topology
-  encoder_num_layers: 5
+  encoder_num_layers: 6
   subsample_list:
     - True
     - True
     - True
     - False
     - False
-  decoder_num_layers: 1
+    - False
+  decoder_num_layers: 2
 
   # optimization
-  batch_size: 128
+  batch_size: 64
 
   # regularization
   scheduled_sampling_ramp_max_step: 250000
 
   # annealing
-  print_step: 1000
+  print_step: 400

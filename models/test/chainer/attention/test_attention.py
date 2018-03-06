@@ -24,6 +24,18 @@ class TestAttention(unittest.TestCase):
     def test(self):
         print("Attention Working check.")
 
+        # Decoding order
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', decoding_order='spell_attend')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', decoding_order='attend_spell')
+
+        # Decoder type
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='stateless_lstm')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm')
+
         # Joint CTC-Attention
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', ctc_loss_weight=0.2)
@@ -89,7 +101,8 @@ class TestAttention(unittest.TestCase):
               attention_type='location', label_type='char',
               subsample=False, projection=False, init_dec_state='zero',
               ctc_loss_weight=0, conv=False, batch_norm=False,
-              residual=False, dense_residual=False):
+              residual=False, dense_residual=False,
+              decoding_order='spell_attend'):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
@@ -105,6 +118,7 @@ class TestAttention(unittest.TestCase):
         print('  batch_norm: %s' % str(batch_norm))
         print('  residual: %s' % str(residual))
         print('  dense_residual: %s' % str(dense_residual))
+        print('  decoding_order: %s' % decoding_order)
         print('==================================================')
 
         if conv or encoder_type == 'cnn':
@@ -191,7 +205,8 @@ class TestAttention(unittest.TestCase):
             encoder_residual=residual,
             encoder_dense_residual=dense_residual,
             decoder_residual=residual,
-            decoder_dense_residual=dense_residual)
+            decoder_dense_residual=dense_residual,
+            decoding_order=decoding_order)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):
@@ -241,7 +256,7 @@ class TestAttention(unittest.TestCase):
                 # Decode
                 best_hyps, _ = model.decode(xs, x_lens,
                                             beam_width=1,
-                                            # beam_width=2,
+                                            # beam_width=2,  # TODO: fix bugs
                                             max_decode_len=60)
 
                 str_ref = map_fn(ys[0])

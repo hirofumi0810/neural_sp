@@ -20,12 +20,3 @@ param:
     - False
     - False
   embedding_dim: 128
-
-  # optimization
-  batch_size: 80
-
-  # regularization
-  scheduled_sampling_ramp_max_step: 250000
-
-  # annealing
-  print_step: 500

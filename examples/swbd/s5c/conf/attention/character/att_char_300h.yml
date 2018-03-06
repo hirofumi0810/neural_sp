@@ -49,13 +49,14 @@ param:
   embedding_dim: 16
   attention_conv_num_channels: 10
   attention_conv_width: 201
+  decoding_order: spell_attend
 
   # optimization
-  batch_size: 80
+  batch_size: 64
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 50
-  convert_to_sgd_epoch: 40
+  num_epoch: 30
+  convert_to_sgd_epoch: 20
 
   # initialization
   parameter_init_distribution: uniform
@@ -78,7 +79,7 @@ param:
   sigmoid_smoothing: False
   coverage_weight: 0
   scheduled_sampling_prob: 0.2
-  scheduled_sampling_ramp_max_step: 250000
+  scheduled_sampling_ramp_max_step: 125000
   label_smoothing_prob: 0.1
   weight_noise_std: 0
 
@@ -89,7 +90,7 @@ param:
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
   eval_start_epoch: 5
-  print_step: 500
+  print_step: 200
 
   # MTL
   ctc_loss_weight: 0

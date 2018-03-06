@@ -166,6 +166,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             encoder_dense_residual=dense_residual,
             decoder_residual=residual,
             decoder_dense_residual=dense_residual,
+            decoding_order='spell_attend',
             curriculum_training=curriculum_training)
 
         # Count total parameters

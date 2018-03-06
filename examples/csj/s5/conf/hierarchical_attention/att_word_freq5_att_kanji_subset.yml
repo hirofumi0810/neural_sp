@@ -37,8 +37,7 @@ param:
   encoder_num_units: 320
   encoder_num_proj: 0
   encoder_num_layers: 5
-  # encoder_num_layers_sub: 4
-  encoder_num_layers_sub: 5
+  encoder_num_layers_sub: 4
   subsample_list:
     - True
     - True
@@ -57,13 +56,14 @@ param:
   embedding_dim_sub: 64
   attention_conv_num_channels: 10
   attention_conv_width: 201
+  decoding_order: spell_attend
 
   # optimization
   batch_size: 64
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 50
-  convert_to_sgd_epoch: 40
+  num_epoch: 30
+  convert_to_sgd_epoch: 20
 
   # initialization
   parameter_init_distribution: uniform
@@ -100,6 +100,7 @@ param:
   print_step: 200
 
   # MTL
-  main_loss_weight: 0.8
+  # main_loss_weight: 0.8
+  main_loss_weight: 0.5
   ctc_loss_weight_sub: 0
   curriculum_training: False

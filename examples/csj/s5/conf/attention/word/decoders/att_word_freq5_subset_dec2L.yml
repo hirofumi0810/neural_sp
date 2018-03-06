@@ -6,12 +6,3 @@ param:
 
   # topology
   decoder_num_layers: 2
-
-  # optimization
-  batch_size: 64
-
-  # regularization
-  scheduled_sampling_ramp_max_step: 250000
-
-  # annealing
-  print_step: 1000

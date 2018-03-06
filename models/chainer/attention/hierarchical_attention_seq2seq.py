@@ -76,6 +76,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  encoder_dense_residual=False,
                  decoder_residual=False,
                  decoder_dense_residual=False,
+                 decoding_order='spell_attend',
                  curriculum_training=False):
 
         super(HierarchicalAttentionSeq2seq, self).__init__(
@@ -121,7 +122,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             encoder_residual=encoder_residual,
             encoder_dense_residual=encoder_dense_residual,
             decoder_residual=decoder_residual,
-            decoder_dense_residual=decoder_dense_residual)
+            decoder_dense_residual=decoder_dense_residual,
+            decoding_order=decoding_order)
         self.model_type = 'hierarchical_attention'
 
         # Setting for the encoder

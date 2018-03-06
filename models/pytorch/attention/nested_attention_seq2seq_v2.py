@@ -86,7 +86,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                  usage_dec_sub='update_decoder',  # or all
                  gate_dec_sub='no_gate',  # or scalar or elementwise
                  gate_embedding='no_gate',  # or concat or scalar or elementwise
-                 attention_regularization=False):  # ***
+                 attention_regularization=False,  # ***
+                 decoding_order='spell_attend'):
 
         super(NestedAttentionSeq2seq, self).__init__(
             input_size=input_size,
@@ -131,7 +132,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             encoder_residual=encoder_residual,
             encoder_dense_residual=encoder_dense_residual,
             decoder_residual=decoder_residual,
-            decoder_dense_residual=decoder_dense_residual)
+            decoder_dense_residual=decoder_dense_residual,
+            decoding_order=decoding_order)
         self.model_type = 'nested_attention'
 
         # Setting for the encoder
@@ -745,7 +747,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
             best_hyps_sub (np.ndarray): A tensor of size `[B, T_out_sub]`
             aw (np.ndarray): A tensor of size `[B, T_out, T_in]`
-            char_att_weights (np.ndarray): A tensor of size
+            aw_sub (np.ndarray): A tensor of size `[B, T_out_sub, T_in]`
+            aw_dec_out_sub (np.ndarray): A tensor of size
                 `[B, T_out, T_out_sub]`
         """
         # Change to evaluation mode
@@ -759,53 +762,14 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         enc_out, x_lens, enc_out_sub, x_lens_sub, perm_idx = self._encode(
             xs, x_lens, is_multi_task=True)
 
-        # At first, decode by character-based decoder
-        if self.ctc_loss_weight_sub > self.sub_loss_weight:
-            # Decode by CTC decoder
-
-            # Path through the softmax layer
-            batch_size, max_time_sub = enc_out_sub.size()[:2]
-            enc_out_sub = enc_out_sub.view(
-                batch_size * max_time_sub, -1).contiguous()
-            logits_ctc_sub = self.fc_ctc_sub(enc_out_sub)
-            logits_ctc_sub = logits_ctc_sub.view(batch_size, max_time_sub, -1)
-
-            if beam_width == 1:
-                best_hyps_sub = self._decode_ctc_greedy_np(
-                    self.var2np(logits_ctc_sub),
-                    self.var2np(x_lens_sub))
-            else:
-                best_hyps_sub = self._decode_ctc_beam_np(
-                    self.var2np(F.log_softmax(logits_ctc_sub, dim=-1)),
-                    self.var2np(x_lens_sub), beam_width=beam_width)
-
-            # NOTE: index 0 is reserved for blank in warpctc_pytorch
-            best_hyps_sub -= 1
+        if beam_width == 1:
+            best_hyps, aw, best_hyps_sub, aw_sub, aw_dec_out_sub = self._decode_infer_greedy_joint(
+                enc_out, x_lens, enc_out_sub, x_lens_sub,
+                beam_width=1,
+                max_decode_len=max_decode_len,
+                max_decode_len_sub=max_decode_len_sub)
         else:
-            # Decode by attention decoder
-            if beam_width == 1:
-                best_hyps_sub, _ = self._decode_infer_greedy(
-                    enc_out_sub, x_lens_sub, max_decode_len, is_sub_task=True)
-            else:
-                best_hyps_sub, _ = self._decode_infer_beam(
-                    enc_out_sub, x_lens_sub, max_decode_len, is_sub_task=True)
-
-        y_lens_sub = self.np2var(np.array([len(y) for y in best_hyps_sub]),
-                                 dtype='int')
-        # assert max(y_lens_sub.data) > 0
-
-        ys_sub = self._create_var(
-            (len(xs), max(y_lens_sub.data)), dtype='long')
-        for b in range(len(xs)):
-            ys_sub.data[b, :len(best_hyps_sub[b])] = torch.from_numpy(
-                best_hyps_sub[b])
-
-        # Next, decode by word-based decoder with character outputs
-        best_hyps, aw, char_att_weights = self._decode_infer_greedy(
-            enc_out, x_lens,
-            max_decode_len=max_decode_len,
-            ys_sub=ys_sub,
-            y_lens_sub=y_lens_sub)
+            raise NotImplementedError
 
         # Permutate indices to the original order
         if perm_idx is None:
@@ -813,7 +777,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         else:
             perm_idx = self.var2np(perm_idx)
 
-        return best_hyps, best_hyps_sub, aw, char_att_weights
+        return best_hyps, best_hyps_sub, aw, aw_sub, aw_dec_out_sub
 
     def decode(self, xs, x_lens, beam_width, max_decode_len,
                max_decode_len_sub=None, is_sub_task=False):
