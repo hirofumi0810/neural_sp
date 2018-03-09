@@ -276,7 +276,9 @@ def read_text(text_path, vocab_save_path, data_type,
         for line in f:
             line = line.strip()
             utt_idx, trans_w_pos = line.split('  ')
+
             trans_w_pos = trans_w_pos.replace('<sp>', SHORT_PAUSE)
+
             trans = SPACE.join([w.split('+')[0]
                                 for w in trans_w_pos.split(' ')])
             trans_pos = SPACE.join([w.split('+')[1]

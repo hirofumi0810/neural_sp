@@ -18,8 +18,9 @@ echo "                                   CSJ                                    
 echo ============================================================================
 
 stage=3
-hierarchical_model=false
-# hierarchical_model=true
+# hierarchical_model=false
+hierarchical_model=true
+run_background=true
 restart=false
 
 ### Set path to original data
@@ -236,58 +237,67 @@ if [ $stage -le 3 ]; then
 
   if $hierarchical_model; then
     if $restart; then
-      CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-      nohup $PYTHON exp/training/train_hierarchical.py \
-        --gpu $gpu_index \
-        --saved_model_path $saved_model_path > log/$filename".log" &
-
-      # CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-      # nohup $PYTHON exp/training/train_hierarchical.py \
-      #   --gpu $gpu_index \
-      #   --saved_model_path $saved_model_path || exit 1;
-
+      if $run_background; then
+        CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+        nohup $PYTHON exp/training/train_hierarchical.py \
+          --gpu $gpu_index \
+          --saved_model_path $saved_model_path \
+          --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+      else
+        CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+        nohup $PYTHON exp/training/train_hierarchical.py \
+          --gpu $gpu_index \
+          --saved_model_path $saved_model_path \
+          --data_save_path $DATA_SAVEPATH  || exit 1;
+      fi
     else
-      CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-      nohup $PYTHON exp/training/train_hierarchical.py \
-        --gpu $gpu_index \
-        --config_path $config_path \
-        --model_save_path $MODEL_SAVEPATH \
-        --data_save_path $DATA_SAVEPATH > log/$filename".log" &
-
-      # CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-      # $PYTHON exp/training/train_hierarchical.py \
-      #   --gpu $gpu_index \
-      #   --config_path $config_path \
-      #   --model_save_path $MODEL_SAVEPATH \
-      #   --data_save_path $DATA_SAVEPATH || exit 1;
+      if $run_background; then
+        CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+        nohup $PYTHON exp/training/train_hierarchical.py \
+          --gpu $gpu_index \
+          --config_path $config_path \
+          --model_save_path $MODEL_SAVEPATH \
+          --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+      else
+        CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+        $PYTHON exp/training/train_hierarchical.py \
+          --gpu $gpu_index \
+          --config_path $config_path \
+          --model_save_path $MODEL_SAVEPATH \
+          --data_save_path $DATA_SAVEPATH || exit 1;
+      fi
     fi
-
   else
     if $restart; then
-      CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-      nohup $PYTHON exp/training/train.py \
-        --gpu $gpu_index \
-        --saved_model_path $saved_model_path > log/$filename".log" &
-
-      # CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-      # $PYTHON exp/training/train.py \
-      #   --gpu $gpu_index \
-      #   --saved_model_path $saved_model_path || exit 1;
-
+      if $run_background; then
+        CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+        nohup $PYTHON exp/training/train.py \
+          --gpu $gpu_index \
+          --saved_model_path $saved_model_path \
+          --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+      else
+        CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+        $PYTHON exp/training/train.py \
+          --gpu $gpu_index \
+          --saved_model_path $saved_model_path \
+          --data_save_path $DATA_SAVEPATH || exit 1;
+      fi
     else
-      CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-      nohup $PYTHON exp/training/train.py \
-        --gpu $gpu_index \
-        --config_path $config_path \
-        --model_save_path $MODEL_SAVEPATH \
-        --data_save_path $DATA_SAVEPATH > log/$filename".log" &
-
-      # CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-      # $PYTHON exp/training/train.py \
-      #   --gpu $gpu_index \
-      #   --config_path $config_path \
-      #   --model_save_path $MODEL_SAVEPATH \
-      #   --data_save_path $DATA_SAVEPATH　|| exit 1;
+      if $run_background; then
+        CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+        nohup $PYTHON exp/training/train.py \
+          --gpu $gpu_index \
+          --config_path $config_path \
+          --model_save_path $MODEL_SAVEPATH \
+          --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+      else
+        CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+        $PYTHON exp/training/train.py \
+          --gpu $gpu_index \
+          --config_path $config_path \
+          --model_save_path $MODEL_SAVEPATH \
+          --data_save_path $DATA_SAVEPATH　|| exit 1;
+      fi
     fi
   fi
 

@@ -95,39 +95,43 @@ def plot(model, dataset, max_decode_len,
         mkdir(save_path)
 
     if 'word' in dataset.label_type:
-        map_fn = Idx2word(dataset.vocab_file_path)
+        map_fn = Idx2word(dataset.vocab_file_path, return_list=True)
     else:
-        map_fn = Idx2char(dataset.vocab_file_path)
+        map_fn = Idx2char(dataset.vocab_file_path, return_list=True)
 
     for batch, is_new_epoch in dataset:
 
         # Decode
-        best_hyps, att_weights = model.attention_weights(
+        best_hyps, aw, perm_idx = model.attention_weights(
             batch['xs'], batch['x_lens'], max_decode_len=max_decode_len)
 
+        ys = batch['ys'][perm_idx]
+        y_lens = batch['y_lens'][perm_idx]
+
         for b in range(len(batch['xs'])):
+            ##############################
+            # Reference
+            ##############################
+            if dataset.is_test:
+                str_ref = ys[b][0]
+                # NOTE: transcript is seperated by space('_')
+            else:
+                # Convert from list of index to string
+                str_ref = map_fn(ys[b][:y_lens[b]])
 
             # Check if the sum of attention weights equals to 1
-            # print(np.sum(att_weights[b], axis=1))
+            # print(np.sum(aw[b], axis=1))
 
-            str_pred = map_fn(best_hyps[b])
-            eos = True if '>' in str_pred else False
-
-            str_pred = str_pred.split('>')[0]
-            # NOTE: Trancate by <EOS>
-
-            # Remove the last space
-            if len(str_pred) > 0 and str_pred[-1] == ' ':
-                str_pred = str_pred[:-1]
-
-            if eos:
-                str_pred += '_>'
+            token_list = map_fn(best_hyps[b])
 
             speaker = batch['input_names'][b].split('_')[0]
             plot_attention_weights(
-                attention_weights=att_weights[b, :len(
-                    str_pred.split('_')), :batch['x_lens'][b]],
-                label_list=str_pred.split('_'),
+                aw[b, :len(token_list), :batch['x_lens'][b]],
+                frame_num=batch['x_lens'][b],
+                num_stack=dataset.num_stack,
+                label_list=token_list,
+                spectrogram=batch['xs'][b, :, :80],
+                str_ref=str_ref,
                 save_path=mkdir_join(save_path, speaker,
                                      batch['input_names'][b] + '.png'),
                 figsize=(20, 8))

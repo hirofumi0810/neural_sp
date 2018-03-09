@@ -127,7 +127,7 @@ def main():
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  CER (eval1): %.3f %%' % (cer_eval1 * 100))
-        if params['label_type'] == 'kanji_divide':
+        if params['label_type'] == 'kanji_wb':
             print('  WER (eval1): %.3f %%' % (wer_eval1 * 100))
         print(df_cer_eval1)
         cer_eval2, wer_eval2, df_cer_eval2 = do_eval_cer(
@@ -138,7 +138,7 @@ def main():
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  CER (eval2): %.3f %%' % (cer_eval2 * 100))
-        if params['label_type'] == 'kanji_divide':
+        if params['label_type'] == 'kanji_wb':
             print('  WER (eval2): %.3f %%' % (wer_eval2 * 100))
         print(df_cer_eval2)
         cer_eval3, wer_eval3, df_cer_eval3 = do_eval_cer(
@@ -149,13 +149,13 @@ def main():
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  CER (eval3): %.3f %%' % (cer_eval3 * 100))
-        if params['label_type'] == 'kanji_divide':
+        if params['label_type'] == 'kanji_wb':
             print('  WER (eval3): %.3f %%' % (wer_eval3 * 100))
         print(df_cer_eval3)
 
         print('  CER (mean): %.3f %%' %
               ((cer_eval1 + cer_eval2 + cer_eval3) * 100 / 3))
-        if params['label_type'] == 'kanji_divide':
+        if params['label_type'] == 'kanji_wb':
             print('  WER (mean): %.3f %%' %
                   ((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3))
 

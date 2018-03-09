@@ -33,7 +33,7 @@ parser.add_argument('--beam_width', type=int, default=1,
                     ' 1 disables beam search, which mean greedy decoding.')
 parser.add_argument('--max_decode_len', type=int, default=60,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
-parser.add_argument('--max_decode_len_sub', type=int, default=100,
+parser.add_argument('--max_decode_len_sub', type=int, default=150,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
@@ -108,55 +108,45 @@ def plot(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
         shutil.rmtree(save_path)
         mkdir(save_path)
 
-    if dataset.label_type == 'pos':
-        map_fn_main = Idx2word(dataset.vocab_file_path)
-        map_fn_sub = Idx2word(dataset.vocab_file_path_sub)
-    else:
-        map_fn_main = Idx2word(dataset.vocab_file_path)
-        map_fn_sub = Idx2char(dataset.vocab_file_path_sub)
+    map_fn_main = Idx2word(dataset.vocab_file_path, return_list=True)
+    map_fn_sub = Idx2char(dataset.vocab_file_path_sub, return_list=True)
 
     for batch, is_new_epoch in dataset:
 
         # Decode
-        best_hyps, att_weights = model.attention_weights(
+        best_hyps, aw, perm_idx = model.attention_weights(
             batch['xs'], batch['x_lens'],
             beam_width=beam_width,
             max_decode_len=max_decode_len)
-        best_hyps_sub, att_weights_sub = model.attention_weights(
+        best_hyps_sub, aw_sub, _ = model.attention_weights(
             batch['xs'], batch['x_lens'],
             beam_width=beam_width,
             max_decode_len=max_decode_len,
             is_sub_task=True)
 
-        for i_batch in range(len(batch['xs'])):
+        for b in range(len(batch['xs'])):
 
             # Check if the sum of attention weights equals to 1
-            # print(np.sum(att_weights[i_batch], axis=1))
+            # print(np.sum(aw[b], axis=1))
 
-            str_pred = map_fn_main(best_hyps[i_batch]).split('>')[0]
-            str_pred_sub = map_fn_sub(best_hyps_sub[i_batch]).split('>')[0]
-            # NOTE: Trancate by <EOS>
+            word_list = map_fn_main(best_hyps[b])
+            char_list = map_fn_sub(best_hyps_sub[b])
 
-            # Remove the last space
-            if len(str_pred) > 0 and str_pred[-1] == '_':
-                str_pred = str_pred[:-1]
-            if len(str_pred_sub) > 0 and str_pred_sub[-1] == '_':
-                str_pred_sub = str_pred_sub[:-1]
+            speaker = batch['input_names'][b].split('_')[0]
 
-            speaker = batch['input_names'][i_batch].split('_')[0]
             plot_hierarchical_attention_weights(
-                spectrogram=batch['xs'][i_batch],
-                attention_weights=att_weights[i_batch, :len(
-                    str_pred.split('_')), :batch['x_lens'][i_batch]],
-                attention_weights_sub=att_weights_sub[i_batch, :len(
-                    str_pred.split('_')), :batch['x_lens'][i_batch]],
-                label_list=str_pred.split('_'),
-                label_list_sub=str_pred_sub.split('_'),
+                aw[b, :len(word_list), :batch['x_lens'][b]],
+                aw_sub[b, :len(char_list), :batch['x_lens'][b]],
+                frame_num=batch['x_lens'][b],
+                num_stack=dataset.num_stack,
+                label_list=word_list,
+                label_list_sub=char_list,
+                spectrogram=batch['xs'][b, :, :80],
                 save_path=mkdir_join(save_path, speaker,
-                                     batch['input_names'][i_batch] + '.png'),
-                figsize=(20, 12))
-            # TODO: consider subsample
-            # TODO: add spectrogram
+                                     batch['input_names'][b] + '_word.png'),
+                figsize=(20, 8)
+                # figsize=(14, 7)
+            )
 
         if is_new_epoch:
             break

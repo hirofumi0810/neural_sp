@@ -6,7 +6,7 @@ set -e
 ### Select GPU
 if [ $# -ne 2 ]; then
   echo "Error: set GPU number & config path." 1>&2
-  echo "Usage: ./plot_hierarchical_attention.sh path_to_saved_model gpu_index" 1>&2
+  echo "Usage: ./plot_nested_attention.sh path_to_saved_model gpu_index" 1>&2
   exit 1
 fi
 
@@ -23,7 +23,7 @@ saved_model_path=$1
 gpu_index=$2
 
 CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-$PYTHON exp/visualization/plot_hierarchical_attention_weights.py \
+$PYTHON exp/visualization/plot_nested_attention_weights.py \
   --model_path $saved_model_path \
   --epoch -1 \
   --eval_batch_size 1 \

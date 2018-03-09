@@ -31,7 +31,7 @@ parser.add_argument('--beam_width', type=int, default=1,
                     ' 1 disables beam search, which mean greedy decoding.')
 parser.add_argument('--max_decode_len', type=int, default=60,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
-parser.add_argument('--max_decode_len_sub', type=int, default=100,
+parser.add_argument('--max_decode_len_sub', type=int, default=150,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
@@ -51,8 +51,8 @@ def main():
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         # data_type='eval1',
-        data_type='eval2',
-        # data_type='eval3',
+        # data_type='eval2',
+        data_type='eval3',
         data_size=params['data_size'],
         label_type=params['label_type'], label_type_sub=params['label_type_sub'],
         batch_size=args.eval_batch_size, splice=params['splice'],
@@ -111,7 +111,7 @@ def decode(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
     for batch, is_new_epoch in dataset:
 
         # Decode
-        if model.model_type == 'charseq_attention':
+        if model.model_type == 'nested_attention':
             best_hyps, best_hyps_sub, perm_idx = model.decode(
                 batch['xs'], batch['x_lens'],
                 beam_width=beam_width,
@@ -166,10 +166,13 @@ def decode(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
                 if len(str_hyp_sub) > 0 and str_hyp_sub[-1] == '_':
                     str_hyp_sub = str_hyp_sub[:-1]
 
-            print('Ref: %s' % str_ref.replace('_', ' '))
+            # if 'OOV' not in str_hyp:
+            #     continue
+
+            print('Ref       : %s' % str_ref.replace('_', ' '))
             print('Hyp (main): %s' % str_hyp.replace('_', ' '))
-            # print('Ref (sub): %s' % str_ref_sub.replace('_', ' '))
-            print('Hyp (sub): %s' % str_hyp_sub.replace('_', ' '))
+            # print('Ref (sub) : %s' % str_ref_sub.replace('_', ' '))
+            print('Hyp (sub) : %s' % str_hyp_sub.replace('_', ' '))
 
             try:
                 wer, _, _, _ = compute_wer(ref=str_ref.split('_'),

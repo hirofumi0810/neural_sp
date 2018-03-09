@@ -43,7 +43,7 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
 parser.add_argument('--max_decode_len', type=int, default=60,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
-parser.add_argument('--max_decode_len_sub', type=int, default=100,
+parser.add_argument('--max_decode_len_sub', type=int, default=150,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
@@ -69,7 +69,7 @@ def main():
         label_type=params['label_type'], label_type_sub=params['label_type_sub'],
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=True, reverse=True, save_format=params['save_format'])
+        sort_utt=True, reverse=True, tool=params['tool'])
 
     params['num_classes'] = test_data.num_classes
     params['num_classes_sub'] = test_data.num_classes_sub
@@ -112,13 +112,13 @@ def plot(model, dataset, max_decode_len, max_decode_len_sub,
         shutil.rmtree(save_path)
         mkdir(save_path)
 
-    idx2word = Idx2word(dataset.vocab_file_path)
-    idx2char = Idx2char(dataset.vocab_file_path_sub)
+    idx2word = Idx2word(dataset.vocab_file_path, return_list=True)
+    idx2char = Idx2char(dataset.vocab_file_path_sub, return_list=True)
 
     for batch, is_new_epoch in dataset:
 
         if model.model_type == 'nested_attention':
-            best_hyps, best_hyps_sub, att_weights, char_att_weights = model.attention_weights(
+            best_hyps, best_hyps_sub, aw, aw_sub, aw_dec_out_sub = model.attention_weights(
                 batch['xs'], batch['x_lens'],
                 max_decode_len=max_decode_len,
                 max_decode_len_sub=max_decode_len_sub)
@@ -128,33 +128,48 @@ def plot(model, dataset, max_decode_len, max_decode_len_sub,
         for b in range(len(batch['xs'])):
 
             # Check if the sum of attention weights equals to 1
-            # print(np.sum(att_weights[b], axis=1))
+            # print(np.sum(aw[b], axis=1))
 
-            str_hyp = idx2word(best_hyps[b])
-            str_hyp_sub = idx2char(best_hyps_sub[b])
+            word_list = idx2word(best_hyps[b])
+            char_list = idx2char(best_hyps_sub[b])
 
             # TODO: eosで区切ってもattention weightsは打ち切られていない．
 
             speaker = batch['input_names'][b].split('_')[0]
+
+            # word to acoustic
             plot_attention_weights(
-                att_weights[b, :len(str_hyp.split('_')), :batch['x_lens'][b]],
+                aw[b, :len(word_list), :batch['x_lens'][b]],
                 frame_num=batch['x_lens'][b],
                 num_stack=dataset.num_stack,
-                label_list=str_hyp.split('_'),
+                label_list=word_list,
                 spectrogram=batch['xs'][b, :, :80],
                 save_path=mkdir_join(save_path, speaker,
-                                     batch['input_names'][b] + '.png'),
+                                     batch['input_names'][b] + '_word.png'),
                 figsize=(20, 8)
                 # figsize=(14, 7)
             )
 
-            plot_char_attention_weights(
-                char_att_weights[b, :len(str_hyp.split(
-                    '_')), :len(list(str_hyp_sub))],
-                label_list=str_hyp.split('_'),
-                label_list_sub=list(str_hyp_sub),
+            # character to acoustic
+            plot_attention_weights(
+                aw_sub[b, :len(char_list), :batch['x_lens'][b]],
+                frame_num=batch['x_lens'][b],
+                num_stack=dataset.num_stack,
+                label_list=char_list,
+                spectrogram=batch['xs'][b, :, :80],
                 save_path=mkdir_join(save_path, speaker,
-                                     batch['input_names'][b] + '_char_attend.png'),
+                                     batch['input_names'][b] + '_char.png'),
+                figsize=(20, 8)
+                # figsize=(14, 7)
+            )
+
+            # word to characater
+            plot_word2char_attention_weights(
+                aw_dec_out_sub[b, :len(word_list), :len(char_list)],
+                label_list=word_list,
+                label_list_sub=char_list,
+                save_path=mkdir_join(save_path, speaker,
+                                     batch['input_names'][b] + '_word2char.png'),
                 figsize=(20, 8)
                 # figsize=(14, 7)
             )
@@ -163,9 +178,9 @@ def plot(model, dataset, max_decode_len, max_decode_len_sub,
             break
 
 
-def plot_char_attention_weights(attention_weights, label_list, label_list_sub,
-                                save_path=None, figsize=(10, 4)):
-    """Plot attention weights.
+def plot_word2char_attention_weights(attention_weights, label_list, label_list_sub,
+                                     save_path=None, figsize=(10, 4)):
+    """Plot attention weights from word-level decoder to character-level decoder.
     Args:
         attention_weights (np.ndarray): A tensor of size `[T_out, T_in]`
         label_list (list):

@@ -10,7 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from os.path import join
+from os.path import join, isfile
 import pandas as pd
 import logging
 logger = logging.getLogger('training')
@@ -88,9 +88,7 @@ class Dataset(DatasetBase):
         self.num_enque = num_enque
         self.dynamic_batching = dynamic_batching
 
-        try:
-            print(data_save_path)
-        except:
+        if isfile(data_save_path):
             data_save_path = data_save_path[:-3]
         # TODO: fix this
 
@@ -144,6 +142,8 @@ class Dataset(DatasetBase):
         if self.data_size == 'subset':
             if min_frame_num_batch <= 300:
                 batch_size = batch_size * 2
+            elif min_frame_num_batch <= 600:
+                batch_size = int(batch_size * 1.5)
             elif min_frame_num_batch <= 900:
                 pass
             elif min_frame_num_batch <= 1200:

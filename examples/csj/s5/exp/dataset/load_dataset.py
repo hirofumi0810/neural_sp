@@ -10,7 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from os.path import join
+from os.path import join, isfile
 import pandas as pd
 import logging
 logger = logging.getLogger('training')
@@ -86,9 +86,7 @@ class Dataset(DatasetBase):
         self.num_enque = num_enque
         self.dynamic_batching = dynamic_batching
 
-        try:
-            print(data_save_path)
-        except:
+        if isfile(data_save_path):
             data_save_path = data_save_path[:-3]
         # TODO: fix this
 

@@ -100,26 +100,32 @@ def do_eval_cer(model, dataset, beam_width, max_decode_len,
 
             if dataset.label_type == 'kanji_wb' or (is_sub_task and dataset.label_type_sub == 'kanji_wb'):
                 # Compute WER
-                wer_b, sub_b, ins_b, del_b = compute_wer(
-                    ref=str_ref.split('_'),
-                    hyp=str_hyp.split('_'),
-                    normalize=False)
-                wer += wer_b
-                sub_word += sub_b
-                ins_word += ins_b
-                del_word += del_b
-                num_words += len(str_ref.split('_'))
+                try:
+                    wer_b, sub_b, ins_b, del_b = compute_wer(
+                        ref=str_ref.split('_'),
+                        hyp=str_hyp.split('_'),
+                        normalize=False)
+                    wer += wer_b
+                    sub_word += sub_b
+                    ins_word += ins_b
+                    del_word += del_b
+                    num_words += len(str_ref.split('_'))
+                except:
+                    pass
 
             # Compute CER
-            cer_b, sub_b, ins_b, del_b = compute_wer(
-                ref=list(str_ref.replace('_', '')),
-                hyp=list(str_hyp.replace('_', '')),
-                normalize=False)
-            cer += cer_b
-            sub_char += sub_b
-            ins_char += ins_b
-            del_char += del_b
-            num_chars += len(str_ref.replace('_', ''))
+            try:
+                cer_b, sub_b, ins_b, del_b = compute_wer(
+                    ref=list(str_ref.replace('_', '')),
+                    hyp=list(str_hyp.replace('_', '')),
+                    normalize=False)
+                cer += cer_b
+                sub_char += sub_b
+                ins_char += ins_b
+                del_char += del_b
+                num_chars += len(str_ref.replace('_', ''))
+            except:
+                pass
 
             if progressbar:
                 pbar.update(1)
