@@ -1,4 +1,4 @@
-parent: ../config/attention/character/att_char_300h.yml
+parent: ./conf/attention/character/att_char_300h.yml
 param:
   # framework
   backend: pytorch
@@ -7,7 +7,7 @@ param:
   # corpus
   corpus: switchboard
   data_size: 300h
-  label_type: word_freq5
+  label_type: word5
 
   # topology
   encoder_num_units: 320
@@ -20,3 +20,9 @@ param:
     - False
     - False
   embedding_dim: 128
+
+  # optimization
+  pretrain_stage: False
+
+  # initialization
+  char_init: False

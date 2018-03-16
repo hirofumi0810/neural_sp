@@ -23,6 +23,10 @@ param:
 
   # optimization
   batch_size: 64
+  pretrain_stage: False
+
+  # initialization
+  char_init: False
 
   # regularization
   scheduled_sampling_ramp_max_step: 300000

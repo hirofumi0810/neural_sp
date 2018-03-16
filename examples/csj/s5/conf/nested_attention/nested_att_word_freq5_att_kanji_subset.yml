@@ -65,12 +65,14 @@ param:
   learning_rate: 1e-3
   num_epoch: 30
   convert_to_sgd_epoch: 20
+  pretrain_stage: False
 
   # initialization
   parameter_init_distribution: uniform
   parameter_init: 0.1
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
+  char_init: False
 
   # regularization
   clip_grad_norm: 5.0
@@ -105,8 +107,8 @@ param:
   ctc_loss_weight_sub: 0
   curriculum_training: False
 
-  # usage_dec_sub: update_decoder
-  usage_dec_sub: all
+  usage_dec_sub: update_decoder
+  # usage_dec_sub: all
 
   gate_dec_sub: no_gate
   # gate_dec_sub: scalar
@@ -118,3 +120,8 @@ param:
   # gate_embedding: concat
   # gate_embedding: scalar
   # gate_embedding: elementwise
+
+  # other setting
+  dec_out_sub_attend_temperature: 1
+  dec_out_sub_sigmoid_smoothing: False
+  detach_dec_out_sub: True

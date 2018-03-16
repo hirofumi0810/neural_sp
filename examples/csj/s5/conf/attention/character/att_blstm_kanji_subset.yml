@@ -5,28 +5,16 @@ param:
   # backend: chainer
 
   # corpus
-  # label_type: kanji
-  label_type: kanji_divide
+  label_type: kanji_wb
   data_size: subset
 
   # topology
-  encoder_num_layers: 4
+  encoder_num_layers: 5
   subsample_list:
     - True
     - True
     - True
     - False
+    - False
   decoder_num_layers: 1
   embedding_dim: 64
-
-  # optimization
-  batch_size: 64
-
-  # regularization
-  scheduled_sampling_ramp_max_step: 250000
-
-  # annealing
-  print_step: 500
-
-  # MTL
-  ctc_loss_weight: 0.2

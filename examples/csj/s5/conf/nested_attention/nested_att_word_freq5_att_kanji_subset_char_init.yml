@@ -2,17 +2,15 @@ parent: ./conf/nested_attention/nested_att_word_freq5_att_kanji_subset.yml
 param:
   # framework
   backend: pytorch
-  # backend: chainer
 
-  # corpus
-  data_size: subset
-  label_type: word5
-  label_type_sub: kanji_wb
+  # optimization
+  pretrain_stage: False
+
+  # initialization
+  char_init: True
 
   # MTL
-  main_loss_weight: 0.7
-  ctc_loss_weight_sub: 0.1
-  curriculum_training: False
+  main_loss_weight: 0.0
 
   usage_dec_sub: update_decoder
   # usage_dec_sub: all
@@ -32,4 +30,3 @@ param:
   dec_out_sub_attend_temperature: 1
   dec_out_sub_sigmoid_smoothing: False
   detach_dec_out_sub: True
-  

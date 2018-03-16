@@ -64,12 +64,14 @@ param:
   learning_rate: 1e-3
   num_epoch: 30
   convert_to_sgd_epoch: 20
+  pretrain_stage: False
 
   # initialization
   parameter_init_distribution: uniform
   parameter_init: 0.1
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
+  char_init: False
 
   # regularization
   clip_grad_norm: 5.0
@@ -100,7 +102,7 @@ param:
   print_step: 200
 
   # MTL
-  # main_loss_weight: 0.8
-  main_loss_weight: 0.5
+  main_loss_weight: 0.8
+  # main_loss_weight: 0.5
   ctc_loss_weight_sub: 0
   curriculum_training: False

@@ -5,7 +5,7 @@ param:
   # backend: chainer
 
   # corpus
-  label_type: kanji
+  label_type: kanji_wb
   data_size: fullset
 
   # topology
@@ -17,14 +17,14 @@ param:
     - False
     - False
     - False
-  decoder_num_layers: 1
+  decoder_num_layers: 2
   embedding_dim: 64
 
   # optimization
-  batch_size: 32
+  batch_size: 64
 
   # regularization
-  scheduled_sampling_ramp_max_step: 1000000
+  scheduled_sampling_ramp_max_step: 250000
 
   # annealing
-  print_step: 2000
+  print_step: 400

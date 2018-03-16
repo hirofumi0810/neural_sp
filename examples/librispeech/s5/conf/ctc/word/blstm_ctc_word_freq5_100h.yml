@@ -22,6 +22,10 @@ param:
 
   # optimization
   batch_size: 40
+  pretrain_stage: False
+
+  # initialization
+  char_init: False
 
   # annealing
   print_step: 100

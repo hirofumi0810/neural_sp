@@ -1,4 +1,4 @@
-parent: ../config/charseq_attention/att_word_freq5_att_char_300h.yml
+parent: ./conf/nested_attention/att_word_freq5_att_char_300h.yml
 param:
   # framework
   backend: pytorch
@@ -13,6 +13,17 @@ param:
   main_loss_weight: 0.8
   ctc_loss_weight_sub: 0.2
   curriculum_training: False
-  composition_case: fine_grained_gating
-  # composition_case: scalar_gating
-  # composition_case: concat
+
+  # usage_dec_sub: update_decoder
+  usage_dec_sub: all
+
+  gate_dec_sub: no_gate
+  # gate_dec_sub: scalar
+  # gate_dec_sub: elementwise
+
+  attention_regularization: False
+
+  gate_embedding: no_gate
+  # gate_embedding: concat
+  # gate_embedding: scalar
+  # gate_embedding: elementwise

@@ -6,12 +6,12 @@ param:
   # corpus
   corpus: switchboard
   data_size: 300h
-  label_type: word_freq5
+  label_type: word5
   label_type_sub: character
 
   # features
   feature: fbank
-  save_format: numpy
+  tool: htk
   input_channel: 40
   use_delta: True
   use_double_delta: True
@@ -63,12 +63,14 @@ param:
   learning_rate: 1e-3
   num_epoch: 30
   convert_to_sgd_epoch: 20
+  pretrain_stage: True
 
   # initialization
   parameter_init_distribution: uniform
   parameter_init: 0.1
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
+  char_init: False
 
   # regularization
   clip_grad_norm: 5.0

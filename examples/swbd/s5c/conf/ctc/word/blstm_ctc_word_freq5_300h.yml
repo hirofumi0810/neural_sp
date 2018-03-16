@@ -1,11 +1,11 @@
-parent: ../config/ctc/character/blstm_ctc_char_300h.yml
+parent: ./conf/ctc/character/blstm_ctc_char_300h.yml
 param:
   # framework
   backend: pytorch
   # backend: chainer
 
   # corpus
-  label_type: word_freq5
+  label_type: word5
 
   # topology
   encoder_num_units: 320
@@ -16,3 +16,9 @@ param:
     - False
     - False
     - False
+
+  # optimization
+  pretrain_stage: False
+
+  # initialization
+  char_init: False

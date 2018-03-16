@@ -1,0 +1,13 @@
+parent: ./conf/hierarchical_attention/att_word_freq5_att_kanji_subset.yml
+param:
+  # framework
+  backend: pytorch
+
+  # optimization
+  pretrain_stage: False
+
+  # initialization
+  char_init: True
+
+  # MTL
+  main_loss_weight: 1.0
