@@ -1,1 +1,0 @@
-../../librispeech/training/run_train_hierarchical.sh

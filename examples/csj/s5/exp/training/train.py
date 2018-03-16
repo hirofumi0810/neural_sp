@@ -32,7 +32,7 @@ from utils.directory import mkdir_join
 from utils.config import load_config, save_config
 
 MAX_DECODE_LEN_WORD = 60
-MAX_DECODE_LEN_CHAR = 100
+MAX_DECODE_LEN_CHAR = 150
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', type=int, default=-1,
@@ -44,6 +44,8 @@ parser.add_argument('--model_save_path', type=str, default=None,
 parser.add_argument('--saved_model_path', type=str, default=None,
                     help='path to the saved model to retrain')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
+parser.add_argument('--pretrain_stage', type=bool, default=False,
+                    help='When True, start pre-training stage')
 
 
 def main():
@@ -294,7 +296,7 @@ def main():
             else:
                 start_time_eval = time.time()
                 # dev
-                if 'word' in params['label_type']:
+                if 'word' in params['label_type'] and not bool(param['pretrain_stage']):
                     metric_dev_epoch, _ = do_eval_wer(
                         model=model,
                         dataset=dev_data,
@@ -310,9 +312,8 @@ def main():
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_CHAR,
                         eval_batch_size=1)
-                    logger.info('  CER (dev): %.3f %%' %
-                                (metric_dev_epoch * 100))
-                    logger.info('  WER (dev): %.3f %%' % (wer_dev_epoch * 100))
+                    logger.info('  CER / WER (dev): %.3f %% / %.3f %%' %
+                                ((metric_dev_epoch * 100), (wer_dev_epoch * 100)))
 
                 if metric_dev_epoch < metric_dev_best:
                     metric_dev_best = metric_dev_epoch
@@ -324,7 +325,7 @@ def main():
                                           learning_rate, metric_dev_best)
 
                     # test
-                    if 'word' in params['label_type']:
+                    if 'word' in params['label_type'] and not bool(params['pretrain_stage']):
                         wer_eval1, _ = do_eval_wer(
                             model=model,
                             dataset=eval1_data,
@@ -333,6 +334,7 @@ def main():
                             eval_batch_size=1)
                         logger.info('  WER (eval1): %.3f %%' %
                                     (wer_eval1 * 100))
+
                         wer_eval2, _ = do_eval_wer(
                             model=model,
                             dataset=eval2_data,
@@ -341,6 +343,7 @@ def main():
                             eval_batch_size=1)
                         logger.info('  WER (eval2): %.3f %%' %
                                     (wer_eval2 * 100))
+
                         wer_eval3, _ = do_eval_wer(
                             model=model,
                             dataset=eval3_data,
@@ -349,6 +352,7 @@ def main():
                             eval_batch_size=1)
                         logger.info('  WER (eval3): %.3f %%' %
                                     (wer_eval3 * 100))
+
                         logger.info('  WER (mean): %.3f %%' %
                                     ((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3))
                     else:
@@ -360,6 +364,7 @@ def main():
                             eval_batch_size=1)
                         logger.info('  CER / WER (eval1): %.3f %% / %.3f %%' %
                                     ((cer_eval1 * 100), (wer_eval1 * 100)))
+
                         cer_eval2, wer_eval2, _ = do_eval_cer(
                             model=model,
                             dataset=eval2_data,
@@ -368,6 +373,7 @@ def main():
                             eval_batch_size=1)
                         logger.info('  CER / WER (eval2): %.3f %% / %.3f %%' %
                                     ((cer_eval2 * 100), (wer_eval2 * 100)))
+
                         cer_eval3, wer_eval3, _ = do_eval_cer(
                             model=model,
                             dataset=eval3_data,
@@ -376,6 +382,7 @@ def main():
                             eval_batch_size=1)
                         logger.info('  CER / WER (eval3): %.3f %% / %.3f %%' %
                                     ((cer_eval3 * 100), (wer_eval3 * 100)))
+
                         logger.info('  CER / WER (mean): %.3f %% / %.3f %%' %
                                     (((cer_eval1 + cer_eval2 + cer_eval3) * 100 / 3),
                                      ((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3)))

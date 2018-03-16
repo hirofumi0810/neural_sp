@@ -300,60 +300,88 @@ def main():
             else:
                 start_time_eval = time.time()
                 # dev
-                wer_dev_epoch, _ = do_eval_wer(
-                    model=model,
-                    dataset=dev_data,
-                    beam_width=1,
-                    max_decode_len=MAX_DECODE_LEN_WORD,
-                    eval_batch_size=1)
-                logger.info('  WER (dev): %.3f %%' % (wer_dev_epoch * 100))
+                if bool(params['pretrain_stage']):
+                    metric_dev_epoch, wer_dev_sub_epoch, _ = do_eval_cer(
+                        model=model,
+                        dataset=dev_data,
+                        beam_width=1,
+                        max_decode_len=MAX_DECODE_LEN_CHAR,
+                        eval_batch_size=1)
+                    logger.info('  CER / WER (dev, sub): %.3f %% / %.3f %%' %
+                                ((metric_dev_epoch * 100), (wer_dev_sub_epoch * 100)))
 
-                if wer_dev_epoch < metric_dev_best:
-                    metric_dev_best = wer_dev_epoch
+                else:
+                    metric_dev_epoch, _ = do_eval_wer(
+                        model=model,
+                        dataset=dev_data,
+                        beam_width=1,
+                        max_decode_len=MAX_DECODE_LEN_WORD,
+                        eval_batch_size=1)
+                    logger.info('  WER (dev, main): %.3f %%' %
+                                (metric_dev_epoch * 100))
+
+                if metric_dev_epoch < metric_dev_best:
+                    metric_dev_best = metric_dev_epoch
                     not_improved_epoch = 0
-                    logger.info('||||| Best Score (WER) |||||')
+                    logger.info('||||| Best Score |||||')
 
                     # Save the model
                     model.save_checkpoint(model.save_path, epoch, step,
                                           learning_rate, metric_dev_best)
 
                     # test
-                    wer_eval2000_swbd, _ = do_eval_wer(
-                        model=model,
-                        dataset=eval2000_swbd_data,
-                        beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_WORD,
-                        eval_batch_size=1)
-                    logger.info('  WER (SWB, main): %.3f %%' %
-                                (wer_eval2000_swbd * 100))
-                    # cer_eval2000_swbd, _, _ = do_eval_cer(
-                    #     model=model,
-                    #     dataset=eval2000_swbd_data,
-                    #     beam_width=1,
-                    #     max_decode_len=MAX_DECODE_LEN_CHAR,
-                    #     eval_batch_size=1)
-                    # logger.info('  CER (SWB, sub): %.3f %%' %
-                    #             (cer_eval2000_swbd * 100))
-                    wer_eval2000_ch, _ = do_eval_wer(
-                        model=model,
-                        dataset=eval2000_ch_data,
-                        beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_WORD,
-                        eval_batch_size=1)
-                    logger.info('  WER (CHE, main): %.3f %%' %
-                                (wer_eval2000_ch * 100))
-                    # cer_eval2000_ch, _, _ = do_eval_cer(
-                    #     model=model,
-                    #     dataset=eval2000_ch_data,
-                    #     beam_width=1,
-                    #     max_decode_len=MAX_DECODE_LEN_CHAR,
-                    #     eval_batch_size=1)
-                    # logger.info('  CER (CHE, sub): %.3f %%' %
-                    #             (cer_eval2000_ch * 100))
-                    logger.info('  WER (mean, main): %.3f %%' %
-                                ((wer_eval2000_swbd + wer_eval2000_ch) * 100 / 2))
-                    # logger.info('  CER (mean, main): %.3f %%' %
-                    #             ((cer_eval2000_swbd + cer_eval2000_ch) * 100 / 2))
+                    if bool(params['pretrain_stage']):
+                        cer_eval2000_swbd, wer_eval2000_swbd, _ = do_eval_cer(
+                            model=model,
+                            dataset=eval2000_swbd_data,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_CHAR,
+                            eval_batch_size=1)
+                        logger.info('  CER / WER (SWB, sub): %.3f %% / %.3f %%' %
+                                    ((cer_eval2000_swbd * 100), (wer_eval2000_swbd * 100)))
+
+                        cer_eval2000_ch, wer_eval2000_ch, _ = do_eval_cer(
+                            model=model,
+                            dataset=eval2000_ch_data,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_CHAR,
+                            eval_batch_size=1)
+                        logger.info('  CER / WER (CHE): %.3f %% / %.3f %%' %
+                                    ((cer_eval2000_ch * 100), (wer_eval2000_ch * 100)))
+
+                        logger.info('  CER / WER (mean): %.3f %% / %.3f %%' %
+                                    (((cer_eval2000_swbd + cer_eval2000_ch) * 100 / 2),
+                                     ((wer_eval2000_swbd + wer_eval2000_ch) * 100 / 2)))
+
+                    else:
+                        wer_eval2000_swbd, _ = do_eval_wer(
+                            model=model,
+                            dataset=eval2000_swbd_data,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_WORD,
+                            eval_batch_size=1)
+                        logger.info('  WER (SWB, main): %.3f %%' %
+                                    (wer_eval2000_swbd * 100))
+                        cer_eval2000_swbd_sub, wer_eval2000_swbd_sub, _ = do_eval_cer(
+                            model=model,
+                            dataset=eval2000_swbd_data,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_CHAR,
+                            eval_batch_size=1)
+                        logger.info('  CER / WER (SWB, sub): %.3f %% / %.3f %%' %
+                                    ((cer_eval2000_swbd_sub * 100), (wer_eval2000_swbd_sub * 100)))
+
+                        wer_eval2000_ch, _ = do_eval_wer(
+                            model=model,
+                            dataset=eval2000_ch_data,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_WORD,
+                            eval_batch_size=1)
+                        logger.info('  WER (CHE, main): %.3f %%' %
+                                    (wer_eval2000_ch * 100))
+
+                        logger.info('  WER (mean, main): %.3f %%' %
+                                    ((wer_eval2000_swbd + wer_eval2000_ch) * 100 / 2))
                 else:
                     not_improved_epoch += 1
 
@@ -369,7 +397,7 @@ def main():
                     optimizer=model.optimizer,
                     learning_rate=learning_rate,
                     epoch=epoch,
-                    value=wer_dev_epoch)
+                    value=metric_dev_epoch)
 
                 if epoch == params['convert_to_sgd_epoch']:
                     # Convert to fine-tuning stage
@@ -403,6 +431,8 @@ def main():
 
     if params['backend'] == 'pytorch':
         tf_writer.close()
+
+    # TODO: evaluate the best model by beam search here
 
     # Training was finished correctly
     with open(os.path.join(model.save_path, 'COMPLETE'), 'w') as f:

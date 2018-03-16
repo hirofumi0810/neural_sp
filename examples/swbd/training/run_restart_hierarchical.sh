@@ -1,1 +1,0 @@
-../../librispeech/training/run_restart_hierarchical.sh

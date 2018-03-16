@@ -75,7 +75,7 @@ def main():
         max_epoch=params['num_epoch'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
-        save_format=params['save_format'], num_enque=None,
+        tool=params['tool'], num_enque=None,
         dynamic_batching=params['dynamic_batching'])
     dev_data = Dataset(
         data_save_path=args.data_save_path,
@@ -87,7 +87,7 @@ def main():
         label_type=params['label_type'],
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=True, save_format=params['save_format'])
+        shuffle=True, tool=params['tool'])
     eval2000_swbd_data = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
@@ -98,7 +98,7 @@ def main():
         label_type=params['label_type'],
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        save_format=params['save_format'])
+        tool=params['tool'])
     eval2000_ch_data = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
@@ -109,7 +109,7 @@ def main():
         label_type=params['label_type'],
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        save_format=params['save_format'])
+        tool=params['tool'])
 
     params['num_classes'] = train_data.num_classes
 
@@ -281,7 +281,7 @@ def main():
             else:
                 start_time_eval = time.time()
                 # dev
-                if 'word' in params['label_type']:
+                if 'word' in params['label_type'] and not bool(params['pretrain_stage']):
                     metric_dev_epoch, _ = do_eval_wer(
                         model=model,
                         dataset=dev_data,
@@ -291,14 +291,14 @@ def main():
                     logger.info('  WER (dev): %.3f %%' %
                                 (metric_dev_epoch * 100))
                 else:
-                    metric_dev_epoch, _, _ = do_eval_cer(
+                    metric_dev_epoch, wer_dev_epoch, _ = do_eval_cer(
                         model=model,
                         dataset=dev_data,
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_CHAR,
                         eval_batch_size=1)
-                    logger.info('  CER (dev): %.3f %%' %
-                                (metric_dev_epoch * 100))
+                    logger.info('  CER / WER (dev): %.3f %% / %.3f %%' %
+                                ((metric_dev_epoch * 100), (wer_dev_epoch * 100)))
 
                 if metric_dev_epoch < metric_dev_best:
                     metric_dev_best = metric_dev_epoch
@@ -310,7 +310,7 @@ def main():
                                           learning_rate, metric_dev_best)
 
                     # test
-                    if 'word' in params['label_type']:
+                    if 'word' in params['label_type'] and not bool(params['pretrain_stage']):
                         wer_eval2000_swbd, _ = do_eval_wer(
                             model=model,
                             dataset=eval2000_swbd_data,
@@ -319,6 +319,7 @@ def main():
                             eval_batch_size=1)
                         logger.info('  WER (SWB): %.3f %%' %
                                     (wer_eval2000_swbd * 100))
+
                         wer_eval2000_ch, _ = do_eval_wer(
                             model=model,
                             dataset=eval2000_ch_data,
@@ -327,6 +328,9 @@ def main():
                             eval_batch_size=1)
                         logger.info('  WER (CHE): %.3f %%' %
                                     (wer_eval2000_ch * 100))
+
+                        logger.info('  WER (mean): %.3f %%' %
+                                    ((wer_eval2000_swbd + wer_eval2000_ch) * 100 / 2))
                     else:
                         cer_eval2000_swbd, wer_eval2000_swbd, _ = do_eval_cer(
                             model=model,
@@ -336,6 +340,7 @@ def main():
                             eval_batch_size=1)
                         logger.info('  CER / WER (SWB): %.3f %% / %.3f %%' %
                                     ((cer_eval2000_swbd * 100), (wer_eval2000_swbd * 100)))
+
                         cer_eval2000_ch, wer_eval2000_ch, _ = do_eval_cer(
                             model=model,
                             dataset=eval2000_ch_data,
@@ -344,6 +349,11 @@ def main():
                             eval_batch_size=1)
                         logger.info('  CER / WER (CHE): %.3f %% / %.3f %%' %
                                     ((cer_eval2000_ch * 100), (wer_eval2000_ch * 100)))
+
+                        logger.info('  CER / WER (mean): %.3f %% / %.3f %%' %
+                                    (((cer_eval2000_swbd + cer_eval2000_ch) * 100 / 2),
+                                     ((wer_eval2000_swbd + wer_eval2000_ch) * 100 / 2)))
+
                 else:
                     not_improved_epoch += 1
 
