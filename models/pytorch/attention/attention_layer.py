@@ -166,13 +166,19 @@ class AttentionMechanism(nn.Module):
             if x_lens[b].data[0] < max_time:
                 energy_mask.data[b, x_lens[b].data[0]:] = 0
         energy *= energy_mask
+        # NOTE: energy: `[B, T_in]`
+
+        # Sharpening
+        energy = energy * self.sharpening_factor
 
         # Compute attention weights
         if self.sigmoid_smoothing:
-            att_weights_step = F.sigmoid(energy * self.sharpening_factor)
+            att_weights_step = F.sigmoid(energy)
+            sigmoid_energy = att_weights_step.clone()
+            for b in range(batch_size):
+                att_weights_step.data[b] /= torch.sum(sigmoid_energy.data[b])
         else:
-            att_weights_step = F.softmax(
-                energy * self.sharpening_factor, dim=-1)
+            att_weights_step = F.softmax(energy, dim=-1)
 
         # Compute context vector (weighted sum of encoder outputs)
         context_vec = torch.sum(
