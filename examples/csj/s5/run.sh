@@ -8,7 +8,7 @@ set -e
 
 if [ $# -ne 2 ]; then
   echo "Error: set GPU number & config path." 1>&2
-  echo "Usage: ./run.sh path_to_config_file gpu_index" 1>&2
+  echo "Usage: ./run.sh path_to_config_file gpu_index or ./run.sh path_to_saved_model gpu_index" 1>&2
   exit 1
 fi
 
@@ -20,8 +20,13 @@ echo ===========================================================================
 stage=3
 # hierarchical_model=false
 hierarchical_model=true
+
+### Set true when hiding progress bar
 run_background=true
-restart=false
+
+### Set true when restarting training
+# restart=false
+restart=true
 
 ### Set path to original data
 CSJDATATOP="/n/rd25/mimura/corpus/CSJ"
@@ -241,14 +246,14 @@ if [ $stage -le 3 ]; then
         CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
         nohup $PYTHON exp/training/train_hierarchical.py \
           --gpu $gpu_index \
-          --saved_model_path $saved_model_path \
+          --saved_model_path $config_path \
           --data_save_path $DATA_SAVEPATH > log/$filename".log" &
       else
         CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
         nohup $PYTHON exp/training/train_hierarchical.py \
           --gpu $gpu_index \
-          --saved_model_path $saved_model_path \
-          --data_save_path $DATA_SAVEPATH  || exit 1;
+          --saved_model_path $config_path \
+          --data_save_path $DATA_SAVEPATH || exit 1;
       fi
     else
       if $run_background; then
@@ -273,13 +278,13 @@ if [ $stage -le 3 ]; then
         CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
         nohup $PYTHON exp/training/train.py \
           --gpu $gpu_index \
-          --saved_model_path $saved_model_path \
+          --saved_model_path $config_path \
           --data_save_path $DATA_SAVEPATH > log/$filename".log" &
       else
         CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
         $PYTHON exp/training/train.py \
           --gpu $gpu_index \
-          --saved_model_path $saved_model_path \
+          --saved_model_path $config_path \
           --data_save_path $DATA_SAVEPATH || exit 1;
       fi
     else

@@ -121,11 +121,12 @@ def main():
     ##################################################
     # MODEL
     ##################################################
+    # Model setting
+    model = load(model_type=params['model_type'],
+                 params=params,
+                 backend=params['backend'])
+
     if args.model_save_path is not None:
-        # Model setting
-        model = load(model_type=params['model_type'],
-                     params=params,
-                     backend=params['backend'])
 
         # Set save path
         save_path = mkdir_join(
@@ -140,6 +141,12 @@ def main():
 
         # Setting for logging
         logger = set_logger(model.save_path)
+
+        if os.path.isdir(params['char_init']):
+            # NOTE: Start training from the pre-trained character model
+            model.load_checkpoint(
+                save_path=params['char_init'], epoch=-1,
+                load_pretrained_model=True)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):
@@ -164,10 +171,6 @@ def main():
 
     # NOTE: Retrain the saved model from the last checkpoint
     elif args.saved_model_path is not None:
-        # Load model
-        model = load(model_type=params['model_type'],
-                     params=params,
-                     backend=params['backend'])
 
         # Set save path
         model.save_path = args.saved_model_path
@@ -178,7 +181,7 @@ def main():
         # Define optimizer
         model.set_optimizer(
             optimizer=params['optimizer'],
-            learning_rate_init=float(params['learning_rate']),
+            learning_rate_init=float(params['learning_rate']),  # on-the-fly
             weight_decay=float(params['weight_decay']),
             clip_grad_norm=params['clip_grad_norm'],
             lr_schedule=False,
@@ -209,7 +212,7 @@ def main():
     ##################################################
     # Define learning rate controller
     lr_controller = Controller(
-        learning_rate_init=params['learning_rate'],
+        learning_rate_init=learning_rate,
         backend=params['backend'],
         decay_start_epoch=params['decay_start_epoch'],
         decay_rate=params['decay_rate'],
@@ -268,8 +271,10 @@ def main():
                     name = name.replace('.', '/')
                     tf_writer.add_histogram(
                         name, param.data.cpu().numpy(), step + 1)
-                    tf_writer.add_histogram(
-                        name + '/grad', param.grad.data.cpu().numpy(), step + 1)
+                    if param.grad is not None:
+                        tf_writer.add_histogram(
+                            name + '/grad', param.grad.data.cpu().numpy(), step + 1)
+                    # TODO: fix this
 
             duration_step = time.time() - start_time_step
             logger.info("...Step:%d(epoch:%.3f) loss:%.3f/%.3f/%.3f(%.3f/%.3f/%.3f)/lr:%.5f/batch:%d/x_lens:%d (%.3f min)" %

@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Train the model (TIMIT corpus)."""
+"""Train the model (WSJ corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -14,7 +14,6 @@ from setproctitle import setproctitle
 import argparse
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
-import copy
 
 import torch
 torch.manual_seed(1623)
@@ -22,8 +21,9 @@ torch.cuda.manual_seed_all(1623)
 
 sys.path.append(os.path.abspath('../../../'))
 from models.load_model import load
-from examples.timit.s5.exp.dataset.load_dataset import Dataset
-from examples.timit.s5.exp.metrics.per import do_eval_per
+from examples.wsj.s5.exp.dataset.load_dataset import Dataset
+from examples.wsj.s5.exp.metrics.cer import do_eval_cer
+from examples.wsj.s5.exp.metrics.wer import do_eval_wer
 from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
 from utils.training.training_loop import train_step
@@ -31,14 +31,15 @@ from utils.training.logging import set_logger
 from utils.directory import mkdir_join
 from utils.config import load_config, save_config
 
-MAX_DECODE_LEN_PHONE = 40
+MAX_DECODE_LEN_WORD = 60
+MAX_DECODE_LEN_CHAR = 100
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', type=int, default=-1,
                     help='the index of GPU (negative value indicates CPU)')
 parser.add_argument('--config_path', type=str, default=None,
                     help='path to the configuration file')
-parser.add_argument('--model_save_path', type=str,
+parser.add_argument('--model_save_path', type=str, default=None,
                     help='path to save the model')
 parser.add_argument('--saved_model_path', type=str, default=None,
                     help='path to the saved model to retrain')
@@ -68,10 +69,12 @@ def main():
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
-        data_type='train', label_type=params['label_type'],
-        batch_size=params['batch_size'],
-        max_epoch=params['num_epoch'], splice=params['splice'],
+        data_type='train', data_size=params['data_size'],
+        label_type=params['label_type'],
+        batch_size=params['batch_size'], max_epoch=params['num_epoch'],
+        splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
+        min_frame_num=params['min_frame_num'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
         tool=params['tool'], num_enque=None,
         dynamic_batching=params['dynamic_batching'])
@@ -81,18 +84,42 @@ def main():
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
-        data_type='dev', label_type=params['label_type'],
+        data_type='dev', data_size=params['data_size'],
+        label_type=params['label_type'],
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True, tool=params['tool'])
-    test_data = Dataset(
+    eval1_data = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
-        data_type='test', label_type=params['label_type'],
-        batch_size=1, splice=params['splice'],
+        data_type='eval1', data_size=params['data_size'],
+        label_type=params['label_type'],
+        batch_size=params['batch_size'], splice=params['splice'],
+        num_stack=params['num_stack'], num_skip=params['num_skip'],
+        tool=params['tool'])
+    eval2_data = Dataset(
+        data_save_path=args.data_save_path,
+        backend=params['backend'],
+        input_channel=params['input_channel'],
+        use_delta=params['use_delta'],
+        use_double_delta=params['use_double_delta'],
+        data_type='eval2', data_size=params['data_size'],
+        label_type=params['label_type'],
+        batch_size=params['batch_size'], splice=params['splice'],
+        num_stack=params['num_stack'], num_skip=params['num_skip'],
+        tool=params['tool'])
+    eval3_data = Dataset(
+        data_save_path=args.data_save_path,
+        backend=params['backend'],
+        input_channel=params['input_channel'],
+        use_delta=params['use_delta'],
+        use_double_delta=params['use_double_delta'],
+        data_type='eval3', data_size=params['data_size'],
+        label_type=params['label_type'],
+        batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         tool=params['tool'])
 
@@ -110,7 +137,7 @@ def main():
         # Set save path
         save_path = mkdir_join(
             args.model_save_path, params['backend'],
-            params['model_type'], params['label_type'], model.name)
+            params['model_type'], params['label_type'], params['data_size'], model.name)
         model.set_save_path(save_path)
 
         # Save config file
@@ -156,7 +183,7 @@ def main():
         # Define optimizer
         model.set_optimizer(
             optimizer=params['optimizer'],
-            learning_rate_init=float(params['learning_rate']),  # on-the-fly
+            learning_rate_init=float(params['learning_rate']),
             weight_decay=float(params['weight_decay']),
             clip_grad_norm=params['clip_grad_norm'],
             lr_schedule=False,
@@ -179,7 +206,8 @@ def main():
     logger.info('USERNAME: %s' % os.uname()[1])
 
     # Set process name
-    setproctitle('timit_' + params['model_type'] + '_' + params['label_type'])
+    setproctitle('csj_' + params['model_type'] + '_' +
+                 params['label_type'] + '_' + params['data_size'])
 
     ##################################################
     # TRAINING LOOP
@@ -205,13 +233,12 @@ def main():
     not_improved_epoch = 0
     loss_train_mean = 0.
     pbar_epoch = tqdm(total=len(train_data))
-    best_model = None
     while True:
         # Compute loss in the training set (including parameter update)
         batch_train, is_new_epoch = train_data.next()
-        model, loss_train_val = train_step(
+        model, loss_train = train_step(
             model, batch_train, params['clip_grad_norm'], params['backend'])
-        loss_train_mean += loss_train_val
+        loss_train_mean += loss_train
 
         pbar_epoch.update(len(batch_train['xs']))
 
@@ -267,34 +294,91 @@ def main():
             else:
                 start_time_eval = time.time()
                 # dev
-                per_dev_epoch, _ = do_eval_per(
-                    model=model,
-                    dataset=dev_data,
-                    beam_width=1,
-                    max_decode_len=MAX_DECODE_LEN_PHONE,
-                    eval_batch_size=1,
-                    map_file_path='./conf/phones.60-48-39.map')
-                logger.info('  PER (dev): %.3f %%' % (per_dev_epoch * 100))
+                if 'word' in params['label_type']:
+                    metric_dev_epoch, _ = do_eval_wer(
+                        model=model,
+                        dataset=dev_data,
+                        beam_width=1,
+                        max_decode_len=MAX_DECODE_LEN_WORD,
+                        eval_batch_size=1)
+                    logger.info('  WER (dev): %.3f %%' %
+                                (metric_dev_epoch * 100))
+                else:
+                    metric_dev_epoch, wer_dev_epoch, _ = do_eval_cer(
+                        model=model,
+                        dataset=dev_data,
+                        beam_width=1,
+                        max_decode_len=MAX_DECODE_LEN_CHAR,
+                        eval_batch_size=1)
+                    logger.info('  CER (dev): %.3f %%' %
+                                (metric_dev_epoch * 100))
+                    logger.info('  WER (dev): %.3f %%' % (wer_dev_epoch * 100))
 
-                if per_dev_epoch < metric_dev_best:
-                    metric_dev_best = per_dev_epoch
+                if metric_dev_epoch < metric_dev_best:
+                    metric_dev_best = metric_dev_epoch
                     not_improved_epoch = 0
-                    best_model = copy.deepcopy(model)
-                    logger.info('||||| Best Score (PER) |||||')
+                    logger.info('||||| Best Score |||||')
 
                     # Save the model
                     model.save_checkpoint(model.save_path, epoch, step,
                                           learning_rate, metric_dev_best)
 
                     # test
-                    per_test, _ = do_eval_per(
-                        model=model,
-                        dataset=test_data,
-                        beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_PHONE,
-                        eval_batch_size=1,
-                        map_file_path='./conf/phones.60-48-39.map')
-                    logger.info('  PER (test): %.3f %%' % (per_test * 100))
+                    if 'word' in params['label_type']:
+                        wer_eval1, _ = do_eval_wer(
+                            model=model,
+                            dataset=eval1_data,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_CHAR,
+                            eval_batch_size=1)
+                        logger.info('  WER (eval1): %.3f %%' %
+                                    (wer_eval1 * 100))
+                        wer_eval2, _ = do_eval_wer(
+                            model=model,
+                            dataset=eval2_data,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_CHAR,
+                            eval_batch_size=1)
+                        logger.info('  WER (eval2): %.3f %%' %
+                                    (wer_eval2 * 100))
+                        wer_eval3, _ = do_eval_wer(
+                            model=model,
+                            dataset=eval3_data,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_CHAR,
+                            eval_batch_size=1)
+                        logger.info('  WER (eval3): %.3f %%' %
+                                    (wer_eval3 * 100))
+                        logger.info('  WER (mean): %.3f %%' %
+                                    ((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3))
+                    else:
+                        cer_eval1, wer_eval1, _ = do_eval_cer(
+                            model=model,
+                            dataset=eval1_data,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_CHAR,
+                            eval_batch_size=1)
+                        logger.info('  CER / WER (eval1): %.3f %% / %.3f %%' %
+                                    ((cer_eval1 * 100), (wer_eval1 * 100)))
+                        cer_eval2, wer_eval2, _ = do_eval_cer(
+                            model=model,
+                            dataset=eval2_data,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_CHAR,
+                            eval_batch_size=1)
+                        logger.info('  CER / WER (eval2): %.3f %% / %.3f %%' %
+                                    ((cer_eval2 * 100), (wer_eval2 * 100)))
+                        cer_eval3, wer_eval3, _ = do_eval_cer(
+                            model=model,
+                            dataset=eval3_data,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_CHAR,
+                            eval_batch_size=1)
+                        logger.info('  CER / WER (eval3): %.3f %% / %.3f %%' %
+                                    ((cer_eval3 * 100), (wer_eval3 * 100)))
+                        logger.info('  CER / WER (mean): %.3f %% / %.3f %%' %
+                                    (((cer_eval1 + cer_eval2 + cer_eval3) * 100 / 3),
+                                     ((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3)))
                 else:
                     not_improved_epoch += 1
 
@@ -310,7 +394,7 @@ def main():
                     optimizer=model.optimizer,
                     learning_rate=learning_rate,
                     epoch=epoch,
-                    value=per_dev_epoch)
+                    value=metric_dev_epoch)
 
                 if epoch == params['convert_to_sgd_epoch']:
                     # Convert to fine-tuning stage
@@ -344,18 +428,6 @@ def main():
 
     if params['backend'] == 'pytorch':
         tf_writer.close()
-    pbar_epoch.close()
-
-    # Evaluate the best model by beam search
-    per_test_best, _ = do_eval_per(
-        model=best_model,
-        dataset=test_data,
-        beam_width=10,
-        max_decode_len=MAX_DECODE_LEN_PHONE,
-        eval_batch_size=1,
-        map_file_path='./conf/phones.60-48-39.map')
-    logger.info('  PER (test, beam: 10): %.3f %%' %
-                (per_test_best * 100))
 
     # Training was finished correctly
     with open(os.path.join(model.save_path, 'COMPLETE'), 'w') as f:

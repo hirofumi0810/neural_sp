@@ -17,10 +17,14 @@ echo ===========================================================================
 echo "                           Switchboard (300h)                             "
 echo ============================================================================
 
-stage=2
-hierarchical_model=false
-# hierarchical_model=true
-run_background=false
+stage=3
+# hierarchical_model=false
+hierarchical_model=true
+
+### Set true when hiding progress bar
+run_background=true
+
+### Set true when restarting training
 restart=false
 
 ### Set path to original data
@@ -282,12 +286,14 @@ if [ $stage -le 3 ]; then
         CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
         nohup $PYTHON exp/training/train_hierarchical.py \
           --gpu $gpu_index \
-          --saved_model_path $saved_model_path > log/$filename".log" &
+          --saved_model_path $config_path \
+          --data_save_path $DATA_SAVEPATH > log/$filename".log" &
       else
         CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
         nohup $PYTHON exp/training/train_hierarchical.py \
           --gpu $gpu_index \
-          --saved_model_path $saved_model_path || exit 1;
+          --saved_model_path $config_path \
+          --data_save_path $DATA_SAVEPATH || exit 1;
       fi
     else
       if $run_background; then
@@ -312,12 +318,14 @@ if [ $stage -le 3 ]; then
         CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
         nohup $PYTHON exp/training/train.py \
           --gpu $gpu_index \
-          --saved_model_path $saved_model_path > log/$filename".log" &
+          --saved_model_path $config_path \
+          --data_save_path $DATA_SAVEPATH > log/$filename".log" &
       else
         CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
         $PYTHON exp/training/train.py \
           --gpu $gpu_index \
-          --saved_model_path $saved_model_path || exit 1;
+          --saved_model_path $config_path \
+          --data_save_path $DATA_SAVEPATH || exit 1;
       fi
     else
       if $run_background; then

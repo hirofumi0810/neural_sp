@@ -15,8 +15,9 @@ echo ===========================================================================
 echo "                                  TIMIT                                    "
 echo ============================================================================
 
-stage=1
-resta=false
+stage=3
+run_background=true
+restart=false
 
 ### Set path to original data
 #timit=/export/corpora5/LDC/LDC93S1/timit/TIMIT # @JHU
@@ -156,30 +157,35 @@ if [ $stage -le 3 ]; then
   echo "Start training..."
 
   if $restart; then
-    CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-    nohup $PYTHON exp/training/train.py \
-      --gpu $gpu_index \
-      --saved_model_path $saved_model_path > log/$filename".log" &
-
-    # CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-    # $PYTHON exp/training/train.py \
-    #   --gpu $gpu_index \
-    #   --saved_model_path $saved_model_path || exit 1;
-
+    if $run_background; then
+      CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+      nohup $PYTHON exp/training/train.py \
+        --gpu $gpu_index \
+        --saved_model_path $config_path \
+        --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+    else
+      CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+      $PYTHON exp/training/train.py \
+        --gpu $gpu_index \
+        --saved_model_path $config_path \
+        --data_save_path $DATA_SAVEPATH || exit 1;
+    fi
   else
-    CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-    nohup $PYTHON exp/training/train.py \
-      --gpu $gpu_index \
-      --config_path $config_path \
-      --model_save_path $MODEL_SAVEPATH \
-      --data_save_path $DATA_SAVEPATH > log/$filename".log" &
-
-    # CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-    # $PYTHON exp/training/train.py \
-    #   --gpu $gpu_index \
-    #   --config_path $config_path \
-    #   --model_save_path $MODEL_SAVEPATH \
-    #   --data_save_path $DATA_SAVEPATH　|| exit 1;
+    if $run_background; then
+      CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+      nohup $PYTHON exp/training/train.py \
+        --gpu $gpu_index \
+        --config_path $config_path \
+        --model_save_path $MODEL_SAVEPATH \
+        --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+    else
+      CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+      $PYTHON exp/training/train.py \
+        --gpu $gpu_index \
+        --config_path $config_path \
+        --model_save_path $MODEL_SAVEPATH \
+        --data_save_path $DATA_SAVEPATH　|| exit 1;
+    fi
   fi
 
   echo "Finish model training (stage: 3)."
