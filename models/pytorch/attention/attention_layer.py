@@ -169,14 +169,13 @@ class AttentionMechanism(nn.Module):
         # NOTE: energy: `[B, T_in]`
 
         # Sharpening
-        energy = energy * self.sharpening_factor
+        energy *= self.sharpening_factor
 
         # Compute attention weights
         if self.sigmoid_smoothing:
             att_weights_step = F.sigmoid(energy)
-            sigmoid_energy = att_weights_step.clone()
-            for b in range(batch_size):
-                att_weights_step.data[b] /= torch.sum(sigmoid_energy.data[b])
+            # for b in range(batch_size):
+            #     att_weights_step.data[b] /= att_weights_step.data[b].sum()
         else:
             att_weights_step = F.softmax(energy, dim=-1)
 

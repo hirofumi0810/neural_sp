@@ -66,6 +66,7 @@ class AttentionSeq2seq(ModelBase):
             zero => initialize with zero state
             mean => initialize with the mean of encoder outputs in all time steps
             final => initialize with tha final encoder state
+            first => initialize with tha first encoder state
         sharpening_factor (float, optional): a sharpening factor in the
             softmax layer for computing attention weights
         logits_temperature (float, optional): a parameter for smoothing the
@@ -99,7 +100,7 @@ class AttentionSeq2seq(ModelBase):
         encoder_dense_residual (bool, optional):
         decoder_residual (bool, optional):
         decoder_dense_residual (bool, optional):
-        decoding_order (string, optional): attend_spell or spell_attend
+        decoding_order (string, optional): attend_spell or spell_attend or conditional
     """
 
     def __init__(self,
@@ -181,9 +182,9 @@ class AttentionSeq2seq(ModelBase):
         # NOTE: <SOS> and <EOS> have the same index
 
         # Setting for the attention
-        if init_dec_state not in ['zero', 'mean', 'final']:
+        if init_dec_state not in ['zero', 'mean', 'final', 'first']:
             raise ValueError(
-                'init_dec_state must be "zero" or "mean" or "final".')
+                'init_dec_state must be "zero" or "mean" or "final" or "first".')
         self.init_dec_state = init_dec_state
         self.sharpening_factor = sharpening_factor
         self.logits_temperature = logits_temperature
@@ -265,15 +266,35 @@ class AttentionSeq2seq(ModelBase):
             ##############################
             # Decoder
             ##############################
-            self.decoder = RNNDecoder(
-                input_size=self.encoder_num_units + embedding_dim,
-                rnn_type=decoder_type,
-                num_units=decoder_num_units,
-                num_layers=decoder_num_layers,
-                dropout=dropout_decoder,
-                use_cuda=self.use_cuda,
-                residual=decoder_residual,
-                dense_residual=decoder_dense_residual)
+            if decoding_order == 'conditional':
+                self.decoder_first = RNNDecoder(
+                    input_size=embedding_dim,
+                    rnn_type=decoder_type,
+                    num_units=decoder_num_units,
+                    num_layers=decoder_num_layers,
+                    dropout=dropout_decoder,
+                    use_cuda=self.use_cuda,
+                    residual=decoder_residual,
+                    dense_residual=decoder_dense_residual)
+                self.decoder_second = RNNDecoder(
+                    input_size=self.encoder_num_units,
+                    rnn_type=decoder_type,
+                    num_units=decoder_num_units,
+                    num_layers=decoder_num_layers,
+                    dropout=dropout_decoder,
+                    use_cuda=self.use_cuda,
+                    residual=decoder_residual,
+                    dense_residual=decoder_dense_residual)
+            else:
+                self.decoder = RNNDecoder(
+                    input_size=self.encoder_num_units + embedding_dim,
+                    rnn_type=decoder_type,
+                    num_units=decoder_num_units,
+                    num_layers=decoder_num_layers,
+                    dropout=dropout_decoder,
+                    use_cuda=self.use_cuda,
+                    residual=decoder_residual,
+                    dense_residual=decoder_dense_residual)
 
             ##############################
             # Attention layer
@@ -634,6 +655,7 @@ class AttentionSeq2seq(ModelBase):
                     y = self.embed_sub(y)
                     dec_in = F.concat([y, context_vec], axis=-1)
                     dec_out, dec_state = self.decoder_sub(dec_in, dec_state)
+
                 elif self.decoding_order == 'spell_attend':
                     # Update decoder states
                     y = self.embed_sub(y)
@@ -643,6 +665,19 @@ class AttentionSeq2seq(ModelBase):
                     # Compute attention distributions
                     context_vec, aw_step = self.attend_sub(
                         enc_out, x_lens, dec_out, aw_step)
+
+                elif self.decoding_order == 'conditional':
+                    # Update decoder states of the first decoder
+                    _dec_out, _dec_state = self.decoder_first_sub(
+                        self.embed_sub(y), dec_state)
+
+                    # Compute attention distributions
+                    context_vec, aw_step = self.attend_sub(
+                        enc_out, x_lens, _dec_out, aw_step)
+
+                    # Update decoder states of the second decoder
+                    dec_out, dec_state = self.decoder_second_sub(
+                        context_vec, _dec_state)
 
                 logits_step = self.fc_sub(F.tanh(
                     self.W_d_sub(dec_out) + self.W_c_sub(context_vec)))
@@ -656,6 +691,7 @@ class AttentionSeq2seq(ModelBase):
                     y = self.embed(y)
                     dec_in = F.concat([y, context_vec], axis=-1)
                     dec_out, dec_state = self.decoder(dec_in, dec_state)
+
                 elif self.decoding_order == 'spell_attend':
                     # Update decoder states
                     y = self.embed(y)
@@ -665,6 +701,19 @@ class AttentionSeq2seq(ModelBase):
                     # Compute attention distributions
                     context_vec, aw_step = self.attend(
                         enc_out, x_lens, dec_out, aw_step)
+
+                elif self.decoding_order == 'conditional':
+                    # Update decoder states of the first decoder
+                    _dec_out, _dec_state = self.decoder_first(
+                        self.embed(y), dec_state)
+
+                    # Compute attention distributions
+                    context_vec, aw_step = self.attend(
+                        enc_out, x_lens, _dec_out, aw_step)
+
+                    # Update decoder states of the second decoder
+                    dec_out, dec_state = self.decoder_second(
+                        context_vec, _dec_state)
 
                 logits_step = self.fc(F.tanh(
                     self.W_d(dec_out) + self.W_c(context_vec)))
@@ -739,14 +788,15 @@ class AttentionSeq2seq(ModelBase):
             elif self.init_dec_state == 'final':
                 # Initialize with the final encoder output
                 h_0 = enc_out[:, -1, :]
+            elif self.init_dec_state == 'first':
+                # Initialize with the first encoder output
+                h_0 = enc_out[:, 0, :]
 
             # Path through the linear layer
             if is_sub_task:
-                h_0 = self.W_dec_init_sub(h_0)
+                hx_list[0] = F.tanh(self.W_dec_init_sub(h_0))
             else:
-                h_0 = self.W_dec_init(h_0)
-
-            hx_list[0] = h_0
+                hx_list[0] = F.tanh(self.W_dec_init(h_0))
 
         if self.decoder_type == 'gru':
             dec_state = hx_list
@@ -864,6 +914,7 @@ class AttentionSeq2seq(ModelBase):
                     y = self.embed_sub(y)
                     dec_in = F.concat([y, context_vec], axis=-1)
                     dec_out, dec_state = self.decoder_sub(dec_in, dec_state)
+
                 elif self.decoding_order == 'spell_attend':
                     # Update decoder states
                     y = self.embed_sub(y)
@@ -873,6 +924,19 @@ class AttentionSeq2seq(ModelBase):
                     # Compute attention distributions
                     context_vec, aw_step = self.attend_sub(
                         enc_out, x_lens, dec_out, aw_step)
+
+                elif self.decoding_order == 'conditional':
+                    # Update decoder states of the first decoder
+                    _dec_out, _dec_state = self.decoder_first_sub(
+                        self.embed_sub(y), dec_state)
+
+                    # Compute attention distributions
+                    context_vec, aw_step = self.attend_sub(
+                        enc_out, x_lens, _dec_out, aw_step)
+
+                    # Update decoder states of the second decoder
+                    dec_out, dec_state = self.decoder_second_sub(
+                        context_vec, _dec_state)
 
                 logits_step = self.fc_sub(F.tanh(
                     self.W_d_sub(dec_out) + self.W_c_sub(context_vec)))
@@ -886,6 +950,7 @@ class AttentionSeq2seq(ModelBase):
                     y = self.embed(y)
                     dec_in = F.concat([y, context_vec], axis=-1)
                     dec_out, dec_state = self.decoder(dec_in, dec_state)
+
                 elif self.decoding_order == 'spell_attend':
                     # Update decoder states
                     y = self.embed(y)
@@ -895,6 +960,19 @@ class AttentionSeq2seq(ModelBase):
                     # Compute attention distributions
                     context_vec, aw_step = self.attend(
                         enc_out, x_lens, dec_out, aw_step)
+
+                elif self.decoding_order == 'conditional':
+                    # Update decoder states of the first decoder
+                    _dec_out, _dec_state = self.decoder_first(
+                        self.embed(y), dec_state)
+
+                    # Compute attention distributions
+                    context_vec, aw_step = self.attend(
+                        enc_out, x_lens, _dec_out, aw_step)
+
+                    # Update decoder states of the second decoder
+                    dec_out, dec_state = self.decoder_second(
+                        context_vec, _dec_state)
 
                 logits_step = self.fc(F.tanh(
                     self.W_d(dec_out) + self.W_c(context_vec)))
@@ -983,6 +1061,7 @@ class AttentionSeq2seq(ModelBase):
                             dec_in = F.concat([y, context_vec], axis=-1)
                             dec_out, dec_state = self.decoder_sub(
                                 dec_in, beam[i_beam]['dec_state'])
+
                         elif self.decoding_order == 'spell_attend':
                             # Update decoder states
                             y = self.embed_sub(y)
@@ -995,6 +1074,21 @@ class AttentionSeq2seq(ModelBase):
                                 enc_out[b:b + 1, :frame_num],
                                 x_lens[b:b + 1],
                                 dec_out, beam[i_beam]['aw_step'])
+
+                        elif self.decoding_order == 'conditional':
+                            # Update decoder states of the first decoder
+                            _dec_out, _dec_state = self.decoder_first_sub(
+                                self.embed_sub(y), beam[i_beam]['dec_state'])
+
+                            # Compute attention distributions
+                            context_vec, aw_step = self.attend_sub(
+                                enc_out[b:b + 1, :frame_num],
+                                x_lens[b:b + 1],
+                                _dec_out, beam[i_beam]['aw_step'])
+
+                            # Update decoder states of the second decoder
+                            dec_out, dec_state = self.decoder_second_sub(
+                                context_vec, _dec_state)
 
                         logits_step = self.fc_sub(F.tanh(
                             self.W_d_sub(dec_out) + self.W_c_sub(context_vec)))
@@ -1011,6 +1105,7 @@ class AttentionSeq2seq(ModelBase):
                             dec_in = F.concat([y, context_vec], axis=-1)
                             dec_out, dec_state = self.decoder(
                                 dec_in, beam[i_beam]['dec_state'])
+
                         elif self.decoding_order == 'spell_attend':
                             # Update decoder states
                             y = self.embed(y)
@@ -1023,6 +1118,21 @@ class AttentionSeq2seq(ModelBase):
                                 enc_out[b:b + 1, :frame_num],
                                 x_lens[b:b + 1],
                                 dec_out, beam[i_beam]['aw_step'])
+
+                        elif self.decoding_order == 'conditional':
+                            # Update decoder states of the first decoder
+                            _dec_out, _dec_state = self.decoder_first(
+                                self.embed(y), beam[i_beam]['dec_state'])
+
+                            # Compute attention distributions
+                            context_vec, aw_step = self.attend(
+                                enc_out[b:b + 1, :frame_num],
+                                x_lens[b:b + 1],
+                                _dec_out, beam[i_beam]['aw_step'])
+
+                            # Update decoder states of the second decoder
+                            dec_out, dec_state = self.decoder_second(
+                                context_vec, _dec_state)
 
                         logits_step = self.fc(F.tanh(
                             self.W_d(dec_out) + self.W_c(context_vec)))

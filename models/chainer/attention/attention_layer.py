@@ -169,13 +169,18 @@ class AttentionMechanism(chainer.Chain):
                 energy_mask[b, x_lens[b]:] = 0
         energy_mask = Variable(energy_mask)
         energy *= energy_mask
+        # NOTE: energy: `[B, T_in]`
+
+        # Sharpening
+        energy = energy * self.sharpening_factor
 
         # Compute attention weights
         if self.sigmoid_smoothing:
-            att_weights_step = F.sigmoid(energy * self.sharpening_factor)
+            att_weights_step = F.sigmoid(energy)
+            # for b in range(batch_size):
+            #     att_weights_step.data[b] /= att_weights_step.data[b].sum()
         else:
-            att_weights_step = F.softmax(
-                energy * self.sharpening_factor, axis=1)
+            att_weights_step = F.softmax(energy, axis=1)
 
         # Compute context vector (weighted sum of encoder outputs)
         batch_size, max_time = att_weights_step.shape

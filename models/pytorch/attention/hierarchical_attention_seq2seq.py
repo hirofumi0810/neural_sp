@@ -141,11 +141,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         # Setting for MTL
         self.main_loss_weight = main_loss_weight
-        self.main_loss_weight_tmp = main_loss_weight
         self.sub_loss_weight = 1 - main_loss_weight - ctc_loss_weight_sub
-        self.sub_loss_weight_tmp = 1 - main_loss_weight - ctc_loss_weight_sub
         self.ctc_loss_weight_sub = ctc_loss_weight_sub
-        self.ctc_loss_weight_sub_tmp = ctc_loss_weight_sub
         if curriculum_training and scheduled_sampling_ramp_max_step == 0:
             raise ValueError('Set scheduled_sampling_ramp_max_step.')
         self.curriculum_training = curriculum_training
@@ -192,14 +189,32 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             ##############################
             # Decoder (sub)
             ##############################
-            self.decoder_sub = RNNDecoder(
-                input_size=self.encoder_num_units + embedding_dim_sub,
-                rnn_type=decoder_type,
-                num_units=decoder_num_units_sub,
-                num_layers=decoder_num_layers_sub,
-                dropout=dropout_decoder,
-                residual=decoder_residual,
-                dense_residual=decoder_dense_residual)
+            if decoding_order == 'conditional':
+                self.decoder_first_sub = RNNDecoder(
+                    input_size=embedding_dim_sub,
+                    rnn_type=decoder_type,
+                    num_units=decoder_num_units_sub,
+                    num_layers=decoder_num_layers_sub,
+                    dropout=dropout_decoder,
+                    residual=decoder_residual,
+                    dense_residual=decoder_dense_residual)
+                self.decoder_second_sub = RNNDecoder(
+                    input_size=self.encoder_num_units,
+                    rnn_type=decoder_type,
+                    num_units=decoder_num_units_sub,
+                    num_layers=decoder_num_layers_sub,
+                    dropout=dropout_decoder,
+                    residual=decoder_residual,
+                    dense_residual=decoder_dense_residual)
+            else:
+                self.decoder_sub = RNNDecoder(
+                    input_size=self.encoder_num_units + embedding_dim_sub,
+                    rnn_type=decoder_type,
+                    num_units=decoder_num_units_sub,
+                    num_layers=decoder_num_layers_sub,
+                    dropout=dropout_decoder,
+                    residual=decoder_residual,
+                    dense_residual=decoder_dense_residual)
 
             ###################################
             # Attention layer (sub)
@@ -355,11 +370,14 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         ##################################################
         # Main task
         ##################################################
-        # Compute XE loss
-        loss_main = self.compute_xe_loss(
-            xs, ys_in, ys_out, x_lens, y_lens, size_average=True)
+        if self.main_loss_weight > 0:
+            # Compute XE loss
+            loss_main = self.compute_xe_loss(
+                xs, ys_in, ys_out, x_lens, y_lens, size_average=True)
 
-        loss_main = loss_main * self.main_loss_weight_tmp
+            loss_main = loss_main * self.main_loss_weight
+        else:
+            loss_main = self._create_var((1,), fill_value=0)
         loss = loss_main.clone()
 
         ##################################################
@@ -371,7 +389,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 xs_sub, ys_sub_in, ys_sub_out, x_lens_sub, y_lens_sub,
                 is_sub_task=True, size_average=True)
 
-            loss_sub = loss_sub * self.sub_loss_weight_tmp
+            loss_sub = loss_sub * self.sub_loss_weight
             loss += loss_sub
 
         ##################################################
@@ -382,7 +400,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 xs_sub, ys_sub_in[:, 1:] + 1,
                 x_lens_sub, y_lens_sub, is_sub_task=True, size_average=True)
 
-            ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub_tmp
+            ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub
             loss += ctc_loss_sub
 
         if is_eval:
@@ -400,27 +418,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     self.sample_prob,
                     self.sample_prob / self.sample_ramp_max_step * self._step)
 
-            # Curriculum training (gradually from char to word task)
-            if self.curriculum_training:
-                # main
-                self.main_loss_weight_tmp = min(
-                    self.main_loss_weight,
-                    0.0 + self.main_loss_weight / self.sample_ramp_max_step * self._step * 2)
-                # sub (attention)
-                self.sub_loss_weight_tmp = max(
-                    self.sub_loss_weight,
-                    1.0 - (1 - self.sub_loss_weight) / self.sample_ramp_max_step * self._step * 2)
-                # sub (CTC)
-                self.ctc_loss_weight_sub_tmp = max(
-                    self.ctc_loss_weight_sub,
-                    1.0 - (1 - self.ctc_loss_weight_sub) / self.sample_ramp_max_step * self._step * 2)
-
         if self.sub_loss_weight > self.ctc_loss_weight_sub:
             return loss, loss_main, loss_sub
         else:
             return loss, loss_main, ctc_loss_sub
 
-    def decode(self, xs, x_lens, beam_width, max_decode_len, is_sub_task=False):
+    def decode(self, xs, x_lens, beam_width, max_decode_len,
+               length_penalty=0, coverage_penalty=0, is_sub_task=False):
         """Decoding in the inference stage.
         Args:
             xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
@@ -428,6 +432,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             beam_width (int): the size of beam
             max_decode_len (int): the length of output sequences
                 to stop prediction when EOS token have not been emitted
+            length_penalty (float, optional):
+            coverage_penalty (float, optional):
             is_sub_task (bool, optional):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
@@ -461,6 +467,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             else:
                 best_hyps = self._decode_infer_beam(
                     enc_out, x_lens, beam_width, max_decode_len,
+                    length_penalty, coverage_penalty,
                     is_sub_task=is_sub_task)
 
             # Permutate indices to the original order

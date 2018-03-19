@@ -26,6 +26,8 @@ class TestAttention(unittest.TestCase):
 
         # Decoding order
         self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', decoding_order='conditional')
+        self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', decoding_order='spell_attend')
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', decoding_order='attend_spell')
@@ -41,6 +43,8 @@ class TestAttention(unittest.TestCase):
                    decoder_type='lstm', ctc_loss_weight=0.2)
 
         # Initialize decoder state
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', init_dec_state='first')
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', init_dec_state='final')
         self.check(encoder_type='lstm', bidirectional=True,

@@ -24,13 +24,9 @@ class TestHierarchicalAttention(unittest.TestCase):
     def test(self):
         print("Hierarchical Attention Working check.")
 
-        # Curriculum training
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            decoder_type='lstm', curriculum_training=True)
-
         # Word attention + char CTC
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', ctc_loss_weight_sub=0.2)
+        # self.check(encoder_type='lstm', bidirectional=True,
+        #            decoder_type='lstm', ctc_loss_weight_sub=0.2)
 
         # Pyramidal encoder
         self.check(encoder_type='lstm', bidirectional=True,
@@ -61,7 +57,7 @@ class TestHierarchicalAttention(unittest.TestCase):
     def check(self, encoder_type, bidirectional, decoder_type,
               attention_type='location', subsample=False, projection=False,
               ctc_loss_weight_sub=0, conv=False, batch_norm=False,
-              residual=False, dense_residual=False, curriculum_training=False):
+              residual=False, dense_residual=False):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
@@ -75,7 +71,6 @@ class TestHierarchicalAttention(unittest.TestCase):
         print('  batch_norm: %s' % str(batch_norm))
         print('  residual: %s' % str(residual))
         print('  dense_residual: %s' % str(dense_residual))
-        print('  curriculum_training: %s' % str(curriculum_training))
         print('==================================================')
 
         if conv or encoder_type == 'cnn':
@@ -140,7 +135,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             init_forget_gate_bias_with_one=True,
             subsample_list=[] if not subsample else [True, True, False],
             subsample_type='concat' if subsample is False else subsample,
-            init_dec_state='final',
+            init_dec_state='first',
             sharpening_factor=1,
             logits_temperature=1,
             sigmoid_smoothing=False,
@@ -162,8 +157,9 @@ class TestHierarchicalAttention(unittest.TestCase):
             encoder_dense_residual=dense_residual,
             decoder_residual=residual,
             decoder_dense_residual=dense_residual,
-            decoding_order='spell_attend',
-            curriculum_training=curriculum_training)
+            # decoding_order='spell_attend',
+            decoding_order='conditional',
+            curriculum_training=False)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):
@@ -212,9 +208,15 @@ class TestHierarchicalAttention(unittest.TestCase):
 
                 # Decode
                 best_hyps, _ = model.decode(
-                    xs, x_lens, beam_width=1, max_decode_len=30)
+                    xs, x_lens,
+                    # beam_width=1,
+                    beam_width=2,
+                    max_decode_len=30)
                 best_hyps_sub, _ = model.decode(
-                    xs, x_lens, beam_width=1, max_decode_len=60,
+                    xs, x_lens,
+                    # beam_width=1,
+                    beam_width=2,
+                    max_decode_len=60,
                     is_sub_task=True)
 
                 str_hyp = idx2word(best_hyps[0][:-1]).split('>')[0]

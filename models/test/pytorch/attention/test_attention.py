@@ -16,6 +16,16 @@ import torch.nn as nn
 torch.manual_seed(1623)
 torch.cuda.manual_seed_all(1623)
 
+import matplotlib
+matplotlib.use('Agg')
+from matplotlib import pyplot as plt
+plt.style.use('ggplot')
+import seaborn as sns
+sns.set_style("white")
+blue = '#4682B4'
+orange = '#D2691E'
+green = '#006400'
+
 sys.path.append('../../../../')
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 from models.test.data import generate_data, idx2char, idx2word
@@ -31,15 +41,19 @@ class TestAttention(unittest.TestCase):
 
         # Decoding order
         self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', decoding_order='conditional')
+        self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', decoding_order='spell_attend')
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', decoding_order='attend_spell')
 
         # Joint CTC-Attention
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', ctc_loss_weight=0.2)
+        # self.check(encoder_type='lstm', bidirectional=True,
+        #            decoder_type='lstm', ctc_loss_weight=0.2)
 
         # Initialize decoder state
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', init_dec_state='first')
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', init_dec_state='final')
         self.check(encoder_type='lstm', bidirectional=True,
@@ -182,7 +196,8 @@ class TestAttention(unittest.TestCase):
             init_dec_state=init_dec_state,
             sharpening_factor=1,
             logits_temperature=1,
-            sigmoid_smoothing=False,
+            # sigmoid_smoothing=False,
+            sigmoid_smoothing=True,
             coverage_weight=0,
             ctc_loss_weight=ctc_loss_weight,
             attention_conv_num_channels=10,
@@ -284,7 +299,7 @@ class TestAttention(unittest.TestCase):
                 print('Ref: %s' % str_ref)
                 print('Hyp: %s' % str_hyp)
 
-                # Decode by theCTC decoder
+                # Decode by the CTC decoder
                 if model.ctc_loss_weight >= 0.1:
                     best_hyps_ctc, perm_idx = model.decode_ctc(
                         xs, x_lens, beam_width=1)

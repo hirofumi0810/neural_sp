@@ -59,7 +59,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                  subsample_list=[],
                  subsample_type='drop',
                  init_dec_state='zero',
-                 sharpening_factor=1,
+                 sharpening_factor=1,  # TODO: change arg name
                  logits_temperature=1,
                  sigmoid_smoothing=False,
                  coverage_weight=0,
@@ -87,7 +87,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                  gate_dec_sub='no_gate',  # or scalar or elementwise
                  gate_embedding='no_gate',  # or concat or scalar or elementwise
                  attention_regularization=False,  # ***
-                 decoding_order='spell_attend'):
+                 decoding_order='spell_attend',
+                 dec_out_sub_attend_temperature=1,
+                 dec_out_sub_sigmoid_smoothing=False,
+                 detach_dec_out_sub=False):
 
         super(NestedAttentionSeq2seq, self).__init__(
             input_size=input_size,
@@ -149,25 +152,22 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         # Setting for MTL
         self.main_loss_weight = main_loss_weight
-        self.main_loss_weight_tmp = main_loss_weight
         self.sub_loss_weight = 1 - main_loss_weight - ctc_loss_weight_sub
-        self.sub_loss_weight_tmp = 1 - main_loss_weight - ctc_loss_weight_sub
         assert self.sub_loss_weight > 0
         self.ctc_loss_weight_sub = ctc_loss_weight_sub
-        self.ctc_loss_weight_sub_tmp = ctc_loss_weight_sub
         if curriculum_training and scheduled_sampling_ramp_max_step == 0:
             raise ValueError('Set scheduled_sampling_ramp_max_step.')
         self.curriculum_training = curriculum_training
 
-        # Setting for decoder intruction
+        # Setting for decoder attention
         assert usage_dec_sub in ['update_decoder', 'all']
-        print(gate_dec_sub)
         assert gate_dec_sub in ['no_gate', 'scalar', 'elementwise']
         assert gate_embedding in ['no_gate', 'concat', 'scalar', 'elementwise']
         self.usage_dec_sub = usage_dec_sub
         self.gate_dec_sub = gate_dec_sub
         self.gate_embedding = gate_embedding
         self.attention_regularization = attention_regularization
+        self.detach_dec_out_sub = detach_dec_out_sub
 
         #########################
         # Encoder
@@ -278,13 +278,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         self.attend_dec_sub = AttentionMechanism(
             encoder_num_units=decoder_num_units_sub,
             decoder_num_units=decoder_num_units,
-            attention_type='location',
+            attention_type='content',
             attention_dim=attention_dim,
-            sharpening_factor=sharpening_factor,
-            sigmoid_smoothing=sigmoid_smoothing,
+            sharpening_factor=1 / dec_out_sub_attend_temperature,
+            sigmoid_smoothing=dec_out_sub_sigmoid_smoothing,
             out_channels=attention_conv_num_channels,
-            kernel_size=attention_conv_width)
-        # TODO: fix bugs in location
+            kernel_size=21)  # 10 characters | current | 10 characters
 
         ##############################################
         # Usage of decoder states in the sub task
@@ -444,8 +443,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             xs_sub, ys_sub_in, ys_sub_out, x_lens_sub, y_lens_sub,
             size_average=True)
 
-        loss_main = loss_main * self.main_loss_weight_tmp
-        loss_sub = loss_sub * self.sub_loss_weight_tmp
+        loss_main = loss_main * self.main_loss_weight
+        loss_sub = loss_sub * self.sub_loss_weight
         loss = loss_main + loss_sub
 
         ##################################################
@@ -455,7 +454,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             ctc_loss_sub = self.compute_ctc_loss(
                 xs_sub, ys_sub_in[:, 1:] + 1,
                 x_lens_sub, y_lens_sub, is_sub_task=True, size_average=True)
-            ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub_tmp
+            ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub
             loss += ctc_loss_sub
 
         if is_eval:
@@ -469,21 +468,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 self._sample_prob = min(
                     self.sample_prob,
                     self.sample_prob / self.sample_ramp_max_step * self._step)
-
-            # Curriculum training (gradually from char to word task)
-            if self.curriculum_training:
-                # main
-                self.main_loss_weight_tmp = min(
-                    self.main_loss_weight,
-                    0.0 + self.main_loss_weight / self.sample_ramp_max_step * self._step * 2)
-                # sub (attention)
-                self.sub_loss_weight_tmp = max(
-                    self.sub_loss_weight,
-                    1.0 - (1 - self.sub_loss_weight) / self.sample_ramp_max_step * self._step * 2)
-                # sub (CTC)
-                self.ctc_loss_weight_sub_tmp = max(
-                    self.ctc_loss_weight_sub,
-                    1.0 - (1 - self.ctc_loss_weight_sub) / self.sample_ramp_max_step * self._step * 2)
 
         return loss, loss_main, loss_sub
 
@@ -520,17 +504,47 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             enc_out, x_lens, ys_in,
             enc_out_sub, x_lens_sub, ys_in_sub, y_lens_sub)
 
+        ##################################################
+        # Main task
+        ##################################################
+        if self.main_loss_weight > 0:
+            # Output smoothing
+            if self.logits_temperature != 1:
+                logits /= self.logits_temperature
+
+            # Compute XE sequence loss in the main task
+            loss = F.cross_entropy(
+                input=logits.view((-1, logits.size(2))),
+                target=ys_out.view(-1),
+                ignore_index=-1, size_average=False) / len(enc_out)
+
+            # Label smoothing (with uniform distribution)
+            if self.label_smoothing_prob > 0:
+                loss_ls = cross_entropy_label_smoothing(
+                    logits,
+                    y_lens=y_lens + 1,  # Add <EOS>
+                    label_smoothing_prob=self.label_smoothing_prob,
+                    distribution='uniform',
+                    size_average=True)
+                loss = loss * (1 - self.label_smoothing_prob) + loss_ls
+                # print(loss_ls)
+
+            # Attention regularization
+            if self.attention_regularization:
+                loss += 0.2 * F.mse_loss(torch.bmm(aw_dec_out_sub, aw_sub),
+                                         aw.detach(),
+                                         size_average=True, reduce=True)
+        else:
+            loss = self._create_var((1,), fill_value=0)
+
+        ##################################################
+        # Sub task
+        ##################################################
         # Output smoothing
         if self.logits_temperature != 1:
-            logits /= self.logits_temperature
             logits_sub /= self.logits_temperature
 
-        # Compute XE sequence loss
-        loss = F.cross_entropy(
-            input=logits.view((-1, logits.size(2))),
-            target=ys_out.view(-1),
-            ignore_index=-1, size_average=False) / len(enc_out)
-
+        # Compute XE sequence loss in the sub task
         loss_sub = F.cross_entropy(
             input=logits_sub.view((-1, logits_sub.size(2))),
             target=ys_out_sub.view(-1),
@@ -538,15 +552,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
-            loss_ls = cross_entropy_label_smoothing(
-                logits,
-                y_lens=y_lens + 1,  # Add <EOS>
-                label_smoothing_prob=self.label_smoothing_prob,
-                distribution='uniform',
-                size_average=True)
-            loss = loss * (1 - self.label_smoothing_prob) + loss_ls
-            # print(loss_ls)
-
             loss_ls_sub = cross_entropy_label_smoothing(
                 logits_sub,
                 y_lens=y_lens_sub + 1,  # Add <EOS>
@@ -559,15 +564,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         # Add coverage term
         if self.coverage_weight != 0:
             raise NotImplementedError
-
-        # Attention regularization
-        if self.attention_regularization:
-            loss += 0.2 * F.mse_loss(torch.bmm(aw_dec_out_sub, aw_sub),
-                                     aw.detach(),
-                                     size_average=True, reduce=True)
-            # loss += 0.5 * F.mse_loss(torch.bmm(aw_dec_out_sub, aw_sub),
-            #                          aw.detach(),
-            #                          size_average=True, reduce=True)
 
         return loss, loss_sub
 
@@ -608,6 +604,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             (batch_size, 1, self.decoder_num_units_sub))
         aw_sub_step = self._create_var((batch_size, enc_out_sub.size(1)))
 
+        if self.decoding_order == 'spell_attend':
+            context_vec_sub = self._create_var(
+                (batch_size, 1, self.encoder_num_units))
+
         embs_sub = []
         dec_out_sub_seq = []
         logits_sub = []
@@ -624,15 +624,27 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 # teacher-forcing
                 y_sub = ys_sub[:, t:t + 1]
 
-            # Compute attention weights for encoder states
-            context_vec_sub, aw_sub_step = self.attend_sub(
-                enc_out_sub, x_lens_sub, dec_out_sub, aw_sub_step)
+            if self.decoding_order == 'attend_spell':
+                # Compute attention weights for encoder states
+                context_vec_sub, aw_sub_step = self.attend_sub(
+                    enc_out_sub, x_lens_sub, dec_out_sub, aw_sub_step)
 
-            # Update character-level decoder states
-            y_sub = self.embed_sub(y_sub)
-            dec_in_sub = torch.cat([y_sub, context_vec_sub], dim=-1)
-            dec_out_sub, dec_state_sub = self.decoder_sub(
-                dec_in_sub, dec_state_sub)
+                # Update character-level decoder states
+                y_sub = self.embed_sub(y_sub)
+                dec_in_sub = torch.cat([y_sub, context_vec_sub], dim=-1)
+                dec_out_sub, dec_state_sub = self.decoder_sub(
+                    dec_in_sub, dec_state_sub)
+
+            elif self.decoding_order == 'spell_attend':
+                # Update character-level decoder states
+                y_sub = self.embed_sub(y_sub)
+                dec_in_sub = torch.cat([y_sub, context_vec_sub], dim=-1)
+                dec_out_sub, dec_state_sub = self.decoder_sub(
+                    dec_in_sub, dec_state_sub)
+
+                # Compute attention weights for encoder states
+                context_vec_sub, aw_sub_step = self.attend_sub(
+                    enc_out_sub, x_lens_sub, dec_out_sub, aw_sub_step)
 
             out_sub = self.W_d_sub(dec_out_sub) + \
                 self.W_c_sub(context_vec_sub)
@@ -647,8 +659,13 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         # Concatenate in T_out-dimension
         embs_sub = torch.cat(embs_sub, dim=1)
         dec_out_sub_seq = torch.cat(dec_out_sub_seq, dim=1)
+        if self.detach_dec_out_sub:
+            dec_out_sub_seq = dec_out_sub_seq.detach()
         logits_sub = torch.cat(logits_sub, dim=1)
         aw_sub = torch.stack(aw_sub, dim=1)
+
+        if self.main_loss_weight == 0:
+            return None, None, logits_sub, aw_sub, None
 
         ##################################################
         # Next, compute logits of the word model
@@ -658,6 +675,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         dec_out = self._create_var((batch_size, 1, self.decoder_num_units))
         aw_step = self._create_var((batch_size, enc_out.size(1)))
 
+        if self.decoding_order == 'spell_attend':
+            context_vec = self._create_var(
+                (batch_size, 1, self.encoder_num_units))
+            context_vec_dec_out_sub = self._create_var(
+                (batch_size, 1, self.decoder_num_units_sub))
+
         aw_dec_out_sub_step = self._create_var(
             (batch_size, dec_out_sub_seq.size(1)))
 
@@ -666,21 +689,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         aw_dec_out_sub = []
         for t in range(ys.size(1)):
 
-            # Compute attention weights for encoder states
-            context_vec, aw_step = self.attend(
-                enc_out, x_lens, dec_out, aw_step)
-
-            # Compute attention weights for decoder states in the sub task
-            context_vec_dec_out_sub, aw_dec_out_sub_step = self.attend_dec_sub(
-                dec_out_sub_seq, y_lens_sub, dec_out, aw_dec_out_sub_step)
-
-            # Compute the importance of information from decoder states in the sub task
-            if self.gate_dec_sub != 'no_gate':
-                gate_dec_sub = F.sigmoid(self.gate_fn_dec_sub(dec_out))
-                # NOTE: gate_dec_sub: `[B, decoder_num_units or 1]`
-                context_vec_dec_out_sub = gate_dec_sub * context_vec_dec_out_sub
-
-            # Embed one-hot representations
             is_sample = self.sample_prob > 0 and t > 0 and self._step > 0 and random.random(
             ) < self._sample_prob
             if is_sample:
@@ -691,26 +699,77 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 y = ys[:, t:t + 1]
             y = self.embed(y)
 
-            # Compute representations of the PREVIOUS word based on gating mechanism
-            if self.gate_embedding != 'no_gate':
-                # Compute PREVIOUS word representations from character embeddings
-                embs_sub_context_vec = torch.sum(
-                    embs_sub * aw_dec_out_sub_step.unsqueeze(2),
-                    dim=1, keepdim=True)
-                word_repr = self.W_c2w(embs_sub_context_vec)
-               # NOTE: to match the dimensions of word and character embeddings
+            if self.decoding_order == 'attend_spell':
+                # Compute attention weights for encoder states
+                context_vec, aw_step = self.attend(
+                    enc_out, x_lens, dec_out, aw_step)
 
-               # Compose word embedding and word representations from character embeddings
-                if self.gate_embedding in ['scalar', 'elementwise']:
-                    gate_emb = F.sigmoid(self.gate_fn_emb(y))
-                    y = (1 - gate_emb) * y + gate_emb * word_repr
-                elif self.gate_embedding == 'concat':
-                    y = torch.cat([y, word_repr], dim=-1)
+                # Compute attention weights for decoder states in the sub task
+                context_vec_dec_out_sub, aw_dec_out_sub_step = self.attend_dec_sub(
+                    dec_out_sub_seq, y_lens_sub, dec_out, aw_dec_out_sub_step)
 
-            # Update word-level decoder states
-            dec_in = torch.cat([y, context_vec], dim=-1)
-            dec_in = torch.cat([dec_in, context_vec_dec_out_sub], dim=-1)
-            dec_out, dec_state = self.decoder(dec_in, dec_state)
+                # Compute the importance of information from decoder states in the sub task
+                if self.gate_dec_sub != 'no_gate':
+                    gate_dec_sub = F.sigmoid(self.gate_fn_dec_sub(dec_out))
+                    # NOTE: gate_dec_sub: `[B, decoder_num_units or 1]`
+                    context_vec_dec_out_sub = gate_dec_sub * context_vec_dec_out_sub
+
+                # Compute representations of the PREVIOUS word based on gating mechanism
+                if self.gate_embedding != 'no_gate':
+                    # Compute PREVIOUS word representations from character embeddings
+                    embs_sub_context_vec = torch.sum(
+                        embs_sub * aw_dec_out_sub_step.unsqueeze(2),
+                        dim=1, keepdim=True)
+                    word_repr = self.W_c2w(embs_sub_context_vec)
+                    # NOTE: to match the dimensions of word and character embeddings
+
+                    # Compose word embedding and word representations from character embeddings
+                    if self.gate_embedding in ['scalar', 'elementwise']:
+                        gate_emb = F.sigmoid(self.gate_fn_emb(y))
+                        y = (1 - gate_emb) * y + gate_emb * word_repr
+                    elif self.gate_embedding == 'concat':
+                        y = torch.cat([y, word_repr], dim=-1)
+
+                # Update word-level decoder states
+                dec_in = torch.cat([y, context_vec], dim=-1)
+                dec_in = torch.cat([dec_in, context_vec_dec_out_sub], dim=-1)
+                dec_out, dec_state = self.decoder(dec_in, dec_state)
+
+            elif self.decoding_order == 'spell_attend':
+                # Compute representations of the PREVIOUS word based on gating mechanism
+                if self.gate_embedding != 'no_gate':
+                    # Compute PREVIOUS word representations from character embeddings
+                    embs_sub_context_vec = torch.sum(
+                        embs_sub * aw_dec_out_sub_step.unsqueeze(2),
+                        dim=1, keepdim=True)
+                    word_repr = self.W_c2w(embs_sub_context_vec)
+                    # NOTE: to match the dimensions of word and character embeddings
+
+                    # Compose word embedding and word representations from character embeddings
+                    if self.gate_embedding in ['scalar', 'elementwise']:
+                        gate_emb = F.sigmoid(self.gate_fn_emb(y))
+                        y = (1 - gate_emb) * y + gate_emb * word_repr
+                    elif self.gate_embedding == 'concat':
+                        y = torch.cat([y, word_repr], dim=-1)
+
+                # Update word-level decoder states
+                dec_in = torch.cat([y, context_vec], dim=-1)
+                dec_in = torch.cat([dec_in, context_vec_dec_out_sub], dim=-1)
+                dec_out, dec_state = self.decoder(dec_in, dec_state)
+
+                # Compute attention weights for encoder states
+                context_vec, aw_step = self.attend(
+                    enc_out, x_lens, dec_out, aw_step)
+
+                # Compute attention weights for decoder states in the sub task
+                context_vec_dec_out_sub, aw_dec_out_sub_step = self.attend_dec_sub(
+                    dec_out_sub_seq, y_lens_sub, dec_out, aw_dec_out_sub_step)
+
+                # Compute the importance of information from decoder states in the sub task
+                if self.gate_dec_sub != 'no_gate':
+                    gate_dec_sub = F.sigmoid(self.gate_fn_dec_sub(dec_out))
+                    # NOTE: gate_dec_sub: `[B, decoder_num_units or 1]`
+                    context_vec_dec_out_sub = gate_dec_sub * context_vec_dec_out_sub
 
             if self.usage_dec_sub == 'all':
                 out = self.W_d(dec_out) + self.W_c(context_vec) + \
@@ -874,6 +933,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         aw_sub_step = self._create_var(
             (batch_size, enc_out_sub.size(1)), volatile=True)
 
+        if self.decoding_order == 'spell_attend':
+            context_vec_sub = self._create_var(
+                (batch_size, 1, self.encoder_num_units), volatile=True)
+
         # Start from <SOS>
         y_sub = self._create_var(
             (batch_size, 1), fill_value=self.sos_sub, dtype='long')
@@ -882,18 +945,31 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         dec_out_sub_seq = []
         aw_sub = []
         best_hyps_sub = []
-        y_lens_sub = np.zeros((batch_size,))
+        y_lens_sub = np.zeros((batch_size,), dtype=np.int32)
+        eos_flag = [False] * batch_size
         for t in range(max_decode_len_sub):
 
-            # Compute attention weights for encoder states
-            context_vec_sub, aw_sub_step = self.attend_sub(
-                enc_out_sub, x_lens_sub, dec_out_sub, aw_sub_step)
+            if self.decoding_order == 'attend_spell':
+                # Compute attention weights for encoder states
+                context_vec_sub, aw_sub_step = self.attend_sub(
+                    enc_out_sub, x_lens_sub, dec_out_sub, aw_sub_step)
 
-            # Update character-level decoder states
-            y_sub = self.embed_sub(y_sub)
-            dec_in_sub = torch.cat([y_sub, context_vec_sub], dim=-1)
-            dec_out_sub, dec_state_sub = self.decoder_sub(
-                dec_in_sub, dec_state_sub)
+                # Update character-level decoder states
+                y_sub = self.embed_sub(y_sub)
+                dec_in_sub = torch.cat([y_sub, context_vec_sub], dim=-1)
+                dec_out_sub, dec_state_sub = self.decoder_sub(
+                    dec_in_sub, dec_state_sub)
+
+            elif self.decoding_order == 'spell_attend':
+                # Update character-level decoder states
+                y_sub = self.embed_sub(y_sub)
+                dec_in_sub = torch.cat([y_sub, context_vec_sub], dim=-1)
+                dec_out_sub, dec_state_sub = self.decoder_sub(
+                    dec_in_sub, dec_state_sub)
+
+                # Compute attention weights for encoder states
+                context_vec_sub, aw_sub_step = self.attend_sub(
+                    enc_out_sub, x_lens_sub, dec_out_sub, aw_sub_step)
 
             out_sub = self.W_d_sub(dec_out_sub) + \
                 self.W_c_sub(context_vec_sub)
@@ -911,8 +987,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             aw_sub.append(aw_sub_step)
 
             for b in range(batch_size):
-                if y_lens_sub[b] == 0 and y_sub.data.cpu().numpy()[b] == self.eos_sub:
-                    y_lens_sub[b] = t + 1
+                if not eos_flag[b]:
+                    y_lens_sub[b] += 1
+                    if y_sub.data.cpu().numpy()[b] == self.eos_sub:
+                        eos_flag[b] = True
 
             # Break if <EOS> is outputed in all mini-batch
             if torch.sum(y_sub.data == self.eos_sub) == y_sub.numel():
@@ -934,6 +1012,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         aw_step = self._create_var(
             (batch_size, enc_out.size(1)), volatile=True)
 
+        if self.decoding_order == 'spell_attend':
+            context_vec = self._create_var(
+                (batch_size, 1, self.encoder_num_units), volatile=True)
+            context_vec_dec_out_sub = self._create_var(
+                (batch_size, 1, self.decoder_num_units_sub), volatile=True)
+
         aw_dec_out_sub_step = self._create_var(
             (batch_size, dec_out_sub_seq.size(1)), volatile=True)
 
@@ -950,43 +1034,80 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         aw_dec_out_sub = []
         for _ in range(max_decode_len):
 
-            # Compute attention weights for encoder states
-            context_vec, aw_step = self.attend(
-                enc_out, x_lens, dec_out, aw_step)
-
-            # Compute attention weights for character-level decoder states
-            context_vec_dec_out_sub, aw_dec_out_sub_step = self.attend_dec_sub(
-                dec_out_sub_seq, y_lens_sub, dec_out, aw_dec_out_sub_step)
-
-            # Compute the importance of information from decoder states in the sub task
-            if self.gate_dec_sub != 'no_gate':
-                gate_dec_sub = F.sigmoid(self.gate_fn_dec_sub(dec_out))
-                # NOTE: gate_dec_sub: `[B, decoder_num_units or 1]`
-                context_vec_dec_out_sub = gate_dec_sub * context_vec_dec_out_sub
-
-            # Embed one-hot representations
             y = self.embed(y)
 
-            # Compute representations of the PREVIOUS word based on gating mechanism
-            if self.gate_embedding != 'no_gate':
-                # Compute PREVIOUS word representations from character embeddings
-                embs_sub_context_vec = torch.sum(
-                    embs_sub * aw_dec_out_sub_step.unsqueeze(2),
-                    dim=1, keepdim=True)
-                word_repr = self.W_c2w(embs_sub_context_vec)
-               # NOTE: to match the dimensions of word and character embeddings
+            if self.decoding_order == 'attend_spell':
+                # Compute attention weights for encoder states
+                context_vec, aw_step = self.attend(
+                    enc_out, x_lens, dec_out, aw_step)
 
-               # Compose word embedding and word representations from character embeddings
-                if self.gate_embedding in ['scalar', 'elementwise']:
-                    gate_emb = F.sigmoid(self.gate_fn_emb(y))
-                    y = (1 - gate_emb) * y + gate_emb * word_repr
-                elif self.gate_embedding == 'concat':
-                    y = torch.cat([y, word_repr], dim=-1)
+                # Compute attention weights for character-level decoder states
+                context_vec_dec_out_sub, aw_dec_out_sub_step = self.attend_dec_sub(
+                    dec_out_sub_seq, y_lens_sub, dec_out, aw_dec_out_sub_step)
 
-            # Update word-level decoder states
-            dec_in = torch.cat([y, context_vec], dim=-1)
-            dec_in = torch.cat([dec_in, context_vec_dec_out_sub], dim=-1)
-            dec_out, dec_state = self.decoder(dec_in, dec_state)
+                # Compute the importance of information from decoder states in the sub task
+                if self.gate_dec_sub != 'no_gate':
+                    gate_dec_sub = F.sigmoid(self.gate_fn_dec_sub(dec_out))
+                    # NOTE: gate_dec_sub: `[B, decoder_num_units or 1]`
+                    context_vec_dec_out_sub = gate_dec_sub * context_vec_dec_out_sub
+
+                # Compute representations of the PREVIOUS word based on gating mechanism
+                if self.gate_embedding != 'no_gate':
+                    # Compute PREVIOUS word representations from character embeddings
+                    embs_sub_context_vec = torch.sum(
+                        embs_sub * aw_dec_out_sub_step.unsqueeze(2),
+                        dim=1, keepdim=True)
+                    word_repr = self.W_c2w(embs_sub_context_vec)
+                    # NOTE: to match the dimensions of word and character embeddings
+
+                    # Compose word embedding and word representations from character embeddings
+                    if self.gate_embedding in ['scalar', 'elementwise']:
+                        gate_emb = F.sigmoid(self.gate_fn_emb(y))
+                        y = (1 - gate_emb) * y + gate_emb * word_repr
+                    elif self.gate_embedding == 'concat':
+                        y = torch.cat([y, word_repr], dim=-1)
+
+                # Update word-level decoder states
+                dec_in = torch.cat([y, context_vec], dim=-1)
+                dec_in = torch.cat([dec_in, context_vec_dec_out_sub], dim=-1)
+                dec_out, dec_state = self.decoder(dec_in, dec_state)
+
+            elif self.decoding_order == 'spell_attend':
+                # Compute representations of the PREVIOUS word based on gating mechanism
+                if self.gate_embedding != 'no_gate':
+                    # Compute PREVIOUS word representations from character embeddings
+                    embs_sub_context_vec = torch.sum(
+                        embs_sub * aw_dec_out_sub_step.unsqueeze(2),
+                        dim=1, keepdim=True)
+                    word_repr = self.W_c2w(embs_sub_context_vec)
+                    # NOTE: to match the dimensions of word and character embeddings
+
+                    # Compose word embedding and word representations from character embeddings
+                    if self.gate_embedding in ['scalar', 'elementwise']:
+                        gate_emb = F.sigmoid(self.gate_fn_emb(y))
+                        y = (1 - gate_emb) * y + gate_emb * word_repr
+                    elif self.gate_embedding == 'concat':
+                        y = torch.cat([y, word_repr], dim=-1)
+
+                # Update word-level decoder states
+                dec_in = torch.cat([y, context_vec], dim=-1)
+                dec_in = torch.cat([dec_in, context_vec_dec_out_sub], dim=-1)
+                dec_out, dec_state = self.decoder(dec_in, dec_state)
+
+                # Compute attention weights for encoder states
+                context_vec, aw_step = self.attend(
+                    enc_out, x_lens, dec_out, aw_step)
+
+                # Compute attention weights for character-level decoder states
+                context_vec_dec_out_sub, aw_dec_out_sub_step = self.attend_dec_sub(
+                    dec_out_sub_seq, y_lens_sub, dec_out, aw_dec_out_sub_step)
+                # print(aw_dec_out_sub_step.size())
+
+                # Compute the importance of information from decoder states in the sub task
+                if self.gate_dec_sub != 'no_gate':
+                    gate_dec_sub = F.sigmoid(self.gate_fn_dec_sub(dec_out))
+                    # NOTE: gate_dec_sub: `[B, decoder_num_units or 1]`
+                    context_vec_dec_out_sub = gate_dec_sub * context_vec_dec_out_sub
 
             if self.usage_dec_sub == 'all':
                 out = self.W_d(dec_out) + self.W_c(context_vec) + \
