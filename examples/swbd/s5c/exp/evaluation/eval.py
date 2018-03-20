@@ -78,7 +78,7 @@ def main():
     model.set_cuda(deterministic=False, benchmark=True)
 
     if 'word' in params['label_type']:
-        wer_eval2000_swbd = do_eval_wer(
+        wer_eval2000_swbd, df_wer_eval2000_swbd = do_eval_wer(
             model=model,
             dataset=eval2000_swbd_data,
             beam_width=args.beam_width,
@@ -86,7 +86,8 @@ def main():
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  WER (SWB): %.3f %%' % (wer_eval2000_swbd * 100))
-        wer_eval2000_ch = do_eval_wer(
+        print(df_wer_eval2000_swbd)
+        wer_eval2000_ch, df_wer_eval2000_ch = do_eval_wer(
             model=model,
             dataset=eval2000_ch_data,
             beam_width=args.beam_width,
@@ -94,10 +95,12 @@ def main():
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  WER (CHE): %.3f %%' % (wer_eval2000_ch * 100))
+        print(df_wer_eval2000_ch)
+
         print('  WER (mean): %.3f %%' %
               ((wer_eval2000_swbd + wer_eval2000_ch) * 100 / 2))
     else:
-        cer_eval2000_swbd, wer_eval2000_swbd = do_eval_cer(
+        cer_eval2000_swbd, wer_eval2000_swbd, df_cer_eval2000_swbd = do_eval_cer(
             model=model,
             dataset=eval2000_swbd_data,
             beam_width=args.beam_width,
@@ -106,7 +109,8 @@ def main():
             progressbar=True)
         print('  CER (SWB): %.3f %%' % (cer_eval2000_swbd * 100))
         print('  WER (SWB): %.3f %%' % (wer_eval2000_swbd * 100))
-        cer_eval2000_ch, wer_eval2000_ch = do_eval_cer(
+        print(df_cer_eval2000_swbd)
+        cer_eval2000_ch, wer_eval2000_ch, df_cer_eval2000_ch = do_eval_cer(
             model=model,
             dataset=eval2000_ch_data,
             beam_width=args.beam_width,
@@ -115,6 +119,8 @@ def main():
             progressbar=True)
         print('  CER (CHE): %.3f %%' % (cer_eval2000_ch * 100))
         print('  WER (CHE): %.3f %%' % (wer_eval2000_ch * 100))
+        print(df_cer_eval2000_ch)
+
         print('  CER (mean): %.3f %%' %
               ((cer_eval2000_swbd + cer_eval2000_ch) * 100 / 2))
         print('  WER (mean): %.3f %%' %

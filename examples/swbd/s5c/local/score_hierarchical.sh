@@ -26,4 +26,4 @@ $PYTHON exp/evaluation/eval_hierarchical.py \
   --epoch -1 \
   --beam_width 1 \
   --eval_batch_size 1 \
-  --data_save_path $DATA_SAVEPATH/$DATASIZE
+  --data_save_path $DATA_SAVEPATH

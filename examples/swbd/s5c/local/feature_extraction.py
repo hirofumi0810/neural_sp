@@ -56,8 +56,7 @@ CONFIG = {
 
 def main():
     print('=> Processing input data...')
-    # for data_type in ['train', 'dev', 'eval2000_swbd', 'eval2000_ch']:
-    for data_type in ['eval2000_swbd', 'eval2000_ch']:
+    for data_type in ['train', 'dev', 'eval2000_swbd', 'eval2000_ch']:
 
         if 'eval' in data_type:
             data_type_tmp = 'eval2000'

@@ -267,14 +267,14 @@ def main():
                 tf_writer.add_scalar('dev/loss', loss_dev, step + 1)
                 tf_writer.add_scalar('dev/loss_main', loss_main_dev, step + 1)
                 tf_writer.add_scalar('dev/loss_sub', loss_sub_dev, step + 1)
-                for name, param in model.named_parameters():
-                    name = name.replace('.', '/')
-                    tf_writer.add_histogram(
-                        name, param.data.cpu().numpy(), step + 1)
-                    if param.grad is not None:
-                        tf_writer.add_histogram(
-                            name + '/grad', param.grad.data.cpu().numpy(), step + 1)
-                    # TODO: fix this
+                # for name, param in model.named_parameters():
+                #     name = name.replace('.', '/')
+                #     tf_writer.add_histogram(
+                #         name, param.data.cpu().numpy(), step + 1)
+                #     if param.grad is not None:
+                #         tf_writer.add_histogram(
+                #             name + '/grad', param.grad.data.cpu().numpy(), step + 1)
+                #     # TODO: fix this
 
             duration_step = time.time() - start_time_step
             logger.info("...Step:%d(epoch:%.3f) loss:%.3f/%.3f/%.3f(%.3f/%.3f/%.3f)/lr:%.5f/batch:%d/x_lens:%d (%.3f min)" %

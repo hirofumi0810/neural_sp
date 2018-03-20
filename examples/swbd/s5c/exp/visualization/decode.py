@@ -16,8 +16,8 @@ from models.load_model import load
 from examples.swbd.s5c.exp.dataset.load_dataset import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
-from examples.swbd.metrics.glm import GLM
-from examples.swbd.metrics.post_processing import fix_trans
+from examples.swbd.s5c.exp.metrics.glm import GLM
+from examples.swbd.s5c.exp.metrics.post_processing import fix_trans
 from utils.config import load_config
 from utils.evaluation.edit_distance import compute_wer
 

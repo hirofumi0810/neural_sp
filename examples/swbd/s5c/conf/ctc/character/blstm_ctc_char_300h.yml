@@ -61,7 +61,7 @@ param:
   clip_grad_norm: 5.0
   clip_activation: 50
   dropout_input: 0
-  dropout_encoder: 0.2
+  dropout_encoder: 0.25
   weight_decay: 1e-6
   logits_temperature: 1
   label_smoothing_prob: 0

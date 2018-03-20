@@ -60,7 +60,8 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
-            data_save_path='/n/sd8/inaguma/corpus/swbd/kaldi/' + data_size,
+            # data_save_path='/n/sd8/inaguma/corpus/swbd/kaldi/' + data_size,
+            data_save_path='/n/sd8/inaguma/corpus/swbd/kaldi',
             backend=backend,
             input_channel=40, use_delta=True, use_double_delta=True,
             data_type=data_type, data_size=data_size,
@@ -85,7 +86,12 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
 
             if dataset.is_test:
                 str_ref = batch['ys'][0][0]
+                str_ref = str_ref.lower()
+                str_ref = str_ref.replace('(', '').replace(')', '')
+
                 str_ref_sub = batch['ys_sub'][0][0]
+                str_ref_sub = str_ref_sub.lower()
+                str_ref_sub = str_ref_sub.replace('(', '').replace(')', '')
             else:
                 str_ref = idx2word(batch['ys'][0][:batch['y_lens'][0]])
                 str_ref_sub = idx2char(
@@ -102,7 +108,7 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
                 print('y_lens (word): %d' % batch['y_lens'][0])
                 print('y_lens_sub (char): %d' % batch['y_lens_sub'][0])
 
-            if dataset.epoch_detail >= 0.01:
+            if dataset.epoch_detail >= 1:
                 break
 
 

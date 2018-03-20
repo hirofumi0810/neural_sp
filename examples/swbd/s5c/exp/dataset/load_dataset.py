@@ -10,7 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from os.path import join
+from os.path import join, isfile
 import pandas as pd
 import logging
 logger = logging.getLogger('training')
@@ -80,6 +80,10 @@ class Dataset(DatasetBase):
         self.num_enque = num_enque
         self.dynamic_batching = dynamic_batching
 
+        if isfile(data_save_path):
+            data_save_path = data_save_path[:-3]
+        # TODO: fix this
+
         self.vocab_file_path = join(
             data_save_path, 'vocab', label_type + '.txt')
 
@@ -115,16 +119,30 @@ class Dataset(DatasetBase):
         if not self.dynamic_batching:
             return batch_size
 
-        if min_frame_num_batch <= 900:
-            pass
-        elif min_frame_num_batch <= 1200:
-            batch_size = int(batch_size / 1.5)
-        elif min_frame_num_batch <= 1500:
-            batch_size = int(batch_size / 2)
-        elif min_frame_num_batch <= 1700:
-            batch_size = 8
+        if 'word' in self.data_type:
+            if min_frame_num_batch <= 300:
+                batch_size = batch_size * 2
+            elif min_frame_num_batch <= 600:
+                batch_size = int(batch_size * 1.5)
+            elif min_frame_num_batch <= 1500:
+                pass
+            elif min_frame_num_batch <= 1700:
+                batch_size = 8
+            else:
+                batch_size = 1
         else:
-            batch_size = 1
+            if min_frame_num_batch <= 300:
+                batch_size = batch_size * 2
+            elif min_frame_num_batch <= 600:
+                batch_size = int(batch_size * 1.5)
+            elif min_frame_num_batch <= 1200:
+                pass
+            elif min_frame_num_batch <= 1500:
+                batch_size = int(batch_size / 2)
+            elif min_frame_num_batch <= 1700:
+                batch_size = 8
+            else:
+                batch_size = 1
 
         if batch_size < 1:
             batch_size = 1

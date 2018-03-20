@@ -25,9 +25,11 @@ class TestLoadDataset(unittest.TestCase):
         #            data_type='train', backend='chainer')
 
         # data_type
-        self.check(label_type='character', data_type='dev')
+        # self.check(label_type='character', data_type='dev')
         self.check(label_type='character', data_type='eval2000_swbd')
         self.check(label_type='character', data_type='eval2000_ch')
+
+        raise ValueError
 
         # label_type
         self.check(label_type='word1')
@@ -72,7 +74,8 @@ class TestLoadDataset(unittest.TestCase):
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
-            data_save_path='/n/sd8/inaguma/corpus/swbd/kaldi/' + data_size,
+            # data_save_path='/n/sd8/inaguma/corpus/swbd/kaldi/' + data_size,
+            data_save_path='/n/sd8/inaguma/corpus/swbd/kaldi',
             backend=backend,
             input_channel=40, use_delta=True, use_double_delta=True,
             data_type=data_type, data_size=data_size,
@@ -99,6 +102,8 @@ class TestLoadDataset(unittest.TestCase):
 
             if dataset.is_test:
                 str_ref = batch['ys'][0][0]
+                str_ref = str_ref.lower()
+                str_ref = str_ref.replace('(', '').replace(')', '')
             else:
                 str_ref = map_fn(batch['ys'][0][:batch['y_lens'][0]])
 

@@ -7,17 +7,18 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from os.path import join, abspath
+from os.path import join, abspath, isdir
 import sys
 import argparse
+import shutil
 
 sys.path.append(abspath('../../../'))
 from models.load_model import load
 from examples.swbd.s5c.exp.dataset.load_dataset import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
-from utils.directory import mkdir_join
-from examples.librispeech.s5.exp.visualization.plot_attention_weights import plot_attention
+from utils.directory import mkdir_join, mkdir
+from utils.visualization.attention import plot_attention_weights
 from utils.config import load_config
 
 parser = argparse.ArgumentParser()
@@ -68,11 +69,73 @@ def main():
     model.set_cuda(deterministic=False, benchmark=True)
 
     # Visualize
-    plot_attention(model=model,
-                   dataset=test_data,
-                   max_decode_len=args.max_decode_len,
-                   eval_batch_size=args.eval_batch_size,
-                   save_path=mkdir_join(args.model_path, 'att_weights'))
+    plot(model=model,
+         dataset=test_data,
+         max_decode_len=args.max_decode_len,
+         eval_batch_size=args.eval_batch_size,
+         save_path=mkdir_join(args.model_path, 'att_weights'))
+
+
+def plot(model, dataset, max_decode_len,
+         eval_batch_size=None, save_path=None):
+    """Visualize attention weights of attetnion-based model.
+    Args:
+        model: model to evaluate
+        dataset: An instance of a `Dataset` class
+        max_decode_len (int): the length of output sequences
+            to stop prediction when EOS token have not been emitted.
+        eval_batch_size (int, optional): the batch size when evaluating the model
+        save_path (string, optional): path to save attention weights plotting
+    """
+    # Clean directory
+    if save_path is not None and isdir(save_path):
+        shutil.rmtree(save_path)
+        mkdir(save_path)
+
+    if 'char' in dataset.label_type:
+        map_fn = Idx2char(dataset.vocab_file_path,
+                          capital_divide=dataset.label_type == 'character_capital_divide',
+                          return_list=True)
+    else:
+        map_fn = Idx2word(dataset.vocab_file_path, return_list=True)
+
+    for batch, is_new_epoch in dataset:
+
+        # Decode
+        best_hyps, aw, perm_idx = model.attention_weights(
+            batch['xs'], batch['x_lens'], max_decode_len=max_decode_len)
+
+        ys = batch['ys'][perm_idx]
+        y_lens = batch['y_lens'][perm_idx]
+
+        for b in range(len(batch['xs'])):
+            ##############################
+            # Reference
+            ##############################
+            if dataset.is_test:
+                str_ref = ys[b][0]
+                # NOTE: transcript is seperated by space('_')
+            else:
+                # Convert from list of index to string
+                str_ref = map_fn(ys[b][:y_lens[b]])
+
+            # Check if the sum of attention weights equals to 1
+            # print(np.sum(aw[b], axis=1))
+
+            token_list = map_fn(best_hyps[b])
+
+            speaker = '_'.join(batch['input_names'][b].split('_')[:2])
+            plot_attention_weights(
+                aw[b, :len(token_list), :batch['x_lens'][b]],
+                label_list=token_list,
+                spectrogram=batch['xs'][b, :, :dataset.input_channel],
+                str_ref=str_ref,
+                save_path=mkdir_join(save_path, speaker,
+                                     batch['input_names'][b] + '.png'),
+                figsize=(20, 8))
+
+        if is_new_epoch:
+            break
 
 
 if __name__ == '__main__':

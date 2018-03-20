@@ -12,8 +12,8 @@ import pandas as pd
 
 from utils.io.labels.character import Idx2char
 from utils.evaluation.edit_distance import compute_wer
-from examples.swbd.metrics.glm import GLM
-from examples.swbd.metrics.post_processing import fix_trans
+from examples.swbd.s5c.exp.metrics.glm import GLM
+from examples.swbd.s5c.exp.metrics.post_processing import fix_trans
 
 
 def do_eval_cer(model, dataset, beam_width, max_decode_len,
