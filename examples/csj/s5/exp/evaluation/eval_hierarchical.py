@@ -100,6 +100,7 @@ def main():
         beam_width=args.beam_width,
         max_decode_len=args.max_decode_len,
         eval_batch_size=args.eval_batch_size,
+        # resolving_unk=True,
         progressbar=True)
     print('  WER (eval1, main): %.3f %%' % (wer_eval1 * 100))
     print(df_wer_eval1)
@@ -125,6 +126,7 @@ def main():
         beam_width=args.beam_width,
         max_decode_len=args.max_decode_len,
         eval_batch_size=args.eval_batch_size,
+        # resolving_unk=True,
         progressbar=True)
     print('  WER (eval2, main): %.3f %%' % (wer_eval2 * 100))
     print(df_wer_eval2)
@@ -150,6 +152,7 @@ def main():
         beam_width=args.beam_width,
         max_decode_len=args.max_decode_len,
         eval_batch_size=args.eval_batch_size,
+        # resolving_unk=True,
         progressbar=True)
     print('  WER (eval3, main): %.3f %%' % (wer_eval3 * 100))
     print(df_wer_eval3)

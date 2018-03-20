@@ -11,12 +11,14 @@ import re
 from tqdm import tqdm
 import pandas as pd
 
+from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
 from utils.evaluation.edit_distance import compute_wer
+from utils.evaluation.resolving_unk import resolve_unk
 
 
 def do_eval_wer(model, dataset, beam_width, max_decode_len,
-                eval_batch_size=None, progressbar=False):
+                eval_batch_size=None, progressbar=False, resolving_unk=False):
     """Evaluate trained model by Word Error Rate.
     Args:
         model: the model to evaluate
@@ -27,6 +29,7 @@ def do_eval_wer(model, dataset, beam_width, max_decode_len,
             This is used for seq2seq models.
         eval_batch_size (int, optional): the batch size when evaluating the model
         progressbar (bool, optional): if True, visualize the progressbar
+        resolving_unk (bool, optional):
     Returns:
         wer (float): Word error rate
         df_wer (pd.DataFrame): dataframe of substitution, insertion, and deletion
@@ -34,7 +37,8 @@ def do_eval_wer(model, dataset, beam_width, max_decode_len,
     # Reset data counter
     dataset.reset()
 
-    idx2word = Idx2word(vocab_file_path=dataset.vocab_file_path)
+    idx2word = Idx2word(dataset.vocab_file_path)
+    idx2char = Idx2char(dataset.vocab_file_path_sub)
 
     wer = 0
     sub, ins, dele, = 0, 0, 0
@@ -52,10 +56,22 @@ def do_eval_wer(model, dataset, beam_width, max_decode_len,
                 max_decode_len=max_decode_len,
                 max_decode_len_sub=100)
         else:
-            best_hyps, perm_idx = model.decode(
-                batch['xs'], batch['x_lens'],
-                beam_width=beam_width,
-                max_decode_len=max_decode_len)
+            if resolving_unk:
+                best_hyps, aw, perm_idx = model.decode(
+                    batch['xs'], batch['x_lens'],
+                    beam_width=beam_width,
+                    max_decode_len=max_decode_len,
+                    resolving_unk=True)
+                best_hyps_sub, aw_sub, _ = model.decode(
+                    batch['xs'], batch['x_lens'],
+                    beam_width=beam_width,
+                    max_decode_len=max_decode_len * 3,
+                    is_sub_task=True, resolving_unk=True)
+            else:
+                best_hyps, perm_idx = model.decode(
+                    batch['xs'], batch['x_lens'],
+                    beam_width=beam_width,
+                    max_decode_len=max_decode_len)
 
         ys = batch['ys'][perm_idx]
         y_lens = batch['y_lens'][perm_idx]
@@ -87,6 +103,17 @@ def do_eval_wer(model, dataset, beam_width, max_decode_len,
             # TODO: fix POS tag (nan -> 'nan')
             str_ref = str(str_ref)
 
+            ##############################
+            # Resolving UNK
+            ##############################
+            if resolving_unk and 'OOV' in str_hyp:
+                str_hyp = resolve_unk(
+                    str_hyp, best_hyps_sub[b], aw[b], aw_sub[b], idx2char)
+                str_hyp = str_hyp.replace('*', '')
+
+            ##############################
+            # Post-proccessing
+            ##############################
             # Remove noise labels
             str_ref = re.sub(r'[@>]+', '', str_ref)
             str_hyp = re.sub(r'[@>]+', '', str_hyp)

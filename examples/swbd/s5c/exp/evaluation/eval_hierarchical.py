@@ -80,43 +80,56 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
-    wer_eval2000_swbd = do_eval_wer(
+    ##############################
+    # Switchboard
+    ##############################
+    wer_eval2000_swbd, df_wer_eval2000_swbd = do_eval_wer(
         model=model,
         dataset=eval2000_swbd_data,
         beam_width=args.beam_width,
         max_decode_len=args.max_decode_len,
         eval_batch_size=args.eval_batch_size,
+        resolving_unk=True,
         progressbar=True)
     print('  WER (SWB, main): %.3f %%' % (wer_eval2000_swbd * 100))
-    wer_eval2000_ch = do_eval_wer(
-        model=model,
-        dataset=eval2000_ch_data,
-        beam_width=args.beam_width,
-        max_decode_len=args.max_decode_len,
-        eval_batch_size=args.eval_batch_size,
-        progressbar=True)
-    print('  WER (CHE, main): %.3f %%' % (wer_eval2000_ch * 100))
-    print('  WER (mean, main): %.3f %%' %
-          ((wer_eval2000_swbd + wer_eval2000_ch) * 100 / 2))
-
-    cer_eval2000_swbd, _ = do_eval_cer(
+    print(df_wer_eval2000_swbd)
+    cer_eval2000_swbd_sub, wer_eval2000_swbd_sub, _ = do_eval_cer(
         model=model,
         dataset=eval2000_swbd_data,
         beam_width=args.beam_width,
         max_decode_len=args.max_decode_len_sub,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
-    print('  CER (SWB, sub): %.3f %%' % (cer_eval2000_swbd * 100))
-    cer_eval2000_ch, _ = do_eval_cer(
+    print('  CER / WER (SWB, sub): %.3f %% / %.3f %%' %
+          ((cer_eval2000_swbd_sub * 100), (wer_eval2000_swbd_sub * 100)))
+
+    ##############################
+    # Callhome
+    ##############################
+    wer_eval2000_ch, df_wer_eval2000_ch = do_eval_wer(
+        model=model,
+        dataset=eval2000_ch_data,
+        beam_width=args.beam_width,
+        max_decode_len=args.max_decode_len,
+        eval_batch_size=args.eval_batch_size,
+        # resolving_unk=True,
+        progressbar=True)
+    print('  WER (CHE, main): %.3f %%' % (wer_eval2000_ch * 100))
+    print(df_wer_eval2000_ch)
+    cer_eval2000_ch_sub, wer_eval2000_ch_sub, _ = do_eval_cer(
         model=model,
         dataset=eval2000_ch_data,
         beam_width=args.beam_width,
         max_decode_len=args.max_decode_len_sub,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
-    print('  CER (CHE, sub): %.3f %%' % (cer_eval2000_ch * 100))
+    print('  CER / WER (CHE, sub): %.3f %% / %.3f %%' %
+          ((cer_eval2000_ch_sub * 100), (wer_eval2000_ch_sub * 100)))
+
+    print('  WER (mean, main): %.3f %%' %
+          ((wer_eval2000_swbd + wer_eval2000_ch) * 100 / 2))
     print('  CER (mean, sub): %.3f %%' %
-          ((cer_eval2000_swbd + cer_eval2000_ch) * 100 / 2))
+          ((cer_eval2000_swbd_sub + cer_eval2000_ch_sub) * 100 / 2))
 
 
 if __name__ == '__main__':

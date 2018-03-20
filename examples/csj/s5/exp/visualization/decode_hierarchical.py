@@ -18,6 +18,7 @@ from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
 from utils.config import load_config
 from utils.evaluation.edit_distance import compute_wer
+from utils.evaluation.resolving_unk import resolve_unk
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model_path', type=str,
@@ -29,9 +30,9 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
 parser.add_argument('--beam_width', type=int, default=1,
                     help='beam_width (int, optional): beam width for beam search.' +
                     ' 1 disables beam search, which mean greedy decoding.')
-parser.add_argument('--max_decode_len', type=int, default=60,
+parser.add_argument('--max_decode_len', type=int, default=100,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
-parser.add_argument('--max_decode_len_sub', type=int, default=150,
+parser.add_argument('--max_decode_len_sub', type=int, default=300,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
@@ -57,7 +58,7 @@ def main():
         label_type=params['label_type'], label_type_sub=params['label_type_sub'],
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=True, reverse=True, tool=params['tool'])
+        sort_utt=False, reverse=False, tool=params['tool'])
 
     params['num_classes'] = test_data.num_classes
     params['num_classes_sub'] = test_data.num_classes_sub
@@ -80,8 +81,9 @@ def main():
            max_decode_len=args.max_decode_len,
            max_decode_len_sub=args.max_decode_len_sub,
            eval_batch_size=args.eval_batch_size,
-           save_path=None)
-    # save_path=args.model_path)
+           save_path=None
+           # save_path=args.model_path
+           )
 
 
 def decode(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
@@ -118,15 +120,16 @@ def decode(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
                 max_decode_len=max_decode_len,
                 max_decode_len_sub=100)
         else:
-            best_hyps, perm_idx = model.decode(
+            best_hyps, aw, perm_idx = model.decode(
                 batch['xs'], batch['x_lens'],
                 beam_width=beam_width,
-                max_decode_len=max_decode_len)
-            best_hyps_sub, perm_idx = model.decode(
+                max_decode_len=max_decode_len,
+                resolving_unk=True)
+            best_hyps_sub, aw_sub, perm_idx = model.decode(
                 batch['xs'], batch['x_lens'],
                 beam_width=beam_width,
                 max_decode_len=max_decode_len_sub,
-                is_sub_task=True)
+                is_sub_task=True, resolving_unk=True)
 
         ys = batch['ys'][perm_idx]
         y_lens = batch['y_lens'][perm_idx]
@@ -134,7 +137,6 @@ def decode(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
         y_lens_sub = batch['y_lens_sub'][perm_idx]
 
         for b in range(len(batch['xs'])):
-            print('----- wav: %s -----' % batch['input_names'][b])
 
             ##############################
             # Reference
@@ -155,9 +157,19 @@ def decode(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
             str_hyp = idx2word(best_hyps[b])
             str_hyp_sub = idx2char(best_hyps_sub[b])
 
+            ##############################
+            # Resolving UNK
+            ##############################
+            if 'OOV' in str_hyp:
+                str_hyp_no_unk = resolve_unk(
+                    str_hyp, best_hyps_sub[b], aw[b], aw_sub[b], idx2char)
+            else:
+                str_hyp_no_unk = str_hyp
+
             if model.model_type != 'hierarchical_ctc':
                 str_hyp = str_hyp.split('>')[0]
                 str_hyp_sub = str_hyp_sub.split('>')[0]
+                str_hyp_no_unk = str_hyp_no_unk.split('>')[0]
                 # NOTE: Trancate by the first <EOS>
 
                 # Remove the last space
@@ -165,25 +177,34 @@ def decode(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
                     str_hyp = str_hyp[:-1]
                 if len(str_hyp_sub) > 0 and str_hyp_sub[-1] == '_':
                     str_hyp_sub = str_hyp_sub[:-1]
+                if len(str_hyp_no_unk) > 0 and str_hyp_no_unk[-1] == '_':
+                    str_hyp_no_unk = str_hyp_no_unk[:-1]
 
-            # if 'OOV' not in str_hyp:
-            #     continue
+            if 'OOV' not in str_hyp:
+                continue
 
-            print('Ref       : %s' % str_ref.replace('_', ' '))
-            print('Hyp (main): %s' % str_hyp.replace('_', ' '))
+            print('----- wav: %s -----' % batch['input_names'][b])
+            print('Ref         : %s' % str_ref.replace('_', ' '))
+            print('Hyp (main)  : %s' % str_hyp.replace('_', ' '))
             # print('Ref (sub) : %s' % str_ref_sub.replace('_', ' '))
-            print('Hyp (sub) : %s' % str_hyp_sub.replace('_', ' '))
+            print('Hyp (sub)   : %s' % str_hyp_sub.replace('_', ' '))
+            print('Hyp (no UNK): %s' % str_hyp_no_unk.replace('_', ' '))
 
             try:
                 wer, _, _, _ = compute_wer(ref=str_ref.split('_'),
                                            hyp=str_hyp.split('_'),
                                            normalize=True)
-                print('WER: %.3f %%' % (wer * 100))
+                print('WER (main)  : %.3f %%' % (wer * 100))
                 cer, _, _, _ = compute_wer(ref=list(str_ref_sub.replace('_', '')),
                                            hyp=list(
                                                str_hyp_sub.replace('_', '')),
                                            normalize=True)
-                print('CER: %.3f %%' % (cer * 100))
+                print('CER (sub)   : %.3f %%' % (cer * 100))
+                wer_no_unk, _, _, _ = compute_wer(ref=str_ref.split('_'),
+                                                  hyp=str_hyp_no_unk.replace(
+                                                      '*', '').split('_'),
+                                                  normalize=True)
+                print('WER (no UNK): %.3f %%' % (wer_no_unk * 100))
             except:
                 pass
 

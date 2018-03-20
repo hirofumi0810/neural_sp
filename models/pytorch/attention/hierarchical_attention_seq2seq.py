@@ -14,8 +14,8 @@ import torch
 from models.pytorch.linear import LinearND, Embedding, Embedding_LS
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 from models.pytorch.encoders.load_encoder import load
-# from models.pytorch.attention.rnn_decoder import RNNDecoder
-from models.pytorch.attention.rnn_decoder_nstep import RNNDecoder
+from models.pytorch.attention.rnn_decoder import RNNDecoder
+# from models.pytorch.attention.rnn_decoder_nstep import RNNDecoder
 from models.pytorch.attention.attention_layer import AttentionMechanism
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
@@ -53,7 +53,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  init_forget_gate_bias_with_one=True,
                  subsample_list=[],
                  subsample_type='drop',
-                 init_dec_state='zero',
+                 init_dec_state='first',
                  sharpening_factor=1,
                  logits_temperature=1,
                  sigmoid_smoothing=False,
@@ -77,7 +77,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  encoder_dense_residual=False,
                  decoder_residual=False,
                  decoder_dense_residual=False,
-                 decoding_order='spell_attend',
+                 decoding_order='attend_spell',
                  curriculum_training=False):
 
         super(HierarchicalAttentionSeq2seq, self).__init__(
@@ -194,18 +194,18 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     input_size=embedding_dim_sub,
                     rnn_type=decoder_type,
                     num_units=decoder_num_units_sub,
-                    num_layers=decoder_num_layers_sub,
+                    num_layers=1,
                     dropout=dropout_decoder,
-                    residual=decoder_residual,
-                    dense_residual=decoder_dense_residual)
+                    residual=False,
+                    dense_residual=False)
                 self.decoder_second_sub = RNNDecoder(
                     input_size=self.encoder_num_units,
                     rnn_type=decoder_type,
                     num_units=decoder_num_units_sub,
-                    num_layers=decoder_num_layers_sub,
+                    num_layers=1,
                     dropout=dropout_decoder,
-                    residual=decoder_residual,
-                    dense_residual=decoder_dense_residual)
+                    residual=False,
+                    dense_residual=False)
             else:
                 self.decoder_sub = RNNDecoder(
                     input_size=self.encoder_num_units + embedding_dim_sub,
@@ -424,7 +424,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             return loss, loss_main, ctc_loss_sub
 
     def decode(self, xs, x_lens, beam_width, max_decode_len,
-               length_penalty=0, coverage_penalty=0, is_sub_task=False):
+               length_penalty=0, coverage_penalty=0, is_sub_task=False,
+               resolving_unk=False):
         """Decoding in the inference stage.
         Args:
             xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
@@ -435,6 +436,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             length_penalty (float, optional):
             coverage_penalty (float, optional):
             is_sub_task (bool, optional):
+            resolving_unk (bool, optional):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
             perm_idx (np.ndarray): A tensor of size `[B]`
@@ -461,7 +463,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
             # Decode by attention decoder
             if beam_width == 1:
-                best_hyps, _ = self._decode_infer_greedy(
+                best_hyps, aw = self._decode_infer_greedy(
                     enc_out, x_lens, max_decode_len,
                     is_sub_task=is_sub_task)
             else:
@@ -476,4 +478,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             else:
                 perm_idx = self.var2np(perm_idx)
 
-        return best_hyps, perm_idx
+        if resolving_unk:
+            return best_hyps, aw, perm_idx
+        else:
+            return best_hyps, perm_idx
