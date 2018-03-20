@@ -13,6 +13,7 @@ import argparse
 from tqdm import tqdm
 import pandas as pd
 import pickle
+import re
 
 sys.path.append('../../../')
 # from utils.io.labels.phone import Phone2idx
@@ -41,15 +42,21 @@ OOV = 'OOV'
 
 def main():
 
-    for data_type in ['train', 'dev', 'eval2000_swbd', 'eval2000_ch']:
+    # for data_type in ['train', 'dev', 'eval2000_swbd', 'eval2000_ch']:
+    for data_type in ['eval2000_swbd', 'eval2000_ch']:
         print('=' * 50)
         print(' ' * 20 + data_type)
         print('=' * 50)
 
+        if 'eval' in data_type:
+            data_type_tmp = 'eval2000'
+        else:
+            data_type_tmp = data_type
+
         # Convert transcript to index
         print('=> Processing transcripts...')
         trans_dict = read_text(
-            text_path=join(args.data_save_path, data_type, 'text'),
+            text_path=join(args.data_save_path, data_type_tmp, 'text'),
             vocab_save_path=mkdir_join(args.data_save_path, 'vocab'),
             data_type=data_type,
             lexicon_path=None)
@@ -80,7 +87,7 @@ def main():
             word10_indices, word15_indices = trans_list[2:4]
             char_indices, char_capital_indices = trans_list[4:6]
 
-            speaker = utt_idx.split('_')[0]
+            speaker = '_'.join(utt_idx.split('_')[:2])
 
             if args.tool == 'wav':
                 raise NotImplementedError
@@ -207,7 +214,7 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
         for line in f:
             line = line.strip()
             utt_idx = line.split(' ')[0]
-            trans = ' '.join(line.split(' ')[1:])
+            trans = ' '.join(line.split(' ')[1:]).lower()
 
             if data_type == 'eval2000_swbd' and utt_idx[:2] == 'en':
                 continue
@@ -218,6 +225,21 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
             trans = trans.replace('[laughter]', LAUGHTER)
             trans = trans.replace('[noise]', NOISE)
             trans = trans.replace('[vocalized-noise]', VOCALIZED_NOISE)
+
+            if 'eval' in data_type:
+                trans = trans.replace('<b_aside>', '')
+                trans = trans.replace('<e_aside>', '')
+                trans = re.sub(r'[()]+', '', trans)
+
+                # Remove consecutive spaces
+                trans = re.sub(r'[\s]+', ' ', trans)
+
+                # Remove the first and last spaces
+                if trans[0] == ' ':
+                    trans = trans[1:]
+                if trans[-1] == ' ':
+                    trans = trans[:-1]
+
             trans = trans.replace(' ', SPACE)
 
             trans_dict[utt_idx] = trans
@@ -308,22 +330,22 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
             # word-level (threshold == 1)
             oov_rate = compute_oov_rate(word_dict, word1_vocab_path)
             f.write('Word (freq1):\n')
-            f.write('  OOV rate (test): %f %%\n' % oov_rate)
+            f.write('  OOV rate: %f %%\n' % oov_rate)
 
             # word-level (threshold == 5)
             oov_rate = compute_oov_rate(word_dict, word5_vocab_path)
             f.write('Word (freq5):\n')
-            f.write('  OOV rate (test): %f %%\n' % oov_rate)
+            f.write('  OOV rate: %f %%\n' % oov_rate)
 
             # word-level (threshold == 10)
             oov_rate = compute_oov_rate(word_dict, word10_vocab_path)
             f.write('Word (freq10):\n')
-            f.write('  OOV rate (test): %f %%\n' % oov_rate)
+            f.write('  OOV rate: %f %%\n' % oov_rate)
 
             # word-level (threshold == 15)
             oov_rate = compute_oov_rate(word_dict, word15_vocab_path)
             f.write('Word (freq15):\n')
-            f.write('  OOV rate (test): %f %%\n' % oov_rate)
+            f.write('  OOV rate: %f %%\n' % oov_rate)
 
     # Convert to index
     print('=====> Convert to index...')
@@ -336,8 +358,7 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
 
     for utt_idx, trans in tqdm(trans_dict.items()):
         if 'eval' in data_type:
-            pass
-            # trans_dict[utt_idx] = trans
+            trans_dict[utt_idx] = [trans, trans, trans, trans, trans, trans]
             # NOTE: save as it is
         else:
             word1_indices = word2idx_freq1(trans)
@@ -373,13 +394,23 @@ def compute_oov_rate(word_dict, vocab_path):
         vocab_set = set([])
         for line in f:
             word = line.strip()
+
+            # Convert acronyms to character
+            if word[-1] == '.':
+                word = word.replace('.', '')
+
             vocab_set.add(word)
 
     oov_count = 0
     word_num = 0
     for word, freq in word_dict.items():
+
+        if word == '%hesitation':
+            continue
+
         word_num += freq
-        if word not in vocab_set:
+        if word not in vocab_set and word.replace('-', '') not in vocab_set:
+            print(word)
             oov_count += freq
 
     oov_rate = oov_count * 100 / word_num

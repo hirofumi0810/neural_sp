@@ -9,8 +9,6 @@ from __future__ import print_function
 
 import re
 
-HESITATIONS = ['uh', 'um', 'eh', 'mm', 'hm', 'ah', 'huh', 'ha', 'er', 'oof',
-               'hee', 'ach', 'eee', 'ew']
 LAUGHTER = 'LA'
 NOISE = 'NZ'
 VOCALIZED_NOISE = 'VN'
@@ -35,11 +33,15 @@ def fix_trans(transcript, glm):
     transcript = transcript.replace(NOISE, '')
     transcript = transcript.replace(LAUGHTER, '')
     transcript = transcript.replace(VOCALIZED_NOISE, '')
-    transcript = transcript.replace(HESITATION, '')
+    # transcript = transcript.replace(HESITATION, '')
 
     # Remove garbage labels
-    transcript = re.sub(r'[\'-<>]+', '', transcript)
-    # TODO: WER計算するときに消していい？
+    transcript = re.sub(r'[<>]+', '', transcript)
+    transcript = transcript.replace('-', '')
+    # transcript = transcript.replace('\'', '')
+
+    # Convert acronyms to character
+    transcript = transcript.replace('.', '')
 
     # Remove consecutive spaces again
     transcript = re.sub(r'[_]+', '_', transcript)
@@ -48,6 +50,6 @@ def fix_trans(transcript, glm):
     if len(transcript) > 0 and transcript[0] == '_':
         transcript = transcript[1:]
     if len(transcript) > 0 and transcript[-1] == '_':
-        transcript = transcript[:-1]
+        transcript = transcript[: -1]
 
     return transcript
