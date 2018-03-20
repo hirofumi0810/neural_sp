@@ -25,8 +25,7 @@ hierarchical_model=true
 run_background=true
 
 ### Set true when restarting training
-# restart=false
-restart=true
+restart=false
 
 ### Set path to original data
 CSJDATATOP="/n/rd25/mimura/corpus/CSJ"

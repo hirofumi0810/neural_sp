@@ -299,7 +299,7 @@ def main():
             else:
                 start_time_eval = time.time()
                 # dev
-                if 'word' in params['label_type'] and not bool(param['pretrain_stage']):
+                if 'word' in params['label_type'] and not bool(params['pretrain_stage']):
                     metric_dev_epoch, _ = do_eval_wer(
                         model=model,
                         dataset=dev_data,

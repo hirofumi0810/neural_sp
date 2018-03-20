@@ -7,7 +7,7 @@ param:
   pretrain_stage: False
 
   # initialization
-  char_init: True
+  char_init: /n/sd8/inaguma/result/csj/pytorch/hierarchical_attention/word5_kanji_wb/subset/blstm320H5L4L_drop8_lstm320H1L_adam_lr1e-3_location_dropen0.2de0.2emb0.2_ss0.2_ls0.1_main0.0_input80
 
   # MTL
-  main_loss_weight: 1.0
+  main_loss_weight: 0.5

@@ -57,7 +57,7 @@ param:
   embedding_dim_sub: 64
   attention_conv_num_channels: 10
   attention_conv_width: 201
-  decoding_order: spell_attend
+  decoding_order: attend_spell
 
   # optimization
   batch_size: 64
@@ -83,13 +83,13 @@ param:
   dropout_decoder: 0.2
   dropout_embedding: 0.2
   weight_decay: 1e-6
-  init_dec_state: zero
+  init_dec_state: first
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False
   coverage_weight: 0
   scheduled_sampling_prob: 0.2
-  scheduled_sampling_ramp_max_step: 125000
+  scheduled_sampling_ramp_max_step: 50000
   label_smoothing_prob: 0.1
   weight_noise_std: 0
 
@@ -104,24 +104,28 @@ param:
 
   # MTL
   main_loss_weight: 0.5
+  # main_loss_weight: 0.8
   ctc_loss_weight_sub: 0
   curriculum_training: False
 
+  # W2C attention
   usage_dec_sub: update_decoder
   # usage_dec_sub: all
 
-  gate_dec_sub: no_gate
-  # gate_dec_sub: scalar
+  dec_out_sub_attend_temperature: 1
+  dec_out_sub_sigmoid_smoothing: True
+
+  attention_regularization: True
+
+  # gate_dec_sub: no_gate
+  gate_dec_sub: scalar
   # gate_dec_sub: elementwise
 
-  attention_regularization: False
+  conditional_decoder: True
 
+  ### not used now
   gate_embedding: no_gate
   # gate_embedding: concat
   # gate_embedding: scalar
   # gate_embedding: elementwise
-
-  # other setting
-  dec_out_sub_attend_temperature: 1
-  dec_out_sub_sigmoid_smoothing: False
-  detach_dec_out_sub: True
+  detach_dec_out_sub: False

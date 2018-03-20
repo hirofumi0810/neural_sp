@@ -28,7 +28,7 @@ parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--max_decode_len', type=int, default=100,  # or 60
+parser.add_argument('--max_decode_len', type=int, default=150,  # or 60
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
@@ -75,12 +75,11 @@ def main():
          max_decode_len=args.max_decode_len,
          eval_batch_size=args.eval_batch_size,
          save_path=mkdir_join(args.model_path, 'att_weights'))
-    # save_path=None)
 
 
 def plot(model, dataset, max_decode_len,
          eval_batch_size=None, save_path=None):
-    """Visualize attention weights of Attetnion-based model.
+    """Visualize attention weights of attetnion-based model.
     Args:
         model: model to evaluate
         dataset: An instance of a `Dataset` class
@@ -127,15 +126,12 @@ def plot(model, dataset, max_decode_len,
             speaker = batch['input_names'][b].split('_')[0]
             plot_attention_weights(
                 aw[b, :len(token_list), :batch['x_lens'][b]],
-                frame_num=batch['x_lens'][b],
-                num_stack=dataset.num_stack,
                 label_list=token_list,
-                spectrogram=batch['xs'][b, :, :80],
+                spectrogram=batch['xs'][b, :, :dataset.input_channel],
                 str_ref=str_ref,
                 save_path=mkdir_join(save_path, speaker,
                                      batch['input_names'][b] + '.png'),
                 figsize=(20, 8))
-            # TODO: add spectrogram
 
         if is_new_epoch:
             break

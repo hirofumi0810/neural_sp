@@ -5,7 +5,7 @@ param:
   # corpus
   corpus: csj
   data_size: subset
-  label_type: word5
+  label_type: word15
 
   # features
   feature: fbank
@@ -51,7 +51,8 @@ param:
   embedding_dim: 128
   attention_conv_num_channels: 10
   attention_conv_width: 201
-  decoding_order: spell_attend
+  # decoding_order: attend_spell
+  decoding_order: conditional
 
   # optimization
   batch_size: 64
@@ -77,13 +78,13 @@ param:
   dropout_decoder: 0.2
   dropout_embedding: 0.2
   weight_decay: 1e-6
-  init_dec_state: zero
+  init_dec_state: first
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False
   coverage_weight: 0
   scheduled_sampling_prob: 0.2
-  scheduled_sampling_ramp_max_step: 125000
+  scheduled_sampling_ramp_max_step: 50000
   label_smoothing_prob: 0.1
   weight_noise_std: 0
 

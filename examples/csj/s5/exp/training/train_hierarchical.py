@@ -31,7 +31,6 @@ from utils.training.logging import set_logger
 from utils.directory import mkdir_join
 from utils.config import load_config, save_config
 
-MAX_DECODE_LEN_POS = 60
 MAX_DECODE_LEN_WORD = 60
 MAX_DECODE_LEN_CHAR = 150
 

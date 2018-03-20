@@ -11,6 +11,7 @@ from os.path import join, abspath, isdir
 import sys
 import argparse
 import shutil
+import numpy as np
 
 import matplotlib
 matplotlib.use('Agg')
@@ -31,7 +32,7 @@ from examples.csj.s5.exp.dataset.load_dataset_hierarchical import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
 from utils.directory import mkdir_join, mkdir
-from utils.visualization.attention import plot_attention_weights
+from utils.visualization.attention import plot_hierarchical_attention_weights
 from utils.config import load_config
 
 parser = argparse.ArgumentParser()
@@ -62,9 +63,9 @@ def main():
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
-        data_type='eval1',
+        # data_type='eval1',
         # data_type='eval2',
-        # data_type='eval3',
+        data_type='eval3',
         data_size=params['data_size'],
         label_type=params['label_type'], label_type_sub=params['label_type_sub'],
         batch_size=args.eval_batch_size, splice=params['splice'],
@@ -118,7 +119,7 @@ def plot(model, dataset, max_decode_len, max_decode_len_sub,
     for batch, is_new_epoch in dataset:
 
         if model.model_type == 'nested_attention':
-            best_hyps, best_hyps_sub, aw, aw_sub, aw_dec_out_sub = model.attention_weights(
+            best_hyps, best_hyps_sub, aw, aw_sub, aw_dec_out_sub, gate_weights = model.attention_weights(
                 batch['xs'], batch['x_lens'],
                 max_decode_len=max_decode_len,
                 max_decode_len_sub=max_decode_len_sub)
@@ -137,30 +138,16 @@ def plot(model, dataset, max_decode_len, max_decode_len_sub,
 
             speaker = batch['input_names'][b].split('_')[0]
 
-            # word to acoustic
-            plot_attention_weights(
+            # word to acoustic & character to acoustic
+            plot_hierarchical_attention_weights(
                 aw[b, :len(word_list), :batch['x_lens'][b]],
-                frame_num=batch['x_lens'][b],
-                num_stack=dataset.num_stack,
-                label_list=word_list,
-                spectrogram=batch['xs'][b, :, :80],
-                save_path=mkdir_join(save_path, speaker,
-                                     batch['input_names'][b] + '_word.png'),
-                figsize=(20, 8)
-                # figsize=(14, 7)
-            )
-
-            # character to acoustic
-            plot_attention_weights(
                 aw_sub[b, :len(char_list), :batch['x_lens'][b]],
-                frame_num=batch['x_lens'][b],
-                num_stack=dataset.num_stack,
-                label_list=char_list,
+                label_list=word_list,
+                label_list_sub=char_list,
                 spectrogram=batch['xs'][b, :, :80],
                 save_path=mkdir_join(save_path, speaker,
-                                     batch['input_names'][b] + '_char.png'),
-                figsize=(20, 8)
-                # figsize=(14, 7)
+                                     batch['input_names'][b] + '.png'),
+                figsize=(40, 8)
             )
 
             # word to characater
@@ -170,9 +157,12 @@ def plot(model, dataset, max_decode_len, max_decode_len_sub,
                 label_list_sub=char_list,
                 save_path=mkdir_join(save_path, speaker,
                                      batch['input_names'][b] + '_word2char.png'),
-                figsize=(20, 8)
-                # figsize=(14, 7)
+                figsize=(40, 8)
             )
+
+            # gate activation
+            # if gate_weights is not None:
+            #     print(np.mean(gate_weights[b], axis=1))
 
         if is_new_epoch:
             break
@@ -198,8 +188,10 @@ def plot_word2char_attention_weights(attention_weights, label_list, label_list_s
                 xticklabels=label_list_sub,
                 yticklabels=label_list)
     # cbar_kws={"orientation": "horizontal"}
-    plt.ylabel('Output labels (←)', fontsize=12)
+    plt.ylabel('Output characters (→)', fontsize=12)
+    plt.ylabel('Output words (←)', fontsize=12)
     plt.yticks(rotation=0)
+    plt.xticks(rotation=0)
 
     # Save as a png file
     if save_path is not None:

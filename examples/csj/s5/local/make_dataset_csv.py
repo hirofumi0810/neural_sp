@@ -367,22 +367,22 @@ def read_text(text_path, vocab_save_path, data_type,
             # word-level (threshold == 1)
             oov_rate = compute_oov_rate(word_dict, word1_vocab_path)
             f.write('Word (freq1):\n')
-            f.write('  OOV rate (test): %f %%\n' % oov_rate)
+            f.write('  OOV rate: %f %%\n' % oov_rate)
 
             # word-level (threshold == 5)
             oov_rate = compute_oov_rate(word_dict, word5_vocab_path)
             f.write('Word (freq5):\n')
-            f.write('  OOV rate (test): %f %%\n' % oov_rate)
+            f.write('  OOV rate: %f %%\n' % oov_rate)
 
             # word-level (threshold == 10)
             oov_rate = compute_oov_rate(word_dict, word10_vocab_path)
             f.write('Word (freq10):\n')
-            f.write('  OOV rate (test): %f %%\n' % oov_rate)
+            f.write('  OOV rate: %f %%\n' % oov_rate)
 
             # word-level (threshold == 15)
             oov_rate = compute_oov_rate(word_dict, word15_vocab_path)
             f.write('Word (freq15):\n')
-            f.write('  OOV rate (test): %f %%\n' % oov_rate)
+            f.write('  OOV rate: %f %%\n' % oov_rate)
 
     # Convert to index
     print('=====> Convert to index...')

@@ -122,16 +122,31 @@ class Dataset(DatasetBase):
             return batch_size
 
         if self.data_size == 'subset':
-            if min_frame_num_batch <= 300:
-                batch_size = batch_size * 2
-            elif min_frame_num_batch <= 600:
-                batch_size = int(batch_size * 1.5)
-            elif min_frame_num_batch <= 1600:
-                pass
-            elif min_frame_num_batch <= 1700:
-                batch_size = int(batch_size / 2)
+            if 'word' in self.data_type:
+                if min_frame_num_batch <= 300:
+                    batch_size = batch_size * 2
+                elif min_frame_num_batch <= 600:
+                    batch_size = int(batch_size * 1.5)
+                elif min_frame_num_batch <= 1600:
+                    pass
+                elif min_frame_num_batch <= 1700:
+                    batch_size = int(batch_size / 2)
+                else:
+                    batch_size = 8
             else:
-                batch_size = 8
+                if min_frame_num_batch <= 300:
+                    batch_size = batch_size * 2
+                elif min_frame_num_batch <= 600:
+                    batch_size = int(batch_size * 1.5)
+                elif min_frame_num_batch <= 1400:
+                    pass
+                elif min_frame_num_batch <= 1600:
+                    batch_size = int(batch_size / 2)
+                elif min_frame_num_batch <= 1700:
+                    batch_size = int(batch_size / 4)
+                else:
+                    batch_size = 8
+
         elif self.data_size == 'fullset':
             pass
 

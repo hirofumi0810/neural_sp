@@ -143,9 +143,8 @@ def plot(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
                 label_list_sub=char_list,
                 spectrogram=batch['xs'][b, :, :80],
                 save_path=mkdir_join(save_path, speaker,
-                                     batch['input_names'][b] + '_word.png'),
-                figsize=(20, 8)
-                # figsize=(14, 7)
+                                     batch['input_names'][b] + '.png'),
+                figsize=(40, 8)
             )
 
         if is_new_epoch:
