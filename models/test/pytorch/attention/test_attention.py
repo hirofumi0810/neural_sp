@@ -43,9 +43,9 @@ class TestAttention(unittest.TestCase):
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', decoding_order='conditional')
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', decoding_order='spell_attend')
+                   decoder_type='lstm', decoding_order='attend_update_generate')
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', decoding_order='attend_spell')
+                   decoder_type='lstm', decoding_order='attend_generate_update')
 
         # Joint CTC-Attention
         # self.check(encoder_type='lstm', bidirectional=True,
@@ -112,10 +112,10 @@ class TestAttention(unittest.TestCase):
     @measure_time
     def check(self, encoder_type, decoder_type, bidirectional=False,
               attention_type='location', label_type='char',
-              subsample=False, projection=False, init_dec_state='zero',
+              subsample=False, projection=False, init_dec_state='first',
               ctc_loss_weight=0, conv=False, batch_norm=False,
               residual=False, dense_residual=False,
-              decoding_order='spell_attend'):
+              decoding_order='attend_generate_update'):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
@@ -180,7 +180,8 @@ class TestAttention(unittest.TestCase):
             attention_dim=128,
             decoder_type=decoder_type,
             decoder_num_units=256,
-            decoder_num_layers=2,
+            decoder_num_layers=1,
+            # decoder_num_layers=2,
             embedding_dim=32,
             dropout_input=0.1,
             dropout_encoder=0.1,
@@ -247,7 +248,7 @@ class TestAttention(unittest.TestCase):
         model.set_cuda(deterministic=False, benchmark=True)
 
         # Train model
-        max_step = 1000
+        max_step = 300
         start_time_step = time.time()
         for step in range(max_step):
 
@@ -269,8 +270,8 @@ class TestAttention(unittest.TestCase):
                 # Decode
                 best_hyps, perm_idx = model.decode(
                     xs, x_lens,
-                    # beam_width=1,
-                    beam_width=2,
+                    beam_width=1,
+                    # beam_width=2,
                     max_decode_len=60)
 
                 str_ref = map_fn(ys[0])

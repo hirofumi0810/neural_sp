@@ -81,14 +81,14 @@ class RNNDecoder(nn.Module):
         for l in range(self.num_layers):
             if self.rnn_type == 'lstm':
                 if l == 0:
-                    hx_list[l], cx_list[l] = getattr(self, 'lstm_l0')(
-                        dec_in, (hx_list[l], cx_list[l]))
+                    hx_list[0], cx_list[0] = getattr(self, 'lstm_l0')(
+                        dec_in, (hx_list[0], cx_list[0]))
                 else:
                     hx_list[l], cx_list[l] = getattr(self, 'lstm_l' + str(l))(
                         hx_list[l - 1], (hx_list[l], cx_list[l]))
             elif self.rnn_type == 'gru':
                 if l == 0:
-                    hx_list[l] = getattr(self, 'gru_l0')(dec_in, hx_list[l])
+                    hx_list[0] = getattr(self, 'gru_l0')(dec_in, hx_list[0])
                 else:
                     hx_list[l] = getattr(self, 'gru_l' + str(l))(
                         hx_list[l - 1], hx_list[l])
