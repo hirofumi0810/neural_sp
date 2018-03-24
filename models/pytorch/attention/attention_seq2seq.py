@@ -510,7 +510,7 @@ class AttentionSeq2seq(ModelBase):
         return loss
 
     def compute_ctc_loss(self, enc_out, ys, x_lens, y_lens,
-                         size_average=False, task_idx=0):
+                         task_idx=0, size_average=False):
         """Compute CTC loss.
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
@@ -1070,13 +1070,13 @@ class AttentionSeq2seq(ModelBase):
                         # TODO: add y
 
                     elif self.decoding_order == 'conditional':
-                        # Recurrency of the first decoder
-                        _dec_out, _dec_state = getattr(self, 'decoder_first_' + str(task_idx))(
-                            y, beam[i_beam]['dec_state'])
-
                         y = self._create_var(
                             (1,), fill_value=beam[i_beam]['hyp'][-1], dtype='long').unsqueeze(1)
                         y = getattr(self, 'embed_' + str(task_idx))(y)
+
+                        # Recurrency of the first decoder
+                        _dec_out, _dec_state = getattr(self, 'decoder_first_' + str(task_idx))(
+                            y, beam[i_beam]['dec_state'])
 
                         # Score
                         context_vec, aw_step = getattr(self, 'attend_' + str(task_idx))(

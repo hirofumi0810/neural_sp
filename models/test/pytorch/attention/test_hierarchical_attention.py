@@ -127,7 +127,8 @@ class TestHierarchicalAttention(unittest.TestCase):
             attention_dim=128,
             decoder_type=decoder_type,
             decoder_num_units=256,
-            decoder_num_layers=2,
+            decoder_num_layers=1,
+            # decoder_num_layers=2,
             decoder_num_units_sub=256,
             decoder_num_layers_sub=1,
             embedding_dim=64,
@@ -137,6 +138,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             dropout_decoder=0.1,
             dropout_embedding=0.1,
             main_loss_weight=main_loss_weight,
+            sub_loss_weight=0.2 if ctc_loss_weight_sub == 0 else 0,
             num_classes=num_classes,
             num_classes_sub=num_classes_sub,
             parameter_init_distribution='uniform',
@@ -167,9 +169,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             encoder_dense_residual=dense_residual,
             decoder_residual=residual,
             decoder_dense_residual=dense_residual,
-            # decoding_order='spell_attend',
-            decoding_order='conditional',
-            curriculum_training=False)
+            decoding_order='attend_generate_update')
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):
@@ -198,7 +198,7 @@ class TestHierarchicalAttention(unittest.TestCase):
         model.set_cuda(deterministic=False, benchmark=True)
 
         # Train model
-        max_step = 1000
+        max_step = 300
         start_time_step = time.time()
         for step in range(max_step):
 
@@ -218,15 +218,15 @@ class TestHierarchicalAttention(unittest.TestCase):
                 # Decode
                 best_hyps, perm_idx = model.decode(
                     xs, x_lens,
-                    # beam_width=1,
-                    beam_width=2,
+                    beam_width=1,
+                    # beam_width=2,
                     max_decode_len=30)
                 best_hyps_sub, _ = model.decode(
                     xs, x_lens,
-                    # beam_width=1,
-                    beam_width=2,
+                    beam_width=1,
+                    # beam_width=2,
                     max_decode_len=60,
-                    is_sub_task=True)
+                    task_idx=1)
 
                 str_hyp = idx2word(best_hyps[0][:-1]).split('>')[0]
                 str_ref = idx2word(ys[0])

@@ -271,7 +271,7 @@ class TestAttention(unittest.TestCase):
                 best_hyps, perm_idx = model.decode(
                     xs, x_lens,
                     beam_width=1,
-                    # beam_width=2,
+                    # beam_width=2,  # TODO: beam search does not work well
                     max_decode_len=60)
 
                 str_ref = map_fn(ys[0])
