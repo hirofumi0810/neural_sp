@@ -100,8 +100,8 @@ class RNNDecoder(chainer.Chain):
         for l in range(self.num_layers):
             if self.rnn_type == 'stateless_lstm':
                 if l == 0:
-                    cx_list[l], hx_list[l] = getattr(self, 'lstm_l0')(
-                        cx_list[l], hx_list[l], dec_in)
+                    cx_list[0], hx_list[0] = getattr(self, 'lstm_l0')(
+                        cx_list[0], hx_list[0], dec_in)
                 else:
                     cx_list[l], hx_list[l] = getattr(self, 'lstm_l' + str(l))(
                         cx_list[l], hx_list[l], hx_list[l - 1])
@@ -116,7 +116,7 @@ class RNNDecoder(chainer.Chain):
                     cx_list[l], hx_list[l] = F.lstm(cx_list[l], x)
             elif self.rnn_type == 'gru':
                 if l == 0:
-                    hx_list[l] = getattr(self, 'gru_l0')(hx_list[l], dec_in)
+                    hx_list[0] = getattr(self, 'gru_l0')(hx_list[0], dec_in)
                 else:
                     hx_list[l] = getattr(self, 'gru_l' + str(l))(
                         hx_list[l], hx_list[l - 1])

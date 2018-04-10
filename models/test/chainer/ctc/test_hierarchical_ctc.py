@@ -31,9 +31,9 @@ class TestCTC(unittest.TestCase):
         # Pyramidal encoder
         self.check(encoder_type='lstm', bidirectional=True, subsample=True)
 
-        # TODO: Projection
-        # self.check(encoder_type='lstm', bidirectional=True, projection=True)
-        # self.check(encoder_type='lstm', bidirectional=False, projection=True)
+        # Projection
+        self.check(encoder_type='lstm', bidirectional=True, projection=True)
+        self.check(encoder_type='lstm', bidirectional=False, projection=True)
 
         # Residual LSTM-CTC
         self.check(encoder_type='lstm', bidirectional=True,
@@ -120,7 +120,7 @@ class TestCTC(unittest.TestCase):
             parameter_init=0.1,
             recurrent_weight_orthogonal=False,
             init_forget_gate_bias_with_one=True,
-            subsample_list=[] if not subsample else [True] * 3,
+            subsample_list=[] if not subsample else [True, True, False],
             num_stack=num_stack,
             splice=splice,
             conv_channels=conv_channels,
@@ -161,7 +161,7 @@ class TestCTC(unittest.TestCase):
         model.set_cuda(deterministic=False, benchmark=True)
 
         # Train model
-        max_step = 1000
+        max_step = 300
         start_time_step = time.time()
         for step in range(max_step):
 
@@ -182,9 +182,10 @@ class TestCTC(unittest.TestCase):
                     xs, ys, ys_sub, x_lens, y_lens, y_lens_sub, is_eval=True)
 
                 # Decode
-                best_hyps, _ = model.decode(xs, x_lens, beam_width=1)
+                best_hyps, _ = model.decode(
+                    xs, x_lens, beam_width=1, task_index=0)
                 best_hyps_sub, _ = model.decode(
-                    xs, x_lens, beam_width=1, is_sub_task=True)
+                    xs, x_lens, beam_width=1, task_index=1)
 
                 str_ref = idx2word(ys[0, :y_lens[0]])
                 str_hyp = idx2word(best_hyps[0])

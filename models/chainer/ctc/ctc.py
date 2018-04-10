@@ -18,12 +18,7 @@ from models.chainer.criterion import cross_entropy_label_smoothing
 from models.chainer.encoders.load_encoder import load
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
-# from models.pytorch.ctc.decoders.beam_search_decoder2 import
-# BeamSearchDecoder
-
-NEG_INF = -float("inf")
-LOG_0 = NEG_INF
-LOG_1 = 0
+# from models.pytorch.ctc.decoders.beam_search_decoder2 import BeamSearchDecoder
 
 
 class CTC(ModelBase):
@@ -218,12 +213,9 @@ class CTC(ModelBase):
             if init_forget_gate_bias_with_one:
                 self.init_forget_gate_bias_with_one()
 
-        # self.blank_index = num_classes
-        self.blank_index = 0
-
         # Set CTC decoders
-        self._decode_greedy_np = GreedyDecoder(blank_index=self.blank_index)
-        self._decode_beam_np = BeamSearchDecoder(blank_index=self.blank_index)
+        self._decode_greedy_np = GreedyDecoder(blank_index=0)
+        self._decode_beam_np = BeamSearchDecoder(blank_index=0)
         # TODO: set space index
 
     def __call__(self, xs, ys, x_lens, y_lens, is_eval=False):
@@ -251,7 +243,6 @@ class CTC(ModelBase):
         # Wrap by Variable
         xs = self.np2var(xs)
         ys = self.np2var(ys)
-        x_lens = self.np2var(x_lens)
         y_lens = self.np2var(y_lens)
 
         # Encode acoustic features
@@ -261,16 +252,15 @@ class CTC(ModelBase):
         if self.logits_temperature != 1:
             logits /= self.logits_temperature
 
-        if self.blank_index == 0:
-            # NOTE: index 0 is reserved for the blank class
-            ys = ys + 1
+        ys = ys + 1
+        # NOTE: index 0 is reserved for the blank class
 
         # Compute CTC loss
         loss = connectionist_temporal_classification(
             x=F.separate(logits, axis=1),  # list of Variable
             t=ys,  # Variable
-            blank_symbol=self.blank_index,
-            input_length=x_lens,  # Variable
+            blank_symbol=0,
+            input_length=self.np2var(x_lens),  # Variable
             label_length=y_lens,  # Variable
             reduce='no')
         loss = F.sum(loss, axis=0) / len(xs)
@@ -280,12 +270,11 @@ class CTC(ModelBase):
             # XE
             xe_loss_ls = cross_entropy_label_smoothing(
                 logits,
-                y_lens=x_lens,  # NOTE: CTC is frame-synchronous
+                y_lens=self.np2var(x_lens),  # NOTE: CTC is frame-synchronous
                 label_smoothing_prob=self.label_smoothing_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)
             loss = loss * (1 - self.label_smoothing_prob) + xe_loss_ls
-            # print(xe_loss_ls)
 
         return loss
 
@@ -328,7 +317,7 @@ class CTC(ModelBase):
             return logits, x_lens
 
     def posteriors(self, xs, x_lens, temperature=1,
-                   blank_prior=None, is_sub_task=False):
+                   blank_prior=None, task_idx=0):
         """Returns CTC posteriors (after the softmax layer).
         Args:
             xs (list of np.ndarray):
@@ -337,9 +326,10 @@ class CTC(ModelBase):
             temperature (float, optional): the temperature parameter for the
                 softmax layer in the inference stage
             blank_prior (float, optional):
-            is_sub_task (bool, optional):
+            task_idx (int, optional): the index ofta task
         Returns:
             probs (np.ndarray): A tensor of size `[B, T, num_classes]`
+            perm_idx (np.ndarray): For interface with pytorch, not used
         """
         with chainer.no_backprop_mode(), chainer.using_config('train', False):
 
@@ -348,14 +338,16 @@ class CTC(ModelBase):
 
             # Encode acoustic features
             if hasattr(self, 'main_loss_weight'):
-                if is_sub_task:
-                    _, _, logits, _ = self._encode(
+                if task_idx == 0:
+                    logits, _, _, _, perm_idx = self._encode(
+                        xs, x_lens, is_multi_task=True)
+                elif task_idx == 1:
+                    _, _, logits, _, perm_idx = self._encode(
                         xs, x_lens, is_multi_task=True)
                 else:
-                    logits, _, _, _ = self._encode(
-                        xs, x_lens, is_multi_task=True)
+                    raise NotImplementedError
             else:
-                logits, _ = self._encode(xs, x_lens)
+                logits, _, perm_idx = self._encode(xs, x_lens)
 
             probs = F.softmax(logits / temperature)
 
@@ -363,10 +355,12 @@ class CTC(ModelBase):
             if blank_prior is not None:
                 raise NotImplementedError
 
-            return self.var2np(probs)
+            perm_idx = np.arange(0, len(xs), 1)
+
+            return self.var2np(probs), perm_idx
 
     def decode(self, xs, x_lens, beam_width=1,
-               max_decode_len=None, is_sub_task=False):
+               max_decode_len=None, task_index=0):
         """
         Args:
             xs (list of np.ndarray):
@@ -374,7 +368,7 @@ class CTC(ModelBase):
             x_lens (np.ndarray): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
             max_decode_len: not used (to make CTC compatible with attention)
-            is_sub_task (bool, optional):
+            task_index (bool, optional): the index of a task
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
             perm_idx (np.ndarray): For interface with pytorch, not used
@@ -386,12 +380,14 @@ class CTC(ModelBase):
 
             # Encode acoustic features
             if hasattr(self, 'main_loss_weight'):
-                if is_sub_task:
+                if task_index == 0:
+                    logits, x_lens, _, _ = self._encode(
+                        xs, x_lens, is_multi_task=True)
+                elif task_index == 1:
                     _, _, logits, x_lens = self._encode(
                         xs, x_lens, is_multi_task=True)
                 else:
-                    logits, x_lens, _, _ = self._encode(
-                        xs, x_lens, is_multi_task=True)
+                    raise NotImplementedError
             else:
                 logits, x_lens = self._encode(xs, x_lens)
 
@@ -400,14 +396,14 @@ class CTC(ModelBase):
                     self.var2np(logits), x_lens)
             else:
                 best_hyps = self._decode_beam_np(
-                    self.var2np(F.log_softmax(logits, dim=-1)),
+                    self.var2np(F.log_softmax(logits)),
                     x_lens, beam_width=beam_width)
 
-        if self.blank_index == 0:
-            best_hyps -= 1
-            # NOTE: index 0 is reserved for the blank class
+        best_hyps -= 1
+        # NOTE: index 0 is reserved for the blank class
 
         perm_idx = np.arange(0, len(xs), 1)
+
         return best_hyps, perm_idx
 
     def decode_from_probs(self, probs, x_lens, beam_width=1,

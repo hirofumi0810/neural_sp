@@ -7,11 +7,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numpy as np
+
 import chainer
 from chainer import functions as F
 from chainer import links as L
-from chainer import Variable
-from chainer import cuda
 
 
 class CNNEncoder(chainer.Chain):
@@ -108,13 +108,11 @@ class CNNEncoder(chainer.Chain):
         Args:
             xs (chainer.Variable of list of chainer/Variable): A tensor of size
                 `[B, T, input_size]`
-            x_lens (np.ndarray or chainer.Variable): A tensor of size `[B]`
+            x_lens (np.ndarray): A tensor of size `[B]`
         Returns:
             xs (chainer.Variable): A tensor of size `[B, T', feature_dim]`
-            x_lens (np.ndarray or chainer.Variable): A tensor of size `[B]`
+            x_lens (np.ndarray): A tensor of size `[B]`
         """
-        wrap_by_var = isinstance(x_lens, Variable)
-
         # Convert to Variable
         if isinstance(xs, list):
             xs = F.pad_sequence(xs, padding=0)
@@ -146,8 +144,6 @@ class CNNEncoder(chainer.Chain):
                 xs = F.relu(xs)
             elif self.activation == 'prelu':
                 raise NotImplementedError
-                # xs = F.prelu(xs, W)
-                # layers.append(F.PReLU(num_parameters=1, init=0.2))
             elif self.activation == 'hard_tanh':
                 raise NotImplementedError
             elif self.activation == 'maxout':
@@ -184,17 +180,11 @@ class CNNEncoder(chainer.Chain):
         xs = xs.transpose(0, 3, 2, 1)
         xs = xs.reshape(batch_size, time, freq * output_channels)
 
-        if wrap_by_var:
-            # Update x_lens
-            x_lens = [self.get_conv_out_size(x.data, 1) for x in x_lens]
+        # Update x_lens
+        x_lens = np.array([self.get_conv_out_size(x, 1)
+                           for x in x_lens], dtype=np.int32)
 
-            # Wrap by Variable again
-            x_lens = Variable(cuda.to_gpu(x_lens), requires_grad=False)
-        else:
-            # Update x_lens
-            x_lens = [self.get_conv_out_size(x, 1) for x in x_lens]
-
-            # Convert to list again
+        # Convert to list again
         xs = F.separate(xs, axis=0)
 
         return xs, x_lens

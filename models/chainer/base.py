@@ -213,7 +213,8 @@ class ModelBase(chainer.Chain):
                 break
         self.save_path = mkdir(save_path_tmp)
 
-    def save_checkpoint(self, save_path, epoch, step, lr, metric_dev_best):
+    def save_checkpoint(self, save_path, epoch, step, lr, metric_dev_best,
+                        remove_old_checkpoints=False):
         """Save checkpoint.
         Args:
             save_path (string): path to save a model (directory)
@@ -221,14 +222,17 @@ class ModelBase(chainer.Chain):
             step (int): the current step
             lr (float):
             metric_dev_best (float):
+            remove_old_checkpoints (bool, optional): if True, all checkpoints
+                other than the best one will be deleted
         Returns:
             model (string): path to the saved model (file)
         """
         model_path = join(save_path, 'model.epoch-' + str(epoch))
 
         # Remove old checkpoints
-        for path in glob(join(save_path, 'model.epoch-*')):
-            os.remove(path)
+        if remove_old_checkpoints:
+            for path in glob(join(save_path, 'model.epoch-*')):
+                os.remove(path)
 
         checkpoint = {
             "epoch": epoch,
@@ -255,12 +259,15 @@ class ModelBase(chainer.Chain):
 
         logger.info("=> Saved checkpoint (epoch:%d): %s" % (epoch, model_path))
 
-    def load_checkpoint(self, save_path, epoch=-1, restart=False):
+    def load_checkpoint(self, save_path, epoch=-1, restart=False,
+                        load_pretrained_model=False):
         """Load checkpoint.
         Args:
             save_path (string): path to the saved models
             epoch (int, optional): if -1 means the last saved model
             restart (bool, optional): if True, restore the save optimizer
+            load_pretrained_model (bool, optional): if True, load all parameters
+                which match those of the new model's parameters
         Returns:
             epoch (int): the currnet epoch
             step (int): the current step
@@ -278,9 +285,8 @@ class ModelBase(chainer.Chain):
             epoch = sorted(epochs, key=lambda x: x[0])[-1][0]
 
         model_path = join(save_path, 'model.epoch-' + str(epoch) + '.npz')
-        if isfile(join(model_path)):
-            print("=> Loading checkpoint (epoch:%d): %s" % (epoch, model_path))
 
+        if isfile(join(model_path)):
             with np.load(model_path) as f:
                 deserializer = serializers.NpzDeserializer(f)
 
@@ -288,12 +294,33 @@ class ModelBase(chainer.Chain):
                 checkpoint = pickle.loads(pickled_params.tobytes())
                 # type: HyperParameters
 
+                # Restore parameters
+                if load_pretrained_model:
+                    logger.info(
+                        "=> Loading pre-trained checkpoint (epoch:%d): %s" % (epoch, model_path))
+
+                    # pretrained_dict = checkpoint['state_dict']
+                    # model_dict = self.state_dict()
+                    #
+                    # # 1. filter out unnecessary keys and params which do not match size
+                    # pretrained_dict = {
+                    #     k: v for k, v in pretrained_dict.items() if k in model_dict.keys() and v.size() == model_dict[k].size()}
+                    # # 2. overwrite entries in the existing state dict
+                    # model_dict.update(pretrained_dict)
+                    # # 3. load the new state dict
+                    # self.load_state_dict(model_dict)
+
                 deserializer["model"].load(self)
+
+                # Restore optimizer
                 if restart:
                     if hasattr(self, 'optimizer'):
                         deserializer["optimizer"].load(self.optimizer)
                     else:
                         raise ValueError('Set optimizer.')
+                else:
+                    print("=> Loading checkpoint (epoch:%d): %s" %
+                          (epoch, model_path))
 
         else:
             raise ValueError("No checkpoint found at %s" % model_path)

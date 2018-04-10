@@ -17,6 +17,7 @@ from chainer import cuda
 from models.chainer.linear import LinearND
 
 ATTENTION_TYPE = ['content', 'location', 'dot_product', 'rnn_attention']
+# TODO: multi-head attention
 
 
 class AttentionMechanism(chainer.Chain):
@@ -76,15 +77,23 @@ class AttentionMechanism(chainer.Chain):
                                       bias=False, use_cuda=use_cuda)
                 self.W_conv = LinearND(out_channels, attention_dim,
                                        bias=False, use_cuda=use_cuda)
-                # TODO: add 1D convolution
-                self.conv = L.Convolution2D(in_channels=1,
+                self.conv = L.ConvolutionND(ndim=1,
+                                            in_channels=1,
                                             out_channels=out_channels,
-                                            ksize=(1, kernel_size),
+                                            ksize=kernel_size,
                                             stride=1,
-                                            pad=(0, kernel_size // 2),
+                                            pad=kernel_size // 2,
                                             nobias=True,
                                             initialW=None,
                                             initial_bias=None)
+                # self.conv = L.Convolution2D(in_channels=1,
+                #                             out_channels=out_channels,
+                #                             ksize=(1, kernel_size),
+                #                             stride=1,
+                #                             pad=(0, kernel_size // 2),
+                #                             nobias=True,
+                #                             initialW=None,
+                #                             initial_bias=None)
                 self.V = LinearND(attention_dim, 1,
                                   bias=False, use_cuda=use_cuda)
 
@@ -135,8 +144,13 @@ class AttentionMechanism(chainer.Chain):
             # f = F * α_{i-1}
             # energy = <v, tanh(W([h_de; h_en] + W_conv(f) + b))>
             ###################################################################
-            conv_feat = F.squeeze(self.conv(
-                att_weights_step.reshape(batch_size, 1, 1, max_time)), axis=2)
+            # For 1D conv
+            conv_feat = self.conv(
+                att_weights_step.reshape(batch_size, 1, max_time))
+
+            # For 2D conv
+            # conv_feat = F.squeeze(self.conv(
+            #     att_weights_step.reshape(batch_size, 1, 1, max_time)), axis=2)
             # -> `[B, out_channels, T_in]`
             conv_feat = conv_feat.transpose(0, 2, 1)
             # -> `[B, T_in, out_channels]`
@@ -165,6 +179,8 @@ class AttentionMechanism(chainer.Chain):
         energy_mask = xp.ones((batch_size, max_time), dtype=np.float32)
         # energy_mask = xp.ones((batch_size, max_time), dtype=xp.float32)
         for b in range(batch_size):
+            # TODO: fix bugs
+            # if x_lens[b].data < max_time:
             if x_lens[b] < max_time:
                 energy_mask[b, x_lens[b]:] = 0
         energy_mask = Variable(energy_mask)
@@ -186,7 +202,6 @@ class AttentionMechanism(chainer.Chain):
         batch_size, max_time = att_weights_step.shape
         context_vec = F.sum(enc_out * F.broadcast_to(
             F.expand_dims(att_weights_step, axis=2),
-            (batch_size, max_time, enc_out.shape[-1])),
-            axis=1, keepdims=True)
+            (batch_size, max_time, enc_out.shape[-1])), axis=1, keepdims=True)
 
         return context_vec, att_weights_step

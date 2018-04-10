@@ -25,12 +25,12 @@ class TestAttention(unittest.TestCase):
         print("Attention Working check.")
 
         # Decoding order
+        # self.check(encoder_type='lstm', bidirectional=True,
+        #            decoder_type='lstm', decoding_order='conditional')
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', decoding_order='conditional')
+                   decoder_type='lstm', decoding_order='attend_update_generate')
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', decoding_order='spell_attend')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', decoding_order='attend_spell')
+                   decoder_type='lstm', decoding_order='attend_generate_update')
 
         # Decoder type
         self.check(encoder_type='lstm', bidirectional=True,
@@ -103,10 +103,10 @@ class TestAttention(unittest.TestCase):
     @measure_time
     def check(self, encoder_type, decoder_type, bidirectional=False,
               attention_type='location', label_type='char',
-              subsample=False, projection=False, init_dec_state='zero',
+              subsample=False, projection=False, init_dec_state='first',
               ctc_loss_weight=0, conv=False, batch_norm=False,
               residual=False, dense_residual=False,
-              decoding_order='spell_attend'):
+              decoding_order='attend_generate_update'):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
@@ -210,7 +210,8 @@ class TestAttention(unittest.TestCase):
             encoder_dense_residual=dense_residual,
             decoder_residual=residual,
             decoder_dense_residual=dense_residual,
-            decoding_order=decoding_order)
+            decoding_order=decoding_order,
+            bottleneck_dim=256)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):
@@ -228,18 +229,18 @@ class TestAttention(unittest.TestCase):
                             patience_epoch=5)
 
         # Define learning rate controller
-        # lr_controller = Controller(learning_rate_init=learning_rate,
-        #                            backend='chainer',
-        #                            decay_start_epoch=20,
-        #                            decay_rate=0.9,
-        #                            decay_patient_epoch=10,
-        #                            lower_better=True)
+        lr_controller = Controller(learning_rate_init=learning_rate,
+                                   backend='chainer',
+                                   decay_start_epoch=20,
+                                   decay_rate=0.9,
+                                   decay_patient_epoch=10,
+                                   lower_better=True)
 
         # GPU setting
         model.set_cuda(deterministic=False, benchmark=True)
 
         # Train model
-        max_step = 1000
+        max_step = 300
         start_time_step = time.time()
         for step in range(max_step):
 
@@ -301,11 +302,11 @@ class TestAttention(unittest.TestCase):
                     break
 
                 # Update learning rate
-                # model.optimizer, learning_rate = lr_controller.decay_lr(
-                #     optimizer=model.optimizer,
-                #     learning_rate=learning_rate,
-                #     epoch=step,
-                #     value=ler)
+                model.optimizer, learning_rate = lr_controller.decay_lr(
+                    optimizer=model.optimizer,
+                    learning_rate=learning_rate,
+                    epoch=step,
+                    value=ler)
 
 
 if __name__ == "__main__":

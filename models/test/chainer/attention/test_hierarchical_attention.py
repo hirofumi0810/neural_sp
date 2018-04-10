@@ -15,7 +15,7 @@ sys.path.append('../../../../')
 from models.chainer.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
 from models.test.data import generate_data, idx2char, idx2word
 from utils.measure_time_func import measure_time
-from utils.evaluation.edit_distance import compute_cer, compute_wer
+from utils.evaluation.edit_distance import compute_wer
 from utils.training.learning_rate_controller import Controller
 
 
@@ -25,8 +25,8 @@ class TestHierarchicalAttention(unittest.TestCase):
         print("Hierarchical Attention Working check.")
 
         # Word attention + char CTC
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            decoder_type='lstm', ctc_loss_weight_sub=0.2)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', ctc_loss_weight_sub=0.2)
 
         # Pyramidal encoder
         self.check(encoder_type='lstm', bidirectional=True,
@@ -157,9 +157,9 @@ class TestHierarchicalAttention(unittest.TestCase):
             encoder_dense_residual=dense_residual,
             decoder_residual=residual,
             decoder_dense_residual=dense_residual,
-            # decoding_order='spell_attend',
-            decoding_order='conditional',
-            curriculum_training=False)
+            decoding_order='attend_generate_update',
+            bottleneck_dim=256,
+            bottleneck_dim_sub=256)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):
@@ -177,18 +177,18 @@ class TestHierarchicalAttention(unittest.TestCase):
                             patience_epoch=5)
 
         # Define learning rate controller
-        # lr_controller = Controller(learning_rate_init=learning_rate,
-        #                            backend='chainer',
-        #                            decay_start_epoch=20,
-        #                            decay_rate=0.9,
-        #                            decay_patient_epoch=10,
-        #                            lower_better=True)
+        lr_controller = Controller(learning_rate_init=learning_rate,
+                                   backend='chainer',
+                                   decay_start_epoch=20,
+                                   decay_rate=0.9,
+                                   decay_patient_epoch=10,
+                                   lower_better=True)
 
         # GPU setting
         model.set_cuda(deterministic=False, benchmark=True)
 
         # Train model
-        max_step = 1000
+        max_step = 300
         start_time_step = time.time()
         for step in range(max_step):
 
@@ -209,15 +209,14 @@ class TestHierarchicalAttention(unittest.TestCase):
                 # Decode
                 best_hyps, _ = model.decode(
                     xs, x_lens,
-                    # beam_width=1,
-                    beam_width=2,
-                    max_decode_len=30)
+                    beam_width=1,
+                    # beam_width=2,
+                    max_decode_len=30, task_index=0)
                 best_hyps_sub, _ = model.decode(
                     xs, x_lens,
-                    # beam_width=1,
-                    beam_width=2,
-                    max_decode_len=60,
-                    is_sub_task=True)
+                    beam_width=1,
+                    # beam_width=2,
+                    max_decode_len=60, task_index=1)
 
                 str_hyp = idx2word(best_hyps[0][:-1]).split('>')[0]
                 str_ref = idx2word(ys[0])
@@ -253,11 +252,11 @@ class TestHierarchicalAttention(unittest.TestCase):
                     break
 
                 # Update learning rate
-                # model.optimizer, learning_rate = lr_controller.decay_lr(
-                #     optimizer=model.optimizer,
-                #     learning_rate=learning_rate,
-                #     epoch=step,
-                #     value=wer)
+                model.optimizer, learning_rate = lr_controller.decay_lr(
+                    optimizer=model.optimizer,
+                    learning_rate=learning_rate,
+                    epoch=step,
+                    value=wer)
 
 
 if __name__ == "__main__":

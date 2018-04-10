@@ -16,10 +16,6 @@ from models.chainer.linear import LinearND
 from models.chainer.criterion import cross_entropy_label_smoothing
 from models.chainer.encoders.load_encoder import load
 
-NEG_INF = -float("inf")
-LOG_0 = NEG_INF
-LOG_1 = 0
-
 
 class HierarchicalCTC(CTC):
     """Hierarchical CTC model.
@@ -188,8 +184,6 @@ class HierarchicalCTC(CTC):
             if init_forget_gate_bias_with_one:
                 self.init_forget_gate_bias_with_one()
 
-            self.blank_index = 0
-
     def __call__(self, xs, ys, ys_sub, x_lens, y_lens, y_lens_sub, is_eval=False):
         """Forward computation.
         Args:
@@ -225,7 +219,6 @@ class HierarchicalCTC(CTC):
         xs = self.np2var(xs)
         ys = self.np2var(ys)
         ys_sub = self.np2var(ys_sub)
-        x_lens = self.np2var(x_lens)
         y_lens = self.np2var(y_lens)
         y_lens_sub = self.np2var(y_lens_sub)
 
@@ -238,27 +231,27 @@ class HierarchicalCTC(CTC):
             logits_main /= self.logits_temperature
             logits_sub /= self.logits_temperature
 
-        if self.blank_index == 0:
-            # NOTE: index 0 is reserved for the blank class
-            ys = ys + 1
-            ys_sub = ys_sub + 1
+        ys = ys + 1
+        ys_sub = ys_sub + 1
+        # NOTE: index 0 is reserved for the blank class
 
         # Compute CTC loss in the main & sub task
         loss_main = connectionist_temporal_classification(
             x=F.separate(logits_main, axis=1),  # list of Variable
             t=ys,  # Variable
             blank_symbol=0,
-            input_length=x_lens,  # Variable
+            input_length=self.np2var(x_lens),  # Variable
             label_length=y_lens,  # Variable
             reduce='no')
+        loss_main = F.sum(loss_main, axis=0) / len(xs)
+
         loss_sub = connectionist_temporal_classification(
             x=F.separate(logits_sub, axis=1),  # list of Variable
             t=ys_sub,  # Variable
             blank_symbol=0,
-            input_length=x_lens_sub,  # Variable
+            input_length=self.np2var(x_lens_sub),  # Variable
             label_length=y_lens_sub,  # Variable
             reduce='no')
-        loss_main = F.sum(loss_main, axis=0) / len(xs)
         loss_sub = F.sum(loss_sub, axis=0) / len(xs)
 
         # Label smoothing (with uniform distribution)
@@ -266,19 +259,18 @@ class HierarchicalCTC(CTC):
             # XE
             xe_loss_ls_main = cross_entropy_label_smoothing(
                 logits_main,
-                y_lens=x_lens,  # NOTE: CTC is frame-synchronous
+                y_lens=self.np2var(x_lens),  # NOTE: CTC is frame-synchronous
                 label_smoothing_prob=self.label_smoothing_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)
-            # print(xe_loss_ls_main)
 
             xe_loss_ls_sub = cross_entropy_label_smoothing(
                 logits_sub,
-                y_lens=x_lens_sub,  # NOTE: CTC is frame-synchronous
+                y_lens=self.np2var(x_lens_sub),
                 label_smoothing_prob=self.label_smoothing_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)
-            # print(xe_loss_ls_sub)
+
             loss_main = loss_main * \
                 (1 - self.label_smoothing_prob) + xe_loss_ls_main
             loss_sub = loss_sub * \

@@ -16,7 +16,7 @@ from models.chainer.ctc.ctc import CTC
 from models.test.data import generate_data, idx2char, idx2word
 from utils.measure_time_func import measure_time
 from utils.evaluation.edit_distance import compute_wer
-# from utils.training.learning_rate_controller import Controller
+from utils.training.learning_rate_controller import Controller
 
 
 class TestCTC(unittest.TestCase):
@@ -31,9 +31,9 @@ class TestCTC(unittest.TestCase):
         # Pyramidal encoder
         self.check(encoder_type='lstm', bidirectional=True, subsample=True)
 
-        # TODO: Projection
-        # self.check(encoder_type='lstm', bidirectional=True, projection=True)
-        # self.check(encoder_type='lstm', bidirectional=False, projection=True)
+        # Projection
+        self.check(encoder_type='lstm', bidirectional=True, projection=True)
+        self.check(encoder_type='lstm', bidirectional=False, projection=True)
 
         # Residual LSTM-CTC
         self.check(encoder_type='lstm', bidirectional=True,
@@ -44,9 +44,9 @@ class TestCTC(unittest.TestCase):
         # CNN-CTC
         self.check(encoder_type='cnn')
         self.check(encoder_type='cnn', batch_norm=True, activation='relu')
-        self.check(encoder_type='cnn', batch_norm=True, activation='prelu')
-        self.check(encoder_type='cnn', batch_norm=True, activation='hard_tanh')
-        self.check(encoder_type='cnn', batch_norm=True, activation='maxout')
+        # self.check(encoder_type='cnn', batch_norm=True, activation='prelu')
+        # self.check(encoder_type='cnn', batch_norm=True, activation='hard_tanh')
+        # self.check(encoder_type='cnn', batch_norm=True, activation='maxout')
 
         # CLDNN-CTC
         self.check(encoder_type='lstm', bidirectional=True,
@@ -63,8 +63,6 @@ class TestCTC(unittest.TestCase):
         self.check(encoder_type='lstm', bidirectional=False)
         self.check(encoder_type='gru', bidirectional=True)
         self.check(encoder_type='gru', bidirectional=False)
-        self.check(encoder_type='rnn', bidirectional=True)
-        self.check(encoder_type='rnn', bidirectional=False)
 
     @measure_time
     def check(self, encoder_type, bidirectional=False, label_type='char',
@@ -120,8 +118,10 @@ class TestCTC(unittest.TestCase):
 
         if label_type == 'char':
             num_classes = 27
+            map_fn = idx2char
         elif label_type == 'word':
             num_classes = 11
+            map_fn = idx2word
 
         # Load model
         model = CTC(
@@ -172,18 +172,18 @@ class TestCTC(unittest.TestCase):
             patience_epoch=None)
 
         # Define learning rate controller
-        # lr_controller = Controller(learning_rate_init=learning_rate,
-        #                            backend='chainer',
-        #                            decay_start_epoch=20,
-        #                            decay_rate=0.9,
-        #                            decay_patient_epoch=10,
-        #                            lower_better=True)
+        lr_controller = Controller(learning_rate_init=learning_rate,
+                                   backend='chainer',
+                                   decay_start_epoch=20,
+                                   decay_rate=0.9,
+                                   decay_patient_epoch=10,
+                                   lower_better=True)
 
         # GPU setting
         model.set_cuda(deterministic=False, benchmark=True)
 
         # Train model
-        max_step = 1000
+        max_step = 300
         start_time_step = time.time()
         for step in range(max_step):
 
@@ -204,8 +204,8 @@ class TestCTC(unittest.TestCase):
                 # Decode
                 best_hyps, _ = model.decode(xs, x_lens, beam_width=1)
 
-                str_ref = idx2char(ys[0, :y_lens[0]])
-                str_hyp = idx2char(best_hyps[0])
+                str_ref = map_fn(ys[0, :y_lens[0]])
+                str_hyp = map_fn(best_hyps[0])
 
                 # Compute accuracy
                 try:
@@ -235,11 +235,11 @@ class TestCTC(unittest.TestCase):
                     break
 
                 # Update learning rate
-                # model.optimizer, learning_rate = lr_controller.decay_lr(
-                #     optimizer=model.optimizer,
-                #     learning_rate=learning_rate,
-                #     epoch=step,
-                #     value=ler)
+                model.optimizer, learning_rate = lr_controller.decay_lr(
+                    optimizer=model.optimizer,
+                    learning_rate=learning_rate,
+                    epoch=step,
+                    value=ler)
 
 
 if __name__ == "__main__":

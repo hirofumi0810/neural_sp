@@ -12,8 +12,6 @@ import numpy as np
 import chainer
 from chainer import functions as F
 from chainer import links as L
-from chainer import Variable
-from chainer import cuda
 
 from models.chainer.linear import LinearND
 from models.chainer.encoders.cnn import CNNEncoder
@@ -48,8 +46,6 @@ class RNNEncoder(chainer.Chain):
         residual (bool, optional):
         dense_residual (bool, optional):
         num_layers_sub (int): the number of layers in the sub task
-
-        # clip_activation (float): the range of activation clipping (> 0)
     """
 
     def __init__(self,
@@ -201,49 +197,43 @@ class RNNEncoder(chainer.Chain):
                     raise ValueError(
                         'rnn_type must be "lstm" or "gru" or "rnn".')
 
-                if self.subsample_list[l]:
-                    setattr(self, 'p' + rnn_type + '_l' + str(l), rnn_i)
-                else:
-                    setattr(self, rnn_type + '_l' + str(l), rnn_i)
                 if use_cuda:
                     rnn_i.to_gpu()
-                self.rnns.append(rnn_i)
+                setattr(self, rnn_type + '_l' + str(l), rnn_i)
 
                 if l != self.num_layers - 1 and self.num_proj > 0:
                     proj_i = LinearND(
                         num_units * self.num_directions, num_proj,
                         dropout=dropout_hidden, use_cuda=use_cuda)
-                    setattr(self, 'proj_l' + str(l), proj_i)
+
                     if use_cuda:
                         proj_i.to_gpu()
-                    self.projections.append(proj_i)
+                    setattr(self, 'proj_l' + str(l), proj_i)
 
     def __call__(self, xs, x_lens):
         """Forward computation.
         Args:
             xs (list of chainer.Variable): A list of tensors of size
                 `[T, input_size]`, of length '[B]'
-            x_lens (np.ndarray or chainer.Variable (int)):
+            x_lens (np.ndarray):
                 A tensor of size `[B]`
         Returns:
             xs (list of chainer.Variable):
                 A list of tensors of size
                     `[T // sum(subsample_list), num_units (* num_directions)]`,
                     of length '[B]'
-            x_lens (np.ndarray or chainer.Variable (int)):
+            x_lens (np.ndarray):
                 A tensor of size `[B]`
             OPTION:
                 xs_sub (list of chainer.Variable):
                     A list of tensor of size
                         `[T // sum(subsample_list), num_units (* num_directions)]`,
                         of length `[B]`
-                x_lens_sub (np.ndarray or chainer.Variable (int)):
+                x_lens_sub (np.ndarray):
                     A tensor of size `[B]`
         """
         # NOTE: automatically sort xs in descending order by length,
         # and transpose the sequence
-
-        wrap_by_var = isinstance(x_lens, Variable)
 
         # Dropout for inputs-hidden connection
         if self.dropout_input > 0:
@@ -259,9 +249,11 @@ class RNNEncoder(chainer.Chain):
 
             # Path through RNN
             if self.rnn_type == 'lstm':
-                _, _, xs = self.rnns[l](hx=None, cx=None, xs=xs)
+                _, _, xs = getattr(self, self.rnn_type +
+                                   '_l' + str(l))(hx=None, cx=None, xs=xs)
             else:
-                _, xs = self.rnns[l](hx=None, xs=xs)
+                _, xs = getattr(self, self.rnn_type + '_l' +
+                                str(l))(hx=None, xs=xs)
 
             # Dropout for hidden-hidden or hidden-output connection
             if self.dropout_hidden > 0:
@@ -272,11 +264,6 @@ class RNNEncoder(chainer.Chain):
                 xs_sub = xs
                 x_lens_sub = x_lens
 
-                # Wrap by Variable again
-                if wrap_by_var and not isinstance(x_lens_sub, Variable):
-                    x_lens_sub = Variable(
-                        cuda.to_gpu(x_lens_sub), requires_grad=False)
-
             # NOTE: Exclude the last layer
             if l != self.num_layers - 1:
                 if self.residual or self.dense_residual or self.num_proj > 0 or self.subsample_list[l]:
@@ -285,7 +272,8 @@ class RNNEncoder(chainer.Chain):
                     if self.num_proj > 0:
                         # Convert to 2D tensor
                         xs = F.vstack(xs)
-                        xs = F.tanh(self.projections[l](xs))
+                        xs = F.tanh(getattr(self, 'proj_l' + str(l))(xs))
+
                         # Reshape back to 3D tensor
                         xs = F.split_axis(xs, np.cumsum(x_lens)[:-1], axis=0)
 
@@ -315,11 +303,6 @@ class RNNEncoder(chainer.Chain):
                                 res_outputs_list = [xs]
                             elif self.dense_residual:
                                 res_outputs_list.append(xs)
-
-        # Wrap by Variable again
-        if wrap_by_var and not isinstance(x_lens, Variable):
-            x_lens = Variable(
-                cuda.to_gpu(x_lens), requires_grad=False)
 
         # Sum bidirectional outputs
         if self.bidirectional and self.merge_bidirectional:
