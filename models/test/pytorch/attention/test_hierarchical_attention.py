@@ -29,10 +29,6 @@ class TestHierarchicalAttention(unittest.TestCase):
     def test(self):
         print("Hierarchical Attention Working check.")
 
-        # char initialization
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            decoder_type='lstm', main_loss_weight=0)
-
         # Word attention + char CTC
         # self.check(encoder_type='lstm', bidirectional=True,
         #            decoder_type='lstm', ctc_loss_weight_sub=0.2)
@@ -169,7 +165,9 @@ class TestHierarchicalAttention(unittest.TestCase):
             encoder_dense_residual=dense_residual,
             decoder_residual=residual,
             decoder_dense_residual=dense_residual,
-            decoding_order='attend_generate_update')
+            decoding_order='attend_generate_update',
+            bottleneck_dim=256,
+            bottleneck_dim_sub=256)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):
@@ -226,7 +224,7 @@ class TestHierarchicalAttention(unittest.TestCase):
                     beam_width=1,
                     # beam_width=2,
                     max_decode_len=60,
-                    task_idx=1)
+                    task_index=1)
 
                 str_hyp = idx2word(best_hyps[0][:-1]).split('>')[0]
                 str_ref = idx2word(ys[0])

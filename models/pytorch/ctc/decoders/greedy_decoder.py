@@ -29,11 +29,11 @@ class GreedyDecoder(object):
         best_hyps = []
 
         # Pickup argmax class
-        for i_batch in range(batch_size):
+        for b in range(batch_size):
             indices = []
-            time = x_lens[i_batch]
+            time = x_lens[b]
             for t in range(time):
-                argmax = np.argmax(logits[i_batch, t], axis=0)
+                argmax = np.argmax(logits[b, t], axis=0)
                 indices.append(argmax)
 
             # Step 1. Collapse repeated labels

@@ -24,14 +24,14 @@ class BeamSearchDecoder(object):
         self._blank = blank_index
         self._space = space_index
 
-    def __call__(self, log_probs, inputs_seq_len, beam_width=1,
+    def __call__(self, log_probs, x_lens, beam_width=1,
                  alpha=0., beta=0.):
         """Performs inference for the given output probabilities.
         Args:
             log_probs (np.ndarray): The output log-scale probabilities
                 (e.g. post-softmax) for each time step.
                 A tensor of size `[B, T, num_classes]`
-            inputs_seq_len (np.ndarray): A tensor of size `[B]`
+            x_lens (np.ndarray): A tensor of size `[B]`
             beam_width (int): the size of beam
             alpha (float): language model weight
             beta (float): insertion bonus
@@ -42,7 +42,7 @@ class BeamSearchDecoder(object):
         batch_size, _, num_classes = log_probs.shape
         best_hyps = []
 
-        for i_batch in range(batch_size):
+        for b in range(batch_size):
             # Initialize the beam with the empty sequence, a probability of
             # 1 for ending in blank and zero for ending in non-blank
             # (in log space).
@@ -50,7 +50,7 @@ class BeamSearchDecoder(object):
             beam_p_b = [LOG_1]
             beam_p_nb = [LOG_0]
 
-            for t in range(inputs_seq_len[i_batch]):
+            for t in range(x_lens[b]):
                 new_beam_prefix = []
                 new_beam_p = []
                 new_beam_p_b = []
@@ -62,7 +62,7 @@ class BeamSearchDecoder(object):
                     # blank and does not end in a blank at this time step.
 
                     for c in range(num_classes):
-                        p_t = log_probs[i_batch, t, c]
+                        p_t = log_probs[b, t, c]
 
                         # If we propose a blank the prefix doesn't change.
                         # Only the probability of ending in blank gets updated.

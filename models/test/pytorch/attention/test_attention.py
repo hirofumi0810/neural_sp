@@ -219,7 +219,8 @@ class TestAttention(unittest.TestCase):
             encoder_dense_residual=dense_residual,
             decoder_residual=residual,
             decoder_dense_residual=dense_residual,
-            decoding_order=decoding_order)
+            decoding_order=decoding_order,
+            bottleneck_dim=256)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):

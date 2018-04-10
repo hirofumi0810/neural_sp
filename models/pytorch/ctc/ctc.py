@@ -8,20 +8,16 @@ from __future__ import division
 from __future__ import print_function
 
 try:
-    from warpctc_pytorch import CTCLoss
-    ctc_loss = CTCLoss()
-except ImportError:
+    import warpctc_pytorch
+except:
     raise ImportError('Install warpctc_pytorch.')
-# try:
-#     import pytorch_ctc
-# except ImportError:
-#     raise ImportError('Install pytorch_ctc.')
 
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
 import torch.nn.functional as F
+from torch.nn.modules.loss import _assert_no_grad
 
 from models.pytorch.base import ModelBase
 from models.pytorch.linear import LinearND
@@ -31,9 +27,47 @@ from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
 # from models.pytorch.ctc.decoders.beam_search_decoder2 import BeamSearchDecoder
 
-NEG_INF = -float("inf")
-LOG_0 = NEG_INF
-LOG_1 = 0
+
+class _CTC(warpctc_pytorch._CTC):
+    @staticmethod
+    def forward(ctx, acts, labels, act_lens, label_lens, size_average=False):
+        is_cuda = True if acts.is_cuda else False
+        acts = acts.contiguous()
+        loss_func = warpctc_pytorch.gpu_ctc if is_cuda else warpctc_pytorch.cpu_ctc
+        grads = torch.zeros(acts.size()).type_as(acts)
+        minibatch_size = acts.size(1)
+        costs = torch.zeros(minibatch_size).cpu()
+        loss_func(acts,
+                  grads,
+                  labels,
+                  label_lens,
+                  act_lens,
+                  minibatch_size,
+                  costs)
+        if size_average:
+            # Compute the avg. log-probability per frame and batch sample.
+            costs = torch.FloatTensor([costs.mean()])
+        else:
+            costs = torch.FloatTensor([costs.sum()])
+        ctx.grads = Variable(grads)
+        return costs
+
+
+def my_warpctc(acts, labels, act_lens, label_lens, size_average=False):
+    """Chainer like CTC Loss
+    acts: Tensor of (seqLength x batch x outputDim) containing output from network
+    labels: 1 dimensional Tensor containing all the targets of the batch in one sequence
+    act_lens: Tensor of size (batch) containing size of each output sequence from the network
+    act_lens: Tensor of (batch) containing label length of each example
+    """
+    assert len(labels.size()) == 1  # labels must be 1 dimensional
+    _assert_no_grad(labels)
+    _assert_no_grad(act_lens)
+    _assert_no_grad(label_lens)
+    return _CTC.apply(acts, labels, act_lens, label_lens, size_average)
+
+
+warpctc = warpctc_pytorch.CTCLoss()
 
 
 class CTC(ModelBase):
@@ -272,9 +306,17 @@ class CTC(ModelBase):
         concatenated_labels = _concatenate_labels(ys, y_lens)
 
         # Compute CTC loss
-        loss = ctc_loss(logits.transpose(0, 1).contiguous(),  # time-major
-                        concatenated_labels,
-                        x_lens.cpu(), y_lens) / len(xs)
+        # loss = warpctc(logits.transpose(0, 1),  # time-major
+        #                concatenated_labels,
+        #                x_lens.cpu(),
+        #                y_lens) / len(xs)
+
+        loss = my_warpctc(logits.transpose(0, 1),  # time-major
+                          concatenated_labels,
+                          x_lens.cpu(),
+                          y_lens,
+                          size_average=False) / len(xs)
+
         if self.use_cuda:
             loss = loss.cuda()
 
@@ -288,7 +330,6 @@ class CTC(ModelBase):
                 distribution='uniform',
                 size_average=False) / len(xs)
             loss = loss * (1 - self.label_smoothing_prob) + loss_ls
-            # print(loss_ls)
 
         if is_eval:
             loss = loss.data[0]
@@ -333,7 +374,7 @@ class CTC(ModelBase):
             return logits, x_lens, perm_idx
 
     def posteriors(self, xs, x_lens, temperature=1,
-                   blank_prior=None, is_sub_task=False):
+                   blank_prior=None, task_idx=0):
         """Returns CTC posteriors (after the softmax layer).
         Args:
             xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
@@ -341,7 +382,7 @@ class CTC(ModelBase):
             temperature (float, optional): the temperature parameter for the
                 softmax layer in the inference stage
             blank_prior (float, optional):
-            is_sub_task (bool, optional):
+            task_idx (int, optional): the index ofta task
         Returns:
             probs (np.ndarray): A tensor of size `[B, T, num_classes]`
         """
@@ -354,12 +395,14 @@ class CTC(ModelBase):
 
         # Encode acoustic features
         if hasattr(self, 'main_loss_weight'):
-            if is_sub_task:
+            if task_idx == 0:
+                logits, _, _, _, perm_idx = self._encode(
+                    xs, x_lens, is_multi_task=True)
+            elif task_idx == 1:
                 _, _, logits, _, perm_idx = self._encode(
                     xs, x_lens, is_multi_task=True)
             else:
-                logits, _, _, _, perm_idx = self._encode(
-                    xs, x_lens, is_multi_task=True)
+                raise NotImplementedError
         else:
             logits, _, perm_idx = self._encode(xs, x_lens)
 
@@ -376,14 +419,14 @@ class CTC(ModelBase):
         return self.var2np(probs)
 
     def decode(self, xs, x_lens, beam_width=1,
-               max_decode_len=None, is_sub_task=False):
+               max_decode_len=None, task_index=0):
         """
         Args:
             xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
             x_lens (np.ndarray): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
             max_decode_len: not used (to make CTC compatible with attention)
-            is_sub_task (bool, optional):
+            task_index (bool, optional): the index of a task
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
             perm_idx (np.ndarray): A tensor of size `[B]`
@@ -397,12 +440,14 @@ class CTC(ModelBase):
 
         # Encode acoustic features
         if hasattr(self, 'main_loss_weight'):
-            if is_sub_task:
+            if task_index == 0:
+                logits, x_lens, _, _, perm_idx = self._encode(
+                    xs, x_lens, is_multi_task=True)
+            elif task_index == 1:
                 _, _, logits, x_lens, perm_idx = self._encode(
                     xs, x_lens, is_multi_task=True)
             else:
-                logits, x_lens, _, _, perm_idx = self._encode(
-                    xs, x_lens, is_multi_task=True)
+                raise NotImplementedError
         else:
             logits, x_lens, perm_idx = self._encode(xs, x_lens)
 
@@ -465,9 +510,9 @@ def _concatenate_labels(ys, y_lens):
     total_y_lens = y_lens.data.sum()
     concatenated_labels = Variable(torch.zeros(total_y_lens)).int()
     label_counter = 0
-    for i_batch in range(batch_size):
+    for b in range(batch_size):
         concatenated_labels[label_counter:label_counter +
-                            y_lens.data[i_batch]] = ys[i_batch][:y_lens.data[i_batch]]
-        label_counter += y_lens.data[i_batch]
+                            y_lens.data[b]] = ys[b][:y_lens.data[b]]
+        label_counter += y_lens.data[b]
 
     return concatenated_labels

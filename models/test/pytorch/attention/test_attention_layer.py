@@ -41,6 +41,7 @@ class TestAttentionLayer(unittest.TestCase):
         encoder_num_units = decoder_num_units
 
         attend = AttentionMechanism(
+            encoder_num_units=decoder_num_units,
             decoder_num_units=decoder_num_units,
             attention_type=attention_type,
             attention_dim=128,

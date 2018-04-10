@@ -15,6 +15,7 @@ from torch.autograd import Variable
 from models.pytorch.linear import LinearND
 
 ATTENTION_TYPE = ['content', 'location', 'dot_product', 'rnn_attention']
+# TODO: multi-head attention
 
 
 class AttentionMechanism(nn.Module):
@@ -54,19 +55,22 @@ class AttentionMechanism(nn.Module):
         self.sigmoid_smoothing = sigmoid_smoothing
 
         if self.attention_type == 'content':
-            self.W_enc = LinearND(encoder_num_units,
-                                  attention_dim, bias=True)
-            self.W_dec = LinearND(decoder_num_units, attention_dim, bias=False)
-            self.V = LinearND(attention_dim, 1, bias=False)
+            self.W_enc = LinearND(encoder_num_units, attention_dim,
+                                  bias=True)
+            self.W_dec = LinearND(decoder_num_units, attention_dim,
+                                  bias=False)
+            self.V = LinearND(attention_dim, 1,
+                              bias=False)
 
         elif self.attention_type == 'location':
             assert kernel_size % 2 == 1
 
-            self.W_enc = LinearND(encoder_num_units,
-                                  attention_dim, bias=True)
-            self.W_dec = LinearND(decoder_num_units,
-                                  attention_dim, bias=False)
-            self.W_conv = LinearND(out_channels, attention_dim, bias=False)
+            self.W_enc = LinearND(encoder_num_units, attention_dim,
+                                  bias=True)
+            self.W_dec = LinearND(decoder_num_units, attention_dim,
+                                  bias=False)
+            self.W_conv = LinearND(out_channels, attention_dim,
+                                   bias=False)
             # self.conv = nn.Conv1d(in_channels=1,
             #                       out_channels=out_channels,
             #                       kernel_size=kernel_size,
@@ -79,7 +83,8 @@ class AttentionMechanism(nn.Module):
                                   stride=1,
                                   padding=(0, kernel_size // 2),
                                   bias=False)
-            self.V = LinearND(attention_dim, 1, bias=False)
+            self.V = LinearND(attention_dim, 1,
+                              bias=False)
 
         elif self.attention_type == 'dot_product':
             self.W_keys = LinearND(encoder_num_units, attention_dim,
@@ -129,7 +134,6 @@ class AttentionMechanism(nn.Module):
             ###################################################################
             # For 1D conv
             # conv_feat = self.conv(att_weights_step.unsqueeze(dim=1))
-            # -> `[B, out_channels, T_in]`
 
             # For 2D conv
             conv_feat = self.conv(

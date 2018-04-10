@@ -22,10 +22,6 @@ from models.pytorch.linear import LinearND
 from models.pytorch.criterion import cross_entropy_label_smoothing
 from models.pytorch.encoders.load_encoder import load
 
-NEG_INF = -float("inf")
-LOG_0 = NEG_INF
-LOG_1 = 0
-
 
 class HierarchicalCTC(CTC):
     """Hierarchical CTC model.

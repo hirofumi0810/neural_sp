@@ -50,13 +50,13 @@ class BeamSearchDecoder(object):
         batch_size, _, num_classes = log_probs.shape
         best_hyps = []
 
-        for i_batch in range(batch_size):
+        for b in range(batch_size):
             # Elements in the beam are (prefix, (p_blank, p_no_blank))
             # Initialize the beam with the empty sequence, a probability of
             # 1 for ending in blank and zero for ending in non-blank
             # (in log space).
             beam = [(tuple(), (LOG_1, LOG_0))]
-            time = x_lens[i_batch]
+            time = x_lens[b]
 
             for t in range(time):
 
@@ -64,7 +64,7 @@ class BeamSearchDecoder(object):
                 next_beam = _make_new_beam()
 
                 for c in range(num_classes):
-                    p_t = log_probs[i_batch, t, c]
+                    p_t = log_probs[b, t, c]
 
                     # The variables p_b and p_nb are respectively the
                     # probabilities for the prefix given that it ends in a

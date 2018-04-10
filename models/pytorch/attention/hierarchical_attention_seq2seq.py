@@ -15,7 +15,6 @@ from models.pytorch.linear import LinearND, Embedding, Embedding_LS
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
 from models.pytorch.encoders.load_encoder import load
 from models.pytorch.attention.rnn_decoder import RNNDecoder
-# from models.pytorch.attention.rnn_decoder_nstep import RNNDecoder
 from models.pytorch.attention.attention_layer import AttentionMechanism
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
@@ -78,7 +77,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  encoder_dense_residual=False,
                  decoder_residual=False,
                  decoder_dense_residual=False,
-                 decoding_order='attend_update_generate'):
+                 decoding_order='attend_generate_update',
+                 bottleneck_dim=256,
+                 bottleneck_dim_sub=256):
 
         super(HierarchicalAttentionSeq2seq, self).__init__(
             input_size=input_size,
@@ -124,7 +125,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             encoder_dense_residual=encoder_dense_residual,
             decoder_residual=decoder_residual,
             decoder_dense_residual=decoder_dense_residual,
-            decoding_order=decoding_order)
+            decoding_order=decoding_order,
+            bottleneck_dim=bottleneck_dim)
         self.model_type = 'hierarchical_attention'
 
         # Setting for the encoder
@@ -133,7 +135,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Setting for the decoder in the second task
         self.decoder_num_units_1 = decoder_num_units_sub
         self.decoder_num_layers_1 = decoder_num_layers_sub
-        self.embedding_dim_sub = embedding_dim_sub
         self.num_classes_sub = num_classes_sub + 1  # Add <EOS> class
         self.sos_1 = num_classes_sub
         self.eos_1 = num_classes_sub
@@ -244,11 +245,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             ##############################
             # Output layer (sub)
             ##############################
-            self.W_d_1 = LinearND(decoder_num_units_sub, decoder_num_units_sub,
+            self.W_d_1 = LinearND(decoder_num_units_sub, bottleneck_dim_sub,
                                   dropout=dropout_decoder)
-            self.W_c_1 = LinearND(self.encoder_num_units, decoder_num_units_sub,
+            self.W_c_1 = LinearND(self.encoder_num_units, bottleneck_dim_sub,
                                   dropout=dropout_decoder)
-            self.fc_1 = LinearND(decoder_num_units_sub, self.num_classes_sub)
+            self.fc_1 = LinearND(bottleneck_dim_sub, self.num_classes_sub)
 
         ##############################
         # CTC (sub)
@@ -370,8 +371,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         ##################################################
         if self.main_loss_weight > 0:
             # Compute XE loss
-            loss_main = self.compute_xe_loss(
-                xs, ys_in, ys_out, x_lens, y_lens, size_average=True)
+            loss_main = self.compute_xe_loss(xs, ys_in, ys_out, x_lens, y_lens,
+                                             task_idx=0)
 
             loss_main = loss_main * self.main_loss_weight
         else:
@@ -385,7 +386,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # Compute XE loss
             loss_sub = self.compute_xe_loss(
                 xs_sub, ys_sub_in, ys_sub_out, x_lens_sub, y_lens_sub,
-                task_idx=1, size_average=True)
+                task_idx=1)
 
             loss_sub = loss_sub * self.sub_loss_weight
             loss += loss_sub
@@ -396,7 +397,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         if self.ctc_loss_weight_sub > 0:
             ctc_loss_sub = self.compute_ctc_loss(
                 xs_sub, ys_sub_in[:, 1:] + 1,
-                x_lens_sub, y_lens_sub, task_idx=1, size_average=True)
+                x_lens_sub, y_lens_sub, task_idx=1)
 
             ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub
             loss += ctc_loss_sub
@@ -422,7 +423,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             return loss, loss_main, ctc_loss_sub
 
     def decode(self, xs, x_lens, beam_width, max_decode_len,
-               length_penalty=0, coverage_penalty=0, task_idx=0,
+               length_penalty=0, coverage_penalty=0, task_index=0,
                resolving_unk=False):
         """Decoding in the inference stage.
         Args:
@@ -433,7 +434,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 to stop prediction when EOS token have not been emitted
             length_penalty (float, optional):
             coverage_penalty (float, optional):
-            task_idx (int, optional):
+            task_index (int, optional): the index of a task
             resolving_unk (bool, optional):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
@@ -442,20 +443,20 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Change to evaluation mode
         self.eval()
 
-        if task_idx > 0 and self.ctc_loss_weight_sub > self.sub_loss_weight:
+        if task_index > 0 and self.ctc_loss_weight_sub > self.sub_loss_weight:
             # Decode by CTC decoder
             best_hyps, perm_idx = self.decode_ctc(
-                xs, x_lens, beam_width, task_idx)
+                xs, x_lens, beam_width, task_index)
         else:
             # Wrap by Variable
             xs = self.np2var(xs)
             x_lens = self.np2var(x_lens, dtype='int')
 
             # Encode acoustic features
-            if task_idx == 0:
+            if task_index == 0:
                 enc_out, x_lens, _, _, perm_idx = self._encode(
                     xs, x_lens, is_multi_task=True)
-            elif task_idx == 1:
+            elif task_index == 1:
                 _, _, enc_out, x_lens, perm_idx = self._encode(
                     xs, x_lens, is_multi_task=True)
             else:
@@ -464,11 +465,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # Decode by attention decoder
             if beam_width == 1:
                 best_hyps, aw = self._decode_infer_greedy(
-                    enc_out, x_lens, max_decode_len, task_idx)
+                    enc_out, x_lens, max_decode_len, task_index)
             else:
                 best_hyps = self._decode_infer_beam(
                     enc_out, x_lens, beam_width, max_decode_len,
-                    length_penalty, coverage_penalty, task_idx)
+                    length_penalty, coverage_penalty, task_index)
 
             # Permutate indices to the original order
             if perm_idx is None:
@@ -478,5 +479,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         if resolving_unk:
             return best_hyps, aw, perm_idx
+            # TODO: beam search
         else:
             return best_hyps, perm_idx

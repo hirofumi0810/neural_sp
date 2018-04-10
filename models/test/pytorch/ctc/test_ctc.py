@@ -67,8 +67,6 @@ class TestCTC(unittest.TestCase):
         self.check(encoder_type='lstm', bidirectional=False)
         self.check(encoder_type='gru', bidirectional=True)
         self.check(encoder_type='gru', bidirectional=False)
-        self.check(encoder_type='rnn', bidirectional=True)
-        self.check(encoder_type='rnn', bidirectional=False)
 
     @measure_time
     def check(self, encoder_type, bidirectional=False, label_type='char',
@@ -185,7 +183,7 @@ class TestCTC(unittest.TestCase):
         model.set_cuda(deterministic=False, benchmark=True)
 
         # Train model
-        max_step = 1000
+        max_step = 300
         start_time_step = time.time()
         for step in range(max_step):
 

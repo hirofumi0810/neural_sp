@@ -7,6 +7,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from os.path import isdir
+
 
 def load(model_type, params, backend):
     """Load an encoder.
@@ -110,6 +112,8 @@ def load(model_type, params, backend):
         if bool(params['encoder_dense_residual']):
             model.name += '_dense_res'
         model.name += '_input' + str(model.input_size)
+        if isdir(params['char_init']):
+            model.name += '_charinit'
 
     elif model_type == 'student_ctc':
         if 'activation' not in params.keys():
@@ -237,7 +241,8 @@ def load(model_type, params, backend):
             encoder_dense_residual=params['encoder_dense_residual'],
             decoder_residual=params['decoder_residual'],
             decoder_dense_residual=params['decoder_dense_residual'],
-            decoding_order=params['decoding_order'])
+            decoding_order=params['decoding_order'],
+            bottleneck_dim=params['bottleneck_dim'])
 
         model.name = model_name
         if params['encoder_type'] not in ['cnn', 'resnet']:
@@ -256,6 +261,8 @@ def load(model_type, params, backend):
         model.name += '_' + params['optimizer']
         model.name += '_lr' + str(params['learning_rate'])
         model.name += '_' + params['attention_type']
+        if params['bottleneck_dim'] != params['decoder_num_units']:
+            model.name += '_fc' + str(params['bottleneck_dim'])
         if params['dropout_encoder'] != 0 or params['dropout_decoder'] != 0:
             model.name += '_drop'
             if params['dropout_input'] != 0:
@@ -271,7 +278,7 @@ def load(model_type, params, backend):
         if params['logits_temperature'] != 1:
             model.name += '_temp' + str(params['logits_temperature'])
         if bool(params['sigmoid_smoothing']):
-            model.name += '_smooth'
+            model.name += '_sigsmooth'
         if params['coverage_weight'] > 0:
             model.name += '_coverage' + str(params['coverage_weight'])
         if params['ctc_loss_weight'] > 0:
@@ -291,6 +298,10 @@ def load(model_type, params, backend):
         elif bool(params['decoder_dense_residual']):
             model.name += '_decdense'
         model.name += '_input' + str(model.input_size)
+        if params['decoding_order'] == 'conditional':
+            model.name += '_conditional'
+        if isdir(params['char_init']):
+            model.name += '_charinit'
 
     elif params['model_type'] == 'hierarchical_ctc':
         if 'activation' not in params.keys():
@@ -385,6 +396,8 @@ def load(model_type, params, backend):
             model.name += '_dense_res'
         model.name += '_main' + str(params['main_loss_weight'])
         model.name += '_input' + str(model.input_size)
+        if isdir(params['char_init']):
+            model.name += '_charinit'
 
     elif params['model_type'] == 'hierarchical_attention':
 
@@ -416,6 +429,7 @@ def load(model_type, params, backend):
             dropout_decoder=params['dropout_decoder'],
             dropout_embedding=params['dropout_embedding'],
             main_loss_weight=params['main_loss_weight'],
+            sub_loss_weight=params['sub_loss_weight'],
             num_classes=params['num_classes'],
             num_classes_sub=params['num_classes_sub'],
             parameter_init_distribution=params['parameter_init_distribution'],
@@ -447,8 +461,9 @@ def load(model_type, params, backend):
             encoder_dense_residual=params['encoder_dense_residual'],
             decoder_residual=params['decoder_residual'],
             decoder_dense_residual=params['decoder_dense_residual'],
-            curriculum_training=params['curriculum_training'],
-            decoding_order=params['decoding_order'])
+            decoding_order=params['decoding_order'],
+            bottleneck_dim=params['bottleneck_dim'],
+            bottlleneck_dim_sub=params['bottlleneck_dim_sub'])
 
         model.name = model_name
         if params['encoder_type'] not in ['cnn', 'resnet']:
@@ -468,6 +483,8 @@ def load(model_type, params, backend):
         model.name += '_' + params['optimizer']
         model.name += '_lr' + str(params['learning_rate'])
         model.name += '_' + params['attention_type']
+        if params['bottleneck_dim'] != params['decoder_num_units']:
+            model.name += '_fc' + str(params['bottleneck_dim'])
         if params['dropout_encoder'] != 0 or params['dropout_decoder'] != 0:
             model.name += '_drop'
             if params['dropout_input'] != 0:
@@ -483,11 +500,9 @@ def load(model_type, params, backend):
         if params['logits_temperature'] != 1:
             model.name += '_temp' + str(params['logits_temperature'])
         if bool(params['sigmoid_smoothing']):
-            model.name += '_smooth'
+            model.name += '_sigsmooth'
         if params['coverage_weight'] > 0:
             model.name += '_coverage' + str(params['coverage_weight'])
-        if params['ctc_loss_weight_sub'] > 0:
-            model.name += '_ctcsub' + str(params['ctc_loss_weight_sub'])
         if params['scheduled_sampling_prob'] > 0:
             model.name += '_ss' + str(params['scheduled_sampling_prob'])
         if params['label_smoothing_prob'] > 0:
@@ -503,9 +518,14 @@ def load(model_type, params, backend):
         elif bool(params['decoder_dense_residual']):
             model.name += '_decdense'
         model.name += '_main' + str(params['main_loss_weight'])
+        model.name += '_sub' + str(params['sub_loss_weight'])
+        if params['ctc_loss_weight_sub'] > 0:
+            model.name += '_ctcsub' + str(params['ctc_loss_weight_sub'])
         model.name += '_input' + str(model.input_size)
-        if bool(params['curriculum_training']):
-            model.name += '_curriculum'
+        if params['decoding_order'] == 'conditional':
+            model.name += '_conditional'
+        if isdir(params['char_init']):
+            model.name += '_charinit'
 
     elif params['model_type'] == 'nested_attention':
         if backend == 'pytorch':
@@ -567,12 +587,15 @@ def load(model_type, params, backend):
             encoder_dense_residual=params['encoder_dense_residual'],
             decoder_residual=params['decoder_residual'],
             decoder_dense_residual=params['decoder_dense_residual'],
-            curriculum_training=params['curriculum_training'],
+            decoding_order=params['decoding_order'],
             usage_dec_sub=params['usage_dec_sub'],
             gate_dec_sub=params['gate_dec_sub'],
             gate_embedding=params['gate_embedding'],
             attention_regularization=params['attention_regularization'],
-            decoding_order=params['decoding_order'])
+            dec_out_sub_attend_temperature=params['dec_out_sub_attend_temperature'],
+            dec_out_sub_sigmoid_smoothing=params['dec_out_sub_sigmoid_smoothing'],
+            detach_dec_out_sub=params['detach_dec_out_sub'],
+            conditional_decoder=params['conditional_decoder'])
 
         model.name = model_name
         if params['encoder_type'] not in ['cnn', 'resnet']:
@@ -607,7 +630,7 @@ def load(model_type, params, backend):
         if params['logits_temperature'] != 1:
             model.name += '_temp' + str(params['logits_temperature'])
         if bool(params['sigmoid_smoothing']):
-            model.name += '_smooth'
+            model.name += '_sigsmooth'
         if params['coverage_weight'] > 0:
             model.name += '_coverage' + str(params['coverage_weight'])
         if params['ctc_loss_weight_sub'] > 0:
@@ -628,14 +651,23 @@ def load(model_type, params, backend):
             model.name += '_decdense'
         model.name += '_main' + str(params['main_loss_weight'])
         model.name += '_input' + str(model.input_size)
-        if bool(params['curriculum_training']):
-            model.name += '_curriculum'
         model.name += '_' + params['usage_dec_sub']
+        if params['dec_out_sub_attend_temperature'] != 1:
+            model.name += '_temp' + \
+                str(params['dec_out_sub_attend_temperature'])
+        if bool(params['dec_out_sub_sigmoid_smoothing']):
+            model.name += '_sigsmooth'
+        if bool(params['attention_regularization']):
+            model.name += '_attreg'
         if params['gate_dec_sub'] != 'no_gate':
             model.name += '_gatedec_' + params['gate_dec_sub']
         if params['gate_embedding'] != 'no_gate':
             model.name += '_gateemb_' + params['gate_embedding']
-        if bool(params['attention_regularization']):
-            model.name += '_attreg'
+        if bool(params['detach_dec_out_sub']):
+            model.name += '_detach'
+        if bool(params['conditional_decoder']) or params['decoding_order'] == 'conditional':
+            model.name += '_conditional'
+        if isdir(params['char_init']):
+            model.name += '_charinit'
 
     return model

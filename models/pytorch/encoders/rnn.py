@@ -187,16 +187,16 @@ class RNNEncoder(nn.Module):
         else:
             self.fast_impl = False
 
-            for i_layer in range(num_layers):
-                if i_layer == 0:
+            for l in range(num_layers):
+                if l == 0:
                     encoder_input_size = input_size
                 elif self.num_proj > 0:
                     encoder_input_size = num_proj
-                    if subsample_type == 'concat' and i_layer > 0 and self.subsample_list[i_layer - 1]:
+                    if subsample_type == 'concat' and l > 0 and self.subsample_list[l - 1]:
                         encoder_input_size *= 2
                 else:
                     encoder_input_size = num_units * self.num_directions
-                    if subsample_type == 'concat' and i_layer > 0 and self.subsample_list[i_layer - 1]:
+                    if subsample_type == 'concat' and l > 0 and self.subsample_list[l - 1]:
                         encoder_input_size *= 2
 
                 if rnn_type == 'lstm':
@@ -228,19 +228,16 @@ class RNNEncoder(nn.Module):
                     raise ValueError(
                         'rnn_type must be "lstm" or "gru" or "rnn".')
 
-                if self.subsample_list[i_layer]:
-                    setattr(self, 'p' + rnn_type + '_l' + str(i_layer), rnn_i)
-                else:
-                    setattr(self, rnn_type + '_l' + str(i_layer), rnn_i)
+                setattr(self, rnn_type + '_l' + str(l), rnn_i)
 
                 # Dropout for hidden-hidden or hidden-output connection
-                setattr(self, 'dropout_l' + str(i_layer),
+                setattr(self, 'dropout_l' + str(l),
                         nn.Dropout(p=dropout_hidden))
 
-                if i_layer != self.num_layers - 1 and self.num_proj > 0:
+                if l != self.num_layers - 1 and self.num_proj > 0:
                     proj_i = LinearND(num_units * self.num_directions, num_proj,
                                       dropout=dropout_hidden)
-                    setattr(self, 'proj_l' + str(i_layer), proj_i)
+                    setattr(self, 'proj_l' + str(l), proj_i)
 
     def forward(self, xs, x_lens, volatile=False):
         """Forward computation.
@@ -331,35 +328,31 @@ class RNNEncoder(nn.Module):
 
             res_outputs_list = []
             # NOTE: exclude residual connection from the raw inputs
-            for i_layer in range(self.num_layers):
+            for l in range(self.num_layers):
 
                 torch.cuda.empty_cache()
 
-                # Pack i_layer-th encoder xs
+                # Pack l-th encoder xs
                 if self.pack_sequence:
                     if not isinstance(xs, torch.nn.utils.rnn.PackedSequence):
                         xs = pack_padded_sequence(
                             xs, x_lens, batch_first=self.batch_first)
 
                 # Path through RNN
-                if self.subsample_list[i_layer]:
-                    xs, _ = getattr(self, 'p' + self.rnn_type +
-                                    '_l' + str(i_layer))(xs, hx=h_0)
-                else:
-                    xs, _ = getattr(self, self.rnn_type + '_l' +
-                                    str(i_layer))(xs, hx=h_0)
+                xs, _ = getattr(self, self.rnn_type + '_l' +
+                                str(l))(xs, hx=h_0)
 
-                # Unpack i_layer-th encoder outputs
+                # Unpack l-th encoder outputs
                 if self.pack_sequence:
                     xs, unpacked_seq_len = pad_packed_sequence(
                         xs, batch_first=self.batch_first, padding_value=0)
                     # assert x_lens == unpacked_seq_len
 
                 # Dropout for hidden-hidden or hidden-output connection
-                xs = getattr(self, 'dropout_l' + str(i_layer))(xs)
+                xs = getattr(self, 'dropout_l' + str(l))(xs)
 
                 # Pick up outputs in the sub task before the projection layer
-                if self.num_layers_sub >= 1 and i_layer == self.num_layers_sub - 1:
+                if self.num_layers_sub >= 1 and l == self.num_layers_sub - 1:
                     xs_sub = xs
 
                     # Wrap by Variable again
@@ -369,16 +362,15 @@ class RNNEncoder(nn.Module):
                         x_lens_sub = x_lens_sub.cuda()
 
                 # NOTE: Exclude the last layer
-                if i_layer != self.num_layers - 1:
-                    if self.residual or self.dense_residual or self.num_proj > 0 or self.subsample_list[i_layer]:
+                if l != self.num_layers - 1:
+                    if self.residual or self.dense_residual or self.num_proj > 0 or self.subsample_list[l]:
 
                         # Projection layer (affine transformation)
                         if self.num_proj > 0:
-                            xs = F.tanh(
-                                getattr(self, 'proj_l' + str(i_layer))(xs))
+                            xs = F.tanh(getattr(self, 'proj_l' + str(l))(xs))
 
                         # Subsampling
-                        if self.subsample_list[i_layer]:
+                        if self.subsample_list[l]:
                             # Pick up features at odd time step
                             if self.subsample_type == 'drop':
                                 if self.batch_first:
@@ -406,7 +398,7 @@ class RNNEncoder(nn.Module):
 
                         # Residual connection
                         elif self.residual or self.dense_residual:
-                            if i_layer >= self.residual_start_layer - 1:
+                            if l >= self.residual_start_layer - 1:
                                 for xs_lower in res_outputs_list:
                                     xs = xs + xs_lower
                                 if self.residual:

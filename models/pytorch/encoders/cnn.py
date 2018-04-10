@@ -62,14 +62,14 @@ class CNNEncoder(nn.Module):
         layers = []
         in_c = self.input_channels
         in_freq = self.input_freq
-        for i_layer in range(len(conv_channels)):
+        for l in range(len(conv_channels)):
 
             # Conv
             conv = nn.Conv2d(in_channels=in_c,
-                             out_channels=conv_channels[i_layer],
-                             kernel_size=tuple(conv_kernel_sizes[i_layer]),
-                             stride=tuple(conv_strides[i_layer]),
-                             padding=tuple(conv_strides[i_layer]),
+                             out_channels=conv_channels[l],
+                             kernel_size=tuple(conv_kernel_sizes[l]),
+                             stride=tuple(conv_strides[l]),
+                             padding=tuple(conv_strides[l]),
                              bias=not batch_norm)
             layers.append(conv)
             in_freq = math.floor(
@@ -88,9 +88,9 @@ class CNNEncoder(nn.Module):
                 raise NotImplementedError
 
             # Max Pooling
-            if len(poolings[i_layer]) > 0:
-                pool = nn.MaxPool2d(kernel_size=tuple(poolings[i_layer]),
-                                    stride=tuple(poolings[i_layer]),
+            if len(poolings[l]) > 0:
+                pool = nn.MaxPool2d(kernel_size=tuple(poolings[l]),
+                                    stride=tuple(poolings[l]),
                                     # padding=(1, 1),
                                     padding=(0, 0),  # default
                                     ceil_mode=False)
@@ -103,7 +103,7 @@ class CNNEncoder(nn.Module):
 
             # Batch Normalization
             if batch_norm:
-                layers.append(nn.BatchNorm2d(conv_channels[i_layer]))
+                layers.append(nn.BatchNorm2d(conv_channels[l]))
 
             # Dropout for hidden-hidden connection
             layers.append(nn.Dropout(p=dropout_hidden))
@@ -112,7 +112,7 @@ class CNNEncoder(nn.Module):
             # TODO: try this
             # layers.append(nn.Dropout2d(p=dropout_hidden))
 
-            in_c = conv_channels[i_layer]
+            in_c = conv_channels[l]
 
         self.layers = nn.Sequential(*layers)
 
