@@ -1,6 +1,7 @@
 ### Set the root path of kaldi-asr
-export KALDI_ROOT="/home/inaguma/tool/kaldi"
-
+if [ -z $KALDI_ROOT ]; then
+  export KALDI_ROOT="/home/inaguma/tool/kaldi"
+fi
 # [ -f $KALDI_ROOT/tools/env.sh ] && . $KALDI_ROOT/tools/env.sh
 
 export PATH=$PWD/utils/:$KALDI_ROOT/tools/openfst/bin:$PWD:$PATH
@@ -11,8 +12,6 @@ export PATH=$PWD/utils/:$KALDI_ROOT/tools/openfst/bin:$PWD:$PATH
 export PYTHON=/home/inaguma/.pyenv/versions/anaconda3-4.1.1/envs/`hostname`/bin/python
 
 ### CUDA
-# export PATH=$PATH:/usr/local/cuda/bin
-# export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64:/usr/local/lib:/usr/local/lib64:/usr/local/cuda/bin/nvcc
 export PATH=$PATH:/usr/local/cuda/bin
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64:/usr/local/cuda/extras/CUPTI/lib64
 
