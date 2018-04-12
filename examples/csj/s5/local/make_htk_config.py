@@ -53,6 +53,7 @@ def main():
             for line in f:
                 line = line.strip()
                 wav_path = line.split(' ')[2]
+                assert isfile(wav_path)
                 wav_paths.append(wav_path)
 
         with open(join(args.data_save_path, data_type, 'wav2htk.scp'), 'w') as f:

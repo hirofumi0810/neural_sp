@@ -20,13 +20,9 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
 
     def test(self):
 
-        # framework
-        # self.check(label_type='word5', label_type_sub='kanji_wb',
-        #            data_type='train', backend='chainer')
-
         # data_type
-        self.check(label_type='word5', label_type_sub='kanji_wb',
-                   data_type='train')
+        # self.check(label_type='word5', label_type_sub='kanji_wb',
+        #            data_type='train')
         self.check(label_type='word5', label_type_sub='kanji_wb',
                    data_type='dev')
         self.check(label_type='word5', label_type_sub='kanji_wb',
@@ -37,11 +33,11 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
                    data_type='eval3')
 
         # label_type
-        self.check(label_type='kanji_wb', label_type_sub='kana_wb')
+        # self.check(label_type='kanji_wb', label_type_sub='kana_wb')
 
     @measure_time
     def check(self, label_type, label_type_sub, data_type='dev',
-              data_size='subset', backend='pytorch',
+              data_size='fullset', backend='pytorch',
               shuffle=False, sort_utt=True, sort_stop_epoch=None,
               frame_stacking=False, splice=1, num_gpus=1):
 
@@ -62,7 +58,7 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
-            data_save_path='/n/sd8/inaguma/corpus/csj/kaldi/' + data_size,
+            data_save_path='/n/sd8/inaguma/corpus/csj/kaldi',
             backend=backend,
             input_channel=80, use_delta=True, use_double_delta=True,
             data_type=data_type, data_size=data_size,

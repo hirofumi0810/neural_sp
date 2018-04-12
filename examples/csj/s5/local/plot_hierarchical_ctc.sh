@@ -13,12 +13,6 @@ fi
 ### Set path to save dataset
 DATA_SAVEPATH="/n/sd8/inaguma/corpus/csj/kaldi"
 
-### Select data size
-DATASIZE=subset
-# DATASIZE=aps
-# DATASIZE=fullset
-# DATASIZE=all
-
 saved_model_path=$1
 gpu_index=$2
 
@@ -27,4 +21,4 @@ $PYTHON exp/visualization/plot_hierarchical_ctc_probs.py \
   --model_path $saved_model_path \
   --epoch -1 \
   --eval_batch_size 1 \
-  --data_save_path $DATA_SAVEPATH/$DATASIZE
+  --data_save_path $DATA_SAVEPATH

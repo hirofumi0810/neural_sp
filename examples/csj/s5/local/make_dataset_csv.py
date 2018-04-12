@@ -38,7 +38,8 @@ SHORT_PAUSE = '@'
 
 def main():
 
-    for data_type in ['train', 'dev', 'eval1', 'eval2', 'eval3']:
+    # for data_type in ['train', 'dev', 'eval1', 'eval2', 'eval3']:
+    for data_type in ['eval1', 'eval2', 'eval3']:
         print('=' * 50)
         print(' ' * 20 + data_type)
         print('=' * 50)
@@ -62,6 +63,7 @@ def main():
         df_word5 = pd.DataFrame([], columns=df_columns)
         df_word10 = pd.DataFrame([], columns=df_columns)
         df_word15 = pd.DataFrame([], columns=df_columns)
+        df_word20 = pd.DataFrame([], columns=df_columns)
         df_kanji = pd.DataFrame([], columns=df_columns)
         df_kanji_wb = pd.DataFrame([], columns=df_columns)
         # df_kana = pd.DataFrame([], columns=df_columns)
@@ -76,18 +78,18 @@ def main():
 
         utt_count = 0
         df_word1_list, df_word5_list = [], []
-        df_word10_list, df_word15_list = [], []
+        df_word10_list, df_word15_list, df_word20_list = [], [], []
         df_kanji_list, df_kanji_wb_list = [], []
         # df_kana_list,  df_kana_wb_list = [], []
         # df_phone_list, df_phone_wb_list = [], []
         df_pos_list = []
         for utt_idx, trans_list in tqdm(trans_dict.items()):
             word1_indices, word5_indices = trans_list[:2]
-            word10_indices, word15_indices = trans_list[2:4]
-            kanji_indices, kanji_wb_indices = trans_list[4:6]
-            kana_indices, kana_wb_indices = trans_list[6:8]
-            phone_indices, phone_wb_indices = trans_list[8:10]
-            pos_indices = trans_list[10]
+            word10_indices, word15_indices, word20_indices = trans_list[2:5]
+            kanji_indices, kanji_wb_indices = trans_list[5:7]
+            kana_indices, kana_wb_indices = trans_list[7:9]
+            phone_indices, phone_wb_indices = trans_list[9:11]
+            pos_indices = trans_list[11]
 
             speaker = utt_idx.split('_')[0]
 
@@ -114,6 +116,8 @@ def main():
                 df_word10, [frame_num, feat_utt_save_path, word10_indices])
             df_word15 = add_element(
                 df_word15, [frame_num, feat_utt_save_path, word15_indices])
+            df_word20 = add_element(
+                df_word20, [frame_num, feat_utt_save_path, word20_indices])
             df_kanji = add_element(
                 df_kanji, [frame_num, feat_utt_save_path, kanji_indices])
             df_kanji_wb = add_element(
@@ -136,6 +140,7 @@ def main():
                 df_word5_list.append(df_word5)
                 df_word10_list.append(df_word10)
                 df_word15_list.append(df_word15)
+                df_word20_list.append(df_word20)
                 df_kanji_list.append(df_kanji)
                 df_kanji_wb_list.append(df_kanji_wb)
                 # df_kana_list.append(df_kana)
@@ -148,6 +153,7 @@ def main():
                 df_word5 = pd.DataFrame([], columns=df_columns)
                 df_word10 = pd.DataFrame([], columns=df_columns)
                 df_word15 = pd.DataFrame([], columns=df_columns)
+                df_word20 = pd.DataFrame([], columns=df_columns)
                 df_kanji = pd.DataFrame([], columns=df_columns)
                 df_kanji_wb = pd.DataFrame([], columns=df_columns)
                 # df_kana = pd.DataFrame([], columns=df_columns)
@@ -162,6 +168,7 @@ def main():
         df_word5_list.append(df_word5)
         df_word10_list.append(df_word10)
         df_word15_list.append(df_word15)
+        df_word20_list.append(df_word20)
         df_kanji_list.append(df_kanji)
         df_kanji_wb_list.append(df_kanji_wb)
         # df_kana_list.append(df_kana)
@@ -175,6 +182,7 @@ def main():
         df_word5 = df_word5_list[0]
         df_word10 = df_word10_list[0]
         df_word15 = df_word15_list[0]
+        df_word20 = df_word20_list[0]
         df_kanji = df_kanji_list[0]
         df_kanji_wb = df_kanji_wb_list[0]
         # df_kana = df_kana_list[0]
@@ -191,6 +199,8 @@ def main():
             df_word10 = pd.concat([df_word10, i], axis=0)
         for i in df_word15_list[1:]:
             df_word15 = pd.concat([df_word15, i], axis=0)
+        for i in df_word20_list[1:]:
+            df_word20 = pd.concat([df_word20, i], axis=0)
         for i in df_kanji_list[1:]:
             df_kanji = pd.concat([df_kanji, i], axis=0)
         for i in df_kanji_wb_list[1:]:
@@ -206,17 +216,19 @@ def main():
         for i in df_pos_list[1:]:
             df_pos = pd.concat([df_pos, i], axis=0)
 
-        df_word1.to_csv(join(csv_save_path, 'word1.csv'))
-        df_word5.to_csv(join(csv_save_path, 'word5.csv'))
-        df_word10.to_csv(join(csv_save_path, 'word10.csv'))
-        df_word15.to_csv(join(csv_save_path, 'word15.csv'))
-        df_kanji.to_csv(join(csv_save_path, 'kanji.csv'))
-        df_kanji_wb.to_csv(join(csv_save_path, 'kanji_wb.csv'))
-        # df_kana.to_csv(join(csv_save_path, 'kana.csv'))
-        # df_kana_wb.to_csv(join(csv_save_path, 'kana_wb.csv'))
-        # df_phone.to_csv(join(csv_save_path, 'phone.csv'))
-        # df_phone_wb.to_csv(join(csv_save_path, 'phone_wb.csv'))
-        df_pos.to_csv(join(csv_save_path, 'pos.csv'))
+        df_word1.to_csv(join(csv_save_path, 'word1.csv'), encoding='utf-8')
+        df_word5.to_csv(join(csv_save_path, 'word5.csv'), encoding='utf-8')
+        df_word10.to_csv(join(csv_save_path, 'word10.csv'), encoding='utf-8')
+        df_word15.to_csv(join(csv_save_path, 'word15.csv'), encoding='utf-8')
+        df_word20.to_csv(join(csv_save_path, 'word20.csv'), encoding='utf-8')
+        df_kanji.to_csv(join(csv_save_path, 'kanji.csv'), encoding='utf-8')
+        df_kanji_wb.to_csv(
+            join(csv_save_path, 'kanji_wb.csv'), encoding='utf-8')
+        # df_kana.to_csv(join(csv_save_path, 'kana.csv'), encoding='utf-8')
+        # df_kana_wb.to_csv(join(csv_save_path, 'kana_wb.csv'), encoding='utf-8')
+        # df_phone.to_csv(join(csv_save_path, 'phone.csv'), encoding='utf-8')
+        # df_phone_wb.to_csv(join(csv_save_path, 'phone_wb.csv'), encoding='utf-8')
+        df_pos.to_csv(join(csv_save_path, 'pos.csv'), encoding='utf-8')
 
 
 def add_element(df, elem_list):
@@ -241,7 +253,7 @@ def read_text(text_path, vocab_save_path, data_type,
                 key (string) => utterance index
                 value (list) => list of
                     [word1_indices, word5_indices,
-                     word10_indices, word15_indices
+                     word10_indices, word15_indices, word20_indices,
                      kanji_indices, kanji_wb_indices,
                      phone_indices, phone_wb_indices,
                      pos_indices]
@@ -259,6 +271,7 @@ def read_text(text_path, vocab_save_path, data_type,
     word5_vocab_path = mkdir_join(vocab_save_path, 'word5.txt')
     word10_vocab_path = mkdir_join(vocab_save_path, 'word10.txt')
     word15_vocab_path = mkdir_join(vocab_save_path, 'word15.txt')
+    word20_vocab_path = mkdir_join(vocab_save_path, 'word20.txt')
     kanji_vocab_path = mkdir_join(vocab_save_path, 'kanji.txt')
     kanji_wb_vocab_path = mkdir_join(vocab_save_path, 'kanji_wb.txt')
     # kana_vocab_path = mkdir_join(vocab_save_path, 'kana' + '.txt')
@@ -276,13 +289,13 @@ def read_text(text_path, vocab_save_path, data_type,
         for line in f:
             line = line.strip()
             utt_idx, trans_w_pos = line.split('  ')
-
             trans_w_pos = trans_w_pos.replace('<sp>', SHORT_PAUSE)
-
             trans = SPACE.join([w.split('+')[0]
                                 for w in trans_w_pos.split(' ')])
-            trans_pos = SPACE.join([w.split('+')[1]
-                                    for w in trans_w_pos.split(' ') if '+' in w])
+            trans_pos = SPACE.join([w.split('+')[1].split('/')[0] if '+' in w else SHORT_PAUSE
+                                    for w in trans_w_pos.split(' ')])
+            # NOTE: word and POS sequence are the same length
+
             trans_dict[utt_idx] = [trans, trans_pos]
 
             for word in trans.split(SPACE):
@@ -327,6 +340,13 @@ def read_text(text_path, vocab_save_path, data_type,
         with codecs.open(word15_vocab_path, 'w', 'utf-8') as f:
             word_list = sorted([word for word, freq in list(word_dict.items())
                                 if freq >= 15]) + [OOV]
+            for word in word_list:
+                f.write('%s\n' % word)
+
+        # word-level (threshold == 20)
+        with codecs.open(word20_vocab_path, 'w', 'utf-8') as f:
+            word_list = sorted([word for word, freq in list(word_dict.items())
+                                if freq >= 20]) + [OOV]
             for word in word_list:
                 f.write('%s\n' % word)
 
@@ -384,12 +404,18 @@ def read_text(text_path, vocab_save_path, data_type,
             f.write('Word (freq15):\n')
             f.write('  OOV rate: %f %%\n' % oov_rate)
 
+            # word-level (threshold == 20)
+            oov_rate = compute_oov_rate(word_dict, word20_vocab_path)
+            f.write('Word (freq20):\n')
+            f.write('  OOV rate: %f %%\n' % oov_rate)
+
     # Convert to index
     print('=====> Convert to index...')
     word2idx_freq1 = Word2idx(word1_vocab_path)
     word2idx_freq5 = Word2idx(word5_vocab_path)
     word2idx_freq10 = Word2idx(word10_vocab_path)
     word2idx_freq15 = Word2idx(word15_vocab_path)
+    word2idx_freq20 = Word2idx(word20_vocab_path)
     kanji2idx = Char2idx(kanji_vocab_path, double_letter=True)
     kanji2idx_wb = Char2idx(kanji_wb_vocab_path, double_letter=True)
     # kana2idx = Char2idx(kana_vocab_path, double_letter=True)
@@ -401,7 +427,8 @@ def read_text(text_path, vocab_save_path, data_type,
     for utt_idx, [trans, trans_pos] in tqdm(trans_dict.items()):
         if 'eval' in data_type:
             trans_dict[utt_idx] = [
-                trans, trans, trans, trans,
+                trans, trans, trans,
+                trans, trans,
                 trans.replace(SPACE, ''), trans,
                 # trans_kana.replace(SPACE, ''), trans_kana,
                 None, None,
@@ -415,6 +442,7 @@ def read_text(text_path, vocab_save_path, data_type,
             word5_indices = word2idx_freq5(trans)
             word10_indices = word2idx_freq10(trans)
             word15_indices = word2idx_freq15(trans)
+            word20_indices = word2idx_freq20(trans)
             kanji_indices = kanji2idx(trans.replace(SPACE, ''))
             kanji_wb_indices = kanji2idx_wb(trans)
             # kana_indices = kana2idx(trans_kana.replace(SPACE, ''))
@@ -432,6 +460,8 @@ def read_text(text_path, vocab_save_path, data_type,
                 list(map(str, word10_indices.tolist())))
             word15_indices = ' '.join(
                 list(map(str, word15_indices.tolist())))
+            word20_indices = ' '.join(
+                list(map(str, word20_indices.tolist())))
             kanji_indices = ' '.join(
                 list(map(str, kanji_indices.tolist())))
             kanji_wb_indices = ' '.join(
@@ -448,7 +478,8 @@ def read_text(text_path, vocab_save_path, data_type,
                 list(map(str, pos_indices.tolist())))
 
             trans_dict[utt_idx] = [
-                word1_indices, word5_indices, word10_indices, word15_indices,
+                word1_indices, word5_indices, word10_indices,
+                word15_indices, word20_indices,
                 kanji_indices, kanji_wb_indices,
                 # kana_indices, kana_wb_indices,
                 None, None,

@@ -88,9 +88,11 @@ class Dataset(DatasetBase):
         self.num_enque = num_enque
         self.dynamic_batching = dynamic_batching
 
-        if isfile(data_save_path):
-            data_save_path = data_save_path[:-3]
+        # if isfile(data_save_path):
+        #     data_save_path = data_save_path[:-3]
         # TODO: fix this
+
+        data_save_path = join(data_save_path, data_size)
 
         self.vocab_file_path = join(
             data_save_path, 'vocab', label_type + '.txt')
@@ -105,9 +107,9 @@ class Dataset(DatasetBase):
             data_save_path, 'dataset', tool, data_type, label_type + '.csv')
         dataset_path_sub = join(
             data_save_path, 'dataset', tool, data_type, label_type_sub + '.csv')
-        df = pd.read_csv(dataset_path)
+        df = pd.read_csv(dataset_path, encoding='utf-8')
         df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
-        df_sub = pd.read_csv(dataset_path_sub)
+        df_sub = pd.read_csv(dataset_path_sub, encoding='utf-8')
         df_sub = df_sub.loc[:, ['frame_num', 'input_path', 'transcript']]
 
         # Remove inappropriate utteraces
@@ -140,20 +142,17 @@ class Dataset(DatasetBase):
             return batch_size
 
         if self.data_size == 'subset':
-            if min_frame_num_batch <= 300:
-                batch_size = batch_size * 2
-            elif min_frame_num_batch <= 600:
-                batch_size = int(batch_size * 1.5)
-            elif min_frame_num_batch <= 900:
+            if min_frame_num_batch <= 900:
                 pass
             elif min_frame_num_batch <= 1200:
-                batch_size = int(batch_size / 1.5)
-            elif min_frame_num_batch <= 1600:
-                batch_size = int(batch_size / 2)
-            elif min_frame_num_batch <= 1700:
+                batch_size = int(batch_size / 2)  # 32
+            elif min_frame_num_batch <= 1500:
+                batch_size = int(batch_size / 4)  # 16
+            elif min_frame_num_batch <= 1800:
                 batch_size = int(batch_size / 4)
             else:
-                batch_size = 8
+                batch_size = 16
+
         elif self.data_size == 'fullset':
             pass
 

@@ -20,10 +20,12 @@ class TestLoadDataset(unittest.TestCase):
 
     def test(self):
 
-        # framework
-        # self.check(label_type='word5', data_type='train', backend='chainer')
+        # data_size
+        self.check(label_type='word5', data_type='eval1', data_size='subset')
+        self.check(label_type='word5', data_type='eval1', data_size='fullset')
 
         # data_type
+        # self.check(label_type='word5', data_type='train')
         self.check(label_type='word5', data_type='dev')
         self.check(label_type='word5', data_type='eval1')
         self.check(label_type='word5', data_type='eval2')
@@ -33,6 +35,7 @@ class TestLoadDataset(unittest.TestCase):
         self.check(label_type='word1')
         self.check(label_type='word10')
         self.check(label_type='word15')
+        self.check(label_type='word20')
         self.check(label_type='kanji')
         self.check(label_type='kanji_wb')
         # self.check(label_type='kana')
@@ -55,7 +58,7 @@ class TestLoadDataset(unittest.TestCase):
 
     @measure_time
     def check(self, label_type, data_type='dev',
-              data_size='subset', backend='pytorch',
+              data_size='fullset', backend='pytorch',
               shuffle=False, sort_utt=True, sort_stop_epoch=None,
               frame_stacking=False, splice=1, num_gpus=1):
 
@@ -75,7 +78,7 @@ class TestLoadDataset(unittest.TestCase):
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
-            data_save_path='/n/sd8/inaguma/corpus/csj/kaldi/' + data_size,
+            data_save_path='/n/sd8/inaguma/corpus/csj/kaldi',
             backend=backend,
             input_channel=80, use_delta=True, use_double_delta=True,
             data_type=data_type, data_size=data_size,
