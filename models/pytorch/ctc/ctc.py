@@ -21,8 +21,8 @@ from torch.nn.modules.loss import _assert_no_grad
 
 from models.pytorch.base import ModelBase
 from models.pytorch.linear import LinearND
-from models.pytorch.criterion import cross_entropy_label_smoothing
 from models.pytorch.encoders.load_encoder import load
+from models.pytorch.criterion import cross_entropy_label_smoothing
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
 # from models.pytorch.ctc.decoders.beam_search_decoder2 import BeamSearchDecoder
@@ -161,7 +161,6 @@ class CTC(ModelBase):
         self.logits_temperature = logits_temperature
 
         # Setting for regualarization
-        self.parameter_init = parameter_init
         self.weight_noise_injection = False
         self.weight_noise_std = float(weight_noise_std)
         self.label_smoothing_prob = label_smoothing_prob
@@ -181,7 +180,6 @@ class CTC(ModelBase):
                 subsample_type=subsample_type,
                 batch_first=True,
                 merge_bidirectional=False,
-                # pack_sequence=False if init_dec_state == 'zero' else True,
                 pack_sequence=True,
                 num_stack=num_stack,
                 splice=splice,
@@ -306,11 +304,6 @@ class CTC(ModelBase):
         concatenated_labels = _concatenate_labels(ys, y_lens)
 
         # Compute CTC loss
-        # loss = warpctc(logits.transpose(0, 1),  # time-major
-        #                concatenated_labels,
-        #                x_lens.cpu(),
-        #                y_lens) / len(xs)
-
         loss = my_warpctc(logits.transpose(0, 1),  # time-major
                           concatenated_labels,
                           x_lens.cpu(),

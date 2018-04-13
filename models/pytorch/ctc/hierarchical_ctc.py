@@ -7,20 +7,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-try:
-    from warpctc_pytorch import CTCLoss
-    ctc_loss = CTCLoss()
-except:
-    raise ImportError('Install warpctc_pytorch.')
-# try:
-#     import pytorch_ctc
-# except ImportError:
-#     raise ImportError('Install pytorch_ctc.')
-
 from models.pytorch.ctc.ctc import CTC, _concatenate_labels
 from models.pytorch.linear import LinearND
-from models.pytorch.criterion import cross_entropy_label_smoothing
 from models.pytorch.encoders.load_encoder import load
+from models.pytorch.ctc.ctc import my_warpctc
+from models.pytorch.criterion import cross_entropy_label_smoothing
 
 
 class HierarchicalCTC(CTC):
@@ -149,7 +140,6 @@ class HierarchicalCTC(CTC):
                 subsample_type=subsample_type,
                 batch_first=True,
                 merge_bidirectional=False,
-                # pack_sequence=False if init_dec_state == 'zero' else True,
                 pack_sequence=True,
                 num_stack=num_stack,
                 splice=splice,
@@ -247,14 +237,15 @@ class HierarchicalCTC(CTC):
         concatenated_labels_sub = _concatenate_labels(ys_sub, y_lens_sub)
 
         # Compute CTC loss in the main & sub task
-        loss_main = ctc_loss(
+        loss_main = my_warpctc(
             logits_main.transpose(0, 1).contiguous(),  # time-major
             concatenated_labels,
-            x_lens.cpu(), y_lens) / len(xs)
-        loss_sub = ctc_loss(
+            x_lens.cpu(), y_lens, size_average=False) / len(xs)
+        loss_sub = my_warpctc(
             logits_sub.transpose(0, 1).contiguous(),  # time-major
             concatenated_labels_sub,
-            x_lens_sub.cpu(), y_lens_sub) / len(xs)
+            x_lens_sub.cpu(), y_lens_sub, size_average=False) / len(xs)
+
         if self.use_cuda:
             loss_main = loss_main.cuda()
             loss_sub = loss_sub.cuda()
@@ -270,7 +261,6 @@ class HierarchicalCTC(CTC):
                 size_average=False) / len(xs)
             loss_main = loss_main * \
                 (1 - self.label_smoothing_prob) + loss_ls_main
-            # print(loss_ls_main)
 
             loss_ls_sub = cross_entropy_label_smoothing(
                 logits_sub,
@@ -280,7 +270,6 @@ class HierarchicalCTC(CTC):
                 size_average=False) / len(xs)
             loss_sub = loss_sub * \
                 (1 - self.label_smoothing_prob) + loss_ls_sub
-            # print(loss_ls_sub)
 
         # Compute total loss
         loss_main = loss_main * self.main_loss_weight

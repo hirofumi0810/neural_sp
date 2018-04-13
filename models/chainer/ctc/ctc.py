@@ -14,8 +14,8 @@ from models.chainer.ctc.ctc_loss_from_chainer import connectionist_temporal_clas
 
 from models.chainer.base import ModelBase
 from models.chainer.linear import LinearND
-from models.chainer.criterion import cross_entropy_label_smoothing
 from models.chainer.encoders.load_encoder import load
+from models.chainer.criterion import cross_entropy_label_smoothing
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
 # from models.pytorch.ctc.decoders.beam_search_decoder2 import BeamSearchDecoder
@@ -112,7 +112,6 @@ class CTC(ModelBase):
         self.logits_temperature = logits_temperature
 
         # Setting for regualarization
-        self.parameter_init = parameter_init
         self.weight_noise_injection = False
         self.weight_noise_std = float(weight_noise_std)
         self.label_smoothing_prob = label_smoothing_prob
@@ -399,8 +398,8 @@ class CTC(ModelBase):
                     self.var2np(F.log_softmax(logits)),
                     x_lens, beam_width=beam_width)
 
-        best_hyps -= 1
         # NOTE: index 0 is reserved for the blank class
+        best_hyps -= 1
 
         perm_idx = np.arange(0, len(xs), 1)
 

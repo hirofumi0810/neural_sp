@@ -13,8 +13,8 @@ from models.chainer.ctc.ctc_loss_from_chainer import connectionist_temporal_clas
 
 from models.chainer.ctc.ctc import CTC
 from models.chainer.linear import LinearND
-from models.chainer.criterion import cross_entropy_label_smoothing
 from models.chainer.encoders.load_encoder import load
+from models.chainer.criterion import cross_entropy_label_smoothing
 
 
 class HierarchicalCTC(CTC):
