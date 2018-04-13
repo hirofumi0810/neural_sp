@@ -11,8 +11,8 @@ import numpy as np
 
 import torch
 
-from models.pytorch.linear import LinearND, Embedding, Embedding_LS
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
+from models.pytorch.linear import LinearND, Embedding, Embedding_LS
 from models.pytorch.encoders.load_encoder import load
 from models.pytorch.attention.rnn_decoder import RNNDecoder
 from models.pytorch.attention.attention_layer import AttentionMechanism
@@ -314,37 +314,37 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
         # NOTE: ys and ys_sub are padded with -1 here
-        # ys_in and ys_sub_in areb padded with <EOS> in order to convert to
+        # ys_in and ys_in_sub areb padded with <EOS> in order to convert to
         # one-hot vector, and added <SOS> before the first token
-        # ys_out and ys_sub_out are padded with -1, and added <EOS>
+        # ys_out and ys_out_sub are padded with -1, and added <EOS>
         # after the last token
         ys_in = self._create_var((ys.shape[0], ys.shape[1] + 1),
                                  fill_value=self.eos_0, dtype='long')
-        ys_sub_in = self._create_var((ys_sub.shape[0], ys_sub.shape[1] + 1),
+        ys_in_sub = self._create_var((ys_sub.shape[0], ys_sub.shape[1] + 1),
                                      fill_value=self.eos_1, dtype='long')
         ys_out = self._create_var((ys.shape[0], ys.shape[1] + 1),
                                   fill_value=-1, dtype='long')
-        ys_sub_out = self._create_var((ys_sub.shape[0], ys_sub.shape[1] + 1),
+        ys_out_sub = self._create_var((ys_sub.shape[0], ys_sub.shape[1] + 1),
                                       fill_value=-1, dtype='long')
         for b in range(len(xs)):
             ys_in.data[b, 0] = self.sos_0
             ys_in.data[b, 1:y_lens[b] + 1] = torch.from_numpy(
                 ys[b, :y_lens[b]])
-            ys_sub_in.data[b, 0] = self.sos_1
-            ys_sub_in.data[b, 1:y_lens_sub[b] + 1] = torch.from_numpy(
+            ys_in_sub.data[b, 0] = self.sos_1
+            ys_in_sub.data[b, 1:y_lens_sub[b] + 1] = torch.from_numpy(
                 ys_sub[b, :y_lens_sub[b]])
 
             ys_out.data[b, :y_lens[b]] = torch.from_numpy(ys[b, :y_lens[b]])
             ys_out.data[b, y_lens[b]] = self.eos_0
-            ys_sub_out.data[b, :y_lens_sub[b]] = torch.from_numpy(
+            ys_out_sub.data[b, :y_lens_sub[b]] = torch.from_numpy(
                 ys_sub[b, :y_lens_sub[b]])
-            ys_sub_out.data[b, y_lens_sub[b]] = self.eos_1
+            ys_out_sub.data[b, y_lens_sub[b]] = self.eos_1
 
         if self.use_cuda:
             ys_in = ys_in.cuda()
-            ys_sub_in = ys_sub_in.cuda()
             ys_out = ys_out.cuda()
-            ys_sub_out = ys_sub_out.cuda()
+            ys_in_sub = ys_in_sub.cuda()
+            ys_out_sub = ys_out_sub.cuda()
 
         # Wrap by Variable
         xs = self.np2var(xs)
@@ -362,8 +362,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             ys_out = ys_out[perm_idx]
             y_lens = y_lens[perm_idx]
 
-            ys_sub_in = ys_sub_in[perm_idx]
-            ys_sub_out = ys_sub_out[perm_idx]
+            ys_in_sub = ys_in_sub[perm_idx]
+            ys_out_sub = ys_out_sub[perm_idx]
             y_lens_sub = y_lens_sub[perm_idx]
 
         ##################################################
@@ -385,7 +385,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         if self.sub_loss_weight > 0:
             # Compute XE loss
             loss_sub = self.compute_xe_loss(
-                xs_sub, ys_sub_in, ys_sub_out, x_lens_sub, y_lens_sub,
+                xs_sub, ys_in_sub, ys_out_sub, x_lens_sub, y_lens_sub,
                 task_idx=1)
 
             loss_sub = loss_sub * self.sub_loss_weight
@@ -396,7 +396,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         ##################################################
         if self.ctc_loss_weight_sub > 0:
             ctc_loss_sub = self.compute_ctc_loss(
-                xs_sub, ys_sub_in[:, 1:] + 1,
+                xs_sub, ys_in_sub[:, 1:] + 1,
                 x_lens_sub, y_lens_sub, task_idx=1)
 
             ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub

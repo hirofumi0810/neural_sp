@@ -17,10 +17,10 @@ from models.chainer.ctc.ctc_loss_from_chainer import connectionist_temporal_clas
 
 from models.chainer.base import ModelBase
 from models.chainer.linear import LinearND, Embedding, Embedding_LS
-from models.chainer.criterion import cross_entropy_label_smoothing
 from models.chainer.encoders.load_encoder import load
 from models.chainer.attention.rnn_decoder import RNNDecoder
 from models.chainer.attention.attention_layer import AttentionMechanism
+from models.chainer.criterion import cross_entropy_label_smoothing
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
 
@@ -172,8 +172,6 @@ class AttentionSeq2seq(ModelBase):
         self.subsample_list = subsample_list
 
         # Setting for the decoder
-        self.attention_type = attention_type
-        self.attention_dim = attention_dim
         self.decoder_type = decoder_type
         self.decoder_num_units_0 = decoder_num_units
         self.decoder_num_layers_0 = decoder_num_layers
@@ -193,11 +191,8 @@ class AttentionSeq2seq(ModelBase):
         self.logits_temperature = logits_temperature
         self.sigmoid_smoothing = sigmoid_smoothing
         self.coverage_weight = coverage_weight
-        self.attention_conv_num_channels = attention_conv_num_channels
-        self.attention_conv_width = attention_conv_width
 
         # Setting for regularization
-        self.parameter_init = parameter_init
         self.weight_noise_injection = False
         self.weight_noise_std = float(weight_noise_std)
         if scheduled_sampling_prob > 0 and scheduled_sampling_ramp_max_step == 0:
@@ -326,17 +321,19 @@ class AttentionSeq2seq(ModelBase):
             # Embedding
             ##############################
             if label_smoothing_prob > 0:
-                self.embed_0 = Embedding_LS(num_classes=self.num_classes,
-                                            embedding_dim=embedding_dim,
-                                            dropout=dropout_embedding,
-                                            label_smoothing_prob=label_smoothing_prob,
-                                            use_cuda=self.use_cuda)
+                self.embed_0 = Embedding_LS(
+                    num_classes=self.num_classes,
+                    embedding_dim=embedding_dim,
+                    dropout=dropout_embedding,
+                    label_smoothing_prob=label_smoothing_prob,
+                    use_cuda=self.use_cuda)
             else:
-                self.embed_0 = Embedding(num_classes=self.num_classes,
-                                         embedding_dim=embedding_dim,
-                                         dropout=dropout_embedding,
-                                         # ignore_index=self.sos,
-                                         use_cuda=self.use_cuda)
+                self.embed_0 = Embedding(
+                    num_classes=self.num_classes,
+                    embedding_dim=embedding_dim,
+                    dropout=dropout_embedding,
+                    # ignore_index=self.sos,
+                    use_cuda=self.use_cuda)
 
             ##############################
             # Output layer

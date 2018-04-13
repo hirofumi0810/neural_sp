@@ -15,13 +15,12 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 
 from models.pytorch.base import ModelBase
-from models.pytorch.criterion import cross_entropy_label_smoothing
 from models.pytorch.linear import LinearND, Embedding, Embedding_LS
 from models.pytorch.encoders.load_encoder import load
 from models.pytorch.attention.rnn_decoder import RNNDecoder
 from models.pytorch.attention.attention_layer import AttentionMechanism
-from models.pytorch.ctc.ctc import _concatenate_labels
-from models.pytorch.ctc.ctc import my_warpctc
+from models.pytorch.ctc.ctc import _concatenate_labels, my_warpctc
+from models.pytorch.criterion import cross_entropy_label_smoothing
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
 
@@ -159,7 +158,7 @@ class AttentionSeq2seq(ModelBase):
         super(ModelBase, self).__init__()
         self.model_type = 'attention'
 
-        # TODO: clip_activation
+        # TODO: add bridge layer option
 
         # Setting for the encoder
         self.input_size = input_size
@@ -173,8 +172,6 @@ class AttentionSeq2seq(ModelBase):
         self.subsample_list = subsample_list
 
         # Setting for the decoder
-        self.attention_type = attention_type
-        self.attention_dim = attention_dim
         self.decoder_type = decoder_type
         self.decoder_num_units_0 = decoder_num_units
         self.decoder_num_layers_0 = decoder_num_layers
@@ -194,11 +191,8 @@ class AttentionSeq2seq(ModelBase):
         self.logits_temperature = logits_temperature
         self.sigmoid_smoothing = sigmoid_smoothing
         self.coverage_weight = coverage_weight
-        self.attention_conv_num_channels = attention_conv_num_channels
-        self.attention_conv_width = attention_conv_width
 
         # Setting for regularization
-        self.parameter_init = parameter_init
         self.weight_noise_injection = False
         self.weight_noise_std = float(weight_noise_std)
         if scheduled_sampling_prob > 0 and scheduled_sampling_ramp_max_step == 0:
@@ -283,6 +277,7 @@ class AttentionSeq2seq(ModelBase):
                 dropout=dropout_decoder,
                 residual=False,
                 dense_residual=False)
+            # NOTE; the conditional decoder only supports the 1 layer
         else:
             self.decoder_0 = RNNDecoder(
                 input_size=self.encoder_num_units + embedding_dim,
@@ -292,7 +287,6 @@ class AttentionSeq2seq(ModelBase):
                 dropout=dropout_decoder,
                 residual=decoder_residual,
                 dense_residual=decoder_dense_residual)
-            # NOTE; the conditional decoder only supports the 1 layer
 
         ##############################
         # Attention layer
@@ -321,14 +315,16 @@ class AttentionSeq2seq(ModelBase):
         # Embedding
         ##############################
         if label_smoothing_prob > 0:
-            self.embed_0 = Embedding_LS(num_classes=self.num_classes,
-                                        embedding_dim=embedding_dim,
-                                        dropout=dropout_embedding,
-                                        label_smoothing_prob=label_smoothing_prob)
+            self.embed_0 = Embedding_LS(
+                num_classes=self.num_classes,
+                embedding_dim=embedding_dim,
+                dropout=dropout_embedding,
+                label_smoothing_prob=label_smoothing_prob)
         else:
-            self.embed_0 = Embedding(num_classes=self.num_classes,
-                                     embedding_dim=embedding_dim,
-                                     dropout=dropout_embedding)
+            self.embed_0 = Embedding(
+                num_classes=self.num_classes,
+                embedding_dim=embedding_dim,
+                dropout=dropout_embedding)
 
         ##############################
         # Output layer
@@ -337,8 +333,6 @@ class AttentionSeq2seq(ModelBase):
                               dropout=dropout_decoder)
         self.W_c_0 = LinearND(self.encoder_num_units, bottleneck_dim,
                               dropout=dropout_decoder)
-        # self.W_y_0 = LinearND(embedding_dim, bottleneck_dim,
-        #                     dropout=dropout_decoder)
         self.fc_0 = LinearND(bottleneck_dim, self.num_classes)
 
         ##############################
@@ -624,9 +618,7 @@ class AttentionSeq2seq(ModelBase):
         batch_size = enc_out.size(0)
 
         # Initialize decoder state, decoder output, attention_weights
-        dec_state = self._init_decoder_state(enc_out, task_idx)
-        dec_out = self._create_var((batch_size, 1, getattr(
-            self, 'decoder_num_units_' + str(task_idx))))
+        dec_state, dec_out = self._init_decoder_state(enc_out, task_idx)
         aw_step = self._create_var((batch_size, enc_out.size(1)), fill_value=0)
 
         logits = []
@@ -750,20 +742,27 @@ class AttentionSeq2seq(ModelBase):
             task_idx (int, optional): the index of a task
         Returns:
             dec_state (list or tuple of list):
+            dec_out (torch.autograd.Variable, float): A tensor of size
+                `[B, 1, decoder_num_units]`
         """
-        zero_state = self._create_var((enc_out.size(0), getattr(self, 'decoder_num_units_' + str(task_idx))),
-                                      volatile=not self.training)
+        zero_state = self._create_var((enc_out.size(0), getattr(
+            self, 'decoder_num_units_' + str(task_idx))),
+            fill_value=0, volatile=not self.training)
 
-        if self.decoder_type == 'lstm':
-            hx_list = [zero_state] * \
-                getattr(self, 'decoder_num_layers_' + str(task_idx))
-            cx_list = [zero_state] * \
-                getattr(self, 'decoder_num_layers_' + str(task_idx))
+        if self.init_dec_state == 'zero' or self.encoder_type != self.decoder_type:
+            if self.decoder_type == 'lstm':
+                hx_list = [zero_state] * \
+                    getattr(self, 'decoder_num_layers_' + str(task_idx))
+                cx_list = [zero_state] * \
+                    getattr(self, 'decoder_num_layers_' + str(task_idx))
+            else:
+                hx_list = [zero_state] * \
+                    getattr(self, 'decoder_num_layers_' + str(task_idx))
+
+            dec_out = self._create_var((enc_out.size(0), 1, getattr(
+                self, 'decoder_num_units_' + str(task_idx))),
+                fill_value=0, volatile=not self.training)
         else:
-            hx_list = [zero_state] * \
-                getattr(self, 'decoder_num_layers_' + str(task_idx))
-
-        if self.init_dec_state != 'zero' and self.encoder_type == self.decoder_type:
             if self.init_dec_state == 'mean':
                 # Initialize with mean of all encoder outputs
                 h_0 = enc_out.mean(dim=1, keepdim=False)
@@ -775,15 +774,24 @@ class AttentionSeq2seq(ModelBase):
                 h_0 = enc_out[:, 0, :]
 
             # Path through the linear layer
-            hx_list[0] = F.tanh(
-                getattr(self, 'W_dec_init_' + str(task_idx))(h_0))
+            h_0 = F.tanh(getattr(self, 'W_dec_init_' + str(task_idx))(h_0))
+
+            hx_list = [h_0] * \
+                getattr(self, 'decoder_num_layers_' + str(task_idx))
+            # NOTE: all layers are initialized with the same values
+
+            if self.decoder_type == 'lstm':
+                cx_list = [zero_state] * \
+                    getattr(self, 'decoder_num_layers_' + str(task_idx))
+
+            dec_out = h_0.unsqueeze(1)
 
         if self.decoder_type == 'lstm':
             dec_state = (hx_list, cx_list)
         else:
             dec_state = hx_list
 
-        return dec_state
+        return dec_state, dec_out
 
     def attention_weights(self, xs, x_lens, max_decode_len, task_index=0):
         """Get attention weights for visualization.
@@ -890,9 +898,7 @@ class AttentionSeq2seq(ModelBase):
         batch_size = enc_out.size(0)
 
         # Initialize decoder state
-        dec_state = self._init_decoder_state(enc_out, task_idx)
-        dec_out = self._create_var(
-            (batch_size, 1, getattr(self, 'decoder_num_units_' + str(task_idx))), volatile=True)
+        dec_state, dec_out = self._init_decoder_state(enc_out, task_idx)
         aw_step = self._create_var((
             batch_size, enc_out.size(1)), fill_value=0, volatile=True)
 
@@ -1010,10 +1016,8 @@ class AttentionSeq2seq(ModelBase):
             frame_num = x_lens[b].data[0]
 
             # Initialization per utterance
-            dec_state = self._init_decoder_state(
+            dec_state, dec_out = self._init_decoder_state(
                 enc_out[b:b + 1, :, :], task_idx)
-            dec_out = self._create_var(
-                (1, 1, getattr(self, 'decoder_num_units_' + str(task_idx))), volatile=True)
             aw_step = self._create_var(
                 (1, frame_num), fill_value=0, volatile=True)
 
