@@ -30,8 +30,8 @@ class TestHierarchicalAttention(unittest.TestCase):
         print("Hierarchical Attention Working check.")
 
         # Word attention + char CTC
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            decoder_type='lstm', ctc_loss_weight_sub=0.2)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', ctc_loss_weight_sub=0.2)
 
         # Pyramidal encoder
         self.check(encoder_type='lstm', bidirectional=True,
@@ -124,7 +124,6 @@ class TestHierarchicalAttention(unittest.TestCase):
             decoder_type=decoder_type,
             decoder_num_units=256,
             decoder_num_layers=1,
-            # decoder_num_layers=2,
             decoder_num_units_sub=256,
             decoder_num_layers_sub=1,
             embedding_dim=64,
@@ -143,6 +142,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             init_forget_gate_bias_with_one=True,
             subsample_list=[] if not subsample else [True, False, False],
             subsample_type='concat' if subsample is False else subsample,
+            bridge_layer=True,
             init_dec_state='first',
             sharpening_factor=1,
             logits_temperature=1,
@@ -159,7 +159,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             batch_norm=batch_norm,
             scheduled_sampling_prob=0.1,
             scheduled_sampling_ramp_max_step=200,
-            label_smoothing_prob=0.1,  # default
+            label_smoothing_prob=0.1,
             weight_noise_std=0,
             encoder_residual=residual,
             encoder_dense_residual=dense_residual,

@@ -135,6 +135,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             init_forget_gate_bias_with_one=True,
             subsample_list=[] if not subsample else [True, True, False],
             subsample_type='concat' if subsample is False else subsample,
+            bridge_layer=True,
             init_dec_state='first',
             sharpening_factor=1,
             logits_temperature=1,
@@ -151,7 +152,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             batch_norm=batch_norm,
             scheduled_sampling_prob=0.1,
             scheduled_sampling_ramp_max_step=200,
-            label_smoothing_prob=0.1,  # default
+            label_smoothing_prob=0.1,
             weight_noise_std=0,
             encoder_residual=residual,
             encoder_dense_residual=dense_residual,

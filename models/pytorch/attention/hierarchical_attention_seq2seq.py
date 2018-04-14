@@ -53,6 +53,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  init_forget_gate_bias_with_one=True,
                  subsample_list=[],
                  subsample_type='drop',
+                 bridge_layer=True,
                  init_dec_state='first',
                  sharpening_factor=1,
                  logits_temperature=1,
@@ -102,6 +103,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             parameter_init=parameter_init,
             subsample_list=subsample_list,
             subsample_type=subsample_type,
+            bridge_layer=bridge_layer,
             init_dec_state=init_dec_state,
             sharpening_factor=sharpening_factor,
             logits_temperature=logits_temperature,
@@ -130,7 +132,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         self.model_type = 'hierarchical_attention'
 
         # Setting for the encoder
-        self.encoder_num_layers_1 = encoder_num_layers_sub
+        self.encoder_num_units_sub = encoder_num_units
+        if encoder_bidirectional:
+            self.encoder_num_units_sub *= 2
 
         # Setting for the decoder in the second task
         self.decoder_num_units_1 = decoder_num_units_sub
@@ -180,11 +184,19 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         else:
             raise NotImplementedError
 
-        if self.init_dec_state != 'zero':
-            self.W_dec_init_1 = LinearND(
-                self.encoder_num_units, decoder_num_units_sub)
-
+        self.is_bridge_sub = False
         if self.sub_loss_weight > 0:
+            if bridge_layer:
+                self.bridge_1 = LinearND(
+                    self.encoder_num_units_sub, decoder_num_units_sub,
+                    dropout=dropout_encoder)
+                self.encoder_num_units_sub = decoder_num_units_sub
+                self.is_bridge_sub = True
+
+            if self.init_dec_state != 'zero':
+                self.W_dec_init_1 = LinearND(
+                    self.encoder_num_units_sub, decoder_num_units_sub)
+
             ##############################
             # Decoder (sub)
             ##############################
@@ -198,7 +210,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     residual=False,
                     dense_residual=False)
                 self.decoder_second_1 = RNNDecoder(
-                    input_size=self.encoder_num_units,
+                    input_size=self.encoder_num_units_sub,
                     rnn_type=decoder_type,
                     num_units=decoder_num_units_sub,
                     num_layers=1,
@@ -207,7 +219,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     dense_residual=False)
             else:
                 self.decoder_1 = RNNDecoder(
-                    input_size=self.encoder_num_units + embedding_dim_sub,
+                    input_size=self.encoder_num_units_sub + embedding_dim_sub,
                     rnn_type=decoder_type,
                     num_units=decoder_num_units_sub,
                     num_layers=decoder_num_layers_sub,
@@ -219,7 +231,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # Attention layer (sub)
             ###################################
             self.attend_1 = AttentionMechanism(
-                encoder_num_units=self.encoder_num_units,
+                encoder_num_units=self.encoder_num_units_sub,
                 decoder_num_units=decoder_num_units_sub,
                 attention_type=attention_type,
                 attention_dim=attention_dim,
@@ -232,22 +244,24 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # Embedding (sub)
             ##############################
             if label_smoothing_prob > 0:
-                self.embed_1 = Embedding_LS(num_classes=self.num_classes_sub,
-                                            embedding_dim=embedding_dim_sub,
-                                            dropout=dropout_embedding,
-                                            label_smoothing_prob=label_smoothing_prob)
+                self.embed_1 = Embedding_LS(
+                    num_classes=self.num_classes_sub,
+                    embedding_dim=embedding_dim_sub,
+                    dropout=dropout_embedding,
+                    label_smoothing_prob=label_smoothing_prob)
             else:
-                self.embed_1 = Embedding(num_classes=self.num_classes_sub,
-                                         embedding_dim=embedding_dim_sub,
-                                         dropout=dropout_embedding,
-                                         ignore_index=-1)
+                self.embed_1 = Embedding(
+                    num_classes=self.num_classes_sub,
+                    embedding_dim=embedding_dim_sub,
+                    dropout=dropout_embedding,
+                    ignore_index=-1)
 
             ##############################
             # Output layer (sub)
             ##############################
             self.W_d_1 = LinearND(decoder_num_units_sub, bottleneck_dim_sub,
                                   dropout=dropout_decoder)
-            self.W_c_1 = LinearND(self.encoder_num_units, bottleneck_dim_sub,
+            self.W_c_1 = LinearND(self.encoder_num_units_sub, bottleneck_dim_sub,
                                   dropout=dropout_decoder)
             self.fc_1 = LinearND(bottleneck_dim_sub, self.num_classes_sub)
 
@@ -256,7 +270,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         ##############################
         if ctc_loss_weight_sub > 0:
             self.fc_ctc_1 = LinearND(
-                self.encoder_num_units, num_classes_sub + 1)
+                self.encoder_num_units_sub, num_classes_sub + 1)
 
             # Set CTC decoders
             self._decode_ctc_greedy_np = GreedyDecoder(blank_index=0)

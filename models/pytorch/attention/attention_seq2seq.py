@@ -62,6 +62,8 @@ class AttentionSeq2seq(ModelBase):
             ex.) [False, True, True, False] means that subsample is conducted
                 in the 2nd and 3rd layers.
         subsample_type (string, optional): drop or concat
+        bridge_layer (bool, optional): if True, add the bridge layer between
+            the encoder and decoder
         init_dec_state (bool, optional): how to initialize decoder state
             zero => initialize with zero state
             mean => initialize with the mean of encoder outputs in all time steps
@@ -128,6 +130,7 @@ class AttentionSeq2seq(ModelBase):
                  init_forget_gate_bias_with_one=True,
                  subsample_list=[],
                  subsample_type='drop',
+                 bridge_layer=True,
                  init_dec_state='first',
                  sharpening_factor=1,
                  logits_temperature=1,
@@ -157,8 +160,6 @@ class AttentionSeq2seq(ModelBase):
 
         super(ModelBase, self).__init__()
         self.model_type = 'attention'
-
-        # TODO: add bridge layer option
 
         # Setting for the encoder
         self.input_size = input_size
@@ -253,6 +254,24 @@ class AttentionSeq2seq(ModelBase):
         if encoder_type != decoder_type:
             self.init_dec_state = 'zero'
 
+        ##################################################
+        # Bridge layer between the encoder and decoder
+        ##################################################
+        if encoder_type == 'cnn':
+            self.bridge_0 = LinearND(
+                self.encoder.output_size, decoder_num_units,
+                dropout=dropout_encoder)
+            self.encoder_num_units = decoder_num_units
+            self.is_bridge = True
+        elif bridge_layer:
+            self.bridge_0 = LinearND(
+                self.encoder_num_units, decoder_num_units,
+                dropout=dropout_encoder)
+            self.encoder_num_units = decoder_num_units
+            self.is_bridge = True
+        else:
+            self.is_bridge = False
+
         if self.init_dec_state != 'zero':
             self.W_dec_init_0 = LinearND(
                 self.encoder_num_units, decoder_num_units)
@@ -300,16 +319,6 @@ class AttentionSeq2seq(ModelBase):
             sigmoid_smoothing=sigmoid_smoothing,
             out_channels=attention_conv_num_channels,
             kernel_size=attention_conv_width)
-
-        ##################################################
-        # Bridge layer between the encoder and decoder
-        ##################################################
-        self.is_bridge = False
-        if encoder_type == 'cnn':
-            self.bridge_0 = LinearND(
-                self.encoder.output_size, decoder_num_units,
-                dropout=dropout_encoder)
-            self.is_bridge = True
 
         ##############################
         # Embedding
@@ -525,11 +534,6 @@ class AttentionSeq2seq(ModelBase):
         logits = getattr(self, 'fc_ctc_' + str(task_idx))(enc_out)
 
         # Compute CTC loss
-        # loss = warpctc(logits.transpose(0, 1),  # time-major
-        #                concatenated_labels.cpu(),
-        #                x_lens.cpu(),
-        #                y_lens.cpu())
-
         loss = my_warpctc(logits.transpose(0, 1),  # time-major
                           concatenated_labels.cpu(),
                           x_lens.cpu(),
@@ -550,7 +554,6 @@ class AttentionSeq2seq(ModelBase):
         #         size_average=False)
         #     loss = loss * (1 - self.label_smoothing_prob) + \
         #         loss_ls
-        #     # print(loss_ls)
 
         loss /= len(enc_out)
 
@@ -589,7 +592,8 @@ class AttentionSeq2seq(ModelBase):
         # Bridge between the encoder and decoder in the main task
         if self.is_bridge:
             xs = self.bridge_0(xs)
-            # NOTE: this is used for CNN encoder
+        if is_multi_task and self.is_bridge_sub:
+            xs_sub = self.bridge_1(xs_sub)
 
         if is_multi_task:
             return xs, x_lens, xs_sub, x_lens_sub, perm_idx

@@ -48,8 +48,8 @@ class TestAttention(unittest.TestCase):
                    decoder_type='lstm', decoding_order='attend_generate_update')
 
         # Joint CTC-Attention
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            decoder_type='lstm', ctc_loss_weight=0.2)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', ctc_loss_weight=0.2)
 
         # Initialize decoder state
         self.check(encoder_type='lstm', bidirectional=True,
@@ -181,7 +181,6 @@ class TestAttention(unittest.TestCase):
             decoder_type=decoder_type,
             decoder_num_units=256,
             decoder_num_layers=1,
-            # decoder_num_layers=2,
             embedding_dim=32,
             dropout_input=0.1,
             dropout_encoder=0.1,
@@ -194,11 +193,11 @@ class TestAttention(unittest.TestCase):
             init_forget_gate_bias_with_one=True,
             subsample_list=[] if subsample is False else [True, False],
             subsample_type='concat' if subsample is False else subsample,
+            bridge_layer=True,
             init_dec_state=init_dec_state,
             sharpening_factor=1,
             logits_temperature=1,
-            # sigmoid_smoothing=False,
-            sigmoid_smoothing=True,
+            sigmoid_smoothing=False,
             coverage_weight=0,
             ctc_loss_weight=ctc_loss_weight,
             attention_conv_num_channels=10,
@@ -213,7 +212,6 @@ class TestAttention(unittest.TestCase):
             scheduled_sampling_prob=0.1,
             scheduled_sampling_ramp_max_step=200,
             label_smoothing_prob=0.1,
-            # label_smoothing_prob=0,
             weight_noise_std=1e-9,
             encoder_residual=residual,
             encoder_dense_residual=dense_residual,
