@@ -149,7 +149,7 @@ def main():
         # Setting for logging
         logger = set_logger(model.save_path)
 
-        if os.path.isfile(params['char_init']):
+        if os.path.isdir(params['char_init']):
             # NOTE: Start training from the pre-trained character model
             model.load_checkpoint(
                 save_path=params['char_init'], epoch=-1,
@@ -211,7 +211,7 @@ def main():
     logger.info('USERNAME: %s' % os.uname()[1])
 
     # Set process name
-    setproctitle('csj_' + params['model_type'] + '_' +
+    setproctitle('csj_' + params['backend'] + '_' + params['model_type'] + '_' +
                  params['label_type'] + '_' + params['data_size'])
 
     ##################################################

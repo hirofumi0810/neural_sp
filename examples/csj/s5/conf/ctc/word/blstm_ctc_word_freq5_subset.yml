@@ -5,8 +5,8 @@ param:
 
   # corpus
   corpus: csj
-  label_type: word5
   data_size: subset
+  label_type: word5
 
   # features
   feature: fbank
@@ -15,8 +15,8 @@ param:
   use_delta: False
   use_double_delta: False
   splice: 1
-  num_stack: 3
-  num_skip: 3
+  num_stack: 1
+  num_skip: 1
   min_frame_num: 40
   dynamic_batching: True
 
@@ -36,13 +36,13 @@ param:
   encoder_num_proj: 0
   encoder_num_layers: 5
   subsample_list:
-    - False
-    - False
-    - False
+    - True
+    - True
+    - True
     - False
     - False
   subsample_type: drop
-  fc_list: []
+  fc_list: [256]
 
   # optimization
   batch_size: 64
@@ -57,7 +57,8 @@ param:
   parameter_init: 0.1
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
-  char_init: False
+  # char_init: False
+  char_init: /n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/subset/blstm320H5L_drop4_fc_256_adam_lr1e-3_dropen0.2_input80
 
   # regularization
   clip_grad_norm: 5.0
@@ -71,9 +72,9 @@ param:
 
   # annealing
   decay_start_epoch: 5
-  decay_rate: 0.75
-  decay_patient_epoch: 1
+  decay_rate: 0.8
+  decay_patient_epoch: 0
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
   eval_start_epoch: 5
-  print_step: 500
+  print_step: 200

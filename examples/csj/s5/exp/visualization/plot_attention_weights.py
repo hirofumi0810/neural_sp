@@ -54,7 +54,7 @@ def main():
         label_type=params['label_type'],
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=False, tool=params['tool'])
+        sort_utt=False, reverse=False, tool=params['tool'])
 
     params['num_classes'] = test_data.num_classes
 

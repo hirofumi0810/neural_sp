@@ -217,7 +217,7 @@ def main():
     logger.info('USERNAME: %s' % os.uname()[1])
 
     # Set process name
-    setproctitle('csj_' + params['model_type'] + '_' +
+    setproctitle('csj_' + params['backend'] + '_' + params['model_type'] + '_' +
                  params['label_type'] + '_' + params['label_type_sub'] + '_' + params['data_size'])
 
     ##################################################
@@ -390,14 +390,6 @@ def main():
                             eval_batch_size=1)
                         logger.info('  WER (eval1, main): %.3f %%' %
                                     (wer_eval1 * 100))
-                        cer_eval1_sub, wer_eval1_sub, _ = do_eval_cer(
-                            model=model,
-                            dataset=eval1_data,
-                            beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_CHAR,
-                            eval_batch_size=1)
-                        logger.info('  CER / WER (eval1, sub): %.3f %% / %.3f %%' %
-                                    ((cer_eval1_sub * 100), (wer_eval1_sub * 100)))
 
                         wer_eval2, _ = do_eval_wer(
                             model=model,
