@@ -2,7 +2,13 @@ parent: ./conf/attention/word/att_blstm_word_freq5_subset.yml
 param:
   # framework
   backend: pytorch
-  # backend: chainer
 
   # topology
-  decoder_num_layers: 2
+  encoder_num_layers: 6
+  subsample_list:
+    - False
+    - True
+    - True
+    - False
+    - False
+    - False

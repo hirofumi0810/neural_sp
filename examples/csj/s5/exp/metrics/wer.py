@@ -38,7 +38,8 @@ def do_eval_wer(model, dataset, beam_width, max_decode_len,
     dataset.reset()
 
     idx2word = Idx2word(dataset.vocab_file_path)
-    idx2char = Idx2char(dataset.vocab_file_path_sub)
+    if resolving_unk:
+        idx2char = Idx2char(dataset.vocab_file_path_sub)
 
     wer = 0
     sub, ins, dele, = 0, 0, 0
@@ -50,23 +51,31 @@ def do_eval_wer(model, dataset, beam_width, max_decode_len,
 
         # Decode
         if model.model_type == 'nested_attention':
-            best_hyps, _, perm_idx = model.decode(
-                batch['xs'], batch['x_lens'],
-                beam_width=beam_width,
-                max_decode_len=max_decode_len,
-                max_decode_len_sub=100)
+            if resolving_unk:
+                best_hyps, aw, best_hyps_sub, aw_sub, perm_idx = model.decode(
+                    batch['xs'], batch['x_lens'],
+                    beam_width=beam_width,
+                    max_decode_len=max_decode_len,
+                    max_decode_len_sub=100,
+                    resolving_unk=True)
+            else:
+                best_hyps, _, perm_idx = model.decode(
+                    batch['xs'], batch['x_lens'],
+                    beam_width=beam_width,
+                    max_decode_len=max_decode_len,
+                    max_decode_len_sub=100)
         else:
             if resolving_unk:
                 best_hyps, aw, perm_idx = model.decode(
                     batch['xs'], batch['x_lens'],
                     beam_width=beam_width,
                     max_decode_len=max_decode_len,
-                    resolving_unk=True)
+                    task_index=0, resolving_unk=True)
                 best_hyps_sub, aw_sub, _ = model.decode(
                     batch['xs'], batch['x_lens'],
                     beam_width=beam_width,
                     max_decode_len=max_decode_len * 3,
-                    is_sub_task=True, resolving_unk=True)
+                    task_index=1, resolving_unk=True)
             else:
                 best_hyps, perm_idx = model.decode(
                     batch['xs'], batch['x_lens'],
@@ -123,9 +132,6 @@ def do_eval_wer(model, dataset, beam_width, max_decode_len,
             str_ref = re.sub(r'[_]+', '_', str_ref)
             str_hyp = re.sub(r'[_]+', '_', str_hyp)
 
-            # print('REF: %s' % str_ref)
-            # print('HYP: %s' % str_hyp)
-
             # Compute WER
             try:
                 wer_b, sub_b, ins_b, del_b = compute_wer(
@@ -138,8 +144,6 @@ def do_eval_wer(model, dataset, beam_width, max_decode_len,
                 dele += del_b
                 num_words += len(str_ref.split('_'))
             except:
-                # print('REF: %s' % str_ref)
-                # print('HYP: %s' % str_hyp)
                 pass
 
             if progressbar:

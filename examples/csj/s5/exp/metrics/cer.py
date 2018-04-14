@@ -50,21 +50,21 @@ def do_eval_cer(model, dataset, beam_width, max_decode_len,
         batch, is_new_epoch = dataset.next(batch_size=eval_batch_size)
 
         # Decode
-        is_sub_task = False
         if model.model_type in ['ctc', 'attention']:
             best_hyps, perm_idx = model.decode(batch['xs'], batch['x_lens'],
                                                beam_width=beam_width,
                                                max_decode_len=max_decode_len)
             ys = batch['ys'][perm_idx]
             y_lens = batch['y_lens'][perm_idx]
+            task_index = 0
         else:
             best_hyps, perm_idx = model.decode(batch['xs'], batch['x_lens'],
                                                beam_width=beam_width,
                                                max_decode_len=max_decode_len,
-                                               is_sub_task=True)
+                                               task_index=1)
             ys = batch['ys_sub'][perm_idx]
             y_lens = batch['y_lens_sub'][perm_idx]
-            is_sub_task = True
+            task_index = 1
 
         for b in range(len(batch['xs'])):
 
@@ -95,10 +95,7 @@ def do_eval_cer(model, dataset, beam_width, max_decode_len,
             str_ref = re.sub(r'[_]+', '_', str_ref)
             str_hyp = re.sub(r'[_]+', '_', str_hyp)
 
-            # print('REF: %s' % str_ref)
-            # print('HYP: %s' % str_hyp)
-
-            if dataset.label_type == 'kanji_wb' or (is_sub_task and dataset.label_type_sub == 'kanji_wb'):
+            if dataset.label_type == 'kanji_wb' or (task_index > 0 and dataset.label_type_sub == 'kanji_wb'):
                 # Compute WER
                 try:
                     wer_b, sub_b, ins_b, del_b = compute_wer(

@@ -2,15 +2,16 @@ parent: ./conf/attention/word/att_blstm_word_freq5_subset.yml
 param:
   # framework
   backend: pytorch
-  # backend: chainer
-
-  # corpus
-  label_type: kanji
-  data_size: subset
 
   # topology
-  conv_channels: [64, 64, 128, 128]
+  encoder_type: cnn
+  conv_channels: [64, 64, 64, 128, 128, 128, 256, 256, 256]
   conv_kernel_sizes:
+    - [3, 3]
+    - [3, 3]
+    - [3, 3]
+    - [3, 3]
+    - [3, 3]
     - [3, 3]
     - [3, 3]
     - [3, 3]
@@ -20,29 +21,32 @@ param:
     - [1, 1]
     - [1, 1]
     - [1, 1]
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
   poolings:
     - []
+    - []
     - [2, 2]
+    - []
+    - []
+    - [2, 2]
+    - []
     - []
     - [2, 2]
   activation: relu
   batch_norm: True
-  encoder_num_layers: 4
+  encoder_num_layers: 0
   subsample_list:
-    - True
-    - True
-    - True
     - False
-  decoder_num_layers: 1
-  embedding_dim: 64
-
-  embedding_dim: 64
 
   # optimization
   batch_size: 16
 
   # regularization
-  scheduled_sampling_ramp_max_step: 800000
+  scheduled_sampling_ramp_max_step: 200000
 
   # annealing
-  print_step: 2000
+  print_step: 800

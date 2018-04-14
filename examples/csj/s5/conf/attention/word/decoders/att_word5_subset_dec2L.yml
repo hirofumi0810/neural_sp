@@ -1,6 +1,7 @@
 parent: ./conf/attention/word/att_blstm_word_freq5_subset.yml
 param:
   # framework
-  backend: chainer
+  backend: pytorch
 
-  attention_type: content
+  # topology
+  decoder_num_layers: 2

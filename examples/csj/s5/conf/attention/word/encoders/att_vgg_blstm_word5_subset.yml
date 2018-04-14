@@ -2,11 +2,6 @@ parent: ./conf/attention/word/att_blstm_word_freq5_subset.yml
 param:
   # framework
   backend: pytorch
-  # backend: chainer
-
-  # features
-  num_stack: 1
-  num_skip: 1
 
   # topology
   conv_channels: [64, 64, 128, 128]
@@ -42,7 +37,7 @@ param:
   batch_size: 32
 
   # regularization
-  scheduled_sampling_ramp_max_step: 500000
+  scheduled_sampling_ramp_max_step: 100000
 
   # annealing
-  print_step: 2000
+  print_step: 400

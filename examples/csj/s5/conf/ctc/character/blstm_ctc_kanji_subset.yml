@@ -6,12 +6,18 @@ param:
 
   # corpus
   data_size: subset
-  label_type: kanji_divide
+  label_type: kanji_wb
+
+  # features
+  num_stack: 1
+  num_skip: 1
 
   # topology
-  encoder_num_layers: 4
+  encoder_num_layers: 5
   subsample_list:
     - False
+    - True
+    - True
     - False
     - False
-    - False
+  fc_list: [256]

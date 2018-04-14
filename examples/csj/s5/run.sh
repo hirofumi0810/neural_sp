@@ -17,9 +17,9 @@ echo ===========================================================================
 echo "                                   CSJ                                     "
 echo ============================================================================
 
-stage=3
-# hierarchical_model=false
-hierarchical_model=true
+stage=2
+hierarchical_model=false
+# hierarchical_model=true
 
 ### Set true when hiding progress bar
 run_background=true
@@ -41,9 +41,9 @@ CSJVER=dvd  ## Set your CSJ format (dvd or usb).
             ## Case merl :MERL setup. Neccesary directory is WAV and sdb
 
 ### Select data size
-DATASIZE=subset
+# DATASIZE=subset
 # DATASIZE=aps
-# DATASIZE=fullset
+DATASIZE=fullset
 # DATASIZE=all
 
 ### Set path to save the model
@@ -57,7 +57,6 @@ DATA_SAVEPATH="/n/sd8/inaguma/corpus/csj/kaldi"
 TOOL=htk
 # TOOL=python_speech_features
 # TOOL=librosa
-# # TOOL=wav
 
 ### Configuration of feature extranction
 CHANNELS=80
@@ -69,8 +68,6 @@ DELTADELTA=1
 # NORMALIZE=global
 NORMALIZE=speaker
 # NORMALIZE=utterance
-# NORMALIZE=no
-# NOTE: normalize in [-1, 1] in case of WAV
 
 
 export DATA_SAVEPATH=$DATA_SAVEPATH/$DATASIZE
@@ -246,13 +243,13 @@ if [ $stage -le 3 ]; then
         nohup $PYTHON exp/training/train_hierarchical.py \
           --gpu $gpu_index \
           --saved_model_path $config_path \
-          --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+          --data_save_path $DATA_SAVEPATH/.. > log/$filename".log" &
       else
         CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
         nohup $PYTHON exp/training/train_hierarchical.py \
           --gpu $gpu_index \
           --saved_model_path $config_path \
-          --data_save_path $DATA_SAVEPATH || exit 1;
+          --data_save_path $DATA_SAVEPATH/.. || exit 1;
       fi
     else
       if $run_background; then
@@ -261,14 +258,14 @@ if [ $stage -le 3 ]; then
           --gpu $gpu_index \
           --config_path $config_path \
           --model_save_path $MODEL_SAVEPATH \
-          --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+          --data_save_path $DATA_SAVEPATH/.. > log/$filename".log" &
       else
         CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
         $PYTHON exp/training/train_hierarchical.py \
           --gpu $gpu_index \
           --config_path $config_path \
           --model_save_path $MODEL_SAVEPATH \
-          --data_save_path $DATA_SAVEPATH || exit 1;
+          --data_save_path $DATA_SAVEPATH/.. || exit 1;
       fi
     fi
   else
@@ -278,13 +275,13 @@ if [ $stage -le 3 ]; then
         nohup $PYTHON exp/training/train.py \
           --gpu $gpu_index \
           --saved_model_path $config_path \
-          --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+          --data_save_path $DATA_SAVEPATH/.. > log/$filename".log" &
       else
         CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
         $PYTHON exp/training/train.py \
           --gpu $gpu_index \
           --saved_model_path $config_path \
-          --data_save_path $DATA_SAVEPATH || exit 1;
+          --data_save_path $DATA_SAVEPATH/.. || exit 1;
       fi
     else
       if $run_background; then
@@ -293,14 +290,14 @@ if [ $stage -le 3 ]; then
           --gpu $gpu_index \
           --config_path $config_path \
           --model_save_path $MODEL_SAVEPATH \
-          --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+          --data_save_path $DATA_SAVEPATH/.. > log/$filename".log" &
       else
         CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
         $PYTHON exp/training/train.py \
           --gpu $gpu_index \
           --config_path $config_path \
           --model_save_path $MODEL_SAVEPATH \
-          --data_save_path $DATA_SAVEPATH　|| exit 1;
+          --data_save_path $DATA_SAVEPATH/..　|| exit 1;
       fi
     fi
   fi

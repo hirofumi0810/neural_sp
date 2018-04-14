@@ -1,11 +1,12 @@
 param:
   # framework
   backend: pytorch
+  # backend: chainer
 
   # corpus
   corpus: csj
   data_size: subset
-  label_type: word15
+  label_type: word5
 
   # features
   feature: fbank
@@ -41,6 +42,7 @@ param:
     - False
     - False
   subsample_type: drop
+  bridge_layer: True
   attention_type: location
   attention_dim: 128
   decoder_type: lstm
@@ -51,8 +53,9 @@ param:
   embedding_dim: 128
   attention_conv_num_channels: 10
   attention_conv_width: 201
-  # decoding_order: attend_spell
-  decoding_order: conditional
+  decoding_order: attend_generate_update
+  # decoding_order: conditional
+  bottleneck_dim: 256
 
   # optimization
   batch_size: 64
@@ -67,7 +70,8 @@ param:
   parameter_init: 0.1
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
-  char_init: False
+  # char_init: False
+  char_init: /n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/subset/blstm320H5L_drop4_fc_256_adam_lr1e-3_dropen0.2_input80
 
   # regularization
   clip_grad_norm: 5.0
@@ -90,8 +94,8 @@ param:
 
   # annealing
   decay_start_epoch: 5
-  decay_rate: 0.75
-  decay_patient_epoch: 1
+  decay_rate: 0.8
+  decay_patient_epoch: 0
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
   eval_start_epoch: 5
