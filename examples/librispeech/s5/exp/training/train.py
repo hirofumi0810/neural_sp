@@ -32,7 +32,7 @@ from utils.training.logging import set_logger
 from utils.directory import mkdir_join
 from utils.config import load_config, save_config
 
-MAX_DECODE_LEN_WORD = 100
+MAX_DECODE_LEN_WORD = 200
 MAX_DECODE_LEN_CHAR = 600
 
 parser = argparse.ArgumentParser()
@@ -210,7 +210,7 @@ def main():
     logger.info('USERNAME: %s' % os.uname()[1])
 
     # Set process name
-    setproctitle('libri_' + params['model_type'] + '_' +
+    setproctitle('libri_' + params['backend'] + '_' + params['model_type'] + '_' +
                  params['label_type'] + '_' + params['data_size'])
 
     ##################################################
@@ -250,10 +250,7 @@ def main():
         if (step + 1) % params['print_step'] == 0:
 
             # Compute loss in the dev set
-            if params['data_size'] in ['100h', '460h']:
-                batch_dev = dev_clean_data.next()[0]
-            else:
-                batch_dev = dev_other_data.next()[0]
+            batch_dev = dev_clean_data.next()[0]
             loss_dev_val = model(
                 batch_dev['xs'], batch_dev['ys'], batch_dev['x_lens'], batch_dev['y_lens'], is_eval=True)
 
@@ -302,47 +299,24 @@ def main():
             else:
                 start_time_eval = time.time()
                 # dev
-                if 'word' in params['label_type'] and not bool(params['pretrain_stage']):
-                    metric_dev_clean_epoch, _ = do_eval_wer(
+                if 'word' in params['label_type']:
+                    metric_dev_epoch, _ = do_eval_wer(
                         model=model,
                         dataset=dev_clean_data,
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_WORD,
                         eval_batch_size=1)
                     logger.info('  WER (dev-clean): %.3f %%' %
-                                (metric_dev_clean_epoch * 100))
-
-                    metric_dev_other_epoch, _ = do_eval_wer(
-                        model=model,
-                        dataset=dev_other_data,
-                        beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_WORD,
-                        eval_batch_size=1)
-                    logger.info('  WER (dev-other): %.3f %%' %
-                                (metric_dev_other_epoch * 100))
+                                (metric_dev_epoch * 100))
                 else:
-                    metric_dev_clean_epoch, wer_dev_clean_epoch, _ = do_eval_cer(
+                    metric_dev_epoch, wer_dev_clean_epoch, _ = do_eval_cer(
                         model=model,
                         dataset=dev_clean_data,
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_CHAR,
                         eval_batch_size=1)
                     logger.info('  CER / WER (dev-clean): %.3f %% / %.3f %%' %
-                                ((metric_dev_clean_epoch * 100), (wer_dev_clean_epoch * 100)))
-
-                    metric_dev_other_epoch, wer_dev_other_epoch, _ = do_eval_cer(
-                        model=model,
-                        dataset=dev_other_data,
-                        beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_CHAR,
-                        eval_batch_size=1)
-                    logger.info('  CER / WER (dev-other): %.3f %% / %.3f %%' %
-                                ((metric_dev_other_epoch * 100), (wer_dev_other_epoch * 100)))
-
-                if params['data_size'] in ['100h', '460h']:
-                    metric_dev_epoch = metric_dev_clean_epoch
-                else:
-                    metric_dev_epoch = metric_dev_other_epoch
+                                ((metric_dev_epoch * 100), (wer_dev_clean_epoch * 100)))
 
                 if metric_dev_epoch < metric_dev_best:
                     metric_dev_best = metric_dev_epoch
@@ -353,6 +327,70 @@ def main():
                     # Save the model
                     model.save_checkpoint(model.save_path, epoch, step,
                                           learning_rate, metric_dev_best)
+
+                    # dev-other & test
+                    if 'word' in params['label_type']:
+                        metric_dev_other_epoch, _ = do_eval_wer(
+                            model=model,
+                            dataset=dev_other_data,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_WORD,
+                            eval_batch_size=1)
+                        logger.info('  WER (dev-other): %.3f %%' %
+                                    (metric_dev_other_epoch * 100))
+
+                        wer_test_clean, _ = do_eval_wer(
+                            model=model,
+                            dataset=test_clean_data,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_WORD,
+                            eval_batch_size=1)
+                        logger.info('  WER (test-clean): %.3f %%' %
+                                    (wer_test_clean * 100))
+
+                        wer_test_other, _ = do_eval_wer(
+                            model=model,
+                            dataset=test_other_data,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_WORD,
+                            eval_batch_size=1)
+                        logger.info('  WER (test-other): %.3f %%' %
+                                    (wer_test_other * 100))
+
+                        logger.info('  WER (test-mean): %.3f %%' %
+                                    ((wer_test_clean + wer_test_other) * 100 / 2))
+                    else:
+                        metric_dev_other_epoch, wer_dev_other_epoch, _ = do_eval_cer(
+                            model=model,
+                            dataset=dev_other_data,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_CHAR,
+                            eval_batch_size=1)
+                        logger.info('  CER / WER (dev-other): %.3f %% / %.3f %%' %
+                                    ((metric_dev_other_epoch * 100), (wer_dev_other_epoch * 100)))
+
+                        cer_test_clean, wer_test_clean, _ = do_eval_cer(
+                            model=model,
+                            dataset=test_clean_data,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_CHAR,
+                            eval_batch_size=1)
+                        logger.info('  CER / WER (test-clean): %.3f %% / %.3f %%' %
+                                    ((cer_test_clean * 100), (wer_test_clean * 100)))
+
+                        cer_test_other, wer_test_other, _ = do_eval_cer(
+                            model=model,
+                            dataset=test_other_data,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_CHAR,
+                            eval_batch_size=1)
+                        logger.info('  CER / WER (test-other): %.3f %% / %.3f %%' %
+                                    ((cer_test_other * 100), (wer_test_other * 100)))
+
+                        logger.info('  CER / WER (test-mean): %.3f %% / %.3f %%' %
+                                    (((cer_test_clean + cer_test_other) * 100 / 2),
+                                     ((wer_test_clean + wer_test_other) * 100 / 2)))
+
                 else:
                     not_improved_epoch += 1
 
@@ -397,48 +435,7 @@ def main():
             start_time_epoch = time.time()
             epoch += 1
 
-    # Evaluate the best model (test)
-    if 'word' in params['label_type'] and not bool(params['pretrain_stage']):
-        wer_test_clean, _ = do_eval_wer(
-            model=best_model,
-            dataset=test_clean_data,
-            beam_width=1,
-            max_decode_len=MAX_DECODE_LEN_WORD,
-            eval_batch_size=1)
-        logger.info('  WER (test-clean): %.3f %%' % (wer_test_clean * 100))
-
-        wer_test_other, _ = do_eval_wer(
-            model=best_model,
-            dataset=test_other_data,
-            beam_width=1,
-            max_decode_len=MAX_DECODE_LEN_WORD,
-            eval_batch_size=1)
-        logger.info('  WER (test-other): %.3f %%' % (wer_test_other * 100))
-
-        logger.info('  WER (mean): %.3f %%' %
-                    ((wer_test_clean + wer_test_other) * 100 / 2))
-    else:
-        cer_test_clean, wer_test_clean, _ = do_eval_cer(
-            model=best_model,
-            dataset=test_clean_data,
-            beam_width=1,
-            max_decode_len=MAX_DECODE_LEN_CHAR,
-            eval_batch_size=1)
-        logger.info('  CER / WER (test-clean): %.3f %% / %.3f %%' %
-                    ((cer_test_clean * 100), (wer_test_clean * 100)))
-
-        cer_test_other, wer_test_other, _ = do_eval_cer(
-            model=best_model,
-            dataset=test_other_data,
-            beam_width=1,
-            max_decode_len=MAX_DECODE_LEN_CHAR,
-            eval_batch_size=1)
-        logger.info('  CER / WER (test-other): %.3f %% / %.3f %%' %
-                    ((cer_test_other * 100), (wer_test_other * 100)))
-
-        logger.info('  CER / WER (mean): %.3f %% / %.3f %%' %
-                    (((cer_test_clean + cer_test_other) * 100 / 2),
-                     ((wer_test_clean + wer_test_other) * 100 / 2)))
+    # TODO: evaluate the best model by beam search here
 
     duration_train = time.time() - start_time_train
     logger.info('Total time: %.3f hour' % (duration_train / 3600))

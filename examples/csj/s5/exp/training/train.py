@@ -11,6 +11,7 @@ import os
 import sys
 import time
 from setproctitle import setproctitle
+import copy
 import argparse
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
@@ -31,7 +32,7 @@ from utils.training.logging import set_logger
 from utils.directory import mkdir_join
 from utils.config import load_config, save_config
 
-MAX_DECODE_LEN_WORD = 60
+MAX_DECODE_LEN_WORD = 80
 MAX_DECODE_LEN_CHAR = 150
 
 parser = argparse.ArgumentParser()
@@ -236,6 +237,7 @@ def main():
     start_time_epoch = time.time()
     start_time_step = time.time()
     not_improved_epoch = 0
+    best_model = model
     loss_train_mean = 0.
     pbar_epoch = tqdm(total=len(train_data))
     while True:
@@ -299,7 +301,7 @@ def main():
             else:
                 start_time_eval = time.time()
                 # dev
-                if 'word' in params['label_type'] and not bool(params['pretrain_stage']):
+                if 'word' in params['label_type']:
                     metric_dev_epoch, _ = do_eval_wer(
                         model=model,
                         dataset=dev_data,
@@ -321,6 +323,7 @@ def main():
                 if metric_dev_epoch < metric_dev_best:
                     metric_dev_best = metric_dev_epoch
                     not_improved_epoch = 0
+                    best_model = copy.deepcopy(model)
                     logger.info('||||| Best Score |||||')
 
                     # Save the model
@@ -328,7 +331,7 @@ def main():
                                           learning_rate, metric_dev_best)
 
                     # test
-                    if 'word' in params['label_type'] and not bool(params['pretrain_stage']):
+                    if 'word' in params['label_type']:
                         wer_eval1, _ = do_eval_wer(
                             model=model,
                             dataset=eval1_data,
@@ -432,6 +435,8 @@ def main():
             start_time_step = time.time()
             start_time_epoch = time.time()
             epoch += 1
+
+    # TODO: evaluate the best model by beam search here
 
     duration_train = time.time() - start_time_train
     logger.info('Total time: %.3f hour' % (duration_train / 3600))

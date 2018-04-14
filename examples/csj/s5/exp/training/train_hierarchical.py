@@ -11,6 +11,7 @@ import os
 import sys
 import time
 from setproctitle import setproctitle
+import copy
 import argparse
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
@@ -31,7 +32,7 @@ from utils.training.logging import set_logger
 from utils.directory import mkdir_join
 from utils.config import load_config, save_config
 
-MAX_DECODE_LEN_WORD = 60
+MAX_DECODE_LEN_WORD = 80
 MAX_DECODE_LEN_CHAR = 150
 
 parser = argparse.ArgumentParser()
@@ -242,6 +243,7 @@ def main():
     start_time_epoch = time.time()
     start_time_step = time.time()
     not_improved_epoch = 0
+    best_model = model
     loss_train_mean, loss_main_train_mean, loss_sub_train_mean = 0., 0., 0.
     pbar_epoch = tqdm(total=len(train_data))
     while True:
@@ -342,6 +344,7 @@ def main():
                 if metric_dev_epoch < metric_dev_best:
                     metric_dev_best = metric_dev_epoch
                     not_improved_epoch = 0
+                    best_model = copy.deepcopy(model)
                     logger.info('||||| Best Score |||||')
 
                     # Save the model
@@ -349,68 +352,35 @@ def main():
                                           learning_rate, metric_dev_best)
 
                     # test
-                    if bool(params['pretrain_stage']):
-                        cer_eval1_sub, wer_eval1_sub, _ = do_eval_cer(
-                            model=model,
-                            dataset=eval1_data,
-                            beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_CHAR,
-                            eval_batch_size=1)
-                        logger.info('  CER / WER (eval1, sub): %.3f %% / %.3f %%' %
-                                    ((cer_eval1_sub * 100), (wer_eval1_sub * 100)))
+                    wer_eval1, _ = do_eval_wer(
+                        model=model,
+                        dataset=eval1_data,
+                        beam_width=1,
+                        max_decode_len=MAX_DECODE_LEN_WORD,
+                        eval_batch_size=1)
+                    logger.info('  WER (eval1, main): %.3f %%' %
+                                (wer_eval1 * 100))
 
-                        cer_eval2_sub, wer_eval2_sub, _ = do_eval_cer(
-                            model=model,
-                            dataset=eval2_data,
-                            beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_CHAR,
-                            eval_batch_size=1)
-                        logger.info('  CER / WER (eval2, sub): %.3f %% / %.3f %%' %
-                                    ((cer_eval2_sub * 100), (wer_eval2_sub * 100)))
+                    wer_eval2, _ = do_eval_wer(
+                        model=model,
+                        dataset=eval2_data,
+                        beam_width=1,
+                        max_decode_len=MAX_DECODE_LEN_WORD,
+                        eval_batch_size=1)
+                    logger.info('  WER (eval2, main): %.3f %%' %
+                                (wer_eval2 * 100))
 
-                        cer_eval3_sub, wer_eval3_sub, _ = do_eval_cer(
-                            model=model,
-                            dataset=eval3_data,
-                            beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_CHAR,
-                            eval_batch_size=1)
-                        logger.info('  CER / WER (eval3, sub): %.3f %% / %.3f %%' %
-                                    ((cer_eval3_sub * 100), (wer_eval3_sub * 100)))
+                    wer_eval3, _ = do_eval_wer(
+                        model=model,
+                        dataset=eval3_data,
+                        beam_width=1,
+                        max_decode_len=MAX_DECODE_LEN_WORD,
+                        eval_batch_size=1)
+                    logger.info('  WER (eval3, main): %.3f %%' %
+                                (wer_eval3 * 100))
 
-                        logger.info('  CER / WER (mean, sub): %.3f %% / %.3f %%' %
-                                    (((cer_eval1_sub + cer_eval2_sub + cer_eval3_sub) * 100 / 3),
-                                     ((wer_eval1_sub + wer_eval2_sub + wer_eval3_sub) * 100 / 3)))
-
-                    else:
-                        wer_eval1, _ = do_eval_wer(
-                            model=model,
-                            dataset=eval1_data,
-                            beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_WORD,
-                            eval_batch_size=1)
-                        logger.info('  WER (eval1, main): %.3f %%' %
-                                    (wer_eval1 * 100))
-
-                        wer_eval2, _ = do_eval_wer(
-                            model=model,
-                            dataset=eval2_data,
-                            beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_WORD,
-                            eval_batch_size=1)
-                        logger.info('  WER (eval2, main): %.3f %%' %
-                                    (wer_eval2 * 100))
-
-                        wer_eval3, _ = do_eval_wer(
-                            model=model,
-                            dataset=eval3_data,
-                            beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_WORD,
-                            eval_batch_size=1)
-                        logger.info('  WER (eval3, main): %.3f %%' %
-                                    (wer_eval3 * 100))
-
-                        logger.info('  WER (mean, main): %.3f %%' %
-                                    ((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3))
+                    logger.info('  WER (mean, main): %.3f %%' %
+                                ((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3))
                 else:
                     not_improved_epoch += 1
 
