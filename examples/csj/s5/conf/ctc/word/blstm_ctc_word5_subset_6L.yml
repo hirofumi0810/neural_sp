@@ -6,18 +6,23 @@ param:
 
   # corpus
   data_size: subset
-  label_type: kanji_wb
+  label_type: word5
 
   # features
   num_stack: 1
   num_skip: 1
 
   # topology
-  encoder_num_layers: 5
+  encoder_num_layers: 6
   subsample_list:
+    - True
+    - True
+    - True
     - False
-    - True
-    - True
     - False
     - False
   fc_list: [256]
+
+  # initialization
+  # char_init: False
+  char_init: /n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/subset/blstm320H6L_drop4_fc_256_adam_lr1e-3_dropen0.2_input80

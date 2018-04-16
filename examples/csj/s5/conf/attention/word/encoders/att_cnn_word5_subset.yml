@@ -1,4 +1,4 @@
-parent: ./conf/attention/word/att_blstm_word_freq5_subset.yml
+parent: ./conf/attention/word/att_blstm_word5_subset.yml
 param:
   # framework
   backend: pytorch

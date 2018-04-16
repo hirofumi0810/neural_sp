@@ -13,11 +13,17 @@ param:
   num_skip: 1
 
   # topology
-  encoder_num_layers: 5
+  encoder_num_layers: 8
   subsample_list:
     - False
     - True
     - True
     - False
     - False
+    - False
+    - False
+    - False
   fc_list: [256]
+
+  # initialization
+  char_init: False

@@ -1,4 +1,4 @@
-parent: ./conf/ctc/word/blstm_ctc_word_freq5_subset.yml
+parent: ./conf/ctc/word/blstm_ctc_word5_subset.yml
 param:
   # framework
   backend: pytorch
