@@ -21,7 +21,7 @@ param:
   dynamic_batching: True
 
   # topology
-  model_type: hierarchical_attention
+  model_type: nested_attention
   encoder_type: lstm
   conv_channels: []
   conv_kernel_sizes: []
@@ -37,7 +37,7 @@ param:
   encoder_num_units: 320
   encoder_num_proj: 0
   encoder_num_layers: 5
-  encoder_num_layers_sub: 4
+  encoder_num_layers_sub: 5
   subsample_list:
     - True
     - True
@@ -56,7 +56,7 @@ param:
   embedding_dim_sub: 64
   attention_conv_num_channels: 10
   attention_conv_width: 201
-  decoding_order: attend_spell
+  decoding_order: attend_generate_update
 
   # optimization
   batch_size: 64
@@ -71,7 +71,8 @@ param:
   parameter_init: 0.1
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
-  char_init: False
+  # char_init: False
+  char_init: /n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/subset/blstm320H5L_drop4_fc_256_adam_lr1e-3_dropen0.2_input80
 
   # regularization
   clip_grad_norm: 5.0
@@ -94,7 +95,7 @@ param:
 
   # annealing
   decay_start_epoch: 5
-  decay_rate: 0.75
+  decay_rate: 0.8
   decay_patient_epoch: 1
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
@@ -103,6 +104,18 @@ param:
 
   # MTL
   main_loss_weight: 0.5
-  # main_loss_weight: 0.8
   ctc_loss_weight_sub: 0
-  curriculum_training: False
+
+  # W2C attention
+  usage_dec_sub: update_decoder
+  # usage_dec_sub: all
+  # usage_dec_sub: no_use
+
+  dec_out_sub_attend_temperature: 1
+  dec_out_sub_sigmoid_smoothing: True
+
+  attention_regularization: True
+
+  gate_dec_sub: no_gate
+  # gate_dec_sub: scalar
+  # gate_dec_sub: elementwise

@@ -1,0 +1,21 @@
+parent: ./conf/nested_attention/nested_att_word5_att_kanji_subset.yml
+param:
+  # framework
+  backend: pytorch
+
+  # corpus
+  data_size: fullset
+
+  # W2C attention
+  usage_dec_sub: update_decoder
+  # usage_dec_sub: all
+  # usage_dec_sub: no_use
+
+  dec_out_sub_attend_temperature: 1
+  dec_out_sub_sigmoid_smoothing: True
+
+  attention_regularization: True
+
+  gate_dec_sub: no_gate
+  # gate_dec_sub: scalar
+  # gate_dec_sub: elementwise
