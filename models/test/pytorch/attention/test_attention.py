@@ -39,6 +39,12 @@ class TestAttention(unittest.TestCase):
     def test(self):
         print("Attention Working check.")
 
+        # Multi-head attention
+
+        # Backward decoder
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', backward=True, init_dec_state='final')
+
         # Decoding order
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', decoding_order='conditional')
@@ -115,7 +121,7 @@ class TestAttention(unittest.TestCase):
               subsample=False, projection=False, init_dec_state='first',
               ctc_loss_weight=0, conv=False, batch_norm=False,
               residual=False, dense_residual=False,
-              decoding_order='attend_generate_update'):
+              decoding_order='attend_generate_update', backward=False):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
@@ -132,6 +138,7 @@ class TestAttention(unittest.TestCase):
         print('  residual: %s' % str(residual))
         print('  dense_residual: %s' % str(dense_residual))
         print('  decoding_order: %s' % decoding_order)
+        print('  backward: %s' % str(backward))
         print('==================================================')
 
         if conv or encoder_type == 'cnn':
@@ -218,7 +225,9 @@ class TestAttention(unittest.TestCase):
             decoder_residual=residual,
             decoder_dense_residual=dense_residual,
             decoding_order=decoding_order,
-            bottleneck_dim=256)
+            bottleneck_dim=256,
+            backward=backward,
+            num_head=1)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):
@@ -274,7 +283,7 @@ class TestAttention(unittest.TestCase):
                     max_decode_len=60)
 
                 str_ref = map_fn(ys[0])
-                str_hyp = map_fn(best_hyps[0][:-1]).split('>')[0]
+                str_hyp = map_fn(best_hyps[0][:-1])
 
                 # Compute accuracy
                 try:

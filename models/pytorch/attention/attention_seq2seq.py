@@ -9,6 +9,7 @@ from __future__ import print_function
 
 import random
 import numpy as np
+import copy
 
 import torch
 import torch.nn.functional as F
@@ -102,8 +103,12 @@ class AttentionSeq2seq(ModelBase):
         encoder_dense_residual (bool, optional):
         decoder_residual (bool, optional):
         decoder_dense_residual (bool, optional):
-        decoding_order (string, optional): attend_update_generate or attend_generate_update or conditional
+        decoding_order (string, optional):
+            attend_update_generate or attend_generate_update or conditional
         bottleneck_dim (int, optional): the dimension of the pre-softmax layer
+        backward (bool, optional): if True, the model predicts each token
+            in the reverse order
+        num_head (int, optional): the number of heads in the multi-head attention
     """
 
     def __init__(self,
@@ -156,7 +161,9 @@ class AttentionSeq2seq(ModelBase):
                  decoder_residual=False,
                  decoder_dense_residual=False,
                  decoding_order='attend_generate_update',
-                 bottleneck_dim=256):
+                 bottleneck_dim=256,
+                 backward=False,
+                 num_head=1):
 
         super(ModelBase, self).__init__()
         self.model_type = 'attention'
@@ -173,6 +180,10 @@ class AttentionSeq2seq(ModelBase):
         self.subsample_list = subsample_list
 
         # Setting for the decoder
+        if init_dec_state not in ['zero', 'mean', 'final', 'first']:
+            raise ValueError(
+                'init_dec_state must be "zero" or "mean" or "final" or "first".')
+        self.init_dec_state = init_dec_state
         self.decoder_type = decoder_type
         self.decoder_num_units_0 = decoder_num_units
         self.decoder_num_layers_0 = decoder_num_layers
@@ -182,12 +193,9 @@ class AttentionSeq2seq(ModelBase):
         self.eos_0 = num_classes
         # NOTE: <SOS> and <EOS> have the same index
         self.decoding_order = decoding_order
+        self.backward = backward
 
         # Setting for the attention
-        if init_dec_state not in ['zero', 'mean', 'final', 'first']:
-            raise ValueError(
-                'init_dec_state must be "zero" or "mean" or "final" or "first".')
-        self.init_dec_state = init_dec_state
         self.sharpening_factor = sharpening_factor
         self.logits_temperature = logits_temperature
         self.sigmoid_smoothing = sigmoid_smoothing
@@ -318,7 +326,8 @@ class AttentionSeq2seq(ModelBase):
             sharpening_factor=sharpening_factor,
             sigmoid_smoothing=sigmoid_smoothing,
             out_channels=attention_conv_num_channels,
-            kernel_size=attention_conv_width)
+            kernel_size=attention_conv_width,
+            num_head=num_head)
 
         ##############################
         # Embedding
@@ -407,6 +416,13 @@ class AttentionSeq2seq(ModelBase):
             if self.weight_noise_injection:
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
+        if self.backward:
+            ys_tmp = copy.deepcopy(ys)
+            for b in range(len(xs)):
+                ys_tmp[b, :y_lens[b]] = ys[b, :y_lens[b]][::-1]
+        else:
+            ys_tmp = ys
+
         # NOTE: ys is padded with -1 here
         # ys_in is padded with <EOS> in order to convert to one-hot vector,
         # and added <SOS> before the first token
@@ -418,9 +434,10 @@ class AttentionSeq2seq(ModelBase):
         for b in range(len(xs)):
             ys_in.data[b, 0] = self.sos_0
             ys_in.data[b, 1:y_lens[b] + 1] = torch.from_numpy(
-                ys[b, :y_lens[b]])
+                ys_tmp[b, :y_lens[b]])
 
-            ys_out.data[b, :y_lens[b]] = torch.from_numpy(ys[b, :y_lens[b]])
+            ys_out.data[b, :y_lens[b]] = torch.from_numpy(
+                ys_tmp[b, :y_lens[b]])
             ys_out.data[b, y_lens[b]] = self.eos_0
 
         if self.use_cuda:
@@ -494,7 +511,6 @@ class AttentionSeq2seq(ModelBase):
             input=logits.view((-1, logits.size(2))),
             target=ys_out.view(-1),
             ignore_index=-1, size_average=False) / len(enc_out)
-        # NOTE: ys_in are padded by <SOS>
 
         # Label smoothing (with uniform distribution)
         if self.label_smoothing_prob > 0:
@@ -629,6 +645,7 @@ class AttentionSeq2seq(ModelBase):
         aw = []
         for t in range(ys.size(1)):
 
+            # for scheduled sampling
             is_sample = self.sample_prob > 0 and t > 0 and self._step > 0 and random.random(
             ) < self._sample_prob
 
@@ -638,12 +655,8 @@ class AttentionSeq2seq(ModelBase):
                     enc_out, x_lens, dec_out, aw_step)
 
                 # Sample
-                if is_sample:
-                    # scheduled sampling
-                    y = torch.max(logits[-1], dim=2)[1]
-                else:
-                    # teacher-forcing
-                    y = ys[:, t:t + 1]
+                y = torch.max(
+                    logits[-1], dim=2)[1] if is_sample else ys[:, t:t + 1]
                 y = getattr(self, 'embed_' + str(task_idx))(y)
 
                 # Recurrency
@@ -668,12 +681,8 @@ class AttentionSeq2seq(ModelBase):
 
                 if t < ys.size(1) - 1:
                     # Sample
-                    if is_sample:
-                        # scheduled sampling
-                        y = torch.max(logits_step, dim=2)[1]
-                    else:
-                        # teacher-forcing
-                        y = ys[:, t + 1:t + 2]
+                    y = torch.max(
+                        logits[-1], dim=2)[1] if is_sample else ys[:, t:t + 1]
                     y = getattr(self, 'embed_' + str(task_idx))(y)
 
                     # Recurrency
@@ -683,12 +692,8 @@ class AttentionSeq2seq(ModelBase):
 
             elif self.decoding_order == 'conditional':
                 # Sample
-                if is_sample:
-                    # scheduled sampling
-                    y = torch.max(logits[-1], dim=2)[1]
-                else:
-                    # teacher-forcing
-                    y = ys[:, t:t + 1]
+                y = torch.max(
+                    logits[-1], dim=2)[1] if is_sample else ys[:, t:t + 1]
                 y = getattr(self, 'embed_' + str(task_idx))(y)
 
                 # Recurrency of the first decoder
@@ -914,6 +919,8 @@ class AttentionSeq2seq(ModelBase):
 
         best_hyps = []
         aw = []
+        y_lens = np.zeros((batch_size,), dtype=np.int32)
+        eos_flag = [False] * batch_size
         for _ in range(max_decode_len):
 
             if self.decoding_order == 'attend_update_generate':
@@ -981,6 +988,15 @@ class AttentionSeq2seq(ModelBase):
 
             aw.append(aw_step)
 
+            # Count lengths of hypotheses
+            if self.backward:
+                for b in range(batch_size):
+                    if not eos_flag[b]:
+                        if y.data.cpu().numpy()[b] == eos:
+                            eos_flag[b] = True
+                        else:
+                            y_lens[b] += 1
+
             # Break if <EOS> is outputed in all mini-batch
             if torch.sum(y.data == eos) == y.numel():
                 break
@@ -992,6 +1008,10 @@ class AttentionSeq2seq(ModelBase):
         # Convert to numpy
         best_hyps = self.var2np(best_hyps)
         aw = self.var2np(aw)
+
+        if self.backward:
+            for b in range(batch_size):
+                best_hyps[b, :y_lens[b]] = best_hyps[b, :y_lens[b]][::-1]
 
         return best_hyps, aw
 
@@ -1151,6 +1171,11 @@ class AttentionSeq2seq(ModelBase):
             best_hyps.append(np.array(complete[0]['hyp'][1:]))
             # NOTE: Exclude <SOS>
 
+        if self.backward:
+            raise NotImplementedError
+        #     for b in range(batch_size):
+        #         best_hyps[b, :y_lens[b]] = best_hyps[b, :y_lens[b]][::-1]
+
         return np.array(best_hyps)
 
     def decode_ctc(self, xs, x_lens, beam_width=1, task_index=0):
@@ -1203,6 +1228,10 @@ class AttentionSeq2seq(ModelBase):
             perm_idx = np.arange(0, len(xs), 1)
         else:
             perm_idx = self.var2np(perm_idx)
+
+        if self.backward:
+            raise NotImplementedError
+            best_hyps = best_hyps[:, ::-1]
 
         return best_hyps, perm_idx
 
