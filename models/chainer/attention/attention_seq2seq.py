@@ -108,7 +108,7 @@ class AttentionSeq2seq(ModelBase):
         bottleneck_dim (int, optional): the dimension of the pre-softmax layer
         backward (bool, optional): if True, the model predicts each token
             in the reverse order
-        num_head (int, optional): the number of heads in the multi-head attention
+        num_heads (int, optional): the number of heads in the multi-head attention
     """
 
     def __init__(self,
@@ -135,7 +135,7 @@ class AttentionSeq2seq(ModelBase):
                  init_forget_gate_bias_with_one=True,
                  subsample_list=[],
                  subsample_type='drop',
-                 bridge_layer=True,
+                 bridge_layer=False,
                  init_dec_state='first',
                  sharpening_factor=1,
                  logits_temperature=1,
@@ -163,7 +163,7 @@ class AttentionSeq2seq(ModelBase):
                  decoding_order='attend_generate_update',
                  bottleneck_dim=256,
                  backward=False,
-                 num_head=1):
+                 num_heads=1):
 
         super(ModelBase, self).__init__()
         self.model_type = 'attention'
@@ -200,6 +200,7 @@ class AttentionSeq2seq(ModelBase):
         self.logits_temperature = logits_temperature
         self.sigmoid_smoothing = sigmoid_smoothing
         self.coverage_weight = coverage_weight
+        self.num_heads_0 = num_heads
 
         # Setting for regularization
         self.weight_noise_injection = False
@@ -300,7 +301,7 @@ class AttentionSeq2seq(ModelBase):
                     residual=False,
                     dense_residual=False)
                 self.decoder_second_0 = RNNDecoder(
-                    input_size=self.encoder_num_units,
+                    input_size=self.encoder_num_units * num_heads,
                     rnn_type=decoder_type,
                     num_units=decoder_num_units,
                     num_layers=1,
@@ -311,7 +312,7 @@ class AttentionSeq2seq(ModelBase):
                 # NOTE; the conditional decoder only supports the 1 layer
             else:
                 self.decoder_0 = RNNDecoder(
-                    input_size=self.encoder_num_units + embedding_dim,
+                    input_size=self.encoder_num_units * num_heads + embedding_dim,
                     rnn_type=decoder_type,
                     num_units=decoder_num_units,
                     num_layers=decoder_num_layers,
@@ -333,7 +334,7 @@ class AttentionSeq2seq(ModelBase):
                 sigmoid_smoothing=sigmoid_smoothing,
                 out_channels=attention_conv_num_channels,
                 kernel_size=attention_conv_width,
-                num_head=num_head)
+                num_heads=num_heads)
 
             ##############################
             # Embedding
@@ -356,12 +357,14 @@ class AttentionSeq2seq(ModelBase):
             ##############################
             # Output layer
             ##############################
-            self.W_d_0 = LinearND(decoder_num_units, bottleneck_dim,
-                                  dropout=dropout_decoder, use_cuda=self.use_cuda)
-            self.W_c_0 = LinearND(self.encoder_num_units, bottleneck_dim,
-                                  dropout=dropout_decoder, use_cuda=self.use_cuda)
-            self.fc_0 = LinearND(bottleneck_dim, self.num_classes,
-                                 use_cuda=self.use_cuda)
+            self.W_d_0 = LinearND(
+                decoder_num_units, bottleneck_dim,
+                dropout=dropout_decoder, use_cuda=self.use_cuda)
+            self.W_c_0 = LinearND(
+                self.encoder_num_units * num_heads, bottleneck_dim,
+                dropout=dropout_decoder, use_cuda=self.use_cuda)
+            self.fc_0 = LinearND(
+                bottleneck_dim, self.num_classes, use_cuda=self.use_cuda)
 
             ##############################
             # CTC
@@ -597,8 +600,6 @@ class AttentionSeq2seq(ModelBase):
             xs, x_lens, xs_sub, x_lens_sub = self.encoder(xs, x_lens)
         else:
             xs, x_lens = self.encoder(xs, x_lens)
-        # NOTE: xs: `[B, T_in, encoder_num_units * encoder_num_directions]`
-        # xs_sub: `[B, T_in, encoder_num_units * encoder_num_directions]`
 
         # Concatenate
         xs = F.pad_sequence(xs, padding=0)
@@ -633,7 +634,7 @@ class AttentionSeq2seq(ModelBase):
         Returns:
             logits (chainer.Variable, float): A tensor of size `[B, T_out, num_classes]`
             aw (chainer.Variable, float): A tensor of size
-                `[B, T_out, T_in]`
+                `[B, T_out, T_in, num_heads]`
         """
         batch_size, max_time = enc_out.shape[:2]
 
@@ -642,7 +643,8 @@ class AttentionSeq2seq(ModelBase):
         dec_out = self._create_var((batch_size, 1, getattr(
             self, 'decoder_num_units_' + str(task_idx))))
         aw_step = self._create_var(
-            (batch_size, max_time), fill_value=0, dtype=np.float32)
+            (batch_size, max_time, getattr(self, 'num_heads_' + str(task_idx))),
+            fill_value=0, dtype=np.float32)
 
         logits = []
         aw = []
@@ -685,7 +687,7 @@ class AttentionSeq2seq(ModelBase):
                 if t < ys.shape[1] - 1:
                     # Sample
                     y = F.argmax(
-                        logits[-1], axis=2) if is_sample else ys[:, t:t + 1]
+                        logits_step, axis=2) if is_sample else ys[:, t + 1:t + 2]
                     y = getattr(self, 'embed_' + str(task_idx))(y)
 
                     # Recurrency
@@ -721,7 +723,8 @@ class AttentionSeq2seq(ModelBase):
 
         # Concatenate in T_out-dimension
         logits = F.concat(logits, axis=1)
-        aw = F.concat(aw, axis=1)
+        aw = F.concat(aw, axis=-1).reshape(
+            batch_size, -1, max_time, getattr(self, 'num_heads_' + str(task_idx)))
         # NOTE; aw in the training stage may be used for computing the
         # coverage, so do not convert to numpy yet.
 
@@ -803,7 +806,7 @@ class AttentionSeq2seq(ModelBase):
             task_index (int, optional): the index of a task
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
-            aw (np.ndarray): A tensor of size `[B, T_out, T_in]`
+            aw (np.ndarray): A tensor of size `[B, T_out, T_in. num_heads]`
             perm_idx (np.ndarray): For interface with pytorch, not used
         """
         with chainer.no_backprop_mode(), chainer.using_config('train', False):
@@ -827,6 +830,9 @@ class AttentionSeq2seq(ModelBase):
             # NOTE: assume beam_width == 1
             best_hyps, aw = self._decode_infer_greedy(
                 enc_out, x_lens, max_decode_len, task_idx=task_index)
+
+        # TODO: fix this
+        aw = aw[:, :, :, 0]
 
         perm_idx = np.arange(0, len(xs), 1)
 
@@ -878,16 +884,18 @@ class AttentionSeq2seq(ModelBase):
             task_idx (int, optional): the index of a task
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
-            aw (np.ndarray): A tensor of size `[B, T_out, T_in]`
+            aw (np.ndarray): A tensor of size `[B, T_out, T_in, num_heads]`
         """
-        batch_size = enc_out.shape[0]
+        batch_size, max_time = enc_out.shape[:2]
 
         # Initialization
         dec_state = self._init_decoder_state(enc_out, task_idx)
         dec_out = self._create_var(
-            (batch_size, 1,  getattr(self, 'decoder_num_units_' + str(task_idx))), dtype=np.float32)
+            (batch_size, 1,  getattr(self, 'decoder_num_units_' + str(task_idx))),
+            dtype=np.float32)
         aw_step = self._create_var(
-            (batch_size, enc_out.shape[1]), fill_value=0, dtype=np.float32)
+            (batch_size, max_time, getattr(self, 'num_heads_' + str(task_idx))),
+            fill_value=0, dtype=np.float32)
 
         # Start from <SOS>
         sos = getattr(self, 'sos_' + str(task_idx))
@@ -984,7 +992,8 @@ class AttentionSeq2seq(ModelBase):
 
         # Concatenate in T_out dimension
         best_hyps = F.concat(best_hyps, axis=1)
-        aw = F.concat(aw, axis=1)
+        aw = F.concat(aw, axis=-1).reshape(
+            batch_size, -1, max_time, getattr(self, 'num_heads_' + str(task_idx)))
 
         # Convert to numpy
         best_hyps = self.var2np(best_hyps)
@@ -1010,7 +1019,7 @@ class AttentionSeq2seq(ModelBase):
             coverage_penalty (float):
             task_idx (int, optional): the index of a task
         Returns:
-            best_hyps (np.ndarray): A tensor of size `[B, T_out]`
+            best_hyps (np.ndarray): A tensor of size `[B]`
         """
         # Start from <SOS>
         sos = getattr(self, 'sos_' + str(task_idx))
@@ -1024,9 +1033,11 @@ class AttentionSeq2seq(ModelBase):
             dec_state = self._init_decoder_state(
                 enc_out[b:b + 1, :, :], task_idx)
             dec_out = self._create_var(
-                (1, 1, getattr(self, 'decoder_num_units_' + str(task_idx))), dtype=np.float32)
+                (1, 1, getattr(self, 'decoder_num_units_' + str(task_idx))),
+                dtype=np.float32)
             aw_step = self._create_var(
-                (1, frame_num), fill_value=0, dtype=np.float32)
+                (1, frame_num, getattr(self, 'num_heads_' + str(task_idx))),
+                fill_value=0, dtype=np.float32)
 
             complete = []
             beam = [{'hyp': [sos],

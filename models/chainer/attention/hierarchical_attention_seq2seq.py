@@ -43,6 +43,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  dropout_decoder,
                  dropout_embedding,
                  main_loss_weight,  # ***
+                 sub_loss_weight,  # ***
                  num_classes,
                  num_classes_sub,  # ***
                  parameter_init_distribution='uniform',
@@ -51,7 +52,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  init_forget_gate_bias_with_one=True,
                  subsample_list=[],
                  subsample_type='drop',
-                 bridge_layer=True,
+                 bridge_layer=False,
                  init_dec_state='first',
                  sharpening_factor=1,
                  logits_temperature=1,
@@ -78,7 +79,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  decoder_dense_residual=False,
                  decoding_order='attend_generate_update',
                  bottleneck_dim=256,
-                 bottleneck_dim_sub=256):
+                 bottleneck_dim_sub=256,
+                 num_heads=1,
+                 num_heads_sub=1):
 
         super(HierarchicalAttentionSeq2seq, self).__init__(
             input_size=input_size,
@@ -126,7 +129,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             decoder_residual=decoder_residual,
             decoder_dense_residual=decoder_dense_residual,
             decoding_order=decoding_order,
-            bottleneck_dim=bottleneck_dim)
+            bottleneck_dim=bottleneck_dim,
+            num_heads=num_heads)
         self.model_type = 'hierarchical_attention'
 
         # Setting for the encoder
@@ -142,9 +146,12 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         self.eos_1 = num_classes_sub
         # NOTE: <SOS> and <EOS> have the same index
 
+        # Setting for the attention in the sub task
+        self.num_heads_1 = num_heads_sub
+
         # Setting for MTL
         self.main_loss_weight = main_loss_weight
-        self.sub_loss_weight = 1 - main_loss_weight - ctc_loss_weight_sub
+        self.sub_loss_weight = sub_loss_weight
         self.ctc_loss_weight_sub = ctc_loss_weight_sub
         if scheduled_sampling_ramp_max_step == 0:
             raise ValueError('Set scheduled_sampling_ramp_max_step.')
@@ -212,7 +219,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                         residual=False,
                         dense_residual=False)
                     self.decoder_second_1 = RNNDecoder(
-                        input_size=self.encoder_num_units_sub,
+                        input_size=self.encoder_num_units_sub * num_heads_sub,
                         rnn_type=decoder_type,
                         num_units=decoder_num_units_sub,
                         num_layers=1,
@@ -222,7 +229,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                         dense_residual=False)
                 else:
                     self.decoder_1 = RNNDecoder(
-                        input_size=self.encoder_num_units_sub + embedding_dim_sub,
+                        input_size=self.encoder_num_units_sub * num_heads_sub + embedding_dim_sub,
                         rnn_type=decoder_type,
                         num_units=decoder_num_units_sub,
                         num_layers=decoder_num_layers_sub,
@@ -243,7 +250,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     sharpening_factor=sharpening_factor,
                     sigmoid_smoothing=sigmoid_smoothing,
                     out_channels=attention_conv_num_channels,
-                    kernel_size=attention_conv_width)
+                    kernel_size=attention_conv_width,
+                    num_heads=num_heads_sub)
 
                 ##############################
                 # Embedding (sub)
@@ -270,7 +278,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     decoder_num_units_sub, bottleneck_dim_sub,
                     dropout=dropout_decoder, use_cuda=self.use_cuda)
                 self.W_c_1 = LinearND(
-                    self.encoder_num_units_sub, bottleneck_dim_sub,
+                    self.encoder_num_units_sub * num_heads_sub, bottleneck_dim_sub,
                     dropout=dropout_decoder, use_cuda=self.use_cuda)
                 self.fc_1 = LinearND(
                     bottleneck_dim_sub, self.num_classes_sub,

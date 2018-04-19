@@ -25,12 +25,16 @@ class TestAttention(unittest.TestCase):
         print("Attention Working check.")
 
         # Multi-head attention
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', attention_type='content', num_heads=2)
+        # self.check(encoder_type='lstm', bidirectional=True,
+        #            decoder_type='lstm', attention_type='location', num_heads=2)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', attention_type='dot_product', num_heads=2)
 
         # Backward decoder
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', backward=True, init_dec_state='final')
-
-        raise ValueError
 
         # Decoding order
         # self.check(encoder_type='lstm', bidirectional=True,
@@ -114,7 +118,8 @@ class TestAttention(unittest.TestCase):
               subsample=False, projection=False, init_dec_state='first',
               ctc_loss_weight=0, conv=False, batch_norm=False,
               residual=False, dense_residual=False,
-              decoding_order='attend_generate_update', backward=False):
+              decoding_order='attend_generate_update', backward=False,
+              num_heads=1):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
@@ -132,6 +137,7 @@ class TestAttention(unittest.TestCase):
         print('  dense_residual: %s' % str(dense_residual))
         print('  decoding_order: %s' % decoding_order)
         print('  backward: %s' % str(backward))
+        print('  num_heads: %s' % str(num_heads))
         print('==================================================')
 
         if conv or encoder_type == 'cnn':
@@ -222,7 +228,7 @@ class TestAttention(unittest.TestCase):
             decoding_order=decoding_order,
             bottleneck_dim=256,
             backward=backward,
-            num_head=1)
+            num_heads=num_heads)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):

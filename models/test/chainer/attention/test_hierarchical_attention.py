@@ -24,6 +24,12 @@ class TestHierarchicalAttention(unittest.TestCase):
     def test(self):
         print("Hierarchical Attention Working check.")
 
+        # Multi-head attention
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', attention_type='content', num_heads=2)
+
+        # TODO: backward
+
         # Word attention + char CTC
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', ctc_loss_weight_sub=0.2)
@@ -57,7 +63,7 @@ class TestHierarchicalAttention(unittest.TestCase):
     def check(self, encoder_type, bidirectional, decoder_type,
               attention_type='location', subsample=False, projection=False,
               ctc_loss_weight_sub=0, conv=False, batch_norm=False,
-              residual=False, dense_residual=False):
+              residual=False, dense_residual=False, num_heads=1):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
@@ -127,6 +133,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             dropout_decoder=0.1,
             dropout_embedding=0.1,
             main_loss_weight=0.8,
+            sub_loss_weight=0.2 if ctc_loss_weight_sub == 0 else 0,
             num_classes=num_classes,
             num_classes_sub=num_classes_sub,
             parameter_init_distribution='uniform',
@@ -160,7 +167,9 @@ class TestHierarchicalAttention(unittest.TestCase):
             decoder_dense_residual=dense_residual,
             decoding_order='attend_generate_update',
             bottleneck_dim=256,
-            bottleneck_dim_sub=256)
+            bottleneck_dim_sub=256,
+            num_heads=num_heads,
+            num_heads_sub=num_heads)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):

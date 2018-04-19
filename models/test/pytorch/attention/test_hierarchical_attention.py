@@ -29,6 +29,12 @@ class TestHierarchicalAttention(unittest.TestCase):
     def test(self):
         print("Hierarchical Attention Working check.")
 
+        # Multi-head attention
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', num_heads=2)
+
+        # TODO: backward
+
         # Word attention + char CTC
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', ctc_loss_weight_sub=0.2)
@@ -61,9 +67,8 @@ class TestHierarchicalAttention(unittest.TestCase):
     @measure_time
     def check(self, encoder_type, bidirectional, decoder_type,
               attention_type='location', subsample=False, projection=False,
-              main_loss_weight=0.8, ctc_loss_weight_sub=0,
-              conv=False, batch_norm=False,
-              residual=False, dense_residual=False):
+              ctc_loss_weight_sub=0, conv=False, batch_norm=False,
+              residual=False, dense_residual=False, num_heads=1):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
@@ -72,12 +77,12 @@ class TestHierarchicalAttention(unittest.TestCase):
         print('  decoder_type: %s' % decoder_type)
         print('  attention_type: %s' % attention_type)
         print('  subsample: %s' % str(subsample))
-        print('  main_loss_weight: %s' % str(main_loss_weight))
         print('  ctc_loss_weight_sub: %s' % str(ctc_loss_weight_sub))
         print('  conv: %s' % str(conv))
         print('  batch_norm: %s' % str(batch_norm))
         print('  residual: %s' % str(residual))
         print('  dense_residual: %s' % str(dense_residual))
+        print('  num_heads: %s' % str(num_heads))
         print('==================================================')
 
         if conv or encoder_type == 'cnn':
@@ -132,7 +137,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             dropout_encoder=0.1,
             dropout_decoder=0.1,
             dropout_embedding=0.1,
-            main_loss_weight=main_loss_weight,
+            main_loss_weight=0.8,
             sub_loss_weight=0.2 if ctc_loss_weight_sub == 0 else 0,
             num_classes=num_classes,
             num_classes_sub=num_classes_sub,
@@ -167,7 +172,9 @@ class TestHierarchicalAttention(unittest.TestCase):
             decoder_dense_residual=dense_residual,
             decoding_order='attend_generate_update',
             bottleneck_dim=256,
-            bottleneck_dim_sub=256)
+            bottleneck_dim_sub=256,
+            num_heads=num_heads,
+            num_heads_sub=num_heads)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):

@@ -17,7 +17,6 @@ from chainer import cuda
 from models.chainer.linear import LinearND
 
 ATTENTION_TYPE = ['content', 'location', 'dot_product', 'rnn_attention']
-# TODO: multi-head attention
 
 
 class AttentionMechanism(chainer.Chain):
@@ -38,6 +37,7 @@ class AttentionMechanism(chainer.Chain):
             This is used for location-based attention.
         kernel_size (int, optional): the size of kernel.
             This must be the odd number.
+        num_heads (int, optional): the number of heads in the multi-head attention
     """
 
     def __init__(self,
@@ -49,7 +49,8 @@ class AttentionMechanism(chainer.Chain):
                  sharpening_factor=1,
                  sigmoid_smoothing=False,
                  out_channels=10,
-                 kernel_size=201):
+                 kernel_size=201,
+                 num_heads=1):
 
         super(AttentionMechanism, self).__init__()
 
@@ -58,26 +59,36 @@ class AttentionMechanism(chainer.Chain):
         self.use_cuda = use_cuda
         self.sharpening_factor = sharpening_factor
         self.sigmoid_smoothing = sigmoid_smoothing
+        self.num_heads = num_heads
 
         with self.init_scope():
-            if self.attention_type == 'content':
-                self.W_enc = LinearND(encoder_num_units, attention_dim,
-                                      bias=True, use_cuda=use_cuda)
-                self.W_dec = LinearND(decoder_num_units, attention_dim,
-                                      bias=False, use_cuda=use_cuda)
-                self.V = LinearND(attention_dim, 1,
-                                  bias=False, use_cuda=use_cuda)
+            for h in range(num_heads):
+                if self.attention_type == 'content':
+                    setattr(self, 'W_enc_head' + str(h),
+                            LinearND(encoder_num_units, attention_dim,
+                                     bias=True, use_cuda=use_cuda))
+                    setattr(self, 'W_dec_head' + str(h),
+                            LinearND(decoder_num_units, attention_dim,
+                                     bias=False, use_cuda=use_cuda))
+                    setattr(self, 'V_head' + str(h),
+                            LinearND(attention_dim, 1,
+                                     bias=False, use_cuda=use_cuda))
 
-            elif self.attention_type == 'location':
-                assert kernel_size % 2 == 1
+                elif self.attention_type == 'location':
+                    assert kernel_size % 2 == 1
 
-                self.W_enc = LinearND(encoder_num_units, attention_dim,
-                                      bias=True, use_cuda=use_cuda)
-                self.W_dec = LinearND(decoder_num_units, attention_dim,
-                                      bias=False, use_cuda=use_cuda)
-                self.W_conv = LinearND(out_channels, attention_dim,
-                                       bias=False, use_cuda=use_cuda)
-                self.conv = L.ConvolutionND(ndim=1,
+                    setattr(self, 'W_enc_head' + str(h),
+                            LinearND(encoder_num_units, attention_dim,
+                                     bias=True, use_cuda=use_cuda))
+                    setattr(self, 'W_dec_head' + str(h),
+                            LinearND(decoder_num_units, attention_dim,
+                                     bias=False, use_cuda=use_cuda))
+                    setattr(self, 'W_conv_head' + str(h),
+                            LinearND(out_channels, attention_dim,
+                                     bias=False, use_cuda=use_cuda))
+
+                    setattr(self, 'conv_head' + str(h),
+                            L.ConvolutionND(ndim=1,
                                             in_channels=1,
                                             out_channels=out_channels,
                                             ksize=kernel_size,
@@ -85,37 +96,41 @@ class AttentionMechanism(chainer.Chain):
                                             pad=kernel_size // 2,
                                             nobias=True,
                                             initialW=None,
-                                            initial_bias=None)
-                # self.conv = L.Convolution2D(in_channels=1,
-                #                             out_channels=out_channels,
-                #                             ksize=(1, kernel_size),
-                #                             stride=1,
-                #                             pad=(0, kernel_size // 2),
-                #                             nobias=True,
-                #                             initialW=None,
-                #                             initial_bias=None)
-                self.V = LinearND(attention_dim, 1,
-                                  bias=False, use_cuda=use_cuda)
+                                            initial_bias=None))
+                    # setattr(self, 'conv_head' + str(h),
+                    #         L.Convolution2D(in_channels=1,
+                    #                         out_channels=out_channels,
+                    #                         ksize=(1, kernel_size),
+                    #                         stride=1,
+                    #                         pad=(0, kernel_size // 2),
+                    #                         nobias=True,
+                    #                         initialW=None,
+                    #                         initial_bias=None))
+                    setattr(self, 'V_head' + str(h),
+                            LinearND(attention_dim, 1,
+                                     bias=False, use_cuda=use_cuda))
 
-            elif self.attention_type == 'dot_product':
-                self.W_keys = LinearND(encoder_num_units, attention_dim,
-                                       bias=False, use_cuda=use_cuda)
-                self.W_query = LinearND(decoder_num_units, attention_dim,
-                                        bias=False, use_cuda=use_cuda)
+                elif self.attention_type == 'dot_product':
+                    setattr(self, 'W_enc_head' + str(h),
+                            LinearND(encoder_num_units, attention_dim,
+                                     bias=False, use_cuda=use_cuda))
+                    setattr(self, 'W_dec_head' + str(h),
+                            LinearND(decoder_num_units, attention_dim,
+                                     bias=False, use_cuda=use_cuda))
 
-            elif self.attention_type == 'rnn_attention':
-                raise NotImplementedError
+                elif self.attention_type == 'rnn_attention':
+                    raise NotImplementedError
 
-            else:
-                raise TypeError(
-                    "attention_type should be one of [%s], you provided %s." %
-                    (", ".join(ATTENTION_TYPE), attention_type))
+                else:
+                    raise TypeError(
+                        "attention_type should be one of [%s], you provided %s." %
+                        (", ".join(ATTENTION_TYPE), attention_type))
 
             if use_cuda:
                 for c in self.children():
                     c.to_gpu()
 
-    def __call__(self, enc_out, x_lens, dec_out, att_weights_step):
+    def __call__(self, enc_out, x_lens, dec_out, aw_step):
         """Forward computation.
         Args:
             enc_out (chainer.Variable): A tensor of size
@@ -123,85 +138,104 @@ class AttentionMechanism(chainer.Chain):
             x_lens (chainer.Variable): A tensor of size `[B]`
             dec_out (chainer.Variable): A tensor of size
                 `[B, 1, decoder_num_units]`
-            att_weights_step (chainer.Variable): A tensor of size `[B, T_in]`
+            aw_step (chainer.Variable): A tensor of size `[B, T_in, num_heads]`
         Returns:
             context_vec (chainer.Variable): A tensor of size
-                `[B, 1, encoder_num_units]`
-            att_weights_step (chainer.Variable): A tensor of size `[B, T_in]`
+                `[B, 1, encoder_num_units * num_heads]`
+            aw_step (chainer.Variable): A tensor of size `[B, T_in, num_heads]`
         """
         batch_size, max_time = enc_out.shape[:2]
 
-        if self.attention_type == 'content':
-            ###################################################################
-            # energy = <v, tanh(W([h_de; h_en] + b))>
-            ###################################################################
-            energy = F.squeeze(self.V(F.tanh(
-                self.W_enc(enc_out) +
-                self.W_dec(F.broadcast_to(dec_out, (dec_out.shape[0], enc_out.shape[1], dec_out.shape[2]))))), axis=2)
+        energy = []
+        for h in range(self.num_heads):
+            if self.attention_type == 'content':
+                ###################################################################
+                # energy = <v, tanh(W([h_de; h_en] + b))>
+                ###################################################################
+                dec_out = F.broadcast_to(
+                    dec_out, (dec_out.shape[0], enc_out.shape[1], dec_out.shape[2]))
+                energy_head = F.squeeze(getattr(self, 'V_head' + str(h))(F.tanh(
+                    getattr(self, 'W_enc_head' + str(h))(enc_out) +
+                    getattr(self, 'W_dec_head' + str(h))(dec_out))), axis=2)
+                energy.append(energy_head)
 
-        elif self.attention_type == 'location':
-            ###################################################################
-            # f = F * α_{i-1}
-            # energy = <v, tanh(W([h_de; h_en] + W_conv(f) + b))>
-            ###################################################################
-            # For 1D conv
-            conv_feat = self.conv(
-                att_weights_step.reshape(batch_size, 1, max_time))
+            elif self.attention_type == 'location':
+                ###################################################################
+                # f = F * α_{i-1}
+                # energy = <v, tanh(W([h_de; h_en] + W_conv(f) + b))>
+                ###################################################################
+                # For 1D conv
+                # conv_feat = getattr(self, 'conv_head' + str(h))(
+                #     aw_step[:, :, h].reshape(batch_size, 1, max_time))
 
-            # For 2D conv
-            # conv_feat = F.squeeze(self.conv(
-            #     att_weights_step.reshape(batch_size, 1, 1, max_time)), axis=2)
-            # -> `[B, out_channels, T_in]`
-            conv_feat = conv_feat.transpose(0, 2, 1)
-            # -> `[B, T_in, out_channels]`
+                # For 2D conv
+                conv_feat = F.squeeze(getattr(self, 'conv_head' + str(h))(
+                    aw_step[:, :, h].reshape(batch_size, 1, 1, max_time)), axis=2)
+                # -> `[B, out_channels, T_in]`
+                conv_feat = conv_feat.transpose(0, 2, 1)
+                # -> `[B, T_in, out_channels]`
 
-            energy = F.squeeze(self.V(F.tanh(
-                self.W_enc(enc_out) +
-                self.W_dec(F.broadcast_to(dec_out, (dec_out.shape[0], enc_out.shape[1], dec_out.shape[2]))) +
-                self.W_conv(conv_feat))), axis=2)
+                dec_out = F.broadcast_to(
+                    dec_out, (dec_out.shape[0], enc_out.shape[1], dec_out.shape[2]))
+                energy_head = F.squeeze(getattr(self, 'V_head' + str(h))(F.tanh(
+                    getattr(self, 'W_enc_head' + str(h))(enc_out) +
+                    getattr(self, 'W_dec_head' + str(h))(dec_out) +
+                    getattr(self, 'W_conv_head' + str(h))(conv_feat))), axis=2)
+                energy.append(energy_head)
 
-        elif self.attention_type == 'dot_product':
-            ###################################################################
-            # energy = <W_keys(h_en), W_query(h_de)>
-            ###################################################################
-            keys = self.W_keys(enc_out)
-            query = self.W_query(dec_out).transpose(0, 2, 1)
-            energy = F.squeeze(F.matmul(keys, query), axis=2)
+            elif self.attention_type == 'dot_product':
+                ###################################################################
+                # energy = <W_enc(h_en), W_dec(h_de)>
+                ###################################################################
+                energy_head = F.squeeze(F.matmul(
+                    getattr(self, 'W_enc_head' + str(h))(enc_out),
+                    getattr(self, 'W_dec_head' + str(h))(dec_out).transpose(0, 2, 1)), axis=2)
+                energy.append(energy_head)
 
-        elif self.attention_type == 'rnn_attention':
-            raise NotImplementedError
+            elif self.attention_type == 'rnn_attention':
+                raise NotImplementedError
 
-        else:
-            raise NotImplementedError
+            else:
+                raise NotImplementedError
 
-        # Mask attention distribution
-        xp = cuda.get_array_module(enc_out)
-        energy_mask = xp.ones((batch_size, max_time), dtype=np.float32)
-        # energy_mask = xp.ones((batch_size, max_time), dtype=xp.float32)
-        for b in range(batch_size):
-            # TODO: fix bugs
-            # if x_lens[b].data < max_time:
-            if x_lens[b] < max_time:
-                energy_mask[b, x_lens[b]:] = 0
-        energy_mask = Variable(energy_mask)
-        energy *= energy_mask
-        # NOTE: energy: `[B, T_in]`
+        context_vec = []
+        aw_step = []
+        for h in range(self.num_heads):
+            # Mask attention distribution
+            xp = cuda.get_array_module(enc_out)
+            energy_mask = xp.ones((batch_size, max_time), dtype=np.float32)
+            # energy_mask = xp.ones((batch_size, max_time), dtype=xp.float32)
+            for b in range(batch_size):
+                # TODO: fix bugs
+                # if x_lens[b].data < max_time:
+                if x_lens[b] < max_time:
+                    energy_mask[b, x_lens[b]:] = 0
+            energy_mask = Variable(energy_mask)
+            energy[h] *= energy_mask
+            # NOTE: energy[h] : `[B, T_in]`
 
-        # Sharpening
-        energy = energy * self.sharpening_factor
+            # Sharpening
+            energy[h] = energy[h] * self.sharpening_factor
 
-        # Compute attention weights
-        if self.sigmoid_smoothing:
-            att_weights_step = F.sigmoid(energy)
-            # for b in range(batch_size):
-            #     att_weights_step.data[b] /= att_weights_step.data[b].sum()
-        else:
-            att_weights_step = F.softmax(energy, axis=1)
+            # Compute attention weights
+            if self.sigmoid_smoothing:
+                aw_step_head = F.sigmoid(energy[h])
+                # for b in range(batch_size):
+                #     aw_step_head.data[b] /= aw_step_head.data[b].sum()
+            else:
+                aw_step_head = F.softmax(energy[h], axis=1)
+            aw_step.append(aw_step_head)
 
-        # Compute context vector (weighted sum of encoder outputs)
-        batch_size, max_time = att_weights_step.shape
-        context_vec = F.sum(enc_out * F.broadcast_to(
-            F.expand_dims(att_weights_step, axis=2),
-            (batch_size, max_time, enc_out.shape[-1])), axis=1, keepdims=True)
+            # Compute context vector (weighted sum of encoder outputs)
+            batch_size, max_time = aw_step_head.shape
+            context_vec_head = F.sum(enc_out * F.broadcast_to(
+                F.expand_dims(aw_step_head, axis=2),
+                (batch_size, max_time, enc_out.shape[-1])), axis=1, keepdims=True)
+            context_vec.append(context_vec_head)
 
-        return context_vec, att_weights_step
+        # Concatenate all convtext vectors and attention distributions
+        context_vec = F.concat(context_vec, axis=-1)
+        aw_step = F.concat(aw_step, axis=-1).reshape(
+            batch_size, -1, self.num_heads)
+
+        return context_vec, aw_step

@@ -53,7 +53,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  init_forget_gate_bias_with_one=True,
                  subsample_list=[],
                  subsample_type='drop',
-                 bridge_layer=True,
+                 bridge_layer=False,
                  init_dec_state='first',
                  sharpening_factor=1,
                  logits_temperature=1,
@@ -80,7 +80,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  decoder_dense_residual=False,
                  decoding_order='attend_generate_update',
                  bottleneck_dim=256,
-                 bottleneck_dim_sub=256):
+                 bottleneck_dim_sub=256,  # ***
+                 num_heads=1,
+                 num_heads_sub=1):  # ***
 
         super(HierarchicalAttentionSeq2seq, self).__init__(
             input_size=input_size,
@@ -128,7 +130,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             decoder_residual=decoder_residual,
             decoder_dense_residual=decoder_dense_residual,
             decoding_order=decoding_order,
-            bottleneck_dim=bottleneck_dim)
+            bottleneck_dim=bottleneck_dim,
+            num_heads=num_heads)
         self.model_type = 'hierarchical_attention'
 
         # Setting for the encoder
@@ -143,6 +146,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         self.sos_1 = num_classes_sub
         self.eos_1 = num_classes_sub
         # NOTE: <SOS> and <EOS> have the same index
+
+        # Setting for the attention in the sub task
+        self.num_heads_1 = num_heads_sub
 
         # Setting for MTL
         self.main_loss_weight = main_loss_weight
@@ -210,16 +216,17 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     residual=False,
                     dense_residual=False)
                 self.decoder_second_1 = RNNDecoder(
-                    input_size=self.encoder_num_units_sub,
+                    input_size=self.encoder_num_units_sub * num_heads_sub,
                     rnn_type=decoder_type,
                     num_units=decoder_num_units_sub,
                     num_layers=1,
                     dropout=dropout_decoder,
                     residual=False,
                     dense_residual=False)
+                # NOTE; the conditional decoder only supports the 1 layer
             else:
                 self.decoder_1 = RNNDecoder(
-                    input_size=self.encoder_num_units_sub + embedding_dim_sub,
+                    input_size=self.encoder_num_units_sub * num_heads_sub + embedding_dim_sub,
                     rnn_type=decoder_type,
                     num_units=decoder_num_units_sub,
                     num_layers=decoder_num_layers_sub,
@@ -238,7 +245,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 sharpening_factor=sharpening_factor,
                 sigmoid_smoothing=sigmoid_smoothing,
                 out_channels=attention_conv_num_channels,
-                kernel_size=attention_conv_width)
+                kernel_size=attention_conv_width,
+                num_heads=num_heads_sub)
 
             ##############################
             # Embedding (sub)
@@ -259,10 +267,12 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             ##############################
             # Output layer (sub)
             ##############################
-            self.W_d_1 = LinearND(decoder_num_units_sub, bottleneck_dim_sub,
-                                  dropout=dropout_decoder)
-            self.W_c_1 = LinearND(self.encoder_num_units_sub, bottleneck_dim_sub,
-                                  dropout=dropout_decoder)
+            self.W_d_1 = LinearND(
+                decoder_num_units_sub, bottleneck_dim_sub,
+                dropout=dropout_decoder)
+            self.W_c_1 = LinearND(
+                self.encoder_num_units_sub * num_heads_sub, bottleneck_dim_sub,
+                dropout=dropout_decoder)
             self.fc_1 = LinearND(bottleneck_dim_sub, self.num_classes_sub)
 
         ##############################
