@@ -4,18 +4,10 @@ param:
   backend: pytorch
   # backend: chainer
 
-  # corpus
-  data_size: subset
-  label_type: word5
-
-  # features
-  num_stack: 1
-  num_skip: 1
-
   # topology
   encoder_num_layers: 6
   subsample_list:
-    - True
+    - False
     - True
     - True
     - False

@@ -8,14 +8,10 @@ param:
   data_size: fullset
   label_type: kanji_wb
 
-  # features
-  num_stack: 1
-  num_skip: 1
-
   # topology
   encoder_num_layers: 5
   subsample_list:
-    - True
+    - False
     - True
     - True
     - False
@@ -23,8 +19,9 @@ param:
   decoder_num_layers: 1
   embedding_dim: 64
   decoding_order: attend_generate_update
-  # decoding_order: conditional
   bottleneck_dim: 256
+  backward: False
+  num_heads: 1
 
   # regularization
   scheduled_sampling_ramp_max_step: 100000

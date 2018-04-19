@@ -36,7 +36,7 @@ param:
   encoder_num_proj: 0
   encoder_num_layers: 5
   subsample_list:
-    - True
+    - False
     - True
     - True
     - False
@@ -54,11 +54,13 @@ param:
   attention_conv_num_channels: 10
   attention_conv_width: 201
   decoding_order: attend_generate_update
-  # decoding_order: conditional
   bottleneck_dim: 256
+  backward: False
+  # backward: True
+  num_heads: 1
 
   # optimization
-  batch_size: 64
+  batch_size: 50
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 30
@@ -83,6 +85,7 @@ param:
   dropout_embedding: 0.2
   weight_decay: 1e-6
   init_dec_state: first
+  # init_dec_state: final
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False

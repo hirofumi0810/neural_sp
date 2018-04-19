@@ -21,3 +21,6 @@ param:
     - False
     - False
   fc_list: [256]
+
+  # initialization
+  char_init: False

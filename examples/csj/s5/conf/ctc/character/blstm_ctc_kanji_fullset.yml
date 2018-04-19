@@ -22,5 +22,8 @@ param:
     - False
   fc_list: [256]
 
+  # initialization
+  char_init: False
+  
   # annealing
   print_step: 400

@@ -6,7 +6,9 @@ param:
   # topology
   decoder_num_layers: 2
   decoding_order: attend_generate_update
-  # decoding_order: conditional
+  bottleneck_dim: 256
+  backward: False
+  num_heads: 1
 
   # initialization
   # char_init: False

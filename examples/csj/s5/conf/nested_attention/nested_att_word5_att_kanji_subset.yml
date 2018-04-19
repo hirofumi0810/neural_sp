@@ -45,6 +45,7 @@ param:
     - False
     - False
   subsample_type: drop
+  bridge_layer: True
   attention_type: location
   attention_dim: 128
   decoder_type: lstm
@@ -57,6 +58,11 @@ param:
   attention_conv_num_channels: 10
   attention_conv_width: 201
   decoding_order: attend_generate_update
+  # decoding_order: conditional
+  bottleneck_dim: 256
+  bottleneck_dim_sub: 256
+  num_heads: 1
+  num_heads_sub: 1
 
   # optimization
   batch_size: 64
@@ -104,6 +110,7 @@ param:
 
   # MTL
   main_loss_weight: 0.5
+  sub_loss_weight: 0.5
   ctc_loss_weight_sub: 0
 
   # W2C attention
@@ -111,11 +118,12 @@ param:
   # usage_dec_sub: all
   # usage_dec_sub: no_use
 
+  # regularization
   dec_out_sub_attend_temperature: 1
   dec_out_sub_sigmoid_smoothing: True
-
   attention_regularization: True
 
-  gate_dec_sub: no_gate
-  # gate_dec_sub: scalar
-  # gate_dec_sub: elementwise
+  # gating mechanism
+  # gating_mechanism: no_gate
+  gating_mechanism: scalar
+  # gating_mechanism: elementwise

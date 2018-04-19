@@ -6,20 +6,22 @@ param:
 
   # corpus
   data_size: fullset
-  label_type: word5
 
   # topology
   encoder_num_layers: 5
   subsample_list:
-    - True
+    - False
     - True
     - True
     - False
     - False
-  decoder_num_layers: 1
   decoding_order: attend_generate_update
-  # decoding_order: conditional
   bottleneck_dim: 256
+  backward: False
+  num_heads: 1
+
+  # optimization
+  batch_size: 40
 
   # initialization
   # char_init: False

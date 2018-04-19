@@ -6,21 +6,19 @@ param:
 
   # corpus
   data_size: fullset
-  label_type: word5
-
-  # features
-  num_stack: 1
-  num_skip: 1
 
   # topology
   encoder_num_layers: 5
   subsample_list:
-    - True
+    - False
     - True
     - True
     - False
     - False
   fc_list: [256]
+
+  # optimization
+  batch_size: 40
 
   # initialization
   # char_init: False

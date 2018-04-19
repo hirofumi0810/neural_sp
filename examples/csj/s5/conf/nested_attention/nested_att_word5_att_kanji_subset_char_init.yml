@@ -19,11 +19,12 @@ param:
     # usage_dec_sub: all
     # usage_dec_sub: no_use
 
+    # regularization
     dec_out_sub_attend_temperature: 1
     dec_out_sub_sigmoid_smoothing: True
-
     attention_regularization: True
 
-    gate_dec_sub: no_gate
-    # gate_dec_sub: scalar
-    # gate_dec_sub: elementwise
+    # gating mechanism
+    gating_mechanism: no_gate
+    # gating_mechanism: scalar
+    # gating_mechanism: elementwise

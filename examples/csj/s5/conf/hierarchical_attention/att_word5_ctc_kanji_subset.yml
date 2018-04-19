@@ -3,14 +3,11 @@ param:
   # framework
   backend: pytorch
 
-  # topology
-  decoding_order: attend_generate_update
-  # decoding_order: conditional
-
   # initialization
   # char_init: False
   char_init: /n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/subset/blstm320H5L_drop4_fc_256_adam_lr1e-3_dropen0.2_input80
 
   # MTL
   main_loss_weight: 0.8
+  sub_loss_weight: 0
   ctc_loss_weight_sub: 0.2

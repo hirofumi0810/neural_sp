@@ -47,7 +47,7 @@ param:
   fc_list: [256]
 
   # optimization
-  batch_size: 64
+  batch_size: 50
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 30
@@ -60,7 +60,7 @@ param:
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
   # char_init: False
-  char_init: /n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/subset/blstm320H5L_drop4_adam_lr1e-3_dropen0.2_input80
+  char_init: /n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/subset/blstm320H5L_drop4_fc_256_adam_lr1e-3_dropen0.2_input80
 
   # regularization
   clip_grad_norm: 5.0
@@ -82,5 +82,11 @@ param:
   print_step: 400
 
   # MTL
-  main_loss_weight: 0.5
+  # main_loss_weight: 0.5
+  # sub_loss_weight: 0.5
+
   # main_loss_weight: 0.8
+  # sub_loss_weight: 0.2
+
+  main_loss_weight: 1.0
+  sub_loss_weight: 0.2
