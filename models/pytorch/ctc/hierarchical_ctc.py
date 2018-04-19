@@ -27,7 +27,8 @@ class HierarchicalCTC(CTC):
         fc_list (list):
         dropout_input (float): the probability to drop nodes in input-hidden connection
         dropout_encoder (float): the probability to drop nodes in hidden-hidden connection
-        main_loss_weight (float): A weight parameter for the main CTC loss
+        main_loss_weight (float): A weight parameter for the CTC loss in the main task
+        sub_loss_weight (float): A weight parameter for the CTC loss in the sub task
         num_classes (int): the number of classes of target labels of the main task
             (excluding the blank class)
         num_classes_sub (int): the number of classes of target labels of the sub task
@@ -72,6 +73,7 @@ class HierarchicalCTC(CTC):
                  dropout_input,
                  dropout_encoder,
                  main_loss_weight,  # ***
+                 sub_loss_weight,  # ***
                  num_classes,
                  num_classes_sub,  # ***
                  parameter_init_distribution='uniform',
@@ -122,6 +124,7 @@ class HierarchicalCTC(CTC):
 
         # Setting for MTL
         self.main_loss_weight = main_loss_weight
+        self.sub_loss_weight = sub_loss_weight
 
         # Load the encoder
         # NOTE: overide encoder
@@ -273,7 +276,7 @@ class HierarchicalCTC(CTC):
 
         # Compute total loss
         loss_main = loss_main * self.main_loss_weight
-        loss_sub = loss_sub * (1 - self.main_loss_weight)
+        loss_sub = loss_sub * self.sub_loss_weight
         loss = loss_main + loss_sub
 
         if is_eval:

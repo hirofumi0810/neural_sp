@@ -118,6 +118,7 @@ class TestCTC(unittest.TestCase):
             dropout_input=0.1,
             dropout_encoder=0.1,
             main_loss_weight=0.8,
+            sub_loss_weight=0.2,
             num_classes=num_classes,
             num_classes_sub=num_classes_sub,
             parameter_init_distribution='uniform',
