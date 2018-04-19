@@ -112,9 +112,6 @@ class TestHierarchicalAttention(unittest.TestCase):
             num_stack=num_stack,
             splice=splice)
 
-        num_classes = 11
-        num_classes_sub = 27
-
         # Load model
         model = HierarchicalAttentionSeq2seq(
             input_size=xs.shape[-1] // splice // num_stack,  # 120
@@ -139,8 +136,8 @@ class TestHierarchicalAttention(unittest.TestCase):
             dropout_embedding=0.1,
             main_loss_weight=0.8,
             sub_loss_weight=0.2 if ctc_loss_weight_sub == 0 else 0,
-            num_classes=num_classes,
-            num_classes_sub=num_classes_sub,
+            num_classes=11,
+            num_classes_sub=27,
             parameter_init_distribution='uniform',
             parameter_init=0.1,
             recurrent_weight_orthogonal=False,

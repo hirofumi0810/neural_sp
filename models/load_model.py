@@ -473,7 +473,9 @@ def load(model_type, params, backend):
             decoder_dense_residual=params['decoder_dense_residual'],
             decoding_order=params['decoding_order'],
             bottleneck_dim=params['bottleneck_dim'],
-            bottleneck_dim_sub=params['bottleneck_dim_sub'])
+            bottleneck_dim_sub=params['bottleneck_dim_sub'],
+            num_heads=params['num_heads'],
+            num_heads_sub=params['num_heads_sub'])
 
         model.name = model_name
         if params['encoder_type'] not in ['cnn', 'resnet']:
@@ -536,6 +538,8 @@ def load(model_type, params, backend):
             model.name += '_conditional'
         if isdir(params['char_init']):
             model.name += '_charinit'
+        if int(params['num_heads']) > 1:
+            model.name += '_head' + str(params['num_heads'])
 
     elif params['model_type'] == 'nested_attention':
         if backend == 'pytorch':
@@ -602,6 +606,9 @@ def load(model_type, params, backend):
             decoding_order=params['decoding_order'],
             bottleneck_dim=params['bottleneck_dim'],
             bottleneck_dim_sub=params['bottleneck_dim_sub'],
+            num_heads=params['num_heads'],
+            num_heads_sub=params['num_heads_sub'],
+            num_heads_dec_out_sub=params['num_heads_dec_out_sub'],
             usage_dec_sub=params['usage_dec_sub'],
             gating_mechanism=params['gating_mechanism'],
             attention_regularization=params['attention_regularization'],
@@ -669,6 +676,8 @@ def load(model_type, params, backend):
             model.name += '_conditional'
         if isdir(params['char_init']):
             model.name += '_charinit'
+        if int(params['num_heads']) > 1:
+            model.name += '_head' + str(params['num_heads'])
 
         model.name += '_' + params['usage_dec_sub']
         if params['dec_out_sub_attend_temperature'] != 1:

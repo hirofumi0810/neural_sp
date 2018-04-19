@@ -51,7 +51,7 @@ class TestCharseqAttention(unittest.TestCase):
 
     @measure_time
     def check(self, usage_dec_sub='update_decoder', gating_mechanism='no_gate',
-              attention_regularization=True,
+              attention_regularization=False,
               main_loss_weight=0.5, ctc_loss_weight_sub=0,
               dec_out_sub_attend_temperature=1,
               dec_out_sub_sigmoid_smoothing=False):
@@ -99,7 +99,8 @@ class TestCharseqAttention(unittest.TestCase):
             dropout_encoder=0.1,
             dropout_decoder=0.1,
             dropout_embedding=0.1,
-            main_loss_weight=main_loss_weight,
+            main_loss_weight=0.8,
+            sub_loss_weight=0.2 if ctc_loss_weight_sub == 0 else 0,
             num_classes=11,
             num_classes_sub=27,
             parameter_init_distribution='uniform',
@@ -131,6 +132,11 @@ class TestCharseqAttention(unittest.TestCase):
             decoder_residual=False,
             decoder_dense_residual=False,
             decoding_order='attend_generate_update',
+            bottleneck_dim=256,
+            bottleneck_dim_sub=256,
+            num_heads=1,
+            num_heads_sub=1,
+            num_heads_dec_out_sub=1,
             usage_dec_sub=usage_dec_sub,
             gating_mechanism=gating_mechanism,
             attention_regularization=attention_regularization,

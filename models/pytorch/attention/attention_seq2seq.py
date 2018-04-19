@@ -641,7 +641,7 @@ class AttentionSeq2seq(ModelBase):
         # Initialize decoder state, decoder output, attention_weights
         dec_state, dec_out = self._init_decoder_state(enc_out, task_idx)
         aw_step = self._create_var(
-            (batch_size, enc_out.size(1), getattr(self, 'num_heads_' + str(task_idx))), fill_value=0)
+            (batch_size, max_time, getattr(self, 'num_heads_' + str(task_idx))), fill_value=0)
 
         logits = []
         aw = []
