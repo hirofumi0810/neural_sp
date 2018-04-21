@@ -13,7 +13,6 @@ import copy
 
 import torch
 import torch.nn.functional as F
-from torch.autograd import Variable
 
 from models.pytorch.base import ModelBase
 from models.pytorch.linear import LinearND, Embedding, Embedding_LS
@@ -183,7 +182,10 @@ class AttentionSeq2seq(ModelBase):
         if init_dec_state not in ['zero', 'mean', 'final', 'first']:
             raise ValueError(
                 'init_dec_state must be "zero" or "mean" or "final" or "first".')
-        self.init_dec_state = init_dec_state
+        if init_dec_state == 'first' and backward:
+            self.init_dec_state_0 = 'final'
+        else:
+            self.init_dec_state_0 = init_dec_state
         self.decoder_type = decoder_type
         self.decoder_num_units_0 = decoder_num_units
         self.decoder_num_layers_0 = decoder_num_layers
@@ -193,7 +195,7 @@ class AttentionSeq2seq(ModelBase):
         self.eos_0 = num_classes
         # NOTE: <SOS> and <EOS> have the same index
         self.decoding_order = decoding_order
-        self.backward = backward
+        self.backward_0 = backward
 
         # Setting for the attention
         self.sharpening_factor = sharpening_factor
@@ -256,12 +258,9 @@ class AttentionSeq2seq(ModelBase):
                 dropout_hidden=dropout_encoder,
                 activation=activation,
                 batch_norm=batch_norm)
-            self.init_dec_state = 'zero'
+            self.init_dec_state_0 = 'zero'
         else:
             raise NotImplementedError
-
-        if encoder_type != decoder_type:
-            self.init_dec_state = 'zero'
 
         ##################################################
         # Bridge layer between the encoder and decoder
@@ -281,7 +280,13 @@ class AttentionSeq2seq(ModelBase):
         else:
             self.is_bridge = False
 
-        if self.init_dec_state != 'zero':
+        ##################################################
+        # Initialization of the decoder
+        ##################################################
+        if encoder_type != decoder_type:
+            self.init_dec_state_0 = 'zero'
+
+        if self.init_dec_state_0 != 'zero':
             self.W_dec_init_0 = LinearND(
                 self.encoder_num_units, decoder_num_units)
 
@@ -419,7 +424,8 @@ class AttentionSeq2seq(ModelBase):
             if self.weight_noise_injection:
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
-        if self.backward:
+        # Reverse the order
+        if self.backward_0:
             ys_tmp = copy.deepcopy(ys)
             for b in range(len(xs)):
                 ys_tmp[b, :y_lens[b]] = ys[b, :y_lens[b]][::-1]
@@ -726,25 +732,6 @@ class AttentionSeq2seq(ModelBase):
 
         return logits, aw
 
-    def _create_var(self, size, fill_value=0, dtype='float', volatile=False):
-        """Initialize a variable with zero.
-        Args:
-            size (tuple):
-            fill_value (int or float, optional):
-            dtype (string): long or float
-            volatile (bool, optional):
-        Returns:
-            var (torch.autograd.Variable, float):
-        """
-        var = Variable(torch.zeros(size).fill_(fill_value))
-        if dtype == 'long':
-            var = var.long()
-        if volatile:
-            var.volatile = True
-        if self.use_cuda:
-            var = var.cuda()
-        return var
-
     def _init_decoder_state(self, enc_out, task_idx=0):
         """Initialize decoder state.
         Args:
@@ -760,7 +747,7 @@ class AttentionSeq2seq(ModelBase):
             self, 'decoder_num_units_' + str(task_idx))),
             fill_value=0, volatile=not self.training)
 
-        if self.init_dec_state == 'zero' or self.encoder_type != self.decoder_type:
+        if getattr(self, 'init_dec_state_' + str(task_idx)) == 'zero' or self.encoder_type != self.decoder_type:
             if self.decoder_type == 'lstm':
                 hx_list = [zero_state] * \
                     getattr(self, 'decoder_num_layers_' + str(task_idx))
@@ -774,15 +761,16 @@ class AttentionSeq2seq(ModelBase):
                 self, 'decoder_num_units_' + str(task_idx))),
                 fill_value=0, volatile=not self.training)
         else:
-            if self.init_dec_state == 'mean':
+            if getattr(self, 'init_dec_state_' + str(task_idx)) == 'mean':
                 # Initialize with mean of all encoder outputs
                 h_0 = enc_out.mean(dim=1, keepdim=False)
-            elif self.init_dec_state == 'final':
+            elif getattr(self, 'init_dec_state_' + str(task_idx)) == 'final':
                 # Initialize with the final encoder output
                 h_0 = enc_out[:, -1, :]
-            elif self.init_dec_state == 'first':
+            elif getattr(self, 'init_dec_state_' + str(task_idx)) == 'first':
                 # Initialize with the first encoder output
                 h_0 = enc_out[:, 0, :]
+            # NOTE: h_0: `[B, encoder_num_units]`
 
             # Path through the linear layer
             h_0 = F.tanh(getattr(self, 'W_dec_init_' + str(task_idx))(h_0))
@@ -995,7 +983,7 @@ class AttentionSeq2seq(ModelBase):
             aw.append(aw_step)
 
             # Count lengths of hypotheses
-            if self.backward:
+            if getattr(self, 'backward_' + str(task_idx)):
                 for b in range(batch_size):
                     if not eos_flag[b]:
                         if y.data.cpu().numpy()[b] == eos:
@@ -1015,7 +1003,8 @@ class AttentionSeq2seq(ModelBase):
         best_hyps = self.var2np(best_hyps)
         aw = self.var2np(aw)
 
-        if self.backward:
+        # Reverse the order
+        if getattr(self, 'backward_' + str(task_idx)):
             for b in range(batch_size):
                 best_hyps[b, :y_lens[b]] = best_hyps[b, :y_lens[b]][::-1]
 
@@ -1178,10 +1167,11 @@ class AttentionSeq2seq(ModelBase):
             best_hyps.append(np.array(complete[0]['hyp'][1:]))
             # NOTE: Exclude <SOS>
 
-        if self.backward:
+        # Reverse the order
+        if getattr(self, 'backward_' + str(task_idx)):
             raise NotImplementedError
-        #     for b in range(batch_size):
-        #         best_hyps[b, :y_lens[b]] = best_hyps[b, :y_lens[b]][::-1]
+            # for b in range(batch_size):
+            #     best_hyps[b, :y_lens[b]] = best_hyps[b, :y_lens[b]][::-1]
 
         return np.array(best_hyps)
 
@@ -1235,10 +1225,6 @@ class AttentionSeq2seq(ModelBase):
             perm_idx = np.arange(0, len(xs), 1)
         else:
             perm_idx = self.var2np(perm_idx)
-
-        if self.backward:
-            raise NotImplementedError
-            best_hyps = best_hyps[:, ::-1]
 
         return best_hyps, perm_idx
 

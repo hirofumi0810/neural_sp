@@ -9,6 +9,7 @@ from __future__ import print_function
 
 import random
 import numpy as np
+import copy
 
 import torch
 import torch.nn.functional as F
@@ -86,12 +87,13 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                  decoding_order='attend_generate_update',
                  bottleneck_dim=256,
                  bottleneck_dim_sub=256,  # ***
+                 backward_sub=False,  # ***
                  num_heads=1,
                  num_heads_sub=1,  # ***
                  num_heads_dec_out_sub=1,  # ***
                  usage_dec_sub='update_decoder',  # or all or no_use
                  gating_mechanism='no_gate',  # or scalar or elementwise
-                 attention_regularization=False,  # ***
+                 attention_regularization_weight=0,  # ***
                  dec_out_sub_attend_temperature=1,
                  dec_out_sub_sigmoid_smoothing=False):
 
@@ -149,13 +151,18 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         if encoder_bidirectional:
             self.encoder_num_units_sub *= 2
 
-        # Setting for the decoder
+        # Setting for the decoder in the sub task
+        if init_dec_state == 'first' and backward_sub:
+            self.init_dec_state_1 = 'final'
+        else:
+            self.init_dec_state_1 = init_dec_state
         self.decoder_num_units_1 = decoder_num_units_sub
         self.decoder_num_layers_1 = decoder_num_layers_sub
         self.num_classes_sub = num_classes_sub + 2  # Add <EOS> class
         self.sos_1 = num_classes_sub
         self.eos_1 = num_classes_sub
         # NOTE: <SOS> and <EOS> have the same index
+        self.backward_1 = backward_sub
 
         # Setting for the attention in the sub task
         self.num_heads_1 = num_heads_sub
@@ -173,7 +180,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         assert gating_mechanism in ['no_gate', 'scalar', 'elementwise']
         self.usage_dec_sub = usage_dec_sub
         self.gating_mechanism = gating_mechanism
-        self.attention_regularization = attention_regularization
+        self.attention_regularization_weight = attention_regularization_weight
         self.num_heads_dec_out_sub = num_heads_dec_out_sub
 
         #########################
@@ -209,6 +216,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         else:
             raise NotImplementedError
 
+        ##################################################
+        # Bridge layer between the encoder and decoder
+        ##################################################
         if bridge_layer:
             self.bridge_1 = LinearND(
                 self.encoder_num_units_sub, decoder_num_units_sub,
@@ -218,7 +228,13 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         else:
             self.is_bridge_sub = False
 
-        if self.init_dec_state != 'zero':
+        ##################################################
+        # Initialization of the decoder
+        ##################################################
+        if encoder_type != decoder_type:
+            self.init_dec_state_1 = 'zero'
+
+        if self.init_dec_state_1 != 'zero':
             self.W_dec_init_1 = LinearND(
                 self.encoder_num_units_sub, decoder_num_units_sub)
 
@@ -430,6 +446,14 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             if self.weight_noise_injection:
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
+        # Reverse the order
+        if self.backward_1:
+            ys_sub_tmp = copy.deepcopy(ys_sub)
+            for b in range(len(xs)):
+                ys_sub_tmp[b, :y_lens_sub[b]] = ys_sub[b, :y_lens_sub[b]][::-1]
+        else:
+            ys_sub_tmp = ys_sub
+
         # NOTE: ys and ys_sub are padded with -1 here
         # ys_in and ys_in_sub areb padded with <EOS> in order to convert to
         # one-hot vector, and added <SOS> before the first token
@@ -449,12 +473,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 ys[b, :y_lens[b]])
             ys_in_sub.data[b, 0] = self.sos_1
             ys_in_sub.data[b, 1:y_lens_sub[b] + 1] = torch.from_numpy(
-                ys_sub[b, :y_lens_sub[b]])
+                ys_sub_tmp[b, :y_lens_sub[b]])
 
             ys_out.data[b, :y_lens[b]] = torch.from_numpy(ys[b, :y_lens[b]])
             ys_out.data[b, y_lens[b]] = self.eos_0
             ys_out_sub.data[b, :y_lens_sub[b]] = torch.from_numpy(
-                ys_sub[b, :y_lens_sub[b]])
+                ys_sub_tmp[b, :y_lens_sub[b]])
             ys_out_sub.data[b, y_lens_sub[b]] = self.eos_1
 
         if self.use_cuda:
@@ -542,11 +566,11 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             x_lens_sub (torch.autograd.Variable, int): A tensor of size `[B]`
             y_lens_sub (torch.autograd.Variable, int): A tensor of size `[B]`
         Returns:
-            loss (torch.autograd.Variable, float): A tensor of size `[1]`
+            loss_main (torch.autograd.Variable, float): A tensor of size `[1]`
             loss_sub (torch.autograd.Variable, float): A tensor of size `[1]`
         """
         # Teacher-forcing
-        logits, aw, logits_sub, aw_sub, aw_dec_out_sub = self._decode_train(
+        logits_main, aw, logits_sub, aw_sub, aw_dec_out_sub = self._decode_train(
             enc_out, x_lens, ys_in,
             enc_out_sub, x_lens_sub, ys_in_sub, y_lens_sub)
 
@@ -556,31 +580,37 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         if self.main_loss_weight > 0:
             # Output smoothing
             if self.logits_temperature != 1:
-                logits /= self.logits_temperature
+                logits_main /= self.logits_temperature
 
             # Compute XE sequence loss in the main task
-            loss = F.cross_entropy(
-                input=logits.view((-1, logits.size(2))),
+            loss_main = F.cross_entropy(
+                input=logits_main.view((-1, logits_main.size(2))),
                 target=ys_out.view(-1),
                 ignore_index=-1, size_average=False) / len(enc_out)
 
             # Label smoothing (with uniform distribution)
             if self.label_smoothing_prob > 0:
-                loss_ls = cross_entropy_label_smoothing(
-                    logits,
+                loss_ls_main = cross_entropy_label_smoothing(
+                    logits_main,
                     y_lens=y_lens + 1,  # Add <EOS>
                     label_smoothing_prob=self.label_smoothing_prob,
                     distribution='uniform',
                     size_average=True)
-                loss = loss * (1 - self.label_smoothing_prob) + loss_ls
+                loss_main = loss_main * \
+                    (1 - self.label_smoothing_prob) + loss_ls_main
 
             # Attention regularization
-            if self.attention_regularization:
-                loss += 1.0 * F.mse_loss(torch.bmm(aw_dec_out_sub, aw_sub),
-                                         aw.detach(),
-                                         size_average=True, reduce=True)
+            if self.attention_regularization_weight > 0:
+                if self.backward_1:
+                    raise NotImplementedError
+
+                loss_main += F.mse_loss(
+                    torch.bmm(aw_dec_out_sub, aw_sub),
+                    aw.detach(),
+                    # aw.clone(),
+                    size_average=True, reduce=True) * self.attention_regularization_weight
         else:
-            loss = self._create_var((1,), fill_value=0)
+            loss_main = self._create_var((1,), fill_value=0)
 
         ##################################################
         # Sub task
@@ -609,7 +639,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         if self.coverage_weight != 0:
             raise NotImplementedError
 
-        return loss, loss_sub
+        return loss_main, loss_sub
 
     def _decode_train(self, enc_out, x_lens, ys,
                       enc_out_sub, x_lens_sub, ys_sub, y_lens_sub):
@@ -654,6 +684,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         aw_sub = []
         for t in range(ys_sub.size(1)):
 
+            # for scheduled sampling
             is_sample = self.sample_prob > 0 and t > 0 and self._step > 0 and random.random(
             ) < self._sample_prob
 
@@ -870,18 +901,20 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         # NOTE; aw in the training stage may be used for computing the
         # coverage, so do not convert to numpy yet.
 
+        # TODO: fix these
+        aw = aw.squeeze(3)
+        aw_sub = aw_sub.squeeze(3)
+        aw_dec_out_sub = aw_dec_out_sub.squeeze(3)
+
         return logits, aw, logits_sub, aw_sub, aw_dec_out_sub
 
-    def attention_weights(self, xs, x_lens, max_decode_len, max_decode_len_sub,
-                          beam_width=1):
+    def attention_weights(self, xs, x_lens, max_decode_len, max_decode_len_sub):
         """Get attention weights for visualization.
         Args:
             xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
             x_lens (np.ndarray): A tensor of size `[B]`
             max_decode_len (int): the length of output sequences
                 to stop prediction when EOS token have not been emitted
-
-            is_sub_task (bool, optional):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
             best_hyps_sub (np.ndarray): A tensor of size `[B, T_out_sub]`
@@ -903,14 +936,11 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         enc_out, x_lens, enc_out_sub, x_lens_sub, perm_idx = self._encode(
             xs, x_lens, is_multi_task=True)
 
-        if beam_width == 1:
-            best_hyps, aw, best_hyps_sub, aw_sub, aw_dec_out_sub, gate_weights = self._decode_infer_greedy_joint(
-                enc_out, x_lens, enc_out_sub, x_lens_sub,
-                beam_width=1,
-                max_decode_len=max_decode_len,
-                max_decode_len_sub=max_decode_len_sub)
-        else:
-            raise NotImplementedError
+        best_hyps, aw, best_hyps_sub, aw_sub, aw_dec_out_sub, gate_weights = self._decode_infer_greedy_joint(
+            enc_out, x_lens, enc_out_sub, x_lens_sub,
+            beam_width=1,
+            max_decode_len=max_decode_len,
+            max_decode_len_sub=max_decode_len_sub)
 
         # Permutate indices to the original order
         if perm_idx is None:
@@ -920,8 +950,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         return best_hyps, best_hyps_sub, aw, aw_sub, aw_dec_out_sub, gate_weights
 
-    def decode(self, xs, x_lens, beam_width, max_decode_len,
-               max_decode_len_sub=None, is_sub_task=False,
+    def decode(self, xs, x_lens, beam_width, max_decode_len, max_decode_len_sub=None,
+               length_penalty=0, coverage_penalty=0, task_index=0,
                resolving_unk=False, teacher_forcing=False):
         """Decoding in the inference stage.
         Args:
@@ -931,7 +961,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             max_decode_len (int): the length of output sequences
                 to stop prediction when EOS token have not been emitted
             max_decode_len_sub (int, optional):
-            is_sub_task (bool, optional):
+            length_penalty (float, optional):
+            coverage_penalty (float, optional):
+            task_index (int, optional): the index of a task
             resolving_unk (bool, optional):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
@@ -946,17 +978,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         x_lens = self.np2var(x_lens, dtype='int')
 
         # Encode acoustic features
-        if is_sub_task:
-            _, _, enc_out, x_lens, perm_idx = self._encode(
-                xs, x_lens, is_multi_task=True)
-
-            if beam_width == 1:
-                best_hyps, _ = self._decode_infer_greedy(
-                    enc_out, x_lens, max_decode_len, is_sub_task=True)
-            else:
-                best_hyps, _ = self._decode_infer_beam(
-                    enc_out, x_lens, max_decode_len, is_sub_task=True)
-        else:
+        if task_index == 0:
             enc_out, x_lens, enc_out_sub, x_lens_sub, perm_idx = self._encode(
                 xs, x_lens, is_multi_task=True)
 
@@ -969,6 +991,18 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     max_decode_len_sub=max_decode_len_sub)
             else:
                 raise NotImplementedError
+        elif task_index == 1:
+            _, _, enc_out, x_lens, perm_idx = self._encode(
+                xs, x_lens, is_multi_task=True)
+
+            if beam_width == 1:
+                best_hyps, _ = self._decode_infer_greedy(
+                    enc_out, x_lens, max_decode_len, task_idx=1)
+            else:
+                best_hyps, _ = self._decode_infer_beam(
+                    enc_out, x_lens, max_decode_len, task_idx=1)
+        else:
+            raise ValueError
 
         # Permutate indices to the original order
         if perm_idx is None:
@@ -976,13 +1010,13 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         else:
             perm_idx = self.var2np(perm_idx)
 
-        if is_sub_task:
-            return best_hyps, perm_idx
-        else:
+        if task_index == 0:
             if resolving_unk:
                 return best_hyps, aw, best_hyps_sub, aw_sub, perm_idx
             else:
                 return best_hyps, best_hyps_sub, perm_idx
+        elif task_index == 1:
+            return best_hyps, perm_idx
 
     def _decode_infer_greedy_joint(self, enc_out, x_lens,
                                    enc_out_sub, x_lens_sub, beam_width,
@@ -1270,6 +1304,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         best_hyps_sub = self.var2np(best_hyps_sub)
         aw_sub = self.var2np(aw_sub)
         aw_dec_out_sub = self.var2np(aw_dec_out_sub)
+
+        # Reverse the order
+        if self.backward_1:
+            for b in range(batch_size):
+                best_hyps_sub[b, :y_lens_sub[b]
+                              ] = best_hyps_sub[b, :y_lens_sub[b]][::-1]
 
         if self.gating_mechanism != 'no_gate':
             gate_weights = torch.stack(gate_weights, dim=1).squeeze(2)

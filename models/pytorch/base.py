@@ -336,6 +336,25 @@ class ModelBase(nn.Module):
         return (checkpoint['epoch'] + 1, checkpoint['step'] + 1,
                 checkpoint['lr'], checkpoint['metric_dev_best'])
 
+    def _create_var(self, size, fill_value=0, dtype='float', volatile=False):
+        """Initialize a variable with zero.
+        Args:
+            size (tuple):
+            fill_value (int or float, optional):
+            dtype (string): long or float
+            volatile (bool, optional):
+        Returns:
+            var (torch.autograd.Variable, float):
+        """
+        var = torch.autograd.Variable(torch.zeros(size).fill_(fill_value))
+        if dtype == 'long':
+            var = var.long()
+        if volatile:
+            var.volatile = True
+        if self.use_cuda:
+            var = var.cuda()
+        return var
+
     def np2var(self, array, dtype=None, cpu=False):
         """Convert form np.ndarray to Variable.
         Args:

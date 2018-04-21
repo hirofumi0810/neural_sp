@@ -29,11 +29,13 @@ class TestHierarchicalAttention(unittest.TestCase):
     def test(self):
         print("Hierarchical Attention Working check.")
 
+        # Forward word decoder + backward char decoder
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', backward_sub=True)
+
         # Multi-head attention
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', num_heads=2)
-
-        # TODO: backward
 
         # Word attention + char CTC
         self.check(encoder_type='lstm', bidirectional=True,
@@ -68,7 +70,8 @@ class TestHierarchicalAttention(unittest.TestCase):
     def check(self, encoder_type, bidirectional, decoder_type,
               attention_type='location', subsample=False, projection=False,
               ctc_loss_weight_sub=0, conv=False, batch_norm=False,
-              residual=False, dense_residual=False, num_heads=1):
+              residual=False, dense_residual=False,
+              num_heads=1, backward_sub=False):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
@@ -82,6 +85,7 @@ class TestHierarchicalAttention(unittest.TestCase):
         print('  batch_norm: %s' % str(batch_norm))
         print('  residual: %s' % str(residual))
         print('  dense_residual: %s' % str(dense_residual))
+        print('  backward_sub: %s' % str(backward_sub))
         print('  num_heads: %s' % str(num_heads))
         print('==================================================')
 
@@ -170,6 +174,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             decoding_order='attend_generate_update',
             bottleneck_dim=256,
             bottleneck_dim_sub=256,
+            backward_sub=backward_sub,
             num_heads=num_heads,
             num_heads_sub=num_heads)
 

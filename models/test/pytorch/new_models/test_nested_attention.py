@@ -32,29 +32,34 @@ class TestCharseqAttention(unittest.TestCase):
         # char initialization
         # self.check(main_loss_weight=0)
 
-        # how to use character-level decoder states
+        # Forward word decoder + backward char decoder
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', backward_sub=True)
+
+        # Usage character-level decoder states
         self.check(usage_dec_sub='no_use')
         self.check(usage_dec_sub='update_decoder')
         self.check(usage_dec_sub='all')
 
-        # attention_regularization
-        self.check(attention_regularization=True)
+        # Attention regularization
+        self.check(attention_regularization=1)
 
-        # smoothing
+        # Attention smoothing
         self.check(dec_out_sub_attend_temperature=2)
         self.check(dec_out_sub_attend_temperature=3)
         self.check(dec_out_sub_sigmoid_smoothing=True)
 
-        # gating mechanism
+        # Gating mechanism
         self.check(gating_mechanism='scalar')
         self.check(gating_mechanism='elementwise')
 
     @measure_time
     def check(self, usage_dec_sub='update_decoder', gating_mechanism='no_gate',
-              attention_regularization=False,
+              attention_regularization=1,
               main_loss_weight=0.5, ctc_loss_weight_sub=0,
               dec_out_sub_attend_temperature=1,
-              dec_out_sub_sigmoid_smoothing=False):
+              dec_out_sub_sigmoid_smoothing=False,
+              backward_sub=False, num_heads=1):
 
         print('==================================================')
         print('  usage_dec_sub: %s' % usage_dec_sub)
@@ -66,6 +71,8 @@ class TestCharseqAttention(unittest.TestCase):
               str(dec_out_sub_attend_temperature))
         print('  dec_out_sub_sigmoid_smoothing: %s' %
               str(dec_out_sub_sigmoid_smoothing))
+        print('  backward_sub: %s' % str(backward_sub))
+        print('  num_heads: %s' % str(num_heads))
         print('==================================================')
 
         # Load batch data
@@ -134,9 +141,10 @@ class TestCharseqAttention(unittest.TestCase):
             decoding_order='attend_generate_update',
             bottleneck_dim=256,
             bottleneck_dim_sub=256,
-            num_heads=1,
-            num_heads_sub=1,
-            num_heads_dec_out_sub=1,
+            backward_sub=backward_sub,
+            num_heads=num_heads,
+            num_heads_sub=num_heads,
+            num_heads_dec_out_sub=num_heads,
             usage_dec_sub=usage_dec_sub,
             gating_mechanism=gating_mechanism,
             attention_regularization=attention_regularization,

@@ -8,6 +8,7 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
+import copy
 
 import torch
 
@@ -81,6 +82,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  decoding_order='attend_generate_update',
                  bottleneck_dim=256,
                  bottleneck_dim_sub=256,  # ***
+                 backward_sub=False,  # ***
                  num_heads=1,
                  num_heads_sub=1):  # ***
 
@@ -140,12 +142,17 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             self.encoder_num_units_sub *= 2
 
         # Setting for the decoder in the second task
+        if init_dec_state == 'first' and backward_sub:
+            self.init_dec_state_1 = 'final'
+        else:
+            self.init_dec_state_1 = init_dec_state
         self.decoder_num_units_1 = decoder_num_units_sub
         self.decoder_num_layers_1 = decoder_num_layers_sub
         self.num_classes_sub = num_classes_sub + 1  # Add <EOS> class
         self.sos_1 = num_classes_sub
         self.eos_1 = num_classes_sub
         # NOTE: <SOS> and <EOS> have the same index
+        self.backward_1 = backward_sub
 
         # Setting for the attention in the sub task
         self.num_heads_1 = num_heads_sub
@@ -154,8 +161,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         self.main_loss_weight = main_loss_weight
         self.sub_loss_weight = sub_loss_weight
         self.ctc_loss_weight_sub = ctc_loss_weight_sub
-        if scheduled_sampling_ramp_max_step == 0:
-            raise ValueError('Set scheduled_sampling_ramp_max_step.')
 
         ##############################
         # Encoder
@@ -192,6 +197,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         self.is_bridge_sub = False
         if self.sub_loss_weight > 0:
+
+            ##################################################
+            # Bridge layer between the encoder and decoder
+            ##################################################
             if bridge_layer:
                 self.bridge_1 = LinearND(
                     self.encoder_num_units_sub, decoder_num_units_sub,
@@ -199,7 +208,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 self.encoder_num_units_sub = decoder_num_units_sub
                 self.is_bridge_sub = True
 
-            if self.init_dec_state != 'zero':
+            ##################################################
+            # Initialization of the decoder
+            ##################################################
+            if encoder_type != decoder_type:
+                self.init_dec_state_1 = 'zero'
+
+            if self.init_dec_state_1 != 'zero':
                 self.W_dec_init_1 = LinearND(
                     self.encoder_num_units_sub, decoder_num_units_sub)
 
@@ -337,6 +352,14 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             if self.weight_noise_injection:
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
+        # Reverse the order
+        if self.backward_1:
+            ys_sub_tmp = copy.deepcopy(ys_sub)
+            for b in range(len(xs)):
+                ys_sub_tmp[b, :y_lens_sub[b]] = ys_sub[b, :y_lens_sub[b]][::-1]
+        else:
+            ys_sub_tmp = ys_sub
+
         # NOTE: ys and ys_sub are padded with -1 here
         # ys_in and ys_in_sub areb padded with <EOS> in order to convert to
         # one-hot vector, and added <SOS> before the first token
@@ -356,12 +379,12 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 ys[b, :y_lens[b]])
             ys_in_sub.data[b, 0] = self.sos_1
             ys_in_sub.data[b, 1:y_lens_sub[b] + 1] = torch.from_numpy(
-                ys_sub[b, :y_lens_sub[b]])
+                ys_sub_tmp[b, :y_lens_sub[b]])
 
             ys_out.data[b, :y_lens[b]] = torch.from_numpy(ys[b, :y_lens[b]])
             ys_out.data[b, y_lens[b]] = self.eos_0
             ys_out_sub.data[b, :y_lens_sub[b]] = torch.from_numpy(
-                ys_sub[b, :y_lens_sub[b]])
+                ys_sub_tmp[b, :y_lens_sub[b]])
             ys_out_sub.data[b, y_lens_sub[b]] = self.eos_1
 
         if self.use_cuda:

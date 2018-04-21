@@ -328,6 +328,18 @@ class ModelBase(chainer.Chain):
         return (checkpoint['epoch'] + 1, checkpoint['step'] + 1,
                 checkpoint['lr'], checkpoint['metric_dev_best'])
 
+    def _create_var(self, size, fill_value=0, dtype=np.float32):
+        """Initialize a variable with zero.
+        Args:
+            size (tuple):
+            fill_value (int or float, optional):
+            dtype ():
+        Returns:
+            var (chainer.Variable, float):
+        """
+        var = chainer.Variable(self.xp.full(size, fill_value, dtype=dtype))
+        return var
+
     def np2var(self, array, use_cuda=False, volatile=False, dtype=None):
         """Convert form np.ndarray to Variable.
         Args:

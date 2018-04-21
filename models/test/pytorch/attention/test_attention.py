@@ -127,8 +127,8 @@ class TestAttention(unittest.TestCase):
               subsample=False, projection=False, init_dec_state='first',
               ctc_loss_weight=0, conv=False, batch_norm=False,
               residual=False, dense_residual=False,
-              decoding_order='attend_generate_update', backward=False,
-              num_heads=1):
+              decoding_order='attend_generate_update',
+              backward=False, num_heads=1):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
