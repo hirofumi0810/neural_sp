@@ -403,10 +403,10 @@ def load(model_type, params, backend):
             model.name += '_conditional'
         if isdir(params['char_init']):
             model.name += '_charinit'
-        if int(params['num_heads']) > 1:
-            model.name += '_head' + str(params['num_heads'])
         if bool(params['backward']):
             model.name += '_bwd'
+        if int(params['num_heads']) > 1:
+            model.name += '_head' + str(params['num_heads'])
 
     elif params['model_type'] == 'hierarchical_attention':
 
@@ -474,6 +474,7 @@ def load(model_type, params, backend):
             decoding_order=params['decoding_order'],
             bottleneck_dim=params['bottleneck_dim'],
             bottleneck_dim_sub=params['bottleneck_dim_sub'],
+            backward_sub=params['backward_sub'],
             num_heads=params['num_heads'],
             num_heads_sub=params['num_heads_sub'])
 
@@ -538,6 +539,8 @@ def load(model_type, params, backend):
             model.name += '_conditional'
         if isdir(params['char_init']):
             model.name += '_charinit'
+        if bool(params['backward_sub']):
+            model.name += '_bwdsub'
         if int(params['num_heads']) > 1:
             model.name += '_head' + str(params['num_heads'])
 
@@ -606,12 +609,13 @@ def load(model_type, params, backend):
             decoding_order=params['decoding_order'],
             bottleneck_dim=params['bottleneck_dim'],
             bottleneck_dim_sub=params['bottleneck_dim_sub'],
+            backward_sub=params['backward_sub'],
             num_heads=params['num_heads'],
             num_heads_sub=params['num_heads_sub'],
             num_heads_dec_out_sub=params['num_heads_dec_out_sub'],
             usage_dec_sub=params['usage_dec_sub'],
             gating_mechanism=params['gating_mechanism'],
-            attention_regularization=params['attention_regularization'],
+            attention_regularization_weight=params['attention_regularization_weight'],
             dec_out_sub_attend_temperature=params['dec_out_sub_attend_temperature'],
             dec_out_sub_sigmoid_smoothing=params['dec_out_sub_sigmoid_smoothing'])
 
@@ -676,6 +680,8 @@ def load(model_type, params, backend):
             model.name += '_conditional'
         if isdir(params['char_init']):
             model.name += '_charinit'
+        if bool(params['backward_sub']):
+            model.name += '_bwdsub'
         if int(params['num_heads']) > 1:
             model.name += '_head' + str(params['num_heads'])
 
@@ -685,8 +691,9 @@ def load(model_type, params, backend):
                 str(params['dec_out_sub_attend_temperature'])
         if bool(params['dec_out_sub_sigmoid_smoothing']):
             model.name += '_sigsmooth'
-        if bool(params['attention_regularization']):
-            model.name += '_attreg'
+        if int(params['attention_regularization_weight']) > 0:
+            model.name += '_attreg' + \
+                str(params['attention_regularization_weight'])
         if params['gating_mechanism'] != 'no_gate':
             model.name += '_' + params['gating_mechanism']
 

@@ -373,11 +373,12 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                   fill_value=-1, dtype='long')
         ys_out_sub = self._create_var((ys_sub.shape[0], ys_sub.shape[1] + 1),
                                       fill_value=-1, dtype='long')
+
+        ys_in.data[:, 0] = self.sos_0
+        ys_in_sub.data[:, 0] = self.sos_1
         for b in range(len(xs)):
-            ys_in.data[b, 0] = self.sos_0
             ys_in.data[b, 1:y_lens[b] + 1] = torch.from_numpy(
                 ys[b, :y_lens[b]])
-            ys_in_sub.data[b, 0] = self.sos_1
             ys_in_sub.data[b, 1:y_lens_sub[b] + 1] = torch.from_numpy(
                 ys_sub_tmp[b, :y_lens_sub[b]])
 

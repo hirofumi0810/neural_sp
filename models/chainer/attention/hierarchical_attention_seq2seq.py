@@ -397,10 +397,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                          fill_value=-1, dtype=np.int32)
         ys_out_sub = np.full((ys_sub.shape[0], ys_sub.shape[1] + 1),
                              fill_value=-1, dtype=np.int32)
+
+        ys_in[:, 0] = self.sos_0
+        ys_in_sub[:, 0] = self.sos_1
         for b in range(len(xs)):
-            ys_in[b, 0] = self.sos_0
             ys_in[b, 1:y_lens[b] + 1] = ys[b, :y_lens[b]]
-            ys_in_sub[b, 0] = self.sos_1
             ys_in_sub[b, 1:y_lens_sub[b] + 1] = ys_sub_tmp[b, :y_lens_sub[b]]
 
             ys_out[b, :y_lens[b]] = ys[b, :y_lens[b]]

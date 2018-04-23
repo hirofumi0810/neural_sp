@@ -250,8 +250,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 dropout=dropout_decoder,
                 residual=False,
                 dense_residual=False)
+
+            decoder_input_size = self.encoder_num_units * num_heads
+            if usage_dec_sub != 'no_use':
+                decoder_input_size += decoder_num_units_sub * num_heads_dec_out_sub
             self.decoder_second_0 = RNNDecoder(
-                input_size=self.encoder_num_units * num_heads + decoder_num_units_sub,
+                input_size=decoder_input_size,
                 rnn_type=decoder_type,
                 num_units=decoder_num_units,
                 num_layers=decoder_num_layers,
@@ -262,7 +266,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         else:
             decoder_input_size = self.encoder_num_units * num_heads + embedding_dim
             if usage_dec_sub != 'no_use':
-                decoder_input_size += decoder_num_units_sub
+                decoder_input_size += decoder_num_units_sub * num_heads_dec_out_sub
             self.decoder_0 = RNNDecoder(
                 input_size=decoder_input_size,
                 rnn_type=decoder_type,
@@ -364,7 +368,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         ##############################################
         if usage_dec_sub == 'all':
             self.W_c_dec_sub = LinearND(
-                decoder_num_units, decoder_num_units,
+                decoder_num_units * num_heads_dec_out_sub, bottleneck_dim_sub,
                 dropout=dropout_decoder)
         elif usage_dec_sub == 'update_decoder':
             pass
@@ -467,11 +471,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                                   fill_value=-1, dtype='long')
         ys_out_sub = self._create_var((ys_sub.shape[0], ys_sub.shape[1] + 1),
                                       fill_value=-1, dtype='long')
+
+        ys_in.data[:, 0] = self.sos_0
+        ys_in_sub.data[:, 0] = self.sos_1
         for b in range(len(xs)):
-            ys_in.data[b, 0] = self.sos_0
             ys_in.data[b, 1:y_lens[b] + 1] = torch.from_numpy(
                 ys[b, :y_lens[b]])
-            ys_in_sub.data[b, 0] = self.sos_1
             ys_in_sub.data[b, 1:y_lens_sub[b] + 1] = torch.from_numpy(
                 ys_sub_tmp[b, :y_lens_sub[b]])
 
@@ -601,9 +606,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
             # Attention regularization
             if self.attention_regularization_weight > 0:
-                if self.backward_1:
-                    raise NotImplementedError
-
                 loss_main += F.mse_loss(
                     torch.bmm(aw_dec_out_sub, aw_sub),
                     aw.detach(),
@@ -755,7 +757,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             dec_out_sub_seq.append(dec_out_sub)
 
             logits_sub.append(logits_step_sub)
-            aw_sub.append(aw_step_sub)
+            if self.backward_1:
+                aw_sub = [aw_step_sub] + aw_sub
+            else:
+                aw_sub.append(aw_step_sub)
 
         # Concatenate in T_out-dimension
         dec_out_sub_seq = torch.cat(dec_out_sub_seq, dim=1)
@@ -941,6 +946,11 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             beam_width=1,
             max_decode_len=max_decode_len,
             max_decode_len_sub=max_decode_len_sub)
+
+        # TODO: fix this
+        aw = aw[:, :, :, 0]
+        aw_sub = aw_sub[:, :, :, 0]
+        aw_dec_out_sub = aw_dec_out_sub[:, :, :, 0]
 
         # Permutate indices to the original order
         if perm_idx is None:
@@ -1307,6 +1317,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         # Reverse the order
         if self.backward_1:
+            y_lens_sub = self.var2np(y_lens_sub)
             for b in range(batch_size):
                 best_hyps_sub[b, :y_lens_sub[b]
                               ] = best_hyps_sub[b, :y_lens_sub[b]][::-1]

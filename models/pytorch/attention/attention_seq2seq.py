@@ -440,8 +440,9 @@ class AttentionSeq2seq(ModelBase):
                                  fill_value=self.eos_0, dtype='long')
         ys_out = self._create_var((ys.shape[0], ys.shape[1] + 1),
                                   fill_value=-1, dtype='long')
+
+        ys_in.data[:, 0] = self.sos_0
         for b in range(len(xs)):
-            ys_in.data[b, 0] = self.sos_0
             ys_in.data[b, 1:y_lens[b] + 1] = torch.from_numpy(
                 ys_tmp[b, :y_lens[b]])
 

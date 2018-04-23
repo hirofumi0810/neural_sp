@@ -235,9 +235,9 @@ class TestHierarchicalAttention(unittest.TestCase):
                     max_decode_len=60,
                     task_index=1)
 
-                str_hyp = idx2word(best_hyps[0][:-1]).split('>')[0]
+                str_hyp = idx2word(best_hyps[0][:-1])
                 str_ref = idx2word(ys[0])
-                str_hyp_sub = idx2char(best_hyps_sub[0][:-1]).split('>')[0]
+                str_hyp_sub = idx2char(best_hyps_sub[0][:-1])
                 str_ref_sub = idx2char(ys_sub[0])
 
                 # Compute accuracy

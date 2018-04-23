@@ -25,8 +25,12 @@ class TestHierarchicalAttention(unittest.TestCase):
         print("Hierarchical Attention Working check.")
 
         # Forward word decoder + backward char decoder
+        # self.check(encoder_type='lstm', bidirectional=True,
+        #            decoder_type='lstm', backward_sub=True,
+        #            attention_type='location')
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', backward_sub=True)
+                   decoder_type='lstm', backward_sub=True,
+                   attention_type='content')
 
         # Multi-head attention
         self.check(encoder_type='lstm', bidirectional=True,

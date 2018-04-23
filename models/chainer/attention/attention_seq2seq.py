@@ -465,8 +465,9 @@ class AttentionSeq2seq(ModelBase):
                         fill_value=self.eos_0, dtype=np.int32)
         ys_out = np.full((ys.shape[0], ys.shape[1] + 1),
                          fill_value=-1, dtype=np.int32)
+
+        ys_in[:, 0] = self.sos_0
         for b in range(len(xs)):
-            ys_in[b, 0] = self.sos_0
             ys_in[b, 1:y_lens[b] + 1] = ys_tmp[b, :y_lens[b]]
 
             ys_out[b, :y_lens[b]] = ys_tmp[b, :y_lens[b]]

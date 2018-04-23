@@ -27,14 +27,13 @@ from utils.training.learning_rate_controller import Controller
 class TestCharseqAttention(unittest.TestCase):
 
     def test(self):
-        print("Hierarchical Attention Working check.")
+        print("Nested Attention Working check.")
 
         # char initialization
         # self.check(main_loss_weight=0)
 
         # Forward word decoder + backward char decoder
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', backward_sub=True)
+        self.check(backward_sub=True)
 
         # Usage character-level decoder states
         self.check(usage_dec_sub='no_use')
@@ -42,7 +41,7 @@ class TestCharseqAttention(unittest.TestCase):
         self.check(usage_dec_sub='all')
 
         # Attention regularization
-        self.check(attention_regularization=1)
+        self.check(attention_regularization_weight=1)
 
         # Attention smoothing
         self.check(dec_out_sub_attend_temperature=2)
@@ -55,7 +54,7 @@ class TestCharseqAttention(unittest.TestCase):
 
     @measure_time
     def check(self, usage_dec_sub='update_decoder', gating_mechanism='no_gate',
-              attention_regularization=1,
+              attention_regularization_weight=1,
               main_loss_weight=0.5, ctc_loss_weight_sub=0,
               dec_out_sub_attend_temperature=1,
               dec_out_sub_sigmoid_smoothing=False,
@@ -64,7 +63,8 @@ class TestCharseqAttention(unittest.TestCase):
         print('==================================================')
         print('  usage_dec_sub: %s' % usage_dec_sub)
         print('  gating_mechanism: %s' % gating_mechanism)
-        print('  attention_regularization: %s' % str(attention_regularization))
+        print('  attention_regularization_weight: %s' %
+              str(attention_regularization_weight))
         print('  main_loss_weight: %s' % str(main_loss_weight))
         print('  ctc_loss_weight_sub: %s' % str(ctc_loss_weight_sub))
         print('  dec_out_sub_attend_temperature: %s' %
@@ -147,7 +147,7 @@ class TestCharseqAttention(unittest.TestCase):
             num_heads_dec_out_sub=num_heads,
             usage_dec_sub=usage_dec_sub,
             gating_mechanism=gating_mechanism,
-            attention_regularization=attention_regularization,
+            attention_regularization_weight=attention_regularization_weight,
             dec_out_sub_attend_temperature=dec_out_sub_attend_temperature,
             dec_out_sub_sigmoid_smoothing=dec_out_sub_attend_temperature)
 
@@ -200,9 +200,9 @@ class TestCharseqAttention(unittest.TestCase):
                     max_decode_len=30,
                     max_decode_len_sub=60)
 
-                str_hyp = idx2word(best_hyps[0][:-1]).split('>')[0]
+                str_hyp = idx2word(best_hyps[0][:-1])
                 str_ref = idx2word(ys[0])
-                str_hyp_sub = idx2char(best_hyps_sub[0][:-1]).split('>')[0]
+                str_hyp_sub = idx2char(best_hyps_sub[0][:-1])
                 str_ref_sub = idx2char(ys_sub[0])
 
                 # Compute accuracy
