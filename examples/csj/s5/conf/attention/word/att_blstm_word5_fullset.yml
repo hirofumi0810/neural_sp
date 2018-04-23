@@ -2,7 +2,6 @@ parent: ./conf/attention/word/att_blstm_word5_subset.yml
 param:
   # framework
   backend: pytorch
-  # backend: chainer
 
   # corpus
   data_size: fullset

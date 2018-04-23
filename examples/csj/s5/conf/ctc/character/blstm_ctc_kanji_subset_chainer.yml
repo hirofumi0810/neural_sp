@@ -1,26 +1,24 @@
 parent: ./conf/ctc/word/blstm_ctc_word5_subset.yml
 param:
   # framework
-  backend: pytorch
+  backend: chainer
 
   # corpus
   data_size: subset
   label_type: kanji_wb
 
   # features
-  num_stack: 1
-  num_skip: 1
+  num_stack: 3
+  num_skip: 3
 
   # topology
-  encoder_num_layers: 6
+  encoder_num_layers: 3
   subsample_list:
-    - False
-    - True
-    - True
     - False
     - False
     - False
   fc_list: [256]
+  # TODO: concat or subsampling (small mini-batch)
 
   # initialization
   char_init: False

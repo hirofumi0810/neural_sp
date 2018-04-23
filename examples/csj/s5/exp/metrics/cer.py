@@ -15,11 +15,11 @@ from utils.io.labels.character import Idx2char
 from utils.evaluation.edit_distance import compute_wer
 
 
-def do_eval_cer(model, dataset, beam_width, max_decode_len,
+def do_eval_cer(models, dataset, beam_width, max_decode_len,
                 eval_batch_size=None, progressbar=False):
     """Evaluate trained model by Character Error Rate.
     Args:
-        model: the model to evaluate
+        models (list): the models to evaluate
         dataset: An instance of a `Dataset' class
         beam_width: (int): the size of beam
         max_decode_len (int): the length of output sequences
@@ -35,7 +35,7 @@ def do_eval_cer(model, dataset, beam_width, max_decode_len,
     # Reset data counter
     dataset.reset()
 
-    if model.model_type in ['ctc', 'attention']:
+    if models[0].model_type in ['ctc', 'attention']:
         idx2char = Idx2char(vocab_file_path=dataset.vocab_file_path)
     else:
         idx2char = Idx2char(vocab_file_path=dataset.vocab_file_path_sub)
@@ -50,6 +50,8 @@ def do_eval_cer(model, dataset, beam_width, max_decode_len,
         batch, is_new_epoch = dataset.next(batch_size=eval_batch_size)
 
         # Decode
+        model = models[0]
+        # TODO: fix this
         if model.model_type in ['ctc', 'attention']:
             best_hyps, perm_idx = model.decode(batch['xs'], batch['x_lens'],
                                                beam_width=beam_width,

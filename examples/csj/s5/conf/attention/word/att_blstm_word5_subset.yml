@@ -1,7 +1,6 @@
 param:
   # framework
   backend: pytorch
-  # backend: chainer
 
   # corpus
   corpus: csj

@@ -104,30 +104,30 @@ def main():
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         tool=params['tool'])
-    eval2_data = Dataset(
-        data_save_path=args.data_save_path,
-        backend=params['backend'],
-        input_channel=params['input_channel'],
-        use_delta=params['use_delta'],
-        use_double_delta=params['use_double_delta'],
-        data_type='eval2', data_size=params['data_size'],
-        label_type=params['label_type'],
-        label_type_sub=params['label_type_sub'],
-        batch_size=params['batch_size'], splice=params['splice'],
-        num_stack=params['num_stack'], num_skip=params['num_skip'],
-        tool=params['tool'])
-    eval3_data = Dataset(
-        data_save_path=args.data_save_path,
-        backend=params['backend'],
-        input_channel=params['input_channel'],
-        use_delta=params['use_delta'],
-        use_double_delta=params['use_double_delta'],
-        data_type='eval3', data_size=params['data_size'],
-        label_type=params['label_type'],
-        label_type_sub=params['label_type_sub'],
-        batch_size=params['batch_size'], splice=params['splice'],
-        num_stack=params['num_stack'], num_skip=params['num_skip'],
-        tool=params['tool'])
+    # eval2_data = Dataset(
+    #     data_save_path=args.data_save_path,
+    #     backend=params['backend'],
+    #     input_channel=params['input_channel'],
+    #     use_delta=params['use_delta'],
+    #     use_double_delta=params['use_double_delta'],
+    #     data_type='eval2', data_size=params['data_size'],
+    #     label_type=params['label_type'],
+    #     label_type_sub=params['label_type_sub'],
+    #     batch_size=params['batch_size'], splice=params['splice'],
+    #     num_stack=params['num_stack'], num_skip=params['num_skip'],
+    #     tool=params['tool'])
+    # eval3_data = Dataset(
+    #     data_save_path=args.data_save_path,
+    #     backend=params['backend'],
+    #     input_channel=params['input_channel'],
+    #     use_delta=params['use_delta'],
+    #     use_double_delta=params['use_double_delta'],
+    #     data_type='eval3', data_size=params['data_size'],
+    #     label_type=params['label_type'],
+    #     label_type_sub=params['label_type_sub'],
+    #     batch_size=params['batch_size'], splice=params['splice'],
+    #     num_stack=params['num_stack'], num_skip=params['num_skip'],
+    #     tool=params['tool'])
 
     params['num_classes'] = train_data.num_classes
     params['num_classes_sub'] = train_data.num_classes_sub
@@ -322,24 +322,14 @@ def main():
             else:
                 start_time_eval = time.time()
                 # dev
-                if bool(params['pretrain_stage']):
-                    metric_dev_epoch, wer_dev_sub_epoch, _ = do_eval_cer(
-                        model=model,
-                        dataset=dev_data,
-                        beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_CHAR,
-                        eval_batch_size=1)
-                    logger.info('  CER / WER (dev, sub): %.3f %% / %.3f %%' %
-                                ((metric_dev_epoch * 100), (wer_dev_sub_epoch * 100)))
-                else:
-                    metric_dev_epoch, _ = do_eval_wer(
-                        model=model,
-                        dataset=dev_data,
-                        beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_WORD,
-                        eval_batch_size=1)
-                    logger.info('  WER (dev, main): %.3f %%' %
-                                (metric_dev_epoch * 100))
+                metric_dev_epoch, _ = do_eval_wer(
+                    models=[model],
+                    dataset=dev_data,
+                    beam_width=1,
+                    max_decode_len=MAX_DECODE_LEN_WORD,
+                    eval_batch_size=1)
+                logger.info('  WER (dev, main): %.3f %%' %
+                            (metric_dev_epoch * 100))
 
                 if metric_dev_epoch < metric_dev_best:
                     metric_dev_best = metric_dev_epoch
@@ -353,7 +343,7 @@ def main():
 
                     # test
                     wer_eval1, _ = do_eval_wer(
-                        model=model,
+                        models=[model],
                         dataset=eval1_data,
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_WORD,
@@ -361,26 +351,26 @@ def main():
                     logger.info('  WER (eval1, main): %.3f %%' %
                                 (wer_eval1 * 100))
 
-                    wer_eval2, _ = do_eval_wer(
-                        model=model,
-                        dataset=eval2_data,
-                        beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_WORD,
-                        eval_batch_size=1)
-                    logger.info('  WER (eval2, main): %.3f %%' %
-                                (wer_eval2 * 100))
-
-                    wer_eval3, _ = do_eval_wer(
-                        model=model,
-                        dataset=eval3_data,
-                        beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_WORD,
-                        eval_batch_size=1)
-                    logger.info('  WER (eval3, main): %.3f %%' %
-                                (wer_eval3 * 100))
-
-                    logger.info('  WER (mean, main): %.3f %%' %
-                                ((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3))
+                    # wer_eval2, _ = do_eval_wer(
+                    #     models=[model],
+                    #     dataset=eval2_data,
+                    #     beam_width=1,
+                    #     max_decode_len=MAX_DECODE_LEN_WORD,
+                    #     eval_batch_size=1)
+                    # logger.info('  WER (eval2, main): %.3f %%' %
+                    #             (wer_eval2 * 100))
+                    #
+                    # wer_eval3, _ = do_eval_wer(
+                    #     models=[model],
+                    #     dataset=eval3_data,
+                    #     beam_width=1,
+                    #     max_decode_len=MAX_DECODE_LEN_WORD,
+                    #     eval_batch_size=1)
+                    # logger.info('  WER (eval3, main): %.3f %%' %
+                    #             (wer_eval3 * 100))
+                    #
+                    # logger.info('  WER (mean, main): %.3f %%' %
+                    #             ((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3))
                 else:
                     not_improved_epoch += 1
 

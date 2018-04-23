@@ -42,7 +42,7 @@ parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--max_decode_len', type=int, default=60,
+parser.add_argument('--max_decode_len', type=int, default=80,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
 parser.add_argument('--max_decode_len_sub', type=int, default=150,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
@@ -63,14 +63,14 @@ def main():
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
-        # data_type='eval1',
+        data_type='eval1',
         # data_type='eval2',
-        data_type='eval3',
+        # data_type='eval3',
         data_size=params['data_size'],
         label_type=params['label_type'], label_type_sub=params['label_type_sub'],
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=True, reverse=True, tool=params['tool'])
+        sort_utt=False, reverse=False, tool=params['tool'])
 
     params['num_classes'] = test_data.num_classes
     params['num_classes_sub'] = test_data.num_classes_sub
@@ -144,7 +144,7 @@ def plot(model, dataset, max_decode_len, max_decode_len_sub,
                 aw_sub[b, :len(char_list), :batch['x_lens'][b]],
                 label_list=word_list,
                 label_list_sub=char_list,
-                spectrogram=batch['xs'][b, :, :80],
+                spectrogram=batch['xs'][b, :, :dataset.input_channel],
                 save_path=mkdir_join(save_path, speaker,
                                      batch['input_names'][b] + '.png'),
                 figsize=(40, 8)
@@ -161,8 +161,16 @@ def plot(model, dataset, max_decode_len, max_decode_len_sub,
             )
 
             # gate activation
-            # if gate_weights is not None:
-            #     print(np.mean(gate_weights[b], axis=1))
+            if gate_weights is not None:
+                plt.clf()
+                plt.figure(figsize=(40, 8))
+                plt.plot(np.arange(0, len(gate_weights[b])), np.mean(
+                    gate_weights[b], axis=1), 1)
+                plt.xlabel('Output words', fontsize=12)
+                plt.xticks(np.arange(0, len(gate_weights[b])), word_list)
+                plt.savefig(join(save_path, speaker,
+                                 batch['input_names'][b] + '_gate.png'), dvi=500)
+                plt.close()
 
         if is_new_epoch:
             break

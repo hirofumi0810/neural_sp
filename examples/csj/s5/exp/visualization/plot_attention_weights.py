@@ -28,7 +28,7 @@ parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--max_decode_len', type=int, default=150,  # or 60
+parser.add_argument('--max_decode_len', type=int, default=150,  # or 80
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
 

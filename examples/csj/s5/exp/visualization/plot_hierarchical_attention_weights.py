@@ -31,7 +31,7 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
 parser.add_argument('--beam_width', type=int, default=1,
                     help='beam_width (int, optional): beam width for beam search.' +
                     ' 1 disables beam search, which mean greedy decoding.')
-parser.add_argument('--max_decode_len', type=int, default=60,
+parser.add_argument('--max_decode_len', type=int, default=80,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
 parser.add_argument('--max_decode_len_sub', type=int, default=150,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
@@ -59,7 +59,7 @@ def main():
         label_type=params['label_type'], label_type_sub=params['label_type_sub'],
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=True, reverse=True, tool=params['tool'])
+        sort_utt=False, reverse=False, tool=params['tool'])
 
     params['num_classes'] = test_data.num_classes
     params['num_classes_sub'] = test_data.num_classes_sub
@@ -141,7 +141,7 @@ def plot(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
                 num_stack=dataset.num_stack,
                 label_list=word_list,
                 label_list_sub=char_list,
-                spectrogram=batch['xs'][b, :, :80],
+                spectrogram=batch['xs'][b, :, :dataset.input_channel],
                 save_path=mkdir_join(save_path, speaker,
                                      batch['input_names'][b] + '.png'),
                 figsize=(40, 8)

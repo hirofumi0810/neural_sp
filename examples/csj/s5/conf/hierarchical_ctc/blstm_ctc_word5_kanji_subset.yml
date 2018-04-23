@@ -1,7 +1,6 @@
 param:
   # framework
   backend: pytorch
-  # backend: chainer
 
   # corpus
   corpus: csj
@@ -85,8 +84,8 @@ param:
   # main_loss_weight: 0.5
   # sub_loss_weight: 0.5
 
-  # main_loss_weight: 0.8
-  # sub_loss_weight: 0.2
-
-  main_loss_weight: 1.0
+  main_loss_weight: 0.8
   sub_loss_weight: 0.2
+
+  # main_loss_weight: 1.0
+  # sub_loss_weight: 0.2

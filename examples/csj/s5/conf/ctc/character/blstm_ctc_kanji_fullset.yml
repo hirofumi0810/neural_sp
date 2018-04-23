@@ -2,7 +2,6 @@ parent: ./conf/ctc/word/blstm_ctc_word5_subset.yml
 param:
   # framework
   backend: pytorch
-  # backend: chainer
 
   # corpus
   data_size: fullset
@@ -24,6 +23,6 @@ param:
 
   # initialization
   char_init: False
-  
+
   # annealing
   print_step: 400

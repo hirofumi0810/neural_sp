@@ -19,8 +19,8 @@ from examples.csj.s5.exp.metrics.wer import do_eval_wer
 from utils.config import load_config
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--model_path', type=str,
-                    help='path to the model to evaluate')
+# parser.add_argument('--model_path', type=str,
+#                     help='path to the model to evaluate')
 parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
 parser.add_argument('--eval_batch_size', type=int, default=1,
@@ -37,59 +37,72 @@ def main():
 
     args = parser.parse_args()
 
+    model_paths = [
+        "/n/sd8/inaguma/result/csj/pytorch/ctc/word5/subset/blstm320H5L_drop8_fc_256_adam_lr1e-3_dropen0.2_input80_charinit",
+        "/n/sd8/inaguma/result/csj/pytorch/ctc/word5/subset/blstm320H5L_drop8_fc_256_adam_lr1e-3_dropen0.2_input80_charinit_1",
+        "/n/sd8/inaguma/result/csj/pytorch/ctc/word5/subset/blstm320H5L_drop8_fc_256_adam_lr1e-3_dropen0.2_input80_charinit_2",
+        "/n/sd8/inaguma/result/csj/pytorch/ctc/word5/subset/blstm320H5L_drop8_fc_256_adam_lr1e-3_dropen0.2_input80_charinit_3",
+    ]
+
     # Load a config file (.yml)
-    params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
+    params_list = []
+    for model_path in model_paths:
+        params = load_config(join(model_path, 'config.yml'), is_eval=True)
+        params_list.append(params)
 
     # Load dataset
     eval1_data = Dataset(
         data_save_path=args.data_save_path,
-        backend=params['backend'],
-        input_channel=params['input_channel'],
-        use_delta=params['use_delta'],
-        use_double_delta=params['use_double_delta'],
-        data_type='eval1', data_size=params['data_size'],
-        label_type=params['label_type'],
-        batch_size=args.eval_batch_size, splice=params['splice'],
-        num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=False, tool=params['tool'])
+        backend=params_list[0]['backend'],
+        input_channel=params_list[0]['input_channel'],
+        use_delta=params_list[0]['use_delta'],
+        use_double_delta=params_list[0]['use_double_delta'],
+        data_type='eval1', data_size=params_list[0]['data_size'],
+        label_type=params_list[0]['label_type'],
+        batch_size=args.eval_batch_size, splice=params_list[0]['splice'],
+        num_stack=params_list[0]['num_stack'], num_skip=params_list[0]['num_skip'],
+        shuffle=False, tool=params_list[0]['tool'])
     eval2_data = Dataset(
         data_save_path=args.data_save_path,
-        backend=params['backend'],
-        input_channel=params['input_channel'],
-        use_delta=params['use_delta'],
-        use_double_delta=params['use_double_delta'],
-        data_type='eval2', data_size=params['data_size'],
-        label_type=params['label_type'],
-        batch_size=args.eval_batch_size, splice=params['splice'],
-        num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=False, tool=params['tool'])
+        backend=params_list[0]['backend'],
+        input_channel=params_list[0]['input_channel'],
+        use_delta=params_list[0]['use_delta'],
+        use_double_delta=params_list[0]['use_double_delta'],
+        data_type='eval2', data_size=params_list[0]['data_size'],
+        label_type=params_list[0]['label_type'],
+        batch_size=args.eval_batch_size, splice=params_list[0]['splice'],
+        num_stack=params_list[0]['num_stack'], num_skip=params_list[0]['num_skip'],
+        shuffle=False, tool=params_list[0]['tool'])
     eval3_data = Dataset(
         data_save_path=args.data_save_path,
-        backend=params['backend'],
-        input_channel=params['input_channel'],
-        use_delta=params['use_delta'],
-        use_double_delta=params['use_double_delta'],
-        data_type='eval3', data_size=params['data_size'],
-        label_type=params['label_type'],
-        batch_size=args.eval_batch_size, splice=params['splice'],
-        num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=False, tool=params['tool'])
-    params['num_classes'] = eval1_data.num_classes
+        backend=params_list[0]['backend'],
+        input_channel=params_list[0]['input_channel'],
+        use_delta=params_list[0]['use_delta'],
+        use_double_delta=params_list[0]['use_double_delta'],
+        data_type='eval3', data_size=params_list[0]['data_size'],
+        label_type=params_list[0]['label_type'],
+        batch_size=args.eval_batch_size, splice=params_list[0]['splice'],
+        num_stack=params_list[0]['num_stack'], num_skip=params_list[0]['num_skip'],
+        shuffle=False, tool=params_list[0]['tool'])
+    params_list[0]['num_classes'] = eval1_data.num_classes
 
     # Load model
-    model = load(model_type=params['model_type'],
-                 params=params,
-                 backend=params['backend'])
+    models = []
+    for i in range(len(model_paths)):
+        model = load(model_type=params_list[i]['model_type'],
+                     params=params_list[0],
+                     backend=params_list[0]['backend'])
 
-    # Restore the saved parameters
-    model.load_checkpoint(save_path=args.model_path, epoch=args.epoch)
+        # Restore the saved parameters
+        model.load_checkpoint(save_path=model_paths[i], epoch=args.epoch)
 
-    # GPU setting
-    model.set_cuda(deterministic=False, benchmark=True)
+        # GPU setting
+        model.set_cuda(deterministic=False, benchmark=True)
+        models.append(model)
 
     if 'word' in params['label_type']:
         wer_eval1, df_wer_eval1 = do_eval_wer(
-            models=[model],
+            models=models,
             dataset=eval1_data,
             beam_width=args.beam_width,
             max_decode_len=args.max_decode_len,
@@ -99,7 +112,7 @@ def main():
         print(df_wer_eval1)
 
         wer_eval2, df_wer_eval2 = do_eval_wer(
-            models=[model],
+            models=models,
             dataset=eval2_data,
             beam_width=args.beam_width,
             max_decode_len=args.max_decode_len,
@@ -109,7 +122,7 @@ def main():
         print(df_wer_eval2)
 
         wer_eval3, df_wer_eval3 = do_eval_wer(
-            models=[model],
+            models=models,
             dataset=eval3_data,
             beam_width=args.beam_width,
             max_decode_len=args.max_decode_len,
@@ -122,7 +135,7 @@ def main():
               ((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3))
     else:
         cer_eval1, wer_eval1, df_cer_eval1 = do_eval_cer(
-            models=[model],
+            models=models,
             dataset=eval1_data,
             beam_width=args.beam_width,
             max_decode_len=args.max_decode_len,
@@ -134,7 +147,7 @@ def main():
         print(df_cer_eval1)
 
         cer_eval2, wer_eval2, df_cer_eval2 = do_eval_cer(
-            models=[model],
+            models=models,
             dataset=eval2_data,
             beam_width=args.beam_width,
             max_decode_len=args.max_decode_len,
@@ -146,7 +159,7 @@ def main():
         print(df_cer_eval2)
 
         cer_eval3, wer_eval3, df_cer_eval3 = do_eval_cer(
-            models=[model],
+            models=models,
             dataset=eval3_data,
             beam_width=args.beam_width,
             max_decode_len=args.max_decode_len,

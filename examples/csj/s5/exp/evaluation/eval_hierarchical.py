@@ -28,7 +28,7 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
 parser.add_argument('--beam_width', type=int, default=1,
                     help='beam_width (int, optional): beam width for beam search.' +
                     ' 1 disables beam search, which mean greedy decoding.')
-parser.add_argument('--max_decode_len', type=int, default=60,
+parser.add_argument('--max_decode_len', type=int, default=80,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
 parser.add_argument('--max_decode_len_sub', type=int, default=150,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
@@ -95,7 +95,7 @@ def main():
     # eval1
     ##############################
     wer_eval1, df_wer_eval1 = do_eval_wer(
-        model=model,
+        models=[model],
         dataset=eval1_data,
         beam_width=args.beam_width,
         max_decode_len=args.max_decode_len,
@@ -106,7 +106,7 @@ def main():
     print(df_wer_eval1)
 
     cer_eval1, wer_eval1_sub, df_cer_eval1 = do_eval_cer(
-        model=model,
+        models=[model],
         dataset=eval1_data,
         beam_width=args.beam_width,
         max_decode_len=args.max_decode_len_sub,
@@ -121,7 +121,7 @@ def main():
     # eval2
     ##############################
     wer_eval2, df_wer_eval2 = do_eval_wer(
-        model=model,
+        models=[model],
         dataset=eval2_data,
         beam_width=args.beam_width,
         max_decode_len=args.max_decode_len,
@@ -132,7 +132,7 @@ def main():
     print(df_wer_eval2)
 
     cer_eval2, wer_eval2_sub, df_cer_eval2 = do_eval_cer(
-        model=model,
+        models=[model],
         dataset=eval2_data,
         beam_width=args.beam_width,
         max_decode_len=args.max_decode_len_sub,
@@ -147,7 +147,7 @@ def main():
     # eval3
     ##############################
     wer_eval3, df_wer_eval3 = do_eval_wer(
-        model=model,
+        models=[model],
         dataset=eval3_data,
         beam_width=args.beam_width,
         max_decode_len=args.max_decode_len,
@@ -158,7 +158,7 @@ def main():
     print(df_wer_eval3)
 
     cer_eval3, wer_eval3_sub, df_cer_eval3 = do_eval_cer(
-        model=model,
+        models=[model],
         dataset=eval3_data,
         beam_width=args.beam_width,
         max_decode_len=args.max_decode_len_sub,

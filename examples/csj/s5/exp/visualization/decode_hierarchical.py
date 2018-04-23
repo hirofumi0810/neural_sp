@@ -30,9 +30,9 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
 parser.add_argument('--beam_width', type=int, default=1,
                     help='beam_width (int, optional): beam width for beam search.' +
                     ' 1 disables beam search, which mean greedy decoding.')
-parser.add_argument('--max_decode_len', type=int, default=100,
+parser.add_argument('--max_decode_len', type=int, default=80,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
-parser.add_argument('--max_decode_len_sub', type=int, default=300,
+parser.add_argument('--max_decode_len_sub', type=int, default=150,
                     help='the length of output sequences to stop prediction when EOS token have not been emitted')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
@@ -51,9 +51,9 @@ def main():
         input_channel=params['input_channel'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
-        # data_type='eval1',
+        data_type='eval1',
         # data_type='eval2',
-        data_type='eval3',
+        # data_type='eval3',
         data_size=params['data_size'],
         label_type=params['label_type'], label_type_sub=params['label_type_sub'],
         batch_size=args.eval_batch_size, splice=params['splice'],
@@ -81,13 +81,13 @@ def main():
            max_decode_len=args.max_decode_len,
            max_decode_len_sub=args.max_decode_len_sub,
            eval_batch_size=args.eval_batch_size,
-           save_path=None
-           # save_path=args.model_path
-           )
+           save_path=None,
+           # save_path=args.model_path,
+           resolving_unk=False)
 
 
 def decode(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
-           eval_batch_size=None, save_path=None):
+           eval_batch_size=None, save_path=None, resolving_unk=False):
     """Visualize label outputs.
     Args:
         model: the model to evaluate
@@ -99,6 +99,7 @@ def decode(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
         max_decode_len_sub (int):
         eval_batch_size (int, optional): the batch size when evaluating the model
         save_path (string): path to save decoding results
+        resolving_unk (bool, optional):
     """
     # Set batch size in the evaluation
     if eval_batch_size is not None:
@@ -106,6 +107,7 @@ def decode(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
 
     idx2word = Idx2word(dataset.vocab_file_path)
     idx2char = Idx2char(dataset.vocab_file_path_sub)
+    # idx2char = Idx2word(dataset.vocab_file_path_sub)
 
     if save_path is not None:
         sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
@@ -114,22 +116,43 @@ def decode(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
 
         # Decode
         if model.model_type == 'nested_attention':
-            best_hyps, best_hyps_sub, perm_idx = model.decode(
-                batch['xs'], batch['x_lens'],
-                beam_width=beam_width,
-                max_decode_len=max_decode_len,
-                max_decode_len_sub=100)
+            if resolving_unk:
+                best_hyps, aw, best_hyps_sub, aw_sub, perm_idx = model.decode(
+                    batch['xs'], batch['x_lens'],
+                    beam_width=beam_width,
+                    max_decode_len=max_decode_len,
+                    max_decode_len_sub=100,
+                    resolving_unk=True)
+            else:
+                best_hyps, best_hyps_sub, perm_idx = model.decode(
+                    batch['xs'], batch['x_lens'],
+                    beam_width=beam_width,
+                    max_decode_len=max_decode_len,
+                    max_decode_len_sub=100,
+                    resolving_unk=False)
         else:
-            best_hyps, aw, perm_idx = model.decode(
-                batch['xs'], batch['x_lens'],
-                beam_width=beam_width,
-                max_decode_len=max_decode_len,
-                resolving_unk=True)
-            best_hyps_sub, aw_sub, perm_idx = model.decode(
-                batch['xs'], batch['x_lens'],
-                beam_width=beam_width,
-                max_decode_len=max_decode_len_sub,
-                is_sub_task=True, resolving_unk=True)
+            if resolving_unk:
+                best_hyps, aw, perm_idx = model.decode(
+                    batch['xs'], batch['x_lens'],
+                    beam_width=beam_width,
+                    max_decode_len=max_decode_len,
+                    task_index=0, resolving_unk=True)
+                best_hyps_sub, aw_sub, perm_idx = model.decode(
+                    batch['xs'], batch['x_lens'],
+                    beam_width=beam_width,
+                    max_decode_len=max_decode_len_sub,
+                    task_index=1, resolving_unk=True)
+            else:
+                best_hyps, perm_idx = model.decode(
+                    batch['xs'], batch['x_lens'],
+                    beam_width=beam_width,
+                    max_decode_len=max_decode_len,
+                    task_index=0, resolving_unk=False)
+                best_hyps_sub, perm_idx = model.decode(
+                    batch['xs'], batch['x_lens'],
+                    beam_width=beam_width,
+                    max_decode_len=max_decode_len_sub,
+                    task_index=1, resolving_unk=False)
 
         ys = batch['ys'][perm_idx]
         y_lens = batch['y_lens'][perm_idx]
@@ -160,9 +183,12 @@ def decode(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
             ##############################
             # Resolving UNK
             ##############################
-            if 'OOV' in str_hyp:
-                str_hyp_no_unk = resolve_unk(
-                    str_hyp, best_hyps_sub[b], aw[b], aw_sub[b], idx2char)
+            if resolving_unk:
+                if 'OOV' in str_hyp:
+                    str_hyp_no_unk = resolve_unk(
+                        str_hyp, best_hyps_sub[b], aw[b], aw_sub[b], idx2char)
+                else:
+                    str_hyp_no_unk = str_hyp
             else:
                 str_hyp_no_unk = str_hyp
 
