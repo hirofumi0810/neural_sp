@@ -119,6 +119,12 @@ def main():
         # Setting for logging
         logger = set_logger(model.save_path)
 
+        if os.path.isdir(params['char_init']):
+            # NOTE: Start training from the pre-trained character model
+            model.load_checkpoint(
+                save_path=params['char_init'], epoch=-1,
+                load_pretrained_model=True)
+
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):
             num_params = model.num_params_dict[name]
@@ -179,7 +185,8 @@ def main():
     logger.info('USERNAME: %s' % os.uname()[1])
 
     # Set process name
-    setproctitle('timit_' + params['model_type'] + '_' + params['label_type'])
+    setproctitle('timit_' + params['backend'] + '_' +
+                 params['model_type'] + '_' + params['label_type'])
 
     ##################################################
     # TRAINING LOOP

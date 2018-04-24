@@ -15,13 +15,11 @@ echo ===========================================================================
 echo "                                  TIMIT                                    "
 echo ============================================================================
 
-stage=3
+stage=2
 run_background=true
 restart=false
 
 ### Set path to original data
-#timit=/export/corpora5/LDC/LDC93S1/timit/TIMIT # @JHU
-# timit=/mnt/matylda2/data/TIMIT/timit # @BUT
 timit="/n/sd8/inaguma/corpus/timit/data"
 
 ### Set path to save dataset
@@ -35,7 +33,6 @@ MODEL_SAVEPATH="/n/sd8/inaguma/result/timit"
 TOOL=htk
 # TOOL=python_speech_features
 # TOOL=librosa
-# TOOL=wav
 
 ### Configuration of feature extranction
 CHANNELS=40
@@ -47,8 +44,6 @@ DELTADELTA=1
 # NORMALIZE=global
 NORMALIZE=speaker
 # NORMALIZE=utterance
-# NORMALIZE=no
-# NOTE: normalize in [-1, 1] in case of wav
 
 
 if [ $stage -le 0 ]; then
@@ -193,11 +188,3 @@ fi
 
 
 echo "Done."
-
-
-# echo ============================================================================
-# echo "                    Getting Results [see RESULTS file]                    "
-# echo ============================================================================
-#
-# bash RESULTS dev
-# bash RESULTS test

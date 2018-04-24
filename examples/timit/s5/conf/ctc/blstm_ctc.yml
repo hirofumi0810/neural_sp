@@ -55,6 +55,8 @@ param:
   parameter_init: 0.1
   recurrent_weight_orthogonal: True
   init_forget_gate_bias_with_one: True
+  char_init: False
+  # NOTE: phone_init in the case of TIMIT
 
   # regularization
   clip_grad_norm: 5.0
@@ -68,7 +70,7 @@ param:
 
   # annealing
   decay_start_epoch: 10
-  decay_rate: 0.95
+  decay_rate: 0.9
   decay_patient_epoch: 1
   sort_stop_epoch: 100
   not_improved_patient_epoch: 20

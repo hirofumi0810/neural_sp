@@ -43,7 +43,7 @@ def main():
     test_data = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
-        input_channel=params['input_channel'],
+        input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         data_type='test', label_type=params['label_type'],
@@ -92,41 +92,40 @@ def plot_attention(model, dataset, max_decode_len,
         shutil.rmtree(save_path)
         mkdir(save_path)
 
-    idx2phone = Idx2phone(dataset.vocab_file_path)
+    idx2phone = Idx2phone(dataset.vocab_file_path, return_list=True)
 
     for batch, is_new_epoch in dataset:
 
         # Decode
-        best_hyps, att_weights = model.attention_weights(
+        best_hyps, aw, perm_idx = model.attention_weights(
             batch['xs'], batch['x_lens'], max_decode_len=max_decode_len)
-        # NOTE: att_weights: `[B, T_out, T_in]`
+
+        ys = batch['ys'][perm_idx]
+        y_lens = batch['y_lens'][perm_idx]
 
         for b in range(len(batch['xs'])):
+            ##############################
+            # Reference
+            ##############################
+            if dataset.is_test:
+                str_ref = ys[b][0]
+                # NOTE: transcript is seperated by space('_')
+            else:
+                # Convert from list of index to string
+                str_ref = idx2phone(ys[b][:y_lens[b]])
 
             # Check if the sum of attention weights equals to 1
-            # print(np.sum(att_weights[b], axis=1))
+            # print(np.sum(aw[b], axis=1))
 
-            str_hyp = idx2phone(best_hyps[b])
-            eos = True if '>' in str_hyp else False
-
-            str_hyp = str_hyp.split('>')[0]
-            # NOTE: Trancate by <EOS>
-
-            # Remove the last space
-            if len(str_hyp) > 0 and str_hyp[-1] == ' ':
-                str_hyp = str_hyp[:-1]
-
-            if eos:
-                str_hyp += ' >'
+            token_list = idx2phone(best_hyps[b])
 
             plot_attention_weights(
-                att_weights[b, :len(str_hyp.split(' ')), :batch['x_lens'][b]],
-                frame_num=batch['x_lens'][b],
-                num_stack=dataset.num_stack,
-                label_list=str_hyp.split(' '),
+                aw[b, :len(token_list), :batch['x_lens'][b]],
+                label_list=token_list,
+                str_ref=str_ref,
                 spectrogram=batch['xs'][b, :, :40],
                 save_path=join(save_path, batch['input_names'][b] + '.png'),
-                figsize=(14, 7))
+                figsize=(20, 8))
 
         if is_new_epoch:
             break

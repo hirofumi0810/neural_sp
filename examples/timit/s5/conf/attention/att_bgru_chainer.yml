@@ -3,16 +3,13 @@ param:
   # framework
   backend: chainer
 
-  attention_type: content
-  # attention_type: location
+  # topology
+  encoder_num_layers: 4
+  subsample_list:
+    - False
+    - False
+    - False
+    - False
 
   # initialization
   recurrent_weight_orthogonal: False
-
-  # MTL
-  ctc_loss_weight: 0
-  # ctc_loss_weight: 0.2
-
-  batch_size: 40
-  scheduled_sampling_ramp_max_step: 6400
-  print_step: 10
