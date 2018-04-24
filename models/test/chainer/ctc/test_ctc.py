@@ -24,6 +24,19 @@ class TestCTC(unittest.TestCase):
     def test(self):
         print("CTC Working check.")
 
+        # CNN-CTC
+        self.check(encoder_type='cnn')
+        self.check(encoder_type='cnn', batch_norm=True, activation='relu')
+        # self.check(encoder_type='cnn', batch_norm=True, activation='prelu')
+        # self.check(encoder_type='cnn', batch_norm=True, activation='hard_tanh')
+        # self.check(encoder_type='cnn', batch_norm=True, activation='maxout')
+
+        # CLDNN-CTC
+        self.check(encoder_type='lstm', bidirectional=True,
+                   conv=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   conv=True, batch_norm=True)
+
         # Label smoothing
         self.check(encoder_type='lstm', bidirectional=True,
                    label_smoothing=True)
@@ -40,19 +53,6 @@ class TestCTC(unittest.TestCase):
                    encoder_residual=True)
         self.check(encoder_type='lstm', bidirectional=True,
                    encoder_dense_residual=True)
-
-        # CNN-CTC
-        self.check(encoder_type='cnn')
-        self.check(encoder_type='cnn', batch_norm=True, activation='relu')
-        # self.check(encoder_type='cnn', batch_norm=True, activation='prelu')
-        # self.check(encoder_type='cnn', batch_norm=True, activation='hard_tanh')
-        # self.check(encoder_type='cnn', batch_norm=True, activation='maxout')
-
-        # CLDNN-CTC
-        self.check(encoder_type='lstm', bidirectional=True,
-                   conv=True)
-        self.check(encoder_type='lstm', bidirectional=True,
-                   conv=True, batch_norm=True)
 
         # word-level CTC
         self.check(encoder_type='lstm', bidirectional=True,
@@ -130,7 +130,7 @@ class TestCTC(unittest.TestCase):
             encoder_bidirectional=bidirectional,
             encoder_num_units=256,
             encoder_num_proj=256 if projection else 0,
-            encoder_num_layers=2,
+            encoder_num_layers=1 if not subsample else 2,
             fc_list=fc_list,
             dropout_input=0.1,
             dropout_encoder=0.1,
@@ -142,6 +142,7 @@ class TestCTC(unittest.TestCase):
             subsample_list=[] if not subsample else [True] * 2,
             num_stack=num_stack,
             splice=splice,
+            input_channel=3,
             conv_channels=conv_channels,
             conv_kernel_sizes=conv_kernel_sizes,
             conv_strides=conv_strides,

@@ -7,6 +7,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import torch.nn as nn
+
 from models.pytorch.ctc.ctc import CTC, _concatenate_labels
 from models.pytorch.linear import LinearND
 from models.pytorch.encoders.load_encoder import load
@@ -25,6 +27,7 @@ class HierarchicalCTC(CTC):
         encoder_num_layers (int): the number of layers of the encoder of the main task
         encoder_num_layers_sub (int): the number of layers of the encoder of the sub task
         fc_list (list):
+        fc_list_sub (list):
         dropout_input (float): the probability to drop nodes in input-hidden connection
         dropout_encoder (float): the probability to drop nodes in hidden-hidden connection
         main_loss_weight (float): A weight parameter for the CTC loss in the main task
@@ -48,6 +51,7 @@ class HierarchicalCTC(CTC):
         logits_temperature (float):
         num_stack (int, optional): the number of frames to stack
         splice (int, optional): frames to splice. Default is 1 frame.
+        input_channel (int, optional): the number of channels of input features
         conv_channels (list, optional):
         conv_kernel_sizes (list, optional):
         conv_strides (list, optional):
@@ -70,6 +74,7 @@ class HierarchicalCTC(CTC):
                  encoder_num_layers,
                  encoder_num_layers_sub,  # ***
                  fc_list,
+                 fc_list_sub,
                  dropout_input,
                  dropout_encoder,
                  main_loss_weight,  # ***
@@ -85,6 +90,7 @@ class HierarchicalCTC(CTC):
                  logits_temperature=1,
                  num_stack=1,
                  splice=1,
+                 input_channel=1,
                  conv_channels=[],
                  conv_kernel_sizes=[],
                  conv_strides=[],
@@ -110,6 +116,13 @@ class HierarchicalCTC(CTC):
             subsample_list=subsample_list,
             subsample_type=subsample_type,
             fc_list=fc_list,
+            num_stack=num_stack,
+            splice=splice,
+            input_channel=input_channel,
+            conv_channels=conv_channels,
+            conv_kernel_sizes=conv_kernel_sizes,
+            conv_strides=conv_strides,
+            poolings=poolings,
             logits_temperature=logits_temperature,
             batch_norm=batch_norm,
             label_smoothing_prob=label_smoothing_prob,
@@ -118,6 +131,7 @@ class HierarchicalCTC(CTC):
 
         # Setting for the encoder
         self.encoder_num_layers_sub = encoder_num_layers_sub
+        self.fc_list_sub = fc_list_sub
 
         # Setting for CTC
         self.num_classes_sub = num_classes_sub + 1  # Add the blank class
@@ -146,6 +160,7 @@ class HierarchicalCTC(CTC):
                 pack_sequence=True,
                 num_stack=num_stack,
                 splice=splice,
+                input_channel=input_channel,
                 conv_channels=conv_channels,
                 conv_kernel_sizes=conv_kernel_sizes,
                 conv_strides=conv_strides,
@@ -154,10 +169,78 @@ class HierarchicalCTC(CTC):
                 batch_norm=batch_norm,
                 residual=encoder_residual,
                 dense_residual=encoder_dense_residual)
+        elif encoder_type == 'cnn':
+            assert num_stack == 1 and splice == 1
+            self.encoder = load(encoder_type='cnn')(
+                input_size=input_size,
+                input_channel=input_channel,
+                conv_channels=conv_channels,
+                conv_kernel_sizes=conv_kernel_sizes,
+                conv_strides=conv_strides,
+                poolings=poolings,
+                dropout_input=dropout_input,
+                dropout_hidden=dropout_encoder,
+                activation=activation,
+                batch_norm=batch_norm)
         else:
             raise NotImplementedError
 
-        self.fc_sub = LinearND(self.encoder_num_units, self.num_classes_sub)
+        ##################################################
+        # Fully-connected layers in the main task
+        ##################################################
+        if len(fc_list) > 0:
+            for i in range(len(fc_list)):
+                if i == 0:
+                    if encoder_type == 'cnn':
+                        bottle_input_size = self.encoder.output_size
+                    else:
+                        bottle_input_size = self.encoder_num_units
+
+                    # TODO: add batch norm layers
+
+                    setattr(self, 'fc_0', LinearND(
+                        bottle_input_size, fc_list[i],
+                        dropout=dropout_encoder))
+                else:
+                    # TODO: add batch norm layers
+
+                    setattr(self, 'fc_' + str(i),
+                            LinearND(fc_list[i - 1], fc_list[i],
+                                     dropout=dropout_encoder))
+            # TODO: remove a bias term in the case of batch normalization
+
+            self.fc_out = LinearND(fc_list[-1], self.num_classes)
+        else:
+            self.fc_out = LinearND(self.encoder_num_units, self.num_classes)
+
+        ##################################################
+        # Fully-connected layers in the sub task
+        ##################################################
+        if len(fc_list_sub) > 0:
+            for i in range(len(fc_list_sub)):
+                if i == 0:
+                    if encoder_type == 'cnn':
+                        bottle_input_size = self.encoder.output_size
+                    else:
+                        bottle_input_size = self.encoder_num_units
+
+                    # TODO: add batch norm layers
+
+                    setattr(self, 'fc_sub_0', LinearND(
+                        bottle_input_size, fc_list_sub[i],
+                        dropout=dropout_encoder))
+                else:
+                    # TODO: add batch norm layers
+
+                    setattr(self, 'fc_sub_' + str(i),
+                            LinearND(fc_list_sub[i - 1], fc_list_sub[i],
+                                     dropout=dropout_encoder))
+            # TODO: remove a bias term in the case of batch normalization
+
+            self.fc_out_sub = LinearND(fc_list_sub[-1], self.num_classes_sub)
+        else:
+            self.fc_out_sub = LinearND(
+                self.encoder_num_units, self.num_classes_sub)
 
         ##################################################
         # Initialize parameters

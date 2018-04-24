@@ -24,6 +24,15 @@ class TestCTC(unittest.TestCase):
     def test(self):
         print("Hierarchical CTC Working check.")
 
+        # CNN-CTC
+        self.check(encoder_type='cnn', batch_norm=True, activation='relu')
+
+        # CLDNN-CTC
+        self.check(encoder_type='lstm', bidirectional=True,
+                   conv=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   conv=True, batch_norm=True)
+
         # Label smoothing
         self.check(encoder_type='lstm', bidirectional=True,
                    label_smoothing=True)
@@ -41,18 +50,13 @@ class TestCTC(unittest.TestCase):
         self.check(encoder_type='lstm', bidirectional=True,
                    dense_residual=True)
 
-        # CLDNN-CTC
-        self.check(encoder_type='lstm', bidirectional=True,
-                   conv=True)
-        self.check(encoder_type='lstm', bidirectional=True,
-                   conv=True, batch_norm=True)
-
+        # BLSTM-CTC
         self.check(encoder_type='lstm', bidirectional=True)
 
     @measure_time
     def check(self, encoder_type, bidirectional=False,
               subsample=False, projection=False,
-              conv=False, batch_norm=False,
+              conv=False, batch_norm=False, activation='relu',
               residual=False, dense_residual=False, label_smoothing=False):
 
         print('==================================================')
@@ -89,7 +93,7 @@ class TestCTC(unittest.TestCase):
             fc_list = []
 
         # Load batch data
-        num_stack = 1 if subsample or conv else 2
+        num_stack = 1 if subsample or conv or encoder_type == 'cnn' else 2
         splice = 1
         xs, ys, ys_sub, x_lens, y_lens, y_lens_sub = generate_data(
             label_type='word_char',
@@ -108,9 +112,10 @@ class TestCTC(unittest.TestCase):
             encoder_bidirectional=bidirectional,
             encoder_num_units=256,
             encoder_num_proj=256 if projection else 0,
-            encoder_num_layers=3,
-            encoder_num_layers_sub=2,
+            encoder_num_layers=2,
+            encoder_num_layers_sub=1,
             fc_list=fc_list,
+            fc_list_sub=fc_list,
             dropout_input=0.1,
             dropout_encoder=0.1,
             main_loss_weight=0.8,
@@ -121,7 +126,7 @@ class TestCTC(unittest.TestCase):
             parameter_init=0.1,
             recurrent_weight_orthogonal=False,
             init_forget_gate_bias_with_one=True,
-            subsample_list=[] if not subsample else [True, True, False],
+            subsample_list=[] if not subsample else [True, False],
             num_stack=num_stack,
             splice=splice,
             conv_channels=conv_channels,

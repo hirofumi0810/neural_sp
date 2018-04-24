@@ -10,6 +10,7 @@ from __future__ import print_function
 import numpy as np
 import chainer
 from chainer import functions as F
+from chainer import links as L
 from models.chainer.ctc.ctc_loss_from_chainer import connectionist_temporal_classification
 
 from models.chainer.base import ModelBase
@@ -24,7 +25,7 @@ from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
 class CTC(ModelBase):
     """The Connectionist Temporal Classification model.
     Args:
-        input_size (int): the dimension of input features
+        input_size (int): the dimension of input features (freq * channel)
         encoder_type (string): the type of the encoder. Set lstm or gru or rnn.
         encoder_bidirectional (bool): if True create a bidirectional encoder
         encoder_num_units (int): the number of units in each layer
@@ -50,6 +51,7 @@ class CTC(ModelBase):
         logits_temperature (float):
         num_stack (int, optional): the number of frames to stack
         splice (int, optional): frames to splice. Default is 1 frame.
+        input_channel (int, optional): the number of channels of input features
         conv_channels (list, optional):
         conv_kernel_sizes (list, optional):
         conv_strides (list, optional):
@@ -83,6 +85,7 @@ class CTC(ModelBase):
                  logits_temperature=1,
                  num_stack=1,
                  splice=1,
+                 input_channel=1,
                  conv_channels=[],
                  conv_kernel_sizes=[],
                  conv_strides=[],
@@ -106,6 +109,7 @@ class CTC(ModelBase):
             self.encoder_num_units *= 2
         self.fc_list = fc_list
         self.subsample_list = subsample_list
+        self.batch_norm = batch_norm
 
         # Setting for CTC
         self.num_classes = num_classes + 1  # Add the blank class
@@ -134,6 +138,7 @@ class CTC(ModelBase):
                     merge_bidirectional=False,
                     num_stack=num_stack,
                     splice=splice,
+                    input_channel=input_channel,
                     conv_channels=conv_channels,
                     conv_kernel_sizes=conv_kernel_sizes,
                     conv_strides=conv_strides,
@@ -146,6 +151,7 @@ class CTC(ModelBase):
                 assert num_stack == 1 and splice == 1
                 self.encoder = load(encoder_type='cnn')(
                     input_size=input_size,
+                    input_channel=input_channel,
                     conv_channels=conv_channels,
                     conv_kernel_sizes=conv_kernel_sizes,
                     conv_strides=conv_strides,
@@ -158,38 +164,40 @@ class CTC(ModelBase):
             else:
                 raise NotImplementedError
 
+            ##################################################
+            # Fully-connected layers
+            ##################################################
             if len(fc_list) > 0:
-                self.fc_layers = []
                 for i in range(len(fc_list)):
                     if i == 0:
                         if encoder_type == 'cnn':
                             bottle_input_size = self.encoder.output_size
                         else:
                             bottle_input_size = self.encoder_num_units
+
                         # if batch_norm:
-                        #     self.fc_layers.append(
-                        #         L.BatchNormalization(bottle_input_size))
-                        # TODO: to_gpu()
-                        self.fc_layers.append(
-                            LinearND(bottle_input_size, fc_list[i],
-                                     dropout=dropout_encoder,
-                                     use_cuda=self.use_cuda))
+                        #     setattr(self, 'bn_fc_0',
+                        #             L.BatchNormalization(bottle_input_size))
+
+                        setattr(self, 'fc_0', LinearND(
+                            bottle_input_size, fc_list[i],
+                            dropout=dropout_encoder, use_cuda=self.use_cuda))
                     else:
                         # if batch_norm:
-                        #     self.fc_layers.append(
-                        #         L.BatchNormalization(fc_list[i - 1]))
-                        # TODO: to_gpu()
-                        self.fc_layers.append(
-                            LinearND(fc_list[i - 1], fc_list[i],
-                                     dropout=dropout_encoder,
-                                     use_cuda=self.use_cuda))
+                        #     setattr(self, 'bn_fc_' + str(i),
+                        #             L.BatchNormalization(fc_list[i - 1]))
+
+                        setattr(self, 'fc_' + str(i), LinearND(
+                            fc_list[i - 1], fc_list[i],
+                            dropout=dropout_encoder, use_cuda=self.use_cuda))
                 # TODO: remove a bias term in the case of batch normalization
 
-                self.fc = LinearND(fc_list[-1], self.num_classes,
-                                   use_cuda=self.use_cuda)
+                self.fc_out = LinearND(fc_list[-1], self.num_classes,
+                                       use_cuda=self.use_cuda)
             else:
-                self.fc = LinearND(self.encoder_num_units, self.num_classes,
-                                   use_cuda=self.use_cuda)
+                self.fc_out = LinearND(
+                    self.encoder_num_units, self.num_classes,
+                    use_cuda=self.use_cuda)
 
             ##################################################
             # Initialize parameters
@@ -294,69 +302,41 @@ class CTC(ModelBase):
                 x_lens_sub (np.ndarray): A tensor of size `[B]`
         """
         if is_multi_task:
-            xs, x_lens, xs_sub, x_lens_sub = self.encoder(xs, x_lens)
+            if self.encoder_type == 'cnn':
+                xs, x_lens = self.encoder(xs, x_lens)
+                xs_sub = xs
+                x_lens_sub = x_lens
+            else:
+                xs, x_lens, xs_sub, x_lens_sub = self.encoder(xs, x_lens)
         else:
             xs, x_lens = self.encoder(xs, x_lens)
 
         # Concatenate
         xs = F.pad_sequence(xs, padding=0)
 
+        # Path through fully-connected layers
         if len(self.fc_list) > 0:
-            for fc in self.fc_layers:
-                xs = fc(xs)
-        logits = self.fc(xs)
+            for i in range(len(self.fc_list)):
+                # if self.batch_norm:
+                #     xs = self['bn_fc_' + str(i)](xs)
+                xs = self['fc_' + str(i)](xs)
+        logits = self.fc_out(xs)
 
         if is_multi_task:
             # Concatenate
             xs_sub = F.pad_sequence(xs_sub, padding=0)
 
-            logits_sub = self.fc_sub(xs_sub)
+            # Path through fully-connected layers
+            if len(self.fc_list_sub) > 0:
+                for i in range(len(self.fc_list_sub)):
+                    # if self.batch_norm:
+                    #     xs_sub = self['bn_fc_sub_' + str(i)](xs_sub)
+                    xs_sub = self['fc_sub_' + str(i)](xs_sub)
+            logits_sub = self.fc_out_sub(xs_sub)
+
             return logits, x_lens, logits_sub, x_lens_sub
         else:
             return logits, x_lens
-
-    def posteriors(self, xs, x_lens, temperature=1,
-                   blank_prior=None, task_idx=0):
-        """Returns CTC posteriors (after the softmax layer).
-        Args:
-            xs (list of np.ndarray):
-                A list of tensors of size `[B, T_in, input_size]`
-            x_lens (np.ndarray): A tensor of size `[B]`
-            temperature (float, optional): the temperature parameter for the
-                softmax layer in the inference stage
-            blank_prior (float, optional):
-            task_idx (int, optional): the index ofta task
-        Returns:
-            probs (np.ndarray): A tensor of size `[B, T, num_classes]`
-            perm_idx (np.ndarray): For interface with pytorch, not used
-        """
-        with chainer.no_backprop_mode(), chainer.using_config('train', False):
-
-            # Wrap by Variable
-            xs = self.np2var(xs)
-
-            # Encode acoustic features
-            if hasattr(self, 'main_loss_weight'):
-                if task_idx == 0:
-                    logits, _, _, _, perm_idx = self._encode(
-                        xs, x_lens, is_multi_task=True)
-                elif task_idx == 1:
-                    _, _, logits, _, perm_idx = self._encode(
-                        xs, x_lens, is_multi_task=True)
-                else:
-                    raise NotImplementedError
-            else:
-                logits, _, perm_idx = self._encode(xs, x_lens)
-
-            probs = F.softmax(logits / temperature)
-
-            # Divide by blank prior
-            if blank_prior is not None:
-                raise NotImplementedError
-
-            perm_idx = np.arange(0, len(xs), 1)
-
-            return self.var2np(probs), perm_idx
 
     def decode(self, xs, x_lens, beam_width=1,
                max_decode_len=None, task_index=0):
@@ -404,6 +384,49 @@ class CTC(ModelBase):
         perm_idx = np.arange(0, len(xs), 1)
 
         return best_hyps, perm_idx
+
+    def posteriors(self, xs, x_lens, temperature=1,
+                   blank_prior=None, task_idx=0):
+        """Returns CTC posteriors (after the softmax layer).
+        Args:
+            xs (list of np.ndarray):
+                A list of tensors of size `[B, T_in, input_size]`
+            x_lens (np.ndarray): A tensor of size `[B]`
+            temperature (float, optional): the temperature parameter for the
+                softmax layer in the inference stage
+            blank_prior (float, optional):
+            task_idx (int, optional): the index ofta task
+        Returns:
+            probs (np.ndarray): A tensor of size `[B, T, num_classes]`
+            perm_idx (np.ndarray): For interface with pytorch, not used
+        """
+        with chainer.no_backprop_mode(), chainer.using_config('train', False):
+
+            # Wrap by Variable
+            xs = self.np2var(xs)
+
+            # Encode acoustic features
+            if hasattr(self, 'main_loss_weight'):
+                if task_idx == 0:
+                    logits, _, _, _, perm_idx = self._encode(
+                        xs, x_lens, is_multi_task=True)
+                elif task_idx == 1:
+                    _, _, logits, _, perm_idx = self._encode(
+                        xs, x_lens, is_multi_task=True)
+                else:
+                    raise NotImplementedError
+            else:
+                logits, _, perm_idx = self._encode(xs, x_lens)
+
+            probs = F.softmax(logits / temperature)
+
+            # Divide by blank prior
+            if blank_prior is not None:
+                raise NotImplementedError
+
+            perm_idx = np.arange(0, len(xs), 1)
+
+            return self.var2np(probs), perm_idx
 
     def decode_from_probs(self, probs, x_lens, beam_width=1,
                           max_decode_len=None):

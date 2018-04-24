@@ -30,7 +30,7 @@ LOG_1 = 0
 class AttentionSeq2seq(ModelBase):
     """Attention-based sequence-to-sequence model.
     Args:
-        input_size (int): the dimension of input features
+        input_size (int): the dimension of input features (freq * channel)
         encoder_type (string): the type of the encoder. Set lstm or gru or rnn.
         encoder_bidirectional (bool): if True, create a bidirectional encoder
         encoder_num_units (int): the number of units in each layer of the encoder
@@ -83,6 +83,7 @@ class AttentionSeq2seq(ModelBase):
             This must be the odd number.
         num_stack (int, optional): the number of frames to stack
         splice (int, optional): frames to splice. Default is 1 frame.
+        input_channel (int, optional): the number of channels of input features
         conv_channels (list, optional): the number of channles in the
             convolution of the location-based attention
         conv_kernel_sizes (list, optional): the size of kernels in the
@@ -145,6 +146,7 @@ class AttentionSeq2seq(ModelBase):
                  attention_conv_width=201,
                  num_stack=1,
                  splice=1,
+                 input_channel=1,
                  conv_channels=[],
                  conv_kernel_sizes=[],
                  conv_strides=[],
@@ -238,6 +240,7 @@ class AttentionSeq2seq(ModelBase):
                 pack_sequence=True,
                 num_stack=num_stack,
                 splice=splice,
+                input_channel=input_channel,
                 conv_channels=conv_channels,
                 conv_kernel_sizes=conv_kernel_sizes,
                 conv_strides=conv_strides,
@@ -250,6 +253,7 @@ class AttentionSeq2seq(ModelBase):
             assert num_stack == 1 and splice == 1
             self.encoder = load(encoder_type='cnn')(
                 input_size=input_size,
+                input_channel=input_channel,
                 conv_channels=conv_channels,
                 conv_kernel_sizes=conv_kernel_sizes,
                 conv_strides=conv_strides,
@@ -603,8 +607,15 @@ class AttentionSeq2seq(ModelBase):
             perm_idx (torch.autograd.Variable, long): A tensor of size `[B]`
         """
         if is_multi_task:
-            xs, x_lens, xs_sub, x_lens_sub, perm_idx = self.encoder(
-                xs, x_lens, volatile=not self.training)
+            if self.encoder_type == 'cnn':
+                xs, x_lens = self.encoder(xs, x_lens)
+                perm_idx = None
+                xs_sub = xs
+                x_lens_sub = x_lens
+                # TODO: clone??
+            else:
+                xs, x_lens, xs_sub, x_lens_sub, perm_idx = self.encoder(
+                    xs, x_lens, volatile=not self.training)
         else:
             if self.encoder_type == 'cnn':
                 xs, x_lens = self.encoder(xs, x_lens)

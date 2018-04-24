@@ -29,6 +29,15 @@ class TestHierarchicalAttention(unittest.TestCase):
     def test(self):
         print("Hierarchical Attention Working check.")
 
+        # CNN-CTC
+        self.check(encoder_type='cnn', decoder_type='lstm', batch_norm=True)
+
+        # CLDNN encoder
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', conv=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', conv=True, batch_norm=True)
+
         # Forward word decoder + backward char decoder
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', backward_sub=True)
@@ -57,17 +66,12 @@ class TestHierarchicalAttention(unittest.TestCase):
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', dense_residual=True)
 
-        # CLDNN encoder
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', conv=True)
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', conv=True, batch_norm=True)
-
+        # BLSTM encoder
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm')
 
     @measure_time
-    def check(self, encoder_type, bidirectional, decoder_type,
+    def check(self, encoder_type, decoder_type, bidirectional=False,
               attention_type='location', subsample=False, projection=False,
               ctc_loss_weight_sub=0, conv=False, batch_norm=False,
               residual=False, dense_residual=False,
@@ -109,7 +113,7 @@ class TestHierarchicalAttention(unittest.TestCase):
 
         # Load batch data
         splice = 1
-        num_stack = 1 if subsample or conv else 2
+        num_stack = 1 if subsample or conv or encoder_type == 'cnn' else 2
         xs, ys, ys_sub, x_lens, y_lens, y_lens_sub = generate_data(
             label_type='word_char',
             batch_size=2,
@@ -123,8 +127,8 @@ class TestHierarchicalAttention(unittest.TestCase):
             encoder_bidirectional=bidirectional,
             encoder_num_units=256,
             encoder_num_proj=256 if projection else 0,
-            encoder_num_layers=3,
-            encoder_num_layers_sub=2,
+            encoder_num_layers=2,
+            encoder_num_layers_sub=1,
             attention_type=attention_type,
             attention_dim=128,
             decoder_type=decoder_type,
@@ -146,7 +150,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             parameter_init=0.1,
             recurrent_weight_orthogonal=False,
             init_forget_gate_bias_with_one=True,
-            subsample_list=[] if not subsample else [True, False, False],
+            subsample_list=[] if not subsample else [True, False],
             subsample_type='concat' if subsample is False else subsample,
             bridge_layer=True,
             init_dec_state='first',
@@ -158,10 +162,12 @@ class TestHierarchicalAttention(unittest.TestCase):
             attention_conv_width=201,
             num_stack=num_stack,
             splice=splice,
+            input_channel=3,
             conv_channels=conv_channels,
             conv_kernel_sizes=conv_kernel_sizes,
             conv_strides=conv_strides,
             poolings=poolings,
+            activation='relu',
             batch_norm=batch_norm,
             scheduled_sampling_prob=0.1,
             scheduled_sampling_ramp_max_step=200,

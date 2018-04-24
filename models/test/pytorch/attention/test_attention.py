@@ -39,6 +39,15 @@ class TestAttention(unittest.TestCase):
     def test(self):
         print("Attention Working check.")
 
+        # CNN encoder
+        self.check(encoder_type='cnn', decoder_type='lstm', batch_norm=True)
+
+        # CLDNN encoder
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', conv=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', conv=True, batch_norm=True)
+
         # Multi-head attention
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', attention_type='content', num_heads=2)
@@ -73,9 +82,6 @@ class TestAttention(unittest.TestCase):
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', init_dec_state='zero')
 
-        # CNN encoder
-        self.check(encoder_type='cnn', decoder_type='lstm', batch_norm=True)
-
         # Pyramidal encoder
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', subsample='drop')
@@ -91,12 +97,6 @@ class TestAttention(unittest.TestCase):
                    decoder_type='lstm', residual=True)
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', dense_residual=True)
-
-        # CLDNN encoder
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', conv=True)
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', conv=True, batch_norm=True)
 
         # word-level attention
         self.check(encoder_type='lstm', bidirectional=True,
@@ -190,7 +190,7 @@ class TestAttention(unittest.TestCase):
             encoder_bidirectional=bidirectional,
             encoder_num_units=256,
             encoder_num_proj=256 if projection else 0,
-            encoder_num_layers=2,
+            encoder_num_layers=1 if not subsample else 2,
             attention_type=attention_type,
             attention_dim=128,
             decoder_type=decoder_type,
@@ -206,8 +206,8 @@ class TestAttention(unittest.TestCase):
             parameter_init=0.1,
             recurrent_weight_orthogonal=False,
             init_forget_gate_bias_with_one=True,
-            subsample_list=[] if subsample is False else [True, False],
-            subsample_type='concat' if subsample is False else subsample,
+            subsample_list=[] if not subsample else [True, False],
+            subsample_type='concat' if not subsample else subsample,
             bridge_layer=True,
             init_dec_state=init_dec_state,
             sharpening_factor=1,
@@ -219,10 +219,12 @@ class TestAttention(unittest.TestCase):
             attention_conv_width=201,
             num_stack=num_stack,
             splice=splice,
+            input_channel=3,
             conv_channels=conv_channels,
             conv_kernel_sizes=conv_kernel_sizes,
             conv_strides=conv_strides,
             poolings=poolings,
+            activation='relu',
             batch_norm=batch_norm,
             scheduled_sampling_prob=0.1,
             scheduled_sampling_ramp_max_step=200,

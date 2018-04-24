@@ -41,6 +41,7 @@ class RNNEncoder(nn.Module):
         pack_sequence (bool, optional):
         num_stack (int, optional): the number of frames to stack
         splice (int, optional): frames to splice. Default is 1 frame.
+        input_channel (int, optional): the number of channels of input features
         conv_channels (list, optional): the number of channles in CNN layers
         conv_kernel_sizes (list, optional): the size of kernels in CNN layers
         conv_strides (list, optional): strides in CNN layers
@@ -70,6 +71,7 @@ class RNNEncoder(nn.Module):
                  pack_sequence=True,
                  num_stack=1,
                  splice=1,
+                 input_channel=1,
                  conv_channels=[],
                  conv_kernel_sizes=[],
                  conv_strides=[],
@@ -126,7 +128,6 @@ class RNNEncoder(nn.Module):
                 subsample_last_layer = num_layers - i_layer_reverse
                 break
         self.residual_start_layer = subsample_last_layer + 1
-        # NOTE: このレイヤの出力からres_outputs_listに入れていく
 
         # Dropout for input-hidden connection
         self.dropout_input = nn.Dropout(p=dropout_input)
@@ -135,6 +136,7 @@ class RNNEncoder(nn.Module):
         if len(conv_channels) > 0 and len(conv_channels) == len(conv_kernel_sizes) and len(conv_kernel_sizes) == len(conv_strides):
             assert num_stack == 1 and splice == 1
             self.conv = CNNEncoder(input_size,
+                                   input_channel=input_channel,
                                    conv_channels=conv_channels,
                                    conv_kernel_sizes=conv_kernel_sizes,
                                    conv_strides=conv_strides,

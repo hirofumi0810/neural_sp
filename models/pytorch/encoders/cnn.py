@@ -20,7 +20,8 @@ from models.pytorch.encoders.cnn_utils import ConvOutSize, Maxout
 class CNNEncoder(nn.Module):
     """CNN encoder.
     Args:
-        input_size (int): the dimension of input features
+        input_size (int): the dimension of input features (freq * channel)
+        input_channel (int, optional): the number of channels of input features
         conv_channels (list, optional): the number of channles in CNN layers
         conv_kernel_sizes (list, optional): the size of kernels in CNN layers
         conv_strides (list, optional): strides in CNN layers
@@ -33,6 +34,7 @@ class CNNEncoder(nn.Module):
 
     def __init__(self,
                  input_size,
+                 input_channel,
                  conv_channels,
                  conv_kernel_sizes,
                  conv_strides,
@@ -44,12 +46,9 @@ class CNNEncoder(nn.Module):
 
         super(CNNEncoder, self).__init__()
 
-        if input_size % 3 == 0:
-            self.input_freq = input_size // 3
-            self.input_channels = 3
-        else:
-            self.input_freq = input_size
-            self.input_channels = 1
+        self.input_channel = input_channel
+        assert input_size % input_channel == 0
+        self.input_freq = input_size // input_channel
 
         assert len(conv_channels) > 0
         assert len(conv_channels) == len(conv_kernel_sizes)
@@ -60,7 +59,7 @@ class CNNEncoder(nn.Module):
         self.dropout_input = nn.Dropout(p=dropout_input)
 
         layers = []
-        in_c = self.input_channels
+        in_c = self.input_channel
         in_freq = self.input_freq
         for l in range(len(conv_channels)):
 
@@ -132,14 +131,14 @@ class CNNEncoder(nn.Module):
         """
         batch_size, max_time, input_size = xs.size()
 
-        # assert input_size == self.input_freq * self.input_channels
+        # assert input_size == self.input_freq * self.input_channel
 
         # Dropout for inputs-hidden connection
         xs = self.dropout_input(xs)
 
         # Reshape to 4D tensor
         xs = xs.transpose(1, 2).contiguous()
-        if self.input_channels == 3:
+        if self.input_channel == 3:
             xs = xs.view(batch_size, 3, input_size // 3, max_time)
             # NOTE: xs: `[B, in_ch (3), freq // 3, max_time]`
         else:

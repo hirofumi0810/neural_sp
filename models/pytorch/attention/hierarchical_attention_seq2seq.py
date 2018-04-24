@@ -65,6 +65,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  attention_conv_width=201,
                  num_stack=1,
                  splice=1,
+                 input_channel=1,
                  conv_channels=[],
                  conv_kernel_sizes=[],
                  conv_strides=[],
@@ -118,11 +119,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             attention_conv_width=attention_conv_width,
             num_stack=num_stack,
             splice=splice,
+            input_channel=input_channel,
             conv_channels=conv_channels,
             conv_kernel_sizes=conv_kernel_sizes,
             conv_strides=conv_strides,
             poolings=poolings,
-            batch_norm=batch_norm,
             scheduled_sampling_prob=scheduled_sampling_prob,
             scheduled_sampling_ramp_max_step=scheduled_sampling_ramp_max_step,
             label_smoothing_prob=label_smoothing_prob,
@@ -184,6 +185,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 pack_sequence=True,
                 num_stack=num_stack,
                 splice=splice,
+                input_channel=input_channel,
                 conv_channels=conv_channels,
                 conv_kernel_sizes=conv_kernel_sizes,
                 conv_strides=conv_strides,
@@ -192,6 +194,21 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 batch_norm=batch_norm,
                 residual=encoder_residual,
                 dense_residual=encoder_dense_residual)
+        elif encoder_type == 'cnn':
+            assert num_stack == 1 and splice == 1
+            self.encoder = load(encoder_type='cnn')(
+                input_size=input_size,
+                input_channel=input_channel,
+                conv_channels=conv_channels,
+                conv_kernel_sizes=conv_kernel_sizes,
+                conv_strides=conv_strides,
+                poolings=poolings,
+                dropout_input=dropout_input,
+                dropout_hidden=dropout_encoder,
+                activation=activation,
+                batch_norm=batch_norm)
+            self.init_dec_state_0 = 'zero'
+            self.init_dec_state_1 = 'zero'
         else:
             raise NotImplementedError
 
@@ -201,12 +218,20 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             ##################################################
             # Bridge layer between the encoder and decoder
             ##################################################
-            if bridge_layer:
+            if encoder_type == 'cnn':
+                self.bridge_1 = LinearND(
+                    self.encoder.output_size, decoder_num_units_sub,
+                    dropout=dropout_encoder)
+                self.encoder_num_units_sub = decoder_num_units_sub
+                self.is_bridge_sub = True
+            elif bridge_layer:
                 self.bridge_1 = LinearND(
                     self.encoder_num_units_sub, decoder_num_units_sub,
                     dropout=dropout_encoder)
                 self.encoder_num_units_sub = decoder_num_units_sub
                 self.is_bridge_sub = True
+            else:
+                self.is_bridge_sub = False
 
             ##################################################
             # Initialization of the decoder
