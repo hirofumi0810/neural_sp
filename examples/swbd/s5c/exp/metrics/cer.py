@@ -16,11 +16,11 @@ from examples.swbd.s5c.exp.metrics.glm import GLM
 from examples.swbd.s5c.exp.metrics.post_processing import fix_trans
 
 
-def do_eval_cer(model, dataset, beam_width, max_decode_len,
+def do_eval_cer(models, dataset, beam_width, max_decode_len,
                 eval_batch_size=None, progressbar=False):
     """Evaluate trained model by Character Error Rate.
     Args:
-        model: the model to evaluate
+        models (list): the models to evaluate
         dataset: An instance of a `Dataset' class
         beam_width: (int): the size of beam
         max_decode_len (int): the length of output sequences
@@ -36,7 +36,7 @@ def do_eval_cer(model, dataset, beam_width, max_decode_len,
     # Reset data counter
     dataset.reset()
 
-    if model.model_type in ['ctc', 'attention']:
+    if models[0].model_type in ['ctc', 'attention']:
         idx2char = Idx2char(
             vocab_file_path=dataset.vocab_file_path,
             capital_divide=(dataset.label_type == 'character_capital_divide'))
@@ -59,6 +59,8 @@ def do_eval_cer(model, dataset, beam_width, max_decode_len,
         batch, is_new_epoch = dataset.next(batch_size=eval_batch_size)
 
         # Decode
+        model = models[0]
+        # TODO: fix this
         if model.model_type in ['ctc', 'attention']:
             best_hyps, perm_idx = model.decode(batch['xs'], batch['x_lens'],
                                                beam_width=beam_width,
@@ -69,7 +71,7 @@ def do_eval_cer(model, dataset, beam_width, max_decode_len,
             best_hyps, perm_idx = model.decode(batch['xs'], batch['x_lens'],
                                                beam_width=beam_width,
                                                max_decode_len=max_decode_len,
-                                               is_sub_task=True)
+                                               task_index=1)
             ys = batch['ys_sub'][perm_idx]
             y_lens = batch['y_lens_sub'][perm_idx]
 
@@ -134,8 +136,6 @@ def do_eval_cer(model, dataset, beam_width, max_decode_len,
                 del_char += del_b
                 num_chars += len(str_ref.replace('_', ''))
             except:
-                # print('REF: %s' % str_ref)
-                # print('HYP: %s' % str_hyp)
                 pass
 
             if progressbar:

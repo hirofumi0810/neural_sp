@@ -1,7 +1,6 @@
 param:
   # framework
   backend: pytorch
-  # backend: chainer
 
   # corpus
   corpus: switchboard
@@ -12,9 +11,10 @@ param:
   # features
   feature: fbank
   tool: htk
-  input_channel: 40
+  input_freq: 40
   use_delta: True
   use_double_delta: True
+  input_channel: 3
   splice: 1
   num_stack: 1
   num_skip: 1
@@ -36,14 +36,15 @@ param:
   encoder_num_units: 320
   encoder_num_proj: 0
   encoder_num_layers: 5
-  encoder_num_layers_sub: 4
+  encoder_num_layers_sub: 5
   subsample_list:
-    - True
+    - False
     - True
     - True
     - False
     - False
   subsample_type: drop
+  bridge_layer: True
   attention_type: location
   attention_dim: 128
   decoder_type: lstm
@@ -52,13 +53,19 @@ param:
   decoder_num_units_sub: 320
   decoder_num_layers_sub: 1
   embedding_dim: 128
-  embedding_dim_sub: 16
+  embedding_dim_sub: 32
   attention_conv_num_channels: 10
   attention_conv_width: 201
-  decoding_order: attend_spell
+  decoding_order: attend_generate_update
+  bottleneck_dim: 256
+  bottleneck_dim_sub: 256
+  # backward_sub: False
+  backward_sub: True
+  num_heads: 1
+  num_heads_sub: 1
 
   # optimization
-  batch_size: 64
+  batch_size: 40
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 30
@@ -70,7 +77,8 @@ param:
   parameter_init: 0.1
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
-  char_init: False
+  # char_init: False
+  char_init: /n/sd8/inaguma/result/swbd/pytorch/ctc/character/300h/blstm320H5L_drop4_adam_lr1e-3_dropen0.2_input120
 
   # regularization
   clip_grad_norm: 5.0
@@ -87,21 +95,20 @@ param:
   sigmoid_smoothing: False
   coverage_weight: 0
   scheduled_sampling_prob: 0.2
-  scheduled_sampling_ramp_max_step: 50000
+  scheduled_sampling_ramp_max_step: 100000
   label_smoothing_prob: 0.1
   weight_noise_std: 0
 
   # annealing
   decay_start_epoch: 5
-  decay_rate: 0.75
-  decay_patient_epoch: 1
+  decay_rate: 0.8
+  decay_patient_epoch: 0
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
   eval_start_epoch: 5
   print_step: 200
 
   # MTL
-  main_loss_weight: 0.5
-  # main_loss_weight: 0.8
-  ctc_loss_weight_sub: 0
-  curriculum_training: False
+  main_loss_weight: 0.8
+  sub_loss_weight: 0.2
+  ctc_loss_weight_sub: 0.0

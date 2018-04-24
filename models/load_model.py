@@ -207,6 +207,7 @@ def load(model_type, params, backend):
             encoder_num_layers=params['encoder_num_layers'],
             encoder_num_layers_sub=params['encoder_num_layers_sub'],
             fc_list=params['fc_list'],
+            fc_list_sub=params['fc_list_sub'],
             dropout_input=params['dropout_input'],
             dropout_encoder=params['dropout_encoder'],
             main_loss_weight=params['main_loss_weight'],

@@ -67,7 +67,7 @@ def main():
     train_data = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
-        input_channel=params['input_channel'],
+        input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         data_type='train', data_size=params['data_size'],
@@ -82,7 +82,7 @@ def main():
     dev_data = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
-        input_channel=params['input_channel'],
+        input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         data_type='dev', data_size=params['data_size'],
@@ -94,7 +94,7 @@ def main():
     eval2000_swbd_data = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
-        input_channel=params['input_channel'],
+        input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         data_type='eval2000_swbd', data_size=params['data_size'],
@@ -106,7 +106,7 @@ def main():
     eval2000_ch_data = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
-        input_channel=params['input_channel'],
+        input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         data_type='eval2000_ch', data_size=params['data_size'],
@@ -308,7 +308,7 @@ def main():
                 start_time_eval = time.time()
                 # dev
                 metric_dev_epoch, _ = do_eval_wer(
-                    model=model,
+                    models=[model],
                     dataset=dev_data,
                     beam_width=1,
                     max_decode_len=MAX_DECODE_LEN_WORD,
@@ -328,7 +328,7 @@ def main():
 
                     # test
                     wer_eval2000_swbd, _ = do_eval_wer(
-                        model=model,
+                        models=[model],
                         dataset=eval2000_swbd_data,
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_WORD,
@@ -337,7 +337,7 @@ def main():
                                 (wer_eval2000_swbd * 100))
 
                     wer_eval2000_ch, _ = do_eval_wer(
-                        model=model,
+                        models=[model],
                         dataset=eval2000_ch_data,
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_WORD,

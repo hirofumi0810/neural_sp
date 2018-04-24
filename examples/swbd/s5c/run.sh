@@ -17,9 +17,9 @@ echo ===========================================================================
 echo "                           Switchboard (300h)                             "
 echo ============================================================================
 
-stage=3
-# hierarchical_model=false
-hierarchical_model=true
+stage=2
+hierarchical_model=false
+# hierarchical_model=true
 
 ### Set true when hiding progress bar
 run_background=true
@@ -44,7 +44,6 @@ MODEL_SAVEPATH="/n/sd8/inaguma/result/swbd"
 TOOL=htk
 # TOOL=python_speech_features
 # TOOL=librosa
-# # TOOL=wav
 
 ### Configuration of feature extranction
 CHANNELS=40
@@ -56,8 +55,6 @@ DELTADELTA=1
 # NORMALIZE=global
 NORMALIZE=speaker
 # NORMALIZE=utterance
-# NORMALIZE=no
-# NOTE: normalize in [-1, 1] in case of wav
 
 
 if [ ! -e $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe ]; then
@@ -200,19 +197,19 @@ if [ $stage -le 1 ]; then
       touch $DATA_SAVEPATH/wav_1ch/.done_wav_1ch
     fi
 
-    # Make a config file to covert from wav to htk file
-    # and split per channel
-    python local/make_htk_config.py \
-        --data_save_path $DATA_SAVEPATH \
-        --config_save_path ./conf/fbank_htk.conf \
-        --channels $CHANNELS \
-        --window $WINDOW \
-        --slide $SLIDE \
-        --energy $ENERGY \
-        --delta $DELTA \
-        --deltadelta $DELTADELTA || exit 1;
-
     if [ $TOOL = "htk" ]; then
+      # Make a config file to covert from wav to htk file
+      # and split per channel
+      python local/make_htk_config.py \
+          --data_save_path $DATA_SAVEPATH \
+          --config_save_path ./conf/fbank_htk.conf \
+          --channels $CHANNELS \
+          --window $WINDOW \
+          --slide $SLIDE \
+          --energy $ENERGY \
+          --delta $DELTA \
+          --deltadelta $DELTADELTA || exit 1;
+
       # Convert from wav to htk files
       for data_type in train dev eval2000 ; do
         mkdir -p $DATA_SAVEPATH/htk

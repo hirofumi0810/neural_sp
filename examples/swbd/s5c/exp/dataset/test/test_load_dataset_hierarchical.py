@@ -20,11 +20,9 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
 
     def test(self):
 
-        # framework
-        # self.check(label_type='word5', label_type_sub='character',
-        #            data_type='train', backend='chainer')
-
         # data_type
+        # self.check(label_type='word5', label_type_sub='character',
+        #            data_type='train')
         self.check(label_type='word5', label_type_sub='character',
                    data_type='dev')
         self.check(label_type='word5', label_type_sub='character',
@@ -63,7 +61,7 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
             # data_save_path='/n/sd8/inaguma/corpus/swbd/kaldi/' + data_size,
             data_save_path='/n/sd8/inaguma/corpus/swbd/kaldi',
             backend=backend,
-            input_channel=40, use_delta=True, use_double_delta=True,
+            input_freq=40, use_delta=True, use_double_delta=True,
             data_type=data_type, data_size=data_size,
             label_type=label_type, label_type_sub=label_type_sub,
             batch_size=64, max_epoch=1, splice=splice,

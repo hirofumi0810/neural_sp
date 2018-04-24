@@ -46,7 +46,7 @@ def main():
     eval2000_swbd_data = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
-        input_channel=params['input_channel'],
+        input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         data_type='eval2000_swbd', data_size=params['data_size'],
@@ -57,7 +57,7 @@ def main():
     eval2000_ch_data = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
-        input_channel=params['input_channel'],
+        input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         data_type='eval2000_ch',  data_size=params['data_size'],
@@ -84,7 +84,7 @@ def main():
     # Switchboard
     ##############################
     wer_eval2000_swbd, df_wer_eval2000_swbd = do_eval_wer(
-        model=model,
+        models=[model],
         dataset=eval2000_swbd_data,
         beam_width=args.beam_width,
         max_decode_len=args.max_decode_len,
@@ -94,7 +94,7 @@ def main():
     print('  WER (SWB, main): %.3f %%' % (wer_eval2000_swbd * 100))
     print(df_wer_eval2000_swbd)
     cer_eval2000_swbd_sub, wer_eval2000_swbd_sub, _ = do_eval_cer(
-        model=model,
+        models=[model],
         dataset=eval2000_swbd_data,
         beam_width=args.beam_width,
         max_decode_len=args.max_decode_len_sub,
@@ -107,17 +107,17 @@ def main():
     # Callhome
     ##############################
     wer_eval2000_ch, df_wer_eval2000_ch = do_eval_wer(
-        model=model,
+        models=[model],
         dataset=eval2000_ch_data,
         beam_width=args.beam_width,
         max_decode_len=args.max_decode_len,
         eval_batch_size=args.eval_batch_size,
-        # resolving_unk=True,
+        resolving_unk=True,
         progressbar=True)
     print('  WER (CHE, main): %.3f %%' % (wer_eval2000_ch * 100))
     print(df_wer_eval2000_ch)
     cer_eval2000_ch_sub, wer_eval2000_ch_sub, _ = do_eval_cer(
-        model=model,
+        models=[model],
         dataset=eval2000_ch_data,
         beam_width=args.beam_width,
         max_decode_len=args.max_decode_len_sub,

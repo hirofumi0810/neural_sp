@@ -18,11 +18,11 @@ from utils.evaluation.edit_distance import compute_wer
 from utils.evaluation.resolving_unk import resolve_unk
 
 
-def do_eval_wer(model, dataset, beam_width, max_decode_len,
+def do_eval_wer(models, dataset, beam_width, max_decode_len,
                 eval_batch_size=None, progressbar=False, resolving_unk=False):
     """Evaluate trained model by Word Error Rate.
     Args:
-        model: the model to evaluate
+        models (list): the models to evaluate
         dataset: An instance of a `Dataset' class
         beam_width: (int): the size of beam
         max_decode_len (int): the length of output sequences
@@ -39,8 +39,9 @@ def do_eval_wer(model, dataset, beam_width, max_decode_len,
     dataset.reset()
 
     idx2word = Idx2word(vocab_file_path=dataset.vocab_file_path)
-    idx2char = Idx2char(vocab_file_path=dataset.vocab_file_path_sub,
-                        capital_divide=dataset.label_type_sub == 'character_capital_divide')
+    if resolving_unk:
+        idx2char = Idx2char(vocab_file_path=dataset.vocab_file_path_sub,
+                            capital_divide=dataset.label_type_sub == 'character_capital_divide')
 
     # Read GLM file
     glm = GLM(
@@ -55,29 +56,53 @@ def do_eval_wer(model, dataset, beam_width, max_decode_len,
         batch, is_new_epoch = dataset.next(batch_size=eval_batch_size)
 
         # Decode
-        if model.model_type == 'nested_attention':
-            best_hyps, _, perm_idx = model.decode(
-                batch['xs'], batch['x_lens'],
-                beam_width=beam_width,
-                max_decode_len=max_decode_len,
-                max_decode_len_sub=100)
+        if len(models) > 1:
+            assert models[0].model_type in ['ctc']
+            for i, model in enumerate(models):
+                probs, x_lens, perm_idx = model.posteriors(
+                    batch['xs'], batch['x_lens'])
+                if i == 0:
+                    probs_ensenmble = probs
+                else:
+                    probs_ensenmble += probs
+            probs_ensenmble /= len(models)
+
+            best_hyps = models[0].decode_from_probs(
+                probs_ensenmble, x_lens, beam_width=1)
         else:
-            if resolving_unk:
-                best_hyps, aw, perm_idx = model.decode(
-                    batch['xs'], batch['x_lens'],
-                    beam_width=beam_width,
-                    max_decode_len=max_decode_len,
-                    resolving_unk=True)
-                best_hyps_sub, aw_sub, _ = model.decode(
-                    batch['xs'], batch['x_lens'],
-                    beam_width=beam_width,
-                    max_decode_len=max_decode_len * 3,
-                    is_sub_task=True, resolving_unk=True)
+            model = models[0]
+            if model.model_type == 'nested_attention':
+                if resolving_unk:
+                    best_hyps, aw, best_hyps_sub, aw_sub, perm_idx = model.decode(
+                        batch['xs'], batch['x_lens'],
+                        beam_width=beam_width,
+                        max_decode_len=max_decode_len,
+                        max_decode_len_sub=150,
+                        resolving_unk=True)
+                else:
+                    best_hyps, _, perm_idx = model.decode(
+                        batch['xs'], batch['x_lens'],
+                        beam_width=beam_width,
+                        max_decode_len=max_decode_len,
+                        max_decode_len_sub=150)
+
             else:
-                best_hyps, perm_idx = model.decode(
-                    batch['xs'], batch['x_lens'],
-                    beam_width=beam_width,
-                    max_decode_len=max_decode_len)
+                if resolving_unk:
+                    best_hyps, aw, perm_idx = model.decode(
+                        batch['xs'], batch['x_lens'],
+                        beam_width=beam_width,
+                        max_decode_len=max_decode_len,
+                        resolving_unk=True)
+                    best_hyps_sub, aw_sub, _ = model.decode(
+                        batch['xs'], batch['x_lens'],
+                        beam_width=beam_width,
+                        max_decode_len=150,
+                        task_index=1, resolving_unk=True)
+                else:
+                    best_hyps, perm_idx = model.decode(
+                        batch['xs'], batch['x_lens'],
+                        beam_width=beam_width,
+                        max_decode_len=max_decode_len)
 
         ys = batch['ys'][perm_idx]
         y_lens = batch['y_lens'][perm_idx]

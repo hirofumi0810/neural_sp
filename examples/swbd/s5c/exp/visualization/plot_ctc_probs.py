@@ -42,7 +42,7 @@ def main():
     test_data = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
-        input_channel=params['input_channel'],
+        input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         data_type='eval2000_swbd',
@@ -66,25 +66,20 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
-    space_index = 37 if params['label_type'] == 'character' else None
-    # NOTE: index 0 is reserved for blank in warpctc_pytorch
-
     # Visualize
     plot(model=model,
          dataset=test_data,
          eval_batch_size=args.eval_batch_size,
-         save_path=mkdir_join(args.model_path, 'ctc_probs'),
-         space_index=space_index)
+         save_path=mkdir_join(args.model_path, 'ctc_probs'))
 
 
-def plot(model, dataset, eval_batch_size, save_path=None, space_index=None):
+def plot(model, dataset, eval_batch_size, save_path=None):
     """
     Args:
         model: the model to evaluate
         dataset: An instance of a `Dataset` class
         eval_batch_size (int): the batch size when evaluating the model
         save_path (string): path to save figures of CTC posteriors
-        space_index (int, optional):
     """
     # Set batch size in the evaluation
     if eval_batch_size is not None:
@@ -121,7 +116,6 @@ def plot(model, dataset, eval_batch_size, save_path=None, space_index=None):
                 probs[b, :batch['x_lens'][b], :],
                 frame_num=batch['x_lens'][b],
                 num_stack=dataset.num_stack,
-                space_index=space_index,
                 str_hyp=str_hyp,
                 save_path=mkdir_join(save_path, speaker, batch['input_names'][b] + '.png'))
 

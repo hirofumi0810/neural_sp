@@ -55,7 +55,7 @@ def main():
     test_data = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
-        input_channel=params['input_channel'],
+        input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         # data_type='eval2000_swbd',
@@ -126,11 +126,12 @@ def decode(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
 
         # Decode
         if model.model_type == 'nested_attention':
-            best_hyps, best_hyps_sub, perm_idx = model.decode(
+            best_hyps, aw, best_hyps_sub, aw_sub, perm_idx = model.decode(
                 batch['xs'], batch['x_lens'],
                 beam_width=beam_width,
                 max_decode_len=max_decode_len,
-                max_decode_len_sub=100)
+                max_decode_len_sub=100,
+                resolving_unk=True)
         else:
             best_hyps, aw, perm_idx = model.decode(
                 batch['xs'], batch['x_lens'],

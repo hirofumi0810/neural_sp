@@ -20,16 +20,11 @@ class TestLoadDataset(unittest.TestCase):
 
     def test(self):
 
-        # framework
-        # self.check(label_type='character',
-        #            data_type='train', backend='chainer')
-
         # data_type
-        # self.check(label_type='character', data_type='dev')
+        # self.check(label_type='character', data_type='train')
+        self.check(label_type='character', data_type='dev')
         self.check(label_type='character', data_type='eval2000_swbd')
         self.check(label_type='character', data_type='eval2000_ch')
-
-        raise ValueError
 
         # label_type
         self.check(label_type='word1')
@@ -77,7 +72,7 @@ class TestLoadDataset(unittest.TestCase):
             # data_save_path='/n/sd8/inaguma/corpus/swbd/kaldi/' + data_size,
             data_save_path='/n/sd8/inaguma/corpus/swbd/kaldi',
             backend=backend,
-            input_channel=40, use_delta=True, use_double_delta=True,
+            input_freq=40, use_delta=True, use_double_delta=True,
             data_type=data_type, data_size=data_size,
             label_type=label_type, batch_size=64,
             max_epoch=1, splice=splice,
