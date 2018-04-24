@@ -1,14 +1,17 @@
-parent: ./conf/attention/word/att_blstm_word5_subset.yml
+parent: ./conf/ctc/word/blstm_ctc_word5_subset.yml
 param:
   # framework
   backend: pytorch
+
+  # corpus
+  label_type: kanji_wb
 
   # features
   input_freq: 80
   use_delta: True
   use_double_delta: True
   input_channel: 3
-  
+
   # topology
   conv_channels: [64, 64, 128, 128]
   conv_kernel_sizes:
@@ -31,19 +34,18 @@ param:
   encoder_bidirectional: True
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 5
+  encoder_num_layers: 4
   subsample_list:
-    - True
-    - True
+    - False
     - False
     - False
     - False
 
   # optimization
-  batch_size: 32
+  batch_size: 30
 
-  # regularization
-  scheduled_sampling_ramp_max_step: 100000
+  # initialization
+  char_init: False
 
   # annealing
   print_step: 400

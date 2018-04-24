@@ -11,9 +11,10 @@ param:
   # features
   feature: fbank
   tool: htk
-  input_channel: 80
+  input_freq: 80
   use_delta: False
   use_double_delta: False
+  input_channel: 1
   splice: 1
   num_stack: 1
   num_skip: 1
@@ -39,7 +40,7 @@ param:
   encoder_num_layers: 5
   encoder_num_layers_sub: 5
   subsample_list:
-    - False
+    - True
     - True
     - True
     - False
@@ -117,8 +118,8 @@ param:
   ctc_loss_weight_sub: 0
 
   # W2C attention
-  usage_dec_sub: update_decoder
-  # usage_dec_sub: all
+  # usage_dec_sub: update_decoder
+  usage_dec_sub: all
   # usage_dec_sub: no_use
   num_heads_dec_out_sub: 1
 
@@ -127,8 +128,8 @@ param:
   dec_out_sub_sigmoid_smoothing: True
   attention_regularization_weight: 0
 
-  # backward_sub: False
-  backward_sub: True
+  backward_sub: False
+  # backward_sub: True
 
   # gating mechanism
   gating_mechanism: no_gate

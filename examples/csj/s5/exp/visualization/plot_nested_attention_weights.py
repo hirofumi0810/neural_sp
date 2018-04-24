@@ -60,7 +60,7 @@ def main():
     test_data = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
-        input_channel=params['input_channel'],
+        input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         data_type='eval1',
@@ -144,7 +144,7 @@ def plot(model, dataset, max_decode_len, max_decode_len_sub,
                 aw_sub[b, :len(char_list), :batch['x_lens'][b]],
                 label_list=word_list,
                 label_list_sub=char_list,
-                spectrogram=batch['xs'][b, :, :dataset.input_channel],
+                spectrogram=batch['xs'][b, :, :dataset.input_freq],
                 save_path=mkdir_join(save_path, speaker,
                                      batch['input_names'][b] + '.png'),
                 figsize=(40, 8)

@@ -67,7 +67,6 @@ class Base(object):
     @property
     def epoch_detail(self):
         # Floating point version of epoch
-        # return self.iteration / len(self)
         return self.epoch + self.offset / len(self)
 
     @property
@@ -123,8 +122,8 @@ class Base(object):
                 self.queue_size += self.num_enque
                 time.sleep(3)
 
-            # logging.info(self.queue.qsize())
-            # logging.info(self.queue_size)
+            # print(self.queue.qsize())
+            # print(self.queue_size)
 
             self.iteration += len(
                 self.data_indices_list[self.num_enque - self.queue_size])
@@ -248,12 +247,6 @@ class Base(object):
             # Read header
             spam = f.read(12)
             frame_num, sampPeriod, sampSize, parmKind = unpack(">IIHH", spam)
-
-            # for debug
-            # print(frame_num)  # frame num
-            # print(sampPeriod)  # 10ms
-            # print(sampSize)  # feature dim * 4 (byte)
-            # print(parmKind)
 
             # Read data
             feature_dim = int(sampSize / 4)

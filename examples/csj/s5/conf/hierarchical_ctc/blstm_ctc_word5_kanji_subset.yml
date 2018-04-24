@@ -11,9 +11,10 @@ param:
   # features
   feature: fbank
   tool: htk
-  input_channel: 80
+  input_freq: 80
   use_delta: False
   use_double_delta: False
+  input_channel: 1
   splice: 1
   num_stack: 1
   num_skip: 1

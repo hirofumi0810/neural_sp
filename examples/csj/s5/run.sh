@@ -297,7 +297,7 @@ if [ $stage -le 3 ]; then
           --gpu $gpu_index \
           --config_path $config_path \
           --model_save_path $MODEL_SAVEPATH \
-          --data_save_path $DATA_SAVEPATH/..　|| exit 1;
+          --data_save_path $DATA_SAVEPATH/.. || exit 1;
       fi
     fi
   fi

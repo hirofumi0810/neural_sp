@@ -3,6 +3,12 @@ param:
   # framework
   backend: pytorch
 
+  # features
+  input_freq: 80
+  use_delta: True
+  use_double_delta: True
+  input_channel: 3
+  
   # topology
   encoder_type: cnn
   conv_channels: [64, 64, 64, 128, 128, 128, 256, 256, 256]

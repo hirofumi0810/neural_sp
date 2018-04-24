@@ -21,7 +21,7 @@ from utils.dataset.loader import DatasetBase
 class Dataset(DatasetBase):
 
     def __init__(self, data_save_path,
-                 backend, input_channel, use_delta, use_double_delta,
+                 backend, input_freq, use_delta, use_double_delta,
                  data_type, data_size, label_type,
                  batch_size, max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
@@ -33,7 +33,7 @@ class Dataset(DatasetBase):
         Args:
             data_save_path (string): path to saved data
             backend (string): pytorch or chainer
-            input_channel (int): the number of channels of acoustics
+            input_freq (int): the number of dimensions of acoustics
             use_delta (bool): if True, use the delta feature
             use_double_delta (bool): if True, use the acceleration feature
             data_type (string): train or dev or eval1 or eval2 or eval3
@@ -67,7 +67,7 @@ class Dataset(DatasetBase):
             self.is_test = False
 
         self.backend = backend
-        self.input_channel = input_channel
+        self.input_freq = input_freq
         self.use_delta = use_delta
         self.use_double_delta = use_double_delta
         self.data_type = data_type

@@ -10,9 +10,10 @@ param:
   # features
   feature: fbank
   tool: htk
-  input_channel: 80
+  input_freq: 80
   use_delta: False
   use_double_delta: False
+  input_channel: 1
   splice: 1
   num_stack: 1
   num_skip: 1
@@ -55,7 +56,6 @@ param:
   decoding_order: attend_generate_update
   bottleneck_dim: 256
   backward: False
-  # backward: True
   num_heads: 1
 
   # optimization
@@ -84,7 +84,6 @@ param:
   dropout_embedding: 0.2
   weight_decay: 1e-6
   init_dec_state: first
-  # init_dec_state: final
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False

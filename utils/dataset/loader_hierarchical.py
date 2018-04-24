@@ -61,11 +61,11 @@ class DatasetBase(Base):
 
         if not hasattr(self, 'input_size'):
             if self.use_double_delta:
-                self.input_size = self.input_channel * 3
+                self.input_size = self.input_freq * 3
             elif self.use_delta:
-                self.input_size = self.input_channel * 2
+                self.input_size = self.input_freq * 2
             else:
-                self.input_size = self.input_channel
+                self.input_size = self.input_freq
             self.input_size *= self.num_stack
             self.input_size *= self.splice
 
@@ -75,11 +75,10 @@ class DatasetBase(Base):
 
         # Compute max target label length in mini-batch
         max_label_num = max(
-            map(lambda x: len(str(x).split(' ')), str_indices_list)) + 2
+            map(lambda x: len(str(x).split(' ')), str_indices_list))
         # TODO: fix POS tag (nan -> 'nan')
         max_labels_seq_len_sub = max(
-            map(lambda x: len(x.split(' ')), str_indices_list_sub)) + 2
-        # NOTE: add <SOS> and <EOS>
+            map(lambda x: len(x.split(' ')), str_indices_list_sub))
 
         # Initialization
         if self.backend == 'pytorch':
@@ -113,14 +112,19 @@ class DatasetBase(Base):
                     input_path_list[b].replace(
                         '/n/sd8/inaguma/corpus', '/data/inaguma'))
             except:
-                data_i_tmp = self.load(input_path_list[b])
+                try:
+                    data_i_tmp = self.load(
+                        input_path_list[b].replace(
+                            '/n/sd8/inaguma/corpus', '/tmp/inaguma'))
+                except:
+                    data_i_tmp = self.load(input_path_list[b])
 
             if self.use_double_delta:
                 data_i = data_i_tmp
             elif self.use_delta:
-                data_i = data_i_tmp[:, :self.input_channel * 2]
+                data_i = data_i_tmp[:, :self.input_freq * 2]
             else:
-                data_i = data_i_tmp[:, :self.input_channel]
+                data_i = data_i_tmp[:, :self.input_freq]
 
             # Frame stacking
             if self.num_stack > 1:

@@ -46,7 +46,7 @@ def load(model_type, params, backend):
             from models.chainer.ctc.ctc import CTC
 
         model = CTC(
-            input_size=params['input_channel'] *
+            input_size=params['input_freq'] *
             (1 + int(params['use_delta'] + int(params['use_double_delta']))),
             encoder_type=params['encoder_type'],
             encoder_bidirectional=params['encoder_bidirectional'],
@@ -126,7 +126,7 @@ def load(model_type, params, backend):
             raise NotImplementedError
 
         model = StudentCTC(
-            input_size=params['input_channel'] *
+            input_size=params['input_freq'] *
             (1 + int(params['use_delta'] + int(params['use_double_delta']))),
             encoder_type=params['encoder_type'],
             encoder_bidirectional=params['encoder_bidirectional'],
@@ -198,7 +198,7 @@ def load(model_type, params, backend):
             from models.chainer.ctc.hierarchical_ctc import HierarchicalCTC
 
         model = HierarchicalCTC(
-            input_size=params['input_channel'] *
+            input_size=params['input_freq'] *
             (1 + int(params['use_delta'] + int(params['use_double_delta']))),
             encoder_type=params['encoder_type'],
             encoder_bidirectional=params['encoder_bidirectional'],
@@ -295,7 +295,7 @@ def load(model_type, params, backend):
             from models.chainer.attention.attention_seq2seq import AttentionSeq2seq
 
         model = AttentionSeq2seq(
-            input_size=params['input_channel'] *
+            input_size=params['input_freq'] *
             (1 + int(params['use_delta'] + int(params['use_double_delta']))),
             encoder_type=params['encoder_type'],
             encoder_bidirectional=params['encoder_bidirectional'],
@@ -420,7 +420,7 @@ def load(model_type, params, backend):
             from models.chainer.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
 
         model = HierarchicalAttentionSeq2seq(
-            input_size=params['input_channel'] *
+            input_size=params['input_freq'] *
             (1 + int(params['use_delta'] + int(params['use_double_delta']))),
             encoder_type=params['encoder_type'],
             encoder_bidirectional=params['encoder_bidirectional'],
@@ -556,7 +556,7 @@ def load(model_type, params, backend):
             raise NotImplementedError
 
         model = NestedAttentionSeq2seq(
-            input_size=params['input_channel'] *
+            input_size=params['input_freq'] *
             (1 + int(params['use_delta'] + int(params['use_double_delta']))),
             encoder_type=params['encoder_type'],
             encoder_bidirectional=params['encoder_bidirectional'],

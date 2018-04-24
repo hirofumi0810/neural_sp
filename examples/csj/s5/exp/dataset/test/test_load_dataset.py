@@ -80,7 +80,7 @@ class TestLoadDataset(unittest.TestCase):
         dataset = Dataset(
             data_save_path='/n/sd8/inaguma/corpus/csj/kaldi',
             backend=backend,
-            input_channel=80, use_delta=True, use_double_delta=True,
+            input_freq=80, use_delta=True, use_double_delta=True,
             data_type=data_type, data_size=data_size,
             label_type=label_type, batch_size=64,
             max_epoch=1, splice=splice, num_stack=num_stack, num_skip=num_skip,
