@@ -24,8 +24,19 @@ class TestAttention(unittest.TestCase):
     def test(self):
         print("Attention Working check.")
 
+        # Backward decoder
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', backward_loss_weight=1)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', backward_loss_weight=0.8)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', backward_loss_weight=0.5)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', backward_loss_weight=0.2)
+
         # CNN encoder
-        self.check(encoder_type='cnn', decoder_type='lstm', batch_norm=True)
+        self.check(encoder_type='cnn',
+                   decoder_type='lstm', batch_norm=True)
 
         # CLDNN encoder
         self.check(encoder_type='lstm', bidirectional=True,
@@ -37,17 +48,13 @@ class TestAttention(unittest.TestCase):
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', attention_type='content', num_heads=2)
         # self.check(encoder_type='lstm', bidirectional=True,
-        #            decoder_type='lstm', attention_type='location', num_heads=2)
+        #            decoder_type='lstm', attention_type='location', num_heads=2) # TODO
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', attention_type='dot_product', num_heads=2)
 
-        # Backward decoder
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', backward=True, init_dec_state='final')
-
         # Decoding order
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            decoder_type='lstm', decoding_order='conditional')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', decoding_order='conditional')
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', decoding_order='attend_update_generate')
         self.check(encoder_type='lstm', bidirectional=True,
@@ -55,7 +62,7 @@ class TestAttention(unittest.TestCase):
 
         # Decoder type
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='stateless_lstm')
+                   decoder_type='lstm')
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm')
 
@@ -84,8 +91,8 @@ class TestAttention(unittest.TestCase):
                    decoder_type='lstm')
 
         # Residual connection
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', residual=True)
+        # self.check(encoder_type='lstm', bidirectional=True,
+        #            decoder_type='lstm', residual=True)  # TODO
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', dense_residual=True)
 
@@ -107,8 +114,8 @@ class TestAttention(unittest.TestCase):
         # Attention type
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', attention_type='content')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', attention_type='location')
+        # # self.check(encoder_type='lstm', bidirectional=True,
+        #            decoder_type='lstm', attention_type='location') # TODO
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', attention_type='dot_product')
 
@@ -119,7 +126,7 @@ class TestAttention(unittest.TestCase):
               ctc_loss_weight=0, conv=False, batch_norm=False,
               residual=False, dense_residual=False,
               decoding_order='attend_generate_update',
-              backward=False, num_heads=1):
+              backward_loss_weight=False, num_heads=1):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
@@ -136,7 +143,7 @@ class TestAttention(unittest.TestCase):
         print('  residual: %s' % str(residual))
         print('  dense_residual: %s' % str(dense_residual))
         print('  decoding_order: %s' % decoding_order)
-        print('  backward: %s' % str(backward))
+        print('  backward_loss_weight: %s' % str(backward_loss_weight))
         print('  num_heads: %s' % str(num_heads))
         print('==================================================')
 
@@ -229,7 +236,7 @@ class TestAttention(unittest.TestCase):
             decoder_dense_residual=dense_residual,
             decoding_order=decoding_order,
             bottleneck_dim=256,
-            backward=backward,
+            backward_loss_weight=backward_loss_weight,
             num_heads=num_heads)
 
         # Count total parameters

@@ -347,7 +347,7 @@ def load(model_type, params, backend):
             decoder_dense_residual=params['decoder_dense_residual'],
             decoding_order=params['decoding_order'],
             bottleneck_dim=params['bottleneck_dim'],
-            backward=params['backward'],
+            backward_loss_weight=params['backward_loss_weight'],
             num_heads=params['num_heads'])
 
         model.name = model_name
@@ -408,8 +408,8 @@ def load(model_type, params, backend):
             model.name += '_conditional'
         if isdir(params['char_init']):
             model.name += '_charinit'
-        if bool(params['backward']):
-            model.name += '_bwd'
+        if float(params['backward_loss_weight']) > 0:
+            model.name += '_bwd' + str(params['backward_loss_weight'])
         if int(params['num_heads']) > 1:
             model.name += '_head' + str(params['num_heads'])
 

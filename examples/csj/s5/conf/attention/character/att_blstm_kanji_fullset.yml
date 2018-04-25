@@ -19,7 +19,6 @@ param:
   embedding_dim: 64
   decoding_order: attend_generate_update
   bottleneck_dim: 256
-  backward: False
   num_heads: 1
 
   # regularization
@@ -29,3 +28,7 @@ param:
 
   # annealing
   print_step: 400
+
+  # MTL
+  backward_loss_weight: 0
+  ctc_loss_weight: 0

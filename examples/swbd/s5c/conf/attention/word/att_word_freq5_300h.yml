@@ -23,8 +23,6 @@ param:
   embedding_dim: 128
   decoding_order: attend_generate_update
   bottleneck_dim: 256
-  backward: False
-  # backward: True
   num_heads: 1
 
   # optimization
@@ -38,3 +36,7 @@ param:
   # initialization
   char_init: False
   # char_init: /n/sd8/inaguma/result/swbd/pytorch/ctc/character/300h/blstm320H5L_drop4_adam_lr1e-3_dropen0.2_input120
+
+  # MTL
+  backward_loss_weight: 0
+  ctc_loss_weight: 0

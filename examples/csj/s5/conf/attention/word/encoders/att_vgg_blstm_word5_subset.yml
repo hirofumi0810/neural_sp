@@ -8,7 +8,7 @@ param:
   use_delta: True
   use_double_delta: True
   input_channel: 3
-  
+
   # topology
   conv_channels: [64, 64, 128, 128]
   conv_kernel_sizes:
@@ -47,3 +47,7 @@ param:
 
   # annealing
   print_step: 400
+
+  # MTL
+  backward_loss_weight: 0
+  ctc_loss_weight: 0

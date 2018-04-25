@@ -134,6 +134,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             decoder_dense_residual=decoder_dense_residual,
             decoding_order=decoding_order,
             bottleneck_dim=bottleneck_dim,
+            backward_loss_weight=0,
             num_heads=num_heads)
         self.model_type = 'hierarchical_attention'
 
@@ -142,11 +143,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         if encoder_bidirectional:
             self.encoder_num_units_sub *= 2
 
-        # Setting for the decoder in the second task
-        if init_dec_state == 'first' and backward_sub:
-            self.init_dec_state_1 = 'final'
-        else:
-            self.init_dec_state_1 = init_dec_state
+        # Setting for the decoder in the sub task
         self.decoder_num_units_1 = decoder_num_units_sub
         self.decoder_num_layers_1 = decoder_num_layers_sub
         self.num_classes_sub = num_classes_sub + 1  # Add <EOS> class
@@ -155,6 +152,21 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # NOTE: <SOS> and <EOS> have the same index
         self.backward_1 = backward_sub
 
+        # Setting for the decoder initialization in the sub task
+        if backward_sub:
+            if init_dec_state == 'first':
+                self.init_dec_state_1_bwd = 'final'
+            elif init_dec_state == 'final':
+                self.init_dec_state_1_bwd = 'first'
+            else:
+                self.init_dec_state_1_bwd = init_dec_state
+            if encoder_type != decoder_type:
+                self.init_dec_state_1_bwd = 'zero'
+        else:
+            self.init_dec_state_1_fwd = init_dec_state
+            if encoder_type != decoder_type:
+                self.init_dec_state_1_fwd = 'zero'
+
         # Setting for the attention in the sub task
         self.num_heads_1 = num_heads_sub
 
@@ -162,6 +174,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         self.main_loss_weight = main_loss_weight
         self.sub_loss_weight = sub_loss_weight
         self.ctc_loss_weight_sub = ctc_loss_weight_sub
+        if backward_sub:
+            self.bwd_weight_1 = sub_loss_weight
 
         ##############################
         # Encoder
@@ -212,9 +226,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         else:
             raise NotImplementedError
 
+        dir = 'bwd' if backward_sub else 'fwd'
         self.is_bridge_sub = False
         if self.sub_loss_weight > 0:
-
             ##################################################
             # Bridge layer between the encoder and decoder
             ##################################################
@@ -236,48 +250,45 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             ##################################################
             # Initialization of the decoder
             ##################################################
-            if encoder_type != decoder_type:
-                self.init_dec_state_1 = 'zero'
-
-            if self.init_dec_state_1 != 'zero':
-                self.W_dec_init_1 = LinearND(
-                    self.encoder_num_units_sub, decoder_num_units_sub)
+            if getattr(self, 'init_dec_state_1_' + dir) != 'zero':
+                setattr(self, 'W_dec_init_1_' + dir, LinearND(
+                    self.encoder_num_units_sub, decoder_num_units_sub))
 
             ##############################
             # Decoder (sub)
             ##############################
             if decoding_order == 'conditional':
-                self.decoder_first_1 = RNNDecoder(
+                setattr(self, 'decoder_first_1_' + dir, RNNDecoder(
                     input_size=embedding_dim_sub,
                     rnn_type=decoder_type,
                     num_units=decoder_num_units_sub,
                     num_layers=1,
                     dropout=dropout_decoder,
                     residual=False,
-                    dense_residual=False)
-                self.decoder_second_1 = RNNDecoder(
+                    dense_residual=False))
+                setattr(self, 'decoder_second_1_' + dir, RNNDecoder(
                     input_size=self.encoder_num_units_sub * num_heads_sub,
                     rnn_type=decoder_type,
                     num_units=decoder_num_units_sub,
                     num_layers=1,
                     dropout=dropout_decoder,
                     residual=False,
-                    dense_residual=False)
+                    dense_residual=False))
                 # NOTE; the conditional decoder only supports the 1 layer
             else:
-                self.decoder_1 = RNNDecoder(
+                setattr(self, 'decoder_1_' + dir, RNNDecoder(
                     input_size=self.encoder_num_units_sub * num_heads_sub + embedding_dim_sub,
                     rnn_type=decoder_type,
                     num_units=decoder_num_units_sub,
                     num_layers=decoder_num_layers_sub,
                     dropout=dropout_decoder,
                     residual=decoder_residual,
-                    dense_residual=decoder_dense_residual)
+                    dense_residual=decoder_dense_residual))
 
             ###################################
             # Attention layer (sub)
             ###################################
-            self.attend_1 = AttentionMechanism(
+            setattr(self, 'attend_1_' + dir, AttentionMechanism(
                 encoder_num_units=self.encoder_num_units_sub,
                 decoder_num_units=decoder_num_units_sub,
                 attention_type=attention_type,
@@ -286,7 +297,19 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 sigmoid_smoothing=sigmoid_smoothing,
                 out_channels=attention_conv_num_channels,
                 kernel_size=attention_conv_width,
-                num_heads=num_heads_sub)
+                num_heads=num_heads_sub))
+
+            ##############################
+            # Output layer (sub)
+            ##############################
+            setattr(self, 'W_d_1_' + dir, LinearND(
+                decoder_num_units_sub, bottleneck_dim_sub,
+                dropout=dropout_decoder))
+            setattr(self, 'W_c_1_' + dir, LinearND(
+                self.encoder_num_units_sub * num_heads_sub, bottleneck_dim_sub,
+                dropout=dropout_decoder))
+            setattr(self, 'fc_1_' + dir, LinearND(
+                bottleneck_dim_sub, self.num_classes_sub))
 
             ##############################
             # Embedding (sub)
@@ -303,17 +326,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     embedding_dim=embedding_dim_sub,
                     dropout=dropout_embedding,
                     ignore_index=-1)
-
-            ##############################
-            # Output layer (sub)
-            ##############################
-            self.W_d_1 = LinearND(
-                decoder_num_units_sub, bottleneck_dim_sub,
-                dropout=dropout_decoder)
-            self.W_c_1 = LinearND(
-                self.encoder_num_units_sub * num_heads_sub, bottleneck_dim_sub,
-                dropout=dropout_decoder)
-            self.fc_1 = LinearND(bottleneck_dim_sub, self.num_classes_sub)
 
         ##############################
         # CTC (sub)
@@ -444,10 +456,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         ##################################################
         if self.main_loss_weight > 0:
             # Compute XE loss
-            loss_main = self.compute_xe_loss(xs, ys_in, ys_out, x_lens, y_lens,
-                                             task_idx=0)
-
-            loss_main = loss_main * self.main_loss_weight
+            loss_main = self.compute_xe_loss(
+                xs, ys_in, ys_out, x_lens, y_lens,
+                task_idx=0, direction='fwd') * self.main_loss_weight
         else:
             loss_main = self._create_var((1,), fill_value=0)
         loss = loss_main.clone()
@@ -459,20 +470,19 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # Compute XE loss
             loss_sub = self.compute_xe_loss(
                 xs_sub, ys_in_sub, ys_out_sub, x_lens_sub, y_lens_sub,
-                task_idx=1)
-
-            loss_sub = loss_sub * self.sub_loss_weight
+                task_idx=1, direction='bwd' if self.backward_1 else 'fwd') * self.sub_loss_weight
             loss += loss_sub
 
         ##################################################
         # Sub task (CTC, optional)
         ##################################################
         if self.ctc_loss_weight_sub > 0:
-            ctc_loss_sub = self.compute_ctc_loss(
-                xs_sub, ys_in_sub[:, 1:] + 1,
-                x_lens_sub, y_lens_sub, task_idx=1)
+            # Wrap by Variable
+            ys_ctc_sub = self.np2var(ys, dtype='long')
 
-            ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub
+            ctc_loss_sub = self.compute_ctc_loss(
+                xs_sub, ys_ctc_sub + 1,
+                x_lens_sub, y_lens_sub, task_idx=1) * self.ctc_loss_weight_sub
             loss += ctc_loss_sub
 
         if is_eval:
@@ -535,14 +545,15 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             else:
                 raise NotImplementedError
 
+            dir = 'bwd' if task_index == 1 and self.backward_1 else 'fwd'
             # Decode by attention decoder
             if beam_width == 1:
                 best_hyps, aw = self._decode_infer_greedy(
-                    enc_out, x_lens, max_decode_len, task_index)
+                    enc_out, x_lens, max_decode_len, task_index, dir)
             else:
                 best_hyps = self._decode_infer_beam(
                     enc_out, x_lens, beam_width, max_decode_len,
-                    length_penalty, coverage_penalty, task_index)
+                    length_penalty, coverage_penalty, task_index, dir)
 
             # Permutate indices to the original order
             if perm_idx is None:

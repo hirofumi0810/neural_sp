@@ -8,7 +8,7 @@ param:
   use_delta: True
   use_double_delta: True
   input_channel: 3
-  
+
   # topology
   encoder_type: cnn
   conv_channels: [64, 64, 64, 128, 128, 128, 256, 256, 256]
@@ -56,3 +56,7 @@ param:
 
   # annealing
   print_step: 800
+
+  # MTL
+  backward_loss_weight: 0
+  ctc_loss_weight: 0

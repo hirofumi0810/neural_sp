@@ -54,8 +54,6 @@ param:
   attention_conv_width: 201
   decoding_order: attend_generate_update
   bottleneck_dim: 256
-  backward: False
-  # backward: True
   num_heads: 1
 
   # optimization
@@ -103,4 +101,5 @@ param:
   print_step: 200
 
   # MTL
+  backward_loss_weight: 0
   ctc_loss_weight: 0
