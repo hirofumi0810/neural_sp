@@ -61,6 +61,7 @@ class CNNEncoder(nn.Module):
         layers = []
         in_c = self.input_channel
         in_freq = self.input_freq
+        first_max_pool_layer = True
         for l in range(len(conv_channels)):
 
             # Conv
@@ -92,9 +93,10 @@ class CNNEncoder(nn.Module):
                                     stride=tuple(poolings[l]),
                                     # padding=(1, 1),
                                     padding=(0, 0),  # default
-                                    ceil_mode=False)
+                                    ceil_mode=False if first_max_pool_layer else True)
                 # NOTE: If ceil_mode is False, remove last feature when the
                 # dimension of features are odd.
+                first_max_pool_layer = False
 
                 layers.append(pool)
                 in_freq = math.floor(

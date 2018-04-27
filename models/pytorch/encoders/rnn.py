@@ -123,11 +123,12 @@ class RNNEncoder(nn.Module):
         self.residual = residual
         self.dense_residual = dense_residual
         subsample_last_layer = 0
-        for i_layer_reverse, is_subsample in enumerate(subsample_list[::-1]):
+        for l_reverse, is_subsample in enumerate(subsample_list[::-1]):
             if is_subsample:
-                subsample_last_layer = num_layers - i_layer_reverse
+                subsample_last_layer = num_layers - l_reverse
                 break
         self.residual_start_layer = subsample_last_layer + 1
+        # NOTE: residual connection starts from the last subsampling layer
 
         # Dropout for input-hidden connection
         self.dropout_input = nn.Dropout(p=dropout_input)
@@ -178,6 +179,9 @@ class RNNEncoder(nn.Module):
                              batch_first=batch_first,
                              dropout=dropout_hidden,
                              bidirectional=bidirectional)
+            else:
+                raise ValueError(
+                    'rnn_type must be "lstm" or "gru" or "rnn".')
 
             setattr(self, rnn_type, rnn)
             # NOTE: pytorch introduces a dropout layer on the outputs of
@@ -284,7 +288,6 @@ class RNNEncoder(nn.Module):
         else:
             perm_idx = None
         x_lens = x_lens.data.cpu().numpy().tolist()
-        # x_lens = x_lens.data.cpu()
 
         if not self.batch_first:
             # Convert to the time-major
@@ -329,10 +332,10 @@ class RNNEncoder(nn.Module):
                                volatile=volatile)
 
             res_outputs_list = []
-            # NOTE: exclude residual connection from the raw inputs
             for l in range(self.num_layers):
 
-                torch.cuda.empty_cache()
+                if use_cuda:
+                    torch.cuda.empty_cache()
 
                 # Pack l-th encoder xs
                 if self.pack_sequence:
@@ -373,12 +376,12 @@ class RNNEncoder(nn.Module):
 
                         # Subsampling
                         if self.subsample_list[l]:
-                            # Pick up features at odd time step
                             if self.subsample_type == 'drop':
                                 if self.batch_first:
-                                    xs = xs[:, ::2, :]
+                                    xs = xs[:, 1::2, :]
                                 else:
-                                    xs = xs[::2, :, :]
+                                    xs = xs[1::2, :, :]
+                                # NOTE: Pick up features at EVEN time step
 
                             # Concatenate the successive frames
                             elif self.subsample_type == 'concat':
@@ -390,6 +393,7 @@ class RNNEncoder(nn.Module):
                                     xs = [torch.cat([xs[t - 1:t, :, :], xs[t:t + 1, :, :]], dim=2)
                                           for t in range(xs.size(0)) if (t + 1) % 2 == 0]
                                     xs = torch.cat(xs, dim=0)
+                                # NOTE: Exclude the last frame if the length of xs is odd
 
                             # Update x_lens
                             if self.batch_first:
@@ -407,6 +411,7 @@ class RNNEncoder(nn.Module):
                                     res_outputs_list = [xs]
                                 elif self.dense_residual:
                                     res_outputs_list.append(xs)
+                        # NOTE: Exclude residual connection from the raw inputs
 
         # Wrap by Variable again
         x_lens = Variable(torch.from_numpy(

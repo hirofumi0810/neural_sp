@@ -11,10 +11,11 @@ import sys
 import unittest
 import math
 
+import chainer
+
 sys.path.append('../../../../')
 from models.chainer.encoders.load_encoder import load
 from models.test.data import generate_data
-from utils.io.variable import np2var
 from utils.measure_time_func import measure_time
 
 
@@ -128,7 +129,7 @@ class TestPyramidRNNEncoders(unittest.TestCase):
                                          backend='chainer')
 
         # Wrap by Variable
-        xs = np2var(xs, backend='chainer')
+        xs = [chainer.Variable(x, requires_grad=False) for x in xs]
 
         # Load encoder
         encoder = load(encoder_type=encoder_type)
@@ -163,9 +164,9 @@ class TestPyramidRNNEncoders(unittest.TestCase):
         max_time = xs[0].shape[0]
         if conv:
             max_time = encoder.conv.get_conv_out_size(max_time, 1)
-        max_time_sub = max_time / \
+        max_time_sub = max_time // \
             (2 ** sum(encoder.subsample_list[:encoder.num_layers_sub]))
-        max_time /= (2 ** sum(encoder.subsample_list))
+        max_time //= (2 ** sum(encoder.subsample_list))
         if subsample_type == 'drop':
             max_time_sub = math.ceil(max_time_sub)
             max_time = math.ceil(max_time)

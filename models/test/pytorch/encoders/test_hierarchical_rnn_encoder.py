@@ -10,10 +10,12 @@ from __future__ import print_function
 import sys
 import unittest
 
+import torch
+from torch.autograd import Variable
+
 sys.path.append('../../../../')
 from models.pytorch.encoders.load_encoder import load
 from models.test.data import generate_data
-from utils.io.variable import np2var
 from utils.measure_time_func import measure_time
 
 
@@ -123,8 +125,8 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
                                          splice=splice)
 
         # Wrap by Variable
-        xs = np2var(xs, backend='pytorch')
-        x_lens = np2var(x_lens, backend='pytorch')
+        xs = Variable(torch.from_numpy(xs), requires_grad=False)
+        x_lens = Variable(torch.from_numpy(x_lens), requires_grad=False)
 
         # Load encoder
         encoder = load(encoder_type=encoder_type)

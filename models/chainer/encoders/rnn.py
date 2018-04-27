@@ -118,11 +118,12 @@ class RNNEncoder(chainer.Chain):
         self.residual = residual
         self.dense_residual = dense_residual
         subsample_last_layer = 0
-        for i_layer_reverse, is_subsample in enumerate(subsample_list[::-1]):
+        for l_reverse, is_subsample in enumerate(subsample_list[::-1]):
             if is_subsample:
-                subsample_last_layer = num_layers - i_layer_reverse
+                subsample_last_layer = num_layers - l_reverse
                 break
         self.residual_start_layer = subsample_last_layer + 1
+        # NOTE: residual connection starts from the last subsampling layer
 
         with self.init_scope():
             # Setting for CNNs before RNNs# Setting for CNNs before RNNs
@@ -246,7 +247,6 @@ class RNNEncoder(chainer.Chain):
             xs, x_lens = self.conv(xs, x_lens)
 
         res_outputs_list = []
-        # NOTE: exclude residual connection from the raw inputs
         for l in range(self.num_layers):
 
             # Path through RNN
@@ -283,13 +283,15 @@ class RNNEncoder(chainer.Chain):
                     if self.subsample_list[l]:
                         # Pick up features at odd time step
                         if self.subsample_type == 'drop':
-                            xs = [x[::2, :] for x in xs]
+                            xs = [x[1::2, :] for x in xs]
+                            # NOTE: Pick up features at EVEN time step
 
                         # Concatenate the successive frames
                         elif self.subsample_type == 'concat':
                             xs = [F.vstack([F.concat([x[t - 1:t, :], x[t:t + 1, :]], axis=-1)
                                             for t in range(x.shape[0]) if (t + 1) % 2 == 0])
                                   for x in xs]
+                            # NOTE: Exclude the last frame if the length of xs is odd
 
                         # Update x_lens
                         x_lens = np.array([x.shape[0]
@@ -305,6 +307,7 @@ class RNNEncoder(chainer.Chain):
                                 res_outputs_list = [xs]
                             elif self.dense_residual:
                                 res_outputs_list.append(xs)
+                    # NOTE: Exclude residual connection from the raw inputs
 
         # Sum bidirectional outputs
         if self.bidirectional and self.merge_bidirectional:

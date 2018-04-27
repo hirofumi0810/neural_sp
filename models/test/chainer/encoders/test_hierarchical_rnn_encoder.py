@@ -10,10 +10,11 @@ from __future__ import print_function
 import sys
 import unittest
 
+import chainer
+
 sys.path.append('../../../../')
 from models.chainer.encoders.load_encoder import load
 from models.test.data import generate_data
-from utils.io.variable import np2var
 from utils.measure_time_func import measure_time
 
 
@@ -105,7 +106,7 @@ class TestHierarchicalRNNEncoders(unittest.TestCase):
                                          backend='chainer')
 
         # Wrap by Variable
-        xs = np2var(xs, backend='chainer')
+        xs = [chainer.Variable(x, requires_grad=False) for x in xs]
 
         # Load encoder
         encoder = load(encoder_type=encoder_type)
