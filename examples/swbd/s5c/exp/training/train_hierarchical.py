@@ -249,8 +249,9 @@ def main():
             # Compute loss in the dev set
             batch_dev = dev_data.next()[0]
             loss_dev, loss_main_dev, loss_sub_dev = model(
-                batch_dev['xs'], batch_dev['ys'], batch_dev['ys_sub'],
-                batch_dev['x_lens'], batch_dev['y_lens'], batch_dev['y_lens_sub'], is_eval=True)
+                batch_dev['xs'], batch_dev['ys'],
+                batch_dev['x_lens'], batch_dev['y_lens'],
+                batch_dev['ys_sub'], batch_dev['y_lens_sub'], is_eval=True)
 
             loss_train_mean /= params['print_step']
             loss_main_train_mean /= params['print_step']

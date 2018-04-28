@@ -236,14 +236,14 @@ def main():
     start_time_step = time.time()
     not_improved_epoch = 0
     best_model = model
-    loss_train_val_mean = 0.
+    loss_train_mean = 0.
     pbar_epoch = tqdm(total=len(train_data))
     while True:
         # Compute loss in the training set (including parameter update)
         batch_train, is_new_epoch = train_data.next()
         model, loss_train_val = train_step(
             model, batch_train, params['clip_grad_norm'], backend=params['backend'])
-        loss_train_val_mean += loss_train_val
+        loss_train_mean += loss_train_val
 
         pbar_epoch.update(len(batch_train['xs']))
 
@@ -251,19 +251,20 @@ def main():
 
             # Compute loss in the dev set
             batch_dev = dev_clean_data.next()[0]
-            loss_dev_val = model(
-                batch_dev['xs'], batch_dev['ys'], batch_dev['x_lens'], batch_dev['y_lens'], is_eval=True)
+            loss_dev = model(
+                batch_dev['xs'], batch_dev['ys'],
+                batch_dev['x_lens'], batch_dev['y_lens'], is_eval=True)
 
-            loss_train_val_mean /= params['print_step']
+            loss_train_mean /= params['print_step']
             csv_steps.append(step)
-            csv_loss_train.append(loss_train_val_mean)
-            csv_loss_dev.append(loss_dev_val)
+            csv_loss_train.append(loss_train_mean)
+            csv_loss_dev.append(loss_dev)
 
             # Logging by tensorboard
             if params['backend'] == 'pytorch':
                 tf_writer.add_scalar(
-                    'train/loss', loss_train_val_mean, step + 1)
-                tf_writer.add_scalar('dev/loss', loss_dev_val, step + 1)
+                    'train/loss', loss_train_mean, step + 1)
+                tf_writer.add_scalar('dev/loss', loss_dev, step + 1)
                 for name, param in model.named_parameters():
                     name = name.replace('.', '/')
                     tf_writer.add_histogram(
@@ -274,12 +275,12 @@ def main():
             duration_step = time.time() - start_time_step
             logger.info("...Step:%d(epoch:%.3f) loss:%.3f(%.3f)/lr:%.5f/batch:%d/x_lens:%d (%.3f min)" %
                         (step + 1, train_data.epoch_detail,
-                         loss_train_val_mean, loss_dev_val,
+                         loss_train_mean, loss_dev,
                          learning_rate, train_data.current_batch_size,
                          max(batch_train['x_lens']) * params['num_stack'],
                          duration_step / 60))
             start_time_step = time.time()
-            loss_train_val_mean = 0.
+            loss_train_mean = 0.
         step += 1
 
         # Save checkpoint and evaluate model per epoch
@@ -301,7 +302,7 @@ def main():
                 # dev
                 if 'word' in params['label_type']:
                     metric_dev_epoch, _ = do_eval_wer(
-                        model=model,
+                        models=[model],
                         dataset=dev_clean_data,
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_WORD,
@@ -310,7 +311,7 @@ def main():
                                 (metric_dev_epoch * 100))
                 else:
                     metric_dev_epoch, wer_dev_clean_epoch, _ = do_eval_cer(
-                        model=model,
+                        models=[model],
                         dataset=dev_clean_data,
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_CHAR,
@@ -331,7 +332,7 @@ def main():
                     # dev-other & test
                     if 'word' in params['label_type']:
                         metric_dev_other_epoch, _ = do_eval_wer(
-                            model=model,
+                            models=[model],
                             dataset=dev_other_data,
                             beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_WORD,
@@ -340,7 +341,7 @@ def main():
                                     (metric_dev_other_epoch * 100))
 
                         wer_test_clean, _ = do_eval_wer(
-                            model=model,
+                            models=[model],
                             dataset=test_clean_data,
                             beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_WORD,
@@ -349,7 +350,7 @@ def main():
                                     (wer_test_clean * 100))
 
                         wer_test_other, _ = do_eval_wer(
-                            model=model,
+                            models=[model],
                             dataset=test_other_data,
                             beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_WORD,
@@ -361,7 +362,7 @@ def main():
                                     ((wer_test_clean + wer_test_other) * 100 / 2))
                     else:
                         metric_dev_other_epoch, wer_dev_other_epoch, _ = do_eval_cer(
-                            model=model,
+                            models=[model],
                             dataset=dev_other_data,
                             beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_CHAR,
@@ -370,7 +371,7 @@ def main():
                                     ((metric_dev_other_epoch * 100), (wer_dev_other_epoch * 100)))
 
                         cer_test_clean, wer_test_clean, _ = do_eval_cer(
-                            model=model,
+                            models=[model],
                             dataset=test_clean_data,
                             beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_CHAR,
@@ -379,7 +380,7 @@ def main():
                                     ((cer_test_clean * 100), (wer_test_clean * 100)))
 
                         cer_test_other, wer_test_other, _ = do_eval_cer(
-                            model=model,
+                            models=[model],
                             dataset=test_other_data,
                             beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_CHAR,

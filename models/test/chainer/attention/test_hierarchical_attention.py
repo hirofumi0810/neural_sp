@@ -219,7 +219,7 @@ class TestHierarchicalAttention(unittest.TestCase):
 
             # Step for parameter update
             loss, loss_main, loss_sub = model(
-                xs, ys, ys_sub, x_lens, y_lens, y_lens_sub)
+                xs, ys, x_lens, y_lens, ys_sub, y_lens_sub)
             model.optimizer.target.cleargrads()
             model.cleargrads()
             loss.backward()
@@ -229,7 +229,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             if (step + 1) % 10 == 0:
                 # Compute loss
                 loss, loss_main, loss_sub = model(
-                    xs, ys, ys_sub, x_lens, y_lens, y_lens_sub, is_eval=True)
+                    xs, ys, x_lens, y_lens, ys_sub, y_lens_sub, is_eval=True)
 
                 # Decode
                 best_hyps, _ = model.decode(

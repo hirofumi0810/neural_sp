@@ -67,7 +67,7 @@ def main():
     train_data = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
-        input_channel=params['input_channel'],
+        input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         data_type='train', data_size=params['data_size'],
@@ -82,7 +82,7 @@ def main():
     dev_clean_data = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
-        input_channel=params['input_channel'],
+        input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         data_type='dev_clean', data_size=params['data_size'],
@@ -94,7 +94,7 @@ def main():
     dev_other_data = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
-        input_channel=params['input_channel'],
+        input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         data_type='dev_other', data_size=params['data_size'],
@@ -106,7 +106,7 @@ def main():
     test_clean_data = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
-        input_channel=params['input_channel'],
+        input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         data_type='test_clean', data_size=params['data_size'],
@@ -118,7 +118,7 @@ def main():
     test_other_data = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
-        input_channel=params['input_channel'],
+        input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         data_type='test_other', data_size=params['data_size'],
@@ -261,8 +261,9 @@ def main():
             # Compute loss in the dev set
             batch_dev = dev_clean_data.next()[0]
             loss_dev, loss_main_dev, loss_sub_dev = model(
-                batch_dev['xs'], batch_dev['ys'], batch_dev['ys_sub'],
-                batch_dev['x_lens'], batch_dev['y_lens'], batch_dev['y_lens_sub'], is_eval=True)
+                batch_dev['xs'], batch_dev['ys'],
+                batch_dev['x_lens'], batch_dev['y_lens'],
+                batch_dev['ys_sub'], batch_dev['y_lens_sub'], is_eval=True)
 
             loss_train_mean /= params['print_step']
             loss_main_train_mean /= params['print_step']
@@ -318,7 +319,7 @@ def main():
                 start_time_eval = time.time()
                 # dev-clean
                 metric_dev_epoch, _ = do_eval_wer(
-                    model=model,
+                    models=[model],
                     dataset=dev_clean_data,
                     beam_width=1,
                     max_decode_len=MAX_DECODE_LEN_WORD,
@@ -338,7 +339,7 @@ def main():
 
                     # dev-other
                     metric_dev_other_epoch, _ = do_eval_wer(
-                        model=model,
+                        models=[model],
                         dataset=dev_other_data,
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_WORD,
@@ -348,7 +349,7 @@ def main():
 
                     # test
                     wer_test_clean, _ = do_eval_wer(
-                        model=model,
+                        models=[model],
                         dataset=test_clean_data,
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_WORD,
@@ -357,7 +358,7 @@ def main():
                                 (wer_test_clean * 100))
 
                     wer_test_other, _ = do_eval_wer(
-                        model=model,
+                        models=[model],
                         dataset=test_other_data,
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_WORD,

@@ -364,14 +364,14 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         if init_forget_gate_bias_with_one:
             self.init_forget_gate_bias_with_one()
 
-    def forward(self, xs, ys, ys_sub, x_lens, y_lens, y_lens_sub, is_eval=False):
+    def forward(self, xs, ys, x_lens, y_lens, ys_sub, y_lens_sub, is_eval=False):
         """Forward computation.
         Args:
             xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
             ys (np.ndarray): A tensor of size `[B, T_out]`
-            ys_sub (np.ndarray): A tensor of size `[B, T_out_sub]`
             x_lens (np.ndarray): A tensor of size `[B]`
             y_lens (np.ndarray): A tensor of size `[B]`
+            ys_sub (np.ndarray): A tensor of size `[B, T_out_sub]`
             y_lens_sub (np.ndarray): A tensor of size `[B]`
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
@@ -478,7 +478,14 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         ##################################################
         if self.ctc_loss_weight_sub > 0:
             # Wrap by Variable
-            ys_ctc_sub = self.np2var(ys, dtype='long')
+            ys_ctc_sub = self.np2var(ys_sub, dtype='long')
+
+            if self.use_cuda:
+                ys_ctc_sub = ys_ctc_sub.cuda()
+
+            # Permutate indices
+            if perm_idx is not None:
+                ys_ctc_sub = ys_ctc_sub[perm_idx]
 
             ctc_loss_sub = self.compute_ctc_loss(
                 xs_sub, ys_ctc_sub + 1,

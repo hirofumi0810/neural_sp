@@ -11,8 +11,15 @@ import logging
 logger = logging.getLogger('training')
 import numpy as np
 
-import cupy
-import chainer
+try:
+    import cupy
+except:
+    logger.warning('Install cupy.')
+try:
+    import chainer
+except:
+    logger.warning('Install chainer.')
+
 import torch
 import torch.nn as nn
 
@@ -98,8 +105,9 @@ def train_hierarchical_step(model, batch, clip_grad_norm, backend):
         if backend == 'pytorch':
             model.optimizer.zero_grad()
             loss_train, loss_main_train, loss_sub_train = model(
-                batch['xs'], batch['ys'], batch['ys_sub'], batch['x_lens'],
-                batch['y_lens'], batch['y_lens_sub'])
+                batch['xs'], batch['ys'],
+                batch['x_lens'], batch['y_lens'],
+                batch['ys_sub'], batch['y_lens_sub'])
             loss_train.backward()
             if clip_grad_norm > 0:
                 nn.utils.clip_grad_norm(model.parameters(), clip_grad_norm)
@@ -113,8 +121,9 @@ def train_hierarchical_step(model, batch, clip_grad_norm, backend):
         elif backend == 'chainer':
             model.optimizer.target.cleargrads()
             loss_train, loss_main_train, loss_sub_train = model(
-                batch['xs'], batch['ys'], batch['ys_sub'],
-                batch['x_lens'], batch['y_lens'], batch['y_lens_sub'])
+                batch['xs'], batch['ys'],
+                batch['x_lens'], batch['y_lens'],
+                batch['ys_sub'], batch['y_lens_sub'])
             loss_train.backward()
             loss_train.unchain_backward()
             model.optimizer.update()

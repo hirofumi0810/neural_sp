@@ -376,14 +376,14 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             if init_forget_gate_bias_with_one:
                 self.init_forget_gate_bias_with_one()
 
-    def __call__(self, xs, ys, ys_sub, x_lens, y_lens, y_lens_sub, is_eval=False):
+    def __call__(self, xs, ys, x_lens, y_lens, ys_sub, y_lens_sub, is_eval=False):
         """Forward computation.
         Args:
             xs (list of np.ndarray): A tensor of size `[B, T_in, input_size]`
             ys (np.ndarray): A tensor of size `[B, T_out]`
-            ys_sub (np.ndarray): A tensor of size `[B, T_out_sub]`
             x_lens (np.ndarray): A tensor of size `[B]`
             y_lens (np.ndarray): A tensor of size `[B]`
+            ys_sub (np.ndarray): A tensor of size `[B, T_out_sub]`
             y_lens_sub (np.ndarray): A tensor of size `[B]`
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
@@ -395,13 +395,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         if is_eval:
             with chainer.no_backprop_mode(), chainer.using_config('train', False):
                 loss, loss_main, loss_sub = self._forward(
-                    xs, ys, ys_sub, x_lens, y_lens, y_lens_sub)
+                    xs, ys, x_lens, y_lens, ys_sub, y_lens_sub)
                 loss = loss.data
                 loss_main = loss_main.data
                 loss_sub = loss_sub.data
         else:
             loss, loss_main, loss_sub = self._forward(
-                xs, ys, ys_sub, x_lens, y_lens, y_lens_sub)
+                xs, ys, x_lens, y_lens, ys_sub, y_lens_sub)
             # TODO: Gaussian noise injection
 
             # Update the probability of scheduled sampling
@@ -413,7 +413,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         return loss, loss_main, loss_sub
 
-    def _forward(self, xs, ys, ys_sub, x_lens, y_lens, y_lens_sub):
+    def _forward(self, xs, ys, x_lens, y_lens, ys_sub, y_lens_sub):
 
         # Reverse the order
         if self.backward_1:

@@ -266,12 +266,13 @@ def main():
             if params['backend'] == 'pytorch':
                 tf_writer.add_scalar('train/loss', loss_train_mean, step + 1)
                 tf_writer.add_scalar('dev/loss', loss_dev, step + 1)
-                for name, param in model.named_parameters():
-                    name = name.replace('.', '/')
-                    tf_writer.add_histogram(
-                        name, param.data.cpu().numpy(), step + 1)
-                    tf_writer.add_histogram(
-                        name + '/grad', param.grad.data.cpu().numpy(), step + 1)
+                # for name, param in model.named_parameters():
+                #     name = name.replace('.', '/')
+                #     tf_writer.add_histogram(
+                #         name, param.data.cpu().numpy(), step + 1)
+                #     tf_writer.add_histogram(
+                #         name + '/grad', param.grad.data.cpu().numpy(), step + 1)
+                # TODO: fix this
 
             duration_step = time.time() - start_time_step
             logger.info("...Step:%d(epoch:%.3f) loss:%.3f(%.3f)/lr:%.5f/batch:%d/x_lens:%d (%.3f min)" %
