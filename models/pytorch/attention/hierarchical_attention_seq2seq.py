@@ -267,7 +267,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     residual=False,
                     dense_residual=False))
                 setattr(self, 'decoder_second_1_' + dir, RNNDecoder(
-                    input_size=self.encoder_num_units_sub * num_heads_sub,
+                    input_size=self.encoder_num_units_sub,
                     rnn_type=decoder_type,
                     num_units=decoder_num_units_sub,
                     num_layers=1,
@@ -277,7 +277,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 # NOTE; the conditional decoder only supports the 1 layer
             else:
                 setattr(self, 'decoder_1_' + dir, RNNDecoder(
-                    input_size=self.encoder_num_units_sub * num_heads_sub + embedding_dim_sub,
+                    input_size=self.encoder_num_units_sub + embedding_dim_sub,
                     rnn_type=decoder_type,
                     num_units=decoder_num_units_sub,
                     num_layers=decoder_num_layers_sub,
@@ -306,7 +306,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 decoder_num_units_sub, bottleneck_dim_sub,
                 dropout=dropout_decoder))
             setattr(self, 'W_c_1_' + dir, LinearND(
-                self.encoder_num_units_sub * num_heads_sub, bottleneck_dim_sub,
+                self.encoder_num_units_sub, bottleneck_dim_sub,
                 dropout=dropout_decoder))
             setattr(self, 'fc_1_' + dir, LinearND(
                 bottleneck_dim_sub, self.num_classes_sub))

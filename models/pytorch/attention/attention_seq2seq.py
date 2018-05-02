@@ -319,7 +319,7 @@ class AttentionSeq2seq(ModelBase):
                     residual=False,
                     dense_residual=False))
                 setattr(self, 'decoder_second_0_' + dir, RNNDecoder(
-                    input_size=self.encoder_num_units * num_heads,
+                    input_size=self.encoder_num_units,
                     rnn_type=decoder_type,
                     num_units=decoder_num_units,
                     num_layers=1,
@@ -329,7 +329,7 @@ class AttentionSeq2seq(ModelBase):
                 # NOTE; the conditional decoder only supports the 1 layer
             else:
                 setattr(self, 'decoder_0_' + dir, RNNDecoder(
-                    input_size=self.encoder_num_units * num_heads + embedding_dim,
+                    input_size=self.encoder_num_units + embedding_dim,
                     rnn_type=decoder_type,
                     num_units=decoder_num_units,
                     num_layers=decoder_num_layers,
@@ -358,7 +358,7 @@ class AttentionSeq2seq(ModelBase):
                 decoder_num_units, bottleneck_dim,
                 dropout=dropout_decoder))
             setattr(self, 'W_c_0_' + dir, LinearND(
-                self.encoder_num_units * num_heads, bottleneck_dim,
+                self.encoder_num_units, bottleneck_dim,
                 dropout=dropout_decoder))
             setattr(self, 'fc_0_' + dir,
                     LinearND(bottleneck_dim, self.num_classes))

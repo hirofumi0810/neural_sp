@@ -57,6 +57,11 @@ class AttentionMechanism(nn.Module):
         self.sigmoid_smoothing = sigmoid_smoothing
         self.num_heads = num_heads
 
+        # Multi-head attention
+        if num_heads > 1:
+            setattr(self, 'W_mha', LinearND(
+                encoder_num_units * num_heads, encoder_num_units))
+
         for h in range(num_heads):
             if self.attention_type == 'content':
                 setattr(self, 'W_enc_head' + str(h),
@@ -118,7 +123,7 @@ class AttentionMechanism(nn.Module):
                 `[B, T_in, num_heads]`
         Returns:
             context_vec (torch.autograd.Variable, float): A tensor of size
-                `[B, 1, encoder_num_units * num_heads]`
+                `[B, 1, encoder_num_units]`
             aw_step (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, num_heads]`
         """
@@ -210,5 +215,8 @@ class AttentionMechanism(nn.Module):
         # Concatenate all convtext vectors and attention distributions
         context_vec = torch.cat(context_vec, dim=-1)
         aw_step = torch.stack(aw_step, dim=-1)
+
+        if self.num_heads > 1:
+            context_vec = getattr(self, 'W_mha')(context_vec)
 
         return context_vec, aw_step

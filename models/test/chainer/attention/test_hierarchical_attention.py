@@ -24,6 +24,11 @@ class TestHierarchicalAttention(unittest.TestCase):
     def test(self):
         print("Hierarchical Attention Working check.")
 
+        # Multi-head attention
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', attention_type='content', num_heads=2)
+        # TODO: location
+
         # Forward word decoder + backward char decoder
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', backward_sub=True,
@@ -38,11 +43,6 @@ class TestHierarchicalAttention(unittest.TestCase):
                    decoder_type='lstm', conv=True)
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', conv=True, batch_norm=True)
-
-        # Multi-head attention
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', attention_type='content', num_heads=2)
-        # TODO: location
 
         # Word attention + char CTC
         self.check(encoder_type='lstm', bidirectional=True,
@@ -153,7 +153,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             recurrent_weight_orthogonal=False,
             init_forget_gate_bias_with_one=True,
             subsample_list=[] if not subsample else [True, False],
-            subsample_type='concat' if not subsample else subsample,
+            subsample_type='drop' if not subsample else subsample,
             bridge_layer=True,
             init_dec_state='first',
             sharpening_factor=1,

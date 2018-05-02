@@ -95,8 +95,11 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                  usage_dec_sub='update_decoder',  # or all or no_use
                  gating_mechanism='no_gate',  # or scalar or elementwise
                  attention_regularization_weight=0,  # ***
-                 dec_out_sub_attend_temperature=1,
-                 dec_out_sub_sigmoid_smoothing=False):
+                 dec_out_sub_attend_temperature=1,  # ***
+                 dec_out_sub_sigmoid_smoothing=False,
+                 prevent_coadaptation=False,
+                 pass_linear_context_vec_dec_out_sub=False,
+                 twinnet_regualization=0):
 
         super(NestedAttentionSeq2seq, self).__init__(
             input_size=input_size,
@@ -196,6 +199,11 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         self.attention_regularization_weight = attention_regularization_weight
         self.num_heads_dec_out_sub = num_heads_dec_out_sub
 
+        # Regularization
+        self.prevent_coadaptation = prevent_coadaptation
+        self.pass_linear_context_vec_dec_out_sub = pass_linear_context_vec_dec_out_sub
+        self.twinnet_regualization = twinnet_regualization
+
         #########################
         # Encoder
         # NOTE: overide encoder
@@ -283,6 +291,11 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 residual=decoder_residual,
                 dense_residual=decoder_dense_residual)
 
+        if pass_linear_context_vec_dec_out_sub:
+            self.linear_context_vec_dec_out_sub = LinearND(
+                decoder_num_units_sub, decoder_num_units_sub,
+                dropout=dropout_decoder)
+
         dir = 'bwd' if backward_sub else 'fwd'
         ##################################################
         # Bridge layer between the encoder and decoder
@@ -322,7 +335,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 residual=False,
                 dense_residual=False))
             setattr(self, 'decoder_second_1_' + dir, RNNDecoder(
-                input_size=self.encoder_num_units_sub * num_heads_sub,
+                input_size=self.encoder_num_units_sub,
                 rnn_type=decoder_type,
                 num_units=decoder_num_units_sub,
                 num_layers=1,
@@ -332,7 +345,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             # NOTE; the conditional decoder only supports the 1 layer
         else:
             setattr(self, 'decoder_1_' + dir, RNNDecoder(
-                input_size=self.encoder_num_units_sub * num_heads_sub + embedding_dim_sub,
+                input_size=self.encoder_num_units_sub + embedding_dim_sub,
                 rnn_type=decoder_type,
                 num_units=decoder_num_units_sub,
                 num_layers=decoder_num_layers_sub,
@@ -402,7 +415,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         ##############################################
         if usage_dec_sub == 'all':
             self.W_c_dec_sub = LinearND(
-                decoder_num_units * num_heads_dec_out_sub, bottleneck_dim_sub,
+                decoder_num_units, bottleneck_dim_sub,
                 dropout=dropout_decoder)
         elif usage_dec_sub == 'update_decoder':
             pass
@@ -483,6 +496,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             # Gaussian noise injection
             if self.weight_noise_injection:
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
+
+        second_pass = False
+        if ys_sub is None:
+            ys_sub = ys
+            y_lens_sub = y_lens
+            second_pass = True
 
         # Reverse the order
         if self.backward_1:
@@ -581,7 +600,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     self.sample_prob,
                     self.sample_prob / self.sample_ramp_max_step * self._step)
 
-        return loss, loss_main, loss_sub
+        if second_pass:
+            return loss
+        else:
+            return loss, loss_main, loss_sub
 
     def compute_xe_loss(self, enc_out, ys_in, ys_out, x_lens, y_lens,
                         enc_out_sub, ys_in_sub, ys_out_sub, x_lens_sub, y_lens_sub):
@@ -981,7 +1003,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             enc_out, x_lens, enc_out_sub, x_lens_sub,
             beam_width=1,
             max_decode_len=max_decode_len,
-            max_decode_len_sub=max_decode_len_sub)
+            max_decode_len_sub=max_decode_len_sub,
+            reverse_backward=False)
 
         # TODO: fix this
         aw = aw[:, :, :, 0]
@@ -1066,7 +1089,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
     def _decode_infer_greedy_joint(self, enc_out, x_lens,
                                    enc_out_sub, x_lens_sub, beam_width,
-                                   max_decode_len, max_decode_len_sub):
+                                   max_decode_len, max_decode_len_sub,
+                                   reverse_backward=True):
         """Greedy decoding in the inference stage.
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
@@ -1080,6 +1104,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 to stop prediction when EOS token have not been emitted
             max_decode_len_sub (int): the length of output sequences
                 to stop prediction when EOS token have not been emitted
+            reverse_backward (bool, optional):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
             aw (np.ndarray): A tensor of size `[B, T_out, T_in]`
@@ -1354,7 +1379,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         aw_dec_out_sub = self.var2np(aw_dec_out_sub)
 
         # Reverse the order
-        if self.backward_1:
+        if self.backward_1 and reverse_backward:
             y_lens_sub = self.var2np(y_lens_sub)
             for b in range(batch_size):
                 best_hyps_sub[b, :y_lens_sub[b]

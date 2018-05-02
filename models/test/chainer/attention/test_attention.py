@@ -24,6 +24,14 @@ class TestAttention(unittest.TestCase):
     def test(self):
         print("Attention Working check.")
 
+        # Multi-head attention
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', attention_type='content', num_heads=2)
+        # self.check(encoder_type='lstm', bidirectional=True,
+        #            decoder_type='lstm', attention_type='location', num_heads=2) # TODO
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', attention_type='dot_product', num_heads=2)
+
         # Backward decoder
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', backward_loss_weight=1)
@@ -43,14 +51,6 @@ class TestAttention(unittest.TestCase):
                    decoder_type='lstm', conv=True)
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', conv=True, batch_norm=True)
-
-        # Multi-head attention
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', attention_type='content', num_heads=2)
-        # self.check(encoder_type='lstm', bidirectional=True,
-        #            decoder_type='lstm', attention_type='location', num_heads=2) # TODO
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', attention_type='dot_product', num_heads=2)
 
         # Decoding order
         self.check(encoder_type='lstm', bidirectional=True,

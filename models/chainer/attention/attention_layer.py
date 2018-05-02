@@ -61,6 +61,12 @@ class AttentionMechanism(chainer.Chain):
         self.sigmoid_smoothing = sigmoid_smoothing
         self.num_heads = num_heads
 
+        # Multi-head attention
+        if num_heads > 1:
+            setattr(self, 'W_mha', LinearND(
+                encoder_num_units * num_heads, encoder_num_units,
+                use_cuda=use_cuda))
+
         with self.init_scope():
             for h in range(num_heads):
                 if self.attention_type == 'content':
@@ -141,7 +147,7 @@ class AttentionMechanism(chainer.Chain):
             aw_step (chainer.Variable): A tensor of size `[B, T_in, num_heads]`
         Returns:
             context_vec (chainer.Variable): A tensor of size
-                `[B, 1, encoder_num_units * num_heads]`
+                `[B, 1, encoder_num_units]`
             aw_step (chainer.Variable): A tensor of size `[B, T_in, num_heads]`
         """
         batch_size, max_time = enc_out.shape[:2]
@@ -237,5 +243,8 @@ class AttentionMechanism(chainer.Chain):
         context_vec = F.concat(context_vec, axis=-1)
         aw_step = F.concat(aw_step, axis=-1).reshape(
             batch_size, -1, self.num_heads)
+
+        if self.num_heads > 1:
+            context_vec = getattr(self, 'W_mha')(context_vec)
 
         return context_vec, aw_step
