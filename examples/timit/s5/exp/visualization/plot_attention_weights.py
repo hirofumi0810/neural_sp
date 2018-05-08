@@ -25,11 +25,13 @@ parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
 parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
+parser.add_argument('--beam_width', type=int, default=1,
+                    help='the size of beam')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--max_decode_len', type=int, default=40,
-                    help='the length of output sequences to stop prediction when EOS token have not been emitted')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
+
+MAX_DECODE_LEN_PHONE = 40
 
 
 def main():
@@ -67,19 +69,18 @@ def main():
     # Visualize
     plot_attention(model=model,
                    dataset=test_data,
-                   max_decode_len=args.max_decode_len,
+                   beam_width=args.beam_width,
                    eval_batch_size=args.eval_batch_size,
                    save_path=mkdir_join(args.model_path, 'att_weights'))
 
 
-def plot_attention(model, dataset, max_decode_len,
+def plot_attention(model, dataset, beam_width,
                    eval_batch_size=None, save_path=None):
     """Visualize attention weights of the attetnion-based model.
     Args:
         model: model to evaluate
         dataset: An instance of a `Dataset` class
-        max_decode_len (int): the length of output sequences
-            to stop prediction when EOS token have not been emitted.
+        beam_width: (int): the size of beam
         eval_batch_size (int, optional): the batch size when evaluating the model
         save_path (string, optional): path to save attention weights plotting
     """
@@ -98,7 +99,8 @@ def plot_attention(model, dataset, max_decode_len,
 
         # Decode
         best_hyps, aw, perm_idx = model.attention_weights(
-            batch['xs'], batch['x_lens'], max_decode_len=max_decode_len)
+            batch['xs'], batch['x_lens'],
+            max_decode_len=MAX_DECODE_LEN_PHONE)
 
         ys = batch['ys'][perm_idx]
         y_lens = batch['y_lens'][perm_idx]
@@ -114,13 +116,10 @@ def plot_attention(model, dataset, max_decode_len,
                 # Convert from list of index to string
                 str_ref = idx2phone(ys[b][:y_lens[b]])
 
-            # Check if the sum of attention weights equals to 1
-            # print(np.sum(aw[b], axis=1))
-
             token_list = idx2phone(best_hyps[b])
 
             plot_attention_weights(
-                aw[b, :len(token_list), :batch['x_lens'][b]],
+                aw[b][:len(token_list), :batch['x_lens'][b]],
                 label_list=token_list,
                 str_ref=str_ref,
                 spectrogram=batch['xs'][b, :, :40],

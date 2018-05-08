@@ -24,13 +24,12 @@ parser.add_argument('--model_path', type=str,
 parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
 parser.add_argument('--beam_width', type=int, default=1,
-                    help='beam_width (int, optional): beam width for beam search.' +
-                    ' 1 disables beam search, which mean greedy decoding.')
+                    help='the size of beam')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--max_decode_len', type=int, default=40,
-                    help='the length of output sequences to stop prediction when EOS token have not been emitted')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
+
+MAX_DECODE_LEN_PHONE = 40
 
 
 def main():
@@ -70,22 +69,17 @@ def main():
     decode(model=model,
            dataset=test_data,
            beam_width=args.beam_width,
-           max_decode_len=args.max_decode_len,
            eval_batch_size=args.eval_batch_size,
            save_path=None)
     # save_path=args.model_path)
 
 
-def decode(model, dataset, beam_width, max_decode_len,
-           eval_batch_size=None, save_path=None):
+def decode(model, dataset, beam_width, eval_batch_size=None, save_path=None):
     """Visualize label outputs.
     Args:
         model: the model to evaluate
         dataset: An instance of a `Dataset` class
         beam_width: (int): the size of beam
-        max_decode_len (int): the length of output sequences
-            to stop prediction when EOS token have not been emitted.
-            This is used for seq2seq models.
         eval_batch_size (int, optional): the batch size when evaluating the model
         save_path (string): path to save decoding results
     """
@@ -101,12 +95,14 @@ def decode(model, dataset, beam_width, max_decode_len,
     for batch, is_new_epoch in dataset:
 
         # Decode
-        best_hyps, perm_idx = model.decode(batch['xs'], batch['x_lens'],
-                                           beam_width=beam_width,
-                                           max_decode_len=max_decode_len)
+        best_hyps, perm_idx = model.decode(
+            batch['xs'], batch['x_lens'],
+            beam_width=beam_width,
+            max_decode_len=MAX_DECODE_LEN_PHONE)
         if model.model_type == 'attention' and model.ctc_loss_weight > 0:
             best_hyps_ctc, perm_idx = model.decode_ctc(
-                batch['xs'], batch['x_lens'], beam_width=beam_width)
+                batch['xs'], batch['x_lens'],
+                beam_width=beam_width)
 
         ys = batch['ys'][perm_idx]
         y_lens = batch['y_lens'][perm_idx]
@@ -127,14 +123,6 @@ def decode(model, dataset, beam_width, max_decode_len,
             ##############################
             # Convert from list of index to string
             str_hyp = idx2phone(best_hyps[b])
-
-            if model.model_type == 'attention':
-                str_hyp = str_hyp.split('>')[0]
-                # NOTE: Trancate by the first <EOS>
-
-                # Remove the last space
-                if len(str_hyp) > 0 and str_hyp[-1] == ' ':
-                    str_hyp = str_hyp[:-1]
 
             print('----- wav: %s -----' % batch['input_names'][b])
             print('Ref      : %s' % str_ref)

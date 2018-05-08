@@ -22,14 +22,13 @@ parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
 parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
-parser.add_argument('--beam_width', type=int, default=10,
-                    help='beam_width (int, optional): beam width for beam search.' +
-                    ' 1 disables beam search, which mean greedy decoding.')
+parser.add_argument('--beam_width', type=int, default=1,
+                    help='the size of beam')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--max_decode_len', type=int, default=40,
-                    help='the length of output sequences to stop prediction when EOS token have not been emitted')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
+
+MAX_DECODE_LEN_PHONE = 40
 
 
 def main():
@@ -69,7 +68,7 @@ def main():
         model=model,
         dataset=test_data,
         beam_width=args.beam_width,
-        max_decode_len=args.max_decode_len,
+        max_decode_len=MAX_DECODE_LEN_PHONE,
         eval_batch_size=args.eval_batch_size,
         progressbar=True,
         map_file_path='./conf/phones.60-48-39.map')
