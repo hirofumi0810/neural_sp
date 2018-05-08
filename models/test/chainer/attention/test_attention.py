@@ -227,7 +227,7 @@ class TestAttention(unittest.TestCase):
             activation='relu',
             batch_norm=batch_norm,
             scheduled_sampling_prob=0.1,
-            scheduled_sampling_ramp_max_step=200,
+            scheduled_sampling_max_step=200,
             label_smoothing_prob=0.1,
             weight_noise_std=0,
             encoder_residual=residual,
@@ -285,10 +285,11 @@ class TestAttention(unittest.TestCase):
                 loss = model(xs, ys, x_lens, y_lens, is_eval=True)
 
                 # Decode
-                best_hyps, _ = model.decode(xs, x_lens,
-                                            beam_width=1,
-                                            # beam_width=2,  # TODO: fix bugs
-                                            max_decode_len=60)
+                best_hyps, _,  _ = model.decode(
+                    xs, x_lens,
+                    beam_width=1,
+                    # beam_width=2,
+                    max_decode_len=60)
 
                 str_ref = map_fn(ys[0])
                 str_hyp = map_fn(best_hyps[0][:-1])

@@ -26,7 +26,7 @@ param:
   char_init: /n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/fullset/blstm320H5L_drop4_fc_256_adam_lr1e-3_dropen0.2_input80
 
   # regularization
-  scheduled_sampling_ramp_max_step: 100000
+  scheduled_sampling_max_step: 100000
 
   # annealing
   print_step: 400

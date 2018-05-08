@@ -1,25 +1,23 @@
 param:
   # framework
   backend: pytorch
-  # backend: chainer
 
   # corpus
   corpus: librispeech
-  label_type: word_freq5
-  label_type_sub: character
   data_size: 100h
-  num_classes: 11735
-  num_classes_sub: 28
+  label_type: word5
+  label_type_sub: character
 
   # features
   feature: fbank
   save_format: numpy
-  input_channel: 40
+  input_freq: 40
   use_delta: True
   use_double_delta: True
+  input_channel: 3
   splice: 1
-  num_stack: 3
-  num_skip: 3
+  num_stack: 1
+  num_skip: 1
   dynamic_batching: True
 
   # topology
@@ -38,14 +36,15 @@ param:
   encoder_num_units: 320
   encoder_num_proj: 0
   encoder_num_layers: 5
-  encoder_num_layers_sub: 4
+  encoder_num_layers_sub: 5
   subsample_list:
     - False
-    - False
-    - False
+    - True
+    - True
     - False
     - False
   subsample_type: drop
+  bridge_layer: True
   attention_type: location
   attention_dim: 128
   decoder_type: lstm
@@ -57,9 +56,15 @@ param:
   embedding_dim_sub: 16
   attention_conv_num_channels: 10
   attention_conv_width: 201
+  decoding_order: attend_generate_update
+  bottleneck_dim: 256
+  bottleneck_dim_sub: 0
+  backward_sub: False
+  num_heads: 1
+  num_heads_sub: 1
 
   # optimization
-  batch_size: 32
+  batch_size: 40
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 80
@@ -82,20 +87,20 @@ param:
   dropout_decoder: 0.1
   dropout_embedding: 0.1
   weight_decay: 1e-6
-  init_dec_state: zero
+  init_dec_state: first
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False
   coverage_weight: 0
   scheduled_sampling_prob: 0.2
-  scheduled_sampling_ramp_max_step: 300000
+  scheduled_sampling_max_step: 50000
   label_smoothing_prob: 0.2
   weight_noise_std: 0
 
   # annealing
   decay_start_epoch: 5
-  decay_rate: 0.9
-  decay_patient_epoch: 1
+  decay_rate: 0.8
+  decay_patient_epoch: 0
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
   eval_start_epoch: 5
@@ -103,5 +108,8 @@ param:
 
   # MTL
   main_loss_weight: 0.8
+  sub_loss_weight: 0.2
   ctc_loss_weight_sub: 0
-  curriculum_training: False
+
+  # sub_loss_weight: 0
+  # ctc_loss_weight_sub: 0.2

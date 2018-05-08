@@ -170,7 +170,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             activation='relu',
             batch_norm=batch_norm,
             scheduled_sampling_prob=0.1,
-            scheduled_sampling_ramp_max_step=200,
+            scheduled_sampling_max_step=200,
             label_smoothing_prob=0.1,
             weight_noise_std=0,
             encoder_residual=residual,
@@ -229,17 +229,16 @@ class TestHierarchicalAttention(unittest.TestCase):
                     xs, ys, x_lens, y_lens, ys_sub, y_lens_sub, is_eval=True)
 
                 # Decode
-                best_hyps, perm_idx = model.decode(
+                best_hyps, _, perm_idx = model.decode(
                     xs, x_lens,
                     beam_width=1,
-                    # beam_width=2,
                     max_decode_len=30)
-                best_hyps_sub, _ = model.decode(
+                best_hyps_sub, _, _ = model.decode(
                     xs, x_lens,
                     beam_width=1,
-                    # beam_width=2,
                     max_decode_len=60,
                     task_index=1)
+                # TODO: fix beam search
 
                 str_hyp = idx2word(best_hyps[0][:-1])
                 str_ref = idx2word(ys[0])

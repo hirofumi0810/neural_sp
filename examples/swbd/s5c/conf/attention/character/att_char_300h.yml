@@ -60,7 +60,7 @@ param:
   batch_size: 50
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 30
+  num_epoch: 20
   convert_to_sgd_epoch: 20
   pretrain_stage: False
 
@@ -69,8 +69,8 @@ param:
   parameter_init: 0.1
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
-  # char_init: False
-  char_init: /n/sd8/inaguma/result/swbd/pytorch/ctc/character/300h/blstm320H5L_drop4_adam_lr1e-3_dropen0.2_input120
+  char_init: False
+  # char_init: /n/sd8/inaguma/result/swbd/pytorch/ctc/character/300h/blstm320H5L_drop4_adam_lr1e-3_dropen0.2_input120
 
   # regularization
   clip_grad_norm: 5.0
@@ -87,7 +87,7 @@ param:
   sigmoid_smoothing: False
   coverage_weight: 0
   scheduled_sampling_prob: 0.2
-  scheduled_sampling_ramp_max_step: 50000
+  scheduled_sampling_max_step: 50000
   label_smoothing_prob: 0.1
   weight_noise_std: 0
 

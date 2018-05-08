@@ -27,6 +27,7 @@ class TestAttentionLayer(unittest.TestCase):
         self.check(attention_type='location')
         self.check(attention_type='dot_product')
         # self.check(attention_type='rnn_attention')
+        # self.check(attention_type='coverage')
 
     @measure_time
     def check(self, attention_type):
@@ -48,14 +49,15 @@ class TestAttentionLayer(unittest.TestCase):
             sharpening_factor=2,
             sigmoid_smoothing=False,
             out_channels=10,
-            kernel_size=101)
+            kernel_size=101,
+            num_heads=1)
 
         enc_out = Variable(torch.randn(
             (batch_size, max_time, encoder_num_units)))
         x_lens = Variable(torch.ones(batch_size)) * max_time
         dec_state_step = Variable(torch.randn(
             (batch_size, 1, decoder_num_units)))
-        att_weights_step = Variable(torch.randn((batch_size, max_time)))
+        att_weights_step = Variable(torch.randn((batch_size, max_time, 1)))
 
         context_vec, att_weights_step = attend(enc_out,
                                                x_lens,
@@ -63,7 +65,7 @@ class TestAttentionLayer(unittest.TestCase):
                                                att_weights_step)
 
         assert context_vec.size() == (batch_size, 1, encoder_num_units)
-        assert att_weights_step.size() == (batch_size, max_time)
+        assert att_weights_step.size() == (batch_size, max_time, 1)
 
 
 if __name__ == '__main__':

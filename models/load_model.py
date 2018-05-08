@@ -32,8 +32,6 @@ def load(model_type, params, backend):
             model_name = 'conv_'
             for c in params['conv_channels']:
                 model_name += str(c) + '_'
-            if bool(params['batch_norm']):
-                model_name += 'bn_'
             model_name += name_tmp
 
     if model_type == 'ctc':
@@ -93,6 +91,8 @@ def load(model_type, params, backend):
             model.name += '_fc'
             for l in params['fc_list']:
                 model.name += '_' + str(l)
+        if bool(params['batch_norm']):
+            model.name += '_bn'
         model.name += '_' + params['optimizer']
         model.name += '_lr' + str(params['learning_rate'])
         if params['dropout_encoder'] != 0:
@@ -236,20 +236,6 @@ def load(model_type, params, backend):
             encoder_dense_residual=params['encoder_dense_residual'])
 
         model.name = model_name
-        if len(params['conv_channels']) != 0:
-            if params['encoder_type'] in ['cnn', 'resnet']:
-                for c in params['conv_channels']:
-                    model.name += '_' + str(c)
-            else:
-                if params['encoder_bidirectional']:
-                    model.name = 'b' + model.name
-                name_tmp = model.name
-                model.name = 'conv_'
-                for c in params['conv_channels']:
-                    model.name += str(c) + '_'
-                model.name = model.name + name_tmp
-        if bool(params['batch_norm']):
-            model.name += '_bn'
         if params['encoder_type'] not in ['cnn', 'resnet']:
             model.name += str(params['encoder_num_units']) + 'H'
             model.name += str(params['encoder_num_layers']) + 'L'
@@ -265,6 +251,8 @@ def load(model_type, params, backend):
             model.name += '_fc'
             for l in params['fc_list']:
                 model.name += '_' + str(l)
+        if bool(params['batch_norm']):
+            model.name += '_bn'
         model.name += '_' + params['optimizer']
         model.name += '_lr' + str(params['learning_rate'])
         if params['dropout_encoder'] != 0:
@@ -338,7 +326,7 @@ def load(model_type, params, backend):
             poolings=params['poolings'],
             batch_norm=params['batch_norm'],
             scheduled_sampling_prob=params['scheduled_sampling_prob'],
-            scheduled_sampling_ramp_max_step=params['scheduled_sampling_ramp_max_step'],
+            scheduled_sampling_max_step=params['scheduled_sampling_max_step'],
             label_smoothing_prob=params['label_smoothing_prob'],
             weight_noise_std=params['weight_noise_std'],
             encoder_residual=params['encoder_residual'],
@@ -361,6 +349,8 @@ def load(model_type, params, backend):
                     str(2 ** sum(params['subsample_list']))
             if params['num_stack'] != 1:
                 model.name += '_stack' + str(params['num_stack'])
+        if bool(params['batch_norm']):
+            model.name += '_bn'
         model.name += '_' + params['decoder_type']
         model.name += str(params['decoder_num_units']) + 'H'
         model.name += str(params['decoder_num_layers']) + 'L'
@@ -470,7 +460,7 @@ def load(model_type, params, backend):
             poolings=params['poolings'],
             batch_norm=params['batch_norm'],
             scheduled_sampling_prob=params['scheduled_sampling_prob'],
-            scheduled_sampling_ramp_max_step=params['scheduled_sampling_ramp_max_step'],
+            scheduled_sampling_max_step=params['scheduled_sampling_max_step'],
             label_smoothing_prob=params['label_smoothing_prob'],
             weight_noise_std=params['weight_noise_std'],
             encoder_residual=params['encoder_residual'],
@@ -496,6 +486,8 @@ def load(model_type, params, backend):
                     str(2 ** sum(params['subsample_list']))
             if params['num_stack'] != 1:
                 model.name += '_stack' + str(params['num_stack'])
+        if bool(params['batch_norm']):
+            model.name += '_bn'
         model.name += '_' + params['decoder_type']
         model.name += str(params['decoder_num_units']) + 'H'
         model.name += str(params['decoder_num_layers']) + 'L'
@@ -606,7 +598,7 @@ def load(model_type, params, backend):
             poolings=params['poolings'],
             batch_norm=params['batch_norm'],
             scheduled_sampling_prob=params['scheduled_sampling_prob'],
-            scheduled_sampling_ramp_max_step=params['scheduled_sampling_ramp_max_step'],
+            scheduled_sampling_max_step=params['scheduled_sampling_max_step'],
             label_smoothing_prob=params['label_smoothing_prob'],
             weight_noise_std=params['weight_noise_std'],
             encoder_residual=params['encoder_residual'],
@@ -619,12 +611,13 @@ def load(model_type, params, backend):
             backward_sub=params['backward_sub'],
             num_heads=params['num_heads'],
             num_heads_sub=params['num_heads_sub'],
-            num_heads_dec_out_sub=params['num_heads_dec_out_sub'],
+            num_heads_dec=params['num_heads_dec'],
             usage_dec_sub=params['usage_dec_sub'],
-            gating_mechanism=params['gating_mechanism'],
-            attention_regularization_weight=params['attention_regularization_weight'],
-            dec_out_sub_attend_temperature=params['dec_out_sub_attend_temperature'],
-            dec_out_sub_sigmoid_smoothing=params['dec_out_sub_sigmoid_smoothing'])
+            att_reg_weight=params['att_reg_weight'],
+            dec_attend_temperature=params['dec_attend_temperature'],
+            dec_sigmoid_smoothing=params['dec_sigmoid_smoothing'],
+            relax_context_vec_dec=params['relax_context_vec_dec'],
+            dec_attention_type=params['dec_attention_type'])
 
         model.name = model_name
         if params['encoder_type'] not in ['cnn', 'resnet']:
@@ -638,6 +631,8 @@ def load(model_type, params, backend):
                     str(2 ** sum(params['subsample_list']))
             if params['num_stack'] != 1:
                 model.name += '_stack' + str(params['num_stack'])
+        if bool(params['batch_norm']):
+            model.name += '_bn'
         model.name += '_' + params['decoder_type']
         model.name += str(params['decoder_num_units']) + 'H'
         model.name += str(params['decoder_num_layers']) + 'L'
@@ -692,16 +687,17 @@ def load(model_type, params, backend):
         if int(params['num_heads']) > 1:
             model.name += '_head' + str(params['num_heads'])
 
+        model.name += '_' + params['dec_attention_type']
         model.name += '_' + params['usage_dec_sub']
-        if params['dec_out_sub_attend_temperature'] != 1:
+        if params['dec_attend_temperature'] != 1:
             model.name += '_temp' + \
-                str(params['dec_out_sub_attend_temperature'])
-        if bool(params['dec_out_sub_sigmoid_smoothing']):
+                str(params['dec_attend_temperature'])
+        if bool(params['dec_sigmoid_smoothing']):
             model.name += '_sigsmooth'
-        if int(params['attention_regularization_weight']) > 0:
+        if int(params['att_reg_weight']) > 0:
             model.name += '_attreg' + \
-                str(params['attention_regularization_weight'])
-        if params['gating_mechanism'] != 'no_gate':
-            model.name += '_' + params['gating_mechanism']
+                str(params['att_reg_weight'])
+        if bool(params['relax_context_vec_dec']):
+            model.name += '_relax'
 
     return model

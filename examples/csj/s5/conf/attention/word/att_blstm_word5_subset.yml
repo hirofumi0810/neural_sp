@@ -34,12 +34,11 @@ param:
   encoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 5
+  encoder_num_layers: 4
   subsample_list:
     - False
     - True
     - True
-    - False
     - False
   subsample_type: drop
   bridge_layer: False
@@ -58,10 +57,11 @@ param:
   num_heads: 1
 
   # optimization
-  batch_size: 50
+  # batch_size: 50  # 5L
+  batch_size: 60  # 4L
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 30
+  num_epoch: 20
   convert_to_sgd_epoch: 20
   pretrain_stage: False
 
@@ -88,7 +88,7 @@ param:
   sigmoid_smoothing: False
   coverage_weight: 0
   scheduled_sampling_prob: 0.2
-  scheduled_sampling_ramp_max_step: 50000
+  scheduled_sampling_max_step: 50000
   label_smoothing_prob: 0.1
   weight_noise_std: 0
 

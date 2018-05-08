@@ -47,12 +47,12 @@ class LinearND(chainer.Chain):
             xs (chainer.Variable): A tensor of size `[B, T, size[-1]]`
         """
         size = list(xs.shape)
-        outputs = xs.reshape(np.prod(size[:-1]), size[-1])
-        outputs = self.fc(outputs)
+        xs = xs.reshape(np.prod(size[:-1]), size[-1])
+        xs = self.fc(xs)
         if self.dropout > 0:
-            outputs = F.dropout(outputs, ratio=self.dropout)
-        size[-1] = outputs.shape[-1]
-        return outputs.reshape(size)
+            xs = F.dropout(xs, ratio=self.dropout)
+        size[-1] = xs.shape[-1]
+        return xs.reshape(size)
 
 
 class Embedding(chainer.Chain):

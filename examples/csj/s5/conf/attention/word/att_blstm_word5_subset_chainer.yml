@@ -3,21 +3,14 @@ param:
   # framework
   backend: chainer
 
-  # corpus
-  data_size: subset
-  label_type: word5
-
-  # features
-  num_stack: 3
-  num_skip: 3
-
   # topology
-  encoder_num_layers: 3
+  encoder_num_layers: 4
   subsample_list:
     - False
+    - True
+    - True
     - False
-    - False
-  attention_type: content
+  attention_type: location
   decoding_order: attend_generate_update
   bottleneck_dim: 256
   num_heads: 1

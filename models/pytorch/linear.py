@@ -39,12 +39,12 @@ class LinearND(nn.Module):
                 `[B, T, size[-1]]`
         """
         size = list(xs.size())
-        outputs = xs.contiguous().view(
+        xs = xs.contiguous().view(
             (int(np.prod(size[:-1])), int(size[-1])))
-        outputs = self.fc(outputs)
-        outputs = self.dropout(outputs)
-        size[-1] = outputs.size()[-1]
-        return outputs.view(size)
+        xs = self.fc(xs)
+        xs = self.dropout(xs)
+        size[-1] = xs.size()[-1]
+        return xs.view(size)
 
 
 class Embedding(nn.Module):

@@ -16,7 +16,8 @@ from chainer import cuda
 
 from models.chainer.linear import LinearND
 
-ATTENTION_TYPE = ['content', 'location', 'dot_product', 'rnn_attention']
+ATTENTION_TYPE = ['content', 'location',
+                  'dot_product', 'rnn_attention', 'coverage']
 
 
 class AttentionMechanism(chainer.Chain):
@@ -93,38 +94,38 @@ class AttentionMechanism(chainer.Chain):
                             LinearND(out_channels, attention_dim,
                                      bias=False, use_cuda=use_cuda))
 
-                    setattr(self, 'conv_head' + str(h),
-                            L.ConvolutionND(ndim=1,
-                                            in_channels=1,
-                                            out_channels=out_channels,
-                                            ksize=kernel_size,
-                                            stride=1,
-                                            pad=kernel_size // 2,
-                                            nobias=True,
-                                            initialW=None,
-                                            initial_bias=None))
                     # setattr(self, 'conv_head' + str(h),
-                    #         L.Convolution2D(in_channels=1,
+                    #         L.ConvolutionND(ndim=1,
+                    #                         in_channels=1,
                     #                         out_channels=out_channels,
-                    #                         ksize=(1, kernel_size),
+                    #                         ksize=kernel_size,
                     #                         stride=1,
-                    #                         pad=(0, kernel_size // 2),
+                    #                         pad=kernel_size // 2,
                     #                         nobias=True,
                     #                         initialW=None,
                     #                         initial_bias=None))
+                    setattr(self, 'conv_head' + str(h),
+                            L.Convolution2D(in_channels=1,
+                                            out_channels=out_channels,
+                                            ksize=(1, kernel_size),
+                                            stride=1,
+                                            pad=(0, kernel_size // 2),
+                                            nobias=True,
+                                            initialW=None,
+                                            initial_bias=None))
                     setattr(self, 'V_head' + str(h),
                             LinearND(attention_dim, 1,
                                      bias=False, use_cuda=use_cuda))
 
                 elif self.attention_type == 'dot_product':
                     setattr(self, 'W_enc_head' + str(h),
-                            LinearND(encoder_num_units, attention_dim,
-                                     bias=False, use_cuda=use_cuda))
-                    setattr(self, 'W_dec_head' + str(h),
-                            LinearND(decoder_num_units, attention_dim,
+                            LinearND(encoder_num_units, decoder_num_units,
                                      bias=False, use_cuda=use_cuda))
 
                 elif self.attention_type == 'rnn_attention':
+                    raise NotImplementedError
+
+                elif self.attention_type == 'coverage':
                     raise NotImplementedError
 
                 else:
@@ -155,21 +156,20 @@ class AttentionMechanism(chainer.Chain):
         energy = []
         for h in range(self.num_heads):
             if self.attention_type == 'content':
-                ###################################################################
+                ##############################################################
                 # energy = <v, tanh(W([h_de; h_en] + b))>
-                ###################################################################
+                ##############################################################
                 dec_out = F.broadcast_to(
                     dec_out, (dec_out.shape[0], enc_out.shape[1], dec_out.shape[2]))
                 energy_head = F.squeeze(getattr(self, 'V_head' + str(h))(F.tanh(
                     getattr(self, 'W_enc_head' + str(h))(enc_out) +
                     getattr(self, 'W_dec_head' + str(h))(dec_out))), axis=2)
-                energy.append(energy_head)
 
             elif self.attention_type == 'location':
-                ###################################################################
+                ##############################################################
                 # f = F * α_{i-1}
                 # energy = <v, tanh(W([h_de; h_en] + W_conv(f) + b))>
-                ###################################################################
+                ##############################################################
                 # For 1D conv
                 # conv_feat = getattr(self, 'conv_head' + str(h))(
                 #     aw_step[:, :, h].reshape(batch_size, 1, max_time))
@@ -187,22 +187,25 @@ class AttentionMechanism(chainer.Chain):
                     getattr(self, 'W_enc_head' + str(h))(enc_out) +
                     getattr(self, 'W_dec_head' + str(h))(dec_out) +
                     getattr(self, 'W_conv_head' + str(h))(conv_feat))), axis=2)
-                energy.append(energy_head)
 
             elif self.attention_type == 'dot_product':
-                ###################################################################
+                ##############################################################
                 # energy = <W_enc(h_en), W_dec(h_de)>
-                ###################################################################
+                ##############################################################
                 energy_head = F.squeeze(F.matmul(
                     getattr(self, 'W_enc_head' + str(h))(enc_out),
-                    getattr(self, 'W_dec_head' + str(h))(dec_out).transpose(0, 2, 1)), axis=2)
-                energy.append(energy_head)
+                    dec_out.transpose(0, 2, 1)), axis=2)
 
             elif self.attention_type == 'rnn_attention':
                 raise NotImplementedError
 
+            elif self.attention_type == 'coverage':
+                raise NotImplementedError
+
             else:
                 raise NotImplementedError
+
+            energy.append(energy_head)
 
         context_vec = []
         aw_step = []
@@ -212,8 +215,6 @@ class AttentionMechanism(chainer.Chain):
             energy_mask = xp.ones((batch_size, max_time), dtype=np.float32)
             # energy_mask = xp.ones((batch_size, max_time), dtype=xp.float32)
             for b in range(batch_size):
-                # TODO: fix bugs
-                # if x_lens[b].data < max_time:
                 if x_lens[b] < max_time:
                     energy_mask[b, x_lens[b]:] = 0
             energy_mask = Variable(energy_mask)

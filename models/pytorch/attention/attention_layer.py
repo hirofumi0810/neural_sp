@@ -14,8 +14,8 @@ from torch.autograd import Variable
 
 from models.pytorch.linear import LinearND
 
-ATTENTION_TYPE = ['content', 'location', 'dot_product', 'rnn_attention']
-# TODO: multi-head attention
+ATTENTION_TYPE = ['content', 'location',
+                  'dot_product', 'rnn_attention', 'coverage']
 
 
 class AttentionMechanism(nn.Module):
@@ -99,12 +99,21 @@ class AttentionMechanism(nn.Module):
 
             elif self.attention_type == 'dot_product':
                 setattr(self, 'W_enc_head' + str(h),
-                        LinearND(encoder_num_units, attention_dim, bias=False))
-                setattr(self, 'W_dec_head' + str(h),
-                        LinearND(decoder_num_units, attention_dim, bias=False))
+                        LinearND(encoder_num_units, decoder_num_units, bias=False))
 
             elif self.attention_type == 'rnn_attention':
                 raise NotImplementedError
+
+            elif self.attention_type == 'coverage':
+                setattr(self, 'W_enc_head' + str(h),
+                        LinearND(encoder_num_units, attention_dim, bias=True))
+                setattr(self, 'W_dec_head' + str(h),
+                        LinearND(decoder_num_units, attention_dim, bias=False))
+                setattr(self, 'W_cov_head' + str(h),
+                        LinearND(encoder_num_units, attention_dim, bias=False))
+                setattr(self, 'V_head' + str(h),
+                        LinearND(attention_dim, 1, bias=False))
+                self.aw_cumsum = None
 
             else:
                 raise TypeError(
@@ -132,21 +141,20 @@ class AttentionMechanism(nn.Module):
         energy = []
         for h in range(self.num_heads):
             if self.attention_type == 'content':
-                ###################################################################
-                # energy = <v, tanh(W([h_de; h_en] + b))>
-                ###################################################################
+                ##############################################################
+                # energy = <v, tanh(W([h_dec; h_enc] + b))>
+                ##############################################################
                 dec_out = dec_out.expand_as(torch.zeros(
                     (batch_size, max_time, dec_out.size(2))))
                 energy_head = getattr(self, 'V_head' + str(h))(F.tanh(
                     getattr(self, 'W_enc_head' + str(h))(enc_out) +
                     getattr(self, 'W_dec_head' + str(h))(dec_out))).squeeze(2)
-                energy.append(energy_head)
 
             elif self.attention_type == 'location':
-                ###################################################################
+                ##############################################################
                 # f = F * α_{i-1}
-                # energy = <v, tanh(W([h_de; h_en] + W_conv(f) + b))>
-                ###################################################################
+                # energy = <v, tanh(W([h_dec; h_enc] + W_conv(f) + b))>
+                ##############################################################
                 # For 1D conv
                 # conv_feat = getattr(self, 'conv_head' + str(h))(
                 #     aw_step[:, :, h].contiguous().unsqueeze(dim=1))
@@ -165,22 +173,41 @@ class AttentionMechanism(nn.Module):
                     getattr(self, 'W_enc_head' + str(h))(enc_out) +
                     getattr(self, 'W_dec_head' + str(h))(dec_out) +
                     getattr(self, 'W_conv_head' + str(h))(conv_feat))).squeeze(2)
-                energy.append(energy_head)
 
             elif self.attention_type == 'dot_product':
-                ###################################################################
-                # energy = <W_enc(h_en), W_dec(h_de)>
-                ###################################################################
+                ##############################################################
+                # energy = <W_enc(h_enc), h_dec>
+                ##############################################################
                 energy_head = torch.bmm(
                     getattr(self, 'W_enc_head' + str(h))(enc_out),
-                    getattr(self, 'W_dec_head' + str(h))(dec_out).transpose(1, 2)).squeeze(2)
-                energy.append(energy_head)
+                    dec_out.transpose(1, 2)).squeeze(2)
 
             elif self.attention_type == 'rnn_attention':
                 raise NotImplementedError
 
+            elif self.attention_type == 'coverage':
+                raise NotImplementedError
+
+                ##############################################################
+                # energy = <v, tanh(W([h_dec; h_enc, coverage] + b))>
+                ##############################################################
+                # Sum all previous attention weights
+                if self.aw_cumsum is None:
+                    self.aw_cumsum = aw_step
+                else:
+                    self.aw_cumsum += aw_step
+
+                dec_out = dec_out.expand_as(torch.zeros(
+                    (batch_size, max_time, dec_out.size(2))))
+                energy_head = getattr(self, 'V_head' + str(h))(F.tanh(
+                    getattr(self, 'W_enc_head' + str(h))(enc_out) +
+                    getattr(self, 'W_dec_head' + str(h))(dec_out) +
+                    getattr(self, 'W_cov_head' + str(h))(self.aw_cumsum))).squeeze(2)
+
             else:
                 raise NotImplementedError
+
+            energy.append(energy_head)
 
         context_vec = []
         aw_step = []

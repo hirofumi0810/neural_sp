@@ -5,9 +5,9 @@ param:
 
   # features
   input_freq: 80
-  use_delta: True
-  use_double_delta: True
-  input_channel: 3
+  use_delta: False
+  use_double_delta: False
+  input_channel: 1
 
   # topology
   encoder_type: cnn
@@ -52,7 +52,7 @@ param:
   batch_size: 16
 
   # regularization
-  scheduled_sampling_ramp_max_step: 200000
+  scheduled_sampling_max_step: 200000
 
   # annealing
   print_step: 800

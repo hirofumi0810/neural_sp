@@ -26,14 +26,11 @@ class TestHierarchicalAttention(unittest.TestCase):
 
         # Multi-head attention
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', attention_type='content', num_heads=2)
-        # TODO: location
+                   decoder_type='lstm', num_heads=2)
 
         # Forward word decoder + backward char decoder
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', backward_sub=True,
-                   attention_type='content')
-        # TODO: location
+                   decoder_type='lstm', backward_sub=True)
 
         # CNN-CTC
         self.check(encoder_type='cnn', decoder_type='lstm', batch_norm=True)
@@ -70,7 +67,7 @@ class TestHierarchicalAttention(unittest.TestCase):
 
     @measure_time
     def check(self, encoder_type, decoder_type, bidirectional=False,
-              attention_type='content', subsample=False, projection=False,
+              attention_type='location', subsample=False, projection=False,
               ctc_loss_weight_sub=0, conv=False, batch_norm=False,
               residual=False, dense_residual=False,
               num_heads=1, backward_sub=False):
@@ -172,7 +169,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             activation='relu',
             batch_norm=batch_norm,
             scheduled_sampling_prob=0.1,
-            scheduled_sampling_ramp_max_step=200,
+            scheduled_sampling_max_step=200,
             label_smoothing_prob=0.1,
             weight_noise_std=0,
             encoder_residual=residual,
@@ -232,12 +229,12 @@ class TestHierarchicalAttention(unittest.TestCase):
                     xs, ys, x_lens, y_lens, ys_sub, y_lens_sub, is_eval=True)
 
                 # Decode
-                best_hyps, _ = model.decode(
+                best_hyps, _, _ = model.decode(
                     xs, x_lens,
                     beam_width=1,
                     # beam_width=2,
-                    max_decode_len=30, task_index=0)
-                best_hyps_sub, _ = model.decode(
+                    max_decode_len=30)
+                best_hyps_sub, _, _ = model.decode(
                     xs, x_lens,
                     beam_width=1,
                     # beam_width=2,

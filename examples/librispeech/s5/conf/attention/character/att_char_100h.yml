@@ -10,9 +10,10 @@ param:
   # features
   feature: fbank
   save_format: numpy
-  input_channel: 40
+  input_freq: 40
   use_delta: True
   use_double_delta: True
+  input_channel: 3
   splice: 1
   num_stack: 1
   num_skip: 1
@@ -84,7 +85,7 @@ param:
   sigmoid_smoothing: False
   coverage_weight: 0
   scheduled_sampling_prob: 0.2
-  scheduled_sampling_ramp_max_step: 50000
+  scheduled_sampling_max_step: 50000
   label_smoothing_prob: 0.2
   weight_noise_std: 0
 

@@ -9,9 +9,10 @@ param:
   # features
   feature: fbank
   tool: htk
-  input_channel: 41
+  input_freq: 41
   use_delta: True
   use_double_delta: True
+  input_channel: 3
   splice: 1
   num_stack: 1
   num_skip: 1
@@ -55,7 +56,7 @@ param:
   num_heads: 1
 
   # optimization
-  batch_size: 64
+  batch_size: 32
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 200
@@ -84,7 +85,7 @@ param:
   sigmoid_smoothing: False
   coverage_weight: 0
   scheduled_sampling_prob: 0.2
-  scheduled_sampling_ramp_max_step: 4000
+  scheduled_sampling_max_step: 4000
   label_smoothing_prob: 0.1
   weight_noise_std: 1e-9
 

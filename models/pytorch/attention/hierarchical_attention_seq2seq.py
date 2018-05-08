@@ -73,7 +73,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  activation='relu',
                  batch_norm=False,
                  scheduled_sampling_prob=0,
-                 scheduled_sampling_ramp_max_step=0,
+                 scheduled_sampling_max_step=0,
                  label_smoothing_prob=0,
                  weight_noise_std=0,
                  encoder_residual=False,
@@ -125,7 +125,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             conv_strides=conv_strides,
             poolings=poolings,
             scheduled_sampling_prob=scheduled_sampling_prob,
-            scheduled_sampling_ramp_max_step=scheduled_sampling_ramp_max_step,
+            scheduled_sampling_max_step=scheduled_sampling_max_step,
             label_smoothing_prob=label_smoothing_prob,
             weight_noise_std=weight_noise_std,
             encoder_residual=encoder_residual,
@@ -458,7 +458,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # Compute XE loss
             loss_main = self.compute_xe_loss(
                 xs, ys_in, ys_out, x_lens, y_lens,
-                task_idx=0, direction='fwd') * self.main_loss_weight
+                task_idx=0, dir='fwd') * self.main_loss_weight
         else:
             loss_main = self._create_var((1,), fill_value=0)
         loss = loss_main.clone()
@@ -470,7 +470,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # Compute XE loss
             loss_sub = self.compute_xe_loss(
                 xs_sub, ys_in_sub, ys_out_sub, x_lens_sub, y_lens_sub,
-                task_idx=1, direction='bwd' if self.backward_1 else 'fwd') * self.sub_loss_weight
+                task_idx=1, dir='bwd' if self.backward_1 else 'fwd') * self.sub_loss_weight
             loss += loss_sub
 
         ##################################################
@@ -502,10 +502,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         else:
             # Update the probability of scheduled sampling
             self._step += 1
-            if self.sample_prob > 0:
-                self._sample_prob = min(
-                    self.sample_prob,
-                    self.sample_prob / self.sample_ramp_max_step * self._step)
+            if self.ss_prob > 0:
+                self._ss_prob = min(
+                    self.ss_prob, self.ss_prob / self.ss_max_step * self._step)
 
         if self.sub_loss_weight > self.ctc_loss_weight_sub:
             return loss, loss_main, loss_sub
@@ -528,6 +527,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             resolving_unk (bool, optional):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
+            aw ():
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
         # Change to evaluation mode
@@ -537,6 +537,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # Decode by CTC decoder
             best_hyps, perm_idx = self.decode_ctc(
                 xs, x_lens, beam_width, task_index)
+
+            return best_hyps, None, perm_idx
+            # NOTE: None corresponds to aw in attention-based models
         else:
             # Wrap by Variable
             xs = self.np2var(xs)
@@ -558,9 +561,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 best_hyps, aw = self._decode_infer_greedy(
                     enc_out, x_lens, max_decode_len, task_index, dir)
             else:
-                best_hyps = self._decode_infer_beam(
+                best_hyps, aw = self._decode_infer_beam(
                     enc_out, x_lens, beam_width, max_decode_len,
                     length_penalty, coverage_penalty, task_index, dir)
+
+            # TODO: fix this
+            if beam_width == 1:
+                aw = aw[:, :, :, 0]
 
             # Permutate indices to the original order
             if perm_idx is None:
@@ -568,8 +575,4 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             else:
                 perm_idx = self.var2np(perm_idx)
 
-        if resolving_unk:
             return best_hyps, aw, perm_idx
-            # TODO: beam search
-        else:
-            return best_hyps, perm_idx
