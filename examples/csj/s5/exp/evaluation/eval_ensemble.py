@@ -23,26 +23,46 @@ parser = argparse.ArgumentParser()
 #                     help='path to the model to evaluate')
 parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
+parser.add_argument('--beam_width', type=int, default=1,
+                    help='the size of beam in the main task')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--beam_width', type=int, default=1,
-                    help='beam_width (int, optional): beam width for beam search.' +
-                    ' 1 disables beam search, which mean greedy decoding.')
-parser.add_argument('--max_decode_len', type=int, default=150,  # or 80
-                    help='the length of output sequences to stop prediction when EOS token have not been emitted')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
+
+MAX_DECODE_LEN_WORD = 100
+MAX_DECODE_LEN_CHAR = 200
 
 
 def main():
 
     args = parser.parse_args()
 
+    # model_paths = [
+    #     "/n/sd8/inaguma/result/csj/pytorch/ctc/word5/subset/blstm320H5L_drop8_fc_256_adam_lr1e-3_dropen0.2_input80_charinit",
+    #     "/n/sd8/inaguma/result/csj/pytorch/ctc/word5/subset/blstm320H5L_drop8_fc_256_adam_lr1e-3_dropen0.2_input80_charinit_1",
+    #     "/n/sd8/inaguma/result/csj/pytorch/ctc/word5/subset/blstm320H5L_drop8_fc_256_adam_lr1e-3_dropen0.2_input80_charinit_2",
+    #     "/n/sd8/inaguma/result/csj/pytorch/ctc/word5/subset/blstm320H5L_drop8_fc_256_adam_lr1e-3_dropen0.2_input80_charinit_3",
+    # ]
+
+    # model_paths = [
+    #     "/n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/subset/blstm320H5L_drop4_fc_256_adam_lr1e-3_dropen0.2_input240",
+    #     "/n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/subset/blstm320H5L_drop4_fc_256_adam_lr1e-3_dropen0.2_input240_1",
+    #     "/n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/subset/blstm320H5L_drop4_fc_256_adam_lr1e-3_dropen0.2_input240_2",
+    #     "/n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/subset/blstm320H5L_drop4_fc_256_adam_lr1e-3_dropen0.2_input240_3",
+    # ]
+    # model_paths = [
+    #     "/n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/subset/blstm320H5L_drop4_fc_256_adam_lr1e-3_dropen0.2_temp2_input240",
+    #     "/n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/subset/blstm320H5L_drop4_fc_256_adam_lr1e-3_dropen0.2_temp2_input240_1",
+    #     "/n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/subset/blstm320H5L_drop4_fc_256_adam_lr1e-3_dropen0.2_temp2_input240_2",
+    #     "/n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/subset/blstm320H5L_drop4_fc_256_adam_lr1e-3_dropen0.2_temp2_input240_3",
+    # ]
+
     model_paths = [
-        "/n/sd8/inaguma/result/csj/pytorch/ctc/word5/subset/blstm320H5L_drop8_fc_256_adam_lr1e-3_dropen0.2_input80_charinit",
-        "/n/sd8/inaguma/result/csj/pytorch/ctc/word5/subset/blstm320H5L_drop8_fc_256_adam_lr1e-3_dropen0.2_input80_charinit_1",
-        "/n/sd8/inaguma/result/csj/pytorch/ctc/word5/subset/blstm320H5L_drop8_fc_256_adam_lr1e-3_dropen0.2_input80_charinit_2",
-        "/n/sd8/inaguma/result/csj/pytorch/ctc/word5/subset/blstm320H5L_drop8_fc_256_adam_lr1e-3_dropen0.2_input80_charinit_3",
+        "/n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/subset/conv_64_64_128_128_bn_blstm320H4L_fc_256_adam_lr1e-3_dropen0.2_input240",
+        "/n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/subset/blstm320H5L_drop4_fc_256_adam_lr1e-3_dropen0.2_input240",
     ]
+
+    temp_infer = 2
 
     # Load a config file (.yml)
     params_list = []
@@ -84,14 +104,15 @@ def main():
         batch_size=args.eval_batch_size, splice=params_list[0]['splice'],
         num_stack=params_list[0]['num_stack'], num_skip=params_list[0]['num_skip'],
         shuffle=False, tool=params_list[0]['tool'])
-    params_list[0]['num_classes'] = eval1_data.num_classes
 
     # Load model
     models = []
     for i in range(len(model_paths)):
+        params_list[i]['num_classes'] = eval1_data.num_classes
+
         model = load(model_type=params_list[i]['model_type'],
-                     params=params_list[0],
-                     backend=params_list[0]['backend'])
+                     params=params_list[i],
+                     backend=params_list[i]['backend'])
 
         # Restore the saved parameters
         model.load_checkpoint(save_path=model_paths[i], epoch=args.epoch)
@@ -105,7 +126,7 @@ def main():
             models=models,
             dataset=eval1_data,
             beam_width=args.beam_width,
-            max_decode_len=args.max_decode_len,
+            max_decode_len=MAX_DECODE_LEN_WORD,
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  WER (eval1): %.3f %%' % (wer_eval1 * 100))
@@ -115,7 +136,7 @@ def main():
             models=models,
             dataset=eval2_data,
             beam_width=args.beam_width,
-            max_decode_len=args.max_decode_len,
+            max_decode_len=MAX_DECODE_LEN_WORD,
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  WER (eval2): %.3f %%' % (wer_eval2 * 100))
@@ -125,7 +146,7 @@ def main():
             models=models,
             dataset=eval3_data,
             beam_width=args.beam_width,
-            max_decode_len=args.max_decode_len,
+            max_decode_len=MAX_DECODE_LEN_WORD,
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  WER (eval3): %.3f %%' % (wer_eval3 * 100))
@@ -138,9 +159,10 @@ def main():
             models=models,
             dataset=eval1_data,
             beam_width=args.beam_width,
-            max_decode_len=args.max_decode_len,
+            max_decode_len=MAX_DECODE_LEN_CHAR,
             eval_batch_size=args.eval_batch_size,
-            progressbar=True)
+            progressbar=True,
+            temperature=temp_infer)
         print('  CER (eval1): %.3f %%' % (cer_eval1 * 100))
         if params['label_type'] == 'kanji_wb':
             print('  WER (eval1): %.3f %%' % (wer_eval1 * 100))
@@ -150,9 +172,10 @@ def main():
             models=models,
             dataset=eval2_data,
             beam_width=args.beam_width,
-            max_decode_len=args.max_decode_len,
+            max_decode_len=MAX_DECODE_LEN_CHAR,
             eval_batch_size=args.eval_batch_size,
-            progressbar=True)
+            progressbar=True,
+            temperature=temp_infer)
         print('  CER (eval2): %.3f %%' % (cer_eval2 * 100))
         if params['label_type'] == 'kanji_wb':
             print('  WER (eval2): %.3f %%' % (wer_eval2 * 100))
@@ -162,9 +185,10 @@ def main():
             models=models,
             dataset=eval3_data,
             beam_width=args.beam_width,
-            max_decode_len=args.max_decode_len,
+            max_decode_len=MAX_DECODE_LEN_CHAR,
             eval_batch_size=args.eval_batch_size,
-            progressbar=True)
+            progressbar=True,
+            temperature=temp_infer)
         print('  CER (eval3): %.3f %%' % (cer_eval3 * 100))
         if params['label_type'] == 'kanji_wb':
             print('  WER (eval3): %.3f %%' % (wer_eval3 * 100))

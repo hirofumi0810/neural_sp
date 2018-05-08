@@ -39,14 +39,12 @@ parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
 parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
+parser.add_argument('--beam_width', type=int, default=1,
+                    help='the size of beam in the main task')
+parser.add_argument('--beam_width_sub', type=int, default=1,
+                    help='the size of beam in the sub task')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--beam_width', type=int, default=1,
-                    help='beam_width (int, optional): beam width for beam search.' +
-                    ' 1 disables beam search, which mean greedy decoding.')
-parser.add_argument('--beam_width_sub', type=int, default=1,
-                    help='beam_width (int, optional): beam width for beam search.' +
-                    ' 1 disables beam search, which mean greedy decoding.')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
 MAX_DECODE_LEN_WORD = 100
@@ -122,7 +120,7 @@ def plot(model, dataset, beam_width, beam_width_sub,
         best_hyps, best_hyps_sub, aw, aw_sub, aw_dec = model.attention_weights(
             batch['xs'], batch['x_lens'],
             beam_width=beam_width,
-            # beam_width_sub=beam_width_sub,
+            beam_width_sub=beam_width_sub,
             max_decode_len=MAX_DECODE_LEN_WORD,
             max_decode_len_sub=MAX_DECODE_LEN_CHAR)
 

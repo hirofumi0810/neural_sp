@@ -28,8 +28,9 @@ parser.add_argument('--model_path', type=str,
 parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
 parser.add_argument('--beam_width', type=int, default=1,
-                    help='beam_width (int, optional): beam width for beam search.' +
-                    ' 1 disables beam search, which mean greedy decoding.')
+                    help='the size of beam in the main task')
+parser.add_argument('--beam_width_sub', type=int, default=1,
+                    help='the size of beam in the sub task')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
 parser.add_argument('--data_save_path', type=str,
@@ -80,19 +81,21 @@ def main():
     decode(model=model,
            dataset=test_data,
            beam_width=args.beam_width,
+           beam_width_sub=args.beam_width_sub,
            eval_batch_size=args.eval_batch_size,
            save_path=None
            # save_path=args.model_path
            resolving_unk=False)
 
 
-def decode(model, dataset, beam_width,
+def decode(model, dataset, beam_width, beam_width_sub,
            eval_batch_size=None, save_path=None, resolving_unk=False):
     """Visualize label outputs.
     Args:
         model: the model to evaluate
         dataset: An instance of a `Dataset` class
-        beam_width: (int): the size of beam
+        beam_width: (int): the size of beam in the main task
+        beam_width: (int): the size of beam in the sub task
         eval_batch_size (int, optional): the batch size when evaluating the model
         save_path (string): path to save decoding results
         resolving_unk (bool, optional):
@@ -119,6 +122,7 @@ def decode(model, dataset, beam_width,
             best_hyps, aw, best_hyps_sub, aw_sub, perm_idx = model.decode(
                 batch['xs'], batch['x_lens'],
                 beam_width=beam_width,
+                beam_width_sub=beam_width_sub,
                 max_decode_len=MAX_DECODE_LEN_WORD,
                 max_decode_len_sub=MAX_DECODE_LEN_CHAR)
         else:
@@ -128,7 +132,7 @@ def decode(model, dataset, beam_width,
                 max_decode_len=MAX_DECODE_LEN_WORD)
             best_hyps_sub, aw_sub, _ = model.decode(
                 batch['xs'], batch['x_lens'],
-                beam_width=beam_width,
+                beam_width=beam_width_sub,
                 max_decode_len=MAX_DECODE_LEN_CHAR,
                 task_index=1)
 

@@ -24,8 +24,9 @@ parser.add_argument('--model_path', type=str,
 parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
 parser.add_argument('--beam_width', type=int, default=1,
-                    help='beam_width (int, optional): beam width for beam search.' +
-                    ' 1 disables beam search, which mean greedy decoding.')
+                    help='the size of beam in the main task')
+parser.add_argument('--beam_width_sub', type=int, default=1,
+                    help='the size of beam in the sub task')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
@@ -99,7 +100,7 @@ def main():
     cer_eval2000_swbd_sub, wer_eval2000_swbd_sub, _ = do_eval_cer(
         models=[model],
         dataset=eval2000_swbd_data,
-        beam_width=args.beam_width,
+        beam_width=args.beam_width_sub,
         max_decode_len=args.max_decode_len_sub,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
@@ -123,7 +124,7 @@ def main():
     cer_eval2000_ch_sub, wer_eval2000_ch_sub, _ = do_eval_cer(
         models=[model],
         dataset=eval2000_ch_data,
-        beam_width=args.beam_width,
+        beam_width=args.beam_width_sub,
         max_decode_len=args.max_decode_len_sub,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)

@@ -23,11 +23,12 @@ parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
 parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
+parser.add_argument('--beam_width', type=int, default=1,
+                    help='the size of beam in the main task')
+parser.add_argument('--beam_width_sub', type=int, default=1,
+                    help='the size of beam in the sub task')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--beam_width', type=int, default=1,
-                    help='beam_width (int, optional): beam width for beam search.' +
-                    ' 1 disables beam search, which mean greedy decoding.')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
 MAX_DECODE_LEN_WORD = 100
@@ -90,6 +91,9 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
+    a2c_oracle = False
+    resolving_unk = False
+
     ##############################
     # eval1
     ##############################
@@ -99,15 +103,16 @@ def main():
         beam_width=args.beam_width,
         max_decode_len=MAX_DECODE_LEN_WORD,
         eval_batch_size=args.eval_batch_size,
-        resolving_unk=False,
-        progressbar=True)
+        progressbar=True,
+        resolving_unk=resolving_unk,
+        a2c_oracle=a2c_oracle)
     print('  WER (eval1, main): %.3f %%' % (wer_eval1 * 100))
     print(df_wer_eval1)
 
     cer_eval1, wer_eval1_sub, df_cer_eval1 = do_eval_cer(
         models=[model],
         dataset=eval1_data,
-        beam_width=args.beam_width,
+        beam_width=args.beam_width_sub,
         max_decode_len=MAX_DECODE_LEN_CHAR,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
@@ -125,15 +130,15 @@ def main():
         beam_width=args.beam_width,
         max_decode_len=MAX_DECODE_LEN_WORD,
         eval_batch_size=args.eval_batch_size,
-        resolving_unk=False,
-        progressbar=True)
+        progressbar=True,
+        resolving_unk=resolving_unk,
+        a2c_oracle=a2c_oracle)
     print('  WER (eval2, main): %.3f %%' % (wer_eval2 * 100))
     print(df_wer_eval2)
-
     cer_eval2, wer_eval2_sub, df_cer_eval2 = do_eval_cer(
         models=[model],
         dataset=eval2_data,
-        beam_width=args.beam_width,
+        beam_width=args.beam_width_sub,
         max_decode_len=MAX_DECODE_LEN_CHAR,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
@@ -151,15 +156,16 @@ def main():
         beam_width=args.beam_width,
         max_decode_len=MAX_DECODE_LEN_WORD,
         eval_batch_size=args.eval_batch_size,
-        resolving_unk=False,
-        progressbar=True)
+        progressbar=True,
+        resolving_unk=resolving_unk,
+        a2c_oracle=a2c_oracle)
     print('  WER (eval3, main): %.3f %%' % (wer_eval3 * 100))
     print(df_wer_eval3)
 
     cer_eval3, wer_eval3_sub, df_cer_eval3 = do_eval_cer(
         models=[model],
         dataset=eval3_data,
-        beam_width=args.beam_width,
+        beam_width=args.beam_width_sub,
         max_decode_len=MAX_DECODE_LEN_CHAR,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)

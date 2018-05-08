@@ -42,6 +42,10 @@ parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
+parser.add_argument('--beam_width', type=int, default=1,
+                    help='the size of beam in the main task')
+parser.add_argument('--beam_width_sub', type=int, default=1,
+                    help='the size of beam in the sub task')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
 MAX_DECODE_LEN_WORD = 100
@@ -89,14 +93,19 @@ def main():
     plot(model=model,
          dataset=test_data,
          eval_batch_size=args.eval_batch_size,
+         beam_width=args.beam_width,
+         beam_width_sub=args.beam_width_sub,
          save_path=mkdir_join(args.model_path, 'att_weights'))
 
 
-def plot(model, dataset, eval_batch_size=None, save_path=None):
+def plot(model, dataset, beam_width, beam_width_sub,
+         eval_batch_size=None, save_path=None):
     """Visualize attention weights of Attetnion-based model.
     Args:
         model: model to evaluate
         dataset: An instance of a `Dataset` class
+        beam_width: (int): the size of beam i nteh main task
+        beam_width_sub: (int): the size of beam in the sub task
         eval_batch_size (int, optional): the batch size when evaluating the model
         save_path (string, optional): path to save attention weights plotting
     """
@@ -110,9 +119,10 @@ def plot(model, dataset, eval_batch_size=None, save_path=None):
 
     for batch, is_new_epoch in dataset:
 
-        best_hyps, best_hyps_sub, aw, aw_sub, aw_dec_out_sub = model.attention_weights(
+        best_hyps, best_hyps_sub, aw, aw_sub, aw_dec = model.attention_weights(
             batch['xs'], batch['x_lens'],
-            beam_width=1,
+            beam_width=beam_width,
+            beam_width_sub=beam_width_sub,
             max_decode_len=MAX_DECODE_LEN_WORD,
             max_decode_len_sub=MAX_DECODE_LEN_CHAR)
 
@@ -123,6 +133,9 @@ def plot(model, dataset, eval_batch_size=None, save_path=None):
                 char_list = idx2word(best_hyps_sub[b])
             else:
                 char_list = idx2char(best_hyps_sub[b])
+
+            # if word_list.count('OOV') < 1:
+            #     continue
 
             speaker = batch['input_names'][b].split('_')[0]
 
@@ -140,13 +153,16 @@ def plot(model, dataset, eval_batch_size=None, save_path=None):
 
             # word to characater
             plot_word2char_attention_weights(
-                aw_dec_out_sub[b][:len(word_list), :len(char_list)],
+                aw_dec[b][:len(word_list), :len(char_list)],
                 label_list=word_list,
                 label_list_sub=char_list,
                 save_path=mkdir_join(save_path, speaker,
                                      batch['input_names'][b] + '_word2char.png'),
                 figsize=(40, 8)
             )
+
+            with open(join(save_path, speaker, batch['input_names'][b] + '.txt'), 'w') as f:
+                f.write(batch['ys'][b][0])
 
         if is_new_epoch:
             break

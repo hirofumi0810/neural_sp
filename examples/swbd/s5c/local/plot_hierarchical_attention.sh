@@ -20,5 +20,7 @@ CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
 $PYTHON exp/visualization/plot_hierarchical_attention_weights.py \
   --model_path $saved_model_path \
   --epoch -1 \
+  --beam_width 1 \
+  --beam_width_sub 1 \
   --eval_batch_size 1 \
   --data_save_path $DATA_SAVEPATH

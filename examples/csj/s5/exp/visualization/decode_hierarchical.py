@@ -28,8 +28,9 @@ parser.add_argument('--epoch', type=int, default=-1,
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
 parser.add_argument('--beam_width', type=int, default=1,
-                    help='beam_width (int, optional): beam width for beam search.' +
-                    ' 1 disables beam search, which mean greedy decoding.')
+                    help='the size of beam in the main task')
+parser.add_argument('--beam_width_sub', type=int, default=1,
+                    help='the size of beam in the sub task')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
 MAX_DECODE_LEN_WORD = 100
@@ -77,23 +78,21 @@ def main():
     decode(model=model,
            dataset=test_data,
            beam_width=args.beam_width,
+           beam_width_sub=args.beam_width_sub,
            eval_batch_size=args.eval_batch_size,
            save_path=None,
            # save_path=args.model_path,
            resolving_unk=False)
 
 
-def decode(model, dataset, beam_width,
+def decode(model, dataset, beam_width, beam_width_sub,
            eval_batch_size=None, save_path=None, resolving_unk=False):
     """Visualize label outputs.
     Args:
         model: the model to evaluate
         dataset: An instance of a `Dataset` class
-        beam_width: (int): the size of beam
-        max_decode_len (int): the length of output sequences
-            to stop prediction when EOS token have not been emitted.
-            This is used for seq2seq models.
-        max_decode_len_sub (int):
+        beam_width: (int): the size of beam in the main task
+        beam_width_sub: (int): the size of beam in the sub task
         eval_batch_size (int, optional): the batch size when evaluating the model
         save_path (string): path to save decoding results
         resolving_unk (bool, optional):
@@ -115,20 +114,19 @@ def decode(model, dataset, beam_width,
             best_hyps, aw, best_hyps_sub, aw_sub, perm_idx = model.decode(
                 batch['xs'], batch['x_lens'],
                 beam_width=beam_width,
+                beam_width_sub=beam_width_sub,
                 max_decode_len=MAX_DECODE_LEN_WORD,
-                max_decode_len_sub=200,
-                resolving_unk=resolve_unk)
+                max_decode_len_sub=MAX_DECODE_LEN_CHAR)
         else:
             best_hyps, aw, perm_idx = model.decode(
                 batch['xs'], batch['x_lens'],
                 beam_width=beam_width,
-                max_decode_len=MAX_DECODE_LEN_WORD,
-                resolving_unk=resolving_unk)
+                max_decode_len=MAX_DECODE_LEN_WORD)
             best_hyps_sub, aw_sub, perm_idx = model.decode(
                 batch['xs'], batch['x_lens'],
-                beam_width=beam_width,
+                beam_width=beam_width_sub,
                 max_decode_len=MAX_DECODE_LEN_CHAR,
-                task_index=1, resolving_unk=resolving_unk)
+                task_index=1)
 
         ys = batch['ys'][perm_idx]
         y_lens = batch['y_lens'][perm_idx]
@@ -159,8 +157,8 @@ def decode(model, dataset, beam_width,
             ##############################
             # Resolving UNK
             ##############################
-            if resolving_unk:
-                if 'OOV' in str_hyp:
+            if 'OOV' in str_hyp:
+                if resolving_unk:
                     str_hyp_no_unk = resolve_unk(
                         str_hyp, best_hyps_sub[b], aw[b], aw_sub[b], idx2char)
                 else:

@@ -105,7 +105,6 @@ def do_eval_wer(models, dataset, beam_width, max_decode_len,
                     beam_width=beam_width,
                     max_decode_len=max_decode_len,
                     max_decode_len_sub=max_label_num if a2c_oracle else 200,
-                    resolving_unk=resolving_unk,
                     teacher_forcing=a2c_oracle,
                     ys_sub=ys_sub,
                     y_lens_sub=y_lens_sub)
@@ -113,14 +112,13 @@ def do_eval_wer(models, dataset, beam_width, max_decode_len,
                 best_hyps, aw, perm_idx = model.decode(
                     batch['xs'], batch['x_lens'],
                     beam_width=beam_width,
-                    max_decode_len=max_decode_len,
-                    resolving_unk=resolving_unk)
+                    max_decode_len=max_decode_len)
                 if resolving_unk:
                     best_hyps_sub, aw_sub, _ = model.decode(
                         batch['xs'], batch['x_lens'],
                         beam_width=beam_width,
                         max_decode_len=200,
-                        task_index=1, resolving_unk=True)
+                        task_index=1)
 
         ys = batch['ys'][perm_idx]
         y_lens = batch['y_lens'][perm_idx]
