@@ -203,7 +203,8 @@ class TestCTC(unittest.TestCase):
                 loss = model(xs, ys, x_lens, y_lens, is_eval=True)
 
                 # Decode
-                best_hyps, _ = model.decode(xs, x_lens, beam_width=1)
+                best_hyps, _,  _ = model.decode(xs, x_lens, beam_width=1)
+                # TODO: fix beam search
 
                 str_ref = map_fn(ys[0, :y_lens[0]])
                 str_hyp = map_fn(best_hyps[0])

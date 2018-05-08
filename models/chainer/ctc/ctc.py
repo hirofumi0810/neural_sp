@@ -350,6 +350,7 @@ class CTC(ModelBase):
             task_index (bool, optional): the index of a task
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
+            None: this corresponds to aw in attention-based models
             perm_idx (np.ndarray): For interface with pytorch, not used
         """
         with chainer.no_backprop_mode(), chainer.using_config('train', False):
@@ -383,10 +384,11 @@ class CTC(ModelBase):
 
         perm_idx = np.arange(0, len(xs), 1)
 
-        return best_hyps, perm_idx
+        return best_hyps, None, perm_idx
+        # NOTE: None corresponds to aw in attention-based models
 
     def posteriors(self, xs, x_lens, temperature=1,
-                   blank_prior=None, task_idx=0):
+                   blank_scale=None, task_idx=0):
         """Returns CTC posteriors (after the softmax layer).
         Args:
             xs (list of np.ndarray):
@@ -394,7 +396,7 @@ class CTC(ModelBase):
             x_lens (np.ndarray): A tensor of size `[B]`
             temperature (float, optional): the temperature parameter for the
                 softmax layer in the inference stage
-            blank_prior (float, optional):
+            blank_scale (float, optional):
             task_idx (int, optional): the index ofta task
         Returns:
             probs (np.ndarray): A tensor of size `[B, T, num_classes]`
@@ -421,7 +423,7 @@ class CTC(ModelBase):
             probs = F.softmax(logits / temperature)
 
             # Divide by blank prior
-            if blank_prior is not None:
+            if blank_scale is not None:
                 raise NotImplementedError
 
             perm_idx = np.arange(0, len(xs), 1)

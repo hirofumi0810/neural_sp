@@ -189,9 +189,9 @@ class TestCTC(unittest.TestCase):
                     xs, ys, x_lens, y_lens, ys_sub, y_lens_sub, is_eval=True)
 
                 # Decode
-                best_hyps, _ = model.decode(
+                best_hyps, _, _ = model.decode(
                     xs, x_lens, beam_width=2, task_index=0)
-                best_hyps_sub, _ = model.decode(
+                best_hyps_sub, _, _ = model.decode(
                     xs, x_lens, beam_width=2, task_index=1)
 
                 str_ref = idx2word(ys[0, :y_lens[0]])
