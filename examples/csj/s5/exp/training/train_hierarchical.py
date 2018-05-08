@@ -32,8 +32,8 @@ from utils.training.logging import set_logger
 from utils.directory import mkdir_join
 from utils.config import load_config, save_config
 
-MAX_DECODE_LEN_WORD = 80
-MAX_DECODE_LEN_CHAR = 150
+MAX_DECODE_LEN_WORD = 100
+MAX_DECODE_LEN_CHAR = 200
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', type=int, default=-1,

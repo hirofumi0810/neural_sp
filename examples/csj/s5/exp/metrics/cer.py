@@ -16,7 +16,7 @@ from utils.evaluation.edit_distance import compute_wer
 
 
 def do_eval_cer(models, dataset, beam_width, max_decode_len,
-                eval_batch_size=None, progressbar=False):
+                eval_batch_size=None, progressbar=False, temperature=1):
     """Evaluate trained model by Character Error Rate.
     Args:
         models (list): the models to evaluate
@@ -27,6 +27,7 @@ def do_eval_cer(models, dataset, beam_width, max_decode_len,
             This is used for seq2seq models.
         eval_batch_size (int, optional): the batch size when evaluating the model
         progressbar (bool, optional): if True, visualize the progressbar
+        temperature (int, optional):
     Returns:
         wer (float): Word error rate
         cer (float): Character error rate
@@ -50,23 +51,44 @@ def do_eval_cer(models, dataset, beam_width, max_decode_len,
         batch, is_new_epoch = dataset.next(batch_size=eval_batch_size)
 
         # Decode
-        model = models[0]
-        # TODO: fix this
-        if model.model_type in ['ctc', 'attention']:
-            best_hyps, perm_idx = model.decode(batch['xs'], batch['x_lens'],
-                                               beam_width=beam_width,
-                                               max_decode_len=max_decode_len)
+        if len(models) > 1:
+            assert models[0].model_type in ['ctc']
+            for i, model in enumerate(models):
+                probs, x_lens, perm_idx = model.posteriors(
+                    batch['xs'], batch['x_lens'], temperature=temperature)
+                if i == 0:
+                    probs_ensenmble = probs
+                else:
+                    probs_ensenmble += probs
+            probs_ensenmble /= len(models)
+
+            best_hyps = models[0].decode_from_probs(
+                probs_ensenmble, x_lens, beam_width=beam_width)
+
             ys = batch['ys'][perm_idx]
             y_lens = batch['y_lens'][perm_idx]
             task_index = 0
         else:
-            best_hyps, perm_idx = model.decode(batch['xs'], batch['x_lens'],
-                                               beam_width=beam_width,
-                                               max_decode_len=max_decode_len,
-                                               task_index=1)
-            ys = batch['ys_sub'][perm_idx]
-            y_lens = batch['y_lens_sub'][perm_idx]
-            task_index = 1
+            model = models[0]
+            # TODO: fix this
+
+            if model.model_type in ['ctc', 'attention']:
+                best_hyps, _, perm_idx = model.decode(
+                    batch['xs'], batch['x_lens'],
+                    beam_width=beam_width,
+                    max_decode_len=max_decode_len)
+                ys = batch['ys'][perm_idx]
+                y_lens = batch['y_lens'][perm_idx]
+                task_index = 0
+            else:
+                best_hyps, _, perm_idx = model.decode(
+                    batch['xs'], batch['x_lens'],
+                    beam_width=beam_width,
+                    max_decode_len=max_decode_len,
+                    task_index=1)
+                ys = batch['ys_sub'][perm_idx]
+                y_lens = batch['y_lens_sub'][perm_idx]
+                task_index = 1
 
         for b in range(len(batch['xs'])):
 

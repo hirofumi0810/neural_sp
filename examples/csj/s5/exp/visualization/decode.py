@@ -29,9 +29,11 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
 parser.add_argument('--beam_width', type=int, default=1,
                     help='beam_width (int, optional): beam width for beam search.' +
                     ' 1 disables beam search, which mean greedy decoding.')
-parser.add_argument('--max_decode_len', type=int, default=150,  # or 80
-                    help='the length of output sequences to stop prediction when EOS token have not been emitted')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
+
+
+MAX_DECODE_LEN_WORD = 100
+MAX_DECODE_LEN_CHAR = 200
 
 
 def main():
@@ -58,6 +60,7 @@ def main():
         sort_utt=False, reverse=False, tool=params['tool'])
 
     params['num_classes'] = test_data.num_classes
+    params['num_classes_sub'] = test_data.num_classes
 
     # Load model
     model = load(model_type=params['model_type'],
@@ -74,22 +77,18 @@ def main():
     decode(model=model,
            dataset=test_data,
            beam_width=args.beam_width,
-           max_decode_len=args.max_decode_len,
            eval_batch_size=args.eval_batch_size,
            save_path=None)
     # save_path=args.model_path)
 
 
-def decode(model, dataset, beam_width, max_decode_len,
+def decode(model, dataset, beam_width,
            eval_batch_size=None, save_path=None):
     """Visualize label outputs.
     Args:
         model: the model to evaluate
         dataset: An instance of a `Dataset` class
         beam_width: (int): the size of beam
-        max_decode_len (int): the length of output sequences
-            to stop prediction when EOS token have not been emitted.
-            This is used for seq2seq models.
         eval_batch_size (int, optional): the batch size when evaluating the model
         save_path (string): path to save decoding results
     """
@@ -99,8 +98,10 @@ def decode(model, dataset, beam_width, max_decode_len,
 
     if 'word' in dataset.label_type:
         map_fn = Idx2word(dataset.vocab_file_path)
+        max_decode_len = MAX_DECODE_LEN_WORD
     else:
         map_fn = Idx2char(dataset.vocab_file_path)
+        max_decode_len = MAX_DECODE_LEN_CHAR
 
     if save_path is not None:
         sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
@@ -108,9 +109,17 @@ def decode(model, dataset, beam_width, max_decode_len,
     for batch, is_new_epoch in dataset:
 
         # Decode
-        best_hyps, perm_idx = model.decode(batch['xs'], batch['x_lens'],
-                                           beam_width=beam_width,
-                                           max_decode_len=max_decode_len)
+        if model.model_type == 'nested_attention':
+            best_hyps, _, best_hyps_sub, _, perm_idx = model.decode(
+                batch['xs'], batch['x_lens'],
+                beam_width=beam_width,
+                max_decode_len=max_decode_len,
+                max_decode_len_sub=max_decode_len)
+        else:
+            best_hyps, _, perm_idx = model.decode(
+                batch['xs'], batch['x_lens'],
+                beam_width=beam_width,
+                max_decode_len=max_decode_len)
 
         if model.model_type == 'attention' and model.ctc_loss_weight > 0:
             best_hyps_ctc, perm_idx = model.decode_ctc(
@@ -136,14 +145,6 @@ def decode(model, dataset, beam_width, max_decode_len,
             # Convert from list of index to string
             str_hyp = map_fn(best_hyps[b])
 
-            if model.model_type == 'attention':
-                str_hyp = str_hyp.split('>')[0]
-                # NOTE: Trancate by the first <EOS>
-
-                # Remove the last space
-                if len(str_hyp) > 0 and str_hyp[-1] == '_':
-                    str_hyp = str_hyp[:-1]
-
             print('----- wav: %s -----' % batch['input_names'][b])
             print('Ref: %s' % str_ref.replace('_', ' '))
             print('Hyp: %s' % str_hyp.replace('_', ' '))
@@ -153,21 +154,22 @@ def decode(model, dataset, beam_width, max_decode_len,
 
             try:
                 if 'word' in dataset.label_type:
-                    wer, _, _, _ = compute_wer(ref=str_ref.split('_'),
-                                               hyp=str_hyp.split('_'),
-                                               normalize=True)
+                    wer, _, _, _ = compute_wer(
+                        ref=str_ref.split('_'),
+                        hyp=str_hyp.replace('_>', '').split('_'),
+                        normalize=True)
                     print('WER: %.3f %%' % (wer * 100))
                     if model.ctc_loss_weight > 0:
-                        wer_ctc, _, _, _ = compute_wer(ref=str_ref.split('_'),
-                                                       hyp=str_hyp_ctc.split(
-                                                           '_'),
-                                                       normalize=True)
+                        wer_ctc, _, _, _ = compute_wer(
+                            ref=str_ref.split('_'),
+                            hyp=str_hyp_ctc.split('_'),
+                            normalize=True)
                         print('WER (CTC): %.3f %%' % (wer_ctc * 100))
                 else:
-                    cer, _, _, _ = compute_wer(ref=list(str_ref.replace('_', '')),
-                                               hyp=list(
-                                                   str_hyp.replace('_', '')),
-                                               normalize=True)
+                    cer, _, _, _ = compute_wer(
+                        ref=list(str_ref.replace('_', '')),
+                        hyp=list(str_hyp.replace('>', '').replace('_', '')),
+                        normalize=True)
                     print('CER: %.3f %%' % (cer * 100))
                     if model.model_type == 'attention' and model.ctc_loss_weight > 0:
                         cer_ctc, _, _, _ = compute_wer(
@@ -176,7 +178,7 @@ def decode(model, dataset, beam_width, max_decode_len,
                             normalize=True)
                         print('CER (CTC): %.3f %%' % (cer_ctc * 100))
             except:
-                pass
+                print('--- skipped ---')
 
         if is_new_epoch:
             break

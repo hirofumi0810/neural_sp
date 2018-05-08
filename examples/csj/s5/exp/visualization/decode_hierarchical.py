@@ -30,11 +30,10 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
 parser.add_argument('--beam_width', type=int, default=1,
                     help='beam_width (int, optional): beam width for beam search.' +
                     ' 1 disables beam search, which mean greedy decoding.')
-parser.add_argument('--max_decode_len', type=int, default=80,
-                    help='the length of output sequences to stop prediction when EOS token have not been emitted')
-parser.add_argument('--max_decode_len_sub', type=int, default=150,
-                    help='the length of output sequences to stop prediction when EOS token have not been emitted')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
+
+MAX_DECODE_LEN_WORD = 100
+MAX_DECODE_LEN_CHAR = 200
 
 
 def main():
@@ -78,15 +77,13 @@ def main():
     decode(model=model,
            dataset=test_data,
            beam_width=args.beam_width,
-           max_decode_len=args.max_decode_len,
-           max_decode_len_sub=args.max_decode_len_sub,
            eval_batch_size=args.eval_batch_size,
            save_path=None,
            # save_path=args.model_path,
            resolving_unk=False)
 
 
-def decode(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
+def decode(model, dataset, beam_width,
            eval_batch_size=None, save_path=None, resolving_unk=False):
     """Visualize label outputs.
     Args:
@@ -107,7 +104,6 @@ def decode(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
 
     idx2word = Idx2word(dataset.vocab_file_path)
     idx2char = Idx2char(dataset.vocab_file_path_sub)
-    # idx2char = Idx2word(dataset.vocab_file_path_sub)
 
     if save_path is not None:
         sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
@@ -116,43 +112,23 @@ def decode(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
 
         # Decode
         if model.model_type == 'nested_attention':
-            if resolving_unk:
-                best_hyps, aw, best_hyps_sub, aw_sub, perm_idx = model.decode(
-                    batch['xs'], batch['x_lens'],
-                    beam_width=beam_width,
-                    max_decode_len=max_decode_len,
-                    max_decode_len_sub=100,
-                    resolving_unk=True)
-            else:
-                best_hyps, best_hyps_sub, perm_idx = model.decode(
-                    batch['xs'], batch['x_lens'],
-                    beam_width=beam_width,
-                    max_decode_len=max_decode_len,
-                    max_decode_len_sub=100,
-                    resolving_unk=False)
+            best_hyps, aw, best_hyps_sub, aw_sub, perm_idx = model.decode(
+                batch['xs'], batch['x_lens'],
+                beam_width=beam_width,
+                max_decode_len=MAX_DECODE_LEN_WORD,
+                max_decode_len_sub=200,
+                resolving_unk=resolve_unk)
         else:
-            if resolving_unk:
-                best_hyps, aw, perm_idx = model.decode(
-                    batch['xs'], batch['x_lens'],
-                    beam_width=beam_width,
-                    max_decode_len=max_decode_len,
-                    task_index=0, resolving_unk=True)
-                best_hyps_sub, aw_sub, perm_idx = model.decode(
-                    batch['xs'], batch['x_lens'],
-                    beam_width=beam_width,
-                    max_decode_len=max_decode_len_sub,
-                    task_index=1, resolving_unk=True)
-            else:
-                best_hyps, perm_idx = model.decode(
-                    batch['xs'], batch['x_lens'],
-                    beam_width=beam_width,
-                    max_decode_len=max_decode_len,
-                    task_index=0, resolving_unk=False)
-                best_hyps_sub, perm_idx = model.decode(
-                    batch['xs'], batch['x_lens'],
-                    beam_width=beam_width,
-                    max_decode_len=max_decode_len_sub,
-                    task_index=1, resolving_unk=False)
+            best_hyps, aw, perm_idx = model.decode(
+                batch['xs'], batch['x_lens'],
+                beam_width=beam_width,
+                max_decode_len=MAX_DECODE_LEN_WORD,
+                resolving_unk=resolving_unk)
+            best_hyps_sub, aw_sub, perm_idx = model.decode(
+                batch['xs'], batch['x_lens'],
+                beam_width=beam_width,
+                max_decode_len=MAX_DECODE_LEN_CHAR,
+                task_index=1, resolving_unk=resolving_unk)
 
         ys = batch['ys'][perm_idx]
         y_lens = batch['y_lens'][perm_idx]
@@ -192,47 +168,32 @@ def decode(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
             else:
                 str_hyp_no_unk = str_hyp
 
-            if model.model_type != 'hierarchical_ctc':
-                str_hyp = str_hyp.split('>')[0]
-                str_hyp_sub = str_hyp_sub.split('>')[0]
-                str_hyp_no_unk = str_hyp_no_unk.split('>')[0]
-                # NOTE: Trancate by the first <EOS>
-
-                # Remove the last space
-                if len(str_hyp) > 0 and str_hyp[-1] == '_':
-                    str_hyp = str_hyp[:-1]
-                if len(str_hyp_sub) > 0 and str_hyp_sub[-1] == '_':
-                    str_hyp_sub = str_hyp_sub[:-1]
-                if len(str_hyp_no_unk) > 0 and str_hyp_no_unk[-1] == '_':
-                    str_hyp_no_unk = str_hyp_no_unk[:-1]
-
-            if 'OOV' not in str_hyp:
-                continue
-
             print('----- wav: %s -----' % batch['input_names'][b])
             print('Ref         : %s' % str_ref.replace('_', ' '))
             print('Hyp (main)  : %s' % str_hyp.replace('_', ' '))
-            # print('Ref (sub) : %s' % str_ref_sub.replace('_', ' '))
             print('Hyp (sub)   : %s' % str_hyp_sub.replace('_', ' '))
-            print('Hyp (no UNK): %s' % str_hyp_no_unk.replace('_', ' '))
+            if resolve_unk:
+                print('Hyp (no UNK): %s' % str_hyp_no_unk.replace('_', ' '))
 
             try:
-                wer, _, _, _ = compute_wer(ref=str_ref.split('_'),
-                                           hyp=str_hyp.split('_'),
-                                           normalize=True)
+                wer, _, _, _ = compute_wer(
+                    ref=str_ref.split('_'),
+                    hyp=str_hyp.replace('_>', '').split('_'),
+                    normalize=True)
                 print('WER (main)  : %.3f %%' % (wer * 100))
-                cer, _, _, _ = compute_wer(ref=list(str_ref_sub.replace('_', '')),
-                                           hyp=list(
-                                               str_hyp_sub.replace('_', '')),
-                                           normalize=True)
+                cer, _, _, _ = compute_wer(
+                    ref=list(str_ref_sub.replace('_', '')),
+                    hyp=list(str_hyp_sub.replace('>', '').replace('_', '')),
+                    normalize=True)
                 print('CER (sub)   : %.3f %%' % (cer * 100))
-                wer_no_unk, _, _, _ = compute_wer(ref=str_ref.split('_'),
-                                                  hyp=str_hyp_no_unk.replace(
-                                                      '*', '').split('_'),
-                                                  normalize=True)
-                print('WER (no UNK): %.3f %%' % (wer_no_unk * 100))
+                if resolve_unk:
+                    wer_no_unk, _, _, _ = compute_wer(
+                        ref=str_ref.split('_'),
+                        hyp=str_hyp_no_unk.replace('*', '').split('_'),
+                        normalize=True)
+                    print('WER (no UNK): %.3f %%' % (wer_no_unk * 100))
             except:
-                pass
+                print('--- skipped ---')
 
         if is_new_epoch:
             break

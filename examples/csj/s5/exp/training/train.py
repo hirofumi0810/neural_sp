@@ -32,8 +32,8 @@ from utils.training.logging import set_logger
 from utils.directory import mkdir_join
 from utils.config import load_config, save_config
 
-MAX_DECODE_LEN_WORD = 80
-MAX_DECODE_LEN_CHAR = 150
+MAX_DECODE_LEN_WORD = 100
+MAX_DECODE_LEN_CHAR = 200
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', type=int, default=-1,
@@ -45,8 +45,6 @@ parser.add_argument('--model_save_path', type=str, default=None,
 parser.add_argument('--saved_model_path', type=str, default=None,
                     help='path to the saved model to retrain')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
-parser.add_argument('--pretrain_stage', type=bool, default=False,
-                    help='When True, start pre-training stage')
 
 
 def main():
@@ -127,6 +125,7 @@ def main():
     #     tool=params['tool'])
 
     params['num_classes'] = train_data.num_classes
+    params['num_classes_sub'] = train_data.num_classes
 
     ##################################################
     # MODEL

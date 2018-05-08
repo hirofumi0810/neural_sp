@@ -28,11 +28,10 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
 parser.add_argument('--beam_width', type=int, default=1,
                     help='beam_width (int, optional): beam width for beam search.' +
                     ' 1 disables beam search, which mean greedy decoding.')
-parser.add_argument('--max_decode_len', type=int, default=80,
-                    help='the length of output sequences to stop prediction when EOS token have not been emitted')
-parser.add_argument('--max_decode_len_sub', type=int, default=150,
-                    help='the length of output sequences to stop prediction when EOS token have not been emitted')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
+
+MAX_DECODE_LEN_WORD = 100
+MAX_DECODE_LEN_CHAR = 200
 
 
 def main():
@@ -98,7 +97,7 @@ def main():
         models=[model],
         dataset=eval1_data,
         beam_width=args.beam_width,
-        max_decode_len=args.max_decode_len,
+        max_decode_len=MAX_DECODE_LEN_WORD,
         eval_batch_size=args.eval_batch_size,
         resolving_unk=False,
         progressbar=True)
@@ -109,7 +108,7 @@ def main():
         models=[model],
         dataset=eval1_data,
         beam_width=args.beam_width,
-        max_decode_len=args.max_decode_len_sub,
+        max_decode_len=MAX_DECODE_LEN_CHAR,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
     print('  CER (eval1, sub): %.3f %%' % (cer_eval1 * 100))
@@ -124,7 +123,7 @@ def main():
         models=[model],
         dataset=eval2_data,
         beam_width=args.beam_width,
-        max_decode_len=args.max_decode_len,
+        max_decode_len=MAX_DECODE_LEN_WORD,
         eval_batch_size=args.eval_batch_size,
         resolving_unk=False,
         progressbar=True)
@@ -135,7 +134,7 @@ def main():
         models=[model],
         dataset=eval2_data,
         beam_width=args.beam_width,
-        max_decode_len=args.max_decode_len_sub,
+        max_decode_len=MAX_DECODE_LEN_CHAR,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
     print('  CER (eval2, sub): %.3f %%' % (cer_eval2 * 100))
@@ -150,7 +149,7 @@ def main():
         models=[model],
         dataset=eval3_data,
         beam_width=args.beam_width,
-        max_decode_len=args.max_decode_len,
+        max_decode_len=MAX_DECODE_LEN_WORD,
         eval_batch_size=args.eval_batch_size,
         resolving_unk=False,
         progressbar=True)
@@ -161,7 +160,7 @@ def main():
         models=[model],
         dataset=eval3_data,
         beam_width=args.beam_width,
-        max_decode_len=args.max_decode_len_sub,
+        max_decode_len=MAX_DECODE_LEN_CHAR,
         eval_batch_size=args.eval_batch_size,
         progressbar=True)
     print('  CER (eval3, sub): %.3f %%' % (cer_eval3 * 100))
