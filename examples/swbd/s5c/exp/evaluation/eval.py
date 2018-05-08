@@ -28,9 +28,10 @@ parser.add_argument('--beam_width', type=int, default=1,
                     ' 1 disables beam search, which mean greedy decoding.')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--max_decode_len', type=int, default=300,  # or 100
-                    help='the length of output sequences to stop prediction when EOS token have not been emitted')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
+
+MAX_DECODE_LEN_WORD = 100
+MAX_DECODE_LEN_CHAR = 300
 
 
 def main():
@@ -82,7 +83,7 @@ def main():
             models=[model],
             dataset=eval2000_swbd_data,
             beam_width=args.beam_width,
-            max_decode_len=args.max_decode_len,
+            max_decode_len=MAX_DECODE_LEN_WORD,
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  WER (SWB): %.3f %%' % (wer_eval2000_swbd * 100))
@@ -91,7 +92,7 @@ def main():
             models=[model],
             dataset=eval2000_ch_data,
             beam_width=args.beam_width,
-            max_decode_len=args.max_decode_len,
+            max_decode_len=MAX_DECODE_LEN_WORD,
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  WER (CHE): %.3f %%' % (wer_eval2000_ch * 100))
@@ -104,7 +105,7 @@ def main():
             models=[model],
             dataset=eval2000_swbd_data,
             beam_width=args.beam_width,
-            max_decode_len=args.max_decode_len,
+            max_decode_len=MAX_DECODE_LEN_CHAR,
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  CER (SWB): %.3f %%' % (cer_eval2000_swbd * 100))
@@ -114,7 +115,7 @@ def main():
             models=[model],
             dataset=eval2000_ch_data,
             beam_width=args.beam_width,
-            max_decode_len=args.max_decode_len,
+            max_decode_len=MAX_DECODE_LEN_CHAR,
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
         print('  CER (CHE): %.3f %%' % (cer_eval2000_ch * 100))

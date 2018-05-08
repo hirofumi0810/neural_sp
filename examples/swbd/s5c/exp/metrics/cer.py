@@ -61,17 +61,20 @@ def do_eval_cer(models, dataset, beam_width, max_decode_len,
         # Decode
         model = models[0]
         # TODO: fix this
+
         if model.model_type in ['ctc', 'attention']:
-            best_hyps, perm_idx = model.decode(batch['xs'], batch['x_lens'],
-                                               beam_width=beam_width,
-                                               max_decode_len=max_decode_len)
+            best_hyps, _, perm_idx = model.decode(
+                batch['xs'], batch['x_lens'],
+                beam_width=beam_width,
+                max_decode_len=max_decode_len)
             ys = batch['ys'][perm_idx]
             y_lens = batch['y_lens'][perm_idx]
         else:
-            best_hyps, perm_idx = model.decode(batch['xs'], batch['x_lens'],
-                                               beam_width=beam_width,
-                                               max_decode_len=max_decode_len,
-                                               task_index=1)
+            best_hyps, _, perm_idx = model.decode(
+                batch['xs'], batch['x_lens'],
+                beam_width=beam_width,
+                max_decode_len=max_decode_len,
+                task_index=1)
             ys = batch['ys_sub'][perm_idx]
             y_lens = batch['y_lens_sub'][perm_idx]
 
@@ -110,11 +113,8 @@ def do_eval_cer(models, dataset, beam_width, max_decode_len,
                     pbar.update(1)
                 continue
 
-            # print('REF: %s' % str_ref)
-            # print('HYP: %s' % str_hyp)
-
+            # Compute WER
             try:
-                # Compute WER
                 wer_b, sub_b, ins_b, del_b = compute_wer(
                     ref=str_ref.split('_'),
                     hyp=str_hyp.split('_'),

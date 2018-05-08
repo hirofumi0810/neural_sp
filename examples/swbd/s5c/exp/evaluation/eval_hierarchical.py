@@ -28,11 +28,10 @@ parser.add_argument('--beam_width', type=int, default=1,
                     ' 1 disables beam search, which mean greedy decoding.')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--max_decode_len', type=int, default=100,
-                    help='the length of output sequences to stop prediction when EOS token have not been emitted')
-parser.add_argument('--max_decode_len_sub', type=int, default=300,
-                    help='the length of output sequences to stop prediction when EOS token have not been emitted')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
+
+MAX_DECODE_LEN_WORD = 100
+MAX_DECODE_LEN_CHAR = 300
 
 
 def main():
@@ -80,6 +79,9 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
+    a2c_oracle = False
+    resolving_unk = False
+
     ##############################
     # Switchboard
     ##############################
@@ -89,8 +91,9 @@ def main():
         beam_width=args.beam_width,
         max_decode_len=args.max_decode_len,
         eval_batch_size=args.eval_batch_size,
-        resolving_unk=True,
-        progressbar=True)
+        progressbar=True,
+        resolving_unk=resolving_unk,
+        a2c_oracle=a2c_oracle)
     print('  WER (SWB, main): %.3f %%' % (wer_eval2000_swbd * 100))
     print(df_wer_eval2000_swbd)
     cer_eval2000_swbd_sub, wer_eval2000_swbd_sub, _ = do_eval_cer(
@@ -112,8 +115,9 @@ def main():
         beam_width=args.beam_width,
         max_decode_len=args.max_decode_len,
         eval_batch_size=args.eval_batch_size,
-        resolving_unk=True,
-        progressbar=True)
+        progressbar=True,
+        resolving_unk=resolving_unk,
+        a2c_oracle=a2c_oracle)
     print('  WER (CHE, main): %.3f %%' % (wer_eval2000_ch * 100))
     print(df_wer_eval2000_ch)
     cer_eval2000_ch_sub, wer_eval2000_ch_sub, _ = do_eval_cer(

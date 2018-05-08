@@ -32,16 +32,11 @@ parser.add_argument('--beam_width', type=int, default=1,
                     ' 1 disables beam search, which mean greedy decoding.')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--max_decode_len', type=int, default=100,
-                    help='the length of output sequences to stop prediction when EOS token have not been emitted')
-parser.add_argument('--max_decode_len_sub', type=int, default=300,
-                    help='the length of output sequences to stop prediction when EOS token have not been emitted')
-parser.add_argument('--data_save_path', type=str, help='path to saved data')
+parser.add_argument('--data_save_path', type=str,
+                    help='path to saved data')
 
-LAUGHTER = 'LA'
-NOISE = 'NZ'
-VOCALIZED_NOISE = 'VN'
-HESITATION = '%hesitation'
+MAX_DECODE_LEN_WORD = 100
+MAX_DECODE_LEN_CHAR = 300
 
 
 def main():
@@ -85,27 +80,22 @@ def main():
     decode(model=model,
            dataset=test_data,
            beam_width=args.beam_width,
-           max_decode_len=args.max_decode_len,
-           max_decode_len_sub=args.max_decode_len_sub,
            eval_batch_size=args.eval_batch_size,
            save_path=None
            # save_path=args.model_path
-           )
+           resolving_unk=False)
 
 
-def decode(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
-           eval_batch_size=None, save_path=None):
+def decode(model, dataset, beam_width,
+           eval_batch_size=None, save_path=None, resolving_unk=False):
     """Visualize label outputs.
     Args:
         model: the model to evaluate
         dataset: An instance of a `Dataset` class
         beam_width: (int): the size of beam
-        max_decode_len (int): the length of output sequences
-            to stop prediction when EOS token have not been emitted.
-            This is used for seq2seq models.
-        max_decode_len_sub (int):
         eval_batch_size (int, optional): the batch size when evaluating the model
         save_path (string): path to save decoding results
+        resolving_unk (bool, optional):
     """
     # Set batch size in the evaluation
     if eval_batch_size is not None:
@@ -129,20 +119,18 @@ def decode(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
             best_hyps, aw, best_hyps_sub, aw_sub, perm_idx = model.decode(
                 batch['xs'], batch['x_lens'],
                 beam_width=beam_width,
-                max_decode_len=max_decode_len,
-                max_decode_len_sub=100,
-                resolving_unk=True)
+                max_decode_len=MAX_DECODE_LEN_WORD,
+                max_decode_len_sub=MAX_DECODE_LEN_CHAR)
         else:
             best_hyps, aw, perm_idx = model.decode(
                 batch['xs'], batch['x_lens'],
                 beam_width=beam_width,
-                max_decode_len=max_decode_len,
-                resolving_unk=True)
+                max_decode_len=MAX_DECODE_LEN_WORD)
             best_hyps_sub, aw_sub, _ = model.decode(
                 batch['xs'], batch['x_lens'],
                 beam_width=beam_width,
-                max_decode_len=max_decode_len_sub,
-                is_sub_task=True, resolving_unk=True)
+                max_decode_len=MAX_DECODE_LEN_CHAR,
+                task_index=1)
 
         ys = batch['ys'][perm_idx]
         y_lens = batch['y_lens'][perm_idx]
@@ -174,27 +162,16 @@ def decode(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
             # Resolving UNK
             ##############################
             if 'OOV' in str_hyp:
-                str_hyp_no_unk = resolve_unk(
-                    str_hyp, best_hyps_sub[b], aw[b], aw_sub[b], idx2char)
+                if resolving_unk:
+                    str_hyp_no_unk = resolve_unk(
+                        str_hyp, best_hyps_sub[b], aw[b], aw_sub[b], idx2char)
+                else:
+                    str_hyp_no_unk = str_hyp
             else:
                 str_hyp_no_unk = str_hyp
 
-            if model.model_type != 'hierarchical_ctc':
-                str_hyp = str_hyp.split('>')[0]
-                str_hyp_sub = str_hyp_sub.split('>')[0]
-                str_hyp_no_unk = str_hyp_no_unk.split('>')[0]
-                # NOTE: Trancate by the first <EOS>
-
-                # Remove the last space
-                if len(str_hyp) > 0 and str_hyp[-1] == '_':
-                    str_hyp = str_hyp[: -1]
-                if len(str_hyp_sub) > 0 and str_hyp_sub[-1] == '_':
-                    str_hyp_sub = str_hyp_sub[:-1]
-                if len(str_hyp_no_unk) > 0 and str_hyp_no_unk[-1] == '_':
-                    str_hyp_no_unk = str_hyp_no_unk[:-1]
-
-            if 'OOV' not in str_hyp:
-                continue
+            # if 'OOV' not in str_hyp:
+            #     continue
 
             ##############################
             # Post-proccessing
@@ -211,9 +188,9 @@ def decode(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
             print('----- wav: %s -----' % batch['input_names'][b])
             print('Ref         : %s' % str_ref.replace('_', ' '))
             print('Hyp (main)  : %s' % str_hyp.replace('_', ' '))
-            # print('Ref (sub): %s' % str_ref_sub.replace('_', ' '))
             print('Hyp (sub)   : %s' % str_hyp_sub.replace('_', ' '))
-            print('Hyp (no UNK): %s' % str_hyp_no_unk.replace('_', ' '))
+            if resolving_unk:
+                print('Hyp (no UNK): %s' % str_hyp_no_unk.replace('_', ' '))
 
             try:
                 wer, _, _, _ = compute_wer(ref=str_ref.split('_'),
@@ -231,7 +208,7 @@ def decode(model, dataset, beam_width, max_decode_len, max_decode_len_sub,
                                                   normalize=True)
                 print('WER (no UNK): %.3f %%' % (wer_no_unk * 100))
             except:
-                pass
+                print('--- skipped ---')
 
         if is_new_epoch:
             break

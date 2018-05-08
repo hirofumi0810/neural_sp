@@ -11,7 +11,6 @@ from os.path import join, abspath, isdir
 import sys
 import argparse
 import shutil
-import numpy as np
 
 import matplotlib
 matplotlib.use('Agg')
@@ -42,11 +41,16 @@ parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--max_decode_len', type=int, default=100,
-                    help='the length of output sequences to stop prediction when EOS token have not been emitted')
-parser.add_argument('--max_decode_len_sub', type=int, default=300,
-                    help='the length of output sequences to stop prediction when EOS token have not been emitted')
+parser.add_argument('--beam_width', type=int, default=1,
+                    help='beam_width (int, optional): beam width for beam search.' +
+                    ' 1 disables beam search, which mean greedy decoding.')
+parser.add_argument('--beam_width_sub', type=int, default=1,
+                    help='beam_width (int, optional): beam width for beam search.' +
+                    ' 1 disables beam search, which mean greedy decoding.')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
+
+MAX_DECODE_LEN_WORD = 100
+MAX_DECODE_LEN_CHAR = 300
 
 
 def main():
@@ -88,22 +92,20 @@ def main():
     # Visualize
     plot(model=model,
          dataset=test_data,
-         max_decode_len=args.max_decode_len,
-         max_decode_len_sub=args.max_decode_len_sub,
          eval_batch_size=args.eval_batch_size,
+         beam_width=args.beam_width,
+         beam_width_sub=args.beam_width_sub,
          save_path=mkdir_join(args.model_path, 'att_weights'))
-    # save_path=None)
 
 
-def plot(model, dataset, max_decode_len, max_decode_len_sub,
+def plot(model, dataset, beam_width, beam_width_sub,
          eval_batch_size=None, save_path=None):
     """Visualize attention weights of Attetnion-based model.
     Args:
         model: model to evaluate
         dataset: An instance of a `Dataset` class
-        max_decode_len (int): the length of output sequences
-            to stop prediction when EOS token have not been emitted.
-        max_decode_len_sub (int):
+        beam_width: (int): the size of beam in the main task
+        beam_width_sub: (int): the size of beam in the sub task
         eval_batch_size (int, optional): the batch size when evaluating the model
         save_path (string, optional): path to save attention weights plotting
     """
@@ -117,33 +119,27 @@ def plot(model, dataset, max_decode_len, max_decode_len_sub,
 
     for batch, is_new_epoch in dataset:
 
-        if model.model_type == 'nested_attention':
-            best_hyps, best_hyps_sub, aw, aw_sub, aw_dec_out_sub, gate_weights = model.attention_weights(
-                batch['xs'], batch['x_lens'],
-                max_decode_len=max_decode_len,
-                max_decode_len_sub=max_decode_len_sub)
-        else:
-            raise ValueError
+        best_hyps, best_hyps_sub, aw, aw_sub, aw_dec = model.attention_weights(
+            batch['xs'], batch['x_lens'],
+            beam_width=beam_width,
+            # beam_width_sub=beam_width_sub,
+            max_decode_len=MAX_DECODE_LEN_WORD,
+            max_decode_len_sub=MAX_DECODE_LEN_CHAR)
 
         for b in range(len(batch['xs'])):
-
-            # Check if the sum of attention weights equals to 1
-            # print(np.sum(aw[b], axis=1))
 
             word_list = idx2word(best_hyps[b])
             char_list = idx2char(best_hyps_sub[b])
 
-            # TODO: eosで区切ってもattention weightsは打ち切られていない．
-
-            if word_list.count('OOV') < 1:
-                continue
+            # if word_list.count('OOV') < 1:
+            #     continue
 
             speaker = '_'.join(batch['input_names'][b].split('_')[:2])
 
             # word to acoustic & character to acoustic
             plot_hierarchical_attention_weights(
-                aw[b, :len(word_list), :batch['x_lens'][b]],
-                aw_sub[b, :len(char_list), :batch['x_lens'][b]],
+                aw[b][:len(word_list), :batch['x_lens'][b]],
+                aw_sub[b][:len(char_list), :batch['x_lens'][b]],
                 label_list=word_list,
                 label_list_sub=char_list,
                 spectrogram=batch['xs'][b, :, :dataset.input_freq],
@@ -154,7 +150,7 @@ def plot(model, dataset, max_decode_len, max_decode_len_sub,
 
             # word to characater attention
             plot_word2char_attention_weights(
-                aw_dec_out_sub[b, :len(word_list), :len(char_list)],
+                aw_dec[b][:len(word_list), :len(char_list)],
                 label_list=word_list,
                 label_list_sub=char_list,
                 save_path=mkdir_join(save_path, speaker,
@@ -164,18 +160,6 @@ def plot(model, dataset, max_decode_len, max_decode_len_sub,
 
             with open(join(save_path, speaker, batch['input_names'][b] + '.txt'), 'w') as f:
                 f.write(batch['ys'][b][0])
-
-            # gate activation
-            # if gate_weights is not None:
-            #     plt.clf()
-            #     plt.figure(figsize=(50, 10))
-            #     plt.plot(np.arange(0, len(gate_weights[b])), np.mean(
-            #         gate_weights[b], axis=1), 1)
-            #     plt.xlabel('Output words', fontsize=12)
-            #     plt.xticks(np.arange(0, len(gate_weights[b])), word_list)
-            #     plt.savefig(join(save_path, speaker,
-            #                      batch['input_names'][b] + '_gate.png'), dvi=500)
-            #     plt.close()
 
         if is_new_epoch:
             break

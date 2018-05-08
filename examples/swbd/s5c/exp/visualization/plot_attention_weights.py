@@ -28,9 +28,13 @@ parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--max_decode_len', type=int, default=300,  # or 100
-                    help='the length of output sequences to stop prediction when EOS token have not been emitted')
+parser.add_argument('--beam_width', type=int, default=1,
+                    help='beam_width (int, optional): beam width for beam search.' +
+                    ' 1 disables beam search, which mean greedy decoding.')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
+
+MAX_DECODE_LEN_WORD = 100
+MAX_DECODE_LEN_CHAR = 300
 
 
 def main():
@@ -71,19 +75,18 @@ def main():
     # Visualize
     plot(model=model,
          dataset=test_data,
-         max_decode_len=args.max_decode_len,
+         beam_width=args.beam_width,
          eval_batch_size=args.eval_batch_size,
          save_path=mkdir_join(args.model_path, 'att_weights'))
 
 
-def plot(model, dataset, max_decode_len,
+def plot(model, dataset, beam_width,
          eval_batch_size=None, save_path=None):
     """Visualize attention weights of attetnion-based model.
     Args:
         model: model to evaluate
         dataset: An instance of a `Dataset` class
-        max_decode_len (int): the length of output sequences
-            to stop prediction when EOS token have not been emitted.
+        beam_width: (int): the size of beam
         eval_batch_size (int, optional): the batch size when evaluating the model
         save_path (string, optional): path to save attention weights plotting
     """
@@ -96,14 +99,18 @@ def plot(model, dataset, max_decode_len,
         map_fn = Idx2char(dataset.vocab_file_path,
                           capital_divide=dataset.label_type == 'character_capital_divide',
                           return_list=True)
+        max_decode_len = MAX_DECODE_LEN_CHAR
     else:
         map_fn = Idx2word(dataset.vocab_file_path, return_list=True)
+        max_decode_len = MAX_DECODE_LEN_WORD
 
     for batch, is_new_epoch in dataset:
 
         # Decode
         best_hyps, aw, perm_idx = model.attention_weights(
-            batch['xs'], batch['x_lens'], max_decode_len=max_decode_len)
+            batch['xs'], batch['x_lens'],
+            beam_width=beam_width,
+            max_decode_len=max_decode_len)
 
         ys = batch['ys'][perm_idx]
         y_lens = batch['y_lens'][perm_idx]
@@ -118,9 +125,6 @@ def plot(model, dataset, max_decode_len,
             else:
                 # Convert from list of index to string
                 str_ref = map_fn(ys[b][:y_lens[b]])
-
-            # Check if the sum of attention weights equals to 1
-            # print(np.sum(aw[b], axis=1))
 
             token_list = map_fn(best_hyps[b])
 
