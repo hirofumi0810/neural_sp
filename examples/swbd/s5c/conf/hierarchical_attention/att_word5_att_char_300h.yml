@@ -35,16 +35,15 @@ param:
   decoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 5
-  encoder_num_layers_sub: 5
+  encoder_num_layers: 4
+  encoder_num_layers_sub: 4
   subsample_list:
     - False
     - True
     - True
     - False
-    - False
   subsample_type: drop
-  bridge_layer: True
+  bridge_layer: False
   attention_type: location
   attention_dim: 128
   decoder_type: lstm
@@ -58,19 +57,19 @@ param:
   attention_conv_width: 201
   decoding_order: attend_generate_update
   bottleneck_dim: 256
-  bottleneck_dim_sub: 256
-  # backward_sub: False
-  backward_sub: True
+  bottleneck_dim_sub: 0
+  backward_sub: False
+  # backward_sub: True
   num_heads: 1
   num_heads_sub: 1
 
   # optimization
-  batch_size: 40
+  # batch_size: 40  # 5L
+  batch_size: 50  # 4L
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 20
   convert_to_sgd_epoch: 20
-  pretrain_stage: False
 
   # initialization
   parameter_init_distribution: uniform
@@ -95,7 +94,7 @@ param:
   sigmoid_smoothing: False
   coverage_weight: 0
   scheduled_sampling_prob: 0.2
-  scheduled_sampling_max_step: 100000
+  scheduled_sampling_max_step: 50000
   label_smoothing_prob: 0.1
   weight_noise_std: 0
 

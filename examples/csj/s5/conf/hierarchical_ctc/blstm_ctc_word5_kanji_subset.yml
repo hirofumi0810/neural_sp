@@ -35,32 +35,32 @@ param:
   encoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 5
-  encoder_num_layers_sub: 5
+  encoder_num_layers: 4
+  encoder_num_layers_sub: 4
   subsample_list:
     - False
     - True
     - True
     - False
-    - False
   subsample_type: drop
   fc_list: [256]
+  fc_list_sub: [256]
 
   # optimization
-  batch_size: 50
+  # batch_size: 50  # 5L
+  batch_size: 60  # 4L
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 30
+  num_epoch: 20
   convert_to_sgd_epoch: 20
-  pretrain_stage: False
 
   # initialization
   parameter_init_distribution: uniform
   parameter_init: 0.1
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
-  # char_init: False
-  char_init: /n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/subset/blstm320H5L_drop4_fc_256_adam_lr1e-3_dropen0.2_input80
+  char_init: False
+  # char_init: /n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/subset/blstm320H5L_drop4_fc_256_adam_lr1e-3_dropen0.2_input80
 
   # regularization
   clip_grad_norm: 5.0
@@ -79,14 +79,8 @@ param:
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
   eval_start_epoch: 5
-  print_step: 400
+  print_step: 200
 
   # MTL
-  # main_loss_weight: 0.5
-  # sub_loss_weight: 0.5
-
-  main_loss_weight: 0.8
-  sub_loss_weight: 0.2
-
-  # main_loss_weight: 1.0
-  # sub_loss_weight: 0.2
+  main_loss_weight: 0.5
+  sub_loss_weight: 0.5

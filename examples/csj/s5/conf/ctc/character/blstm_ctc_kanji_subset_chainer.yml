@@ -7,18 +7,14 @@ param:
   data_size: subset
   label_type: kanji_wb
 
-  # features
-  num_stack: 3
-  num_skip: 3
-
   # topology
-  encoder_num_layers: 3
+  encoder_num_layers: 4
   subsample_list:
     - False
-    - False
+    - True
+    - True
     - False
   fc_list: [256]
-  # TODO: concat or subsampling (small mini-batch)
 
   # initialization
   char_init: False

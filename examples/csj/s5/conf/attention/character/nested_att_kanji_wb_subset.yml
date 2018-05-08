@@ -3,21 +3,22 @@ param:
   backend: pytorch
 
   # corpus
-  corpus: switchboard
-  data_size: 300h
-  label_type: word5
-  label_type_sub: character
+  corpus: csj
+  data_size: subset
+  label_type: kanji_wb
+  label_type_sub: kanji_wb
 
   # features
   feature: fbank
   tool: htk
-  input_freq: 40
-  use_delta: True
-  use_double_delta: True
-  input_channel: 3
+  input_freq: 80
+  use_delta: False
+  use_double_delta: False
+  input_channel: 1
   splice: 1
   num_stack: 1
   num_skip: 1
+  min_frame_num: 40
   dynamic_batching: True
 
   # topology
@@ -36,15 +37,15 @@ param:
   decoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 5
-  encoder_num_layers_sub: 5
+  encoder_num_layers: 4
+  encoder_num_layers_sub: 4
   subsample_list:
     - False
     - True
     - True
     - False
-    - False
   subsample_type: drop
+  bridge_layer: False
   attention_type: location
   attention_dim: 128
   decoder_type: lstm
@@ -52,8 +53,8 @@ param:
   decoder_num_layers: 1
   decoder_num_units_sub: 320
   decoder_num_layers_sub: 1
-  embedding_dim: 128
-  embedding_dim_sub: 16
+  embedding_dim: 64
+  embedding_dim_sub: 64
   attention_conv_num_channels: 10
   attention_conv_width: 201
   decoding_order: attend_generate_update
@@ -63,20 +64,20 @@ param:
   num_heads_sub: 1
 
   # optimization
-  batch_size: 40
+  # batch_size: 40  # 5L
+  batch_size: 50  # 4L
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 30
   convert_to_sgd_epoch: 20
-  pretrain_stage: False
 
   # initialization
   parameter_init_distribution: uniform
   parameter_init: 0.1
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
-  # char_init: False
-  char_init: /n/sd8/inaguma/result/swbd/pytorch/ctc/character/300h/blstm320H5L_drop4_adam_lr1e-3_dropen0.2_input120
+  char_init: False
+  # char_init: /n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/subset/blstm320H5L_drop4_fc_256_adam_lr1e-3_dropen0.2_input80
 
   # regularization
   clip_grad_norm: 5.0
@@ -109,27 +110,22 @@ param:
 
 
   # MTL
-  # main_loss_weight: 0.5
-  # sub_loss_weight: 0.5
-  main_loss_weight: 0.8
-  sub_loss_weight: 0.2
+  main_loss_weight: 0.5
+  sub_loss_weight: 0.5
   ctc_loss_weight_sub: 0
 
   # W2C attention
-  # usage_dec_sub: update_decoder
   usage_dec_sub: all
-  # usage_dec_sub: no_use
-  num_heads_dec_out_sub: 1
+  num_heads_dec: 1
+  dec_attention_type: content
 
   # regularization
-  dec_out_sub_attend_temperature: 1
-  dec_out_sub_sigmoid_smoothing: True
-  attention_regularization_weight: 0
+  dec_attend_temperature: 1
+  dec_sigmoid_smoothing: True
+  att_reg_weight: 0
 
-  backward_sub: False
-  # backward_sub: True
+  # backward_sub: False
+  backward_sub: True
 
-  # gating mechanism
-  gating_mechanism: no_gate
-  # gating_mechanism: scalar
-  # gating_mechanism: elementwise
+  # regularization
+  relax_context_vec_dec: True

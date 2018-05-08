@@ -7,19 +7,18 @@ param:
   data_size: subset
   label_type: kanji_wb
 
-  # features
-  num_stack: 1
-  num_skip: 1
-
   # topology
-  encoder_num_layers: 5
+  encoder_num_layers: 4
   subsample_list:
     - False
     - True
     - True
     - False
-    - False
   fc_list: [256]
 
   # initialization
   char_init: False
+
+  # regularization
+  logits_temperature: 1
+  label_smoothing_prob: 0

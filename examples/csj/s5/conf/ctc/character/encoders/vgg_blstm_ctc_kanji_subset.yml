@@ -6,12 +6,6 @@ param:
   # corpus
   label_type: kanji_wb
 
-  # features
-  input_freq: 80
-  use_delta: True
-  use_double_delta: True
-  input_channel: 3
-
   # topology
   conv_channels: [64, 64, 128, 128]
   conv_kernel_sizes:
@@ -30,7 +24,7 @@ param:
     - []
     - [2, 2]
   activation: relu
-  batch_norm: False
+  batch_norm: True
   encoder_bidirectional: True
   encoder_num_units: 320
   encoder_num_proj: 0
@@ -40,9 +34,10 @@ param:
     - False
     - False
     - False
+  fc_list: [256]
 
   # optimization
-  batch_size: 30
+  batch_size: 25
 
   # initialization
   char_init: False

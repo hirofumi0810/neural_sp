@@ -29,50 +29,48 @@ class TestCharseqAttention(unittest.TestCase):
     def test(self):
         print("Nested Attention Working check.")
 
+        # Regularization
+        self.check(relax_context_vec_dec=True)
+
         # char initialization
         # self.check(main_loss_weight=0)
+
+        # Attend to word-level backward decoder
+        self.check(second_pass=True)
 
         # Forward word decoder + backward char decoder
         self.check(backward_sub=True)
 
         # Usage character-level decoder states
-        self.check(usage_dec_sub='no_use')
         self.check(usage_dec_sub='update_decoder')
         self.check(usage_dec_sub='all')
 
         # Attention regularization
-        self.check(attention_regularization_weight=1)
+        self.check(att_reg_weight=1)
 
         # Attention smoothing
-        self.check(dec_out_sub_attend_temperature=2)
-        self.check(dec_out_sub_attend_temperature=3)
-        self.check(dec_out_sub_sigmoid_smoothing=True)
-
-        # Gating mechanism
-        self.check(gating_mechanism='scalar')
-        self.check(gating_mechanism='elementwise')
+        self.check(dec_attend_temperature=2)
+        self.check(dec_sigmoid_smoothing=True)
 
     @measure_time
-    def check(self, usage_dec_sub='update_decoder', gating_mechanism='no_gate',
-              attention_regularization_weight=1,
+    def check(self, usage_dec_sub='all', att_reg_weight=1,
               main_loss_weight=0.5, ctc_loss_weight_sub=0,
-              dec_out_sub_attend_temperature=1,
-              dec_out_sub_sigmoid_smoothing=False,
-              backward_sub=False, num_heads=1):
+              dec_attend_temperature=1,
+              dec_sigmoid_smoothing=False,
+              backward_sub=False, num_heads=1, second_pass=False,
+              relax_context_vec_dec=False):
 
         print('==================================================')
         print('  usage_dec_sub: %s' % usage_dec_sub)
-        print('  gating_mechanism: %s' % gating_mechanism)
-        print('  attention_regularization_weight: %s' %
-              str(attention_regularization_weight))
+        print('  att_reg_weight: %s' % str(att_reg_weight))
         print('  main_loss_weight: %s' % str(main_loss_weight))
         print('  ctc_loss_weight_sub: %s' % str(ctc_loss_weight_sub))
-        print('  dec_out_sub_attend_temperature: %s' %
-              str(dec_out_sub_attend_temperature))
-        print('  dec_out_sub_sigmoid_smoothing: %s' %
-              str(dec_out_sub_sigmoid_smoothing))
+        print('  dec_attend_temperature: %s' % str(dec_attend_temperature))
+        print('  dec_sigmoid_smoothing: %s' % str(dec_sigmoid_smoothing))
         print('  backward_sub: %s' % str(backward_sub))
         print('  num_heads: %s' % str(num_heads))
+        print('  second_pass: %s' % str(second_pass))
+        print('  relax_context_vec_dec: %s' % str(relax_context_vec_dec))
         print('==================================================')
 
         # Load batch data
@@ -91,13 +89,13 @@ class TestCharseqAttention(unittest.TestCase):
             encoder_bidirectional=True,
             encoder_num_units=256,
             encoder_num_proj=0,
-            encoder_num_layers=3,
+            encoder_num_layers=2,
             encoder_num_layers_sub=2,
             attention_type='location',
             attention_dim=128,
             decoder_type='lstm',
             decoder_num_units=256,
-            decoder_num_layers=2,
+            decoder_num_layers=1,
             decoder_num_units_sub=256,
             decoder_num_layers_sub=1,
             embedding_dim=64,
@@ -109,12 +107,12 @@ class TestCharseqAttention(unittest.TestCase):
             main_loss_weight=0.8,
             sub_loss_weight=0.2 if ctc_loss_weight_sub == 0 else 0,
             num_classes=11,
-            num_classes_sub=27,
+            num_classes_sub=27 if not second_pass else 11,
             parameter_init_distribution='uniform',
             parameter_init=0.1,
             recurrent_weight_orthogonal=False,
             init_forget_gate_bias_with_one=True,
-            subsample_list=[True, False, False],
+            subsample_list=[True, False],
             subsample_type='drop',
             init_dec_state='first',
             sharpening_factor=1,
@@ -131,7 +129,7 @@ class TestCharseqAttention(unittest.TestCase):
             poolings=[],
             batch_norm=False,
             scheduled_sampling_prob=0.1,
-            scheduled_sampling_ramp_max_step=200,
+            scheduled_sampling_max_step=200,
             label_smoothing_prob=0.1,
             weight_noise_std=0,
             encoder_residual=False,
@@ -139,17 +137,20 @@ class TestCharseqAttention(unittest.TestCase):
             decoder_residual=False,
             decoder_dense_residual=False,
             decoding_order='attend_generate_update',
+            # decoding_order='attend_update_generate',
+            # decoding_order='conditional',
             bottleneck_dim=256,
             bottleneck_dim_sub=256,
             backward_sub=backward_sub,
             num_heads=num_heads,
             num_heads_sub=num_heads,
-            num_heads_dec_out_sub=num_heads,
+            num_heads_dec=num_heads,
             usage_dec_sub=usage_dec_sub,
-            gating_mechanism=gating_mechanism,
-            attention_regularization_weight=attention_regularization_weight,
-            dec_out_sub_attend_temperature=dec_out_sub_attend_temperature,
-            dec_out_sub_sigmoid_smoothing=dec_out_sub_attend_temperature)
+            att_reg_weight=att_reg_weight,
+            dec_attend_temperature=dec_attend_temperature,
+            dec_sigmoid_smoothing=dec_attend_temperature,
+            relax_context_vec_dec=relax_context_vec_dec,
+            dec_attention_type='location')
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):
@@ -184,44 +185,64 @@ class TestCharseqAttention(unittest.TestCase):
 
             # Step for parameter update
             model.optimizer.zero_grad()
-            loss, loss_main, loss_sub = model(
-                xs, ys, ys_sub, x_lens, y_lens, y_lens_sub)
+            if second_pass:
+                loss = model(xs, ys, x_lens, y_lens)
+            else:
+                loss, loss_main, loss_sub = model(
+                    xs, ys, x_lens, y_lens, ys_sub, y_lens_sub)
             loss.backward()
             nn.utils.clip_grad_norm(model.parameters(), 5)
             model.optimizer.step()
 
             if (step + 1) % 10 == 0:
                 # Compute loss
-                loss, loss_main, loss_sub = model(
-                    xs, ys, ys_sub, x_lens, y_lens, y_lens_sub, is_eval=True)
+                if second_pass:
+                    loss = model(xs, ys, x_lens, y_lens, is_eval=True)
+                else:
+                    loss, loss_main, loss_sub = model(
+                        xs, ys, x_lens, y_lens, ys_sub, y_lens_sub, is_eval=True)
 
-                best_hyps, best_hyps_sub, perm_idx = model.decode(
+                best_hyps, _, best_hyps_sub, _, perm_idx = model.decode(
                     xs, x_lens, beam_width=1,
                     max_decode_len=30,
                     max_decode_len_sub=60)
 
                 str_hyp = idx2word(best_hyps[0][:-1])
                 str_ref = idx2word(ys[0])
-                str_hyp_sub = idx2char(best_hyps_sub[0][:-1])
-                str_ref_sub = idx2char(ys_sub[0])
+                if second_pass:
+                    str_hyp_sub = idx2word(best_hyps_sub[0][:-1])
+                    str_ref_sub = idx2word(ys[0])
+                else:
+                    str_hyp_sub = idx2char(best_hyps_sub[0][:-1])
+                    str_ref_sub = idx2char(ys_sub[0])
 
                 # Compute accuracy
                 try:
                     wer, _, _, _ = compute_wer(ref=str_ref.split('_'),
                                                hyp=str_hyp.split('_'),
                                                normalize=True)
-                    cer, _, _, _ = compute_wer(
-                        ref=list(str_ref_sub.replace('_', '')),
-                        hyp=list(str_hyp_sub.replace('_', '')),
-                        normalize=True)
+                    if second_pass:
+                        cer, _, _, _ = compute_wer(ref=str_ref.split('_'),
+                                                   hyp=str_hyp_sub.split('_'),
+                                                   normalize=True)
+                    else:
+                        cer, _, _, _ = compute_wer(
+                            ref=list(str_ref_sub.replace('_', '')),
+                            hyp=list(str_hyp_sub.replace('_', '')),
+                            normalize=True)
                 except:
                     wer = 1
                     cer = 1
 
                 duration_step = time.time() - start_time_step
-                print('Step %d: loss=%.3f(%.3f/%.3f) / wer=%.3f / cer=%.3f / lr=%.5f (%.3f sec)' %
-                      (step + 1, loss, loss_main, loss_sub,
-                       wer, cer, learning_rate, duration_step))
+                if second_pass:
+                    print('Step %d: loss=%.3f / wer=%.3f / cer=%.3f / lr=%.5f (%.3f sec)' %
+                          (step + 1, loss, wer, cer, learning_rate, duration_step))
+                else:
+                    print('Step %d: loss=%.3f(%.3f/%.3f) / wer=%.3f / cer=%.3f / lr=%.5f (%.3f sec)' %
+                          (step + 1, loss, loss_main, loss_sub,
+                           wer, cer, learning_rate, duration_step))
+
                 start_time_step = time.time()
 
                 # Visualize

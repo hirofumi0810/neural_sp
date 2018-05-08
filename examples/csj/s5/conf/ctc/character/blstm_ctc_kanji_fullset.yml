@@ -7,10 +7,6 @@ param:
   data_size: fullset
   label_type: kanji_wb
 
-  # features
-  num_stack: 1
-  num_skip: 1
-
   # topology
   encoder_num_layers: 5
   subsample_list:
