@@ -1143,8 +1143,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         dec_state_sub, dec_out_sub = self._init_decoder_state(
             enc_out_sub, x_lens_sub, task_idx=1, dir=dir)
         aw_step_sub = self._create_var(
-            (batch_size, max_time_sub, self.num_heads_1),
-            fill_value=0, volatile=True)
+            (batch_size, max_time_sub, self.num_heads_1), fill_value=0)
 
         # Start from <SOS>
         y_sub = self._create_var(
@@ -1270,11 +1269,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         dec_state, dec_out = self._init_decoder_state(
             enc_out, x_lens, task_idx=0, dir='fwd')
         aw_step_enc = self._create_var(
-            (batch_size, max_time, self.num_heads_0),
-            fill_value=0, volatile=True)
+            (batch_size, max_time, self.num_heads_0), fill_value=0)
         aw_dec_step = self._create_var(
-            (batch_size, dec_out_sub_seq.size(1), self.num_heads_dec),
-            volatile=True)
+            (batch_size, dec_out_sub_seq.size(1), self.num_heads_dec), fill_value=0)
 
         y_lens_sub = self.np2var(y_lens_sub + 1, dtype='int')
         # NOTE: add <SOS>

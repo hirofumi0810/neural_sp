@@ -340,21 +340,18 @@ class ModelBase(nn.Module):
         return (checkpoint['epoch'] + 1, checkpoint['step'] + 1,
                 checkpoint['lr'], checkpoint['metric_dev_best'])
 
-    def _create_var(self, size, fill_value=0, dtype='float', volatile=False):
+    def _create_var(self, size, fill_value=0, dtype='float'):
         """Initialize a variable with zero.
         Args:
             size (tuple):
             fill_value (int or float, optional):
             dtype (string): long or float
-            volatile (bool, optional):
         Returns:
             var (torch.autograd.Variable, float):
         """
         var = torch.autograd.Variable(torch.zeros(size).fill_(fill_value))
         if dtype == 'long':
             var = var.long()
-        if volatile:
-            var.volatile = True
         if self.use_cuda:
             var = var.cuda()
         return var
@@ -380,10 +377,6 @@ class ModelBase(nn.Module):
             elif dtype == 'int':
                 array = array.int()
 
-        array = torch.autograd.Variable(array, requires_grad=False)
-
-        if not self.training:
-            array.volatile = True
         if not cpu and self.use_cuda:
             array = array.cuda()
 

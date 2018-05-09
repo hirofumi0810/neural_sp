@@ -281,14 +281,12 @@ class RNNEncoder(nn.Module):
                                     nn.BatchNorm1d(encoder_output_size))
                     # NOTE* BN in RNN models is applied only after NiN
 
-    def forward(self, xs, x_lens, volatile=False):
+    def forward(self, xs, x_lens):
         """Forward computation.
         Args:
             xs (torch.FloatTensor): A tensor of size
                 `[B, T, input_size]`
             x_lens (torch.IntTensor): A tensor of size `[B]`
-            volatile (bool, optional): if True, the history will not be saved.
-                This should be used in inference model for memory efficiency.
         Returns:
             xs (torch.FloatTensor):
                 if batch_first is True, a tensor of size
@@ -336,8 +334,7 @@ class RNNEncoder(nn.Module):
                                num_units=self.num_units,
                                num_directions=self.num_directions,
                                num_layers=self.num_layers,
-                               use_cuda=use_cuda,
-                               volatile=volatile)
+                               use_cuda=use_cuda)
 
             # Pack encoder inputs
             if self.pack_sequence:
@@ -364,8 +361,7 @@ class RNNEncoder(nn.Module):
                                num_units=self.num_units,
                                num_directions=self.num_directions,
                                num_layers=1,
-                               use_cuda=use_cuda,
-                               volatile=volatile)
+                               use_cuda=use_cuda)
 
             res_outputs_list = []
             for l in range(self.num_layers):
@@ -497,7 +493,7 @@ def to3d(xs, size):
 
 
 def _init_hidden(batch_size, rnn_type, num_units, num_directions,
-                 num_layers, use_cuda, volatile):
+                 num_layers, use_cuda):
     """Initialize hidden states.
     Args:
         batch_size (int): the size of mini-batch
@@ -506,8 +502,6 @@ def _init_hidden(batch_size, rnn_type, num_units, num_directions,
         num_directions (int):
         num_layers (int):
         use_cuda (bool, optional):
-        volatile (bool): if True, the history will not be saved.
-            This should be used in inference model for memory efficiency.
     Returns:
         if rnn_type is 'lstm', return a tuple of tensors (h_0, c_0).
             h_0 (torch.FloatTensor): A tensor of size
@@ -518,16 +512,12 @@ def _init_hidden(batch_size, rnn_type, num_units, num_directions,
     """
     h_0 = Variable(torch.zeros(
         num_layers * num_directions, batch_size, num_units))
-    if volatile:
-        h_0.volatile = True
     if use_cuda:
         h_0 = h_0.cuda()
 
     if rnn_type == 'lstm':
         c_0 = Variable(torch.zeros(
             num_layers * num_directions, batch_size, num_units))
-        if volatile:
-            c_0.volatile = True
         if use_cuda:
             c_0 = c_0.cuda()
 

@@ -685,14 +685,13 @@ class AttentionSeq2seq(ModelBase):
                 # TODO: clone??
             else:
                 xs, x_lens, xs_sub, x_lens_sub, perm_idx = self.encoder(
-                    xs, x_lens, volatile=not self.training)
+                    xs, x_lens)
         else:
             if self.encoder_type == 'cnn':
                 xs, x_lens = self.encoder(xs, x_lens)
                 perm_idx = None
             else:
-                xs, x_lens, perm_idx = self.encoder(
-                    xs, x_lens, volatile=not self.training)
+                xs, x_lens, perm_idx = self.encoder(xs, x_lens)
 
         # Bridge between the encoder and decoder in the main task
         if self.is_bridge:
@@ -830,8 +829,7 @@ class AttentionSeq2seq(ModelBase):
                 `[B, 1, decoder_num_units]`
         """
         zero_state = self._create_var((enc_out.size(0), getattr(
-            self, 'decoder_num_units_' + str(task_idx))),
-            fill_value=0, volatile=not self.training)
+            self, 'decoder_num_units_' + str(task_idx))), fill_value=0)
 
         if getattr(self, 'init_dec_state_' + str(task_idx) + '_' + dir) == 'zero':
             if self.decoder_type == 'lstm':
@@ -844,8 +842,7 @@ class AttentionSeq2seq(ModelBase):
                     getattr(self, 'decoder_num_layers_' + str(task_idx))
 
             dec_out = self._create_var((enc_out.size(0), 1, getattr(
-                self, 'decoder_num_units_' + str(task_idx))),
-                fill_value=0, volatile=not self.training)
+                self, 'decoder_num_units_' + str(task_idx))), fill_value=0)
         else:
             # TODO: consider x_lens
 
@@ -956,7 +953,7 @@ class AttentionSeq2seq(ModelBase):
             enc_out, x_lens, task_idx, dir)
         aw_step = self._create_var((
             batch_size, max_time, getattr(self, 'num_heads_' + str(task_idx))),
-            fill_value=0, volatile=True)
+            fill_value=0)
 
         # Start from <SOS>
         sos = getattr(self, 'sos_' + str(task_idx))
@@ -1098,7 +1095,7 @@ class AttentionSeq2seq(ModelBase):
                 enc_out[b:b + 1], x_lens, task_idx, dir)
             aw_step = self._create_var(
                 (1, frame_num, getattr(self, 'num_heads_' + str(task_idx))),
-                fill_value=0, volatile=True)
+                fill_value=0)
 
             complete = []
             beam = [{'hyp': [sos],

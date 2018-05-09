@@ -368,14 +368,13 @@ class CTC(ModelBase):
                 # TODO: clone??
             else:
                 xs, x_lens, xs_sub, x_lens_sub, perm_idx = self.encoder(
-                    xs, x_lens, volatile=not self.training)
+                    xs, x_lens)
         else:
             if self.encoder_type == 'cnn':
                 xs, x_lens = self.encoder(xs, x_lens)
                 perm_idx = None
             else:
-                xs, x_lens, perm_idx = self.encoder(
-                    xs, x_lens, volatile=not self.training)
+                xs, x_lens, perm_idx = self.encoder(xs, x_lens)
 
         # Path through fully-connected layers
         if len(self.fc_list) > 0:
