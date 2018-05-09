@@ -456,10 +456,16 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (torch.FloatTensor or float): A tensor of size `[1]`
-            loss_main (torch.FloatTensor or float): A tensor of size `[1]`
-            loss_sub (torch.FloatTensor or float): A tensor of size `[1]`
+            loss (torch.FloatTensor or float): A tensor of size `[]`
+            loss_main (torch.FloatTensor or float): A tensor of size `[]`
+            loss_sub (torch.FloatTensor or float): A tensor of size `[]`
         """
+        second_pass = False
+        if ys_sub is None:
+            ys_sub = ys
+            y_lens_sub = y_lens
+            second_pass = True
+
         if is_eval:
             with torch.no_grad():
                 loss, loss_main, loss_sub = self._forward(
@@ -484,15 +490,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 self._ss_prob = min(
                     self.ss_prob, self.ss_prob / self.ss_max_step * self._step)
 
-        return loss, loss_main, loss_sub
+        if second_pass:
+            return loss
+        else:
+            return loss, loss_main, loss_sub
 
-    def _forward(self, xs, ys, x_lens, y_lens, ys_sub=None, y_lens_sub=None):
-        second_pass = False
-        if ys_sub is None:
-            ys_sub = ys
-            y_lens_sub = y_lens
-            second_pass = True
-
+    def _forward(self, xs, ys, x_lens, y_lens, ys_sub, y_lens_sub):
         # Reverse the order
         if self.backward_1:
             ys_sub_tmp = copy.deepcopy(ys_sub)
@@ -574,10 +577,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub
             loss += ctc_loss_sub
 
-        if second_pass:
-            return loss
-        else:
-            return loss, loss_main, loss_sub
+        return loss, loss_main, loss_sub
 
     def compute_xe_loss(self, enc_out, ys_in, ys_out, x_lens, y_lens,
                         enc_out_sub, ys_in_sub, ys_out_sub, x_lens_sub, y_lens_sub):
@@ -601,8 +601,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             x_lens_sub (torch.IntTensor): A tensor of size `[B]`
             y_lens_sub (torch.IntTensor): A tensor of size `[B]`
         Returns:
-            loss_main (torch.LongTensor): A tensor of size `[1]`
-            loss_sub (torch.LongTensor): A tensor of size `[1]`
+            loss_main (torch.LongTensor): A tensor of size `[]`
+            loss_sub (torch.LongTensor): A tensor of size `[]`
         """
         # Teacher-forcing
         logits_main, aw, logits_sub, aw_sub, aw_dec_out_sub = self._decode_train(

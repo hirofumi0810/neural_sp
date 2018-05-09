@@ -275,9 +275,9 @@ class HierarchicalCTC(CTC):
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (torch.FloatTensor or float): A tensor of size `[1]`
-            loss_main (torch.FloatTensor or float): A tensor of size `[1]`
-            loss_sub (torch.FloatTensor or float): A tensor of size `[1]`
+            loss (torch.FloatTensor or float): A tensor of size `[]`
+            loss_main (torch.FloatTensor or float): A tensor of size `[]`
+            loss_sub (torch.FloatTensor or float): A tensor of size `[]`
         """
         if is_eval:
             with torch.no_grad():

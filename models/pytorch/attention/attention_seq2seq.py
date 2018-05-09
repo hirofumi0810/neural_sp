@@ -431,7 +431,7 @@ class AttentionSeq2seq(ModelBase):
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (torch.FloatTensor or float): A tensor of size `[1]`
+            loss (torch.FloatTensor or float): A tensor of size `[]`
         """
         if is_eval:
             with torch.no_grad():
@@ -578,7 +578,7 @@ class AttentionSeq2seq(ModelBase):
             task_idx (int): the index of a task
             dir (str): fwd or bwd
         Returns:
-            loss (torch.FloatTensor): A tensor of size `[1]`
+            loss (torch.FloatTensor): A tensor of size `[]`
         """
         # Teacher-forcing
         logits, aw = self._decode_train(
@@ -622,7 +622,7 @@ class AttentionSeq2seq(ModelBase):
                 which includes <SOS> nor <EOS>
             task_idx (int, optional): the index of a task
         Returns:
-            loss (torch.FloatTensor): A tensor of size `[1]`
+            loss (torch.FloatTensor): A tensor of size `[]`
         """
         # Concatenate all _ys for warpctc_pytorch
         # `[B, T_out]` -> `[1,]`
@@ -654,7 +654,8 @@ class AttentionSeq2seq(ModelBase):
 
         loss /= len(enc_out)
 
-        return loss
+        return loss.sum()
+        # NOTE: to convert to 0-dim tensor
 
     def _encode(self, xs, x_lens, is_multi_task=False):
         """Encode acoustic features.
@@ -1264,7 +1265,7 @@ class AttentionSeq2seq(ModelBase):
 
         # Path through the softmax layer
         batch_size, max_time = enc_out.size()[:2]
-        enc_out = enc_out.view(batch_size * max_time, -1).contiguous()
+        enc_out = enc_out.contiguous().view(batch_size * max_time, -1)
         logits_ctc = getattr(self, 'fc_ctc_' + str(task_index))(enc_out)
         logits_ctc = logits_ctc.view(batch_size, max_time, -1)
 
