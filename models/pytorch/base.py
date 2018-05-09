@@ -309,6 +309,10 @@ class ModelBase(nn.Module):
                 model_dict.update(pretrained_dict)
                 # 3. load the new state dict
                 self.load_state_dict(model_dict)
+
+                for k in pretrained_dict.keys():
+                    logger.info(k)
+                logger.info('=> Finished loading.')
             else:
                 self.load_state_dict(checkpoint['state_dict'])
 

@@ -258,7 +258,8 @@ class AttentionSeq2seq(ModelBase):
                 activation=activation,
                 batch_norm=batch_norm,
                 residual=encoder_residual,
-                dense_residual=encoder_dense_residual)
+                dense_residual=encoder_dense_residual,
+                nin=0)
         elif encoder_type == 'cnn':
             assert num_stack == 1 and splice == 1
             self.encoder = load(encoder_type='cnn')(

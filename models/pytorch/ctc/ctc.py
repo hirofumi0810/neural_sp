@@ -164,7 +164,7 @@ class CTC(ModelBase):
         # Setting for regualarization
         self.weight_noise_injection = False
         self.weight_noise_std = float(weight_noise_std)
-        self.label_smoothing_prob = label_smoothing_prob
+        self.ls_prob = label_smoothing_prob
 
         # Call the encoder function
         if encoder_type in ['lstm', 'gru', 'rnn']:
@@ -192,7 +192,8 @@ class CTC(ModelBase):
                 activation=activation,
                 batch_norm=batch_norm,
                 residual=encoder_residual,
-                dense_residual=encoder_dense_residual)
+                dense_residual=encoder_dense_residual,
+                nin=0)
         elif encoder_type == 'cnn':
             assert num_stack == 1 and splice == 1
             self.encoder = load(encoder_type='cnn')(
@@ -325,15 +326,15 @@ class CTC(ModelBase):
             loss = loss.cuda()
 
         # Label smoothing (with uniform distribution)
-        if self.label_smoothing_prob > 0:
+        if self.ls_prob > 0:
             # XE
             loss_ls = cross_entropy_label_smoothing(
                 logits,
                 y_lens=x_lens,  # NOTE: CTC is frame-synchronous
-                label_smoothing_prob=self.label_smoothing_prob,
+                label_smoothing_prob=self.ls_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)
-            loss = loss * (1 - self.label_smoothing_prob) + loss_ls
+            loss = loss * (1 - self.ls_prob) + loss_ls
 
         if is_eval:
             loss = loss.data[0]

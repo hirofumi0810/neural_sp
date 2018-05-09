@@ -48,10 +48,12 @@ class RNNEncoder(nn.Module):
         poolings (list, optional): the size of poolings in CNN layers
         activation (string, optional): The activation function of CNN layers.
             Choose from relu or prelu or hard_tanh or maxout
-        batch_norm (bool, optional):
-        residual (bool, optional):
+        batch_norm (bool, optional): if True, apply batch normalization
+        residual (bool, optional): if True, apply residual connection between each layer
         dense_residual (bool, optional):
         num_layers_sub (int): the number of layers in the sub task
+        nin (int, optional): if larger than 0, insert 1*1 conv (filter size: nin)
+            and ReLU activation between each LSTM layer
     """
 
     def __init__(self,
@@ -80,7 +82,8 @@ class RNNEncoder(nn.Module):
                  batch_norm=False,
                  residual=False,
                  dense_residual=False,
-                 num_layers_sub=0):
+                 num_layers_sub=0,
+                 nin=0):
 
         super(RNNEncoder, self).__init__()
 
@@ -130,6 +133,10 @@ class RNNEncoder(nn.Module):
         self.residual_start_layer = subsample_last_layer + 1
         # NOTE: residual connection starts from the last subsampling layer
 
+        # Setting for the NiN
+        self.batch_norm = batch_norm
+        self.nin = nin
+
         # Dropout for input-hidden connection
         self.dropout_input = nn.Dropout(p=dropout_input)
 
@@ -152,7 +159,7 @@ class RNNEncoder(nn.Module):
             self.conv = None
 
         # Fast implementation without using torch.nn.utils.rnn.PackedSequence
-        if sum(self.subsample_list) == 0 and self.num_proj == 0 and not residual and not dense_residual and num_layers_sub == 0:
+        if sum(self.subsample_list) == 0 and self.num_proj == 0 and not residual and not dense_residual and num_layers_sub == 0 and (not batch_norm) and nin == 0:
             self.fast_impl = True
 
             if rnn_type == 'lstm':
@@ -196,6 +203,8 @@ class RNNEncoder(nn.Module):
             for l in range(num_layers):
                 if l == 0:
                     encoder_input_size = input_size
+                elif nin > 0:
+                    encoder_input_size = nin
                 elif self.num_proj > 0:
                     encoder_input_size = num_proj
                     if subsample_type == 'concat' and l > 0 and self.subsample_list[l - 1]:
@@ -235,6 +244,7 @@ class RNNEncoder(nn.Module):
                         'rnn_type must be "lstm" or "gru" or "rnn".')
 
                 setattr(self, rnn_type + '_l' + str(l), rnn_i)
+                encoder_output_size = num_units * self.num_directions
 
                 # Dropout for hidden-hidden or hidden-output connection
                 setattr(self, 'dropout_l' + str(l),
@@ -244,6 +254,32 @@ class RNNEncoder(nn.Module):
                     proj_i = LinearND(num_units * self.num_directions, num_proj,
                                       dropout=dropout_hidden)
                     setattr(self, 'proj_l' + str(l), proj_i)
+                    encoder_output_size = num_proj
+
+                # Network in network (1*1 conv)
+                if nin > 0:
+                    setattr(self, 'nin_l' + str(l),
+                            nn.Conv1d(in_channels=encoder_output_size,
+                                      out_channels=nin,
+                                      kernel_size=1,
+                                      stride=1,
+                                      padding=1,
+                                      bias=not batch_norm))
+
+                    # Batch normalization
+                    if batch_norm:
+                        if nin:
+                            setattr(self, 'bn_0_l' + str(l),
+                                    nn.BatchNorm1d(encoder_output_size))
+                            setattr(self, 'bn_l' + str(l),
+                                    nn.BatchNorm1d(nin))
+                        elif subsample_type == 'concat' and self.subsample_list[l]:
+                            setattr(self, 'bn_l' + str(l),
+                                    nn.BatchNorm1d(encoder_output_size * 2))
+                        else:
+                            setattr(self, 'bn_l' + str(l),
+                                    nn.BatchNorm1d(encoder_output_size))
+                    # NOTE* BN in RNN models is applied only after NiN
 
     def forward(self, xs, x_lens, volatile=False):
         """Forward computation.
@@ -402,8 +438,23 @@ class RNNEncoder(nn.Module):
                                 x_lens = np.array([xs[:, i].size(0)
                                                    for i in range(xs.size(1))])
 
+                        # NiN
+                        if self.nin > 0:
+                            raise NotImplementedError
+
+                            # Batch normalization befor NiN
+                            if self.batch_norm:
+                                size = list(xs.size())
+                                xs = to2d(xs, size)
+                                xs = getattr(self, 'bn_0_l' + str(l))(xs)
+                                xs = F.relu(xs)
+                                xs = to3d(xs, size)
+                                # NOTE: mean and var are computed along all timesteps in the mini-batch
+
+                            xs = getattr(self, 'nin_l' + str(l))(xs)
+
                         # Residual connection
-                        elif self.residual or self.dense_residual:
+                        if (not self.subsample_list[l]) and (self.residual or self.dense_residual):
                             if l >= self.residual_start_layer - 1:
                                 for xs_lower in res_outputs_list:
                                     xs = xs + xs_lower
@@ -434,6 +485,15 @@ class RNNEncoder(nn.Module):
             return xs, x_lens, xs_sub, x_lens_sub, perm_idx
         else:
             return xs, x_lens, perm_idx
+
+
+def to2d(xs, size):
+    return xs.contiguous().view(
+        (int(np.prod(size[:-1])), int(size[-1])))
+
+
+def to3d(xs, size):
+    return xs.view(size)
 
 
 def _init_hidden(batch_size, rnn_type, num_units, num_directions,

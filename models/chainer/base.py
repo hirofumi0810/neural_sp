@@ -299,6 +299,7 @@ class ModelBase(chainer.Chain):
                     logger.info(
                         "=> Loading pre-trained checkpoint (epoch:%d): %s" % (epoch, model_path))
 
+                    # TODO:
                     # pretrained_dict = checkpoint['state_dict']
                     # model_dict = self.state_dict()
                     #
@@ -309,6 +310,9 @@ class ModelBase(chainer.Chain):
                     # model_dict.update(pretrained_dict)
                     # # 3. load the new state dict
                     # self.load_state_dict(model_dict)
+
+                    # for k in pretrained_dict.keys():
+                    #     logger.info(k)
 
                 deserializer["model"].load(self)
 

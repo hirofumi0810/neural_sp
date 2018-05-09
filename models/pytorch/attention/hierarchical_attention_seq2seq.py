@@ -512,8 +512,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             return loss, loss_main, ctc_loss_sub
 
     def decode(self, xs, x_lens, beam_width, max_decode_len,
-               length_penalty=0, coverage_penalty=0, task_index=0,
-               resolving_unk=False):
+               length_penalty=0, coverage_penalty=0, task_index=0):
         """Decoding in the inference stage.
         Args:
             xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
@@ -524,7 +523,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             length_penalty (float, optional):
             coverage_penalty (float, optional):
             task_index (int, optional): the index of a task
-            resolving_unk (bool, optional):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
             aw ():

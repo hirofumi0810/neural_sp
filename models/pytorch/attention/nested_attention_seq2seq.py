@@ -936,13 +936,14 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         return logits, aw, logits_sub, aw_sub, aw_dec_out_sub
 
-    def attention_weights(self, xs, x_lens, beam_width,
+    def attention_weights(self, xs, x_lens, beam_width, beam_width_sub,
                           max_decode_len, max_decode_len_sub):
         """Get attention weights for visualization.
         Args:
             xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
             x_lens (np.ndarray): A tensor of size `[B]`
-            beam_width (int): the size of beam
+            beam_width (int): the size of beam in the main task
+            beam_width_sub (int): the size of beam in the sub task
             max_decode_len (int): the length of output sequences
                 to stop prediction when EOS token have not been emitted
         Returns:
@@ -964,9 +965,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         enc_out, x_lens, enc_out_sub, x_lens_sub, perm_idx = self._encode(
             xs, x_lens, is_multi_task=True)
 
-        best_hyps, aw, best_hyps_sub, aw_sub, aw_dec_out_sub = self._decode_infer_greedy_joint(
+        best_hyps, aw, best_hyps_sub, aw_sub, aw_dec_out_sub = self._decode_infer_joint(
             enc_out, x_lens, enc_out_sub, x_lens_sub,
             beam_width=1,
+            beam_width_sub=1,
             max_decode_len=max_decode_len,
             max_decode_len_sub=max_decode_len_sub,
             reverse_backward=False)
@@ -984,10 +986,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         return best_hyps, best_hyps_sub, aw, aw_sub, aw_dec_out_sub
 
-    def decode(self, xs, x_lens, beam_width, max_decode_len, max_decode_len_sub=None,
+    def decode(self, xs, x_lens, beam_width, max_decode_len,
+               max_decode_len_sub=None,
                length_penalty=0, coverage_penalty=0, task_index=0,
-               resolving_unk=False, teacher_forcing=False,
-               ys_sub=None, y_lens_sub=None):
+               teacher_forcing=False, ys_sub=None, y_lens_sub=None):
         """Decoding in the inference stage.
         Args:
             xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
@@ -999,9 +1001,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             length_penalty (float, optional):
             coverage_penalty (float, optional):
             task_index (int, optional): the index of a task
-            resolving_unk (bool, optional):
             teacher_forcing (bool, optional):
-
+            ys_sub ():
+            y_lens_sub ():
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
             best_hyps_sub (np.ndarray): A tensor of size `[B]`
@@ -1051,9 +1053,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 if teacher_forcing:
                     ys_in_sub = ys_in_sub[perm_idx]
 
-                best_hyps, aw, best_hyps_sub, aw_sub, _ = self._decode_infer_greedy_joint(
+                best_hyps, aw, best_hyps_sub, aw_sub, _ = self._decode_infer_joint(
                     enc_out, x_lens, enc_out_sub, x_lens_sub,
                     beam_width=1,
+                    beam_width_sub=1,
                     max_decode_len=max_decode_len,
                     max_decode_len_sub=max_decode_len_sub,
                     teacher_forcing=teacher_forcing,
@@ -1091,11 +1094,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         elif task_index == 1:
             return best_hyps, aw, perm_idx
 
-    def _decode_infer_greedy_joint(self, enc_out, x_lens,
-                                   enc_out_sub, x_lens_sub, beam_width,
-                                   max_decode_len, max_decode_len_sub,
-                                   teacher_forcing=False, ys_sub=None,
-                                   reverse_backward=True):
+    def _decode_infer_joint(self, enc_out, x_lens,
+                            enc_out_sub, x_lens_sub,
+                            beam_width, beam_width_sub,
+                            max_decode_len, max_decode_len_sub,
+                            teacher_forcing=False, ys_sub=None,
+                            reverse_backward=True):
         """Greedy decoding in the inference stage.
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
@@ -1104,7 +1108,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             enc_out_sub (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in_sub, encoder_num_units]`
             x_lens_sub (torch.autograd.Variable, int): A tensor of size `[B]`
-            beam_width (int): the size of beam
+            beam_width (int): the size of beam in the main task
+            beam_width_sub (int): the size of beam in the sub task
             max_decode_len (int): the length of output sequences
                 to stop prediction when EOS token have not been emitted
             max_decode_len_sub (int): the length of output sequences

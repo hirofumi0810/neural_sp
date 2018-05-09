@@ -29,7 +29,7 @@ class CNNEncoder(nn.Module):
         dropout_input (float): the probability to drop nodes in input-hidden connection
         dropout_hidden (float): the probability to drop nodes in hidden-hidden connection
         activation (string, optional): relu or prelu or hard_tanh or maxout
-        batch_norm (bool, optional):
+        batch_norm (bool, optional): if True, apply batch normalization
     """
 
     def __init__(self,
@@ -61,7 +61,7 @@ class CNNEncoder(nn.Module):
         layers = []
         in_c = self.input_channel
         in_freq = self.input_freq
-        first_max_pool_layer = True
+        first_max_pool = True
         for l in range(len(conv_channels)):
 
             # Conv
@@ -93,10 +93,11 @@ class CNNEncoder(nn.Module):
                                     stride=tuple(poolings[l]),
                                     # padding=(1, 1),
                                     padding=(0, 0),  # default
-                                    ceil_mode=False if first_max_pool_layer else True)
+                                    ceil_mode=False if first_max_pool else True)
                 # NOTE: If ceil_mode is False, remove last feature when the
                 # dimension of features are odd.
-                first_max_pool_layer = False
+                first_max_pool = False
+                # NOTE: This is important for having the same frames as RNN models
 
                 layers.append(pool)
                 in_freq = math.floor(
@@ -147,9 +148,7 @@ class CNNEncoder(nn.Module):
             xs = xs.unsqueeze(1)
             # NOTE: xs: `[B, in_ch (1), freq, max_time]`
 
-        # print(xs.size())
         xs = self.layers(xs)
-        # print(xs.size())
         # NOTE: xs: `[B, out_ch, new_freq, new_time]`
 
         # Collapse feature dimension

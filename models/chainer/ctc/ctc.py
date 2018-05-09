@@ -118,7 +118,7 @@ class CTC(ModelBase):
         # Setting for regualarization
         self.weight_noise_injection = False
         self.weight_noise_std = float(weight_noise_std)
-        self.label_smoothing_prob = label_smoothing_prob
+        self.ls_prob = label_smoothing_prob
 
         with self.init_scope():
             # Load the encoder
@@ -273,15 +273,15 @@ class CTC(ModelBase):
         loss = F.sum(loss, axis=0) / len(xs)
 
         # Label smoothing (with uniform distribution)
-        if self.label_smoothing_prob > 0:
+        if self.ls_prob > 0:
             # XE
             xe_loss_ls = cross_entropy_label_smoothing(
                 logits,
                 y_lens=self.np2var(x_lens),  # NOTE: CTC is frame-synchronous
-                label_smoothing_prob=self.label_smoothing_prob,
+                label_smoothing_prob=self.ls_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)
-            loss = loss * (1 - self.label_smoothing_prob) + xe_loss_ls
+            loss = loss * (1 - self.ls_prob) + xe_loss_ls
 
         return loss
 

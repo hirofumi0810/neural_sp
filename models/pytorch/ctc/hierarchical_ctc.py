@@ -336,7 +336,7 @@ class HierarchicalCTC(CTC):
             loss_sub = loss_sub.cuda()
 
         # Label smoothing (with uniform distribution)
-        if self.label_smoothing_prob > 0:
+        if self.ls_prob > 0:
             # XE
             loss_ls_main = cross_entropy_label_smoothing(
                 logits_main,
@@ -344,8 +344,7 @@ class HierarchicalCTC(CTC):
                 label_smoothing_prob=self.label_smoothing_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)
-            loss_main = loss_main * \
-                (1 - self.label_smoothing_prob) + loss_ls_main
+            loss_main = loss_main * (1 - self.ls_prob) + loss_ls_main
 
             loss_ls_sub = cross_entropy_label_smoothing(
                 logits_sub,
@@ -353,8 +352,7 @@ class HierarchicalCTC(CTC):
                 label_smoothing_prob=self.label_smoothing_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)
-            loss_sub = loss_sub * \
-                (1 - self.label_smoothing_prob) + loss_ls_sub
+            loss_sub = loss_sub * (1 - self.ls_prob) + loss_ls_sub
 
         # Compute total loss
         loss_main = loss_main * self.main_loss_weight
