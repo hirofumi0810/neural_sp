@@ -7,9 +7,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import numpy as np
 import copy
-
 import torch
 
 from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
@@ -420,34 +418,27 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # one-hot vector, and added <SOS> before the first token
         # ys_out and ys_out_sub are padded with -1, and added <EOS>
         # after the last token
-        ys_in = self._create_var((ys.shape[0], ys.shape[1] + 1),
-                                 fill_value=self.eos_0, dtype=torch.long)
-        ys_in_sub = self._create_var((ys_sub.shape[0], ys_sub.shape[1] + 1),
-                                     fill_value=self.eos_1, dtype=torch.long)
-        ys_out = self._create_var((ys.shape[0], ys.shape[1] + 1),
-                                  fill_value=-1, dtype=torch.long)
-        ys_out_sub = self._create_var((ys_sub.shape[0], ys_sub.shape[1] + 1),
-                                      fill_value=-1, dtype=torch.long)
+        ys_in = self._create_tensor((ys.shape[0], ys.shape[1] + 1),
+                                    fill_value=self.eos_0, dtype=torch.long)
+        ys_in_sub = self._create_tensor((ys_sub.shape[0], ys_sub.shape[1] + 1),
+                                        fill_value=self.eos_1, dtype=torch.long)
+        ys_out = self._create_tensor((ys.shape[0], ys.shape[1] + 1),
+                                     fill_value=-1, dtype=torch.long)
+        ys_out_sub = self._create_tensor((ys_sub.shape[0], ys_sub.shape[1] + 1),
+                                         fill_value=-1, dtype=torch.long)
 
-        ys_in.data[:, 0] = self.sos_0
-        ys_in_sub.data[:, 0] = self.sos_1
+        ys_in[:, 0] = self.sos_0
+        ys_in_sub[:, 0] = self.sos_1
         for b in range(len(xs)):
-            ys_in.data[b, 1:y_lens[b] + 1] = torch.from_numpy(
-                ys[b, :y_lens[b]])
-            ys_in_sub.data[b, 1:y_lens_sub[b] + 1] = torch.from_numpy(
+            ys_in[b, 1:y_lens[b] + 1] = torch.from_numpy(ys[b, :y_lens[b]])
+            ys_in_sub[b, 1:y_lens_sub[b] + 1] = torch.from_numpy(
                 ys_sub_tmp[b, :y_lens_sub[b]])
 
-            ys_out.data[b, :y_lens[b]] = torch.from_numpy(ys[b, :y_lens[b]])
-            ys_out.data[b, y_lens[b]] = self.eos_0
-            ys_out_sub.data[b, :y_lens_sub[b]] = torch.from_numpy(
+            ys_out[b, :y_lens[b]] = torch.from_numpy(ys[b, :y_lens[b]])
+            ys_out[b, y_lens[b]] = self.eos_0
+            ys_out_sub[b, :y_lens_sub[b]] = torch.from_numpy(
                 ys_sub_tmp[b, :y_lens_sub[b]])
-            ys_out_sub.data[b, y_lens_sub[b]] = self.eos_1
-
-        if self.use_cuda:
-            ys_in = ys_in.cuda()
-            ys_out = ys_out.cuda()
-            ys_in_sub = ys_in_sub.cuda()
-            ys_out_sub = ys_out_sub.cuda()
+            ys_out_sub[b, y_lens_sub[b]] = self.eos_1
 
         # Wrap by Tensor
         xs = self.np2tensor(xs, dtype=torch.float)
@@ -475,9 +466,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # Compute XE loss
             loss_main = self.compute_xe_loss(
                 xs, ys_in, ys_out, x_lens, y_lens,
-                task_idx=0, dir='fwd') * self.main_loss_weight
+                task=0, dir='fwd') * self.main_loss_weight
         else:
-            loss_main = self._create_var((1,), fill_value=0)
+            loss_main = self._create_tensor(
+                (), fill_value=0, dtype=torch.float)
         loss = loss_main.clone()
 
         ##################################################
@@ -487,7 +479,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # Compute XE loss
             loss_sub = self.compute_xe_loss(
                 xs_sub, ys_in_sub, ys_out_sub, x_lens_sub, y_lens_sub,
-                task_idx=1, dir='bwd' if self.backward_1 else 'fwd') * self.sub_loss_weight
+                task=1, dir='bwd' if self.backward_1 else 'fwd') * self.sub_loss_weight
             loss += loss_sub
 
         ##################################################
@@ -497,16 +489,14 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # Wrap by Tensor
             ys_ctc_sub = self.np2tensor(ys_sub, dtype=torch.long)
 
-            if self.use_cuda:
-                ys_ctc_sub = ys_ctc_sub.cuda()
+            ys_ctc_sub = ys_ctc_sub.to(self.device)
 
             # Permutate indices
-            if perm_idx is not None:
-                ys_ctc_sub = ys_ctc_sub[perm_idx]
+            ys_ctc_sub = ys_ctc_sub[perm_idx]
 
             ctc_loss_sub = self.compute_ctc_loss(
                 xs_sub, ys_ctc_sub + 1,
-                x_lens_sub, y_lens_sub, task_idx=1) * self.ctc_loss_weight_sub
+                x_lens_sub, y_lens_sub, task=1) * self.ctc_loss_weight_sub
             loss += ctc_loss_sub
 
         if self.sub_loss_weight > self.ctc_loss_weight_sub:

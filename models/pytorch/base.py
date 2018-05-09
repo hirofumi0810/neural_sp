@@ -87,16 +87,12 @@ class ModelBase(nn.Module):
         #     torch.Tensor([mean]), torch.Tensor([std]))
         # for name, param in self.named_parameters():
         #     noise = m.sample()
-        #     if self.use_cuda:
-        #         noise = noise.cuda()
-        #     param.data += noise
+        #     param.data += noise.to(self.device)
 
         for name, param in self.named_parameters():
             noise = np.random.normal(loc=mean, scale=std, size=param.size())
             noise = torch.FloatTensor(noise)
-            if self.use_cuda:
-                noise = noise.cuda()
-            param.data += noise
+            param.data += noise.to(self.device)
 
     @property
     def num_params_dict(self):
@@ -118,6 +114,10 @@ class ModelBase(nn.Module):
     def use_cuda(self):
         return torch.cuda.is_available()
 
+    @property
+    def device(self):
+        return torch.device("cuda:0" if self.use_cuda else "cpu")
+
     def set_cuda(self, deterministic=False, benchmark=True):
         """Set model to the GPU version.
         Args:
@@ -134,7 +134,7 @@ class ModelBase(nn.Module):
                 # NOTE: this is slower than GPU mode.
             else:
                 logger.info('GPU mode')
-            self = self.cuda()
+            self = self.to(self.device)
         else:
             logger.info('CPU mode')
 
@@ -327,7 +327,7 @@ class ModelBase(nn.Module):
                     for state in self.optimizer.state.values():
                         for k, v in state.items():
                             if torch.is_tensor(v):
-                                state[k] = v.cuda()
+                                state[k] = v.to(self.device)
                     # NOTE: from https://github.com/pytorch/pytorch/issues/2830
                 else:
                     raise ValueError('Set optimizer.')
@@ -340,19 +340,17 @@ class ModelBase(nn.Module):
         return (checkpoint['epoch'] + 1, checkpoint['step'] + 1,
                 checkpoint['lr'], checkpoint['metric_dev_best'])
 
-    def _create_var(self, size, fill_value=0, dtype=torch.float):
+    def _create_tensor(self, size, fill_value=0, dtype=torch.float):
         """Initialize a variable with zero.
         Args:
             size (tuple):
             fill_value (int or float, optional):
             dtype ():
         Returns:
-            var (torch.autograd.Variable, float):
+            tensor (torch.Tensor):
         """
-        var = torch.zeros(size, dtype=dtype).fill_(fill_value)
-        if self.use_cuda:
-            var = var.cuda()
-        return var
+        tensor = torch.zeros(size, dtype=dtype).fill_(fill_value)
+        return tensor.to(self.device)
 
     def np2tensor(self, array, dtype=torch.float, cpu=False):
         """Convert form np.ndarray to Variable.
@@ -375,10 +373,10 @@ class ModelBase(nn.Module):
             elif dtype == torch.int:
                 tensor = tensor.int()
 
-        if not cpu and self.use_cuda:
-            tensor = tensor.cuda()
-
-        return tensor
+        if cpu:
+            return tensor
+        else:
+            return tensor.to(self.device)
 
     def tensor2np(self, tensor):
         """Convert form Variable to np.ndarray.
