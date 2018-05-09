@@ -311,7 +311,7 @@ class RNNEncoder(nn.Module):
 
         # Path through CNN layers before RNN layers
         if self.conv is not None:
-            xs, x_lens = self.conv(xs, x_lens)
+            xs, x_lens, perm_idx = self.conv(xs, x_lens)
 
         # Sort xs by lengths in descending order
         if self.pack_sequence:
@@ -320,8 +320,8 @@ class RNNEncoder(nn.Module):
             # NOTE: batch-first yet here
             # NOTE: must be descending order for pack_padded_sequence
         else:
-            perm_idx = None
-        x_lens = x_lens.data.cpu().numpy().tolist()
+            perm_idx = torch.arange(0, len(xs), 1, dtype=torch.long)
+        x_lens = x_lens.cpu().numpy().tolist()
 
         if not self.batch_first:
             # Convert to the time-major

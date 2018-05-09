@@ -130,6 +130,7 @@ class CNNEncoder(nn.Module):
         Returns:
             xs (torch.FloatTensor): A tensor of size `[B, T', feature_dim]`
             x_lens (torch.IntTensor): A tensor of size `[B]`
+            perm_idx (torch.LongTensor??): for making compatible with RNN models
         """
         batch_size, max_time, input_size = xs.size()
 
@@ -161,4 +162,6 @@ class CNNEncoder(nn.Module):
         if xs.is_cuda:
             x_lens = x_lens.cuda()
 
-        return xs, x_lens
+        perm_idx = torch.arange(0, len(xs), 1, dtype=torch.long)
+
+        return xs, x_lens, perm_idx

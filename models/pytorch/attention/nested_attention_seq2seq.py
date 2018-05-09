@@ -546,14 +546,13 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             xs, x_lens, is_multi_task=True)
 
         # Permutate indices
-        if perm_idx is not None:
-            ys_in = ys_in[perm_idx]
-            ys_out = ys_out[perm_idx]
-            y_lens = y_lens[perm_idx]
+        ys_in = ys_in[perm_idx]
+        ys_out = ys_out[perm_idx]
+        y_lens = y_lens[perm_idx]
 
-            ys_in_sub = ys_in_sub[perm_idx]
-            ys_out_sub = ys_out_sub[perm_idx]
-            y_lens_sub = y_lens_sub[perm_idx]
+        ys_in_sub = ys_in_sub[perm_idx]
+        ys_out_sub = ys_out_sub[perm_idx]
+        y_lens_sub = y_lens_sub[perm_idx]
 
         ##################################################
         # Main + Sub task (attention)
@@ -986,10 +985,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         aw_dec_out_sub = aw_dec_out_sub[:, :, :, 0]
 
         # Permutate indices to the original order
-        if perm_idx is None:
-            perm_idx = np.arange(0, len(xs), 1)
-        else:
-            perm_idx = self.var2np(perm_idx)
+        perm_idx = self.var2np(perm_idx)
 
         return best_hyps, best_hyps_sub, aw, aw_sub, aw_dec_out_sub
 
@@ -1091,10 +1087,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         # aw_dec_out_sub = aw_dec_out_sub[:, :, :, 0]
 
         # Permutate indices to the original order
-        if perm_idx is None:
-            perm_idx = np.arange(0, len(xs), 1)
-        else:
-            perm_idx = self.var2np(perm_idx)
+        perm_idx = self.var2np(perm_idx)
 
         if task_index == 0:
             return best_hyps, aw, best_hyps_sub, aw_sub, perm_idx

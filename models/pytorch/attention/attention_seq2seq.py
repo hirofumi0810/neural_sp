@@ -490,10 +490,9 @@ class AttentionSeq2seq(ModelBase):
             y_lens_fwd = self.np2var(y_lens, dtype='int')
 
             # Permutate indices
-            if perm_idx is not None:
-                ys_in_fwd = ys_in_fwd[perm_idx]
-                ys_out_fwd = ys_out_fwd[perm_idx]
-                y_lens_fwd = y_lens_fwd[perm_idx]
+            ys_in_fwd = ys_in_fwd[perm_idx]
+            ys_out_fwd = ys_out_fwd[perm_idx]
+            y_lens_fwd = y_lens_fwd[perm_idx]
 
             # Compute XE loss
             loss = self.compute_xe_loss(
@@ -532,10 +531,9 @@ class AttentionSeq2seq(ModelBase):
             y_lens_bwd = self.np2var(y_lens, dtype='int')
 
             # Permutate indices
-            if perm_idx is not None:
-                ys_in_bwd = ys_in_bwd[perm_idx]
-                ys_out_bwd = ys_out_bwd[perm_idx]
-                y_lens_bwd = y_lens_bwd[perm_idx]
+            ys_in_bwd = ys_in_bwd[perm_idx]
+            ys_out_bwd = ys_out_bwd[perm_idx]
+            y_lens_bwd = y_lens_bwd[perm_idx]
 
             # Compute XE loss
             loss += self.compute_xe_loss(
@@ -554,9 +552,8 @@ class AttentionSeq2seq(ModelBase):
                 ys_ctc = ys_ctc.cuda()
 
             # Permutate indices
-            if perm_idx is not None:
-                ys_ctc = ys_ctc[perm_idx]
-                y_lens_ctc = y_lens_ctc[perm_idx]
+            ys_ctc = ys_ctc[perm_idx]
+            y_lens_ctc = y_lens_ctc[perm_idx]
 
             loss += self.compute_ctc_loss(
                 xs, ys_ctc + 1,
@@ -678,20 +675,14 @@ class AttentionSeq2seq(ModelBase):
         """
         if is_multi_task:
             if self.encoder_type == 'cnn':
-                xs, x_lens = self.encoder(xs, x_lens)
-                perm_idx = None
-                xs_sub = xs
-                x_lens_sub = x_lens
-                # TODO: clone??
+                xs, x_lens, perm_idx = self.encoder(xs, x_lens)
+                xs_sub = xs.clone()
+                x_lens_sub = x_lens.clone()
             else:
                 xs, x_lens, xs_sub, x_lens_sub, perm_idx = self.encoder(
                     xs, x_lens)
         else:
-            if self.encoder_type == 'cnn':
-                xs, x_lens = self.encoder(xs, x_lens)
-                perm_idx = None
-            else:
-                xs, x_lens, perm_idx = self.encoder(xs, x_lens)
+            xs, x_lens, perm_idx = self.encoder(xs, x_lens)
 
         # Bridge between the encoder and decoder in the main task
         if self.is_bridge:
@@ -921,10 +912,7 @@ class AttentionSeq2seq(ModelBase):
             aw = aw[:, :, :, 0]
 
         # Permutate indices to the original order
-        if perm_idx is None:
-            perm_idx = np.arange(0, len(xs), 1)
-        else:
-            perm_idx = self.var2np(perm_idx)
+        perm_idx = self.var2np(perm_idx)
 
         return best_hyps, aw, perm_idx
 
@@ -1292,9 +1280,6 @@ class AttentionSeq2seq(ModelBase):
         best_hyps -= 1
 
         # Permutate indices to the original order
-        if perm_idx is None:
-            perm_idx = np.arange(0, len(xs), 1)
-        else:
-            perm_idx = self.var2np(perm_idx)
+        perm_idx = self.var2np(perm_idx)
 
         return best_hyps, perm_idx

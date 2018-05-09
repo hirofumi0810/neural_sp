@@ -460,14 +460,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             xs, x_lens, is_multi_task=True)
 
         # Permutate indices
-        if perm_idx is not None:
-            ys_in = ys_in[perm_idx]
-            ys_out = ys_out[perm_idx]
-            y_lens = y_lens[perm_idx]
+        ys_in = ys_in[perm_idx]
+        ys_out = ys_out[perm_idx]
+        y_lens = y_lens[perm_idx]
 
-            ys_in_sub = ys_in_sub[perm_idx]
-            ys_out_sub = ys_out_sub[perm_idx]
-            y_lens_sub = y_lens_sub[perm_idx]
+        ys_in_sub = ys_in_sub[perm_idx]
+        ys_out_sub = ys_out_sub[perm_idx]
+        y_lens_sub = y_lens_sub[perm_idx]
 
         ##################################################
         # Main task

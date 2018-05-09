@@ -313,9 +313,8 @@ class CTC(ModelBase):
             logits /= self.logits_temperature
 
         # Permutate indices
-        if perm_idx is not None:
-            ys = ys[perm_idx.cpu()]
-            y_lens = y_lens[perm_idx.cpu()]
+        ys = ys[perm_idx]
+        y_lens = y_lens[perm_idx]
 
         # Concatenate all labels for warpctc_pytorch
         # `[B, T_out]` -> `[1,]`
@@ -361,20 +360,15 @@ class CTC(ModelBase):
         """
         if is_multi_task:
             if self.encoder_type == 'cnn':
-                xs, x_lens = self.encoder(xs, x_lens)
-                perm_idx = None
-                xs_sub = xs
-                x_lens_sub = x_lens
+                xs, x_lens, perm_idx = self.encoder(xs, x_lens)
+                xs_sub = xs.clone()
+                x_lens_sub = x_lens.clone()
                 # TODO: clone??
             else:
                 xs, x_lens, xs_sub, x_lens_sub, perm_idx = self.encoder(
                     xs, x_lens)
         else:
-            if self.encoder_type == 'cnn':
-                xs, x_lens = self.encoder(xs, x_lens)
-                perm_idx = None
-            else:
-                xs, x_lens, perm_idx = self.encoder(xs, x_lens)
+            xs, x_lens, perm_idx = self.encoder(xs, x_lens)
 
         # Path through fully-connected layers
         if len(self.fc_list) > 0:
@@ -442,10 +436,7 @@ class CTC(ModelBase):
         best_hyps -= 1
 
         # Permutate indices to the original order
-        if perm_idx is None:
-            perm_idx = np.arange(0, len(xs), 1)
-        else:
-            perm_idx = self.var2np(perm_idx)
+        perm_idx = self.var2np(perm_idx)
 
         return best_hyps, None, perm_idx
         # NOTE: None corresponds to aw in attention-based models
@@ -492,10 +483,7 @@ class CTC(ModelBase):
             raise NotImplementedError
 
         # Permutate indices to the original order
-        if perm_idx is None:
-            perm_idx = np.arange(0, len(xs), 1)
-        else:
-            perm_idx = self.var2np(perm_idx)
+        perm_idx = self.var2np(perm_idx)
 
         return self.var2np(probs), self.var2np(x_lens), perm_idx
 

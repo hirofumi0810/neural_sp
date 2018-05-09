@@ -322,11 +322,10 @@ class HierarchicalCTC(CTC):
             logits_sub /= self.logits_temperature
 
         # Permutate indices
-        if perm_idx is not None:
-            ys = ys[perm_idx.cpu()]
-            ys_sub = ys_sub[perm_idx.cpu()]
-            y_lens = y_lens[perm_idx.cpu()]
-            y_lens_sub = y_lens_sub[perm_idx.cpu()]
+        ys = ys[perm_idx]
+        ys_sub = ys_sub[perm_idx]
+        y_lens = y_lens[perm_idx]
+        y_lens_sub = y_lens_sub[perm_idx]
 
         # Concatenate all labels for warpctc_pytorch
         # `[B, T_out]` -> `[1,]`
