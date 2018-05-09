@@ -296,7 +296,7 @@ class CTC(ModelBase):
         return loss
 
     def _forward(self, xs, ys, x_lens, y_lens):
-        # Wrap by Variable
+        # Wrap by Tensor
         xs = self.np2tensor(xs, dtype=torch.float)
         ys = self.np2tensor(ys, dtype=torch.int, cpu=True)
         x_lens = self.np2tensor(x_lens, dtype=torch.int)
@@ -405,7 +405,7 @@ class CTC(ModelBase):
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
         with torch.no_grad():
-            # Wrap by Variable
+            # Wrap by Tensor
             xs = self.np2tensor(xs, dtype=torch.float)
             x_lens = self.np2tensor(x_lens, dtype=torch.int)
 
@@ -455,7 +455,7 @@ class CTC(ModelBase):
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
         with torch.no_grad():
-            # Wrap by Variable
+            # Wrap by Tensor
             xs = self.np2tensor(xs, dtype=torch.float)
             x_lens = self.np2tensor(x_lens, dtype=torch.int)
 

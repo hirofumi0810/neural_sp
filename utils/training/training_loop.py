@@ -9,7 +9,8 @@ from __future__ import print_function
 
 import logging
 logger = logging.getLogger('training')
-import numpy as np
+
+import torch
 
 try:
     import cupy
@@ -20,16 +21,13 @@ try:
 except:
     logger.warning('Install chainer.')
 
-import torch
-import torch.nn as nn
-
 INF = float("inf")
 
 
 def train_step(model, batch, clip_grad_norm, backend):
     """
     Args:
-        model (torch.nn.Module or chainer.Chaine):
+        model (torch.nn.Module or chainer.Chain):
         batch (tuple):
         clip_grad_norm (float):
         backend (string): pytorch or chainer
@@ -46,11 +44,12 @@ def train_step(model, batch, clip_grad_norm, backend):
                                batch['x_lens'], batch['y_lens'])
             loss_train.backward()
             if clip_grad_norm > 0:
-                nn.utils.clip_grad_norm(model.parameters(), clip_grad_norm)
+                torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), clip_grad_norm)
             model.optimizer.step()
             # TODO: Add scheduler
 
-            loss_train_val = loss_train.data[0]
+            loss_train_val = loss_train.item()
 
         elif backend == 'chainer':
             model.optimizer.target.cleargrads()
@@ -110,13 +109,14 @@ def train_hierarchical_step(model, batch, clip_grad_norm, backend):
                 batch['ys_sub'], batch['y_lens_sub'])
             loss_train.backward()
             if clip_grad_norm > 0:
-                nn.utils.clip_grad_norm(model.parameters(), clip_grad_norm)
+                torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), clip_grad_norm)
             model.optimizer.step()
             # TODO: Add scheduler
 
-            loss_train_val = loss_train.data[0]
-            loss_main_train_val = loss_main_train.data[0]
-            loss_sub_train_val = loss_sub_train.data[0]
+            loss_train_val = loss_train.item()
+            loss_main_train_val = loss_main_train.item()
+            loss_sub_train_val = loss_sub_train.item()
 
         elif backend == 'chainer':
             model.optimizer.target.cleargrads()

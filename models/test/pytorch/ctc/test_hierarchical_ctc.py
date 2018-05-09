@@ -12,7 +12,6 @@ import time
 import unittest
 
 import torch
-import torch.nn as nn
 torch.manual_seed(1623)
 torch.cuda.manual_seed_all(1623)
 
@@ -180,7 +179,7 @@ class TestCTC(unittest.TestCase):
             loss, loss_main, loss_sub = model(
                 xs, ys, x_lens, y_lens, ys_sub, y_lens_sub)
             loss.backward()
-            nn.utils.clip_grad_norm(model.parameters(), 5)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
             model.optimizer.step()
 
             if (step + 1) % 10 == 0:

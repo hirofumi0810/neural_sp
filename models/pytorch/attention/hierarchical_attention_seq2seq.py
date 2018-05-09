@@ -449,7 +449,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             ys_in_sub = ys_in_sub.cuda()
             ys_out_sub = ys_out_sub.cuda()
 
-        # Wrap by Variable
+        # Wrap by Tensor
         xs = self.np2tensor(xs, dtype=torch.float)
         x_lens = self.np2tensor(x_lens, dtype=torch.int)
         y_lens = self.np2tensor(y_lens, dtype=torch.int)
@@ -494,7 +494,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Sub task (CTC, optional)
         ##################################################
         if self.ctc_loss_weight_sub > 0:
-            # Wrap by Variable
+            # Wrap by Tensor
             ys_ctc_sub = self.np2tensor(ys_sub, dtype=torch.long)
 
             if self.use_cuda:
@@ -540,7 +540,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 return best_hyps, None, perm_idx
                 # NOTE: None corresponds to aw in attention-based models
             else:
-                # Wrap by Variable
+                # Wrap by Tensor
                 xs = self.np2tensor(xs, dtype=torch.float)
                 x_lens = self.np2tensor(x_lens, dtype=torch.int)
 

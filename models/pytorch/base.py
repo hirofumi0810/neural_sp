@@ -59,16 +59,16 @@ class ModelBase(nn.Module):
                 continue
 
             if distribution == 'uniform':
-                nn.init.uniform(
+                nn.init.uniform_(
                     param.data, a=-parameter_init, b=parameter_init)
             elif distribution == 'normal':
                 assert parameter_init > 0
-                torch.nn.init.normal(param.data, mean=0, std=parameter_init)
+                torch.nn.init.normal_(param.data, mean=0, std=parameter_init)
             elif distribution == 'orthogonal':
                 if param.dim() >= 2:
-                    torch.nn.init.orthogonal(param.data, gain=1)
+                    torch.nn.init.orthogonal_(param.data, gain=1)
             elif distribution == 'constant':
-                torch.nn.init.constant(param.data, val=parameter_init)
+                torch.nn.init.constant_(param.data, val=parameter_init)
             else:
                 raise NotImplementedError
 
@@ -366,25 +366,25 @@ class ModelBase(nn.Module):
         if isinstance(array, list):
             array = np.array(array)
 
-        array = torch.from_numpy(array)
+        tensor = torch.from_numpy(array)
         if dtype is not None:
             if dtype == torch.float:
-                array = array.float()
+                tensor = tensor.float()
             elif dtype == torch.long:
-                array = array.long()
+                tensor = tensor.long()
             elif dtype == torch.int:
-                array = array.int()
+                tensor = tensor.int()
 
         if not cpu and self.use_cuda:
-            array = array.cuda()
+            tensor = tensor.cuda()
 
-        return array
+        return tensor
 
-    def tensor2np(self, var):
+    def tensor2np(self, tensor):
         """Convert form Variable to np.ndarray.
         Args:
-            var (torch.Tensor):
+            tensor (torch.Tensor):
         Returns:
             np.ndarray
         """
-        return var.cpu().numpy()
+        return tensor.cpu().numpy()

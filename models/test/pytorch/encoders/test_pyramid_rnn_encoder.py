@@ -157,9 +157,9 @@ class TestPyramidRNNEncoders(unittest.TestCase):
                                          num_stack=num_stack,
                                          splice=splice)
 
-        # Wrap by Variable
-        xs = Variable(torch.from_numpy(xs), requires_grad=False)
-        x_lens = Variable(torch.from_numpy(x_lens), requires_grad=False)
+        # Wrap by Tensor
+        xs = torch.from_numpy(xs)
+        x_lens = torch.from_numpy(x_lens)
 
         # Load encoder
         encoder = load(encoder_type=encoder_type)
@@ -187,7 +187,10 @@ class TestPyramidRNNEncoders(unittest.TestCase):
                 poolings=poolings,
                 batch_norm=True,
                 residual=residual,
-                dense_residual=dense_residual)
+                dense_residual=dense_residual,
+                # nin=32
+                nin=0
+            )
         else:
             raise NotImplementedError
 

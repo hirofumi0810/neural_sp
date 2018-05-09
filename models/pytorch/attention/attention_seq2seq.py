@@ -454,7 +454,7 @@ class AttentionSeq2seq(ModelBase):
         return loss
 
     def _forward(self, xs, ys, x_lens, y_lens):
-        # Wrap by Variable
+        # Wrap by Tensor
         xs = self.np2tensor(xs, dtype=torch.float)
         x_lens = self.np2tensor(x_lens, dtype=torch.int)
 
@@ -486,7 +486,7 @@ class AttentionSeq2seq(ModelBase):
                 ys_in_fwd = ys_in_fwd.cuda()
                 ys_out_fwd = ys_out_fwd.cuda()
 
-            # Wrap by Variable
+            # Wrap by Tensor
             y_lens_fwd = self.np2tensor(y_lens, dtype=torch.int)
 
             # Permutate indices
@@ -527,7 +527,7 @@ class AttentionSeq2seq(ModelBase):
                 ys_in_bwd = ys_in_bwd.cuda()
                 ys_out_bwd = ys_out_bwd.cuda()
 
-            # Wrap by Variable
+            # Wrap by Tensor
             y_lens_bwd = self.np2tensor(y_lens, dtype=torch.int)
 
             # Permutate indices
@@ -544,7 +544,7 @@ class AttentionSeq2seq(ModelBase):
         # Auxiliary CTC loss (optional)
         ##################################################
         if self.ctc_loss_weight > 0:
-            # Wrap by Variable
+            # Wrap by Tensor
             ys_ctc = self.np2tensor(ys, dtype=torch.long)
             y_lens_ctc = self.np2tensor(y_lens, dtype=torch.int)
 
@@ -892,7 +892,7 @@ class AttentionSeq2seq(ModelBase):
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
         with torch.no_grad():
-            # Wrap by Variable
+            # Wrap by Tensor
             xs = self.np2tensor(xs, dtype=torch.float)
             x_lens = self.np2tensor(x_lens, dtype=torch.int)
 
@@ -1248,27 +1248,25 @@ class AttentionSeq2seq(ModelBase):
             best_hyps (np.ndarray): A tensor of size `[B]`
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
-        # Change to evaluation mode
-        self.eval()
+        with torch.no_grad():
+            # Wrap by Tensor
+            xs = self.np2tensor(xs, dtype=torch.float)
+            x_lens = self.np2tensor(x_lens, dtype=torch.int)
 
-        # Wrap by Variable
-        xs = self.np2tensor(xs, dtype=torch.float)
-        x_lens = self.np2tensor(x_lens, dtype=torch.int)
+            # Encode acoustic features
+            if task_index == 0:
+                enc_out, x_lens, perm_idx = self._encode(xs, x_lens)
+            elif task_index == 1:
+                _, _, enc_out, x_lens, perm_idx = self._encode(
+                    xs, x_lens, is_multi_task=True)
+            else:
+                raise NotImplementedError
 
-        # Encode acoustic features
-        if task_index == 0:
-            enc_out, x_lens, perm_idx = self._encode(xs, x_lens)
-        elif task_index == 1:
-            _, _, enc_out, x_lens, perm_idx = self._encode(
-                xs, x_lens, is_multi_task=True)
-        else:
-            raise NotImplementedError
-
-        # Path through the softmax layer
-        batch_size, max_time = enc_out.size()[:2]
-        enc_out = enc_out.contiguous().view(batch_size * max_time, -1)
-        logits_ctc = getattr(self, 'fc_ctc_' + str(task_index))(enc_out)
-        logits_ctc = logits_ctc.view(batch_size, max_time, -1)
+            # Path through the softmax layer
+            batch_size, max_time = enc_out.size()[:2]
+            enc_out = enc_out.contiguous().view(batch_size * max_time, -1)
+            logits_ctc = getattr(self, 'fc_ctc_' + str(task_index))(enc_out)
+            logits_ctc = logits_ctc.view(batch_size, max_time, -1)
 
         if beam_width == 1:
             best_hyps = self._decode_ctc_greedy_np(

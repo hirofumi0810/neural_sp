@@ -538,7 +538,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             ys_out = ys_out.cuda()
             ys_out_sub = ys_out_sub.cuda()
 
-        # Wrap by Variable
+        # Wrap by Tensor
         xs = self.np2tensor(xs, dtype=torch.float)
         x_lens = self.np2tensor(x_lens, dtype=torch.int)
         y_lens = self.np2tensor(y_lens, dtype=torch.int)
@@ -963,7 +963,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 `[B, T_out, T_out_sub]`
         """
         with torch.no_grad():
-            # Wrap by Variable
+            # Wrap by Tensor
             xs = self.np2tensor(xs, dtype=torch.float)
             x_lens = self.np2tensor(x_lens, dtype=torch.int)
 
@@ -1033,12 +1033,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 if self.use_cuda:
                     ys_in_sub = ys_in_sub.cuda()
 
-                # Wrap by Variable
+                # Wrap by Tensor
                 y_lens_sub = self.np2tensor(y_lens_sub, dtype=torch.int)
             else:
                 ys_in_sub = None
 
-            # Wrap by Variable
+            # Wrap by Tensor
             xs = self.np2tensor(xs, dtype=torch.float)
             x_lens = self.np2tensor(x_lens, dtype=torch.int)
 

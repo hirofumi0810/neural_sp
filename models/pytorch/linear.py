@@ -32,11 +32,9 @@ class LinearND(nn.Module):
     def forward(self, xs):
         """Forward computation.
         Args:
-            xs (torch.autograd.Variable, float): A tensor of size
-                `[B, T, input_dim]`
+            xs (torch.FloatTensor): A tensor of size `[B, T, input_dim]`
         Returns:
-            xs (torch.autograd.Variable, float): A tensor of size
-                `[B, T, size[-1]]`
+            xs (torch.FloatTensor): A tensor of size `[B, T, size[-1]]`
         """
         size = list(xs.size())
         xs = xs.contiguous().view(
@@ -67,10 +65,9 @@ class Embedding(nn.Module):
     def forward(self, y):
         """Forward computation.
         Args:
-            y (torch.autograd.Variable, long): A tensor of size `[B, 1]`
+            y (torch.LongTensor): A tensor of size `[B, 1]`
         Returns:
-            y (torch.autograd.Variable, float): A tensor of size
-                `[B, 1, embedding_dim]`
+            y (torch.FloatTensor): A tensor of size `[B, 1, embedding_dim]`
         """
         y = self.embed(y)
         y = self.dropout(y)
@@ -101,11 +98,9 @@ class Embedding_LS(nn.Module):
     def forward(self, y):
         """Forward computation.
         Args:
-            y (torch.autograd.Variable, long): A tensor of size
-                `[B, 1]`
+            y (torch.LongTensor): A tensor of size `[B, 1]`
         Returns:
-            y (torch.autograd.Variable, float): A tensor of size
-                `[B, 1, embedding_dim]`
+            y (torch.FloatTensor): A tensor of size `[B, 1, embedding_dim]`
         """
         # Convert to one-hot labels
         y = to_onehot(y, self.num_classes, self.label_smoothing_prob)
@@ -119,13 +114,11 @@ class Embedding_LS(nn.Module):
 def to_onehot(y, num_classes, label_smoothing_prob=0):
     """Convert indices into one-hot encoding.
     Args:
-        y (torch.autograd.Variable, long): Indices of labels.
-            A tensor of size `[B, 1]`.
+        y (torch.LongTensor): Indices of labels. A tensor of size `[B, 1]`.
         num_classes (int): the number of classes
         label_smoothing_prob (float, optional):
     Returns:
-        y (torch.autograd.Variable, float): A tensor of size
-            `[B, 1, num_classes]`
+        y (torch.FloatTensor): A tensor of size `[B, 1, num_classes]`
     """
     batch_size = y.size(0)
     y_onehot = torch.FloatTensor(batch_size, num_classes).zero_()

@@ -217,8 +217,8 @@ class AttentionMechanism(nn.Module):
             if enc_out.is_cuda:
                 energy_mask = energy_mask.cuda()
             for b in range(batch_size):
-                if x_lens[b][0] < max_time:
-                    energy_mask[b, x_lens[b][0]:] = 0
+                if x_lens[b].item() < max_time:
+                    energy_mask[b, x_lens[b]:] = 0
             energy[h] *= energy_mask
             # NOTE: energy[h]: `[B, T_in]`
 

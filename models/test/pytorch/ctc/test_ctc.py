@@ -12,7 +12,6 @@ import time
 import unittest
 
 import torch
-import torch.nn as nn
 torch.manual_seed(1623)
 torch.cuda.manual_seed_all(1623)
 
@@ -192,7 +191,7 @@ class TestCTC(unittest.TestCase):
             model.optimizer.zero_grad()
             loss = model(xs, ys, x_lens, y_lens)
             loss.backward()
-            nn.utils.clip_grad_norm(model.parameters(), 5)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
             model.optimizer.step()
 
             # Inject Gaussian noise to all parameters

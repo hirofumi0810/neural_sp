@@ -300,7 +300,7 @@ class HierarchicalCTC(CTC):
         return loss, loss_main, loss_sub
 
     def _forward(self, xs, ys, x_lens, y_lens, ys_sub, y_lens_sub):
-        # Wrap by Variable
+        # Wrap by Tensor
         xs = self.np2tensor(xs, dtype=torch.float)
         ys = self.np2tensor(ys, dtype=torch.int, cpu=True)
         ys_sub = self.np2tensor(ys_sub, dtype=torch.int, cpu=True)
