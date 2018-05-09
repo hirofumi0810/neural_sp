@@ -297,10 +297,10 @@ class CTC(ModelBase):
 
     def _forward(self, xs, ys, x_lens, y_lens):
         # Wrap by Variable
-        xs = self.np2var(xs)
-        ys = self.np2var(ys, dtype='int', cpu=True)
-        x_lens = self.np2var(x_lens, dtype='int')
-        y_lens = self.np2var(y_lens, dtype='int', cpu=True)
+        xs = self.np2tensor(xs, dtype=torch.float)
+        ys = self.np2tensor(ys, dtype=torch.int, cpu=True)
+        x_lens = self.np2tensor(x_lens, dtype=torch.int)
+        y_lens = self.np2tensor(y_lens, dtype=torch.int, cpu=True)
 
         # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
         ys = ys + 1
@@ -404,39 +404,37 @@ class CTC(ModelBase):
             None: this corresponds to aw in attention-based models
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
-        # Change to evaluation mode
-        self.eval()
+        with torch.no_grad():
+            # Wrap by Variable
+            xs = self.np2tensor(xs, dtype=torch.float)
+            x_lens = self.np2tensor(x_lens, dtype=torch.int)
 
-        # Wrap by Variable
-        xs = self.np2var(xs)
-        x_lens = self.np2var(x_lens, dtype='int')
-
-        # Encode acoustic features
-        if hasattr(self, 'main_loss_weight'):
-            if task_index == 0:
-                logits, x_lens, _, _, perm_idx = self._encode(
-                    xs, x_lens, is_multi_task=True)
-            elif task_index == 1:
-                _, _, logits, x_lens, perm_idx = self._encode(
-                    xs, x_lens, is_multi_task=True)
+            # Encode acoustic features
+            if hasattr(self, 'main_loss_weight'):
+                if task_index == 0:
+                    logits, x_lens, _, _, perm_idx = self._encode(
+                        xs, x_lens, is_multi_task=True)
+                elif task_index == 1:
+                    _, _, logits, x_lens, perm_idx = self._encode(
+                        xs, x_lens, is_multi_task=True)
+                else:
+                    raise NotImplementedError
             else:
-                raise NotImplementedError
-        else:
-            logits, x_lens, perm_idx = self._encode(xs, x_lens)
+                logits, x_lens, perm_idx = self._encode(xs, x_lens)
 
         if beam_width == 1:
             best_hyps = self._decode_greedy_np(
-                self.var2np(logits), self.var2np(x_lens))
+                self.tensor2np(logits), self.tensor2np(x_lens))
         else:
             best_hyps = self._decode_beam_np(
-                self.var2np(F.log_softmax(logits, dim=-1)),
-                self.var2np(x_lens), beam_width=beam_width)
+                self.tensor2np(F.log_softmax(logits, dim=-1)),
+                self.tensor2np(x_lens), beam_width=beam_width)
 
         # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
         best_hyps -= 1
 
         # Permutate indices to the original order
-        perm_idx = self.var2np(perm_idx)
+        perm_idx = self.tensor2np(perm_idx)
 
         return best_hyps, None, perm_idx
         # NOTE: None corresponds to aw in attention-based models
@@ -456,25 +454,23 @@ class CTC(ModelBase):
             x_lens (np.ndarray): A tensor of size `[B]`
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
-        # Change to evaluation mode
-        self.eval()
+        with torch.no_grad():
+            # Wrap by Variable
+            xs = self.np2tensor(xs, dtype=torch.float)
+            x_lens = self.np2tensor(x_lens, dtype=torch.int)
 
-        # Wrap by Variable
-        xs = self.np2var(xs)
-        x_lens = self.np2var(x_lens, dtype='int')
-
-        # Encode acoustic features
-        if hasattr(self, 'main_loss_weight'):
-            if task_idx == 0:
-                logits, x_lens, _, _, perm_idx = self._encode(
-                    xs, x_lens, is_multi_task=True)
-            elif task_idx == 1:
-                _, _, logits, x_lens, perm_idx = self._encode(
-                    xs, x_lens, is_multi_task=True)
+            # Encode acoustic features
+            if hasattr(self, 'main_loss_weight'):
+                if task_idx == 0:
+                    logits, x_lens, _, _, perm_idx = self._encode(
+                        xs, x_lens, is_multi_task=True)
+                elif task_idx == 1:
+                    _, _, logits, x_lens, perm_idx = self._encode(
+                        xs, x_lens, is_multi_task=True)
+                else:
+                    raise NotImplementedError
             else:
-                raise NotImplementedError
-        else:
-            logits, x_lens, perm_idx = self._encode(xs, x_lens)
+                logits, x_lens, perm_idx = self._encode(xs, x_lens)
 
         probs = F.softmax(logits / temperature, dim=-1)
 
@@ -483,9 +479,9 @@ class CTC(ModelBase):
             raise NotImplementedError
 
         # Permutate indices to the original order
-        perm_idx = self.var2np(perm_idx)
+        perm_idx = self.tensor2np(perm_idx)
 
-        return self.var2np(probs), self.var2np(x_lens), perm_idx
+        return self.tensor2np(probs), self.tensor2np(x_lens), perm_idx
 
     def decode_from_probs(self, probs, x_lens, beam_width=1,
                           max_decode_len=None):

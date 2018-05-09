@@ -213,12 +213,12 @@ class AttentionMechanism(nn.Module):
         aw_step = []
         for h in range(self.num_heads):
             # Mask attention distribution
-            energy_mask = Variable(torch.ones(batch_size, max_time))
+            energy_mask = torch.ones(batch_size, max_time)
             if enc_out.is_cuda:
                 energy_mask = energy_mask.cuda()
             for b in range(batch_size):
-                if x_lens[b].data[0] < max_time:
-                    energy_mask.data[b, x_lens[b].data[0]:] = 0
+                if x_lens[b][0] < max_time:
+                    energy_mask[b, x_lens[b][0]:] = 0
             energy[h] *= energy_mask
             # NOTE: energy[h]: `[B, T_in]`
 
@@ -229,7 +229,7 @@ class AttentionMechanism(nn.Module):
             if self.sigmoid_smoothing:
                 aw_step_head = F.sigmoid(energy[h])
                 # for b in range(batch_size):
-                #     aw_step_head.data[b] /= aw_step_head.data[b].sum()
+                #     aw_step_head[b] /= aw_step_head[b].sum()
             else:
                 aw_step_head = F.softmax(energy[h], dim=-1)
             aw_step.append(aw_step_head)

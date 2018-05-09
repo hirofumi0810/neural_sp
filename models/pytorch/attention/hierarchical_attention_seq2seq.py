@@ -421,13 +421,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # ys_out and ys_out_sub are padded with -1, and added <EOS>
         # after the last token
         ys_in = self._create_var((ys.shape[0], ys.shape[1] + 1),
-                                 fill_value=self.eos_0, dtype='long')
+                                 fill_value=self.eos_0, dtype=torch.long)
         ys_in_sub = self._create_var((ys_sub.shape[0], ys_sub.shape[1] + 1),
-                                     fill_value=self.eos_1, dtype='long')
+                                     fill_value=self.eos_1, dtype=torch.long)
         ys_out = self._create_var((ys.shape[0], ys.shape[1] + 1),
-                                  fill_value=-1, dtype='long')
+                                  fill_value=-1, dtype=torch.long)
         ys_out_sub = self._create_var((ys_sub.shape[0], ys_sub.shape[1] + 1),
-                                      fill_value=-1, dtype='long')
+                                      fill_value=-1, dtype=torch.long)
 
         ys_in.data[:, 0] = self.sos_0
         ys_in_sub.data[:, 0] = self.sos_1
@@ -450,10 +450,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             ys_out_sub = ys_out_sub.cuda()
 
         # Wrap by Variable
-        xs = self.np2var(xs)
-        x_lens = self.np2var(x_lens, dtype='int')
-        y_lens = self.np2var(y_lens, dtype='int')
-        y_lens_sub = self.np2var(y_lens_sub, dtype='int')
+        xs = self.np2tensor(xs, dtype=torch.float)
+        x_lens = self.np2tensor(x_lens, dtype=torch.int)
+        y_lens = self.np2tensor(y_lens, dtype=torch.int)
+        y_lens_sub = self.np2tensor(y_lens_sub, dtype=torch.int)
 
         # Encode acoustic features
         xs, x_lens, xs_sub, x_lens_sub, perm_idx = self._encode(
@@ -495,7 +495,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         ##################################################
         if self.ctc_loss_weight_sub > 0:
             # Wrap by Variable
-            ys_ctc_sub = self.np2var(ys_sub, dtype='long')
+            ys_ctc_sub = self.np2tensor(ys_sub, dtype=torch.long)
 
             if self.use_cuda:
                 ys_ctc_sub = ys_ctc_sub.cuda()
@@ -531,49 +531,44 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             aw ():
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
-        # Change to evaluation mode
-        self.eval()
+        with torch.no_grad():
+            if task_index > 0 and self.ctc_loss_weight_sub > self.sub_loss_weight:
+                # Decode by CTC decoder
+                best_hyps, perm_idx = self.decode_ctc(
+                    xs, x_lens, beam_width, task_index)
 
-        if task_index > 0 and self.ctc_loss_weight_sub > self.sub_loss_weight:
-            # Decode by CTC decoder
-            best_hyps, perm_idx = self.decode_ctc(
-                xs, x_lens, beam_width, task_index)
-
-            return best_hyps, None, perm_idx
-            # NOTE: None corresponds to aw in attention-based models
-        else:
-            # Wrap by Variable
-            xs = self.np2var(xs)
-            x_lens = self.np2var(x_lens, dtype='int')
-
-            # Encode acoustic features
-            if task_index == 0:
-                enc_out, x_lens, _, _, perm_idx = self._encode(
-                    xs, x_lens, is_multi_task=True)
-            elif task_index == 1:
-                _, _, enc_out, x_lens, perm_idx = self._encode(
-                    xs, x_lens, is_multi_task=True)
+                return best_hyps, None, perm_idx
+                # NOTE: None corresponds to aw in attention-based models
             else:
-                raise NotImplementedError
+                # Wrap by Variable
+                xs = self.np2tensor(xs, dtype=torch.float)
+                x_lens = self.np2tensor(x_lens, dtype=torch.int)
 
-            dir = 'bwd' if task_index == 1 and self.backward_1 else 'fwd'
-            # Decode by attention decoder
-            if beam_width == 1:
-                best_hyps, aw = self._decode_infer_greedy(
-                    enc_out, x_lens, max_decode_len, task_index, dir)
-            else:
-                best_hyps, aw = self._decode_infer_beam(
-                    enc_out, x_lens, beam_width, max_decode_len,
-                    length_penalty, coverage_penalty, task_index, dir)
+                # Encode acoustic features
+                if task_index == 0:
+                    enc_out, x_lens, _, _, perm_idx = self._encode(
+                        xs, x_lens, is_multi_task=True)
+                elif task_index == 1:
+                    _, _, enc_out, x_lens, perm_idx = self._encode(
+                        xs, x_lens, is_multi_task=True)
+                else:
+                    raise NotImplementedError
+
+                dir = 'bwd' if task_index == 1 and self.backward_1 else 'fwd'
+                # Decode by attention decoder
+                if beam_width == 1:
+                    best_hyps, aw = self._decode_infer_greedy(
+                        enc_out, x_lens, max_decode_len, task_index, dir)
+                else:
+                    best_hyps, aw = self._decode_infer_beam(
+                        enc_out, x_lens, beam_width, max_decode_len,
+                        length_penalty, coverage_penalty, task_index, dir)
 
             # TODO: fix this
             if beam_width == 1:
                 aw = aw[:, :, :, 0]
 
             # Permutate indices to the original order
-            if perm_idx is None:
-                perm_idx = np.arange(0, len(xs), 1)
-            else:
-                perm_idx = self.var2np(perm_idx)
+            perm_idx = self.tensor2np(perm_idx)
 
             return best_hyps, aw, perm_idx

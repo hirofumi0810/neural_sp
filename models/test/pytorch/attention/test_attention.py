@@ -284,7 +284,7 @@ class TestAttention(unittest.TestCase):
             model.optimizer.step()
 
             # Inject Gaussian noise to all parameters
-            if loss.data[0] < 50:
+            if loss.item() < 50:
                 model.weight_noise_injection = True
 
             if (step + 1) % 10 == 0:

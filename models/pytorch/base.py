@@ -340,41 +340,39 @@ class ModelBase(nn.Module):
         return (checkpoint['epoch'] + 1, checkpoint['step'] + 1,
                 checkpoint['lr'], checkpoint['metric_dev_best'])
 
-    def _create_var(self, size, fill_value=0, dtype='float'):
+    def _create_var(self, size, fill_value=0, dtype=torch.float):
         """Initialize a variable with zero.
         Args:
             size (tuple):
             fill_value (int or float, optional):
-            dtype (string): long or float
+            dtype ():
         Returns:
             var (torch.autograd.Variable, float):
         """
-        var = torch.autograd.Variable(torch.zeros(size).fill_(fill_value))
-        if dtype == 'long':
-            var = var.long()
+        var = torch.zeros(size, dtype=dtype).fill_(fill_value)
         if self.use_cuda:
             var = var.cuda()
         return var
 
-    def np2var(self, array, dtype=None, cpu=False):
+    def np2tensor(self, array, dtype=torch.float, cpu=False):
         """Convert form np.ndarray to Variable.
         Args:
             array (np.ndarray): A tensor of any sizes
             type (string, optional): float or long or int
             cpu (bool, optional):
         Returns:
-            array (torch.autograd.Variable):
+            array (torch.Tensor):
         """
         if isinstance(array, list):
             array = np.array(array)
 
         array = torch.from_numpy(array)
         if dtype is not None:
-            if dtype == 'float':
+            if dtype == torch.float:
                 array = array.float()
-            elif dtype == 'long':
+            elif dtype == torch.long:
                 array = array.long()
-            elif dtype == 'int':
+            elif dtype == torch.int:
                 array = array.int()
 
         if not cpu and self.use_cuda:
@@ -382,20 +380,11 @@ class ModelBase(nn.Module):
 
         return array
 
-    def var2np(self, var):
+    def tensor2np(self, var):
         """Convert form Variable to np.ndarray.
         Args:
-            var (torch.autograd.Variable):
+            var (torch.Tensor):
         Returns:
             np.ndarray
         """
-        return var.data.cpu().numpy()
-
-    def tensor2np(self, x):
-        """Convert tensor to np.ndarray.
-        Args:
-            x (torch.FloatTensor):
-        Returns:
-            np.ndarray
-        """
-        return x.cpu().numpy()
+        return var.cpu().numpy()

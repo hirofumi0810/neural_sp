@@ -455,8 +455,8 @@ class AttentionSeq2seq(ModelBase):
 
     def _forward(self, xs, ys, x_lens, y_lens):
         # Wrap by Variable
-        xs = self.np2var(xs)
-        x_lens = self.np2var(x_lens, dtype='int')
+        xs = self.np2tensor(xs, dtype=torch.float)
+        x_lens = self.np2tensor(x_lens, dtype=torch.int)
 
         # Encode acoustic features
         xs, x_lens, perm_idx = self._encode(xs, x_lens)
@@ -470,9 +470,9 @@ class AttentionSeq2seq(ModelBase):
             # and added <SOS> before the first token
             # ys_out_fwd is padded with -1, and added <EOS> after the last token
             ys_in_fwd = self._create_var((ys.shape[0], ys.shape[1] + 1),
-                                         fill_value=self.eos_0, dtype='long')
+                                         fill_value=self.eos_0, dtype=torch.long)
             ys_out_fwd = self._create_var((ys.shape[0], ys.shape[1] + 1),
-                                          fill_value=-1, dtype='long')
+                                          fill_value=-1, dtype=torch.long)
 
             ys_in_fwd.data[:, 0] = self.sos_0
             for b in range(len(xs)):
@@ -487,7 +487,7 @@ class AttentionSeq2seq(ModelBase):
                 ys_out_fwd = ys_out_fwd.cuda()
 
             # Wrap by Variable
-            y_lens_fwd = self.np2var(y_lens, dtype='int')
+            y_lens_fwd = self.np2tensor(y_lens, dtype=torch.int)
 
             # Permutate indices
             ys_in_fwd = ys_in_fwd[perm_idx]
@@ -499,7 +499,7 @@ class AttentionSeq2seq(ModelBase):
                 xs, ys_in_fwd, ys_out_fwd, x_lens, y_lens_fwd,
                 task_idx=0, dir='fwd') * self.fwd_weight_0
         else:
-            loss = self._create_var((1,), fill_value=0)
+            loss = self._create_var((1,), fill_value=0, dtype=torch.float)
 
         ##################################################
         # Compute loss for the backward decoder
@@ -511,9 +511,9 @@ class AttentionSeq2seq(ModelBase):
                 ys_tmp[b, :y_lens[b]] = ys[b, :y_lens[b]][::-1]
 
             ys_in_bwd = self._create_var((ys.shape[0], ys.shape[1] + 1),
-                                         fill_value=self.eos_0, dtype='long')
+                                         fill_value=self.eos_0, dtype=torch.long)
             ys_out_bwd = self._create_var((ys.shape[0], ys.shape[1] + 1),
-                                          fill_value=-1, dtype='long')
+                                          fill_value=-1, dtype=torch.long)
 
             ys_in_bwd.data[:, 0] = self.sos_0
             for b in range(len(xs)):
@@ -528,7 +528,7 @@ class AttentionSeq2seq(ModelBase):
                 ys_out_bwd = ys_out_bwd.cuda()
 
             # Wrap by Variable
-            y_lens_bwd = self.np2var(y_lens, dtype='int')
+            y_lens_bwd = self.np2tensor(y_lens, dtype=torch.int)
 
             # Permutate indices
             ys_in_bwd = ys_in_bwd[perm_idx]
@@ -545,8 +545,8 @@ class AttentionSeq2seq(ModelBase):
         ##################################################
         if self.ctc_loss_weight > 0:
             # Wrap by Variable
-            ys_ctc = self.np2var(ys, dtype='long')
-            y_lens_ctc = self.np2var(y_lens, dtype='int')
+            ys_ctc = self.np2tensor(ys, dtype=torch.long)
+            y_lens_ctc = self.np2tensor(y_lens, dtype=torch.int)
 
             if self.use_cuda:
                 ys_ctc = ys_ctc.cuda()
@@ -722,7 +722,8 @@ class AttentionSeq2seq(ModelBase):
         dec_state, dec_out = self._init_decoder_state(
             enc_out, x_lens, task_idx, dir)
         aw_step = self._create_var(
-            (batch_size, max_time, getattr(self, 'num_heads_' + str(task_idx))), fill_value=0)
+            (batch_size, max_time, getattr(self, 'num_heads_' + str(task_idx))),
+            fill_value=0, dtype=torch.float)
 
         logits = []
         aw = []
@@ -821,7 +822,8 @@ class AttentionSeq2seq(ModelBase):
                 `[B, 1, decoder_num_units]`
         """
         zero_state = self._create_var((enc_out.size(0), getattr(
-            self, 'decoder_num_units_' + str(task_idx))), fill_value=0)
+            self, 'decoder_num_units_' + str(task_idx))),
+            fill_value=0, dtype=torch.float)
 
         if getattr(self, 'init_dec_state_' + str(task_idx) + '_' + dir) == 'zero':
             if self.decoder_type == 'lstm':
@@ -834,7 +836,8 @@ class AttentionSeq2seq(ModelBase):
                     getattr(self, 'decoder_num_layers_' + str(task_idx))
 
             dec_out = self._create_var((enc_out.size(0), 1, getattr(
-                self, 'decoder_num_units_' + str(task_idx))), fill_value=0)
+                self, 'decoder_num_units_' + str(task_idx))),
+                fill_value=0, dtype=torch.float)
         else:
             # TODO: consider x_lens
 
@@ -888,32 +891,30 @@ class AttentionSeq2seq(ModelBase):
             aw (np.ndarray): A tensor of size `[B, T_out, T_in]`
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
-        # Change to evaluation mode
-        self.eval()
+        with torch.no_grad():
+            # Wrap by Variable
+            xs = self.np2tensor(xs, dtype=torch.float)
+            x_lens = self.np2tensor(x_lens, dtype=torch.int)
 
-        # Wrap by Variable
-        xs = self.np2var(xs)
-        x_lens = self.np2var(x_lens, dtype='int')
+            # Encode acoustic features
+            enc_out, x_lens, perm_idx = self._encode(xs, x_lens)
 
-        # Encode acoustic features
-        enc_out, x_lens, perm_idx = self._encode(xs, x_lens)
+            dir = 'fwd'if self.fwd_weight_0 >= self.bwd_weight_0 else 'bwd'
 
-        dir = 'fwd'if self.fwd_weight_0 >= self.bwd_weight_0 else 'bwd'
-
-        if beam_width == 1:
-            best_hyps, aw = self._decode_infer_greedy(
-                enc_out, x_lens, max_decode_len, task_idx=0, dir=dir)
-        else:
-            best_hyps, aw = self._decode_infer_beam(
-                enc_out, x_lens, beam_width, max_decode_len,
-                length_penalty, coverage_penalty, task_idx=0, dir=dir)
+            if beam_width == 1:
+                best_hyps, aw = self._decode_infer_greedy(
+                    enc_out, x_lens, max_decode_len, task_idx=0, dir=dir)
+            else:
+                best_hyps, aw = self._decode_infer_beam(
+                    enc_out, x_lens, beam_width, max_decode_len,
+                    length_penalty, coverage_penalty, task_idx=0, dir=dir)
 
         # TODO: fix this
         if beam_width == 1:
             aw = aw[:, :, :, 0]
 
         # Permutate indices to the original order
-        perm_idx = self.var2np(perm_idx)
+        perm_idx = self.tensor2np(perm_idx)
 
         return best_hyps, aw, perm_idx
 
@@ -942,12 +943,12 @@ class AttentionSeq2seq(ModelBase):
             enc_out, x_lens, task_idx, dir)
         aw_step = self._create_var((
             batch_size, max_time, getattr(self, 'num_heads_' + str(task_idx))),
-            fill_value=0)
+            fill_value=0, dtype=torch.float)
 
         # Start from <SOS>
         sos = getattr(self, 'sos_' + str(task_idx))
         eos = getattr(self, 'eos_' + str(task_idx))
-        y = self._create_var((batch_size, 1), fill_value=sos, dtype='long')
+        y = self._create_var((batch_size, 1), fill_value=sos, dtype=torch.long)
         y_emb = getattr(self, 'embed_' + str(task_idx))(y)
 
         best_hyps = []
@@ -1040,8 +1041,8 @@ class AttentionSeq2seq(ModelBase):
         aw = torch.stack(aw, dim=1)
 
         # Convert to numpy
-        best_hyps = self.var2np(best_hyps)
-        aw = self.var2np(aw)
+        best_hyps = self.tensor2np(best_hyps)
+        aw = self.tensor2np(aw)
 
         # Reverse the order
         if dir == 'bwd':
@@ -1084,7 +1085,7 @@ class AttentionSeq2seq(ModelBase):
                 enc_out[b:b + 1], x_lens, task_idx, dir)
             aw_step = self._create_var(
                 (1, frame_num, getattr(self, 'num_heads_' + str(task_idx))),
-                fill_value=0)
+                fill_value=0, dtype=torch.float)
 
             complete = []
             beam = [{'hyp': [sos],
@@ -1098,7 +1099,7 @@ class AttentionSeq2seq(ModelBase):
 
                     if self.decoding_order == 'attend_update_generate':
                         y = self._create_var(
-                            (1,), fill_value=beam[i_beam]['hyp'][-1], dtype='long').unsqueeze(1)
+                            (1,), fill_value=beam[i_beam]['hyp'][-1], dtype=torch.long).unsqueeze(1)
                         y = getattr(self, 'embed_' + str(task_idx))(y)
 
                         # Score
@@ -1135,7 +1136,7 @@ class AttentionSeq2seq(ModelBase):
 
                     elif self.decoding_order == 'conditional':
                         y = self._create_var(
-                            (1,), fill_value=beam[i_beam]['hyp'][-1], dtype='long').unsqueeze(1)
+                            (1,), fill_value=beam[i_beam]['hyp'][-1], dtype=torch.long).unsqueeze(1)
                         y = getattr(self, 'embed_' + str(task_idx))(y)
 
                         # Recurrency of the first decoder
@@ -1170,7 +1171,7 @@ class AttentionSeq2seq(ModelBase):
                     for k in range(beam_width):
                         if self.decoding_order == 'attend_generate_update':
                             y = self._create_var(
-                                (1,), fill_value=indices_topk.data[0, k], dtype='long').unsqueeze(1)
+                                (1,), fill_value=indices_topk.data[0, k], dtype=torch.long).unsqueeze(1)
                             y_emb = getattr(self, 'embed_' + str(task_idx))(y)
 
                             # Recurrency
@@ -1225,7 +1226,7 @@ class AttentionSeq2seq(ModelBase):
                 aw[j][k] = aw[j][k][:, :, 0]
                 # TODO: fix for multi-head atteniton
 
-            aw[j] = self.var2np(torch.stack(aw[j], dim=1).squeeze(0))
+            aw[j] = self.tensor2np(torch.stack(aw[j], dim=1).squeeze(0))
 
         # Reverse the order
         if dir == 'bwd':
@@ -1251,8 +1252,8 @@ class AttentionSeq2seq(ModelBase):
         self.eval()
 
         # Wrap by Variable
-        xs = self.np2var(xs)
-        x_lens = self.np2var(x_lens, dtype='int')
+        xs = self.np2tensor(xs, dtype=torch.float)
+        x_lens = self.np2tensor(x_lens, dtype=torch.int)
 
         # Encode acoustic features
         if task_index == 0:
@@ -1271,16 +1272,16 @@ class AttentionSeq2seq(ModelBase):
 
         if beam_width == 1:
             best_hyps = self._decode_ctc_greedy_np(
-                self.var2np(logits_ctc), self.var2np(x_lens))
+                self.tensor2np(logits_ctc), self.tensor2np(x_lens))
         else:
             best_hyps = self._decode_ctc_beam_np(
-                self.var2np(F.log_softmax(logits_ctc, dim=-1)),
-                self.var2np(x_lens), beam_width=beam_width)
+                self.tensor2np(F.log_softmax(logits_ctc, dim=-1)),
+                self.tensor2np(x_lens), beam_width=beam_width)
 
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
         best_hyps -= 1
 
         # Permutate indices to the original order
-        perm_idx = self.var2np(perm_idx)
+        perm_idx = self.tensor2np(perm_idx)
 
         return best_hyps, perm_idx

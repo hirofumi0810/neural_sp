@@ -301,12 +301,12 @@ class HierarchicalCTC(CTC):
 
     def _forward(self, xs, ys, x_lens, y_lens, ys_sub, y_lens_sub):
         # Wrap by Variable
-        xs = self.np2var(xs)
-        ys = self.np2var(ys, dtype='int', cpu=True)
-        ys_sub = self.np2var(ys_sub, dtype='int', cpu=True)
-        x_lens = self.np2var(x_lens, dtype='int')
-        y_lens = self.np2var(y_lens, dtype='int', cpu=True)
-        y_lens_sub = self.np2var(y_lens_sub, dtype='int', cpu=True)
+        xs = self.np2tensor(xs, dtype=torch.float)
+        ys = self.np2tensor(ys, dtype=torch.int, cpu=True)
+        ys_sub = self.np2tensor(ys_sub, dtype=torch.int, cpu=True)
+        x_lens = self.np2tensor(x_lens, dtype=torch.int)
+        y_lens = self.np2tensor(y_lens, dtype=torch.int, cpu=True)
+        y_lens_sub = self.np2tensor(y_lens_sub, dtype=torch.int, cpu=True)
 
         # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
         ys = ys + 1
