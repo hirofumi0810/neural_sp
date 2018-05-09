@@ -456,12 +456,18 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (torch.autograd.Variable(float) or float): A tensor of size `[1]`
-            loss_main (torch.autograd.Variable(float) or float): A tensor of size `[1]`
-            loss_sub (torch.autograd.Variable(float) or float): A tensor of size `[1]`
+            loss (torch.FloatTensor or float): A tensor of size `[1]`
+            loss_main (torch.FloatTensor or float): A tensor of size `[1]`
+            loss_sub (torch.FloatTensor or float): A tensor of size `[1]`
         """
         if is_eval:
-            self.eval()
+            with torch.no_grad():
+                loss, loss_main, loss_sub = self._forward(
+                    xs, ys, x_lens, y_lens, ys_sub, y_lens_sub)
+
+                loss = loss.item()
+                loss_main = loss_main.item()
+                loss_sub = loss_sub.item()
         else:
             self.train()
 
@@ -469,6 +475,18 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             if self.weight_noise_injection:
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
+            loss, loss_main, loss_sub = self._forward(
+                xs, ys, x_lens, y_lens, ys_sub, y_lens_sub)
+
+            # Update the probability of scheduled sampling
+            self._step += 1
+            if self.ss_prob > 0:
+                self._ss_prob = min(
+                    self.ss_prob, self.ss_prob / self.ss_max_step * self._step)
+
+        return loss, loss_main, loss_sub
+
+    def _forward(self, xs, ys, x_lens, y_lens, ys_sub=None, y_lens_sub=None):
         second_pass = False
         if ys_sub is None:
             ys_sub = ys
@@ -557,17 +575,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             ctc_loss_sub = ctc_loss_sub * self.ctc_loss_weight_sub
             loss += ctc_loss_sub
 
-        if is_eval:
-            loss = loss.data[0]
-            loss_main = loss_main.data[0]
-            loss_sub = loss_sub.data[0]
-        else:
-            # Update the probability of scheduled sampling
-            self._step += 1
-            if self.ss_prob > 0:
-                self._ss_prob = min(
-                    self.ss_prob, self.ss_prob / self.ss_max_step * self._step)
-
         if second_pass:
             return loss
         else:
@@ -577,26 +584,26 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         enc_out_sub, ys_in_sub, ys_out_sub, x_lens_sub, y_lens_sub):
         """Compute XE loss.
         Args:
-            enc_out (torch.autograd.Variable, float): A tensor of size
+            enc_out (torch.FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            ys_in (torch.autograd.Variable, long): A tensor of size
+            ys_in (torch.LongTensor): A tensor of size
                 `[B, T_out]`, which includes <SOS>
-            ys_out (torch.autograd.Variable, long): A tensor of size
+            ys_out (torch.LongTensor): A tensor of size
                 `[B, T_out]`, which includes <EOS>
-            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
-            y_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            x_lens (torch.IntTensor): A tensor of size `[B]`
+            y_lens (torch.IntTensor): A tensor of size `[B]`
 
-            enc_out_sub (torch.autograd.Variable, float): A tensor of size
+            enc_out_sub (torch.FloatTensor): A tensor of size
                 `[B, T_in_sub, encoder_num_units]`
-            ys_in_sub (torch.autograd.Variable, long): A tensor of size
+            ys_in_sub (torch.LongTensor): A tensor of size
                 `[B, T_out_sub]`, which includes <SOS>
-            ys_out_sub (torch.autograd.Variable, long): A tensor of size
+            ys_out_sub (torch.LongTensor): A tensor of size
                 `[B, T_out_sub]`, which includes <EOS>
-            x_lens_sub (torch.autograd.Variable, int): A tensor of size `[B]`
-            y_lens_sub (torch.autograd.Variable, int): A tensor of size `[B]`
+            x_lens_sub (torch.IntTensor): A tensor of size `[B]`
+            y_lens_sub (torch.IntTensor): A tensor of size `[B]`
         Returns:
-            loss_main (torch.autograd.Variable, float): A tensor of size `[1]`
-            loss_sub (torch.autograd.Variable, float): A tensor of size `[1]`
+            loss_main (torch.LongTensor): A tensor of size `[1]`
+            loss_sub (torch.LongTensor): A tensor of size `[1]`
         """
         # Teacher-forcing
         logits_main, aw, logits_sub, aw_sub, aw_dec_out_sub = self._decode_train(
@@ -675,24 +682,24 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                       enc_out_sub, x_lens_sub, ys_sub, y_lens_sub):
         """Decoding in the training stage.
         Args:
-            enc_out (torch.autograd.Variable, float): A tensor of size
+            enc_out (torch.FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
-            ys (torch.autograd.Variable, long): A tensor of size `[B, T_out]`
+            x_lens (torch.IntTensor): A tensor of size `[B]`
+            ys (torch.LongTensor): A tensor of size `[B, T_out]`
 
-            enc_out_sub (torch.autograd.Variable, float): A tensor of size
+            enc_out_sub (torch.FloatTensor): A tensor of size
                 `[B, T_in_sub, encoder_num_units]`
-            x_lens_sub (torch.autograd.Variable, int): A tensor of size `[B]`
-            ys_sub (torch.autograd.Variable, long): A tensor of size `[B, T_out_sub]`
-            y_lens_sub (torch.autograd.Variable, long): A tensor of size `[B]`
+            x_lens_sub (torch.IntTensor): A tensor of size `[B]`
+            ys_sub (torch.LongTensor): A tensor of size `[B, T_out_sub]`
+            y_lens_sub (torch.LongTensor): A tensor of size `[B]`
         Returns:
-            logits (torch.autograd.Variable, float): A tensor of size
+            logits (torch.LongTensor): A tensor of size
                 `[B, T_out, num_classes]`
-            aw (torch.autograd.Variable, float): A tensor of size
+            aw (torch.LongTensor): A tensor of size
                 `[B, T_out, T_in]`
-            logits_sub (torch.autograd.Variable, float): A tensor of size
+            logits_sub (torch.LongTensor): A tensor of size
                 `[B, T_out_sub, num_classes_sub]`
-            aw_sub (torch.autograd.Variable, float): A tensor of size
+            aw_sub (torch.LongTensor): A tensor of size
                 `[B, T_out_sub, T_in_sub]`
             aw_dec_out_sub (np.ndarray): A tensor of size
                 `[B, T_out, T_out_sub]`
@@ -1102,12 +1109,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                             reverse_backward=True):
         """Greedy decoding in the inference stage.
         Args:
-            enc_out (torch.autograd.Variable, float): A tensor of size
+            enc_out (torch.FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
-            enc_out_sub (torch.autograd.Variable, float): A tensor of size
+            x_lens (torch.IntTensor): A tensor of size `[B]`
+            enc_out_sub (torch.FloatTensor): A tensor of size
                 `[B, T_in_sub, encoder_num_units]`
-            x_lens_sub (torch.autograd.Variable, int): A tensor of size `[B]`
+            x_lens_sub (torch.IntTensor): A tensor of size `[B]`
             beam_width (int): the size of beam in the main task
             beam_width_sub (int): the size of beam in the sub task
             max_decode_len (int): the length of output sequences

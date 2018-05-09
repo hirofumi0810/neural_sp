@@ -19,10 +19,10 @@ class ConvLSTMEncoder(nn.Module):
     def forward(self, xs, x_lens):
         """Forward computation.
         Args:
-            xs (Variable, float): A tensor of size `[B, T, input_size]`
-            x_lens (Variable, int):
+            xs (torch.FloatTensor): A tensor of size `[B, T, input_size]`
+            x_lens (torch.IntTensor):
         Returns:
-            xs (Variable, float): A tensor of size `[B, T', feature_dim]`
-            x_lens (Variable, int):
+            xs (torch.FloatTensor): A tensor of size `[B, T', feature_dim]`
+            x_lens (torch.IntTensor):
         """
         raise NotImplementedError

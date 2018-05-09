@@ -124,13 +124,12 @@ class CNNEncoder(nn.Module):
     def forward(self, xs, x_lens):
         """Forward computation.
         Args:
-            xs (torch.autograd.Variable, float): A tensor of size
+            xs (torch.FloatTensor): A tensor of size
                 `[B, T, input_size (+Δ, ΔΔ)]`
-            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            x_lens (torch.IntTensor): A tensor of size `[B]`
         Returns:
-            xs (torch.autograd.Variable, float): A tensor of size
-                `[B, T', feature_dim]`
-            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            xs (torch.FloatTensor): A tensor of size `[B, T', feature_dim]`
+            x_lens (torch.IntTensor): A tensor of size `[B]`
         """
         batch_size, max_time, input_size = xs.size()
 

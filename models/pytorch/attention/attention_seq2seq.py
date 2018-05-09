@@ -431,10 +431,11 @@ class AttentionSeq2seq(ModelBase):
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (torch.autograd.Variable(float) or float): A tensor of size `[1]`
+            loss (torch.FloatTensor or float): A tensor of size `[1]`
         """
         if is_eval:
-            self.eval()
+            with torch.no_grad():
+                loss = self._forward(xs, ys, x_lens, y_lens).item()
         else:
             self.train()
 
@@ -442,6 +443,17 @@ class AttentionSeq2seq(ModelBase):
             if self.weight_noise_injection:
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
+            loss = self._forward(xs, ys, x_lens, y_lens)
+
+            # Update the probability of scheduled sampling
+            self._step += 1
+            if self.ss_prob > 0:
+                self._ss_prob = min(
+                    self.ss_prob, self.ss_prob / self.ss_max_step * self._step)
+
+        return loss
+
+    def _forward(self, xs, ys, x_lens, y_lens):
         # Wrap by Variable
         xs = self.np2var(xs)
         x_lens = self.np2var(x_lens, dtype='int')
@@ -552,33 +564,24 @@ class AttentionSeq2seq(ModelBase):
             # NOTE: exclude <SOS>
             # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
-        if is_eval:
-            loss = loss.data[0]
-        else:
-            # Update the probability of scheduled sampling
-            self._step += 1
-            if self.ss_prob > 0:
-                self._ss_prob = min(
-                    self.ss_prob, self.ss_prob / self.ss_max_step * self._step)
-
         return loss
 
     def compute_xe_loss(self, enc_out, ys_in, ys_out, x_lens, y_lens,
                         task_idx, dir):
         """Compute XE loss.
         Args:
-            enc_out (torch.autograd.Variable, float): A tensor of size
+            enc_out (torch.FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            ys_in (torch.autograd.Variable, long): A tensor of size
+            ys_in (torch.LongTensor): A tensor of size
                 `[B, T_out]`, which includes <SOS>
-            ys_out (torch.autograd.Variable, long): A tensor of size
+            ys_out (torch.LongTensor): A tensor of size
                 `[B, T_out]`, which includes <EOS>
-            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
-            y_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            x_lens (torch.IntTensor): A tensor of size `[B]`
+            y_lens (torch.IntTensor): A tensor of size `[B]`
             task_idx (int): the index of a task
             dir (str): fwd or bwd
         Returns:
-            loss (torch.autograd.Variable, float): A tensor of size `[1]`
+            loss (torch.FloatTensor): A tensor of size `[1]`
         """
         # Teacher-forcing
         logits, aw = self._decode_train(
@@ -613,16 +616,16 @@ class AttentionSeq2seq(ModelBase):
     def compute_ctc_loss(self, enc_out, ys, x_lens, y_lens, task_idx=0):
         """Compute CTC loss.
         Args:
-            enc_out (torch.autograd.Variable, float): A tensor of size
+            enc_out (torch.FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            ys (torch.autograd.Variable, long): A tensor of size `[B, T_out]`,
+            ys (torch.LongTensor): A tensor of size `[B, T_out]`,
                 which includes <SOS> nor <EOS>
-            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
-            y_lens (torch.autograd.Variable, int): A tensor of size `[B]`,
+            x_lens (torch.IntTensor): A tensor of size `[B]`
+            y_lens (torch.IntTensor): A tensor of size `[B]`,
                 which includes <SOS> nor <EOS>
             task_idx (int, optional): the index of a task
         Returns:
-            loss (torch.autograd.Variable, float): A tensor of size `[1]`
+            loss (torch.FloatTensor): A tensor of size `[1]`
         """
         # Concatenate all _ys for warpctc_pytorch
         # `[B, T_out]` -> `[1,]`
@@ -659,19 +662,19 @@ class AttentionSeq2seq(ModelBase):
     def _encode(self, xs, x_lens, is_multi_task=False):
         """Encode acoustic features.
         Args:
-            xs (torch.autograd.Variable, float): A tensor of size
+            xs (torch.FloatTensor): A tensor of size
                 `[B, T_in, input_size]`
-            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            x_lens (torch.IntTensor): A tensor of size `[B]`
             is_multi_task (bool, optional):
         Returns:
-            xs (torch.autograd.Variable, float): A tensor of size
+            xs (torch.FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            x_lens (torch.IntTensor): A tensor of size `[B]`
             OPTION:
-                xs_sub (torch.autograd.Variable, float): A tensor of size
+                xs_sub (torch.FloatTensor): A tensor of size
                     `[B, T_in, encoder_num_units]`
-                x_lens_sub (torch.autograd.Variable, int): A tensor of size `[B]`
-            perm_idx (torch.autograd.Variable, long): A tensor of size `[B]`
+                x_lens_sub (torch.IntTensor): A tensor of size `[B]`
+            perm_idx (torch.LongTensor): A tensor of size `[B]`
         """
         if is_multi_task:
             if self.encoder_type == 'cnn':
@@ -709,17 +712,17 @@ class AttentionSeq2seq(ModelBase):
     def _decode_train(self, enc_out, x_lens, ys, task_idx, dir):
         """Decoding in the training stage.
         Args:
-            enc_out (torch.autograd.Variable, float): A tensor of size
+            enc_out (torch.FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
-            ys (torch.autograd.Variable, long): A tensor of size `[B, T_out]`,
+            x_lens (torch.IntTensor): A tensor of size `[B]`
+            ys (torch.LongTensor): A tensor of size `[B, T_out]`,
                 which should be padded with <EOS>.
             task_idx (int): the index of a task
             dir (str): fwd or bwd
         Returns:
-            logits (torch.autograd.Variable, float): A tensor of size
+            logits (torch.FloatTensor): A tensor of size
                 `[B, T_out, num_classes]`
-            aw (torch.autograd.Variable, float): A tensor of size
+            aw (torch.FloatTensor): A tensor of size
                 `[B, T_out, T_in, num_heads]`
         """
         batch_size, max_time = enc_out.size()[:2]
@@ -816,14 +819,14 @@ class AttentionSeq2seq(ModelBase):
     def _init_decoder_state(self, enc_out, x_lens, task_idx, dir):
         """Initialize decoder state.
         Args:
-            enc_out (torch.autograd.Variable, float): A tensor of size
+            enc_out (torch.FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            x_lens (torch.IntTensor): A tensor of size `[B]`
             task_idx (int): the index of a task
             dir (str): fwd or bwd
         Returns:
             dec_state (list or tuple of list):
-            dec_out (torch.autograd.Variable, float): A tensor of size
+            dec_out (torch.FloatTensor): A tensor of size
                 `[B, 1, decoder_num_units]`
         """
         zero_state = self._create_var((enc_out.size(0), getattr(
@@ -932,9 +935,9 @@ class AttentionSeq2seq(ModelBase):
                              task_idx, dir):
         """Greedy decoding in the inference stage.
         Args:
-            enc_out (torch.autograd.Variable, float): A tensor of size
+            enc_out (torch.FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            x_lens (torch.IntTensor): A tensor of size `[B]`
             max_decode_len (int): the length of output sequences
                 to stop prediction when EOS token have not been emitted
             task_idx (int, optional): the index of a task
@@ -1065,9 +1068,9 @@ class AttentionSeq2seq(ModelBase):
                            length_penalty, coverage_penalty, task_idx, dir):
         """Beam search decoding in the inference stage.
         Args:
-            enc_out (torch.autograd.Variable, float): A tensor of size
+            enc_out (torch.FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            x_lens (torch.IntTensor): A tensor of size `[B]`
             beam_width (int): the size of beam
             max_decode_len (int, optional): the length of output sequences
                 to stop prediction when EOS token have not been emitted

@@ -284,26 +284,26 @@ class RNNEncoder(nn.Module):
     def forward(self, xs, x_lens, volatile=False):
         """Forward computation.
         Args:
-            xs (torch.autograd.Variable, float): A tensor of size
+            xs (torch.FloatTensor): A tensor of size
                 `[B, T, input_size]`
-            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            x_lens (torch.IntTensor): A tensor of size `[B]`
             volatile (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            xs (torch.autograd.Variable, float):
+            xs (torch.FloatTensor):
                 if batch_first is True, a tensor of size
                     `[B, T // sum(subsample_list), num_units (* num_directions)]`
                 else
                     `[T // sum(subsample_list), B, num_units (* num_directions)]`
-            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            x_lens (torch.IntTensor): A tensor of size `[B]`
             OPTION:
-                xs_sub (torch.autograd.Variable, float):
+                xs_sub (torch.FloatTensor):
                     if batch_first is True, a tensor of size
                         `[B, T // sum(subsample_list), num_units (* num_directions)]`
                     else
                         `[T // sum(subsample_list), B, num_units (* num_directions)]`
-                x_lens_sub (torch.autograd.Variable, int): A tensor of size `[B]`
-            perm_idx (torch.autograd.Variable, int): A tensor of size `[B]`
+                x_lens_sub (torch.IntTensor): A tensor of size `[B]`
+            perm_idx (torch.IntTensor): A tensor of size `[B]`
         """
         batch_size = xs.size(0)
         use_cuda = xs.is_cuda
@@ -510,9 +510,9 @@ def _init_hidden(batch_size, rnn_type, num_units, num_directions,
             This should be used in inference model for memory efficiency.
     Returns:
         if rnn_type is 'lstm', return a tuple of tensors (h_0, c_0).
-            h_0 (torch.autograd.Variable, float): A tensor of size
+            h_0 (torch.FloatTensor): A tensor of size
                 `[num_layers * num_directions, batch_size, num_units]`
-            c_0 (torch.autograd.Variable, float): A tensor of size
+            c_0 (torch.FloatTensor): A tensor of size
                 `[num_layers * num_directions, batch_size, num_units]`
         otherwise return h_0.
     """

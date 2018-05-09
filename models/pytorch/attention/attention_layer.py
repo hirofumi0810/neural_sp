@@ -123,17 +123,17 @@ class AttentionMechanism(nn.Module):
     def forward(self, enc_out, x_lens, dec_out, aw_step):
         """Forward computation.
         Args:
-            enc_out (torch.autograd.Variable, float): A tensor of size
+            enc_out (torch.FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
-            dec_out (torch.autograd.Variable, float): A tensor of size
+            x_lens (torch.IntTensor): A tensor of size `[B]`
+            dec_out (torch.FloatTensor): A tensor of size
                 `[B, 1, decoder_num_units]`
-            aw_step (torch.autograd.Variable, float): A tensor of size
+            aw_step (torch.FloatTensor): A tensor of size
                 `[B, T_in, num_heads]`
         Returns:
-            context_vec (torch.autograd.Variable, float): A tensor of size
+            context_vec (torch.FloatTensor): A tensor of size
                 `[B, 1, encoder_num_units]`
-            aw_step (torch.autograd.Variable, float): A tensor of size
+            aw_step (torch.FloatTensor): A tensor of size
                 `[B, T_in, num_heads]`
         """
         batch_size, max_time = enc_out.size()[:2]

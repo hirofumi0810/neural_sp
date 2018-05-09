@@ -376,12 +376,18 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (torch.autograd.Variable(float) or float): A tensor of size `[1]`
-            loss_main (torch.autograd.Variable(float) or float): A tensor of size `[1]`
-            loss_sub (torch.autograd.Variable(float) or float): A tensor of size `[1]`
+            loss (torch.FloatTensor or float): A tensor of size `[1]`
+            loss_main (torch.FloatTensor or float): A tensor of size `[1]`
+            loss_sub (torch.FloatTensor or float): A tensor of size `[1]`
         """
         if is_eval:
-            self.eval()
+            with torch.no_grad():
+                loss, loss_main, loss_sub = self._forward(
+                    xs, ys, x_lens, y_lens, ys_sub, y_lens_sub)
+
+                loss = loss.item()
+                loss_main = loss_main.item()
+                loss_sub = loss_sub.item()
         else:
             self.train()
 
@@ -389,6 +395,18 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             if self.weight_noise_injection:
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
+            loss, loss_main, loss_sub = self._forward(
+                xs, ys, x_lens, y_lens, ys_sub, y_lens_sub)
+
+            # Update the probability of scheduled sampling
+            self._step += 1
+            if self.ss_prob > 0:
+                self._ss_prob = min(
+                    self.ss_prob, self.ss_prob / self.ss_max_step * self._step)
+
+        return loss, loss_main, loss_sub
+
+    def _forward(self, xs, ys, x_lens, y_lens, ys_sub, y_lens_sub):
         # Reverse the order
         if self.backward_1:
             ys_sub_tmp = copy.deepcopy(ys_sub)
@@ -491,20 +509,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 xs_sub, ys_ctc_sub + 1,
                 x_lens_sub, y_lens_sub, task_idx=1) * self.ctc_loss_weight_sub
             loss += ctc_loss_sub
-
-        if is_eval:
-            loss = loss.data[0]
-            loss_main = loss_main.data[0]
-            if self.sub_loss_weight > 0:
-                loss_sub = loss_sub.data[0]
-            if self.ctc_loss_weight_sub > 0:
-                ctc_loss_sub = ctc_loss_sub.data[0]
-        else:
-            # Update the probability of scheduled sampling
-            self._step += 1
-            if self.ss_prob > 0:
-                self._ss_prob = min(
-                    self.ss_prob, self.ss_prob / self.ss_max_step * self._step)
 
         if self.sub_loss_weight > self.ctc_loss_weight_sub:
             return loss, loss_main, loss_sub

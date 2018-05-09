@@ -7,7 +7,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import torch.nn as nn
+import torch
 
 from models.pytorch.ctc.ctc import CTC, _concatenate_labels
 from models.pytorch.linear import LinearND
@@ -275,12 +275,18 @@ class HierarchicalCTC(CTC):
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (torch.autograd.Variable(float) or float): A tensor of size `[1]`
-            loss_main (torch.autograd.Variable(float) or float): A tensor of size `[1]`
-            loss_sub (torch.autograd.Variable(float) or float): A tensor of size `[1]`
+            loss (torch.FloatTensor or float): A tensor of size `[1]`
+            loss_main (torch.FloatTensor or float): A tensor of size `[1]`
+            loss_sub (torch.FloatTensor or float): A tensor of size `[1]`
         """
         if is_eval:
-            self.eval()
+            with torch.no_grad():
+                loss, loss_main, loss_sub = self._forward(
+                    xs, ys, x_lens, y_lens, ys_sub, y_lens_sub)
+
+                loss = loss.item()
+                loss_main = loss_main.item()
+                loss_sub = loss_sub.item()
         else:
             self.train()
 
@@ -288,6 +294,12 @@ class HierarchicalCTC(CTC):
             if self.weight_noise_injection:
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
+            loss, loss_main, loss_sub = self._forward(
+                xs, ys, x_lens, y_lens, ys_sub, y_lens_sub)
+
+        return loss, loss_main, loss_sub
+
+    def _forward(self, xs, ys, x_lens, y_lens, ys_sub, y_lens_sub):
         # Wrap by Variable
         xs = self.np2var(xs)
         ys = self.np2var(ys, dtype='int', cpu=True)
@@ -341,7 +353,7 @@ class HierarchicalCTC(CTC):
             loss_ls_main = cross_entropy_label_smoothing(
                 logits_main,
                 y_lens=x_lens,  # NOTE: CTC is frame-synchronous
-                label_smoothing_prob=self.label_smoothing_prob,
+                label_smoothing_prob=self.ls_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)
             loss_main = loss_main * (1 - self.ls_prob) + loss_ls_main
@@ -349,7 +361,7 @@ class HierarchicalCTC(CTC):
             loss_ls_sub = cross_entropy_label_smoothing(
                 logits_sub,
                 y_lens=x_lens_sub,  # NOTE: CTC is frame-synchronous
-                label_smoothing_prob=self.label_smoothing_prob,
+                label_smoothing_prob=self.ls_prob,
                 distribution='uniform',
                 size_average=False) / len(xs)
             loss_sub = loss_sub * (1 - self.ls_prob) + loss_ls_sub
@@ -358,10 +370,5 @@ class HierarchicalCTC(CTC):
         loss_main = loss_main * self.main_loss_weight
         loss_sub = loss_sub * self.sub_loss_weight
         loss = loss_main + loss_sub
-
-        if is_eval:
-            loss = loss.data[0]
-            loss_main = loss_main.data[0]
-            loss_sub = loss_sub.data[0]
 
         return loss, loss_main, loss_sub

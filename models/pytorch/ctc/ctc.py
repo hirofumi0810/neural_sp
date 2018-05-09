@@ -279,10 +279,11 @@ class CTC(ModelBase):
             is_eval (bool, optional): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (torch.autograd.Variable(float) or float): A tensor of size `[1]`
+            loss (torch.FloatTensor or float): A tensor of size `[1]`
         """
         if is_eval:
-            self.eval()
+            with torch.no_grad():
+                loss = self._forward(xs, ys, x_lens, y_lens).item()
         else:
             self.train()
 
@@ -290,6 +291,11 @@ class CTC(ModelBase):
             if self.weight_noise_injection:
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
+            loss = self._forward(xs, ys, x_lens, y_lens)
+
+        return loss
+
+    def _forward(self, xs, ys, x_lens, y_lens):
         # Wrap by Variable
         xs = self.np2var(xs)
         ys = self.np2var(ys, dtype='int', cpu=True)
@@ -336,26 +342,22 @@ class CTC(ModelBase):
                 size_average=False) / len(xs)
             loss = loss * (1 - self.ls_prob) + loss_ls
 
-        if is_eval:
-            loss = loss.data[0]
-
         return loss
 
     def _encode(self, xs, x_lens, is_multi_task=False):
         """Encode acoustic features.
         Args:
-            xs (torch.autograd.Variable, float): A tensor of size
-                `[B, T, input_size]`
-            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
-            is_multi_task (bool, optional):
+            xs (torch.FloatTensor): A tensor of size `[B, T, input_size]`
+            x_lens (torch.IntTensor): A tensor of size `[B]`
+            is_multi_task (bool, optional): set True in MTL models
         Returns:
-            logits (torch.autograd.Variable, float): A tensor of size
+            logits (torch.FloatTensor): A tensor of size
                 `[B, T, num_classes (including the blank class)]`
-            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
-            logits_sub (torch.autograd.Variable, float): A tensor of size
+            x_lens (torch.IntTensor): A tensor of size `[B]`
+            logits_sub (torch.FloatTensor): A tensor of size
                 `[B, T, num_classes_sub (including the blank class)]`
-            x_lens_sub (torch.autograd.Variable, int): A tensor of size `[B]`
-            perm_idx (torch.autograd.Variable, long): A tensor of size `[B]`
+            x_lens_sub (torch.IntTensor): A tensor of size `[B]`
+            perm_idx (torch.LongTensor): A tensor of size `[B]`
         """
         if is_multi_task:
             if self.encoder_type == 'cnn':
@@ -529,18 +531,16 @@ class CTC(ModelBase):
 def _concatenate_labels(ys, y_lens):
     """Concatenate all labels in mini-batch and convert to a 1D tensor.
     Args:
-        ys (torch.autograd.Variable, long): A tensor of size `[B, T_out]`
-        y_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+        ys (torch.IntTensor): A tensor of size `[B, T_out]`
+        y_lens (torch.IntTensor): A tensor of size `[B]`
     Returns:
-        concatenated_labels (): A tensor of size `[all_label_num]`
+        concatenated_labels (torch.IntTensor): A tensor of size `[all_label_num]`
     """
-    batch_size = ys.size(0)
-    total_y_lens = y_lens.data.sum()
-    concatenated_labels = Variable(torch.zeros(total_y_lens)).int()
+    total_y_lens = y_lens.sum().item()
+    concatenated_labels = torch.zeros(total_y_lens).int()
     label_counter = 0
-    for b in range(batch_size):
+    for b in range(ys.size(0)):
         concatenated_labels[label_counter:label_counter +
-                            y_lens.data[b]] = ys[b][:y_lens.data[b]]
-        label_counter += y_lens.data[b]
-
+                            y_lens[b]] = ys[b, :y_lens[b]]
+        label_counter += y_lens[b]
     return concatenated_labels

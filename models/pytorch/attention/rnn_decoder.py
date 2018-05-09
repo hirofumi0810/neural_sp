@@ -63,13 +63,12 @@ class RNNDecoder(nn.Module):
     def forward(self, dec_in, dec_state):
         """Forward computation.
         Args:
-            dec_in (torch.autograd.Variable, float): A tensor of size
+            dec_in (torch.FloatTensor): A tensor of size
                 `[B, 1, embedding_dim + encoder_num_units]`
-            dec_state (torch.autograd.Variable(float) or tuple):
+            dec_state (torch.FloatTensor or tuple):
         Returns:
-            dec_out (torch.autograd.Variable, float): A tensor of size
-                `[B, 1, num_units]`
-            dec_state (torch.autograd.Variable(float) or tuple):
+            dec_out (torch.FloatTensor): A tensor of size `[B, 1, num_units]`
+            dec_state (torch.FloatTensor or tuple):
         """
         if self.rnn_type == 'lstm':
             hx_list, cx_list = dec_state
