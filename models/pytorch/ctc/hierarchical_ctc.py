@@ -336,15 +336,11 @@ class HierarchicalCTC(CTC):
         loss_main = my_warpctc(
             logits_main.transpose(0, 1).contiguous(),  # time-major
             concatenated_labels,
-            x_lens.cpu(), y_lens, size_average=False) / len(xs)
+            x_lens.cpu(), y_lens, size_average=False).to(self.device) / len(xs)
         loss_sub = my_warpctc(
             logits_sub.transpose(0, 1).contiguous(),  # time-major
             concatenated_labels_sub,
-            x_lens_sub.cpu(), y_lens_sub, size_average=False) / len(xs)
-
-        if self.use_cuda:
-            loss_main = loss_main.cuda()
-            loss_sub = loss_sub.cuda()
+            x_lens_sub.cpu(), y_lens_sub, size_average=False).to(self.device) / len(xs)
 
         # Label smoothing (with uniform distribution)
         if self.ls_prob > 0:

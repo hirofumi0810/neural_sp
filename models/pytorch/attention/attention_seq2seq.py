@@ -433,6 +433,7 @@ class AttentionSeq2seq(ModelBase):
             loss (torch.FloatTensor or float): A tensor of size `[]`
         """
         if is_eval:
+            self.eval()
             with torch.no_grad():
                 loss = self._forward(xs, ys, x_lens, y_lens).item()
         else:
@@ -874,6 +875,7 @@ class AttentionSeq2seq(ModelBase):
             aw (np.ndarray): A tensor of size `[B, T_out, T_in]`
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
+        self.eval()
         with torch.no_grad():
             # Wrap by Tensor
             xs = self.np2tensor(xs, dtype=torch.float)
@@ -1223,6 +1225,7 @@ class AttentionSeq2seq(ModelBase):
             best_hyps (np.ndarray): A tensor of size `[B]`
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
+        self.eval()
         with torch.no_grad():
             # Wrap by Tensor
             xs = self.np2tensor(xs, dtype=torch.float)

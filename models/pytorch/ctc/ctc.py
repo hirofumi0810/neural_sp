@@ -282,6 +282,7 @@ class CTC(ModelBase):
             loss (torch.FloatTensor or float): A tensor of size `[]`
         """
         if is_eval:
+            self.eval()
             with torch.no_grad():
                 loss = self._forward(xs, ys, x_lens, y_lens).item()
         else:
@@ -325,10 +326,7 @@ class CTC(ModelBase):
                           concatenated_labels,
                           x_lens.cpu(),
                           y_lens,
-                          size_average=False) / len(xs)
-
-        if self.use_cuda:
-            loss = loss.cuda()
+                          size_average=False).to(self.device) / len(xs)
 
         # Label smoothing (with uniform distribution)
         if self.ls_prob > 0:
@@ -404,6 +402,7 @@ class CTC(ModelBase):
             None: this corresponds to aw in attention-based models
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
+        self.eval()
         with torch.no_grad():
             # Wrap by Tensor
             xs = self.np2tensor(xs, dtype=torch.float)
@@ -454,6 +453,7 @@ class CTC(ModelBase):
             x_lens (np.ndarray): A tensor of size `[B]`
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
+        self.eval()
         with torch.no_grad():
             # Wrap by Tensor
             xs = self.np2tensor(xs, dtype=torch.float)

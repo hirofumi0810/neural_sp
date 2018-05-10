@@ -379,6 +379,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             loss_sub (torch.FloatTensor or float): A tensor of size `[]`
         """
         if is_eval:
+            self.eval()
             with torch.no_grad():
                 loss, loss_main, loss_sub = self._forward(
                     xs, ys, x_lens, y_lens, ys_sub, y_lens_sub)
@@ -521,6 +522,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             aw ():
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
+        self.eval()
         with torch.no_grad():
             if task_index > 0 and self.ctc_loss_weight_sub > self.sub_loss_weight:
                 # Decode by CTC decoder

@@ -465,6 +465,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             second_pass = True
 
         if is_eval:
+            self.eval()
             with torch.no_grad():
                 loss, loss_main, loss_sub = self._forward(
                     xs, ys, x_lens, y_lens, ys_sub, y_lens_sub)
@@ -950,6 +951,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             aw_dec (np.ndarray): A tensor of size
                 `[B, T_out, T_out_sub]`
         """
+        self.eval()
         with torch.no_grad():
             # Wrap by Tensor
             xs = self.np2tensor(xs, dtype=torch.float)
@@ -1000,6 +1002,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             best_hyps_sub (np.ndarray): A tensor of size `[B]`
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
+        self.eval()
         with torch.no_grad():
             if teacher_forcing:
                 # Reverse the order
