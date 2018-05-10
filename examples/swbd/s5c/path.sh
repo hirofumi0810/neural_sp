@@ -20,7 +20,4 @@ export LC_ALL=C
 # NOTE: set when using HTK toolkit
 export HCOPY='/home/inaguma/htk-3.4/bin/HCopy'
 
-ln -s $KALDI_ROOT/egs/wsj/s5/steps .
-ln -s $KALDI_ROOT/egs/wsj/s5/utils .
-
 export PYTHONIOENCODING='utf-8'
