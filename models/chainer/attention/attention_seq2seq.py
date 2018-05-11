@@ -454,6 +454,8 @@ class AttentionSeq2seq(ModelBase):
             with chainer.no_backprop_mode(), chainer.using_config('train', False):
                 loss = self._forward(xs, ys, x_lens, y_lens).data
         else:
+            # TODO: add Gaussian noise injection
+
             loss = self._forward(xs, ys, x_lens, y_lens)
 
             # Update the probability of scheduled sampling
@@ -870,7 +872,8 @@ class AttentionSeq2seq(ModelBase):
         return dec_state, dec_out
 
     def decode(self, xs, x_lens, beam_width, max_decode_len,
-               length_penalty=0, coverage_penalty=0, resolving_unk=False):
+               length_penalty=0, coverage_penalty=0, task_index=0,
+               resolving_unk=False):
         """Decoding in the inference stage.
         Args:
             xs (list of np.ndarray): A tensor of size `[B, T_in, input_size]`
@@ -880,7 +883,8 @@ class AttentionSeq2seq(ModelBase):
                 to stop prediction when EOS token have not been emitted
             length_penalty (float, optional):
             coverage_penalty (float, optional):
-            resolving_unk (bool, optional): not used
+            task_index (int, optional): not used (to make compatible)
+            resolving_unk (bool, optional): not used (to make compatible)
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
             # aw (np.ndarray): A tensor of size `[B, T_out, T_in, num_heads]`

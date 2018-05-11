@@ -19,7 +19,8 @@ from utils.evaluation.resolving_unk import resolve_unk
 
 
 def do_eval_wer(models, dataset, beam_width, max_decode_len,
-                eval_batch_size=None, progressbar=False, temperature=1,
+                eval_batch_size=None, length_penalty=0,
+                progressbar=False, temperature=1,
                 resolving_unk=False, a2c_oracle=False):
     """Evaluate trained model by Word Error Rate.
     Args:
@@ -30,6 +31,7 @@ def do_eval_wer(models, dataset, beam_width, max_decode_len,
             to stop prediction when EOS token have not been emitted.
             This is used for seq2seq models.
         eval_batch_size (int, optional): the batch size when evaluating the model
+        length_penalty (float, optional):
         progressbar (bool, optional): if True, visualize the progressbar
         temperature (int, optional):
         resolving_unk (bool, optional):
@@ -105,6 +107,7 @@ def do_eval_wer(models, dataset, beam_width, max_decode_len,
                     beam_width=beam_width,
                     max_decode_len=max_decode_len,
                     max_decode_len_sub=max_label_num if a2c_oracle else 200,
+                    length_penalty=length_penalty,
                     teacher_forcing=a2c_oracle,
                     ys_sub=ys_sub,
                     y_lens_sub=y_lens_sub)
@@ -112,12 +115,14 @@ def do_eval_wer(models, dataset, beam_width, max_decode_len,
                 best_hyps, aw, perm_idx = model.decode(
                     batch['xs'], batch['x_lens'],
                     beam_width=beam_width,
-                    max_decode_len=max_decode_len)
+                    max_decode_len=max_decode_len,
+                    length_penalty=length_penalty,)
                 if resolving_unk:
                     best_hyps_sub, aw_sub, _ = model.decode(
                         batch['xs'], batch['x_lens'],
                         beam_width=beam_width,
                         max_decode_len=200,
+                        length_penalty=length_penalty,
                         task_index=1)
 
         ys = batch['ys'][perm_idx]

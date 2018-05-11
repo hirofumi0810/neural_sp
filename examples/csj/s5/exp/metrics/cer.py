@@ -16,7 +16,8 @@ from utils.evaluation.edit_distance import compute_wer
 
 
 def do_eval_cer(models, dataset, beam_width, max_decode_len,
-                eval_batch_size=None, progressbar=False, temperature=1):
+                eval_batch_size=None,  length_penalty=0,
+                progressbar=False, temperature=1):
     """Evaluate trained model by Character Error Rate.
     Args:
         models (list): the models to evaluate
@@ -27,6 +28,7 @@ def do_eval_cer(models, dataset, beam_width, max_decode_len,
             This is used for seq2seq models.
         eval_batch_size (int, optional): the batch size when evaluating the model
         progressbar (bool, optional): if True, visualize the progressbar
+        length_penalty (float, optional):
         temperature (int, optional):
     Returns:
         wer (float): Word error rate
@@ -76,7 +78,8 @@ def do_eval_cer(models, dataset, beam_width, max_decode_len,
                 best_hyps, _, perm_idx = model.decode(
                     batch['xs'], batch['x_lens'],
                     beam_width=beam_width,
-                    max_decode_len=max_decode_len)
+                    max_decode_len=max_decode_len,
+                    length_penalty=length_penalty)
                 ys = batch['ys'][perm_idx]
                 y_lens = batch['y_lens'][perm_idx]
                 task_index = 0
@@ -85,6 +88,7 @@ def do_eval_cer(models, dataset, beam_width, max_decode_len,
                     batch['xs'], batch['x_lens'],
                     beam_width=beam_width,
                     max_decode_len=max_decode_len,
+                    length_penalty=length_penalty,
                     task_index=1)
                 ys = batch['ys_sub'][perm_idx]
                 y_lens = batch['y_lens_sub'][perm_idx]
@@ -160,14 +164,18 @@ def do_eval_cer(models, dataset, beam_width, max_decode_len,
     # Reset data counters
     dataset.reset()
 
-    wer /= num_words
+    if dataset.label_type == 'kanji_wb' or (task_index > 0 and dataset.label_type_sub == 'kanji_wb'):
+        wer /= num_words
+        sub_word /= num_words
+        ins_word /= num_words
+        del_word /= num_words
+    else:
+        wer = sub_word = ins_word = del_word = 0
+
     cer /= num_chars
     sub_char /= num_chars
     ins_char /= num_chars
     del_char /= num_chars
-    sub_word /= num_words
-    ins_word /= num_words
-    del_word /= num_words
 
     df_wer_cer = pd.DataFrame(
         {'SUB': [sub_char * 100, sub_word * 100],

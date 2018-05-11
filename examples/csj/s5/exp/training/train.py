@@ -40,11 +40,12 @@ parser.add_argument('--gpu', type=int, default=-1,
                     help='the index of GPU (negative value indicates CPU)')
 parser.add_argument('--config_path', type=str, default=None,
                     help='path to the configuration file')
+parser.add_argument('--data_save_path', type=str,
+                    help='path to saved data')
 parser.add_argument('--model_save_path', type=str, default=None,
                     help='path to save the model')
 parser.add_argument('--saved_model_path', type=str, default=None,
                     help='path to the saved model to retrain')
-parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
 
 def main():

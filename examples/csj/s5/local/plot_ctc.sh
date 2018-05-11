@@ -18,7 +18,7 @@ gpu_index=$2
 
 CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
 $PYTHON exp/visualization/plot_ctc_probs.py \
+  --data_save_path $DATA_SAVEPATH \
   --model_path $saved_model_path \
   --epoch -1 \
-  --eval_batch_size 1 \
-  --data_save_path $DATA_SAVEPATH
+  --eval_batch_size 1

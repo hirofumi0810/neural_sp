@@ -389,13 +389,14 @@ class CTC(ModelBase):
             return logits, x_lens, perm_idx
 
     def decode(self, xs, x_lens, beam_width=1,
-               max_decode_len=None, task_index=0):
+               max_decode_len=None, length_penalty=0, task_index=0):
         """
         Args:
             xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
             x_lens (np.ndarray): A tensor of size `[B]`
             beam_width (int, optional): the size of beam
-            max_decode_len: not used (to make CTC compatible with attention)
+            max_decode_len: not used (to make compatible with attention)
+            length_penalty (float, optional):
             task_index (bool, optional): the index of a task
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`

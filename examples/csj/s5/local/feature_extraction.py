@@ -99,39 +99,31 @@ def main():
                     wav_path = line.split(' ')[2]
                     spk2audio[speaker] = wav_path
 
-        if args.tool == 'wav':
-            # Split WAV files per utterance
-            raise ValueError
-            # split_wav(wav_paths=wav_paths,
-            #           speaker_dict=speaker_dict_dict[data_type],
-            #           save_path=mkdir_join(feature_save_path, data_type))
-
+        if data_type == 'train':
+            global_mean_male, global_std_male = None, None
+            global_mean_female, global_std_female = None, None
         else:
-            if data_type == 'train':
-                global_mean_male, global_std_male = None, None
-                global_mean_female, global_std_female = None, None
-            else:
-                # Load statistics over train dataset
-                global_mean_male = np.load(
-                    join(args.data_save_path, 'feature', args.tool, 'train/global_mean_male.npy'))
-                global_std_male = np.load(
-                    join(args.data_save_path, 'feature', args.tool, 'train/global_std_male.npy'))
-                global_mean_female = np.load(
-                    join(args.data_save_path, 'feature', args.tool, 'train/global_mean_female.npy'))
-                global_std_female = np.load(
-                    join(args.data_save_path, 'feature', args.tool, 'train/global_std_female.npy'))
+            # Load statistics over train dataset
+            global_mean_male = np.load(
+                join(args.data_save_path, 'feature', args.tool, 'train/global_mean_male.npy'))
+            global_std_male = np.load(
+                join(args.data_save_path, 'feature', args.tool, 'train/global_std_male.npy'))
+            global_mean_female = np.load(
+                join(args.data_save_path, 'feature', args.tool, 'train/global_mean_female.npy'))
+            global_std_female = np.load(
+                join(args.data_save_path, 'feature', args.tool, 'train/global_std_female.npy'))
 
-            read_audio(data_type=data_type,
-                       spk2audio=spk2audio,
-                       segment_dict=segment_dict,
-                       tool=args.tool,
-                       config=CONFIG,
-                       normalize=args.normalize,
-                       save_path=feature_save_path,
-                       global_mean_male=global_mean_male,
-                       global_std_male=global_std_male,
-                       global_mean_female=global_mean_female,
-                       global_std_female=global_std_female)
+        read_audio(data_type=data_type,
+                   spk2audio=spk2audio,
+                   segment_dict=segment_dict,
+                   tool=args.tool,
+                   config=CONFIG,
+                   normalize=args.normalize,
+                   save_path=feature_save_path,
+                   global_mean_male=global_mean_male,
+                   global_std_male=global_std_male,
+                   global_mean_female=global_mean_female,
+                   global_std_female=global_std_female)
 
 
 def read_audio(data_type, spk2audio, segment_dict, tool, config, normalize,

@@ -19,6 +19,8 @@ from examples.csj.s5.exp.metrics.wer import do_eval_wer
 from utils.config import load_config
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--data_save_path', type=str,
+                    help='path to saved data')
 parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
 parser.add_argument('--epoch', type=int, default=-1,
@@ -29,7 +31,8 @@ parser.add_argument('--beam_width_sub', type=int, default=1,
                     help='the size of beam in the sub task')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--data_save_path', type=str, help='path to saved data')
+parser.add_argument('--length_penalty', type=float,
+                    help='length penalty in beam search decodding')
 
 MAX_DECODE_LEN_WORD = 100
 MAX_DECODE_LEN_CHAR = 200
@@ -103,6 +106,7 @@ def main():
         beam_width=args.beam_width,
         max_decode_len=MAX_DECODE_LEN_WORD,
         eval_batch_size=args.eval_batch_size,
+        length_penalty=args.length_penalty,
         progressbar=True,
         resolving_unk=resolving_unk,
         a2c_oracle=a2c_oracle)
@@ -115,6 +119,7 @@ def main():
         beam_width=args.beam_width_sub,
         max_decode_len=MAX_DECODE_LEN_CHAR,
         eval_batch_size=args.eval_batch_size,
+        length_penalty=args.length_penalty,
         progressbar=True)
     print('  CER (eval1, sub): %.3f %%' % (cer_eval1 * 100))
     if params['label_type_sub'] == 'kanji_wb':
@@ -130,6 +135,7 @@ def main():
         beam_width=args.beam_width,
         max_decode_len=MAX_DECODE_LEN_WORD,
         eval_batch_size=args.eval_batch_size,
+        length_penalty=args.length_penalty,
         progressbar=True,
         resolving_unk=resolving_unk,
         a2c_oracle=a2c_oracle)
@@ -141,6 +147,7 @@ def main():
         beam_width=args.beam_width_sub,
         max_decode_len=MAX_DECODE_LEN_CHAR,
         eval_batch_size=args.eval_batch_size,
+        length_penalty=args.length_penalty,
         progressbar=True)
     print('  CER (eval2, sub): %.3f %%' % (cer_eval2 * 100))
     if params['label_type_sub'] == 'kanji_wb':
@@ -156,6 +163,7 @@ def main():
         beam_width=args.beam_width,
         max_decode_len=MAX_DECODE_LEN_WORD,
         eval_batch_size=args.eval_batch_size,
+        length_penalty=args.length_penalty,
         progressbar=True,
         resolving_unk=resolving_unk,
         a2c_oracle=a2c_oracle)
@@ -168,6 +176,7 @@ def main():
         beam_width=args.beam_width_sub,
         max_decode_len=MAX_DECODE_LEN_CHAR,
         eval_batch_size=args.eval_batch_size,
+        length_penalty=args.length_penalty,
         progressbar=True)
     print('  CER (eval3, sub): %.3f %%' % (cer_eval3 * 100))
     if params['label_type_sub'] == 'kanji_wb':

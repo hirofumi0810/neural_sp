@@ -19,6 +19,8 @@ from examples.csj.s5.exp.metrics.wer import do_eval_wer
 from utils.config import load_config
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--data_save_path', type=str,
+                    help='path to saved data')
 # parser.add_argument('--model_path', type=str,
 #                     help='path to the model to evaluate')
 parser.add_argument('--epoch', type=int, default=-1,
@@ -27,7 +29,7 @@ parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam in the main task')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--data_save_path', type=str, help='path to saved data')
+
 
 MAX_DECODE_LEN_WORD = 100
 MAX_DECODE_LEN_CHAR = 200
@@ -128,6 +130,7 @@ def main():
             beam_width=args.beam_width,
             max_decode_len=MAX_DECODE_LEN_WORD,
             eval_batch_size=args.eval_batch_size,
+            length_penalty=args.length_penalty,
             progressbar=True)
         print('  WER (eval1): %.3f %%' % (wer_eval1 * 100))
         print(df_wer_eval1)
@@ -138,6 +141,7 @@ def main():
             beam_width=args.beam_width,
             max_decode_len=MAX_DECODE_LEN_WORD,
             eval_batch_size=args.eval_batch_size,
+            length_penalty=args.length_penalty,
             progressbar=True)
         print('  WER (eval2): %.3f %%' % (wer_eval2 * 100))
         print(df_wer_eval2)
@@ -148,6 +152,7 @@ def main():
             beam_width=args.beam_width,
             max_decode_len=MAX_DECODE_LEN_WORD,
             eval_batch_size=args.eval_batch_size,
+            length_penalty=args.length_penalty,
             progressbar=True)
         print('  WER (eval3): %.3f %%' % (wer_eval3 * 100))
         print(df_wer_eval3)
@@ -161,6 +166,7 @@ def main():
             beam_width=args.beam_width,
             max_decode_len=MAX_DECODE_LEN_CHAR,
             eval_batch_size=args.eval_batch_size,
+            length_penalty=args.length_penalty,
             progressbar=True,
             temperature=temp_infer)
         print('  CER (eval1): %.3f %%' % (cer_eval1 * 100))
@@ -174,6 +180,7 @@ def main():
             beam_width=args.beam_width,
             max_decode_len=MAX_DECODE_LEN_CHAR,
             eval_batch_size=args.eval_batch_size,
+            length_penalty=args.length_penalty,
             progressbar=True,
             temperature=temp_infer)
         print('  CER (eval2): %.3f %%' % (cer_eval2 * 100))
@@ -187,6 +194,7 @@ def main():
             beam_width=args.beam_width,
             max_decode_len=MAX_DECODE_LEN_CHAR,
             eval_batch_size=args.eval_batch_size,
+            length_penalty=args.length_penalty,
             progressbar=True,
             temperature=temp_infer)
         print('  CER (eval3): %.3f %%' % (cer_eval3 * 100))

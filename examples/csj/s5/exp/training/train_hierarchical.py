@@ -40,11 +40,12 @@ parser.add_argument('--gpu', type=int, default=-1,
                     help='the index of GPU (negative value indicates CPU)')
 parser.add_argument('--config_path', type=str, default=None,
                     help='path to the configuration file')
+parser.add_argument('--data_save_path', type=str,
+                    help='path to saved data')
 parser.add_argument('--model_save_path', type=str,
                     help='path to save the model')
 parser.add_argument('--saved_model_path', type=str, default=None,
                     help='path to the saved model to retrain')
-parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
 
 def main():
@@ -322,14 +323,27 @@ def main():
             else:
                 start_time_eval = time.time()
                 # dev
-                metric_dev_epoch, _ = do_eval_wer(
-                    models=[model],
-                    dataset=dev_data,
-                    beam_width=1,
-                    max_decode_len=MAX_DECODE_LEN_WORD,
-                    eval_batch_size=1)
-                logger.info('  WER (dev, main): %.3f %%' %
-                            (metric_dev_epoch * 100))
+                if model.main_loss_weight > 0:
+                    metric_dev_epoch, _ = do_eval_wer(
+                        models=[model],
+                        dataset=dev_data,
+                        beam_width=1,
+                        max_decode_len=MAX_DECODE_LEN_WORD,
+                        eval_batch_size=1)
+                    logger.info('  WER (dev, main): %.3f %%' %
+                                (metric_dev_epoch * 100))
+                else:
+                    metric_dev_epoch, wer_dev_sub, _ = do_eval_cer(
+                        models=[model],
+                        dataset=dev_data,
+                        beam_width=1,
+                        max_decode_len=MAX_DECODE_LEN_CHAR,
+                        eval_batch_size=1)
+                    logger.info('  CER (dev, sub): %.3f %%' %
+                                (metric_dev_epoch * 100))
+                    if params['label_type_sub'] == 'kanji_wb':
+                        logger.info('  WER (dev, sub): %.3f %%' %
+                                    (wer_dev_sub * 100))
 
                 if metric_dev_epoch < metric_dev_best:
                     metric_dev_best = metric_dev_epoch
@@ -342,14 +356,27 @@ def main():
                                           learning_rate, metric_dev_best)
 
                     # test
-                    wer_eval1, _ = do_eval_wer(
-                        models=[model],
-                        dataset=eval1_data,
-                        beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_WORD,
-                        eval_batch_size=1)
-                    logger.info('  WER (eval1, main): %.3f %%' %
-                                (wer_eval1 * 100))
+                    if model.main_loss_weight > 0:
+                        wer_eval1, _ = do_eval_wer(
+                            models=[model],
+                            dataset=eval1_data,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_WORD,
+                            eval_batch_size=1)
+                        logger.info('  WER (eval1, main): %.3f %%' %
+                                    (wer_eval1 * 100))
+                    else:
+                        cer_eval1, wer_eval1_sub, _ = do_eval_cer(
+                            models=[model],
+                            dataset=eval1_data,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_CHAR,
+                            eval_batch_size=1)
+                        logger.info('  CER (eval1, sub): %.3f %%' %
+                                    (cer_eval1 * 100))
+                        if params['label_type_sub'] == 'kanji_wb':
+                            logger.info('  WER (eval1, sub): %.3f %%' %
+                                        (wer_eval1_sub * 100))
 
                     # wer_eval2, _ = do_eval_wer(
                     #     models=[model],

@@ -18,9 +18,10 @@ gpu_index=$2
 
 CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
 $PYTHON exp/evaluation/eval_hierarchical.py \
+  --data_save_path $DATA_SAVEPATH \
   --model_path $saved_model_path \
   --epoch -1 \
   --beam_width 1 \
   --beam_width_sub 1 \
   --eval_batch_size 1 \
-  --data_save_path $DATA_SAVEPATH
+  --length_penalty 0.1
