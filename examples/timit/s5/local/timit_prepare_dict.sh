@@ -29,10 +29,6 @@
 # run this from ../
 srcdir=$DATA_SAVEPATH/local/data
 dir=$DATA_SAVEPATH/local/dict
-lmdir=$DATA_SAVEPATH/local/nist_lm
-tmpdir=$DATA_SAVEPATH/local/lm_tmp
-
-mkdir -p $dir $lmdir $tmpdir
 
 [ -f path.sh ] && . ./path.sh
 
@@ -59,31 +55,5 @@ cat $dir/silence_phones.txt| awk '{printf("%s ", $1);} END{printf "\n";}' > $dir
 cat $dir/nonsilence_phones.txt | perl -e 'while(<>){ foreach $p (split(" ", $_)) {
   $p =~ m:^([^\d]+)(\d*)$: || die "Bad phone $_"; $q{$2} .= "$p "; } } foreach $l (values %q) {print "$l\n";}' \
  >> $dir/extra_questions.txt || exit 1;
-
-echo "Dictionary & language model preparation succeeded"
-exit 0
-
-# (2) Create the phone bigram LM
-if [ -z $IRSTLM ] ; then
-  export IRSTLM=$KALDI_ROOT/tools/irstlm/
-fi
-export PATH=${PATH}:$IRSTLM/bin
-if ! command -v prune-lm >/dev/null 2>&1 ; then
-  echo "$0: Error: the IRSTLM is not available or compiled" >&2
-  echo "$0: Error: We used to install it by default, but." >&2
-  echo "$0: Error: this is no longer the case." >&2
-  echo "$0: Error: To install it, go to $KALDI_ROOT/tools" >&2
-  echo "$0: Error: and run extras/install_irstlm.sh" >&2
-  exit 1
-fi
-
-cut -d' ' -f2- $srcdir/train.text | sed -e 's:^:<s> :' -e 's:$: </s>:' \
-  > $srcdir/lm_train.text
-
-build-lm.sh -i $srcdir/lm_train.text -n 2 \
-  -o $tmpdir/lm_phone_bg.ilm.gz
-
-compile-lm $tmpdir/lm_phone_bg.ilm.gz -t=yes /dev/stdout | \
-grep -v unk | gzip -c > $lmdir/lm_phone_bg.arpa.gz
 
 echo "Dictionary & language model preparation succeeded"

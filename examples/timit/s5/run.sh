@@ -15,7 +15,7 @@ echo ===========================================================================
 echo "                                  TIMIT                                    "
 echo ============================================================================
 
-stage=2
+stage=0
 run_background=true
 restart=false
 
@@ -77,20 +77,34 @@ if [ $stage -le 1 ]; then
     python local/make_htk_config.py \
         --data_save_path $DATA_SAVEPATH \
         --config_save_path ./conf/fbank_htk.conf \
+        --audio_file_type nist \
         --channels $CHANNELS \
+        --sampling_rate 16000 \
         --window $WINDOW \
         --slide $SLIDE \
         --energy $ENERGY \
         --delta $DELTA \
         --deltadelta $DELTADELTA || exit 1;
 
-    # Convert from wav to htk files
     for data_type in train dev test ; do
-      mkdir -p $DATA_SAVEPATH/htk
-      mkdir -p $DATA_SAVEPATH/htk/$data_type
-
       if [ ! -e $DATA_SAVEPATH/htk/$data_type/.done_make_htk ]; then
-        $HCOPY -T 1 -C ./conf/fbank_htk.conf -S $DATA_SAVEPATH/$data_type/wav2htk.scp || exit 1;
+        mkdir -p $DATA_SAVEPATH/htk/$data_type
+        touch $DATA_SAVEPATH/$data_type/htk.scp
+        cat $DATA_SAVEPATH/$data_type/wav.scp | while read line
+        do
+          # Convert from wav to htk files
+          wav_path=`echo $line | awk -F " " '{ print $(NF - 1) }'`
+          speaker=`echo $line | awk -F "/" '{ print $(NF - 1) }'`
+          mkdir -p $DATA_SAVEPATH/htk/$data_type/$speaker
+          file_name=`basename $wav_path`
+          base=${file_name%.*}
+          # ext=${file_name##*.}
+          htk_path=$DATA_SAVEPATH/htk/$data_type/$speaker/$base".htk"
+          echo $wav_path $htk_path > ./tmp.scp
+          $HCOPY -T 1 -C ./conf/fbank_htk.conf -S ./tmp.scp || exit 1;
+          echo $htk_path >> $DATA_SAVEPATH/$data_type/htk.scp
+        done
+        rm ./tmp.scp
         touch $DATA_SAVEPATH/htk/$data_type/.done_make_htk
       fi
     done

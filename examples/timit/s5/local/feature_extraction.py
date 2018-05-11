@@ -73,10 +73,9 @@ def main():
 
         audio_paths = []
         if args.tool == 'htk':
-            with open(join(args.data_save_path, data_type, 'wav2htk.scp'), 'r') as f:
+            with open(join(args.data_save_path, data_type, 'htk.scp'), 'r') as f:
                 for line in f:
-                    line = line.strip()
-                    htk_path = line.split('  ')[1]
+                    htk_path = line.strip()
                     audio_paths.append(htk_path)
         else:
             with open(join(args.data_save_path, data_type, 'wav.scp'), 'r') as f:
@@ -85,44 +84,41 @@ def main():
                     wav_path = line.split(' ')[4]
                     audio_paths.append(wav_path)
 
-        if args.tool == 'wav':
-            for wav_path in tqdm(audio_paths):
-                # Convert from nist to wav
-                speaker = wav_path.split('/')[-2]
-                utt_idx = basename(wav_path).split('.')[0]
-                result = subprocess.call(
-                    ['sox', wav_path, '-t', 'wav', join(args.data_save_path, 'feature', 'wav', data_type, speaker + '_' + utt_idx + '.wav')])
+        spk2gender = {}
+        with open(join(args.data_save_path, data_type, 'spk2gender'), 'r') as f:
+            for line in f:
+                line = line.strip()
+                speaker, gender = line.split(' ')
+                spk2gender[speaker] = gender
 
-                if result != 0:
-                    raise ValueError
+        if data_type == 'train':
+            global_mean_male, global_std_male = None, None
+            global_mean_female, global_std_female = None, None
         else:
-            if data_type == 'train':
-                global_mean_male, global_std_male = None, None
-                global_mean_female, global_std_female = None, None
-            else:
-                # Load statistics over train dataset
-                global_mean_male = np.load(
-                    join(args.data_save_path, 'feature', args.tool, 'train/global_mean_male.npy'))
-                global_std_male = np.load(
-                    join(args.data_save_path, 'feature', args.tool, 'train/global_std_male.npy'))
-                global_mean_female = np.load(
-                    join(args.data_save_path, 'feature', args.tool, 'train/global_mean_female.npy'))
-                global_std_female = np.load(
-                    join(args.data_save_path, 'feature', args.tool, 'train/global_std_female.npy'))
+            # Load statistics over train dataset
+            global_mean_male = np.load(
+                join(args.data_save_path, 'feature', args.tool, 'train/global_mean_male.npy'))
+            global_std_male = np.load(
+                join(args.data_save_path, 'feature', args.tool, 'train/global_std_male.npy'))
+            global_mean_female = np.load(
+                join(args.data_save_path, 'feature', args.tool, 'train/global_mean_female.npy'))
+            global_std_female = np.load(
+                join(args.data_save_path, 'feature', args.tool, 'train/global_std_female.npy'))
 
-            read_audio(data_type=data_type,
-                       audio_paths=audio_paths,
-                       tool=args.tool,
-                       config=CONFIG,
-                       normalize=args.normalize,
-                       save_path=feature_save_path,
-                       global_mean_male=global_mean_male,
-                       global_std_male=global_std_male,
-                       global_mean_female=global_mean_female,
-                       global_std_female=global_std_female)
+        read_audio(data_type=data_type,
+                   audio_paths=audio_paths,
+                   spk2gender=spk2gender,
+                   tool=args.tool,
+                   config=CONFIG,
+                   normalize=args.normalize,
+                   save_path=feature_save_path,
+                   global_mean_male=global_mean_male,
+                   global_std_male=global_std_male,
+                   global_mean_female=global_mean_female,
+                   global_std_female=global_std_female)
 
 
-def read_audio(data_type, audio_paths, tool, config, normalize,
+def read_audio(data_type, audio_paths, spk2gender, tool, config, normalize,
                save_path, global_mean_male=None, global_std_male=None,
                global_mean_female=None, global_std_female=None,
                dtype=np.float32):
@@ -130,6 +126,9 @@ def read_audio(data_type, audio_paths, tool, config, normalize,
     Args:
         data_type (string):
         audio_paths (list): paths to audio files
+        spk2gender (dict):
+            key => speaker
+            value => gender
         tool (string): the tool to extract features,
             htk or librosa or python_speech_features
         config (dict): a configuration for feature extraction
@@ -170,14 +169,10 @@ def read_audio(data_type, audio_paths, tool, config, normalize,
     if data_type == 'train' and normalize != 'no':
         print('=====> Reading audio files...')
         for i, audio_path in enumerate(tqdm(audio_paths)):
-            if tool == 'htk':
-                utt_idx = basename(audio_path).split('.')[0]
-                speaker = utt_idx.split('_')[0]
-            else:
-                speaker = audio_path.split('/')[-2]
-                utt_idx = basename(audio_path).split('.')[0]
-                utt_idx = speaker + '_' + utt_idx
-            gender = utt_idx[0]  # f (female) or m (male)
+            speaker = audio_path.split('/')[-2]
+            utt_idx = basename(audio_path).split('.')[0]
+            utt_idx = speaker + '_' + utt_idx
+            gender = spk2gender[speaker]
 
             if tool == 'htk':
                 feat_utt, sampPeriod, parmKind = read(audio_path)
@@ -245,14 +240,10 @@ def read_audio(data_type, audio_paths, tool, config, normalize,
                 speaker_mean_dict[speaker] /= total_frame_num_dict[speaker]
 
         for audio_path in tqdm(audio_paths):
-            if tool == 'htk':
-                utt_idx = basename(audio_path).split('.')[0]
-                speaker = utt_idx.split('_')[0]
-            else:
-                speaker = audio_path.split('/')[-2]
-                utt_idx = basename(audio_path).split('.')[0]
-                utt_idx = speaker + '_' + utt_idx
-            gender = utt_idx[0]  # f (female) or m (male)
+            speaker = audio_path.split('/')[-2]
+            utt_idx = basename(audio_path).split('.')[0]
+            utt_idx = speaker + '_' + utt_idx
+            gender = spk2gender[speaker]
 
             if tool == 'htk':
                 feat_utt, sampPeriod, parmKind = read(audio_path)
@@ -314,14 +305,10 @@ def read_audio(data_type, audio_paths, tool, config, normalize,
     frame_num_dict = {}
     # sampPeriod, parmKind = None, None
     for audio_path in tqdm(audio_paths):
-        if tool == 'htk':
-            utt_idx = basename(audio_path).split('.')[0]
-            speaker = utt_idx.split('_')[0]
-        else:
-            speaker = audio_path.split('/')[-2]
-            utt_idx = basename(audio_path).split('.')[0]
-            utt_idx = speaker + '_' + utt_idx
-        gender = utt_idx[0]  # f (female) or m (male)
+        speaker = audio_path.split('/')[-2]
+        utt_idx = basename(audio_path).split('.')[0]
+        utt_idx = speaker + '_' + utt_idx
+        gender = spk2gender[speaker]
 
         if tool == 'htk':
             feat_utt, sampPeriod, parmKind = read(audio_path)
@@ -370,13 +357,6 @@ def read_audio(data_type, audio_paths, tool, config, normalize,
 
         # Save input features
         np.save(mkdir_join(save_path, utt_idx + '.npy'), feat_utt)
-
-        # if sampPeriod is None:
-        #     _, sampPeriod, parmKind = read(audio_path)
-        # write(feat_utt,
-        #       htk_path=mkdir_join(save_path, utt_idx + '.htk'),
-        #       sampPeriod=sampPeriod,
-        #       parmKind=parmKind)
 
     # Save the frame number dictionary
     with open(join(save_path, 'frame_num.pickle'), 'wb') as f:

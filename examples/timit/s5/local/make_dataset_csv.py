@@ -61,15 +61,9 @@ def main():
             frame_num_dict = pickle.load(f)
 
         for utt_idx, trans_list in tqdm(trans_dict.items()):
-            if args.tool == 'wav':
-                raise NotImplementedError
-                feat_utt_save_path = join(
-                    args.data_save_path, 'feature', args.tool, data_type, utt_idx + '.wav')
-                # frame_num =
-            else:
-                feat_utt_save_path = join(
-                    args.data_save_path, 'feature', args.tool, data_type, utt_idx + '.npy')
-                frame_num = frame_num_dict[utt_idx]
+            feat_utt_save_path = join(
+                args.data_save_path, 'feature', args.tool, data_type, utt_idx + '.npy')
+            frame_num = frame_num_dict[utt_idx]
 
             if not isfile(feat_utt_save_path):
                 raise ValueError('There is no file: %s' % feat_utt_save_path)
