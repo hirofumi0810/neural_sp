@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright 2010-2012 Microsoft Corporation  
+# Copyright 2010-2012 Microsoft Corporation
 #           2012-2014 Johns Hopkins University (Author: Daniel Povey)
 #                2015 Guoguo Chen
 
@@ -34,7 +34,7 @@ dict_suffix=
 echo "$0 $@"  # Print the command line for logging
 . utils/parse_options.sh || exit 1;
 
-dir=data/local/dict${dict_suffix}
+dir=$DATA_SAVEPATH/local/dict${dict_suffix}
 mkdir -p $dir
 
 
@@ -43,7 +43,6 @@ svn co  https://svn.code.sf.net/p/cmusphinx/code/trunk/cmudict \
   $dir/cmudict || exit 1;
 
 # can add -r 10966 for strict compatibility.
-
 
 #(2) Dictionary preparation:
 
@@ -59,7 +58,7 @@ echo SIL > $dir/optional_silence.txt
 # really to the same base phone.
 cat $dir/cmudict/cmudict.0.7a.symbols | perl -ane 's:\r::; print;' | \
  perl -e 'while(<>){
-  chop; m:^([^\d]+)(\d*)$: || die "Bad phone $_"; 
+  chop; m:^([^\d]+)(\d*)$: || die "Bad phone $_";
   $phones_of{$1} .= "$_ "; }
   foreach $list (values %phones_of) {print $list . "\n"; } ' \
   > $dir/nonsilence_phones.txt || exit 1;
@@ -89,4 +88,3 @@ cp $dir/lexicon2_raw.txt $dir/lexicon.txt
 rm $dir/lexiconp.txt 2>/dev/null
 
 echo "Dictionary preparation succeeded"
-

@@ -21,39 +21,39 @@ echo "$0 $@"  # Print the command line for logging
 . ./path.sh || exit 1;
 
 echo "Preparing train and test data"
-srcdir=data/local/data
-lmdir=data/local/nist_lm
-tmpdir=data/local/lm_tmp
-lexicon=data/local/lang${lang_suffix}_tmp/lexiconp.txt
+srcdir=$DATA_SAVEPATH/local/data
+lmdir=$DATA_SAVEPATH/local/nist_lm
+tmpdir=$DATA_SAVEPATH/local/lm_tmp
+lexicon=$DATA_SAVEPATH/local/lang${lang_suffix}_tmp/lexiconp.txt
 mkdir -p $tmpdir
 
-for x in train_si284 test_eval92 test_eval93 test_dev93 test_eval92_5k test_eval93_5k test_dev93_5k dev_dt_05 dev_dt_20; do
-  mkdir -p data/$x
-  cp $srcdir/${x}_wav.scp data/$x/wav.scp || exit 1;
-  cp $srcdir/$x.txt data/$x/text || exit 1;
-  cp $srcdir/$x.spk2utt data/$x/spk2utt || exit 1;
-  cp $srcdir/$x.utt2spk data/$x/utt2spk || exit 1;
-  utils/filter_scp.pl data/$x/spk2utt $srcdir/spk2gender > data/$x/spk2gender || exit 1;
+for x in train_si284 test_eval92 test_dev93; do
+  mkdir -p $DATA_SAVEPATH/$x
+  cp $srcdir/${x}_wav.scp $DATA_SAVEPATH/$x/wav.scp || exit 1;
+  cp $srcdir/$x.txt $DATA_SAVEPATH/$x/text || exit 1;
+  cp $srcdir/$x.spk2utt $DATA_SAVEPATH/$x/spk2utt || exit 1;
+  cp $srcdir/$x.utt2spk $DATA_SAVEPATH/$x/utt2spk || exit 1;
+  utils/filter_scp.pl $DATA_SAVEPATH/$x/spk2utt $srcdir/spk2gender > $DATA_SAVEPATH/$x/spk2gender || exit 1;
 done
 
 
 # Next, for each type of language model, create the corresponding FST
 # and the corresponding lang_test_* directory.
 
-echo Preparing language models for test
-
-for lm_suffix in bg tgpr tg bg_5k tgpr_5k tg_5k; do
-  test=data/lang${lang_suffix}_test_${lm_suffix}
-
-  mkdir -p $test
-  cp -r data/lang${lang_suffix}/* $test || exit 1;
-
-  gunzip -c $lmdir/lm_${lm_suffix}.arpa.gz | \
-    arpa2fst --disambig-symbol=#0 \
-             --read-symbol-table=$test/words.txt - $test/G.fst
-
-  utils/validate_lang.pl --skip-determinization-check $test || exit 1;
-done
+# echo Preparing language models for test
+#
+# for lm_suffix in bg tgpr tg bg_5k tgpr_5k tg_5k; do
+#   test=$DATA_SAVEPATH/lang${lang_suffix}_test_${lm_suffix}
+#
+#   mkdir -p $test
+#   cp -r $DATA_SAVEPATH/lang${lang_suffix}/* $test || exit 1;
+#
+#   gunzip -c $lmdir/lm_${lm_suffix}.arpa.gz | \
+#     arpa2fst --disambig-symbol=#0 \
+#              --read-symbol-table=$test/words.txt - $test/G.fst
+#
+#   utils/validate_lang.pl --skip-determinization-check $test || exit 1;
+# done
 
 echo "Succeeded in formatting data."
 rm -r $tmpdir

@@ -17,12 +17,22 @@ echo ===========================================================================
 echo "                                   WSJ                                     "
 echo ============================================================================
 
-stage=0
+stage=2
+run_background=true
 restart=false
 
 ### Set path to original data
-wsj0="/n/rd21/corpora_1/WSJ/wsj0"
-wsj1="/n/rd21/corpora_1/WSJ/wsj1"
+# wsj0="/n/rd21/corpora_1/WSJ/wsj0"
+# wsj1="/n/rd21/corpora_1/WSJ/wsj1"
+
+# Sometimes, we have seen WSJ distributions that do not have subdirectories
+# like '11-13.1', but instead have 'doc', 'si_et_05', etc. directly under the
+# wsj0 or wsj1 directories. In such cases, try the following:
+#
+# corpus=/exports/work/inf_hcrc_cstr_general/corpora/wsj
+cstr_wsj="/n/rd21/corpora_1/WSJ"
+# $corpus must contain a 'wsj0' and a 'wsj1' subdirectory for this to work.
+
 
 ### Set path to save dataset
 export DATA_SAVEPATH="/n/sd8/inaguma/corpus/wsj/kaldi"
@@ -35,10 +45,9 @@ MODEL_SAVEPATH="/n/sd8/inaguma/result/wsj"
 TOOL=htk
 # TOOL=python_speech_features
 # TOOL=librosa
-# # TOOL=wav
 
 ### Configuration of feature extranction
-CHANNELS=40
+CHANNELS=80
 WINDOW=0.025
 SLIDE=0.01
 ENERGY=1
@@ -47,8 +56,40 @@ DELTADELTA=1
 # NORMALIZE=global
 NORMALIZE=speaker
 # NORMALIZE=utterance
-# NORMALIZE=no
-# NOTE: normalize in [-1, 1] in case of wav
+
+
+if [ ! -e $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe ]; then
+  echo ============================================================================
+  echo "                           Install sph2pipe                               "
+  echo ============================================================================
+  SWBD_REPO=`pwd`
+  # Install instructions for sph2pipe_v2.5.tar.gz
+  if ! which wget >&/dev/null; then
+    echo "This script requires you to first install wget";
+    exit 1;
+  fi
+  if ! which automake >&/dev/null; then
+    echo "Warning: automake not installed (IRSTLM installation will not work)"
+    sleep 1
+  fi
+  if ! which libtoolize >&/dev/null && ! which glibtoolize >&/dev/null; then
+    echo "Warning: libtoolize or glibtoolize not installed (IRSTLM installation probably will not work)"
+    sleep 1
+  fi
+
+  if [ ! -e KALDI_ROOT/tools/sph2pipe_v2.5.tar.gz ]; then
+    wget -T 3 -t 3 http://www.openslr.org/resources/3/sph2pipe_v2.5.tar.gz -P KALDI_ROOT/tools
+  else
+    echo "sph2pipe_v2.5.tar.gz is already downloaded."
+  fi
+  tar -xovzf KALDI_ROOT/tools/sph2pipe_v2.5.tar.gz -C $KALDI_ROOT/tools
+  rm $KALDI_ROOT/tools/sph2pipe_v2.5.tar.gz
+  echo "Enter into $KALDI_ROOT/tools/sph2pipe_v2.5 ..."
+  cd $KALDI_ROOT/tools/sph2pipe_v2.5
+  gcc -o sph2pipe *.c -lm
+  echo "Get out of $KALDI_ROOT/tools/sph2pipe_v2.5 ..."
+  cd $SWBD_REPO
+fi
 
 
 if [ $stage -le 0 ]; then
@@ -56,24 +97,15 @@ if [ $stage -le 0 ]; then
   echo "                           Data Preparation                               "
   echo ============================================================================
 
-  # rm -rf $DATA_SAVEPATH/local
-
   # data preparation.
   # local/wsj_data_prep.sh $wsj0/??-{?,??}.? $wsj1/??-{?,??}.?  || exit 1;
 
-  # Sometimes, we have seen WSJ distributions that do not have subdirectories
-  # like '11-13.1', but instead have 'doc', 'si_et_05', etc. directly under the
-  # wsj0 or wsj1 directories. In such cases, try the following:
-  #
-  # corpus=/exports/work/inf_hcrc_cstr_general/corpora/wsj
-  corpus="/n/rd21/corpora_1/WSJ"
-  local/cstr_wsj_data_prep.sh $corpus || exit 1;
+  local/cstr_wsj_data_prep.sh $cstr_wsj || exit 1;
   # rm $DATA_SAVEPATH/local/dict/lexiconp.txt
-  # $corpus must contain a 'wsj0' and a 'wsj1' subdirectory for this to work.
-  #
+
   # "nosp" refers to the dictionary before silence probabilities and pronunciation
   # probabilities are added.
-  local/wsj_prepare_dict.sh --dict-suffix "_nosp" || exit 1;
+  # local/wsj_prepare_dict.sh --dict-suffix "_nosp" || exit 1;
 
   # utils/prepare_lang.sh $DATA_SAVEPATH/local/dict_nosp \
   #                       "<SPOKEN_NOISE>" $DATA_SAVEPATH/local/lang_tmp_nosp data/lang_nosp || exit 1;
@@ -98,13 +130,10 @@ if [ $stage -le 0 ]; then
   #     local/wsj_format_local_lms.sh --lang-suffix "_nosp" # &&
   # ) &
 
-  utils/subset_data_dir.sh --first data/train_si284 7138 data/train_si84 || exit 1;
+  utils/subset_data_dir.sh --first $DATA_SAVEPATH/train_si284 7138 $DATA_SAVEPATH/train_si84 || exit 1
 
   echo "Finish data preparation (stage: 0)."
 fi
-
-
-exit 1
 
 
 if [ $stage -le 1 ]; then
@@ -113,7 +142,7 @@ if [ $stage -le 1 ]; then
   echo ============================================================================
 
   if [ $TOOL = "kaldi" ]; then
-    for x in train_si284 train_si84 dev93 test_eval92; do
+    for x in train_si84 train_si284 test_dev93 test_eval92; do
       steps/make_fbank.sh --nj 8 --cmd run.pl $DATA_SAVEPATH/$x exp/make_fbank/$x $DATA_SAVEPATH/fbank || exit 1;
       steps/compute_cmvn_stats.sh $DATA_SAVEPATH/$x exp/make_fbank/$x $DATA_SAVEPATH/fbank || exit 1;
       utils/fix_data_dir.sh $DATA_SAVEPATH/$x || exit 1;
@@ -123,24 +152,42 @@ if [ $stage -le 1 ]; then
     # Make a config file to covert from wav to htk file
     python local/make_htk_config.py \
         --data_save_path $DATA_SAVEPATH \
-        --config_save_path ./conf \
+        --config_save_path ./conf/fbank_htk.conf \
+        --audio_file_type wav \
         --channels $CHANNELS \
+        --sampling_rate 16000 \
         --window $WINDOW \
         --slide $SLIDE \
         --energy $ENERGY \
         --delta $DELTA \
         --deltadelta $DELTADELTA || exit 1;
 
-    # Convert from wav to htk files
-    for data_type in test_eval92 test_eval93 test_dev93 train_si284; do
-      mkdir -p $DATA_SAVEPATH/$data_type/htk
+    for data_type in train_si84 train_si284 test_dev93 test_eval92; do
+      if [ ! -e $DATA_SAVEPATH/htk/$data_type/.done_make_htk ]; then
+        mkdir -p $DATA_SAVEPATH/wav/$data_type
+        mkdir -p $DATA_SAVEPATH/htk/$data_type
+        touch $DATA_SAVEPATH/$data_type/htk.scp
+        cat $DATA_SAVEPATH/$data_type/wav.scp | while read line
+        do
+          # Convert from sph to wav files
+          sph_path=`echo $line | awk -F " " '{ print $(NF - 1) }'`
+          speaker=`echo $line | awk -F "/" '{ print $(NF - 1) }'`
+          mkdir -p $DATA_SAVEPATH/wav/$data_type/$speaker
+          file_name=`basename $sph_path`
+          base=${file_name%.*}
+          # ext=${file_name##*.}
+          wav_path=$DATA_SAVEPATH/wav/$data_type/$speaker/$base".wav"
+          $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe -f wav $sph_path $wav_path || exit 1;
 
-      htk_paths=$(find $DATA_SAVEPATH/$data_type/htk -iname '*.htk')
-      htk_file_num=$(find $DATA_SAVEPATH/$data_type/htk -iname '*.htk' | wc -l)
-
-      if [ $htk_file_num -ne ${file_number[$data_type]} ]; then
-        $HCOPY -T 1 -C ./conf/fbank.conf -S $DATA_SAVEPATH/$data_type/wav2htk.scp || exit 1;
-        touch $DATA_SAVEPATH/$data_type/htk/.done_make_htk
+          # Convert from wav to htk files
+          mkdir -p $DATA_SAVEPATH/htk/$data_type/$speaker
+          htk_path=$DATA_SAVEPATH/htk/$data_type/$speaker/$base".htk"
+          echo $wav_path  $htk_path > ./tmp.scp
+          $HCOPY -T 1 -C ./conf/fbank_htk.conf -S ./tmp.scp || exit 1;
+          echo $htk_path >> $DATA_SAVEPATH/$data_type/htk.scp
+        done
+        rm ./tmp.scp
+        touch $DATA_SAVEPATH/htk/$data_type/.done_make_htk
       fi
     done
 
@@ -151,54 +198,83 @@ if [ $stage -le 1 ]; then
     fi
   fi
 
-  python local/feature_extraction.py \
-    --data_save_path $DATA_SAVEPATH \
-    --tool $TOOL \
-    --normalize $NORMALIZE \
-    --channels $CHANNELS \
-    --window $WINDOW \
-    --slide $SLIDE \
-    --energy $ENERGY \
-    --delta $DELTA \
-    --deltadelta $DELTADELTA || exit 1;
+  if [ ! -e $DATA_SAVEPATH/feature/$TOOL/.done_feature_extraction ]; then
+    python local/feature_extraction.py \
+      --data_save_path $DATA_SAVEPATH \
+      --tool $TOOL \
+      --normalize $NORMALIZE \
+      --channels $CHANNELS \
+      --window $WINDOW \
+      --slide $SLIDE \
+      --energy $ENERGY \
+      --delta $DELTA \
+      --deltadelta $DELTADELTA || exit 1;
+    touch $DATA_SAVEPATH/feature/$TOOL/.done_feature_extraction
+  fi
 
   echo "Finish feature extranction (stage: 1)."
 fi
 
 
-echo ============================================================================
-echo "                            Create dataset                                "
-echo ============================================================================
 if [ $stage -le 2 ]; then
+  echo ============================================================================
+  echo "                            Create dataset                                "
+  echo ============================================================================
+
+  if [ ! -e $DATA_SAVEPATH/dataset/$TOOL/.done_dataset ]; then
+    python local/make_dataset_csv.py \
+      --data_save_path $DATA_SAVEPATH \
+      --tool $TOOL || exit 1;
+    touch $DATA_SAVEPATH/dataset/$TOOL/.done_dataset
+  fi
 
   echo "Finish creating dataset (stage: 2)."
 fi
 
-exit 1
 
-
-echo ============================================================================
-echo "                             Training stage                               "
-echo ============================================================================
 if [ $stage -le 3 ]; then
+  echo ============================================================================
+  echo "                             Training stage                               "
+  echo ============================================================================
+
   config_path=$1
   gpu_index=$2
   filename=$(basename $config_path | awk -F. '{print $1}')
 
-
   mkdir -p log
+  mkdir -p $MODEL_SAVEPATH
 
-  # CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-  # nohup $PYTHON train.py \
-  #   --gpu $gpu_index \
-  #   --config_path $config_path \
-  #   --model_save_path $MODEL_SAVEPATH > log/$filename".log" &
-
-  CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-  $PYTHON train.py \
-    --gpu $gpu_index \
-    --config_path $config_path \
-    --model_save_path $MODEL_SAVEPATH || exit 1;
+  if $restart; then
+    if $run_background; then
+      CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+      nohup $PYTHON exp/training/train.py \
+        --gpu $gpu_index \
+        --saved_model_path $config_path \
+        --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+    else
+      CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+      $PYTHON exp/training/train.py \
+        --gpu $gpu_index \
+        --saved_model_path $config_path \
+        --data_save_path $DATA_SAVEPATH || exit 1;
+    fi
+  else
+    if $run_background; then
+      CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+      nohup $PYTHON exp/training/train.py \
+        --gpu $gpu_index \
+        --config_path $config_path \
+        --model_save_path $MODEL_SAVEPATH \
+        --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+    else
+      CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+      $PYTHON exp/training/train.py \
+        --gpu $gpu_index \
+        --config_path $config_path \
+        --model_save_path $MODEL_SAVEPATH \
+        --data_save_path $DATA_SAVEPATH || exit 1;
+    fi
+  fi
 
   echo "Finish model training (stage: 3)."
 fi
@@ -222,15 +298,7 @@ fi
 # fi
 
 echo "Done."
-
-exit 1
-
-
-# utils/prepare_lang.sh $DATA_SAVEPATH/local/dict \
-#   "<SPOKEN_NOISE>" $DATA_SAVEPATH/local/lang_tmp data/lang || exit 1;
-
-# utils/prepare_lang.sh $DATA_SAVEPATH/local/dict_larger \
-#   "<SPOKEN_NOISE>" $DATA_SAVEPATH/local/lang_tmp_larger data/lang_bd || exit 1;
+exit 0
 
 # The following demonstrate how to re-segment long audios.
 # local/run_segmentation_long_utts.sh
