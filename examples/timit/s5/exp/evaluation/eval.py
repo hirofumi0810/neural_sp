@@ -14,10 +14,12 @@ import argparse
 sys.path.append(abspath('../../../'))
 from models.load_model import load
 from examples.timit.s5.exp.dataset.load_dataset import Dataset
-from examples.timit.s5.exp.metrics.per import do_eval_per
+from examples.timit.s5.exp.metrics.phone import eval_phone
 from utils.config import load_config
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--data_save_path', type=str,
+                    help='path to saved data')
 parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
 parser.add_argument('--epoch', type=int, default=-1,
@@ -26,9 +28,10 @@ parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--data_save_path', type=str, help='path to saved data')
+parser.add_argument('--length_penalty', type=float,
+                    help='length penalty in beam search decodding')
 
-MAX_DECODE_LEN_PHONE = 40
+MAX_DECODE_LEN_PHONE = 100
 
 
 def main():
@@ -64,12 +67,13 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
-    per_test, df_per_test = do_eval_per(
+    per_test, df_per_test = eval_phone(
         model=model,
         dataset=test_data,
         beam_width=args.beam_width,
         max_decode_len=MAX_DECODE_LEN_PHONE,
         eval_batch_size=args.eval_batch_size,
+        length_penalty=args.length_penalty,
         progressbar=True,
         map_file_path='./conf/phones.60-48-39.map')
     print('  PER (test): %.3f %%' % (per_test * 100))

@@ -1,8 +1,0 @@
-parent: ./conf/attention/att_bgru.yml
-param:
-  # framework
-  backend: pytorch
-  # backend: chainer
-
-  # regularization
-  scheduled_sampling_prob: 0.2

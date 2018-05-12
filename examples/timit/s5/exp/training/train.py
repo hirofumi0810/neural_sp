@@ -23,7 +23,7 @@ torch.cuda.manual_seed_all(1623)
 sys.path.append(os.path.abspath('../../../'))
 from models.load_model import load
 from examples.timit.s5.exp.dataset.load_dataset import Dataset
-from examples.timit.s5.exp.metrics.per import do_eval_per
+from examples.timit.s5.exp.metrics.phone import eval_phone
 from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
 from utils.training.training_loop import train_step
@@ -31,7 +31,7 @@ from utils.training.logging import set_logger
 from utils.directory import mkdir_join
 from utils.config import load_config, save_config
 
-MAX_DECODE_LEN_PHONE = 40
+MAX_DECODE_LEN_PHONE = 100
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', type=int, default=-1,
@@ -274,7 +274,7 @@ def main():
             else:
                 start_time_eval = time.time()
                 # dev
-                per_dev_epoch, _ = do_eval_per(
+                per_dev_epoch, _ = eval_phone(
                     model=model,
                     dataset=dev_data,
                     beam_width=1,
@@ -294,7 +294,7 @@ def main():
                                           learning_rate, metric_dev_best)
 
                     # test
-                    per_test, _ = do_eval_per(
+                    per_test, _ = eval_phone(
                         model=model,
                         dataset=test_data,
                         beam_width=1,
@@ -354,7 +354,7 @@ def main():
     pbar_epoch.close()
 
     # Evaluate the best model by beam search
-    per_test_best, _ = do_eval_per(
+    per_test_best, _ = eval_phone(
         model=best_model,
         dataset=test_data,
         beam_width=10,

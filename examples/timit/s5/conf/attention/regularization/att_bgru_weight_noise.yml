@@ -1,8 +1,0 @@
-parent: ./conf/attention/att_bgru.yml
-param:
-  # framework
-  backend: pytorch
-  # backend: chainer
-
-  # regularization
-  weight_noise_std: 1e-5

@@ -7,6 +7,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import re
 from tqdm import tqdm
 import pandas as pd
 
@@ -14,18 +15,18 @@ from utils.io.labels.phone import Idx2phone
 from utils.evaluation.edit_distance import compute_wer
 
 
-def do_eval_per(model, dataset, beam_width, max_decode_len, map_file_path,
-                eval_batch_size=None, progressbar=False):
+def eval_phone(model, dataset, beam_width, max_decode_len, map_file_path,
+               eval_batch_size=None, length_penalty=0, progressbar=False):
     """Evaluate trained model by Phone Error Rate.
     Args:
         model: the model to evaluate
         dataset: An instance of a `Dataset' class
         beam_width: (int): the size of beam
         max_decode_len (int): the length of output sequences
-            to stop prediction when EOS token have not been emitted.
-            This is used for seq2seq models.
+            to stop prediction. This is used for seq2seq models.
         map_file_path (string): path to phones.60-48-39.map
         eval_batch_size (int, optional): the batch size when evaluating the model
+        length_penalty (float, optional):
         progressbar (bool, optional): if True, visualize the progressbar
     Returns:
         per (float): Phone error rate
@@ -47,9 +48,10 @@ def do_eval_per(model, dataset, beam_width, max_decode_len, map_file_path,
         batch, is_new_epoch = dataset.next(batch_size=eval_batch_size)
 
         # Decode
-        best_hyps, perm_idx = model.decode(batch['xs'], batch['x_lens'],
-                                           beam_width=beam_width,
-                                           max_decode_len=max_decode_len)
+        best_hyps, _, perm_idx = model.decode(batch['xs'], batch['x_lens'],
+                                              beam_width=beam_width,
+                                              max_decode_len=max_decode_len,
+                                              length_penalty=length_penalty)
         ys = batch['ys'][perm_idx]
         y_lens = batch['y_lens'][perm_idx]
 
@@ -69,14 +71,8 @@ def do_eval_per(model, dataset, beam_width, max_decode_len, map_file_path,
             ##############################
             # Convert from index to phone (-> list of phone strings)
             str_hyp = idx2phone(best_hyps[b])
-
-            if model.model_type == 'attention':
-                str_hyp = str_hyp.split('>')[0]
-                # NOTE: Trancate by the first <EOS>
-
-                # Remove the last space
-                if len(str_hyp) > 0 and str_hyp[-1] == ' ':
-                    str_hyp = str_hyp[:-1]
+            str_hyp = re.sub(r'(.*) >(.*)', r'\1', str_hyp)
+            # NOTE: Trancate by the first <EOS>
 
             phone_hyp_list = str_hyp.split(' ')
 

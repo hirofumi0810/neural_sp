@@ -10,6 +10,7 @@ from __future__ import print_function
 from os.path import join, abspath
 import sys
 import argparse
+import re
 
 sys.path.append(abspath('../../../'))
 from models.load_model import load
@@ -19,6 +20,8 @@ from utils.config import load_config
 from utils.evaluation.edit_distance import compute_wer
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--data_save_path', type=str,
+                    help='path to saved data')
 parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
 parser.add_argument('--epoch', type=int, default=-1,
@@ -27,9 +30,8 @@ parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
-MAX_DECODE_LEN_PHONE = 40
+MAX_DECODE_LEN_PHONE = 100
 
 
 def main():
@@ -95,7 +97,7 @@ def decode(model, dataset, beam_width, eval_batch_size=None, save_path=None):
     for batch, is_new_epoch in dataset:
 
         # Decode
-        best_hyps, perm_idx = model.decode(
+        best_hyps, _, perm_idx = model.decode(
             batch['xs'], batch['x_lens'],
             beam_width=beam_width,
             max_decode_len=MAX_DECODE_LEN_PHONE)
@@ -133,7 +135,8 @@ def decode(model, dataset, beam_width, eval_batch_size=None, save_path=None):
 
             # Compute PER
             per, _, _, _ = compute_wer(ref=str_ref.split(' '),
-                                       hyp=str_hyp.split(' '),
+                                       hyp=re.sub(r'(.*) >(.*)', r'\1',
+                                                  str_hyp).split(' '),
                                        normalize=True)
             print('PER: %.3f %%' % (per * 100))
             if model.model_type == 'attention' and model.ctc_loss_weight > 0:

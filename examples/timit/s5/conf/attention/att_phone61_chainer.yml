@@ -1,13 +1,14 @@
-parent: ./conf/attention/att_bgru.yml
+parent: ./conf/attention/att_phone61.yml
 param:
   # framework
   backend: chainer
 
   # topology
-  encoder_num_layers: 4
+  encoder_num_layers: 5
   subsample_list:
     - False
-    - False
+    - True
+    - True
     - False
     - False
 
