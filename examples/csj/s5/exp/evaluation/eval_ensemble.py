@@ -14,8 +14,8 @@ import argparse
 sys.path.append(abspath('../../../'))
 from models.load_model import load
 from examples.csj.s5.exp.dataset.load_dataset import Dataset
-from examples.csj.s5.exp.metrics.cer import do_eval_cer
-from examples.csj.s5.exp.metrics.wer import do_eval_wer
+from examples.csj.s5.exp.metrics.character import eval_char
+from examples.csj.s5.exp.metrics.word import eval_word
 from utils.config import load_config
 
 parser = argparse.ArgumentParser()
@@ -124,7 +124,7 @@ def main():
         models.append(model)
 
     if 'word' in params['label_type']:
-        wer_eval1, df_wer_eval1 = do_eval_wer(
+        wer_eval1, df_eval1 = eval_word(
             models=models,
             dataset=eval1_data,
             beam_width=args.beam_width,
@@ -133,9 +133,9 @@ def main():
             length_penalty=args.length_penalty,
             progressbar=True)
         print('  WER (eval1): %.3f %%' % (wer_eval1 * 100))
-        print(df_wer_eval1)
+        print(df_eval1)
 
-        wer_eval2, df_wer_eval2 = do_eval_wer(
+        wer_eval2, df_eval2 = eval_word(
             models=models,
             dataset=eval2_data,
             beam_width=args.beam_width,
@@ -144,9 +144,9 @@ def main():
             length_penalty=args.length_penalty,
             progressbar=True)
         print('  WER (eval2): %.3f %%' % (wer_eval2 * 100))
-        print(df_wer_eval2)
+        print(df_eval2)
 
-        wer_eval3, df_wer_eval3 = do_eval_wer(
+        wer_eval3, df_eval3 = eval_word(
             models=models,
             dataset=eval3_data,
             beam_width=args.beam_width,
@@ -155,12 +155,12 @@ def main():
             length_penalty=args.length_penalty,
             progressbar=True)
         print('  WER (eval3): %.3f %%' % (wer_eval3 * 100))
-        print(df_wer_eval3)
+        print(df_eval3)
 
         print('  WER (mean): %.3f %%' %
               ((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3))
     else:
-        cer_eval1, wer_eval1, df_cer_eval1 = do_eval_cer(
+        wer_eval1, cer_eval1, df_eval1 = eval_char(
             models=models,
             dataset=eval1_data,
             beam_width=args.beam_width,
@@ -169,12 +169,11 @@ def main():
             length_penalty=args.length_penalty,
             progressbar=True,
             temperature=temp_infer)
-        print('  CER (eval1): %.3f %%' % (cer_eval1 * 100))
-        if params['label_type'] == 'kanji_wb':
-            print('  WER (eval1): %.3f %%' % (wer_eval1 * 100))
-        print(df_cer_eval1)
+        print(' WER / CER (eval1): %.3f / %.3f %%' %
+              ((wer_eval1 * 100), (cer_eval1 * 100)))
+        print(df_eval1)
 
-        cer_eval2, wer_eval2, df_cer_eval2 = do_eval_cer(
+        wer_eval2, cer_eval2, df_eval2 = eval_char(
             models=models,
             dataset=eval2_data,
             beam_width=args.beam_width,
@@ -183,12 +182,11 @@ def main():
             length_penalty=args.length_penalty,
             progressbar=True,
             temperature=temp_infer)
-        print('  CER (eval2): %.3f %%' % (cer_eval2 * 100))
-        if params['label_type'] == 'kanji_wb':
-            print('  WER (eval2): %.3f %%' % (wer_eval2 * 100))
-        print(df_cer_eval2)
+        print(' WER / CER (eval2): %.3f / %.3f %%' %
+              ((wer_eval2 * 100), (cer_eval2 * 100)))
+        print(df_eval2)
 
-        cer_eval3, wer_eval3, df_cer_eval3 = do_eval_cer(
+        wer_eval3, cer_eval3, df_eval3 = eval_char(
             models=models,
             dataset=eval3_data,
             beam_width=args.beam_width,
@@ -197,16 +195,13 @@ def main():
             length_penalty=args.length_penalty,
             progressbar=True,
             temperature=temp_infer)
-        print('  CER (eval3): %.3f %%' % (cer_eval3 * 100))
-        if params['label_type'] == 'kanji_wb':
-            print('  WER (eval3): %.3f %%' % (wer_eval3 * 100))
-        print(df_cer_eval3)
+        print(' WER / CER (eval3): %.3f / %.3f %%' %
+              ((wer_eval3 * 100), (cer_eval3 * 100)))
+        print(df_eval3)
 
-        print('  CER (mean): %.3f %%' %
-              ((cer_eval1 + cer_eval2 + cer_eval3) * 100 / 3))
-        if params['label_type'] == 'kanji_wb':
-            print('  WER (mean): %.3f %%' %
-                  ((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3))
+        print('  WER / CER (mean): %.3f / %.3f %%' %
+              (((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3),
+               ((cer_eval1 + cer_eval2 + cer_eval3) * 100 / 3)))
 
 
 if __name__ == '__main__':

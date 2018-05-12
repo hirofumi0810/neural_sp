@@ -20,6 +20,13 @@ class TestLoadDataset(unittest.TestCase):
 
     def test(self):
 
+        # self.check(label_type='kanji_wb_left', data_type='eva1')
+        # self.check(label_type='kanji_wb_right', data_type='eva1')
+        # self.check(label_type='kanji_wb_both', data_type='eva1')
+        # self.check(label_type='kanji_wb_remove', data_type='eva1')
+        #
+        # raise ValueError
+
         # data_size
         self.check(label_type='word5', data_type='eval1', data_size='subset')
         self.check(label_type='word5', data_type='eval1', data_size='fullset')

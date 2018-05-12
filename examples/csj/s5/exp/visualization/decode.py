@@ -10,6 +10,7 @@ from __future__ import print_function
 from os.path import join, abspath
 import sys
 import argparse
+import re
 
 sys.path.append(abspath('../../../'))
 from models.load_model import load
@@ -153,10 +154,11 @@ def decode(model, dataset, beam_width,
                 print('Hyp (CTC): %s' % str_hyp_ctc)
 
             try:
-                if 'word' in dataset.label_type:
+                if 'word' in dataset.label_type or dataset.label_type == 'kanji_wb':
                     wer, _, _, _ = compute_wer(
                         ref=str_ref.split('_'),
-                        hyp=str_hyp.replace('_>', '').split('_'),
+                        hyp=re.sub(r'(.*)[_]*>(.*)', r'\1',
+                                   str_hyp).split('_'),
                         normalize=True)
                     print('WER: %.3f %%' % (wer * 100))
                     if model.ctc_loss_weight > 0:
@@ -168,7 +170,8 @@ def decode(model, dataset, beam_width,
                 else:
                     cer, _, _, _ = compute_wer(
                         ref=list(str_ref.replace('_', '')),
-                        hyp=list(str_hyp.replace('>', '').replace('_', '')),
+                        hyp=list(re.sub(r'(.*)>(.*)', r'\1',
+                                        str_hyp).replace('_', '')),
                         normalize=True)
                     print('CER: %.3f %%' % (cer * 100))
                     if model.model_type == 'attention' and model.ctc_loss_weight > 0:

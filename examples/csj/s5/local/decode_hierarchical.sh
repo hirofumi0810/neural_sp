@@ -23,4 +23,4 @@ $PYTHON exp/visualization/decode_hierarchical.py \
   --epoch -1 \
   --beam_width 1 \
   --beam_width_sub 1 \
-  --eval_batch_size 1 \
+  --eval_batch_size 1

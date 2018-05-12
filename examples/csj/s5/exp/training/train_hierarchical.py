@@ -23,8 +23,8 @@ torch.cuda.manual_seed_all(1623)
 sys.path.append(os.path.abspath('../../../'))
 from models.load_model import load
 from examples.csj.s5.exp.dataset.load_dataset_hierarchical import Dataset
-from examples.csj.s5.exp.metrics.cer import do_eval_cer
-from examples.csj.s5.exp.metrics.wer import do_eval_wer
+from examples.csj.s5.exp.metrics.character import eval_char
+from examples.csj.s5.exp.metrics.word import eval_word
 from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
 from utils.training.training_loop import train_hierarchical_step
@@ -105,30 +105,6 @@ def main():
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         tool=params['tool'])
-    # eval2_data = Dataset(
-    #     data_save_path=args.data_save_path,
-    #     backend=params['backend'],
-    #     input_freq=params['input_freq'],
-    #     use_delta=params['use_delta'],
-    #     use_double_delta=params['use_double_delta'],
-    #     data_type='eval2', data_size=params['data_size'],
-    #     label_type=params['label_type'],
-    #     label_type_sub=params['label_type_sub'],
-    #     batch_size=params['batch_size'], splice=params['splice'],
-    #     num_stack=params['num_stack'], num_skip=params['num_skip'],
-    #     tool=params['tool'])
-    # eval3_data = Dataset(
-    #     data_save_path=args.data_save_path,
-    #     backend=params['backend'],
-    #     input_freq=params['input_freq'],
-    #     use_delta=params['use_delta'],
-    #     use_double_delta=params['use_double_delta'],
-    #     data_type='eval3', data_size=params['data_size'],
-    #     label_type=params['label_type'],
-    #     label_type_sub=params['label_type_sub'],
-    #     batch_size=params['batch_size'], splice=params['splice'],
-    #     num_stack=params['num_stack'], num_skip=params['num_skip'],
-    #     tool=params['tool'])
 
     params['num_classes'] = train_data.num_classes
     params['num_classes_sub'] = train_data.num_classes_sub
@@ -324,29 +300,26 @@ def main():
                 start_time_eval = time.time()
                 # dev
                 if model.main_loss_weight > 0:
-                    metric_dev_epoch, _ = do_eval_wer(
+                    metric_dev, _ = eval_word(
                         models=[model],
                         dataset=dev_data,
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_WORD,
                         eval_batch_size=1)
                     logger.info('  WER (dev, main): %.3f %%' %
-                                (metric_dev_epoch * 100))
+                                (metric_dev * 100))
                 else:
-                    metric_dev_epoch, wer_dev_sub, _ = do_eval_cer(
+                    wer_dev_sub, metric_dev,  _ = eval_char(
                         models=[model],
                         dataset=dev_data,
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_CHAR,
                         eval_batch_size=1)
-                    logger.info('  CER (dev, sub): %.3f %%' %
-                                (metric_dev_epoch * 100))
-                    if params['label_type_sub'] == 'kanji_wb':
-                        logger.info('  WER (dev, sub): %.3f %%' %
-                                    (wer_dev_sub * 100))
+                    logger.info('  WER / CER (dev, sub): %.3f / %.3f %%' %
+                                ((wer_dev_sub * 100), (metric_dev * 100)))
 
-                if metric_dev_epoch < metric_dev_best:
-                    metric_dev_best = metric_dev_epoch
+                if metric_dev < metric_dev_best:
+                    metric_dev_best = metric_dev
                     not_improved_epoch = 0
                     best_model = copy.deepcopy(model)
                     logger.info('||||| Best Score |||||')
@@ -357,7 +330,7 @@ def main():
 
                     # test
                     if model.main_loss_weight > 0:
-                        wer_eval1, _ = do_eval_wer(
+                        wer_eval1, _ = eval_word(
                             models=[model],
                             dataset=eval1_data,
                             beam_width=1,
@@ -366,38 +339,14 @@ def main():
                         logger.info('  WER (eval1, main): %.3f %%' %
                                     (wer_eval1 * 100))
                     else:
-                        cer_eval1, wer_eval1_sub, _ = do_eval_cer(
+                        wer_eval1_sub, cer_eval1_sub, _ = eval_char(
                             models=[model],
                             dataset=eval1_data,
                             beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_CHAR,
                             eval_batch_size=1)
-                        logger.info('  CER (eval1, sub): %.3f %%' %
-                                    (cer_eval1 * 100))
-                        if params['label_type_sub'] == 'kanji_wb':
-                            logger.info('  WER (eval1, sub): %.3f %%' %
-                                        (wer_eval1_sub * 100))
-
-                    # wer_eval2, _ = do_eval_wer(
-                    #     models=[model],
-                    #     dataset=eval2_data,
-                    #     beam_width=1,
-                    #     max_decode_len=MAX_DECODE_LEN_WORD,
-                    #     eval_batch_size=1)
-                    # logger.info('  WER (eval2, main): %.3f %%' %
-                    #             (wer_eval2 * 100))
-                    #
-                    # wer_eval3, _ = do_eval_wer(
-                    #     models=[model],
-                    #     dataset=eval3_data,
-                    #     beam_width=1,
-                    #     max_decode_len=MAX_DECODE_LEN_WORD,
-                    #     eval_batch_size=1)
-                    # logger.info('  WER (eval3, main): %.3f %%' %
-                    #             (wer_eval3 * 100))
-                    #
-                    # logger.info('  WER (mean, main): %.3f %%' %
-                    #             ((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3))
+                        logger.info('  WER / CER (eval1): %.3f / %.3f %%' %
+                                    ((wer_eval1_sub * 100), (cer_eval1_sub * 100)))
                 else:
                     not_improved_epoch += 1
 
@@ -413,7 +362,7 @@ def main():
                     optimizer=model.optimizer,
                     learning_rate=learning_rate,
                     epoch=epoch,
-                    value=metric_dev_epoch)
+                    value=metric_dev)
 
                 if epoch == params['convert_to_sgd_epoch']:
                     # Convert to fine-tuning stage

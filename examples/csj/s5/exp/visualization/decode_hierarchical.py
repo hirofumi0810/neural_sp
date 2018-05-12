@@ -10,6 +10,7 @@ from __future__ import print_function
 from os.path import join, abspath
 import sys
 import argparse
+import re
 
 sys.path.append(abspath('../../../'))
 from models.load_model import load
@@ -158,37 +159,42 @@ def decode(model, dataset, beam_width, beam_width_sub,
             ##############################
             # Resolving UNK
             ##############################
-            if 'OOV' in str_hyp:
-                if resolving_unk:
-                    str_hyp_no_unk = resolve_unk(
-                        str_hyp, best_hyps_sub[b], aw[b], aw_sub[b], idx2char)
-                else:
-                    str_hyp_no_unk = str_hyp
-            else:
-                str_hyp_no_unk = str_hyp
+            if 'OOV' in str_hyp and resolving_unk:
+                str_hyp_no_unk = resolve_unk(
+                    str_hyp, best_hyps_sub[b], aw[b], aw_sub[b], idx2char)
 
             print('----- wav: %s -----' % batch['input_names'][b])
             print('Ref         : %s' % str_ref.replace('_', ' '))
             print('Hyp (main)  : %s' % str_hyp.replace('_', ' '))
             print('Hyp (sub)   : %s' % str_hyp_sub.replace('_', ' '))
-            if resolve_unk:
+            if 'OOV' in str_hyp and resolving_unk:
                 print('Hyp (no UNK): %s' % str_hyp_no_unk.replace('_', ' '))
 
             try:
                 wer, _, _, _ = compute_wer(
                     ref=str_ref.split('_'),
-                    hyp=str_hyp.replace('_>', '').split('_'),
+                    hyp=re.sub(r'(.*)_>(.*)', r'\1', str_hyp).split('_'),
                     normalize=True)
                 print('WER (main)  : %.3f %%' % (wer * 100))
-                cer, _, _, _ = compute_wer(
-                    ref=list(str_ref_sub.replace('_', '')),
-                    hyp=list(str_hyp_sub.replace('>', '').replace('_', '')),
-                    normalize=True)
-                print('CER (sub)   : %.3f %%' % (cer * 100))
-                if resolve_unk:
+                if dataset.label_type_sub == 'kanji_wb':
+                    wer_sub, _, _, _ = compute_wer(
+                        ref=str_ref.split('_'),
+                        hyp=re.sub(r'(.*)>(.*)', r'\1',
+                                   str_hyp_sub).split('_'),
+                        normalize=True)
+                    print('WER (sub)  : %.3f %%' % (wer_sub * 100))
+                else:
+                    cer, _, _, _ = compute_wer(
+                        ref=list(str_ref_sub.replace('_', '')),
+                        hyp=list(re.sub(r'(.*)>(.*)', r'\1',
+                                        str_hyp_sub).replace('_', '')),
+                        normalize=True)
+                    print('CER (sub)   : %.3f %%' % (cer * 100))
+                if 'OOV' in str_hyp and resolving_unk:
                     wer_no_unk, _, _, _ = compute_wer(
                         ref=str_ref.split('_'),
-                        hyp=str_hyp_no_unk.replace('*', '').split('_'),
+                        hyp=re.sub(r'(.*)_>(.*)', r'\1',
+                                   str_hyp_no_unk.replace('*', '')).split('_'),
                         normalize=True)
                     print('WER (no UNK): %.3f %%' % (wer_no_unk * 100))
             except:

@@ -14,8 +14,8 @@ import argparse
 sys.path.append(abspath('../../../'))
 from models.load_model import load
 from examples.csj.s5.exp.dataset.load_dataset_hierarchical import Dataset
-from examples.csj.s5.exp.metrics.cer import do_eval_cer
-from examples.csj.s5.exp.metrics.wer import do_eval_wer
+from examples.csj.s5.exp.metrics.character import eval_char
+from examples.csj.s5.exp.metrics.word import eval_word
 from utils.config import load_config
 
 parser = argparse.ArgumentParser()
@@ -100,20 +100,21 @@ def main():
     ##############################
     # eval1
     ##############################
-    wer_eval1, df_wer_eval1 = do_eval_wer(
+    wer_eval1, df_eval1 = eval_word(
         models=[model],
         dataset=eval1_data,
         beam_width=args.beam_width,
+        beam_width_sub=args.beam_width_sub,
         max_decode_len=MAX_DECODE_LEN_WORD,
+        max_decode_len_sub=MAX_DECODE_LEN_CHAR,
         eval_batch_size=args.eval_batch_size,
         length_penalty=args.length_penalty,
         progressbar=True,
         resolving_unk=resolving_unk,
         a2c_oracle=a2c_oracle)
     print('  WER (eval1, main): %.3f %%' % (wer_eval1 * 100))
-    print(df_wer_eval1)
-
-    cer_eval1, wer_eval1_sub, df_cer_eval1 = do_eval_cer(
+    print(df_eval1)
+    wer_eval1_sub, cer_eval1_sub, df_eval1_sub = eval_char(
         models=[model],
         dataset=eval1_data,
         beam_width=args.beam_width_sub,
@@ -121,27 +122,28 @@ def main():
         eval_batch_size=args.eval_batch_size,
         length_penalty=args.length_penalty,
         progressbar=True)
-    print('  CER (eval1, sub): %.3f %%' % (cer_eval1 * 100))
-    if params['label_type_sub'] == 'kanji_wb':
-        print('  WER (eval1, sub): %.3f %%' % (wer_eval1_sub * 100))
-    print(df_cer_eval1)
+    print(' WER / CER (eval1, sub): %.3f / %.3f %%' %
+          ((wer_eval1_sub * 100), (cer_eval1_sub * 100)))
+    print(df_eval1_sub)
 
     ##############################
     # eval2
     ##############################
-    wer_eval2, df_wer_eval2 = do_eval_wer(
+    wer_eval2, df_eval2 = eval_word(
         models=[model],
         dataset=eval2_data,
         beam_width=args.beam_width,
+        beam_width_sub=args.beam_width_sub,
         max_decode_len=MAX_DECODE_LEN_WORD,
+        max_decode_len_sub=MAX_DECODE_LEN_CHAR,
         eval_batch_size=args.eval_batch_size,
         length_penalty=args.length_penalty,
         progressbar=True,
         resolving_unk=resolving_unk,
         a2c_oracle=a2c_oracle)
     print('  WER (eval2, main): %.3f %%' % (wer_eval2 * 100))
-    print(df_wer_eval2)
-    cer_eval2, wer_eval2_sub, df_cer_eval2 = do_eval_cer(
+    print(df_eval2)
+    wer_eval2_sub, cer_eval2_sub, df_eval2_sub = eval_char(
         models=[model],
         dataset=eval2_data,
         beam_width=args.beam_width_sub,
@@ -149,28 +151,28 @@ def main():
         eval_batch_size=args.eval_batch_size,
         length_penalty=args.length_penalty,
         progressbar=True)
-    print('  CER (eval2, sub): %.3f %%' % (cer_eval2 * 100))
-    if params['label_type_sub'] == 'kanji_wb':
-        print('  WER (eval2, sub): %.3f %%' % (wer_eval2_sub * 100))
-    print(df_cer_eval2)
+    print(' WER / CER (eval2, sub): %.3f / %.3f %%' %
+          ((wer_eval2_sub * 100), (cer_eval2_sub * 100)))
+    print(df_eval2_sub)
 
     ##############################
     # eval3
     ##############################
-    wer_eval3, df_wer_eval3 = do_eval_wer(
+    wer_eval3, df_eval3 = eval_word(
         models=[model],
         dataset=eval3_data,
         beam_width=args.beam_width,
+        beam_width_sub=args.beam_width_sub,
         max_decode_len=MAX_DECODE_LEN_WORD,
+        max_decode_len_sub=MAX_DECODE_LEN_CHAR,
         eval_batch_size=args.eval_batch_size,
         length_penalty=args.length_penalty,
         progressbar=True,
         resolving_unk=resolving_unk,
         a2c_oracle=a2c_oracle)
     print('  WER (eval3, main): %.3f %%' % (wer_eval3 * 100))
-    print(df_wer_eval3)
-
-    cer_eval3, wer_eval3_sub, df_cer_eval3 = do_eval_cer(
+    print(df_eval3)
+    wer_eval3_sub, cer_eval3_sub, df_eval3_sub = eval_char(
         models=[model],
         dataset=eval3_data,
         beam_width=args.beam_width_sub,
@@ -178,18 +180,15 @@ def main():
         eval_batch_size=args.eval_batch_size,
         length_penalty=args.length_penalty,
         progressbar=True)
-    print('  CER (eval3, sub): %.3f %%' % (cer_eval3 * 100))
-    if params['label_type_sub'] == 'kanji_wb':
-        print('  WER (eval3, sub): %.3f %%' % (wer_eval3_sub * 100))
-    print(df_cer_eval3)
+    print(' WER / CER (eval3, sub): %.3f / %.3f %%' %
+          ((wer_eval3_sub * 100), (cer_eval3_sub * 100)))
+    print(df_eval3_sub)
 
     print('  WER (mean, main): %.3f %%' %
           ((wer_eval1 + wer_eval2 + wer_eval3) * 100 / 3))
-    print('  CER (mean, sub): %.3f %%' %
-          ((cer_eval1 + cer_eval2 + cer_eval3) * 100 / 3))
-    if params['label_type_sub'] == 'kanji_wb':
-        print('  WER (mean, sub): %.3f %%' %
-              ((wer_eval1_sub + wer_eval2_sub + wer_eval3_sub) * 100 / 3))
+    print('  WER / CER (mean, sub): %.3f / %.3f %%' %
+          (((wer_eval1_sub + wer_eval2_sub + wer_eval3_sub) * 100 / 3),
+           ((cer_eval1_sub + cer_eval2_sub + cer_eval3_sub) * 100 / 3)))
 
 
 if __name__ == '__main__':

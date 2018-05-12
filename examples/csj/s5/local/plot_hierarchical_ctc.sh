@@ -21,4 +21,4 @@ $PYTHON exp/visualization/plot_hierarchical_ctc_probs.py \
   --data_save_path $DATA_SAVEPATH \
   --model_path $saved_model_path \
   --epoch -1 \
-  --eval_batch_size 1 \
+  --eval_batch_size 1

@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Define evaluation method by Character Error Rate (CSJ corpus)."""
+"""Define evaluation method of character-level models (CSJ corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -15,20 +15,19 @@ from utils.io.labels.character import Idx2char
 from utils.evaluation.edit_distance import compute_wer
 
 
-def do_eval_cer(models, dataset, beam_width, max_decode_len,
-                eval_batch_size=None,  length_penalty=0,
-                progressbar=False, temperature=1):
+def eval_char(models, dataset, beam_width, max_decode_len,
+              eval_batch_size=None, length_penalty=0,
+              progressbar=False, temperature=1):
     """Evaluate trained model by Character Error Rate.
     Args:
         models (list): the models to evaluate
         dataset: An instance of a `Dataset' class
         beam_width: (int): the size of beam
         max_decode_len (int): the length of output sequences
-            to stop prediction when EOS token have not been emitted.
-            This is used for seq2seq models.
+            to stop prediction. This is used for seq2seq models.
         eval_batch_size (int, optional): the batch size when evaluating the model
-        progressbar (bool, optional): if True, visualize the progressbar
         length_penalty (float, optional):
+        progressbar (bool, optional): if True, visualize the progressbar
         temperature (int, optional):
     Returns:
         wer (float): Word error rate
@@ -95,7 +94,6 @@ def do_eval_cer(models, dataset, beam_width, max_decode_len,
                 task_index = 1
 
         for b in range(len(batch['xs'])):
-
             ##############################
             # Reference
             ##############################
@@ -110,9 +108,8 @@ def do_eval_cer(models, dataset, beam_width, max_decode_len,
             # Hypothesis
             ##############################
             str_hyp = idx2char(best_hyps[b])
-            if 'attention' in model.model_type:
-                str_hyp = str_hyp.split('>')[0]
-                # NOTE: Trancate by the first <EOS>
+            str_hyp = re.sub(r'(.*)>(.*)', r'\1', str_hyp)
+            # NOTE: Trancate by the first <EOS>
 
             # Remove garbage labels
             str_ref = re.sub(r'[@>]+', '', str_ref)
@@ -178,9 +175,9 @@ def do_eval_cer(models, dataset, beam_width, max_decode_len,
     del_char /= num_chars
 
     df_wer_cer = pd.DataFrame(
-        {'SUB': [sub_char * 100, sub_word * 100],
-         'INS': [ins_char * 100, ins_word * 100],
-         'DEL': [del_char * 100, del_word * 100]},
-        columns=['SUB', 'INS', 'DEL'], index=['CER', 'WER'])
+        {'SUB': [sub_word * 100, sub_char * 100],
+         'INS': [ins_word * 100, ins_char * 100],
+         'DEL': [del_word * 100, del_char * 100]},
+        columns=['SUB', 'INS', 'DEL'], index=['WER', 'CER'])
 
-    return cer, wer, df_wer_cer
+    return wer, cer, df_wer_cer

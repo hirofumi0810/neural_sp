@@ -21,6 +21,6 @@ $PYTHON exp/evaluation/eval_ensemble.py \
   --data_save_path $DATA_SAVEPATH \
   --epoch -1 \
   --beam_width 1 \
-  --eval_batch_size 1 \
+  --eval_batch_size 1
 
   # --model_path $saved_model_path \
