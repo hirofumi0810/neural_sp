@@ -394,7 +394,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             sharpening_factor=1 / dec_attend_temperature,
             sigmoid_smoothing=dec_sigmoid_smoothing,
             out_channels=attention_conv_num_channels,
-            kernel_size=11,
+            # kernel_size=11,
+            kernel_size=21,
             num_heads=num_heads_dec)
 
         ##############################################
@@ -804,7 +805,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         aw_step_enc = self._create_tensor(
             (batch_size, max_time, self.num_heads_0),
             fill_value=0, dtype=torch.float)
-        aw_dec_step = self._create_tensor(
+        aw_step_dec = self._create_tensor(
             (batch_size, dec_out_sub_seq.size(1), self.num_heads_dec),
             fill_value=0, dtype=torch.float)
 
@@ -819,8 +820,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     enc_out, x_lens, dec_out, aw_step_enc)
 
                 # Score for the character-level decoder states
-                context_vec_dec, aw_dec_step = self.attend_dec_sub(
-                    dec_out_sub_seq, y_lens_sub, dec_out, aw_dec_step)
+                context_vec_dec, aw_step_dec = self.attend_dec_sub(
+                    dec_out_sub_seq, y_lens_sub, dec_out, aw_step_dec)
                 if self.relax_context_vec_dec:
                     context_vec_dec = self.W_c_dec_relax(context_vec_dec)
 
@@ -866,8 +867,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 dec_out, dec_state = self.decoder_0_fwd(dec_in, dec_state)
 
                 # Score for the character-level decoder states
-                context_vec_dec, aw_dec_step = self.attend_dec_sub(
-                    dec_out_sub_seq, y_lens_sub, dec_out, aw_dec_step)
+                context_vec_dec, aw_step_dec = self.attend_dec_sub(
+                    dec_out_sub_seq, y_lens_sub, dec_out, aw_step_dec)
                 if self.relax_context_vec_dec:
                     context_vec_dec = self.W_c_dec_relax(context_vec_dec)
 
@@ -904,8 +905,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     context_vecs, _dec_state)
 
                 # Score for the character-level decoder states
-                context_vec_dec, aw_dec_step = self.attend_dec_sub(
-                    dec_out_sub_seq, y_lens_sub, _dec_out, aw_dec_step)
+                context_vec_dec, aw_step_dec = self.attend_dec_sub(
+                    dec_out_sub_seq, y_lens_sub, _dec_out, aw_step_dec)
                 if self.relax_context_vec_dec:
                     context_vec_dec = self.W_c_dec_relax(context_vec_dec)
 
@@ -917,7 +918,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
             logits.append(logits_step)
             aw.append(aw_step_enc)
-            aw_dec.append(aw_dec_step)
+            aw_dec.append(aw_step_dec)
 
         # Concatenate in T_out-dimension
         logits = torch.cat(logits, dim=1)
@@ -967,12 +968,13 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 beam_width_sub=1,
                 max_decode_len=max_decode_len,
                 max_decode_len_sub=max_decode_len_sub,
+                length_penalty=0,
                 reverse_backward=False)
 
         # TODO: fix this
-        aw = aw[:, :, :, 0]
-        aw_sub = aw_sub[:, :, :, 0]
-        aw_dec = aw_dec[:, :, :, 0]
+        # aw = aw[:, :, :, 0]
+        # aw_sub = aw_sub[:, :, :, 0]
+        # aw_dec = aw_dec[:, :, :, 0]
 
         # Permutate indices to the original order
         perm_idx = self.tensor2np(perm_idx)
@@ -980,7 +982,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         return best_hyps, best_hyps_sub, aw, aw_sub, aw_dec
 
     def decode(self, xs, x_lens, beam_width, max_decode_len,
-               max_decode_len_sub=None,
+               beam_width_sub=1, max_decode_len_sub=None,
                length_penalty=0, coverage_penalty=0, task_index=0,
                teacher_forcing=False, ys_sub=None, y_lens_sub=None):
         """Decoding in the inference stage.
@@ -1040,20 +1042,18 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     xs, x_lens, is_multi_task=True)
 
                 # Next, decode by word-based decoder with character outputs
-                if beam_width == 1:
-                    if teacher_forcing:
-                        ys_in_sub = ys_in_sub[perm_idx]
+                if teacher_forcing:
+                    ys_in_sub = ys_in_sub[perm_idx]
 
-                    best_hyps, aw, best_hyps_sub, aw_sub, _ = self._decode_infer_joint(
-                        enc_out, x_lens, enc_out_sub, x_lens_sub,
-                        beam_width=1,
-                        beam_width_sub=1,
-                        max_decode_len=max_decode_len,
-                        max_decode_len_sub=max_decode_len_sub,
-                        teacher_forcing=teacher_forcing,
-                        ys_sub=ys_in_sub)
-                else:
-                    raise NotImplementedError
+                best_hyps, aw, best_hyps_sub, aw_sub, _ = self._decode_infer_joint(
+                    enc_out, x_lens, enc_out_sub, x_lens_sub,
+                    beam_width=1,
+                    beam_width_sub=beam_width_sub,
+                    max_decode_len=max_decode_len,
+                    max_decode_len_sub=max_decode_len_sub,
+                    length_penalty=length_penalty,
+                    teacher_forcing=teacher_forcing,
+                    ys_sub=ys_in_sub)
 
             elif task_index == 1:
                 _, _, enc_out, x_lens, perm_idx = self._encode(
@@ -1086,6 +1086,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                             enc_out_sub, x_lens_sub,
                             beam_width, beam_width_sub,
                             max_decode_len, max_decode_len_sub,
+                            length_penalty,
                             teacher_forcing=False, ys_sub=None,
                             reverse_backward=True):
         """Greedy decoding in the inference stage.
@@ -1102,6 +1103,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 to stop prediction when EOS token have not been emitted
             max_decode_len_sub (int): the length of output sequences
                 to stop prediction when EOS token have not been emitted
+            length_penalty (float, optional):
             teacher_forcing (bool, optional):
             ys_sub ():
             y_lens_sub ():
@@ -1114,280 +1116,394 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             aw_dec (np.ndarray): A tensor of size `[B, T_out, T_out_sub]`
         """
         batch_size, max_time = enc_out.size()[:2]
-        max_time_sub = enc_out_sub.size(1)
         dir = 'bwd' if self.backward_1 else 'fwd'
+        if teacher_forcing:
+            beam_width_sub = 1
 
         ##################################################
         # At first, decode by the character model
         ##################################################
-        # Initialization for the character model
-        dec_state_sub, dec_out_sub = self._init_dec_state(
-            enc_out_sub, x_lens_sub, task=1, dir=dir)
-        aw_step_sub = self._create_tensor(
-            (batch_size, max_time_sub, self.num_heads_1),
-            fill_value=0, dtype=torch.float)
-
-        # Start from <SOS>
-        y_sub = self._create_tensor(
-            (batch_size, 1), fill_value=self.sos_1, dtype=torch.long)
-        y_emb_sub = self.embed_1(y_sub)
-
         dec_out_sub_seq, aw_sub, best_hyps_sub = [], [], []
         y_lens_sub = np.zeros((batch_size,), dtype=np.int32)
-        eos_flag = [False] * batch_size
-        for t in range(max_decode_len_sub):
-            if self.decoding_order == 'attend_generate_update':
-                # Score
-                context_vec_sub, aw_step_sub = getattr(self, 'attend_1_' + dir)(
-                    enc_out_sub, x_lens_sub, dec_out_sub, aw_step_sub)
+        for b in range(batch_size):
+            # Initialization for the character model per utterance
+            dec_state_sub, dec_out_sub = self._init_dec_state(
+                enc_out_sub[b: b + 1], x_lens_sub[b:b + 1], task=1, dir=dir)
+            aw_step_sub = self._create_tensor(
+                (1, x_lens_sub[b].item(), self.num_heads_1),
+                fill_value=0, dtype=torch.float)
 
-                # Generate
-                logits_step_sub = getattr(self, 'fc_1_' + dir)(F.tanh(
-                    getattr(self, 'W_d_1_' + dir)(dec_out_sub) +
-                    getattr(self, 'W_c_1_' + dir)(context_vec_sub)))
+            complete_sub = []
+            beam_sub = [{'hyp': [self.sos_1],
+                         'score': LOG_1,
+                         'dec_state': dec_state_sub,
+                         'dec_outs': [dec_out_sub],  # NOTE: keep all outputs
+                         'aw_steps': [aw_step_sub]}]
 
-                if teacher_forcing:
-                    # Sample
-                    y_sub = ys_sub[:, t + 1:t + 2]
-                    best_hyps_sub.append(y_sub)
-                    y_emb_sub = self.embed_1(y_sub)
-                else:
-                    # Pick up 1-best
-                    y_sub = torch.max(logits_step_sub.squeeze(1), dim=1)[
-                        1].unsqueeze(1)
-                    best_hyps_sub.append(y_sub)
-                    y_emb_sub = self.embed_1(y_sub)
+            for t in range(max_decode_len_sub):
+                new_beam_sub = []
+                for i_beam in range(len(beam_sub)):
+                    if self.decoding_order == 'attend_generate_update':
+                        # Score
+                        context_vec_sub, aw_step_sub = getattr(self, 'attend_1_' + dir)(
+                            enc_out_sub[b:b + 1], x_lens_sub[b:b + 1],
+                            beam_sub[i_beam]['dec_outs'][-1], beam_sub[i_beam]['aw_steps'][-1])
 
-                # Recurrency
-                dec_in_sub = torch.cat([y_emb_sub, context_vec_sub], dim=-1)
-                dec_out_sub, dec_state_sub = getattr(self, 'decoder_1_' + dir)(
-                    dec_in_sub, dec_state_sub)
-                dec_out_sub_seq.append(dec_out_sub)
+                        # Generate
+                        logits_step_sub = getattr(self, 'fc_1_' + dir)(F.tanh(
+                            getattr(self, 'W_d_1_' + dir)(dec_out_sub) +
+                            getattr(self, 'W_c_1_' + dir)(context_vec_sub)))
+                        # NOTE: Recurrency is placed at the latter stage
 
-            elif self.decoding_order == 'attend_update_generate':
-                # Score
-                context_vec_sub, aw_step_sub = getattr(self, 'attend_1_' + dir)(
-                    enc_out_sub, x_lens_sub, dec_out_sub, aw_step_sub)
+                        # if teacher_forcing:
+                        #     # Sample
+                        #     y_sub = ys_sub[:, t + 1:t + 2]
+                        #     best_hyps_sub.append(y_sub)
+                        #     y_emb_sub = self.embed_1(y_sub)
 
-                # Recurrency
-                dec_in_sub = torch.cat([y_emb_sub, context_vec_sub], dim=-1)
-                dec_out_sub, dec_state_sub = getattr(self, 'decoder_1_' + dir)(
-                    dec_in_sub, dec_state_sub)
-                dec_out_sub_seq.append(dec_out_sub)
+                    elif self.decoding_order == 'attend_update_generate':
+                        y_sub = self._create_tensor(
+                            (1,), fill_value=beam_sub[i_beam]['hyp'][-1], dtype=torch.long).unsqueeze(1)
+                        y_sub = self.embed_1(y_sub)
 
-                # Generate
-                logits_step_sub = getattr(self, 'fc_1_' + dir)(F.tanh(
-                    getattr(self, 'W_d_1_' + dir)(dec_out_sub) +
-                    getattr(self, 'W_c_1_' + dir)(context_vec_sub)))
+                        # Score
+                        context_vec_sub, aw_step_sub = getattr(self, 'attend_1_' + dir)(
+                            enc_out_sub[b:b + 1], x_lens_sub[b:b + 1],
+                            beam_sub[i_beam]['dec_outs'][-1], beam_sub[i_beam]['aw_steps'][-1])
 
-                if teacher_forcing:
-                    # Sample
-                    y_sub = ys_sub[:, t:t + 1]
-                    best_hyps_sub.append(y_sub)
-                    y_emb_sub = self.embed_1(y_sub)
-                else:
-                    # Pick up 1-best
-                    y_sub = torch.max(logits_step_sub.squeeze(1), dim=1)[
-                        1].unsqueeze(1)
-                    best_hyps_sub.append(y_sub)
-                    y_emb_sub = self.embed_1(y_sub)
+                        # Recurrency
+                        dec_in_sub = torch.cat(
+                            [y_emb_sub, context_vec_sub], dim=-1)
+                        dec_out_sub, dec_state_sub = getattr(self, 'decoder_1_' + dir)(
+                            dec_in_sub, dec_state_sub)
+                        dec_out_sub_seq.append(dec_out_sub)
 
-            elif self.decoding_order == 'conditional':
-                # Recurrency of the first decoder
-                _dec_out_sub, _dec_state_sub = getattr(self, 'decoder_first_1_' + dir)(
-                    y_emb_sub, dec_state_sub)
+                        # Generate
+                        logits_step_sub = getattr(self, 'fc_1_' + dir)(F.tanh(
+                            getattr(self, 'W_d_1_' + dir)(dec_out_sub) +
+                            getattr(self, 'W_c_1_' + dir)(context_vec_sub)))
 
-                # Score
-                context_vec_sub, aw_step_sub = getattr(self, 'attend_1_' + dir)(
-                    enc_out_sub, x_lens_sub, _dec_out_sub, aw_step_sub)
+                        # if teacher_forcing:
+                        #     # Sample
+                        #     y_sub = ys_sub[:, t:t + 1]
+                        #     best_hyps_sub.append(y_sub)
+                        #     y_emb_sub = self.embed_1(y_sub)
 
-                # Recurrency of the second decoder
-                dec_out_sub, dec_state_sub = getattr(self, 'decoder_second_1_' + dir)(
-                    context_vec_sub, _dec_state_sub)
-                dec_out_sub_seq.append(dec_out_sub)
+                    elif self.decoding_order == 'conditional':
+                        y_sub = self._create_tensor(
+                            (1,), fill_value=beam_sub[i_beam]['hyp'][-1], dtype=torch.long).unsqueeze(1)
+                        y_sub = self.embed_1(y_sub)
 
-                # Generate
-                logits_step_sub = getattr(self, 'fc_1_' + dir)(F.tanh(
-                    getattr(self, 'W_d_1_' + dir)(dec_out_sub) +
-                    getattr(self, 'W_c_1_' + dir)(context_vec_sub)))
+                        # Recurrency of the first decoder
+                        _dec_out_sub, _dec_state_sub = getattr(self, 'decoder_first_1_' + dir)(
+                            y_sub, beam_sub[i_beam]['dec_state'])
 
-                if teacher_forcing:
-                    # Sample
-                    y_sub = ys_sub[:, t:t + 1]
-                    best_hyps_sub.append(y_sub)
-                    y_emb_sub = self.embed_1(y_sub)
-                else:
-                    # Pick up 1-best
-                    y_sub = torch.max(logits_step_sub.squeeze(1), dim=1)[
-                        1].unsqueeze(1)
-                    best_hyps_sub.append(y_sub)
-                    y_emb_sub = self.embed_1(y_sub)
+                        # Score
+                        context_vec_sub, aw_step_sub = getattr(self, 'attend_1_' + dir)(
+                            enc_out_sub[b:b + 1], x_lens_sub[b:b + 1],
+                            _dec_out_sub, beam_sub[i_beam]['aw_steps'][-1])
 
-            aw_sub.append(aw_step_sub)
+                        # Recurrency of the second decoder
+                        dec_out_sub, dec_state_sub = getattr(self, 'decoder_second_1_' + dir)(
+                            context_vec_sub, _dec_state_sub)
 
-            for b in range(batch_size):
-                if not eos_flag[b]:
-                    y_lens_sub[b] += 1
-                    # NOTE: include <EOS>
-                    if y_sub.cpu().numpy()[b] == self.eos_1:
-                        eos_flag[b] = True
+                        # Generate
+                        logits_step_sub = getattr(self, 'fc_1_' + dir)(F.tanh(
+                            getattr(self, 'W_d_1_' + dir)(dec_out_sub) +
+                            getattr(self, 'W_c_1_' + dir)(context_vec_sub)))
 
-            # Break if <EOS> is outputed in all mini-batch
-            if torch.sum(y_sub == self.eos_1) == y_sub.numel():
-                break
+                        # if teacher_forcing:
+                        #     # Sample
+                        #     y_sub = ys_sub[:, t:t + 1]
+                        #     best_hyps_sub.append(y_sub)
+                        #     y_emb_sub = self.embed_1(y_sub)
+
+                    # Path through the softmax layer & convert to log-scale
+                    log_probs_sub = F.log_softmax(
+                        logits_step_sub.squeeze(1), dim=1)
+                    # NOTE: `[1 (B), 1, num_classes]` -> `[1 (B), num_classes]`
+
+                    # Pick up the top-k scores
+                    log_probs_sub_topk, indices_sub_topk = log_probs_sub.topk(
+                        beam_width_sub, dim=1, largest=True, sorted=True)
+
+                    for k in range(beam_width_sub):
+                        if self.decoding_order == 'attend_generate_update':
+                            y_sub = self._create_tensor(
+                                (1,), fill_value=indices_sub_topk[0, k].item(), dtype=torch.long).unsqueeze(1)
+                            y_sub = self.embed_1(y_sub)
+
+                            # Recurrency
+                            dec_in_sub = torch.cat(
+                                [y_sub, context_vec_sub], dim=-1)
+                            dec_out_sub, dec_state_sub = getattr(
+                                self, 'decoder_1_' + dir)(dec_in_sub, beam_sub[i_beam]['dec_state'])
+
+                        new_beam_sub.append(
+                            {'hyp': beam_sub[i_beam]['hyp'] + [indices_sub_topk[0, k].item()],
+                             'score': beam_sub[i_beam]['score'] + log_probs_sub_topk[0, k].item(),
+                             'dec_state': copy.deepcopy(dec_state_sub),
+                             'dec_outs': beam_sub[i_beam]['dec_outs'] + [dec_out_sub],
+                             'aw_steps': beam_sub[i_beam]['aw_steps'] + [aw_step_sub]})
+
+                new_beam_sub = sorted(
+                    new_beam_sub, key=lambda x: x['score'], reverse=True)
+
+                # Remove complete hypotheses
+                not_complete_sub = []
+                for cand in new_beam_sub[:beam_width_sub]:
+                    if cand['hyp'][-1] == self.eos_1:
+                        complete_sub.append(cand)
+                    else:
+                        not_complete_sub.append(cand)
+                if len(complete_sub) >= beam_width_sub:
+                    complete_sub = complete_sub[:beam_width_sub]
+                    break
+                beam_sub = not_complete_sub[:beam_width_sub]
+
+            if len(complete_sub) == 0:
+                complete_sub = beam_sub
+
+            # Renormalized hypotheses by length
+            # if length_penalty > 0:
+            #     for j in range(len(complete_sub)):
+            #         complete_sub[j]['score'] += len(complete_sub[j]
+            #                                         ['hyp']) * length_penalty
+
+            complete_sub = sorted(
+                complete_sub, key=lambda x: x['score'], reverse=True)
+
+            best_hyps_sub.append(np.array(complete_sub[0]['hyp'][1:]))
+            # NOTE: Exclude <SOS>
+            aw_sub.append(complete_sub[0]['aw_steps'])
+            dec_out_sub_seq.append(
+                torch.cat(complete_sub[0]['dec_outs'][1:], dim=1))
+            # NOTE: Exclude the fist state
+
+            y_lens_sub[b] = len(complete_sub[0]['hyp'][1:])
+            # NOTE: include <EOS>
 
         # Concatenate in T_out dimension
-        dec_out_sub_seq = torch.cat(dec_out_sub_seq, dim=1)
-        best_hyps_sub = torch.cat(best_hyps_sub, dim=1)
-        aw_sub = torch.stack(aw_sub, dim=1)
+        for j in range(len(aw_sub)):
+            aw_sub[j] = aw_sub[j][1:]
+            # NOTE: exclude the first atteniton weights
+
+            for k in range(len(aw_sub[j])):
+                aw_sub[j][k] = aw_sub[j][k][:, :, 0]
+                # TODO: fix for multi-head atteniton
+
+            aw_sub[j] = self.tensor2np(
+                torch.stack(aw_sub[j], dim=1).squeeze(0))
 
         ##################################################
         # Next, compute logits of the word model
         ##################################################
-        # Initialization for the word model
-        dec_state, dec_out = self._init_dec_state(
-            enc_out, x_lens, task=0, dir='fwd')
-        aw_step_enc = self._create_tensor(
-            (batch_size, max_time, self.num_heads_0),
-            fill_value=0, dtype=torch.float)
-        aw_dec_step = self._create_tensor(
-            (batch_size, dec_out_sub_seq.size(1), self.num_heads_dec),
-            fill_value=0, dtype=torch.float)
-
-        y_lens_sub = self.np2tensor(y_lens_sub + 1, dtype=torch.int)
-        # NOTE: add <SOS>
+        y_lens_sub = self.np2tensor(y_lens_sub, dtype=torch.int)
         # assert max(y_lens_sub.item()) > 0
 
-        # Start from <SOS>
-        y = self._create_tensor(
-            (batch_size, 1), fill_value=self.sos_0, dtype=torch.long)
-        y_emb = self.embed_0(y)
-
         best_hyps, aw, aw_dec = [], [], []
-        for t in range(max_decode_len):
-            if self.decoding_order == 'attend_generate_update':
-                # Score for the encoder
-                context_vec_enc, aw_step_enc = self.attend_0_fwd(
-                    enc_out, x_lens, dec_out, aw_step_enc)
+        for b in range(enc_out.size(0)):
+            # Initialization for the word model per utterance
+            dec_state, dec_out = self._init_dec_state(
+                enc_out[b:b + 1], x_lens[b:b + 1], task=0, dir='fwd')
+            aw_step_enc = self._create_tensor(
+                (1, x_lens[b].item(), self.num_heads_0),
+                fill_value=0, dtype=torch.float)
+            aw_step_dec = self._create_tensor(
+                (1, dec_out_sub_seq[b].size(1), self.num_heads_dec),
+                fill_value=0, dtype=torch.float)
 
-                # Score for the character-level decoder states
-                context_vec_dec, aw_dec_step = self.attend_dec_sub(
-                    dec_out_sub_seq, y_lens_sub, dec_out, aw_dec_step)
-                if self.relax_context_vec_dec:
-                    context_vec_dec = self.W_c_dec_relax(context_vec_dec)
+            complete = []
+            beam = [{'hyp': [self.sos_0],
+                     'score': LOG_1,
+                     'dec_state': dec_state,
+                     'dec_out': dec_out,
+                     'aw_steps_enc': [aw_step_enc],
+                     'aw_steps_dec': [aw_step_dec]}]
+            for t in range(max_decode_len):
+                new_beam = []
+                for i_beam in range(len(beam)):
+                    if self.decoding_order == 'attend_generate_update':
+                        # Score for the encoder
+                        context_vec_enc, aw_step_enc = self.attend_0_fwd(
+                            enc_out[b:b + 1], x_lens[b:b + 1],
+                            beam[i_beam]['dec_out'], beam[i_beam]['aw_steps_enc'][-1])
 
-                # Generate
-                out = self.W_d_0_fwd(dec_out) + self.W_c_0_fwd(context_vec_enc)
-                if self.usage_dec_sub == 'all':
-                    out += self.W_c_dec_out(context_vec_dec)
-                logits_step = self.fc_0_fwd(F.tanh(out))
+                        # Score for the character-level decoder states
+                        context_vec_dec, aw_step_dec = self.attend_dec_sub(
+                            dec_out_sub_seq[b], y_lens_sub[b:b + 1],
+                            beam[i_beam]['dec_out'], beam[i_beam]['aw_steps_dec'][-1])
+                        if self.relax_context_vec_dec:
+                            context_vec_dec = self.W_c_dec_relax(
+                                context_vec_dec)
 
-                # Pick up 1-best
-                y = torch.max(logits_step.squeeze(1), dim=1)[1].unsqueeze(1)
-                best_hyps.append(y)
-                y_emb = self.embed_0(y)
+                        # Generate
+                        out = self.W_d_0_fwd(dec_out) + \
+                            self.W_c_0_fwd(context_vec_enc)
+                        if self.usage_dec_sub == 'all':
+                            out += self.W_c_dec_out(context_vec_dec)
+                        logits_step = self.fc_0_fwd(F.tanh(out))
 
-                # Recurrency
-                dec_in = torch.cat([y_emb, context_vec_enc], dim=-1)
-                dec_in = torch.cat(
-                    [dec_in, context_vec_dec], dim=-1)
-                dec_out, dec_state = self.decoder_0_fwd(dec_in, dec_state)
+                    elif self.decoding_order == 'attend_update_generate':
+                        y = self._create_tensor(
+                            (1,), fill_value=beam[i_beam]['hyp'][-1], dtype=torch.long).unsqueeze(1)
+                        y = getattr(self, 'embed_' + str(task))(y)
 
-            elif self.decoding_order == 'attend_update_generate':
-                # Score for the encoder
-                context_vec_enc, aw_step_enc = self.attend_0_fwd(
-                    enc_out, x_lens, dec_out, aw_step_enc)
+                        # Score for the encoder
+                        context_vec_enc, aw_step_enc = self.attend_0_fwd(
+                            enc_out[b:b + 1], x_lens[b:b + 1],
+                            beam[i_beam]['dec_out'], beam[i_beam]['aw_steps_enc'][-1])
 
-                if t == 0:
-                    if self.relax_context_vec_dec:
-                        context_vec_dec = self.W_c_dec_relax(dec_out)
+                        if t == 0:
+                            if self.relax_context_vec_dec:
+                                context_vec_dec = self.W_c_dec_relax(
+                                    beam[i_beam]['dec_out'])
+                            else:
+                                context_vec_dec = beam[i_beam]['dec_out']
+
+                        # Recurrency
+                        dec_in = torch.cat([y, context_vec_enc], dim=-1)
+                        dec_in = torch.cat([dec_in, context_vec_dec], dim=-1)
+                        dec_out, dec_state = self.decoder_0_fwd(
+                            dec_in, beam[i_beam]['dec_state'])
+
+                        # Score for the character-level decoder states
+                        context_vec_dec, aw_step_dec = self.attend_dec_sub(
+                            dec_out_sub_seq[b], y_lens_sub[b:b + 1],
+                            dec_out, beam[i_beam]['aw_steps_dec'][-1])
+                        if self.relax_context_vec_dec:
+                            context_vec_dec = self.W_c_dec_relax(
+                                context_vec_dec)
+
+                        # Generate
+                        out = self.W_d_0_fwd(dec_out) + \
+                            self.W_c_0_fwd(context_vec_enc)
+                        if self.usage_dec_sub == 'all':
+                            out += self.W_c_dec_out(context_vec_dec)
+                        logits_step = self.fc_0_fwd(F.tanh(out))
+
+                    elif self.decoding_order == 'conditional':
+                        y = self._create_tensor(
+                            (1,), fill_value=beam[i_beam]['hyp'][-1], dtype=torch.long).unsqueeze(1)
+                        y = getattr(self, 'embed_' + str(task))(y)
+
+                        # Recurrency of the first decoder
+                        _dec_out, _dec_state = self.decoder_first_0_fwd(
+                            y, beam[i_beam]['dec_state'])
+
+                        # Score for the encoder
+                        context_vec_enc, aw_step_enc = self.attend_0_fwd(
+                            enc_out[b:b + 1], x_lens[b:b + 1],
+                            _dec_out, beam[i_beam]['aw_steps_enc'][-1])
+
+                        if t == 0:
+                            if self.relax_context_vec_dec:
+                                context_vec_dec = self.W_c_dec_relax(
+                                    beam[i_beam]['dec_out'])
+                            else:
+                                context_vec_dec = beam[i_beam]['dec_out']
+
+                        # Recurrency of the second decoder
+                        context_vecs = torch.cat(
+                            [context_vec_enc, context_vec_dec], dim=-1)
+                        dec_out, dec_state = self.decoder_second_0_fwd(
+                            context_vecs, _dec_state)
+
+                        # Score for the character-level decoder states
+                        context_vec_dec, aw_step_dec = self.attend_dec_sub(
+                            dec_out_sub_seq[b], y_lens_sub[b:b + 1],
+                            _dec_out, beam[i_beam]['aw_steps_dec'][-1])
+                        if self.relax_context_vec_dec:
+                            context_vec_dec = self.W_c_dec_relax(
+                                context_vec_dec)
+
+                        # Generate
+                        out = self.W_d_0_fwd(dec_out) + \
+                            self.W_c_0_fwd(context_vec_enc)
+                        if self.usage_dec_sub == 'all':
+                            out += self.W_c_dec_out(context_vec_dec)
+                        logits_step = self.fc_0_fwd(F.tanh(out))
+
+                    # Path through the softmax layer & convert to log-scale
+                    log_probs = F.log_softmax(logits_step.squeeze(1), dim=1)
+                    # NOTE: `[1 (B), 1, num_classes]` -> `[1 (B), num_classes]`
+
+                    # Pick up the top-k scores
+                    log_probs_topk, indices_topk = log_probs.topk(
+                        beam_width, dim=1, largest=True, sorted=True)
+
+                    for k in range(beam_width):
+                        if self.decoding_order == 'attend_generate_update':
+                            y = self._create_tensor(
+                                (1,), fill_value=indices_topk[0, k].item(), dtype=torch.long).unsqueeze(1)
+                            y = self.embed_0(y)
+
+                            # Recurrency
+                            dec_in = torch.cat([y, context_vec_enc], dim=-1)
+                            dec_in = torch.cat(
+                                [dec_in, context_vec_dec], dim=-1)
+                            dec_out, dec_state = self.decoder_0_fwd(
+                                dec_in, beam[i_beam]['dec_state'])
+
+                        new_beam.append(
+                            {'hyp': beam[i_beam]['hyp'] + [indices_topk[0, k].item()],
+                             'score': beam[i_beam]['score'] + log_probs_topk[0, k].item(),
+                             'dec_state': copy.deepcopy(dec_state),
+                             'dec_out': dec_out,
+                             'aw_steps_enc': beam[i_beam]['aw_steps_enc'] + [aw_step_enc],
+                             'aw_steps_dec': beam[i_beam]['aw_steps_dec'] + [aw_step_dec]})
+
+                new_beam = sorted(
+                    new_beam, key=lambda x: x['score'], reverse=True)
+
+                # Remove complete hypotheses
+                not_complete = []
+                for cand in new_beam[:beam_width]:
+                    if cand['hyp'][-1] == self.eos_0:
+                        complete.append(cand)
                     else:
-                        context_vec_dec = dec_out
+                        not_complete.append(cand)
+                if len(complete) >= beam_width:
+                    complete = complete[:beam_width]
+                    break
+                beam = not_complete[:beam_width]
 
-                # Recurrency
-                dec_in = torch.cat([y_emb, context_vec_enc], dim=-1)
-                dec_in = torch.cat([dec_in, context_vec_dec], dim=-1)
-                dec_out, dec_state = self.decoder_0_fwd(dec_in, dec_state)
+            if len(complete) == 0:
+                complete = beam
 
-                # Score for the character-level decoder states
-                context_vec_dec, aw_dec_step = self.attend_dec_sub(
-                    dec_out_sub_seq, y_lens_sub, dec_out, aw_dec_step)
-                if self.relax_context_vec_dec:
-                    context_vec_dec = self.W_c_dec_relax(context_vec_dec)
+            # Renormalized hypotheses by length
+            if length_penalty > 0:
+                for j in range(len(complete)):
+                    complete[j]['score'] += len(complete[j]
+                                                ['hyp']) * length_penalty
 
-                # Generate
-                out = self.W_d_0_fwd(dec_out) + self.W_c_0_fwd(context_vec_enc)
-                if self.usage_dec_sub == 'all':
-                    out += self.W_c_dec_out(context_vec_dec)
-                logits_step = self.fc_0_fwd(F.tanh(out))
-
-                # Pick up 1-best
-                y = torch.max(logits_step.squeeze(1), dim=1)[1].unsqueeze(1)
-                best_hyps.append(y)
-                y_emb = self.embed_0(y)
-
-            elif self.decoding_order == 'conditional':
-                # Recurrency of the first decoder
-                _dec_out, _dec_state = self.decoder_first_0_fwd(
-                    y_emb, dec_state)
-
-                # Score for the encoder
-                context_vec_enc, aw_step_enc = self.attend_0_fwd(
-                    enc_out, x_lens, _dec_out, aw_step_enc)
-
-                if t == 0:
-                    if self.relax_context_vec_dec:
-                        context_vec_dec = self.W_c_dec_relax(dec_out)
-                    else:
-                        context_vec_dec = dec_out
-
-                # Recurrency of the second decoder
-                context_vecs = torch.cat(
-                    [context_vec_enc, context_vec_dec], dim=-1)
-                dec_out, dec_state = self.decoder_second_0_fwd(
-                    context_vecs, _dec_state)
-
-                # Score for the character-level decoder states
-                context_vec_dec, aw_dec_step = self.attend_dec_sub(
-                    dec_out_sub_seq, y_lens_sub, _dec_out, aw_dec_step)
-                if self.relax_context_vec_dec:
-                    context_vec_dec = self.W_c_dec_relax(context_vec_dec)
-
-                # Generate
-                out = self.W_d_0_fwd(dec_out) + self.W_c_0_fwd(context_vec_enc)
-                if self.usage_dec_sub == 'all':
-                    out += self.W_c_dec_out(context_vec_dec)
-                logits_step = self.fc_0_fwd(F.tanh(out))
-
-                # Pick up 1-best
-                y = torch.max(logits_step.squeeze(1), dim=1)[1].unsqueeze(1)
-                best_hyps.append(y)
-                y_emb = self.embed_0(y)
-
-            aw.append(aw_step_enc)
-            aw_dec.append(aw_dec_step)
-
-            # Break if <EOS> is outputed in all mini-batch
-            if torch.sum(y == self.eos_0) == y.numel():
-                break
+            complete = sorted(
+                complete, key=lambda x: x['score'], reverse=True)
+            best_hyps.append(np.array(complete[0]['hyp'][1:]))
+            # NOTE: Exclude <SOS>
+            aw.append(complete[0]['aw_steps_enc'])
+            aw_dec.append(complete[0]['aw_steps_dec'])
 
         # Concatenate in T_out dimension
-        best_hyps = torch.cat(best_hyps, dim=1)
-        aw = torch.stack(aw, dim=1)
-        aw_dec = torch.stack(aw_dec, dim=1)
+        for j in range(len(aw)):
+            aw[j] = aw[j][1:]
+            aw_dec[j] = aw_dec[j][1:]
+            # NOTE: exclude the first atteniton weights
 
-        # Convert to numpy
-        best_hyps = self.tensor2np(best_hyps)
-        aw = self.tensor2np(aw)
-        best_hyps_sub = self.tensor2np(best_hyps_sub)
-        aw_sub = self.tensor2np(aw_sub)
-        aw_dec = self.tensor2np(aw_dec)
+            for k in range(len(aw[j])):
+                aw[j][k] = aw[j][k][:, :, 0]
+                aw_dec[j][k] = aw_dec[j][k][:, :, 0]
+                # TODO: fix for multi-head atteniton
+
+            aw[j] = self.tensor2np(torch.stack(aw[j], dim=1).squeeze(0))
+            aw_dec[j] = self.tensor2np(
+                torch.stack(aw_dec[j], dim=1).squeeze(0))
 
         # Reverse the order
         if self.backward_1 and reverse_backward:
             y_lens_sub = self.tensor2np(y_lens_sub)
             for b in range(batch_size):
-                best_hyps_sub[b, :y_lens_sub[b]
-                              ] = best_hyps_sub[b, :y_lens_sub[b]][::-1]
+                best_hyps_sub[b][:y_lens_sub[b]
+                                 ] = best_hyps_sub[b][:y_lens_sub[b]][::-1]
 
         return best_hyps, aw, best_hyps_sub, aw_sub, aw_dec
