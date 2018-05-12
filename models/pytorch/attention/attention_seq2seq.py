@@ -1036,7 +1036,7 @@ class AttentionSeq2seq(ModelBase):
         return best_hyps, aw
 
     def _decode_infer_beam(self, enc_out, x_lens, beam_width, max_decode_len,
-                           length_penalty, coverage_penalty, task, dir, idx2token=None):
+                           length_penalty, coverage_penalty, task, dir):
         """Beam search decoding in the inference stage.
         Args:
             enc_out (torch.FloatTensor): A tensor of size
@@ -1063,7 +1063,7 @@ class AttentionSeq2seq(ModelBase):
         for b in range(enc_out.size(0)):
             # Initialization per utterance
             dec_state, dec_out = self._init_dec_state(
-                enc_out[b:b + 1], x_lens, task, dir)
+                enc_out[b:b + 1], x_lens[b:b + 1], task, dir)
             aw_step = self._create_tensor(
                 (1, x_lens[b].item(), getattr(self, 'num_heads_' + str(task))),
                 fill_value=0, dtype=torch.float)
@@ -1080,10 +1080,8 @@ class AttentionSeq2seq(ModelBase):
                     if self.decoding_order == 'attend_generate_update':
                         # Score
                         context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
-                            enc_out[b:b + 1],
-                            x_lens[b:b + 1],
-                            beam[i_beam]['dec_out'],
-                            beam[i_beam]['aw_steps'][-1])
+                            enc_out[b:b + 1], x_lens[b:b + 1],
+                            beam[i_beam]['dec_out'], beam[i_beam]['aw_steps'][-1])
 
                         # Generate
                         logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(F.tanh(
@@ -1098,15 +1096,13 @@ class AttentionSeq2seq(ModelBase):
 
                         # Score
                         context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
-                            enc_out[b:b + 1],
-                            x_lens[b:b + 1],
-                            beam[i_beam]['dec_out'],
-                            beam[i_beam]['aw_steps'][-1])
+                            enc_out[b:b + 1], x_lens[b:b + 1],
+                            beam[i_beam]['dec_out'], beam[i_beam]['aw_steps'][-1])
 
                         # Recurrency
                         dec_in = torch.cat([y, context_vec], dim=-1)
-                        dec_out, dec_state = getattr(
-                            self, 'decoder_' + str(task) + '_' + dir)(dec_in, beam[i_beam]['dec_state'])
+                        dec_out, dec_state = getattr(self, 'decoder_' + str(task) + '_' + dir)(
+                            dec_in, beam[i_beam]['dec_state'])
 
                         # Generate
                         logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(F.tanh(
@@ -1124,10 +1120,8 @@ class AttentionSeq2seq(ModelBase):
 
                         # Score
                         context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
-                            enc_out[b:b + 1],
-                            x_lens[b:b + 1],
-                            _dec_out,
-                            beam[i_beam]['aw_steps'][-1])
+                            enc_out[b:b + 1], x_lens[b:b + 1],
+                            _dec_out, beam[i_beam]['aw_steps'][-1])
 
                         # Recurrency of the second decoder
                         dec_out, dec_state = getattr(self, 'decoder_second_' + str(task) + '_' + dir)(
@@ -1143,26 +1137,24 @@ class AttentionSeq2seq(ModelBase):
                     # NOTE: `[1 (B), 1, num_classes]` -> `[1 (B), num_classes]`
 
                     # Pick up the top-k scores
-                    log_probs_topk, indices_topk = torch.topk(
-                        log_probs, k=beam_width, dim=1,
-                        largest=True, sorted=True)
+                    log_probs_topk, indices_topk = log_probs.topk(
+                        beam_width, dim=1, largest=True, sorted=True)
 
                     for k in range(beam_width):
                         if self.decoding_order == 'attend_generate_update':
                             y = self._create_tensor(
                                 (1,), fill_value=indices_topk[0, k].item(), dtype=torch.long).unsqueeze(1)
-                            y_emb = getattr(self, 'embed_' + str(task))(y)
+                            y = getattr(self, 'embed_' + str(task))(y)
 
                             # Recurrency
-                            dec_in = torch.cat([y_emb, context_vec], dim=-1)
+                            dec_in = torch.cat([y, context_vec], dim=-1)
                             dec_out, dec_state = getattr(
                                 self, 'decoder_' + str(task) + '_' + dir)(dec_in, beam[i_beam]['dec_state'])
 
                         new_beam.append(
                             {'hyp': beam[i_beam]['hyp'] + [indices_topk[0, k].item()],
                              'score': beam[i_beam]['score'] + log_probs_topk[0, k].item(),
-                             #  'score': np.logaddexp(beam[i_beam]['score'], log_probs_topk[0, k].item()),
-                             'dec_state': dec_state,
+                             'dec_state': copy.deepcopy(dec_state),
                              'dec_out': dec_out,
                              'aw_steps': beam[i_beam]['aw_steps'] + [aw_step]})
 
