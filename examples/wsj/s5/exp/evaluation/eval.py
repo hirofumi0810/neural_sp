@@ -14,7 +14,7 @@ import argparse
 sys.path.append(abspath('../../../'))
 from models.load_model import load
 from examples.wsj.s5.exp.dataset.load_dataset import Dataset
-from examples.wsj.s5.exp.metrics.wer import do_eval_wer
+from examples.wsj.s5.exp.metrics.character import eval_char
 from utils.config import load_config
 
 parser = argparse.ArgumentParser()
@@ -31,7 +31,7 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
 parser.add_argument('--length_penalty', type=float,
                     help='length penalty in beam search decodding')
 
-MAX_DECODE_LEN_CHAR = 300
+MAX_DECODE_LEN_CHAR = 200
 
 
 def main():
@@ -69,7 +69,7 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
-    wer_eval92, cer_eval92, df_wer_cer = do_eval_wer(
+    wer_eval92, cer_eval92, df_wer_cer = eval_char(
         models=[model],
         dataset=test_data,
         beam_width=args.beam_width,

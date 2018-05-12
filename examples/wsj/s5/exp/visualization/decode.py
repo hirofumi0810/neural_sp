@@ -10,6 +10,7 @@ from __future__ import print_function
 from os.path import join, abspath
 import sys
 import argparse
+import re
 
 sys.path.append(abspath('../../../'))
 from models.load_model import load
@@ -30,7 +31,7 @@ parser.add_argument('--beam_width', type=int, default=1,
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
 
-MAX_DECODE_LEN_CHAR = 300
+MAX_DECODE_LEN_CHAR = 200
 
 
 def main():
@@ -137,16 +138,16 @@ def decode(model, dataset, beam_width,
 
             try:
                 # Compute WER
-                wer, _,  _, _ = compute_wer(ref=str_ref.split('_'),
-                                            hyp=str_hyp.replace(
-                                                '>', '').split('_'),
-                                            normalize=True)
+                wer, _, _, _ = compute_wer(
+                    ref=str_ref.split('_'),
+                    hyp=re.sub(r'(.*)[_]*>(.*)', r'\1', str_hyp).split('_'),
+                    normalize=True)
                 print('WER: %.3f %%' % (wer * 100))
                 if model.ctc_loss_weight > 0:
-                    wer_ctc, _, _, _ = compute_wer(ref=str_ref.split('_'),
-                                                   hyp=str_hyp_ctc.split(
-                                                       '_'),
-                                                   normalize=True)
+                    wer_ctc, _, _, _ = compute_wer(
+                        ref=str_ref.split('_'),
+                        hyp=str_hyp_ctc.split('_'),
+                        normalize=True)
                     print('WER (CTC): %.3f %%' % (wer_ctc * 100))
             except:
                 print('--- skipped ---')
