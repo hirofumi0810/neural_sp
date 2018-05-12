@@ -23,8 +23,8 @@ torch.cuda.manual_seed_all(1623)
 sys.path.append(os.path.abspath('../../../'))
 from models.load_model import load
 from examples.swbd.s5c.exp.dataset.load_dataset_hierarchical import Dataset
-from examples.swbd.s5c.exp.metrics.cer import do_eval_cer
-from examples.swbd.s5c.exp.metrics.wer import do_eval_wer
+from examples.swbd.s5c.exp.metrics.character import eval_char
+from examples.swbd.s5c.exp.metrics.word import eval_word
 from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
 from utils.training.training_loop import train_hierarchical_step
@@ -308,17 +308,27 @@ def main():
             else:
                 start_time_eval = time.time()
                 # dev
-                metric_dev_epoch, _ = do_eval_wer(
-                    models=[model],
-                    dataset=dev_data,
-                    beam_width=1,
-                    max_decode_len=MAX_DECODE_LEN_WORD,
-                    eval_batch_size=1)
-                logger.info('  WER (dev, main): %.3f %%' %
-                            (metric_dev_epoch * 100))
+                if model.main_loss_weight > 0:
+                    metric_dev, _ = eval_word(
+                        models=[model],
+                        dataset=dev_data,
+                        beam_width=1,
+                        max_decode_len=MAX_DECODE_LEN_WORD,
+                        eval_batch_size=1)
+                    logger.info('  WER (dev, main): %.3f %%' %
+                                (metric_dev * 100))
+                else:
+                    wer_dev_sub, metric_dev, _ = eval_char(
+                        models=[model],
+                        dataset=dev_data,
+                        beam_width=1,
+                        max_decode_len=MAX_DECODE_LEN_CHAR,
+                        eval_batch_size=1)
+                    logger.info('  WER / CER (dev, sub): %.3f / %.3f %%' %
+                                ((wer_dev_sub * 100), (metric_dev * 100)))
 
-                if metric_dev_epoch < metric_dev_best:
-                    metric_dev_best = metric_dev_epoch
+                if metric_dev < metric_dev_best:
+                    metric_dev_best = metric_dev
                     not_improved_epoch = 0
                     best_model = copy.deepcopy(model)
                     logger.info('||||| Best Score |||||')
@@ -328,26 +338,45 @@ def main():
                                           learning_rate, metric_dev_best)
 
                     # test
-                    wer_eval2000_swbd, _ = do_eval_wer(
-                        models=[model],
-                        dataset=eval2000_swbd_data,
-                        beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_WORD,
-                        eval_batch_size=1)
-                    logger.info('  WER (SWB, main): %.3f %%' %
-                                (wer_eval2000_swbd * 100))
-
-                    wer_eval2000_ch, _ = do_eval_wer(
-                        models=[model],
-                        dataset=eval2000_ch_data,
-                        beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_WORD,
-                        eval_batch_size=1)
-                    logger.info('  WER (CHE, main): %.3f %%' %
-                                (wer_eval2000_ch * 100))
-
-                    logger.info('  WER (mean, main): %.3f %%' %
-                                ((wer_eval2000_swbd + wer_eval2000_ch) * 100 / 2))
+                    if model.main_loss_weight > 0:
+                        wer_eval2000_swbd, _ = eval_word(
+                            models=[model],
+                            dataset=eval2000_swbd_data,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_WORD,
+                            eval_batch_size=1)
+                        logger.info('  WER (SWB, main): %.3f %%' %
+                                    (wer_eval2000_swbd * 100))
+                        wer_eval2000_ch, _ = eval_word(
+                            models=[model],
+                            dataset=eval2000_ch_data,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_WORD,
+                            eval_batch_size=1)
+                        logger.info('  WER (CHE, main): %.3f %%' %
+                                    (wer_eval2000_ch * 100))
+                        logger.info('  WER (mean, main): %.3f %%' %
+                                    ((wer_eval2000_swbd + wer_eval2000_ch) * 100 / 2))
+                    else:
+                        wer_eval2000_swbd_sub, cer_eval2000_swbd_sub, _ = eval_char(
+                            models=[model],
+                            dataset=eval2000_swbd_data,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_CHAR,
+                            eval_batch_size=1)
+                        logger.info(' WER / CER (SWB, sub): %.3f / %.3f %%' %
+                                    ((wer_eval2000_swbd_sub * 100), (cer_eval2000_swbd_sub * 100)))
+                        wer_eval2000_ch_sub, cer_eval2000_ch_sub, _ = eval_char(
+                            models=[model],
+                            dataset=eval2000_ch_data,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_CHAR,
+                            eval_batch_size=1)
+                        logger.info('  WER / CER (CHE, sub): %.3f / %.3f %%' %
+                                    ((wer_eval2000_ch_sub * 100), (cer_eval2000_ch_sub * 100)))
+                        logger.info('  WER / CER (mean, sub): %.3f / %.3f %%' %
+                                    (((wer_eval2000_swbd_sub + wer_eval2000_ch_sub) * 100 / 2),
+                                     ((cer_eval2000_swbd_sub + cer_eval2000_ch_sub) * 100 / 2)))
                 else:
                     not_improved_epoch += 1
 
@@ -363,7 +392,7 @@ def main():
                     optimizer=model.optimizer,
                     learning_rate=learning_rate,
                     epoch=epoch,
-                    value=metric_dev_epoch)
+                    value=metric_dev)
 
                 if epoch == params['convert_to_sgd_epoch']:
                     # Convert to fine-tuning stage

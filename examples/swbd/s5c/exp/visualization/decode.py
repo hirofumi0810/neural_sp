@@ -22,6 +22,8 @@ from utils.config import load_config
 from utils.evaluation.edit_distance import compute_wer
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--data_save_path', type=str,
+                    help='path to saved data')
 parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
 parser.add_argument('--epoch', type=int, default=-1,
@@ -30,7 +32,6 @@ parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
 MAX_DECODE_LEN_WORD = 100
 MAX_DECODE_LEN_CHAR = 300
@@ -166,28 +167,18 @@ def decode(model, dataset, beam_width,
 
             try:
                 # Compute WER
-                if 'word' in dataset.label_type:
-                    wer, _, _, _ = compute_wer(ref=str_ref.split('_'),
-                                               hyp=str_hyp.split('_'),
-                                               normalize=True)
-                    print('WER: %.3f %%' % (wer * 100))
-                    if model.ctc_loss_weight > 0:
-                        wer_ctc, _, _, _ = compute_wer(ref=str_ref.split('_'),
-                                                       hyp=str_hyp_ctc.split(
-                                                           '_'),
-                                                       normalize=True)
-                        print('WER (CTC): %.3f %%' % (wer_ctc * 100))
-                else:
-                    cer, _, _, _ = compute_wer(ref=str_ref.split('_'),
-                                               hyp=str_hyp.split('_'),
-                                               normalize=True)
-                    print('CER: %.3f %%' % (cer * 100))
-                    if model.model_type == 'attention' and model.ctc_loss_weight > 0:
-                        cer_ctc, _, _, _ = compute_wer(
-                            ref=list(str_ref.replace('_', '')),
-                            hyp=list(str_hyp.replace('_', '')),
-                            normalize=True)
-                        print('CER (CTC): %.3f %%' % (cer_ctc * 100))
+                wer, _, _, _ = compute_wer(
+                    ref=str_ref.split('_'),
+                    hyp=str_hyp.replace(
+                        r'_>.*', '').replace(r'>.*', '').split('_'),
+                    normalize=True)
+                print('WER: %.3f %%' % (wer * 100))
+                if model.ctc_loss_weight > 0:
+                    wer_ctc, _, _, _ = compute_wer(
+                        ref=str_ref.split('_'),
+                        hyp=str_hyp_ctc.split('_'),
+                        normalize=True)
+                    print('WER (CTC): %.3f %%' % (wer_ctc * 100))
             except:
                 print('--- skipped ---')
 

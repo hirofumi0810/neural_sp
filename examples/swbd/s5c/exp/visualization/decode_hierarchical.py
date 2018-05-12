@@ -23,6 +23,8 @@ from utils.evaluation.edit_distance import compute_wer
 from utils.evaluation.resolving_unk import resolve_unk
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--data_save_path', type=str,
+                    help='path to saved data')
 parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
 parser.add_argument('--epoch', type=int, default=-1,
@@ -33,8 +35,6 @@ parser.add_argument('--beam_width_sub', type=int, default=1,
                     help='the size of beam in the sub task')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--data_save_path', type=str,
-                    help='path to saved data')
 
 MAX_DECODE_LEN_WORD = 100
 MAX_DECODE_LEN_CHAR = 300
@@ -165,14 +165,9 @@ def decode(model, dataset, beam_width, beam_width_sub,
             ##############################
             # Resolving UNK
             ##############################
-            if 'OOV' in str_hyp:
-                if resolving_unk:
-                    str_hyp_no_unk = resolve_unk(
-                        str_hyp, best_hyps_sub[b], aw[b], aw_sub[b], idx2char)
-                else:
-                    str_hyp_no_unk = str_hyp
-            else:
-                str_hyp_no_unk = str_hyp
+            if 'OOV' in str_hyp and resolving_unk:
+                str_hyp_no_unk = resolve_unk(
+                    str_hyp, best_hyps_sub[b], aw[b], aw_sub[b], idx2char)
 
             # if 'OOV' not in str_hyp:
             #     continue
@@ -193,24 +188,28 @@ def decode(model, dataset, beam_width, beam_width_sub,
             print('Ref         : %s' % str_ref.replace('_', ' '))
             print('Hyp (main)  : %s' % str_hyp.replace('_', ' '))
             print('Hyp (sub)   : %s' % str_hyp_sub.replace('_', ' '))
-            if resolving_unk:
+            if 'OOV' in str_hyp and resolving_unk:
                 print('Hyp (no UNK): %s' % str_hyp_no_unk.replace('_', ' '))
 
             try:
-                wer, _, _, _ = compute_wer(ref=str_ref.split('_'),
-                                           hyp=str_hyp.split('_'),
-                                           normalize=True)
+                # Compute WER
+                wer, _, _, _ = compute_wer(
+                    ref=str_ref.split('_'),
+                    hyp=str_hyp.replace(r'_>.*', '').split('_'),
+                    normalize=True)
                 print('WER (main)  : %.3f %%' % (wer * 100))
-                cer, _, _, _ = compute_wer(ref=list(str_ref_sub.replace('_', '')),
-                                           hyp=list(
-                                               str_hyp_sub.replace('_', '')),
-                                           normalize=True)
-                print('CER (sub)   : %.3f %%' % (cer * 100))
-                wer_no_unk, _, _, _ = compute_wer(ref=str_ref.split('_'),
-                                                  hyp=str_hyp_no_unk.replace(
-                                                      '*', '').split('_'),
-                                                  normalize=True)
-                print('WER (no UNK): %.3f %%' % (wer_no_unk * 100))
+                wer_sub, _, _, _ = compute_wer(
+                    ref=str_ref_sub.split('_'),
+                    hyp=str_hyp_sub.replace(r'>.*', '').split('_'),
+                    normalize=True)
+                print('WER (sub)   : %.3f %%' % (wer_sub * 100))
+                if 'OOV' in str_hyp and resolving_unk:
+                    wer_no_unk, _, _, _ = compute_wer(
+                        ref=str_ref.split('_'),
+                        hyp=str_hyp_no_unk.replace(
+                            '*', '').replace(r'_>.*', '').split('_'),
+                        normalize=True)
+                    print('WER (no UNK): %.3f %%' % (wer_no_unk * 100))
             except:
                 print('--- skipped ---')
 

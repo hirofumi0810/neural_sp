@@ -35,6 +35,8 @@ from utils.visualization.attention import plot_hierarchical_attention_weights
 from utils.config import load_config
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--data_save_path', type=str,
+                    help='path to saved data')
 parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
 parser.add_argument('--epoch', type=int, default=-1,
@@ -45,7 +47,6 @@ parser.add_argument('--beam_width_sub', type=int, default=1,
                     help='the size of beam in the sub task')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
 MAX_DECODE_LEN_WORD = 100
 MAX_DECODE_LEN_CHAR = 300

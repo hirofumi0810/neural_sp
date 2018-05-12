@@ -14,11 +14,13 @@ import argparse
 sys.path.append(abspath('../../../'))
 from models.load_model import load
 from examples.swbd.s5c.exp.dataset.load_dataset import Dataset
-from examples.swbd.s5c.exp.metrics.cer import do_eval_cer
-from examples.swbd.s5c.exp.metrics.wer import do_eval_wer
+from examples.swbd.s5c.exp.metrics.character import eval_char
+from examples.swbd.s5c.exp.metrics.word import eval_word
 from utils.config import load_config
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--data_save_path', type=str,
+                    help='path to saved data')
 parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
 parser.add_argument('--epoch', type=int, default=-1,
@@ -27,7 +29,6 @@ parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
 MAX_DECODE_LEN_WORD = 100
 MAX_DECODE_LEN_CHAR = 300
@@ -78,7 +79,7 @@ def main():
     model.set_cuda(deterministic=False, benchmark=True)
 
     if 'word' in params['label_type']:
-        wer_eval2000_swbd, df_wer_eval2000_swbd = do_eval_wer(
+        wer_eval2000_swbd, df_wer_eval2000_swbd = eval_word(
             models=[model],
             dataset=eval2000_swbd_data,
             beam_width=args.beam_width,
@@ -87,7 +88,8 @@ def main():
             progressbar=True)
         print('  WER (SWB): %.3f %%' % (wer_eval2000_swbd * 100))
         print(df_wer_eval2000_swbd)
-        wer_eval2000_ch, df_wer_eval2000_ch = do_eval_wer(
+
+        wer_eval2000_ch, df_wer_eval2000_ch = eval_word(
             models=[model],
             dataset=eval2000_ch_data,
             beam_width=args.beam_width,
@@ -100,31 +102,31 @@ def main():
         print('  WER (mean): %.3f %%' %
               ((wer_eval2000_swbd + wer_eval2000_ch) * 100 / 2))
     else:
-        cer_eval2000_swbd, wer_eval2000_swbd, df_cer_eval2000_swbd = do_eval_cer(
+        wer_eval2000_swbd, cer_eval2000_swbd, df_wer_cer_eval2000_swbd = eval_char(
             models=[model],
             dataset=eval2000_swbd_data,
             beam_width=args.beam_width,
             max_decode_len=MAX_DECODE_LEN_CHAR,
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
-        print('  CER (SWB): %.3f %%' % (cer_eval2000_swbd * 100))
-        print('  WER (SWB): %.3f %%' % (wer_eval2000_swbd * 100))
-        print(df_cer_eval2000_swbd)
-        cer_eval2000_ch, wer_eval2000_ch, df_cer_eval2000_ch = do_eval_cer(
+        print(' WER / CER (SWB): %.3f / %.3f %%' %
+              ((wer_eval2000_swbd * 100), (cer_eval2000_swbd * 100)))
+        print(df_wer_cer_eval2000_swbd)
+
+        wer_eval2000_ch, cer_eval2000_ch, df_wer_cer_eval2000_ch = eval_char(
             models=[model],
             dataset=eval2000_ch_data,
             beam_width=args.beam_width,
             max_decode_len=MAX_DECODE_LEN_CHAR,
             eval_batch_size=args.eval_batch_size,
             progressbar=True)
-        print('  CER (CHE): %.3f %%' % (cer_eval2000_ch * 100))
-        print('  WER (CHE): %.3f %%' % (wer_eval2000_ch * 100))
-        print(df_cer_eval2000_ch)
+        print('  WER / CER (CHE): %.3f / %.3f %%' %
+              ((wer_eval2000_ch * 100), (cer_eval2000_ch * 100)))
+        print(df_wer_cer_eval2000_ch)
 
-        print('  CER (mean): %.3f %%' %
-              ((cer_eval2000_swbd + cer_eval2000_ch) * 100 / 2))
-        print('  WER (mean): %.3f %%' %
-              ((wer_eval2000_swbd + wer_eval2000_ch) * 100 / 2))
+        print('  WER / CER (mean): %.3f / %.3f %%' %
+              (((wer_eval2000_swbd + wer_eval2000_ch) * 100 / 2),
+               ((cer_eval2000_swbd + cer_eval2000_ch) * 100 / 2)))
 
 
 if __name__ == '__main__':

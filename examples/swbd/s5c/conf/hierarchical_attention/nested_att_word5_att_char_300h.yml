@@ -63,8 +63,7 @@ param:
   num_heads_sub: 1
 
   # optimization
-  # batch_size: 40  # 5L
-  batch_size: 50  # 4L
+  batch_size: 40
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 20
@@ -115,8 +114,8 @@ param:
 
   # W2C attention
   usage_dec_sub: all
-  num_heads_dec_out_sub: 1
-  dec_attention_type: content
+  num_heads_dec: 1
+  dec_attention_type: location
 
   # regularization
   dec_attend_temperature: 1

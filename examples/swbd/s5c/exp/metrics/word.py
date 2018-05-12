@@ -19,19 +19,24 @@ from utils.evaluation.edit_distance import compute_wer
 from utils.evaluation.resolving_unk import resolve_unk
 
 
-def do_eval_wer(models, dataset, beam_width, max_decode_len,
-                eval_batch_size=None, progressbar=False,
-                resolving_unk=False, a2c_oracle=False):
+def eval_word(models, dataset, beam_width, max_decode_len,
+              beam_width_sub=1, max_decode_len_sub=300,
+              eval_batch_size=None, length_penalty=0,
+              progressbar=False, temperature=1,
+              resolving_unk=False, a2c_oracle=False):
     """Evaluate trained model by Word Error Rate.
     Args:
         models (list): the models to evaluate
         dataset: An instance of a `Dataset' class
-        beam_width: (int): the size of beam
         max_decode_len (int): the length of output sequences
-            to stop prediction when EOS token have not been emitted.
-            This is used for seq2seq models.
+            to stop prediction. This is used for seq2seq models.
+        beam_width_sub (int, optional): the size of beam in ths sub task
+            This is used for the nested attention
+        max_decode_len_sub (int, optional): the length of output sequences
+            to stop prediction. This is used for the nested attention
         eval_batch_size (int, optional): the batch size when evaluating the model
         progressbar (bool, optional): if True, visualize the progressbar
+        temperature (int, optional):
         resolving_unk (bool, optional):
         a2c_oracle (bool, optional):
     Returns:
@@ -105,8 +110,10 @@ def do_eval_wer(models, dataset, beam_width, max_decode_len,
                 best_hyps, aw, best_hyps_sub, aw_sub, perm_idx = model.decode(
                     batch['xs'], batch['x_lens'],
                     beam_width=beam_width,
+                    beam_width_sub=beam_width_sub,
                     max_decode_len=max_decode_len,
-                    max_decode_len_sub=300,
+                    max_decode_len_sub=max_label_num if a2c_oracle else max_decode_len_sub,
+                    length_penalty=length_penalty,
                     teacher_forcing=a2c_oracle,
                     ys_sub=ys_sub,
                     y_lens_sub=y_lens_sub)
@@ -114,12 +121,14 @@ def do_eval_wer(models, dataset, beam_width, max_decode_len,
                 best_hyps, aw, perm_idx = model.decode(
                     batch['xs'], batch['x_lens'],
                     beam_width=beam_width,
-                    max_decode_len=max_decode_len)
+                    max_decode_len=max_decode_len,
+                    length_penalty=length_penalty)
                 if resolving_unk:
                     best_hyps_sub, aw_sub, _ = model.decode(
                         batch['xs'], batch['x_lens'],
                         beam_width=beam_width,
-                        max_decode_len=200,
+                        max_decode_len=max_decode_len_sub,
+                        length_penalty=length_penalty,
                         task_index=1)
 
         ys = batch['ys'][perm_idx]

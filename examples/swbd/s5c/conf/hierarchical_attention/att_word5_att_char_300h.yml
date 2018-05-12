@@ -64,8 +64,7 @@ param:
   num_heads_sub: 1
 
   # optimization
-  # batch_size: 40  # 5L
-  batch_size: 50  # 4L
+  batch_size: 40
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 20
@@ -110,6 +109,8 @@ param:
   # MTL
   main_loss_weight: 0.5
   sub_loss_weight: 0.5
+  # main_loss_weight: 0.0
+  # sub_loss_weight: 1.0
   ctc_loss_weight_sub: 0.0
 
   # sub_loss_weight: 0.0

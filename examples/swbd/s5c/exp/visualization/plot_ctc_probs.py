@@ -22,13 +22,14 @@ from utils.visualization.ctc import plot_ctc_probs
 from utils.config import load_config
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--data_save_path', type=str,
+                    help='path to saved data')
 parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
 parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
 
 def main():

@@ -16,8 +16,9 @@ from examples.swbd.s5c.exp.metrics.glm import GLM
 from examples.swbd.s5c.exp.metrics.post_processing import fix_trans
 
 
-def do_eval_cer(models, dataset, beam_width, max_decode_len,
-                eval_batch_size=None, progressbar=False):
+def eval_char(models, dataset, beam_width, max_decode_len,
+              eval_batch_size=None, length_penalty=0,
+              progressbar=False, temperature=1):
     """Evaluate trained model by Character Error Rate.
     Args:
         models (list): the models to evaluate
@@ -26,6 +27,7 @@ def do_eval_cer(models, dataset, beam_width, max_decode_len,
         max_decode_len (int): the length of output sequences
             to stop prediction when EOS token have not been emitted.
             This is used for seq2seq models.
+        length_penalty (float, optional):
         eval_batch_size (int, optional): the batch size when evaluating the model
         progressbar (bool, optional): if True, visualize the progressbar
     Returns:
@@ -49,14 +51,16 @@ def do_eval_cer(models, dataset, beam_width, max_decode_len,
     glm = GLM(
         glm_path='/n/sd8/inaguma/corpus/swbd/data/eval2000/LDC2002T43/reference/en20000405_hub5.glm')
 
-    cer, wer = 0, 0
-    sub_char, ins_char, del_char = 0, 0, 0
+    wer, cer = 0, 0
     sub_word, ins_word, del_word = 0, 0, 0
+    sub_char, ins_char, del_char = 0, 0, 0
     num_words, num_chars = 0, 0
     if progressbar:
         pbar = tqdm(total=len(dataset))  # TODO: fix this
     while True:
         batch, is_new_epoch = dataset.next(batch_size=eval_batch_size)
+
+        # TODO: add CTC ensemble
 
         # Decode
         model = models[0]
@@ -66,7 +70,8 @@ def do_eval_cer(models, dataset, beam_width, max_decode_len,
             best_hyps, _, perm_idx = model.decode(
                 batch['xs'], batch['x_lens'],
                 beam_width=beam_width,
-                max_decode_len=max_decode_len)
+                max_decode_len=max_decode_len,
+                length_penalty=length_penalty)
             ys = batch['ys'][perm_idx]
             y_lens = batch['y_lens'][perm_idx]
         else:
@@ -74,6 +79,7 @@ def do_eval_cer(models, dataset, beam_width, max_decode_len,
                 batch['xs'], batch['x_lens'],
                 beam_width=beam_width,
                 max_decode_len=max_decode_len,
+                length_penalty=length_penalty,
                 task_index=1)
             ys = batch['ys_sub'][perm_idx]
             y_lens = batch['y_lens_sub'][perm_idx]
@@ -113,8 +119,8 @@ def do_eval_cer(models, dataset, beam_width, max_decode_len,
                     pbar.update(1)
                 continue
 
-            # Compute WER
             try:
+                # Compute WER
                 wer_b, sub_b, ins_b, del_b = compute_wer(
                     ref=str_ref.split('_'),
                     hyp=str_hyp.split('_'),
@@ -151,18 +157,18 @@ def do_eval_cer(models, dataset, beam_width, max_decode_len,
     dataset.reset()
 
     wer /= num_words
+    sub_word /= num_words
+    ins_word /= num_words
+    del_word /= num_words
     cer /= num_chars
     sub_char /= num_chars
     ins_char /= num_chars
     del_char /= num_chars
-    sub_word /= num_words
-    ins_word /= num_words
-    del_word /= num_words
 
     df_wer_cer = pd.DataFrame(
-        {'SUB': [sub_char * 100, sub_word * 100],
-         'INS': [ins_char * 100, ins_word * 100],
-         'DEL': [del_char * 100, del_word * 100]},
-        columns=['SUB', 'INS', 'DEL'], index=['CER', 'WER'])
+        {'SUB': [sub_word * 100, sub_char * 100],
+         'INS': [ins_word * 100, ins_char * 100],
+         'DEL': [del_word * 100, del_char * 100]},
+        columns=['SUB', 'INS', 'DEL'], index=['WER', 'CER'])
 
-    return cer, wer, df_wer_cer
+    return wer, cer, df_wer_cer
