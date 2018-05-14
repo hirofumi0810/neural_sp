@@ -29,6 +29,7 @@ class TestLoadDataset(unittest.TestCase):
         self.check(data_size='train_si84')
 
         # label_type
+        self.check(label_type='word')
         self.check(label_type='character_capital_divide')
 
         # sort

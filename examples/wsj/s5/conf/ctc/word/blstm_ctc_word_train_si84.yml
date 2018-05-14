@@ -1,0 +1,14 @@
+parent: ./conf/ctc/character/blstm_ctc_char_train_si284.yml
+param:
+  # framework
+  backend: pytorch
+
+  # corpus
+  data_size: train_si84
+  label_type: word
+
+  # initialization
+  char_init: False
+
+  # annealing
+  print_step: 20

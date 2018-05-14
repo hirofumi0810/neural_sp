@@ -16,7 +16,7 @@ from utils.evaluation.edit_distance import compute_wer
 
 
 def eval_char(models, dataset, beam_width, max_decode_len,
-              eval_batch_size=None,  length_penalty=0,
+              eval_batch_size=None, length_penalty=0,
               progressbar=False, temperature=1):
     """Evaluate trained model by Character Error Rate.
     Args:
@@ -94,6 +94,9 @@ def eval_char(models, dataset, beam_width, max_decode_len,
             str_hyp = re.sub(r'(.*)>(.*)', r'\1', str_hyp)
             # NOTE: Trancate by the first <EOS>
 
+            ##############################
+            # Post-proccessing
+            ##############################
             # Remove garbage labels
             str_ref = re.sub(r'[@>]+', '', str_ref)
             str_hyp = re.sub(r'[@>]+', '', str_hyp)

@@ -85,7 +85,7 @@ param:
   sigmoid_smoothing: False
   coverage_weight: 0
   scheduled_sampling_prob: 0.2
-  scheduled_sampling_max_step: 50000
+  scheduled_sampling_max_step: 15000
   label_smoothing_prob: 0.1
   weight_noise_std: 0
 

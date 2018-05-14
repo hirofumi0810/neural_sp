@@ -24,6 +24,7 @@ sys.path.append(os.path.abspath('../../../'))
 from models.load_model import load
 from examples.wsj.s5.exp.dataset.load_dataset import Dataset
 from examples.wsj.s5.exp.metrics.character import eval_char
+from examples.swbd.s5c.exp.metrics.word import eval_word
 from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
 from utils.training.training_loop import train_step
@@ -31,6 +32,7 @@ from utils.training.logging import set_logger
 from utils.directory import mkdir_join
 from utils.config import load_config, save_config
 
+MAX_DECODE_LEN_WORD = 100
 MAX_DECODE_LEN_CHAR = 200
 
 parser = argparse.ArgumentParser()
@@ -276,14 +278,23 @@ def main():
             else:
                 start_time_eval = time.time()
                 # dev
-                wer_dev, metric_dev, _ = eval_char(
-                    models=[model],
-                    dataset=dev93_data,
-                    beam_width=1,
-                    max_decode_len=MAX_DECODE_LEN_CHAR,
-                    eval_batch_size=1)
-                logger.info('  WER / CER (dev93): %.3f %% / %.3f %%' %
-                            ((wer_dev * 100), (metric_dev * 100)))
+                if params['label_type'] == 'word':
+                    metric_dev, _ = eval_word(
+                        models=[model],
+                        dataset=dev93_data,
+                        beam_width=1,
+                        max_decode_len=MAX_DECODE_LEN_WORD,
+                        eval_batch_size=1)
+                    logger.info('  WER (dev93): %.3f %%' % (metric_dev * 100))
+                else:
+                    wer_dev, metric_dev, _ = eval_char(
+                        models=[model],
+                        dataset=dev93_data,
+                        beam_width=1,
+                        max_decode_len=MAX_DECODE_LEN_CHAR,
+                        eval_batch_size=1)
+                    logger.info('  WER / CER (dev93): %.3f %% / %.3f %%' %
+                                ((wer_dev * 100), (metric_dev * 100)))
 
                 if metric_dev < metric_dev_best:
                     metric_dev_best = metric_dev
@@ -296,14 +307,24 @@ def main():
                                           learning_rate, metric_dev_best)
 
                     # test
-                    wer_eval92, cer_eval92, _ = eval_char(
-                        models=[model],
-                        dataset=eval92_data,
-                        beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_CHAR,
-                        eval_batch_size=1)
-                    logger.info('  WER / CER (eval92): %.3f %% / %.3f %%' %
-                                ((wer_eval92 * 100), (cer_eval92 * 100)))
+                    if 'word' in params['label_type']:
+                        wer_eval92, _ = eval_word(
+                            models=[model],
+                            dataset=eval92_data,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_WORD,
+                            eval_batch_size=1)
+                        logger.info('  WER (eval92): %.3f %%' %
+                                    (wer_eval92 * 100))
+                    else:
+                        wer_eval92, cer_eval92, _ = eval_char(
+                            models=[model],
+                            dataset=eval92_data,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_CHAR,
+                            eval_batch_size=1)
+                        logger.info('  WER / CER (eval92): %.3f %% / %.3f %%' %
+                                    ((wer_eval92 * 100), (cer_eval92 * 100)))
                 else:
                     not_improved_epoch += 1
 

@@ -63,6 +63,7 @@ def main():
                 args.data_save_path, 'dataset', args.tool, data_size, data_type)
 
             df_columns = ['frame_num', 'input_path', 'transcript']
+            df_word = pd.DataFrame([], columns=df_columns)
             df_char = pd.DataFrame([], columns=df_columns)
             df_char_capital = pd.DataFrame([], columns=df_columns)
 
@@ -70,6 +71,7 @@ def main():
                 frame_num_dict = pickle.load(f)
 
             utt_count = 0
+            df_word_list = []
             df_char_list, df_char_capital_list = [], []
             for utt_idx, trans in tqdm(trans_dict.items()):
                 speaker = utt_idx[:3]
@@ -82,6 +84,8 @@ def main():
                     raise ValueError('There is no file: %s' %
                                      feat_utt_save_path)
 
+                df_word = add_element(
+                    df_word, [frame_num, feat_utt_save_path, trans['word']])
                 df_char = add_element(
                     df_char, [frame_num, feat_utt_save_path, trans['char']])
                 df_char_capital = add_element(
@@ -90,29 +94,37 @@ def main():
 
                 # Reset
                 if utt_count == 10000:
+                    df_word_list.append(df_word)
                     df_char_list.append(df_char)
                     df_char_capital_list.append(df_char_capital)
 
+                    df_word = pd.DataFrame([], columns=df_columns)
                     df_char = pd.DataFrame([], columns=df_columns)
                     df_char_capital = pd.DataFrame([], columns=df_columns)
 
                     utt_count = 0
 
             # Last dataframe
+            df_word_list.append(df_word)
             df_char_list.append(df_char)
             df_char_capital_list.append(df_char_capital)
 
             # Concatenate all dataframes
+            df_word = df_word_list[0]
             df_char = df_char_list[0]
             df_char_capital = df_char_capital_list[0]
 
+            for i in df_word_list[1:]:
+                df_word = pd.concat([df_char, i], axis=0)
             for i in df_char_list[1:]:
                 df_char = pd.concat([df_char, i], axis=0)
             for i in df_char_capital_list[1:]:
                 df_char_capital = pd.concat([df_char_capital, i], axis=0)
 
-            df_char.to_csv(join(csv_save_path, 'character.csv'),
-                           encoding='utf-8')
+            df_word.to_csv(
+                join(csv_save_path, 'word.csv'), encoding='utf-8')
+            df_char.to_csv(
+                join(csv_save_path, 'character.csv'), encoding='utf-8')
             df_char_capital.to_csv(
                 join(csv_save_path, 'character_capital_divide.csv'), encoding='utf-8')
 
@@ -135,7 +147,7 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
             key (string) => speaker
             value (dict) => the dictionary of utterance information of each speaker
                 key (string) => utterance index
-                value (list) => list of [char_indices, char_capital_indices]
+                value (dict) => list of [word_indices, char_indices, char_capital_indices]
     """
     # Make vocabulary files
     word_vocab_path = mkdir_join(vocab_save_path, 'word.txt')
@@ -203,6 +215,12 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
 
     # Save vocabulary files
     if 'train' in data_type:
+        # word-level (threshold == 1)
+        with open(word_vocab_path, 'w') as f:
+            word_list = sorted(list(word_set)) + [OOV]
+            for w in word_list:
+                f.write('%s\n' % w)
+
         # character-level
         with open(char_vocab_path, 'w') as f:
             char_list = sorted(list(char_set)) + [SPACE]
@@ -215,29 +233,72 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
             for c in char_capital_list:
                 f.write('%s\n' % c)
 
+    # Compute OOV rate
+    if 'train' not in data_type:
+        with open(mkdir_join(vocab_save_path, 'oov', data_type + '.txt'), 'w') as f:
+
+            # word-level (threshold == 1)
+            oov_rate = compute_oov_rate(word_dict, word_vocab_path)
+            f.write('Word (freq1):\n')
+            f.write('  OOV rate: %f %%\n' % oov_rate)
+
     # Convert to index
     print('=====> Convert to index...')
+    word2idx = Word2idx(word_vocab_path)
     char2idx = Char2idx(char_vocab_path)
     char2idx_capital = Char2idx(char_capital_vocab_path, capital_divide=True)
 
     for utt_idx, [trans, trans_capital] in tqdm(trans_dict.items()):
         if data_type == 'test_eval92':
-            trans_dict[utt_idx] = {"char": trans,
+            trans_dict[utt_idx] = {"word": trans,
+                                   "char": trans,
                                    "char_capital": trans}
             # NOTE: save as it is
         else:
+            word_indices = word2idx(trans)
             char_indices = char2idx(trans)
             char_capital_indices = char2idx_capital(trans)
 
+            word_indices = ' '.join(
+                list(map(str, word_indices.tolist())))
             char_indices = ' '.join(
                 list(map(str, char_indices.tolist())))
             char_capital_indices = ' '.join(
                 list(map(str, char_capital_indices.tolist())))
 
-            trans_dict[utt_idx] = {"char": char_indices,
+            trans_dict[utt_idx] = {"word": word_indices,
+                                   "char": char_indices,
                                    "char_capital": char_capital_indices}
 
     return trans_dict
+
+
+def compute_oov_rate(word_dict, vocab_path):
+
+    with open(vocab_path, 'r') as f:
+        vocab_set = set([])
+        for line in f:
+            word = line.strip()
+
+            # Convert acronyms to character
+            if word[-1] == '.':
+                word = word.replace('.', '')
+
+            vocab_set.add(word)
+
+    oov_count = 0
+    word_num = 0
+    for word, freq in word_dict.items():
+
+        if word == '%hesitation':
+            continue
+
+        word_num += freq
+        if word not in vocab_set and word.replace('-', '') not in vocab_set:
+            oov_count += freq
+
+    oov_rate = oov_count * 100 / word_num
+    return oov_rate
 
 
 if __name__ == '__main__':

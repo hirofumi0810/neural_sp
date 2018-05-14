@@ -18,6 +18,8 @@ echo "                                   WSJ                                    
 echo ============================================================================
 
 stage=2
+hierarchical_model=false
+# hierarchical_model=true
 run_background=true
 restart=false
 
@@ -244,40 +246,79 @@ if [ $stage -le 3 ]; then
   mkdir -p log
   mkdir -p $MODEL_SAVEPATH
 
-  if $restart; then
-    if $run_background; then
-      CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-      nohup $PYTHON exp/training/train.py \
-        --gpu $gpu_index \
-        --saved_model_path $config_path \
-        --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+  echo "Start training..."
+
+  if $hierarchical_model; then
+    if $restart; then
+      if $run_background; then
+        CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+        nohup $PYTHON exp/training/train_hierarchical.py \
+          --gpu $gpu_index \
+          --saved_model_path $config_path \
+          --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+      else
+        CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+        nohup $PYTHON exp/training/train_hierarchical.py \
+          --gpu $gpu_index \
+          --saved_model_path $config_path \
+          --data_save_path $DATA_SAVEPATH || exit 1;
+      fi
     else
-      CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-      $PYTHON exp/training/train.py \
-        --gpu $gpu_index \
-        --saved_model_path $config_path \
-        --data_save_path $DATA_SAVEPATH || exit 1;
+      if $run_background; then
+        CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+        nohup $PYTHON exp/training/train_hierarchical.py \
+          --gpu $gpu_index \
+          --config_path $config_path \
+          --model_save_path $MODEL_SAVEPATH \
+          --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+      else
+        CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+        $PYTHON exp/training/train_hierarchical.py \
+          --gpu $gpu_index \
+          --config_path $config_path \
+          --model_save_path $MODEL_SAVEPATH \
+          --data_save_path $DATA_SAVEPATH || exit 1;
+      fi
     fi
   else
-    if $run_background; then
-      CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-      nohup $PYTHON exp/training/train.py \
-        --gpu $gpu_index \
-        --config_path $config_path \
-        --model_save_path $MODEL_SAVEPATH \
-        --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+    if $restart; then
+      if $run_background; then
+        CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+        nohup $PYTHON exp/training/train.py \
+          --gpu $gpu_index \
+          --saved_model_path $config_path \
+          --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+      else
+        CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+        $PYTHON exp/training/train.py \
+          --gpu $gpu_index \
+          --saved_model_path $config_path \
+          --data_save_path $DATA_SAVEPATH || exit 1;
+      fi
     else
-      CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-      $PYTHON exp/training/train.py \
-        --gpu $gpu_index \
-        --config_path $config_path \
-        --model_save_path $MODEL_SAVEPATH \
-        --data_save_path $DATA_SAVEPATH || exit 1;
+      if $run_background; then
+        CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+        nohup $PYTHON exp/training/train.py \
+          --gpu $gpu_index \
+          --config_path $config_path \
+          --model_save_path $MODEL_SAVEPATH \
+          --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+      else
+        CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+        $PYTHON exp/training/train.py \
+          --gpu $gpu_index \
+          --config_path $config_path \
+          --model_save_path $MODEL_SAVEPATH \
+          --data_save_path $DATA_SAVEPATH　|| exit 1;
+      fi
     fi
   fi
 
   echo "Finish model training (stage: 3)."
 fi
+
+
+echo "Done."
 
 
 # echo ============================================================================
@@ -297,8 +338,6 @@ fi
 #   echo "Finish rescoring (stage: 5)."
 # fi
 
-echo "Done."
-exit 0
 
 # The following demonstrate how to re-segment long audios.
 # local/run_segmentation_long_utts.sh

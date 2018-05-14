@@ -10,7 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from os.path import join, isfile
+from os.path import join
 import pandas as pd
 import logging
 logger = logging.getLogger('training')
@@ -37,7 +37,7 @@ class Dataset(DatasetBase):
             use_double_delta (bool): if True, use the acceleration feature
             data_type (string): train_si84 or train_si284 or test_dev93 or test_eval92
             data_size (string): train_si84 or train_si284
-            label_type (string): characater or characater_capital_divide
+            label_type (string): word or characater or characater_capital_divide
             batch_size (int): the size of mini-batch
             max_epoch (int, optional): the max epoch. None means infinite loop.
             splice (int, optional): frames to splice. Default is 1 frame.
