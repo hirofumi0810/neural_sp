@@ -115,7 +115,7 @@ def main():
             df_char_capital = df_char_capital_list[0]
 
             for i in df_word_list[1:]:
-                df_word = pd.concat([df_char, i], axis=0)
+                df_word = pd.concat([df_word, i], axis=0)
             for i in df_char_list[1:]:
                 df_char = pd.concat([df_char, i], axis=0)
             for i in df_char_capital_list[1:]:

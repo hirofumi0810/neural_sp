@@ -144,7 +144,7 @@ def eval_word(models, dataset, beam_width, max_decode_len,
             # Hypothesis
             ##############################
             str_hyp = idx2word(best_hyps[b])
-            if 'word' in dataset.label_type:
+            if dataset.label_type == 'word':
                 str_hyp = re.sub(r'(.*)_>(.*)', r'\1', str_hyp)
             else:
                 str_hyp = re.sub(r'(.*)>(.*)', r'\1', str_hyp)

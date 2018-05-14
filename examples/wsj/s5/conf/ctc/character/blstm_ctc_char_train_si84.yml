@@ -7,6 +7,10 @@ param:
   data_size: train_si84
   label_type: character
 
+  # optimization
+  num_epoch: 40
+  convert_to_sgd_epoch: 20
+
   # initialization
   char_init: False
 

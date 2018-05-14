@@ -15,7 +15,7 @@ sys.path.append(abspath('../../../'))
 from models.load_model import load
 from examples.wsj.s5.exp.dataset.load_dataset import Dataset
 from examples.wsj.s5.exp.metrics.character import eval_char
-from examples.csj.s5.exp.metrics.word import eval_word
+from examples.wsj.s5.exp.metrics.word import eval_word
 from utils.config import load_config
 
 parser = argparse.ArgumentParser()

@@ -24,7 +24,7 @@ sys.path.append(os.path.abspath('../../../'))
 from models.load_model import load
 from examples.wsj.s5.exp.dataset.load_dataset import Dataset
 from examples.wsj.s5.exp.metrics.character import eval_char
-from examples.swbd.s5c.exp.metrics.word import eval_word
+from examples.wsj.s5.exp.metrics.word import eval_word
 from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
 from utils.training.training_loop import train_step
@@ -76,6 +76,7 @@ def main():
         batch_size=params['batch_size'],
         max_epoch=params['num_epoch'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
+        min_frame_num=params['min_frame_num'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
         tool=params['tool'], num_enque=None,
         dynamic_batching=params['dynamic_batching'])
