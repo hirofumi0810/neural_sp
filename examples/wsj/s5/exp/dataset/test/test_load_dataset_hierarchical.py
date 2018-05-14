@@ -10,51 +10,34 @@ import sys
 import unittest
 
 sys.path.append(os.path.abspath('../../../../../../'))
-from examples.wsj.s5.exp.dataset.load_dataset import Dataset
+from examples.wsj.s5.exp.dataset.load_dataset_hierarchical import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
 from utils.measure_time_func import measure_time
 
 
-class TestLoadDataset(unittest.TestCase):
+class TestLoadDatasetHierarchical(unittest.TestCase):
 
     def test(self):
 
         # data_type
-        self.check(data_type='train_si284')
-        self.check(data_type='test_dev93')
-        self.check(data_type='test_eval92')
-
-        # data_size
-        self.check(data_size='train_si84')
-
-        # label_type
-        self.check(label_type='word')
-        self.check(label_type='character_capital_divide')
-
-        # sort
-        self.check(sort_utt=True)
-        self.check(sort_utt=True, sort_stop_epoch=2)
-        self.check(shuffle=True)
-
-        # frame stacking
-        self.check(frame_stacking=True)
-
-        # splicing
-        self.check(splice=11)
-
-        # multi-GPU
-        # self.check(label_type='character', num_gpus=8)
+        # self.check(label_type='word', label_type_sub='character',
+        #            data_type='train_si284')
+        self.check(label_type='word', label_type_sub='character',
+                   data_type='test_dev93')
+        self.check(label_type='word', label_type_sub='character',
+                   data_type='test_eval92')
 
     @measure_time
-    def check(self, label_type='character', data_type='test_dev93',
-              data_size='train_si284', backend='pytorch',
+    def check(self, label_type, label_type_sub,
+              data_type='test_dev93', data_size='train_si284', backend='pytorch',
               shuffle=False, sort_utt=True, sort_stop_epoch=None,
               frame_stacking=False, splice=1, num_gpus=1):
 
         print('========================================')
         print('  backend: %s' % backend)
         print('  label_type: %s' % label_type)
+        print('  label_type_sub: %s' % label_type_sub)
         print('  data_type: %s' % data_type)
         print('  data_size: %s' % data_size)
         print('  shuffle: %s' % str(shuffle))
@@ -72,8 +55,8 @@ class TestLoadDataset(unittest.TestCase):
             backend=backend,
             input_freq=81, use_delta=True, use_double_delta=True,
             data_type=data_type, data_size=data_size,
-            label_type=label_type, batch_size=64,
-            max_epoch=1, splice=splice,
+            label_type=label_type, label_type_sub=label_type_sub,
+            batch_size=64, max_epoch=1, splice=splice,
             num_stack=num_stack, num_skip=num_skip,
             min_frame_num=40, shuffle=shuffle,
             sort_utt=sort_utt, reverse=True, sort_stop_epoch=sort_stop_epoch,
@@ -81,10 +64,8 @@ class TestLoadDataset(unittest.TestCase):
             num_enque=None)
 
         print('=> Loading mini-batch...')
-        if 'word' in label_type:
-            map_fn = Idx2word(dataset.vocab_file_path)
-        else:
-            map_fn = Idx2char(dataset.vocab_file_path)
+        idx2word = Idx2word(dataset.vocab_file_path)
+        idx2char = Idx2char(dataset.vocab_file_path_sub)
 
         for batch, is_new_epoch in dataset:
             if data_type == 'train' and backend == 'pytorch':
@@ -97,15 +78,25 @@ class TestLoadDataset(unittest.TestCase):
                 str_ref = batch['ys'][0][0]
                 str_ref = str_ref.lower()
                 str_ref = str_ref.replace('(', '').replace(')', '')
+
+                str_ref_sub = batch['ys_sub'][0][0]
+                str_ref_sub = str_ref_sub.lower()
+                str_ref_sub = str_ref_sub.replace('(', '').replace(')', '')
             else:
-                str_ref = map_fn(batch['ys'][0][:batch['y_lens'][0]])
+                str_ref = idx2word(batch['ys'][0][:batch['y_lens'][0]])
+                str_ref_sub = idx2char(
+                    batch['ys_sub'][0][:batch['y_lens_sub'][0]])
 
             print('----- %s (epoch: %.3f, batch: %d) -----' %
                   (batch['input_names'][0], dataset.epoch_detail, len(batch['xs'])))
+            print('=' * 20)
             print(str_ref)
+            print('-' * 10)
+            print(str_ref_sub)
             print('x_lens: %d' % (batch['x_lens'][0] * num_stack))
             if not dataset.is_test:
-                print('y_lens: %d' % batch['y_lens'][0])
+                print('y_lens (word): %d' % batch['y_lens'][0])
+                print('y_lens_sub (char): %d' % batch['y_lens_sub'][0])
 
             if dataset.epoch_detail >= 1:
                 break
