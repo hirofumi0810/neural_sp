@@ -1,4 +1,4 @@
-parent: ./conf/ctc/character/blstm_ctc_char_train_si284.yml
+parent: ./conf/ctc/blstm_ctc_char_train_si284.yml
 param:
   # framework
   backend: pytorch

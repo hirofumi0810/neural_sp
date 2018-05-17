@@ -22,19 +22,16 @@ param:
   dynamic_batching: True
 
   # topology
-  model_type: nested_attention
+  model_type: hierarchical_ctc
   encoder_type: lstm
   conv_channels: []
   conv_kernel_sizes: []
   conv_strides: []
   poolings: []
-  activation: relu
   batch_norm: False
   encoder_bidirectional: True
   encoder_residual: False
   encoder_dense_residual: False
-  decoder_residual: False
-  decoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
   encoder_num_layers: 4
@@ -45,29 +42,14 @@ param:
     - True
     - False
   subsample_type: drop
-  bridge_layer: False
-  attention_type: location
-  attention_dim: 128
-  decoder_type: lstm
-  decoder_num_units: 320
-  decoder_num_layers: 1
-  decoder_num_units_sub: 320
-  decoder_num_layers_sub: 1
-  embedding_dim: 128
-  embedding_dim_sub: 32
-  attention_conv_num_channels: 10
-  attention_conv_width: 201
-  decoding_order: attend_generate_update
-  bottleneck_dim: 256
-  bottleneck_dim_sub: 256
-  num_heads: 1
-  num_heads_sub: 1
+  fc_list: [256]
+  fc_list_sub: []
 
   # optimization
-  batch_size: 40
+  batch_size: 50
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 30
+  num_epoch: 20
   convert_to_sgd_epoch: 20
 
   # initialization
@@ -80,21 +62,12 @@ param:
 
   # regularization
   clip_grad_norm: 5.0
-  clip_activation_encoder: 50
-  clip_activation_decoder: 50
+  clip_activation: 50
   dropout_input: 0
   dropout_encoder: 0.2
-  dropout_decoder: 0.2
-  dropout_embedding: 0.2
   weight_decay: 1e-6
-  init_dec_state: first
-  sharpening_factor: 1.0
-  logits_temperature: 1.0
-  sigmoid_smoothing: False
-  coverage_weight: 0
-  scheduled_sampling_prob: 0.2
-  scheduled_sampling_max_step: 15000
-  label_smoothing_prob: 0.1
+  logits_temperature: 1
+  label_smoothing_prob: 0
   weight_noise_std: 0
 
   # annealing
@@ -106,24 +79,6 @@ param:
   eval_start_epoch: 5
   print_step: 100
 
-
-
   # MTL
   main_loss_weight: 0.5
   sub_loss_weight: 0.5
-  ctc_loss_weight_sub: 0
-
-  # W2C attention
-  usage_dec_sub: all
-  num_heads_dec: 1
-  dec_attention_type: content
-
-  # regularization
-  dec_attend_temperature: 1
-  dec_sigmoid_smoothing: False
-  att_reg_weight: 0
-
-  backward_sub: False
-
-  # regularization
-  relax_context_vec_dec: False

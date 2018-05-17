@@ -102,4 +102,4 @@ param:
   # MTL
   backward_loss_weight: 0
   ctc_loss_weight: 0
-  # ctc_loss_weight: 0.5
+  # ctc_loss_weight: 0.1

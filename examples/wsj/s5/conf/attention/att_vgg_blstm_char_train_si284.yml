@@ -39,7 +39,7 @@ param:
   char_init: False
 
   # regularization
-  scheduled_sampling_max_step: 100000
+  scheduled_sampling_max_step: 30000
 
   # annealing
   print_step: 200
