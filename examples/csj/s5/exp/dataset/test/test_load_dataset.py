@@ -28,21 +28,17 @@ class TestLoadDataset(unittest.TestCase):
         # raise ValueError
 
         # data_size
-        self.check(label_type='word5', data_type='eval1', data_size='subset')
-        self.check(label_type='word5', data_type='eval1', data_size='fullset')
+        self.check(label_type='word', data_type='eval1', data_size='aps_other')
+        self.check(label_type='word', data_type='eval1', data_size='all')
 
         # data_type
-        # self.check(label_type='word5', data_type='train')
-        self.check(label_type='word5', data_type='dev')
-        self.check(label_type='word5', data_type='eval1')
-        self.check(label_type='word5', data_type='eval2')
-        self.check(label_type='word5', data_type='eval3')
+        # self.check(label_type='word', data_type='train')
+        self.check(label_type='word', data_type='dev')
+        self.check(label_type='word', data_type='eval1')
+        self.check(label_type='word', data_type='eval2')
+        self.check(label_type='word', data_type='eval3')
 
         # label_type
-        self.check(label_type='word1')
-        self.check(label_type='word10')
-        self.check(label_type='word15')
-        self.check(label_type='word20')
         self.check(label_type='kanji')
         self.check(label_type='kanji_wb')
         # self.check(label_type='kana')
@@ -52,20 +48,20 @@ class TestLoadDataset(unittest.TestCase):
         self.check(label_type='pos')
 
         # sort
-        self.check(label_type='word5', sort_utt=True, sort_stop_epoch=True)
+        self.check(label_type='word', sort_utt=True, sort_stop_epoch=True)
 
         # frame stacking
-        self.check(label_type='word5', frame_stacking=True)
+        self.check(label_type='word', frame_stacking=True)
 
         # splicing
-        self.check(label_type='word5', splice=11)
+        self.check(label_type='word', splice=11)
 
         # multi-GPU
-        # self.check(label_type='word5', num_gpus=8)
+        # self.check(label_type='word', num_gpus=8)
 
     @measure_time
     def check(self, label_type, data_type='dev',
-              data_size='fullset', backend='pytorch',
+              data_size='all', backend='pytorch',
               shuffle=False, sort_utt=True, sort_stop_epoch=None,
               frame_stacking=False, splice=1, num_gpus=1):
 

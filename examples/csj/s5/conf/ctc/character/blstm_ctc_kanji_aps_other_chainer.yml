@@ -1,0 +1,19 @@
+parent: ./conf/ctc/word/blstm_ctc_word_aps_other.yml
+param:
+  # framework
+  backend: chainer
+
+  # corpus
+  data_size: aps_other
+  label_type: kanji_wb
+
+  # topology
+  encoder_num_layers: 3
+  subsample_list:
+    - True
+    - True
+    - False
+  fc_list: [320]
+
+  # initialization
+  char_init: False

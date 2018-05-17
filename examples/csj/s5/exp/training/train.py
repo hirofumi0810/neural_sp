@@ -280,22 +280,22 @@ def main():
             else:
                 start_time_eval = time.time()
                 # dev
-                if 'word' in params['label_type']:
+                if params['label_type'] == 'word':
                     metric_dev, _ = eval_word(
                         models=[model],
                         dataset=dev_data,
+                        eval_batch_size=1,
                         beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_WORD,
-                        eval_batch_size=1)
+                        max_decode_len=MAX_DECODE_LEN_WORD)
                     logger.info('  WER (dev): %.3f %%' %
                                 (metric_dev * 100))
                 else:
                     wer_dev, metric_dev, _ = eval_char(
                         models=[model],
                         dataset=dev_data,
+                        eval_batch_size=1,
                         beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_CHAR,
-                        eval_batch_size=1)
+                        max_decode_len=MAX_DECODE_LEN_CHAR)
                     logger.info('  WER / CER (dev): %.3f / %.3f %%' %
                                 ((wer_dev * 100), (metric_dev * 100)))
 
@@ -310,22 +310,22 @@ def main():
                                           learning_rate, metric_dev_best)
 
                     # test
-                    if 'word' in params['label_type']:
+                    if params['label_type'] == 'word':
                         wer_eval1, _ = eval_word(
                             models=[model],
                             dataset=eval1_data,
+                            eval_batch_size=1,
                             beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_CHAR,
-                            eval_batch_size=1)
+                            max_decode_len=MAX_DECODE_LEN_CHAR)
                         logger.info('  WER (eval1): %.3f %%' %
                                     (wer_eval1 * 100))
                     else:
                         wer_eval1, cer_eval1, _ = eval_char(
                             models=[model],
                             dataset=eval1_data,
+                            eval_batch_size=1,
                             beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_CHAR,
-                            eval_batch_size=1)
+                            max_decode_len=MAX_DECODE_LEN_CHAR)
                         logger.info('  WER / CER (eval1): %.3f / %.3f %%' %
                                     ((wer_eval1 * 100), (cer_eval1 * 100)))
                 else:

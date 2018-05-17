@@ -21,7 +21,7 @@ $PYTHON exp/evaluation/eval_hierarchical.py \
   --data_save_path $DATA_SAVEPATH \
   --model_path $saved_model_path \
   --epoch -1 \
-  --beam_width 1 \
-  --beam_width_sub 1 \
   --eval_batch_size 1 \
+  --beam_width 4 \
+  --beam_width_sub 4 \
   --length_penalty 0.1

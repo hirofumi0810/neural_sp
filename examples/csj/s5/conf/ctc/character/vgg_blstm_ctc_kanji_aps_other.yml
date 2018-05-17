@@ -1,7 +1,10 @@
-parent: ./conf/attention/word/att_blstm_word5_subset.yml
+parent: ./conf/ctc/word/blstm_ctc_word_aps_other.yml
 param:
   # framework
   backend: pytorch
+
+  # corpus
+  label_type: kanji_wb
 
   # topology
   conv_channels: [64, 64, 128, 128]
@@ -25,26 +28,18 @@ param:
   encoder_bidirectional: True
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 4
+  encoder_num_layers: 3
   subsample_list:
     - False
     - False
     - False
-    - False
+  fc_list: [320]
 
   # optimization
   batch_size: 25
 
   # initialization
   char_init: False
-  # char_init: /n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/subset/conv_64_64_128_128_blstm320H4L_fc_256_bn_adam_lr1e-3_dropen0.2_input80
-
-  # regularization
-  scheduled_sampling_max_step: 100000
 
   # annealing
   print_step: 400
-
-  # MTL
-  backward_loss_weight: 0
-  ctc_loss_weight: 0

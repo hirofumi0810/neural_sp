@@ -21,15 +21,15 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
     def test(self):
 
         # data_type
-        # self.check(label_type='word5', label_type_sub='kanji_wb',
+        # self.check(label_type='word', label_type_sub='kanji_wb',
         #            data_type='train')
-        self.check(label_type='word5', label_type_sub='kanji_wb',
+        self.check(label_type='word', label_type_sub='kanji_wb',
                    data_type='dev')
-        self.check(label_type='word5', label_type_sub='kanji_wb',
+        self.check(label_type='word', label_type_sub='kanji_wb',
                    data_type='eval1')
-        self.check(label_type='word5', label_type_sub='kanji_wb',
+        self.check(label_type='word', label_type_sub='kanji_wb',
                    data_type='eval2')
-        self.check(label_type='word5', label_type_sub='kanji_wb',
+        self.check(label_type='word', label_type_sub='kanji_wb',
                    data_type='eval3')
 
         # label_type
@@ -37,7 +37,7 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
 
     @measure_time
     def check(self, label_type, label_type_sub, data_type='dev',
-              data_size='fullset', backend='pytorch',
+              data_size='all', backend='pytorch',
               shuffle=False, sort_utt=True, sort_stop_epoch=None,
               frame_stacking=False, splice=1, num_gpus=1):
 

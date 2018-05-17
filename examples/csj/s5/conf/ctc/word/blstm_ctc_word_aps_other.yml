@@ -4,8 +4,8 @@ param:
 
   # corpus
   corpus: csj
-  data_size: subset
-  label_type: word5
+  data_size: aps_other
+  label_type: word
 
   # features
   feature: fbank
@@ -21,7 +21,7 @@ param:
   dynamic_batching: True
 
   # topology
-  model_type: attention
+  model_type: ctc
   encoder_type: lstm
   conv_channels: []
   conv_kernel_sizes: []
@@ -34,31 +34,16 @@ param:
   encoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 4
+  encoder_num_layers: 3
   subsample_list:
-    - False
     - True
     - True
     - False
   subsample_type: drop
-  bridge_layer: False
-  attention_type: location
-  attention_dim: 128
-  decoder_type: lstm
-  decoder_residual: False
-  decoder_dense_residual: False
-  decoder_num_units: 320
-  decoder_num_layers: 1
-  embedding_dim: 128
-  attention_conv_num_channels: 10
-  attention_conv_width: 201
-  decoding_order: attend_generate_update
-  bottleneck_dim: 256
-  num_heads: 1
+  fc_list: [320]
 
   # optimization
-  # batch_size: 50  # 5L
-  batch_size: 60  # 4L
+  batch_size: 50
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 20
@@ -70,25 +55,15 @@ param:
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
   char_init: False
-  # char_init: /n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/subset/blstm320H5L_drop4_fc_256_adam_lr1e-3_dropen0.2_input80
 
   # regularization
   clip_grad_norm: 5.0
-  clip_activation_encoder: 50
-  clip_activation_decoder: 50
+  clip_activation: 50
   dropout_input: 0
   dropout_encoder: 0.2
-  dropout_decoder: 0.2
-  dropout_embedding: 0.2
   weight_decay: 1e-6
-  init_dec_state: first
-  sharpening_factor: 1.0
-  logits_temperature: 1.0
-  sigmoid_smoothing: False
-  coverage_weight: 0
-  scheduled_sampling_prob: 0.2
-  scheduled_sampling_max_step: 50000
-  label_smoothing_prob: 0.1
+  logits_temperature: 1
+  label_smoothing_prob: 0
   weight_noise_std: 0
 
   # annealing
@@ -99,7 +74,3 @@ param:
   not_improved_patient_epoch: 5
   eval_start_epoch: 5
   print_step: 200
-
-  # MTL
-  backward_loss_weight: 0
-  ctc_loss_weight: 0

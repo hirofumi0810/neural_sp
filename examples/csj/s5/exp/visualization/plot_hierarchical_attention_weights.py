@@ -28,12 +28,14 @@ parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
 parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
+parser.add_argument('--eval_batch_size', type=int, default=1,
+                    help='the size of mini-batch in evaluation')
 parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam in the main task')
 parser.add_argument('--beam_width_sub', type=int, default=1,
                     help='the size of beam in the sub task')
-parser.add_argument('--eval_batch_size', type=int, default=1,
-                    help='the size of mini-batch in evaluation')
+parser.add_argument('--length_penalty', type=float,
+                    help='length penalty in beam search decodding')
 
 MAX_DECODE_LEN_WORD = 100
 MAX_DECODE_LEN_CHAR = 200
@@ -79,25 +81,25 @@ def main():
     # Visualize
     plot(model=model,
          dataset=test_data,
-         beam_width=args.beam_width,
          eval_batch_size=args.eval_batch_size,
+         beam_width=args.beam_width,
+         beam_width_sub=args.beam_width_sub,
+         length_penalty=args.length_penalty,
          save_path=mkdir_join(args.model_path, 'att_weights'))
 
 
-def plot(model, dataset, beam_width,
-         eval_batch_size=None, save_path=None):
+def plot(model, dataset, eval_batch_size, beam_width, beam_width_sub,
+         length_penalty, save_path=None):
     """Visualize attention weights of Attetnion-based model.
     Args:
         model: model to evaluate
         dataset: An instance of a `Dataset` class
-        beam_width: (int): the size of beam
-        eval_batch_size (int, optional): the batch size when evaluating the model
+        eval_batch_size (int): the batch size when evaluating the model
+        beam_width: (int): the size of beam in the main task
+        beam_width_sub: (int): the size of beam in the sub task
+        length_penalty (float):
         save_path (string, optional): path to save attention weights plotting
     """
-    # Set batch size in the evaluation
-    if eval_batch_size is not None:
-        dataset.batch_size = eval_batch_size
-
     # Clean directory
     if save_path is not None and isdir(save_path):
         shutil.rmtree(save_path)
@@ -115,7 +117,7 @@ def plot(model, dataset, beam_width,
             max_decode_len=MAX_DECODE_LEN_WORD)
         best_hyps_sub, aw_sub, _ = model.decode(
             batch['xs'], batch['x_lens'],
-            beam_width=beam_width,
+            beam_width=beam_width_sub,
             max_decode_len=MAX_DECODE_LEN_CHAR,
             task_index=1)
 

@@ -1,0 +1,16 @@
+parent: ./conf/attention/word/att_blstm_word_aps_other.yml
+param:
+  # framework
+  backend: pytorch
+
+  # topology
+  decoder_num_layers: 2
+  decoding_order: attend_generate_update
+  num_heads: 1
+
+  # initialization
+  char_init: False
+
+  # MTL
+  backward_loss_weight: 0
+  ctc_loss_weight: 0

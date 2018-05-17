@@ -4,9 +4,9 @@ param:
 
   # corpus
   corpus: csj
-  data_size: subset
+  data_size: aps_other
   label_type: word5
-  label_type_sub: kanji_wb
+  label_type_sub: word5
 
   # features
   feature: fbank
@@ -37,10 +37,9 @@ param:
   decoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 4
-  encoder_num_layers_sub: 4
+  encoder_num_layers: 3
+  encoder_num_layers_sub: 3
   subsample_list:
-    - False
     - True
     - True
     - False
@@ -54,18 +53,17 @@ param:
   decoder_num_units_sub: 320
   decoder_num_layers_sub: 1
   embedding_dim: 128
-  embedding_dim_sub: 64
+  embedding_dim_sub: 128
   attention_conv_num_channels: 10
   attention_conv_width: 201
   decoding_order: attend_generate_update
-  bottleneck_dim: 256
-  bottleneck_dim_sub: 256
+  bottleneck_dim: 320
+  bottleneck_dim_sub: 320
   num_heads: 1
   num_heads_sub: 1
 
   # optimization
-  # batch_size: 40  # 5L
-  batch_size: 50  # 4L
+  batch_size: 40
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 20
@@ -77,7 +75,6 @@ param:
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
   char_init: False
-  # char_init: /n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/subset/blstm320H5L_drop4_fc_256_adam_lr1e-3_dropen0.2_input80
 
   # regularization
   clip_grad_norm: 5.0
@@ -124,7 +121,7 @@ param:
   dec_sigmoid_smoothing: True
   att_reg_weight: 0
 
-  backward_sub: False
+  backward_sub: True
 
   # regularization
   relax_context_vec_dec: True

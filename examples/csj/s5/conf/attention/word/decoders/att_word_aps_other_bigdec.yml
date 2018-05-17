@@ -1,4 +1,4 @@
-parent: ./conf/attention/word/att_blstm_word5_subset.yml
+parent: ./conf/attention/word/att_blstm_word_aps_other.yml
 param:
   # framework
   backend: pytorch
@@ -7,12 +7,10 @@ param:
   decoder_num_units: 1024
   decoder_num_layers: 1
   decoding_order: attend_generate_update
-  bottleneck_dim: 256
   num_heads: 1
 
   # initialization
-  # char_init: False
-  char_init: /n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/subset/blstm320H5L_drop4_fc_256_adam_lr1e-3_dropen0.2_input80
+  char_init: False
 
   # MTL
   backward_loss_weight: 0

@@ -4,9 +4,10 @@ param:
 
   # corpus
   corpus: csj
-  data_size: subset
-  label_type: word5
+  data_size: aps_other
+  label_type: word
   label_type_sub: kanji_wb
+  # label_type_sub: kanji
 
   # features
   feature: fbank
@@ -22,7 +23,7 @@ param:
   dynamic_batching: True
 
   # topology
-  model_type: hierarchical_attention
+  model_type: nested_attention
   encoder_type: lstm
   conv_channels: []
   conv_kernel_sizes: []
@@ -37,10 +38,9 @@ param:
   decoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 4
-  encoder_num_layers_sub: 4
+  encoder_num_layers: 3
+  encoder_num_layers_sub: 3
   subsample_list:
-    - False
     - True
     - True
     - False
@@ -58,16 +58,13 @@ param:
   attention_conv_num_channels: 10
   attention_conv_width: 201
   decoding_order: attend_generate_update
-  bottleneck_dim: 256
-  bottleneck_dim_sub: 256
-  backward_sub: False
-  # backward_sub: True
+  bottleneck_dim: 320
+  bottleneck_dim_sub: 320
   num_heads: 1
   num_heads_sub: 1
 
   # optimization
-  # batch_size: 40  # 5L
-  batch_size: 50  # 4L
+  batch_size: 40
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 20
@@ -79,7 +76,6 @@ param:
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
   char_init: False
-  # char_init: /n/sd8/inaguma/result/csj/pytorch/ctc/kanji_wb/subset/blstm320H5L_drop4_fc_256_adam_lr1e-3_dropen0.2_input80
 
   # regularization
   clip_grad_norm: 5.0
@@ -109,10 +105,24 @@ param:
   eval_start_epoch: 5
   print_step: 200
 
+
+
   # MTL
   main_loss_weight: 0.5
   sub_loss_weight: 0.5
   ctc_loss_weight_sub: 0
 
-  # sub_loss_weight: 0
-  # ctc_loss_weight_sub: 0.5
+  # W2C attention
+  usage_dec_sub: all
+  num_heads_dec: 1
+  dec_attention_type: content
+
+  # regularization
+  dec_attend_temperature: 1
+  dec_sigmoid_smoothing: True
+  att_reg_weight: 0
+
+  backward_sub: False
+
+  # regularization
+  relax_context_vec_dec: False

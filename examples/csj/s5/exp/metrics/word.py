@@ -13,20 +13,20 @@ import pandas as pd
 import numpy as np
 
 from utils.io.labels.character import Idx2char, Char2idx
-from utils.io.labels.word import Idx2word
+from utils.io.labels.word import Idx2word, Char2word
 from utils.evaluation.edit_distance import compute_wer
 from utils.evaluation.resolving_unk import resolve_unk
 
 
-def eval_word(models, dataset, beam_width, max_decode_len,
-              beam_width_sub=1, max_decode_len_sub=200,
-              eval_batch_size=None, length_penalty=0,
+def eval_word(models, dataset, eval_batch_size, beam_width, max_decode_len,
+              beam_width_sub=1, max_decode_len_sub=0, length_penalty=0,
               progressbar=False, temperature=1,
-              resolving_unk=False, a2c_oracle=False):
+              resolving_unk=False, a2c_oracle=False, joint_decoding=False):
     """Evaluate trained model by Word Error Rate.
     Args:
         models (list): the models to evaluate
         dataset: An instance of a `Dataset' class
+        eval_batch_size (int): the batch size when evaluating the model
         beam_width: (int): the size of beam
         max_decode_len (int): the length of output sequences
             to stop prediction. This is used for seq2seq models.
@@ -34,7 +34,6 @@ def eval_word(models, dataset, beam_width, max_decode_len,
             This is used for the nested attention
         max_decode_len_sub (int, optional): the length of output sequences
             to stop prediction. This is used for the nested attention
-        eval_batch_size (int, optional): the batch size when evaluating the model
         length_penalty (float, optional):
         progressbar (bool, optional): if True, visualize the progressbar
         temperature (int, optional):
@@ -42,16 +41,23 @@ def eval_word(models, dataset, beam_width, max_decode_len,
         a2c_oracle (bool, optional):
     Returns:
         wer (float): Word error rate
-        df_wer (pd.DataFrame): dataframe of substitution, insertion, and deletion
+        df_word (pd.DataFrame): dataframe of substitution, insertion, and deletion
     """
     # Reset data counter
     dataset.reset()
+
+    model = models[0]
+    # TODO: fix this
 
     idx2word = Idx2word(dataset.vocab_file_path)
     if models[0].model_type == 'nested_attention':
         char2idx = Char2idx(dataset.vocab_file_path_sub)
     if models[0].model_type not in ['ctc', 'attention'] and resolving_unk:
         idx2char = Idx2char(dataset.vocab_file_path_sub)
+    if models[0].model_type == 'hierarchical_attention' and joint_decoding:
+        char2idx = Char2idx(dataset.vocab_file_path_sub)
+        char2word = Char2word(dataset.vocab_file_path,
+                              dataset.vocab_file_path_sub)
 
     wer = 0
     sub, ins, dele, = 0, 0, 0
@@ -64,71 +70,62 @@ def eval_word(models, dataset, beam_width, max_decode_len,
         batch_size = len(batch['xs'])
 
         # Decode
-        if len(models) > 1:
-            assert models[0].model_type in ['ctc']
-            for i, model in enumerate(models):
-                probs, x_lens, perm_idx = model.posteriors(
-                    batch['xs'], batch['x_lens'], temperature=temperature)
-                if i == 0:
-                    probs_ensenmble = probs
+        if model.model_type == 'nested_attention':
+            if a2c_oracle:
+                if dataset.is_test:
+                    max_label_num = 0
+                    for b in range(batch_size):
+                        if max_label_num < len(list(batch['ys_sub'][b][0])):
+                            max_label_num = len(
+                                list(batch['ys_sub'][b][0]))
+
+                    ys_sub = np.zeros(
+                        (batch_size, max_label_num), dtype=np.int32)
+                    ys_sub -= 1  # pad with -1
+                    y_lens_sub = np.zeros((batch_size,), dtype=np.int32)
+                    for b in range(batch_size):
+                        indices = char2idx(batch['ys_sub'][b][0])
+                        ys_sub[b, :len(indices)] = indices
+                        y_lens_sub[b] = len(indices)
+                        # NOTE: transcript is seperated by space('_')
                 else:
-                    probs_ensenmble += probs
-            probs_ensenmble /= len(models)
-
-            best_hyps = models[0].decode_from_probs(
-                probs_ensenmble, x_lens, beam_width=beam_width)
-        else:
-            model = models[0]
-            # TODO: fix this
-
-            if model.model_type == 'nested_attention':
-                if a2c_oracle:
-                    if dataset.is_test:
-                        max_label_num = 0
-                        for b in range(batch_size):
-                            if max_label_num < len(list(batch['ys_sub'][b][0])):
-                                max_label_num = len(
-                                    list(batch['ys_sub'][b][0]))
-
-                        ys_sub = np.zeros(
-                            (batch_size, max_label_num), dtype=np.int32)
-                        ys_sub -= 1  # pad with -1
-                        y_lens_sub = np.zeros((batch_size,), dtype=np.int32)
-                        for b in range(batch_size):
-                            indices = char2idx(batch['ys_sub'][b][0])
-                            ys_sub[b, :len(indices)] = indices
-                            y_lens_sub[b] = len(indices)
-                            # NOTE: transcript is seperated by space('_')
-                    else:
-                        ys_sub = batch['ys_sub']
-                        y_lens_sub = batch['y_lens_sub']
-                else:
-                    ys_sub = None
-                    y_lens_sub = None
-
-                best_hyps, aw, best_hyps_sub, aw_sub, perm_idx = model.decode(
-                    batch['xs'], batch['x_lens'],
-                    beam_width=beam_width,
-                    beam_width_sub=beam_width_sub,
-                    max_decode_len=max_decode_len,
-                    max_decode_len_sub=max_label_num if a2c_oracle else max_decode_len_sub,
-                    length_penalty=length_penalty,
-                    teacher_forcing=a2c_oracle,
-                    ys_sub=ys_sub,
-                    y_lens_sub=y_lens_sub)
+                    ys_sub = batch['ys_sub']
+                    y_lens_sub = batch['y_lens_sub']
             else:
-                best_hyps, aw, perm_idx = model.decode(
+                ys_sub = None
+                y_lens_sub = None
+
+            best_hyps, aw, best_hyps_sub, aw_sub, perm_idx = model.decode(
+                batch['xs'], batch['x_lens'],
+                beam_width=beam_width,
+                beam_width_sub=beam_width_sub,
+                max_decode_len=max_decode_len,
+                max_decode_len_sub=max_label_num if a2c_oracle else max_decode_len_sub,
+                length_penalty=length_penalty,
+                teacher_forcing=a2c_oracle,
+                ys_sub=ys_sub,
+                y_lens_sub=y_lens_sub)
+        elif model.model_type == 'hierarchical_attention' and joint_decoding:
+            best_hyps, aw, perm_idx = model.decode(
+                batch['xs'], batch['x_lens'],
+                beam_width=beam_width,
+                max_decode_len=max_decode_len,
+                joint_decoding=True,
+                space_index=char2idx('_')[0],
+                char2word=char2word)
+        else:
+            best_hyps, aw, perm_idx = model.decode(
+                batch['xs'], batch['x_lens'],
+                beam_width=beam_width,
+                max_decode_len=max_decode_len,
+                length_penalty=length_penalty,)
+            if resolving_unk:
+                best_hyps_sub, aw_sub, _ = model.decode(
                     batch['xs'], batch['x_lens'],
                     beam_width=beam_width,
-                    max_decode_len=max_decode_len,
-                    length_penalty=length_penalty,)
-                if resolving_unk:
-                    best_hyps_sub, aw_sub, _ = model.decode(
-                        batch['xs'], batch['x_lens'],
-                        beam_width=beam_width,
-                        max_decode_len=max_decode_len_sub,
-                        length_penalty=length_penalty,
-                        task_index=1)
+                    max_decode_len=max_decode_len_sub,
+                    length_penalty=length_penalty,
+                    task_index=1)
 
         ys = batch['ys'][perm_idx]
         y_lens = batch['y_lens'][perm_idx]
@@ -205,8 +202,8 @@ def eval_word(models, dataset, beam_width, max_decode_len,
     ins /= num_words
     dele /= num_words
 
-    df_wer = pd.DataFrame(
+    df_word = pd.DataFrame(
         {'SUB': [sub * 100], 'INS': [ins * 100], 'DEL': [dele * 100]},
         columns=['SUB', 'INS', 'DEL'], index=['WER'])
 
-    return wer, df_wer
+    return wer, df_word

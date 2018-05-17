@@ -29,7 +29,7 @@ sns.set(font='Noto Sans CJK JP')
 sys.path.append(abspath('../../../'))
 from models.load_model import load
 from examples.csj.s5.exp.dataset.load_dataset_hierarchical import Dataset
-from utils.io.labels.character import Idx2char
+from utils.io.labels.character import Idx2char, Char2idx
 from utils.io.labels.word import Idx2word
 from utils.directory import mkdir_join, mkdir
 from utils.visualization.attention import plot_hierarchical_attention_weights
@@ -48,6 +48,8 @@ parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam in the main task')
 parser.add_argument('--beam_width_sub', type=int, default=1,
                     help='the size of beam in the sub task')
+parser.add_argument('--length_penalty', type=float,
+                    help='length penalty in beam search decodding')
 
 MAX_DECODE_LEN_WORD = 100
 MAX_DECODE_LEN_CHAR = 200
@@ -90,24 +92,30 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
+    a2c_oracle = False
+
     # Visualize
     plot(model=model,
          dataset=test_data,
          eval_batch_size=args.eval_batch_size,
          beam_width=args.beam_width,
          beam_width_sub=args.beam_width_sub,
+         length_penalty=args.length_penalty,
+         a2c_oracle=a2c_oracle,
          save_path=mkdir_join(args.model_path, 'att_weights'))
 
 
-def plot(model, dataset, beam_width, beam_width_sub,
-         eval_batch_size=None, save_path=None):
+def plot(model, dataset, eval_batch_size, beam_width, beam_width_sub,
+         a2c_oracle=False, save_path=None):
     """Visualize attention weights of Attetnion-based model.
     Args:
         model: model to evaluate
         dataset: An instance of a `Dataset` class
+        eval_batch_size (int): the batch size when evaluating the model
         beam_width: (int): the size of beam i nteh main task
         beam_width_sub: (int): the size of beam in the sub task
-        eval_batch_size (int, optional): the batch size when evaluating the model
+        length_penalty (float):
+        a2c_oracle (bool, optional):
         save_path (string, optional): path to save attention weights plotting
     """
     # Clean directory
@@ -119,24 +127,48 @@ def plot(model, dataset, beam_width, beam_width_sub,
     idx2char = Idx2char(dataset.vocab_file_path_sub, return_list=True)
 
     for batch, is_new_epoch in dataset:
+        batch_size = len(batch['xs'])
+
+        if a2c_oracle:
+            if dataset.is_test:
+                max_label_num = 0
+                for b in range(batch_size):
+                    if max_label_num < len(list(batch['ys_sub'][b][0])):
+                        max_label_num = len(
+                            list(batch['ys_sub'][b][0]))
+
+                ys_sub = np.zeros(
+                    (batch_size, max_label_num), dtype=np.int32)
+                ys_sub -= 1  # pad with -1
+                y_lens_sub = np.zeros((batch_size,), dtype=np.int32)
+                for b in range(batch_size):
+                    indices = char2idx(batch['ys_sub'][b][0])
+                    ys_sub[b, :len(indices)] = indices
+                    y_lens_sub[b] = len(indices)
+                    # NOTE: transcript is seperated by space('_')
+            else:
+                ys_sub = batch['ys_sub']
+                y_lens_sub = batch['y_lens_sub']
+        else:
+            ys_sub = None
+            y_lens_sub = None
 
         best_hyps, best_hyps_sub, aw, aw_sub, aw_dec = model.attention_weights(
             batch['xs'], batch['x_lens'],
             beam_width=beam_width,
             beam_width_sub=beam_width_sub,
             max_decode_len=MAX_DECODE_LEN_WORD,
-            max_decode_len_sub=MAX_DECODE_LEN_CHAR)
+            max_decode_len_sub=MAX_DECODE_LEN_CHAR,
+            teacher_forcing=a2c_oracle,
+            ys_sub=ys_sub,
+            y_lens_sub=y_lens_sub)
 
         for b in range(len(batch['xs'])):
-
             word_list = idx2word(best_hyps[b])
             if 'word' in dataset.label_type_sub:
                 char_list = idx2word(best_hyps_sub[b])
             else:
                 char_list = idx2char(best_hyps_sub[b])
-
-            # if word_list.count('OOV') < 1:
-            #     continue
 
             speaker = batch['input_names'][b].split('_')[0]
 

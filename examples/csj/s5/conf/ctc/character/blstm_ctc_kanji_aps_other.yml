@@ -1,20 +1,19 @@
-parent: ./conf/ctc/word/blstm_ctc_word5_subset.yml
+parent: ./conf/ctc/word/blstm_ctc_word_aps_other.yml
 param:
   # framework
   backend: pytorch
 
   # corpus
-  data_size: subset
+  data_size: aps_other
   label_type: kanji_wb
 
   # topology
-  encoder_num_layers: 4
+  encoder_num_layers: 3
   subsample_list:
-    - False
     - True
     - True
     - False
-  fc_list: [256]
+  fc_list: [320]
 
   # initialization
   char_init: False

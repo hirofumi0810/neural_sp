@@ -37,9 +37,8 @@ class Dataset(DatasetBase):
             use_delta (bool): if True, use the delta feature
             use_double_delta (bool): if True, use the acceleration feature
             data_type (string): train or dev or eval1 or eval2 or eval3
-            data_size (string): subset or fullset or aps or all
-            label_type (string): kanji or kanji_wb or kana or kana_wb
-                or word1 or word5 or word10 or word15
+            data_size (string): aps_other or asps or all_except_dialog_ or all
+            label_type (string): word or kanji or kanji_wb or kana or kana_wb
             batch_size (int): the size of mini-batch
             max_epoch (int, optional): the max epoch. None means infinite loop.
             splice (int, optional): frames to splice. Default is 1 frame.
@@ -61,11 +60,6 @@ class Dataset(DatasetBase):
             dynamic_batching (bool, optional): if True, batch size will be
                 chainged dynamically in training
         """
-        if data_type in ['eval1', 'eval2', 'eval3']:
-            self.is_test = True
-        else:
-            self.is_test = False
-
         self.backend = backend
         self.input_freq = input_freq
         self.use_delta = use_delta
@@ -85,6 +79,7 @@ class Dataset(DatasetBase):
         self.tool = tool
         self.num_enque = num_enque
         self.dynamic_batching = dynamic_batching
+        self.is_test = True if 'eval' in data_type else False
 
         data_save_path = join(data_save_path, data_size)
 

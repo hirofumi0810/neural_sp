@@ -15,8 +15,8 @@ import re
 sys.path.append(abspath('../../../'))
 from models.load_model import load
 from examples.csj.s5.exp.dataset.load_dataset_hierarchical import Dataset
-from utils.io.labels.character import Idx2char
-from utils.io.labels.word import Idx2word
+from utils.io.labels.character import Idx2char, Char2idx
+from utils.io.labels.word import Idx2word, Char2word
 from utils.config import load_config
 from utils.evaluation.edit_distance import compute_wer
 from utils.evaluation.resolving_unk import resolve_unk
@@ -34,6 +34,8 @@ parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam in the main task')
 parser.add_argument('--beam_width_sub', type=int, default=1,
                     help='the size of beam in the sub task')
+parser.add_argument('--length_penalty', type=float,
+                    help='length penalty in beam search decodding')
 
 MAX_DECODE_LEN_WORD = 100
 MAX_DECODE_LEN_CHAR = 200
@@ -79,32 +81,32 @@ def main():
     # Visualize
     decode(model=model,
            dataset=test_data,
+           eval_batch_size=args.eval_batch_size,
            beam_width=args.beam_width,
            beam_width_sub=args.beam_width_sub,
-           eval_batch_size=args.eval_batch_size,
+           length_penalty=args.length_penalty,
            save_path=None,
            # save_path=args.model_path,
            resolving_unk=False)
 
 
-def decode(model, dataset, beam_width, beam_width_sub,
-           eval_batch_size=None, save_path=None, resolving_unk=False):
+def decode(model, dataset, eval_batch_size, beam_width, beam_width_sub,
+           length_penalty, save_path=None, resolving_unk=False):
     """Visualize label outputs.
     Args:
         model: the model to evaluate
         dataset: An instance of a `Dataset` class
+        eval_batch_size (int): the batch size when evaluating the model
         beam_width: (int): the size of beam in the main task
         beam_width_sub: (int): the size of beam in the sub task
-        eval_batch_size (int, optional): the batch size when evaluating the model
+        length_penalty (float):
         save_path (string): path to save decoding results
         resolving_unk (bool, optional):
     """
-    # Set batch size in the evaluation
-    if eval_batch_size is not None:
-        dataset.batch_size = eval_batch_size
-
     idx2word = Idx2word(dataset.vocab_file_path)
     idx2char = Idx2char(dataset.vocab_file_path_sub)
+    char2idx = Char2idx(dataset.vocab_file_path_sub)
+    char2word = Char2word(dataset.vocab_file_path, dataset.vocab_file_path_sub)
 
     if save_path is not None:
         sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
@@ -120,11 +122,19 @@ def decode(model, dataset, beam_width, beam_width_sub,
                 max_decode_len=MAX_DECODE_LEN_WORD,
                 max_decode_len_sub=MAX_DECODE_LEN_CHAR)
         else:
+            # best_hyps, aw, perm_idx = model.decode(
+            #     batch['xs'], batch['x_lens'],
+            #     beam_width=beam_width,
+            #     max_decode_len=MAX_DECODE_LEN_WORD)
             best_hyps, aw, perm_idx = model.decode(
                 batch['xs'], batch['x_lens'],
-                beam_width=beam_width,
-                max_decode_len=MAX_DECODE_LEN_WORD)
-            best_hyps_sub, aw_sub, perm_idx = model.decode(
+                # beam_width=beam_width,
+                beam_width=2,
+                max_decode_len=MAX_DECODE_LEN_WORD,
+                joint_decoding=True,
+                space_index=char2idx('_')[0],
+                char2word=char2word)
+            best_hyps_sub, aw_sub, _ = model.decode(
                 batch['xs'], batch['x_lens'],
                 beam_width=beam_width_sub,
                 max_decode_len=MAX_DECODE_LEN_CHAR,

@@ -27,11 +27,12 @@ parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
 parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
-parser.add_argument('--beam_width', type=int, default=1,
-                    help='the size of beam')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-
+parser.add_argument('--beam_width', type=int, default=1,
+                    help='the size of beam')
+parser.add_argument('--length_penalty', type=float,
+                    help='length penalty in beam search decodding')
 
 MAX_DECODE_LEN_WORD = 100
 MAX_DECODE_LEN_CHAR = 200
@@ -77,26 +78,24 @@ def main():
     # Visualize
     decode(model=model,
            dataset=test_data,
-           beam_width=args.beam_width,
            eval_batch_size=args.eval_batch_size,
+           beam_width=args.beam_width,
+           length_penalty=args.length_penalty,
            save_path=None)
     # save_path=args.model_path)
 
 
-def decode(model, dataset, beam_width,
-           eval_batch_size=None, save_path=None):
+def decode(model, dataset, eval_batch_size, beam_width, length_penalty,
+           save_path=None):
     """Visualize label outputs.
     Args:
         model: the model to evaluate
         dataset: An instance of a `Dataset` class
+        eval_batch_size (int): the batch size when evaluating the model
         beam_width: (int): the size of beam
-        eval_batch_size (int, optional): the batch size when evaluating the model
+        length_penalty (float):
         save_path (string): path to save decoding results
     """
-    # Set batch size in the evaluation
-    if eval_batch_size is not None:
-        dataset.batch_size = eval_batch_size
-
     if 'word' in dataset.label_type:
         map_fn = Idx2word(dataset.vocab_file_path)
         max_decode_len = MAX_DECODE_LEN_WORD
@@ -154,14 +153,14 @@ def decode(model, dataset, beam_width,
                 print('Hyp (CTC): %s' % str_hyp_ctc)
 
             try:
-                if 'word' in dataset.label_type or dataset.label_type == 'kanji_wb':
+                if dataset.label_type == 'word' or dataset.label_type == 'kanji_wb':
                     wer, _, _, _ = compute_wer(
                         ref=str_ref.split('_'),
                         hyp=re.sub(r'(.*)[_]*>(.*)', r'\1',
                                    str_hyp).split('_'),
                         normalize=True)
                     print('WER: %.3f %%' % (wer * 100))
-                    if model.ctc_loss_weight > 0:
+                    if model.model_type == 'attention' and model.ctc_loss_weight > 0:
                         wer_ctc, _, _, _ = compute_wer(
                             ref=str_ref.split('_'),
                             hyp=str_hyp_ctc.split('_'),

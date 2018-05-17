@@ -22,8 +22,11 @@ set -e # exit on error
 #check existing directories
 if [ $# -ne 1 ] && [ $# -ne 2 ]; then
   echo "Usage: csj_data_prep.sh <csj-data dir> [<mode_number>]"
-  echo " mode_number can be 0, 1, 2, 3, (0=default using academic lecture and other data, 1=using academic lecture data,"
-  echo "                                 2=using all data except for dialog data, 3=using all data)"
+  echo " mode_number can be aps_other, aps, all_except_dialog, all, "
+  echo "(aps_other=default using academic lecture and other data, "
+  echo " aps=using academic lecture data, "
+  echo " all_except_dialog=using all data except for dialog data, "
+  echo " all=using all data)"
   exit 1;
 fi
 
@@ -34,7 +37,7 @@ if [ $# -eq 2 ]; then
   mode=$2
 fi
 
-dir=$DATA_SAVEPATH/local/train
+dir=$DATA_SAVEPATH/local/train_$mode
 mkdir -p $dir
 
 # Audio data directory check
@@ -44,21 +47,21 @@ if [ ! -d $CSJ ]; then
 fi
 
 # CSJ dictionary file check
-[ ! -f $dir/lexicon.txt ] && cp $CSJ/lexicon/lexicon.txt $dir || exit 1;
+# [ ! -f $dir/lexicon.txt ] && cp $CSJ/lexicon/lexicon.txt $dir || exit 1;
+[ ! -f $dir/lexicon.txt ] && cp $CSJ/lexicon/lexicon.txt $dir
 
 ### Config of using wav data that relates with acoustic model training ###
-if [ $mode -eq 3 ]
-then
+if [ $mode = 'all' ]; then
   cat $CSJ/*/*/*-wav.list 2>/dev/null | sort > $dir/wav.flist # Using All data
-elif [ $mode -eq 2 ]
-then
+elif [ $mode = 'all_except_dialog' ]; then
   cat $CSJ/*/{A*,M*,R*,S*}/*-wav.list 2>/dev/null | sort > $dir/wav.flist # Using All data except for "dialog" data
-elif [ $mode -eq 1 ]
-then
+elif [ $mode = 'aps' ]; then
   cat $CSJ/*/A*/*-wav.list 2>/dev/null | sort > $dir/wav.flist # Using "Academic lecture" data
-else
+elif [ $mode = 'aps_other' ]; then
   # cat $CSJ/*/{A*,M*}/*-wav.list 2>/dev/null | sort > $dir/wav.flist # Using "Academic lecture" and "other" data
   cat $CSJ/*/{A,M}*/*-wav.list 2>/dev/null | sort > $dir/wav.flist # Using "Academic lecture" and "other" data
+else
+  exit 1;
 fi
 
 
@@ -79,7 +82,7 @@ awk '{
       name=T[1]; stime=$2; etime=$3;
       printf("%s_%07.0f_%07.0f",name, int(1000*stime), int(1000*etime));
       for(i=4;i<=NF;i++) printf(" %s", tolower($i)); printf "\n"
-}' $CSJ/*/*/*-trans.text |sort > $dir/transcripts1.txt # This data is for training language models
+}' $CSJ/*/*/*-trans.text | sort > $dir/transcripts1.txt # This data is for training language models
 # Except evaluation set (30 speakers)
 
 # test if trans. file is sorted
@@ -92,7 +95,7 @@ cat $dir/transcripts1.txt \
   | perl -ane 's:\<s\>::gi;
                s:\<\/s\>::gi;
                print;' \
-  | awk '{if(NF > 1) { print; } } ' |sort > $dir/text
+  | awk '{if(NF > 1) { print; } } ' | sort > $dir/text
 
 
 # (1c) Make segments files from transcript
@@ -118,11 +121,11 @@ awk '{segment=$1; split(segment,S,"[_]"); spkid=S[1]; print $1 " " spkid}' $dir/
 sort -k 2 $dir/utt2spk | utils/utt2spk_to_spk2utt.pl > $dir/spk2utt || exit 1;
 
 # Copy stuff into its final locations [this has been moved from the format_data script]
-mkdir -p $DATA_SAVEPATH/train
+mkdir -p $DATA_SAVEPATH/train_$mode
 for f in spk2utt utt2spk wav.scp text segments; do
-  cp $DATA_SAVEPATH/local/train/$f $DATA_SAVEPATH/train/ || exit 1;
+  cp $DATA_SAVEPATH/local/train_$mode/$f $DATA_SAVEPATH/train_$mode || exit 1;
 done
 
 echo "CSJ data preparation succeeded."
 
-utils/fix_data_dir.sh $DATA_SAVEPATH/train
+utils/fix_data_dir.sh $DATA_SAVEPATH/train_$mode
