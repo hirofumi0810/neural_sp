@@ -21,6 +21,6 @@ $PYTHON exp/evaluation/eval.py \
   --data_save_path $DATA_SAVEPATH \
   --model_path $saved_model_path \
   --epoch -1 \
-  --beam_width 1 \
+  --beam_width 4 \
   --eval_batch_size 1 \
-  --length_penalty 0
+  --length_penalty 0.1

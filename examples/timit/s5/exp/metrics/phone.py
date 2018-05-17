@@ -93,8 +93,6 @@ def eval_phone(model, dataset, beam_width, max_decode_len, map_file_path,
                 dele += del_b
                 num_phones += len(phone_ref_list)
             except:
-                # print('REF: %s' % ' '.join(phone_ref_list))
-                # print('HYP: %s' % ' '.join(phone_hyp_list))
                 pass
 
             if progressbar:
@@ -131,7 +129,7 @@ class Map2phone39(object):
     def __init__(self, label_type, map_file_path):
         self.label_type = label_type
 
-        # Read the mapping file
+        # Load the mapping file
         self.map_dict = {}
         with open(map_file_path) as f:
             for line in f:
@@ -144,6 +142,8 @@ class Map2phone39(object):
                 elif label_type == 'phone48':
                     if len(line) >= 2:
                         self.map_dict[line[1]] = line[2]
+
+        self.map_dict['>'] = '>'
 
     def __call__(self, phone_list):
         """

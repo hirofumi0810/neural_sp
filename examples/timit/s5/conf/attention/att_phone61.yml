@@ -20,7 +20,7 @@ param:
 
   # topology
   model_type: attention
-  encoder_type: lstm
+  encoder_type: gru
   conv_channels: []
   conv_kernel_sizes: []
   conv_strides: []
@@ -35,15 +35,15 @@ param:
   encoder_num_layers: 5
   subsample_list:
     - False
-    - True
-    - True
+    - False
+    - False
     - False
     - False
   subsample_type: drop
   bridge_layer: True
   attention_type: location
   attention_dim: 128
-  decoder_type: lstm
+  decoder_type: gru
   decoder_residual: False
   decoder_dense_residual: False
   decoder_num_units: 256

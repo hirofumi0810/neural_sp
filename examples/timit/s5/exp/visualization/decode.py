@@ -26,10 +26,12 @@ parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
 parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
-parser.add_argument('--beam_width', type=int, default=1,
-                    help='the size of beam')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
+parser.add_argument('--beam_width', type=int, default=1,
+                    help='the size of beam')
+parser.add_argument('--length_penalty', type=float,
+                    help='length penalty in beam search decodding')
 
 MAX_DECODE_LEN_PHONE = 100
 
@@ -72,17 +74,20 @@ def main():
            dataset=test_data,
            beam_width=args.beam_width,
            eval_batch_size=args.eval_batch_size,
+           length_penalty=args.length_penalty,
            save_path=None)
     # save_path=args.model_path)
 
 
-def decode(model, dataset, beam_width, eval_batch_size=None, save_path=None):
+def decode(model, dataset, beam_width, eval_batch_size=None,
+           length_penalty=0, save_path=None):
     """Visualize label outputs.
     Args:
         model: the model to evaluate
         dataset: An instance of a `Dataset` class
         beam_width: (int): the size of beam
         eval_batch_size (int, optional): the batch size when evaluating the model
+        length_penalty (float, optional):
         save_path (string): path to save decoding results
     """
     # Set batch size in the evaluation
@@ -100,7 +105,8 @@ def decode(model, dataset, beam_width, eval_batch_size=None, save_path=None):
         best_hyps, _, perm_idx = model.decode(
             batch['xs'], batch['x_lens'],
             beam_width=beam_width,
-            max_decode_len=MAX_DECODE_LEN_PHONE)
+            max_decode_len=MAX_DECODE_LEN_PHONE,
+            length_penalty=length_penalty)
         if model.model_type == 'attention' and model.ctc_loss_weight > 0:
             best_hyps_ctc, perm_idx = model.decode_ctc(
                 batch['xs'], batch['x_lens'],

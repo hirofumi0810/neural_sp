@@ -4,10 +4,6 @@ param:
   backend: pytorch
   # backend: chainer
 
-  # features
-  num_stack: 1
-  num_skip: 1
-
   # topology
   conv_channels: [64, 64, 128, 128]
   conv_kernel_sizes:
