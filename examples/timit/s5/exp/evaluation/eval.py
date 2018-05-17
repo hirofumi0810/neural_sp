@@ -84,12 +84,12 @@ def main():
     per_dev, df_dev = eval_phone(
         model=model,
         dataset=dev_data,
+        map_file_path='./conf/phones.60-48-39.map',
+        eval_batch_size=args.eval_batch_size,
         beam_width=args.beam_width,
         max_decode_len=MAX_DECODE_LEN_PHONE,
-        eval_batch_size=args.eval_batch_size,
         length_penalty=args.length_penalty,
-        progressbar=True,
-        map_file_path='./conf/phones.60-48-39.map')
+        progressbar=True)
     print('  PER (dev): %.3f %%' % (per_dev * 100))
     print(df_dev)
 
@@ -97,12 +97,12 @@ def main():
     per_test, df_test = eval_phone(
         model=model,
         dataset=test_data,
+        map_file_path='./conf/phones.60-48-39.map',
+        eval_batch_size=args.eval_batch_size,
         beam_width=args.beam_width,
         max_decode_len=MAX_DECODE_LEN_PHONE,
-        eval_batch_size=args.eval_batch_size,
         length_penalty=args.length_penalty,
-        progressbar=True,
-        map_file_path='./conf/phones.60-48-39.map')
+        progressbar=True)
     print('  PER (test): %.3f %%' % (per_test * 100))
     print(df_test)
 

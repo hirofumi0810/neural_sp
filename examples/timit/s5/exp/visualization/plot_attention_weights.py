@@ -72,27 +72,23 @@ def main():
     # Visualize
     plot_attention(model=model,
                    dataset=test_data,
-                   beam_width=args.beam_width,
                    eval_batch_size=args.eval_batch_size,
+                   beam_width=args.beam_width,
                    length_penalty=args.length_penalty,
                    save_path=mkdir_join(args.model_path, 'att_weights'))
 
 
-def plot_attention(model, dataset, beam_width, eval_batch_size=None,
-                   length_penalty=0, save_path=None):
+def plot_attention(model, dataset, eval_batch_size, beam_width, length_penalty,
+                   save_path=None):
     """Visualize attention weights of the attetnion-based model.
     Args:
         model: model to evaluate
         dataset: An instance of a `Dataset` class
+        eval_batch_size (int): the batch size when evaluating the model
         beam_width: (int): the size of beam
-        eval_batch_size (int, optional): the batch size when evaluating the model
-        length_penalty (float, optional):
+        length_penalty (float):
         save_path (string, optional): path to save attention weights plotting
     """
-    # Set batch size in the evaluation
-    if eval_batch_size is not None:
-        dataset.batch_size = eval_batch_size
-
     # Clean directory
     if save_path is not None and isdir(save_path):
         shutil.rmtree(save_path)

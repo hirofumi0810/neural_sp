@@ -72,28 +72,24 @@ def main():
     # Visualize
     decode(model=model,
            dataset=test_data,
-           beam_width=args.beam_width,
            eval_batch_size=args.eval_batch_size,
+           beam_width=args.beam_width,
            length_penalty=args.length_penalty,
            save_path=None)
     # save_path=args.model_path)
 
 
-def decode(model, dataset, beam_width, eval_batch_size=None,
-           length_penalty=0, save_path=None):
+def decode(model, dataset, eval_batch_size, beam_width, length_penalty,
+           save_path=None):
     """Visualize label outputs.
     Args:
         model: the model to evaluate
         dataset: An instance of a `Dataset` class
+        eval_batch_size (int): the batch size when evaluating the model
         beam_width: (int): the size of beam
-        eval_batch_size (int, optional): the batch size when evaluating the model
-        length_penalty (float, optional):
+        length_penalty (float):
         save_path (string): path to save decoding results
     """
-    # Set batch size in the evaluation
-    if eval_batch_size is not None:
-        dataset.batch_size = eval_batch_size
-
     idx2phone = Idx2phone(dataset.vocab_file_path)
 
     if save_path is not None:

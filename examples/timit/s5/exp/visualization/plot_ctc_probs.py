@@ -70,19 +70,14 @@ def main():
                save_path=mkdir_join(args.model_path, 'ctc_probs'))
 
 
-def plot_probs(model, dataset, eval_batch_size=None,
-               save_path=None):
+def plot_probs(model, dataset, eval_batch_size, save_path=None):
     """Plot CTC posteriors.
     Args:
         model: model to evaluate
         dataset: An instance of a `Dataset` class
-        eval_batch_size (int, optional): the batch size when evaluating the model
+        eval_batch_size (int): the batch size when evaluating the model
         save_path (string): path to save figures of CTC posteriors
     """
-    # Set batch size in the evaluation
-    if eval_batch_size is not None:
-        dataset.batch_size = eval_batch_size
-
     # Clean directory
     if save_path is not None and isdir(save_path):
         shutil.rmtree(save_path)

@@ -277,10 +277,10 @@ def main():
                 per_dev_epoch, _ = eval_phone(
                     model=model,
                     dataset=dev_data,
-                    beam_width=1,
-                    max_decode_len=MAX_DECODE_LEN_PHONE,
+                    map_file_path='./conf/phones.60-48-39.map',
                     eval_batch_size=1,
-                    map_file_path='./conf/phones.60-48-39.map')
+                    beam_width=1,
+                    max_decode_len=MAX_DECODE_LEN_PHONE)
                 logger.info('  PER (dev): %.3f %%' % (per_dev_epoch * 100))
 
                 if per_dev_epoch < metric_dev_best:
@@ -297,10 +297,10 @@ def main():
                     per_test, _ = eval_phone(
                         model=model,
                         dataset=test_data,
-                        beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_PHONE,
+                        map_file_path='./conf/phones.60-48-39.map',
                         eval_batch_size=1,
-                        map_file_path='./conf/phones.60-48-39.map')
+                        beam_width=1,
+                        max_decode_len=MAX_DECODE_LEN_PHONE)
                     logger.info('  PER (test): %.3f %%' % (per_test * 100))
                 else:
                     not_improved_epoch += 1

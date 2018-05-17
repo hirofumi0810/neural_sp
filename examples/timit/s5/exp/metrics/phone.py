@@ -15,17 +15,17 @@ from utils.io.labels.phone import Idx2phone
 from utils.evaluation.edit_distance import compute_wer
 
 
-def eval_phone(model, dataset, beam_width, max_decode_len, map_file_path,
-               eval_batch_size=None, length_penalty=0, progressbar=False):
+def eval_phone(model, dataset, map_file_path, eval_batch_size, beam_width,
+               max_decode_len, length_penalty=0, progressbar=False):
     """Evaluate trained model by Phone Error Rate.
     Args:
         model: the model to evaluate
         dataset: An instance of a `Dataset' class
+        map_file_path (string): path to phones.60-48-39.map
+        eval_batch_size (int): the batch size when evaluating the model
         beam_width: (int): the size of beam
         max_decode_len (int): the length of output sequences
             to stop prediction. This is used for seq2seq models.
-        map_file_path (string): path to phones.60-48-39.map
-        eval_batch_size (int, optional): the batch size when evaluating the model
         length_penalty (float, optional):
         progressbar (bool, optional): if True, visualize the progressbar
     Returns:

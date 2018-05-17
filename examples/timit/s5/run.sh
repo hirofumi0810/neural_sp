@@ -103,9 +103,9 @@ if [ $stage -le 1 ] && [ ! -e $DATA_SAVEPATH/.stage_1 ]; then
         if [ ! -e $htk_path ]; then
           echo $wav_path $htk_path > ./tmp.scp
           $HCOPY -T 1 -C ./conf/fbank_htk.conf -S ./tmp.scp || exit 1;
-          echo $htk_path >> $DATA_SAVEPATH/$data_type/htk.scp
           rm ./tmp.scp
         fi
+        echo $htk_path >> $DATA_SAVEPATH/$data_type/htk.scp
       done
     done
 
