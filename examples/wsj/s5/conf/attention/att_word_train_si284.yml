@@ -20,7 +20,7 @@ param:
   decoder_num_units: 320
   embedding_dim: 128
   decoding_order: attend_generate_update
-  bottleneck_dim: 256
+  bottleneck_dim: 320
   num_heads: 1
 
   # initialization

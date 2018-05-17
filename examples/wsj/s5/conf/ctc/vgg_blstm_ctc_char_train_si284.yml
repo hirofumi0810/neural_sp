@@ -1,4 +1,4 @@
-parent: ./conf/attention/att_char_train_si284.yml
+parent: ./conf/ctc/blstm_ctc_char_train_si284.yml
 param:
   # framework
   backend: pytorch
@@ -31,6 +31,7 @@ param:
     - False
     - False
     - False
+  fc_list: []
 
   # optimization
   batch_size: 20
@@ -38,12 +39,5 @@ param:
   # initialization
   char_init: False
 
-  # regularization
-  scheduled_sampling_max_step: 30000
-
   # annealing
   print_step: 200
-
-  # MTL
-  backward_loss_weight: 0
-  ctc_loss_weight: 0

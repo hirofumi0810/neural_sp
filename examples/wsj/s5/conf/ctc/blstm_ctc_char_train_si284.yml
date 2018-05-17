@@ -12,9 +12,9 @@ param:
   feature: fbank
   tool: htk
   input_freq: 81
-  use_delta: True
-  use_double_delta: True
-  input_channel: 3
+  use_delta: False
+  use_double_delta: False
+  input_channel: 1
   splice: 1
   num_stack: 1
   num_skip: 1
