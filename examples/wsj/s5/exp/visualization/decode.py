@@ -16,6 +16,7 @@ sys.path.append(abspath('../../../'))
 from models.load_model import load
 from examples.wsj.s5.exp.dataset.load_dataset import Dataset
 from utils.io.labels.character import Idx2char
+from utils.io.labels.word import Idx2word
 from utils.config import load_config
 from utils.evaluation.edit_distance import compute_wer
 
@@ -31,6 +32,7 @@ parser.add_argument('--beam_width', type=int, default=1,
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
 
+MAX_DECODE_LEN_WORD = 100
 MAX_DECODE_LEN_CHAR = 200
 
 
@@ -91,8 +93,13 @@ def decode(model, dataset, beam_width,
     if eval_batch_size is not None:
         dataset.batch_size = eval_batch_size
 
-    idx2char = Idx2char(dataset.vocab_file_path,
-                        capital_divide=dataset.label_type == 'character_capital_divide')
+    if 'char' in dataset.label_type:
+        map_fn = Idx2char(dataset.vocab_file_path,
+                          capital_divide=dataset.label_type == 'character_capital_divide')
+        max_decode_len = MAX_DECODE_LEN_CHAR
+    else:
+        map_fn = Idx2word(dataset.vocab_file_path)
+        max_decode_len = MAX_DECODE_LEN_WORD
 
     if save_path is not None:
         sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
@@ -103,7 +110,7 @@ def decode(model, dataset, beam_width,
         best_hyps, _, perm_idx = model.decode(
             batch['xs'], batch['x_lens'],
             beam_width=beam_width,
-            max_decode_len=MAX_DECODE_LEN_CHAR)
+            max_decode_len=max_decode_len)
 
         if model.model_type == 'attention' and model.ctc_loss_weight > 0:
             best_hyps_ctc, perm_idx = model.decode_ctc(
@@ -121,19 +128,19 @@ def decode(model, dataset, beam_width,
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
-                str_ref = idx2char(ys[b][:y_lens[b]])
+                str_ref = map_fn(ys[b][:y_lens[b]])
 
             ##############################
             # Hypothesis
             ##############################
             # Convert from list of index to string
-            str_hyp = idx2char(best_hyps[b])
+            str_hyp = map_fn(best_hyps[b])
 
             print('----- wav: %s -----' % batch['input_names'][b])
             print('Ref: %s' % str_ref.replace('_', ' '))
             print('Hyp: %s' % str_hyp.replace('_', ' '))
             if model.model_type == 'attention' and model.ctc_loss_weight > 0:
-                str_hyp_ctc = idx2char(best_hyps_ctc[b])
+                str_hyp_ctc = map_fn(best_hyps_ctc[b])
                 print('Hyp (CTC): %s' % str_hyp_ctc)
 
             try:
@@ -143,7 +150,7 @@ def decode(model, dataset, beam_width,
                     hyp=re.sub(r'(.*)[_]*>(.*)', r'\1', str_hyp).split('_'),
                     normalize=True)
                 print('WER: %.3f %%' % (wer * 100))
-                if model.ctc_loss_weight > 0:
+                if model.model_type == 'attention' and model.ctc_loss_weight > 0:
                     wer_ctc, _, _, _ = compute_wer(
                         ref=str_ref.split('_'),
                         hyp=str_hyp_ctc.split('_'),

@@ -55,7 +55,7 @@ param:
   decoding_order: attend_generate_update
   # decoding_order: attend_update_generate
   # decoding_order: conditional
-  bottleneck_dim: 256
+  bottleneck_dim: 320
   num_heads: 1
 
   # optimization

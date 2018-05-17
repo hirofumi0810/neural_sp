@@ -17,9 +17,9 @@ echo ===========================================================================
 echo "                                   WSJ                                     "
 echo ============================================================================
 
-stage=2
-hierarchical_model=false
-# hierarchical_model=true
+stage=0
+# hierarchical_model=false
+hierarchical_model=true
 run_background=true
 restart=false
 
@@ -94,7 +94,7 @@ if [ ! -e $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe ]; then
 fi
 
 
-if [ $stage -le 0 ]; then
+if [ $stage -le 0 ] && [ ! -e $DATA_SAVEPATH/.stage_0 ]; then
   echo ============================================================================
   echo "                           Data Preparation                               "
   echo ============================================================================
@@ -134,11 +134,12 @@ if [ $stage -le 0 ]; then
 
   utils/subset_data_dir.sh --first $DATA_SAVEPATH/train_si284 7138 $DATA_SAVEPATH/train_si84 || exit 1
 
+  touch $DATA_SAVEPATH/.stage_0
   echo "Finish data preparation (stage: 0)."
 fi
 
 
-if [ $stage -le 1 ]; then
+if [ $stage -le 1 ] && [ ! -e $DATA_SAVEPATH/.stage_1 ]; then
   echo ============================================================================
   echo "                        Feature extranction                               "
   echo ============================================================================
@@ -165,32 +166,31 @@ if [ $stage -le 1 ]; then
         --deltadelta $DELTADELTA || exit 1;
 
     for data_type in train_si84 train_si284 test_dev93 test_eval92; do
-      if [ ! -e $DATA_SAVEPATH/htk/$data_type/.done_make_htk ]; then
-        mkdir -p $DATA_SAVEPATH/wav/$data_type
-        mkdir -p $DATA_SAVEPATH/htk/$data_type
-        touch $DATA_SAVEPATH/$data_type/htk.scp
-        cat $DATA_SAVEPATH/$data_type/wav.scp | while read line
-        do
-          # Convert from sph to wav files
-          sph_path=`echo $line | awk -F " " '{ print $(NF - 1) }'`
-          speaker=`echo $line | awk -F "/" '{ print $(NF - 1) }'`
-          mkdir -p $DATA_SAVEPATH/wav/$data_type/$speaker
-          file_name=`basename $sph_path`
-          base=${file_name%.*}
-          # ext=${file_name##*.}
-          wav_path=$DATA_SAVEPATH/wav/$data_type/$speaker/$base".wav"
-          $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe -f wav $sph_path $wav_path || exit 1;
+      mkdir -p $DATA_SAVEPATH/wav/$data_type
+      mkdir -p $DATA_SAVEPATH/htk/$data_type
+      touch $DATA_SAVEPATH/$data_type/htk.scp
+      cat $DATA_SAVEPATH/$data_type/wav.scp | while read line
+      do
+        # Convert from sph to wav files
+        sph_path=`echo $line | awk -F " " '{ print $(NF - 1) }'`
+        speaker=`echo $line | awk -F "/" '{ print $(NF - 1) }'`
+        mkdir -p $DATA_SAVEPATH/wav/$data_type/$speaker
+        file_name=`basename $sph_path`
+        base=${file_name%.*}
+        # ext=${file_name##*.}
+        wav_path=$DATA_SAVEPATH/wav/$data_type/$speaker/$base".wav"
+        $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe -f wav $sph_path $wav_path || exit 1;
 
-          # Convert from wav to htk files
-          mkdir -p $DATA_SAVEPATH/htk/$data_type/$speaker
-          htk_path=$DATA_SAVEPATH/htk/$data_type/$speaker/$base".htk"
+        # Convert from wav to htk files
+        mkdir -p $DATA_SAVEPATH/htk/$data_type/$speaker
+        htk_path=$DATA_SAVEPATH/htk/$data_type/$speaker/$base".htk"
+        if [ ! -e $htk_path ]; then
           echo $wav_path  $htk_path > ./tmp.scp
           $HCOPY -T 1 -C ./conf/fbank_htk.conf -S ./tmp.scp || exit 1;
-          echo $htk_path >> $DATA_SAVEPATH/$data_type/htk.scp
-        done
-        rm ./tmp.scp
-        touch $DATA_SAVEPATH/htk/$data_type/.done_make_htk
-      fi
+          rm ./tmp.scp
+        fi
+        echo $htk_path >> $DATA_SAVEPATH/$data_type/htk.scp
+      done
     done
 
   else
@@ -200,36 +200,32 @@ if [ $stage -le 1 ]; then
     fi
   fi
 
-  if [ ! -e $DATA_SAVEPATH/feature/$TOOL/.done_feature_extraction ]; then
-    python local/feature_extraction.py \
-      --data_save_path $DATA_SAVEPATH \
-      --tool $TOOL \
-      --normalize $NORMALIZE \
-      --channels $CHANNELS \
-      --window $WINDOW \
-      --slide $SLIDE \
-      --energy $ENERGY \
-      --delta $DELTA \
-      --deltadelta $DELTADELTA || exit 1;
-    touch $DATA_SAVEPATH/feature/$TOOL/.done_feature_extraction
-  fi
+  python local/feature_extraction.py \
+    --data_save_path $DATA_SAVEPATH \
+    --tool $TOOL \
+    --normalize $NORMALIZE \
+    --channels $CHANNELS \
+    --window $WINDOW \
+    --slide $SLIDE \
+    --energy $ENERGY \
+    --delta $DELTA \
+    --deltadelta $DELTADELTA || exit 1;
 
+  touch $DATA_SAVEPATH/.stage_1
   echo "Finish feature extranction (stage: 1)."
 fi
 
 
-if [ $stage -le 2 ]; then
+if [ $stage -le 2 ] && [ ! -e $DATA_SAVEPATH/.stage_2 ]; then
   echo ============================================================================
   echo "                            Create dataset                                "
   echo ============================================================================
 
-  if [ ! -e $DATA_SAVEPATH/dataset/$TOOL/.done_dataset ]; then
-    python local/make_dataset_csv.py \
-      --data_save_path $DATA_SAVEPATH \
-      --tool $TOOL || exit 1;
-    touch $DATA_SAVEPATH/dataset/$TOOL/.done_dataset
-  fi
+  python local/make_dataset_csv.py \
+    --data_save_path $DATA_SAVEPATH \
+    --tool $TOOL || exit 1;
 
+  touch $DATA_SAVEPATH/.stage_2
   echo "Finish creating dataset (stage: 2)."
 fi
 

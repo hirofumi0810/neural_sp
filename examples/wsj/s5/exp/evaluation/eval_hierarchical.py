@@ -73,7 +73,12 @@ def main():
     model.set_cuda(deterministic=False, benchmark=True)
 
     a2c_oracle = False
-    resolving_unk = False
+    resolving_unk = True
+
+    print('beam width (main): %d' % args.beam_width)
+    print('beam width (sub) : %d' % args.beam_width_sub)
+    print('a2c oracle: %s' % str(a2c_oracle))
+    print('resolving_unk: %s' % str(resolving_unk))
 
     wer_eval92, df_eval92 = eval_word(
         models=[model],

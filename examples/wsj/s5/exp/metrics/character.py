@@ -38,7 +38,10 @@ def eval_char(models, dataset, beam_width, max_decode_len,
     # Reset data counter
     dataset.reset()
 
-    idx2char = Idx2char(vocab_file_path=dataset.vocab_file_path)
+    if models[0].model_type in ['ctc', 'attention']:
+        idx2char = Idx2char(vocab_file_path=dataset.vocab_file_path)
+    else:
+        idx2char = Idx2char(vocab_file_path=dataset.vocab_file_path_sub)
 
     wer, cer = 0, 0
     sub_word, ins_word, del_word = 0, 0, 0
@@ -71,7 +74,8 @@ def eval_char(models, dataset, beam_width, max_decode_len,
                 batch['xs'], batch['x_lens'],
                 beam_width=beam_width,
                 max_decode_len=max_decode_len,
-                length_penalty=length_penalty)
+                length_penalty=length_penalty,
+                task_index=0 if model.model_type in ['ctc', 'attention'] else 1)
 
         ys = batch['ys'][perm_idx]
         y_lens = batch['y_lens'][perm_idx]

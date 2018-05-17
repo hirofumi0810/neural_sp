@@ -71,6 +71,8 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
+    print('beam width: %d' % args.beam_width)
+
     if params['label_type'] == 'word':
         wer_eval92, df_eval92 = eval_word(
             models=[model],
