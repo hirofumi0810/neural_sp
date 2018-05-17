@@ -13,6 +13,7 @@ import argparse
 from tqdm import tqdm
 import pandas as pd
 import pickle
+import codecs
 import re
 
 sys.path.append('../../../')
@@ -215,9 +216,10 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
 
     # Save vocabulary files
     if 'train' in data_type:
-        # word-level (threshold == 1)
-        with open(word_vocab_path, 'w') as f:
-            word_list = sorted(list(word_set)) + [OOV]
+        # word-level (threshold == 3)
+        with codecs.open(word_vocab_path, 'w', 'utf-8') as f:
+            word_list = sorted([w for w, freq in list(word_dict.items())
+                                if freq >= 3]) + [OOV]
             for w in word_list:
                 f.write('%s\n' % w)
 
@@ -235,11 +237,10 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
 
     # Compute OOV rate
     if 'train' not in data_type:
-        with open(mkdir_join(vocab_save_path, 'oov', data_type + '.txt'), 'w') as f:
-
-            # word-level (threshold == 1)
+        with codecs.open(mkdir_join(vocab_save_path, 'oov', data_type + '.txt'), 'w', 'utf-8') as f:
+            # word-level (threshold == 3)
             oov_rate = compute_oov_rate(word_dict, word_vocab_path)
-            f.write('Word (freq1):\n')
+            f.write('Word (freq3):\n')
             f.write('  OOV rate: %f %%\n' % oov_rate)
 
     # Convert to index
