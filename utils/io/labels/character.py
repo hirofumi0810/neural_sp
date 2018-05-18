@@ -10,7 +10,7 @@ import codecs
 
 
 class Char2idx(object):
-    """Convert from character to index.
+    """Convert character into index.
     Args:
         vocab_file_path (string): path to the vocabulary file
         space_mark (string, optional): the space mark to divide a sequence into words
@@ -28,15 +28,15 @@ class Char2idx(object):
         self.double_letter = double_letter
         self.remove_list = remove_list
 
-        # Read the vocabulary file
+        # Load the vocabulary file
         self.map_dict = {}
         vocab_count = 0
         with codecs.open(vocab_file_path, 'r', 'utf-8') as f:
             for line in f:
-                char = line.strip()
-                if char in remove_list:
+                c = line.strip()
+                if c in remove_list:
                     continue
-                self.map_dict[char] = vocab_count
+                self.map_dict[c] = vocab_count
                 vocab_count += 1
 
         # Add <EOS>
@@ -47,32 +47,32 @@ class Char2idx(object):
         Args:
             str_char (string): a sequence of characters
         Returns:
-            index_list (list): character indices
+            indices (list): character indices
         """
-        index_list = []
+        indices = []
 
-        # Convert from character to index
+        # Convert character strings into the corresponding indices
         if self.capital_divide:
-            for word in str_char.split(self.space_mark):
+            for w in str_char.split(self.space_mark):
                 # Replace the first character with the capital letter
-                index_list.append(self.map_dict[word[0].upper()])
+                indices.append(self.map_dict[w[0].upper()])
 
                 # Check double-letters
                 skip_flag = False
-                for i in range(1, len(word) - 1, 1):
+                for i in range(1, len(w) - 1, 1):
                     if skip_flag:
                         skip_flag = False
                         continue
 
-                    if not skip_flag and word[i:i + 2] in self.map_dict.keys():
-                        index_list.append(self.map_dict[word[i:i + 2]])
+                    if not skip_flag and w[i:i + 2] in self.map_dict.keys():
+                        indices.append(self.map_dict[w[i:i + 2]])
                         skip_flag = True
                     else:
-                        index_list.append(self.map_dict[word[i]])
+                        indices.append(self.map_dict[w[i]])
 
                 # Final character
                 if not skip_flag:
-                    index_list.append(self.map_dict[word[-1]])
+                    indices.append(self.map_dict[w[-1]])
         # NOTE: capital_divide is prepared for English
 
         elif self.double_letter:
@@ -83,34 +83,34 @@ class Char2idx(object):
                     continue
 
                 if not skip_flag and str_char[i:i + 2] in self.map_dict.keys():
-                    index_list.append(self.map_dict[str_char[i:i + 2]])
+                    indices.append(self.map_dict[str_char[i:i + 2]])
                     skip_flag = True
                 elif str_char[i] in self.map_dict.keys():
-                    index_list.append(self.map_dict[str_char[i]])
+                    indices.append(self.map_dict[str_char[i]])
                 else:
-                    index_list.append(self.map_dict['OOV'])
+                    indices.append(self.map_dict['OOV'])
 
             # Final character
             if not skip_flag:
                 if str_char[-1] in self.map_dict.keys():
-                    index_list.append(self.map_dict[str_char[-1]])
+                    indices.append(self.map_dict[str_char[-1]])
                 else:
-                    index_list.append(self.map_dict['OOV'])
+                    indices.append(self.map_dict['OOV'])
         # NOTE: double_letter is prepared for Japanese
 
         else:
             for c in list(str_char):
                 if c in self.map_dict.keys():
-                    index_list.append(self.map_dict[c])
+                    indices.append(self.map_dict[c])
                 else:
-                    index_list.append(self.map_dict['OOV'])
+                    indices.append(self.map_dict['OOV'])
         # NOTE: OOV handling is prepared for Japanese and Chinese
 
-        return np.array(index_list)
+        return np.array(indices)
 
 
 class Idx2char(object):
-    """Convert from index to character.
+    """Convert index into character.
     Args:
         vocab_file_path (string): path to the vocabulary file
         space_mark (string, optional): the space mark to divide a sequence into words
@@ -127,31 +127,33 @@ class Idx2char(object):
         self.remove_list = remove_list
         self.return_list = return_list
 
-        # Read the vocabulary file
+        # Load the vocabulary file
         self.map_dict = {}
         vocab_count = 0
         with codecs.open(vocab_file_path, 'r', 'utf-8') as f:
             for line in f:
-                char = line.strip()
-                if char in remove_list:
+                c = line.strip()
+                if c in remove_list:
                     continue
-                self.map_dict[vocab_count] = char
+                self.map_dict[vocab_count] = c
                 vocab_count += 1
 
         # Add <EOS>
         self.map_dict[vocab_count] = '>'
 
-    def __call__(self, index_list):
+    def __call__(self, indices):
         """
         Args:
-            index_list (list): list of character indices.
+            indices (list): list of character indices.
         Returns:
             str_char (string): a sequence of characters
+                or
+            char_list (list): list of characters
         """
-        _char_list = list(map(lambda x: self.map_dict[x], index_list))
+        _char_list = list(map(lambda c: self.map_dict[c], indices))
         char_list = []
 
-        # Convert from indices to the corresponding characters
+        # Convert character indices into the corresponding strings
         if self.capital_divide:
             for i in range(len(_char_list)):
                 if i != 0 and 'A' <= _char_list[i] <= 'Z':

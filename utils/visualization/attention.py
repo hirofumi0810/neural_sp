@@ -21,15 +21,15 @@ green = '#006400'
 sns.set(font='Noto Sans CJK JP')
 
 
-def plot_attention_weights(attention_weights, frame_num, num_stack, label_list,
-                           spectrogram=None, save_path=None, figsize=(10, 4)):
+def plot_attention_weights(attention_weights, label_list,
+                           spectrogram=None, str_ref=None,
+                           save_path=None, figsize=(10, 4)):
     """Plot attention weights.
     Args:
         attention_weights (np.ndarray): A tensor of size `[T_out, T_in]`
-        frame_num (int):
-        num_stack (int): the number of frames to stack
         label_list (list):
         spectrogram (np.ndarray, optional): A tensor of size `[T, feature_dim]`
+        str_ref (string, optional):
         save_path (string): path to save a figure of CTC posterior (utterance)
         figsize (tuple):
     """
@@ -58,8 +58,9 @@ def plot_attention_weights(attention_weights, frame_num, num_stack, label_list,
 
         # Plot spectrogram
         plt.subplot(212)
-        imgplot = plt.imshow(spectrogram.T, aspect='auto', origin='lower')
-        imgplot.set_cmap('nipy_spectral')
+        plt.imshow(spectrogram.T,
+                   cmap='viridis',
+                   aspect='auto', origin='lower')
         plt.xlabel('Time [msec]', fontsize=12)
         plt.ylabel('Frequency bin', fontsize=12)
         plt.colorbar()
@@ -74,7 +75,8 @@ def plot_attention_weights(attention_weights, frame_num, num_stack, label_list,
 
 def plot_hierarchical_attention_weights(attention_weights, attention_weights_sub,
                                         label_list, label_list_sub,
-                                        spectrogram=None, save_path=None, figsize=(20, 8)):
+                                        spectrogram=None, str_ref=None,
+                                        save_path=None, figsize=(20, 8)):
     """Plot attention weights for the hierarchical model.
     Args:
         spectrogram (np.ndarray): A tensor of size `[T_in, input_size]`
@@ -83,6 +85,7 @@ def plot_hierarchical_attention_weights(attention_weights, attention_weights_sub
         label_list (list):
         label_list_sub (list):
         spectrogram (np.ndarray, optional): A tensor of size `[T, feature_dim]`
+        str_ref (string, optional):
         save_path (string): path to save a figure of CTC posterior (utterance)
         figsize (tuple):
     """
@@ -127,7 +130,9 @@ def plot_hierarchical_attention_weights(attention_weights, attention_weights_sub
 
         # Plot spectrogram
         plt.subplot(313)
-        plt.imshow(spectrogram.T, aspect='auto', origin='lower')
+        plt.imshow(spectrogram.T,
+                   cmap='viridis',
+                   aspect='auto', origin='lower')
         plt.xlabel('Time [msec]', fontsize=12)
         plt.ylabel('Frequency bin', fontsize=12)
         plt.colorbar()

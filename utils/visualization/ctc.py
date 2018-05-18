@@ -76,7 +76,9 @@ def plot_ctc_probs(probs, frame_num, num_stack, space_index=None, str_pred='',
 
         # Plot spectrogram
         plt.subplot(212)
-        imgplot = plt.imshow(spectrogram.T, aspect='auto', origin='lower')
+        imgplot = plt.imshow(spectrogram.T,
+                             cmap='viridis',
+                             aspect='auto', origin='lower')
         imgplot.set_cmap('nipy_spectral')
         plt.xlabel('Time [msec]', fontsize=12)
         plt.ylabel('Frequency bin', fontsize=12)
@@ -103,6 +105,8 @@ def plot_hierarchical_ctc_probs(probs, probs_sub, frame_num, num_stack,
         figsize (tuple):
         space_index (int, optional):
     """
+    # TODO: add spectrogram
+
     plt.clf()
     plt.figure(figsize=figsize)
     times_probs = np.arange(frame_num) * num_stack / 100
