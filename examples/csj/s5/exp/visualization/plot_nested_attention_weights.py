@@ -106,7 +106,7 @@ def main():
 
 
 def plot(model, dataset, eval_batch_size, beam_width, beam_width_sub,
-         a2c_oracle=False, save_path=None):
+         length_penalty, a2c_oracle=False, save_path=None):
     """Visualize attention weights of Attetnion-based model.
     Args:
         model: model to evaluate
@@ -153,12 +153,13 @@ def plot(model, dataset, eval_batch_size, beam_width, beam_width_sub,
             ys_sub = None
             y_lens_sub = None
 
-        best_hyps, best_hyps_sub, aw, aw_sub, aw_dec = model.attention_weights(
+        best_hyps, aw, best_hyps_sub, aw_sub, aw_dec, _ = model.decode(
             batch['xs'], batch['x_lens'],
             beam_width=beam_width,
             beam_width_sub=beam_width_sub,
             max_decode_len=MAX_DECODE_LEN_WORD,
             max_decode_len_sub=MAX_DECODE_LEN_CHAR,
+            length_penalty=length_penalty,
             teacher_forcing=a2c_oracle,
             ys_sub=ys_sub,
             y_lens_sub=y_lens_sub)

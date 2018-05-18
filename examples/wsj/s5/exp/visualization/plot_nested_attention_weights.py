@@ -49,6 +49,8 @@ parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam in the main task')
 parser.add_argument('--beam_width_sub', type=int, default=1,
                     help='the size of beam in the sub task')
+parser.add_argument('--length_penalty', type=float,
+                    help='length penalty in beam search decodding')
 
 MAX_DECODE_LEN_WORD = 100
 MAX_DECODE_LEN_CHAR = 200
@@ -94,22 +96,24 @@ def main():
     # Visualize
     plot(model=model,
          dataset=test_data,
+         eval_batch_size=args.eval_batch_size,
          beam_width=args.beam_width,
          beam_width_sub=args.beam_width_sub,
-         eval_batch_size=args.eval_batch_size,
+         length_penalty=args.length_penalty,
          a2c_oracle=a2c_oracle,
          save_path=mkdir_join(args.model_path, 'att_weights'))
 
 
-def plot(model, dataset, beam_width, beam_width_sub,
-         eval_batch_size=None, a2c_oracle=False, save_path=None):
+def plot(model, dataset, eval_batch_size, beam_width, beam_width_sub,
+         length_penalty, a2c_oracle=False, save_path=None):
     """Visualize attention weights of Attetnion-based model.
     Args:
         model: model to evaluate
         dataset: An instance of a `Dataset` class
+        eval_batch_size (int, optional): the batch size when evaluating the model
         beam_width: (int): the size of beam i nteh main task
         beam_width_sub: (int): the size of beam in the sub task
-        eval_batch_size (int, optional): the batch size when evaluating the model
+        length_penalty (float):
         a2c_oracle (bool, optional):
         save_path (string, optional): path to save attention weights plotting
     """
@@ -148,17 +152,18 @@ def plot(model, dataset, beam_width, beam_width_sub,
             ys_sub = None
             y_lens_sub = None
 
-        best_hyps, best_hyps_sub, aw, aw_sub, aw_dec = model.attention_weights(
+        best_hyps, aw, best_hyps_sub, aw_sub, aw_dec, _ = model.decode(
             batch['xs'], batch['x_lens'],
             beam_width=beam_width,
             beam_width_sub=beam_width_sub,
             max_decode_len=MAX_DECODE_LEN_WORD,
             max_decode_len_sub=MAX_DECODE_LEN_CHAR,
+            length_penalty=length_penalty,
             teacher_forcing=a2c_oracle,
             ys_sub=ys_sub,
             y_lens_sub=y_lens_sub)
 
-        for b in range(len(batch['xs'])):
+        for b in range(batch_size):
             word_list = idx2word(best_hyps[b])
             if 'word' in dataset.label_type_sub:
                 char_list = idx2word(best_hyps_sub[b])
