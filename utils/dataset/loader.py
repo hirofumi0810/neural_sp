@@ -99,12 +99,30 @@ class DatasetBase(Base):
                 except:
                     data_i_tmp = self.load(input_path_list[b])
 
-            if self.use_double_delta:
-                data_i = data_i_tmp
-            elif self.use_delta:
-                data_i = data_i_tmp[:, :self.input_freq * 2]
+            # Slice features
+            max_input_freq = data_i_tmp.shape[-1] // 3
+            if self.input_freq < max_input_freq and (self.input_freq - 1) % 10 == 0:
+                feat_i = [data_i_tmp[:, :self.input_freq - 1]]
+                feat_i += [data_i_tmp[:, max_input_freq: max_input_freq + 1]]
+                if self.use_delta:
+                    feat_i += [data_i_tmp[:,
+                                          max_input_freq:max_input_freq + self.input_freq - 1]]
+                    feat_i += [data_i_tmp[:, max_input_freq *
+                                          2: max_input_freq * 2 + 1]]
+                if self.use_double_delta:
+                    feat_i += [data_i_tmp[:,
+                                          max_input_freq * 2:max_input_freq * 2 + self.input_freq - 1]]
+                    feat_i += [data_i_tmp[:, -1].reshape(-1, 1)]
             else:
-                data_i = data_i_tmp[:, :self.input_freq]
+                feat_i = [data_i_tmp[:, :self.input_freq]]
+                if self.use_delta:
+                    feat_i += [data_i_tmp[:,
+                                          max_input_freq:max_input_freq + self.input_freq]]
+                if self.use_double_delta:
+                    feat_i += [data_i_tmp[:,
+                                          max_input_freq * 2:max_input_freq * 2 + self.input_freq]]
+            data_i = np.concatenate(feat_i, axis=-1)
+            # NOTE: the last dim should be the pitch feature
 
             # Frame stacking
             if self.num_stack > 1:
