@@ -17,14 +17,10 @@ echo ===========================================================================
 echo "                                   CSJ                                     "
 echo ============================================================================
 
-stage=2
+stage=0
 hierarchical_model=false
 # hierarchical_model=true
-
-### Set true when hiding progress bar
 run_background=true
-
-### Set true when restarting training
 restart=false
 
 ### Set path to original data
@@ -41,16 +37,22 @@ CSJVER=dvd  ## Set your CSJ format (dvd or usb).
             ## Case merl :MERL setup. Neccesary directory is WAV and sdb
 
 ### Select data size
-# DATASIZE=subset
-# DATASIZE=aps
-DATASIZE=fullset
-# DATASIZE=all
+export DATASIZE=aps_other
+# export DATASIZE=aps
+# export DATASIZE=all_except_dialog
+# export DATASIZE=all
+
+# NOTE:
+# aps_other=default using "Academic lecture" and "other" data,
+# aps=using "Academic lecture" data,
+# all_except_dialog=using All data except for "dialog" data,
+# all=using All data
 
 ### Set path to save the model
 MODEL_SAVEPATH="/n/sd8/inaguma/result/csj"
 
 ### Set path to save dataset
-DATA_SAVEPATH="/n/sd8/inaguma/corpus/csj/kaldi"
+export DATA_SAVEPATH="/n/sd8/inaguma/corpus/csj/kaldi"
 
 ### Select one tool to extract features (HTK is the fastest)
 # TOOL=kaldi
@@ -62,7 +64,7 @@ TOOL=htk
 CHANNELS=80
 WINDOW=0.025
 SLIDE=0.01
-ENERGY=0
+ENERGY=1
 DELTA=1
 DELTADELTA=1
 # NORMALIZE=global
@@ -70,40 +72,19 @@ NORMALIZE=speaker
 # NORMALIZE=utterance
 
 
-export DATA_SAVEPATH=$DATA_SAVEPATH/$DATASIZE
+train=train_$DATASIZE
 export DATA_DOWNLOADPATH=$DATA_SAVEPATH/data
-if [ $stage -le 0 ]; then
+
+if [ $stage -le 0 ] && [ ! -e $DATA_SAVEPATH/.stage_0_$DATASIZE ]; then
   echo ============================================================================
   echo "                           Data Preparation                               "
   echo ============================================================================
 
-  if [ ! -e $DATA_SAVEPATH/csj-data/.done_make_all ]; then
-   echo "CSJ transcription file does not exist"
-   #local/csj_make_trans/csj_autorun.sh <RESOUCE_DIR> <MAKING_PLACE(no change)> || exit 1;
-   local/csj_make_trans/csj_autorun.sh $CSJDATATOP $DATA_SAVEPATH/csj-data $CSJVER || exit 1;
-  fi
-  wait
-
-  [ ! -e $DATA_SAVEPATH/csj-data/.done_make_all ]\
-      && echo "Not finished processing CSJ data" && exit 1;
-
-  rm -rf $DATA_SAVEPATH/local
+  local/csj_make_trans/csj_autorun.sh $CSJDATATOP $DATA_SAVEPATH/csj-data $CSJVER || exit 1;
 
   # Prepare Corpus of Spontaneous Japanese (CSJ) data.
   # Processing CSJ data to KALDI format based on switchboard recipe.
-  # local/csj_data_prep.sh <SPEECH_and_TRANSCRIPTION_DATA_DIRECTORY> [ <mode_number> ]
-  # mode_number can be 0, 1, 2, 3 (0=default using "Academic lecture" and "other" data,
-  #                                1=using "Academic lecture" data,
-  #                                2=using All data except for "dialog" data, 3=using All data )
-  if [ $DATASIZE = "subset" ]; then
-    local/csj_data_prep.sh $DATA_SAVEPATH/csj-data || exit 1;  # subset (240h)
-  elif [ $DATASIZE = "aps" ]; then
-    local/csj_data_prep.sh $DATA_SAVEPATH/csj-data 1 || exit 1;  # aps
-  elif [ $DATASIZE = "fullset" ]; then
-    local/csj_data_prep.sh $DATA_SAVEPATH/csj-data 2 || exit 1;  # fullset (586h)
-  elif [ $DATASIZE = "all" ]; then
-    local/csj_data_prep.sh $DATA_SAVEPATH/csj-data 3 || exit 1;  # all
-  fi
+  local/csj_data_prep.sh $DATA_SAVEPATH/csj-data $DATASIZE || exit 1;
 
   local/csj_prepare_dict.sh || exit 1;
 
@@ -112,41 +93,28 @@ if [ $stage -le 0 ]; then
   # so the 1st 4k won't have been used in the LM training data.
   # However, they will be in the lexicon, plus speakers may overlap,
   # so it's still not quite equivalent to a test set.
-  utils/subset_data_dir.sh --first $DATA_SAVEPATH/train 4000 $DATA_SAVEPATH/dev || exit 1; # 6hr 31min
-  n=$[`cat $DATA_SAVEPATH/train/segments | wc -l` - 4000]
-  utils/subset_data_dir.sh --last $DATA_SAVEPATH/train $n $DATA_SAVEPATH/train_nodev || exit 1;
-
-  # Take the first 100k utterances (about half the data); we'll use
-  # this for later stages of training.
-  # utils/subset_data_dir.sh --first $DATA_SAVEPATH/train_nodev 100000 $DATA_SAVEPATH/train_100k || exit 1;
-  # utils/data/remove_dup_utts.sh 200 $DATA_SAVEPATH/train_100k $DATA_SAVEPATH/train_100k_tmp || exit 1;  # 147hr 6min
-  # rm -rf $DATA_SAVEPATH/train_100k
-  # mv $DATA_SAVEPATH/train_100k_tmp $DATA_SAVEPATH/train_100k || exit 1;
+  utils/subset_data_dir.sh --first $DATA_SAVEPATH/$train 4000 $DATA_SAVEPATH/dev || exit 1; # 6hr 31min
+  n=$[`cat $DATA_SAVEPATH/$train/segments | wc -l` - 4000]
+  utils/subset_data_dir.sh --last $DATA_SAVEPATH/$train $n $DATA_SAVEPATH/tmp || exit 1;
 
   # Finally, the full training set:
-  rm -rf $DATA_SAVEPATH/train
-  utils/data/remove_dup_utts.sh 300 $DATA_SAVEPATH/train_nodev $DATA_SAVEPATH/train || exit 1;  # 233hr 36min
-  rm -rf $DATA_SAVEPATH/train_nodev
+  rm -rf $DATA_SAVEPATH/$train
+  utils/data/remove_dup_utts.sh 300 $DATA_SAVEPATH/tmp $DATA_SAVEPATH/$train || exit 1;  # 233hr 36min
+  rm -rf $DATA_SAVEPATH/tmp
 
   # Data preparation and formatting for evaluation set.
   # CSJ has 3 types of evaluation data
   #local/csj_eval_data_prep.sh <SPEECH_and_TRANSCRIPTION_DATA_DIRECTORY_ABOUT_EVALUATION_DATA> <EVAL_NUM>
   for eval_num in eval1 eval2 eval3 ; do
-      local/csj_eval_data_prep.sh $DATA_SAVEPATH/csj-data/eval $eval_num || exit 1;
+    local/csj_eval_data_prep.sh $DATA_SAVEPATH/csj-data/eval $eval_num || exit 1;
   done
 
+  touch $DATA_SAVEPATH/.stage_0_$DATASIZE
   echo "Finish data preparation (stage: 0)."
 fi
 
-# Calculate the amount of utterance segmentations.
-# perl -ne 'split; $s+=($_[3]-$_[2]); END{$h=int($s/3600); $r=($s-$h*3600); $m=int($r/60); $r-=$m*60; printf "%.1f sec -- %d:%d:%.1f\n", $s, $h, $m, $r;}' $DATA_SAVEPATH/train/segments
-# perl -ne 'split; $s+=($_[3]-$_[2]); END{$h=int($s/3600); $r=($s-$h*3600); $m=int($r/60); $r-=$m*60; printf "%.1f sec -- %d:%d:%.1f\n", $s, $h, $m, $r;}' $DATA_SAVEPATH/dev/segments
-# perl -ne 'split; $s+=($_[3]-$_[2]); END{$h=int($s/3600); $r=($s-$h*3600); $m=int($r/60); $r-=$m*60; printf "%.1f sec -- %d:%d:%.1f\n", $s, $h, $m, $r;}' $DATA_SAVEPATH/eval1/segments
-# perl -ne 'split; $s+=($_[3]-$_[2]); END{$h=int($s/3600); $r=($s-$h*3600); $m=int($r/60); $r-=$m*60; printf "%.1f sec -- %d:%d:%.1f\n", $s, $h, $m, $r;}' $DATA_SAVEPATH/eval2/segments
-# perl -ne 'split; $s+=($_[3]-$_[2]); END{$h=int($s/3600); $r=($s-$h*3600); $m=int($r/60); $r-=$m*60; printf "%.1f sec -- %d:%d:%.1f\n", $s, $h, $m, $r;}' $DATA_SAVEPATH/eval3/segments
 
-
-if [ $stage -le 1 ]; then
+if [ $stage -le 1 ] && [ ! -e $DATA_SAVEPATH/.stage_1_$DATASIZE ]; then
   echo ============================================================================
   echo "                        Feature extranction                               "
   echo ============================================================================
@@ -163,7 +131,9 @@ if [ $stage -le 1 ]; then
     python local/make_htk_config.py \
         --data_save_path $DATA_SAVEPATH \
         --config_save_path ./conf/fbank_htk.conf \
+        --audio_file_type wav \
         --channels $CHANNELS \
+        --sampling_rate 16000 \
         --window $WINDOW \
         --slide $SLIDE \
         --energy $ENERGY \
@@ -171,14 +141,33 @@ if [ $stage -le 1 ]; then
         --deltadelta $DELTADELTA || exit 1;
 
     # Convert from wav to htk files
-    for data_type in train dev eval1 eval2 eval3; do
-      mkdir -p $DATA_SAVEPATH/htk
-      mkdir -p $DATA_SAVEPATH/htk/$data_type
-
-      if [ ! -e $DATA_SAVEPATH/htk/$data_type/.done_make_htk ]; then
-        $HCOPY -T 1 -C ./conf/fbank_htk.conf -S $DATA_SAVEPATH/$data_type/wav2htk.scp || exit 1;
-        touch $DATA_SAVEPATH/htk/$data_type/.done_make_htk
+    for data_type in $train dev eval1 eval2 eval3; do
+      if [ `echo $train | grep 'train'` ]; then
+        mkdir -p $DATA_SAVEPATH/htk/train
+      else
+        mkdir -p $DATA_SAVEPATH/htk/$data_type
       fi
+      touch $DATA_SAVEPATH/$data_type/htk.scp
+      cat $DATA_SAVEPATH/$data_type/wav.scp | while read line
+      do
+        wav_path=`echo $line | awk -F " " '{ print $(NF - 1) }'`
+        file_name=`basename $wav_path`
+        base=${file_name%.*}
+        # ext=${file_name##*.}
+
+        # Convert from wav to htk files
+        if [ `echo $train | grep 'train'` ]; then
+          htk_path=$DATA_SAVEPATH/htk/train/$base".htk"
+        else
+          htk_path=$DATA_SAVEPATH/htk/$data_type/$base".htk"
+        fi
+        if [ ! -e $htk_path ]; then
+          echo $wav_path  $htk_path > ./tmp.scp
+          $HCOPY -T 1 -C ./conf/fbank_htk.conf -S ./tmp.scp || exit 1;
+          rm ./tmp.scp
+        fi
+        echo $htk_path >> $DATA_SAVEPATH/$data_type/htk.scp
+      done
     done
 
   else
@@ -188,36 +177,34 @@ if [ $stage -le 1 ]; then
     fi
   fi
 
-  if [ ! -e $DATA_SAVEPATH/feature/$TOOL/.done_feature_extraction ]; then
-    python local/feature_extraction.py \
-      --data_save_path $DATA_SAVEPATH \
-      --tool $TOOL \
-      --normalize $NORMALIZE \
-      --channels $CHANNELS \
-      --window $WINDOW \
-      --slide $SLIDE \
-      --energy $ENERGY \
-      --delta $DELTA \
-      --deltadelta $DELTADELTA || exit 1;
-    touch $DATA_SAVEPATH/feature/$TOOL/.done_feature_extraction
-  fi
+  python local/feature_extraction.py \
+    --data_save_path $DATA_SAVEPATH \
+    --data_size $DATASIZE \
+    --tool $TOOL \
+    --normalize $NORMALIZE \
+    --channels $CHANNELS \
+    --window $WINDOW \
+    --slide $SLIDE \
+    --energy $ENERGY \
+    --delta $DELTA \
+    --deltadelta $DELTADELTA || exit 1;
 
+  touch $DATA_SAVEPATH/.stage_1_$DATASIZE
   echo "Finish feature extranction (stage: 1)."
 fi
 
 
-if [ $stage -le 2 ]; then
+if [ $stage -le 2 ] && [ ! -e $DATA_SAVEPATH/.stage_2_$DATASIZE ]; then
   echo ============================================================================
   echo "                            Create dataset                                "
   echo ============================================================================
 
-  if [ ! -e $DATA_SAVEPATH/dataset/$TOOL/.done_dataset ]; then
-    python local/make_dataset_csv.py \
-      --data_save_path $DATA_SAVEPATH \
-      --tool $TOOL || exit 1;
-    touch $DATA_SAVEPATH/dataset/$TOOL/.done_dataset
-  fi
+  python local/make_dataset_csv.py \
+    --data_save_path $DATA_SAVEPATH \
+    --data_size $DATASIZE \
+    --tool $TOOL || exit 1;
 
+  touch $DATA_SAVEPATH/.stage_2_$DATASIZE
   echo "Finish creating dataset (stage: 2)."
 fi
 

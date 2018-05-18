@@ -50,11 +50,11 @@ def eval_word(models, dataset, eval_batch_size, beam_width, max_decode_len,
     # TODO: fix this
 
     idx2word = Idx2word(dataset.vocab_file_path)
-    if models[0].model_type == 'nested_attention':
+    if model.model_type == 'nested_attention':
         char2idx = Char2idx(dataset.vocab_file_path_sub)
-    if models[0].model_type not in ['ctc', 'attention'] and resolving_unk:
+    if model.model_type not in ['ctc', 'attention'] and resolving_unk:
         idx2char = Idx2char(dataset.vocab_file_path_sub)
-    if models[0].model_type == 'hierarchical_attention' and joint_decoding:
+    if model.model_type == 'hierarchical_attention' and joint_decoding:
         char2idx = Char2idx(dataset.vocab_file_path_sub)
         char2word = Char2word(dataset.vocab_file_path,
                               dataset.vocab_file_path_sub)

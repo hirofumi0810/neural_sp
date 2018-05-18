@@ -5,13 +5,13 @@ param:
   # corpus
   corpus: csj
   data_size: aps_other
-  label_type: word
-  label_type_sub: kanji_wb
+  label_type: character_wb
+  label_type_sub: character_wb
 
   # features
   feature: fbank
   tool: htk
-  input_freq: 80
+  input_freq: 81
   use_delta: False
   use_double_delta: False
   input_channel: 1
@@ -22,7 +22,7 @@ param:
   dynamic_batching: True
 
   # topology
-  model_type: hierarchical_attention
+  model_type: nested_attention
   encoder_type: lstm
   conv_channels: []
   conv_kernel_sizes: []
@@ -52,23 +52,22 @@ param:
   decoder_num_layers: 1
   decoder_num_units_sub: 320
   decoder_num_layers_sub: 1
-  embedding_dim: 128
+  embedding_dim: 64
   embedding_dim_sub: 64
   attention_conv_num_channels: 10
   attention_conv_width: 201
   decoding_order: attend_generate_update
   bottleneck_dim: 320
   bottleneck_dim_sub: 320
-  backward_sub: False
-  # backward_sub: True
   num_heads: 1
   num_heads_sub: 1
 
   # optimization
-  batch_size: 40
+  # batch_size: 40  # 5L
+  batch_size: 50  # 4L
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 20
+  num_epoch: 30
   convert_to_sgd_epoch: 20
 
   # initialization
@@ -93,7 +92,7 @@ param:
   sigmoid_smoothing: False
   coverage_weight: 0
   scheduled_sampling_prob: 0.2
-  scheduled_sampling_max_step: 50000
+  scheduled_sampling_ramp_max_step: 50000
   label_smoothing_prob: 0.1
   weight_noise_std: 0
 
@@ -106,10 +105,25 @@ param:
   eval_start_epoch: 5
   print_step: 200
 
+
+
   # MTL
   main_loss_weight: 0.5
   sub_loss_weight: 0.5
   ctc_loss_weight_sub: 0
 
-  # sub_loss_weight: 0
-  # ctc_loss_weight_sub: 0.5
+  # W2C attention
+  usage_dec_sub: all
+  num_heads_dec: 1
+  dec_attention_type: content
+
+  # regularization
+  dec_attend_temperature: 1
+  dec_sigmoid_smoothing: True
+  att_reg_weight: 0
+
+  # backward_sub: False
+  backward_sub: True
+
+  # regularization
+  relax_context_vec_dec: True

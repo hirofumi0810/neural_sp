@@ -1,11 +1,11 @@
-parent: ./conf/ctc/word/blstm_ctc_word_aps_other.yml
+parent: ./conf/ctc/word/ctc_word_aps_other.yml
 param:
   # framework
   backend: pytorch
 
   # corpus
   data_size: aps_other
-  label_type: kanji_wb
+  label_type: character_wb
 
   # topology
   encoder_num_layers: 3

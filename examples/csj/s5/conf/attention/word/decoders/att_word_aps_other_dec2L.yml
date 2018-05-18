@@ -1,4 +1,4 @@
-parent: ./conf/attention/word/att_blstm_word_aps_other.yml
+parent: ./conf/attention/word/att_word_aps_other.yml
 param:
   # framework
   backend: pytorch

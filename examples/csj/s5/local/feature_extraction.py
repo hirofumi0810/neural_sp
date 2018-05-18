@@ -61,11 +61,11 @@ CONFIG = {
 
 def main():
     print('=> Processing input data...')
-    for data_type in ['train_' + args.data_size, 'dev', 'eval1', 'eval2', 'eval3']:
-
+    data_size = 'train_' + args.data_size
+    for data_type in [data_size, 'dev', 'eval1', 'eval2', 'eval3']:
         print('===> %s' % data_type)
         feature_save_path = mkdir_join(
-            args.data_save_path, 'feature', args.tool, data_type, data_type)
+            args.data_save_path, 'feature', args.tool, data_size, data_type)
 
         utt_indices = []
         with codecs.open(join(args.data_save_path, data_type, 'text'), 'r', 'utf-8') as f:
@@ -108,13 +108,13 @@ def main():
         else:
             # Load statistics over train dataset
             global_mean_male = np.load(
-                join(args.data_save_path, 'feature', args.tool, 'train_' + args.data_size, args.data_size, 'global_mean_male.npy'))
+                join(args.data_save_path, 'feature', args.tool, data_size, data_size, 'global_mean_male.npy'))
             global_std_male = np.load(
-                join(args.data_save_path, 'feature', args.tool, 'train_' + args.data_size, args.data_size, 'global_std_male.npy'))
+                join(args.data_save_path, 'feature', args.tool, data_size, data_size, 'global_std_male.npy'))
             global_mean_female = np.load(
-                join(args.data_save_path, 'feature', args.tool, 'train_' + args.data_size, args.data_size, 'global_mean_female.npy'))
+                join(args.data_save_path, 'feature', args.tool, data_size, data_size, 'global_mean_female.npy'))
             global_std_female = np.load(
-                join(args.data_save_path, 'feature', args.tool, 'train_' + args.data_size, args.data_size, 'global_std_female.npy'))
+                join(args.data_save_path, 'feature', args.tool, data_size, data_size, 'global_std_female.npy'))
 
         read_audio(data_type=data_type,
                    spk2audio=spk2audio,

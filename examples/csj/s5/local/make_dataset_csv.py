@@ -24,6 +24,8 @@ from utils.directory import mkdir_join
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str,
                     help='path to save dataset')
+parser.add_argument('--data_size', type=str,
+                    choices=['aps_other', 'aps', 'all_except_dialog', 'all'])
 parser.add_argument('--tool', type=str,
                     choices=['wav', 'htk', 'python_speech_features', 'librosa'])
 
@@ -42,8 +44,8 @@ EOD = 'd'
 
 def main():
 
-    for data_type in ['train', 'dev', 'eval1', 'eval2', 'eval3']:
-        # TODO: data_size
+    data_size = 'train_' + args.data_size
+    for data_type in [data_size, 'dev', 'eval1', 'eval2', 'eval3']:
         print('=' * 50)
         print(' ' * 20 + data_type)
         print('=' * 50)
@@ -52,7 +54,8 @@ def main():
         print('=> Processing transcripts...')
         trans_dict = read_text(
             text_path=join(args.data_save_path, data_type, 'text'),
-            vocab_save_path=mkdir_join(args.data_save_path, 'vocab'),
+            vocab_save_path=mkdir_join(
+                args.data_save_path, 'vocab', data_size),
             data_type=data_type,
             kana2phone_path='./local/csj_make_trans/kana2phone',
             lexicon_path=None)
@@ -60,7 +63,7 @@ def main():
         # Make dataset file (.csv)
         print('=> Saving dataset files...')
         csv_save_path = mkdir_join(
-            args.data_save_path, 'dataset', args.tool, data_type)
+            args.data_save_path, 'dataset', args.tool, data_size, data_type)
 
         df_columns = ['frame_num', 'input_path', 'transcript']
         df_word = pd.DataFrame([], columns=df_columns)
@@ -74,8 +77,7 @@ def main():
         # df_phone_wb = pd.DataFrame([], columns=df_columns)
         df_pos = pd.DataFrame([], columns=df_columns)
 
-        with open(join(args.data_save_path, 'feature', args.tool, data_type,
-                       'frame_num.pickle'), 'rb') as f:
+        with open(join(args.data_save_path, 'feature', args.tool, data_size, data_type, 'frame_num.pickle'), 'rb') as f:
             frame_num_dict = pickle.load(f)
 
         utt_count = 0
@@ -88,7 +90,7 @@ def main():
         for utt_idx, trans in tqdm(trans_dict.items()):
             speaker = utt_idx.split('_')[0]
             feat_utt_save_path = join(
-                args.data_save_path, 'feature', args.tool, data_type,
+                args.data_save_path, 'feature', args.tool, data_size, data_type,
                 speaker, utt_idx + '.npy')
             frame_num = frame_num_dict[utt_idx]
 
@@ -319,7 +321,7 @@ def read_text(text_path, vocab_save_path, data_type,
     # TODO: load lexicon
 
     # Save vocabulary files
-    if data_type == 'train':
+    if 'train' in data_type:
         # word-level (threshold == 3)
         with codecs.open(word_vocab_path, 'w', 'utf-8') as f:
             word_list = sorted([w for w, freq in list(word_dict.items())

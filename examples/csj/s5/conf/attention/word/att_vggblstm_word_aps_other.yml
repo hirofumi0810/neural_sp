@@ -1,10 +1,7 @@
-parent: ./conf/ctc/word/blstm_ctc_word_aps_other.yml
+parent: ./conf/attention/word/att_word_aps_other.yml
 param:
   # framework
   backend: pytorch
-
-  # corpus
-  label_type: kanji_wb
 
   # topology
   conv_channels: [64, 64, 128, 128]
@@ -33,7 +30,6 @@ param:
     - False
     - False
     - False
-  fc_list: [320]
 
   # optimization
   batch_size: 25
@@ -41,5 +37,12 @@ param:
   # initialization
   char_init: False
 
+  # regularization
+  scheduled_sampling_max_step: 100000
+
   # annealing
   print_step: 400
+
+  # MTL
+  backward_loss_weight: 0
+  ctc_loss_weight: 0

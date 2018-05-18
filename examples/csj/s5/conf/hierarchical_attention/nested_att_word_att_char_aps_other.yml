@@ -5,13 +5,14 @@ param:
   # corpus
   corpus: csj
   data_size: aps_other
-  label_type: kanji_wb
-  label_type_sub: kanji_wb
+  label_type: word
+  label_type_sub: character_wb
+  # label_type_sub: character
 
   # features
   feature: fbank
   tool: htk
-  input_freq: 80
+  input_freq: 81
   use_delta: False
   use_double_delta: False
   input_channel: 1
@@ -52,7 +53,7 @@ param:
   decoder_num_layers: 1
   decoder_num_units_sub: 320
   decoder_num_layers_sub: 1
-  embedding_dim: 64
+  embedding_dim: 128
   embedding_dim_sub: 64
   attention_conv_num_channels: 10
   attention_conv_width: 201
@@ -63,11 +64,10 @@ param:
   num_heads_sub: 1
 
   # optimization
-  # batch_size: 40  # 5L
-  batch_size: 50  # 4L
+  batch_size: 40
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 30
+  num_epoch: 20
   convert_to_sgd_epoch: 20
 
   # initialization
@@ -92,7 +92,7 @@ param:
   sigmoid_smoothing: False
   coverage_weight: 0
   scheduled_sampling_prob: 0.2
-  scheduled_sampling_ramp_max_step: 50000
+  scheduled_sampling_max_step: 50000
   label_smoothing_prob: 0.1
   weight_noise_std: 0
 
@@ -122,8 +122,7 @@ param:
   dec_sigmoid_smoothing: True
   att_reg_weight: 0
 
-  # backward_sub: False
-  backward_sub: True
+  backward_sub: False
 
   # regularization
-  relax_context_vec_dec: True
+  relax_context_vec_dec: False

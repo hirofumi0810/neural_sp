@@ -39,7 +39,7 @@ def eval_char(models, dataset, eval_batch_size, beam_width, max_decode_len,
     model = models[0]
     # TODO: fix this
 
-    if models.model_type in ['ctc', 'attention']:
+    if model.model_type in ['ctc', 'attention']:
         idx2char = Idx2char(vocab_file_path=dataset.vocab_file_path)
     else:
         idx2char = Idx2char(vocab_file_path=dataset.vocab_file_path_sub)
