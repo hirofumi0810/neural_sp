@@ -168,6 +168,7 @@ if [ $stage -le 1 ] && [ ! -e $DATA_SAVEPATH/.stage_1 ]; then
     for data_type in train_si84 train_si284 test_dev93 test_eval92; do
       mkdir -p $DATA_SAVEPATH/wav/$data_type
       mkdir -p $DATA_SAVEPATH/htk/$data_type
+      [ -e $DATA_SAVEPATH/$data_type/htk.scp ] && rm $DATA_SAVEPATH/$data_type/htk.scp
       touch $DATA_SAVEPATH/$data_type/htk.scp
       cat $DATA_SAVEPATH/$data_type/wav.scp | while read line
       do

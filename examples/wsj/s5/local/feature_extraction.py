@@ -13,7 +13,6 @@ import numpy as np
 import pickle
 from tqdm import tqdm
 import argparse
-from collections import OrderedDict
 
 sys.path.append('../../../')
 from utils.directory import mkdir_join
@@ -22,7 +21,8 @@ from utils.feature_extraction.wav2feature_python_speech_features import wav2feat
 from utils.feature_extraction.wav2feature_librosa import wav2feature as w2f_librosa
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--data_save_path', type=str, help='path to save data')
+parser.add_argument('--data_save_path', type=str,
+                    help='path to save data')
 
 parser.add_argument('--tool', type=str,
                     choices=['htk', 'python_speech_features', 'librosa', 'wav'])
@@ -35,8 +35,10 @@ parser.add_argument('--window', type=float, default=0.025,
                     help='window width to extract features')
 parser.add_argument('--slide', type=float, default=0.01,
                     help='extract features per slide')
-parser.add_argument('--energy', type=int, help='if 1, add the energy feature')
-parser.add_argument('--delta', type=int, help='if 1, add the energy feature')
+parser.add_argument('--energy', type=int,
+                    help='if 1, add the energy feature')
+parser.add_argument('--delta', type=int,
+                    help='if 1, add the energy feature')
 parser.add_argument('--deltadelta', type=int,
                     help='if 1, double delta features are also extracted')
 
@@ -140,15 +142,11 @@ def read_audio(data_type, audio_paths, spk2gender, tool, config, normalize,
             utterance => normalize input features by mean & stddev per utterancet
                          data by mean & stddev per utterance
         save_path (string): path to save npy files
-        global_mean_male (np.ndarray, optional): global mean of male over the
-            training set
-        global_std_male (np.ndarray, optional): global standard deviation of
-            male over the training set
-        global_mean_female (np.ndarray, optional): global mean of female over
-            the training set
-        global_std_female (np.ndarray, optional): global standard deviation of
-            female over the training set
-        dtype (optional): the type of data, default is np.float32
+        global_mean_male (np.ndarray): global mean of male over the training set
+        global_std_male (np.ndarray): global standard deviation of male over the training set
+        global_mean_female (np.ndarray): global mean of female over the training set
+        global_std_female (np.ndarray): global standard deviation of female over the training set
+        dtype): the type of data, default is np.float32
     """
     if 'train' not in data_type:
         if global_mean_male is None or global_mean_female is None:

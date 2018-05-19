@@ -142,7 +142,7 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
         text_path (string): path to a text file of kaldi
         vocab_save_path (string): path to save vocabulary files
         data_type (string): train or dev or eval2000_swbd or eval2000_ch
-        lexicon_path (string, optional):
+        lexicon_path (string):
     Returns:
         speaker_dict (dict): the dictionary of utterances of each speaker
             key (string) => speaker

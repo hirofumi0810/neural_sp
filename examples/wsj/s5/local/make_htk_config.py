@@ -14,7 +14,8 @@ sys.path.append('../../../')
 from utils.feature_extraction.htk import save_config
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--data_save_path', type=str, help='path to save data')
+parser.add_argument('--data_save_path', type=str,
+                    help='path to save data')
 parser.add_argument('--config_save_path', type=str,
                     help='path to save the configuration file')
 
@@ -28,8 +29,10 @@ parser.add_argument('--window', type=float, default=0.025,
                     help='window width to extract features')
 parser.add_argument('--slide', type=float, default=0.01,
                     help='extract features per slide')
-parser.add_argument('--energy', type=int, help='if 1, add the energy feature')
-parser.add_argument('--delta', type=int, help='if 1, add the energy feature')
+parser.add_argument('--energy', type=int,
+                    help='if 1, add the energy feature')
+parser.add_argument('--delta', type=int,
+                    help='if 1, add the energy feature')
 parser.add_argument('--deltadelta', type=int,
                     help='if 1, double delta features are also extracted')
 

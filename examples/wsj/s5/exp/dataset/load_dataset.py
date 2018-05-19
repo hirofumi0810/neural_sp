@@ -40,24 +40,24 @@ class Dataset(DatasetBase):
             data_size (string): train_si84 or train_si284
             label_type (string): word or characater or characater_capital_divide
             batch_size (int): the size of mini-batch
-            max_epoch (int, optional): the max epoch. None means infinite loop.
-            splice (int, optional): frames to splice. Default is 1 frame.
-            num_stack (int, optional): the number of frames to stack
-            num_skip (int, optional): the number of frames to skip
-            min_frame_num (int, optional): Exclude utteraces shorter than
+            max_epoch (int): the max epoch. None means infinite loop.
+            splice (int): frames to splice. Default is 1 frame.
+            num_stack (int): the number of frames to stack
+            num_skip (int): the number of frames to skip
+            min_frame_num (int): Exclude utteraces shorter than
                 this value
-            shuffle (bool, optional): if True, shuffle utterances. This is
+            shuffle (bool): if True, shuffle utterances. This is
                 disabled when sort_utt is True.
-            sort_utt (bool, optional): if True, sort all utterances in the
+            sort_utt (bool): if True, sort all utterances in the
                 ascending order
-            reverse (bool, optional): if True, sort utteraces in the
+            reverse (bool): if True, sort utteraces in the
                 descending order
-            sort_stop_epoch (int, optional): After sort_stop_epoch, training
+            sort_stop_epoch (int): After sort_stop_epoch, training
                 will revert back to a random order
-            num_gpus (int, optional): the number of GPUs
-            tool (string, optional): htk or librosa or python_speech_features
-            num_enque (int, optional): the number of elements to enqueue
-            dynamic_batching (bool, optional): if True, batch size will be
+            num_gpus (int): the number of GPUs
+            tool (string): htk or librosa or python_speech_features
+            num_enque (int): the number of elements to enqueue
+            dynamic_batching (bool): if True, batch size will be
                 chainged dynamically in training
         """
         self.is_test = True if 'eval' in data_type else False

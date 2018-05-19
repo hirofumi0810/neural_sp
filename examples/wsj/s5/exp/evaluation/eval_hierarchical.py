@@ -35,7 +35,10 @@ parser.add_argument('--length_penalty', type=float,
                     help='length penalty in beam search decodding')
 
 MAX_DECODE_LEN_WORD = 100
+MIN_DECODE_LEN_WORD = 10
+
 MAX_DECODE_LEN_CHAR = 200
+MIN_DECODE_LEN_CHAR = 20
 
 
 def main():
@@ -83,11 +86,13 @@ def main():
     wer_eval92, df_eval92 = eval_word(
         models=[model],
         dataset=test_data,
+        eval_batch_size=args.eval_batch_size,
         beam_width=args.beam_width,
         beam_width_sub=args.beam_width_sub,
         max_decode_len=MAX_DECODE_LEN_WORD,
+        min_decode_len=MIN_DECODE_LEN_WORD,
         max_decode_len_sub=MAX_DECODE_LEN_CHAR,
-        eval_batch_size=args.eval_batch_size,
+        min_decode_len_sub=MIN_DECODE_LEN_CHAR,
         progressbar=True,
         resolving_unk=resolving_unk,
         a2c_oracle=a2c_oracle)
@@ -96,9 +101,10 @@ def main():
     wer_eval92_sub, cer_eval92_sub, df_eval92_sub = eval_char(
         models=[model],
         dataset=test_data,
+        eval_batch_size=args.eval_batch_size,
         beam_width=args.beam_width_sub,
         max_decode_len=MAX_DECODE_LEN_CHAR,
-        eval_batch_size=args.eval_batch_size,
+        min_decode_len=MIN_DECODE_LEN_CHAR,
         progressbar=True)
     print(' WER / CER (eval92, sub): %.3f / %.3f %%' %
           ((wer_eval92_sub * 100), (cer_eval92_sub * 100)))

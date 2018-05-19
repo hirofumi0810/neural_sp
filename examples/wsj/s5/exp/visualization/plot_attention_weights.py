@@ -1,24 +1,25 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Decode the model's outputs (WSJ corpus)."""
+"""Plot attention weights (WSJs corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from os.path import join, abspath
+from os.path import join, abspath, isdir
 import sys
 import argparse
-import re
+import shutil
 
 sys.path.append(abspath('../../../'))
 from models.load_model import load
 from examples.wsj.s5.exp.dataset.load_dataset import Dataset
 from utils.io.labels.character import Idx2char
 from utils.io.labels.word import Idx2word
+from utils.directory import mkdir_join, mkdir
+from utils.visualization.attention import plot_attention_weights
 from utils.config import load_config
-from utils.evaluation.edit_distance import compute_wer
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str,
@@ -60,7 +61,7 @@ def main():
         label_type=params['label_type'],
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=True, reverse=True, tool=params['tool'])
+        sort_utt=False, reverse=False, tool=params['tool'])
 
     params['num_classes'] = test_data.num_classes
 
@@ -76,54 +77,46 @@ def main():
     model.set_cuda(deterministic=False, benchmark=True)
 
     # Visualize
-    decode(model=model,
-           dataset=test_data,
-           beam_width=args.beam_width,
-           eval_batch_size=args.eval_batch_size,
-           length_penalty=args.length_penalty,
-           save_path=None)
-    # save_path=args.model_path)
+    plot(model=model,
+         dataset=test_data,
+         eval_batch_size=args.eval_batch_size,
+         beam_width=args.beam_width,
+         length_penalty=args.length_penalty,
+         save_path=mkdir_join(args.model_path, 'att_weights'))
 
 
-def decode(model, dataset, eval_batch_size, beam_width, length_penalty,
-           save_path=None):
-    """Visualize label outputs.
+def plot(model, dataset, eval_batch_size, beam_width, length_penalty,
+         save_path=None):
+    """Visualize attention weights of attetnion-based model.
     Args:
-        model: the model to evaluate
+        model: model to evaluate
         dataset: An instance of a `Dataset` class
         eval_batch_size (int): the batch size when evaluating the model
         beam_width: (int): the size of beam
         length_penalty (float):
-        save_path (string): path to save decoding results
+        save_path (string): path to save attention weights plotting
     """
-    # Set batch size in the evaluation
-    if eval_batch_size is not None:
-        dataset.batch_size = eval_batch_size
+    # Clean directory
+    if save_path is not None and isdir(save_path):
+        shutil.rmtree(save_path)
+        mkdir(save_path)
 
     if dataset.label_type == 'word':
-        map_fn = Idx2word(dataset.vocab_file_path)
+        map_fn = Idx2word(dataset.vocab_file_path, return_list=True)
         max_decode_len = MAX_DECODE_LEN_WORD
         min_decode_len = MIN_DECODE_LEN_WORD
     else:
-        map_fn = Idx2char(dataset.vocab_file_path,
-                          capital_divide=dataset.label_type == 'character_capital_divide')
+        map_fn = Idx2char(dataset.vocab_file_path, return_list=True)
         max_decode_len = MAX_DECODE_LEN_CHAR
         min_decode_len = MIN_DECODE_LEN_CHAR
 
-    if save_path is not None:
-        sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
-
     for batch, is_new_epoch in dataset:
         # Decode
-        best_hyps, _, perm_idx = model.decode(
+        best_hyps, aw, perm_idx = model.decode(
             batch['xs'], batch['x_lens'],
             beam_width=beam_width,
             max_decode_len=max_decode_len,
             min_decode_len=min_decode_len)
-
-        if model.model_type == 'attention' and model.ctc_loss_weight > 0:
-            best_hyps_ctc, perm_idx = model.decode_ctc(
-                batch['xs'], batch['x_lens'], beam_width=beam_width)
 
         ys = batch['ys'][perm_idx]
         y_lens = batch['y_lens'][perm_idx]
@@ -139,34 +132,16 @@ def decode(model, dataset, eval_batch_size, beam_width, length_penalty,
                 # Convert from list of index to string
                 str_ref = map_fn(ys[b][:y_lens[b]])
 
-            ##############################
-            # Hypothesis
-            ##############################
-            # Convert from list of index to string
-            str_hyp = map_fn(best_hyps[b])
+            token_list = map_fn(best_hyps[b])
 
-            print('----- wav: %s -----' % batch['input_names'][b])
-            print('Ref: %s' % str_ref.replace('_', ' '))
-            print('Hyp: %s' % str_hyp.replace('_', ' '))
-            if model.model_type == 'attention' and model.ctc_loss_weight > 0:
-                str_hyp_ctc = map_fn(best_hyps_ctc[b])
-                print('Hyp (CTC): %s' % str_hyp_ctc)
-
-            try:
-                # Compute WER
-                wer, _, _, _ = compute_wer(
-                    ref=str_ref.split('_'),
-                    hyp=re.sub(r'(.*)[_]*>(.*)', r'\1', str_hyp).split('_'),
-                    normalize=True)
-                print('WER: %.3f %%' % (wer * 100))
-                if model.model_type == 'attention' and model.ctc_loss_weight > 0:
-                    wer_ctc, _, _, _ = compute_wer(
-                        ref=str_ref.split('_'),
-                        hyp=str_hyp_ctc.split('_'),
-                        normalize=True)
-                    print('WER (CTC): %.3f %%' % (wer_ctc * 100))
-            except:
-                print('--- skipped ---')
+            plot_attention_weights(
+                aw[b][:len(token_list), :batch['x_lens'][b]],
+                label_list=token_list,
+                spectrogram=batch['xs'][b, :, :dataset.input_freq],
+                str_ref=str_ref,
+                save_path=mkdir_join(save_path,
+                                     batch['input_names'][b] + '.png'),
+                figsize=(20, 4))
 
         if is_new_epoch:
             break

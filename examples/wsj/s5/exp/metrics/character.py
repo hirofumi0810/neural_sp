@@ -15,30 +15,34 @@ from utils.io.labels.character import Idx2char
 from utils.evaluation.edit_distance import compute_wer
 
 
-def eval_char(models, dataset, beam_width, max_decode_len,
-              eval_batch_size=None, length_penalty=0,
+def eval_char(models, eval_batch_size, dataset, beam_width,
+              max_decode_len, min_decode_len=0, length_penalty=0,
               progressbar=False, temperature=1):
     """Evaluate trained model by Character Error Rate.
     Args:
         models (list): the models to evaluate
         dataset: An instance of a `Dataset' class
+        eval_batch_size (int): the batch size when evaluating the model
         beam_width: (int): the size of beam
         max_decode_len (int): the length of output sequences
             to stop prediction when EOS token have not been emitted.
             This is used for seq2seq models.
-        eval_batch_size (int, optional): the batch size when evaluating the model
-        progressbar (bool, optional): if True, visualize the progressbar
-        length_penalty (float, optional):
-        temperature (int, optional):
+        min_decode_len (int): the minimum sequence length to emit
+        length_penalty (float):
+        progressbar (bool): if True, visualize the progressbar
+        temperature (int):
     Returns:
         wer (float): Word error rate
         cer (float): Character error rate
-        df_wer_cer (pd.DataFrame): dataframe of substitution, insertion, and deletion
+        df_word (pd.DataFrame): dataframe of substitution, insertion, and deletion
     """
     # Reset data counter
     dataset.reset()
 
-    if models[0].model_type in ['ctc', 'attention']:
+    model = models[0]
+    # TODO: fix this
+
+    if model.model_type in ['ctc', 'attention']:
         idx2char = Idx2char(vocab_file_path=dataset.vocab_file_path)
     else:
         idx2char = Idx2char(vocab_file_path=dataset.vocab_file_path_sub)
@@ -53,29 +57,13 @@ def eval_char(models, dataset, beam_width, max_decode_len,
         batch, is_new_epoch = dataset.next(batch_size=eval_batch_size)
 
         # Decode
-        if len(models) > 1:
-            assert models[0].model_type in ['ctc']
-            for i, model in enumerate(models):
-                probs, x_lens, perm_idx = model.posteriors(
-                    batch['xs'], batch['x_lens'], temperature=temperature)
-                if i == 0:
-                    probs_ensenmble = probs
-                else:
-                    probs_ensenmble += probs
-            probs_ensenmble /= len(models)
-
-            best_hyps = models[0].decode_from_probs(
-                probs_ensenmble, x_lens, beam_width=beam_width)
-        else:
-            model = models[0]
-            # TODO: fix this
-
-            best_hyps, _, perm_idx = model.decode(
-                batch['xs'], batch['x_lens'],
-                beam_width=beam_width,
-                max_decode_len=max_decode_len,
-                length_penalty=length_penalty,
-                task_index=0 if model.model_type in ['ctc', 'attention'] else 1)
+        best_hyps, _, perm_idx = model.decode(
+            batch['xs'], batch['x_lens'],
+            beam_width=beam_width,
+            max_decode_len=max_decode_len,
+            min_decode_len=min_decode_len,
+            length_penalty=length_penalty,
+            task_index=0 if model.model_type in ['ctc', 'attention'] else 1)
 
         ys = batch['ys'][perm_idx]
         y_lens = batch['y_lens'][perm_idx]
@@ -156,10 +144,10 @@ def eval_char(models, dataset, beam_width, max_decode_len,
     ins_char /= num_chars
     del_char /= num_chars
 
-    df_wer_cer = pd.DataFrame(
+    df_word = pd.DataFrame(
         {'SUB': [sub_word * 100, sub_char * 100],
          'INS': [ins_word * 100, ins_char * 100],
          'DEL': [del_word * 100, del_char * 100]},
         columns=['SUB', 'INS', 'DEL'], index=['WER', 'CER'])
 
-    return wer, cer, df_wer_cer
+    return wer, cer, df_word

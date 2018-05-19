@@ -301,18 +301,18 @@ def main():
                     metric_dev, _ = eval_word(
                         models=[model],
                         dataset=dev93_data,
+                        eval_batch_size=1,
                         beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_WORD,
-                        eval_batch_size=1)
+                        max_decode_len=MAX_DECODE_LEN_WORD)
                     logger.info('  WER (dev93, main): %.3f %%' %
                                 (metric_dev * 100))
                 else:
                     wer_dev_sub, metric_dev, _ = eval_char(
                         models=[model],
                         dataset=dev93_data,
+                        eval_batch_size=1,
                         beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_CHAR,
-                        eval_batch_size=1)
+                        max_decode_len=MAX_DECODE_LEN_CHAR)
                     logger.info('  WER / CER (dev93, sub): %.3f / %.3f %%' %
                                 ((wer_dev_sub * 100), (metric_dev * 100)))
 
@@ -331,18 +331,18 @@ def main():
                         wer_eval92, _ = eval_word(
                             models=[model],
                             dataset=eval92_data,
+                            eval_batch_size=1,
                             beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_WORD,
-                            eval_batch_size=1)
+                            max_decode_len=MAX_DECODE_LEN_WORD)
                         logger.info('  WER (eval92, main): %.3f %%' %
                                     (wer_eval92 * 100))
                     else:
                         wer_eval92_sub, cer_eval92_sub, _ = eval_char(
                             models=[model],
                             dataset=eval92_data,
+                            eval_batch_size=1,
                             beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_CHAR,
-                            eval_batch_size=1)
+                            max_decode_len=MAX_DECODE_LEN_CHAR)
                         logger.info(' WER / CER (eval92, sub): %.3f / %.3f %%' %
                                     ((wer_eval92_sub * 100), (cer_eval92_sub * 100)))
                 else:

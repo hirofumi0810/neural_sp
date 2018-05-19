@@ -22,7 +22,7 @@ param:
   dynamic_batching: True
 
   # topology
-  model_type: hierarchical_attention
+  model_type: nested_attention
   encoder_type: lstm
   conv_channels: []
   conv_kernel_sizes: []
@@ -40,9 +40,9 @@ param:
   encoder_num_layers: 4
   encoder_num_layers_sub: 4
   subsample_list:
+    - True
+    - True
     - False
-    - True
-    - True
     - False
   subsample_type: drop
   bridge_layer: False
@@ -58,10 +58,10 @@ param:
   attention_conv_num_channels: 10
   attention_conv_width: 201
   decoding_order: attend_generate_update
+  # decoding_order: attend_update_generate
+  # decoding_order: conditional
   bottleneck_dim: 320
   bottleneck_dim_sub: 320
-  backward_sub: False
-  # backward_sub: True
   num_heads: 1
   num_heads_sub: 1
 
@@ -78,7 +78,7 @@ param:
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
   char_init: False
-  # char_init: /n/sd8/inaguma/result/wsj/pytorch/ctc/character/train_si284/blstm320H4L_drop4_adam_lr1e-3_dropen0.2_input243
+  # char_init: /n/sd8/inaguma/result/wsj/pytorch/ctc/character/train_si284/blstm320H4L_drop4_adam_lr1e-3_dropen0.2_input81
 
   # regularization
   clip_grad_norm: 5.0
@@ -108,10 +108,24 @@ param:
   eval_start_epoch: 5
   print_step: 100
 
+
+
   # MTL
   main_loss_weight: 0.5
   sub_loss_weight: 0.5
   ctc_loss_weight_sub: 0
 
-  # sub_loss_weight: 0
-  # ctc_loss_weight_sub: 0.5
+  # W2C attention
+  usage_dec_sub: all
+  num_heads_dec: 1
+  dec_attention_type: content
+
+  # regularization
+  dec_attend_temperature: 1
+  dec_sigmoid_smoothing: False
+  att_reg_weight: 0
+
+  backward_sub: False
+
+  # regularization
+  relax_context_vec_dec: False

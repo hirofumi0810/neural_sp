@@ -5,8 +5,7 @@ param:
   # corpus
   corpus: wsj
   data_size: train_si284
-  label_type: word
-  label_type_sub: character
+  label_type: character
 
   # features
   feature: fbank
@@ -22,7 +21,7 @@ param:
   dynamic_batching: True
 
   # topology
-  model_type: hierarchical_ctc
+  model_type: ctc
   encoder_type: lstm
   conv_channels: []
   conv_kernel_sizes: []
@@ -35,21 +34,19 @@ param:
   encoder_num_units: 320
   encoder_num_proj: 0
   encoder_num_layers: 4
-  encoder_num_layers_sub: 4
   subsample_list:
+    - True
+    - True
     - False
-    - True
-    - True
     - False
   subsample_type: drop
-  fc_list: [320]
-  fc_list_sub: []
+  fc_list: []
 
   # optimization
   batch_size: 50
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 20
+  num_epoch: 30
   convert_to_sgd_epoch: 20
 
   # initialization
@@ -58,7 +55,6 @@ param:
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
   char_init: False
-  # char_init: /n/sd8/inaguma/result/wsj/pytorch/ctc/character/train_si284/blstm320H4L_drop4_adam_lr1e-3_dropen0.2_input243
 
   # regularization
   clip_grad_norm: 5.0
@@ -78,7 +74,3 @@ param:
   not_improved_patient_epoch: 5
   eval_start_epoch: 5
   print_step: 100
-
-  # MTL
-  main_loss_weight: 0.5
-  sub_loss_weight: 0.5

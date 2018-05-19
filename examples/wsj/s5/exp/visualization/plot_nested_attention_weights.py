@@ -53,7 +53,10 @@ parser.add_argument('--length_penalty', type=float,
                     help='length penalty in beam search decodding')
 
 MAX_DECODE_LEN_WORD = 100
+MIN_DECODE_LEN_WORD = 10
+
 MAX_DECODE_LEN_CHAR = 200
+MIN_DECODE_LEN_CHAR = 20
 
 
 def main():
@@ -110,12 +113,12 @@ def plot(model, dataset, eval_batch_size, beam_width, beam_width_sub,
     Args:
         model: model to evaluate
         dataset: An instance of a `Dataset` class
-        eval_batch_size (int, optional): the batch size when evaluating the model
+        eval_batch_size (int): the batch size when evaluating the model
         beam_width: (int): the size of beam i nteh main task
         beam_width_sub: (int): the size of beam in the sub task
         length_penalty (float):
-        a2c_oracle (bool, optional):
-        save_path (string, optional): path to save attention weights plotting
+        a2c_oracle (bool):
+        save_path (string): path to save attention weights plotting
     """
     # Clean directory
     if save_path is not None and isdir(save_path):
@@ -124,6 +127,8 @@ def plot(model, dataset, eval_batch_size, beam_width, beam_width_sub,
 
     idx2word = Idx2word(dataset.vocab_file_path, return_list=True)
     idx2char = Idx2char(dataset.vocab_file_path_sub, return_list=True)
+    if a2c_oracle:
+        char2idx = Char2idx(dataset.vocab_file_path_sub)
 
     for batch, is_new_epoch in dataset:
         batch_size = len(batch['xs'])
@@ -155,9 +160,11 @@ def plot(model, dataset, eval_batch_size, beam_width, beam_width_sub,
         best_hyps, aw, best_hyps_sub, aw_sub, aw_dec, _ = model.decode(
             batch['xs'], batch['x_lens'],
             beam_width=beam_width,
-            beam_width_sub=beam_width_sub,
             max_decode_len=MAX_DECODE_LEN_WORD,
+            min_decode_len=MIN_DECODE_LEN_WORD,
+            beam_width_sub=beam_width_sub,
             max_decode_len_sub=MAX_DECODE_LEN_CHAR,
+            min_decode_len_sub=MIN_DECODE_LEN_CHAR,
             length_penalty=length_penalty,
             teacher_forcing=a2c_oracle,
             ys_sub=ys_sub,
