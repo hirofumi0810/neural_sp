@@ -1,10 +1,10 @@
-parent: ./conf/ctc/blstm_ctc.yml
+parent: ./conf/ctc/ctc_phone61.yml
 param:
   # framework
   backend: pytorch
-  # backend: chainer
 
   # topology
+  encoder_type: lstm
   conv_channels: [64, 64, 128, 128]
   conv_kernel_sizes:
     - [3, 3]

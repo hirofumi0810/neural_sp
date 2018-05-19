@@ -1,12 +1,7 @@
-parent: ./conf/ctc/blstm_ctc.yml
+parent: ./conf/ctc/ctc_phone61.yml
 param:
   # framework
   backend: pytorch
-  # backend: chainer
-
-  # features
-  num_stack: 1
-  num_skip: 1
 
   # topology
   encoder_type: cnn

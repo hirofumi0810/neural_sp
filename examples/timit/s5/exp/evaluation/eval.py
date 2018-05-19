@@ -32,6 +32,7 @@ parser.add_argument('--length_penalty', type=float,
                     help='length penalty in beam search decodding')
 
 MAX_DECODE_LEN_PHONE = 100
+MIN_DECODE_LEN_PHONE = 20
 
 
 def main():
@@ -42,17 +43,6 @@ def main():
     params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
-    dev_data = Dataset(
-        data_save_path=args.data_save_path,
-        backend=params['backend'],
-        input_freq=params['input_freq'],
-        use_delta=params['use_delta'],
-        use_double_delta=params['use_double_delta'],
-        data_type='dev',
-        label_type=params['label_type'],
-        batch_size=args.eval_batch_size, splice=params['splice'],
-        num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=False, tool=params['tool'])
     test_data = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
@@ -80,20 +70,6 @@ def main():
 
     print('beam width: %d' % args.beam_width)
 
-    # dev
-    per_dev, df_dev = eval_phone(
-        model=model,
-        dataset=dev_data,
-        map_file_path='./conf/phones.60-48-39.map',
-        eval_batch_size=args.eval_batch_size,
-        beam_width=args.beam_width,
-        max_decode_len=MAX_DECODE_LEN_PHONE,
-        length_penalty=args.length_penalty,
-        progressbar=True)
-    print('  PER (dev): %.3f %%' % (per_dev * 100))
-    print(df_dev)
-
-    # test
     per_test, df_test = eval_phone(
         model=model,
         dataset=test_data,
@@ -101,6 +77,7 @@ def main():
         eval_batch_size=args.eval_batch_size,
         beam_width=args.beam_width,
         max_decode_len=MAX_DECODE_LEN_PHONE,
+        min_decode_len=MIN_DECODE_LEN_PHONE,
         length_penalty=args.length_penalty,
         progressbar=True)
     print('  PER (test): %.3f %%' % (per_test * 100))
@@ -108,7 +85,6 @@ def main():
 
     with open(join(args.model_path, 'RESULTS'), 'w') as f:
         f.write('beam width: %d\n' % args.beam_width)
-        f.write('  PER (dev): %.3f %%' % (per_dev * 100))
         f.write('  PER (test): %.3f %%' % (per_test * 100))
 
 

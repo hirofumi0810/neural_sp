@@ -12,7 +12,7 @@ param:
   input_freq: 41
   use_delta: True
   use_double_delta: True
-  input_channel: 3
+  input_channel: 1
   splice: 1
   num_stack: 1
   num_skip: 1

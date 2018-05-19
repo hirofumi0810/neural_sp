@@ -35,6 +35,7 @@ parser.add_argument('--length_penalty', type=float,
                     help='length penalty in beam search decodding')
 
 MAX_DECODE_LEN_PHONE = 100
+MIN_DECODE_LEN_PHONE = 20
 
 
 def main():
@@ -103,6 +104,7 @@ def plot_attention(model, dataset, eval_batch_size, beam_width, length_penalty,
             batch['xs'], batch['x_lens'],
             beam_width=beam_width,
             max_decode_len=MAX_DECODE_LEN_PHONE,
+            min_decode_len=MIN_DECODE_LEN_PHONE,
             length_penalty=length_penalty)
 
         ys = batch['ys'][perm_idx]

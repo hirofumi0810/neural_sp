@@ -1,11 +1,12 @@
-parent: ./conf/ctc/blstm_ctc.yml
+parent: ./conf/ctc/ctc_phone61.yml
 param:
   # framework
   backend: chainer
 
   # topology
-  encoder_num_layers: 4
+  encoder_num_layers: 5
   subsample_list:
+    - False
     - False
     - False
     - False
