@@ -447,9 +447,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             ys (np.ndarray): A tensor of size `[B, T_out]`
             x_lens (np.ndarray): A tensor of size `[B]`
             y_lens (np.ndarray): A tensor of size `[B]`
-            ys_sub (np.ndarray, optional): A tensor of size `[B, T_out_sub]`
-            y_lens_sub (np.ndarray, optional): A tensor of size `[B]`
-            is_eval (bool, optional): if True, the history will not be saved.
+            ys_sub (np.ndarray): A tensor of size `[B, T_out_sub]`
+            y_lens_sub (np.ndarray): A tensor of size `[B]`
+            is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
             loss (torch.FloatTensor or float): A tensor of size `[]`
@@ -557,7 +557,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         loss = loss_main + loss_sub
 
         ##################################################
-        # Sub task (CTC, optional)
+        # Sub task (CTC)
         ##################################################
         if self.ctc_loss_weight_sub > 0:
             ctc_loss_sub = self.compute_ctc_loss(
@@ -919,22 +919,24 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         return logits, aw, logits_sub, aw_sub, aw_dec
 
-    def decode(self, xs, x_lens, beam_width, max_decode_len,
-               beam_width_sub=1, max_decode_len_sub=None,
+    def decode(self, xs, x_lens, beam_width, max_decode_len, min_decode_len=0,
+               beam_width_sub=1, max_decode_len_sub=None, min_decode_len_sub=0,
                length_penalty=0, coverage_penalty=0, task_index=0,
                teacher_forcing=False, ys_sub=None, y_lens_sub=None):
         """Decoding in the inference stage.
         Args:
             xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
             x_lens (np.ndarray): A tensor of size `[B]`
-            beam_width (int): the size of beam
-            max_decode_len (int): the length of output sequences
-                to stop prediction when EOS token have not been emitted
-            max_decode_len_sub (int, optional):
-            length_penalty (float, optional):
-            coverage_penalty (float, optional):
-            task_index (int, optional): the index of a task
-            teacher_forcing (bool, optional):
+            beam_width (int): the size of beam in the main task
+            max_decode_len (int): the maximum sequence length of tokens in the main task
+            min_decode_len (int): the minimum sequence length of tokens in the main task
+            beam_width_sub (int): the size of beam in the sub task
+            max_decode_len_sub (int): the maximum sequence length of tokens in the sub task
+            min_decode_len_sub (int): the minimum sequence length of tokens in the sub task
+            length_penalty (float):
+            coverage_penalty (float):
+            task_index (int): the index of a task
+            teacher_forcing (bool):
             ys_sub ():
             y_lens_sub ():
         Returns:
@@ -989,9 +991,11 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 best_hyps, aw, best_hyps_sub, aw_sub, aw_dec = self._decode_infer_joint(
                     enc_out, x_lens, enc_out_sub, x_lens_sub,
                     beam_width=beam_width,
-                    beam_width_sub=beam_width_sub,
                     max_decode_len=max_decode_len,
+                    min_decode_len=min_decode_len,
+                    beam_width_sub=beam_width_sub,
                     max_decode_len_sub=max_decode_len_sub,
+                    min_decode_len_sub=min_decode_len_sub,
                     length_penalty=length_penalty,
                     teacher_forcing=teacher_forcing,
                     ys_sub=ys_in_sub)
@@ -1005,7 +1009,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         enc_out, x_lens, max_decode_len, task=1, dir=dir)
                 else:
                     best_hyps, aw = self._decode_infer_beam(
-                        enc_out, x_lens, beam_width, max_decode_len,
+                        enc_out, x_lens, beam_width, max_decode_len, min_decode_len,
                         length_penalty, coverage_penalty, task=1, dir=dir)
             else:
                 raise ValueError
@@ -1023,12 +1027,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         elif task_index == 1:
             return best_hyps, aw, perm_idx
 
-    def _decode_infer_joint(self, enc_out, x_lens,
-                            enc_out_sub, x_lens_sub,
-                            beam_width, beam_width_sub,
-                            max_decode_len, max_decode_len_sub,
-                            length_penalty,
-                            teacher_forcing=False, ys_sub=None,
+    def _decode_infer_joint(self, enc_out, x_lens, enc_out_sub, x_lens_sub,
+                            beam_width, max_decode_len, min_decode_len,
+                            beam_width_sub, max_decode_len_sub, min_decode_len_sub,
+                            length_penalty, teacher_forcing=False, ys_sub=None,
                             reverse_backward=True):
         """Greedy decoding in the inference stage.
         Args:
@@ -1039,16 +1041,16 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 `[B, T_in_sub, encoder_num_units]`
             x_lens_sub (torch.IntTensor): A tensor of size `[B]`
             beam_width (int): the size of beam in the main task
+            max_decode_len (int): the maximum sequence length of tokens in the main task
+            min_decode_len (int): the minimum sequence length of tokens in the main task
             beam_width_sub (int): the size of beam in the sub task
-            max_decode_len (int): the length of output sequences
-                to stop prediction when EOS token have not been emitted
-            max_decode_len_sub (int): the length of output sequences
-                to stop prediction when EOS token have not been emitted
-            length_penalty (float, optional):
-            teacher_forcing (bool, optional):
+            max_decode_len_sub (int): the maximum sequence length of tokens in the sub task
+            min_decode_len_sub (int): the minimum sequence length of tokens in the sub task
+            length_penalty (float):
+            teacher_forcing (bool):
             ys_sub ():
             y_lens_sub ():
-            reverse_backward (bool, optional):
+            reverse_backward (bool):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
             aw (np.ndarray): A tensor of size `[B, T_out, T_in]`
@@ -1094,6 +1096,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         logits_step_sub = getattr(self, 'fc_1_' + dir)(F.tanh(
                             getattr(self, 'W_d_1_' + dir)(beam_sub[i_beam]['dec_outs'][-1]) +
                             getattr(self, 'W_c_1_' + dir)(context_vec_sub)))
+
                         # NOTE: Recurrency is placed at the latter stage
 
                     else:
@@ -1137,10 +1140,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                             dec_out_sub, dec_state_sub = getattr(self, 'decoder_second_1_' + dir)(
                                 context_vec_sub, _dec_state_sub)
 
-                    # Generate
-                    logits_step_sub = getattr(self, 'fc_1_' + dir)(F.tanh(
-                        getattr(self, 'W_d_1_' + dir)(dec_out_sub) +
-                        getattr(self, 'W_c_1_' + dir)(context_vec_sub)))
+                        # Generate
+                        logits_step_sub = getattr(self, 'fc_1_' + dir)(F.tanh(
+                            getattr(self, 'W_d_1_' + dir)(dec_out_sub) +
+                            getattr(self, 'W_c_1_' + dir)(context_vec_sub)))
 
                     # Path through the softmax layer & convert to log-scale
                     log_probs_sub = F.log_softmax(
@@ -1246,6 +1249,14 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         if self.relax_context_vec_dec:
                             context_vec_dec = self.W_c_dec_relax(
                                 context_vec_dec)
+
+                        # Generate
+                        out = self.W_d_0_fwd(beam[i_beam]['dec_out']) + \
+                            self.W_c_0_fwd(context_vec_enc)
+                        if self.usage_dec_sub == 'all':
+                            out += self.W_c_dec_out(context_vec_dec)
+                        logits_step = self.fc_0_fwd(F.tanh(out))
+
                     else:
                         y = self._create_tensor(
                             (1,), fill_value=beam[i_beam]['hyp'][-1], dtype=torch.long).unsqueeze(1)
@@ -1296,12 +1307,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                             dec_out, dec_state = self.decoder_second_0_fwd(
                                 context_vecs, _dec_state)
 
-                    # Generate
-                    out = self.W_d_0_fwd(dec_out) + \
-                        self.W_c_0_fwd(context_vec_enc)
-                    if self.usage_dec_sub == 'all':
-                        out += self.W_c_dec_out(context_vec_dec)
-                    logits_step = self.fc_0_fwd(F.tanh(out))
+                        # Generate
+                        out = self.W_d_0_fwd(dec_out) + \
+                            self.W_c_0_fwd(context_vec_enc)
+                        if self.usage_dec_sub == 'all':
+                            out += self.W_c_dec_out(context_vec_dec)
+                        logits_step = self.fc_0_fwd(F.tanh(out))
 
                     # Path through the softmax layer & convert to log-scale
                     log_probs = F.log_softmax(logits_step.squeeze(1), dim=1)
