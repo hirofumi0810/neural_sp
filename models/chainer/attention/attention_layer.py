@@ -30,15 +30,15 @@ class AttentionMechanism(chainer.Chain):
         attention_type (string): the type of attention
         attention_dim: (int) the dimension of the attention layer
         use_cuda (bool):
-        sharpening_factor (float, optional): a sharpening factor in the softmax
+        sharpening_factor (float): a sharpening factor in the softmax
             layer for computing attention weights
-        sigmoid_smoothing (bool, optional): if True, replace softmax function
+        sigmoid_smoothing (bool): if True, replace softmax function
             in computing attention weights with sigmoid function for smoothing
-        out_channels (int, optional): the number of channles of conv outputs.
+        out_channels (int): the number of channles of conv outputs.
             This is used for location-based attention.
-        kernel_size (int, optional): the size of kernel.
+        kernel_size (int): the size of kernel.
             This must be the odd number.
-        num_heads (int, optional): the number of heads in the multi-head attention
+        num_heads (int): the number of heads in the multi-head attention
     """
 
     def __init__(self,

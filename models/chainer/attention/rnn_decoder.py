@@ -22,8 +22,8 @@ class RNNDecoder(chainer.Chain):
         dropout (float): the probability to drop nodes
         use_cuda (bool): if True, use GPUs
         batch_first (bool): if True, batch-major computation will be performed
-        residual (bool, optional):
-        dense_residual (bool, optional):
+        residual (bool):
+        dense_residual (bool):
     """
 
     def __init__(self,

@@ -23,8 +23,6 @@ from models.pytorch.criterion import cross_entropy_label_smoothing
 from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
 
-LOG_1 = 0
-
 
 class AttentionSeq2seq(ModelBase):
     """Attention-based sequence-to-sequence model.
@@ -49,65 +47,65 @@ class AttentionSeq2seq(ModelBase):
         dropout_embedding (float): the probability to drop nodes of the embedding layer
         num_classes (int): the number of nodes in softmax layer
             (excluding <SOS> and <EOS> classes)
-        parameter_init_distribution (string, optional): uniform or normal or
+        parameter_init_distribution (string): uniform or normal or
             orthogonal or constant distribution
-        parameter_init (float, optional): Range of uniform distribution to
+        parameter_init (float): Range of uniform distribution to
             initialize weight parameters
-        recurrent_weight_orthogonal (bool, optional): if True, recurrent
+        recurrent_weight_orthogonal (bool): if True, recurrent
             weights are orthogonalized
-        init_forget_gate_bias_with_one (bool, optional): if True, initialize
+        init_forget_gate_bias_with_one (bool): if True, initialize
             the forget gate bias with 1
-        subsample_list (list, optional): subsample in the corresponding layers (True)
+        subsample_list (list): subsample in the corresponding layers (True)
             ex.) [False, True, True, False] means that subsample is conducted
                 in the 2nd and 3rd layers.
-        subsample_type (string, optional): drop or concat
-        bridge_layer (bool, optional): if True, add the bridge layer between
+        subsample_type (string): drop or concat
+        bridge_layer (bool): if True, add the bridge layer between
             the encoder and decoder
-        init_dec_state (bool, optional): how to initialize decoder state
+        init_dec_state (bool): how to initialize decoder state
             zero => initialize with zero state
             mean => initialize with the mean of encoder outputs in all time steps
             final => initialize with tha final encoder state
             first => initialize with tha first encoder state
-        sharpening_factor (float, optional): a sharpening factor in the
+        sharpening_factor (float): a sharpening factor in the
             softmax layer for computing attention weights
-        logits_temperature (float, optional): a parameter for smoothing the
+        logits_temperature (float): a parameter for smoothing the
             softmax layer in outputing probabilities
-        sigmoid_smoothing (bool, optional): if True, replace softmax function
+        sigmoid_smoothing (bool): if True, replace softmax function
             in computing attention weights with sigmoid function for smoothing
-        coverage_weight (float, optional): the weight parameter for coverage computation
+        coverage_weight (float): the weight parameter for coverage computation
         ctc_loss_weight (float): A weight parameter for auxiliary CTC loss
-        attention_conv_num_channels (int, optional): the number of channles of
+        attention_conv_num_channels (int): the number of channles of
             conv outputs. This is used for location-based attention.
-        attention_conv_width (int, optional): the size of kernel.
+        attention_conv_width (int): the size of kernel.
             This must be the odd number.
-        num_stack (int, optional): the number of frames to stack
-        splice (int, optional): frames to splice. Default is 1 frame.
-        input_channel (int, optional): the number of channels of input features
-        conv_channels (list, optional): the number of channles in the
+        num_stack (int): the number of frames to stack
+        splice (int): frames to splice. Default is 1 frame.
+        input_channel (int): the number of channels of input features
+        conv_channels (list): the number of channles in the
             convolution of the location-based attention
-        conv_kernel_sizes (list, optional): the size of kernels in the
+        conv_kernel_sizes (list): the size of kernels in the
             convolution of the location-based attention
-        conv_strides (list, optional): strides in the convolution
+        conv_strides (list): strides in the convolution
             of the location-based attention
-        poolings (list, optional): the size of poolings in the convolution
+        poolings (list): the size of poolings in the convolution
             of the location-based attention
-        activation (string, optional): The activation function of CNN layers.
+        activation (string): The activation function of CNN layers.
             Choose from relu or prelu or hard_tanh or maxout
-        batch_norm (bool, optional):
-        scheduled_sampling_prob (float, optional):
-        scheduled_sampling_max_step (float, optional):
-        label_smoothing_prob (float, optional):
-        weight_noise_std (flaot, optional):
-        encoder_residual (bool, optional):
-        encoder_dense_residual (bool, optional):
-        decoder_residual (bool, optional):
-        decoder_dense_residual (bool, optional):
-        decoding_order (string, optional):
+        batch_norm (bool):
+        scheduled_sampling_prob (float):
+        scheduled_sampling_max_step (float):
+        label_smoothing_prob (float):
+        weight_noise_std (flaot):
+        encoder_residual (bool):
+        encoder_dense_residual (bool):
+        decoder_residual (bool):
+        decoder_dense_residual (bool):
+        decoding_order (string):
             attend_update_generate or attend_generate_update or conditional
-        bottleneck_dim (int, optional): the dimension of the pre-softmax layer
-        backward_loss_weight (int, optional): A weight parameter for the loss of the backward decdoer,
+        bottleneck_dim (int): the dimension of the pre-softmax layer
+        backward_loss_weight (int): A weight parameter for the loss of the backward decdoer,
             where the model predicts each token in the reverse order
-        num_heads (int, optional): the number of heads in the multi-head attention
+        num_heads (int): the number of heads in the multi-head attention
     """
 
     def __init__(self,
@@ -532,7 +530,7 @@ class AttentionSeq2seq(ModelBase):
                 task=0, dir='bwd') * self.bwd_weight_0
 
         ##################################################
-        # Auxiliary CTC loss (optional)
+        # Auxiliary CTC loss
         ##################################################
         if self.ctc_loss_weight > 0:
             # Wrap by Tensor
@@ -607,7 +605,7 @@ class AttentionSeq2seq(ModelBase):
             x_lens (torch.IntTensor): A tensor of size `[B]`
             y_lens (torch.IntTensor): A tensor of size `[B]`,
                 which includes <SOS> nor <EOS>
-            task (int, optional): the index of a task
+            task (int): the index of a task
         Returns:
             loss (torch.FloatTensor): A tensor of size `[]`
         """
@@ -647,7 +645,7 @@ class AttentionSeq2seq(ModelBase):
             xs (torch.FloatTensor): A tensor of size
                 `[B, T_in, input_size]`
             x_lens (torch.IntTensor): A tensor of size `[B]`
-            is_multi_task (bool, optional):
+            is_multi_task (bool):
         Returns:
             xs (torch.FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
@@ -857,7 +855,7 @@ class AttentionSeq2seq(ModelBase):
 
         return dec_state, dec_out
 
-    def decode(self, xs, x_lens, beam_width, max_decode_len,
+    def decode(self, xs, x_lens, beam_width, max_decode_len, min_decode_len=0,
                length_penalty=0, coverage_penalty=0, task_index=0,
                resolving_unk=False):
         """Decoding in the inference stage.
@@ -865,12 +863,12 @@ class AttentionSeq2seq(ModelBase):
             xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
             x_lens (np.ndarray): A tensor of size `[B]`
             beam_width (int): the size of beam
-            max_decode_len (int): the length of output sequences
-                to stop prediction when EOS token have not been emitted
-            length_penalty (float, optional):
-            coverage_penalty (float, optional):
-            task_index (int, optional): not used (to make compatible)
-            resolving_unk (bool, optional): not used (to make compatible)
+            max_decode_len (int): the maximum sequence length of tokens
+            min_decode_len (int): the minimum sequence length of tokens
+            length_penalty (float):
+            coverage_penalty (float):
+            task_index (int): not used (to make compatible)
+            resolving_unk (bool): not used (to make compatible)
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
             # aw (np.ndarray): A tensor of size `[B, T_out, T_in, num_heads]`
@@ -893,7 +891,7 @@ class AttentionSeq2seq(ModelBase):
                     enc_out, x_lens, max_decode_len, task=0, dir=dir)
             else:
                 best_hyps, aw = self._decode_infer_beam(
-                    enc_out, x_lens, beam_width, max_decode_len,
+                    enc_out, x_lens, beam_width, max_decode_len, min_decode_len,
                     length_penalty, coverage_penalty, task=0, dir=dir)
 
         # TODO: fix this
@@ -911,9 +909,8 @@ class AttentionSeq2seq(ModelBase):
             enc_out (torch.FloatTensor): A tensor of size
                 `[B, T_in, encoder_num_units]`
             x_lens (torch.IntTensor): A tensor of size `[B]`
-            max_decode_len (int): the length of output sequences
-                to stop prediction when EOS token have not been emitted
-            task (int, optional): the index of a task
+            max_decode_len (int): the maximum sequence length of tokens
+            task (int): the index of a task
             dir (str): fwd or bwd
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
@@ -961,38 +958,29 @@ class AttentionSeq2seq(ModelBase):
                 dec_out, dec_state = getattr(
                     self, 'decoder_' + str(task) + '_' + dir)(dec_in, dec_state)
 
-            elif self.decoding_order == 'attend_update_generate':
-                # Score
-                context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
-                    enc_out, x_lens, dec_out, aw_step)
+            else:
+                if self.decoding_order == 'attend_update_generate':
+                    # Score
+                    context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
+                        enc_out, x_lens, dec_out, aw_step)
 
-                # Recurrency
-                dec_in = torch.cat([y_emb, context_vec], dim=-1)
-                dec_out, dec_state = getattr(
-                    self, 'decoder_' + str(task) + '_' + dir)(dec_in, dec_state)
+                    # Recurrency
+                    dec_in = torch.cat([y_emb, context_vec], dim=-1)
+                    dec_out, dec_state = getattr(
+                        self, 'decoder_' + str(task) + '_' + dir)(dec_in, dec_state)
 
-                # Generate
-                logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(F.tanh(
-                    getattr(self, 'W_d_' + str(task) + '_' + dir)(dec_out) +
-                    getattr(self, 'W_c_' + str(task) + '_' + dir)(context_vec)))
+                elif self.decoding_order == 'conditional':
+                    # Recurrency of the first decoder
+                    _dec_out, _dec_state = getattr(self, 'decoder_first_' + str(task) + '_' + dir)(
+                        y_emb, dec_state)
 
-                # Pick up 1-best
-                y = torch.max(logits_step.squeeze(1), dim=1)[1].unsqueeze(1)
-                best_hyps.append(y)
-                y_emb = getattr(self, 'embed_' + str(task))(y)
+                    # Score
+                    context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
+                        enc_out, x_lens, _dec_out, aw_step)
 
-            elif self.decoding_order == 'conditional':
-                # Recurrency of the first decoder
-                _dec_out, _dec_state = getattr(self, 'decoder_first_' + str(task) + '_' + dir)(
-                    y_emb, dec_state)
-
-                # Score
-                context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
-                    enc_out, x_lens, _dec_out, aw_step)
-
-                # Recurrency of the second decoder
-                dec_out, dec_state = getattr(self, 'decoder_second_' + str(task) + '_' + dir)(
-                    context_vec, _dec_state)
+                    # Recurrency of the second decoder
+                    dec_out, dec_state = getattr(self, 'decoder_second_' + str(task) + '_' + dir)(
+                        context_vec, _dec_state)
 
                 # Generate
                 logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(F.tanh(
@@ -1035,7 +1023,8 @@ class AttentionSeq2seq(ModelBase):
 
         return best_hyps, aw
 
-    def _decode_infer_beam(self, enc_out, x_lens, beam_width, max_decode_len,
+    def _decode_infer_beam(self, enc_out, x_lens, beam_width,
+                           max_decode_len, min_decode_len,
                            length_penalty, coverage_penalty, task, dir):
         """Beam search decoding in the inference stage.
         Args:
@@ -1043,8 +1032,8 @@ class AttentionSeq2seq(ModelBase):
                 `[B, T_in, encoder_num_units]`
             x_lens (torch.IntTensor): A tensor of size `[B]`
             beam_width (int): the size of beam
-            max_decode_len (int, optional): the length of output sequences
-                to stop prediction when EOS token have not been emitted
+            max_decode_len (int): the maximum sequence length of tokens
+            min_decode_len (int): the minimum sequence length of tokens
             length_penalty (float):
             coverage_penalty (float):
             task (int): the index of a task
@@ -1070,11 +1059,11 @@ class AttentionSeq2seq(ModelBase):
 
             complete = []
             beam = [{'hyp': [sos],
-                     'score': LOG_1,
+                     'score': 0,  # log 1
                      'dec_state': dec_state,
                      'dec_out': dec_out,
                      'aw_steps': [aw_step]}]
-            for t in range(max_decode_len):
+            for _ in range(max_decode_len):
                 new_beam = []
                 for i_beam in range(len(beam)):
                     if self.decoding_order == 'attend_generate_update':
@@ -1087,45 +1076,38 @@ class AttentionSeq2seq(ModelBase):
                         logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(F.tanh(
                             getattr(self, 'W_d_' + str(task) + '_' + dir)(beam[i_beam]['dec_out']) +
                             getattr(self, 'W_c_' + str(task) + '_' + dir)(context_vec)))
+
                         # NOTE: Recurrency is placed at the latter stage
 
-                    elif self.decoding_order == 'attend_update_generate':
+                    else:
                         y = self._create_tensor(
                             (1,), fill_value=beam[i_beam]['hyp'][-1], dtype=torch.long).unsqueeze(1)
                         y = getattr(self, 'embed_' + str(task))(y)
 
-                        # Score
-                        context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
-                            enc_out[b:b + 1], x_lens[b:b + 1],
-                            beam[i_beam]['dec_out'], beam[i_beam]['aw_steps'][-1])
+                        if self.decoding_order == 'attend_update_generate':
+                            # Score
+                            context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
+                                enc_out[b:b + 1], x_lens[b:b + 1],
+                                beam[i_beam]['dec_out'], beam[i_beam]['aw_steps'][-1])
 
-                        # Recurrency
-                        dec_in = torch.cat([y, context_vec], dim=-1)
-                        dec_out, dec_state = getattr(self, 'decoder_' + str(task) + '_' + dir)(
-                            dec_in, beam[i_beam]['dec_state'])
+                            # Recurrency
+                            dec_in = torch.cat([y, context_vec], dim=-1)
+                            dec_out, dec_state = getattr(self, 'decoder_' + str(task) + '_' + dir)(
+                                dec_in, beam[i_beam]['dec_state'])
 
-                        # Generate
-                        logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(F.tanh(
-                            getattr(self, 'W_d_' + str(task) + '_' + dir)(dec_out) +
-                            getattr(self, 'W_c_' + str(task) + '_' + dir)(context_vec)))
+                        elif self.decoding_order == 'conditional':
+                            # Recurrency of the first decoder
+                            _dec_out, _dec_state = getattr(self, 'decoder_first_' + str(task) + '_' + dir)(
+                                y, beam[i_beam]['dec_state'])
 
-                    elif self.decoding_order == 'conditional':
-                        y = self._create_tensor(
-                            (1,), fill_value=beam[i_beam]['hyp'][-1], dtype=torch.long).unsqueeze(1)
-                        y = getattr(self, 'embed_' + str(task))(y)
+                            # Score
+                            context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
+                                enc_out[b:b + 1], x_lens[b:b + 1],
+                                _dec_out, beam[i_beam]['aw_steps'][-1])
 
-                        # Recurrency of the first decoder
-                        _dec_out, _dec_state = getattr(self, 'decoder_first_' + str(task) + '_' + dir)(
-                            y, beam[i_beam]['dec_state'])
-
-                        # Score
-                        context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
-                            enc_out[b:b + 1], x_lens[b:b + 1],
-                            _dec_out, beam[i_beam]['aw_steps'][-1])
-
-                        # Recurrency of the second decoder
-                        dec_out, dec_state = getattr(self, 'decoder_second_' + str(task) + '_' + dir)(
-                            context_vec, _dec_state)
+                            # Recurrency of the second decoder
+                            dec_out, dec_state = getattr(self, 'decoder_second_' + str(task) + '_' + dir)(
+                                context_vec, _dec_state)
 
                         # Generate
                         logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(F.tanh(
@@ -1134,6 +1116,7 @@ class AttentionSeq2seq(ModelBase):
 
                     # Path through the softmax layer & convert to log-scale
                     log_probs = F.log_softmax(logits_step.squeeze(1), dim=1)
+                    # log_probs = logits_step.squeeze(1)
                     # NOTE: `[1 (B), 1, num_classes]` -> `[1 (B), num_classes]`
 
                     # Pick up the top-k scores
@@ -1151,9 +1134,26 @@ class AttentionSeq2seq(ModelBase):
                             dec_out, dec_state = getattr(
                                 self, 'decoder_' + str(task) + '_' + dir)(dec_in, beam[i_beam]['dec_state'])
 
+                        # Exclude short hypotheses
+                        if indices_topk[0, k].item() == eos and len(beam[i_beam]['hyp']) < min_decode_len:
+                            continue
+
+                        # Add length penalty
+                        score = beam[i_beam]['score'] + \
+                            log_probs_topk[0, k].item() + length_penalty
+
+                        # Add coverage penalty
+                        # if coverage_penalty > 0:
+                        #     threshold = 0.5
+                        #     aw_steps = torch.cat(
+                        #         beam[i_beam]['aw_steps'], dim=0).sum(0).squeeze(1)
+                        #     cov_sum = torch.where(
+                        #         aw_steps < threshold, aw_steps, torch.ones_like(aw_steps) * threshold).sum(0)
+                        #     score += torch.log(cov_sum) * coverage_penalty
+
                         new_beam.append(
                             {'hyp': beam[i_beam]['hyp'] + [indices_topk[0, k].item()],
-                             'score': beam[i_beam]['score'] + log_probs_topk[0, k].item(),
+                             'score': score,
                              'dec_state': copy.deepcopy(dec_state),
                              'dec_out': dec_out,
                              'aw_steps': beam[i_beam]['aw_steps'] + [aw_step]})
@@ -1176,27 +1176,15 @@ class AttentionSeq2seq(ModelBase):
             if len(complete) == 0:
                 complete = beam
 
-            # Renormalized hypotheses by length
-            if length_penalty > 0:
-                for j in range(len(complete)):
-                    complete[j]['score'] += len(complete[j]
-                                                ['hyp']) * length_penalty
-
             complete = sorted(
                 complete, key=lambda x: x['score'], reverse=True)
             best_hyps.append(np.array(complete[0]['hyp'][1:]))
-            # NOTE: Exclude <SOS>
-            aw.append(complete[0]['aw_steps'])
+            aw.append(complete[0]['aw_steps'][1:])
 
         # Concatenate in T_out dimension
         for j in range(len(aw)):
-            aw[j] = aw[j][1:]
-            # NOTE: exclude the first atteniton weights
-
             for k in range(len(aw[j])):
-                aw[j][k] = aw[j][k][:, :, 0]
-                # TODO: fix for multi-head atteniton
-
+                aw[j][k] = aw[j][k][:, :, 0]  # TODO: fix for MHA
             aw[j] = self.tensor2np(torch.stack(aw[j], dim=1).squeeze(0))
 
         # Reverse the order
@@ -1213,8 +1201,8 @@ class AttentionSeq2seq(ModelBase):
         Args:
             xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
             x_lens (np.ndarray): A tensor of size `[B]`
-            beam_width (int, optional): the size of beam
-            task_index (int, optional): the index of a task
+            beam_width (int): the size of beam
+            task_index (int): the index of a task
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
             perm_idx (np.ndarray): A tensor of size `[B]`

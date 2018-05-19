@@ -13,7 +13,6 @@ import copy
 
 import chainer
 from chainer import functions as F
-from chainer import Variable
 from models.chainer.ctc.ctc_loss_from_chainer import connectionist_temporal_classification
 
 from models.chainer.base import ModelBase
@@ -51,65 +50,65 @@ class AttentionSeq2seq(ModelBase):
         dropout_embedding (float): the probability to drop nodes of the embedding layer
         num_classes (int): the number of nodes in softmax layer
             (excluding <SOS> and <EOS> classes)
-        parameter_init_distribution (string, optional): uniform or normal or
+        parameter_init_distribution (string): uniform or normal or
             orthogonal or constant distribution
-        parameter_init (float, optional): Range of uniform distribution to
+        parameter_init (float): Range of uniform distribution to
             initialize weight parameters
-        recurrent_weight_orthogonal (bool, optional): if True, recurrent
+        recurrent_weight_orthogonal (bool): if True, recurrent
             weights are orthogonalized
-        init_forget_gate_bias_with_one (bool, optional): if True, initialize
+        init_forget_gate_bias_with_one (bool): if True, initialize
             the forget gate bias with 1
-        subsample_list (list, optional): subsample in the corresponding layers (True)
+        subsample_list (list): subsample in the corresponding layers (True)
             ex.) [False, True, True, False] means that subsample is conducted
                 in the 2nd and 3rd layers.
-        subsample_type (string, optional): drop or concat
-        bridge_layer (bool, optional): if True, add the bridge layer between
+        subsample_type (string): drop or concat
+        bridge_layer (bool): if True, add the bridge layer between
             the encoder and decoder
-        init_dec_state (bool, optional): how to initialize decoder state
+        init_dec_state (bool): how to initialize decoder state
             zero => initialize with zero state
             mean => initialize with the mean of encoder outputs in all time steps
             final => initialize with tha final encoder state
             first => initialize with tha first encoder state
-        sharpening_factor (float, optional): a sharpening factor in the
+        sharpening_factor (float): a sharpening factor in the
             softmax layer for computing attention weights
-        logits_temperature (float, optional): a parameter for smoothing the
+        logits_temperature (float): a parameter for smoothing the
             softmax layer in outputing probabilities
-        sigmoid_smoothing (bool, optional): if True, replace softmax function
+        sigmoid_smoothing (bool): if True, replace softmax function
             in computing attention weights with sigmoid function for smoothing
-        coverage_weight (float, optional): the weight parameter for coverage computation
+        coverage_weight (float): the weight parameter for coverage computation
         ctc_loss_weight (float): A weight parameter for auxiliary CTC loss
-        attention_conv_num_channels (int, optional): the number of channles of
+        attention_conv_num_channels (int): the number of channles of
             conv outputs. This is used for location-based attention.
-        attention_conv_width (int, optional): the size of kernel.
+        attention_conv_width (int): the size of kernel.
             This must be the odd number.
-        num_stack (int, optional): the number of frames to stack
-        splice (int, optional): frames to splice. Default is 1 frame.
-        input_channel (int, optional): the number of channels of input features
-        conv_channels (list, optional): the number of channles in the
+        num_stack (int): the number of frames to stack
+        splice (int): frames to splice. Default is 1 frame.
+        input_channel (int): the number of channels of input features
+        conv_channels (list): the number of channles in the
             convolution of the location-based attention
-        conv_kernel_sizes (list, optional): the size of kernels in the
+        conv_kernel_sizes (list): the size of kernels in the
             convolution of the location-based attention
-        conv_strides (list, optional): strides in the convolution
+        conv_strides (list): strides in the convolution
             of the location-based attention
-        poolings (list, optional): the size of poolings in the convolution
+        poolings (list): the size of poolings in the convolution
             of the location-based attention
-        activation (string, optional): The activation function of CNN layers.
+        activation (string): The activation function of CNN layers.
             Choose from relu or prelu or hard_tanh or maxout
-        batch_norm (bool, optional):
-        scheduled_sampling_prob (float, optional):
-        scheduled_sampling_max_step (float, optional):
-        label_smoothing_prob (float, optional):
-        weight_noise_std (flaot, optional):
-        encoder_residual (bool, optional):
-        encoder_dense_residual (bool, optional):
-        decoder_residual (bool, optional):
-        decoder_dense_residual (bool, optional):
-        decoding_order (string, optional):
+        batch_norm (bool):
+        scheduled_sampling_prob (float):
+        scheduled_sampling_max_step (float):
+        label_smoothing_prob (float):
+        weight_noise_std (flaot):
+        encoder_residual (bool):
+        encoder_dense_residual (bool):
+        decoder_residual (bool):
+        decoder_dense_residual (bool):
+        decoding_order (string):
             attend_update_generate or attend_generate_update or conditional
-        bottleneck_dim (int, optional): the dimension of the pre-softmax layer
-        backward_loss_weight (int, optional): A weight parameter for the loss of the backward decdoer,
+        bottleneck_dim (int): the dimension of the pre-softmax layer
+        backward_loss_weight (int): A weight parameter for the loss of the backward decdoer,
             where the model predicts each token in the reverse order
-        num_heads (int, optional): the number of heads in the multi-head attention
+        num_heads (int): the number of heads in the multi-head attention
     """
 
     def __init__(self,
@@ -501,7 +500,7 @@ class AttentionSeq2seq(ModelBase):
             # Compute XE loss
             loss = self.compute_xe_loss(
                 xs, ys_in_fwd, ys_out_fwd, x_lens, y_lens_fwd,
-                task_idx=0, dir='fwd') * self.fwd_weight_0
+                task=0, dir='fwd') * self.fwd_weight_0
         else:
             loss = 0
 
@@ -534,10 +533,10 @@ class AttentionSeq2seq(ModelBase):
             # Compute XE loss
             loss += self.compute_xe_loss(
                 xs, ys_in_bwd, ys_out_bwd, x_lens, y_lens_bwd,
-                task_idx=0, dir='bwd') * self.bwd_weight_0
+                task=0, dir='bwd') * self.bwd_weight_0
 
         ##################################################
-        # Auxiliary CTC loss (optional)
+        # Auxiliary CTC loss
         ##################################################
         if self.ctc_loss_weight > 0:
             # Wrap by Variable
@@ -555,7 +554,7 @@ class AttentionSeq2seq(ModelBase):
         return loss
 
     def compute_xe_loss(self, enc_out, ys_in, ys_out, x_lens, y_lens,
-                        task_idx, dir):
+                        task, dir):
         """Compute XE loss.
         Args:
             enc_out (chainer.Variable, float): A tensor of size
@@ -566,14 +565,14 @@ class AttentionSeq2seq(ModelBase):
                 `[B, T_out]`, which includes <EOS>
             x_lens (chainer.Variable, int): A tensor of size `[B]`
             y_lens (chainer.Variable, int): A tensor of size `[B]`
-            task_idx (int): the index of a task
+            task (int): the index of a task
             dir (str): fwd or bwd
         Returns:
             loss (torch.autograd.Variable, float): A tensor of size `[1]`
         """
         # Teacher-forcing
         logits, aw = self._decode_train(
-            enc_out, x_lens, ys_in, task_idx, dir)
+            enc_out, x_lens, ys_in, task, dir)
 
         # Output smoothing
         if self.logits_temperature != 1:
@@ -604,7 +603,7 @@ class AttentionSeq2seq(ModelBase):
 
         return loss
 
-    def compute_ctc_loss(self, enc_out, ys, x_lens, y_lens, task_idx=0):
+    def compute_ctc_loss(self, enc_out, ys, x_lens, y_lens, task=0):
         """Compute CTC loss.
         Args:
             enc_out (chainer.Variable, float): A tensor of size
@@ -612,12 +611,12 @@ class AttentionSeq2seq(ModelBase):
             ys (chainer.Variable, int): A tensor of size `[B, T_out]`
             x_lens (chainer.Variable, int): A tensor of size `[B]`
             y_lens (chainer.Variable, int): A tensor of size `[B]`
-            task_idx (int, optional): the index of a task
+            task (int): the index of a task
         Returns:
             loss (chainer.Variable, float): A tensor of size `[1]`
         """
         # Path through the fully-connected layer
-        logits = getattr(self, 'fc_ctc_' + str(task_idx))(enc_out)
+        logits = getattr(self, 'fc_ctc_' + str(task))(enc_out)
 
         # Compute CTC loss
         loss = connectionist_temporal_classification(
@@ -651,7 +650,7 @@ class AttentionSeq2seq(ModelBase):
             xs (list of chainer.Variable(float)):
                 A list of tensors of size `[T_in, input_size]`
             x_lens (np.ndarray): A tensor of size `[B]`
-            is_multi_task (bool, optional):
+            is_multi_task (bool):
         Returns:
             xs (chainer.Variable, float): A tensor of size
                 `[B, T_in, encoder_num_units]`
@@ -693,14 +692,14 @@ class AttentionSeq2seq(ModelBase):
         batch_size, max_time_outputs, max_time_inputs = aw.shape
         raise NotImplementedError
 
-    def _decode_train(self, enc_out, x_lens, ys, task_idx, dir):
+    def _decode_train(self, enc_out, x_lens, ys, task, dir):
         """Decoding in the training stage.
         Args:
             enc_out (chainer.Variable, float): A tensor of size
                 `[B, T_in, encoder_num_units]`
             x_lens (np.ndarray): A tensor of size `[B]`
             ys (chainer.Variable, int): A tensor of size `[B, T_out]`
-            task_idx (int): the index of a task
+            task (int): the index of a task
             dir (str): fwd or bwd
         Returns:
             logits (chainer.Variable, float): A tensor of size `[B, T_out, num_classes]`
@@ -711,9 +710,9 @@ class AttentionSeq2seq(ModelBase):
 
         # Initialize decoder state, decoder output, attention_weights
         dec_state, dec_out = self._init_decoder_state(
-            enc_out, task_idx, dir)
+            enc_out, task, dir)
         aw_step = self._create_var(
-            (batch_size, max_time, getattr(self, 'num_heads_' + str(task_idx))),
+            (batch_size, max_time, getattr(self, 'num_heads_' + str(task))),
             fill_value=0, dtype=np.float32)
 
         logits = []
@@ -726,67 +725,67 @@ class AttentionSeq2seq(ModelBase):
 
             if self.decoding_order == 'attend_update_generate':
                 # Score
-                context_vec, aw_step = getattr(self, 'attend_' + str(task_idx) + '_' + dir)(
+                context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
                     enc_out, x_lens, dec_out, aw_step)
 
                 # Sample
                 y = F.argmax(
                     logits[-1], axis=2) if is_sample else ys[:, t:t + 1]
-                y = getattr(self, 'embed_' + str(task_idx))(y)
+                y = getattr(self, 'embed_' + str(task))(y)
 
                 # Recurrency
                 dec_in = F.concat([y, context_vec], axis=-1)
                 dec_out, dec_state = getattr(
-                    self, 'decoder_' + str(task_idx) + '_' + dir)(dec_in, dec_state)
+                    self, 'decoder_' + str(task) + '_' + dir)(dec_in, dec_state)
 
                 # Generate
-                logits_step = getattr(self, 'fc_' + str(task_idx) + '_' + dir)(F.tanh(
-                    getattr(self, 'W_d_' + str(task_idx) + '_' + dir)(dec_out) +
-                    getattr(self, 'W_c_' + str(task_idx) + '_' + dir)(context_vec)))
+                logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(F.tanh(
+                    getattr(self, 'W_d_' + str(task) + '_' + dir)(dec_out) +
+                    getattr(self, 'W_c_' + str(task) + '_' + dir)(context_vec)))
 
             elif self.decoding_order == 'attend_generate_update':
                 # Score
-                context_vec, aw_step = getattr(self, 'attend_' + str(task_idx) + '_' + dir)(
+                context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
                     enc_out, x_lens, dec_out, aw_step)
 
                 # Generate
-                logits_step = getattr(self, 'fc_' + str(task_idx) + '_' + dir)(F.tanh(
-                    getattr(self, 'W_d_' + str(task_idx) + '_' + dir)(dec_out) +
-                    getattr(self, 'W_c_' + str(task_idx) + '_' + dir)(context_vec)))
+                logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(F.tanh(
+                    getattr(self, 'W_d_' + str(task) + '_' + dir)(dec_out) +
+                    getattr(self, 'W_c_' + str(task) + '_' + dir)(context_vec)))
 
                 if t < ys.shape[1] - 1:
                     # Sample
                     y = F.argmax(
                         logits_step, axis=2) if is_sample else ys[:, t + 1:t + 2]
-                    y = getattr(self, 'embed_' + str(task_idx))(y)
+                    y = getattr(self, 'embed_' + str(task))(y)
 
                     # Recurrency
                     dec_in = F.concat([y, context_vec], axis=-1)
                     dec_out, dec_state = getattr(
-                        self, 'decoder_' + str(task_idx) + '_' + dir)(dec_in, dec_state)
+                        self, 'decoder_' + str(task) + '_' + dir)(dec_in, dec_state)
 
             elif self.decoding_order == 'conditional':
                 # Sample
                 y = F.argmax(
                     logits[-1], axis=2) if is_sample else ys[:, t:t + 1]
-                y = getattr(self, 'embed_' + str(task_idx))(y)
+                y = getattr(self, 'embed_' + str(task))(y)
 
                 # Recurrency of the first decoder
-                _dec_out, _dec_state = getattr(self, 'decoder_first_' + str(task_idx) + '_' + dir)(
+                _dec_out, _dec_state = getattr(self, 'decoder_first_' + str(task) + '_' + dir)(
                     y, dec_state)
 
                 # Score
-                context_vec, aw_step = getattr(self, 'attend_' + str(task_idx) + '_' + dir)(
+                context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
                     enc_out, x_lens, _dec_out, aw_step)
 
                 # Recurrency of the second decoder
-                dec_out, dec_state = getattr(self, 'decoder_second_' + str(task_idx) + '_' + dir)(
+                dec_out, dec_state = getattr(self, 'decoder_second_' + str(task) + '_' + dir)(
                     context_vec, _dec_state)
 
                 # Generate
-                logits_step = getattr(self, 'fc_' + str(task_idx) + '_' + dir)(F.tanh(
-                    getattr(self, 'W_d_' + str(task_idx) + '_' + dir)(dec_out) +
-                    getattr(self, 'W_c_' + str(task_idx) + '_' + dir)(context_vec)))
+                logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(F.tanh(
+                    getattr(self, 'W_d_' + str(task) + '_' + dir)(dec_out) +
+                    getattr(self, 'W_c_' + str(task) + '_' + dir)(context_vec)))
 
             logits.append(logits_step)
             aw.append(aw_step)
@@ -794,18 +793,18 @@ class AttentionSeq2seq(ModelBase):
         # Concatenate in T_out-dimension
         logits = F.concat(logits, axis=1)
         aw = F.concat(aw, axis=-1).reshape(
-            batch_size, -1, max_time, getattr(self, 'num_heads_' + str(task_idx)))
+            batch_size, -1, max_time, getattr(self, 'num_heads_' + str(task)))
         # NOTE; aw in the training stage may be used for computing the
         # coverage, so do not convert to numpy yet.
 
         return logits, aw
 
-    def _init_decoder_state(self, enc_out, task_idx, dir):
+    def _init_decoder_state(self, enc_out, task, dir):
         """Initialize decoder state.
         Args:
             enc_out (chainer.Variable, float): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            task_idx (int): the index of a task
+            task (int): the index of a task
             dir (str): fwd or bwd
         Returns:
             dec_state (list or tuple of list):
@@ -814,53 +813,53 @@ class AttentionSeq2seq(ModelBase):
         """
         zero_state = self._create_var(
             (enc_out.shape[0], getattr(
-                self, 'decoder_num_units_' + str(task_idx))),
+                self, 'decoder_num_units_' + str(task))),
             fill_value=0, dtype=np.float32)
 
-        if getattr(self, 'init_dec_state_' + str(task_idx) + '_' + dir) == 'zero':
+        if getattr(self, 'init_dec_state_' + str(task) + '_' + dir) == 'zero':
             if self.decoder_type == 'stateless_lstm':
                 hx_list = [None] * \
-                    getattr(self, 'decoder_num_layers_' + str(task_idx))
+                    getattr(self, 'decoder_num_layers_' + str(task))
                 cx_list = [None] * \
-                    getattr(self, 'decoder_num_layers_' + str(task_idx))
+                    getattr(self, 'decoder_num_layers_' + str(task))
             elif self.decoder_type == 'lstm':
                 hx_list = [zero_state] * \
-                    getattr(self, 'decoder_num_layers_' + str(task_idx))
+                    getattr(self, 'decoder_num_layers_' + str(task))
                 cx_list = [zero_state] * \
-                    getattr(self, 'decoder_num_layers_' + str(task_idx))
+                    getattr(self, 'decoder_num_layers_' + str(task))
             else:
                 hx_list = [zero_state] * \
-                    getattr(self, 'decoder_num_layers_' + str(task_idx))
+                    getattr(self, 'decoder_num_layers_' + str(task))
 
             dec_out = self._create_var((enc_out.shape[0], 1, getattr(
-                self, 'decoder_num_units_' + str(task_idx))),
+                self, 'decoder_num_units_' + str(task))),
                 fill_value=0, dtype=np.float32)
         else:
-            if getattr(self, 'init_dec_state_' + str(task_idx) + '_' + dir) == 'mean':
+            if getattr(self, 'init_dec_state_' + str(task) + '_' + dir) == 'mean':
                 # Initialize with mean of all encoder outputs
                 h_0 = F.mean(enc_out, axis=1, keepdims=False)
-            elif getattr(self, 'init_dec_state_' + str(task_idx) + '_' + dir) == 'final':
+            elif getattr(self, 'init_dec_state_' + str(task) + '_' + dir) == 'final':
                 # Initialize with the final encoder output
                 h_0 = enc_out[:, -1, :]
-            elif getattr(self, 'init_dec_state_' + str(task_idx) + '_' + dir) == 'first':
+            elif getattr(self, 'init_dec_state_' + str(task) + '_' + dir) == 'first':
                 # Initialize with the first encoder output
                 h_0 = enc_out[:, 0, :]
             # NOTE: h_0: `[B, encoder_num_units]`
 
             # Path through the linear layer
             h_0 = F.tanh(
-                getattr(self, 'W_dec_init_' + str(task_idx) + '_' + dir)(h_0))
+                getattr(self, 'W_dec_init_' + str(task) + '_' + dir)(h_0))
 
             hx_list = [h_0] * \
-                getattr(self, 'decoder_num_layers_' + str(task_idx))
+                getattr(self, 'decoder_num_layers_' + str(task))
             # NOTE: all layers are initialized with the same values
 
             if self.decoder_type == 'stateless_lstm':
                 cx_list = [None] * \
-                    getattr(self, 'decoder_num_layers_' + str(task_idx))
+                    getattr(self, 'decoder_num_layers_' + str(task))
             elif self.decoder_type == 'lstm':
                 cx_list = [zero_state] * \
-                    getattr(self, 'decoder_num_layers_' + str(task_idx))
+                    getattr(self, 'decoder_num_layers_' + str(task))
 
             dec_out = F.expand_dims(h_0, axis=1)
 
@@ -871,20 +870,21 @@ class AttentionSeq2seq(ModelBase):
 
         return dec_state, dec_out
 
-    def decode(self, xs, x_lens, beam_width, max_decode_len,
+    def decode(self, xs, x_lens, beam_width, max_decode_len, min_decode_len=0,
                length_penalty=0, coverage_penalty=0, task_index=0,
                resolving_unk=False):
         """Decoding in the inference stage.
         Args:
             xs (list of np.ndarray): A tensor of size `[B, T_in, input_size]`
+            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
             x_lens (np.ndarray): A tensor of size `[B]`
             beam_width (int): the size of beam
-            max_decode_len (int): the length of output sequences
-                to stop prediction when EOS token have not been emitted
-            length_penalty (float, optional):
-            coverage_penalty (float, optional):
-            task_index (int, optional): not used (to make compatible)
-            resolving_unk (bool, optional): not used (to make compatible)
+            max_decode_len (int): the maximum sequence length of tokens
+            min_decode_len (int): the minimum sequence length of tokens
+            length_penalty (float):
+            coverage_penalty (float):
+            task_index (int): not used (to make compatible)
+            resolving_unk (bool): not used (to make compatible)
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
             # aw (np.ndarray): A tensor of size `[B, T_out, T_in, num_heads]`
@@ -892,7 +892,6 @@ class AttentionSeq2seq(ModelBase):
             perm_idx (np.ndarray): For interface with pytorch, not used
         """
         with chainer.no_backprop_mode(), chainer.using_config('train', False):
-
             # Wrap by Variable
             xs = self.np2var(xs)
 
@@ -903,11 +902,11 @@ class AttentionSeq2seq(ModelBase):
 
             if beam_width == 1:
                 best_hyps, aw = self._decode_infer_greedy(
-                    enc_out, x_lens, max_decode_len, task_idx=0, dir=dir)
+                    enc_out, x_lens, max_decode_len, task=0, dir=dir)
             else:
                 best_hyps, aw, = self._decode_infer_beam(
-                    enc_out, x_lens, beam_width, max_decode_len,
-                    length_penalty, coverage_penalty, task_idx=0, dir=dir)
+                    enc_out, x_lens, beam_width, max_decode_len, min_decode_len,
+                    length_penalty, coverage_penalty, task=0, dir=dir)
 
         # TODO: fix this
         if beam_width == 1:
@@ -918,37 +917,36 @@ class AttentionSeq2seq(ModelBase):
         return best_hyps, aw, perm_idx
 
     def _decode_infer_greedy(self, enc_out, x_lens, max_decode_len,
-                             task_idx, dir):
+                             task, dir):
         """Greedy decoding in the inference stage.
         Args:
             enc_out (chainer.Variable, float): A tensor of size
                 `[B, T_in, encoder_num_units]`
             x_lens (np.ndarray): A tensor of size `[B]`
-            max_decode_len (int): the length of output sequences
-                to stop prediction when EOS token have not been emitted
-            task_idx (int, optional): the index of a task
+            max_decode_len (int): the maximum sequence length of tokens
+            task (int): the index of a task
             dir (str): fwd or bwd
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
             aw (np.ndarray): A tensor of size `[B, T_out, T_in, num_heads]`
         """
         if dir == 'bwd':
-            assert getattr(self, 'bwd_weight_' + str(task_idx)) > 0
+            assert getattr(self, 'bwd_weight_' + str(task)) > 0
 
         batch_size, max_time = enc_out.shape[:2]
 
         # Initialization
         dec_state, dec_out = self._init_decoder_state(
-            enc_out, task_idx, dir)
+            enc_out, task, dir)
         aw_step = self._create_var(
-            (batch_size, max_time, getattr(self, 'num_heads_' + str(task_idx))),
+            (batch_size, max_time, getattr(self, 'num_heads_' + str(task))),
             fill_value=0, dtype=np.float32)
 
         # Start from <SOS>
-        sos = getattr(self, 'sos_' + str(task_idx))
-        eos = getattr(self, 'eos_' + str(task_idx))
+        sos = getattr(self, 'sos_' + str(task))
+        eos = getattr(self, 'eos_' + str(task))
         y = self._create_var((batch_size, 1), fill_value=sos, dtype=np.int32)
-        y_emb = getattr(self, 'embed_' + str(task_idx))(y)
+        y_emb = getattr(self, 'embed_' + str(task))(y)
 
         best_hyps = []
         aw = []
@@ -956,71 +954,61 @@ class AttentionSeq2seq(ModelBase):
         eos_flag = [False] * batch_size
         for _ in range(max_decode_len):
 
-            if self.decoding_order == 'attend_update_generate':
+            if self.decoding_order == 'attend_generate_update':
                 # Score
-                context_vec, aw_step = getattr(self, 'attend_' + str(task_idx) + '_' + dir)(
+                context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
                     enc_out, x_lens, dec_out, aw_step)
+
+                # Generate
+                logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(F.tanh(
+                    getattr(self, 'W_d_' + str(task) + '_' + dir)(dec_out) +
+                    getattr(self, 'W_c_' + str(task) + '_' + dir)(context_vec)))
+
+                # Pick up 1-best
+                y = F.expand_dims(
+                    F.argmax(F.squeeze(logits_step, axis=1), axis=1), axis=1)
+                best_hyps.append(y)
+                y_emb = getattr(self, 'embed_' + str(task))(y)
 
                 # Recurrency
                 dec_in = F.concat([y_emb, context_vec], axis=-1)
                 dec_out, dec_state = getattr(
-                    self, 'decoder_' + str(task_idx) + '_' + dir)(dec_in, dec_state)
+                    self, 'decoder_' + str(task) + '_' + dir)(dec_in, dec_state)
+
+            else:
+                if self.decoding_order == 'attend_update_generate':
+                    # Score
+                    context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
+                        enc_out, x_lens, dec_out, aw_step)
+
+                    # Recurrency
+                    dec_in = F.concat([y_emb, context_vec], axis=-1)
+                    dec_out, dec_state = getattr(
+                        self, 'decoder_' + str(task) + '_' + dir)(dec_in, dec_state)
+
+                elif self.decoding_order == 'conditional':
+                    # Recurrency of the first decoder
+                    _dec_out, _dec_state = getattr(self, 'decoder_first_' + str(task) + '_' + dir)(
+                        y_emb, dec_state)
+
+                    # Score
+                    context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
+                        enc_out, x_lens, _dec_out, aw_step)
+
+                    # Recurrency of the second decoder
+                    dec_out, dec_state = getattr(self, 'decoder_second_' + str(task) + '_' + dir)(
+                        context_vec, _dec_state)
 
                 # Generate
-                logits_step = getattr(self, 'fc_' + str(task_idx) + '_' + dir)(F.tanh(
-                    getattr(self, 'W_d_' + str(task_idx) + '_' + dir)(dec_out) +
-                    getattr(self, 'W_c_' + str(task_idx) + '_' + dir)(context_vec)))
+                logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(F.tanh(
+                    getattr(self, 'W_d_' + str(task) + '_' + dir)(dec_out) +
+                    getattr(self, 'W_c_' + str(task) + '_' + dir)(context_vec)))
 
                 # Pick up 1-best
                 y = F.expand_dims(
                     F.argmax(F.squeeze(logits_step, axis=1), axis=1), axis=1)
                 best_hyps.append(y)
-                y_emb = getattr(self, 'embed_' + str(task_idx))(y)
-
-            elif self.decoding_order == 'attend_generate_update':
-                # Score
-                context_vec, aw_step = getattr(self, 'attend_' + str(task_idx) + '_' + dir)(
-                    enc_out, x_lens, dec_out, aw_step)
-
-                # Generate
-                logits_step = getattr(self, 'fc_' + str(task_idx) + '_' + dir)(F.tanh(
-                    getattr(self, 'W_d_' + str(task_idx) + '_' + dir)(dec_out) +
-                    getattr(self, 'W_c_' + str(task_idx) + '_' + dir)(context_vec)))
-
-                # Pick up 1-best
-                y = F.expand_dims(
-                    F.argmax(F.squeeze(logits_step, axis=1), axis=1), axis=1)
-                best_hyps.append(y)
-                y_emb = getattr(self, 'embed_' + str(task_idx))(y)
-
-                # Recurrency
-                dec_in = F.concat([y_emb, context_vec], axis=-1)
-                dec_out, dec_state = getattr(
-                    self, 'decoder_' + str(task_idx) + '_' + dir)(dec_in, dec_state)
-
-            elif self.decoding_order == 'conditional':
-                # Recurrency of the first decoder
-                _dec_out, _dec_state = getattr(self, 'decoder_first_' + str(task_idx) + '_' + dir)(
-                    y_emb, dec_state)
-
-                # Score
-                context_vec, aw_step = getattr(self, 'attend_' + str(task_idx) + '_' + dir)(
-                    enc_out, x_lens, _dec_out, aw_step)
-
-                # Recurrency of the second decoder
-                dec_out, dec_state = getattr(self, 'decoder_second_' + str(task_idx) + '_' + dir)(
-                    context_vec, _dec_state)
-
-                # Generate
-                logits_step = getattr(self, 'fc_' + str(task_idx) + '_' + dir)(F.tanh(
-                    getattr(self, 'W_d_' + str(task_idx) + '_' + dir)(dec_out) +
-                    getattr(self, 'W_c_' + str(task_idx) + '_' + dir)(context_vec)))
-
-                # Pick up 1-best
-                y = F.expand_dims(
-                    F.argmax(F.squeeze(logits_step, axis=1), axis=1), axis=1)
-                best_hyps.append(y)
-                y_emb = getattr(self, 'embed_' + str(task_idx))(y)
+                y_emb = getattr(self, 'embed_' + str(task))(y)
 
             aw.append(aw_step)
 
@@ -1041,7 +1029,7 @@ class AttentionSeq2seq(ModelBase):
         # Concatenate in T_out dimension
         best_hyps = F.concat(best_hyps, axis=1)
         aw = F.concat(aw, axis=-1).reshape(
-            batch_size, -1, max_time, getattr(self, 'num_heads_' + str(task_idx)))
+            batch_size, -1, max_time, getattr(self, 'num_heads_' + str(task)))
 
         # Convert to numpy
         best_hyps = self.var2np(best_hyps)
@@ -1054,29 +1042,30 @@ class AttentionSeq2seq(ModelBase):
 
         return best_hyps, aw
 
-    def _decode_infer_beam(self, enc_out, x_lens, beam_width, max_decode_len,
-                           length_penalty, coverage_penalty, task_idx, dir):
+    def _decode_infer_beam(self, enc_out, x_lens, beam_width,
+                           max_decode_len, min_decode_len,
+                           length_penalty, coverage_penalty, task, dir):
         """Beam search decoding in the inference stage.
         Args:
             enc_out (chainer.Variable, float): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            x_lens (np.ndarray): A tensor of size `[B]`
+            x_lens (torch.IntTensor): A tensor of size `[B]`
             beam_width (int): the size of beam
-            max_decode_len (int, optional): the length of output sequences
-                to stop prediction when EOS token have not been emitted
+            max_decode_len (int): the maximum sequence length of tokens
+            min_decode_len (int): the minimum sequence length of tokens
             length_penalty (float):
             coverage_penalty (float):
-            task_idx (int, optional): the index of a task
+            task (int): the index of a task
             dir (str): fwd or bwd
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
         """
         if dir == 'bwd':
-            assert getattr(self, 'bwd_weight_' + str(task_idx)) > 0
+            assert getattr(self, 'bwd_weight_' + str(task)) > 0
 
         # Start from <SOS>
-        sos = getattr(self, 'sos_' + str(task_idx))
-        eos = getattr(self, 'eos_' + str(task_idx))
+        sos = getattr(self, 'sos_' + str(task))
+        eos = getattr(self, 'eos_' + str(task))
 
         best_hyps = []
         aw = []
@@ -1085,85 +1074,66 @@ class AttentionSeq2seq(ModelBase):
 
             # Initialization per utterance
             dec_state, dec_out = self._init_decoder_state(
-                enc_out[b:b + 1, :, :], task_idx, dir)
+                enc_out[b:b + 1, :, :], task, dir)
             aw_step = self._create_var(
-                (1, frame_num, getattr(self, 'num_heads_' + str(task_idx))),
+                (1, frame_num, getattr(self, 'num_heads_' + str(task))),
                 fill_value=0, dtype=np.float32)
 
             complete = []
             beam = [{'hyp': [sos],
-                     'score': LOG_1,
+                     'score': 0,  # log 1
                      'dec_state': dec_state,
                      'dec_out': dec_out,
                      'aw_steps': [aw_step]}]
             for t in range(max_decode_len):
                 new_beam = []
                 for i_beam in range(len(beam)):
-
-                    if self.decoding_order == 'attend_update_generate':
-                        y = F.squeeze(self._create_var(
-                            (1,), fill_value=beam[i_beam]['hyp'][-1], dtype='long'), axis=1)
-                        y = getattr(self, 'embed_' + str(task_idx))(y)
-
+                    if self.decoding_order == 'attend_generate_update':
                         # Score
-                        context_vec, aw_step = getattr(self, 'attend_' + str(task_idx) + '_' + dir)(
-                            enc_out[b:b + 1],
-                            x_lens[b:b + 1],
-                            beam[i_beam]['dec_out'],
-                            beam[i_beam]['aw_steps'][-1])
-
-                        # Recurrency
-                        dec_in = F.concat([y, context_vec], axis=-1)
-                        dec_out, dec_state = getattr(
-                            self, 'decoder_' + str(task_idx) + '_' + dir)(dec_in, beam[i_beam]['dec_state'])
+                        context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
+                            enc_out[b:b + 1], x_lens[b:b + 1],
+                            beam[i_beam]['dec_out'], beam[i_beam]['aw_steps'][-1])
 
                         # Generate
-                        logits_step = getattr(self, 'fc_' + str(task_idx) + '_' + dir)(F.tanh(
-                            getattr(self, 'W_d_' + str(task_idx) + '_' + dir)(dec_out) +
-                            getattr(self, 'W_c_' + str(task_idx) + '_' + dir)(context_vec)))
-
-                    elif self.decoding_order == 'attend_generate_update':
-                        # Score
-                        context_vec, aw_step = getattr(self, 'attend_' + str(task_idx) + '_' + dir)(
-                            enc_out[b:b + 1],
-                            x_lens[b:b + 1],
-                            beam[i_beam]['dec_out'],
-                            beam[i_beam]['aw_steps'][-1])
-
-                        # Generate
-                        logits_step = getattr(self, 'fc_' + str(task_idx) + '_' + dir)(F.tanh(
-                            getattr(self, 'W_d_' + str(task_idx) + '_' + dir)(beam[i_beam]['dec_out']) +
-                            getattr(self, 'W_c_' + str(task_idx) + '_' + dir)(context_vec)))
+                        logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(F.tanh(
+                            getattr(self, 'W_d_' + str(task) + '_' + dir)(beam[i_beam]['dec_out']) +
+                            getattr(self, 'W_c_' + str(task) + '_' + dir)(context_vec)))
 
                         # NOTE: Recurrency is palced at the latter stage
 
-                    elif self.decoding_order == 'conditional':
+                    else:
                         y = F.squeeze(self._create_var(
                             (1,), fill_value=beam[i_beam]['hyp'][-1], dtype='long'), axis=1)
-                        y = getattr(self, 'embed_' + str(task_idx))(y)
+                        y = getattr(self, 'embed_' + str(task))(y)
 
-                        # Recurrency of the first decoder
-                        _dec_out, _dec_state = getattr(self, 'decoder_first_' + str(task_idx) + '_' + dir)(
-                            y, beam[i_beam]['dec_state'])
+                        if self.decoding_order == 'attend_update_generate':
+                            # Score
+                            context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
+                                enc_out[b:b + 1], x_lens[b:b + 1],
+                                beam[i_beam]['dec_out'], beam[i_beam]['aw_steps'][-1])
 
-                        # Score
-                        context_vec, aw_step = getattr(self, 'attend_' + str(task_idx) + '_' + dir)(
-                            enc_out[b:b + 1],
-                            x_lens[b:b + 1],
-                            _dec_out,
-                            beam[i_beam]['aw_steps'][-1])
+                        elif self.decoding_order == 'conditional':
+                            # Recurrency of the first decoder
+                            _dec_out, _dec_state = getattr(self, 'decoder_first_' + str(task) + '_' + dir)(
+                                y, beam[i_beam]['dec_state'])
+
+                            # Score
+                            context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
+                                enc_out[b:b + 1], x_lens[b:b + 1],
+                                _dec_out, beam[i_beam]['aw_steps'][-1])
 
                         # Recurrency of the second decoder
-                        dec_out, dec_state = getattr(self, 'decoder_second_' + str(task_idx) + '_' + dir)(
+                        dec_out, dec_state = getattr(self, 'decoder_second_' + str(task) + '_' + dir)(
                             context_vec, _dec_state)
 
                         # Generate
-                        logits_step = getattr(self, 'fc_' + str(task_idx) + '_' + dir)(F.tanh(
-                            getattr(self, 'W_d_' + str(task_idx) + '_' + dir)(dec_out) +
-                            getattr(self, 'W_c_' + str(task_idx) + '_' + dir)(context_vec)))
+                        logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(F.tanh(
+                            getattr(self, 'W_d_' + str(task) + '_' + dir)(dec_out) +
+                            getattr(self, 'W_c_' + str(task) + '_' + dir)(context_vec)))
 
                     # Path through the softmax layer & convert to log-scale
                     log_probs = F.log_softmax(F.squeeze(logits_step, axis=1))
+                    # log_probs = F.squeeze(logits_step, axis=1)
                     # NOTE: `[1 (B), 1, num_classes]` -> `[1 (B), num_classes]`
 
                     # Pick up the top-k scores
@@ -1180,17 +1150,22 @@ class AttentionSeq2seq(ModelBase):
                         if self.decoding_order == 'attend_generate_update':
                             y = F.expand_dims(self._create_var(
                                 (1,), fill_value=i, dtype='long'), axis=1)
-                            y_emb = getattr(self, 'embed_' + str(task_idx))(y)
+                            y_emb = getattr(self, 'embed_' + str(task))(y)
 
                             # Recurrency
                             dec_in = F.concat([y_emb, context_vec], axis=-1)
                             dec_out, dec_state = getattr(
-                                self, 'decoder_' + str(task_idx) + '_' + dir)(dec_in, beam[i_beam]['dec_state'])
+                                self, 'decoder_' + str(task) + '_' + dir)(dec_in, beam[i_beam]['dec_state'])
+
+                        # Add length penalty
+                        score = beam[i_beam]['score'] + \
+                            log_prob + length_penalty
+
+                        # TODO: Add coverage penalty
 
                         new_beam.append({'hyp': beam[i_beam]['hyp'] + [i],
-                                         'score': beam[i_beam]['score'] + log_prob,
-                                         #  'score': np.logaddexp(beam[i_beam]['score'], log_prob),
-                                         'dec_state': dec_state,
+                                         'score': score,
+                                         'dec_state': copy.deepcopy(dec_state),
                                          'dec_out': dec_out,
                                          'aw_steps': beam[i_beam]['aw_steps'] + [aw_step]})
 
@@ -1221,18 +1196,12 @@ class AttentionSeq2seq(ModelBase):
             complete = sorted(
                 complete, key=lambda x: x['score'], reverse=True)
             best_hyps.append(np.array(complete[0]['hyp'][1:]))
-            # NOTE: Exclude <SOS>
-            aw.append(complete[0]['aw_steps'])
+            aw.append(complete[0]['aw_steps'][1:])
 
         # Concatenate in T_out dimension
         for j in range(len(aw)):
-            aw[j] = aw[j][1:]
-            # NOTE: exclude the first atteniton weights
-
             for k in range(len(aw[j])):
-                aw[j][k] = aw[j][k][:, :, 0]
-                # TODO: fix for multi-head atteniton
-
+                aw[j][k] = aw[j][k][:, :, 0]  # TODO: fix for MHA
             aw[j] = self.var2np(
                 F.concat(aw[j], axis=-1).reshape(1, -1, aw[j][0].shape[1]))
 
@@ -1250,8 +1219,8 @@ class AttentionSeq2seq(ModelBase):
         Args:
             xs (list of np.ndarray): A tensor of size `[B, T_in, input_size]`
             x_lens (np.ndarray): A tensor of size `[B]`
-            beam_width (int, optional): the size of beam
-            task_index (int, optional): the index of a task
+            beam_width (int): the size of beam
+            task_index (int): the index of a task
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
             perm_idx (np.ndarray): For interface with pytorch, not used

@@ -18,8 +18,8 @@ class RNNDecoder(nn.Module):
         num_units (int): the number of units in each layer
         num_layers (int): the number of layers
         dropout (float): the probability to drop nodes
-        residual (bool, optional):
-        dense_residual (bool, optional):
+        residual (bool):
+        dense_residual (bool):
     """
 
     def __init__(self,
