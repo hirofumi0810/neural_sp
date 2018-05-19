@@ -37,33 +37,33 @@ class HierarchicalCTC(CTC):
             (excluding the blank class)
         num_classes_sub (int): the number of classes of target labels of the sub task
             (excluding the blank class)
-        parameter_init_distribution (string, optional): uniform or normal or
+        parameter_init_distribution (string): uniform or normal or
             orthogonal or constant distribution
-        parameter_init (float, optional): Range of uniform distribution to
+        parameter_init (float): Range of uniform distribution to
             initialize weight parameters
-        recurrent_weight_orthogonal (bool, optional): if True, recurrent
+        recurrent_weight_orthogonal (bool): if True, recurrent
             weights are orthogonalized
-        init_forget_gate_bias_with_one (bool, optional): if True, initialize
+        init_forget_gate_bias_with_one (bool): if True, initialize
             the forget gate bias with 1
-        subsample_list (list, optional): subsample in the corresponding layers (True)
+        subsample_list (list): subsample in the corresponding layers (True)
             ex.) [False, True, True, False] means that subsample is conducted
                 in the 2nd and 3rd layers.
-        subsample_type (string, optional): drop or concat
+        subsample_type (string): drop or concat
         logits_temperature (float):
-        num_stack (int, optional): the number of frames to stack
-        splice (int, optional): frames to splice. Default is 1 frame.
-        input_channel (int, optional): the number of channels of input features
-        conv_channels (list, optional):
-        conv_kernel_sizes (list, optional):
-        conv_strides (list, optional):
-        poolings (list, optional):
-        activation (string, optional): The activation function of CNN layers.
+        num_stack (int): the number of frames to stack
+        splice (int): frames to splice. Default is 1 frame.
+        input_channel (int): the number of channels of input features
+        conv_channels (list):
+        conv_kernel_sizes (list):
+        conv_strides (list):
+        poolings (list):
+        activation (string): The activation function of CNN layers.
             Choose from relu or prelu or hard_tanh or maxout
-        batch_norm (bool, optional):
-        label_smoothing_prob (float, optional):
-        weight_noise_std (float, optional):
-        encoder_residual (bool, optional):
-        encoder_dense_residual (bool, optional):
+        batch_norm (bool):
+        label_smoothing_prob (float):
+        weight_noise_std (float):
+        encoder_residual (bool):
+        encoder_dense_residual (bool):
     """
 
     def __init__(self,
@@ -286,7 +286,7 @@ class HierarchicalCTC(CTC):
             y_lens (np.ndarray): A tensor of size `[B]`
             ys_sub (np.ndarray): A tensor of size `[B, T_out_sub]`
             y_lens_sub (np.ndarray): A tensor of size `[B]`
-            is_eval (bool, optional): if True, the history will not be saved.
+            is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
             loss (chainer.Variable(float) or float): A tensor of size `[1]`
