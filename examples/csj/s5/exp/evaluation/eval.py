@@ -29,11 +29,16 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
 parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam')
-parser.add_argument('--length_penalty', type=float,
-                    help='length penalty in beam search decodding')
+parser.add_argument('--length_penalty', type=float, default=0,
+                    help='length penalty in beam search decoding')
+parser.add_argument('--coverage_penalty', type=float, default=0,
+                    help='coverage penalty in beam search decoding')
 
 MAX_DECODE_LEN_WORD = 100
+MIN_DECODE_LEN_WORD = 0
+
 MAX_DECODE_LEN_CHAR = 200
+MIN_DECODE_LEN_CHAR = 0
 
 
 def main():
@@ -84,7 +89,9 @@ def main():
                     eval_batch_size=args.eval_batch_size,
                     beam_width=args.beam_width,
                     max_decode_len=MAX_DECODE_LEN_WORD,
+                    min_decode_len=MIN_DECODE_LEN_WORD,
                     length_penalty=args.length_penalty,
+                    coverage_penalty=args.coverage_penalty,
                     progressbar=True)
                 wer_mean += wer
                 print('  WER (%s): %.3f %%' % (data_type, (wer * 100)))
@@ -97,7 +104,9 @@ def main():
                     eval_batch_size=args.eval_batch_size,
                     beam_width=args.beam_width,
                     max_decode_len=MAX_DECODE_LEN_CHAR,
+                    min_decode_len=MIN_DECODE_LEN_CHAR,
                     length_penalty=args.length_penalty,
+                    coverage_penalty=args.coverage_penalty,
                     progressbar=True)
                 wer_mean += wer
                 cer_mean += cer

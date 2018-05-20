@@ -140,15 +140,15 @@ def read_audio(data_type, audio_paths, spk2gender, tool, config, normalize,
             utterance => normalize input features by mean & stddev per utterancet
                          data by mean & stddev per utterance
         save_path (string): path to save npy files
-        global_mean_male (np.ndarray, optional): global mean of male over the
+        global_mean_male (np.ndarray): global mean of male over the
             training set
-        global_std_male (np.ndarray, optional): global standard deviation of
+        global_std_male (np.ndarray): global standard deviation of
             male over the training set
-        global_mean_female (np.ndarray, optional): global mean of female over
+        global_mean_female (np.ndarray): global mean of female over
             the training set
-        global_std_female (np.ndarray, optional): global standard deviation of
+        global_std_female (np.ndarray): global standard deviation of
             female over the training set
-        dtype (optional): the type of data, default is np.float32
+        dtype (): the type of data, default is np.float32
     """
     if data_type != 'train':
         if global_mean_male is None or global_mean_female is None:

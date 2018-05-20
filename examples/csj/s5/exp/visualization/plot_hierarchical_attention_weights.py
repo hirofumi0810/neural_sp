@@ -34,11 +34,16 @@ parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam in the main task')
 parser.add_argument('--beam_width_sub', type=int, default=1,
                     help='the size of beam in the sub task')
-parser.add_argument('--length_penalty', type=float,
-                    help='length penalty in beam search decodding')
+parser.add_argument('--length_penalty', type=float, default=0,
+                    help='length penalty in beam search decoding')
+parser.add_argument('--coverage_penalty', type=float, default=0,
+                    help='coverage penalty in beam search decoding')
 
 MAX_DECODE_LEN_WORD = 100
+MIN_DECODE_LEN_WORD = 0
+
 MAX_DECODE_LEN_CHAR = 200
+MIN_DECODE_LEN_CHAR = 0
 
 
 def main():
@@ -85,20 +90,22 @@ def main():
          beam_width=args.beam_width,
          beam_width_sub=args.beam_width_sub,
          length_penalty=args.length_penalty,
+         coverage_penalty=args.coverage_penalty,
          save_path=mkdir_join(args.model_path, 'att_weights'))
 
 
 def plot(model, dataset, eval_batch_size, beam_width, beam_width_sub,
-         length_penalty, save_path=None):
+         length_penalty, coverage_penalty, save_path=None):
     """Visualize attention weights of Attetnion-based model.
     Args:
         model: model to evaluate
         dataset: An instance of a `Dataset` class
         eval_batch_size (int): the batch size when evaluating the model
-        beam_width: (int): the size of beam in the main task
+        beam_width: (int): the size of beam i nteh main task
         beam_width_sub: (int): the size of beam in the sub task
-        length_penalty (float):
-        save_path (string, optional): path to save attention weights plotting
+        length_penalty (float): coverage penalty in beam search decoding
+        coverage_penalty (float): length penalty in beam search decoding
+        save_path (string): path to save attention weights plotting
     """
     # Clean directory
     if save_path is not None and isdir(save_path):
@@ -109,16 +116,21 @@ def plot(model, dataset, eval_batch_size, beam_width, beam_width_sub,
     map_fn_sub = Idx2char(dataset.vocab_file_path_sub, return_list=True)
 
     for batch, is_new_epoch in dataset:
-
         # Decode
         best_hyps, aw, perm_idx = model.decode(
             batch['xs'], batch['x_lens'],
             beam_width=beam_width,
-            max_decode_len=MAX_DECODE_LEN_WORD)
+            max_decode_len=MAX_DECODE_LEN_WORD,
+            min_decode_len=MIN_DECODE_LEN_WORD,
+            length_penalty=length_penalty,
+            coverage_penalty=coverage_penalty)
         best_hyps_sub, aw_sub, _ = model.decode(
             batch['xs'], batch['x_lens'],
             beam_width=beam_width_sub,
             max_decode_len=MAX_DECODE_LEN_CHAR,
+            min_decode_len=MIN_DECODE_LEN_CHAR,
+            length_penalty=length_penalty,
+            coverage_penalty=coverage_penalty,
             task_index=1)
 
         for b in range(len(batch['xs'])):

@@ -24,4 +24,5 @@ $PYTHON exp/visualization/plot_hierarchical_attention_weights.py \
   --eval_batch_size 1 \
   --beam_width 1 \
   --beam_width_sub 1 \
-  --length_penalty 0.1
+  --length_penalty 0 \
+  --coverage_penalty 0

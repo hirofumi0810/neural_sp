@@ -23,4 +23,5 @@ $PYTHON exp/visualization/decode.py \
   --epoch -1 \
   --eval_batch_size 1 \
   --beam_width 1 \
-  --length_penalty 0.1
+  --length_penalty 0 \
+  --coverage_penalty 0

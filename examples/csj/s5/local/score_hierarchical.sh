@@ -24,4 +24,5 @@ $PYTHON exp/evaluation/eval_hierarchical.py \
   --eval_batch_size 1 \
   --beam_width 4 \
   --beam_width_sub 4 \
-  --length_penalty 0.1
+  --length_penalty 0 \
+  --coverage_penalty 0

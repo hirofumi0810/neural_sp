@@ -31,11 +31,16 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
 parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam')
-parser.add_argument('--length_penalty', type=float,
-                    help='length penalty in beam search decodding')
+parser.add_argument('--length_penalty', type=float, default=0,
+                    help='length penalty in beam search decoding')
+parser.add_argument('--coverage_penalty', type=float, default=0,
+                    help='coverage penalty in beam search decoding')
 
 MAX_DECODE_LEN_WORD = 100
+MIN_DECODE_LEN_WORD = 0
+
 MAX_DECODE_LEN_CHAR = 200
+MIN_DECODE_LEN_CHAR = 0
 
 
 def main():
@@ -81,45 +86,53 @@ def main():
            eval_batch_size=args.eval_batch_size,
            beam_width=args.beam_width,
            length_penalty=args.length_penalty,
+           coverage_penalty=args.coverage_penalty,
            save_path=None)
     # save_path=args.model_path)
 
 
-def decode(model, dataset, eval_batch_size, beam_width, length_penalty,
-           save_path=None):
+def decode(model, dataset, eval_batch_size, beam_width,
+           length_penalty, coverage_penalty, save_path=None):
     """Visualize label outputs.
     Args:
         model: the model to evaluate
         dataset: An instance of a `Dataset` class
         eval_batch_size (int): the batch size when evaluating the model
         beam_width: (int): the size of beam
-        length_penalty (float):
+        length_penalty (float): coverage penalty in beam search decoding
+        coverage_penalty (float): length penalty in beam search decoding
         save_path (string): path to save decoding results
     """
     if 'word' in dataset.label_type:
         map_fn = Idx2word(dataset.vocab_file_path)
         max_decode_len = MAX_DECODE_LEN_WORD
+        min_decode_len = MIN_DECODE_LEN_WORD
     else:
         map_fn = Idx2char(dataset.vocab_file_path)
         max_decode_len = MAX_DECODE_LEN_CHAR
+        min_decode_len = MIN_DECODE_LEN_CHAR
 
     if save_path is not None:
         sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
 
     for batch, is_new_epoch in dataset:
-
         # Decode
         if model.model_type == 'nested_attention':
             best_hyps, _, best_hyps_sub, _, perm_idx = model.decode(
                 batch['xs'], batch['x_lens'],
                 beam_width=beam_width,
                 max_decode_len=max_decode_len,
-                max_decode_len_sub=max_decode_len)
+                max_decode_len_sub=max_decode_len,
+                length_penalty=length_penalty,
+                coverage_penalty=coverage_penalty)
         else:
             best_hyps, _, perm_idx = model.decode(
                 batch['xs'], batch['x_lens'],
                 beam_width=beam_width,
-                max_decode_len=max_decode_len)
+                max_decode_len=max_decode_len,
+                min_decode_len=min_decode_len,
+                length_penalty=length_penalty,
+                coverage_penalty=coverage_penalty)
 
         if model.model_type == 'attention' and model.ctc_loss_weight > 0:
             best_hyps_ctc, perm_idx = model.decode_ctc(

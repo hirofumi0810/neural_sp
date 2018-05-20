@@ -31,8 +31,10 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
 parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam')
-parser.add_argument('--length_penalty', type=float,
-                    help='length penalty in beam search decodding')
+parser.add_argument('--length_penalty', type=float, default=0,
+                    help='length penalty in beam search decoding')
+parser.add_argument('--coverage_penalty', type=float, default=0,
+                    help='coverage penalty in beam search decoding')
 
 MAX_DECODE_LEN_PHONE = 100
 MIN_DECODE_LEN_PHONE = 20
@@ -76,18 +78,20 @@ def main():
                    eval_batch_size=args.eval_batch_size,
                    beam_width=args.beam_width,
                    length_penalty=args.length_penalty,
+                   coverage_penalty=args.coverage_penalty,
                    save_path=mkdir_join(args.model_path, 'att_weights'))
 
 
-def plot_attention(model, dataset, eval_batch_size, beam_width, length_penalty,
-                   save_path=None):
+def plot_attention(model, dataset, eval_batch_size, beam_width,
+                   length_penalty, coverage_penalty, save_path=None):
     """Visualize attention weights of the attetnion-based model.
     Args:
         model: model to evaluate
         dataset: An instance of a `Dataset` class
         eval_batch_size (int): the batch size when evaluating the model
         beam_width: (int): the size of beam
-        length_penalty (float):
+        length_penalty (float): length penalty in beam search decoding
+        coverage_penalty (float): coverage penalty in beam search decoding
         save_path (string, optional): path to save attention weights plotting
     """
     # Clean directory
@@ -105,7 +109,8 @@ def plot_attention(model, dataset, eval_batch_size, beam_width, length_penalty,
             beam_width=beam_width,
             max_decode_len=MAX_DECODE_LEN_PHONE,
             min_decode_len=MIN_DECODE_LEN_PHONE,
-            length_penalty=length_penalty)
+            length_penalty=length_penalty,
+            coverage_penalty=coverage_penalty)
 
         ys = batch['ys'][perm_idx]
         y_lens = batch['y_lens'][perm_idx]

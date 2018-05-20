@@ -16,21 +16,20 @@ from utils.evaluation.edit_distance import compute_wer
 
 
 def eval_char(models, eval_batch_size, dataset, beam_width,
-              max_decode_len, min_decode_len=0, length_penalty=0,
-              progressbar=False, temperature=1):
+              max_decode_len, min_decode_len=0,
+              length_penalty=0, coverage_penalty=0,
+              progressbar=False):
     """Evaluate trained model by Character Error Rate.
     Args:
         models (list): the models to evaluate
         dataset: An instance of a `Dataset' class
         eval_batch_size (int): the batch size when evaluating the model
         beam_width: (int): the size of beam
-        max_decode_len (int): the length of output sequences
-            to stop prediction when EOS token have not been emitted.
-            This is used for seq2seq models.
+        max_decode_len (int): the maximum sequence length to emit
         min_decode_len (int): the minimum sequence length to emit
-        length_penalty (float):
+        length_penalty (float): length penalty in beam search decoding
+        coverage_penalty (float): coverage penalty in beam search decoding
         progressbar (bool): if True, visualize the progressbar
-        temperature (int):
     Returns:
         wer (float): Word error rate
         cer (float): Character error rate
@@ -63,6 +62,7 @@ def eval_char(models, eval_batch_size, dataset, beam_width,
             max_decode_len=max_decode_len,
             min_decode_len=min_decode_len,
             length_penalty=length_penalty,
+            coverage_penalty=coverage_penalty,
             task_index=0 if model.model_type in ['ctc', 'attention'] else 1)
 
         ys = batch['ys'][perm_idx]

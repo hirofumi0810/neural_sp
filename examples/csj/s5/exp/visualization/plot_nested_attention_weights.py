@@ -48,11 +48,16 @@ parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam in the main task')
 parser.add_argument('--beam_width_sub', type=int, default=1,
                     help='the size of beam in the sub task')
-parser.add_argument('--length_penalty', type=float,
-                    help='length penalty in beam search decodding')
+parser.add_argument('--length_penalty', type=float, default=0,
+                    help='length penalty in beam search decoding')
+parser.add_argument('--coverage_penalty', type=float, default=0,
+                    help='coverage penalty in beam search decoding')
 
 MAX_DECODE_LEN_WORD = 100
+MIN_DECODE_LEN_WORD = 0
+
 MAX_DECODE_LEN_CHAR = 200
+MIN_DECODE_LEN_CHAR = 0
 
 
 def main():
@@ -101,12 +106,13 @@ def main():
          beam_width=args.beam_width,
          beam_width_sub=args.beam_width_sub,
          length_penalty=args.length_penalty,
+         coverage_penalty=args.coverage_penalty,
          a2c_oracle=a2c_oracle,
          save_path=mkdir_join(args.model_path, 'att_weights'))
 
 
 def plot(model, dataset, eval_batch_size, beam_width, beam_width_sub,
-         length_penalty, a2c_oracle=False, save_path=None):
+         length_penalty, coverage_penalty, a2c_oracle=False, save_path=None):
     """Visualize attention weights of Attetnion-based model.
     Args:
         model: model to evaluate
@@ -114,9 +120,10 @@ def plot(model, dataset, eval_batch_size, beam_width, beam_width_sub,
         eval_batch_size (int): the batch size when evaluating the model
         beam_width: (int): the size of beam i nteh main task
         beam_width_sub: (int): the size of beam in the sub task
-        length_penalty (float):
-        a2c_oracle (bool, optional):
-        save_path (string, optional): path to save attention weights plotting
+        length_penalty (float): coverage penalty in beam search decoding
+        coverage_penalty (float): length penalty in beam search decoding
+        a2c_oracle (bool):
+        save_path (string): path to save attention weights plotting
     """
     # Clean directory
     if save_path is not None and isdir(save_path):
@@ -125,6 +132,8 @@ def plot(model, dataset, eval_batch_size, beam_width, beam_width_sub,
 
     idx2word = Idx2word(dataset.vocab_file_path, return_list=True)
     idx2char = Idx2char(dataset.vocab_file_path_sub, return_list=True)
+    if a2c_oracle:
+        char2idx = Char2idx(dataset.vocab_file_path_sub)
 
     for batch, is_new_epoch in dataset:
         batch_size = len(batch['xs'])
@@ -156,10 +165,13 @@ def plot(model, dataset, eval_batch_size, beam_width, beam_width_sub,
         best_hyps, aw, best_hyps_sub, aw_sub, aw_dec, _ = model.decode(
             batch['xs'], batch['x_lens'],
             beam_width=beam_width,
-            beam_width_sub=beam_width_sub,
             max_decode_len=MAX_DECODE_LEN_WORD,
+            min_decode_len=MIN_DECODE_LEN_WORD,
+            beam_width_sub=beam_width_sub,
             max_decode_len_sub=MAX_DECODE_LEN_CHAR,
+            min_decode_len_sub=MIN_DECODE_LEN_CHAR,
             length_penalty=length_penalty,
+            coverage_penalty=coverage_penalty,
             teacher_forcing=a2c_oracle,
             ys_sub=ys_sub,
             y_lens_sub=y_lens_sub)

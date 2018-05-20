@@ -142,11 +142,12 @@ if [ $stage -le 1 ] && [ ! -e $DATA_SAVEPATH/.stage_1_$DATASIZE ]; then
 
     # Convert from wav to htk files
     for data_type in $train dev eval1 eval2 eval3; do
-      if [ `echo $train | grep 'train'` ]; then
+      if [ `echo $data_type | grep 'train'` ]; then
         mkdir -p $DATA_SAVEPATH/htk/train
       else
         mkdir -p $DATA_SAVEPATH/htk/$data_type
       fi
+      [ -e $DATA_SAVEPATH/$data_type/htk.scp ] && rm $DATA_SAVEPATH/$data_type/htk.scp
       touch $DATA_SAVEPATH/$data_type/htk.scp
       cat $DATA_SAVEPATH/$data_type/wav.scp | while read line
       do
@@ -156,7 +157,7 @@ if [ $stage -le 1 ] && [ ! -e $DATA_SAVEPATH/.stage_1_$DATASIZE ]; then
         # ext=${file_name##*.}
 
         # Convert from wav to htk files
-        if [ `echo $train | grep 'train'` ]; then
+        if [ `echo $data_type | grep 'train'` ]; then
           htk_path=$DATA_SAVEPATH/htk/train/$base".htk"
         else
           htk_path=$DATA_SAVEPATH/htk/$data_type/$base".htk"

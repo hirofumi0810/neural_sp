@@ -15,19 +15,21 @@ from utils.io.labels.character import Idx2char
 from utils.evaluation.edit_distance import compute_wer
 
 
-def eval_char(models, dataset, eval_batch_size, beam_width, max_decode_len,
-              length_penalty=0, progressbar=False, temperature=1):
+def eval_char(models, dataset, eval_batch_size, beam_width,
+              max_decode_len, min_decode_len=0,
+              length_penalty=0, coverage_penalty=0, progressbar=False):
     """Evaluate trained model by Character Error Rate.
     Args:
         models (list): the models to evaluate
         dataset: An instance of a `Dataset' class
         eval_batch_size (int): the batch size when evaluating the model
         beam_width: (int): the size of beam
-        max_decode_len (int): the length of output sequences
-            to stop prediction. This is used for seq2seq models.
-        length_penalty (float, optional):
-        progressbar (bool, optional): if True, visualize the progressbar
-        temperature (int, optional):
+        max_decode_len (int): the maximum sequence length to emit in seq2seq
+        min_decode_len (int): the minimum sequence length to emit in seq2seq
+        length_penalty (float): length penalty in beam search decoding
+        coverage_penalty (float): coverage penalty in beam search decoding
+        progressbar (bool): if True, visualize the progressbar
+        temperature (int):
     Returns:
         wer (float): Word error rate
         cer (float): Character error rate
@@ -59,7 +61,8 @@ def eval_char(models, dataset, eval_batch_size, beam_width, max_decode_len,
                 batch['xs'], batch['x_lens'],
                 beam_width=beam_width,
                 max_decode_len=max_decode_len,
-                length_penalty=length_penalty)
+                length_penalty=length_penalty,
+                coverage_penalty=coverage_penalty)
             ys = batch['ys'][perm_idx]
             y_lens = batch['y_lens'][perm_idx]
             task_index = 0
@@ -69,6 +72,7 @@ def eval_char(models, dataset, eval_batch_size, beam_width, max_decode_len,
                 beam_width=beam_width,
                 max_decode_len=max_decode_len,
                 length_penalty=length_penalty,
+                coverage_penalty=coverage_penalty,
                 task_index=1)
             ys = batch['ys_sub'][perm_idx]
             y_lens = batch['y_lens_sub'][perm_idx]

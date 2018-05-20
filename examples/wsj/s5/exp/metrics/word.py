@@ -19,10 +19,10 @@ from utils.evaluation.resolving_unk import resolve_unk
 
 
 def eval_word(models, dataset, eval_batch_size,
-              beam_width,  max_decode_len, min_decode_len=0,
+              beam_width, max_decode_len, min_decode_len=0,
               beam_width_sub=1, max_decode_len_sub=0, min_decode_len_sub=0,
-              length_penalty=0, progressbar=False, temperature=1,
-              resolving_unk=False, a2c_oracle=False):
+              length_penalty=0, coverage_penalty=0,
+              progressbar=False, resolving_unk=False, a2c_oracle=False):
     """Evaluate trained model by Word Error Rate.
     Args:
         models (list): the models to evaluate
@@ -35,9 +35,9 @@ def eval_word(models, dataset, eval_batch_size,
             This is used for the nested attention
         max_decode_len_sub (int): the maximum sequence length of tokens in the sub task
         min_decode_len_sub (int): the minimum sequence length of tokens in the sub task
-        length_penalty (float):
+        length_penalty (float): length penalty in beam search decoding
+        coverage_penalty (float): coverage penalty in beam search decoding
         progressbar (bool): if True, visualize the progressbar
-        temperature (int):
         resolving_unk (bool):
         a2c_oracle (bool):
     Returns:
@@ -99,6 +99,7 @@ def eval_word(models, dataset, eval_batch_size,
                 max_decode_len_sub=max_label_num if a2c_oracle else max_decode_len_sub,
                 min_decode_len_sub=min_decode_len_sub,
                 length_penalty=length_penalty,
+                coverage_penalty=coverage_penalty,
                 teacher_forcing=a2c_oracle,
                 ys_sub=ys_sub,
                 y_lens_sub=y_lens_sub)
@@ -108,7 +109,8 @@ def eval_word(models, dataset, eval_batch_size,
                 beam_width=beam_width,
                 max_decode_len=max_decode_len,
                 min_decode_len=min_decode_len,
-                length_penalty=length_penalty)
+                length_penalty=length_penalty,
+                coverage_penalty=coverage_penalty)
             if resolving_unk:
                 best_hyps_sub, aw_sub, _ = model.decode(
                     batch['xs'], batch['x_lens'],
@@ -116,6 +118,7 @@ def eval_word(models, dataset, eval_batch_size,
                     max_decode_len=max_decode_len_sub,
                     min_decode_len_sub=min_decode_len_sub,
                     length_penalty=length_penalty,
+                    coverage_penalty=coverage_penalty,
                     task_index=1)
 
         ys = batch['ys'][perm_idx]

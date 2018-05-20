@@ -30,8 +30,10 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
 parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam')
-parser.add_argument('--length_penalty', type=float,
-                    help='length penalty in beam search decodding')
+parser.add_argument('--length_penalty', type=float, default=0,
+                    help='length penalty in beam search decoding')
+parser.add_argument('--coverage_penalty', type=float, default=0,
+                    help='coverage penalty in beam search decoding')
 
 MAX_DECODE_LEN_PHONE = 100
 MIN_DECODE_LEN_PHONE = 20
@@ -76,19 +78,21 @@ def main():
            eval_batch_size=args.eval_batch_size,
            beam_width=args.beam_width,
            length_penalty=args.length_penalty,
+           coverage_penalty=args.coverage_penalty,
            save_path=None)
     # save_path=args.model_path)
 
 
-def decode(model, dataset, eval_batch_size, beam_width, length_penalty,
-           save_path=None):
+def decode(model, dataset, eval_batch_size, beam_width,
+           length_penalty, coverage_penalty, save_path=None):
     """Visualize label outputs.
     Args:
         model: the model to evaluate
         dataset: An instance of a `Dataset` class
         eval_batch_size (int): the batch size when evaluating the model
         beam_width: (int): the size of beam
-        length_penalty (float):
+        length_penalty (float): length penalty in beam search decoding
+        coverage_penalty (float): coverage penalty in beam search decoding
         save_path (string): path to save decoding results
     """
     idx2phone = Idx2phone(dataset.vocab_file_path)
@@ -97,14 +101,15 @@ def decode(model, dataset, eval_batch_size, beam_width, length_penalty,
         sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
 
     for batch, is_new_epoch in dataset:
-
         # Decode
         best_hyps, _, perm_idx = model.decode(
             batch['xs'], batch['x_lens'],
             beam_width=beam_width,
             max_decode_len=MAX_DECODE_LEN_PHONE,
             min_decode_len=MIN_DECODE_LEN_PHONE,
-            length_penalty=length_penalty)
+            length_penalty=length_penalty,
+            coverage_penalty=coverage_penalty)
+
         if model.model_type == 'attention' and model.ctc_loss_weight > 0:
             best_hyps_ctc, perm_idx = model.decode_ctc(
                 batch['xs'], batch['x_lens'],

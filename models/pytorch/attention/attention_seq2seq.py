@@ -865,8 +865,8 @@ class AttentionSeq2seq(ModelBase):
             beam_width (int): the size of beam
             max_decode_len (int): the maximum sequence length of tokens
             min_decode_len (int): the minimum sequence length of tokens
-            length_penalty (float):
-            coverage_penalty (float):
+            length_penalty (float): length penalty in beam search decoding
+            coverage_penalty (float): coverage penalty in beam search decoding
             task_index (int): not used (to make compatible)
             resolving_unk (bool): not used (to make compatible)
         Returns:
@@ -1034,12 +1034,13 @@ class AttentionSeq2seq(ModelBase):
             beam_width (int): the size of beam
             max_decode_len (int): the maximum sequence length of tokens
             min_decode_len (int): the minimum sequence length of tokens
-            length_penalty (float):
-            coverage_penalty (float):
+            length_penalty (float): length penalty in beam search decoding
+            coverage_penalty (float): coverage penalty in beam search decoding
             task (int): the index of a task
             dir (str): fwd or bwd
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
+            aw (list): attention weights of the best hypothesis
         """
         if dir == 'bwd':
             assert getattr(self, 'bwd_weight_' + str(task)) > 0
@@ -1143,13 +1144,20 @@ class AttentionSeq2seq(ModelBase):
                             log_probs_topk[0, k].item() + length_penalty
 
                         # Add coverage penalty
-                        # if coverage_penalty > 0:
-                        #     threshold = 0.5
-                        #     aw_steps = torch.cat(
-                        #         beam[i_beam]['aw_steps'], dim=0).sum(0).squeeze(1)
-                        #     cov_sum = torch.where(
-                        #         aw_steps < threshold, aw_steps, torch.ones_like(aw_steps) * threshold).sum(0)
-                        #     score += torch.log(cov_sum) * coverage_penalty
+                        if coverage_penalty > 0:
+                            threshold = 0.5
+                            aw_steps = torch.cat(
+                                beam[i_beam]['aw_steps'], dim=0).sum(0).squeeze(1)
+
+                            # Google NMT
+                            # cov_sum = torch.where(
+                            #     aw_steps < threshold, aw_steps, torch.ones_like(aw_steps) * threshold).sum(0)
+                            # score += torch.log(cov_sum) * coverage_penalty
+
+                            # Toward better decoding
+                            cov_sum = torch.where(
+                                aw_steps > threshold, aw_steps, torch.zeros_like(aw_steps)).sum(0)
+                            score += cov_sum * coverage_penalty
 
                         new_beam.append(
                             {'hyp': beam[i_beam]['hyp'] + [indices_topk[0, k].item()],

@@ -18,8 +18,8 @@ echo "                                   WSJ                                    
 echo ============================================================================
 
 stage=0
-# hierarchical_model=false
-hierarchical_model=true
+hierarchical_model=false
+# hierarchical_model=true
 run_background=true
 restart=false
 

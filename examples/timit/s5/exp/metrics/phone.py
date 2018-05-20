@@ -16,7 +16,8 @@ from utils.evaluation.edit_distance import compute_wer
 
 
 def eval_phone(model, dataset, map_file_path, eval_batch_size, beam_width,
-               max_decode_len, min_decode_len=0, length_penalty=0,
+               max_decode_len, min_decode_len=0,
+               length_penalty=0, coverage_penalty=0,
                progressbar=False):
     """Evaluate trained model by Phone Error Rate.
     Args:
@@ -27,9 +28,10 @@ def eval_phone(model, dataset, map_file_path, eval_batch_size, beam_width,
         beam_width: (int): the size of beam
         max_decode_len (int): the length of output sequences
             to stop prediction. This is used for seq2seq models.
-        min_decode_len (int, optional): the minimum sequence length to emit
-        length_penalty (float, optional):
-        progressbar (bool, optional): if True, visualize the progressbar
+        min_decode_len (int): the minimum sequence length to emit
+        length_penalty (float): length penalty in beam search decoding
+        coverage_penalty (float): coverage penalty in beam search decoding
+        progressbar (bool): if True, visualize the progressbar
     Returns:
         per (float): Phone error rate
         df_phone (pd.DataFrame): dataframe of substitution, insertion, and deletion
@@ -50,11 +52,14 @@ def eval_phone(model, dataset, map_file_path, eval_batch_size, beam_width,
         batch, is_new_epoch = dataset.next(batch_size=eval_batch_size)
 
         # Decode
-        best_hyps, _, perm_idx = model.decode(batch['xs'], batch['x_lens'],
-                                              beam_width=beam_width,
-                                              max_decode_len=max_decode_len,
-                                              min_decode_len=min_decode_len,
-                                              length_penalty=length_penalty)
+        best_hyps, _, perm_idx = model.decode(
+            batch['xs'], batch['x_lens'],
+            beam_width=beam_width,
+            max_decode_len=max_decode_len,
+            min_decode_len=min_decode_len,
+            length_penalty=length_penalty,
+            coverage_penalty=coverage_penalty)
+
         ys = batch['ys'][perm_idx]
         y_lens = batch['y_lens'][perm_idx]
 

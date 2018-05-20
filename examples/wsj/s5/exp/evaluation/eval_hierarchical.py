@@ -31,8 +31,10 @@ parser.add_argument('--beam_width_sub', type=int, default=1,
                     help='the size of beam in the sub task')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--length_penalty', type=float,
-                    help='length penalty in beam search decodding')
+parser.add_argument('--length_penalty', type=float, default=0,
+                    help='length penalty in beam search decoding')
+parser.add_argument('--coverage_penalty', type=float, default=0,
+                    help='coverage penalty in beam search decoding')
 
 MAX_DECODE_LEN_WORD = 100
 MIN_DECODE_LEN_WORD = 10
@@ -55,7 +57,9 @@ def main():
         input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
-        data_type='test_eval92', data_size=params['data_size'],
+        # data_type='test_dev93',
+        data_type='test_eval92',
+        data_size=params['data_size'],
         label_type=params['label_type'], label_type_sub=params['label_type_sub'],
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
@@ -88,11 +92,13 @@ def main():
         dataset=test_data,
         eval_batch_size=args.eval_batch_size,
         beam_width=args.beam_width,
-        beam_width_sub=args.beam_width_sub,
         max_decode_len=MAX_DECODE_LEN_WORD,
         min_decode_len=MIN_DECODE_LEN_WORD,
+        beam_width_sub=args.beam_width_sub,
         max_decode_len_sub=MAX_DECODE_LEN_CHAR,
         min_decode_len_sub=MIN_DECODE_LEN_CHAR,
+        length_penalty=args.length_penalty,
+        coverage_penalty=args.coverage_penalty,
         progressbar=True,
         resolving_unk=resolving_unk,
         a2c_oracle=a2c_oracle)
@@ -105,6 +111,8 @@ def main():
         beam_width=args.beam_width_sub,
         max_decode_len=MAX_DECODE_LEN_CHAR,
         min_decode_len=MIN_DECODE_LEN_CHAR,
+        length_penalty=args.length_penalty,
+        coverage_penalty=args.coverage_penalty,
         progressbar=True)
     print(' WER / CER (eval92, sub): %.3f / %.3f %%' %
           ((wer_eval92_sub * 100), (cer_eval92_sub * 100)))

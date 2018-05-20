@@ -31,11 +31,16 @@ parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam in the main task')
 parser.add_argument('--beam_width_sub', type=int, default=1,
                     help='the size of beam in the sub task')
-parser.add_argument('--length_penalty', type=float,
-                    help='length penalty in beam search decodding')
+parser.add_argument('--length_penalty', type=float, default=0,
+                    help='length penalty in beam search decoding')
+parser.add_argument('--coverage_penalty', type=float, default=0,
+                    help='coverage penalty in beam search decoding')
 
 MAX_DECODE_LEN_WORD = 100
+MIN_DECODE_LEN_WORD = 0
+
 MAX_DECODE_LEN_CHAR = 200
+MIN_DECODE_LEN_CHAR = 0
 
 
 def main():
@@ -97,10 +102,13 @@ def main():
                 dataset=eval_data,
                 eval_batch_size=args.eval_batch_size,
                 beam_width=args.beam_width,
-                beam_width_sub=args.beam_width_sub,
                 max_decode_len=MAX_DECODE_LEN_WORD,
+                min_decode_len=MIN_DECODE_LEN_WORD,
+                beam_width_sub=args.beam_width_sub,
                 max_decode_len_sub=MAX_DECODE_LEN_CHAR,
+                min_decode_len_sub=MIN_DECODE_LEN_CHAR,
                 length_penalty=args.length_penalty,
+                coverage_penalty=args.coverage_penalty,
                 progressbar=True,
                 resolving_unk=resolving_unk,
                 a2c_oracle=a2c_oracle,
@@ -116,7 +124,9 @@ def main():
                 eval_batch_size=args.eval_batch_size,
                 beam_width=args.beam_width_sub,
                 max_decode_len=MAX_DECODE_LEN_CHAR,
+                min_decode_len=MIN_DECODE_LEN_CHAR,
                 length_penalty=args.length_penalty,
+                coverage_penalty=args.coverage_penalty,
                 progressbar=True)
             wer_sub_mean += wer_sub
             cer_sub_mean += cer_sub

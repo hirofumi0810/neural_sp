@@ -34,11 +34,16 @@ parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam in the main task')
 parser.add_argument('--beam_width_sub', type=int, default=1,
                     help='the size of beam in the sub task')
-parser.add_argument('--length_penalty', type=float,
-                    help='length penalty in beam search decodding')
+parser.add_argument('--length_penalty', type=float, default=0,
+                    help='length penalty in beam search decoding')
+parser.add_argument('--coverage_penalty', type=float, default=0,
+                    help='coverage penalty in beam search decoding')
 
 MAX_DECODE_LEN_WORD = 100
+MIN_DECODE_LEN_WORD = 0
+
 MAX_DECODE_LEN_CHAR = 200
+MIN_DECODE_LEN_CHAR = 0
 
 
 def main():
@@ -85,13 +90,14 @@ def main():
            beam_width=args.beam_width,
            beam_width_sub=args.beam_width_sub,
            length_penalty=args.length_penalty,
+           coverage_penalty=args.coverage_penalty,
            save_path=None,
            # save_path=args.model_path,
            resolving_unk=False)
 
 
 def decode(model, dataset, eval_batch_size, beam_width, beam_width_sub,
-           length_penalty, save_path=None, resolving_unk=False):
+           length_penalty, coverage_penalty, save_path=None, resolving_unk=False):
     """Visualize label outputs.
     Args:
         model: the model to evaluate
@@ -99,9 +105,10 @@ def decode(model, dataset, eval_batch_size, beam_width, beam_width_sub,
         eval_batch_size (int): the batch size when evaluating the model
         beam_width: (int): the size of beam in the main task
         beam_width_sub: (int): the size of beam in the sub task
-        length_penalty (float):
+        length_penalty (float): coverage penalty in beam search decoding
+        coverage_penalty (float): length penalty in beam search decoding
         save_path (string): path to save decoding results
-        resolving_unk (bool, optional):
+        resolving_unk (bool):
     """
     idx2word = Idx2word(dataset.vocab_file_path)
     idx2char = Idx2char(dataset.vocab_file_path_sub)
@@ -112,32 +119,40 @@ def decode(model, dataset, eval_batch_size, beam_width, beam_width_sub,
         sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
 
     for batch, is_new_epoch in dataset:
-
         # Decode
         if model.model_type == 'nested_attention':
-            best_hyps, aw, best_hyps_sub, aw_sub, perm_idx = model.decode(
+            best_hyps, aw, best_hyps_sub, aw_sub, _, perm_idx = model.decode(
                 batch['xs'], batch['x_lens'],
                 beam_width=beam_width,
                 beam_width_sub=beam_width_sub,
                 max_decode_len=MAX_DECODE_LEN_WORD,
-                max_decode_len_sub=MAX_DECODE_LEN_CHAR)
+                max_decode_len_sub=MAX_DECODE_LEN_CHAR,
+                length_penalty=length_penalty,
+                coverage_penalty=coverage_penalty)
         else:
-            # best_hyps, aw, perm_idx = model.decode(
-            #     batch['xs'], batch['x_lens'],
-            #     beam_width=beam_width,
-            #     max_decode_len=MAX_DECODE_LEN_WORD)
             best_hyps, aw, perm_idx = model.decode(
                 batch['xs'], batch['x_lens'],
-                # beam_width=beam_width,
-                beam_width=2,
+                beam_width=beam_width,
                 max_decode_len=MAX_DECODE_LEN_WORD,
-                joint_decoding=True,
-                space_index=char2idx('_')[0],
-                char2word=char2word)
+                min_decode_len=MIN_DECODE_LEN_WORD,
+                length_penalty=length_penalty,
+                coverage_penalty=coverage_penalty)
+            # best_hyps, aw, perm_idx = model.decode(
+            #     batch['xs'], batch['x_lens'],
+            #     # beam_width=beam_width,
+            #     beam_width=2,
+            #     max_decode_len=MAX_DECODE_LEN_WORD,
+            #     min_decode_len=MIN_DECODE_LEN_WORD,
+            #     joint_decoding=True,
+            #     space_index=char2idx('_')[0],
+            #     char2word=char2word)
             best_hyps_sub, aw_sub, _ = model.decode(
                 batch['xs'], batch['x_lens'],
                 beam_width=beam_width_sub,
                 max_decode_len=MAX_DECODE_LEN_CHAR,
+                min_decode_len=MIN_DECODE_LEN_CHAR,
+                length_penalty=length_penalty,
+                coverage_penalty=coverage_penalty,
                 task_index=1)
 
         ys = batch['ys'][perm_idx]
@@ -146,7 +161,6 @@ def decode(model, dataset, eval_batch_size, beam_width, beam_width_sub,
         y_lens_sub = batch['y_lens_sub'][perm_idx]
 
         for b in range(len(batch['xs'])):
-
             ##############################
             # Reference
             ##############################
