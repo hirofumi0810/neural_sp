@@ -27,7 +27,7 @@ fi
 
 SWBD_DIR=$1
 
-dir=$DATA_SAVEPATH/local/train
+dir=$DATA/local/train
 mkdir -p $dir
 
 
@@ -92,7 +92,7 @@ local/swbd1_map_words.pl -f 2- $dir/transcripts2.txt  > $dir/text
 
 # format acronyms in text
 python local/map_acronyms_transcripts.py -i $dir/text -o $dir/text_map \
-  -M $DATA_SAVEPATH/local/dict_nosp/acronyms.map
+  -M $DATA/local/dict_nosp/acronyms.map
 mv $dir/text_map $dir/text
 
 # (1c) Make segment files from transcript
@@ -134,23 +134,23 @@ sort -k 2 $dir/utt2spk | utils/utt2spk_to_spk2utt.pl > $dir/spk2utt || exit 1;
 
 # Copy stuff into its final locations [this has been moved from the format_data
 # script]
-mkdir -p $DATA_SAVEPATH/train
+mkdir -p $DATA/train
 for f in spk2utt utt2spk wav.scp text segments reco2file_and_channel; do
-  cp $DATA_SAVEPATH/local/train/$f $DATA_SAVEPATH/train/$f || exit 1;
+  cp $DATA/local/train/$f $DATA/train/$f || exit 1;
 done
 
 if [ $# == 2 ]; then # fix speaker IDs
   find $2 -name conv.tab > $dir/conv.tab
-  local/swbd1_fix_speakerid.pl `cat $dir/conv.tab` $DATA_SAVEPATH/train
-  utils/utt2spk_to_spk2utt.pl $DATA_SAVEPATH/train/utt2spk.new > $DATA_SAVEPATH/train/spk2utt.new
+  local/swbd1_fix_speakerid.pl `cat $dir/conv.tab` $DATA/train
+  utils/utt2spk_to_spk2utt.pl $DATA/train/utt2spk.new > $DATA/train/spk2utt.new
   # patch files
   for f in spk2utt utt2spk text segments; do
-    cp $DATA_SAVEPATH/train/$f $DATA_SAVEPATH/train/$f.old || exit 1;
-    cp $DATA_SAVEPATH/train/$f.new $DATA_SAVEPATH/train/$f || exit 1;
+    cp $DATA/train/$f $DATA/train/$f.old || exit 1;
+    cp $DATA/train/$f.new $DATA/train/$f || exit 1;
   done
   rm $dir/conv.tab
 fi
 
 echo Switchboard-1 data preparation succeeded.
 
-utils/fix_data_dir.sh $DATA_SAVEPATH/train
+utils/fix_data_dir.sh $DATA/train

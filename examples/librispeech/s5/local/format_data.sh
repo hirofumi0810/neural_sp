@@ -18,15 +18,15 @@ fi
 
 lm_dir=$1
 
-lexicon=data/local/lang_tmp/lexiconp.txt
+lexicon=$DATA/local/lang_tmp/lexiconp.txt
 
 # This loop was taken verbatim from wsj_format_data.sh, and I'm leaving it in place in
 # case we decide to add more language models at some point
 for lm_suffix in tgpr; do
-  test=data/lang_test_${lm_suffix}
+  test=$DATA/lang_test_${lm_suffix}
   mkdir -p $test
   for f in phones.txt words.txt phones.txt L.fst L_disambig.fst phones topo oov.txt oov.int; do
-    cp -r data/lang/$f $test
+    cp -r $DATA/lang/$f $test
   done
   gunzip -c $lm_dir/lm_${lm_suffix}.arpa.gz | \
     arpa2fst --disambig-symbol=#0 \

@@ -10,8 +10,8 @@ if [ $# -le 3 ]; then
 fi
 
 
-dir=$DATA_SAVEPATH/local/data
-lmdir=$DATA_SAVEPATH/local/nist_lm
+dir=$DATA/local/data
+lmdir=$DATA/local/nist_lm
 mkdir -p $dir $lmdir
 local=`pwd`/local
 utils=`pwd`/utils

@@ -10,8 +10,8 @@
 #check existing directories
 [ $# != 0 ] && echo "Usage: local/swbd1_data_prep.sh" && exit 1;
 
-srcdir=$DATA_SAVEPATH/local/train  # This is where we downloaded some stuff..
-dir=$DATA_SAVEPATH/local/dict_nosp
+srcdir=$DATA/local/train  # This is where we downloaded some stuff..
+dir=$DATA/local/dict_nosp
 mkdir -p $dir
 srcdict=$srcdir/swb_ms98_transcriptions/sw-ms98-dict.text
 

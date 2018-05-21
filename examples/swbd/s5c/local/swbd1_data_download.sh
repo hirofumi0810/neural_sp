@@ -20,7 +20,7 @@ fi
 
 SWBD_DIR=$1
 
-dir=$DATA_SAVEPATH/local/train
+dir=$DATA/local/train
 mkdir -p $dir
 
 # Audio data directory check

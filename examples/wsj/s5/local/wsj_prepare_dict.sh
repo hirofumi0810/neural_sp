@@ -34,7 +34,7 @@ dict_suffix=
 echo "$0 $@"  # Print the command line for logging
 . utils/parse_options.sh || exit 1;
 
-dir=$DATA_SAVEPATH/local/dict${dict_suffix}
+dir=$DATA/local/dict${dict_suffix}
 mkdir -p $dir
 
 

@@ -26,7 +26,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str,
                     help='path to save dataset')
 parser.add_argument('--tool', type=str,
-                    choices=['wav', 'htk', 'python_speech_features', 'librosa'])
+                    choices=['htk', 'python_speech_features', 'librosa'])
 
 args = parser.parse_args()
 
@@ -185,32 +185,32 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
                 # 47hc0418
 
             trans_capital = ''
-            for word in trans.split(SPACE):
+            for w in trans.split(SPACE):
                 # Count word frequency
-                if word not in word_dict.keys():
-                    word_dict[word] = 1
+                if w not in word_dict.keys():
+                    word_dict[w] = 1
                 else:
-                    word_dict[word] += 1
+                    word_dict[w] += 1
 
-                word_set.add(word)
-                char_set |= set(list(word))
+                word_set.add(w)
+                char_set |= set(list(w))
 
                 # Capital-divided
-                if len(word) == 1:
-                    char_capital_set.add(word)
-                    trans_capital += word
+                if len(w) == 1:
+                    char_capital_set.add(w)
+                    trans_capital += w
                 else:
                     # Replace the first character with the capital
                     # letter
-                    word = word[0].upper() + word[1:]
+                    w = w[0].upper() + w[1:]
 
                     # Check double-letters
-                    for i in range(0, len(word) - 1, 1):
-                        if word[i:i + 2] in DOUBLE_LETTERS:
-                            char_capital_set.add(word[i:i + 2])
+                    for i in range(0, len(w) - 1, 1):
+                        if w[i:i + 2] in DOUBLE_LETTERS:
+                            char_capital_set.add(w[i:i + 2])
                         else:
-                            char_capital_set.add(word[i])
-                    trans_capital += word
+                            char_capital_set.add(w[i])
+                    trans_capital += w
 
             trans_dict[utt_idx] = [trans, trans_capital]
 

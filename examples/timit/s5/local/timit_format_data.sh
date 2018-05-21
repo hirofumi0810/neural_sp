@@ -10,20 +10,20 @@
 . ./path.sh || exit 1;
 
 echo "Preparing train, dev and test data"
-srcdir=$DATA_SAVEPATH/local/data
+srcdir=$DATA/local/data
 
 for x in train dev test; do
-  mkdir -p $DATA_SAVEPATH/$x
-  cp $srcdir/${x}_wav.scp $DATA_SAVEPATH/$x/wav.scp || exit 1;
-  cp $srcdir/$x.text $DATA_SAVEPATH/$x/text || exit 1;
-  cp $srcdir/$x.spk2utt $DATA_SAVEPATH/$x/spk2utt || exit 1;
-  cp $srcdir/$x.utt2spk $DATA_SAVEPATH/$x/utt2spk || exit 1;
-  utils/filter_scp.pl $DATA_SAVEPATH/$x/spk2utt $srcdir/$x.spk2gender > $DATA_SAVEPATH/$x/spk2gender || exit 1;
-  cp $srcdir/${x}.stm $DATA_SAVEPATH/$x/stm
-  cp $srcdir/${x}.glm $DATA_SAVEPATH/$x/glm
-  utils/validate_data_dir.sh --no-feats $DATA_SAVEPATH/$x || exit 1
+  mkdir -p $DATA/$x
+  cp $srcdir/${x}_wav.scp $DATA/$x/wav.scp || exit 1;
+  cp $srcdir/$x.text $DATA/$x/text || exit 1;
+  cp $srcdir/$x.spk2utt $DATA/$x/spk2utt || exit 1;
+  cp $srcdir/$x.utt2spk $DATA/$x/utt2spk || exit 1;
+  utils/filter_scp.pl $DATA/$x/spk2utt $srcdir/$x.spk2gender > $DATA/$x/spk2gender || exit 1;
+  cp $srcdir/${x}.stm $DATA/$x/stm
+  cp $srcdir/${x}.glm $DATA/$x/glm
+  utils/validate_data_dir.sh --no-feats $DATA/$x || exit 1
 
-  cp $srcdir/${x}.spk2gender $DATA_SAVEPATH/$x/spk2gender  # added
+  cp $srcdir/${x}.spk2gender $DATA/$x/spk2gender  # added
 done
 
 echo "Succeeded in formatting data."

@@ -18,7 +18,6 @@ from collections import OrderedDict
 sys.path.append('../../../')
 from utils.directory import mkdir_join
 from utils.feature_extraction.segmentation import segment
-# from utils.feature_extraction.htk import read, write
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str, help='path to save data')
@@ -71,14 +70,11 @@ def main():
         with open(join(args.data_save_path, data_type_tmp, 'text'), 'r') as f:
             for line in f:
                 line = line.strip()
-
                 utt_idx = line.split('  ')[0]
-
                 if data_type == 'eval2000_swbd' and utt_idx[:2] == 'en':
                     continue
                 if data_type == 'eval2000_ch' and utt_idx[:2] == 'sw':
                     continue
-
                 utt_indices.append(utt_idx)
 
         segment_dict = {}
@@ -87,12 +83,10 @@ def main():
             for line in f:
                 line = line.strip()
                 utt_idx, speaker, start_time, end_time = line.split(' ')
-
                 if data_type == 'eval2000_swbd' and utt_idx[:2] == 'en':
                     continue
                 if data_type == 'eval2000_ch' and utt_idx[:2] == 'sw':
                     continue
-
                 if speaker not in segment_dict.keys():
                     segment_dict[speaker] = OrderedDict()
                 segment_dict[speaker][utt_idx] = [int(float(start_time) * 100 + 0.5),
@@ -102,12 +96,11 @@ def main():
 
         spk2audio = {}
         if args.tool == 'htk':
-            with open(join(args.data_save_path, data_type_tmp, 'wav2htk.scp'), 'r') as f:
+            with open(join(args.data_save_path, data_type_tmp, 'htk.scp'), 'r') as f:
                 for line in f:
                     line = line.strip()
                     htk_path = line.split('  ')[1]
                     speaker = basename(htk_path).split('.')[0]
-
                     if data_type == 'eval2000_swbd' and speaker[:2] == 'en':
                         continue
                     if data_type == 'eval2000_ch' and speaker[:2] == 'sw':
@@ -127,32 +120,24 @@ def main():
                                         'wav_1ch', data_type, speaker + '.wav')
                     spk2audio[speaker] = wav_path
 
-        if args.tool == 'wav':
-            # Split WAV files per utterance
-            raise ValueError
-            # split_wav(wav_paths=wav_paths,
-            #           speaker_dict=speaker_dict_dict[data_type],
-            #           save_path=mkdir_join(feature_save_path, data_type))
-
+        if data_type == 'train':
+            global_mean, global_std = None, None
         else:
-            if data_type == 'train':
-                global_mean, global_std = None, None
-            else:
-                # Load statistics over train dataset
-                global_mean = np.load(
-                    join(args.data_save_path, 'feature', args.tool, 'train/global_mean.npy'))
-                global_std = np.load(
-                    join(args.data_save_path, 'feature', args.tool, 'train/global_std.npy'))
+            # Load statistics over train dataset
+            global_mean = np.load(
+                join(args.data_save_path, 'feature', args.tool, 'train/global_mean.npy'))
+            global_std = np.load(
+                join(args.data_save_path, 'feature', args.tool, 'train/global_std.npy'))
 
-            read_audio(data_type=data_type,
-                       spk2audio=spk2audio,
-                       segment_dict=segment_dict,
-                       tool=args.tool,
-                       config=CONFIG,
-                       normalize=args.normalize,
-                       save_path=feature_save_path,
-                       global_mean=global_mean,
-                       global_std=global_std)
+        read_audio(data_type=data_type,
+                   spk2audio=spk2audio,
+                   segment_dict=segment_dict,
+                   tool=args.tool,
+                   config=CONFIG,
+                   normalize=args.normalize,
+                   save_path=feature_save_path,
+                   global_mean=global_mean,
+                   global_std=global_std)
 
 
 def read_audio(data_type, spk2audio, segment_dict, tool, config, normalize,
@@ -300,13 +285,6 @@ def read_audio(data_type, spk2audio, segment_dict, tool, config, normalize,
 
             # Save input features
             np.save(mkdir_join(save_path, speaker, utt_idx + '.npy'), feat_utt)
-
-            # if sampPeriod is None:
-            #     _, sampPeriod, parmKind = read(audio_path)
-            # write(feat_utt,
-            #       htk_path=mkdir_join(save_path, speaker, utt_idx + '.htk'),
-            #       sampPeriod=sampPeriod,
-            #       parmKind=parmKind)
 
     # Save the frame number dictionary
     with open(join(save_path, 'frame_num.pickle'), 'wb') as f:

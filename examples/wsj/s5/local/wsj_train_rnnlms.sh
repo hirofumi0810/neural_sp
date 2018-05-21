@@ -36,7 +36,7 @@ if [ $# != 1 ]; then
 fi
 
 dir=$1
-srcdir=data/local/dict${dict_suffix}_larger
+srcdir=$DATA/local/dict${dict_suffix}_larger
 mkdir -p $dir
 
 $KALDI_ROOT/tools/extras/check_for_rnnlm.sh "$rnnlm_ver" || exit 1

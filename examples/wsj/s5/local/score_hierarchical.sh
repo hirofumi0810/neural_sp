@@ -11,14 +11,14 @@ if [ $# -ne 2 ]; then
 fi
 
 ### Set path to save dataset
-DATA_SAVEPATH="/n/sd8/inaguma/corpus/wsj/kaldi"
+DATA="/n/sd8/inaguma/corpus/wsj/kaldi"
 
 saved_model_path=$1
 gpu_index=$2
 
 CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
 $PYTHON exp/evaluation/eval_hierarchical.py \
-  --data_save_path $DATA_SAVEPATH \
+  --data_save_path $DATA \
   --model_path $saved_model_path \
   --epoch -1 \
   --eval_batch_size 4 \

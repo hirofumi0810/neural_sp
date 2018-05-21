@@ -11,25 +11,25 @@
 # Trains Tomas Mikolov's version, which takes roughly 5 days with the following
 # parameter setting. We start from the dictionary directory without silence
 # probabilities (with suffix "_nosp").
-rm data/local/rnnlm.h300.voc40k/.error 2>/dev/null
+rm $DATA/local/rnnlm.h300.voc40k/.error 2>/dev/null
 local/wsj_train_rnnlms.sh --dict-suffix "_nosp" \
   --cmd "$decode_cmd --mem 16G" \
   --hidden 300 --nwords 40000 --class 400 \
-  --direct 2000 data/local/rnnlm.h300.voc40k \
-  || touch data/local/rnnlm.h300.voc40k/.error &
+  --direct 2000 $DATA/local/rnnlm.h300.voc40k \
+  || touch $DATA/local/rnnlm.h300.voc40k/.error &
 
 # Trains Yandex's version, which takes roughly 10 hours with the following
 # parameter setting. We start from the dictionary directory without silence
 # probabilities (with suffix "_nosp").
 num_threads_rnnlm=8
-rm data/local/rnnlm-hs.nce20.h400.voc40k/.error 2>/dev/null
+rm $DATA/local/rnnlm-hs.nce20.h400.voc40k/.error 2>/dev/null
 local/wsj_train_rnnlms.sh --dict-suffix "_nosp" \
   --rnnlm_ver faster-rnnlm --threads $num_threads_rnnlm \
   --cmd "$decode_cmd --mem 8G --num-threads $num_threads_rnnlm" \
   --bptt 4 --bptt-block 10 --hidden 400 --nwords 40000 --direct 2000 \
   --rnnlm-options "-direct-order 4 -nce 20" \
-  data/local/rnnlm-hs.nce20.h400.voc40k \
-  || touch data/local/rnnlm-hs.nce20.h400.voc40k/.error &
+  $DATA/local/rnnlm-hs.nce20.h400.voc40k \
+  || touch $DATA/local/rnnlm-hs.nce20.h400.voc40k/.error &
 
 wait;
 
@@ -46,22 +46,22 @@ for lm_suffix in tgpr bd_tgpr; do
     # N-best rescoring with Tomas Mikolov's version.
     steps/rnnlmrescore.sh \
       --N 1000 --cmd "$decode_cmd --mem 16G" --inv-acwt 10 0.75 \
-      data/lang_test_${lm_suffix} data/local/rnnlm.h300.voc40k \
-      data/test_${year} ${decode_dir} \
+      $DATA/lang_test_${lm_suffix} $DATA/local/rnnlm.h300.voc40k \
+      $DATA/test_${year} ${decode_dir} \
       ${decode_dir}_rnnlm.h300.voc40k || exit 1;
 
     # Lattice rescoring with Tomas Mikolov's version.
     steps/lmrescore_rnnlm_lat.sh \
       --weight 0.75 --cmd "$decode_cmd --mem 16G" --max-ngram-order 5 \
-      data/lang_test_${lm_suffix} data/local/rnnlm.h300.voc40k \
-      data/test_${year} ${decode_dir} \
+      $DATA/lang_test_${lm_suffix} $DATA/local/rnnlm.h300.voc40k \
+      $DATA/test_${year} ${decode_dir} \
       ${decode_dir}_rnnlm.h300.voc40k_lat || exit 1;
 
     # N-best rescoring with Yandex's version.
     steps/rnnlmrescore.sh --rnnlm_ver faster-rnnlm \
       --N 1000 --cmd "$decode_cmd --mem 8G" --inv-acwt 10 0.75 \
-      data/lang_test_${lm_suffix} data/local/rnnlm-hs.nce20.h400.voc40k \
-      data/test_${year} ${decode_dir} \
+      $DATA/lang_test_${lm_suffix} $DATA/local/rnnlm-hs.nce20.h400.voc40k \
+      $DATA/test_${year} ${decode_dir} \
       ${decode_dir}_rnnlm-hs.nce20.h400.voc40k || exit 1;
   done
 done

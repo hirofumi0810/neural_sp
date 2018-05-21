@@ -37,7 +37,7 @@ if [ $# -eq 2 ]; then
   mode=$2
 fi
 
-dir=$DATA_SAVEPATH/local/train_$mode
+dir=$DATA/local/train_$mode
 mkdir -p $dir
 
 # Audio data directory check
@@ -121,11 +121,11 @@ awk '{segment=$1; split(segment,S,"[_]"); spkid=S[1]; print $1 " " spkid}' $dir/
 sort -k 2 $dir/utt2spk | utils/utt2spk_to_spk2utt.pl > $dir/spk2utt || exit 1;
 
 # Copy stuff into its final locations [this has been moved from the format_data script]
-mkdir -p $DATA_SAVEPATH/train_$mode
+mkdir -p $DATA/train_$mode
 for f in spk2utt utt2spk wav.scp text segments; do
-  cp $DATA_SAVEPATH/local/train_$mode/$f $DATA_SAVEPATH/train_$mode || exit 1;
+  cp $DATA/local/train_$mode/$f $DATA/train_$mode || exit 1;
 done
 
 echo "CSJ data preparation succeeded."
 
-utils/fix_data_dir.sh $DATA_SAVEPATH/train_$mode
+utils/fix_data_dir.sh $DATA/train_$mode

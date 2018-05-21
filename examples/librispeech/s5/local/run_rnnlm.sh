@@ -35,7 +35,7 @@ fi
 s5_dir=`pwd`
 data_dir=`utils/make_absolute.sh $1`
 lm_dir=`utils/make_absolute.sh $2`
-modeldir=data/lang_${rnnlm_ver}_${rnnlm_tag}
+modeldir=$DATA/lang_${rnnlm_ver}_${rnnlm_tag}
 
 if [ $stage -le 1 ]; then
   echo "$0: Prepare training data for RNNLM"

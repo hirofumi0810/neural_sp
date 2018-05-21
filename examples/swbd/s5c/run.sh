@@ -17,14 +17,10 @@ echo ===========================================================================
 echo "                           Switchboard (300h)                             "
 echo ============================================================================
 
-stage=2
-hierarchical_model=false
-# hierarchical_model=true
-
-### Set true when hiding progress bar
+stage=0
+# hierarchical_model=false
+hierarchical_model=true
 run_background=true
-
-### Set true when restarting training
 restart=false
 
 ### Set path to original data
@@ -34,10 +30,10 @@ EVAL2000_TRANSPATH="/n/sd8/inaguma/corpus/swbd/data/eval2000/LDC2002T43"
 has_fisher=false
 
 ### Set path to save dataset
-DATA_SAVEPATH="/n/sd8/inaguma/corpus/swbd/kaldi"
+DATA="/n/sd8/inaguma/corpus/swbd/kaldi"
 
 ### Set path to save the model
-MODEL_SAVEPATH="/n/sd8/inaguma/result/swbd"
+MODEL="/n/sd8/inaguma/result/swbd"
 
 ### Select one tool to extract features (HTK is the fastest)
 # TOOL=kaldi
@@ -91,8 +87,7 @@ if [ ! -e $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe ]; then
 fi
 
 
-export DATA_SAVEPATH=$DATA_SAVEPATH/$DATASIZE
-if [ $stage -le 0 ]; then
+if [ $stage -le 0 ] && [ ! -e $DATA/.stage_0 ]; then
   echo ============================================================================
   echo "                           Data Preparation                               "
   echo ============================================================================
@@ -119,19 +114,19 @@ if [ $stage -le 0 ]; then
   # the 1st 10k sentences as dev set, so the 1st 4k won't have been used in the
   # LM training data.   However, they will be in the lexicon, plus speakers
   # may overlap, so it's still not quite equivalent to a test set.
-  utils/subset_data_dir.sh --first $DATA_SAVEPATH/train 4000 $DATA_SAVEPATH/dev || exit 1; # 5hr 6min
-  n=$[`cat $DATA_SAVEPATH/train/segments | wc -l` - 4000]
-  utils/subset_data_dir.sh --last $DATA_SAVEPATH/train $n $DATA_SAVEPATH/train_nodev || exit 1;
+  utils/subset_data_dir.sh --first $DATA/train 4000 $DATA/dev || exit 1; # 5hr 6min
+  n=$[`cat $DATA/train/segments | wc -l` - 4000]
+  utils/subset_data_dir.sh --last $DATA/train $n $DATA/train_nodev || exit 1;
 
   # Take the first 100k utterances (just under half the data); we'll use
   # this for later stages of training.
-  # utils/subset_data_dir.sh --first $DATA_SAVEPATH/train_nodev 100000 $DATA_SAVEPATH/train_100k || exit 1;
-  # utils/data/remove_dup_utts.sh 200 $DATA_SAVEPATH/train_100k $DATA_SAVEPATH/train_100k_nodup || exit 1;  # 110hr
+  # utils/subset_data_dir.sh --first $DATA/train_nodev 100000 $DATA/train_100k || exit 1;
+  # utils/data/remove_dup_utts.sh 200 $DATA/train_100k $DATA/train_100k_nodup || exit 1;  # 110hr
 
   # Finally, the full training set:
-  rm -rf $DATA_SAVEPATH/train
-  utils/data/remove_dup_utts.sh 300 $DATA_SAVEPATH/train_nodev $DATA_SAVEPATH/train || exit 1;  # 286hr
-  rm -rf $DATA_SAVEPATH/train_nodev
+  rm -rf $DATA/train
+  utils/data/remove_dup_utts.sh 300 $DATA/train_nodev $DATA/train || exit 1;  # 286hr
+  rm -rf $DATA/train_nodev
 
   # Data preparation and formatting for eval2000 (note: the "text" file
   # is not very much preprocessed; for actual WER reporting we'll use
@@ -142,37 +137,35 @@ if [ $stage -le 0 ]; then
   # recipe, not all parts actually test using rt03.
   # local/rt03_data_prep.sh /export/corpora/LDC/LDC2007S10
 
+  touch $DATA/.stage_0
   echo "Finish data preparation (stage: 0)."
 fi
 
-# Calculate the amount of utterance segmentations.
-# perl -ne 'split; $s+=($_[3]-$_[2]); END{$h=int($s/3600); $r=($s-$h*3600); $m=int($r/60); $r-=$m*60; printf "%.1f sec -- %d:%d:%.1f\n", $s, $h, $m, $r;}' $DATA_SAVEPATH/train/segments
 
-
-if [ $stage -le 1 ]; then
+if [ $stage -le 1 ] && [ ! -e $DATA/.stage_1 ]; then
   echo ============================================================================
   echo "                        Feature extranction                               "
   echo ============================================================================
 
   if [ $TOOL = "kaldi" ]; then
     for x in train dev eval2000; do
-      steps/make_fbank.sh --nj 8 --cmd run.pl $DATA_SAVEPATH/$x exp/make_fbank/$x $DATA_SAVEPATH/fbank || exit 1;
-      steps/compute_cmvn_stats.sh $DATA_SAVEPATH/$x exp/make_fbank/$x $DATA_SAVEPATH/fbank || exit 1;
-      utils/fix_data_dir.sh $DATA_SAVEPATH/$x || exit 1;
+      steps/make_fbank.sh --nj 8 --cmd run.pl $DATA/$x exp/make_fbank/$x $DATA/fbank || exit 1;
+      steps/compute_cmvn_stats.sh $DATA/$x exp/make_fbank/$x $DATA/fbank || exit 1;
+      utils/fix_data_dir.sh $DATA/$x || exit 1;
     done
 
   else
     # Convert .sph (2ch) to .wav (1ch)
-    if [ ! -e $DATA_SAVEPATH/wav_1ch/.done_wav_1ch ]; then
+    if [ ! -e $DATA/wav_1ch/.done_wav_1ch ]; then
       # train, dev set
       train_sph_paths=$(find $SWBD_AUDIOPATH/. -iname '*.sph')
-      mkdir -p $DATA_SAVEPATH/wav_1ch/train
+      mkdir -p $DATA/wav_1ch/train
       for sph_path in $train_sph_paths ; do
         file_name=$(basename $sph_path)
         base=${file_name%.*}
         ext=${file_name##*.}
-        wav_path_A=$DATA_SAVEPATH/wav_1ch/train/$base"-A.wav"
-        wav_path_B=$DATA_SAVEPATH/wav_1ch/train/$base"-B.wav"
+        wav_path_A=$DATA/wav_1ch/train/$base"-A.wav"
+        wav_path_B=$DATA/wav_1ch/train/$base"-B.wav"
         echo "Converting from "$sph_path" to "$wav_path_A
         $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe -f wav -p -c 1 $sph_path $wav_path_A || exit 1;
         echo "Converting from "$sph_path" to "$wav_path_B
@@ -181,27 +174,27 @@ if [ $stage -le 1 ]; then
 
       # eval2000
       eval2000_sph_paths=$(find $EVAL2000_AUDIOPATH/. -iname '*.sph')
-      mkdir -p $DATA_SAVEPATH/wav_1ch/eval2000
+      mkdir -p $DATA/wav_1ch/eval2000
       for sph_path in $eval2000_sph_paths ; do
         file_name=$(basename $sph_path)
         base=${file_name%.*}
         ext=${file_name##*.}
-        wav_path_A=$DATA_SAVEPATH/wav_1ch/eval2000/$base"-A.wav"
-        wav_path_B=$DATA_SAVEPATH/wav_1ch/eval2000/$base"-B.wav"
+        wav_path_A=$DATA/wav_1ch/eval2000/$base"-A.wav"
+        wav_path_B=$DATA/wav_1ch/eval2000/$base"-B.wav"
         echo "Converting from "$sph_path" to "$wav_path_A
         $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe -f wav -p -c 1 $sph_path $wav_path_A || exit 1;
         echo "Converting from "$sph_path" to "$wav_path_B
         $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe -f wav -p -c 2 $sph_path $wav_path_B || exit 1;
       done
 
-      touch $DATA_SAVEPATH/wav_1ch/.done_wav_1ch
+      touch $DATA/wav_1ch/.done_wav_1ch
     fi
 
     if [ $TOOL = "htk" ]; then
       # Make a config file to covert from wav to htk file
       # and split per channel
       python local/make_htk_config.py \
-          --data_save_path $DATA_SAVEPATH \
+          --data_save_path $DATA \
           --config_save_path ./conf/fbank_htk.conf \
           --channels $CHANNELS \
           --window $WINDOW \
@@ -212,12 +205,12 @@ if [ $stage -le 1 ]; then
 
       # Convert from wav to htk files
       for data_type in train dev eval2000 ; do
-        mkdir -p $DATA_SAVEPATH/htk
-        mkdir -p $DATA_SAVEPATH/htk/$data_type
+        mkdir -p $DATA/htk
+        mkdir -p $DATA/htk/$data_type
 
-        if [ ! -e $DATA_SAVEPATH/htk/$data_type/.done_make_htk ]; then
-          $HCOPY -T 1 -C ./conf/fbank_htk.conf -S $DATA_SAVEPATH/$data_type/wav2htk.scp || exit 1;
-          touch $DATA_SAVEPATH/htk/$data_type/.done_make_htk
+        if [ ! -e $DATA/htk/$data_type/.done_make_htk ]; then
+          $HCOPY -T 1 -C ./conf/fbank_htk.conf -S $DATA/$data_type/wav2htk.scp || exit 1;
+          touch $DATA/htk/$data_type/.done_make_htk
         fi
       done
 
@@ -229,36 +222,32 @@ if [ $stage -le 1 ]; then
     fi
   fi
 
-  if [ ! -e $DATA_SAVEPATH/feature/$TOOL/.done_feature_extraction ]; then
-    python local/feature_extraction.py \
-      --data_save_path $DATA_SAVEPATH \
-      --tool $TOOL \
-      --normalize $NORMALIZE \
-      --channels $CHANNELS \
-      --window $WINDOW \
-      --slide $SLIDE \
-      --energy $ENERGY \
-      --delta $DELTA \
-      --deltadelta $DELTADELTA || exit 1;
-    touch $DATA_SAVEPATH/feature/$TOOL/.done_feature_extraction
-  fi
+  python local/feature_extraction.py \
+    --data_save_path $DATA \
+    --tool $TOOL \
+    --normalize $NORMALIZE \
+    --channels $CHANNELS \
+    --window $WINDOW \
+    --slide $SLIDE \
+    --energy $ENERGY \
+    --delta $DELTA \
+    --deltadelta $DELTADELTA || exit 1;
 
+  touch $DATA/.stage_1
   echo "Finish feature extranction (stage: 1)."
 fi
 
 
-if [ $stage -le 2 ]; then
+if [ $stage -le 2 ] && [ ! -e $DATA/.stage_2 ]; then
   echo ============================================================================
   echo "                            Create dataset                                "
   echo ============================================================================
 
-  if [ ! -e $DATA_SAVEPATH/dataset/$TOOL/.done_dataset ]; then
-    python local/make_dataset_csv.py \
-      --data_save_path $DATA_SAVEPATH \
-      --tool $TOOL || exit 1;
-    touch $DATA_SAVEPATH/dataset/$TOOL/.done_dataset
-  fi
+  python local/make_dataset_csv.py \
+    --data_save_path $DATA \
+    --tool $TOOL || exit 1;
 
+  touch $DATA/.stage_2
   echo "Finish creating dataset (stage: 2)."
 fi
 
@@ -273,7 +262,7 @@ if [ $stage -le 3 ]; then
   filename=$(basename $config_path | awk -F. '{print $1}')
 
   mkdir -p log
-  mkdir -p $MODEL_SAVEPATH
+  mkdir -p $MODEL
 
   echo "Start training..."
 
@@ -284,13 +273,13 @@ if [ $stage -le 3 ]; then
         nohup $PYTHON exp/training/train_hierarchical.py \
           --gpu $gpu_index \
           --saved_model_path $config_path \
-          --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+          --data_save_path $DATA > log/$filename".log" &
       else
         CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
         nohup $PYTHON exp/training/train_hierarchical.py \
           --gpu $gpu_index \
           --saved_model_path $config_path \
-          --data_save_path $DATA_SAVEPATH || exit 1;
+          --data_save_path $DATA || exit 1;
       fi
     else
       if $run_background; then
@@ -298,15 +287,15 @@ if [ $stage -le 3 ]; then
         nohup $PYTHON exp/training/train_hierarchical.py \
           --gpu $gpu_index \
           --config_path $config_path \
-          --model_save_path $MODEL_SAVEPATH \
-          --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+          --model_save_path $MODEL \
+          --data_save_path $DATA > log/$filename".log" &
       else
         CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
         $PYTHON exp/training/train_hierarchical.py \
           --gpu $gpu_index \
           --config_path $config_path \
-          --model_save_path $MODEL_SAVEPATH \
-          --data_save_path $DATA_SAVEPATH || exit 1;
+          --model_save_path $MODEL \
+          --data_save_path $DATA || exit 1;
       fi
     fi
   else
@@ -316,13 +305,13 @@ if [ $stage -le 3 ]; then
         nohup $PYTHON exp/training/train.py \
           --gpu $gpu_index \
           --saved_model_path $config_path \
-          --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+          --data_save_path $DATA > log/$filename".log" &
       else
         CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
         $PYTHON exp/training/train.py \
           --gpu $gpu_index \
           --saved_model_path $config_path \
-          --data_save_path $DATA_SAVEPATH || exit 1;
+          --data_save_path $DATA || exit 1;
       fi
     else
       if $run_background; then
@@ -330,15 +319,15 @@ if [ $stage -le 3 ]; then
         nohup $PYTHON exp/training/train.py \
           --gpu $gpu_index \
           --config_path $config_path \
-          --model_save_path $MODEL_SAVEPATH \
-          --data_save_path $DATA_SAVEPATH > log/$filename".log" &
+          --model_save_path $MODEL \
+          --data_save_path $DATA > log/$filename".log" &
       else
         CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
         $PYTHON exp/training/train.py \
           --gpu $gpu_index \
           --config_path $config_path \
-          --model_save_path $MODEL_SAVEPATH \
-          --data_save_path $DATA_SAVEPATH　|| exit 1;
+          --model_save_path $MODEL \
+          --data_save_path $DATA　|| exit 1;
       fi
     fi
   fi
@@ -379,8 +368,8 @@ echo "Done."
 # fisher_dirs="/export/corpora3/LDC/LDC2004T19/fe_03_p1_tran/ /export/corpora3/LDC/LDC2005T19/fe_03_p2_tran/"
 # fisher_dirs="/exports/work/inf_hcrc_cstr_general/corpora/fisher/transcripts" # Edinburgh,
 # fisher_dirs="/mnt/matylda2/data/FISHER/fe_03_p1_tran /mnt/matylda2/data/FISHER/fe_03_p2_tran" # BUT,
-# local/swbd1_train_lms.sh $DATA_SAVEPATH/local/train/text \
-#                          $DATA_SAVEPATH/local/dict_nosp/lexicon.txt $DATA_SAVEPATH/local/lm $fisher_dirs
+# local/swbd1_train_lms.sh $DATA/local/train/text \
+#                          $DATA/local/dict_nosp/lexicon.txt $DATA/local/lm $fisher_dirs
 
 
 # getting results (see RESULTS file)

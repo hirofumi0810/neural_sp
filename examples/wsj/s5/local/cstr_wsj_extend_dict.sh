@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# This script builds a larger word-list and dictionary 
+# This script builds a larger word-list and dictionary
 # than used for the LMs supplied with the WSJ corpus.
 # It uses a couple of strategies to fill-in words in
 # the LM training data but not in CMUdict.  One is
@@ -30,20 +30,20 @@ if [ ! -d $srcdir/lng_modl ]; then
   exit 1
 fi
 
-mkdir -p data/local/dict${dict_suffix}_larger
+mkdir -p $DATA/local/dict${dict_suffix}_larger
 dir=data/local/dict${dict_suffix}_larger
-cp data/local/dict${dict_suffix}/* data/local/dict${dict_suffix}_larger # Various files describing phones etc.
+cp $DATA/local/dict${dict_suffix}/* $DATA/local/dict${dict_suffix}_larger # Various files describing phones etc.
   # are there; we just want to copy them as the phoneset is the same.
-rm data/local/dict${dict_suffix}_larger/lexicon.txt # we don't want this.
-rm data/local/dict${dict_suffix}_larger/lexiconp.txt # we don't want this either.
+rm $DATA/local/dict${dict_suffix}_larger/lexicon.txt # we don't want this.
+rm $DATA/local/dict${dict_suffix}_larger/lexiconp.txt # we don't want this either.
 mincount=2 # Minimum count of an OOV we will try to generate a pron for.
 
-[ ! -f data/local/dict${dict_suffix}/cmudict/cmudict.0.7a ] && echo "CMU dict not in expected place" && exit 1;
+[ ! -f $DATA/local/dict${dict_suffix}/cmudict/cmudict.0.7a ] && echo "CMU dict not in expected place" && exit 1;
 
 # Remove comments from cmudict; print first field; remove
 # words like FOO(1) which are alternate prons: our dict format won't
 # include these markers.
-grep -v ';;;' data/local/dict${dict_suffix}/cmudict/cmudict.0.7a | 
+grep -v ';;;' $DATA/local/dict${dict_suffix}/cmudict/cmudict.0.7a |
  perl -ane 's/^(\S+)\(\d+\)/$1/; print; ' | sort | uniq > $dir/dict.cmu
 
 cat $dir/dict.cmu | awk '{print $1}' | sort | uniq > $dir/wordlist.cmu
@@ -64,8 +64,8 @@ else
   | awk '/^</{next}{print toupper($0)}' | perl -e '
    open(F, "<$ARGV[0]")||die;
    while(<F>){ chop; $isword{$_} = 1; }
-   while(<STDIN>) { 
-    @A = split(" ", $_); 
+   while(<STDIN>) {
+    @A = split(" ", $_);
     for ($n = 0; $n < @A; $n++) {
       $a = $A[$n];
       if (! $isword{$a} && $a =~ s/^([^\.]+)\.$/$1/) { # nonwords that end in "."
@@ -78,7 +78,7 @@ else
   }
  ' $dir/wordlist.cmu | gzip -c > $dir/cleaned.gz
 fi
-  
+
 # get unigram counts
 echo "Getting unigram counts"
 gunzip -c $dir/cleaned.gz | tr -s ' ' '\n' | \
@@ -102,7 +102,7 @@ cat $dir/oov.counts | awk -v thresh=$mincount '{if ($1 >= thresh) { print $2; }}
 
 # First make some prons for possible acronyms.
 # Note: we don't do this for things like U.K or U.N,
-# or A.B. (which doesn't exist anyway), 
+# or A.B. (which doesn't exist anyway),
 # as we consider this normalization/spelling errors.
 
 cat $dir/oovlist | local/dict/get_acronym_prons.pl $dir/dict.cmu  > $dir/dict.acronyms
@@ -115,7 +115,7 @@ mkdir $dir/f $dir/b # forward, backward directions of rules...
 
 # Remove ; and , from words, if they are present; these
 # might crash our scripts, as they are used as separators there.
-filter_dict.pl $dir/dict.cmu > $dir/f/dict 
+filter_dict.pl $dir/dict.cmu > $dir/f/dict
 cat $dir/oovlist | filter_dict.pl > $dir/f/oovs
 reverse_dict.pl $dir/f/dict > $dir/b/dict
 reverse_dict.pl $dir/f/oovs > $dir/b/oovs
@@ -137,8 +137,8 @@ for d in $dir/f $dir/b; do
    score_rules.pl <rule.counts | sort -t';' -k3,3 -n -r >rules.with_scores
    get_candidate_prons.pl rules.with_scores dict oovs | \
      limit_candidate_prons.pl hierarchy > oovs.candidates
- )  &   
-done 
+ )  &
+done
 wait
 
 # Merge the candidates.
@@ -156,9 +156,9 @@ sort $dir/oovlist | diff - $dir/oovlist.handled  | grep -v 'd' | sed 's:< ::' > 
 add_counts.pl $dir/oov.counts $dir/oovlist.handled | sort -nr > $dir/oovlist.handled.counts
 add_counts.pl $dir/oov.counts $dir/oovlist.not_handled | sort -nr > $dir/oovlist.not_handled.counts
 
-echo "**Top OOVs we handled are:**"; 
+echo "**Top OOVs we handled are:**";
 head $dir/oovlist.handled.counts
-echo "**Top OOVs we didn't handle are as follows (note: they are mostly misspellings):**"; 
+echo "**Top OOVs we didn't handle are as follows (note: they are mostly misspellings):**";
 head $dir/oovlist.not_handled.counts
 
 

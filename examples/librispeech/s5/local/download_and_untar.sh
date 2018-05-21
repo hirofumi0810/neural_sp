@@ -29,7 +29,7 @@ fi
 
 part_ok=false
 list="dev-clean test-clean dev-other test-other train-clean-100 train-clean-360 train-other-500"
-for x in $list; do 
+for x in $list; do
   if [ "$part" == $x ]; then part_ok=true; fi
 done
 if ! $part_ok; then

@@ -37,7 +37,7 @@ tdir=$2
 
 . ./path.sh
 
-dir=$DATA_SAVEPATH/local/eval2000
+dir=$DATA/local/eval2000
 mkdir -p $dir
 
 find $sdir/english -iname '*.sph' | sort > $dir/sph.flist
@@ -109,7 +109,7 @@ awk '{print $1}' $dir/wav.scp \
                print "$1-$2 $1 $2\n"; ' \
   > $dir/reco2file_and_channel || exit 1;
 
-dest=$DATA_SAVEPATH/eval2000
+dest=$DATA/eval2000
 mkdir -p $dest
 for x in wav.scp segments text utt2spk spk2utt stm glm reco2file_and_channel; do
   cp $dir/$x $dest/$x

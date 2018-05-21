@@ -27,8 +27,8 @@
 # silence_phones.txt
 
 # run this from ../
-srcdir=$DATA_SAVEPATH/local/data
-dir=$DATA_SAVEPATH/local/dict
+srcdir=$DATA/local/data
+dir=$DATA/local/dict
 
 [ -f path.sh ] && . ./path.sh
 

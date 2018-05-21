@@ -9,7 +9,7 @@
 . ./path.sh || exit 1;
 
 # begin configuration section
-src_dir=data/lang
+src_dir=$DATA/lang
 # end configuration section
 
 . utils/parse_options.sh || exit 1;
@@ -38,7 +38,7 @@ if [ ! -f $src_dir/words.txt ]; then
 fi
 
 
-tmpdir=data/local/lm_tmp.$$
+tmpdir=$DATA/local/lm_tmp.$$
 trap "rm -r $tmpdir" EXIT
 
 mkdir -p $tmpdir

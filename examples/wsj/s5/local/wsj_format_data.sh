@@ -21,19 +21,19 @@ echo "$0 $@"  # Print the command line for logging
 . ./path.sh || exit 1;
 
 echo "Preparing train and test data"
-srcdir=$DATA_SAVEPATH/local/data
-lmdir=$DATA_SAVEPATH/local/nist_lm
-tmpdir=$DATA_SAVEPATH/local/lm_tmp
-lexicon=$DATA_SAVEPATH/local/lang${lang_suffix}_tmp/lexiconp.txt
+srcdir=$DATA/local/data
+lmdir=$DATA/local/nist_lm
+tmpdir=$DATA/local/lm_tmp
+lexicon=$DATA/local/lang${lang_suffix}_tmp/lexiconp.txt
 mkdir -p $tmpdir
 
 for x in train_si284 test_eval92 test_dev93; do
-  mkdir -p $DATA_SAVEPATH/$x
-  cp $srcdir/${x}_wav.scp $DATA_SAVEPATH/$x/wav.scp || exit 1;
-  cp $srcdir/$x.txt $DATA_SAVEPATH/$x/text || exit 1;
-  cp $srcdir/$x.spk2utt $DATA_SAVEPATH/$x/spk2utt || exit 1;
-  cp $srcdir/$x.utt2spk $DATA_SAVEPATH/$x/utt2spk || exit 1;
-  utils/filter_scp.pl $DATA_SAVEPATH/$x/spk2utt $srcdir/spk2gender > $DATA_SAVEPATH/$x/spk2gender || exit 1;
+  mkdir -p $DATA/$x
+  cp $srcdir/${x}_wav.scp $DATA/$x/wav.scp || exit 1;
+  cp $srcdir/$x.txt $DATA/$x/text || exit 1;
+  cp $srcdir/$x.spk2utt $DATA/$x/spk2utt || exit 1;
+  cp $srcdir/$x.utt2spk $DATA/$x/utt2spk || exit 1;
+  utils/filter_scp.pl $DATA/$x/spk2utt $srcdir/spk2gender > $DATA/$x/spk2gender || exit 1;
 done
 
 
@@ -43,10 +43,10 @@ done
 # echo Preparing language models for test
 #
 # for lm_suffix in bg tgpr tg bg_5k tgpr_5k tg_5k; do
-#   test=$DATA_SAVEPATH/lang${lang_suffix}_test_${lm_suffix}
+#   test=$DATA/lang${lang_suffix}_test_${lm_suffix}
 #
 #   mkdir -p $test
-#   cp -r $DATA_SAVEPATH/lang${lang_suffix}/* $test || exit 1;
+#   cp -r $DATA/lang${lang_suffix}/* $test || exit 1;
 #
 #   gunzip -c $lmdir/lm_${lm_suffix}.arpa.gz | \
 #     arpa2fst --disambig-symbol=#0 \

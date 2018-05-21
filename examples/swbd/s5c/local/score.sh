@@ -27,4 +27,4 @@ $PYTHON exp/evaluation/eval.py \
   --epoch -1 \
   --beam_width 1 \
   --eval_batch_size 1 \
-  --length_penalty 0.1
+  --length_penalty 0

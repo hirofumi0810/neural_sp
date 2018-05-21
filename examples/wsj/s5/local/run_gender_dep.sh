@@ -9,11 +9,11 @@
 
 . ./cmd.sh
 
-awk '{if ($2 == "f") { print $1; }}' < data/train_si84/spk2gender > spklist
+awk '{if ($2 == "f") { print $1; }}' < $DATA/train_si84/spk2gender > spklist
 
-utils/subset_data_dir.sh --spk-list spklist data/train_si84 data/train_si84_f
+utils/subset_data_dir.sh --spk-list spklist $DATA/train_si84 $DATA/train_si84_f
 
 steps/align_si.sh  --nj 10 --cmd "$train_cmd" \
-  data/train_si84_f data/lang exp/tri2b exp/tri2b_ali_si84_f
+  $DATA/train_si84_f $DATA/lang exp/tri2b exp/tri2b_ali_si84_f
 
-steps/train_map.sh --cmd "$train_cmd" data/train_si84_f data/lang exp/tri2b_ali_si84_f exp/tri2b_f
+steps/train_map.sh --cmd "$train_cmd" $DATA/train_si84_f $DATA/lang exp/tri2b_ali_si84_f exp/tri2b_f

@@ -3,7 +3,7 @@
 # This script trains LMs on the WSJ LM-training data.
 # It requires that you have already run wsj_extend_dict.sh,
 # to get the larger-size dictionary including all of CMUdict
-# plus any OOVs and possible acronyms that we could easily 
+# plus any OOVs and possible acronyms that we could easily
 # derive pronunciations for.
 
 dict_suffix=
@@ -11,8 +11,8 @@ dict_suffix=
 echo "$0 $@"  # Print the command line for logging
 . utils/parse_options.sh || exit 1;
 
-dir=data/local/local_lm
-srcdir=data/local/dict${dict_suffix}_larger
+dir=$DATA/local/local_lm
+srcdir=$DATA/local/dict${dict_suffix}_larger
 mkdir -p $dir
 . ./path.sh || exit 1; # for KALDI_ROOT
 export PATH=$KALDI_ROOT/tools/kaldi_lm:$PATH
@@ -45,7 +45,7 @@ fi
 awk '{print $1}' $srcdir/lexicon.txt | grep -v -w '!SIL' > $dir/wordlist.txt
 
 # Get training data with OOV words (w.r.t. our current vocab) replaced with <UNK>.
-echo "Getting training data with OOV words replaced with <UNK> (train_nounk.gz)" 
+echo "Getting training data with OOV words replaced with <UNK> (train_nounk.gz)"
 gunzip -c $srcdir/cleaned.gz | awk -v w=$dir/wordlist.txt \
   'BEGIN{while((getline<w)>0) v[$1]=1;}
   {for (i=1;i<=NF;i++) if ($i in v) printf $i" ";else printf "<UNK> ";print ""}'|sed 's/ $//g' \
@@ -68,7 +68,7 @@ gunzip -c $dir/train_nounk.gz | awk -v wmap=$dir/word_map 'BEGIN{while((getline<
 
 # To save disk space, remove the un-mapped training data.  We could
 # easily generate it again if needed.
-rm $dir/train_nounk.gz 
+rm $dir/train_nounk.gz
 
 train_lm.sh --arpa --lmtype 3gram-mincount $dir
 #Perplexity over 228518.000000 words (excluding 478.000000 OOVs) is 141.444826
@@ -89,7 +89,7 @@ prune_lm.sh --arpa 7.0 $dir/4gram-mincount
 
 exit 0
 
-### Below here, this script is showing various commands that 
+### Below here, this script is showing various commands that
 ## were run during LM tuning.
 
 train_lm.sh --arpa --lmtype 3gram-mincount $dir
@@ -154,14 +154,14 @@ ngram -lm $sdir/srilm.o3g.kn.gz -ppl $sdir/cleaned.heldout # consider -debug 2
 # Trying 4-gram:
 ngram-count -text $sdir/cleaned.train -order 4 -limit-vocab -vocab $sdir/wordlist.final.s -unk \
   -map-unk "<UNK>" -kndiscount -interpolate -lm $sdir/srilm.o4g.kn.gz
-ngram -order 4 -lm $sdir/srilm.o4g.kn.gz -ppl $sdir/cleaned.heldout 
+ngram -order 4 -lm $sdir/srilm.o4g.kn.gz -ppl $sdir/cleaned.heldout
 #file data/local/local_lm/srilm/cleaned.heldout: 10000 sentences, 218996 words, 478 OOVs
 #0 zeroprobs, logprob= -480939 ppl= 127.233 ppl1= 158.822
 
 #3-gram with pruning:
 ngram-count -text $sdir/cleaned.train -order 3 -limit-vocab -vocab $sdir/wordlist.final.s -unk \
   -prune 0.0000001 -map-unk "<UNK>" -kndiscount -interpolate -lm $sdir/srilm.o3g.pr7.kn.gz
-ngram -lm $sdir/srilm.o3g.pr7.kn.gz -ppl $sdir/cleaned.heldout 
+ngram -lm $sdir/srilm.o3g.pr7.kn.gz -ppl $sdir/cleaned.heldout
 #file data/local/local_lm/srilm/cleaned.heldout: 10000 sentences, 218996 words, 478 OOVs
 #0 zeroprobs, logprob= -510828 ppl= 171.947 ppl1= 217.616
 # Around 2.25M N-grams.
@@ -201,7 +201,7 @@ dict -i=WSJ.cleaned.irstlm.txt -o=dico -f=y -sort=no
 build-lm.sh -i "gunzip -c $idir/train.gz" -o $idir/lm_3gram.gz  -p yes \
   -n 3 -s improved-kneser-ney -b yes
 # Testing perplexity with SRILM tools:
-ngram -lm $idir/lm_3gram.gz  -ppl $sdir/cleaned.heldout 
+ngram -lm $idir/lm_3gram.gz  -ppl $sdir/cleaned.heldout
 #data/local/local_lm/irstlm/lm_3gram.gz: line 162049: warning: non-zero probability for <unk> in closed-vocabulary LM
 #file data/local/local_lm/srilm/cleaned.heldout: 10000 sentences, 218996 words, 0 OOVs
 #0 zeroprobs, logprob= -513670 ppl= 175.041 ppl1= 221.599
@@ -212,6 +212,3 @@ ngram -lm $idir/lm_3gram.gz  -ppl $sdir/cleaned.heldout
 # the IRSTLM LM does not seem to sum to one properly, so it seems that
 # it produces an LM that isn't interpretable in the normal way as an ARPA
 # LM.
-
-
-
