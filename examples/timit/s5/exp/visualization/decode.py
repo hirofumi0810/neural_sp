@@ -35,8 +35,8 @@ parser.add_argument('--length_penalty', type=float, default=0,
 parser.add_argument('--coverage_penalty', type=float, default=0,
                     help='coverage penalty in beam search decoding')
 
-MAX_DECODE_LEN_PHONE = 100
-MIN_DECODE_LEN_PHONE = 20
+MAX_DECODE_LEN_PHONE = 71
+MIN_DECODE_LEN_PHONE = 13
 
 
 def main():

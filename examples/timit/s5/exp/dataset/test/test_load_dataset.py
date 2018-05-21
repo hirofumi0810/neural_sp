@@ -19,10 +19,6 @@ class TestLoadDataset(unittest.TestCase):
 
     def test(self):
 
-        # framework
-        self.check(label_type='phone61', data_type='train', backend='chainer')
-        self.check(label_type='phone61', data_type='train', backend='pytorch')
-
         # data_type
         self.check(label_type='phone61', data_type='dev')
         self.check(label_type='phone61', data_type='test')
@@ -67,7 +63,7 @@ class TestLoadDataset(unittest.TestCase):
             backend=backend,
             input_freq=41, use_delta=True, use_double_delta=True,
             data_type=data_type, label_type=label_type,
-            batch_size=64, max_epoch=2,
+            batch_size=32, max_epoch=1,
             splice=splice, num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
             sort_utt=sort_utt, sort_stop_epoch=sort_stop_epoch,
@@ -85,13 +81,13 @@ class TestLoadDataset(unittest.TestCase):
                             'input length must be longer than label length.')
 
             if dataset.is_test:
-                str_true = batch['ys'][0][0]
+                str_ref = batch['ys'][0][0]
             else:
-                str_true = idx2phone(batch['ys'][0][:batch['y_lens'][0]])
+                str_ref = idx2phone(batch['ys'][0][:batch['y_lens'][0]])
 
             print('----- %s (epoch: %.3f, batch: %d) -----' %
                   (batch['input_names'][0], dataset.epoch_detail, len(batch['xs'])))
-            print(str_true)
+            print(str_ref)
             print('x_lens: %d' % (batch['x_lens'][0] * num_stack))
             if not dataset.is_test:
                 print('y_lens: %d' % batch['y_lens'][0])

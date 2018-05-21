@@ -4,11 +4,9 @@ param:
   backend: chainer
 
   # topology
-  encoder_num_layers: 5
+  encoder_num_layers: 3
   subsample_list:
     - False
-    - True
-    - True
     - False
     - False
 

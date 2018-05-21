@@ -22,6 +22,6 @@ $PYTHON exp/visualization/plot_attention_weights.py \
   --model_path $saved_model_path \
   --epoch -1 \
   --eval_batch_size 1 \
-  --beam_width 4 \
+  --beam_width 10 \
   --length_penalty 0 \
   --coverage_penalty 0

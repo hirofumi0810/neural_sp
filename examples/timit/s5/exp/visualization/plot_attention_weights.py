@@ -36,8 +36,8 @@ parser.add_argument('--length_penalty', type=float, default=0,
 parser.add_argument('--coverage_penalty', type=float, default=0,
                     help='coverage penalty in beam search decoding')
 
-MAX_DECODE_LEN_PHONE = 100
-MIN_DECODE_LEN_PHONE = 20
+MAX_DECODE_LEN_PHONE = 71
+MIN_DECODE_LEN_PHONE = 13
 
 
 def main():
@@ -130,8 +130,9 @@ def plot_attention(model, dataset, eval_batch_size, beam_width,
 
             plot_attention_weights(
                 aw[b][:len(token_list), :batch['x_lens'][b]],
-                label_list=token_list,
-                spectrogram=batch['xs'][b, :, :40],
+                # label_list=token_list,
+                label_list=[],
+                spectrogram=batch['xs'][b, :, :dataset.input_freq],
                 str_ref=str_ref,
                 save_path=join(save_path, batch['input_names'][b] + '.png'),
                 figsize=(20, 8))

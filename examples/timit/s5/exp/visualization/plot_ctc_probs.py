@@ -86,14 +86,15 @@ def plot_probs(model, dataset, eval_batch_size, save_path=None):
     for batch, is_new_epoch in dataset:
 
         # Get CTC probs
-        probs = model.posteriors(batch['xs'], batch['x_lens'], temperature=1)
+        probs, x_lens, _ = model.posteriors(
+            batch['xs'], batch['x_lens'], temperature=1)
         # NOTE: probs: '[B, T, num_classes]'
 
         # Visualize
         for b in range(len(batch['xs'])):
             plot_ctc_probs(
-                probs[b, : batch['x_lens'][b], :],
-                frame_num=batch['x_lens'][b],
+                probs[b, : x_lens[b], :],
+                frame_num=x_lens[b],
                 num_stack=dataset.num_stack,
                 spectrogram=batch['xs'][b, :, :40],
                 save_path=join(save_path, batch['input_names'][b] + '.png'),
