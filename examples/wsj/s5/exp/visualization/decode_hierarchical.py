@@ -39,12 +39,10 @@ parser.add_argument('--length_penalty', type=float, default=0,
 parser.add_argument('--coverage_penalty', type=float, default=0,
                     help='coverage penalty in beam search decoding')
 
-
-MAX_DECODE_LEN_WORD = 100
-MIN_DECODE_LEN_WORD = 10
-
-MAX_DECODE_LEN_CHAR = 200
-MIN_DECODE_LEN_CHAR = 20
+MAX_DECODE_LEN_WORD = 32
+MIN_DECODE_LEN_WORD = 2
+MAX_DECODE_LEN_CHAR = 199
+MIN_DECODE_LEN_CHAR = 10
 
 
 def main():
@@ -61,6 +59,7 @@ def main():
         input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
+        # data_type='test_dev93',
         data_type='test_eval92',
         data_size=params['data_size'],
         label_type=params['label_type'], label_type_sub=params['label_type_sub'],
@@ -201,20 +200,12 @@ def decode(model, dataset, eval_batch_size, beam_width, beam_width_sub,
                     hyp=re.sub(r'(.*)_>(.*)', r'\1', str_hyp).split('_'),
                     normalize=True)
                 print('WER (main)  : %.3f %%' % (wer * 100))
-                if dataset.label_type_sub == 'kanji_wb':
-                    wer_sub, _, _, _ = compute_wer(
-                        ref=str_ref.split('_'),
-                        hyp=re.sub(r'(.*)>(.*)', r'\1',
-                                   str_hyp_sub).split('_'),
-                        normalize=True)
-                    print('WER (sub)  : %.3f %%' % (wer_sub * 100))
-                else:
-                    cer, _, _, _ = compute_wer(
-                        ref=list(str_ref_sub.replace('_', '')),
-                        hyp=list(re.sub(r'(.*)>(.*)', r'\1',
-                                        str_hyp_sub).replace('_', '')),
-                        normalize=True)
-                    print('CER (sub)   : %.3f %%' % (cer * 100))
+                wer_sub, _, _, _ = compute_wer(
+                    ref=str_ref.split('_'),
+                    hyp=re.sub(r'(.*)>(.*)', r'\1',
+                               str_hyp_sub).split('_'),
+                    normalize=True)
+                print('WER (sub)  : %.3f %%' % (wer_sub * 100))
                 if 'OOV' in str_hyp and resolving_unk:
                     wer_no_unk, _, _, _ = compute_wer(
                         ref=str_ref.split('_'),

@@ -34,11 +34,15 @@ parser.add_argument('--length_penalty', type=float, default=0,
 parser.add_argument('--coverage_penalty', type=float, default=0,
                     help='coverage penalty in beam search decoding')
 
-MAX_DECODE_LEN_WORD = 100
-MIN_DECODE_LEN_WORD = 10
-
-MAX_DECODE_LEN_CHAR = 200
-MIN_DECODE_LEN_CHAR = 20
+MAX_DECODE_LEN_WORD = 32
+MIN_DECODE_LEN_WORD = 2
+MAX_DECODE_LEN_CHAR = 199
+MIN_DECODE_LEN_CHAR = 10
+# NOTE:
+# dev93 (char): 10-199
+# test_eval92 (char): 16-195
+# dev93 (word): 2-32
+# test_eval92 (word): 3-30
 
 
 def main():
@@ -89,7 +93,8 @@ def main():
             length_penalty=args.length_penalty,
             coverage_penalty=args.coverage_penalty,
             progressbar=True)
-        print('  WER (eval92): %.3f %%' % (wer_eval92 * 100))
+        print('  WER (%s): %.3f %%' %
+              (test_data.label_type, (wer_eval92 * 100)))
         print(df_eval92)
     else:
         wer_eval92, cer_eval92, df_eval92 = eval_char(
@@ -102,8 +107,8 @@ def main():
             length_penalty=args.length_penalty,
             coverage_penalty=args.coverage_penalty,
             progressbar=True)
-        print('  WER / CER (eval92): %.3f / %.3f %%' %
-              ((wer_eval92 * 100), (cer_eval92 * 100)))
+        print('  WER / CER (%s): %.3f / %.3f %%' %
+              (test_data.label_type, (wer_eval92 * 100), (cer_eval92 * 100)))
         print(df_eval92)
 
 

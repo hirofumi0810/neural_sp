@@ -36,11 +36,15 @@ parser.add_argument('--length_penalty', type=float, default=0,
 parser.add_argument('--coverage_penalty', type=float, default=0,
                     help='coverage penalty in beam search decoding')
 
-MAX_DECODE_LEN_WORD = 100
-MIN_DECODE_LEN_WORD = 10
-
-MAX_DECODE_LEN_CHAR = 200
-MIN_DECODE_LEN_CHAR = 20
+MAX_DECODE_LEN_WORD = 32
+MIN_DECODE_LEN_WORD = 2
+MAX_DECODE_LEN_CHAR = 199
+MIN_DECODE_LEN_CHAR = 10
+# NOTE:
+# dev93 (char): 10-199
+# test_eval92 (char): 16-195
+# dev93 (word): 2-32
+# test_eval92 (word): 3-30
 
 
 def main():
@@ -80,7 +84,7 @@ def main():
     model.set_cuda(deterministic=False, benchmark=True)
 
     a2c_oracle = False
-    resolving_unk = True
+    resolving_unk = False
 
     print('beam width (main): %d' % args.beam_width)
     print('beam width (sub) : %d' % args.beam_width_sub)
@@ -102,8 +106,10 @@ def main():
         progressbar=True,
         resolving_unk=resolving_unk,
         a2c_oracle=a2c_oracle)
-    print('  WER (eval92, main): %.3f %%' % (wer_eval92 * 100))
+    print('  WER (%s, main): %.3f %%' %
+          (test_data.data_type, (wer_eval92 * 100)))
     print(df_eval92)
+
     wer_eval92_sub, cer_eval92_sub, df_eval92_sub = eval_char(
         models=[model],
         dataset=test_data,
@@ -114,8 +120,8 @@ def main():
         length_penalty=args.length_penalty,
         coverage_penalty=args.coverage_penalty,
         progressbar=True)
-    print(' WER / CER (eval92, sub): %.3f / %.3f %%' %
-          ((wer_eval92_sub * 100), (cer_eval92_sub * 100)))
+    print(' WER / CER (%s, sub): %.3f / %.3f %%' %
+          (test_data.data_type, (wer_eval92_sub * 100), (cer_eval92_sub * 100)))
     print(df_eval92_sub)
 
 

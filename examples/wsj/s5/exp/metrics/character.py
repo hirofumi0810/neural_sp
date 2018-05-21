@@ -56,17 +56,28 @@ def eval_char(models, eval_batch_size, dataset, beam_width,
         batch, is_new_epoch = dataset.next(batch_size=eval_batch_size)
 
         # Decode
-        best_hyps, _, perm_idx = model.decode(
-            batch['xs'], batch['x_lens'],
-            beam_width=beam_width,
-            max_decode_len=max_decode_len,
-            min_decode_len=min_decode_len,
-            length_penalty=length_penalty,
-            coverage_penalty=coverage_penalty,
-            task_index=0 if model.model_type in ['ctc', 'attention'] else 1)
-
-        ys = batch['ys'][perm_idx]
-        y_lens = batch['y_lens'][perm_idx]
+        if model.model_type in ['ctc', 'attention']:
+            best_hyps, _, perm_idx = model.decode(
+                batch['xs'], batch['x_lens'],
+                beam_width=beam_width,
+                max_decode_len=max_decode_len,
+                min_decode_len=min_decode_len,
+                length_penalty=length_penalty,
+                coverage_penalty=coverage_penalty,
+                task_index=0)
+            ys = batch['ys'][perm_idx]
+            y_lens = batch['y_lens'][perm_idx]
+        else:
+            best_hyps, _, perm_idx = model.decode(
+                batch['xs'], batch['x_lens'],
+                beam_width=beam_width,
+                max_decode_len=max_decode_len,
+                min_decode_len=min_decode_len,
+                length_penalty=length_penalty,
+                coverage_penalty=coverage_penalty,
+                task_index=1)
+            ys = batch['ys_sub'][perm_idx]
+            y_lens = batch['y_lens_sub'][perm_idx]
 
         for b in range(len(batch['xs'])):
             ##############################

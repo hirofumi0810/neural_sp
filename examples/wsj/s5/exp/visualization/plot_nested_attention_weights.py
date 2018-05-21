@@ -54,11 +54,10 @@ parser.add_argument('--length_penalty', type=float, default=0,
 parser.add_argument('--coverage_penalty', type=float, default=0,
                     help='coverage penalty in beam search decoding')
 
-MAX_DECODE_LEN_WORD = 100
-MIN_DECODE_LEN_WORD = 10
-
-MAX_DECODE_LEN_CHAR = 200
-MIN_DECODE_LEN_CHAR = 20
+MAX_DECODE_LEN_WORD = 32
+MIN_DECODE_LEN_WORD = 2
+MAX_DECODE_LEN_CHAR = 199
+MIN_DECODE_LEN_CHAR = 10
 
 
 def main():
