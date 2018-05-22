@@ -57,7 +57,7 @@ def generate_data(label_type='char', batch_size=1,
     elif backend == 'chainer':
         xs = [None] * batch_size
 
-    for b in range(batch_size):
+    for i, b in enumerate(range(batch_size)):
         # Frame stacking
         data_i = stack_frame(_xs[b], num_stack=num_stack, num_skip=num_stack,
                              dtype=np.float32)
@@ -66,8 +66,8 @@ def generate_data(label_type='char', batch_size=1,
         data_i = do_splice(data_i, splice=splice, num_stack=num_stack,
                            dtype=np.float32)
 
-        xs[b] = data_i
-        x_lens[b] = len(data_i)
+        xs[b, :len(data_i) - i] = data_i[:len(data_i) - i]
+        x_lens[b] = len(data_i) - i
 
     # Make transcripts
     trans = _read_text('../../sample/LDC93S1.txt')

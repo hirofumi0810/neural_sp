@@ -6,6 +6,7 @@ __pycache__
 .ftpconfig
 warp-ctc
 pytorch-ctc
+nohup.out
 
 vocab
 log

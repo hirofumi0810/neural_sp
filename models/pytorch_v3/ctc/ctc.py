@@ -18,13 +18,13 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 from torch.nn.modules.loss import _assert_no_grad
 
-from models.pytorch.base import ModelBase
-from models.pytorch.linear import LinearND
-from models.pytorch.encoders.load_encoder import load
-from models.pytorch.criterion import cross_entropy_label_smoothing
-from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
-from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
-# from models.pytorch.ctc.decoders.beam_search_decoder2 import BeamSearchDecoder
+from models.pytorch_v3.base import ModelBase
+from models.pytorch_v3.linear import LinearND
+from models.pytorch_v3.encoders.load_encoder import load
+from models.pytorch_v3.criterion import cross_entropy_label_smoothing
+from models.pytorch_v3.ctc.decoders.greedy_decoder import GreedyDecoder
+from models.pytorch_v3.ctc.decoders.beam_search_decoder import BeamSearchDecoder
+# from models.pytorch_v3.ctc.decoders.beam_search_decoder2 import BeamSearchDecoder
 
 
 class _CTC(warpctc_pytorch._CTC):
@@ -279,12 +279,10 @@ class CTC(ModelBase):
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (torch.FloatTensor or float): A tensor of size `[]`
+            loss (torch.autograd.Variable(float) or float): A tensor of size `[1]`
         """
         if is_eval:
             self.eval()
-            with torch.no_grad():
-                loss = self._forward(xs, ys, x_lens, y_lens).item()
         else:
             self.train()
 
@@ -292,16 +290,11 @@ class CTC(ModelBase):
             if self.weight_noise_injection:
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
-            loss = self._forward(xs, ys, x_lens, y_lens)
-
-        return loss
-
-    def _forward(self, xs, ys, x_lens, y_lens):
-        # Wrap by Tensor
-        xs = self.np2tensor(xs, dtype=torch.float)
-        ys = self.np2tensor(ys, dtype=torch.int, cpu=True)
-        x_lens = self.np2tensor(x_lens, dtype=torch.int)
-        y_lens = self.np2tensor(y_lens, dtype=torch.int, cpu=True)
+        # Wrap by Variable
+        xs = self.np2var(xs)
+        ys = self.np2var(ys, dtype='int', cpu=True)
+        x_lens = self.np2var(x_lens, dtype='int')
+        y_lens = self.np2var(y_lens, dtype='int', cpu=True)
 
         # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
         ys = ys + 1
@@ -314,8 +307,9 @@ class CTC(ModelBase):
             logits /= self.logits_temperature
 
         # Permutate indices
-        ys = ys[perm_idx]
-        y_lens = y_lens[perm_idx]
+        if perm_idx is not None:
+            ys = ys[perm_idx.cpu()]
+            y_lens = y_lens[perm_idx.cpu()]
 
         # Concatenate all labels for warpctc_pytorch
         # `[B, T_out]` -> `[1,]`
@@ -326,12 +320,10 @@ class CTC(ModelBase):
                           concatenated_labels,
                           x_lens.cpu(),
                           y_lens,
-                          size_average=False).to(self.device) / len(xs)
+                          size_average=False) / len(xs)
 
-        # loss = warpctc(logits.transpose(0, 1),  # time-major
-        #                concatenated_labels,
-        #                x_lens.cpu(),
-        #                y_lens).to(self.device) / len(xs)
+        if self.use_cuda:
+            loss = loss.cuda()
 
         # Label smoothing (with uniform distribution)
         if self.ls_prob > 0:
@@ -344,34 +336,44 @@ class CTC(ModelBase):
                 size_average=False) / len(xs)
             loss = loss * (1 - self.ls_prob) + loss_ls
 
+        if is_eval:
+            loss = loss.data[0]
+
         return loss
 
     def _encode(self, xs, x_lens, is_multi_task=False):
         """Encode acoustic features.
         Args:
-            xs (torch.FloatTensor): A tensor of size `[B, T, input_size]`
-            x_lens (torch.IntTensor): A tensor of size `[B]`
-            is_multi_task (bool): set True in MTL models
+            xs (torch.autograd.Variable, float): A tensor of size
+                `[B, T, input_size]`
+            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            is_multi_task (bool):
         Returns:
-            logits (torch.FloatTensor): A tensor of size
+            logits (torch.autograd.Variable, float): A tensor of size
                 `[B, T, num_classes (including the blank class)]`
-            x_lens (torch.IntTensor): A tensor of size `[B]`
-            logits_sub (torch.FloatTensor): A tensor of size
+            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            logits_sub (torch.autograd.Variable, float): A tensor of size
                 `[B, T, num_classes_sub (including the blank class)]`
-            x_lens_sub (torch.IntTensor): A tensor of size `[B]`
-            perm_idx (torch.LongTensor): A tensor of size `[B]`
+            x_lens_sub (torch.autograd.Variable, int): A tensor of size `[B]`
+            perm_idx (torch.autograd.Variable, long): A tensor of size `[B]`
         """
         if is_multi_task:
             if self.encoder_type == 'cnn':
-                xs, x_lens, perm_idx = self.encoder(xs, x_lens)
+                xs, x_lens = self.encoder(xs, x_lens)
+                perm_idx = None
                 xs_sub = xs.clone()
                 x_lens_sub = x_lens.clone()
                 # TODO: clone??
             else:
                 xs, x_lens, xs_sub, x_lens_sub, perm_idx = self.encoder(
-                    xs, x_lens)
+                    xs, x_lens, volatile=not self.training)
         else:
-            xs, x_lens, perm_idx = self.encoder(xs, x_lens)
+            if self.encoder_type == 'cnn':
+                xs, x_lens = self.encoder(xs, x_lens)
+                perm_idx = None
+            else:
+                xs, x_lens, perm_idx = self.encoder(
+                    xs, x_lens, volatile=not self.training)
 
         # Path through fully-connected layers
         if len(self.fc_list) > 0:
@@ -410,38 +412,42 @@ class CTC(ModelBase):
             None: this corresponds to aw in attention-based models
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
+        # Change to evaluation mode
         self.eval()
-        with torch.no_grad():
-            # Wrap by Tensor
-            xs = self.np2tensor(xs, dtype=torch.float)
-            x_lens = self.np2tensor(x_lens, dtype=torch.int)
 
-            # Encode acoustic features
-            if hasattr(self, 'main_loss_weight'):
-                if task_index == 0:
-                    logits, x_lens, _, _, perm_idx = self._encode(
-                        xs, x_lens, is_multi_task=True)
-                elif task_index == 1:
-                    _, _, logits, x_lens, perm_idx = self._encode(
-                        xs, x_lens, is_multi_task=True)
-                else:
-                    raise NotImplementedError
+        # Wrap by Variable
+        xs = self.np2var(xs)
+        x_lens = self.np2var(x_lens, dtype='int')
+
+        # Encode acoustic features
+        if hasattr(self, 'main_loss_weight'):
+            if task_index == 0:
+                logits, x_lens, _, _, perm_idx = self._encode(
+                    xs, x_lens, is_multi_task=True)
+            elif task_index == 1:
+                _, _, logits, x_lens, perm_idx = self._encode(
+                    xs, x_lens, is_multi_task=True)
             else:
-                logits, x_lens, perm_idx = self._encode(xs, x_lens)
+                raise NotImplementedError
+        else:
+            logits, x_lens, perm_idx = self._encode(xs, x_lens)
 
         if beam_width == 1:
             best_hyps = self._decode_greedy_np(
-                self.tensor2np(logits), self.tensor2np(x_lens))
+                self.var2np(logits), self.var2np(x_lens))
         else:
             best_hyps = self._decode_beam_np(
-                self.tensor2np(F.log_softmax(logits, dim=-1)),
-                self.tensor2np(x_lens), beam_width=beam_width)
+                self.var2np(F.log_softmax(logits, dim=-1)),
+                self.var2np(x_lens), beam_width=beam_width)
 
         # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
         best_hyps -= 1
 
         # Permutate indices to the original order
-        perm_idx = self.tensor2np(perm_idx)
+        if perm_idx is None:
+            perm_idx = np.arange(0, len(xs), 1)
+        else:
+            perm_idx = self.var2np(perm_idx)
 
         return best_hyps, None, perm_idx
         # NOTE: None corresponds to aw in attention-based models
@@ -461,24 +467,25 @@ class CTC(ModelBase):
             x_lens (np.ndarray): A tensor of size `[B]`
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
+        # Change to evaluation mode
         self.eval()
-        with torch.no_grad():
-            # Wrap by Tensor
-            xs = self.np2tensor(xs, dtype=torch.float)
-            x_lens = self.np2tensor(x_lens, dtype=torch.int)
 
-            # Encode acoustic features
-            if hasattr(self, 'main_loss_weight'):
-                if task_idx == 0:
-                    logits, x_lens, _, _, perm_idx = self._encode(
-                        xs, x_lens, is_multi_task=True)
-                elif task_idx == 1:
-                    _, _, logits, x_lens, perm_idx = self._encode(
-                        xs, x_lens, is_multi_task=True)
-                else:
-                    raise NotImplementedError
+        # Wrap by Variable
+        xs = self.np2var(xs)
+        x_lens = self.np2var(x_lens, dtype='int')
+
+        # Encode acoustic features
+        if hasattr(self, 'main_loss_weight'):
+            if task_idx == 0:
+                logits, x_lens, _, _, perm_idx = self._encode(
+                    xs, x_lens, is_multi_task=True)
+            elif task_idx == 1:
+                _, _, logits, x_lens, perm_idx = self._encode(
+                    xs, x_lens, is_multi_task=True)
             else:
-                logits, x_lens, perm_idx = self._encode(xs, x_lens)
+                raise NotImplementedError
+        else:
+            logits, x_lens, perm_idx = self._encode(xs, x_lens)
 
         probs = F.softmax(logits / temperature, dim=-1)
 
@@ -487,9 +494,12 @@ class CTC(ModelBase):
             raise NotImplementedError
 
         # Permutate indices to the original order
-        perm_idx = self.tensor2np(perm_idx)
+        if perm_idx is None:
+            perm_idx = np.arange(0, len(xs), 1)
+        else:
+            perm_idx = self.var2np(perm_idx)
 
-        return self.tensor2np(probs), self.tensor2np(x_lens), perm_idx
+        return self.var2np(probs), self.var2np(x_lens), perm_idx
 
     def decode_from_probs(self, probs, x_lens, beam_width=1,
                           max_decode_len=None):
@@ -522,16 +532,18 @@ class CTC(ModelBase):
 def _concatenate_labels(ys, y_lens):
     """Concatenate all labels in mini-batch and convert to a 1D tensor.
     Args:
-        ys (torch.IntTensor): A tensor of size `[B, T_out]`
-        y_lens (torch.IntTensor): A tensor of size `[B]`
+        ys (torch.autograd.Variable, long): A tensor of size `[B, T_out]`
+        y_lens (torch.autograd.Variable, int): A tensor of size `[B]`
     Returns:
-        concatenated_labels (torch.IntTensor): A tensor of size `[all_label_num]`
+        concatenated_labels (): A tensor of size `[all_label_num]`
     """
-    total_y_lens = y_lens.sum().item()
-    concatenated_labels = torch.zeros(total_y_lens).int()
+    batch_size = ys.size(0)
+    total_y_lens = y_lens.data.sum()
+    concatenated_labels = Variable(torch.zeros(total_y_lens)).int()
     label_counter = 0
-    for b in range(ys.size(0)):
+    for b in range(batch_size):
         concatenated_labels[label_counter:label_counter +
-                            y_lens[b]] = ys[b, :y_lens[b]]
-        label_counter += y_lens[b]
+                            y_lens.data[b]] = ys[b][:y_lens.data[b]]
+        label_counter += y_lens.data[b]
+
     return concatenated_labels

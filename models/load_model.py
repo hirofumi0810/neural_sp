@@ -39,7 +39,7 @@ def load(model_type, params, backend):
             params['activation'] = 'relu'
 
         if backend == 'pytorch':
-            from models.pytorch.ctc.ctc import CTC
+            from models.pytorch_v3.ctc.ctc import CTC
         elif backend == 'chainer':
             from models.chainer.ctc.ctc import CTC
 
@@ -121,7 +121,7 @@ def load(model_type, params, backend):
             params['activation'] = 'relu'
 
         if backend == 'pytorch':
-            from models.pytorch.ctc.student_ctc import StudentCTC
+            from models.pytorch_v3.ctc.student_ctc import StudentCTC
         elif backend == 'chainer':
             raise NotImplementedError
 
@@ -193,7 +193,7 @@ def load(model_type, params, backend):
             params['activation'] = 'relu'
 
         if backend == 'pytorch':
-            from models.pytorch.ctc.hierarchical_ctc import HierarchicalCTC
+            from models.pytorch_v3.ctc.hierarchical_ctc import HierarchicalCTC
         elif backend == 'chainer':
             from models.chainer.ctc.hierarchical_ctc import HierarchicalCTC
 
@@ -279,7 +279,7 @@ def load(model_type, params, backend):
     elif model_type == 'attention':
 
         if backend == 'pytorch':
-            from models.pytorch.attention.attention_seq2seq import AttentionSeq2seq
+            from models.pytorch_v3.attention.attention_seq2seq import AttentionSeq2seq
         elif backend == 'chainer':
             from models.chainer.attention.attention_seq2seq import AttentionSeq2seq
 
@@ -406,7 +406,7 @@ def load(model_type, params, backend):
     elif params['model_type'] == 'hierarchical_attention':
 
         if backend == 'pytorch':
-            from models.pytorch.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
+            from models.pytorch_v3.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
         elif backend == 'chainer':
             from models.chainer.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
 
@@ -544,7 +544,7 @@ def load(model_type, params, backend):
 
     elif params['model_type'] == 'nested_attention':
         if backend == 'pytorch':
-            from models.pytorch.attention.nested_attention_seq2seq import NestedAttentionSeq2seq
+            from models.pytorch_v3.attention.nested_attention_seq2seq import NestedAttentionSeq2seq
         elif backend == 'chainer':
             raise NotImplementedError
 

@@ -9,9 +9,7 @@ from __future__ import print_function
 
 import sys
 import unittest
-
 import torch
-from torch.autograd import Variable
 
 sys.path.append('../../../../')
 from models.pytorch.encoders.load_encoder import load

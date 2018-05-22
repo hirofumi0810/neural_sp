@@ -16,7 +16,7 @@ torch.manual_seed(1623)
 torch.cuda.manual_seed_all(1623)
 
 sys.path.append('../../../../')
-from models.pytorch.attention.nested_attention_seq2seq import NestedAttentionSeq2seq
+from models.pytorch_v3.attention.nested_attention_seq2seq import NestedAttentionSeq2seq
 from models.test.data import generate_data, idx2char, idx2word
 from utils.measure_time_func import measure_time
 from utils.evaluation.edit_distance import compute_wer
@@ -27,6 +27,8 @@ class TestCharseqAttention(unittest.TestCase):
 
     def test(self):
         print("Nested Attention Working check.")
+
+        self.check(main_loss_weight=0)
 
         # Regularization
         self.check(relax_context_vec_dec=True)
@@ -103,8 +105,8 @@ class TestCharseqAttention(unittest.TestCase):
             dropout_encoder=0.1,
             dropout_decoder=0.1,
             dropout_embedding=0.1,
-            main_loss_weight=0.8,
-            sub_loss_weight=0.2 if ctc_loss_weight_sub == 0 else 0,
+            main_loss_weight=main_loss_weight,
+            sub_loss_weight=0.5 if ctc_loss_weight_sub == 0 else 0,
             num_classes=11,
             num_classes_sub=27 if not second_pass else 11,
             parameter_init_distribution='uniform',
@@ -190,7 +192,8 @@ class TestCharseqAttention(unittest.TestCase):
                 loss, loss_main, loss_sub = model(
                     xs, ys, x_lens, y_lens, ys_sub, y_lens_sub)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
+            # torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
+            torch.nn.utils.clip_grad_norm(model.parameters(), 5)
             model.optimizer.step()
 
             if (step + 1) % 10 == 0:
@@ -201,7 +204,7 @@ class TestCharseqAttention(unittest.TestCase):
                     loss, loss_main, loss_sub = model(
                         xs, ys, x_lens, y_lens, ys_sub, y_lens_sub, is_eval=True)
 
-                best_hyps, _, best_hyps_sub, _, perm_idx = model.decode(
+                best_hyps, _, best_hyps_sub, _, _, perm_idx = model.decode(
                     xs, x_lens, beam_width=1,
                     max_decode_len=30,
                     max_decode_len_sub=60)

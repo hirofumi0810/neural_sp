@@ -13,15 +13,15 @@ import copy
 import torch
 import torch.nn.functional as F
 
-from models.pytorch.base import ModelBase
-from models.pytorch.linear import LinearND, Embedding, Embedding_LS
-from models.pytorch.encoders.load_encoder import load
-from models.pytorch.attention.rnn_decoder import RNNDecoder
-from models.pytorch.attention.attention_layer import AttentionMechanism
-from models.pytorch.ctc.ctc import _concatenate_labels, my_warpctc
-from models.pytorch.criterion import cross_entropy_label_smoothing
-from models.pytorch.ctc.decoders.greedy_decoder import GreedyDecoder
-from models.pytorch.ctc.decoders.beam_search_decoder import BeamSearchDecoder
+from models.pytorch_v3.base import ModelBase
+from models.pytorch_v3.linear import LinearND, Embedding, Embedding_LS
+from models.pytorch_v3.encoders.load_encoder import load
+from models.pytorch_v3.attention.rnn_decoder import RNNDecoder
+from models.pytorch_v3.attention.attention_layer import AttentionMechanism
+from models.pytorch_v3.ctc.ctc import _concatenate_labels, my_warpctc
+from models.pytorch_v3.criterion import cross_entropy_label_smoothing
+from models.pytorch_v3.ctc.decoders.greedy_decoder import GreedyDecoder
+from models.pytorch_v3.ctc.decoders.beam_search_decoder import BeamSearchDecoder
 
 
 class AttentionSeq2seq(ModelBase):
@@ -428,12 +428,10 @@ class AttentionSeq2seq(ModelBase):
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (torch.FloatTensor or float): A tensor of size `[]`
+            loss (torch.autograd.Variable(float) or float): A tensor of size `[1]`
         """
         if is_eval:
             self.eval()
-            with torch.no_grad():
-                loss = self._forward(xs, ys, x_lens, y_lens).item()
         else:
             self.train()
 
@@ -441,20 +439,9 @@ class AttentionSeq2seq(ModelBase):
             if self.weight_noise_injection:
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
-            loss = self._forward(xs, ys, x_lens, y_lens)
-
-            # Update the probability of scheduled sampling
-            self._step += 1
-            if self.ss_prob > 0:
-                self._ss_prob = min(
-                    self.ss_prob, self.ss_prob / self.ss_max_step * self._step)
-
-        return loss
-
-    def _forward(self, xs, ys, x_lens, y_lens):
-        # Wrap by Tensor
-        xs = self.np2tensor(xs, dtype=torch.float)
-        x_lens = self.np2tensor(x_lens, dtype=torch.int)
+        # Wrap by Variable
+        xs = self.np2var(xs)
+        x_lens = self.np2var(x_lens, dtype='int')
 
         # Encode acoustic features
         xs, x_lens, perm_idx = self._encode(xs, x_lens)
@@ -467,32 +454,38 @@ class AttentionSeq2seq(ModelBase):
             # ys_in_fwd is padded with <EOS> in order to convert to one-hot vector,
             # and added <SOS> before the first token
             # ys_out_fwd is padded with -1, and added <EOS> after the last token
-            ys_in_fwd = self._create_tensor((ys.shape[0], ys.shape[1] + 1),
-                                            fill_value=self.eos_0, dtype=torch.long)
-            ys_out_fwd = self._create_tensor((ys.shape[0], ys.shape[1] + 1),
-                                             fill_value=-1, dtype=torch.long)
+            ys_in_fwd = self._create_var((ys.shape[0], ys.shape[1] + 1),
+                                         fill_value=self.eos_0, dtype='long')
+            ys_out_fwd = self._create_var((ys.shape[0], ys.shape[1] + 1),
+                                          fill_value=-1, dtype='long')
 
-            ys_in_fwd[:, 0] = self.sos_0
+            ys_in_fwd.data[:, 0] = self.sos_0
             for b in range(len(xs)):
-                ys_in_fwd[b, 1:y_lens[b] + 1] = torch.from_numpy(
+                ys_in_fwd.data[b, 1:y_lens[b] + 1] = torch.from_numpy(
                     ys[b, :y_lens[b]])
-                ys_out_fwd[b, :y_lens[b]] = torch.from_numpy(ys[b, :y_lens[b]])
-                ys_out_fwd[b, y_lens[b]] = self.eos_0
+                ys_out_fwd.data[b, :y_lens[b]] = torch.from_numpy(
+                    ys[b, :y_lens[b]])
+                ys_out_fwd.data[b, y_lens[b]] = self.eos_0
 
-            # Wrap by Tensor
-            y_lens_fwd = self.np2tensor(y_lens, dtype=torch.int)
+            if self.use_cuda:
+                ys_in_fwd = ys_in_fwd.cuda()
+                ys_out_fwd = ys_out_fwd.cuda()
+
+            # Wrap by Variable
+            y_lens_fwd = self.np2var(y_lens, dtype='int')
 
             # Permutate indices
-            ys_in_fwd = ys_in_fwd[perm_idx]
-            ys_out_fwd = ys_out_fwd[perm_idx]
-            y_lens_fwd = y_lens_fwd[perm_idx]
+            if perm_idx is not None:
+                ys_in_fwd = ys_in_fwd[perm_idx]
+                ys_out_fwd = ys_out_fwd[perm_idx]
+                y_lens_fwd = y_lens_fwd[perm_idx]
 
             # Compute XE loss
             loss = self.compute_xe_loss(
                 xs, ys_in_fwd, ys_out_fwd, x_lens, y_lens_fwd,
                 task=0, dir='fwd') * self.fwd_weight_0
         else:
-            loss = self._create_tensor((1,), fill_value=0, dtype=torch.float)
+            loss = self._create_var((1,), fill_value=0)
 
         ##################################################
         # Compute loss for the backward decoder
@@ -503,26 +496,31 @@ class AttentionSeq2seq(ModelBase):
             for b in range(len(xs)):
                 ys_tmp[b, :y_lens[b]] = ys[b, :y_lens[b]][::-1]
 
-            ys_in_bwd = self._create_tensor((ys.shape[0], ys.shape[1] + 1),
-                                            fill_value=self.eos_0, dtype=torch.long)
-            ys_out_bwd = self._create_tensor((ys.shape[0], ys.shape[1] + 1),
-                                             fill_value=-1, dtype=torch.long)
+            ys_in_bwd = self._create_var((ys.shape[0], ys.shape[1] + 1),
+                                         fill_value=self.eos_0, dtype='long')
+            ys_out_bwd = self._create_var((ys.shape[0], ys.shape[1] + 1),
+                                          fill_value=-1, dtype='long')
 
-            ys_in_bwd[:, 0] = self.sos_0
+            ys_in_bwd.data[:, 0] = self.sos_0
             for b in range(len(xs)):
-                ys_in_bwd[b, 1:y_lens[b] + 1] = torch.from_numpy(
+                ys_in_bwd.data[b, 1:y_lens[b] + 1] = torch.from_numpy(
                     ys_tmp[b, :y_lens[b]])
-                ys_out_bwd[b, :y_lens[b]] = torch.from_numpy(
+                ys_out_bwd.data[b, :y_lens[b]] = torch.from_numpy(
                     ys_tmp[b, :y_lens[b]])
-                ys_out_bwd[b, y_lens[b]] = self.eos_0
+                ys_out_bwd.data[b, y_lens[b]] = self.eos_0
 
-            # Wrap by Tensor
-            y_lens_bwd = self.np2tensor(y_lens, dtype=torch.int)
+            if self.use_cuda:
+                ys_in_bwd = ys_in_bwd.cuda()
+                ys_out_bwd = ys_out_bwd.cuda()
+
+            # Wrap by Variable
+            y_lens_bwd = self.np2var(y_lens, dtype='int')
 
             # Permutate indices
-            ys_in_bwd = ys_in_bwd[perm_idx]
-            ys_out_bwd = ys_out_bwd[perm_idx]
-            y_lens_bwd = y_lens_bwd[perm_idx]
+            if perm_idx is not None:
+                ys_in_bwd = ys_in_bwd[perm_idx]
+                ys_out_bwd = ys_out_bwd[perm_idx]
+                y_lens_bwd = y_lens_bwd[perm_idx]
 
             # Compute XE loss
             loss += self.compute_xe_loss(
@@ -533,13 +531,17 @@ class AttentionSeq2seq(ModelBase):
         # Auxiliary CTC loss
         ##################################################
         if self.ctc_loss_weight > 0:
-            # Wrap by Tensor
-            ys_ctc = self.np2tensor(ys, dtype=torch.long)
-            y_lens_ctc = self.np2tensor(y_lens, dtype=torch.int)
+            # Wrap by Variable
+            ys_ctc = self.np2var(ys, dtype='long')
+            y_lens_ctc = self.np2var(y_lens, dtype='int')
+
+            if self.use_cuda:
+                ys_ctc = ys_ctc.cuda()
 
             # Permutate indices
-            ys_ctc = ys_ctc[perm_idx]
-            y_lens_ctc = y_lens_ctc[perm_idx]
+            if perm_idx is not None:
+                ys_ctc = ys_ctc[perm_idx]
+                y_lens_ctc = y_lens_ctc[perm_idx]
 
             loss += self.compute_ctc_loss(
                 xs, ys_ctc + 1,
@@ -547,23 +549,32 @@ class AttentionSeq2seq(ModelBase):
             # NOTE: exclude <SOS>
             # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
+        if is_eval:
+            loss = loss.data[0]
+        else:
+            # Update the probability of scheduled sampling
+            self._step += 1
+            if self.ss_prob > 0:
+                self._ss_prob = min(
+                    self.ss_prob, self.ss_prob / self.ss_max_step * self._step)
+
         return loss
 
     def compute_xe_loss(self, enc_out, ys_in, ys_out, x_lens, y_lens, task, dir):
         """Compute XE loss.
         Args:
-            enc_out (torch.FloatTensor): A tensor of size
+            enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            ys_in (torch.LongTensor): A tensor of size
+            ys_in (torch.autograd.Variable, long): A tensor of size
                 `[B, T_out]`, which includes <SOS>
-            ys_out (torch.LongTensor): A tensor of size
+            ys_out (torch.autograd.Variable, long): A tensor of size
                 `[B, T_out]`, which includes <EOS>
-            x_lens (torch.IntTensor): A tensor of size `[B]`
-            y_lens (torch.IntTensor): A tensor of size `[B]`
+            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            y_lens (torch.autograd.Variable, int): A tensor of size `[B]`
             task (int): the index of a task
             dir (str): fwd or bwd
         Returns:
-            loss (torch.FloatTensor): A tensor of size `[]`
+            loss (torch.autograd.Variable, float): A tensor of size `[1]`
         """
         # Teacher-forcing
         logits, aw = self._decode_train(enc_out, x_lens, ys_in, task, dir)
@@ -597,16 +608,16 @@ class AttentionSeq2seq(ModelBase):
     def compute_ctc_loss(self, enc_out, ys, x_lens, y_lens, task=0):
         """Compute CTC loss.
         Args:
-            enc_out (torch.FloatTensor): A tensor of size
+            enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            ys (torch.LongTensor): A tensor of size `[B, T_out]`,
+            ys (torch.autograd.Variable, long): A tensor of size `[B, T_out]`,
                 which includes <SOS> nor <EOS>
-            x_lens (torch.IntTensor): A tensor of size `[B]`
-            y_lens (torch.IntTensor): A tensor of size `[B]`,
+            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            y_lens (torch.autograd.Variable, int): A tensor of size `[B]`,
                 which includes <SOS> nor <EOS>
             task (int): the index of a task
         Returns:
-            loss (torch.FloatTensor): A tensor of size `[]`
+            loss (torch.autograd.Variable, float): A tensor of size `[1]`
         """
         # Concatenate all _ys for warpctc_pytorch
         # `[B, T_out]` -> `[1,]`
@@ -620,7 +631,10 @@ class AttentionSeq2seq(ModelBase):
                           concatenated_labels.cpu(),
                           x_lens.cpu(),
                           y_lens.cpu(),
-                          size_average=False).to(self.device)
+                          size_average=False)
+
+        if self.use_cuda:
+            loss = loss.cuda()
 
         # Label smoothing (with uniform distribution)
         # if self.ls_prob > 0:
@@ -635,36 +649,41 @@ class AttentionSeq2seq(ModelBase):
 
         loss /= len(enc_out)
 
-        return loss.sum()
-        # NOTE: to convert to 0-dim tensor
+        return loss
 
     def _encode(self, xs, x_lens, is_multi_task=False):
         """Encode acoustic features.
         Args:
-            xs (torch.FloatTensor): A tensor of size
+            xs (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, input_size]`
-            x_lens (torch.IntTensor): A tensor of size `[B]`
+            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
             is_multi_task (bool):
         Returns:
-            xs (torch.FloatTensor): A tensor of size
+            xs (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            x_lens (torch.IntTensor): A tensor of size `[B]`
+            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
             OPTION:
-                xs_sub (torch.FloatTensor): A tensor of size
+                xs_sub (torch.autograd.Variable, float): A tensor of size
                     `[B, T_in, encoder_num_units]`
-                x_lens_sub (torch.IntTensor): A tensor of size `[B]`
-            perm_idx (torch.LongTensor): A tensor of size `[B]`
+                x_lens_sub (torch.autograd.Variable, int): A tensor of size `[B]`
+            perm_idx (torch.autograd.Variable, long): A tensor of size `[B]`
         """
         if is_multi_task:
             if self.encoder_type == 'cnn':
-                xs, x_lens, perm_idx = self.encoder(xs, x_lens)
+                xs, x_lens = self.encoder(xs, x_lens)
+                perm_idx = None
                 xs_sub = xs.clone()
                 x_lens_sub = x_lens.clone()
             else:
                 xs, x_lens, xs_sub, x_lens_sub, perm_idx = self.encoder(
-                    xs, x_lens)
+                    xs, x_lens, volatile=not self.training)
         else:
-            xs, x_lens, perm_idx = self.encoder(xs, x_lens)
+            if self.encoder_type == 'cnn':
+                xs, x_lens = self.encoder(xs, x_lens)
+                perm_idx = None
+            else:
+                xs, x_lens, perm_idx = self.encoder(
+                    xs, x_lens, volatile=not self.training)
 
         # Bridge between the encoder and decoder in the main task
         if self.is_bridge:
@@ -684,26 +703,25 @@ class AttentionSeq2seq(ModelBase):
     def _decode_train(self, enc_out, x_lens, ys, task, dir):
         """Decoding in the training stage.
         Args:
-            enc_out (torch.FloatTensor): A tensor of size
+            enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            x_lens (torch.IntTensor): A tensor of size `[B]`
-            ys (torch.LongTensor): A tensor of size `[B, T_out]`,
+            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            ys (torch.autograd.Variable, long): A tensor of size `[B, T_out]`,
                 which should be padded with <EOS>.
             task (int): the index of a task
             dir (str): fwd or bwd
         Returns:
-            logits (torch.FloatTensor): A tensor of size
+            logits (torch.autograd.Variable, float): A tensor of size
                 `[B, T_out, num_classes]`
-            aw (torch.FloatTensor): A tensor of size
+            aw (torch.autograd.Variable, float): A tensor of size
                 `[B, T_out, T_in, num_heads]`
         """
         batch_size, max_time = enc_out.size()[:2]
 
         # Initialize decoder state, decoder output, attention_weights
         dec_state, dec_out = self._init_dec_state(enc_out, x_lens, task, dir)
-        aw_step = self._create_tensor(
-            (batch_size, max_time, getattr(self, 'num_heads_' + str(task))),
-            fill_value=0, dtype=torch.float)
+        aw_step = self._create_var(
+            (batch_size, max_time, getattr(self, 'num_heads_' + str(task))), fill_value=0)
 
         logits, aw = [], []
         for t in range(ys.size(1)):
@@ -789,19 +807,19 @@ class AttentionSeq2seq(ModelBase):
     def _init_dec_state(self, enc_out, x_lens, task, dir):
         """Initialize decoder state.
         Args:
-            enc_out (torch.FloatTensor): A tensor of size
+            enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            x_lens (torch.IntTensor): A tensor of size `[B]`
+            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
             task (int): the index of a task
             dir (str): fwd or bwd
         Returns:
             dec_state (list or tuple of list):
-            dec_out (torch.FloatTensor): A tensor of size
+            dec_out (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, decoder_num_units]`
         """
-        zero_state = self._create_tensor((enc_out.size(0), getattr(
+        zero_state = self._create_var((enc_out.size(0), getattr(
             self, 'decoder_num_units_' + str(task))),
-            fill_value=0, dtype=torch.float)
+            fill_value=0, volatile=not self.training)
 
         if getattr(self, 'init_dec_state_' + str(task) + '_' + dir) == 'zero':
             if self.decoder_type == 'lstm':
@@ -813,9 +831,9 @@ class AttentionSeq2seq(ModelBase):
                 hx_list = [zero_state] * \
                     getattr(self, 'decoder_num_layers_' + str(task))
 
-            dec_out = self._create_tensor((enc_out.size(0), 1, getattr(
+            dec_out = self._create_var((enc_out.size(0), 1, getattr(
                 self, 'decoder_num_units_' + str(task))),
-                fill_value=0, dtype=torch.float)
+                fill_value=0, volatile=not self.training)
         else:
             # TODO: consider x_lens
 
@@ -872,39 +890,42 @@ class AttentionSeq2seq(ModelBase):
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
         self.eval()
-        with torch.no_grad():
-            # Wrap by Tensor
-            xs = self.np2tensor(xs, dtype=torch.float)
-            x_lens = self.np2tensor(x_lens, dtype=torch.int)
 
-            # Encode acoustic features
-            enc_out, x_lens, perm_idx = self._encode(xs, x_lens)
+        # Wrap by Variable
+        xs = self.np2var(xs)
+        x_lens = self.np2var(x_lens, dtype='int')
 
-            dir = 'fwd'if self.fwd_weight_0 >= self.bwd_weight_0 else 'bwd'
+        # Encode acoustic features
+        enc_out, x_lens, perm_idx = self._encode(xs, x_lens)
 
-            if beam_width == 1:
-                best_hyps, aw = self._decode_infer_greedy(
-                    enc_out, x_lens, max_decode_len, task=0, dir=dir)
-            else:
-                best_hyps, aw = self._decode_infer_beam(
-                    enc_out, x_lens, beam_width, max_decode_len, min_decode_len,
-                    length_penalty, coverage_penalty, task=0, dir=dir)
+        dir = 'fwd'if self.fwd_weight_0 >= self.bwd_weight_0 else 'bwd'
+
+        if beam_width == 1:
+            best_hyps, aw = self._decode_infer_greedy(
+                enc_out, x_lens, max_decode_len, task=0, dir=dir)
+        else:
+            best_hyps, aw = self._decode_infer_beam(
+                enc_out, x_lens, beam_width, max_decode_len, min_decode_len,
+                length_penalty, coverage_penalty, task=0, dir=dir)
 
         # TODO: fix this
         if beam_width == 1:
             aw = aw[:, :, :, 0]
 
         # Permutate indices to the original order
-        perm_idx = self.tensor2np(perm_idx)
+        if perm_idx is None:
+            perm_idx = np.arange(0, len(xs), 1)
+        else:
+            perm_idx = self.var2np(perm_idx)
 
         return best_hyps, aw, perm_idx
 
     def _decode_infer_greedy(self, enc_out, x_lens, max_decode_len, task, dir):
         """Greedy decoding in the inference stage.
         Args:
-            enc_out (torch.FloatTensor): A tensor of size
+            enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            x_lens (torch.IntTensor): A tensor of size `[B]`
+            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
             max_decode_len (int): the maximum sequence length of tokens
             task (int): the index of a task
             dir (str): fwd or bwd
@@ -919,15 +940,14 @@ class AttentionSeq2seq(ModelBase):
 
         # Initialize decoder state
         dec_state, dec_out = self._init_dec_state(enc_out, x_lens, task, dir)
-        aw_step = self._create_tensor((
+        aw_step = self._create_var((
             batch_size, max_time, getattr(self, 'num_heads_' + str(task))),
-            fill_value=0, dtype=torch.float)
+            fill_value=0, volatile=True)
 
         # Start from <SOS>
         sos = getattr(self, 'sos_' + str(task))
         eos = getattr(self, 'eos_' + str(task))
-        y = self._create_tensor(
-            (batch_size, 1), fill_value=sos, dtype=torch.long)
+        y = self._create_var((batch_size, 1), fill_value=sos, dtype='long')
         y_emb = getattr(self, 'embed_' + str(task))(y)
 
         best_hyps, aw = [], []
@@ -993,14 +1013,14 @@ class AttentionSeq2seq(ModelBase):
             if dir == 'bwd':
                 for b in range(batch_size):
                     if not eos_flag[b]:
-                        if y.cpu().numpy()[b] == eos:
+                        if y.data.cpu().numpy()[b] == eos:
                             eos_flag[b] = True
                         else:
                             y_lens[b] += 1
                         # NOTE: exclude <EOS>
 
             # Break if <EOS> is outputed in all mini-batch
-            if torch.sum(y == eos) == y.numel():
+            if torch.sum(y.data == eos) == y.numel():
                 break
 
         # Concatenate in T_out dimension
@@ -1008,8 +1028,8 @@ class AttentionSeq2seq(ModelBase):
         aw = torch.stack(aw, dim=1)
 
         # Convert to numpy
-        best_hyps = self.tensor2np(best_hyps)
-        aw = self.tensor2np(aw)
+        best_hyps = self.var2np(best_hyps)
+        aw = self.var2np(aw)
 
         # Reverse the order
         if dir == 'bwd':
@@ -1023,9 +1043,9 @@ class AttentionSeq2seq(ModelBase):
                            length_penalty, coverage_penalty, task, dir):
         """Beam search decoding in the inference stage.
         Args:
-            enc_out (torch.FloatTensor): A tensor of size
+            enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, encoder_num_units]`
-            x_lens (torch.IntTensor): A tensor of size `[B]`
+            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
             beam_width (int): the size of beam
             max_decode_len (int): the maximum sequence length of tokens
             min_decode_len (int): the minimum sequence length of tokens
@@ -1052,9 +1072,10 @@ class AttentionSeq2seq(ModelBase):
             # Initialization per utterance
             dec_state, dec_out = self._init_dec_state(
                 enc_out[b:b + 1], x_lens[b:b + 1], task, dir)
-            aw_step = self._create_tensor(
-                (1, x_lens[b].item(), getattr(self, 'num_heads_' + str(task))),
-                fill_value=0, dtype=torch.float)
+            aw_step = self._create_var(
+                (1,  x_lens[b].data[0], getattr(
+                    self, 'num_heads_' + str(task))),
+                fill_value=0, volatile=True)
 
             complete = []
             beam = [{'hyp': [sos],
@@ -1079,8 +1100,8 @@ class AttentionSeq2seq(ModelBase):
 
                         # NOTE: Recurrency is placed at the latter stage
                     else:
-                        y = self._create_tensor(
-                            (1,), fill_value=beam[i_beam]['hyp'][-1], dtype=torch.long).unsqueeze(1)
+                        y = self._create_var(
+                            (1,), fill_value=beam[i_beam]['hyp'][-1], dtype='long').unsqueeze(1)
                         y = getattr(self, 'embed_' + str(task))(y)
 
                         if self.decoding_order == 'attend_update_generate':
@@ -1121,13 +1142,13 @@ class AttentionSeq2seq(ModelBase):
                     # NOTE: `[1 (B), 1, num_classes]` -> `[1 (B), num_classes]`
 
                     # Pick up the top-k scores
-                    log_probs_topk, indices_topk = log_probs.topk(
-                        beam_width, dim=1, largest=True, sorted=True)
+                    log_probs_topk, indices_topk = torch.topk(
+                        log_probs, k=beam_width, dim=1, largest=True, sorted=True)
 
                     for k in range(beam_width):
                         if self.decoding_order == 'attend_generate_update':
-                            y = self._create_tensor(
-                                (1,), fill_value=indices_topk[0, k].item(), dtype=torch.long).unsqueeze(1)
+                            y = self._create_var(
+                                (1,), fill_value=indices_topk.data[0, k], dtype='long').unsqueeze(1)
                             y = getattr(self, 'embed_' + str(task))(y)
 
                             # Recurrency
@@ -1136,14 +1157,14 @@ class AttentionSeq2seq(ModelBase):
                                 self, 'decoder_' + str(task) + '_' + dir)(dec_in, beam[i_beam]['dec_state'])
 
                         # Exclude short hypotheses
-                        if indices_topk[0, k].item() == eos and len(beam[i_beam]['hyp']) < min_decode_len:
+                        if indices_topk[0, k].data[0] == eos and len(beam[i_beam]['hyp']) < min_decode_len:
                             continue
-                        # if indices_topk[0, k].item() == eos and len(beam[i_beam]['hyp']) < x_lens[b].item() * min_decode_len_ratio:
+                        # if indices_topk[0, k].data[0] == eos and len(beam[i_beam]['hyp']) < x_lens[b].data[0] * min_decode_len_ratio:
                         #     continue
 
                         # Add length penalty
                         score = beam[i_beam]['score'] + \
-                            log_probs_topk[0, k].item() + length_penalty
+                            log_probs_topk.data[0, k] + length_penalty
 
                         # Add coverage penalty
                         if coverage_penalty > 0:
@@ -1162,7 +1183,7 @@ class AttentionSeq2seq(ModelBase):
                             score += cov_sum * coverage_penalty
 
                         new_beam.append(
-                            {'hyp': beam[i_beam]['hyp'] + [indices_topk[0, k].item()],
+                            {'hyp': beam[i_beam]['hyp'] + [indices_topk.data[0, k]],
                              'score': score,
                              'dec_state': copy.deepcopy(dec_state),
                              'dec_out': dec_out,
@@ -1198,7 +1219,7 @@ class AttentionSeq2seq(ModelBase):
         for j in range(len(aw)):
             for k in range(len(aw[j])):
                 aw[j][k] = aw[j][k][:, :, 0]  # TODO: fix for MHA
-            aw[j] = self.tensor2np(torch.stack(aw[j], dim=1).squeeze(0))
+            aw[j] = self.var2np(torch.stack(aw[j], dim=1).squeeze(0))
 
         # Reverse the order
         if dir == 'bwd':
@@ -1220,38 +1241,41 @@ class AttentionSeq2seq(ModelBase):
             perm_idx (np.ndarray): A tensor of size `[B]`
         """
         self.eval()
-        with torch.no_grad():
-            # Wrap by Tensor
-            xs = self.np2tensor(xs, dtype=torch.float)
-            x_lens = self.np2tensor(x_lens, dtype=torch.int)
 
-            # Encode acoustic features
-            if task_index == 0:
-                enc_out, x_lens, perm_idx = self._encode(xs, x_lens)
-            elif task_index == 1:
-                _, _, enc_out, x_lens, perm_idx = self._encode(
-                    xs, x_lens, is_multi_task=True)
-            else:
-                raise NotImplementedError
+        # Wrap by Variable
+        xs = self.np2var(xs)
+        x_lens = self.np2var(x_lens, dtype='int')
 
-            # Path through the softmax layer
-            batch_size, max_time = enc_out.size()[:2]
-            enc_out = enc_out.contiguous().view(batch_size * max_time, -1)
-            logits_ctc = getattr(self, 'fc_ctc_' + str(task_index))(enc_out)
-            logits_ctc = logits_ctc.view(batch_size, max_time, -1)
+        # Encode acoustic features
+        if task_index == 0:
+            enc_out, x_lens, perm_idx = self._encode(xs, x_lens)
+        elif task_index == 1:
+            _, _, enc_out, x_lens, perm_idx = self._encode(
+                xs, x_lens, is_multi_task=True)
+        else:
+            raise NotImplementedError
+
+        # Path through the softmax layer
+        batch_size, max_time = enc_out.size()[:2]
+        enc_out = enc_out.view(batch_size * max_time, -1).contiguous()
+        logits_ctc = getattr(self, 'fc_ctc_' + str(task_index))(enc_out)
+        logits_ctc = logits_ctc.view(batch_size, max_time, -1)
 
         if beam_width == 1:
             best_hyps = self._decode_ctc_greedy_np(
-                self.tensor2np(logits_ctc), self.tensor2np(x_lens))
+                self.var2np(logits_ctc), self.var2np(x_lens))
         else:
             best_hyps = self._decode_ctc_beam_np(
-                self.tensor2np(F.log_softmax(logits_ctc, dim=-1)),
-                self.tensor2np(x_lens), beam_width=beam_width)
+                self.var2np(F.log_softmax(logits_ctc, dim=-1)),
+                self.var2np(x_lens), beam_width=beam_width)
 
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
         best_hyps -= 1
 
         # Permutate indices to the original order
-        perm_idx = self.tensor2np(perm_idx)
+        if perm_idx is None:
+            perm_idx = np.arange(0, len(xs), 1)
+        else:
+            perm_idx = self.var2np(perm_idx)
 
         return best_hyps, perm_idx

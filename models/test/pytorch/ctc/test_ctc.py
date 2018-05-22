@@ -16,7 +16,8 @@ torch.manual_seed(1623)
 torch.cuda.manual_seed_all(1623)
 
 sys.path.append('../../../../')
-from models.pytorch.ctc.ctc import CTC
+# from models.pytorch.ctc.ctc import CTC
+from models.pytorch_v3.ctc.ctc import CTC
 from models.test.data import generate_data, idx2char, idx2word
 from utils.measure_time_func import measure_time
 from utils.evaluation.edit_distance import compute_wer
@@ -191,11 +192,13 @@ class TestCTC(unittest.TestCase):
             model.optimizer.zero_grad()
             loss = model(xs, ys, x_lens, y_lens)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
+            # torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
+            torch.nn.utils.clip_grad_norm(model.parameters(), 5)
             model.optimizer.step()
 
             # Inject Gaussian noise to all parameters
-            if loss.item() < 50:
+            # if loss.item() < 50:
+            if loss.data[0] < 50:
                 model.weight_noise_injection = True
 
             if (step + 1) % 10 == 0:

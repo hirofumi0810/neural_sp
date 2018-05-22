@@ -16,7 +16,7 @@ torch.manual_seed(1623)
 torch.cuda.manual_seed_all(1623)
 
 sys.path.append('../../../../')
-from models.pytorch.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
+from models.pytorch_v3.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
 from models.test.data import generate_data, idx2char, idx2word
 from utils.measure_time_func import measure_time
 from utils.evaluation.edit_distance import compute_wer
@@ -219,7 +219,8 @@ class TestHierarchicalAttention(unittest.TestCase):
             loss, loss_main, loss_sub = model(
                 xs, ys, x_lens, y_lens, ys_sub, y_lens_sub)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
+            # torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
+            torch.nn.utils.clip_grad_norm(model.parameters(), 5)
             model.optimizer.step()
 
             if (step + 1) % 10 == 0:

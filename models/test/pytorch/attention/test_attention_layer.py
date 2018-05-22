@@ -11,7 +11,6 @@ import sys
 import unittest
 
 import torch
-from torch.autograd import Variable
 
 sys.path.append('../../../../')
 from models.pytorch.attention.attention_layer import AttentionMechanism
@@ -52,6 +51,7 @@ class TestAttentionLayer(unittest.TestCase):
             kernel_size=101,
             num_heads=1)
 
+        # NOTE: not work for 0.4
         enc_out = torch.randn((batch_size, max_time, encoder_num_units))
         x_lens = torch.ones(batch_size) * max_time
         dec_state_step = torch.randn((batch_size, 1, decoder_num_units))

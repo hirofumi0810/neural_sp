@@ -44,12 +44,15 @@ def train_step(model, batch, clip_grad_norm, backend):
                                batch['x_lens'], batch['y_lens'])
             loss_train.backward()
             if clip_grad_norm > 0:
-                torch.nn.utils.clip_grad_norm_(
+                # torch.nn.utils.clip_grad_norm_(
+                #     model.parameters(), clip_grad_norm)
+                torch.nn.utils.clip_grad_norm(
                     model.parameters(), clip_grad_norm)
             model.optimizer.step()
             # TODO: Add scheduler
 
-            loss_train_val = loss_train.item()
+            # loss_train_val = loss_train.item()
+            loss_train_val = loss_train.data[0]
 
         elif backend == 'chainer':
             model.optimizer.target.cleargrads()
@@ -71,11 +74,6 @@ def train_step(model, batch, clip_grad_norm, backend):
             torch.cuda.empty_cache()
         elif backend == 'chainer':
             model.optimizer.target.cleargrads()
-
-    except cupy.cuda.runtime.CUDARuntimeError as e:
-        logger.warning('!!!Skip mini-batch!!! (max_frame_num: %d, batch: %d)' %
-                       (max(batch['x_lens']) * model.num_stack, len(batch['xs'])))
-        model.optimizer.target.cleargrads()
 
     if loss_train_val == INF or loss_train_val == -INF:
         logger.warning(
@@ -109,14 +107,19 @@ def train_hierarchical_step(model, batch, clip_grad_norm, backend):
                 batch['ys_sub'], batch['y_lens_sub'])
             loss_train.backward()
             if clip_grad_norm > 0:
-                torch.nn.utils.clip_grad_norm_(
+                # torch.nn.utils.clip_grad_norm_(
+                #     model.parameters(), clip_grad_norm)
+                torch.nn.utils.clip_grad_norm(
                     model.parameters(), clip_grad_norm)
             model.optimizer.step()
             # TODO: Add scheduler
 
-            loss_train_val = loss_train.item()
-            loss_main_train_val = loss_main_train.item()
-            loss_sub_train_val = loss_sub_train.item()
+            # loss_train_val = loss_train.item()
+            # loss_main_train_val = loss_main_train.item()
+            # loss_sub_train_val = loss_sub_train.item()
+            loss_train_val = loss_train.data[0]
+            loss_main_train_val = loss_main_train.data[0]
+            loss_sub_train_val = loss_sub_train.data[0]
 
         elif backend == 'chainer':
             model.optimizer.target.cleargrads()
@@ -137,13 +140,11 @@ def train_hierarchical_step(model, batch, clip_grad_norm, backend):
     except RuntimeError as e:
         logger.warning('!!!Skip mini-batch!!! (max_frame_num: %d, batch: %d)' %
                        (max(batch['x_lens']) * model.num_stack, len(batch['xs'])))
-        model.optimizer.zero_grad()
-        torch.cuda.empty_cache()
-
-    except cupy.cuda.runtime.CUDARuntimeError as e:
-        logger.warning('!!!Skip mini-batch!!! (max_frame_num: %d, batch: %d)' %
-                       (max(batch['x_lens']) * model.num_stack, len(batch['xs'])))
-        model.optimizer.target.cleargrads()
+        if backend == 'pytorch':
+            model.optimizer.zero_grad()
+            torch.cuda.empty_cache()
+        elif backend == 'chainer':
+            model.optimizer.target.cleargrads()
 
     if loss_train_val == INF or loss_train_val == -INF:
         logger.warning(
