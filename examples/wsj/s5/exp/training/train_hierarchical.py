@@ -303,7 +303,8 @@ def main():
                         dataset=dev93_data,
                         eval_batch_size=1,
                         beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_WORD)
+                        max_decode_len=MAX_DECODE_LEN_WORD,
+                        max_decode_len_sub=MAX_DECODE_LEN_CHAR)
                     logger.info('  WER (dev93, main): %.3f %%' %
                                 (metric_dev * 100))
                 else:
@@ -333,7 +334,8 @@ def main():
                             dataset=eval92_data,
                             eval_batch_size=1,
                             beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_WORD)
+                            max_decode_len=MAX_DECODE_LEN_WORD,
+                            max_decode_len_sub=MAX_DECODE_LEN_CHAR)
                         logger.info('  WER (eval92, main): %.3f %%' %
                                     (wer_eval92 * 100))
                     else:

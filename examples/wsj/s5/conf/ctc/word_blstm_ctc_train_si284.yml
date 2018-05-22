@@ -1,4 +1,4 @@
-parent: ./conf/attention/att_char_train_si284.yml
+parent: ./conf/ctc/char_blstm_ctc_train_si284.yml
 param:
   # framework
   backend: pytorch
@@ -12,21 +12,15 @@ param:
   encoder_num_proj: 0
   encoder_num_layers: 4
   subsample_list:
+    - False
     - True
     - True
     - False
-    - False
-  attention_dim: 128
-  decoder_num_units: 320
-  embedding_dim: 128
-  decoding_order: attend_generate_update
-  bottleneck_dim: 320
-  num_heads: 1
+  fc_list: [320]
 
   # initialization
   char_init: False
   # char_init: /n/sd8/inaguma/result/wsj/pytorch/ctc/character/train_si284/blstm320H4L_drop4_adam_lr1e-3_dropen0.2_input81
 
-  # MTL
-  backward_loss_weight: 0
-  ctc_loss_weight: 0
+  # annealing
+  print_step: 100

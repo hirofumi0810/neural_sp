@@ -18,22 +18,20 @@ echo "                                   WSJ                                    
 echo ============================================================================
 
 stage=0
-# hierarchical_model=false
-hierarchical_model=true
 run_background=true
-restart=false
 
 ### Set path to original data
-# wsj0="/n/rd21/corpora_1/WSJ/wsj0"
-# wsj1="/n/rd21/corpora_1/WSJ/wsj1"
+wsj0="/n/rd21/corpora_1/WSJ/wsj0"
+wsj1="/n/rd21/corpora_1/WSJ/wsj1"
 
 # Sometimes, we have seen WSJ distributions that do not have subdirectories
 # like '11-13.1', but instead have 'doc', 'si_et_05', etc. directly under the
 # wsj0 or wsj1 directories. In such cases, try the following:
-#
 # corpus=/exports/work/inf_hcrc_cstr_general/corpora/wsj
-cstr_wsj="/n/rd21/corpora_1/WSJ"
+corpus="/n/rd21/corpora_1/WSJ"
 # $corpus must contain a 'wsj0' and a 'wsj1' subdirectory for this to work.
+
+directory_type=cstr # or original
 
 ### Set path to save dataset
 export DATA="/n/sd8/inaguma/corpus/wsj/kaldi"
@@ -99,10 +97,15 @@ if [ $stage -le 0 ] && [ ! -e $DATA/.stage_0 ]; then
   echo ============================================================================
 
   # data preparation.
-  # local/wsj_data_prep.sh $wsj0/??-{?,??}.? $wsj1/??-{?,??}.?  || exit 1;
-
-  local/cstr_wsj_data_prep.sh $cstr_wsj || exit 1;
-  # rm $DATA/local/dict/lexiconp.txt
+  if [ $directory_type = "original" ]; then
+    local/wsj_data_prep.sh $wsj0/??-{?,??}.? $wsj1/??-{?,??}.?  || exit 1;
+  elif [ $directory_type = "cstr" ]; then
+    local/cstr_wsj_data_prep.sh $corpus || exit 1;
+    # rm $DATA/local/dict/lexiconp.txt
+  else
+    echo "directory_type is original or cstr.";
+    exit 1;
+  fi
 
   # "nosp" refers to the dictionary before silence probabilities and pronunciation
   # probabilities are added.
@@ -112,6 +115,9 @@ if [ $stage -le 0 ] && [ ! -e $DATA/.stage_0 ]; then
   #                       "<SPOKEN_NOISE>" $DATA/local/lang_tmp_nosp data/lang_nosp || exit 1;
 
   local/wsj_format_data.sh --lang-suffix "_nosp" || exit 1;
+
+  # TODO:
+  # local/cstr_wsj_extend_dict.sh --dict-suffix "_nosp" $corpus/wsj1/doc/
 
   # We suggest to run the next three commands in the background,
   # as they are not a precondition for the system building and
@@ -246,8 +252,8 @@ if [ $stage -le 3 ]; then
 
   echo "Start training..."
 
-  if $hierarchical_model; then
-    if $restart; then
+  if [ `echo $config_path | grep 'hierarchical'` ]; then
+    if [ `echo $config_path | grep 'result'` ]; then
       if $run_background; then
         CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
         nohup $PYTHON exp/training/train_hierarchical.py \
@@ -279,7 +285,7 @@ if [ $stage -le 3 ]; then
       fi
     fi
   else
-    if $restart; then
+    if [ `echo $config_path | grep 'result'` ]; then
       if $run_background; then
         CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
         nohup $PYTHON exp/training/train.py \

@@ -50,7 +50,7 @@ def main():
     params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
-    test_data = Dataset(
+    eval_data = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
         input_freq=params['input_freq'],
@@ -63,7 +63,7 @@ def main():
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, reverse=True, tool=params['tool'])
 
-    params['num_classes'] = test_data.num_classes
+    params['num_classes'] = eval_data.num_classes
 
     # Load model
     model = load(model_type=params['model_type'],
@@ -78,7 +78,7 @@ def main():
 
     # Visualize
     decode(model=model,
-           dataset=test_data,
+           dataset=eval_data,
            beam_width=args.beam_width,
            eval_batch_size=args.eval_batch_size,
            length_penalty=args.length_penalty,

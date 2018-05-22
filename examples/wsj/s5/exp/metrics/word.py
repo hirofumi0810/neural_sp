@@ -20,7 +20,7 @@ from utils.evaluation.resolving_unk import resolve_unk
 
 def eval_word(models, dataset, eval_batch_size,
               beam_width, max_decode_len, min_decode_len=0,
-              beam_width_sub=1, max_decode_len_sub=0, min_decode_len_sub=0,
+              beam_width_sub=1, max_decode_len_sub=200, min_decode_len_sub=0,
               length_penalty=0, coverage_penalty=0,
               progressbar=False, resolving_unk=False, a2c_oracle=False):
     """Evaluate trained model by Word Error Rate.

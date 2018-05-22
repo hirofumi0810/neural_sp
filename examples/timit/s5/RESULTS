@@ -6,14 +6,14 @@ Language Model : no
 Phone mapping  : Training with 61 phonemes, for testing mapped to 39 phonemes
 
 
-# CTC (pytorch)
+# CTC (pytorch), beam=10
 
 
-# CTC (chainer)
+# CTC (chainer), beam=10
 
 
-# Attention (pytorch)
-%PER (dev) 17.8 | bgru256H5L_gru256H1L_adam_lr1e-3_location_dropin0.2en0.5de0.2emb0.2_ss0.2_ls0.1_noise1e-9_input123
-%PER (test) 19.4 | bgru256H5L_gru256H1L_adam_lr1e-3_location_dropin0.2en0.5de0.2emb0.2_ss0.2_ls0.1_noise1e-9_input123
+# Attention (pytorch), beam=10
+%PER (dev) 17.42 | bgru256H5L_gru256H1L_adam_lr1e-3_location_dropin0.2en0.5de0.2emb0.2_ss0.2_ls0.1_noise1e-9_input123
+%PER (test) 19.52 | bgru256H5L_gru256H1L_adam_lr1e-3_location_dropin0.2en0.5de0.2emb0.2_ss0.2_ls0.1_noise1e-9_input123
 
-# Attention (chainer)
+# Attention (chainer), beam=10

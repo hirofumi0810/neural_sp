@@ -17,6 +17,7 @@ from examples.wsj.s5.exp.dataset.load_dataset import Dataset
 from examples.wsj.s5.exp.metrics.character import eval_char
 from examples.wsj.s5.exp.metrics.word import eval_word
 from utils.config import load_config
+from utils.evaluation.logging import set_logger
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str,
@@ -52,64 +53,70 @@ def main():
     # Load a config file (.yml)
     params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
-    # Load dataset
-    test_data = Dataset(
-        data_save_path=args.data_save_path,
-        backend=params['backend'],
-        input_freq=params['input_freq'],
-        use_delta=params['use_delta'],
-        use_double_delta=params['use_double_delta'],
-        # data_type='test_dev93',
-        data_type='test_eval92',
-        data_size=params['data_size'],
-        label_type=params['label_type'],
-        batch_size=args.eval_batch_size, splice=params['splice'],
-        num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=False, tool=params['tool'])
+    # Setting for logging
+    logger = set_logger(args.model_path)
 
-    params['num_classes'] = test_data.num_classes
+    for i, data_type in enumerate(['test_dev93', 'test_eval92']):
+        # Load dataset
+        eval_data = Dataset(
+            data_save_path=args.data_save_path,
+            backend=params['backend'],
+            input_freq=params['input_freq'],
+            use_delta=params['use_delta'],
+            use_double_delta=params['use_double_delta'],
+            data_type=data_type,
+            data_size=params['data_size'],
+            label_type=params['label_type'],
+            batch_size=args.eval_batch_size, splice=params['splice'],
+            num_stack=params['num_stack'], num_skip=params['num_skip'],
+            sort_utt=False, tool=params['tool'])
 
-    # Load model
-    model = load(model_type=params['model_type'],
-                 params=params,
-                 backend=params['backend'])
+        if i == 0:
+            params['num_classes'] = eval_data.num_classes
 
-    # Restore the saved parameters
-    model.load_checkpoint(save_path=args.model_path, epoch=args.epoch)
+            # Load model
+            model = load(model_type=params['model_type'],
+                         params=params,
+                         backend=params['backend'])
 
-    # GPU setting
-    model.set_cuda(deterministic=False, benchmark=True)
+            # Restore the saved parameters
+            epoch, _, _, _ = model.load_checkpoint(
+                save_path=args.model_path, epoch=args.epoch)
 
-    print('beam width: %d' % args.beam_width)
+            # GPU setting
+            model.set_cuda(deterministic=False, benchmark=True)
 
-    if params['label_type'] == 'word':
-        wer_eval92, df_eval92 = eval_word(
-            models=[model],
-            dataset=test_data,
-            eval_batch_size=args.eval_batch_size,
-            beam_width=args.beam_width,
-            max_decode_len=MAX_DECODE_LEN_WORD,
-            min_decode_len=MIN_DECODE_LEN_WORD,
-            length_penalty=args.length_penalty,
-            coverage_penalty=args.coverage_penalty,
-            progressbar=True)
-        print('  WER (%s): %.3f %%' %
-              (test_data.label_type, (wer_eval92 * 100)))
-        print(df_eval92)
-    else:
-        wer_eval92, cer_eval92, df_eval92 = eval_char(
-            models=[model],
-            dataset=test_data,
-            eval_batch_size=args.eval_batch_size,
-            beam_width=args.beam_width,
-            max_decode_len=MAX_DECODE_LEN_CHAR,
-            min_decode_len=MIN_DECODE_LEN_CHAR,
-            length_penalty=args.length_penalty,
-            coverage_penalty=args.coverage_penalty,
-            progressbar=True)
-        print('  WER / CER (%s): %.3f / %.3f %%' %
-              (test_data.label_type, (wer_eval92 * 100), (cer_eval92 * 100)))
-        print(df_eval92)
+            logger.info('beam width: %d' % args.beam_width)
+            logger.info('epoch: %d' % epoch)
+
+        if params['label_type'] == 'word':
+            wer, df = eval_word(
+                models=[model],
+                dataset=eval_data,
+                eval_batch_size=args.eval_batch_size,
+                beam_width=args.beam_width,
+                max_decode_len=MAX_DECODE_LEN_WORD,
+                min_decode_len=MIN_DECODE_LEN_WORD,
+                length_penalty=args.length_penalty,
+                coverage_penalty=args.coverage_penalty,
+                progressbar=True)
+            logger.info('  WER (%s): %.3f %%' %
+                        (eval_data.label_type, (wer * 100)))
+            logger.info(df)
+        else:
+            wer, cer, df = eval_char(
+                models=[model],
+                dataset=eval_data,
+                eval_batch_size=args.eval_batch_size,
+                beam_width=args.beam_width,
+                max_decode_len=MAX_DECODE_LEN_CHAR,
+                min_decode_len=MIN_DECODE_LEN_CHAR,
+                length_penalty=args.length_penalty,
+                coverage_penalty=args.coverage_penalty,
+                progressbar=True)
+            logger.info('  WER / CER (%s): %.3f / %.3f %%' %
+                        (eval_data.label_type, (wer * 100), (cer * 100)))
+            logger.info(df)
 
 
 if __name__ == '__main__':

@@ -1,9 +1,11 @@
-parent: ./conf/attention/att_char_train_si284.yml
+parent: ./conf/attention/bgru_att_phone61.yml
 param:
   # framework
   backend: pytorch
+  # backend: chainer
 
   # topology
+  encoder_type: gru
   conv_channels: [64, 64, 128, 128]
   conv_kernel_sizes:
     - [3, 3]
@@ -25,24 +27,25 @@ param:
   encoder_bidirectional: True
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 4
+  encoder_num_layers: 5
   subsample_list:
+    - False
     - False
     - False
     - False
     - False
 
   # optimization
-  batch_size: 20
+  batch_size: 16
 
   # initialization
   char_init: False
 
   # regularization
-  scheduled_sampling_max_step: 30000
+  scheduled_sampling_max_step: 8000
 
   # annealing
-  print_step: 200
+  print_step: 20
 
   # MTL
   backward_loss_weight: 0

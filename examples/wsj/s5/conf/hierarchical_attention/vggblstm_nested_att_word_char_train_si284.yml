@@ -1,0 +1,69 @@
+parent: ./conf/hierarchical_attention/blstm_nested_att_word_char_train_si284.yml
+param:
+  # framework
+  backend: pytorch
+
+  # topology
+  conv_channels: [64, 64, 128, 128]
+  conv_kernel_sizes:
+    - [3, 3]
+    - [3, 3]
+    - [3, 3]
+    - [3, 3]
+  conv_strides:
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+  poolings:
+    - []
+    - [2, 2]
+    - []
+    - [2, 2]
+  activation: relu
+  batch_norm: True
+  encoder_bidirectional: True
+  encoder_num_units: 320
+  encoder_num_proj: 0
+  encoder_num_layers: 4
+  encoder_num_layers_sub: 4
+  subsample_list:
+    - False
+    - False
+    - False
+    - False
+
+  # optimization
+  batch_size: 20
+
+  # initialization
+  char_init: False
+  # char_init: /n/sd8/inaguma/result/wsj/pytorch/ctc/character/train_si284/conv_64_64_128_128_blstm320H4L_bn_adam_lr1e-3_dropen0.2_input81
+
+  # regularization
+  scheduled_sampling_max_step: 30000
+
+  # annealing
+  print_step: 200
+
+
+
+  # MTL
+  main_loss_weight: 0.5
+  sub_loss_weight: 0.5
+  ctc_loss_weight_sub: 0
+
+  # W2C attention
+  usage_dec_sub: all
+  num_heads_dec: 1
+  dec_attention_type: content
+
+  # regularization
+  dec_attend_temperature: 1
+  dec_sigmoid_smoothing: False
+  att_reg_weight: 0
+
+  backward_sub: False
+
+  # regularization
+  relax_context_vec_dec: False

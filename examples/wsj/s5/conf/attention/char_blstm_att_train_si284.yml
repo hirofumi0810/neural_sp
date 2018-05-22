@@ -37,9 +37,9 @@ param:
   encoder_num_proj: 0
   encoder_num_layers: 4
   subsample_list:
-    - True
-    - True
     - False
+    - True
+    - True
     - False
   subsample_type: drop
   bridge_layer: False
@@ -102,4 +102,3 @@ param:
   # MTL
   backward_loss_weight: 0
   ctc_loss_weight: 0
-  # ctc_loss_weight: 0.1

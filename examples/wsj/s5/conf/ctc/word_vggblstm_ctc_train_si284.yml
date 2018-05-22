@@ -1,10 +1,13 @@
-parent: ./conf/attention/att_phone61.yml
+parent: ./conf/ctc/char_blstm_ctc_train_si284.yml
 param:
   # framework
   backend: pytorch
 
+  # corpus
+  data_size: train_si284
+  label_type: word
+
   # topology
-  encoder_type: gru
   conv_channels: [64, 64, 128, 128]
   conv_kernel_sizes:
     - [3, 3]
@@ -26,26 +29,20 @@ param:
   encoder_bidirectional: True
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 5
+  encoder_num_layers: 4
   subsample_list:
     - False
     - False
     - False
     - False
-    - False
+  fc_list: [320]
 
   # optimization
-  batch_size: 16
+  batch_size: 20
 
   # initialization
   char_init: False
-
-  # regularization
-  scheduled_sampling_max_step: 8000
+  # char_init: /n/sd8/inaguma/result/wsj/pytorch/ctc/character/train_si284/conv_64_64_128_128_blstm320H4L_bn_adam_lr1e-3_dropen0.2_input81
 
   # annealing
-  print_step: 20
-
-  # MTL
-  backward_loss_weight: 0
-  ctc_loss_weight: 0
+  print_step: 200

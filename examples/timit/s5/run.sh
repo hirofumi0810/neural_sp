@@ -17,7 +17,7 @@ echo ===========================================================================
 
 stage=0
 run_background=true
-restart=false
+# run_background=false
 
 ### Set path to original data
 timit="/n/sd8/inaguma/corpus/timit/data"
@@ -162,7 +162,7 @@ if [ $stage -le 3 ]; then
 
   echo "Start training..."
 
-  if $restart; then
+  if [ `echo $config_path | grep 'result'` ]; then
     if $run_background; then
       CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
       nohup $PYTHON exp/training/train.py \

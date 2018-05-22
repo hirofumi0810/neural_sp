@@ -17,6 +17,7 @@ from examples.wsj.s5.exp.dataset.load_dataset_hierarchical import Dataset
 from examples.wsj.s5.exp.metrics.character import eval_char
 from examples.wsj.s5.exp.metrics.word import eval_word
 from utils.config import load_config
+from utils.evaluation.logging import set_logger
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str,
@@ -49,80 +50,86 @@ MIN_DECODE_LEN_CHAR = 10
 
 def main():
 
+    a2c_oracle = False
+    resolving_unk = False
+
     args = parser.parse_args()
 
     # Load a config file (.yml)
     params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
-    # Load dataset
-    test_data = Dataset(
-        data_save_path=args.data_save_path,
-        backend=params['backend'],
-        input_freq=params['input_freq'],
-        use_delta=params['use_delta'],
-        use_double_delta=params['use_double_delta'],
-        # data_type='test_dev93',
-        data_type='test_eval92',
-        data_size=params['data_size'],
-        label_type=params['label_type'], label_type_sub=params['label_type_sub'],
-        batch_size=args.eval_batch_size, splice=params['splice'],
-        num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=False, tool=params['tool'])
+    # Setting for logging
+    logger = set_logger(args.model_path)
 
-    params['num_classes'] = test_data.num_classes
-    params['num_classes_sub'] = test_data.num_classes_sub
+    for i, data_type in enumerate(['test_dev93', 'test_eval92']):
+        # Load dataset
+        eval_data = Dataset(
+            data_save_path=args.data_save_path,
+            backend=params['backend'],
+            input_freq=params['input_freq'],
+            use_delta=params['use_delta'],
+            use_double_delta=params['use_double_delta'],
+            data_type=data_type,
+            data_size=params['data_size'],
+            label_type=params['label_type'], label_type_sub=params['label_type_sub'],
+            batch_size=args.eval_batch_size, splice=params['splice'],
+            num_stack=params['num_stack'], num_skip=params['num_skip'],
+            sort_utt=False, tool=params['tool'])
 
-    # Load model
-    model = load(model_type=params['model_type'],
-                 params=params,
-                 backend=params['backend'])
+        if i == 0:
+            params['num_classes'] = eval_data.num_classes
+            params['num_classes_sub'] = eval_data.num_classes_sub
 
-    # Restore the saved parameters
-    model.load_checkpoint(save_path=args.model_path, epoch=args.epoch)
+            # Load model
+            model = load(model_type=params['model_type'],
+                         params=params,
+                         backend=params['backend'])
 
-    # GPU setting
-    model.set_cuda(deterministic=False, benchmark=True)
+            # Restore the saved parameters
+            epoch, _, _, _ = model.load_checkpoint(
+                save_path=args.model_path, epoch=args.epoch)
 
-    a2c_oracle = False
-    resolving_unk = False
+            # GPU setting
+            model.set_cuda(deterministic=False, benchmark=True)
 
-    print('beam width (main): %d' % args.beam_width)
-    print('beam width (sub) : %d' % args.beam_width_sub)
-    print('a2c oracle: %s' % str(a2c_oracle))
-    print('resolving_unk: %s' % str(resolving_unk))
+            logger.info('beam width (main): %d' % args.beam_width)
+            logger.info('beam width (sub) : %d' % args.beam_width_sub)
+            logger.info('epoch: %d' % epoch)
+            logger.info('a2c oracle: %s' % str(a2c_oracle))
+            logger.info('resolving_unk: %s' % str(resolving_unk))
 
-    wer_eval92, df_eval92 = eval_word(
-        models=[model],
-        dataset=test_data,
-        eval_batch_size=args.eval_batch_size,
-        beam_width=args.beam_width,
-        max_decode_len=MAX_DECODE_LEN_WORD,
-        min_decode_len=MIN_DECODE_LEN_WORD,
-        beam_width_sub=args.beam_width_sub,
-        max_decode_len_sub=MAX_DECODE_LEN_CHAR,
-        min_decode_len_sub=MIN_DECODE_LEN_CHAR,
-        length_penalty=args.length_penalty,
-        coverage_penalty=args.coverage_penalty,
-        progressbar=True,
-        resolving_unk=resolving_unk,
-        a2c_oracle=a2c_oracle)
-    print('  WER (%s, main): %.3f %%' %
-          (test_data.data_type, (wer_eval92 * 100)))
-    print(df_eval92)
+        wer, df = eval_word(
+            models=[model],
+            dataset=eval_data,
+            eval_batch_size=args.eval_batch_size,
+            beam_width=args.beam_width,
+            max_decode_len=MAX_DECODE_LEN_WORD,
+            min_decode_len=MIN_DECODE_LEN_WORD,
+            beam_width_sub=args.beam_width_sub,
+            max_decode_len_sub=MAX_DECODE_LEN_CHAR,
+            min_decode_len_sub=MIN_DECODE_LEN_CHAR,
+            length_penalty=args.length_penalty,
+            coverage_penalty=args.coverage_penalty,
+            progressbar=True,
+            resolving_unk=resolving_unk,
+            a2c_oracle=a2c_oracle)
+        logger.info('  WER (%s, main): %.3f %%' %
+                    (eval_data.data_type, (wer * 100)))
+        logger.info(df)
 
-    wer_eval92_sub, cer_eval92_sub, df_eval92_sub = eval_char(
-        models=[model],
-        dataset=test_data,
-        eval_batch_size=args.eval_batch_size,
-        beam_width=args.beam_width_sub,
-        max_decode_len=MAX_DECODE_LEN_CHAR,
-        min_decode_len=MIN_DECODE_LEN_CHAR,
-        length_penalty=args.length_penalty,
-        coverage_penalty=args.coverage_penalty,
-        progressbar=True)
-    print(' WER / CER (%s, sub): %.3f / %.3f %%' %
-          (test_data.data_type, (wer_eval92_sub * 100), (cer_eval92_sub * 100)))
-    print(df_eval92_sub)
+        wer_sub, cer_sub, df_sub = eval_char(
+            models=[model],
+            dataset=eval_data,
+            eval_batch_size=args.eval_batch_size,
+            beam_width=args.beam_width_sub,
+            max_decode_len=MAX_DECODE_LEN_CHAR,
+            min_decode_len=MIN_DECODE_LEN_CHAR,
+            length_penalty=args.length_penalty,
+            coverage_penalty=args.coverage_penalty,
+            progressbar=True)
+        logger.info(' WER / CER (%s, sub): %.3f / %.3f %%' %
+                    (eval_data.data_type, (wer_sub * 100), (cer_sub * 100)))
+        logger.info(df_sub)
 
 
 if __name__ == '__main__':

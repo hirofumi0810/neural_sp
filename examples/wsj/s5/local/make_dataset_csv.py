@@ -197,12 +197,13 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
 
                 # Capital-divided
                 if len(w) == 1:
-                    char_capital_set.add(w)
-                    trans_capital += w
+                    char_capital_set.add(w.upper())
+                    trans_capital += w.upper()
                 else:
                     # Replace the first character with the capital
                     # letter
                     w = w[0].upper() + w[1:]
+                    char_capital_set.add(w[0])
 
                     # Check double-letters
                     for i in range(0, len(w) - 1, 1):
