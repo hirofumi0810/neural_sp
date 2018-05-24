@@ -58,7 +58,7 @@ def main():
 
     for i, data_type in enumerate(['test_dev93', 'test_eval92']):
         # Load dataset
-        eval_data = Dataset(
+        dataset = Dataset(
             data_save_path=args.data_save_path,
             backend=params['backend'],
             input_freq=params['input_freq'],
@@ -72,7 +72,7 @@ def main():
             sort_utt=False, tool=params['tool'])
 
         if i == 0:
-            params['num_classes'] = eval_data.num_classes
+            params['num_classes'] = dataset.num_classes
 
             # Load model
             model = load(model_type=params['model_type'],
@@ -92,7 +92,7 @@ def main():
         if params['label_type'] == 'word':
             wer, df = eval_word(
                 models=[model],
-                dataset=eval_data,
+                dataset=dataset,
                 eval_batch_size=args.eval_batch_size,
                 beam_width=args.beam_width,
                 max_decode_len=MAX_DECODE_LEN_WORD,
@@ -101,12 +101,12 @@ def main():
                 coverage_penalty=args.coverage_penalty,
                 progressbar=True)
             logger.info('  WER (%s): %.3f %%' %
-                        (eval_data.label_type, (wer * 100)))
+                        (dataset.label_type, (wer * 100)))
             logger.info(df)
         else:
             wer, cer, df = eval_char(
                 models=[model],
-                dataset=eval_data,
+                dataset=dataset,
                 eval_batch_size=args.eval_batch_size,
                 beam_width=args.beam_width,
                 max_decode_len=MAX_DECODE_LEN_CHAR,
@@ -115,7 +115,7 @@ def main():
                 coverage_penalty=args.coverage_penalty,
                 progressbar=True)
             logger.info('  WER / CER (%s): %.3f / %.3f %%' %
-                        (eval_data.label_type, (wer * 100), (cer * 100)))
+                        (dataset.label_type, (wer * 100), (cer * 100)))
             logger.info(df)
 
 

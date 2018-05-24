@@ -15,8 +15,6 @@ import shutil
 sys.path.append(abspath('../../../'))
 from models.load_model import load
 from examples.wsj.s5.exp.dataset.load_dataset import Dataset
-from utils.io.labels.character import Idx2char
-from utils.io.labels.word import Idx2word
 from utils.directory import mkdir_join, mkdir
 from utils.visualization.attention import plot_attention_weights
 from utils.config import load_config
@@ -51,7 +49,7 @@ def main():
     params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
-    eval_data = Dataset(
+    dataset = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
         input_freq=params['input_freq'],
@@ -64,7 +62,7 @@ def main():
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=False, reverse=False, tool=params['tool'])
 
-    params['num_classes'] = eval_data.num_classes
+    params['num_classes'] = dataset.num_classes
 
     # Load model
     model = load(model_type=params['model_type'],
@@ -77,39 +75,21 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
-    # Visualize
-    plot(model=model,
-         dataset=eval_data,
-         eval_batch_size=args.eval_batch_size,
-         beam_width=args.beam_width,
-         length_penalty=args.length_penalty,
-         coverage_penalty=args.coverage_penalty,
-         save_path=mkdir_join(args.model_path, 'att_weights'))
+    save_path = mkdir_join(args.model_path, 'att_weights')
 
+    ######################################################################
 
-def plot(model, dataset, eval_batch_size, beam_width,
-         length_penalty, coverage_penalty, save_path=None):
-    """Visualize attention weights of attetnion-based model.
-    Args:
-        model: model to evaluate
-        dataset: An instance of a `Dataset` class
-        eval_batch_size (int): the batch size when evaluating the model
-        beam_width: (int): the size of beam
-        length_penalty (float): length penalty in beam search decoding
-        coverage_penalty (float): coverage penalty in beam search decoding
-        save_path (string): path to save attention weights plotting
-    """
     # Clean directory
     if save_path is not None and isdir(save_path):
         shutil.rmtree(save_path)
         mkdir(save_path)
 
     if dataset.label_type == 'word':
-        map_fn = Idx2word(dataset.vocab_file_path, return_list=True)
+        map_fn = dataset.idx2word
         max_decode_len = MAX_DECODE_LEN_WORD
         min_decode_len = MIN_DECODE_LEN_WORD
     else:
-        map_fn = Idx2char(dataset.vocab_file_path, return_list=True)
+        map_fn = dataset.idx2char
         max_decode_len = MAX_DECODE_LEN_CHAR
         min_decode_len = MIN_DECODE_LEN_CHAR
 
@@ -117,11 +97,11 @@ def plot(model, dataset, eval_batch_size, beam_width,
         # Decode
         best_hyps, aw, perm_idx = model.decode(
             batch['xs'], batch['x_lens'],
-            beam_width=beam_width,
+            beam_width=args.beam_width,
             max_decode_len=max_decode_len,
             min_decode_len=min_decode_len,
-            length_penalty=length_penalty,
-            coverage_penalty=coverage_penalty)
+            length_penalty=args.length_penalty,
+            coverage_penalty=args.coverage_penalty)
 
         ys = batch['ys'][perm_idx]
         y_lens = batch['y_lens'][perm_idx]
@@ -137,7 +117,7 @@ def plot(model, dataset, eval_batch_size, beam_width,
                 # Convert from list of index to string
                 str_ref = map_fn(ys[b][:y_lens[b]])
 
-            token_list = map_fn(best_hyps[b])
+            token_list = map_fn(best_hyps[b], return_list=True)
 
             plot_attention_weights(
                 aw[b][:len(token_list), :batch['x_lens'][b]],

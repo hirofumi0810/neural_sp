@@ -15,8 +15,7 @@ import re
 sys.path.append(abspath('../../../'))
 from models.load_model import load
 from examples.wsj.s5.exp.dataset.load_dataset_hierarchical import Dataset
-from utils.io.labels.character import Idx2char, Char2idx
-from utils.io.labels.word import Idx2word, Char2word
+from utils.io.labels.word import Char2word
 from utils.config import load_config
 from utils.evaluation.edit_distance import compute_wer
 from utils.evaluation.resolving_unk import resolve_unk
@@ -47,13 +46,15 @@ MIN_DECODE_LEN_CHAR = 10
 
 def main():
 
+    resolving_unk = False
+
     args = parser.parse_args()
 
     # Load a config file (.yml)
     params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
-    eval_data = Dataset(
+    dataset = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
         input_freq=params['input_freq'],
@@ -67,8 +68,8 @@ def main():
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=False, reverse=False, tool=params['tool'])
 
-    params['num_classes'] = eval_data.num_classes
-    params['num_classes_sub'] = eval_data.num_classes_sub
+    params['num_classes'] = dataset.num_classes
+    params['num_classes_sub'] = dataset.num_classes_sub
 
     # Load model
     model = load(model_type=params['model_type'],
@@ -81,65 +82,37 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
-    # Visualize
-    decode(model=model,
-           dataset=eval_data,
-           eval_batch_size=args.eval_batch_size,
-           beam_width=args.beam_width,
-           beam_width_sub=args.beam_width_sub,
-           length_penalty=args.length_penalty,
-           coverage_penalty=args.coverage_penalty,
-           save_path=None,
-           # save_path=args.model_path,
-           resolving_unk=False)
+    # sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
 
+    ######################################################################
 
-def decode(model, dataset, eval_batch_size, beam_width, beam_width_sub,
-           length_penalty, coverage_penalty, save_path=None, resolving_unk=False):
-    """Visualize label outputs.
-    Args:
-        model: the model to evaluate
-        dataset: An instance of a `Dataset` class
-        eval_batch_size (int): the batch size when evaluating the model
-        beam_width: (int): the size of beam in the main task
-        beam_width_sub: (int): the size of beam in the sub task
-        length_penalty (float): coverage penalty in beam search decoding
-        coverage_penalty (float): length penalty in beam search decoding
-        save_path (string): path to save decoding results
-        resolving_unk (bool):
-    """
-    idx2word = Idx2word(dataset.vocab_file_path)
-    idx2char = Idx2char(dataset.vocab_file_path_sub)
-    char2idx = Char2idx(dataset.vocab_file_path_sub)
-    char2word = Char2word(dataset.vocab_file_path, dataset.vocab_file_path_sub)
-
-    if save_path is not None:
-        sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
+    # char2word = Char2word(dataset.vocab_file_path,
+    #                       dataset.vocab_file_path_sub)
 
     for batch, is_new_epoch in dataset:
         # Decode
         if model.model_type == 'nested_attention':
             best_hyps, aw, best_hyps_sub, aw_sub, _, perm_idx = model.decode(
                 batch['xs'], batch['x_lens'],
-                beam_width=beam_width,
+                beam_width=args.beam_width,
                 max_decode_len=MAX_DECODE_LEN_WORD,
                 min_decode_len=MIN_DECODE_LEN_WORD,
-                beam_width_sub=beam_width_sub,
+                beam_width_sub=args.beam_width_sub,
                 max_decode_len_sub=MAX_DECODE_LEN_CHAR,
                 min_decode_len_sub=MIN_DECODE_LEN_CHAR,
-                length_penalty=length_penalty,
-                coverage_penalty=coverage_penalty)
+                length_penalty=args.length_penalty,
+                coverage_penalty=args.coverage_penalty)
         else:
             best_hyps, aw, perm_idx = model.decode(
                 batch['xs'], batch['x_lens'],
-                beam_width=beam_width,
+                beam_width=args.beam_width,
                 max_decode_len=MAX_DECODE_LEN_WORD,
                 min_decode_len=MIN_DECODE_LEN_WORD,
-                length_penalty=length_penalty,
-                coverage_penalty=coverage_penalty)
+                length_penalty=args.length_penalty,
+                coverage_penalty=args.coverage_penalty)
             # best_hyps, aw, perm_idx = model.decode(
             #     batch['xs'], batch['x_lens'],
-            #     # beam_width=beam_width,
+            #     # beam_width=args.beam_width,
             #     beam_width=2,
             #     max_decode_len=MAX_DECODE_LEN_WORD,
             #     min_decode_len=MIN_DECODE_LEN_WORD,
@@ -148,11 +121,11 @@ def decode(model, dataset, eval_batch_size, beam_width, beam_width_sub,
             #     char2word=char2word)
             best_hyps_sub, aw_sub, _ = model.decode(
                 batch['xs'], batch['x_lens'],
-                beam_width=beam_width_sub,
+                beam_width=args.beam_width_sub,
                 max_decode_len=MAX_DECODE_LEN_CHAR,
                 min_decode_len=MIN_DECODE_LEN_CHAR,
-                length_penalty=length_penalty,
-                coverage_penalty=coverage_penalty,
+                length_penalty=args.length_penalty,
+                coverage_penalty=args.coverage_penalty,
                 task_index=1)
 
         ys = batch['ys'][perm_idx]
@@ -170,22 +143,22 @@ def decode(model, dataset, eval_batch_size, beam_width, beam_width_sub,
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
-                str_ref = idx2word(ys[b][: y_lens[b]])
-                str_ref_sub = idx2word(ys_sub[b][:y_lens_sub[b]])
+                str_ref = dataset.idx2word(ys[b][: y_lens[b]])
+                str_ref_sub = dataset.idx2char(ys_sub[b][:y_lens_sub[b]])
 
             ##############################
             # Hypothesis
             ##############################
             # Convert from list of index to string
-            str_hyp = idx2word(best_hyps[b])
-            str_hyp_sub = idx2char(best_hyps_sub[b])
+            str_hyp = dataset.idx2word(best_hyps[b])
+            str_hyp_sub = dataset.idx2char(best_hyps_sub[b])
 
             ##############################
             # Resolving UNK
             ##############################
             if 'OOV' in str_hyp and resolving_unk:
                 str_hyp_no_unk = resolve_unk(
-                    str_hyp, best_hyps_sub[b], aw[b], aw_sub[b], idx2char)
+                    str_hyp, best_hyps_sub[b], aw[b], aw_sub[b], dataset.idx2char)
 
             print('----- wav: %s -----' % batch['input_names'][b])
             print('Ref         : %s' % str_ref.replace('_', ' '))
@@ -201,7 +174,7 @@ def decode(model, dataset, eval_batch_size, beam_width, beam_width_sub,
                     normalize=True)
                 print('WER (main)  : %.3f %%' % (wer * 100))
                 wer_sub, _, _, _ = compute_wer(
-                    ref=str_ref.split('_'),
+                    ref=str_ref_sub.split('_'),
                     hyp=re.sub(r'(.*)>(.*)', r'\1',
                                str_hyp_sub).split('_'),
                     normalize=True)

@@ -11,7 +11,6 @@ import re
 from tqdm import tqdm
 import pandas as pd
 
-from utils.io.labels.character import Idx2char
 from utils.evaluation.edit_distance import compute_wer
 
 
@@ -40,11 +39,6 @@ def eval_char(models, eval_batch_size, dataset, beam_width,
 
     model = models[0]
     # TODO: fix this
-
-    if model.model_type in ['ctc', 'attention']:
-        idx2char = Idx2char(vocab_file_path=dataset.vocab_file_path)
-    else:
-        idx2char = Idx2char(vocab_file_path=dataset.vocab_file_path_sub)
 
     wer, cer = 0, 0
     sub_word, ins_word, del_word = 0, 0, 0
@@ -88,12 +82,12 @@ def eval_char(models, eval_batch_size, dataset, beam_width,
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
-                str_ref = idx2char(ys[b][:y_lens[b]])
+                str_ref = dataset.idx2char(ys[b][:y_lens[b]])
 
             ##############################
             # Hypothesis
             ##############################
-            str_hyp = idx2char(best_hyps[b])
+            str_hyp = dataset.idx2char(best_hyps[b])
             str_hyp = re.sub(r'(.*)>(.*)', r'\1', str_hyp)
             # NOTE: Trancate by the first <EOS>
 

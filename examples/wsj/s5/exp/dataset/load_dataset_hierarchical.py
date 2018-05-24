@@ -16,6 +16,8 @@ import logging
 logger = logging.getLogger('training')
 
 from utils.dataset.loader_hierarchical import DatasetBase
+from utils.io.labels.word import Idx2word, Word2idx
+from utils.io.labels.character import Idx2char, Char2idx
 
 
 class Dataset(DatasetBase):
@@ -61,8 +63,6 @@ class Dataset(DatasetBase):
             dynamic_batching (bool): if True, batch size will be
                 chainged dynamically in training
         """
-        self.is_test = True if 'eval' in data_type else False
-
         self.backend = backend
         self.input_freq = input_freq
         self.use_delta = use_delta
@@ -83,11 +83,20 @@ class Dataset(DatasetBase):
         self.tool = tool
         self.num_enque = num_enque
         self.dynamic_batching = dynamic_batching
+        self.is_test = True if data_type == 'test_eval92' else False
 
         self.vocab_file_path = join(
             data_save_path, 'vocab', data_size, label_type + '.txt')
+        self.idx2word = Idx2word(self.vocab_file_path)
+        self.word2idx = Word2idx(self.vocab_file_path)
         self.vocab_file_path_sub = join(
             data_save_path, 'vocab', data_size, label_type_sub + '.txt')
+        self.idx2char = Idx2char(
+            self.vocab_file_path_sub,
+            capital_divide=label_type_sub == 'character_capital_divide')
+        self.char2idx = Char2idx(
+            self.vocab_file_path_sub,
+            capital_divide=label_type_sub == 'character_capital_divide')
 
         super(Dataset, self).__init__(vocab_file_path=self.vocab_file_path,
                                       vocab_file_path_sub=self.vocab_file_path_sub)

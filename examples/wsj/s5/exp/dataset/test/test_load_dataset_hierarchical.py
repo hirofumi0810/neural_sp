@@ -11,8 +11,6 @@ import unittest
 
 sys.path.append(os.path.abspath('../../../../../../'))
 from examples.wsj.s5.exp.dataset.load_dataset_hierarchical import Dataset
-from utils.io.labels.character import Idx2char
-from utils.io.labels.word import Idx2word
 from utils.measure_time_func import measure_time
 
 
@@ -64,8 +62,8 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
             num_enque=None)
 
         print('=> Loading mini-batch...')
-        idx2word = Idx2word(dataset.vocab_file_path)
-        idx2char = Idx2char(dataset.vocab_file_path_sub)
+        map_fn = dataset.idx2word
+        map_fn_sub = dataset.idx2char
 
         for batch, is_new_epoch in dataset:
             if data_type == 'train' and backend == 'pytorch':
@@ -83,8 +81,8 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
                 str_ref_sub = str_ref_sub.lower()
                 str_ref_sub = str_ref_sub.replace('(', '').replace(')', '')
             else:
-                str_ref = idx2word(batch['ys'][0][:batch['y_lens'][0]])
-                str_ref_sub = idx2char(
+                str_ref = map_fn(batch['ys'][0][:batch['y_lens'][0]])
+                str_ref_sub = map_fn_sub(
                     batch['ys_sub'][0][:batch['y_lens_sub'][0]])
 
             print('----- %s (epoch: %.3f, batch: %d) -----' %

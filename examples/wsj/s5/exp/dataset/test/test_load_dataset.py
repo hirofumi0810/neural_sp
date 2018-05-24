@@ -11,8 +11,6 @@ import unittest
 
 sys.path.append(os.path.abspath('../../../../../../'))
 from examples.wsj.s5.exp.dataset.load_dataset import Dataset
-from utils.io.labels.character import Idx2char
-from utils.io.labels.word import Idx2word
 from utils.measure_time_func import measure_time
 
 
@@ -82,9 +80,9 @@ class TestLoadDataset(unittest.TestCase):
 
         print('=> Loading mini-batch...')
         if 'word' in label_type:
-            map_fn = Idx2word(dataset.vocab_file_path)
+            map_fn = dataset.idx2word
         else:
-            map_fn = Idx2char(dataset.vocab_file_path)
+            map_fn = dataset.idx2char
 
         for batch, is_new_epoch in dataset:
             if data_type == 'train' and backend == 'pytorch':

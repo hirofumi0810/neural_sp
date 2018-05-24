@@ -29,8 +29,6 @@ sns.set(font='Noto Sans CJK JP')
 sys.path.append(abspath('../../../'))
 from models.load_model import load
 from examples.wsj.s5.exp.dataset.load_dataset_hierarchical import Dataset
-from utils.io.labels.character import Idx2char, Char2idx
-from utils.io.labels.word import Idx2word
 from utils.directory import mkdir_join, mkdir
 from utils.visualization.attention import plot_hierarchical_attention_weights
 from utils.config import load_config
@@ -68,7 +66,7 @@ def main():
     params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
-    eval_data = Dataset(
+    dataset = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
         input_freq=params['input_freq'],
@@ -81,8 +79,8 @@ def main():
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=False, reverse=False, tool=params['tool'])
 
-    params['num_classes'] = eval_data.num_classes
-    params['num_classes_sub'] = eval_data.num_classes_sub
+    params['num_classes'] = dataset.num_classes
+    params['num_classes_sub'] = dataset.num_classes_sub
 
     # Load model
     model = load(model_type=params['model_type'],
@@ -97,41 +95,14 @@ def main():
 
     a2c_oracle = False
 
-    # Visualize
-    plot(model=model,
-         dataset=eval_data,
-         eval_batch_size=args.eval_batch_size,
-         beam_width=args.beam_width,
-         beam_width_sub=args.beam_width_sub,
-         length_penalty=args.length_penalty,
-         coverage_penalty=args.coverage_penalty,
-         a2c_oracle=a2c_oracle,
-         save_path=mkdir_join(args.model_path, 'att_weights'))
+    save_path = mkdir_join(args.model_path, 'att_weights')
 
+    ######################################################################
 
-def plot(model, dataset, eval_batch_size, beam_width, beam_width_sub,
-         length_penalty, coverage_penalty, a2c_oracle=False, save_path=None):
-    """Visualize attention weights of Attetnion-based model.
-    Args:
-        model: model to evaluate
-        dataset: An instance of a `Dataset` class
-        eval_batch_size (int): the batch size when evaluating the model
-        beam_width: (int): the size of beam i nteh main task
-        beam_width_sub: (int): the size of beam in the sub task
-        length_penalty (float): coverage penalty in beam search decoding
-        coverage_penalty (float): length penalty in beam search decoding
-        a2c_oracle (bool):
-        save_path (string): path to save attention weights plotting
-    """
     # Clean directory
     if save_path is not None and isdir(save_path):
         shutil.rmtree(save_path)
         mkdir(save_path)
-
-    idx2word = Idx2word(dataset.vocab_file_path, return_list=True)
-    idx2char = Idx2char(dataset.vocab_file_path_sub, return_list=True)
-    if a2c_oracle:
-        char2idx = Char2idx(dataset.vocab_file_path_sub)
 
     for batch, is_new_epoch in dataset:
         batch_size = len(batch['xs'])
@@ -149,7 +120,7 @@ def plot(model, dataset, eval_batch_size, beam_width, beam_width_sub,
                 ys_sub -= 1  # pad with -1
                 y_lens_sub = np.zeros((batch_size,), dtype=np.int32)
                 for b in range(batch_size):
-                    indices = char2idx(batch['ys_sub'][b][0])
+                    indices = dataset.char2idx(batch['ys_sub'][b][0])
                     ys_sub[b, :len(indices)] = indices
                     y_lens_sub[b] = len(indices)
                     # NOTE: transcript is seperated by space('_')
@@ -162,24 +133,26 @@ def plot(model, dataset, eval_batch_size, beam_width, beam_width_sub,
 
         best_hyps, aw, best_hyps_sub, aw_sub, aw_dec, _ = model.decode(
             batch['xs'], batch['x_lens'],
-            beam_width=beam_width,
+            beam_width=args.beam_width,
             max_decode_len=MAX_DECODE_LEN_WORD,
             min_decode_len=MIN_DECODE_LEN_WORD,
-            beam_width_sub=beam_width_sub,
+            beam_width_sub=args.beam_width_sub,
             max_decode_len_sub=MAX_DECODE_LEN_CHAR,
             min_decode_len_sub=MIN_DECODE_LEN_CHAR,
-            length_penalty=length_penalty,
-            coverage_penalty=coverage_penalty,
+            length_penalty=args.length_penalty,
+            coverage_penalty=args.coverage_penalty,
             teacher_forcing=a2c_oracle,
             ys_sub=ys_sub,
             y_lens_sub=y_lens_sub)
 
         for b in range(batch_size):
-            word_list = idx2word(best_hyps[b])
-            if 'word' in dataset.label_type_sub:
-                char_list = idx2word(best_hyps_sub[b])
+            word_list = dataset.idx2word(best_hyps[b])
+            if dataset.label_type_sub == 'word':
+                char_list = dataset.idx2word(
+                    best_hyps_sub[b], return_list=True)
             else:
-                char_list = idx2char(best_hyps_sub[b])
+                char_list = dataset.idx2char(
+                    best_hyps_sub[b], return_list=True)
 
             # word to acoustic & character to acoustic
             plot_hierarchical_attention_weights(
