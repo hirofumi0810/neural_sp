@@ -15,8 +15,6 @@ import shutil
 sys.path.append(abspath('../../../'))
 from models.load_model import load
 from examples.csj.s5.exp.dataset.load_dataset_hierarchical import Dataset
-from utils.io.labels.character import Idx2char
-from utils.io.labels.word import Idx2word
 from utils.directory import mkdir_join, mkdir
 from utils.visualization.attention import plot_hierarchical_attention_weights
 from utils.config import load_config
@@ -54,7 +52,7 @@ def main():
     params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
-    test_data = Dataset(
+    dataset = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
         input_freq=params['input_freq'],
@@ -69,8 +67,8 @@ def main():
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=False, reverse=False, tool=params['tool'])
 
-    params['num_classes'] = test_data.num_classes
-    params['num_classes_sub'] = test_data.num_classes_sub
+    params['num_classes'] = dataset.num_classes
+    params['num_classes_sub'] = dataset.num_classes_sub
 
     # Load model
     model = load(model_type=params['model_type'],
@@ -83,60 +81,37 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
-    # Visualize
-    plot(model=model,
-         dataset=test_data,
-         eval_batch_size=args.eval_batch_size,
-         beam_width=args.beam_width,
-         beam_width_sub=args.beam_width_sub,
-         length_penalty=args.length_penalty,
-         coverage_penalty=args.coverage_penalty,
-         save_path=mkdir_join(args.model_path, 'att_weights'))
+    save_path = mkdir_join(args.model_path, 'att_weights')
 
+    ######################################################################
 
-def plot(model, dataset, eval_batch_size, beam_width, beam_width_sub,
-         length_penalty, coverage_penalty, save_path=None):
-    """Visualize attention weights of Attetnion-based model.
-    Args:
-        model: model to evaluate
-        dataset: An instance of a `Dataset` class
-        eval_batch_size (int): the batch size when evaluating the model
-        beam_width: (int): the size of beam i nteh main task
-        beam_width_sub: (int): the size of beam in the sub task
-        length_penalty (float): coverage penalty in beam search decoding
-        coverage_penalty (float): length penalty in beam search decoding
-        save_path (string): path to save attention weights plotting
-    """
     # Clean directory
     if save_path is not None and isdir(save_path):
         shutil.rmtree(save_path)
         mkdir(save_path)
 
-    map_fn_main = Idx2word(dataset.vocab_file_path, return_list=True)
-    map_fn_sub = Idx2char(dataset.vocab_file_path_sub, return_list=True)
-
     for batch, is_new_epoch in dataset:
         # Decode
         best_hyps, aw, perm_idx = model.decode(
             batch['xs'], batch['x_lens'],
-            beam_width=beam_width,
+            beam_width=args.beam_width,
             max_decode_len=MAX_DECODE_LEN_WORD,
             min_decode_len=MIN_DECODE_LEN_WORD,
-            length_penalty=length_penalty,
-            coverage_penalty=coverage_penalty)
+            length_penalty=args.length_penalty,
+            coverage_penalty=args.coverage_penalty)
         best_hyps_sub, aw_sub, _ = model.decode(
             batch['xs'], batch['x_lens'],
-            beam_width=beam_width_sub,
+            beam_width=args.beam_width_sub,
             max_decode_len=MAX_DECODE_LEN_CHAR,
             min_decode_len=MIN_DECODE_LEN_CHAR,
-            length_penalty=length_penalty,
-            coverage_penalty=coverage_penalty,
+            length_penalty=args.length_penalty,
+            coverage_penalty=args.coverage_penalty,
             task_index=1)
 
         for b in range(len(batch['xs'])):
 
-            word_list = map_fn_main(best_hyps[b])
-            char_list = map_fn_sub(best_hyps_sub[b])
+            word_list = dataset.idx2word(best_hyps[b], return_list=True)
+            char_list = dataset.idx2char(best_hyps_sub[b], return_list=True)
 
             speaker = batch['input_names'][b].split('_')[0]
 

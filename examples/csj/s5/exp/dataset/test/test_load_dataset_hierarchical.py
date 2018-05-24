@@ -11,8 +11,6 @@ import unittest
 
 sys.path.append(os.path.abspath('../../../../../../'))
 from examples.csj.s5.exp.dataset.load_dataset_hierarchical import Dataset
-from utils.io.labels.character import Idx2char
-from utils.io.labels.word import Idx2word
 from utils.measure_time_func import measure_time
 
 
@@ -21,19 +19,21 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
     def test(self):
 
         # data_type
-        # self.check(label_type='word', label_type_sub='kanji_wb',
+        # self.check(label_type='word', label_type_sub='character_wb',
         #            data_type='train')
-        self.check(label_type='word', label_type_sub='kanji_wb',
+        self.check(label_type='word', label_type_sub='character_wb',
                    data_type='dev')
-        self.check(label_type='word', label_type_sub='kanji_wb',
+        self.check(label_type='word', label_type_sub='character_wb',
                    data_type='eval1')
-        self.check(label_type='word', label_type_sub='kanji_wb',
+        self.check(label_type='word', label_type_sub='character_wb',
                    data_type='eval2')
-        self.check(label_type='word', label_type_sub='kanji_wb',
+        self.check(label_type='word', label_type_sub='character_wb',
                    data_type='eval3')
 
         # label_type
-        # self.check(label_type='kanji_wb', label_type_sub='kana_wb')
+        # self.check(label_type='word', label_type_sub='phone_wb')
+        # self.check(label_type='character_wb', label_type_sub='phone_wb')
+        # self.check(label_type='character', label_type_sub='phone')
 
     @measure_time
     def check(self, label_type, label_type_sub, data_type='dev',
@@ -60,7 +60,7 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
         dataset = Dataset(
             data_save_path='/n/sd8/inaguma/corpus/csj/kaldi',
             backend=backend,
-            input_freq=80, use_delta=True, use_double_delta=True,
+            input_freq=81, use_delta=True, use_double_delta=True,
             data_type=data_type, data_size=data_size,
             label_type=label_type, label_type_sub=label_type_sub,
             batch_size=64, max_epoch=1, splice=splice,
@@ -70,16 +70,8 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
             num_gpus=num_gpus, tool='htk', num_enque=None)
 
         print('=> Loading mini-batch...')
-        if 'word' in label_type:
-            map_fn = Idx2word(dataset.vocab_file_path)
-        elif 'pos' in label_type:
-            map_fn = Idx2word(dataset.vocab_file_path)
-        else:
-            map_fn = Idx2char(dataset.vocab_file_path)
-        if 'phone' in label_type_sub:
-            raise NotImplementedError
-        else:
-            map_fn_sub = Idx2char(dataset.vocab_file_path_sub)
+        map_fn = dataset.idx2word
+        map_fn_sub = dataset.idx2char
 
         for batch, is_new_epoch in dataset:
             if data_type == 'train' and backend == 'pytorch':

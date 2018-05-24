@@ -11,8 +11,6 @@ import unittest
 
 sys.path.append(os.path.abspath('../../../../../../'))
 from examples.csj.s5.exp.dataset.load_dataset import Dataset
-from utils.io.labels.character import Idx2char
-from utils.io.labels.word import Idx2word
 from utils.measure_time_func import measure_time
 
 
@@ -20,10 +18,10 @@ class TestLoadDataset(unittest.TestCase):
 
     def test(self):
 
-        # self.check(label_type='kanji_wb_left', data_type='eva1')
-        # self.check(label_type='kanji_wb_right', data_type='eva1')
-        # self.check(label_type='kanji_wb_both', data_type='eva1')
-        # self.check(label_type='kanji_wb_remove', data_type='eva1')
+        # self.check(label_type='character_wb_left', data_type='eva1')
+        # self.check(label_type='character_wb_right', data_type='eva1')
+        # self.check(label_type='character_wb_both', data_type='eva1')
+        # self.check(label_type='character_wb_remove', data_type='eva1')
         #
         # raise ValueError
 
@@ -39,10 +37,8 @@ class TestLoadDataset(unittest.TestCase):
         self.check(label_type='word', data_type='eval3')
 
         # label_type
-        self.check(label_type='kanji')
-        self.check(label_type='kanji_wb')
-        # self.check(label_type='kana')
-        # self.check(label_type='kana_wb')
+        self.check(label_type='character')
+        self.check(label_type='character_wb')
         # self.check(label_type='phone')
         # self.check(label_type='phone_wb')
         self.check(label_type='pos')
@@ -83,7 +79,7 @@ class TestLoadDataset(unittest.TestCase):
         dataset = Dataset(
             data_save_path='/n/sd8/inaguma/corpus/csj/kaldi',
             backend=backend,
-            input_freq=80, use_delta=True, use_double_delta=True,
+            input_freq=81, use_delta=True, use_double_delta=True,
             data_type=data_type, data_size=data_size,
             label_type=label_type, batch_size=64,
             max_epoch=1, splice=splice, num_stack=num_stack, num_skip=num_skip,
@@ -92,10 +88,10 @@ class TestLoadDataset(unittest.TestCase):
             num_gpus=num_gpus, tool='htk', num_enque=None)
 
         print('=> Loading mini-batch...')
-        if 'word' in label_type:
-            map_fn = Idx2word(dataset.vocab_file_path)
+        if label_type == 'word':
+            map_fn = dataset.idx2word
         else:
-            map_fn = Idx2char(dataset.vocab_file_path)
+            map_fn = dataset.idx2char
 
         for batch, is_new_epoch in dataset:
             if data_type == 'train' and backend == 'pytorch':

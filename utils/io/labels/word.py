@@ -13,7 +13,7 @@ class Word2idx(object):
     """Convert word to index.
     Args:
         vocab_file_path (string): path to the vocablary file
-        space_mark (string, optional): the space mark to divide a sequence into words
+        space_mark (string): the space mark to divide a sequence into words
     """
 
     def __init__(self, vocab_file_path, space_mark='_'):
@@ -56,13 +56,11 @@ class Idx2word(object):
     """Convert index into word.
     Args:
         vocab_file_path (string): path to the vocabulary file
-        space_mark (string, optional): the space mark to divide a sequence into words
-        return_list (bool, optional): if True, return list of words
+        space_mark (string): the space mark to divide a sequence into words
     """
 
-    def __init__(self, vocab_file_path, space_mark='_', return_list=False):
+    def __init__(self, vocab_file_path, space_mark='_'):
         self.space_mark = space_mark
-        self.return_list = return_list
 
         # Load the vocabulary file
         self.map_dict = {}
@@ -76,10 +74,11 @@ class Idx2word(object):
         # Add <EOS>
         self.map_dict[vocab_count] = '>'
 
-    def __call__(self, indices):
+    def __call__(self, indices, return_list=False):
         """
         Args:
-            indices (np.ndarray): list of word indices.
+            indices (np.ndarray): list of word indices
+            return_list (bool): if True, return list of words
         Returns:
             str_word (string): a sequence of words
                 or
@@ -88,7 +87,7 @@ class Idx2word(object):
         # Convert word indices into the corresponding strings
         word_list = list(map(lambda w: self.map_dict[w], indices))
 
-        if self.return_list:
+        if return_list:
             return word_list
 
         str_word = self.space_mark.join(word_list)

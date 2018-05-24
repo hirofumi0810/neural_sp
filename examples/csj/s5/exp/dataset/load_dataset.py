@@ -16,6 +16,8 @@ import logging
 logger = logging.getLogger('training')
 
 from utils.dataset.loader import DatasetBase
+from utils.io.labels.word import Idx2word, Word2idx
+from utils.io.labels.character import Idx2char, Char2idx
 
 
 class Dataset(DatasetBase):
@@ -37,28 +39,25 @@ class Dataset(DatasetBase):
             use_delta (bool): if True, use the delta feature
             use_double_delta (bool): if True, use the acceleration feature
             data_type (string): train or dev or eval1 or eval2 or eval3
-            data_size (string): aps_other or asps or all_except_dialog_ or all
-            label_type (string): word or kanji or kanji_wb or kana or kana_wb
+            data_size (string): aps_other or aps or all_except_dialog or all
+            label_type (string): word or character or character_wb or phone or phone_wb
             batch_size (int): the size of mini-batch
-            max_epoch (int, optional): the max epoch. None means infinite loop.
-            splice (int, optional): frames to splice. Default is 1 frame.
-            num_stack (int, optional): the number of frames to stack
-            num_skip (int, optional): the number of frames to skip
-            min_frame_num (int, optional): Exclude utteraces shorter than
-                this value
-            shuffle (bool, optional): if True, shuffle utterances. This is
-                disabled when sort_utt is True.
-            sort_utt (bool, optional): if True, sort all utterances in the
-                ascending order
-            reverse (bool, optional): if True, sort utteraces in the
-                descending order
-            sort_stop_epoch (int, optional): After sort_stop_epoch, training
-                will revert back to a random order
-            num_gpus (optional, int): the number of GPUs
-            tool (string, optional): htk or librosa or python_speech_features
-            num_enque (int, optional): the number of elements to enqueue
-            dynamic_batching (bool, optional): if True, batch size will be
-                chainged dynamically in training
+            max_epoch (int): the max epoch. None means infinite loop.
+            splice (int): frames to splice. Default is 1 frame.
+            num_stack (int): the number of frames to stack
+            num_skip (int): the number of frames to skip
+            min_frame_num (int): Exclude utteraces shorter than this value
+            shuffle (bool): if True, shuffle utterances.
+                This is disabled when sort_utt is True.
+            sort_utt (bool): if True, sort all utterances in the ascending order
+            reverse (bool): if True, sort utteraces in the descending order
+            sort_stop_epoch (int): After sort_stop_epoch, training will revert
+                back to a random order
+            num_gpus, int): the number of GPUs
+            tool (string): htk or librosa or python_speech_features
+            num_enque (int): the number of elements to enqueue
+            dynamic_batching (bool): if True, batch size will be chainged
+                dynamically in training
         """
         self.backend = backend
         self.input_freq = input_freq
@@ -81,16 +80,20 @@ class Dataset(DatasetBase):
         self.dynamic_batching = dynamic_batching
         self.is_test = True if 'eval' in data_type else False
 
-        data_save_path = join(data_save_path, data_size)
-
         self.vocab_file_path = join(
-            data_save_path, 'vocab', label_type + '.txt')
+            data_save_path, 'vocab', data_size, label_type + '.txt')
+        if label_type == 'word':
+            self.idx2word = Idx2word(self.vocab_file_path)
+            self.word2idx = Word2idx(self.vocab_file_path)
+        else:
+            self.idx2char = Idx2char(self.vocab_file_path)
+            self.char2idx = Char2idx(self.vocab_file_path)
 
         super(Dataset, self).__init__(vocab_file_path=self.vocab_file_path)
 
         # Load dataset file
         dataset_path = join(
-            data_save_path, 'dataset', tool, data_type, label_type + '.csv')
+            data_save_path, 'dataset', tool, data_size, data_type, label_type + '.csv')
         df = pd.read_csv(dataset_path, encoding='utf-8')
         df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
 
@@ -114,7 +117,7 @@ class Dataset(DatasetBase):
         if not self.dynamic_batching:
             return batch_size
 
-        if self.data_size == 'subset':
+        if self.data_size in ['aps_other', 'aps']:
             if min_frame_num_batch <= 900:
                 pass
             elif min_frame_num_batch <= 1200:
@@ -126,7 +129,7 @@ class Dataset(DatasetBase):
             else:
                 batch_size = int(batch_size / 8)
 
-        elif self.data_size == 'fullset':
+        elif self.data_size in ['all_except_dialog', 'all']:
             if min_frame_num_batch <= 900:
                 pass
             elif min_frame_num_batch <= 1200:

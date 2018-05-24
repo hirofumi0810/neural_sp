@@ -12,8 +12,7 @@ from tqdm import tqdm
 import pandas as pd
 import numpy as np
 
-from utils.io.labels.character import Idx2char, Char2idx
-from utils.io.labels.word import Idx2word, Char2word
+from utils.io.labels.word import Char2word
 from utils.evaluation.edit_distance import compute_wer
 from utils.evaluation.resolving_unk import resolve_unk
 
@@ -50,13 +49,7 @@ def eval_word(models, dataset, eval_batch_size,
     model = models[0]
     # TODO: fix this
 
-    idx2word = Idx2word(dataset.vocab_file_path)
-    if model.model_type == 'nested_attention':
-        char2idx = Char2idx(dataset.vocab_file_path_sub)
-    if model.model_type not in ['ctc', 'attention'] and resolving_unk:
-        idx2char = Idx2char(dataset.vocab_file_path_sub)
     if model.model_type == 'hierarchical_attention' and joint_decoding:
-        char2idx = Char2idx(dataset.vocab_file_path_sub)
         char2word = Char2word(dataset.vocab_file_path,
                               dataset.vocab_file_path_sub)
 
@@ -85,7 +78,7 @@ def eval_word(models, dataset, eval_batch_size,
                     ys_sub -= 1  # pad with -1
                     y_lens_sub = np.zeros((batch_size,), dtype=np.int32)
                     for b in range(batch_size):
-                        indices = char2idx(batch['ys_sub'][b][0])
+                        indices = dataset.char2idx(batch['ys_sub'][b][0])
                         ys_sub[b, :len(indices)] = indices
                         y_lens_sub[b] = len(indices)
                         # NOTE: transcript is seperated by space('_')
@@ -115,7 +108,7 @@ def eval_word(models, dataset, eval_batch_size,
                 beam_width=beam_width,
                 max_decode_len=max_decode_len,
                 joint_decoding=True,
-                space_index=char2idx('_')[0],
+                space_index=dataset.char2idx('_')[0],
                 char2word=char2word)
         else:
             best_hyps, aw, perm_idx = model.decode(
@@ -145,13 +138,13 @@ def eval_word(models, dataset, eval_batch_size,
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
-                str_ref = idx2word(ys[b][:y_lens[b]])
+                str_ref = dataset.idx2word(ys[b][:y_lens[b]])
 
             ##############################
             # Hypothesis
             ##############################
-            str_hyp = idx2word(best_hyps[b])
-            if 'word' in dataset.label_type:
+            str_hyp = dataset.idx2word(best_hyps[b])
+            if dataset.label_type == 'word':
                 str_hyp = re.sub(r'(.*)_>(.*)', r'\1', str_hyp)
             else:
                 str_hyp = re.sub(r'(.*)>(.*)', r'\1', str_hyp)
@@ -162,7 +155,7 @@ def eval_word(models, dataset, eval_batch_size,
             ##############################
             if resolving_unk and 'OOV' in str_hyp:
                 str_hyp = resolve_unk(
-                    str_hyp, best_hyps_sub[b], aw[b], aw_sub[b], idx2char)
+                    str_hyp, best_hyps_sub[b], aw[b], aw_sub[b], dataset.idx2char)
                 str_hyp = str_hyp.replace('*', '')
 
             ##############################

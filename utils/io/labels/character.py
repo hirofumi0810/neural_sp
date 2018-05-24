@@ -13,12 +13,12 @@ class Char2idx(object):
     """Convert character into index.
     Args:
         vocab_file_path (string): path to the vocabulary file
-        space_mark (string, optional): the space mark to divide a sequence into words
-        capital_divide (bool, optional): if True, words will be divided by
+        space_mark (string): the space mark to divide a sequence into words
+        capital_divide (bool): if True, words will be divided by
             capital letters. This is used for English.
-        double_letter (bool, optional): if True, group repeated letters.
+        double_letter (bool): if True, group repeated letters.
             This is used for Japanese.
-        remove_list (list, optional): characters to neglect
+        remove_list (list): characters to neglect
     """
 
     def __init__(self, vocab_file_path, space_mark='_', capital_divide=False,
@@ -113,19 +113,17 @@ class Idx2char(object):
     """Convert index into character.
     Args:
         vocab_file_path (string): path to the vocabulary file
-        space_mark (string, optional): the space mark to divide a sequence into words
-        capital_divide (bool, optional): if True, words will be divided by
+        space_mark (string): the space mark to divide a sequence into words
+        capital_divide (bool): if True, words will be divided by
             capital letters. This is used for English.
-        remove_list (list, optional): characters to neglect
-        return_list (bool, optional): if True, return list of characters
+        remove_list (list): characters to neglect
     """
 
     def __init__(self, vocab_file_path, space_mark='_', capital_divide=False,
-                 remove_list=[], return_list=False):
+                 remove_list=[]):
         self.space_mark = space_mark
         self.capital_divide = capital_divide
         self.remove_list = remove_list
-        self.return_list = return_list
 
         # Load the vocabulary file
         self.map_dict = {}
@@ -141,10 +139,11 @@ class Idx2char(object):
         # Add <EOS>
         self.map_dict[vocab_count] = '>'
 
-    def __call__(self, indices):
+    def __call__(self, indices, return_list=False):
         """
         Args:
-            indices (list): list of character indices.
+            indices (list): list of character indices
+            return_list (bool): if True, return list of characters
         Returns:
             str_char (string): a sequence of characters
                 or
@@ -161,12 +160,12 @@ class Idx2char(object):
                 else:
                     char_list += [_char_list[i].lower()]
 
-            if self.return_list:
+            if return_list:
                 return char_list
 
             str_char = ''.join(char_list)
         else:
-            if self.return_list:
+            if return_list:
                 return _char_list
 
             str_char = ''.join(_char_list)

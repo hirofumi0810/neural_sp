@@ -11,7 +11,6 @@ import re
 from tqdm import tqdm
 import pandas as pd
 
-from utils.io.labels.character import Idx2char
 from utils.evaluation.edit_distance import compute_wer
 
 
@@ -40,11 +39,6 @@ def eval_char(models, dataset, eval_batch_size, beam_width,
 
     model = models[0]
     # TODO: fix this
-
-    if model.model_type in ['ctc', 'attention']:
-        idx2char = Idx2char(vocab_file_path=dataset.vocab_file_path)
-    else:
-        idx2char = Idx2char(vocab_file_path=dataset.vocab_file_path_sub)
 
     cer, wer = 0, 0
     sub_char, ins_char, del_char = 0, 0, 0
@@ -77,6 +71,7 @@ def eval_char(models, dataset, eval_batch_size, beam_width,
             ys = batch['ys_sub'][perm_idx]
             y_lens = batch['y_lens_sub'][perm_idx]
             task_index = 1
+        # TODO: add nested_attention
 
         for b in range(len(batch['xs'])):
             ##############################
@@ -87,12 +82,12 @@ def eval_char(models, dataset, eval_batch_size, beam_width,
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
-                str_ref = idx2char(ys[b][:y_lens[b]])
+                str_ref = dataset.idx2char(ys[b][:y_lens[b]])
 
             ##############################
             # Hypothesis
             ##############################
-            str_hyp = idx2char(best_hyps[b])
+            str_hyp = dataset.idx2char(best_hyps[b])
             str_hyp = re.sub(r'(.*)>(.*)', r'\1', str_hyp)
             # NOTE: Trancate by the first <EOS>
 
@@ -105,7 +100,7 @@ def eval_char(models, dataset, eval_batch_size, beam_width,
             str_ref = re.sub(r'[_]+', '_', str_ref)
             str_hyp = re.sub(r'[_]+', '_', str_hyp)
 
-            if dataset.label_type == 'kanji_wb' or (task_index > 0 and dataset.label_type_sub == 'kanji_wb'):
+            if dataset.label_type == 'character_wb' or (task_index > 0 and dataset.label_type_sub == 'character_wb'):
                 # Compute WER
                 try:
                     wer_b, sub_b, ins_b, del_b = compute_wer(
@@ -146,7 +141,7 @@ def eval_char(models, dataset, eval_batch_size, beam_width,
     # Reset data counters
     dataset.reset()
 
-    if dataset.label_type == 'kanji_wb' or (task_index > 0 and dataset.label_type_sub == 'kanji_wb'):
+    if dataset.label_type == 'character_wb' or (task_index > 0 and dataset.label_type_sub == 'character_wb'):
         wer /= num_words
         sub_word /= num_words
         ins_word /= num_words

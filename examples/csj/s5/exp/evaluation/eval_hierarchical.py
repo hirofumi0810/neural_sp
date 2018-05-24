@@ -17,6 +17,7 @@ from examples.csj.s5.exp.dataset.load_dataset_hierarchical import Dataset
 from examples.csj.s5.exp.metrics.character import eval_char
 from examples.csj.s5.exp.metrics.word import eval_word
 from utils.config import load_config
+from utils.evaluation.logging import set_logger
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str,
@@ -54,94 +55,87 @@ def main():
     # Load a config file (.yml)
     params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
+    # Setting for logging
+    logger = set_logger(args.model_path)
+
     wer_mean, wer_sub_mean, cer_sub_mean = 0, 0, 0
-    with open(join(args.model_path, 'RESULTS'), 'w') as f:
-        for i, data_type in enumerate(['eval1', 'eval2', 'eval3']):
-            # Load dataset
-            eval_data = Dataset(
-                data_save_path=args.data_save_path,
-                backend=params['backend'],
-                input_freq=params['input_freq'],
-                use_delta=params['use_delta'],
-                use_double_delta=params['use_double_delta'],
-                data_type=data_type, data_size=params['data_size'],
-                label_type=params['label_type'], label_type_sub=params['label_type_sub'],
-                batch_size=args.eval_batch_size, splice=params['splice'],
-                num_stack=params['num_stack'], num_skip=params['num_skip'],
-                shuffle=False, tool=params['tool'])
+    for i, data_type in enumerate(['eval1', 'eval2', 'eval3']):
+        # Load dataset
+        dataset = Dataset(
+            data_save_path=args.data_save_path,
+            backend=params['backend'],
+            input_freq=params['input_freq'],
+            use_delta=params['use_delta'],
+            use_double_delta=params['use_double_delta'],
+            data_type=data_type,
+            data_size=params['data_size'],
+            label_type=params['label_type'], label_type_sub=params['label_type_sub'],
+            batch_size=args.eval_batch_size, splice=params['splice'],
+            num_stack=params['num_stack'], num_skip=params['num_skip'],
+            shuffle=False, tool=params['tool'])
 
-            if i == 0:
-                params['num_classes'] = eval_data.num_classes
-                params['num_classes_sub'] = eval_data.num_classes_sub
+        if i == 0:
+            params['num_classes'] = dataset.num_classes
+            params['num_classes_sub'] = dataset.num_classes_sub
 
-                # Load model
-                model = load(model_type=params['model_type'],
-                             params=params,
-                             backend=params['backend'])
+            # Load model
+            model = load(model_type=params['model_type'],
+                         params=params,
+                         backend=params['backend'])
 
-                # Restore the saved parameters
-                model.load_checkpoint(
-                    save_path=args.model_path, epoch=args.epoch)
+            # Restore the saved parameters
+            epoch, _, _, _ = model.load_checkpoint(
+                save_path=args.model_path, epoch=args.epoch)
 
-                # GPU setting
-                model.set_cuda(deterministic=False, benchmark=True)
+            # GPU setting
+            model.set_cuda(deterministic=False, benchmark=True)
 
-            print('beam width (main): %d' % args.beam_width)
-            print('beam width (sub) : %d' % args.beam_width_sub)
-            print('a2c oracle: %s' % str(a2c_oracle))
-            print('resolving_unk: %s' % str(resolving_unk))
-            print('joint_decoding: %s' % str(joint_decoding))
-            f.write('beam width (main): %d' % args.beam_width)
-            f.write('beam width (sub) : %d' % args.beam_width_sub)
-            f.write('a2c oracle: %s' % str(a2c_oracle))
-            f.write('resolving_unk: %s' % str(resolving_unk))
-            f.write('joint_decoding: %s' % str(joint_decoding))
+            logger.info('beam width (main): %d\n' % args.beam_width)
+            logger.info('beam width (sub) : %d\n' % args.beam_width_sub)
+            logger.info('epoch: %d' % epoch)
+            logger.info('a2c oracle: %s\n' % str(a2c_oracle))
+            logger.info('resolving_unk: %s\n' % str(resolving_unk))
+            logger.info('joint_decoding: %s\n' % str(joint_decoding))
 
-            wer, df = eval_word(
-                models=[model],
-                dataset=eval_data,
-                eval_batch_size=args.eval_batch_size,
-                beam_width=args.beam_width,
-                max_decode_len=MAX_DECODE_LEN_WORD,
-                min_decode_len=MIN_DECODE_LEN_WORD,
-                beam_width_sub=args.beam_width_sub,
-                max_decode_len_sub=MAX_DECODE_LEN_CHAR,
-                min_decode_len_sub=MIN_DECODE_LEN_CHAR,
-                length_penalty=args.length_penalty,
-                coverage_penalty=args.coverage_penalty,
-                progressbar=True,
-                resolving_unk=resolving_unk,
-                a2c_oracle=a2c_oracle,
-                joint_decoding=joint_decoding)
-            wer_mean += wer
-            print('  WER (%s, main): %.3f %%' % (data_type, (wer * 100)))
-            f.write('  WER (%s, main): %.3f %%' % (data_type, (wer * 100)))
-            print(df)
+        wer, df = eval_word(
+            models=[model],
+            dataset=dataset,
+            eval_batch_size=args.eval_batch_size,
+            beam_width=args.beam_width,
+            max_decode_len=MAX_DECODE_LEN_WORD,
+            min_decode_len=MIN_DECODE_LEN_WORD,
+            beam_width_sub=args.beam_width_sub,
+            max_decode_len_sub=MAX_DECODE_LEN_CHAR,
+            min_decode_len_sub=MIN_DECODE_LEN_CHAR,
+            length_penalty=args.length_penalty,
+            coverage_penalty=args.coverage_penalty,
+            progressbar=True,
+            resolving_unk=resolving_unk,
+            a2c_oracle=a2c_oracle,
+            joint_decoding=joint_decoding)
+        wer_mean += wer
+        logger.info('  WER (%s, main): %.3f %%' % (data_type, (wer * 100)))
+        logger.info(df)
 
-            wer_sub, cer_sub, df_sub = eval_char(
-                models=[model],
-                dataset=eval_data,
-                eval_batch_size=args.eval_batch_size,
-                beam_width=args.beam_width_sub,
-                max_decode_len=MAX_DECODE_LEN_CHAR,
-                min_decode_len=MIN_DECODE_LEN_CHAR,
-                length_penalty=args.length_penalty,
-                coverage_penalty=args.coverage_penalty,
-                progressbar=True)
-            wer_sub_mean += wer_sub
-            cer_sub_mean += cer_sub
-            print(' WER / CER (%s, sub): %.3f / %.3f %%' %
-                  (data_type, (wer_sub * 100), (cer_sub * 100)))
-            f.write(' WER / CER (%s, sub): %.3f / %.3f %%' %
+        wer_sub, cer_sub, df_sub = eval_char(
+            models=[model],
+            dataset=dataset,
+            eval_batch_size=args.eval_batch_size,
+            beam_width=args.beam_width_sub,
+            max_decode_len=MAX_DECODE_LEN_CHAR,
+            min_decode_len=MIN_DECODE_LEN_CHAR,
+            length_penalty=args.length_penalty,
+            coverage_penalty=args.coverage_penalty,
+            progressbar=True)
+        wer_sub_mean += wer_sub
+        cer_sub_mean += cer_sub
+        logger.info(' WER / CER (%s, sub): %.3f / %.3f %%' %
                     (data_type, (wer_sub * 100), (cer_sub * 100)))
-            print(df_sub)
+        logger.info(df_sub)
 
-    print('  WER (mean, main): %.3f %%' % (wer_mean * 100 / 3))
-    print('  WER / CER (mean, sub): %.3f / %.3f %%' %
-          ((wer_sub_mean * 100 / 3), (cer_sub_mean * 100 / 3)))
-    f.write('  WER (mean, main): %.3f %%' % (wer_mean * 100 / 3))
-    f.write('  WER / CER (mean, sub): %.3f / %.3f %%' %
-            ((wer_sub_mean * 100 / 3), (cer_sub_mean * 100 / 3)))
+    logger.info('  WER (mean, main): %.3f %%' % (wer_mean * 100 / 3))
+    logger.info('  WER / CER (mean, sub): %.3f / %.3f %%' %
+                ((wer_sub_mean * 100 / 3), (cer_sub_mean * 100 / 3)))
 
 
 if __name__ == '__main__':

@@ -13,7 +13,7 @@ class Phone2idx(object):
     """Convert from phone to index.
     Args:
         vocab_file_path (string): path to the vocabulary file
-        remove_list (list, optional): phones to neglect
+        remove_list (list): phones to neglect
     """
 
     def __init__(self, vocab_file_path, remove_list=[]):
@@ -49,7 +49,7 @@ class Idx2phone(object):
     """Convert from index to phone.
     Args:
         vocab_file_path (string): path to the vocabulary file
-        remove_list (list, optional): phones to neglect
+        remove_list (list): phones to neglect
     """
 
     def __init__(self, vocab_file_path, remove_list=[]):
