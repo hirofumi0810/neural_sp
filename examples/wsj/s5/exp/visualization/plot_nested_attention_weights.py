@@ -30,9 +30,8 @@ sys.path.append(abspath('../../../'))
 from models.load_model import load
 from examples.wsj.s5.exp.dataset.load_dataset_hierarchical import Dataset
 from utils.directory import mkdir_join, mkdir
-from utils.visualization.attention import plot_hierarchical_attention_weights
+from utils.visualization.attention import plot_hierarchical_attention_weights, plot_nested_attention_weights
 from utils.config import load_config
-from examples.csj.s5.exp.visualization.plot_nested_attention_weights import plot_word2char_attention_weights
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str,
@@ -167,7 +166,7 @@ def main():
             )
 
             # word to characater
-            plot_word2char_attention_weights(
+            plot_nested_attention_weights(
                 aw_dec[b][:len(word_list), :len(char_list)],
                 label_list=word_list,
                 label_list_sub=char_list,

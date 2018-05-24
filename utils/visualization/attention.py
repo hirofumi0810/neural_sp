@@ -39,10 +39,9 @@ def plot_attention_weights(attention_weights, label_list,
     if spectrogram is None:
         # Plot attention weights
         sns.heatmap(attention_weights,
-                    # cmap='Blues',
                     cmap='viridis',
                     xticklabels=False,
-                    yticklabels=label_list)
+                    yticklabels=label_list if len(label_list) > 0 else False)
         # cbar_kws={"orientation": "horizontal"}
         plt.ylabel('Output labels (←)', fontsize=12)
         plt.yticks(rotation=0)
@@ -52,7 +51,7 @@ def plot_attention_weights(attention_weights, label_list,
         sns.heatmap(attention_weights,
                     cmap='viridis',
                     xticklabels=False,
-                    yticklabels=label_list)
+                    yticklabels=label_list if len(label_list) > 0 else False)
         plt.ylabel('Output labels (←)', fontsize=12)
         plt.yticks(rotation=0)
 
@@ -98,7 +97,7 @@ def plot_hierarchical_attention_weights(attention_weights, attention_weights_sub
         sns.heatmap(attention_weights,
                     cmap='viridis',
                     xticklabels=False,
-                    yticklabels=label_list)
+                    yticklabels=label_list if len(label_list) > 0 else False)
         plt.ylabel('Output labels (main) (←)', fontsize=12)
         plt.yticks(rotation=0)
 
@@ -106,7 +105,7 @@ def plot_hierarchical_attention_weights(attention_weights, attention_weights_sub
         sns.heatmap(attention_weights_sub,
                     cmap='viridis',
                     xticklabels=False,
-                    yticklabels=label_list_sub)
+                    yticklabels=label_list_sub if len(label_list_sub) > 0 else False)
         plt.xlabel('Time [sec]', fontsize=12)
         plt.ylabel('Output labels (sub) (←)', fontsize=12)
         plt.yticks(rotation=0)
@@ -116,7 +115,7 @@ def plot_hierarchical_attention_weights(attention_weights, attention_weights_sub
         sns.heatmap(attention_weights,
                     cmap='viridis',
                     xticklabels=False,
-                    yticklabels=label_list)
+                    yticklabels=label_list if len(label_list) > 0 else False)
         plt.ylabel('Output labels (main) (←)', fontsize=12)
         plt.yticks(rotation=0)
 
@@ -124,7 +123,7 @@ def plot_hierarchical_attention_weights(attention_weights, attention_weights_sub
         sns.heatmap(attention_weights_sub,
                     cmap='viridis',
                     xticklabels=False,
-                    yticklabels=label_list_sub)
+                    yticklabels=label_list_sub if len(label_list_sub) > 0 else False)
         plt.ylabel('Output labels (sub) (←)', fontsize=12)
         plt.yticks(rotation=0)
 
@@ -137,6 +136,37 @@ def plot_hierarchical_attention_weights(attention_weights, attention_weights_sub
         plt.ylabel('Frequency bin', fontsize=12)
         plt.colorbar()
         plt.grid('off')
+
+    # Save as a png file
+    if save_path is not None:
+        plt.savefig(save_path, dvi=500)
+
+    plt.close()
+
+
+def plot_nested_attention_weights(attention_weights, label_list, label_list_sub,
+                                  save_path=None, figsize=(10, 4)):
+    """Plot attention weights from word-level decoder to character-level decoder.
+    Args:
+        attention_weights (np.ndarray): A tensor of size `[T_out, T_in]`
+        label_list (list):
+        label_list_sub (list):
+        save_path (string): path to save a figure of CTC posterior (utterance)
+        figsize (tuple):
+    """
+    plt.clf()
+    plt.figure(figsize=figsize)
+
+    # Plot attention weights
+    sns.heatmap(attention_weights,
+                cmap='viridis',
+                xticklabels=label_list_sub,
+                yticklabels=label_list)
+    # cbar_kws={"orientation": "horizontal"}
+    plt.ylabel('Output characters (→)', fontsize=12)
+    plt.ylabel('Output words (←)', fontsize=12)
+    plt.yticks(rotation=0)
+    plt.xticks(rotation=0)
 
     # Save as a png file
     if save_path is not None:

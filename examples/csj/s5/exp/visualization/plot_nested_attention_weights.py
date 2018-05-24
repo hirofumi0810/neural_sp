@@ -30,7 +30,7 @@ sys.path.append(abspath('../../../'))
 from models.load_model import load
 from examples.csj.s5.exp.dataset.load_dataset_hierarchical import Dataset
 from utils.directory import mkdir_join, mkdir
-from utils.visualization.attention import plot_hierarchical_attention_weights
+from utils.visualization.attention import plot_hierarchical_attention_weights, plot_nested_attention_weights
 from utils.config import load_config
 
 parser = argparse.ArgumentParser()
@@ -171,7 +171,7 @@ def main():
             )
 
             # word to characater
-            plot_word2char_attention_weights(
+            plot_nested_attention_weights(
                 aw_dec[b][:len(word_list), :len(char_list)],
                 label_list=word_list,
                 label_list_sub=char_list,
@@ -185,37 +185,6 @@ def main():
 
         if is_new_epoch:
             break
-
-
-def plot_word2char_attention_weights(attention_weights, label_list, label_list_sub,
-                                     save_path=None, figsize=(10, 4)):
-    """Plot attention weights from word-level decoder to character-level decoder.
-    Args:
-        attention_weights (np.ndarray): A tensor of size `[T_out, T_in]`
-        label_list (list):
-        label_list_sub (list):
-        save_path (string): path to save a figure of CTC posterior (utterance)
-        figsize (tuple):
-    """
-    plt.clf()
-    plt.figure(figsize=figsize)
-
-    # Plot attention weights
-    sns.heatmap(attention_weights,
-                cmap='viridis',
-                xticklabels=label_list_sub,
-                yticklabels=label_list)
-    # cbar_kws={"orientation": "horizontal"}
-    plt.ylabel('Output characters (→)', fontsize=12)
-    plt.ylabel('Output words (←)', fontsize=12)
-    plt.yticks(rotation=0)
-    plt.xticks(rotation=0)
-
-    # Save as a png file
-    if save_path is not None:
-        plt.savefig(save_path, dvi=500)
-
-    plt.close()
 
 
 if __name__ == '__main__':
