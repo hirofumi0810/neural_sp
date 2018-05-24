@@ -15,7 +15,6 @@ import shutil
 sys.path.append(abspath('../../../'))
 from models.load_model import load
 from examples.timit.s5.exp.dataset.load_dataset import Dataset
-from utils.io.labels.phone import Idx2phone
 from utils.directory import mkdir_join, mkdir
 from utils.visualization.ctc import plot_ctc_probs
 from utils.config import load_config
@@ -39,7 +38,7 @@ def main():
     params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
-    eval_data = Dataset(
+    dataset = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
         input_freq=params['input_freq'],
@@ -50,7 +49,7 @@ def main():
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, reverse=True, tool=params['tool'])
 
-    params['num_classes'] = eval_data.num_classes
+    params['num_classes'] = dataset.num_classes
 
     # Load model
     model = load(model_type=params['model_type'],
@@ -63,28 +62,16 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
-    # Visualize
-    plot_probs(model=model,
-               dataset=eval_data,
-               eval_batch_size=args.eval_batch_size,
-               save_path=mkdir_join(args.model_path, 'ctc_probs'))
+    save_path = mkdir_join(args.model_path, 'ctc_probs')
 
+    ######################################################################
 
-def plot_probs(model, dataset, eval_batch_size, save_path=None):
-    """Plot CTC posteriors.
-    Args:
-        model: model to evaluate
-        dataset: An instance of a `Dataset` class
-        eval_batch_size (int): the batch size when evaluating the model
-        save_path (string): path to save figures of CTC posteriors
-    """
     # Clean directory
     if save_path is not None and isdir(save_path):
         shutil.rmtree(save_path)
         mkdir(save_path)
 
     for batch, is_new_epoch in dataset:
-
         # Get CTC probs
         probs, x_lens, _ = model.posteriors(
             batch['xs'], batch['x_lens'], temperature=1)

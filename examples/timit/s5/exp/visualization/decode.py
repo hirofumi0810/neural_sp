@@ -15,7 +15,6 @@ import re
 sys.path.append(abspath('../../../'))
 from models.load_model import load
 from examples.timit.s5.exp.dataset.load_dataset import Dataset
-from utils.io.labels.phone import Idx2phone
 from utils.config import load_config
 from utils.evaluation.edit_distance import compute_wer
 
@@ -47,7 +46,7 @@ def main():
     params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
-    eval_data = Dataset(
+    dataset = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
         input_freq=params['input_freq'],
@@ -59,7 +58,7 @@ def main():
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, reverse=True, tool=params['tool'])
 
-    params['num_classes'] = eval_data.num_classes
+    params['num_classes'] = dataset.num_classes
 
     # Load model
     model = load(model_type=params['model_type'],
@@ -72,48 +71,24 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
-    # Visualize
-    decode(model=model,
-           dataset=eval_data,
-           eval_batch_size=args.eval_batch_size,
-           beam_width=args.beam_width,
-           length_penalty=args.length_penalty,
-           coverage_penalty=args.coverage_penalty,
-           save_path=None)
-    # save_path=args.model_path)
+    # sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
 
-
-def decode(model, dataset, eval_batch_size, beam_width,
-           length_penalty, coverage_penalty, save_path=None):
-    """Visualize label outputs.
-    Args:
-        model: the model to evaluate
-        dataset: An instance of a `Dataset` class
-        eval_batch_size (int): the batch size when evaluating the model
-        beam_width: (int): the size of beam
-        length_penalty (float): length penalty in beam search decoding
-        coverage_penalty (float): coverage penalty in beam search decoding
-        save_path (string): path to save decoding results
-    """
-    idx2phone = Idx2phone(dataset.vocab_file_path)
-
-    if save_path is not None:
-        sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
+    ######################################################################
 
     for batch, is_new_epoch in dataset:
         # Decode
         best_hyps, _, perm_idx = model.decode(
             batch['xs'], batch['x_lens'],
-            beam_width=beam_width,
+            beam_width=args.beam_width,
             max_decode_len=MAX_DECODE_LEN_PHONE,
             min_decode_len=MIN_DECODE_LEN_PHONE,
-            length_penalty=length_penalty,
-            coverage_penalty=coverage_penalty)
+            length_penalty=args.length_penalty,
+            coverage_penalty=args.coverage_penalty)
 
         if model.model_type == 'attention' and model.ctc_loss_weight > 0:
             best_hyps_ctc, perm_idx = model.decode_ctc(
                 batch['xs'], batch['x_lens'],
-                beam_width=beam_width)
+                beam_width=args.beam_width)
 
         ys = batch['ys'][perm_idx]
         y_lens = batch['y_lens'][perm_idx]
@@ -127,19 +102,19 @@ def decode(model, dataset, eval_batch_size, beam_width,
                 # NOTE: transcript is seperated by space(' ')
             else:
                 # Convert from list of index to string
-                str_ref = idx2phone(ys[b][: y_lens[b]])
+                str_ref = dataset.idx2phone(ys[b][: y_lens[b]])
 
             ##############################
             # Hypothesis
             ##############################
             # Convert from list of index to string
-            str_hyp = idx2phone(best_hyps[b])
+            str_hyp = dataset.idx2phone(best_hyps[b])
 
             print('----- wav: %s -----' % batch['input_names'][b])
             print('Ref      : %s' % str_ref)
             print('Hyp      : %s' % str_hyp)
             if model.model_type == 'attention' and model.ctc_loss_weight > 0:
-                str_hyp_ctc = idx2phone(best_hyps_ctc[b])
+                str_hyp_ctc = dataset.idx2phone(best_hyps_ctc[b])
                 print('Hyp (CTC): %s' % str_hyp_ctc)
 
             # Compute PER

@@ -11,7 +11,6 @@ import unittest
 
 sys.path.append(os.path.abspath('../../../../../../'))
 from examples.timit.s5.exp.dataset.load_dataset import Dataset
-from utils.io.labels.phone import Idx2phone
 from utils.measure_time_func import measure_time
 
 
@@ -71,7 +70,6 @@ class TestLoadDataset(unittest.TestCase):
             num_enque=None)
 
         print('=> Loading mini-batch...')
-        idx2phone = Idx2phone(dataset.vocab_file_path)
 
         for batch, is_new_epoch in dataset:
             if data_type == 'train' and backend == 'pytorch':
@@ -83,7 +81,8 @@ class TestLoadDataset(unittest.TestCase):
             if dataset.is_test:
                 str_ref = batch['ys'][0][0]
             else:
-                str_ref = idx2phone(batch['ys'][0][:batch['y_lens'][0]])
+                str_ref = dataset.idx2phone(
+                    batch['ys'][0][:batch['y_lens'][0]])
 
             print('----- %s (epoch: %.3f, batch: %d) -----' %
                   (batch['input_names'][0], dataset.epoch_detail, len(batch['xs'])))

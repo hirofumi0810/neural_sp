@@ -11,7 +11,6 @@ import re
 from tqdm import tqdm
 import pandas as pd
 
-from utils.io.labels.phone import Idx2phone
 from utils.evaluation.edit_distance import compute_wer
 
 
@@ -39,7 +38,6 @@ def eval_phone(model, dataset, map_file_path, eval_batch_size, beam_width,
     # Reset data counter
     dataset.reset()
 
-    idx2phone = Idx2phone(vocab_file_path=dataset.vocab_file_path)
     map2phone39 = Map2phone39(label_type=dataset.label_type,
                               map_file_path=map_file_path)
 
@@ -72,13 +70,14 @@ def eval_phone(model, dataset, map_file_path, eval_batch_size, beam_width,
                 # NOTE: transcript is seperated by space(' ')
             else:
                 # Convert from index to phone (-> list of phone strings)
-                phone_ref_list = idx2phone(ys[b][:y_lens[b]]).split(' ')
+                phone_ref_list = dataset.idx2phone(
+                    ys[b][:y_lens[b]]).split(' ')
 
             ##############################
             # Hypothesis
             ##############################
             # Convert from index to phone (-> list of phone strings)
-            str_hyp = idx2phone(best_hyps[b])
+            str_hyp = dataset.idx2phone(best_hyps[b])
             str_hyp = re.sub(r'(.*) >(.*)', r'\1', str_hyp)
             # NOTE: Trancate by the first <EOS>
 

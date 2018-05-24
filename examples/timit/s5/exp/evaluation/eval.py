@@ -53,7 +53,7 @@ def main():
 
     for i, data_type in enumerate(['dev', 'test']):
         # Load dataset
-        eval_data = Dataset(
+        dataset = Dataset(
             data_save_path=args.data_save_path,
             backend=params['backend'],
             input_freq=params['input_freq'],
@@ -66,7 +66,7 @@ def main():
             sort_utt=False, tool=params['tool'])
 
         if i == 0:
-            params['num_classes'] = eval_data.num_classes
+            params['num_classes'] = dataset.num_classes
 
             # Load model
             model = load(model_type=params['model_type'],
@@ -84,7 +84,7 @@ def main():
             logger.info('epoch: %d' % epoch)
 
         per, df = eval_phone(model=model,
-                             dataset=eval_data,
+                             dataset=dataset,
                              map_file_path='./conf/phones.60-48-39.map',
                              eval_batch_size=args.eval_batch_size,
                              beam_width=args.beam_width,
