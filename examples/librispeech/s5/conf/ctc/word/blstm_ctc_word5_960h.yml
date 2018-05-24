@@ -2,30 +2,29 @@ parent: ../config/ctc/character/blstm_ctc_char_100h.yml
 param:
   # framework
   backend: pytorch
-  # backend: chainer
 
   # corpus
-  label_type: word_freq5
+  label_type: word5
   data_size: 960h
-  num_classes: 37271
 
   # topology
-  encoder_num_units: 320
-  encoder_num_proj: 0
   encoder_num_layers: 5
   subsample_list:
     - False
-    - False
-    - False
+    - True
+    - True
     - False
     - False
 
-  # optimization
-  batch_size: 40
-  pretrain_stage: False
+  # regularization
+  scheduled_sampling_ramp_max_step: 100000
 
   # initialization
   char_init: False
 
   # annealing
-  print_step: 100
+  print_step: 1000
+
+  # MTL
+  backward_loss_weight: 0
+  ctc_loss_weight: 0

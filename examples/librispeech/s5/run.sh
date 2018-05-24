@@ -18,10 +18,7 @@ echo "                              LibriSpeech                                 
 echo ============================================================================
 
 stage=0
-hierarchical_model=false
-# hierarchical_model=true
 run_background=true
-restart=false
 
 ### Select data size
 DATASIZE=100
@@ -60,14 +57,14 @@ elif [ $DATASIZE = '960' ]; then
 fi
 export DATA_DOWNLOADPATH=$DATA/data
 
+# Base url for downloads.
+data_url=www.openslr.org/resources/12
+lm_url=www.openslr.org/resources/11
+
 if [ $stage -le 0 ] && [ ! -e $DATA/.stage_0_$DATASIZE ]; then
   echo ============================================================================
   echo "                           Data Preparation                               "
   echo ============================================================================
-
-  # Base url for downloads.
-  data_url=www.openslr.org/resources/12
-  lm_url=www.openslr.org/resources/11
 
   mkdir -p $DATA
   mkdir -p $DATA_DOWNLOADPATH
@@ -82,7 +79,7 @@ if [ $stage -le 0 ] && [ ! -e $DATA/.stage_0_$DATASIZE ]; then
     # use underscore-separated names in data directories.
     local/data_prep.sh $DATA_DOWNLOADPATH/LibriSpeech/$part $DATA/$(echo $part | sed s/-/_/g) || exit 1;
   done
-  cp -rf $DATA_DOWNLOADPATH/LibriSpeech/train-clean-100 $DATA_DOWNLOADPATH/LibriSpeech/train_100
+  cp -rf $DATA/train_clean_100 $DATA/train_100
 
   if [ $DATASIZE = "460" ] || [ $DATASIZE = '960' ]; then
     # download 360h clean data
@@ -106,6 +103,23 @@ if [ $stage -le 0 ] && [ ! -e $DATA/.stage_0_$DATASIZE ]; then
     fi
   fi
 
+  # download the LM resources
+  local/download_lm.sh $lm_url $DATA/local/lm || exit 1;
+
+  ## Optional text corpus normalization and LM training
+  ## These scripts are here primarily as a documentation of the process that has been
+  ## used to build the LM. Most users of this recipe will NOT need/want to run
+  ## this step. The pre-built language models and the pronunciation lexicon, as
+  ## well as some intermediate data(e.g. the normalized text used for LM training),
+  ## are available for download at http://www.openslr.org/11/
+  # local/lm/train_lm.sh $LM_CORPUS_ROOT \
+  #  $DATA/local/lm/norm/tmp $DATA/local/lm/norm/norm_texts $DATA/local/lm || exit 1;
+
+  ## Optional G2P training scripts.
+  ## As the LM training scripts above, this script is intended primarily to
+  ## document our G2P model creation process
+  # local/g2p/train_g2p.sh $DATA/local/dict/cmudict $DATA/local/lm || exit 1;
+
   touch $DATA/.stage_0_$DATASIZE
   echo "Finish data preparation (stage: 0)."
 fi
@@ -116,8 +130,13 @@ if [ $stage -le 1 ] && [ ! -e $DATA/.stage_1_$DATASIZE ]; then
   echo "                        Feature extranction                               "
   echo ============================================================================
 
+  # TODO: remove
+  # local/lm/train_lm.sh $LM_CORPUS_ROOT \
+  #  $DATA/local/lm/norm/tmp $DATA/local/lm/norm/norm_texts $DATA/local/lm
+  # local/g2p/train_g2p.sh $DATA/local/dict/cmudict $DATA/local/lm
+
   if [ $TOOL = "kaldi" ]; then
-    for x in $train dev_clean dev_other test_clean test_other; do
+    for x in train_$DATASIZE dev_clean dev_other test_clean test_other; do
       steps/make_fbank.sh --nj 8 --cmd run.pl $DATA/$x $DATA/make_fbank/$x $DATA/fbank || exit 1;
       steps/compute_cmvn_stats.sh $DATA/$x $DATA/make_fbank/$x $DATA/fbank || exit 1;
       utils/fix_data_dir.sh $DATA/$x || exit 1;
@@ -137,9 +156,14 @@ if [ $stage -le 1 ] && [ ! -e $DATA/.stage_1_$DATASIZE ]; then
         --delta $DELTA \
         --deltadelta $DELTADELTA || exit 1;
 
-    for data_type in $train dev_clean dev_other test_clean test_other; do
-      mkdir -p $DATA/wav/$data_type
-      mkdir -p $DATA/htk/$data_type
+    for data_type in train_$DATASIZE dev_clean dev_other test_clean test_other; do
+      if [ `echo $data_type | grep 'train'` ]; then
+        mkdir -p $DATA/htk/train
+        mkdir -p $DATA/wav/train
+      else
+        mkdir -p $DATA/wav/$data_type
+        mkdir -p $DATA/htk/$data_type
+      fi
       [ -e $DATA/$data_type/htk.scp ] && rm $DATA/$data_type/htk.scp
       touch $DATA/$data_type/htk.scp
       cat $DATA/$data_type/wav.scp | while read line
@@ -148,18 +172,28 @@ if [ $stage -le 1 ] && [ ! -e $DATA/.stage_1_$DATASIZE ]; then
         flac_path=`echo $line | awk -F " " '{ print $(NF - 1) }'`
         speaker=`echo $line | awk -F "/" '{ print $(NF - 2) }'`
         chapter=`echo $line | awk -F "/" '{ print $(NF - 1) }'`
-        mkdir -p $DATA/wav/$data_type/$speaker/$chapter
         file_name=`basename $flac_path`
         base=${file_name%.*}
         # ext=${file_name##*.}
-        wav_path=$DATA/wav/$data_type/$speaker/$chapter/$base".wav"
+        if [ `echo $data_type | grep 'train'` ]; then
+          mkdir -p $DATA/wav/train/$speaker/$chapter
+          wav_path=$DATA/wav/train/$speaker/$chapter/$base".wav"
+        else
+          mkdir -p $DATA/wav/$data_type/$speaker/$chapter
+          wav_path=$DATA/wav/$data_type/$speaker/$chapter/$base".wav"
+        fi
         if [ ! -e $wav_path ]; then
           sox $flac_path -t wav $wav_path
         fi
 
         # Convert from wav to htk files
-        mkdir -p $DATA/htk/$data_type/$speaker/$chapter
-        htk_path=$DATA/htk/$data_type/$speaker/$chapter/$base".htk"
+        if [ `echo $data_type | grep 'train'` ]; then
+          mkdir -p $DATA/htk/train/$speaker/$chapter
+          htk_path=$DATA/htk/train/$speaker/$chapter/$base".htk"
+        else
+          mkdir -p $DATA/htk/$data_type/$speaker/$chapter
+          htk_path=$DATA/htk/$data_type/$speaker/$chapter/$base".htk"
+        fi
         if [ ! -e $htk_path ]; then
           echo $wav_path  $htk_path > ./tmp.scp
           $HCOPY -T 1 -C ./conf/fbank_htk.conf -S ./tmp.scp || exit 1;
@@ -178,6 +212,7 @@ if [ $stage -le 1 ] && [ ! -e $DATA/.stage_1_$DATASIZE ]; then
 
   python local/feature_extraction.py \
     --data_save_path $DATA \
+    --data_size $DATASIZE \
     --tool $TOOL \
     --normalize $NORMALIZE \
     --channels $CHANNELS \
@@ -224,8 +259,8 @@ if [ $stage -le 3 ]; then
 
   echo "Start training..."
 
-  if $hierarchical_model; then
-    if $restart; then
+  if [ `echo $config_path | grep 'hierarchical'` ]; then
+    if [ `echo $config_path | grep 'result'` ]; then
       if $run_background; then
         CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
         nohup $PYTHON exp/training/train_hierarchical.py \
@@ -257,7 +292,7 @@ if [ $stage -le 3 ]; then
       fi
     fi
   else
-    if $restart; then
+    if [ `echo $config_path | grep 'result'` ]; then
       if $run_background; then
         CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
         nohup $PYTHON exp/training/train.py \
@@ -299,22 +334,6 @@ if [ $stage -le 4 ]; then
   echo "                             LM training                                 "
   echo ============================================================================
 
-  # download the LM resources
-  local/download_lm.sh $lm_url data/local/lm
-
-  ## Optional text corpus normalization and LM training
-  ## These scripts are here primarily as a documentation of the process that has been
-  ## used to build the LM. Most users of this recipe will NOT need/want to run
-  ## this step. The pre-built language models and the pronunciation lexicon, as
-  ## well as some intermediate data(e.g. the normalized text used for LM training),
-  ## are available for download at http://www.openslr.org/11/
-  #local/lm/train_lm.sh $LM_CORPUS_ROOT \
-  #  data/local/lm/norm/tmp data/local/lm/norm/norm_texts data/local/lm
-
-  ## Optional G2P training scripts.
-  ## As the LM training scripts above, this script is intended primarily to
-  ## document our G2P model creation process
-  #local/g2p/train_g2p.sh data/local/dict/cmudict data/local/lm
 
   echo "Finish LM training (stage: 4)."
 fi

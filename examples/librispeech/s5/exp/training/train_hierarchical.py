@@ -23,17 +23,14 @@ torch.cuda.manual_seed_all(1623)
 sys.path.append(os.path.abspath('../../../'))
 from models.load_model import load
 from examples.librispeech.s5.exp.dataset.load_dataset_hierarchical import Dataset
-from examples.librispeech.s5.exp.metrics.cer import do_eval_cer
-from examples.librispeech.s5.exp.metrics.wer import do_eval_wer
+from examples.librispeech.s5.exp.metrics.character import eval_char
+from examples.librispeech.s5.exp.metrics.word import eval_word
 from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
 from utils.training.training_loop import train_hierarchical_step
 from utils.training.logging import set_logger
 from utils.directory import mkdir_join
 from utils.config import load_config, save_config
-
-MAX_DECODE_LEN_WORD = 200
-MAX_DECODE_LEN_CHAR = 600
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', type=int, default=-1,
@@ -45,6 +42,9 @@ parser.add_argument('--model_save_path', type=str,
 parser.add_argument('--saved_model_path', type=str, default=None,
                     help='path to the saved model to retrain')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
+
+MAX_DECODE_LEN_WORD = 200
+MAX_DECODE_LEN_CHAR = 600
 
 
 def main():
@@ -76,10 +76,11 @@ def main():
         batch_size=params['batch_size'],
         max_epoch=params['num_epoch'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
+        min_frame_num=params['min_frame_num'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
         tool=params['tool'], num_enque=None,
         dynamic_batching=params['dynamic_batching'])
-    dev_clean_data = Dataset(
+    dev_data = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
         input_freq=params['input_freq'],
@@ -91,37 +92,13 @@ def main():
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True, tool=params['tool'])
-    dev_other_data = Dataset(
-        data_save_path=args.data_save_path,
-        backend=params['backend'],
-        input_freq=params['input_freq'],
-        use_delta=params['use_delta'],
-        use_double_delta=params['use_double_delta'],
-        data_type='dev_other', data_size=params['data_size'],
-        label_type=params['label_type'],
-        label_type_sub=params['label_type_sub'],
-        batch_size=params['batch_size'], splice=params['splice'],
-        num_stack=params['num_stack'], num_skip=params['num_skip'],
-        shuffle=True, tool=params['tool'])
-    test_clean_data = Dataset(
+    test_data = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
         input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         data_type='test_clean', data_size=params['data_size'],
-        label_type=params['label_type'],
-        label_type_sub=params['label_type_sub'],
-        batch_size=params['batch_size'], splice=params['splice'],
-        num_stack=params['num_stack'], num_skip=params['num_skip'],
-        tool=params['tool'])
-    test_other_data = Dataset(
-        data_save_path=args.data_save_path,
-        backend=params['backend'],
-        input_freq=params['input_freq'],
-        use_delta=params['use_delta'],
-        use_double_delta=params['use_double_delta'],
-        data_type='test_other', data_size=params['data_size'],
         label_type=params['label_type'],
         label_type_sub=params['label_type_sub'],
         batch_size=params['batch_size'], splice=params['splice'],
@@ -189,7 +166,7 @@ def main():
         model.save_path = args.saved_model_path
 
         # Setting for logging
-        logger = set_logger(model.save_path, restart=True)
+        logger = set_logger(model.save_path)
 
         # Define optimizer
         model.set_optimizer(
@@ -248,18 +225,18 @@ def main():
     while True:
         # Compute loss in the training set (including parameter update)
         batch_train, is_new_epoch = train_data.next()
-        model, loss_train, loss_main_train, loss_sub_train = train_hierarchical_step(
+        model, loss_train_val, loss_main_train_val, loss_sub_train_val = train_hierarchical_step(
             model, batch_train, params['clip_grad_norm'], backend=params['backend'])
-        loss_train_mean += loss_train
-        loss_main_train_mean += loss_main_train
-        loss_sub_train_mean += loss_sub_train
+        loss_train_mean += loss_train_val
+        loss_main_train_mean += loss_main_train_val
+        loss_sub_train_mean += loss_sub_train_val
 
         pbar_epoch.update(len(batch_train['xs']))
 
         if (step + 1) % params['print_step'] == 0:
 
             # Compute loss in the dev set
-            batch_dev = dev_clean_data.next()[0]
+            batch_dev = dev_data.next()[0]
             loss_dev, loss_main_dev, loss_sub_dev = model(
                 batch_dev['xs'], batch_dev['ys'],
                 batch_dev['x_lens'], batch_dev['y_lens'],
@@ -282,12 +259,14 @@ def main():
                 tf_writer.add_scalar('dev/loss', loss_dev, step + 1)
                 tf_writer.add_scalar('dev/loss_main', loss_main_dev, step + 1)
                 tf_writer.add_scalar('dev/loss_sub', loss_sub_dev, step + 1)
-                for name, param in model.named_parameters():
-                    name = name.replace('.', '/')
-                    tf_writer.add_histogram(
-                        name, param.data.cpu().numpy(), step + 1)
-                    tf_writer.add_histogram(
-                        name + '/grad', param.grad.data.cpu().numpy(), step + 1)
+                # for name, param in model.named_parameters():
+                #     name = name.replace('.', '/')
+                #     tf_writer.add_histogram(
+                #         name, param.data.cpu().numpy(), step + 1)
+                #     if param.grad is not None:
+                #         tf_writer.add_histogram(
+                #             name + '/grad', param.grad.data.cpu().numpy(), step + 1)
+                #     # TODO: fix this
 
             duration_step = time.time() - start_time_step
             logger.info("...Step:%d(epoch:%.3f) loss:%.3f/%.3f/%.3f(%.3f/%.3f/%.3f)/lr:%.5f/batch:%d/x_lens:%d (%.3f min)" %
@@ -317,18 +296,29 @@ def main():
                                       learning_rate, metric_dev_best)
             else:
                 start_time_eval = time.time()
-                # dev-clean
-                metric_dev_epoch, _ = do_eval_wer(
-                    models=[model],
-                    dataset=dev_clean_data,
-                    beam_width=1,
-                    max_decode_len=MAX_DECODE_LEN_WORD,
-                    eval_batch_size=1)
-                logger.info('  WER (dev-clean, main): %.3f %%' %
-                            (metric_dev_epoch * 100))
+                # dev
+                if model.main_loss_weight > 0:
+                    metric_dev, _ = eval_word(
+                        models=[model],
+                        dataset=dev_data,
+                        eval_batch_size=1,
+                        beam_width=1,
+                        max_decode_len=MAX_DECODE_LEN_WORD,
+                        max_decode_len_sub=MAX_DECODE_LEN_CHAR)
+                    logger.info('  WER (dev-clean, main): %.3f %%' %
+                                (metric_dev * 100))
+                else:
+                    wer_dev_sub, metric_dev, _ = eval_char(
+                        models=[model],
+                        dataset=dev_data,
+                        eval_batch_size=1,
+                        beam_width=1,
+                        max_decode_len=MAX_DECODE_LEN_CHAR)
+                    logger.info('  WER / CER (dev-clean, sub): %.3f / %.3f %%' %
+                                ((wer_dev_sub * 100), (metric_dev * 100)))
 
-                if metric_dev_epoch < metric_dev_best:
-                    metric_dev_best = metric_dev_epoch
+                if metric_dev < metric_dev_best:
+                    metric_dev_best = metric_dev
                     not_improved_epoch = 0
                     best_model = copy.deepcopy(model)
                     logger.info('||||| Best Score |||||')
@@ -337,38 +327,26 @@ def main():
                     model.save_checkpoint(model.save_path, epoch, step,
                                           learning_rate, metric_dev_best)
 
-                    # dev-other
-                    metric_dev_other_epoch, _ = do_eval_wer(
-                        models=[model],
-                        dataset=dev_other_data,
-                        beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_WORD,
-                        eval_batch_size=1)
-                    logger.info('  WER (dev-other, main): %.3f %%' %
-                                (metric_dev_other_epoch * 100))
-
                     # test
-                    wer_test_clean, _ = do_eval_wer(
-                        models=[model],
-                        dataset=test_clean_data,
-                        beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_WORD,
-                        eval_batch_size=1)
-                    logger.info('  WER (test-clean, main): %.3f %%' %
-                                (wer_test_clean * 100))
-
-                    wer_test_other, _ = do_eval_wer(
-                        models=[model],
-                        dataset=test_other_data,
-                        beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_WORD,
-                        eval_batch_size=1)
-                    logger.info('  WER (test-other, main): %.3f %%' %
-                                (wer_test_other * 100))
-
-                    logger.info('  WER (test-mean, main): %.3f %%' %
-                                ((wer_test_clean + wer_test_other) * 100 / 2))
-
+                    if model.main_loss_weight > 0:
+                        wer_test, _ = eval_word(
+                            models=[model],
+                            dataset=test_data,
+                            eval_batch_size=1,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_WORD,
+                            max_decode_len_sub=MAX_DECODE_LEN_CHAR)
+                        logger.info('  WER (test-clean, main): %.3f %%' %
+                                    (wer_test * 100))
+                    else:
+                        wer_test_sub, cer_test_sub, _ = eval_char(
+                            models=[model],
+                            dataset=test_data,
+                            eval_batch_size=1,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_CHAR)
+                        logger.info(' WER / CER (test-clean, sub): %.3f / %.3f %%' %
+                                    ((wer_test_sub * 100), (cer_test_sub * 100)))
                 else:
                     not_improved_epoch += 1
 
@@ -384,7 +362,7 @@ def main():
                     optimizer=model.optimizer,
                     learning_rate=learning_rate,
                     epoch=epoch,
-                    value=metric_dev_epoch)
+                    value=metric_dev)
 
                 if epoch == params['convert_to_sgd_epoch']:
                     # Convert to fine-tuning stage
@@ -413,13 +391,13 @@ def main():
             start_time_epoch = time.time()
             epoch += 1
 
-    # TODO: evaluate the best model by beam search here
-
     duration_train = time.time() - start_time_train
     logger.info('Total time: %.3f hour' % (duration_train / 3600))
 
     if params['backend'] == 'pytorch':
         tf_writer.close()
+
+    # TODO: evaluate the best model by beam search here
 
     # Training was finished correctly
     with open(os.path.join(model.save_path, 'COMPLETE'), 'w') as f:

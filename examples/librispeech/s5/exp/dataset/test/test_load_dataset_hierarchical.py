@@ -9,10 +9,8 @@ import os
 import sys
 import unittest
 
-sys.path.append(os.path.abspath('../../../../'))
-from examples.librispeech.data.load_dataset_hierarchical import Dataset
-from utils.io.labels.character import Idx2char
-from utils.io.labels.word import Idx2word
+sys.path.append(os.path.abspath('../../../../../../'))
+from examples.librispeech.s5.exp.dataset.load_dataset_hierarchical import Dataset
 from utils.measure_time_func import measure_time
 
 
@@ -20,26 +18,15 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
 
     def test(self):
 
-        # framework
-        self.check(label_type='word_freq5', label_type_sub='character',
-                   data_type='train', backend='chainer')
-        self.check(label_type='word_freq5', label_type_sub='character',
-                   data_type='train', backend='pytorch')
-
         # data_type
-        self.check(label_type='word_freq5', label_type_sub='character',
+        self.check(label_type='word', label_type_sub='character',
                    data_type='dev_clean')
-        self.check(label_type='word_freq5', label_type_sub='character',
+        self.check(label_type='word', label_type_sub='character',
                    data_type='dev_other')
-        self.check(label_type='word_freq5', label_type_sub='character',
+        self.check(label_type='word', label_type_sub='character',
                    data_type='test_clean')
-        self.check(label_type='word_freq5', label_type_sub='character',
+        self.check(label_type='word', label_type_sub='character',
                    data_type='test_other')
-
-        # label_type
-        self.check(label_type='word_freq1', label_type_sub='character')
-        self.check(label_type='word_freq10', label_type_sub='character')
-        self.check(label_type='word_freq15', label_type_sub='character')
 
     @measure_time
     def check(self, label_type, label_type_sub,
@@ -61,31 +48,22 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
         print('  num_gpus: %d' % num_gpus)
         print('========================================')
 
-        vocab_file_path = '../../metrics/vocab_files/' + \
-            label_type + '_' + data_size + '.txt'
-        vocab_file_path_sub = '../../metrics/vocab_files/' + \
-            label_type_sub + '_' + data_size + '.txt'
-
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
+            data_save_path='/n/sd8/inaguma/corpus/librispeech/kaldi',
             backend=backend,
-            input_channel=40, use_delta=True, use_double_delta=True,
+            input_freq=81, use_delta=True, use_double_delta=True,
             data_type=data_type, data_size=data_size,
             label_type=label_type, label_type_sub=label_type_sub,
-            batch_size=64,
-            vocab_file_path=vocab_file_path,
-            vocab_file_path_sub=vocab_file_path_sub,
-            max_epoch=1, splice=splice,
+            batch_size=64, max_epoch=1, splice=splice,
             num_stack=num_stack, num_skip=num_skip,
-            shuffle=shuffle,
+            min_frame_num=40, shuffle=shuffle,
             sort_utt=sort_utt, reverse=True, sort_stop_epoch=sort_stop_epoch,
-            num_gpus=num_gpus, save_format='numpy',
+            num_gpus=num_gpus, tool='htk',
             num_enque=None)
 
         print('=> Loading mini-batch...')
-        idx2word = Idx2word(vocab_file_path, space_mark=' ')
-        idx2char = Idx2char(vocab_file_path_sub)
 
         for batch, is_new_epoch in dataset:
             if data_type == 'train' and backend == 'pytorch':
@@ -98,8 +76,8 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
                 str_ref = batch['ys'][0][0]
                 str_ref_sub = batch['ys_sub'][0][0]
             else:
-                str_ref = idx2word(batch['ys'][0][:batch['y_lens'][0]])
-                str_ref_sub = idx2char(
+                str_ref = dataset.idx2word(batch['ys'][0][:batch['y_lens'][0]])
+                str_ref_sub = dataset.idx2char(
                     batch['ys_sub'][0][:batch['y_lens_sub'][0]])
 
             print('----- %s (epoch: %.3f, batch: %d) -----' %
@@ -113,7 +91,7 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
                 print('y_lens (word): %d' % batch['y_lens'][0])
                 print('y_lens_sub (char): %d' % batch['y_lens_sub'][0])
 
-            if dataset.epoch_detail >= 0.01:
+            if dataset.epoch_detail >= 1:
                 break
 
 

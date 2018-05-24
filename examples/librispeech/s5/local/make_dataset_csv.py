@@ -13,7 +13,7 @@ import argparse
 from tqdm import tqdm
 import pandas as pd
 import pickle
-import
+
 sys.path.append('../../../')
 from utils.io.labels.phone import Phone2idx
 from utils.io.labels.character import Char2idx
@@ -36,9 +36,6 @@ DOUBLE_LETTERS = ['aa', 'bb', 'cc', 'dd', 'ee', 'ff', 'gg', 'hh', 'ii', 'jj',
 SPACE = '_'
 HYPHEN = '-'
 APOSTROPHE = '\''
-LAUGHTER = 'LA'
-NOISE = 'NZ'
-VOCALIZED_NOISE = 'VN'
 OOV = 'OOV'
 
 
@@ -55,8 +52,7 @@ def main():
             text_path=join(args.data_save_path, data_type, 'text'),
             vocab_save_path=mkdir_join(
                 args.data_save_path, 'vocab', args.data_size),
-            data_type=data_type,
-            lexicon_path=None)
+            data_type=data_type)
 
         # Make dataset file (.csv)
         print('=> Saving dataset files...')
@@ -68,18 +64,18 @@ def main():
         df_char = pd.DataFrame([], columns=df_columns)
         df_char_capital = pd.DataFrame([], columns=df_columns)
 
-        with open(join(args.data_save_path, 'feature', args.tool, args.data_size,  data_type.split('_')[0], 'frame_num.pickle'), 'rb') as f:
+        with open(join(args.data_save_path, 'feature', args.tool, args.data_size, data_type.split('_')[0], 'frame_num.pickle'), 'rb') as f:
             frame_num_dict = pickle.load(f)
 
         utt_count = 0
         df_word_list = []
         df_char_list, df_char_capital_list = [], []
-        for utt_idx, trans_list in tqdm(trans_dict.items()):
-            speaker = utt_idx.split('_')[0]
+        for utt_name, trans in tqdm(trans_dict.items()):
+            speaker, chapter, utt_idx = utt_name.split('-')
             feat_utt_save_path = join(
                 args.data_save_path, 'feature', args.tool, args.data_size, data_type.split('_')[
-                    0], speaker, utt_idx + '.npy')
-            frame_num = frame_num_dict[utt_idx]
+                    0], speaker, chapter, utt_idx + '.npy')
+            frame_num = frame_num_dict[utt_name]
 
             if not isfile(feat_utt_save_path):
                 raise ValueError('There is no file: %s' % feat_utt_save_path)
@@ -161,10 +157,11 @@ def read_text(text_path, vocab_save_path, data_type):
     with open(text_path, 'r') as f:
         for line in f:
             line = line.strip()
-            utt_idx, trans = line.split('  ')
+            utt_idx = line.split(' ')[0]
+            trans = ' '.join(line.split(' ')[1:]).lower()
 
-            # test normalization
-            trans = trans.lower()
+            # text normalization
+            trans = trans.replace(' ', SPACE)
 
             trans_capital = ''
             for w in trans.split(SPACE):
@@ -179,12 +176,13 @@ def read_text(text_path, vocab_save_path, data_type):
 
                 # Capital-divided
                 if len(w) == 1:
-                    char_capital_set.add(w)
-                    trans_capital += w
+                    char_capital_set.add(w.upper())
+                    trans_capital += w.upper()
                 else:
                     # Replace the first character with the capital
                     # letter
                     w = w[0].upper() + w[1:]
+                    char_capital_set.add(w[0])
 
                     # Check double-letters
                     for i in range(0, len(w) - 1, 1):
@@ -206,26 +204,23 @@ def read_text(text_path, vocab_save_path, data_type):
                 f.write('%s\n' % w)
 
         # character-level
-        with open(char_vocab_file_path, 'w') as f:
-            char_list = sorted(list(char_set)) + \
-                [SPACE, APOSTROPHE, HYPHEN, LAUGHTER, NOISE, VOCALIZED_NOISE]
+        with open(char_vocab_path, 'w') as f:
+            char_list = sorted(list(char_set)) + [SPACE]
             for char in char_list:
                 f.write('%s\n' % char)
 
         # character-level (capital-divided)
-        with open(char_capital_vocab_file_path, 'w') as f:
-            char_capital_list = sorted(list(char_capital_set)) + \
-                [APOSTROPHE, HYPHEN, LAUGHTER, NOISE, VOCALIZED_NOISE]
+        with open(char_capital_vocab_path, 'w') as f:
+            char_capital_list = sorted(list(char_capital_set))
             for char in char_capital_list:
                 f.write('%s\n' % char)
 
     # Compute OOV rate
-    if data_type != 'train':
-        with open(mkdir_join(vocab_save_path, 'oov', data_type + '.txt'), 'w') as f:
-            # word-level (threshold == 5)
-            oov_rate = compute_oov_rate(word_dict, word_vocab_path)
-            f.write('Word (freq5):\n')
-            f.write('  OOV rate (test): %f %%\n' % oov_rate)
+    with open(mkdir_join(vocab_save_path, 'oov', data_type + '.txt'), 'w') as f:
+        # word-level (threshold == 5)
+        oov_rate = compute_oov_rate(word_dict, word_vocab_path)
+        f.write('Word (freq5):\n')
+        f.write('  OOV rate (test): %f %%\n' % oov_rate)
 
     # Convert to index
     print('=====> Convert to index...')

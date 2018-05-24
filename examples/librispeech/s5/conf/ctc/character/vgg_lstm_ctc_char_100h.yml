@@ -2,11 +2,6 @@ parent: ../config/ctc/character/blstm_ctc_char_100h.yml
 param:
   # framework
   backend: pytorch
-  # backend: chainer
-
-  # features
-  num_stack: 1
-  num_skip: 1
 
   # topology
   # conv_channels: [32, 32]
