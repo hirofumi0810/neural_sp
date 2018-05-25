@@ -11,7 +11,7 @@ param:
   # features
   feature: fbank
   tool: htk
-  input_freq: 81
+  input_freq: 80
   use_delta: False
   use_double_delta: False
   input_channel: 1
@@ -78,7 +78,7 @@ param:
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
   char_init: False
-  # char_init: /n/sd8/inaguma/result/wsj/pytorch/ctc/character/train_si284/blstm320H4L_drop4_adam_lr1e-3_dropen0.2_input81
+  # char_init: /n/sd8/inaguma/result/wsj/pytorch/ctc/character/train_si284/blstm320H4L_drop4_adam_lr1e-3_dropen0.2_input80
 
   # regularization
   clip_grad_norm: 5.0
