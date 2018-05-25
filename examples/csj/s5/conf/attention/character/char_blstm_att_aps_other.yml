@@ -1,15 +1,21 @@
-parent: ./conf/attention/word/att_word_aps_other.yml
+parent: ./conf/attention/word/word_blstm_att_aps_other.yml
 param:
   # framework
-  backend: chainer
+  backend: pytorch
+
+  # corpus
+  data_size: aps_other
+  label_type: character_wb
 
   # topology
-  encoder_num_layers: 3
+  encoder_num_layers: 4
   subsample_list:
+    - False
     - True
     - True
     - False
-  attention_type: location
+  decoder_num_layers: 1
+  embedding_dim: 64
   decoding_order: attend_generate_update
   num_heads: 1
 

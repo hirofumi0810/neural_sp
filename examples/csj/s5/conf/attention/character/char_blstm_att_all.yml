@@ -1,25 +1,36 @@
-parent: ./conf/attention/word/att_word_aps_other.yml
+parent: ./conf/attention/word/word_blstm_att_aps_other.yml
 param:
   # framework
   backend: pytorch
 
   # corpus
-  data_size: aps_other
+  data_size: all
   label_type: character_wb
 
   # topology
-  encoder_num_layers: 3
+  encoder_num_layers: 5
   subsample_list:
+    - False
     - True
     - True
+    - False
     - False
   decoder_num_layers: 1
   embedding_dim: 64
   decoding_order: attend_generate_update
   num_heads: 1
 
+  # optimization
+  batch_size: 50
+
   # initialization
   char_init: False
+
+  # regularization
+  scheduled_sampling_max_step: 100000
+
+  # annealing
+  print_step: 400
 
   # MTL
   backward_loss_weight: 0

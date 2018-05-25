@@ -10,7 +10,7 @@ param:
   # features
   feature: fbank
   tool: htk
-  input_freq: 81
+  input_freq: 80
   use_delta: False
   use_double_delta: False
   input_channel: 1
@@ -34,8 +34,9 @@ param:
   encoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 3
+  encoder_num_layers: 4
   subsample_list:
+    - False
     - True
     - True
     - False
@@ -59,7 +60,7 @@ param:
   batch_size: 50
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 20
+  num_epoch: 30
   convert_to_sgd_epoch: 20
 
   # initialization

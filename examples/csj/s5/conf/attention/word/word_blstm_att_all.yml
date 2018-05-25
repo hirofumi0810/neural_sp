@@ -1,4 +1,4 @@
-parent: ./conf/ctc/word/ctc_word_aps_other.yml
+parent: ./conf/attention/word/word_blstm_att_aps_other.yml
 param:
   # framework
   backend: pytorch
@@ -9,18 +9,26 @@ param:
   # topology
   encoder_num_layers: 5
   subsample_list:
+    - False
     - True
     - True
     - False
     - False
-    - False
-  fc_list: [320]
+  decoding_order: attend_generate_update
+  num_heads: 1
 
   # optimization
-  batch_size: 40
+  batch_size: 50
 
   # initialization
   char_init: False
 
+  # regularization
+  scheduled_sampling_max_step: 100000
+
   # annealing
   print_step: 400
+
+  # MTL
+  backward_loss_weight: 0
+  ctc_loss_weight: 0

@@ -11,7 +11,7 @@ param:
   # features
   feature: fbank
   tool: htk
-  input_freq: 81
+  input_freq: 80
   use_delta: False
   use_double_delta: False
   input_channel: 1
@@ -37,9 +37,10 @@ param:
   decoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 3
-  encoder_num_layers_sub: 3
+  encoder_num_layers: 4
+  encoder_num_layers_sub: 4
   subsample_list:
+    - False
     - True
     - True
     - False
@@ -59,12 +60,12 @@ param:
   decoding_order: attend_generate_update
   bottleneck_dim: 320
   bottleneck_dim_sub: 320
+  backward_sub: True
   num_heads: 1
   num_heads_sub: 1
 
   # optimization
-  # batch_size: 40  # 5L
-  batch_size: 50  # 4L
+  batch_size: 40
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 30
@@ -121,9 +122,6 @@ param:
   dec_attend_temperature: 1
   dec_sigmoid_smoothing: True
   att_reg_weight: 0
-
-  # backward_sub: False
-  backward_sub: True
 
   # regularization
   relax_context_vec_dec: True

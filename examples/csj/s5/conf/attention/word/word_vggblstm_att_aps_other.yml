@@ -1,4 +1,4 @@
-parent: ./conf/attention/word/att_word_aps_other.yml
+parent: ./conf/attention/word/word_blstm_att_aps_other.yml
 param:
   # framework
   backend: pytorch
@@ -25,14 +25,15 @@ param:
   encoder_bidirectional: True
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 3
+  encoder_num_layers: 4
   subsample_list:
+    - False
     - False
     - False
     - False
 
   # optimization
-  batch_size: 25
+  batch_size: 20
 
   # initialization
   char_init: False
