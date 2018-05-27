@@ -106,7 +106,8 @@ class Char2idx(object):
                     indices.append(self.map_dict['OOV'])
         # NOTE: OOV handling is prepared for Japanese and Chinese
 
-        return np.array(indices)
+        # return np.array(indices)
+        return indices
 
 
 class Idx2char(object):

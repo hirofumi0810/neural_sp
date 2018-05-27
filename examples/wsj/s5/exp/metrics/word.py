@@ -14,13 +14,15 @@ import re
 
 from utils.evaluation.edit_distance import compute_wer
 from utils.evaluation.resolving_unk import resolve_unk
+from utils.io.labels.word import Word2char
 
 
 def eval_word(models, dataset, eval_batch_size,
               beam_width, max_decode_len, min_decode_len=0,
               beam_width_sub=1, max_decode_len_sub=200, min_decode_len_sub=0,
               length_penalty=0, coverage_penalty=0,
-              progressbar=False, resolving_unk=False, a2c_oracle=False):
+              progressbar=False, resolving_unk=False, a2c_oracle=False,
+              joint_decoding=None, score_sub_weight=0):
     """Evaluate trained model by Word Error Rate.
     Args:
         models (list): the models to evaluate
@@ -38,6 +40,8 @@ def eval_word(models, dataset, eval_batch_size,
         progressbar (bool): if True, visualize the progressbar
         resolving_unk (bool):
         a2c_oracle (bool):
+        joint_decoding (bool): onepass or resocring or None
+        score_sub_weight (float):
     Returns:
         wer (float): Word error rate
         df_word (pd.DataFrame): dataframe of substitution, insertion, and deletion
@@ -47,6 +51,10 @@ def eval_word(models, dataset, eval_batch_size,
 
     model = models[0]
     # TODO: fix this
+
+    if model.model_type == 'hierarchical_attention' and joint_decoding is not None:
+        word2char = Word2char(dataset.vocab_file_path,
+                              dataset.vocab_file_path_sub)
 
     wer = 0
     sub, ins, dele, = 0, 0, 0
@@ -94,6 +102,21 @@ def eval_word(models, dataset, eval_batch_size,
                 teacher_forcing=a2c_oracle,
                 ys_sub=ys_sub,
                 y_lens_sub=y_lens_sub)
+        elif model.model_type == 'hierarchical_attention' and joint_decoding is not None:
+            best_hyps, aw, best_hyps_sub, aw_sub, perm_idx = model.decode(
+                batch['xs'], batch['x_lens'],
+                beam_width=beam_width,
+                max_decode_len=max_decode_len,
+                min_decode_len=min_decode_len,
+                length_penalty=length_penalty,
+                coverage_penalty=coverage_penalty,
+                joint_decoding=joint_decoding,
+                space_index=dataset.char2idx('_')[0],
+                oov_index=dataset.word2idx('OOV')[0],
+                word2char=word2char,
+                idx2word=dataset.idx2word,
+                idx2char=dataset.idx2char,
+                score_sub_weight=score_sub_weight)
         else:
             best_hyps, aw, perm_idx = model.decode(
                 batch['xs'], batch['x_lens'],
@@ -107,7 +130,7 @@ def eval_word(models, dataset, eval_batch_size,
                     batch['xs'], batch['x_lens'],
                     beam_width=beam_width,
                     max_decode_len=max_decode_len_sub,
-                    min_decode_len_sub=min_decode_len_sub,
+                    min_decode_len=min_decode_len_sub,
                     length_penalty=length_penalty,
                     coverage_penalty=coverage_penalty,
                     task_index=1)

@@ -95,7 +95,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                  dec_attend_temperature=1,  # ***
                  dec_sigmoid_smoothing=False,  # ***
                  relax_context_vec_dec=False,
-                 dec_attention_type='content'):  # ***
+                 dec_attention_type='content',  # ***
+                 cold_fusion_like_prob_injection=False):  # ***
 
         super(NestedAttentionSeq2seq, self).__init__(
             input_size=input_size,
@@ -188,18 +189,21 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             self.bwd_weight_1 = sub_loss_weight
 
         # Setting for decoder attention
-        assert usage_dec_sub in ['update_decoder', 'all']
+        assert usage_dec_sub in ['update_decoder', 'all', 'softmax']
         self.usage_dec_sub = usage_dec_sub
         self.att_reg_weight = att_reg_weight
         self.num_heads_dec = num_heads_dec
+        self.cold_fusion_like_prob_injection = cold_fusion_like_prob_injection
+        if cold_fusion_like_prob_injection:
+            assert usage_dec_sub == 'softmax'
 
         # Regularization
         self.relax_context_vec_dec = relax_context_vec_dec
 
-        #########################
+        ##################################################
         # Encoder
         # NOTE: overide encoder
-        #########################
+        ##################################################
         if encoder_type in ['lstm', 'gru', 'rnn']:
             self.encoder = load(encoder_type=encoder_type)(
                 input_size=input_size,
@@ -245,9 +249,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         else:
             raise NotImplementedError
 
-        ####################
+        #############################################
+        # Main task
+        #############################################
         # Decoder (main)
-        ####################
         if decoding_order == 'conditional':
             self.decoder_first_0_fwd = RNNDecoder(
                 input_size=embedding_dim,
@@ -257,9 +262,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 dropout=dropout_decoder,
                 residual=False,
                 dense_residual=False)
-
             self.decoder_second_0_fwd = RNNDecoder(
-                input_size=self.encoder_num_units + decoder_num_units_sub,
+                input_size=self.encoder_num_units +
+                decoder_num_units_sub if usage_dec_sub != 'softmax' else self.encoder_num_units,
                 rnn_type=decoder_type,
                 num_units=decoder_num_units,
                 num_layers=decoder_num_layers,
@@ -269,8 +274,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             # NOTE; the conditional decoder only supports the 1 layer
         else:
             self.decoder_0_fwd = RNNDecoder(
-                input_size=self.encoder_num_units +
-                embedding_dim + decoder_num_units_sub,
+                input_size=self.encoder_num_units + embedding_dim +
+                decoder_num_units_sub if usage_dec_sub != 'softmax' else self.encoder_num_units + embedding_dim,
                 rnn_type=decoder_type,
                 num_units=decoder_num_units,
                 num_layers=decoder_num_layers,
@@ -278,15 +283,63 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 residual=decoder_residual,
                 dense_residual=decoder_dense_residual)
 
+        # Attention layer (to encoder states)
+        self.attend_0_fwd = AttentionMechanism(
+            encoder_num_units=self.encoder_num_units,
+            decoder_num_units=decoder_num_units,
+            attention_type=attention_type,
+            attention_dim=attention_dim,
+            sharpening_factor=sharpening_factor,
+            sigmoid_smoothing=sigmoid_smoothing,
+            out_channels=attention_conv_num_channels,
+            kernel_size=attention_conv_width,
+            num_heads=num_heads)
+
+        # Attention layer (to decoder states in the sub task)
+        self.attend_dec_sub = AttentionMechanism(
+            encoder_num_units=decoder_num_units,
+            decoder_num_units=decoder_num_units,
+            attention_type=dec_attention_type,
+            attention_dim=attention_dim,
+            sharpening_factor=1 / dec_attend_temperature,
+            sigmoid_smoothing=dec_sigmoid_smoothing,
+            out_channels=attention_conv_num_channels,
+            kernel_size=21,
+            num_heads=num_heads_dec)
+
         if relax_context_vec_dec:
             self.W_c_dec_relax = LinearND(
                 decoder_num_units_sub, decoder_num_units_sub,
                 dropout=dropout_decoder)
 
+        # Output layer (main)
+        self.W_d_0_fwd = LinearND(
+            decoder_num_units, bottleneck_dim,
+            dropout=dropout_decoder)
+        self.W_c_0_fwd = LinearND(
+            self.encoder_num_units, bottleneck_dim,
+            dropout=dropout_decoder)
+        self.fc_0_fwd = LinearND(bottleneck_dim, self.num_classes)
+
+        # Usage of decoder states in the sub task
+        if usage_dec_sub in ['all', 'softmax']:
+            self.W_c_dec_out = LinearND(
+                decoder_num_units, bottleneck_dim_sub,
+                dropout=dropout_decoder)
+
+        if cold_fusion_like_prob_injection:
+            self.W_logits_sub = LinearND(
+                self.num_classes_sub, decoder_num_units_sub,
+                dropout=dropout_decoder)
+            self.W_gate = LinearND(
+                decoder_num_units + decoder_num_units_sub, decoder_num_units_sub,
+                dropout=dropout_decoder)
+
+        #############################################
+        # Sub task
+        #############################################
         dir = 'bwd' if backward_sub else 'fwd'
-        ##################################################
-        # Bridge layer between the encoder and decoder
-        ##################################################
+        # Bridge layer between the encoder and decoder (sub)
         if encoder_type == 'cnn':
             self.bridge_1 = LinearND(
                 self.encoder.output_size, decoder_num_units_sub,
@@ -302,16 +355,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         else:
             self.is_bridge_sub = False
 
-        ##################################################
         # Initialization of the decoder
-        ##################################################
         if getattr(self, 'init_dec_state_1_' + dir) != 'zero':
             setattr(self, 'W_dec_init_1_' + dir, LinearND(
                 self.encoder_num_units_sub, decoder_num_units_sub))
 
-        ##############################
         # Decoder (sub)
-        ##############################
         if decoding_order == 'conditional':
             setattr(self, 'decoder_first_1_' + dir, RNNDecoder(
                 input_size=embedding_dim_sub,
@@ -340,9 +389,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 residual=decoder_residual,
                 dense_residual=decoder_dense_residual))
 
-        ###################################
         # Attention layer (sub)
-        ###################################
         setattr(self, 'attend_1_' + dir, AttentionMechanism(
             encoder_num_units=self.encoder_num_units_sub,
             decoder_num_units=decoder_num_units_sub,
@@ -354,9 +401,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             kernel_size=attention_conv_width,
             num_heads=num_heads_sub))
 
-        ##############################
         # Output layer (sub)
-        ##############################
         setattr(self, 'W_d_1_' + dir, LinearND(
             decoder_num_units_sub, bottleneck_dim_sub,
             dropout=dropout_decoder))
@@ -366,9 +411,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         setattr(self, 'fc_1_' + dir, LinearND(
             bottleneck_dim_sub, self.num_classes_sub))
 
-        ##############################
         # Embedding (sub)
-        ##############################
         if label_smoothing_prob > 0:
             self.embed_1 = Embedding_LS(
                 num_classes=self.num_classes_sub,
@@ -382,31 +425,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 dropout=dropout_embedding,
                 ignore_index=-1)
 
-        ############################################################
-        # Attention layer (to the decoder states in the sub task)
-        ############################################################
-        self.attend_dec_sub = AttentionMechanism(
-            encoder_num_units=decoder_num_units,
-            decoder_num_units=decoder_num_units,
-            attention_type=dec_attention_type,
-            attention_dim=attention_dim,
-            sharpening_factor=1 / dec_attend_temperature,
-            sigmoid_smoothing=dec_sigmoid_smoothing,
-            out_channels=attention_conv_num_channels,
-            kernel_size=21,
-            num_heads=num_heads_dec)
-
-        ##############################################
-        # Usage of decoder states in the sub task
-        ##############################################
-        if usage_dec_sub == 'all':
-            self.W_c_dec_out = LinearND(
-                decoder_num_units, bottleneck_dim_sub,
-                dropout=dropout_decoder)
-
-        ##############################
         # CTC (sub)
-        ##############################
         if ctc_loss_weight_sub > 0:
             self.fc_ctc_1 = LinearND(
                 self.encoder_num_units_sub, num_classes_sub + 1)
@@ -428,10 +447,13 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         # Recurrent weights are orthogonalized
         if recurrent_weight_orthogonal:
-            self.init_weights(parameter_init,
-                              distribution='orthogonal',
-                              keys=[encoder_type, 'weight'],
-                              ignore_keys=['bias'])
+            # encoder
+            if encoder_type != 'cnn':
+                self.init_weights(parameter_init,
+                                  distribution='orthogonal',
+                                  keys=[encoder_type, 'weight'],
+                                  ignore_keys=['bias'])
+            # decoder
             self.init_weights(parameter_init,
                               distribution='orthogonal',
                               keys=[decoder_type, 'weight'],
@@ -733,43 +755,34 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     dec_out_sub, dec_state_sub = getattr(self, 'decoder_1_' + dir)(
                         dec_in_sub, dec_state_sub)
 
-            elif self.decoding_order == 'attend_update_generate':
-                # Score
-                context_vec_sub, aw_step_sub = getattr(self, 'attend_1_' + dir)(
-                    enc_out_sub, x_lens_sub, dec_out_sub, aw_step_sub)
-
+            else:
                 # Sample
                 y_sub = torch.max(
                     logits_sub[-1], dim=2)[1].detach() if is_sample else ys_sub[:, t:t + 1]
                 y_sub = self.embed_1(y_sub)
 
-                # Recurrency
-                dec_in_sub = torch.cat([y_sub, context_vec_sub], dim=-1)
-                dec_out_sub, dec_state_sub = getattr(self, 'decoder_1_' + dir)(
-                    dec_in_sub, dec_state_sub)
+                if self.decoding_order == 'attend_update_generate':
+                    # Score
+                    context_vec_sub, aw_step_sub = getattr(self, 'attend_1_' + dir)(
+                        enc_out_sub, x_lens_sub, dec_out_sub, aw_step_sub)
 
-                # Generate
-                logits_step_sub = getattr(self, 'fc_1_' + dir)(F.tanh(
-                    getattr(self, 'W_d_1_' + dir)(dec_out_sub) +
-                    getattr(self, 'W_c_1_' + dir)(context_vec_sub)))
+                    # Recurrency
+                    dec_in_sub = torch.cat([y_sub, context_vec_sub], dim=-1)
+                    dec_out_sub, dec_state_sub = getattr(self, 'decoder_1_' + dir)(
+                        dec_in_sub, dec_state_sub)
 
-            elif self.decoding_order == 'conditional':
-                # Sample
-                y_sub = torch.max(
-                    logits_sub[-1], dim=2)[1].detach() if is_sample else ys_sub[:, t:t + 1]
-                y_sub = self.embed_1(y_sub)
+                elif self.decoding_order == 'conditional':
+                    # Recurrency of the first decoder
+                    _dec_out_sub, _dec_state_sub = getattr(self, 'decoder_first_1_' + dir)(
+                        y_sub, dec_state_sub)
 
-                # Recurrency of the first decoder
-                _dec_out_sub, _dec_state_sub = getattr(self, 'decoder_first_1_' + dir)(
-                    y_sub, dec_state_sub)
+                    # Score
+                    context_vec_sub, aw_step_sub = getattr(self, 'attend_1_' + dir)(
+                        enc_out_sub, x_lens_sub, _dec_out_sub, aw_step_sub)
 
-                # Score
-                context_vec_sub, aw_step_sub = getattr(self, 'attend_1_' + dir)(
-                    enc_out_sub, x_lens_sub, _dec_out_sub, aw_step_sub)
-
-                # Recurrency of the second decoder
-                dec_out_sub, dec_state_sub = getattr(self, 'decoder_second_1_' + dir)(
-                    context_vec_sub, _dec_state_sub)
+                    # Recurrency of the second decoder
+                    dec_out_sub, dec_state_sub = getattr(self, 'decoder_second_1_' + dir)(
+                        context_vec_sub, _dec_state_sub)
 
                 # Generate
                 logits_step_sub = getattr(self, 'fc_1_' + dir)(F.tanh(
@@ -777,7 +790,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     getattr(self, 'W_c_1_' + dir)(context_vec_sub)))
 
             dec_out_sub_seq.append(dec_out_sub)
-
             logits_sub.append(logits_step_sub)
             if self.backward_1:
                 aw_sub = [aw_step_sub] + aw_sub
@@ -791,6 +803,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         if self.main_loss_weight == 0:
             return None, None, logits_sub, aw_sub, None
+
+        if self.cold_fusion_like_prob_injection:
+            probs_sub = self.W_logits_sub(logits_sub)
 
         ##################################################
         # Next, compute logits of the word model
@@ -814,14 +829,23 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     enc_out, x_lens, dec_out, aw_step_enc)
 
                 # Score for the second decoder states
-                context_vec_dec, aw_step_dec = self.attend_dec_sub(
-                    dec_out_sub_seq, y_lens_sub, dec_out, aw_step_dec)
-                if self.relax_context_vec_dec:
-                    context_vec_dec = self.W_c_dec_relax(context_vec_dec)
+                if self.cold_fusion_like_prob_injection:
+                    context_vec_dec, aw_step_dec = self.attend_dec_sub(
+                        probs_sub, y_lens_sub, dec_out, aw_step_dec)
+
+                    # Fine-grained gating
+                    gate = F.sigmoid(self.W_gate(
+                        torch.cat([dec_out, context_vec_dec], dim=-1)))
+                    context_vec_dec = gate * context_vec_dec
+                else:
+                    context_vec_dec, aw_step_dec = self.attend_dec_sub(
+                        dec_out_sub_seq, y_lens_sub, dec_out, aw_step_dec)
+                    if self.relax_context_vec_dec:
+                        context_vec_dec = self.W_c_dec_relax(context_vec_dec)
 
                 # Generate
                 out = self.W_d_0_fwd(dec_out) + self.W_c_0_fwd(context_vec_enc)
-                if self.usage_dec_sub == 'all':
+                if self.usage_dec_sub in ['all', 'softmax']:
                     out += self.W_c_dec_out(context_vec_dec)
                 logits_step = self.fc_0_fwd(F.tanh(out))
 
@@ -833,65 +857,80 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
                     # Recurrency
                     dec_in = torch.cat([y, context_vec_enc], dim=-1)
-                    dec_in = torch.cat(
-                        [dec_in, context_vec_dec], dim=-1)
+                    if self.usage_dec_sub != 'softmax':
+                        dec_in = torch.cat(
+                            [dec_in, context_vec_dec], dim=-1)
+                    dec_out, dec_state = self.decoder_0_fwd(dec_in, dec_state)
+            else:
+                # Sample
+                y = torch.max(
+                    logits[-1], dim=2)[1].detach() if is_sample else ys[:, t:t + 1]
+                y = self.embed_0(y)
+
+                if self.decoding_order == 'attend_update_generate':
+                    # Score for the encoder
+                    context_vec_enc, aw_step_enc = self.attend_0_fwd(
+                        enc_out, x_lens, dec_out, aw_step_enc)
+
+                    # Score for the second decoder states
+                    if self.cold_fusion_like_prob_injection:
+                        context_vec_dec, aw_step_dec = self.attend_dec_sub(
+                            probs_sub, y_lens_sub, dec_out, aw_step_dec)
+
+                        # Fine-grained gating
+                        gate = F.sigmoid(self.W_gate(
+                            torch.cat([dec_out, context_vec_dec], dim=-1)))
+                        context_vec_dec = gate * context_vec_dec
+                    else:
+                        context_vec_dec, aw_step_dec = self.attend_dec_sub(
+                            dec_out_sub_seq, y_lens_sub, dec_out, aw_step_dec)
+                        if self.relax_context_vec_dec:
+                            context_vec_dec = self.W_c_dec_relax(
+                                context_vec_dec)
+
+                    # Recurrency
+                    dec_in = torch.cat([y, context_vec_enc], dim=-1)
+                    if self.usage_dec_sub != 'softmax':
+                        dec_in = torch.cat([dec_in, context_vec_dec], dim=-1)
                     dec_out, dec_state = self.decoder_0_fwd(dec_in, dec_state)
 
-            elif self.decoding_order == 'attend_update_generate':
-                # Score for the encoder
-                context_vec_enc, aw_step_enc = self.attend_0_fwd(
-                    enc_out, x_lens, dec_out, aw_step_enc)
+                elif self.decoding_order == 'conditional':
+                    # Recurrency of the first decoder
+                    _dec_out, _dec_state = self.decoder_first_0_fwd(
+                        y, dec_state)
 
-                # Score for the second decoder states
-                context_vec_dec, aw_step_dec = self.attend_dec_sub(
-                    dec_out_sub_seq, y_lens_sub, dec_out, aw_step_dec)
-                if self.relax_context_vec_dec:
-                    context_vec_dec = self.W_c_dec_relax(context_vec_dec)
+                    # Score for the encoder
+                    context_vec_enc, aw_step_enc = self.attend_0_fwd(
+                        enc_out, x_lens, _dec_out, aw_step_enc)
 
-                # Sample
-                y = torch.max(
-                    logits[-1], dim=2)[1].detach() if is_sample else ys[:, t:t + 1]
-                y = self.embed_0(y)
+                    # Score for the second decoder states
+                    if self.cold_fusion_like_prob_injection:
+                        context_vec_dec, aw_step_dec = self.attend_dec_sub(
+                            probs_sub, y_lens_sub, _dec_out, aw_step_dec)
 
-                # Recurrency
-                dec_in = torch.cat([y, context_vec_enc], dim=-1)
-                dec_in = torch.cat([dec_in, context_vec_dec], dim=-1)
-                dec_out, dec_state = self.decoder_0_fwd(dec_in, dec_state)
+                        # Fine-grained gating
+                        gate = F.sigmoid(self.W_gate(
+                            torch.cat([_dec_out, context_vec_dec], dim=-1)))
+                        context_vec_dec = gate * context_vec_dec
+                    else:
+                        context_vec_dec, aw_step_dec = self.attend_dec_sub(
+                            dec_out_sub_seq, y_lens_sub, _dec_out, aw_step_dec)
+                        if self.relax_context_vec_dec:
+                            context_vec_dec = self.W_c_dec_relax(
+                                context_vec_dec)
 
-                # Generate
-                out = self.W_d_0_fwd(dec_out) + self.W_c_0_fwd(context_vec_enc)
-                if self.usage_dec_sub == 'all':
-                    out += self.W_c_dec_out(context_vec_dec)
-                logits_step = self.fc_0_fwd(F.tanh(out))
-
-            elif self.decoding_order == 'conditional':
-                # Sample
-                y = torch.max(
-                    logits[-1], dim=2)[1].detach() if is_sample else ys[:, t:t + 1]
-                y = self.embed_0(y)
-
-                # Recurrency of the first decoder
-                _dec_out, _dec_state = self.decoder_first_0_fwd(y, dec_state)
-
-                # Score for the encoder
-                context_vec_enc, aw_step_enc = self.attend_0_fwd(
-                    enc_out, x_lens, _dec_out, aw_step_enc)
-
-                # Score for the second decoder states
-                context_vec_dec, aw_step_dec = self.attend_dec_sub(
-                    dec_out_sub_seq, y_lens_sub, _dec_out, aw_step_dec)
-                if self.relax_context_vec_dec:
-                    context_vec_dec = self.W_c_dec_relax(context_vec_dec)
-
-                # Recurrency of the second decoder
-                context_vecs = torch.cat(
-                    [context_vec_enc, context_vec_dec], dim=-1)
-                dec_out, dec_state = self.decoder_second_0_fwd(
-                    context_vecs, _dec_state)
+                    # Recurrency of the second decoder
+                    if self.usage_dec_sub == 'softmax':
+                        dec_in = context_vec_enc
+                    else:
+                        dec_in = torch.cat(
+                            [context_vec_enc, context_vec_dec], dim=-1)
+                    dec_out, dec_state = self.decoder_second_0_fwd(
+                        dec_in, _dec_state)
 
                 # Generate
                 out = self.W_d_0_fwd(dec_out) + self.W_c_0_fwd(context_vec_enc)
-                if self.usage_dec_sub == 'all':
+                if self.usage_dec_sub in ['all', 'softmax']:
                     out += self.W_c_dec_out(context_vec_dec)
                 logits_step = self.fc_0_fwd(F.tanh(out))
 
@@ -992,6 +1031,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 max_decode_len_sub=max_decode_len_sub,
                 min_decode_len_sub=min_decode_len_sub,
                 length_penalty=length_penalty,
+                coverage_penalty=coverage_penalty,
                 teacher_forcing=teacher_forcing,
                 ys_sub=ys_in_sub)
 
@@ -1028,7 +1068,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
     def _decode_infer_joint(self, enc_out, x_lens, enc_out_sub, x_lens_sub,
                             beam_width, max_decode_len, min_decode_len,
                             beam_width_sub, max_decode_len_sub, min_decode_len_sub,
-                            length_penalty, teacher_forcing=False, ys_sub=None,
+                            length_penalty, coverage_penalty,
+                            teacher_forcing=False, ys_sub=None,
                             reverse_backward=True):
         """Greedy decoding in the inference stage.
         Args:
@@ -1044,10 +1085,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             beam_width_sub (int): the size of beam in the sub task
             max_decode_len_sub (int): the maximum sequence length of tokens in the sub task
             min_decode_len_sub (int): the minimum sequence length of tokens in the sub task
-            length_penalty (float):
+            length_penalty (float): length penalty in beam search decoding
+            coverage_penalty (float): coverage penalty in beam search decoding
             teacher_forcing (bool):
             ys_sub ():
-            y_lens_sub ():
             reverse_backward (bool):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B, T_out]`
@@ -1061,10 +1102,13 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         if teacher_forcing:
             beam_width_sub = 1
 
+        min_decode_len_ratio = 0.05
+
         ##################################################
         # At first, decode by the second decoder
         ##################################################
         dec_out_sub_seq, aw_sub, best_hyps_sub = [], [], []
+        logits_sub = []
         y_lens_sub = np.zeros((batch_size,), dtype=np.int32)
         for b in range(batch_size):
             # Initialization for the character model per utterance
@@ -1079,7 +1123,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                          'score': 0,  # log 1
                          'dec_state': dec_state_sub,
                          'dec_outs': [dec_out_sub],  # NOTE: keep all outputs
-                         'aw_steps': [aw_step_sub]}]
+                         'aw_steps': [aw_step_sub],
+                         'logits_sub': []}]
 
             for t in range(max_decode_len_sub):
                 new_beam_sub = []
@@ -1087,7 +1132,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     if self.decoding_order == 'attend_generate_update':
                         # Score
                         context_vec_sub, aw_step_sub = getattr(self, 'attend_1_' + dir)(
-                            enc_out_sub[b:b + 1, :x_lens_sub[b].data[0]],
+                            enc_out_sub[b:b + 1],
                             x_lens_sub[b:b + 1],
                             beam_sub[i_beam]['dec_outs'][-1], beam_sub[i_beam]['aw_steps'][-1])
 
@@ -1097,19 +1142,18 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                             getattr(self, 'W_c_1_' + dir)(context_vec_sub)))
 
                         # NOTE: Recurrency is placed at the latter stage
-
                     else:
                         if teacher_forcing:
                             y_sub = ys_sub[:, t:t + 1]
                         else:
                             y_sub = self._create_var(
-                                (1,), fill_value=beam_sub[i_beam]['hyp'][-1], dtype='long').unsqueeze(1)
+                                (1, 1), fill_value=beam_sub[i_beam]['hyp'][-1], dtype='long')
                         y_sub = self.embed_1(y_sub)
 
                         if self.decoding_order == 'attend_update_generate':
                             # Score
                             context_vec_sub, aw_step_sub = getattr(self, 'attend_1_' + dir)(
-                                enc_out_sub[b:b + 1, :x_lens_sub[b].data[0]],
+                                enc_out_sub[b:b + 1],
                                 x_lens_sub[b:b + 1],
                                 beam_sub[i_beam]['dec_outs'][-1], beam_sub[i_beam]['aw_steps'][-1])
 
@@ -1124,7 +1168,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                                 y_sub = ys_sub[:, t:t + 1]
                             else:
                                 y_sub = self._create_var(
-                                    (1,), fill_value=beam_sub[i_beam]['hyp'][-1], dtype='long').unsqueeze(1)
+                                    (1, 1), fill_value=beam_sub[i_beam]['hyp'][-1], dtype='long')
                             y_sub = self.embed_1(y_sub)
 
                             # Recurrency of the first decoder
@@ -1133,7 +1177,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
                             # Score
                             context_vec_sub, aw_step_sub = getattr(self, 'attend_1_' + dir)(
-                                enc_out_sub[b:b + 1, :x_lens_sub[b].data[0]],
+                                enc_out_sub[b:b + 1],
                                 x_lens_sub[b:b + 1],
                                 _dec_out_sub, beam_sub[i_beam]['aw_steps'][-1])
 
@@ -1155,13 +1199,16 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     log_probs_sub_topk, indices_sub_topk = log_probs_sub.topk(
                         beam_width_sub, dim=1, largest=True, sorted=True)
 
+                    if self.cold_fusion_like_prob_injection:
+                        logits_step_sub = self.W_logits_sub(logits_step_sub)
+
                     for k in range(beam_width_sub):
                         if self.decoding_order == 'attend_generate_update':
                             if teacher_forcing:
                                 y_sub = ys_sub[:, t + 1:t + 2]
                             else:
                                 y_sub = self._create_var(
-                                    (1,), fill_value=indices_sub_topk[0, k].data[0], dtype='long').unsqueeze(1)
+                                    (1, 1), fill_value=indices_sub_topk[0, k].data[0], dtype='long')
                             y_sub = self.embed_1(y_sub)
 
                             # Recurrency
@@ -1170,12 +1217,39 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                             dec_out_sub, dec_state_sub = getattr(
                                 self, 'decoder_1_' + dir)(dec_in_sub, beam_sub[i_beam]['dec_state'])
 
+                        # Exclude short hypotheses
+                        if indices_sub_topk[0, k].data[0] == self.eos_1 and len(beam_sub[i_beam]['hyp']) < min_decode_len_sub:
+                            continue
+                        # if indices_sub_topk[0, k].data[0] == self.eos_1 and len(beam_sub[i_beam]['hyp']) < x_lens_sub[b].data[0] * min_decode_len_ratio:
+                        #     continue
+
+                        # Add length penalty
+                        score_sub = beam_sub[i_beam]['score'] + \
+                            log_probs_sub_topk.data[0, k] + length_penalty
+
+                        # Add coverage penalty
+                        if coverage_penalty > 0:
+                            threshold = 0.5
+                            aw_steps_sub = torch.cat(
+                                beam_sub[i_beam]['aw_steps'], dim=0).sum(0).squeeze(1)
+
+                            # Google NMT
+                            # cov_sum = torch.where(
+                            #     aw_steps_sub < threshold, aw_steps_sub, torch.ones_like(aw_steps_sub) * threshold).sum(0)
+                            # score_sub += torch.log(cov_sum) * coverage_penalty
+
+                            # Toward better decoding
+                            cov_sum = torch.where(
+                                aw_steps_sub > threshold, aw_steps_sub, torch.zeros_like(aw_steps_sub)).sum(0)
+                            score_sub += cov_sum * coverage_penalty
+
                         new_beam_sub.append(
                             {'hyp': beam_sub[i_beam]['hyp'] + [indices_sub_topk[0, k].data[0]],
-                             'score': beam_sub[i_beam]['score'] + log_probs_sub_topk[0, k].data[0],
+                             'score': score_sub,
                              'dec_state': copy.deepcopy(dec_state_sub),
                              'dec_outs': beam_sub[i_beam]['dec_outs'] + [dec_out_sub],
-                             'aw_steps': beam_sub[i_beam]['aw_steps'] + [aw_step_sub]})
+                             'aw_steps': beam_sub[i_beam]['aw_steps'] + [aw_step_sub],
+                             'logits_sub': beam_sub[i_beam]['logits_sub'] + [logits_step_sub]})
 
                 new_beam_sub = sorted(
                     new_beam_sub, key=lambda x: x['score'], reverse=True)
@@ -1187,9 +1261,11 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         complete_sub.append(cand)
                     else:
                         not_complete_sub.append(cand)
+
                 if len(complete_sub) >= beam_width_sub:
                     complete_sub = complete_sub[:beam_width_sub]
                     break
+
                 beam_sub = not_complete_sub[:beam_width_sub]
 
             if len(complete_sub) == 0:
@@ -1207,6 +1283,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             aw_sub.append(complete_sub[0]['aw_steps'][1:])
             dec_out_sub_seq.append(
                 torch.cat(complete_sub[0]['dec_outs'][1:], dim=1))
+            logits_sub.append(
+                torch.cat(complete_sub[0]['logits_sub'], dim=1))
             y_lens_sub[b] = len(complete_sub[0]['hyp'][1:])
 
         ##################################################
@@ -1240,44 +1318,61 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     if self.decoding_order == 'attend_generate_update':
                         # Score for the encoder
                         context_vec_enc, aw_step_enc = self.attend_0_fwd(
-                            enc_out[b:b + 1, :x_lens[b].data[0]],
-                            x_lens[b:b + 1],
+                            enc_out[b:b + 1], x_lens[b:b + 1],
                             beam[i_beam]['dec_out'], beam[i_beam]['aw_steps_enc'][-1])
 
-                        # Score for the second decoder states
-                        context_vec_dec, aw_step_dec = self.attend_dec_sub(
-                            dec_out_sub_seq[b], y_lens_sub[b:b + 1],
-                            beam[i_beam]['dec_out'], beam[i_beam]['aw_steps_dec'][-1])
-                        if self.relax_context_vec_dec:
-                            context_vec_dec = self.W_c_dec_relax(
-                                context_vec_dec)
+                        # Score for the second decoder states]
+                        if self.cold_fusion_like_prob_injection:
+                            context_vec_dec, aw_step_dec = self.attend_dec_sub(
+                                logits_sub[b], y_lens_sub[b:b + 1],
+                                beam[i_beam]['dec_out'], beam[i_beam]['aw_steps_dec'][-1])
 
-                        # Generate
-                        out = self.W_d_0_fwd(beam[i_beam]['dec_out']) + \
-                            self.W_c_0_fwd(context_vec_enc)
-                        if self.usage_dec_sub == 'all':
-                            out += self.W_c_dec_out(context_vec_dec)
-                        logits_step = self.fc_0_fwd(F.tanh(out))
-
-                    else:
-                        y = self._create_var(
-                            (1,), fill_value=beam[i_beam]['hyp'][-1], dtype='long').unsqueeze(1)
-                        y = self.embed_0(y)
-
-                        if self.decoding_order == 'attend_update_generate':
-                            # Score for the encoder
-                            context_vec_enc, aw_step_enc = self.attend_0_fwd(
-                                enc_out[b:b + 1, :x_lens[b].data[0]],
-                                x_lens[b:b + 1],
-                                beam[i_beam]['dec_out'], beam[i_beam]['aw_steps_enc'][-1])
-
-                            # Score for the second decoder states
+                            # Fine-grained gating
+                            gate = F.sigmoid(self.W_gate(
+                                torch.cat([beam[i_beam]['dec_out'], context_vec_dec], dim=-1)))
+                            context_vec_dec = gate * context_vec_dec
+                        else:
                             context_vec_dec, aw_step_dec = self.attend_dec_sub(
                                 dec_out_sub_seq[b], y_lens_sub[b:b + 1],
                                 beam[i_beam]['dec_out'], beam[i_beam]['aw_steps_dec'][-1])
                             if self.relax_context_vec_dec:
                                 context_vec_dec = self.W_c_dec_relax(
                                     context_vec_dec)
+
+                        # Generate
+                        out = self.W_d_0_fwd(beam[i_beam]['dec_out']) + \
+                            self.W_c_0_fwd(context_vec_enc)
+                        if self.usage_dec_sub in ['all', 'softmax']:
+                            out += self.W_c_dec_out(context_vec_dec)
+                        logits_step = self.fc_0_fwd(F.tanh(out))
+                    else:
+                        y = self._create_var(
+                            (1, 1), fill_value=beam[i_beam]['hyp'][-1], dtype='long')
+                        y = self.embed_0(y)
+
+                        if self.decoding_order == 'attend_update_generate':
+                            # Score for the encoder
+                            context_vec_enc, aw_step_enc = self.attend_0_fwd(
+                                enc_out[b:b + 1], x_lens[b:b + 1],
+                                beam[i_beam]['dec_out'], beam[i_beam]['aw_steps_enc'][-1])
+
+                            # Score for the second decoder states
+                            if self.cold_fusion_like_prob_injection:
+                                context_vec_dec, aw_step_dec = self.attend_dec_sub(
+                                    logits_sub[b], y_lens_sub[b:b + 1],
+                                    beam[i_beam]['dec_out'], beam[i_beam]['aw_steps_dec'][-1])
+
+                                # Fine-grained gating
+                                gate = F.sigmoid(self.W_gate(
+                                    torch.cat([beam[i_beam]['dec_out'], context_vec_dec], dim=-1)))
+                                context_vec_dec = gate * context_vec_dec
+                            else:
+                                context_vec_dec, aw_step_dec = self.attend_dec_sub(
+                                    dec_out_sub_seq[b], y_lens_sub[b:b + 1],
+                                    beam[i_beam]['dec_out'], beam[i_beam]['aw_steps_dec'][-1])
+                                if self.relax_context_vec_dec:
+                                    context_vec_dec = self.W_c_dec_relax(
+                                        context_vec_dec)
 
                             # Recurrency
                             dec_in = torch.cat([y, context_vec_enc], dim=-1)
@@ -1293,28 +1388,40 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
                             # Score for the encoder
                             context_vec_enc, aw_step_enc = self.attend_0_fwd(
-                                enc_out[b:b + 1, :x_lens[b].data[0]],
-                                x_lens[b:b + 1],
+                                enc_out[b:b + 1], x_lens[b:b + 1],
                                 _dec_out, beam[i_beam]['aw_steps_enc'][-1])
 
                             # Score for the second decoder states
-                            context_vec_dec, aw_step_dec = self.attend_dec_sub(
-                                dec_out_sub_seq[b], y_lens_sub[b:b + 1],
-                                _dec_out, beam[i_beam]['aw_steps_dec'][-1])
-                            if self.relax_context_vec_dec:
-                                context_vec_dec = self.W_c_dec_relax(
-                                    context_vec_dec)
+                            if self.cold_fusion_like_prob_injection:
+                                context_vec_dec, aw_step_dec = self.attend_dec_sub(
+                                    logits_sub[b], y_lens_sub[b:b + 1],
+                                    _dec_out, beam[i_beam]['aw_steps_dec'][-1])
+
+                                # Fine-grained gating
+                                gate = F.sigmoid(self.W_gate(
+                                    torch.cat([_dec_out, context_vec_dec], dim=-1)))
+                                context_vec_dec = gate * context_vec_dec
+                            else:
+                                context_vec_dec, aw_step_dec = self.attend_dec_sub(
+                                    dec_out_sub_seq[b], y_lens_sub[b:b + 1],
+                                    _dec_out, beam[i_beam]['aw_steps_dec'][-1])
+                                if self.relax_context_vec_dec:
+                                    context_vec_dec = self.W_c_dec_relax(
+                                        context_vec_dec)
 
                             # Recurrency of the second decoder
-                            context_vecs = torch.cat(
-                                [context_vec_enc, context_vec_dec], dim=-1)
+                            if self.usage_dec_sub == 'softmax':
+                                dec_in = context_vec_enc
+                            else:
+                                dec_in = torch.cat(
+                                    [context_vec_enc, context_vec_dec], dim=-1)
                             dec_out, dec_state = self.decoder_second_0_fwd(
-                                context_vecs, _dec_state)
+                                dec_in, _dec_state)
 
                         # Generate
                         out = self.W_d_0_fwd(dec_out) + \
                             self.W_c_0_fwd(context_vec_enc)
-                        if self.usage_dec_sub == 'all':
+                        if self.usage_dec_sub in ['all', 'softmax']:
                             out += self.W_c_dec_out(context_vec_dec)
                         logits_step = self.fc_0_fwd(F.tanh(out))
 
@@ -1329,19 +1436,46 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     for k in range(beam_width):
                         if self.decoding_order == 'attend_generate_update':
                             y = self._create_var(
-                                (1,), fill_value=indices_topk[0, k].data[0], dtype='long').unsqueeze(1)
+                                (1, 1), fill_value=indices_topk[0, k].data[0], dtype='long')
                             y = self.embed_0(y)
 
                             # Recurrency
                             dec_in = torch.cat([y, context_vec_enc], dim=-1)
-                            dec_in = torch.cat(
-                                [dec_in, context_vec_dec], dim=-1)
+                            if self.usage_dec_sub != 'softmax':
+                                dec_in = torch.cat(
+                                    [dec_in, context_vec_dec], dim=-1)
                             dec_out, dec_state = self.decoder_0_fwd(
                                 dec_in, beam[i_beam]['dec_state'])
 
+                        # Exclude short hypotheses
+                        if indices_topk[0, k].data[0] == self.eos_0 and len(beam[i_beam]['hyp']) < min_decode_len:
+                            continue
+                        # if indices_topk[0, k].data[0] == self.eos_0 and len(beam[i_beam]['hyp']) < x_lens[b].data[0] * min_decode_len_ratio:
+                        #     continue
+
+                        # Add length penalty
+                        score = beam[i_beam]['score'] + \
+                            log_probs_topk.data[0, k] + length_penalty
+
+                        # Add coverage penalty
+                        if coverage_penalty > 0:
+                            threshold = 0.5
+                            aw_steps = torch.cat(
+                                beam[i_beam]['aw_steps'], dim=0).sum(0).squeeze(1)
+
+                            # Google NMT
+                            # cov_sum = torch.where(
+                            #     aw_steps < threshold, aw_steps, torch.ones_like(aw_steps) * threshold).sum(0)
+                            # score += torch.log(cov_sum) * coverage_penalty
+
+                            # Toward better decoding
+                            cov_sum = torch.where(
+                                aw_steps > threshold, aw_steps, torch.zeros_like(aw_steps)).sum(0)
+                            score += cov_sum * coverage_penalty
+
                         new_beam.append(
                             {'hyp': beam[i_beam]['hyp'] + [indices_topk[0, k].data[0]],
-                             'score': beam[i_beam]['score'] + log_probs_topk[0, k].data[0],
+                             'score': score,
                              'dec_state': copy.deepcopy(dec_state),
                              'dec_out': dec_out,
                              'aw_steps_enc': beam[i_beam]['aw_steps_enc'] + [aw_step_enc],
@@ -1357,9 +1491,11 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         complete.append(cand)
                     else:
                         not_complete.append(cand)
+
                 if len(complete) >= beam_width:
                     complete = complete[:beam_width]
                     break
+
                 beam = not_complete[:beam_width]
 
             if len(complete) == 0:

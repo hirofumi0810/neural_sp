@@ -49,7 +49,8 @@ class Word2idx(object):
                 # Replace with <UNK>
                 indices.append(self.map_dict['OOV'])
 
-        return np.array(indices)
+        # return np.array(indices
+        return indices
 
 
 class Idx2word(object):
@@ -133,9 +134,7 @@ class Char2word(object):
         Args:
             char_indices (np.ndarray): list of character indices.
         Returns:
-            str_word (string): a sequence of words
-                or
-            word_list (list): list of words
+            word_index (int): index of the corresponding word
         """
         # Convert character indices into the corresponding character strings
         str_single_word = ''.join(
@@ -182,18 +181,15 @@ class Word2char(object):
         self.map_dict_w[vocab_count_w] = '>'
         self.map_dict_c['>'] = vocab_count_c
 
-    def __call__(self, word_indices):
+    def __call__(self, word_index):
         """
         Args:
-            indices (np.ndarray): list of word indices.
+            word_index (int): index of a word
         Returns:
-            str_word (string): a sequence of words
-                or
-            word_list (list): list of words
+            char_indices (list): indices of the corresponding characters
         """
-        # Convert word indices into the the corresponding character strings
-        word_list = list(map(lambda w: self.map_dict_w[w], word_indices))
-        str_char = self.space_mark.join(word_list)
+        # Convert word index into the the corresponding character strings
+        str_char = self.map_dict_w[word_index]
 
         # Convert character strings into the corresponding indices
         char_indices = list(map(lambda c: self.map_dict_c[c], list(str_char)))

@@ -351,10 +351,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         # Recurrent weights are orthogonalized
         if recurrent_weight_orthogonal:
-            self.init_weights(parameter_init,
-                              distribution='orthogonal',
-                              keys=[encoder_type, 'weight'],
-                              ignore_keys=['bias'])
+            # encoder
+            if encoder_type != 'cnn':
+                self.init_weights(parameter_init,
+                                  distribution='orthogonal',
+                                  keys=[encoder_type, 'weight'],
+                                  ignore_keys=['bias'])
+            # decoder
             self.init_weights(parameter_init,
                               distribution='orthogonal',
                               keys=[decoder_type, 'weight'],
@@ -509,8 +512,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
     def decode(self, xs, x_lens, beam_width, max_decode_len, min_decode_len=0,
                length_penalty=0, coverage_penalty=0, task_index=0,
-               joint_decoding=False, space_index=None, char2word=None,
-               score_sub_weight=0.1):
+               joint_decoding=None, space_index=-1, oov_index=-1,
+               word2char=None, score_sub_weight=0, idx2word=None, idx2char=None):
         """Decoding in the inference stage.
         Args:
             xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
@@ -518,9 +521,14 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             beam_width (int): the size of beam
             max_decode_len (int): the maximum sequence length of tokens
             min_decode_len (int): the minimum sequence length of tokens
-            length_penalty (float):
-            coverage_penalty (float):
+            length_penalty (float): length penalty in beam search decoding
+            coverage_penalty (float): coverage penalty in beam search decoding
             task_index (int): the index of a task
+            joint_decoding (): None or onepass or rescoring
+            space_index (int):
+            oov_index (int):
+            word2char ():
+            score_sub_weight (float):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
             aw ():
@@ -543,7 +551,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 dir = 'bwd' if task_index == 1 and self.backward_1 else 'fwd'
 
                 # Encode acoustic features
-                if joint_decoding and task_index == 0 and dir == 'fwd':
+                if joint_decoding is not None and task_index == 0 and dir == 'fwd':
                     enc_out, x_lens, enc_out_sub, x_lens_sub, perm_idx = self._encode(
                         xs, x_lens, is_multi_task=True)
                 elif task_index == 0:
@@ -556,13 +564,32 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     raise NotImplementedError
 
                 # Decode by attention decoder
-                if joint_decoding and task_index == 0 and dir == 'fwd':
-                    best_hyps, aw, _, _, = self._decode_infer_joint(
-                        enc_out, x_lens,
-                        enc_out_sub, x_lens_sub,
-                        beam_width, beam_width,  # TODO: change to beam_width_sub
-                        max_decode_len, length_penalty,
-                        space_index, char2word)
+                if joint_decoding is not None and task_index == 0 and dir == 'fwd':
+                    raise NotImplementedError
+
+                    if joint_decoding == 'onepass':
+                        best_hyps, aw, best_hyps_sub, aw_sub, = self._decode_infer_joint_onepass(
+                            enc_out, x_lens,
+                            enc_out_sub, x_lens_sub,
+                            beam_width, max_decode_len, min_decode_len,
+                            length_penalty, coverage_penalty,
+                            space_index, oov_index, word2char, score_sub_weight,
+                            idx2word, idx2char)
+                    elif joint_decoding == 'rescoring':
+                        best_hyps, aw, best_hyps_sub, aw_sub, = self._decode_infer_joint_rescoring(
+                            enc_out, x_lens,
+                            enc_out_sub, x_lens_sub,
+                            beam_width, max_decode_len, min_decode_len,
+                            length_penalty, coverage_penalty,
+                            space_index, oov_index, word2char, score_sub_weight,
+                            idx2word, idx2char)
+                    else:
+                        raise ValueError
+
+                    # Permutate indices to the original order
+                    perm_idx = self.tensor2np(perm_idx)
+
+                    return best_hyps, aw, best_hyps_sub, aw_sub, perm_idx
                 else:
                     if beam_width == 1:
                         best_hyps, aw = self._decode_infer_greedy(
@@ -580,327 +607,3 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             perm_idx = self.tensor2np(perm_idx)
 
             return best_hyps, aw, perm_idx
-
-    def _decode_infer_joint(self, enc_out, x_lens, enc_out_sub, x_lens_sub,
-                            beam_width, beam_width_sub,
-                            max_decode_len, length_penalty,
-                            space_index, char2word, score_sub_weight=0.5):
-        """Greedy decoding in the inference stage.
-        Args:
-            enc_out (torch.FloatTensor): A tensor of size
-                `[B, T_in, encoder_num_units]`
-            x_lens (torch.IntTensor): A tensor of size `[B]`
-            enc_out_sub (torch.FloatTensor): A tensor of size
-                `[B, T_in_sub, encoder_num_units]`
-            x_lens_sub (torch.IntTensor): A tensor of size `[B]`
-            beam_width (int): the size of beam in the main task
-            beam_width_sub (int): the size of beam in the sub task
-            max_decode_len (int): the length of output sequences
-                to stop prediction when EOS token have not been emitted
-            length_penalty (float):
-        Returns:
-            best_hyps (np.ndarray): A tensor of size `[B, T_out]`
-            aw (np.ndarray): A tensor of size `[B, T_out, T_in]`
-            best_hyps_sub (np.ndarray): A tensor of size `[B, T_out_sub]`
-            aw_sub (np.ndarray): A tensor of size `[B, T_out_sub, T_in]`
-            aw_dec (np.ndarray): A tensor of size `[B, T_out, T_out_sub]`
-        """
-        batch_size, max_time = enc_out.size()[:2]
-        dir = 'bwd' if self.backward_1 else 'fwd'
-
-        best_hyps, aw = [], []
-        best_hyps_sub, aw_sub = [], []
-        for b in range(batch_size):
-            # Initialization for the word model per utterance
-            dec_state, dec_out = self._init_dec_state(
-                enc_out[b:b + 1], x_lens[b:b + 1], task=0, dir='fwd')
-            aw_step = self._create_tensor(
-                (1, x_lens[b].item(), self.num_heads_0),
-                fill_value=0, dtype=torch.float)
-
-            # Initialization for the character model per utterance
-            dec_state_sub, dec_out_sub = self._init_dec_state(
-                enc_out_sub[b: b + 1], x_lens_sub[b:b + 1], task=1, dir=dir)
-            aw_step_sub = self._create_tensor(
-                (1, x_lens_sub[b].item(), self.num_heads_1),
-                fill_value=0, dtype=torch.float)
-
-            complete = []
-            beam = [{'hyp': [self.sos_0],
-                     'score': 0,  # log1
-                     'dec_state': dec_state,
-                     'dec_out': dec_out,
-                     'aw_steps': [aw_step]}]
-            beam_sub = [{'hyp': [self.sos_1],
-                         'hyp_last_word_char': [],
-                         'hyp_last_word_word': -1,
-                         'score': 0,  # log1
-                         'score_last_word': 0,  # log1
-                         'dec_state': dec_state_sub,
-                         'dec_out': dec_out_sub,
-                         'aw_steps': [aw_step_sub]}]
-
-            for _ in range(max_decode_len):
-                new_beam = []
-                beam_sub_space_end = []
-                for i_beam in range(len(beam)):
-                    #######################################################
-                    # Decode by the second decoder until outputting space
-                    #######################################################
-                    while True:
-                        new_beam_sub = []
-                        if i_beam < len(beam_sub):
-                            if self.decoding_order == 'attend_generate_update':
-                                # Score
-                                context_vec_sub, aw_step_sub = getattr(self, 'attend_1_' + dir)(
-                                    enc_out_sub[b:b + 1], x_lens_sub[b:b + 1],
-                                    beam_sub[i_beam]['dec_out'], beam_sub[i_beam]['aw_steps'][-1])
-
-                                # NOTE: Recurrency is placed at the latter stage
-                            else:
-                                y_sub = self._create_tensor(
-                                    (1,), fill_value=beam_sub[i_beam]['hyp'][-1], dtype=torch.long).unsqueeze(1)
-                                y_sub = self.embed_1(y_sub)
-
-                                if self.decoding_order == 'attend_update_generate':
-                                    # Score
-                                    context_vec_sub, aw_step_sub = getattr(self, 'attend_1_' + dir)(
-                                        enc_out_sub[b:b +
-                                                    1], x_lens_sub[b:b + 1],
-                                        beam_sub[i_beam]['dec_out'], beam_sub[i_beam]['aw_steps'][-1])
-
-                                    # Recurrency
-                                    dec_in_sub = torch.cat(
-                                        [y_sub, context_vec_sub], dim=-1)
-                                    dec_out_sub, dec_state_sub = getattr(self, 'decoder_1_' + dir)(
-                                        dec_in_sub, dec_state_sub)
-
-                                elif self.decoding_order == 'conditional':
-                                    # Recurrency of the first decoder
-                                    _dec_out_sub, _dec_state_sub = getattr(self, 'decoder_first_1_' + dir)(
-                                        y_sub, beam_sub[i_beam]['dec_state'])
-
-                                    # Score
-                                    context_vec_sub, aw_step_sub = getattr(self, 'attend_1_' + dir)(
-                                        enc_out_sub[b:b +
-                                                    1], x_lens_sub[b:b + 1],
-                                        _dec_out_sub, beam_sub[i_beam]['aw_steps'][-1])
-
-                                    # Recurrency of the second decoder
-                                    dec_out_sub, dec_state_sub = getattr(self, 'decoder_second_1_' + dir)(
-                                        context_vec_sub, _dec_state_sub)
-
-                            # Generate
-                            logits_step_sub = getattr(self, 'fc_1_' + dir)(F.tanh(
-                                getattr(self, 'W_d_1_' + dir)(dec_out_sub) +
-                                getattr(self, 'W_c_1_' + dir)(context_vec_sub)))
-
-                            # Path through the softmax layer & convert to log-scale
-                            log_probs_sub = F.log_softmax(
-                                logits_step_sub.squeeze(1), dim=1)
-                            # NOTE: `[1 (B), 1, num_classes_sub]` -> `[1 (B), num_classes_sub]`
-
-                            # Pick up the top-k scores
-                            log_probs_sub_topk, indices_sub_topk = log_probs_sub.topk(
-                                beam_width_sub, dim=1, largest=True, sorted=True)
-
-                            for k in range(beam_width_sub):
-                                if self.decoding_order == 'attend_generate_update':
-                                    y_sub = self._create_tensor(
-                                        (1,), fill_value=indices_sub_topk[0, k].item(), dtype=torch.long).unsqueeze(1)
-                                    y_sub = self.embed_1(y_sub)
-
-                                    # Recurrency
-                                    dec_in_sub = torch.cat(
-                                        [y_sub, context_vec_sub], dim=-1)
-                                    dec_out_sub, dec_state_sub = getattr(
-                                        self, 'decoder_1_' + dir)(dec_in_sub, beam_sub[i_beam]['dec_state'])
-
-                                new_beam_sub.append(
-                                    {'hyp': beam_sub[i_beam]['hyp'] + [indices_sub_topk[0, k].item()],
-                                     'hyp_last_word_char': beam_sub[i_beam]['hyp_last_word_char'] + [indices_sub_topk[0, k].item()],
-                                     'hyp_last_word_word': -1,
-                                     'score': beam_sub[i_beam]['score'] + log_probs_sub_topk[0, k].item(),
-                                     'score_last_word': beam_sub[i_beam]['score_last_word'] + log_probs_sub_topk[0, k].item(),
-                                     'dec_state': copy.deepcopy(dec_state_sub),
-                                     'dec_out': dec_out_sub,
-                                     'aw_steps': beam_sub[i_beam]['aw_steps'] + [aw_step_sub]})
-
-                        new_beam_sub = sorted(
-                            new_beam_sub, key=lambda x: x['score'], reverse=True)
-
-                        # Remove hypotheses ended with a space
-                        not_complete_sub = []
-                        for cand in new_beam_sub[:beam_width_sub]:
-                            if cand['hyp_last_word_char'][-1] in [space_index, self.eos_1]:
-                                cand['hyp_last_word_char'] = cand['hyp_last_word_char'][:-1]
-                                # NOTE: skip the successive spaces
-
-                                if len(cand['hyp_last_word_char']) > 0:
-                                    beam_sub_space_end.append(cand)
-                                # else:
-                                #     print(len(cand['hyp']))
-                                #     print(len(cand['hyp_last_word_char']))
-                            else:
-                                not_complete_sub.append(cand)
-                        if len(beam_sub_space_end) >= beam_width_sub:
-                            beam_sub_space_end = beam_sub_space_end[:beam_width_sub]
-                            break  # from while loop
-                        beam_sub = not_complete_sub[:beam_width_sub]
-
-                    if len(beam_sub_space_end) == 0:
-                        raise ValueError(
-                            'There is no hypothesis ended with a space in a beam.')
-
-                    beam_sub_space_end = sorted(
-                        beam_sub_space_end, key=lambda x: x['score'], reverse=True)
-
-                    ########################################
-                    # Map character to word index
-                    ########################################
-                    for i in range(len(beam_sub_space_end)):
-                        beam_sub_space_end[i]['hyp_last_word_word'] = char2word(
-                            beam_sub_space_end[i]['hyp_last_word_char'])
-
-                    ########################################
-                    # Decoder by the main decoder
-                    ########################################
-                    if self.decoding_order == 'attend_generate_update':
-                        # Score for the encoder
-                        context_vec, aw_step = self.attend_0_fwd(
-                            enc_out[b:b + 1], x_lens[b:b + 1],
-                            beam[i_beam]['dec_out'], beam[i_beam]['aw_steps'][-1])
-
-                        # NOTE: Recurrency is placed at the latter stage
-                    else:
-                        y = self._create_tensor(
-                            (1,), fill_value=beam[i_beam]['hyp'][-1], dtype=torch.long).unsqueeze(1)
-                        y = self.embed_0(y)
-
-                        if self.decoding_order == 'attend_update_generate':
-                            # Score for the encoder
-                            context_vec, aw_step = self.attend_0_fwd(
-                                enc_out[b:b + 1], x_lens[b:b + 1],
-                                beam[i_beam]['dec_out'], beam[i_beam]['aw_steps'][-1])
-
-                            # Recurrency
-                            dec_in = torch.cat([y, context_vec], dim=-1)
-                            dec_out, dec_state = self.decoder_0_fwd(
-                                dec_in, beam[i_beam]['dec_state'])
-
-                        elif self.decoding_order == 'conditional':
-                            # Recurrency of the first decoder
-                            _dec_out, _dec_state = self.decoder_first_0_fwd(
-                                y, beam[i_beam]['dec_state'])
-
-                            # Score for the encoder
-                            context_vec, aw_step = self.attend_0_fwd(
-                                enc_out[b:b + 1], x_lens[b:b + 1],
-                                _dec_out, beam[i_beam]['aw_steps'][-1])
-
-                            # Recurrency of the second decoder
-                            dec_out, dec_state = self.decoder_second_0_fwd(
-                                context_vec, _dec_state)
-
-                    # Generate
-                    out = self.W_d_0_fwd(dec_out) + self.W_c_0_fwd(context_vec)
-                    logits_step = self.fc_0_fwd(F.tanh(out))
-
-                    # Path through the softmax layer & convert to log-scale
-                    log_probs = F.log_softmax(logits_step.squeeze(1), dim=1)
-                    # NOTE: `[1 (B), 1, num_classes]` -> `[1 (B), num_classes]`
-
-                    # Pick up the top-k scores
-                    log_probs_topk, indices_topk = log_probs.topk(
-                        beam_width, dim=1, largest=True, sorted=True)
-
-                    for k in range(beam_width):
-                        if self.decoding_order == 'attend_generate_update':
-                            y = self._create_tensor(
-                                (1,), fill_value=indices_topk[0, k].item(), dtype=torch.long).unsqueeze(1)
-                            y = self.embed_0(y)
-
-                            # Recurrency
-                            dec_in = torch.cat([y, context_vec], dim=-1)
-                            dec_out, dec_state = self.decoder_0_fwd(
-                                dec_in, beam[i_beam]['dec_state'])
-
-                        # Add the score by the decoder in the sub task
-                        for j in range(len(beam_sub_space_end)):
-                            if beam_sub_space_end[j]['hyp_last_word_word'] == indices_topk[0, k].item():
-                                # Add scores from the sub decoder
-                                new_beam.append(
-                                    {'hyp': beam[i_beam]['hyp'] + [indices_topk[0, k].item()],
-                                     'score': beam[i_beam]['score'] + log_probs_topk[0, k].item() - score_sub_weight * beam_sub_space_end[j]['score_last_word'],
-                                     'dec_state': copy.deepcopy(dec_state),
-                                     'dec_out': dec_out,
-                                     'aw_steps': beam[i_beam]['aw_steps'] + [aw_step]})
-                            else:
-                                new_beam.append(
-                                    {'hyp': beam[i_beam]['hyp'] + [indices_topk[0, k].item()],
-                                     'score': beam[i_beam]['score'] + log_probs_topk[0, k].item(),
-                                     'dec_state': copy.deepcopy(dec_state),
-                                     'dec_out': dec_out,
-                                     'aw_steps': beam[i_beam]['aw_steps'] + [aw_step]})
-
-                # Reset
-                for j in range(len(beam_sub_space_end)):
-                    beam_sub_space_end[j]['hyp_last_word_char'] = []
-                    beam_sub_space_end[j]['hyp_last_word_word'] = -1
-                    beam_sub_space_end[j]['score_last_word'] = 0
-                # beam_sub = copy.deepcopy(beam_sub_space_end)  # deepcopy ??
-                beam_sub = beam_sub_space_end
-
-                new_beam = sorted(
-                    new_beam, key=lambda x: x['score'], reverse=True)
-
-                # Remove complete hypotheses
-                not_complete = []
-                for cand in new_beam[:beam_width]:
-                    if cand['hyp'][-1] == self.eos_0:
-                        complete.append(cand)
-                    else:
-                        not_complete.append(cand)
-                if len(complete) >= beam_width:
-                    complete = complete[:beam_width]
-                    break
-                beam = not_complete[:beam_width]
-
-            if len(complete) == 0:
-                complete = beam
-
-            # Renormalized hypotheses by length
-            if length_penalty > 0:
-                for j in range(len(complete)):
-                    complete[j]['score'] += len(complete[j]
-                                                ['hyp']) * length_penalty
-
-            complete = sorted(
-                complete, key=lambda x: x['score'], reverse=True)
-            best_hyps.append(np.array(complete[0]['hyp'][1:]))
-            aw.append(complete[0]['aw_steps'][1:])
-
-            best_hyps_sub.append(
-                np.array(beam_sub_space_end[0]['hyp'][1:]))
-            aw_sub.append(beam_sub_space_end[0]['aw_steps'][1:])
-
-        # Concatenate in T_out dimension
-        for j in range(len(aw)):
-            for k in range(len(aw_sub[j])):
-                aw_sub[j][k] = aw_sub[j][k][:, :, 0]  # TODO: fix for MHA
-            aw_sub[j] = self.tensor2np(
-                torch.stack(aw_sub[j], dim=1).squeeze(0))
-
-            for k in range(len(aw[j])):
-                aw[j][k] = aw[j][k][:, :, 0]  # TODO: fix for MHA
-            aw[j] = self.tensor2np(torch.stack(aw[j], dim=1).squeeze(0))
-
-        # Reverse the order
-        # if self.backward_1 and reverse_backward:
-        #     raise NotImplementedError
-        #     # y_lens_sub = self.tensor2np(y_lens_sub)
-        #     # for b in range(batch_size):
-        #     #     best_hyps_sub[b][:y_lens_sub[b]
-        #     #                      ] = best_hyps_sub[b][:y_lens_sub[b]][::-1]
-
-        return best_hyps, aw, best_hyps_sub, aw_sub
