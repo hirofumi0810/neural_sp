@@ -81,7 +81,7 @@ def main():
             model.set_cuda(deterministic=False, benchmark=True)
 
             logger.info('beam width: %d' % args.beam_width)
-            logger.info('epoch: %d' % epoch)
+            logger.info('epoch: %d' % (epoch - 1))
 
         per, df = eval_phone(model=model,
                              dataset=dataset,

@@ -19,7 +19,6 @@ sys.path.append('../../../')
 from utils.io.labels.phone import Phone2idx
 from utils.directory import mkdir_join
 
-
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str,
                     help='path to save data')

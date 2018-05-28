@@ -14,7 +14,6 @@ import numpy as np
 import pickle
 from tqdm import tqdm
 import argparse
-import subprocess
 
 sys.path.append('../../../')
 from utils.directory import mkdir_join
@@ -150,7 +149,9 @@ def read_audio(data_type, audio_paths, spk2gender, tool, config, normalize,
             female over the training set
         dtype (): the type of data, default is np.float32
     """
-    if data_type != 'train':
+    is_training = data_type == 'train'
+
+    if not is_training:
         if global_mean_male is None or global_mean_female is None:
             raise ValueError('Set mean & stddev computed in the training set.')
     if normalize not in ['global', 'speaker', 'utterance', 'no']:
@@ -166,7 +167,7 @@ def read_audio(data_type, audio_paths, spk2gender, tool, config, normalize,
     speaker_mean_dict, speaker_std_dict = {}, {}
 
     # Loop 1: Computing global mean and statistics
-    if data_type == 'train' and normalize != 'no':
+    if is_training and normalize != 'no':
         print('=====> Reading audio files...')
         for i, audio_path in enumerate(tqdm(audio_paths)):
             speaker = audio_path.split('/')[-2]
@@ -333,7 +334,7 @@ def read_audio(data_type, audio_paths, spk2gender, tool, config, normalize,
 
         if normalize == 'no':
             pass
-        elif normalize == 'global' or not data_type == 'train':
+        elif normalize == 'global' or not is_training:
             # Normalize by mean & stddev over the training set per gender
             if gender == 'm':
                 feat_utt -= global_mean_male

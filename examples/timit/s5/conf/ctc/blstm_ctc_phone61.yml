@@ -21,8 +21,7 @@ param:
 
   # topology
   model_type: ctc
-  # encoder_type: lstm
-  encoder_type: gru
+  encoder_type: lstm
   conv_channels: []
   conv_kernel_sizes: []
   conv_strides: []
@@ -73,7 +72,7 @@ param:
   decay_start_epoch: 10
   decay_rate: 0.9
   decay_patient_epoch: 1
-  sort_stop_epoch: 100
+  sort_stop_epoch: 200
   not_improved_patient_epoch: 20
   eval_start_epoch: 10
   print_step: 10

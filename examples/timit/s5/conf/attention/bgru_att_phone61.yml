@@ -61,7 +61,7 @@ param:
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 200
-  convert_to_sgd_epoch: 20
+  convert_to_sgd_epoch: 200
 
   # initialization
   parameter_init_distribution: uniform
