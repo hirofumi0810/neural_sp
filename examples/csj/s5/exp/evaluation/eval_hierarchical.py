@@ -37,18 +37,18 @@ parser.add_argument('--length_penalty', type=float, default=0,
 parser.add_argument('--coverage_penalty', type=float, default=0,
                     help='coverage penalty in beam search decoding')
 
+parser.add_argument('--resolving_unk', type=bool, default=False)
+parser.add_argument('--a2c_oracle', type=bool, default=False)
+parser.add_argument('--joint_decoding', choices=[None, 'onepass', 'rescoring'])
+parser.add_argument('--score_sub_weight', type=float, default=0)
+
 MAX_DECODE_LEN_WORD = 100
 MIN_DECODE_LEN_WORD = 0
-
 MAX_DECODE_LEN_CHAR = 200
 MIN_DECODE_LEN_CHAR = 0
 
 
 def main():
-
-    a2c_oracle = False
-    resolving_unk = False
-    joint_decoding = True
 
     args = parser.parse_args()
 
@@ -92,10 +92,11 @@ def main():
 
             logger.info('beam width (main): %d\n' % args.beam_width)
             logger.info('beam width (sub) : %d\n' % args.beam_width_sub)
-            logger.info('epoch: %d' % epoch)
-            logger.info('a2c oracle: %s\n' % str(a2c_oracle))
-            logger.info('resolving_unk: %s\n' % str(resolving_unk))
-            logger.info('joint_decoding: %s\n' % str(joint_decoding))
+            logger.info('epoch: %d' % (epoch - 1))
+            logger.info('a2c oracle: %s\n' % str(args.a2c_oracle))
+            logger.info('resolving_unk: %s\n' % str(args.resolving_unk))
+            logger.info('joint_decoding: %s\n' % str(args.joint_decoding))
+            logger.info('score_sub_weight : %f' % args.score_sub_weight)
 
         wer, df = eval_word(
             models=[model],
@@ -110,9 +111,10 @@ def main():
             length_penalty=args.length_penalty,
             coverage_penalty=args.coverage_penalty,
             progressbar=True,
-            resolving_unk=resolving_unk,
-            a2c_oracle=a2c_oracle,
-            joint_decoding=joint_decoding)
+            resolving_unk=args.resolving_unk,
+            a2c_oracle=args.a2c_oracle,
+            joint_decoding=args.joint_decoding,
+            score_sub_weight=args.score_sub_weight)
         wer_mean += wer
         logger.info('  WER (%s, main): %.3f %%' % (data_type, (wer * 100)))
         logger.info(df)

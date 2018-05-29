@@ -28,6 +28,28 @@ class TestCharseqAttention(unittest.TestCase):
     def test(self):
         print("Nested Attention Working check.")
 
+        # Usage character-level decoder states
+        # self.check(usage_dec_sub='softmax', decoding_order='bahdanau')
+        # self.check(usage_dec_sub='update_decoder', decoding_order='bahdanau')
+        # self.check(usage_dec_sub='all', decoding_order='bahdanau')
+
+        self.check(usage_dec_sub='softmax', decoding_order='luong')
+        self.check(usage_dec_sub='update_decoder', decoding_order='luong')
+        self.check(usage_dec_sub='all', decoding_order='luong')
+
+        self.check(usage_dec_sub='softmax', decoding_order='conditional')
+        self.check(usage_dec_sub='update_decoder',
+                   decoding_order='conditional')
+        self.check(usage_dec_sub='all', decoding_order='conditional')
+
+        # probability injection
+        self.check(cold_fusion_like_prob_injection=True,
+                   usage_dec_sub='softmax', decoding_order='bahdanau')
+        self.check(cold_fusion_like_prob_injection=True,
+                   usage_dec_sub='softmax', decoding_order='luong')
+        self.check(cold_fusion_like_prob_injection=True,
+                   usage_dec_sub='softmax', decoding_order='conditional')
+
         self.check(main_loss_weight=0)
 
         # Regularization
@@ -42,10 +64,6 @@ class TestCharseqAttention(unittest.TestCase):
         # Forward word decoder + backward char decoder
         self.check(backward_sub=True)
 
-        # Usage character-level decoder states
-        self.check(usage_dec_sub='update_decoder')
-        self.check(usage_dec_sub='all')
-
         # Attention regularization
         self.check(att_reg_weight=1)
 
@@ -54,12 +72,12 @@ class TestCharseqAttention(unittest.TestCase):
         self.check(dec_sigmoid_smoothing=True)
 
     @measure_time
-    def check(self, usage_dec_sub='all', att_reg_weight=1,
+    def check(self, decoding_order='bahdanau', usage_dec_sub='all', att_reg_weight=1,
               main_loss_weight=0.5, ctc_loss_weight_sub=0,
               dec_attend_temperature=1,
               dec_sigmoid_smoothing=False,
               backward_sub=False, num_heads=1, second_pass=False,
-              relax_context_vec_dec=False):
+              relax_context_vec_dec=False, cold_fusion_like_prob_injection=False):
 
         print('==================================================')
         print('  usage_dec_sub: %s' % usage_dec_sub)
@@ -72,6 +90,8 @@ class TestCharseqAttention(unittest.TestCase):
         print('  num_heads: %s' % str(num_heads))
         print('  second_pass: %s' % str(second_pass))
         print('  relax_context_vec_dec: %s' % str(relax_context_vec_dec))
+        print('  cold_fusion_like_prob_injection: %s' %
+              str(cold_fusion_like_prob_injection))
         print('==================================================')
 
         # Load batch data
@@ -137,9 +157,7 @@ class TestCharseqAttention(unittest.TestCase):
             encoder_dense_residual=False,
             decoder_residual=False,
             decoder_dense_residual=False,
-            decoding_order='attend_generate_update',
-            # decoding_order='attend_update_generate',
-            # decoding_order='conditional',
+            decoding_order=decoding_order,
             bottleneck_dim=256,
             bottleneck_dim_sub=256,
             backward_sub=backward_sub,
@@ -151,7 +169,8 @@ class TestCharseqAttention(unittest.TestCase):
             dec_attend_temperature=dec_attend_temperature,
             dec_sigmoid_smoothing=dec_attend_temperature,
             relax_context_vec_dec=relax_context_vec_dec,
-            dec_attention_type='location')
+            dec_attention_type='location',
+            cold_fusion_like_prob_injection=cold_fusion_like_prob_injection)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):

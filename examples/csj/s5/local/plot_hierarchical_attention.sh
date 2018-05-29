@@ -16,13 +16,18 @@ DATA="/n/sd8/inaguma/corpus/csj/kaldi"
 saved_model_path=$1
 gpu_index=$2
 
+beam_width=4
+beam_width_sub=4
+length_penalty=0
+coverage_penalty=0
+
 CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
 $PYTHON exp/visualization/plot_hierarchical_attention_weights.py \
   --data_save_path $DATA \
   --model_path $saved_model_path \
   --epoch -1 \
   --eval_batch_size 1 \
-  --beam_width 1 \
-  --beam_width_sub 1 \
-  --length_penalty 0 \
-  --coverage_penalty 0
+  --beam_width $beam_width \
+  --beam_width_sub $beam_width_sub \
+  --length_penalty $length_penalty \
+  --coverage_penalty $coverage_penalty

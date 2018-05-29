@@ -38,6 +38,22 @@ class TestAttention(unittest.TestCase):
     def test(self):
         print("Attention Working check.")
 
+        # Decoding order
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', decoding_order='bahdanau_attention')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', decoding_order='luong_attention')
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', decoding_order='conditional')
+
+        # Beam search
+        self.check(encoder_type='lstm', bidirectional=True, beam_width=2,
+                   decoder_type='lstm', decoding_order='bahdanau_attention')
+        self.check(encoder_type='lstm', bidirectional=True, beam_width=2,
+                   decoder_type='lstm', decoding_order='luong_attention')
+        self.check(encoder_type='lstm', bidirectional=True, beam_width=2,
+                   decoder_type='lstm', decoding_order='conditional')
+
         # Multi-head attention
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', attention_type='content', num_heads=2)
@@ -64,14 +80,6 @@ class TestAttention(unittest.TestCase):
                    decoder_type='lstm', conv=True)
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', conv=True, batch_norm=True)
-
-        # Decoding order
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', decoding_order='conditional')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', decoding_order='attend_update_generate')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', decoding_order='attend_generate_update')
 
         # Joint CTC-Attention
         self.check(encoder_type='lstm', bidirectional=True,
@@ -132,8 +140,8 @@ class TestAttention(unittest.TestCase):
               subsample=False, projection=False, init_dec_state='first',
               ctc_loss_weight=0, conv=False, batch_norm=False,
               residual=False, dense_residual=False,
-              decoding_order='attend_generate_update',
-              backward_loss_weight=0, num_heads=1):
+              decoding_order='bahdanau_attention',
+              backward_loss_weight=0, num_heads=1, beam_width=1):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
@@ -152,6 +160,7 @@ class TestAttention(unittest.TestCase):
         print('  decoding_order: %s' % decoding_order)
         print('  backward_loss_weight: %s' % str(backward_loss_weight))
         print('  num_heads: %s' % str(num_heads))
+        print('  beam_width: %s' % str(beam_width))
         print('==================================================')
 
         if conv or encoder_type == 'cnn':
@@ -294,7 +303,7 @@ class TestAttention(unittest.TestCase):
 
                 # Decode
                 best_hyps, _, perm_idx = model.decode(
-                    xs, x_lens, beam_width=2, max_decode_len=60)
+                    xs, x_lens, beam_width, max_decode_len=60)
 
                 str_ref = map_fn(ys[0])
                 str_hyp = map_fn(best_hyps[0][:-1])

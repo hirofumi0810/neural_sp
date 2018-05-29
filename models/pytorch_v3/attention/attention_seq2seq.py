@@ -59,8 +59,8 @@ class AttentionSeq2seq(ModelBase):
             ex.) [False, True, True, False] means that subsample is conducted
                 in the 2nd and 3rd layers.
         subsample_type (string): drop or concat
-        bridge_layer (bool): if True, add the bridge layer between
-            the encoder and decoder
+        bridge_layer (bool): if True, add the bridge layer between the encoder
+            and decoder
         init_dec_state (bool): how to initialize decoder state
             zero => initialize with zero state
             mean => initialize with the mean of encoder outputs in all time steps
@@ -81,14 +81,14 @@ class AttentionSeq2seq(ModelBase):
         num_stack (int): the number of frames to stack
         splice (int): frames to splice. Default is 1 frame.
         input_channel (int): the number of channels of input features
-        conv_channels (list): the number of channles in the
-            convolution of the location-based attention
-        conv_kernel_sizes (list): the size of kernels in the
-            convolution of the location-based attention
-        conv_strides (list): strides in the convolution
-            of the location-based attention
-        poolings (list): the size of poolings in the convolution
-            of the location-based attention
+        conv_channels (list): the number of channles in the convolution of the
+            location-based attention
+        conv_kernel_sizes (list): the size of kernels in the convolution of the
+            location-based attention
+        conv_strides (list): strides in the convolution of the location-based
+            attention
+        poolings (list): the size of poolings in the convolution of the
+            location-based attention
         activation (string): The activation function of CNN layers.
             Choose from relu or prelu or hard_tanh or maxout
         batch_norm (bool):
@@ -100,8 +100,7 @@ class AttentionSeq2seq(ModelBase):
         encoder_dense_residual (bool):
         decoder_residual (bool):
         decoder_dense_residual (bool):
-        decoding_order (string):
-            attend_update_generate or attend_generate_update or conditional
+        decoding_order (string): bahdanau or luong or conditional
         bottleneck_dim (int): the dimension of the pre-softmax layer
         backward_loss_weight (int): A weight parameter for the loss of the backward decdoer,
             where the model predicts each token in the reverse order
@@ -158,7 +157,7 @@ class AttentionSeq2seq(ModelBase):
                  encoder_dense_residual=False,
                  decoder_residual=False,
                  decoder_dense_residual=False,
-                 decoding_order='attend_generate_update',
+                 decoding_order='bahdanau',
                  bottleneck_dim=256,
                  backward_loss_weight=0,
                  num_heads=1):
@@ -487,7 +486,7 @@ class AttentionSeq2seq(ModelBase):
                 xs, ys_in_fwd, ys_out_fwd, x_lens, y_lens_fwd,
                 task=0, dir='fwd') * self.fwd_weight_0
         else:
-            loss = self._create_var((1,), fill_value=0)
+            loss = self._create_var((1,), fill_value=0.)
 
         ##################################################
         # Compute loss for the backward decoder
@@ -723,68 +722,72 @@ class AttentionSeq2seq(ModelBase):
         # Initialize decoder state, decoder output, attention_weights
         dec_state, dec_out = self._init_dec_state(enc_out, x_lens, task, dir)
         aw_step = self._create_var(
-            (batch_size, max_time, getattr(self, 'num_heads_' + str(task))), fill_value=0)
+            (batch_size, max_time, getattr(self, 'num_heads_' + str(task))), fill_value=0.)
+        context_vec = self._create_var(
+            (batch_size, 1, enc_out.size(-1)), fill_value=0.)
+
+        # Pre-computation of embedding
+        ys_emb = [getattr(self, 'embed_' + str(task))(ys[:, t:t + 1])
+                  for t in range(ys.size(1))]
+        ys_emb = torch.cat(ys_emb, dim=1)
+
+        # Pre-computation of encoder-side features computing scores
+        enc_out_a = []
+        for h in range(getattr(self, 'num_heads_' + str(task))):
+            enc_out_a += [getattr(getattr(self, 'attend_' +
+                                          str(task) + '_' + dir), 'W_enc_head' + str(h))(enc_out)]
+        enc_out_a = torch.stack(enc_out_a, dim=-1)
 
         logits, aw = [], []
         for t in range(ys.size(1)):
-            # for scheduled sampling
-            is_sample = self.ss_prob > 0 and t > 0 and self._step > 0 and random.random(
-            ) < self._ss_prob
+            # Sample for scheduled sampling
+            if self.ss_prob > 0 and t > 0 and self._step > 0 and random.random() < self._ss_prob:
+                y = getattr(self, 'embed_' + str(task))(
+                    torch.max(logits[-1], dim=2)[1]).detach()
+            else:
+                y = ys_emb[:, t:t + 1]
 
-            if self.decoding_order == 'attend_generate_update':
+            if self.decoding_order == 'bahdanau':
+                if t > 0:
+                    # Recurrency
+                    dec_in = torch.cat([y, context_vec], dim=-1)
+                    dec_out, dec_state = getattr(
+                        self, 'decoder_' + str(task) + '_' + dir)(dec_in, dec_state)
+
                 # Score
                 context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
-                    enc_out, x_lens, dec_out, aw_step)
+                    enc_out, enc_out_a, x_lens, dec_out, aw_step)
 
-                # Generate
-                logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(F.tanh(
-                    getattr(self, 'W_d_' + str(task) + '_' + dir)(dec_out) +
-                    getattr(self, 'W_c_' + str(task) + '_' + dir)(context_vec)))
+            elif self.decoding_order == 'luong':
+                # Recurrency
+                dec_in = torch.cat([y, context_vec], dim=-1)
+                dec_out, dec_state = getattr(
+                    self, 'decoder_' + str(task) + '_' + dir)(dec_in, dec_state)
 
-                if t < ys.size(1) - 1:
-                    # Sample
-                    y = torch.max(
-                        logits_step, dim=2)[1].detach() if is_sample else ys[:, t + 1:t + 2]
-                    y = getattr(self, 'embed_' + str(task))(y)
+                # Score
+                context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
+                    enc_out, enc_out_a, x_lens, dec_out, aw_step)
 
-                    # Recurrency
-                    dec_in = torch.cat([y, context_vec], dim=-1)
-                    dec_out, dec_state = getattr(
-                        self, 'decoder_' + str(task) + '_' + dir)(dec_in, dec_state)
+            elif self.decoding_order == 'conditional':
+                # Recurrency of the first decoder
+                _dec_out, _dec_state = getattr(self, 'decoder_first_' + str(task) + '_' + dir)(
+                    y, dec_state)
+
+                # Score
+                context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
+                    enc_out, enc_out_a, x_lens, _dec_out, aw_step)
+
+                # Recurrency of the second decoder
+                dec_out, dec_state = getattr(self, 'decoder_second_' + str(task) + '_' + dir)(
+                    context_vec, _dec_state)
 
             else:
-                # Sample
-                y = torch.max(
-                    logits[-1], dim=2)[1].detach() if is_sample else ys[:, t:t + 1]
-                y = getattr(self, 'embed_' + str(task))(y)
+                raise ValueError(self.decoding_order)
 
-                if self.decoding_order == 'attend_update_generate':
-                    # Score
-                    context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
-                        enc_out, x_lens, dec_out, aw_step)
-
-                    # Recurrency
-                    dec_in = torch.cat([y, context_vec], dim=-1)
-                    dec_out, dec_state = getattr(
-                        self, 'decoder_' + str(task) + '_' + dir)(dec_in, dec_state)
-
-                elif self.decoding_order == 'conditional':
-                    # Recurrency of the first decoder
-                    _dec_out, _dec_state = getattr(self, 'decoder_first_' + str(task) + '_' + dir)(
-                        y, dec_state)
-
-                    # Score
-                    context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
-                        enc_out, x_lens, _dec_out, aw_step)
-
-                    # Recurrency of the second decoder
-                    dec_out, dec_state = getattr(self, 'decoder_second_' + str(task) + '_' + dir)(
-                        context_vec, _dec_state)
-
-                # Generate
-                logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(F.tanh(
-                    getattr(self, 'W_d_' + str(task) + '_' + dir)(dec_out) +
-                    getattr(self, 'W_c_' + str(task) + '_' + dir)(context_vec)))
+            # Generate
+            logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(F.tanh(
+                getattr(self, 'W_d_' + str(task) + '_' + dir)(dec_out) +
+                getattr(self, 'W_c_' + str(task) + '_' + dir)(context_vec)))
 
             logits.append(logits_step)
             aw.append(aw_step)
@@ -792,8 +795,6 @@ class AttentionSeq2seq(ModelBase):
         # Concatenate in T_out-dimension
         logits = torch.cat(logits, dim=1)
         aw = torch.stack(aw, dim=1)
-        # NOTE; aw in the training stage may be used for computing the
-        # coverage, so do not convert to numpy yet.
 
         return logits, aw
 
@@ -812,7 +813,7 @@ class AttentionSeq2seq(ModelBase):
         """
         zero_state = self._create_var((enc_out.size(0), getattr(
             self, 'decoder_num_units_' + str(task))),
-            fill_value=0, volatile=not self.training)
+            fill_value=0., volatile=not self.training)
 
         if getattr(self, 'init_dec_state_' + str(task) + '_' + dir) == 'zero':
             if self.decoder_type == 'lstm':
@@ -826,7 +827,7 @@ class AttentionSeq2seq(ModelBase):
 
             dec_out = self._create_var((enc_out.size(0), 1, getattr(
                 self, 'decoder_num_units_' + str(task))),
-                fill_value=0, volatile=not self.training)
+                fill_value=0., volatile=not self.training)
         else:
             # TODO: consider x_lens
 
@@ -935,70 +936,73 @@ class AttentionSeq2seq(ModelBase):
         dec_state, dec_out = self._init_dec_state(enc_out, x_lens, task, dir)
         aw_step = self._create_var((
             batch_size, max_time, getattr(self, 'num_heads_' + str(task))),
-            fill_value=0, volatile=True)
+            fill_value=0., volatile=True)
+        context_vec = self._create_var(
+            (batch_size, 1, enc_out.size(-1)), fill_value=0., volatile=True)
 
         # Start from <SOS>
         sos = getattr(self, 'sos_' + str(task))
         eos = getattr(self, 'eos_' + str(task))
         y = self._create_var((batch_size, 1), fill_value=sos, dtype='long')
-        y_emb = getattr(self, 'embed_' + str(task))(y)
+
+        # Pre-computation of encoder-side features computing scores
+        enc_out_a = []
+        for h in range(getattr(self, 'num_heads_' + str(task))):
+            enc_out_a += [getattr(getattr(self, 'attend_' +
+                                          str(task) + '_' + dir), 'W_enc_head' + str(h))(enc_out)]
+        enc_out_a = torch.stack(enc_out_a, dim=-1)
 
         best_hyps, aw = [], []
         y_lens = np.zeros((batch_size,), dtype=np.int32)
         eos_flag = [False] * batch_size
-        for _ in range(max_decode_len):
-            if self.decoding_order == 'attend_generate_update':
-                # Score
-                context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
-                    enc_out, x_lens, dec_out, aw_step)
+        for t in range(max_decode_len):
+            y = getattr(self, 'embed_' + str(task))(y)
 
-                # Generate
-                logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(F.tanh(
-                    getattr(self, 'W_d_' + str(task) + '_' + dir)(dec_out) +
-                    getattr(self, 'W_c_' + str(task) + '_' + dir)(context_vec)))
-
-                # Pick up 1-best
-                y = torch.max(logits_step.squeeze(1), dim=1)[1].unsqueeze(1)
-                best_hyps.append(y)
-                y_emb = getattr(self, 'embed_' + str(task))(y)
-
-                # Recurrency
-                dec_in = torch.cat([y_emb, context_vec], dim=-1)
-                dec_out, dec_state = getattr(
-                    self, 'decoder_' + str(task) + '_' + dir)(dec_in, dec_state)
-            else:
-                if self.decoding_order == 'attend_update_generate':
-                    # Score
-                    context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
-                        enc_out, x_lens, dec_out, aw_step)
-
+            if self.decoding_order == 'bahdanau':
+                if t > 0:
                     # Recurrency
-                    dec_in = torch.cat([y_emb, context_vec], dim=-1)
+                    dec_in = torch.cat([y, context_vec], dim=-1)
                     dec_out, dec_state = getattr(
                         self, 'decoder_' + str(task) + '_' + dir)(dec_in, dec_state)
 
-                elif self.decoding_order == 'conditional':
-                    # Recurrency of the first decoder
-                    _dec_out, _dec_state = getattr(self, 'decoder_first_' + str(task) + '_' + dir)(
-                        y_emb, dec_state)
+                # Score
+                context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
+                    enc_out, enc_out_a, x_lens, dec_out, aw_step)
 
-                    # Score
-                    context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
-                        enc_out, x_lens, _dec_out, aw_step)
+            elif self.decoding_order == 'luong':
+                # Recurrency
+                dec_in = torch.cat([y, context_vec], dim=-1)
+                dec_out, dec_state = getattr(
+                    self, 'decoder_' + str(task) + '_' + dir)(dec_in, dec_state)
 
-                    # Recurrency of the second decoder
-                    dec_out, dec_state = getattr(self, 'decoder_second_' + str(task) + '_' + dir)(
-                        context_vec, _dec_state)
+                # Score
+                context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
+                    enc_out, enc_out_a, x_lens, dec_out, aw_step)
 
-                # Generate
-                logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(F.tanh(
-                    getattr(self, 'W_d_' + str(task) + '_' + dir)(dec_out) +
-                    getattr(self, 'W_c_' + str(task) + '_' + dir)(context_vec)))
+            elif self.decoding_order == 'conditional':
+                # Recurrency of the first decoder
+                _dec_out, _dec_state = getattr(self, 'decoder_first_' + str(task) + '_' + dir)(
+                    y, dec_state)
 
-                # Pick up 1-best
-                y = torch.max(logits_step.squeeze(1), dim=1)[1].unsqueeze(1)
-                best_hyps.append(y)
-                y_emb = getattr(self, 'embed_' + str(task))(y)
+                # Score
+                context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
+                    enc_out, enc_out_a, x_lens, _dec_out, aw_step)
+
+                # Recurrency of the second decoder
+                dec_out, dec_state = getattr(self, 'decoder_second_' + str(task) + '_' + dir)(
+                    context_vec, _dec_state)
+
+            else:
+                raise ValueError(self.decoding_order)
+
+            # Generate
+            logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(F.tanh(
+                getattr(self, 'W_d_' + str(task) + '_' + dir)(dec_out) +
+                getattr(self, 'W_c_' + str(task) + '_' + dir)(context_vec)))
+
+            # Pick up 1-best
+            y = torch.max(logits_step.squeeze(1), dim=1)[1].unsqueeze(1)
+            best_hyps.append(y)
 
             aw.append(aw_step)
 
@@ -1059,6 +1063,13 @@ class AttentionSeq2seq(ModelBase):
 
         min_decode_len_ratio = 0.05
 
+        # Pre-computation of encoder-side features computing scores
+        enc_out_a = []
+        for h in range(getattr(self, 'num_heads_' + str(task))):
+            enc_out_a += [getattr(getattr(self, 'attend_' +
+                                          str(task) + '_' + dir), 'W_enc_head' + str(h))(enc_out)]
+        enc_out_a = torch.stack(enc_out_a, dim=-1)
+
         best_hyps, aw = [], []
         y_lens = np.zeros((enc_out.size(0),), dtype=np.int32)
         for b in range(enc_out.size(0)):
@@ -1067,64 +1078,78 @@ class AttentionSeq2seq(ModelBase):
                 enc_out[b:b + 1], x_lens[b:b + 1], task, dir)
             aw_step = self._create_var(
                 (1,  x_lens[b].data[0], getattr(
-                    self, 'num_heads_' + str(task))),
-                fill_value=0, volatile=True)
+                    self, 'num_heads_' + str(task))), fill_value=0., volatile=True)
+            context_vec = self._create_var(
+                (1,  1, enc_out.size(-1)), fill_value=0., volatile=True)
 
             complete = []
             beam = [{'hyp': [sos],
                      'score': 0,  # log 1
                      'dec_state': dec_state,
                      'dec_out': dec_out,
+                     'context_vec': context_vec,
                      'aw_steps': [aw_step]}]
-            for _ in range(max_decode_len):
+            for t in range(max_decode_len):
                 new_beam = []
                 for i_beam in range(len(beam)):
-                    if self.decoding_order == 'attend_generate_update':
+                    y = self._create_var(
+                        (1, 1), fill_value=beam[i_beam]['hyp'][-1], dtype='long')
+                    y = getattr(self, 'embed_' + str(task))(y)
+
+                    if self.decoding_order == 'bahdanau':
+                        if t == 0:
+                            dec_out = beam[i_beam]['dec_out']
+                        else:
+                            # Recurrency
+                            dec_in = torch.cat(
+                                [y, beam[i_beam]['context_vec']], dim=-1)
+                            dec_out, dec_state = getattr(
+                                self, 'decoder_' + str(task) + '_' + dir)(dec_in, beam[i_beam]['dec_state'])
+
                         # Score
                         context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
-                            enc_out[b:b + 1], x_lens[b:b + 1],
-                            beam[i_beam]['dec_out'], beam[i_beam]['aw_steps'][-1])
+                            enc_out[b:b + 1, :x_lens.data[b]],
+                            enc_out_a[b:b + 1, :x_lens.data[b]],
+                            x_lens[b:b + 1],
+                            dec_out, beam[i_beam]['aw_steps'][-1])
 
-                        # Generate
-                        logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(F.tanh(
-                            getattr(self, 'W_d_' + str(task) + '_' + dir)(beam[i_beam]['dec_out']) +
-                            getattr(self, 'W_c_' + str(task) + '_' + dir)(context_vec)))
+                    elif self.decoding_order == 'luong':
+                        # Recurrency
+                        dec_in = torch.cat(
+                            [y, beam[i_beam]['context_vec']], dim=-1)
+                        dec_out, dec_state = getattr(self, 'decoder_' + str(task) + '_' + dir)(
+                            dec_in, beam[i_beam]['dec_state'])
 
-                        # NOTE: Recurrency is placed at the latter stage
+                        # Score
+                        context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
+                            enc_out[b:b + 1, :x_lens.data[b]],
+                            enc_out_a[b:b + 1, :x_lens.data[b]],
+                            x_lens[b:b + 1],
+                            dec_out, beam[i_beam]['aw_steps'][-1])
+
+                    elif self.decoding_order == 'conditional':
+                        # Recurrency of the first decoder
+                        _dec_out, _dec_state = getattr(self, 'decoder_first_' + str(task) + '_' + dir)(
+                            y, beam[i_beam]['dec_state'])
+
+                        # Score
+                        context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
+                            enc_out[b:b + 1, :x_lens.data[b]],
+                            enc_out_a[b:b + 1, :x_lens.data[b]],
+                            x_lens[b:b + 1],
+                            _dec_out, beam[i_beam]['aw_steps'][-1])
+
+                        # Recurrency of the second decoder
+                        dec_out, dec_state = getattr(self, 'decoder_second_' + str(task) + '_' + dir)(
+                            context_vec, _dec_state)
+
                     else:
-                        y = self._create_var(
-                            (1, 1), fill_value=beam[i_beam]['hyp'][-1], dtype='long')
-                        y = getattr(self, 'embed_' + str(task))(y)
+                        raise ValueError(self.decoding_order)
 
-                        if self.decoding_order == 'attend_update_generate':
-                            # Score
-                            context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
-                                enc_out[b:b + 1], x_lens[b:b + 1],
-                                beam[i_beam]['dec_out'], beam[i_beam]['aw_steps'][-1])
-
-                            # Recurrency
-                            dec_in = torch.cat([y, context_vec], dim=-1)
-                            dec_out, dec_state = getattr(self, 'decoder_' + str(task) + '_' + dir)(
-                                dec_in, beam[i_beam]['dec_state'])
-
-                        elif self.decoding_order == 'conditional':
-                            # Recurrency of the first decoder
-                            _dec_out, _dec_state = getattr(self, 'decoder_first_' + str(task) + '_' + dir)(
-                                y, beam[i_beam]['dec_state'])
-
-                            # Score
-                            context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
-                                enc_out[b:b + 1], x_lens[b:b + 1],
-                                _dec_out, beam[i_beam]['aw_steps'][-1])
-
-                            # Recurrency of the second decoder
-                            dec_out, dec_state = getattr(self, 'decoder_second_' + str(task) + '_' + dir)(
-                                context_vec, _dec_state)
-
-                        # Generate
-                        logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(F.tanh(
-                            getattr(self, 'W_d_' + str(task) + '_' + dir)(dec_out) +
-                            getattr(self, 'W_c_' + str(task) + '_' + dir)(context_vec)))
+                    # Generate
+                    logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(F.tanh(
+                        getattr(self, 'W_d_' + str(task) + '_' + dir)(dec_out) +
+                        getattr(self, 'W_c_' + str(task) + '_' + dir)(context_vec)))
 
                     # Path through the softmax layer & convert to log-scale
                     log_probs = F.log_softmax(logits_step.squeeze(1), dim=1)
@@ -1136,16 +1161,6 @@ class AttentionSeq2seq(ModelBase):
                         log_probs, k=beam_width, dim=1, largest=True, sorted=True)
 
                     for k in range(beam_width):
-                        if self.decoding_order == 'attend_generate_update':
-                            y = self._create_var(
-                                (1, 1), fill_value=indices_topk.data[0, k], dtype='long')
-                            y = getattr(self, 'embed_' + str(task))(y)
-
-                            # Recurrency
-                            dec_in = torch.cat([y, context_vec], dim=-1)
-                            dec_out, dec_state = getattr(
-                                self, 'decoder_' + str(task) + '_' + dir)(dec_in, beam[i_beam]['dec_state'])
-
                         # Exclude short hypotheses
                         if indices_topk[0, k].data[0] == eos and len(beam[i_beam]['hyp']) < min_decode_len:
                             continue
@@ -1179,6 +1194,7 @@ class AttentionSeq2seq(ModelBase):
                              'score': score,
                              'dec_state': copy.deepcopy(dec_state),
                              'dec_out': dec_out,
+                             'context_vec': context_vec,
                              'aw_steps': beam[i_beam]['aw_steps'] + [aw_step]})
 
                 new_beam = sorted(

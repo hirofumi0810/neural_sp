@@ -37,6 +37,11 @@ parser.add_argument('--length_penalty', type=float, default=0,
 parser.add_argument('--coverage_penalty', type=float, default=0,
                     help='coverage penalty in beam search decoding')
 
+parser.add_argument('--resolving_unk', type=bool, default=False)
+parser.add_argument('--a2c_oracle', type=bool, default=False)
+parser.add_argument('--joint_decoding', choices=[None, 'onepass', 'rescoring'])
+parser.add_argument('--score_sub_weight', type=float, default=0)
+
 MAX_DECODE_LEN_WORD = 32
 MIN_DECODE_LEN_WORD = 2
 MAX_DECODE_LEN_CHAR = 199
@@ -50,9 +55,6 @@ MIN_DECODE_LEN_CHAR = 10
 
 def main():
 
-    a2c_oracle = False
-    resolving_unk = False
-
     args = parser.parse_args()
 
     # Load a config file (.yml)
@@ -61,7 +63,8 @@ def main():
     # Setting for logging
     logger = set_logger(args.model_path)
 
-    for i, data_type in enumerate(['test_dev93', 'test_eval92']):
+    # for i, data_type in enumerate(['test_dev93', 'test_eval92']):
+    for i, data_type in enumerate(['test_eval92']):
         # Load dataset
         dataset = Dataset(
             data_save_path=args.data_save_path,
@@ -94,9 +97,11 @@ def main():
 
             logger.info('beam width (main): %d' % args.beam_width)
             logger.info('beam width (sub) : %d' % args.beam_width_sub)
-            logger.info('epoch: %d' % epoch)
-            logger.info('a2c oracle: %s' % str(a2c_oracle))
-            logger.info('resolving_unk: %s' % str(resolving_unk))
+            logger.info('epoch: %d' % (epoch - 1))
+            logger.info('a2c oracle: %s' % str(args.a2c_oracle))
+            logger.info('resolving_unk: %s' % str(args.resolving_unk))
+            logger.info('joint_decoding: %s' % str(args.joint_decoding))
+            logger.info('score_sub_weight : %f' % args.score_sub_weight)
 
         wer, df = eval_word(
             models=[model],
@@ -111,25 +116,27 @@ def main():
             length_penalty=args.length_penalty,
             coverage_penalty=args.coverage_penalty,
             progressbar=True,
-            resolving_unk=resolving_unk,
-            a2c_oracle=a2c_oracle)
+            resolving_unk=args.resolving_unk,
+            a2c_oracle=args.a2c_oracle,
+            joint_decoding=args.joint_decoding,
+            score_sub_weight=args.score_sub_weight)
         logger.info('  WER (%s, main): %.3f %%' %
                     (dataset.data_type, (wer * 100)))
         logger.info(df)
 
-        wer_sub, cer_sub, df_sub = eval_char(
-            models=[model],
-            dataset=dataset,
-            eval_batch_size=args.eval_batch_size,
-            beam_width=args.beam_width_sub,
-            max_decode_len=MAX_DECODE_LEN_CHAR,
-            min_decode_len=MIN_DECODE_LEN_CHAR,
-            length_penalty=args.length_penalty,
-            coverage_penalty=args.coverage_penalty,
-            progressbar=True)
-        logger.info(' WER / CER (%s, sub): %.3f / %.3f %%' %
-                    (dataset.data_type, (wer_sub * 100), (cer_sub * 100)))
-        logger.info(df_sub)
+        # wer_sub, cer_sub, df_sub = eval_char(
+        #     models=[model],
+        #     dataset=dataset,
+        #     eval_batch_size=args.eval_batch_size,
+        #     beam_width=args.beam_width_sub,
+        #     max_decode_len=MAX_DECODE_LEN_CHAR,
+        #     min_decode_len=MIN_DECODE_LEN_CHAR,
+        #     length_penalty=args.length_penalty,
+        #     coverage_penalty=args.coverage_penalty,
+        #     progressbar=True)
+        # logger.info(' WER / CER (%s, sub): %.3f / %.3f %%' %
+        #             (dataset.data_type, (wer_sub * 100), (cer_sub * 100)))
+        # logger.info(df_sub)
 
 
 if __name__ == '__main__':

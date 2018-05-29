@@ -176,7 +176,7 @@ class TestHierarchicalAttention(unittest.TestCase):
             encoder_dense_residual=dense_residual,
             decoder_residual=residual,
             decoder_dense_residual=dense_residual,
-            decoding_order='attend_generate_update',
+            decoding_order='bahdanau',
             bottleneck_dim=256,
             bottleneck_dim_sub=256,
             backward_sub=backward_sub,

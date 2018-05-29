@@ -1,6 +1,6 @@
 ### Set the root path of kaldi-asr
 if [ -z $KALDI_ROOT ]; then
-  export KALDI_ROOT="/home/inaguma/tool/kaldi"
+  export KALDI_ROOT="/n/sd8/inaguma/kaldi"
 fi
 [ -f $KALDI_ROOT/tools/env.sh ] && . $KALDI_ROOT/tools/env.sh
 

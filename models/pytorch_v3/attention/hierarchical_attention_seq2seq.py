@@ -80,7 +80,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  encoder_dense_residual=False,
                  decoder_residual=False,
                  decoder_dense_residual=False,
-                 decoding_order='attend_generate_update',
+                 decoding_order='bahdanau',
                  bottleneck_dim=256,
                  bottleneck_dim_sub=256,  # ***
                  backward_sub=False,  # ***
@@ -463,7 +463,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 xs, ys_in, ys_out, x_lens, y_lens,
                 task=0, dir='fwd') * self.main_loss_weight
         else:
-            loss_main = self._create_var((1,), fill_value=0)
+            loss_main = self._create_var((1,), fill_value=0.)
         loss = loss_main.clone()
 
         ##################################################
@@ -586,7 +586,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                         space_index, oov_index, word2char, score_sub_weight,
                         idx2word, idx2char)
                 else:
-                    raise ValueError
+                    raise ValueError(joint_decoding)
 
                 # Permutate indices to the original order
                 if perm_idx is None:
@@ -649,6 +649,17 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         """
         batch_size, max_time = enc_out.size()[:2]
 
+        # Pre-computation of encoder-side features computing scores
+        enc_out_a, enc_out_sub_a = [], []
+        for h in range(self.num_heads_0):
+            enc_out_a += [getattr(self.attend_0_fwd,
+                                  'W_enc_head' + str(h))(enc_out)]
+        for h in range(self.num_heads_1):
+            enc_out_sub_a += [getattr(self.attend_1_fwd,
+                                      'W_enc_head' + str(h))(enc_out_sub)]
+        enc_out_a = torch.stack(enc_out_a, dim=-1)
+        enc_out_sub_a = torch.stack(enc_out_sub_a, dim=-1)
+
         best_hyps, aw = [], []
         best_hyps_sub, aw_sub = [], []
         for b in range(batch_size):
@@ -656,15 +667,17 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             dec_state, dec_out = self._init_dec_state(
                 enc_out[b:b + 1], x_lens[b:b + 1], task=0, dir='fwd')
             aw_step = self._create_var(
-                (1, x_lens[b].data[0], self.num_heads_0),
-                fill_value=0, dtype='float')
+                (1, x_lens[b].data[0], self.num_heads_0), fill_value=0., volatile=True)
+            context_vec = self._create_var(
+                (1,  1, enc_out.size(-1)), fill_value=0., volatile=True)
 
             # Initialization for the character model per utterance
             dec_state_sub, dec_out_sub = self._init_dec_state(
                 enc_out_sub[b: b + 1], x_lens_sub[b:b + 1], task=1, dir='fwd')
             aw_step_sub = self._create_var(
-                (1, x_lens_sub[b].data[0], self.num_heads_1),
-                fill_value=0, dtype='float')
+                (1, x_lens_sub[b].data[0], self.num_heads_1), fill_value=0., volatile=True)
+            context_vec_sub = self._create_var(
+                (1,  1, enc_out_sub.size(-1)), fill_value=0., volatile=True)
 
             complete = []
             beam = [{'hyp': [self.sos_0],
@@ -675,78 +688,79 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                      'dec_state_sub': dec_state_sub,
                      'dec_out': dec_out,
                      'dec_out_sub': dec_out_sub,
+                     'context_vec': context_vec,
+                     'context_vec_sub': context_vec_sub,
                      'aw_steps': [aw_step],
                      'aw_steps_sub':[aw_step_sub]}]
-
             for t in range(max_decode_len):
                 new_beam = []
                 for i_beam in range(len(beam)):
-                    if self.decoding_order == 'attend_generate_update':
-                        # Score for the encoder
-                        context_vec, aw_step = self.attend_0_fwd(
-                            enc_out[b:b + 1], x_lens[b:b + 1],
-                            beam[i_beam]['dec_out'], beam[i_beam]['aw_steps'][-1])
+                    y = self._create_var(
+                        (1, 1), fill_value=beam[i_beam]['hyp'][-1], dtype='long')
+                    y = self.embed_0(y)
 
-                        # Generate
-                        out = self.W_d_0_fwd(beam[i_beam]['dec_out']) + \
-                            self.W_c_0_fwd(context_vec)
-                        logits_step = self.fc_0_fwd(F.tanh(out))
-
-                        # NOTE: Recurrency is placed at the latter stage
-                    else:
-                        y = self._create_var(
-                            (1, 1), fill_value=beam[i_beam]['hyp'][-1], dtype='long')
-                        y = self.embed_0(y)
-
-                        if self.decoding_order == 'attend_update_generate':
-                            # Score for the encoder
-                            context_vec, aw_step = self.attend_0_fwd(
-                                enc_out[b:b + 1], x_lens[b:b + 1],
-                                beam[i_beam]['dec_out'], beam[i_beam]['aw_steps'][-1])
-
+                    if self.decoding_order == 'bahdanau':
+                        if t == 0:
+                            dec_out = beam[i_beam]['dec_out']
+                        else:
                             # Recurrency
                             dec_in = torch.cat([y, context_vec], dim=-1)
                             dec_out, dec_state = self.decoder_0_fwd(
                                 dec_in, beam[i_beam]['dec_state'])
 
-                        elif self.decoding_order == 'conditional':
-                            # Recurrency of the first decoder
-                            _dec_out, _dec_state = self.decoder_first_0_fwd(
-                                y, beam[i_beam]['dec_state'])
+                        # Score
+                        context_vec, aw_step = self.attend_0_fwd(
+                            enc_out[b:b + 1, :x_lens.data[b]],
+                            enc_out_a[b:b + 1, :x_lens.data[b]],
+                            x_lens[b:b + 1],
+                            dec_out, beam[i_beam]['aw_steps'][-1])
 
-                            # Score for the encoder
-                            context_vec, aw_step = self.attend_0_fwd(
-                                enc_out[b:b + 1], x_lens[b:b + 1],
-                                _dec_out, beam[i_beam]['aw_steps'][-1])
+                    elif self.decoding_order == 'luong':
+                        # Recurrency
+                        dec_in = torch.cat(
+                            [y, beam[i_beam]['context_vec']], dim=-1)
+                        dec_out, dec_state = self.decoder_0_fwd(
+                            dec_in, beam[i_beam]['dec_state'])
 
-                            # Recurrency of the second decoder
-                            dec_out, dec_state = self.decoder_second_0_fwd(
-                                context_vec, _dec_state)
+                        # Score
+                        context_vec, aw_step = self.attend_0_fwd(
+                            enc_out[b:b + 1, :x_lens.data[b]],
+                            enc_out_a[b:b + 1, :x_lens.data[b]],
+                            x_lens[b:b + 1],
+                            dec_out, beam[i_beam]['aw_steps'][-1])
 
-                        # Generate
-                        out = self.W_d_0_fwd(dec_out) + \
-                            self.W_c_0_fwd(context_vec)
-                        logits_step = self.fc_0_fwd(F.tanh(out))
+                    elif self.decoding_order == 'conditional':
+                        # Recurrency of the first decoder
+                        _dec_out, _dec_state = self.decoder_first_0_fwd(
+                            y, beam[i_beam]['dec_state'])
+
+                        # Score
+                        context_vec, aw_step = self.attend_0_fwd(
+                            enc_out[b:b + 1, :x_lens.data[b]],
+                            enc_out_a[b:b + 1, :x_lens.data[b]],
+                            x_lens[b:b + 1],
+                            _dec_out, beam[i_beam]['aw_steps'][-1])
+
+                        # Recurrency of the second decoder
+                        dec_out, dec_state = self.decoder_second_0_fwd(
+                            context_vec, _dec_state)
+
+                    else:
+                        raise ValueError(self.decoding_order)
+
+                    # Generate
+                    out = self.W_d_0_fwd(dec_out) + \
+                        self.W_c_0_fwd(context_vec)
+                    logits_step = self.fc_0_fwd(F.tanh(out))
 
                     # Path through the log-softmax layer
                     log_probs = F.log_softmax(logits_step.squeeze(1), dim=1)
-                    # NOTE: `[1 (B), 1, num_classes]` -> `[1 (B), num_classes]`
 
                     # Pick up the top-k scores
                     log_probs_topk, indices_topk = log_probs.topk(
                         beam_width, dim=1, largest=True, sorted=True)
 
                     for k in range(beam_width):
-                        if self.decoding_order == 'attend_generate_update':
-                            y = self._create_var(
-                                (1, 1), fill_value=indices_topk.data[0, k], dtype='long')
-                            y = self.embed_0(y)
-
-                            # Recurrency
-                            dec_in = torch.cat([y, context_vec], dim=-1)
-                            dec_out, dec_state = self.decoder_0_fwd(
-                                dec_in, beam[i_beam]['dec_state'])
-
                         # Exclude short hypotheses
                         if indices_topk[0, k].data[0] == self.eos_0 and len(beam[i_beam]['hyp']) < min_decode_len:
                             continue
@@ -782,9 +796,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                         score_c2w_until_space = beam[i_beam]['score_sub']
                         word_idx = indices_topk.data[0, k]
 
-                        if self.decoding_order == 'attend_generate_update':
+                        if self.decoding_order == 'bahdanau':
                             if oov_flag:
-                                # decoder until outputting a space
+                                # NOTE: Decode until outputting a space
                                 t_sub = 0
                                 dec_outs_sub = [beam[i_beam]['dec_out_sub']]
                                 dec_states_sub = [
@@ -796,7 +810,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                 while True:
                                     # Score
                                     context_vec_sub, aw_step_sub = self.attend_1_fwd(
-                                        enc_out_sub[b:b + 1],
+                                        enc_out_sub[b:b + 1,
+                                                    :x_lens_sub.data[b]],
+                                        enc_out_sub_a[b:b + 1,
+                                                      :x_lens_sub.data[b]],
                                         x_lens_sub[b:b + 1],
                                         dec_outs_sub[-1], aw_steps_sub[-1])
 
@@ -811,11 +828,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
                                     if t_sub == 0 and t > 0:
                                         # space before the word
-                                        charseq.append(space_index)
                                         score_c2w += log_probs_sub.data[0,
                                                                         space_index]
                                         score_c2w_until_space += log_probs_sub.data[0,
                                                                                     space_index]
+                                        charseq.append(space_index)
                                         y_sub = self._create_var(
                                             (1, 1), fill_value=space_index, dtype='long')
                                     else:
@@ -829,19 +846,18 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                         if t_sub > 20:
                                             break
 
-                                        charseq.append(y_sub)
                                         score_c2w += log_probs_sub.data[0, y_sub]
+                                        charseq.append(y_sub)
                                         y_sub = self._create_var(
                                             (1, 1), fill_value=y_sub, dtype='long')
+                                    y_sub = self.embed_1(y_sub)
 
                                     # print(idx2word([word_idx]))
                                     # print(idx2char(charseq))
 
-                                    y_sub_emb = self.embed_1(y_sub)
-
                                     # Recurrency
                                     dec_in_sub = torch.cat(
-                                        [y_sub_emb, context_vec_sub], dim=-1)
+                                        [y_sub, context_vec_sub], dim=-1)
                                     dec_out_sub, dec_state_sub = self.decoder_1_fwd(
                                         dec_in_sub, dec_states_sub[-1])
 
@@ -857,10 +873,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                             elif eos_flag:
                                 # Score
                                 context_vec_sub, aw_step_sub = self.attend_1_fwd(
-                                    enc_out_sub[b:b + 1],
+                                    enc_out_sub[b:b + 1,
+                                                :x_lens_sub.data[b]],
+                                    enc_out_sub_a[b:b + 1,
+                                                  :x_lens_sub.data[b]],
                                     x_lens_sub[b:b + 1],
-                                    dec_out_sub, aw_step_sub)
-                                aw_steps_sub.append(aw_step_sub)
+                                    beam[i_beam]['dec_out_sub'],
+                                    beam[i_beam]['aw_steps_sub'][-1])
 
                                 # Generate
                                 logits_step_sub = self.fc_1_fwd(F.tanh(
@@ -870,7 +889,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                 # Path through the log-softmax layer
                                 log_probs_sub = F.log_softmax(
                                     logits_step_sub.squeeze(1), dim=-1)
+
+                                charseq = [self.eos_1]
                                 score_c2w += log_probs_sub.data[0, self.eos_1]
+                                aw_steps_sub.append(aw_step_sub)
 
                                 # print(idx2word([word_idx]))
                                 # print(idx2char([self.eos_1]))
@@ -893,10 +915,12 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                 for t_sub in range(len(charseq)):
                                     # Score
                                     context_vec_sub, aw_step_sub = self.attend_1_fwd(
-                                        enc_out_sub[b:b + 1],
+                                        enc_out_sub[b:b + 1,
+                                                    :x_lens_sub.data[b]],
+                                        enc_out_sub_a[b:b + 1,
+                                                      :x_lens_sub.data[b]],
                                         x_lens_sub[b:b + 1],
                                         dec_out_sub, aw_step_sub)
-                                    aw_steps_sub.append(aw_step_sub)
 
                                     # Generate
                                     logits_step_sub = self.fc_1_fwd(F.tanh(
@@ -906,32 +930,37 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                     # Path through the log-softmax layer
                                     log_probs_sub = F.log_softmax(
                                         logits_step_sub.squeeze(1), dim=-1)
+
                                     score_c2w += log_probs_sub.data[0,
                                                                     charseq[t_sub]]
                                     if t_sub == 0 and t > 0:
                                         score_c2w_until_space += log_probs_sub.data[0,
                                                                                     charseq[t_sub]]
+                                    aw_steps_sub.append(aw_step_sub)
 
                                     # teacher-forcing
                                     y_sub = self._create_var(
                                         (1, 1), fill_value=charseq[t_sub], dtype='long')
-                                    y_sub_emb = self.embed_1(y_sub)
+                                    y_sub = self.embed_1(y_sub)
 
                                     # Recurrency
                                     dec_in_sub = torch.cat(
-                                        [y_sub_emb, context_vec_sub], dim=-1)
+                                        [y_sub, context_vec_sub], dim=-1)
                                     dec_out_sub, dec_state_sub = self.decoder_1_fwd(
                                         dec_in_sub, dec_state_sub)
 
-                        else:
+                        elif self.decoding_order in ['luong', 'conditional']:
                             if oov_flag:
                                 # decoder until outputting a space
                                 t_sub = 0
-                                dec_outs_sub = [beam[i_beam]['dec_out_sub']]
-                                dec_states_sub = [
+                                dec_outs_sub_tmp = [
+                                    beam[i_beam]['dec_out_sub']]
+                                dec_states_sub_tmp = [
                                     beam[i_beam]['dec_state_sub']]
                                 aw_steps_sub = [
                                     beam[i_beam]['aw_steps_sub'][-1]]
+                                context_vecs_sub_tmp = [
+                                    beam[i_beam]['coontext_vec_sub']]
                                 charseq = []
                                 # TODO: add max OOV len
                                 while True:
@@ -952,29 +981,35 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                     else:
                                         y_sub = torch.max(log_probs_sub.squeeze(1), dim=1)[
                                             1].unsqueeze(1)
-                                    y_sub_emb = self.embed_1(y_sub)
+                                    y_sub = self.embed_1(y_sub)
 
-                                    if self.decoding_order == 'attend_update_generate':
-                                        # Score
-                                        context_vec_sub, aw_step_sub = self.attend_1_fwd(
-                                            enc_out_sub[b:b + 1],
-                                            x_lens_sub[b:b + 1],
-                                            dec_outs_sub[-1], aw_steps_sub[-1])
-
+                                    if self.decoding_order == 'luong':
                                         # Recurrency
                                         dec_in_sub = torch.cat(
-                                            [y_sub_emb, context_vec_sub], dim=-1)
+                                            [y_sub, context_vecs_sub_tmp[-1]], dim=-1)
                                         dec_out_sub, dec_state_sub = self.decoder_1_fwd(
-                                            dec_in_sub,  dec_states_sub[-1])
+                                            dec_in_sub,  dec_states_sub_tmp[-1])
+
+                                        # Score
+                                        context_vec_sub, aw_step_sub = self.attend_1_fwd(
+                                            enc_out_sub[b:b + 1,
+                                                        :x_lens_sub.data[b]],
+                                            enc_out_sub_a[b:b + 1,
+                                                          :x_lens_sub.data[b]],
+                                            x_lens_sub[b:b + 1],
+                                            dec_out_sub, aw_steps_sub[-1])
 
                                     elif self.decoding_order == 'conditional':
                                         # Recurrency of the first decoder
                                         _dec_out_sub, _dec_state_sub = self.decoder_first_1_fwd(
-                                            y_sub_emb, dec_states_sub[-1])
+                                            y_sub, dec_states_sub_tmp[-1])
 
                                         # Score
                                         context_vec_sub, aw_step_sub = self.attend_1_fwd(
-                                            enc_out_sub[b:b + 1],
+                                            enc_out_sub[b:b + 1,
+                                                        :x_lens_sub.data[b]],
+                                            enc_out_sub_a[b:b + 1,
+                                                          :x_lens_sub.data[b]],
                                             x_lens_sub[b:b + 1],
                                             _dec_out_sub, aw_steps_sub[-1])
 
@@ -1014,45 +1049,53 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                     # print(idx2word([word_idx]))
                                     # print(idx2char(charseq))
 
-                                    dec_outs_sub += [dec_out_sub]
-                                    dec_states_sub += [dec_state_sub]
+                                    dec_outs_sub_tmp += [dec_out_sub]
+                                    dec_states_sub_tmp += [dec_state_sub]
                                     aw_steps_sub += [aw_step_sub]
+                                    context_vecs_sub_tmp += [context_vec_sub]
                                     t_sub += 1
 
-                                dec_out_sub = dec_outs_sub[-1]
+                                dec_out_sub = dec_outs_sub_tmp[-1]
                                 dec_state_sub = copy.deepcopy(
-                                    dec_states_sub[-1])
+                                    dec_states_sub_tmp[-1])
+                                context_vec_sub = context_vecs_sub_tmp[-1]
 
                             elif eos_flag:
                                 # teacher-forcing
                                 last_char = beam[i_beam]['hyp_sub'][-1]
                                 y_sub = self._create_var(
                                     (1, 1), fill_value=last_char, dtype='long')
-                                y_sub_emb = self.embed_1(y_sub)
+                                y_sub = self.embed_1(y_sub)
 
-                                if self.decoding_order == 'attend_update_generate':
-                                    # Score
-                                    context_vec_sub, aw_step_sub = self.attend_1_fwd(
-                                        enc_out_sub[b:b + 1],
-                                        x_lens_sub[b:b + 1],
-                                        dec_out_sub, aw_step_sub)
-
+                                if self.decoding_order == 'luong':
                                     # Recurrency
                                     dec_in_sub = torch.cat(
-                                        [y_sub_emb, context_vec_sub], dim=-1)
+                                        [y_sub, context_vec_sub], dim=-1)
                                     dec_out_sub, dec_state_sub = self.decoder_1_fwd(
-                                        dec_in_sub, dec_state_sub)
+                                        dec_in_sub, beam[i_beam]['dec_state_sub'])
+
+                                    # Score
+                                    context_vec_sub, aw_step_sub = self.attend_1_fwd(
+                                        enc_out_sub[b:b + 1,
+                                                    :x_lens_sub.data[b]],
+                                        enc_out_sub_a[b:b + 1,
+                                                      :x_lens_sub.data[b]],
+                                        x_lens_sub[b:b + 1],
+                                        dec_out_sub, beam[i_beam]['aw_steps_sub'][-1])
 
                                 elif self.decoding_order == 'conditional':
                                     # Recurrency of the first decoder
                                     _dec_out_sub, _dec_state_sub = self.decoder_first_1_fwd(
-                                        y_sub_emb, dec_state_sub)
+                                        y_sub, beam[i_beam]['dec_state_sub'])
 
                                     # Score
                                     context_vec_sub, aw_step_sub = self.attend_1_fwd(
-                                        enc_out_sub[b:b + 1],
+                                        enc_out_sub[b:b + 1,
+                                                    :x_lens_sub.data[b]],
+                                        enc_out_sub_a[b:b + 1,
+                                                      :x_lens_sub.data[b]],
                                         x_lens_sub[b:b + 1],
-                                        _dec_out_sub, aw_step_sub)
+                                        _dec_out_sub, beam[i_beam]['aw_steps_sub'][-1])
 
                                     # Recurrency of the second decoder
                                     dec_out_sub, dec_state_sub = self.decoder_second_1_fwd(
@@ -1066,8 +1109,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                 # Path through the log-softmax layer
                                 log_probs_sub = F.log_softmax(
                                     logits_step_sub.squeeze(1), dim=-1)
-                                score_c2w += log_probs_sub.data[0, self.eos_1]
 
+                                charseq = [self.eos_1]
+                                score_c2w += log_probs_sub.data[0, self.eos_1]
                                 aw_steps_sub.append(aw_step_sub)
 
                                 # print(idx2word([word_idx]))
@@ -1090,35 +1134,42 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
                                 dec_out_sub = beam[i_beam]['dec_out_sub']
                                 dec_state_sub = beam[i_beam]['dec_state_sub']
+                                context_vec_sub = beam[i_beam]['context_vec_sub']
                                 aw_step_sub = beam[i_beam]['aw_steps_sub'][-1]
                                 aw_steps_sub = []
                                 for t_sub in range(len(charseq) - 1):
                                     # teacher-forcing
                                     y_sub = self._create_var(
                                         (1, 1), fill_value=charseq[t_sub], dtype='long')
-                                    y_sub_emb = self.embed_1(y_sub)
+                                    y_sub = self.embed_1(y_sub)
 
-                                    if self.decoding_order == 'attend_update_generate':
-                                        # Score
-                                        context_vec_sub, aw_step_sub = self.attend_1_fwd(
-                                            enc_out_sub[b:b + 1],
-                                            x_lens_sub[b:b + 1],
-                                            dec_out_sub, aw_step_sub)
-
+                                    if self.decoding_order == 'luong':
                                         # Recurrency
                                         dec_in_sub = torch.cat(
-                                            [y_sub_emb, context_vec_sub], dim=-1)
+                                            [y_sub, context_vec_sub], dim=-1)
                                         dec_out_sub, dec_state_sub = self.decoder_1_fwd(
                                             dec_in_sub, dec_state_sub)
+
+                                        # Score
+                                        context_vec_sub, aw_step_sub = self.attend_1_fwd(
+                                            enc_out_sub[b:b + 1,
+                                                        :x_lens_sub.data[b]],
+                                            enc_out_sub_a[b:b + 1,
+                                                          :x_lens_sub.data[b]],
+                                            x_lens_sub[b:b + 1],
+                                            dec_out_sub, aw_step_sub)
 
                                     elif self.decoding_order == 'conditional':
                                         # Recurrency of the first decoder
                                         _dec_out_sub, _dec_state_sub = self.decoder_first_1_fwd(
-                                            y_sub_emb, dec_state_sub)
+                                            y_sub, dec_state_sub)
 
                                         # Score
                                         context_vec_sub, aw_step_sub = self.attend_1_fwd(
-                                            enc_out_sub[b:b + 1],
+                                            enc_out_sub[b:b + 1,
+                                                        :x_lens_sub.data[b]],
+                                            enc_out_sub_a[b:b + 1,
+                                                          :x_lens_sub.data[b]],
                                             x_lens_sub[b:b + 1],
                                             _dec_out_sub, aw_step_sub)
 
@@ -1134,14 +1185,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                     # Path through the log-softmax layer
                                     log_probs_sub = F.log_softmax(
                                         logits_step_sub.squeeze(1), dim=-1)
+
                                     score_c2w += log_probs_sub[0,
                                                                charseq[t_sub]].data[0]
-
                                     if t_sub == 0:
                                         score_c2w_until_space += log_probs_sub.data[0,
                                                                                     charseq[t_sub]]
                                         # NOTE: if t == 0, <SOS>
-
                                     aw_steps_sub.append(aw_step_sub)
 
                         # Rescoreing
@@ -1157,6 +1207,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                              'dec_state_sub': copy.deepcopy(dec_state_sub),
                              'dec_out': dec_out,
                              'dec_out_sub': dec_out_sub,
+                             'context_vec': context_vec,
+                             'context_vec_sub': context_vec_sub,
                              'aw_steps': beam[i_beam]['aw_steps'] + [aw_step],
                              'aw_steps_sub': beam[i_beam]['aw_steps_sub'] + aw_steps_sub})
 
@@ -1235,92 +1287,106 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         """
         batch_size, max_time = enc_out.size()[:2]
 
+        # Pre-computation of encoder-side features computing scores
+        enc_out_a, enc_out_sub_a = [], []
+        for h in range(self.num_heads_0):
+            enc_out_a += [getattr(self.attend_0_fwd,
+                                  'W_enc_head' + str(h))(enc_out)]
+        for h in range(self.num_heads_1):
+            enc_out_sub_a += [getattr(self.attend_1_fwd,
+                                      'W_enc_head' + str(h))(enc_out_sub)]
+        enc_out_a = torch.stack(enc_out_a, dim=-1)
+        enc_out_sub_a = torch.stack(enc_out_sub_a, dim=-1)
+
         best_hyps, aw = [], []
         best_hyps_sub, aw_sub = [], []
         for b in range(batch_size):
             # Initialization for the word model per utterance
             dec_state, dec_out = self._init_dec_state(
-                enc_out[b:b + 1], x_lens[b:b + 1], task=0, dir='fwd')
+                enc_out[b: b + 1], x_lens[b: b + 1], task=0, dir='fwd')
             aw_step = self._create_var(
-                (1, x_lens[b].data[0], self.num_heads_0),
-                fill_value=0, dtype='float')
+                (1, x_lens[b].data[0], self.num_heads_0), fill_value=0., volatile=True)
+            context_vec = self._create_var(
+                (1,  1, enc_out.size(-1)), fill_value=0., volatile=True)
 
             complete = []
             beam = [{'hyp': [self.sos_0],
                      'score': 0,  # log1
                      'dec_state': dec_state,
                      'dec_out': dec_out,
+                     'context_vec': context_vec,
                      'aw_steps': [aw_step]}]
 
             for t in range(max_decode_len):
                 new_beam = []
                 for i_beam in range(len(beam)):
-                    if self.decoding_order == 'attend_generate_update':
-                        # Score for the encoder
-                        context_vec, aw_step = self.attend_0_fwd(
-                            enc_out[b:b + 1], x_lens[b:b + 1],
-                            beam[i_beam]['dec_out'], beam[i_beam]['aw_steps'][-1])
+                    y = self._create_var(
+                        (1, 1), fill_value=beam[i_beam]['hyp'][-1], dtype='long')
+                    y = self.embed_0(y)
 
-                        # Generate
-                        out = self.W_d_0_fwd(beam[i_beam]['dec_out']) + \
-                            self.W_c_0_fwd(context_vec)
-                        logits_step = self.fc_0_fwd(F.tanh(out))
-
-                        # NOTE: Recurrency is placed at the latter stage
-                    else:
-                        y = self._create_var(
-                            (1, 1), fill_value=beam[i_beam]['hyp'][-1], dtype='long')
-                        y = self.embed_0(y)
-
-                        if self.decoding_order == 'attend_update_generate':
-                            # Score for the encoder
-                            context_vec, aw_step = self.attend_0_fwd(
-                                enc_out[b:b + 1], x_lens[b:b + 1],
-                                beam[i_beam]['dec_out'], beam[i_beam]['aw_steps'][-1])
-
+                    if self.decoding_order == 'bahdanau':
+                        if t == 0:
+                            dec_out = beam[i_beam]['dec_out']
+                        else:
                             # Recurrency
-                            dec_in = torch.cat([y, context_vec], dim=-1)
+                            dec_in = torch.cat(
+                                [y, beam[i_beam]['context_vec']], dim=-1)
                             dec_out, dec_state = self.decoder_0_fwd(
                                 dec_in, beam[i_beam]['dec_state'])
 
-                        elif self.decoding_order == 'conditional':
-                            # Recurrency of the first decoder
-                            _dec_out, _dec_state = self.decoder_first_0_fwd(
-                                y, beam[i_beam]['dec_state'])
+                        # Score
+                        context_vec, aw_step = self.attend_0_fwd(
+                            enc_out[b:b + 1, :x_lens.data[b]],
+                            enc_out_a[b:b + 1, :x_lens.data[b]],
+                            x_lens[b:b + 1],
+                            dec_out, beam[i_beam]['aw_steps'][-1])
 
-                            # Score for the encoder
-                            context_vec, aw_step = self.attend_0_fwd(
-                                enc_out[b:b + 1], x_lens[b:b + 1],
-                                _dec_out, beam[i_beam]['aw_steps'][-1])
+                    elif self.decoding_order == 'luong':
+                        # Recurrency
+                        dec_in = torch.cat(
+                            [y, beam[i_beam]]['context_vec'], dim=-1)
+                        dec_out, dec_state = self.decoder_0_fwd(
+                            dec_in, beam[i_beam]['dec_state'])
 
-                            # Recurrency of the second decoder
-                            dec_out, dec_state = self.decoder_second_0_fwd(
-                                context_vec, _dec_state)
+                        # Score
+                        context_vec, aw_step = self.attend_0_fwd(
+                            enc_out[b:b + 1, :x_lens.data[b]],
+                            enc_out_a[b:b + 1, :x_lens.data[b]],
+                            x_lens[b:b + 1],
+                            dec_out, beam[i_beam]['aw_steps'][-1])
 
-                        # Generate
-                        out = self.W_d_0_fwd(dec_out) + \
-                            self.W_c_0_fwd(context_vec)
-                        logits_step = self.fc_0_fwd(F.tanh(out))
+                    elif self.decoding_order == 'conditional':
+                        # Recurrency of the first decoder
+                        _dec_out, _dec_state = self.decoder_first_0_fwd(
+                            y, beam[i_beam]['dec_state'])
+
+                        # Score
+                        context_vec, aw_step = self.attend_0_fwd(
+                            enc_out[b:b + 1, :x_lens.data[b]],
+                            enc_out_a[b:b + 1, :x_lens.data[b]],
+                            x_lens[b:b + 1],
+                            _dec_out, beam[i_beam]['aw_steps'][-1])
+
+                        # Recurrency of the second decoder
+                        dec_out, dec_state = self.decoder_second_0_fwd(
+                            context_vec, _dec_state)
+
+                    else:
+                        raise ValueError(self.decoding_order)
+
+                    # Generate
+                    out = self.W_d_0_fwd(dec_out) + \
+                        self.W_c_0_fwd(context_vec)
+                    logits_step = self.fc_0_fwd(F.tanh(out))
 
                     # Path through the log-softmax layer
                     log_probs = F.log_softmax(logits_step.squeeze(1), dim=1)
-                    # NOTE: `[1 (B), 1, num_classes]` -> `[1 (B), num_classes]`
 
                     # Pick up the top-k scores
                     log_probs_topk, indices_topk = log_probs.topk(
                         beam_width, dim=1, largest=True, sorted=True)
 
                     for k in range(beam_width):
-                        if self.decoding_order == 'attend_generate_update':
-                            y = self._create_var(
-                                (1, 1), fill_value=indices_topk.data[0, k], dtype='long')
-                            y = self.embed_0(y)
-
-                            # Recurrency
-                            dec_in = torch.cat([y, context_vec], dim=-1)
-                            dec_out, dec_state = self.decoder_0_fwd(
-                                dec_in, beam[i_beam]['dec_state'])
-
                         # Exclude short hypotheses
                         if indices_topk[0, k].data[0] == self.eos_0 and len(beam[i_beam]['hyp']) < min_decode_len:
                             continue
@@ -1352,6 +1418,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                              'score': score,
                              'dec_state': copy.deepcopy(dec_state),
                              'dec_out': dec_out,
+                             'context_vec': context_vec,
                              'aw_steps': beam[i_beam]['aw_steps'] + [aw_step]})
 
                 new_beam = sorted(
@@ -1380,9 +1447,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 dec_state_sub, dec_out_sub = self._init_dec_state(
                     enc_out_sub[b: b + 1], x_lens_sub[b:b + 1], task=1, dir='fwd')
                 aw_step_sub = self._create_var(
-                    (1, x_lens_sub[b].data[0], self.num_heads_1),
-                    fill_value=0, dtype='float')
+                    (1, x_lens_sub[b].data[0], self.num_heads_1), fill_value=0., volatile=True)
                 aw_steps_sub = [aw_step_sub]
+                context_vec_sub = self._create_var(
+                    (1, 1, dec_out_sub.size(1)), fill_value=0., volatile=True)
 
                 score_c2w = 0  # log 1
                 score_c2w_until_space = 0  # log 1
@@ -1393,7 +1461,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     eos_flag = complete[i_beam]['hyp'][t + 1] == self.eos_0
                     word_idx = complete[i_beam]['hyp'][t + 1]
 
-                    if self.decoding_order == 'attend_generate_update':
+                    if self.decoding_order == 'bahdanau':
                         if oov_flag:
                             # decoder until outputting a space
                             t_sub = 0
@@ -1405,7 +1473,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                             while True:
                                 # Score
                                 context_vec_sub, aw_step_sub = self.attend_1_fwd(
-                                    enc_out_sub[b:b + 1],
+                                    enc_out_sub[b:b + 1,
+                                                :x_lens_sub.data[b]],
+                                    enc_out_sub_a[b:b + 1,
+                                                  :x_lens_sub.data[b]],
                                     x_lens_sub[b:b + 1],
                                     dec_outs_sub[-1], aw_steps_sub_tmp[-1])
 
@@ -1420,11 +1491,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
                                 if t_sub == 0 and t > 0:
                                     # space before the word
-                                    charseq_tmp.append(space_index)
                                     score_c2w += log_probs_sub.data[0,
                                                                     space_index]
                                     score_c2w_until_space += log_probs_sub.data[0,
                                                                                 space_index]
+                                    charseq_tmp.append(space_index)
                                     y_sub = self._create_var(
                                         (1, 1), fill_value=space_index, dtype='long')
                                 else:
@@ -1438,19 +1509,19 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                     if t_sub > 20:
                                         break
 
-                                    charseq_tmp.append(y_sub)
                                     score_c2w += log_probs_sub.data[0, y_sub]
+                                    charseq_tmp.append(y_sub)
                                     y_sub = self._create_var(
                                         (1, 1), fill_value=y_sub, dtype='long')
 
                                 # print(idx2word([word_idx]))
                                 # print(idx2char(charseq_tmp))
 
-                                y_sub_emb = self.embed_1(y_sub)
+                                y_sub = self.embed_1(y_sub)
 
                                 # Recurrency
                                 dec_in_sub = torch.cat(
-                                    [y_sub_emb, context_vec_sub], dim=-1)
+                                    [y_sub, context_vec_sub], dim=-1)
                                 dec_out_sub, dec_state_sub = self.decoder_1_fwd(
                                     dec_in_sub, dec_states_sub[-1])
 
@@ -1468,10 +1539,12 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                         elif eos_flag:
                             # Score
                             context_vec_sub, aw_step_sub = self.attend_1_fwd(
-                                enc_out_sub[b:b + 1],
+                                enc_out_sub[b:b + 1,
+                                            :x_lens_sub.data[b]],
+                                enc_out_sub_a[b:b + 1,
+                                              :x_lens_sub.data[b]],
                                 x_lens_sub[b:b + 1],
-                                dec_out_sub, aw_step_sub)
-                            aw_steps_sub.append(aw_step_sub)
+                                dec_out_sub, aw_steps_sub[-1])
 
                             # Generate
                             logits_step_sub = self.fc_1_fwd(F.tanh(
@@ -1481,9 +1554,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                             # Path through the log-softmax layer
                             log_probs_sub = F.log_softmax(
                                 logits_step_sub.squeeze(1), dim=-1)
-                            score_c2w += log_probs_sub.data[0, self.eos_1]
 
                             charseq.append(self.eos_1)
+                            score_c2w += log_probs_sub.data[0, self.eos_1]
+                            aw_steps_sub.append(aw_step_sub)
 
                             # print(idx2word([word_idx]))
                             # print(idx2char([self.eos_1]))
@@ -1499,14 +1573,15 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                             # print(idx2word([word_idx]))
                             # print(idx2char(charseq_tmp))
 
-                            aw_step_sub = aw_steps_sub[-1]
                             for t_sub in range(len(charseq_tmp)):
                                 # Score
                                 context_vec_sub, aw_step_sub = self.attend_1_fwd(
-                                    enc_out_sub[b:b + 1],
+                                    enc_out_sub[b:b + 1,
+                                                :x_lens_sub.data[b]],
+                                    enc_out_sub_a[b:b + 1,
+                                                  :x_lens_sub.data[b]],
                                     x_lens_sub[b:b + 1],
-                                    dec_out_sub, aw_step_sub)
-                                aw_steps_sub.append(aw_step_sub)
+                                    dec_out_sub, aw_steps_sub[-1])
 
                                 # Generate
                                 logits_step_sub = self.fc_1_fwd(F.tanh(
@@ -1516,32 +1591,34 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                 # Path through the log-softmax layer
                                 log_probs_sub = F.log_softmax(
                                     logits_step_sub.squeeze(1), dim=-1)
+
                                 score_c2w += log_probs_sub.data[0,
                                                                 charseq_tmp[t_sub]]
                                 if t_sub == 0 and t > 0:
                                     score_c2w_until_space += log_probs_sub.data[0,
                                                                                 charseq_tmp[t_sub]]
+                                aw_steps_sub.append(aw_step_sub)
 
                                 # teacher-forcing
                                 y_sub = self._create_var(
                                     (1, 1), fill_value=charseq_tmp[t_sub], dtype='long')
-                                y_sub_emb = self.embed_1(y_sub)
+                                y_sub = self.embed_1(y_sub)
 
                                 # Recurrency
                                 dec_in_sub = torch.cat(
-                                    [y_sub_emb, context_vec_sub], dim=-1)
+                                    [y_sub, context_vec_sub], dim=-1)
                                 dec_out_sub, dec_state_sub = self.decoder_1_fwd(
                                     dec_in_sub, dec_state_sub)
 
                             charseq += charseq_tmp
 
-                    else:
+                    elif self.decoding_order in ['luong', 'conditional']:
                         if oov_flag:
                             # decoder until outputting a space
                             t_sub = 0
-                            dec_outs_sub = [dec_out_sub]
-                            dec_states_sub = [dec_state_sub]
-                            aw_steps_sub_tmp = [aw_steps_sub[-1]]
+                            dec_outs_sub_tmp = [dec_out_sub]
+                            dec_states_sub_tmp = [dec_state_sub]
+                            context_vecs_sub_tmp = [context_vec_sub]
                             charseq_tmp = []
                             # TODO: add max OOV len
                             while True:
@@ -1562,31 +1639,37 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                 else:
                                     y_sub = torch.max(log_probs_sub.squeeze(1), dim=1)[
                                         1].unsqueeze(1)
-                                y_sub_emb = self.embed_1(y_sub)
+                                y_sub = self.embed_1(y_sub)
 
-                                if self.decoding_order == 'attend_update_generate':
-                                    # Score
-                                    context_vec_sub, aw_step_sub = self.attend_1_fwd(
-                                        enc_out_sub[b:b + 1],
-                                        x_lens_sub[b:b + 1],
-                                        dec_outs_sub[-1], aw_steps_sub_tmp[-1])
-
+                                if self.decoding_order == 'luong':
                                     # Recurrency
                                     dec_in_sub = torch.cat(
-                                        [y_sub_emb, context_vec_sub], dim=-1)
+                                        [y_sub, context_vecs_sub_tmp[-1]], dim=-1)
                                     dec_out_sub, dec_state_sub = self.decoder_1_fwd(
-                                        dec_in_sub,  dec_states_sub[-1])
+                                        dec_in_sub, dec_states_sub_tmp[-1])
+
+                                    # Score
+                                    context_vec_sub, aw_step_sub = self.attend_1_fwd(
+                                        enc_out_sub[b:b + 1,
+                                                    :x_lens_sub.data[b]],
+                                        enc_out_sub_a[b:b + 1,
+                                                      :x_lens_sub.data[b]],
+                                        x_lens_sub[b:b + 1],
+                                        dec_out_sub, aw_steps_sub[-1])
 
                                 elif self.decoding_order == 'conditional':
                                     # Recurrency of the first decoder
                                     _dec_out_sub, _dec_state_sub = self.decoder_first_1_fwd(
-                                        y_sub_emb, dec_states_sub[-1])
+                                        y_sub, dec_states_sub_tmp[-1])
 
                                     # Score
                                     context_vec_sub, aw_step_sub = self.attend_1_fwd(
-                                        enc_out_sub[b:b + 1],
+                                        enc_out_sub[b:b + 1,
+                                                    :x_lens_sub.data[b]],
+                                        enc_out_sub_a[b:b + 1,
+                                                      :x_lens_sub.data[b]],
                                         x_lens_sub[b:b + 1],
-                                        _dec_out_sub, aw_steps_sub_tmp[-1])
+                                        _dec_out_sub, aw_steps_sub[-1])
 
                                     # Recurrency of the second decoder
                                     dec_out_sub, dec_state_sub = self.decoder_second_1_fwd(
@@ -1624,15 +1707,16 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                 # print(idx2word([word_idx]))
                                 # print(idx2char(charseq_tmp))
 
-                                dec_outs_sub += [dec_out_sub]
-                                dec_states_sub += [dec_state_sub]
-                                aw_steps_sub_tmp += [aw_step_sub]
+                                dec_outs_sub_tmp += [dec_out_sub]
+                                dec_states_sub_tmp += [dec_state_sub]
+                                aw_steps_sub += [aw_step_sub]
+                                context_vecs_sub_tmp += [context_vec_sub]
                                 t_sub += 1
 
-                            dec_out_sub = dec_outs_sub[-1]
+                            dec_out_sub = dec_outs_sub_tmp[-1]
                             dec_state_sub = copy.deepcopy(
-                                dec_states_sub[-1])
-                            aw_steps_sub += aw_steps_sub_tmp[:-1]
+                                dec_states_sub_tmp[-1])
+                            context_vec_sub = context_vecs_sub_tmp[-1]
                             charseq += charseq_tmp
 
                         elif eos_flag:
@@ -1640,31 +1724,37 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                             last_char = beam[i_beam]['hyp_sub'][-1]
                             y_sub = self._create_var(
                                 (1, 1), fill_value=last_char, dtype='long')
-                            y_sub_emb = self.embed_1(y_sub)
+                            y_sub = self.embed_1(y_sub)
 
-                            if self.decoding_order == 'attend_update_generate':
-                                # Score
-                                context_vec_sub, aw_step_sub = self.attend_1_fwd(
-                                    enc_out_sub[b:b + 1],
-                                    x_lens_sub[b:b + 1],
-                                    dec_out_sub, aw_step_sub)
-
+                            if self.decoding_order == 'luong':
                                 # Recurrency
                                 dec_in_sub = torch.cat(
-                                    [y_sub_emb, context_vec_sub], dim=-1)
+                                    [y_sub, context_vec_sub], dim=-1)
                                 dec_out_sub, dec_state_sub = self.decoder_1_fwd(
                                     dec_in_sub, dec_state_sub)
+
+                                # Score
+                                context_vec_sub, aw_step_sub = self.attend_1_fwd(
+                                    enc_out_sub[b:b + 1,
+                                                :x_lens_sub.data[b]],
+                                    enc_out_sub_a[b:b + 1,
+                                                  :x_lens_sub.data[b]],
+                                    x_lens_sub[b:b + 1],
+                                    dec_out_sub, aw_steps_sub[-1])
 
                             elif self.decoding_order == 'conditional':
                                 # Recurrency of the first decoder
                                 _dec_out_sub, _dec_state_sub = self.decoder_first_1_fwd(
-                                    y_sub_emb, dec_state_sub)
+                                    y_sub, dec_state_sub)
 
                                 # Score
                                 context_vec_sub, aw_step_sub = self.attend_1_fwd(
-                                    enc_out_sub[b:b + 1],
+                                    enc_out_sub[b:b + 1,
+                                                :x_lens_sub.data[b]],
+                                    enc_out_sub_a[b:b + 1,
+                                                  :x_lens_sub.data[b]],
                                     x_lens_sub[b:b + 1],
-                                    _dec_out_sub, aw_step_sub)
+                                    _dec_out_sub, aw_steps_sub[-1])
 
                                 # Recurrency of the second decoder
                                 dec_out_sub, dec_state_sub = self.decoder_second_1_fwd(
@@ -1678,10 +1768,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                             # Path through the log-softmax layer
                             log_probs_sub = F.log_softmax(
                                 logits_step_sub.squeeze(1), dim=-1)
-                            score_c2w += log_probs_sub.data[0, self.eos_1]
 
-                            aw_steps_sub.append(aw_step_sub)
                             charseq.append(self.eos_1)
+                            score_c2w += log_probs_sub.data[0, self.eos_1]
+                            aw_steps_sub.append(aw_step_sub)
 
                             # print(idx2word([word_idx]))
                             # print(idx2char([self.eos_1]))
@@ -1701,36 +1791,41 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                             # print(idx2word([word_idx]))
                             # print(idx2char(charseq_tmp))
 
-                            aw_step_sub = aw_steps_sub[-1]
                             for t_sub in range(len(charseq_tmp) - 1):
                                 # teacher-forcing
                                 y_sub = self._create_var(
                                     (1, 1), fill_value=charseq_tmp[t_sub], dtype='long')
-                                y_sub_emb = self.embed_1(y_sub)
+                                y_sub = self.embed_1(y_sub)
 
-                                if self.decoding_order == 'attend_update_generate':
-                                    # Score
-                                    context_vec_sub, aw_step_sub = self.attend_1_fwd(
-                                        enc_out_sub[b:b + 1],
-                                        x_lens_sub[b:b + 1],
-                                        dec_out_sub, aw_step_sub)
-
+                                if self.decoding_order == 'luong':
                                     # Recurrency
                                     dec_in_sub = torch.cat(
-                                        [y_sub_emb, context_vec_sub], dim=-1)
+                                        [y_sub, context_vec_sub], dim=-1)
                                     dec_out_sub, dec_state_sub = self.decoder_1_fwd(
                                         dec_in_sub, dec_state_sub)
+
+                                    # Score
+                                    context_vec_sub, aw_step_sub = self.attend_1_fwd(
+                                        enc_out_sub[b:b + 1,
+                                                    :x_lens_sub.data[b]],
+                                        enc_out_sub_a[b:b + 1,
+                                                      :x_lens_sub.data[b]],
+                                        x_lens_sub[b:b + 1],
+                                        dec_out_sub, aw_steps_sub[-1])
 
                                 elif self.decoding_order == 'conditional':
                                     # Recurrency of the first decoder
                                     _dec_out_sub, _dec_state_sub = self.decoder_first_1_fwd(
-                                        y_sub_emb, dec_state_sub)
+                                        y_sub, dec_state_sub)
 
                                     # Score
                                     context_vec_sub, aw_step_sub = self.attend_1_fwd(
-                                        enc_out_sub[b:b + 1],
+                                        enc_out_sub[b:b + 1,
+                                                    :x_lens_sub.data[b]],
+                                        enc_out_sub_a[b:b + 1,
+                                                      :x_lens_sub.data[b]],
                                         x_lens_sub[b:b + 1],
-                                        _dec_out_sub, aw_step_sub)
+                                        _dec_out_sub, aw_steps_sub[-1])
 
                                     # Recurrency of the second decoder
                                     dec_out_sub, dec_state_sub = self.decoder_second_1_fwd(
@@ -1744,16 +1839,15 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                 # Path through the log-softmax layer
                                 log_probs_sub = F.log_softmax(
                                     logits_step_sub.squeeze(1), dim=-1)
+
+                                charseq += charseq_tmp
                                 score_c2w += log_probs_sub[0,
                                                            charseq_tmp[t_sub]].data[0]
-
                                 if t_sub == 0:
                                     score_c2w_until_space += log_probs_sub.data[0,
                                                                                 charseq_tmp[t_sub]]
                                     # NOTE: if t == 0, <SOS>
-
                                 aw_steps_sub.append(aw_step_sub)
-                                charseq += charseq_tmp
 
                     # Rescoreing
                     complete[i_beam]['score'] += (score_c2w - score_c2w_until_space) * \

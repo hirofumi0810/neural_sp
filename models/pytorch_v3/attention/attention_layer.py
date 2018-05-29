@@ -120,11 +120,13 @@ class AttentionMechanism(nn.Module):
                     "attention_type should be one of [%s], you provided %s." %
                     (", ".join(ATTENTION_TYPE), attention_type))
 
-    def forward(self, enc_out, x_lens, dec_out, aw_step):
+    def forward(self, enc_out, enc_out_a, x_lens, dec_out, aw_step):
         """Forward computation.
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, encoder_num_units]`
+            enc_out_a (torch.autograd.Variable, float): A tensor of size
+                `[B, T_in, attention_dim, num_heads]`
             x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
             dec_out (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, decoder_num_units]`
@@ -136,7 +138,7 @@ class AttentionMechanism(nn.Module):
             aw_step (torch.autograd.Variable, float): A tensor of size
                 `[B, T_in, num_heads]`
         """
-        batch_size, max_time = enc_out.size()[:2]
+        batch_size, max_time = enc_out_a.size()[:2]
 
         energy = []
         for h in range(self.num_heads):
@@ -147,7 +149,7 @@ class AttentionMechanism(nn.Module):
                 dec_out = dec_out.expand_as(torch.zeros(
                     (batch_size, max_time, dec_out.size(2))))
                 energy_head = getattr(self, 'V_head' + str(h))(F.tanh(
-                    getattr(self, 'W_enc_head' + str(h))(enc_out) +
+                    enc_out_a[:, :, :, h] +
                     getattr(self, 'W_dec_head' + str(h))(dec_out))).squeeze(2)
 
             elif self.attention_type == 'location':
@@ -170,7 +172,7 @@ class AttentionMechanism(nn.Module):
                 dec_out = dec_out.expand_as(torch.zeros(
                     (batch_size, max_time, dec_out.size(2))))
                 energy_head = getattr(self, 'V_head' + str(h))(F.tanh(
-                    getattr(self, 'W_enc_head' + str(h))(enc_out) +
+                    enc_out_a[:, :, :, h] +
                     getattr(self, 'W_dec_head' + str(h))(dec_out) +
                     getattr(self, 'W_conv_head' + str(h))(conv_feat))).squeeze(2)
 
@@ -179,7 +181,7 @@ class AttentionMechanism(nn.Module):
                 # energy = <W_enc(h_enc), h_dec>
                 ##############################################################
                 energy_head = torch.bmm(
-                    getattr(self, 'W_enc_head' + str(h))(enc_out),
+                    enc_out_a[:, :, :, h],
                     dec_out.transpose(1, 2)).squeeze(2)
 
             elif self.attention_type == 'rnn_attention':
@@ -200,7 +202,7 @@ class AttentionMechanism(nn.Module):
                 dec_out = dec_out.expand_as(torch.zeros(
                     (batch_size, max_time, dec_out.size(2))))
                 energy_head = getattr(self, 'V_head' + str(h))(F.tanh(
-                    getattr(self, 'W_enc_head' + str(h))(enc_out) +
+                    enc_out_a[:, :, :, h] +
                     getattr(self, 'W_dec_head' + str(h))(dec_out) +
                     getattr(self, 'W_cov_head' + str(h))(self.aw_cumsum))).squeeze(2)
 
@@ -214,7 +216,7 @@ class AttentionMechanism(nn.Module):
         for h in range(self.num_heads):
             # Mask attention distribution
             energy_mask = Variable(torch.ones(batch_size, max_time))
-            if enc_out.is_cuda:
+            if enc_out_a.is_cuda:
                 energy_mask = energy_mask.cuda()
             for b in range(batch_size):
                 if x_lens[b].data[0] < max_time:
