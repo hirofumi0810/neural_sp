@@ -19,6 +19,7 @@ echo ===========================================================================
 
 stage=0
 run_background=true
+# run_background=false
 
 ### Set path to original data
 wsj0="/n/rd21/corpora_1/WSJ/wsj0"
@@ -313,7 +314,7 @@ if [ $stage -le 3 ]; then
           --gpu $gpu_index \
           --config_path $config_path \
           --model_save_path $MODEL \
-          --data_save_path $DATA　|| exit 1;
+          --data_save_path $DATA|| exit 1;
       fi
     fi
   fi

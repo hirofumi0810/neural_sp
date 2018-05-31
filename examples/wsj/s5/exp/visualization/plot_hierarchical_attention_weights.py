@@ -15,9 +15,11 @@ import shutil
 sys.path.append(abspath('../../../'))
 from models.load_model import load
 from examples.wsj.s5.exp.dataset.load_dataset_hierarchical import Dataset
+from utils.io.labels.word import Word2char
 from utils.directory import mkdir_join, mkdir
 from utils.visualization.attention import plot_hierarchical_attention_weights
 from utils.config import load_config
+from utils.io.labels.word import Word2char
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str,
@@ -36,6 +38,10 @@ parser.add_argument('--length_penalty', type=float, default=0,
                     help='length penalty in beam search decoding')
 parser.add_argument('--coverage_penalty', type=float, default=0,
                     help='coverage penalty in beam search decoding')
+
+parser.add_argument('--joint_decoding', choices=[None, 'onepass', 'rescoring'],
+                    default=None)
+parser.add_argument('--score_sub_weight', type=float, default=0)
 
 MAX_DECODE_LEN_WORD = 32
 MIN_DECODE_LEN_WORD = 2
@@ -87,23 +93,42 @@ def main():
         shutil.rmtree(save_path)
         mkdir(save_path)
 
+    word2char = Word2char(dataset.vocab_file_path,
+                          dataset.vocab_file_path_sub)
+
     for batch, is_new_epoch in dataset:
         # Decode
-        best_hyps, aw, perm_idx = model.decode(
-            batch['xs'], batch['x_lens'],
-            beam_width=args.beam_width,
-            max_decode_len=MAX_DECODE_LEN_WORD,
-            min_decode_len=MIN_DECODE_LEN_WORD,
-            length_penalty=args.length_penalty,
-            coverage_penalty=args.coverage_penalty)
-        best_hyps_sub, aw_sub, _ = model.decode(
-            batch['xs'], batch['x_lens'],
-            beam_width=args.beam_width_sub,
-            max_decode_len=MAX_DECODE_LEN_CHAR,
-            min_decode_len=MIN_DECODE_LEN_CHAR,
-            length_penalty=args.length_penalty,
-            coverage_penalty=args.coverage_penalty,
-            task_index=1)
+        if model.model_type == 'hierarchical_attention' and args.joint_decoding is not None:
+            best_hyps, aw, best_hyps_sub, aw_sub, _ = model.decode(
+                batch['xs'], batch['x_lens'],
+                beam_width=args.beam_width,
+                max_decode_len=MAX_DECODE_LEN_WORD,
+                min_decode_len=MIN_DECODE_LEN_WORD,
+                length_penalty=args.length_penalty,
+                coverage_penalty=args.coverage_penalty,
+                joint_decoding=args.joint_decoding,
+                space_index=dataset.char2idx('_')[0],
+                oov_index=dataset.word2idx('OOV')[0],
+                word2char=word2char,
+                idx2word=dataset.idx2word,
+                idx2char=dataset.idx2char,
+                score_sub_weight=args.score_sub_weight)
+        else:
+            best_hyps, aw, perm_idx = model.decode(
+                batch['xs'], batch['x_lens'],
+                beam_width=args.beam_width,
+                max_decode_len=MAX_DECODE_LEN_WORD,
+                min_decode_len=MIN_DECODE_LEN_WORD,
+                length_penalty=args.length_penalty,
+                coverage_penalty=args.coverage_penalty)
+            best_hyps_sub, aw_sub, _ = model.decode(
+                batch['xs'], batch['x_lens'],
+                beam_width=args.beam_width_sub,
+                max_decode_len=MAX_DECODE_LEN_CHAR,
+                min_decode_len=MIN_DECODE_LEN_CHAR,
+                length_penalty=args.length_penalty,
+                coverage_penalty=args.coverage_penalty,
+                task_index=1)
 
         for b in range(len(batch['xs'])):
             word_list = dataset.idx2word(best_hyps[b], return_list=True)

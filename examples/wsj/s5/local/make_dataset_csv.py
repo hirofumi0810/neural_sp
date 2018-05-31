@@ -237,12 +237,11 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
                 f.write('%s\n' % c)
 
     # Compute OOV rate
-    if 'train' not in data_type:
-        with codecs.open(mkdir_join(vocab_save_path, 'oov', data_type + '.txt'), 'w', 'utf-8') as f:
-            # word-level (threshold == 3)
-            oov_rate = compute_oov_rate(word_dict, word_vocab_path)
-            f.write('Word (freq3):\n')
-            f.write('  OOV rate: %f %%\n' % oov_rate)
+    with codecs.open(mkdir_join(vocab_save_path, 'oov', data_type + '.txt'), 'w', 'utf-8') as f:
+        # word-level (threshold == 3)
+        oov_rate = compute_oov_rate(word_dict, word_vocab_path)
+        f.write('Word (freq3):\n')
+        f.write('  OOV rate: %f %%\n' % oov_rate)
 
     # Convert to index
     print('=====> Convert to index...')

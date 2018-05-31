@@ -22,7 +22,7 @@ param:
   dynamic_batching: True
 
   # topology
-  model_type: hierarchical_attention
+  model_type: nested_attention
   encoder_type: lstm
   conv_channels: []
   conv_kernel_sizes: []
@@ -35,7 +35,7 @@ param:
   encoder_dense_residual: False
   decoder_residual: False
   decoder_dense_residual: False
-  encoder_num_units: 320
+  encoder_num_units: 256
   encoder_num_proj: 0
   encoder_num_layers: 4
   encoder_num_layers_sub: 4
@@ -49,17 +49,19 @@ param:
   attention_type: location
   attention_dim: 128
   decoder_type: lstm
-  decoder_num_units: 320
+  decoder_num_units: 256
   decoder_num_layers: 1
-  decoder_num_units_sub: 320
+  decoder_num_units_sub: 256
   decoder_num_layers_sub: 1
   embedding_dim: 128
   embedding_dim_sub: 32
   attention_conv_num_channels: 10
   attention_conv_width: 201
-  decoding_order: attend_generate_update
-  bottleneck_dim: 320
-  bottleneck_dim_sub: 320
+  decoding_order: bahdanau
+  # decoding_order: luong
+  # decoding_order: conditional
+  bottleneck_dim: 256
+  bottleneck_dim_sub: 256
   backward_sub: False
   # backward_sub: True
   num_heads: 1
@@ -78,7 +80,7 @@ param:
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
   char_init: False
-  # char_init: /n/sd8/inaguma/result/wsj/pytorch/ctc/character/train_si284/blstm320H4L_drop4_adam_lr1e-3_dropen0.2_input80
+  # char_init: /n/sd8/inaguma/result/wsj/pytorch/ctc/character/train_si284/blstm256H4L_drop4_adam_lr1e-3_dropen0.2_input80
 
   # regularization
   clip_grad_norm: 5.0
@@ -108,10 +110,25 @@ param:
   eval_start_epoch: 5
   print_step: 100
 
+
+
   # MTL
   main_loss_weight: 0.5
   sub_loss_weight: 0.5
   ctc_loss_weight_sub: 0
 
-  # sub_loss_weight: 0
-  # ctc_loss_weight_sub: 0.5
+  # W2C attention
+  usage_dec_sub: all
+  cold_fusion_like_prob_injection: False
+  # usage_dec_sub: softmax
+  # cold_fusion_like_prob_injection: True
+  num_heads_dec: 1
+  dec_attention_type: content
+
+  # regularization
+  dec_attend_temperature: 1
+  dec_sigmoid_smoothing: False
+  att_reg_weight: 0
+
+  # regularization
+  relax_context_vec_dec: False

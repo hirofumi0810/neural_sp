@@ -1,4 +1,4 @@
-parent: ./conf/hierarchical_attention/blstm_hie_att_word_char_train_si284.yml
+parent: ./conf/hierarchical_attention/word_char_blstm_hie_att_train_si284.yml
 param:
   # framework
   backend: pytorch
@@ -23,7 +23,7 @@ param:
   activation: relu
   batch_norm: True
   encoder_bidirectional: True
-  encoder_num_units: 320
+  encoder_num_units: 256
   encoder_num_proj: 0
   encoder_num_layers: 4
   encoder_num_layers_sub: 4
@@ -32,13 +32,15 @@ param:
     - False
     - False
     - False
+  decoding_order: bahdanau
+  num_heads: 1
 
   # optimization
   batch_size: 20
 
   # initialization
   char_init: False
-  # char_init: /n/sd8/inaguma/result/wsj/pytorch/ctc/character/train_si284/conv_64_64_128_128_blstm320H4L_bn_adam_lr1e-3_dropen0.2_input80
+  # char_init: /n/sd8/inaguma/result/wsj/pytorch/ctc/character/train_si284/conv_64_64_128_128_blstm256H4L_bn_adam_lr1e-3_dropen0.2_input80
 
   # regularization
   scheduled_sampling_max_step: 30000

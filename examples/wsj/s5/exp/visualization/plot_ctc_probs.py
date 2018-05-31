@@ -74,7 +74,6 @@ def main():
         mkdir(save_path)
 
     for batch, is_new_epoch in dataset:
-
         # Get CTC probs
         probs, x_lens, _ = model.posteriors(
             batch['xs'], batch['x_lens'], temperature=1)

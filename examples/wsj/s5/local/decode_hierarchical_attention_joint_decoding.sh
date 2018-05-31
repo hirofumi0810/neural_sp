@@ -21,7 +21,6 @@ length_penalty=0.1
 coverage_penalty=0
 joint_decoding=onepass
 # joint_decoding=rescoring
-# joint_decoding=None
 resolving_unk=true
 score_sub_weight=0.3
 

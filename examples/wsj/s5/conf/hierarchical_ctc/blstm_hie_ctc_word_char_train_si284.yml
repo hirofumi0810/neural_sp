@@ -32,7 +32,7 @@ param:
   encoder_bidirectional: True
   encoder_residual: False
   encoder_dense_residual: False
-  encoder_num_units: 320
+  encoder_num_units: 256
   encoder_num_proj: 0
   encoder_num_layers: 4
   encoder_num_layers_sub: 4
@@ -42,7 +42,7 @@ param:
     - True
     - False
   subsample_type: drop
-  fc_list: [320]
+  fc_list: [256]
   fc_list_sub: []
 
   # optimization
@@ -58,7 +58,7 @@ param:
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
   char_init: False
-  # char_init: /n/sd8/inaguma/result/wsj/pytorch/ctc/character/train_si284/blstm320H4L_drop4_adam_lr1e-3_dropen0.2_input80
+  # char_init: /n/sd8/inaguma/result/wsj/pytorch/ctc/character/train_si284/blstm256H4L_drop4_adam_lr1e-3_dropen0.2_input80
 
   # regularization
   clip_grad_norm: 5.0

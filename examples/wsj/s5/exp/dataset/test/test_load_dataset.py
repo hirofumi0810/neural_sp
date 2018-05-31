@@ -75,11 +75,10 @@ class TestLoadDataset(unittest.TestCase):
             num_stack=num_stack, num_skip=num_skip,
             min_frame_num=40, shuffle=shuffle,
             sort_utt=sort_utt, reverse=True, sort_stop_epoch=sort_stop_epoch,
-            num_gpus=num_gpus, tool='htk',
-            num_enque=None)
+            num_gpus=num_gpus, tool='htk', num_enque=None)
 
         print('=> Loading mini-batch...')
-        if 'word' in label_type:
+        if label_type == 'word':
             map_fn = dataset.idx2word
         else:
             map_fn = dataset.idx2char
@@ -93,8 +92,6 @@ class TestLoadDataset(unittest.TestCase):
 
             if dataset.is_test:
                 str_ref = batch['ys'][0][0]
-                str_ref = str_ref.lower()
-                str_ref = str_ref.replace('(', '').replace(')', '')
             else:
                 str_ref = map_fn(batch['ys'][0][:batch['y_lens'][0]])
 

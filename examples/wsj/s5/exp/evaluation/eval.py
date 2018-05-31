@@ -87,7 +87,7 @@ def main():
             model.set_cuda(deterministic=False, benchmark=True)
 
             logger.info('beam width: %d' % args.beam_width)
-            logger.info('epoch: %d' % epoch)
+            logger.info('epoch: %d' % (epoch - 1))
 
         if params['label_type'] == 'word':
             wer, df = eval_word(
@@ -100,8 +100,7 @@ def main():
                 length_penalty=args.length_penalty,
                 coverage_penalty=args.coverage_penalty,
                 progressbar=True)
-            logger.info('  WER (%s): %.3f %%' %
-                        (dataset.label_type, (wer * 100)))
+            logger.info('  WER (%s): %.3f %%' % (data_type, (wer * 100)))
             logger.info(df)
         else:
             wer, cer, df = eval_char(
@@ -115,7 +114,7 @@ def main():
                 coverage_penalty=args.coverage_penalty,
                 progressbar=True)
             logger.info('  WER / CER (%s): %.3f / %.3f %%' %
-                        (dataset.label_type, (wer * 100), (cer * 100)))
+                        (data_type, (wer * 100), (cer * 100)))
             logger.info(df)
 
 

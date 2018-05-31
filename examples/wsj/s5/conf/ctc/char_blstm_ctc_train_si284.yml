@@ -31,7 +31,7 @@ param:
   encoder_bidirectional: True
   encoder_residual: False
   encoder_dense_residual: False
-  encoder_num_units: 320
+  encoder_num_units: 256
   encoder_num_proj: 0
   encoder_num_layers: 4
   subsample_list:

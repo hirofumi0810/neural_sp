@@ -58,12 +58,9 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
             num_stack=num_stack, num_skip=num_skip,
             min_frame_num=40, shuffle=shuffle,
             sort_utt=sort_utt, reverse=True, sort_stop_epoch=sort_stop_epoch,
-            num_gpus=num_gpus, tool='htk',
-            num_enque=None)
+            num_gpus=num_gpus, tool='htk', num_enque=None)
 
         print('=> Loading mini-batch...')
-        map_fn = dataset.idx2word
-        map_fn_sub = dataset.idx2char
 
         for batch, is_new_epoch in dataset:
             if data_type == 'train' and backend == 'pytorch':
@@ -74,15 +71,10 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
 
             if dataset.is_test:
                 str_ref = batch['ys'][0][0]
-                str_ref = str_ref.lower()
-                str_ref = str_ref.replace('(', '').replace(')', '')
-
                 str_ref_sub = batch['ys_sub'][0][0]
-                str_ref_sub = str_ref_sub.lower()
-                str_ref_sub = str_ref_sub.replace('(', '').replace(')', '')
             else:
-                str_ref = map_fn(batch['ys'][0][:batch['y_lens'][0]])
-                str_ref_sub = map_fn_sub(
+                str_ref = dataset.idx2word(batch['ys'][0][:batch['y_lens'][0]])
+                str_ref_sub = dataset.idx2char(
                     batch['ys_sub'][0][:batch['y_lens_sub'][0]])
 
             print('----- %s (epoch: %.3f, batch: %d) -----' %

@@ -32,9 +32,6 @@ from utils.training.logging import set_logger
 from utils.directory import mkdir_join
 from utils.config import load_config, save_config
 
-MAX_DECODE_LEN_WORD = 32
-MAX_DECODE_LEN_CHAR = 199
-
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', type=int, default=-1,
                     help='the index of GPU (negative value indicates CPU)')
@@ -45,6 +42,9 @@ parser.add_argument('--model_save_path', type=str,
 parser.add_argument('--saved_model_path', type=str, default=None,
                     help='path to the saved model to retrain')
 parser.add_argument('--data_save_path', type=str, help='path to saved data')
+
+MAX_DECODE_LEN_WORD = 32
+MAX_DECODE_LEN_CHAR = 199
 
 
 def main():
@@ -120,7 +120,7 @@ def main():
 
         # Set save path
         save_path = mkdir_join(
-            args.model_save_path,  params['backend'],
+            args.model_save_path, params['backend'],
             params['model_type'],
             params['label_type'] + '_' + params['label_type_sub'],
             params['data_size'], model.name)
@@ -166,7 +166,7 @@ def main():
         model.save_path = args.saved_model_path
 
         # Setting for logging
-        logger = set_logger(model.save_path, restart=True)
+        logger = set_logger(model.save_path)
 
         # Define optimizer
         model.set_optimizer(

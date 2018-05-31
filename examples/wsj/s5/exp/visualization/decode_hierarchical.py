@@ -40,7 +40,8 @@ parser.add_argument('--coverage_penalty', type=float, default=0,
 
 parser.add_argument('--resolving_unk', type=bool, default=False)
 parser.add_argument('--a2c_oracle', type=bool, default=False)
-parser.add_argument('--joint_decoding', choices=[None, 'onepass', 'rescoring'])
+parser.add_argument('--joint_decoding', choices=[None, 'onepass', 'rescoring'],
+                    default=None)
 parser.add_argument('--score_sub_weight', type=float, default=0)
 
 MAX_DECODE_LEN_WORD = 32

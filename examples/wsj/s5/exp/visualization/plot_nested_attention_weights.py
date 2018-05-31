@@ -145,7 +145,7 @@ def main():
             y_lens_sub=y_lens_sub)
 
         for b in range(batch_size):
-            word_list = dataset.idx2word(best_hyps[b])
+            word_list = dataset.idx2word(best_hyps[b], return_list=True)
             if dataset.label_type_sub == 'word':
                 char_list = dataset.idx2word(
                     best_hyps_sub[b], return_list=True)

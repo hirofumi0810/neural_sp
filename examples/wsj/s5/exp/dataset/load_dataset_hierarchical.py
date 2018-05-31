@@ -38,7 +38,7 @@ class Dataset(DatasetBase):
             input_freq (int): the number of dimensions of acoustics
             use_delta (bool): if True, use the delta feature
             use_double_delta (bool): if True, use the acceleration feature
-            data_type (string): train or dev or eval2000_swbd or eval2000_ch
+            data_type (string): train_si84 or train_si284 or test_dev93 or test_eval92
             data_size (string): train_si84 or train_si284
             label_type (string): word
             label_type_sub (string): characater or characater_capital_divide
@@ -47,21 +47,18 @@ class Dataset(DatasetBase):
             splice (int): frames to splice. Default is 1 frame.
             num_stack (int): the number of frames to stack
             num_skip (int): the number of frames to skip
-            min_frame_num (int): Exclude utteraces shorter than
-                this value
-            shuffle (bool): if True, shuffle utterances. This is
-                disabled when sort_utt is True.
-            sort_utt (bool): if True, sort all utterances in the
-                ascending order
-            reverse (bool): if True, sort utteraces in the
-                descending order
-            sort_stop_epoch (int): After sort_stop_epoch, training
-                will revert back to a random order
+            min_frame_num (int): Exclude utteraces shorter than this value
+            shuffle (bool): if True, shuffle utterances.
+                This is disabled when sort_utt is True.
+            sort_utt (bool): if True, sort all utterances in the ascending order
+            reverse (bool): if True, sort utteraces in the descending order
+            sort_stop_epoch (int): After sort_stop_epoch, training will revert
+                back to a random order
             num_gpus (int): the number of GPUs
             tool (string): htk or librosa or python_speech_features
             num_enque (int): the number of elements to enqueue
-            dynamic_batching (bool): if True, batch size will be
-                chainged dynamically in training
+            dynamic_batching (bool): if True, batch size will be chainged
+                dynamically in training
         """
         self.backend = backend
         self.input_freq = input_freq
@@ -119,7 +116,7 @@ class Dataset(DatasetBase):
             logger.info('Restricted utterance num: %d' % len(df))
 
         # Sort paths to input & label
-        if sort_utt and data_type != 'test_dev93':
+        if sort_utt:
             df = df.sort_values(by='frame_num', ascending=not reverse)
             df_sub = df_sub.sort_values(by='frame_num', ascending=not reverse)
         else:
@@ -136,7 +133,7 @@ class Dataset(DatasetBase):
         if not self.dynamic_batching:
             return batch_size
 
-        if min_frame_num_batch <= 800:
+        if min_frame_num_batch <= 700:
             pass
         elif min_frame_num_batch <= 1200:
             batch_size = int(batch_size / 2)

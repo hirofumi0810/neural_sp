@@ -148,7 +148,9 @@ def read_audio(data_type, audio_paths, spk2gender, tool, config, normalize,
         global_std_female (np.ndarray): global standard deviation of female over the training set
         dtype): the type of data, default is np.float32
     """
-    if 'train' not in data_type:
+    is_training = 'train' in data_type
+
+    if not is_training:
         if global_mean_male is None or global_mean_female is None:
             raise ValueError('Set mean & stddev computed in the training set.')
     if normalize not in ['global', 'speaker', 'utterance', 'no']:
@@ -164,7 +166,7 @@ def read_audio(data_type, audio_paths, spk2gender, tool, config, normalize,
     speaker_mean_dict, speaker_std_dict = {}, {}
 
     # Loop 1: Computing global mean and statistics
-    if 'train' in data_type and normalize != 'no':
+    if is_training and normalize != 'no':
         print('=====> Reading audio files...')
         for i, audio_path in enumerate(tqdm(audio_paths)):
             speaker = audio_path.split('/')[-2]
@@ -328,7 +330,7 @@ def read_audio(data_type, audio_paths, spk2gender, tool, config, normalize,
 
         if normalize == 'no':
             pass
-        elif normalize == 'global' or 'train' not in data_type:
+        elif normalize == 'global' or is_training:
             # Normalize by mean & stddev over the training set per gender
             if gender == 'm':
                 feat_utt -= global_mean_male

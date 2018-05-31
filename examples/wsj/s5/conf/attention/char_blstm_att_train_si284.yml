@@ -1,6 +1,7 @@
 param:
   # framework
   backend: pytorch
+  # backend: chainer
 
   # corpus
   corpus: wsj
@@ -33,7 +34,7 @@ param:
   encoder_dense_residual: False
   decoder_residual: False
   decoder_dense_residual: False
-  encoder_num_units: 320
+  encoder_num_units: 256
   encoder_num_proj: 0
   encoder_num_layers: 4
   subsample_list:
@@ -46,15 +47,15 @@ param:
   attention_type: location
   attention_dim: 128
   decoder_type: lstm
-  decoder_num_units: 320
+  decoder_num_units: 256
   decoder_num_layers: 1
   embedding_dim: 32
   attention_conv_num_channels: 10
   attention_conv_width: 201
-  decoding_order: attend_generate_update
-  # decoding_order: attend_update_generate
+  decoding_order: bahdanau
+  # decoding_order: luong
   # decoding_order: conditional
-  bottleneck_dim: 320
+  bottleneck_dim: 256
   num_heads: 1
 
   # optimization
