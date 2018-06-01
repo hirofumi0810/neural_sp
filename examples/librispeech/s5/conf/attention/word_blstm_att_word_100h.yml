@@ -1,21 +1,23 @@
-parent: ../config/attention/character/att_char_100h.yml
+parent: ../config/attention/character/char_blstm_att_100h.yml
 param:
   # framework
   backend: pytorch
 
   # corpus
-  label_type: word5
+  label_type: word
   data_size: 100h
 
   # topology
-  encoder_num_layers: 5
+  encoder_num_layers: 4
   subsample_list:
     - False
     - True
     - True
     - False
-    - False
   embedding_dim: 128
+  decoding_order: bahdanau
+  bottleneck_dim: 256
+  num_heads: 1
 
   # initialization
   char_init: False

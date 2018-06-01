@@ -3,30 +3,32 @@ param:
   backend: pytorch
 
   # corpus
-  corpus: switchboard
-  data_size: 300h
-  label_type: character
-  # label_type: character_capital_divide
+  corpus: csj
+  data_size: aps_other
+  label_type: word
+  label_type_sub: character_wb
 
   # features
   feature: fbank
   tool: htk
-  input_freq: 40
-  use_delta: True
-  use_double_delta: True
-  input_channel: 3
+  input_freq: 80
+  use_delta: False
+  use_double_delta: False
+  input_channel: 1
   splice: 1
   num_stack: 1
   num_skip: 1
+  min_frame_num: 40
   dynamic_batching: True
 
   # topology
-  model_type: attention
+  model_type: nested_attention
   encoder_type: lstm
   conv_channels: []
   conv_kernel_sizes: []
   conv_strides: []
   poolings: []
+  activation: relu
   batch_norm: False
   encoder_bidirectional: True
   encoder_residual: False
@@ -36,6 +38,7 @@ param:
   encoder_num_units: 320
   encoder_num_proj: 0
   encoder_num_layers: 4
+  encoder_num_layers_sub: 4
   subsample_list:
     - False
     - True
@@ -48,18 +51,25 @@ param:
   decoder_type: lstm
   decoder_num_units: 320
   decoder_num_layers: 1
-  embedding_dim: 32
+  decoder_num_units_sub: 320
+  decoder_num_layers_sub: 1
+  embedding_dim: 128
+  embedding_dim_sub: 64
   attention_conv_num_channels: 10
   attention_conv_width: 201
-  decoding_order: attend_generate_update
-  bottleneck_dim: 256
+  decoding_order: bahdanau
+  bottleneck_dim: 320
+  bottleneck_dim_sub: 320
+  backward_sub: False
+  # backward_sub: True
   num_heads: 1
+  num_heads_sub: 1
 
   # optimization
-  batch_size: 50
+  batch_size: 40
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 20
+  num_epoch: 25
   convert_to_sgd_epoch: 20
 
   # initialization
@@ -68,7 +78,6 @@ param:
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
   char_init: False
-  # char_init: /n/sd8/inaguma/result/swbd/pytorch/ctc/character/300h/blstm320H5L_drop4_adam_lr1e-3_dropen0.2_input120
 
   # regularization
   clip_grad_norm: 5.0
@@ -79,7 +88,7 @@ param:
   dropout_decoder: 0.2
   dropout_embedding: 0.2
   weight_decay: 1e-6
-  init_dec_state: first
+  init_dec_state: zero
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False
@@ -90,14 +99,32 @@ param:
   weight_noise_std: 0
 
   # annealing
-  decay_start_epoch: 5
-  decay_rate: 0.8
+  decay_type: per_epoch
+  decay_start_epoch: 10
+  decay_rate: 0.95
   decay_patient_epoch: 0
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
   eval_start_epoch: 5
   print_step: 200
 
+
+
   # MTL
-  backward_loss_weight: 0
-  ctc_loss_weight: 0
+  main_loss_weight: 0.5
+  sub_loss_weight: 0.5
+  ctc_loss_weight_sub: 0
+
+  # W2C attention
+  usage_dec_sub: all
+  cold_fusion_like_prob_injection: False
+  num_heads_dec: 1
+  dec_attention_type: content
+
+  # regularization
+  dec_attend_temperature: 1
+  dec_sigmoid_smoothing: True
+  att_reg_weight: 0
+
+  # regularization
+  relax_context_vec_dec: False

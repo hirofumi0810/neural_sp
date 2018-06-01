@@ -49,7 +49,7 @@ param:
   batch_size: 50
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 30
+  num_epoch: 25
   convert_to_sgd_epoch: 20
 
   # initialization
@@ -71,8 +71,9 @@ param:
   weight_noise_std: 0
 
   # annealing
-  decay_start_epoch: 5
-  decay_rate: 0.8
+  decay_type: per_epoch
+  decay_start_epoch: 10
+  decay_rate: 0.95
   decay_patient_epoch: 0
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5

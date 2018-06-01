@@ -1,4 +1,4 @@
-parent: ./conf/hierarchical_attention/word_char_blstm_hie_att_train_si284.yml
+parent: ./conf/hierarchical_attention/word_char_blstm_nested_att_train_si284.yml
 param:
   # framework
   backend: pytorch
@@ -43,7 +43,7 @@ param:
   # char_init: /n/sd8/inaguma/result/wsj/pytorch/ctc/character/train_si284/conv_64_64_128_128_blstm256H4L_bn_adam_lr1e-3_dropen0.2_input80
 
   # regularization
-  scheduled_sampling_max_step: 30000
+  scheduled_sampling_max_step: 40000
 
   # annealing
   print_step: 200
@@ -57,6 +57,7 @@ param:
 
   # W2C attention
   usage_dec_sub: all
+  cold_fusion_like_prob_injection: False
   num_heads_dec: 1
   dec_attention_type: content
 

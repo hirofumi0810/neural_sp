@@ -3,10 +3,9 @@ param:
   backend: pytorch
 
   # corpus
-  corpus: csj
-  data_size: aps_other
-  label_type: word
-  label_type_sub: character_wb
+  corpus: librispeech
+  data_size: 100h
+  label_type: character
 
   # features
   feature: fbank
@@ -22,35 +21,45 @@ param:
   dynamic_batching: True
 
   # topology
-  model_type: hierarchical_ctc
+  model_type: attention
   encoder_type: lstm
   conv_channels: []
   conv_kernel_sizes: []
   conv_strides: []
   poolings: []
-  activation: relu
   batch_norm: False
   encoder_bidirectional: True
   encoder_residual: False
   encoder_dense_residual: False
+  decoder_residual: False
+  decoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
   encoder_num_layers: 4
-  encoder_num_layers_sub: 4
   subsample_list:
     - False
     - True
     - True
     - False
   subsample_type: drop
-  fc_list: [320]
-  fc_list_sub: [320]
+  bridge_layer: False
+  attention_type: location
+  attention_dim: 128
+  decoder_type: lstm
+  decoder_num_units: 320
+  decoder_num_layers: 1
+  embedding_dim: 32
+  attention_conv_num_channels: 10
+  attention_conv_width: 201
+  decoding_order: bahdanau
+  bottleneck_dim: 320
+  num_heads: 1
 
   # optimization
   batch_size: 50
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 30
+  num_epoch: 25
   convert_to_sgd_epoch: 20
 
   # initialization
@@ -62,23 +71,33 @@ param:
 
   # regularization
   clip_grad_norm: 5.0
-  clip_activation: 50
+  clip_activation_encoder: 50
+  clip_activation_decoder: 50
   dropout_input: 0
   dropout_encoder: 0.2
+  dropout_decoder: 0.2
+  dropout_embedding: 0.2
   weight_decay: 1e-6
-  logits_temperature: 1
-  label_smoothing_prob: 0
+  init_dec_state: zero
+  sharpening_factor: 1.0
+  logits_temperature: 1.0
+  sigmoid_smoothing: False
+  coverage_weight: 0
+  scheduled_sampling_prob: 0.2
+  scheduled_sampling_max_step: 20000
+  label_smoothing_prob: 0.1
   weight_noise_std: 0
 
   # annealing
-  decay_start_epoch: 5
-  decay_rate: 0.8
+  decay_type: per_epoch
+  decay_start_epoch: 10
+  decay_rate: 0.95
   decay_patient_epoch: 0
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
   eval_start_epoch: 5
-  print_step: 200
+  print_step: 100
 
   # MTL
-  main_loss_weight: 0.5
-  sub_loss_weight: 0.5
+  backward_loss_weight: 0
+  ctc_loss_weight: 0

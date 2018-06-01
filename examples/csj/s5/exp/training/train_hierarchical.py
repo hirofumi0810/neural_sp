@@ -32,9 +32,6 @@ from utils.training.logging import set_logger
 from utils.directory import mkdir_join
 from utils.config import load_config, save_config
 
-MAX_DECODE_LEN_WORD = 100
-MAX_DECODE_LEN_CHAR = 200
-
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', type=int, default=-1,
                     help='the index of GPU (negative value indicates CPU)')
@@ -46,6 +43,9 @@ parser.add_argument('--model_save_path', type=str,
                     help='path to save the model')
 parser.add_argument('--saved_model_path', type=str, default=None,
                     help='path to the saved model to retrain')
+
+MAX_DECODE_LEN_WORD = 100
+MAX_DECODE_LEN_CHAR = 200
 
 
 def main():
@@ -167,7 +167,7 @@ def main():
         model.save_path = args.saved_model_path
 
         # Setting for logging
-        logger = set_logger(model.save_path, restart=True)
+        logger = set_logger(model.save_path)
 
         # Define optimizer
         model.set_optimizer(
@@ -205,6 +205,7 @@ def main():
     lr_controller = Controller(
         learning_rate_init=learning_rate,
         backend=params['backend'],
+        decay_type=params['decay_type'],
         decay_start_epoch=params['decay_start_epoch'],
         decay_rate=params['decay_rate'],
         decay_patient_epoch=params['decay_patient_epoch'],

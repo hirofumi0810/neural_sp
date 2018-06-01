@@ -57,7 +57,7 @@ param:
   embedding_dim_sub: 128
   attention_conv_num_channels: 10
   attention_conv_width: 201
-  decoding_order: attend_generate_update
+  decoding_order: bahdanau
   bottleneck_dim: 320
   bottleneck_dim_sub: 320
   backward_sub: True
@@ -68,7 +68,7 @@ param:
   batch_size: 40
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 30
+  num_epoch: 25
   convert_to_sgd_epoch: 20
 
   # initialization
@@ -77,6 +77,7 @@ param:
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
   char_init: False
+  # char_init: /n/sd8/inaguma/result/csj/pytorch/ctc/character_wb/aps_other/blstm320H4L_drop4_fc_320_adam_lr1e-3_dropen0.2_input80
 
   # regularization
   clip_grad_norm: 5.0
@@ -87,7 +88,7 @@ param:
   dropout_decoder: 0.2
   dropout_embedding: 0.2
   weight_decay: 1e-6
-  init_dec_state: first
+  init_dec_state: zero
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False
@@ -98,8 +99,9 @@ param:
   weight_noise_std: 0
 
   # annealing
-  decay_start_epoch: 5
-  decay_rate: 0.8
+  decay_type: per_epoch
+  decay_start_epoch: 10
+  decay_rate: 0.95
   decay_patient_epoch: 0
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
@@ -115,6 +117,7 @@ param:
 
   # W2C attention
   usage_dec_sub: all
+  cold_fusion_like_prob_injection: False
   num_heads_dec: 1
   dec_attention_type: content
 
@@ -124,4 +127,4 @@ param:
   att_reg_weight: 0
 
   # regularization
-  relax_context_vec_dec: True
+  relax_context_vec_dec: False

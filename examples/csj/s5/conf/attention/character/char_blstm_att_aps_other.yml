@@ -16,7 +16,7 @@ param:
     - False
   decoder_num_layers: 1
   embedding_dim: 64
-  decoding_order: attend_generate_update
+  decoding_order: bahdanau
   num_heads: 1
 
   # initialization

@@ -32,19 +32,20 @@ from utils.training.logging import set_logger
 from utils.directory import mkdir_join
 from utils.config import load_config, save_config
 
-MAX_DECODE_LEN_WORD = 100
-MAX_DECODE_LEN_CHAR = 300
-
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', type=int, default=-1,
                     help='the index of GPU (negative value indicates CPU)')
 parser.add_argument('--config_path', type=str, default=None,
                     help='path to the configuration file')
+parser.add_argument('--data_save_path', type=str,
+                    help='path to saved data')
 parser.add_argument('--model_save_path', type=str,
                     help='path to save the model')
 parser.add_argument('--saved_model_path', type=str, default=None,
                     help='path to the saved model to retrain')
-parser.add_argument('--data_save_path', type=str, help='path to saved data')
+
+MAX_DECODE_LEN_WORD = 100
+MAX_DECODE_LEN_CHAR = 300
 
 
 def main():
@@ -75,6 +76,7 @@ def main():
         batch_size=params['batch_size'],
         max_epoch=params['num_epoch'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
+        min_frame_num=params['min_frame_num'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
         tool=params['tool'], num_enque=None,
         dynamic_batching=params['dynamic_batching'])
@@ -171,7 +173,7 @@ def main():
         model.save_path = args.saved_model_path
 
         # Setting for logging
-        logger = set_logger(model.save_path, restart=True)
+        logger = set_logger(model.save_path)
 
         # Define optimizer
         model.set_optimizer(
@@ -209,6 +211,7 @@ def main():
     lr_controller = Controller(
         learning_rate_init=learning_rate,
         backend=params['backend'],
+        decay_type=params['decay_type'],
         decay_start_epoch=params['decay_start_epoch'],
         decay_rate=params['decay_rate'],
         decay_patient_epoch=params['decay_patient_epoch'],
@@ -288,22 +291,21 @@ def main():
             else:
                 start_time_eval = time.time()
                 # dev
-                if 'word' in params['label_type']:
+                if params['label_type'] == 'word':
                     metric_dev, _ = eval_word(
                         models=[model],
                         dataset=dev_data,
+                        eval_batch_size=1,
                         beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_WORD,
-                        eval_batch_size=1)
-                    logger.info('  WER (dev): %.3f %%' %
-                                (metric_dev * 100))
+                        max_decode_len=MAX_DECODE_LEN_WORD)
+                    logger.info('  WER (dev): %.3f %%' % (metric_dev * 100))
                 else:
                     wer_dev, metric_dev, _ = eval_char(
                         models=[model],
                         dataset=dev_data,
+                        eval_batch_size=1,
                         beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_CHAR,
-                        eval_batch_size=1)
+                        max_decode_len=MAX_DECODE_LEN_CHAR)
                     logger.info('  WER / CER (dev): %.3f / %.3f %%' %
                                 ((wer_dev * 100), (metric_dev * 100)))
 
@@ -318,22 +320,22 @@ def main():
                                           learning_rate, metric_dev_best)
 
                     # test
-                    if 'word' in params['label_type']:
+                    if params['label_type'] == 'word':
                         wer_eval2000_swbd, _ = eval_word(
                             models=[model],
                             dataset=eval2000_swbd_data,
+                            eval_batch_size=1,
                             beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_WORD,
-                            eval_batch_size=1)
+                            max_decode_len=MAX_DECODE_LEN_WORD)
                         logger.info('  WER (SWB): %.3f %%' %
                                     (wer_eval2000_swbd * 100))
 
                         wer_eval2000_ch, _ = eval_word(
                             models=[model],
                             dataset=eval2000_ch_data,
+                            eval_batch_size=1,
                             beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_WORD,
-                            eval_batch_size=1)
+                            max_decode_len=MAX_DECODE_LEN_WORD)
                         logger.info('  WER (CHE): %.3f %%' %
                                     (wer_eval2000_ch * 100))
 
@@ -343,18 +345,18 @@ def main():
                         wer_eval2000_swbd, cer_eval2000_swbd, _ = eval_char(
                             models=[model],
                             dataset=eval2000_swbd_data,
+                            eval_batch_size=1,
                             beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_CHAR,
-                            eval_batch_size=1)
+                            max_decode_len=MAX_DECODE_LEN_CHAR)
                         logger.info('  WER / CER (SWB): %.3f / %.3f %%' %
                                     ((wer_eval2000_swbd * 100), (cer_eval2000_swbd * 100)))
 
                         wer_eval2000_ch, cer_eval2000_ch, _ = eval_char(
                             models=[model],
                             dataset=eval2000_ch_data,
+                            eval_batch_size=1,
                             beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_CHAR,
-                            eval_batch_size=1)
+                            max_decode_len=MAX_DECODE_LEN_CHAR)
                         logger.info('  WER / CER (CHE): %.3f / %.3f %%' %
                                     ((wer_eval2000_ch * 100), (cer_eval2000_ch * 100)))
 

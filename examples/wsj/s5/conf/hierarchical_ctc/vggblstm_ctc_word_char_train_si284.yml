@@ -43,7 +43,7 @@ param:
   # char_init: /n/sd8/inaguma/result/wsj/pytorch/ctc/character/train_si284/conv_64_64_128_128_blstm256H4L_bn_adam_lr1e-3_dropen0.2_input80
 
   # regularization
-  scheduled_sampling_max_step: 30000
+  scheduled_sampling_max_step: 40000
 
   # annealing
   print_step: 200

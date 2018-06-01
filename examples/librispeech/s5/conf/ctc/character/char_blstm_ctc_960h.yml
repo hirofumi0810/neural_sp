@@ -4,7 +4,6 @@ param:
   backend: pytorch
 
   # corpus
-  label_type: word5
   data_size: 960h
 
   # topology
@@ -16,15 +15,5 @@ param:
     - False
     - False
 
-  # regularization
-  scheduled_sampling_ramp_max_step: 100000
-
-  # initialization
-  char_init: False
-
   # annealing
   print_step: 1000
-
-  # MTL
-  backward_loss_weight: 0
-  ctc_loss_weight: 0

@@ -31,10 +31,12 @@ param:
   encoder_num_layers: 5
   subsample_list:
     - False
+    - True
     - False
     - False
     - False
-    - False
+  decoding_order: bahdanau
+  num_heads: 1
 
   # optimization
   batch_size: 20
@@ -49,5 +51,5 @@ param:
   print_step: 800
 
   # MTL
-  backward_loss_weight: 0
+  backward_loss_weight: 0.5
   ctc_loss_weight: 0

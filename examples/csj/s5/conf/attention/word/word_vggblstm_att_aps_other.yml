@@ -31,6 +31,8 @@ param:
     - False
     - False
     - False
+  decoding_order: bahdanau
+  num_heads: 1
 
   # optimization
   batch_size: 20

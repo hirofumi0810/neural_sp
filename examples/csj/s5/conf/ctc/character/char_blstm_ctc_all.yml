@@ -15,7 +15,7 @@ param:
     - True
     - False
     - False
-  fc_list: [256]
+  fc_list: [320]
 
   # initialization
   char_init: False

@@ -4,16 +4,6 @@ param:
   backend: pytorch
 
   # topology
-  # conv_channels: [32, 32]
-  # conv_kernel_sizes:
-  #   - [41, 11]
-  #   - [21, 11]
-  # conv_strides:
-  #   - [2, 2]
-  #   - [2, 1]
-  # poolings:
-  #   - []
-  #   - []
   conv_channels: [64, 64, 128, 128]
   conv_kernel_sizes:
     - [3, 3]
@@ -31,17 +21,17 @@ param:
     - []
     - [2, 2]
   activation: relu
-  # batch_norm: True
-  batch_norm: False
-  encoder_bidirectional: False
+  batch_norm: True
+  encoder_bidirectional: True
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 3
+  encoder_num_layers: 4
   subsample_list:
     - False
     - False
     - False
-  fc_list: [896, 74]
+    - False
+  fc_list: [320]
 
   # optimization
   batch_size: 20

@@ -3,30 +3,32 @@ param:
   backend: pytorch
 
   # corpus
-  corpus: switchboard
-  data_size: 300h
-  label_type: character
-  # label_type: character_capital_divide
+  corpus: csj
+  data_size: aps_other
+  label_type: word
+  label_type_sub: character_wb
 
   # features
   feature: fbank
   tool: htk
-  input_freq: 40
-  use_delta: True
-  use_double_delta: True
-  input_channel: 3
+  input_freq: 80
+  use_delta: False
+  use_double_delta: False
+  input_channel: 1
   splice: 1
   num_stack: 1
   num_skip: 1
+  min_frame_num: 40
   dynamic_batching: True
 
   # topology
-  model_type: ctc
+  model_type: hierarchical_ctc
   encoder_type: lstm
   conv_channels: []
   conv_kernel_sizes: []
   conv_strides: []
   poolings: []
+  activation: relu
   batch_norm: False
   encoder_bidirectional: True
   encoder_residual: False
@@ -34,19 +36,21 @@ param:
   encoder_num_units: 320
   encoder_num_proj: 0
   encoder_num_layers: 4
+  encoder_num_layers_sub: 4
   subsample_list:
     - False
     - True
     - True
     - False
   subsample_type: drop
-  fc_list: []
+  fc_list: [320]
+  fc_list_sub: [320]
 
   # optimization
   batch_size: 50
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 20
+  num_epoch: 25
   convert_to_sgd_epoch: 20
 
   # initialization
@@ -67,10 +71,15 @@ param:
   weight_noise_std: 0
 
   # annealing
-  decay_start_epoch: 5
-  decay_rate: 0.8
+  decay_type: per_epoch
+  decay_start_epoch: 10
+  decay_rate: 0.95
   decay_patient_epoch: 0
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
   eval_start_epoch: 5
   print_step: 200
+
+  # MTL
+  main_loss_weight: 0.5
+  sub_loss_weight: 0.5

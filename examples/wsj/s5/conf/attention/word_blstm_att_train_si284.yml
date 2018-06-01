@@ -16,8 +16,6 @@ param:
     - True
     - True
     - False
-  attention_dim: 128
-  decoder_num_units: 256
   embedding_dim: 128
   decoding_order: bahdanau
   bottleneck_dim: 256

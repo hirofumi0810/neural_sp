@@ -1,10 +1,10 @@
-parent: ./conf/ctc/character/blstm_ctc_char_300h.yml
+parent: ./conf/ctc/character/char_blstm_ctc.yml
 param:
   # framework
   backend: pytorch
 
   # corpus
-  label_type: word5
+  label_type: word
 
   # topology
   encoder_num_units: 320
@@ -14,8 +14,8 @@ param:
     - True
     - True
     - False
-  fc_list: [256]
+  fc_list: [320]
 
   # initialization
   char_init: False
-  # char_init: /n/sd8/inaguma/result/swbd/pytorch/ctc/character/300h/blstm320H5L_drop4_adam_lr1e-3_dropen0.2_input120
+  # char_init: /n/sd8/inaguma/result/swbd/pytorch/ctc/character/blstm320H4L_drop4_adam_lr1e-3_dropen0.2_input80

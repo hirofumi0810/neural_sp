@@ -5,7 +5,7 @@ param:
 
   # topology
   decoder_num_layers: 2
-  decoding_order: attend_generate_update
+  decoding_order: bahdanau
   num_heads: 1
 
   # initialization

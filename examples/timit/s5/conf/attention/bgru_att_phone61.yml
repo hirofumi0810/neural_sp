@@ -52,7 +52,7 @@ param:
   embedding_dim: 32
   attention_conv_num_channels: 10
   attention_conv_width: 201
-  decoding_order: attend_generate_update
+  decoding_order: bahdanau
   bottleneck_dim: 256
   num_heads: 1
 
@@ -60,8 +60,8 @@ param:
   batch_size: 32
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 200
-  convert_to_sgd_epoch: 200
+  num_epoch: 100
+  convert_to_sgd_epoch: 40
 
   # initialization
   parameter_init_distribution: uniform
@@ -80,7 +80,7 @@ param:
   dropout_decoder: 0.2
   dropout_embedding: 0.2
   weight_decay: 1e-6
-  init_dec_state: first
+  init_dec_state: zero
   sharpening_factor: 1.0
   logits_temperature: 1.0
   sigmoid_smoothing: False
@@ -91,10 +91,11 @@ param:
   weight_noise_std: 1e-9
 
   # annealing
-  decay_start_epoch: 10
-  decay_rate: 0.9
+  decay_type: per_epoch
+  decay_start_epoch: 20
+  decay_rate: 0.97
   decay_patient_epoch: 1
-  sort_stop_epoch: 200
+  sort_stop_epoch: 100
   not_improved_patient_epoch: 10
   eval_start_epoch: 10
   print_step: 10

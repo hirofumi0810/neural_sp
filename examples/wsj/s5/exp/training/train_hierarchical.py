@@ -204,6 +204,7 @@ def main():
     lr_controller = Controller(
         learning_rate_init=learning_rate,
         backend=params['backend'],
+        decay_type=params['decay_type'],
         decay_start_epoch=params['decay_start_epoch'],
         decay_rate=params['decay_rate'],
         decay_patient_epoch=params['decay_patient_epoch'],

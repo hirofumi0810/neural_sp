@@ -4,23 +4,25 @@ param:
 
   # corpus
   corpus: librispeech
-  label_type: character
+  label_type: word
+  label_type_sub: character
   data_size: 100h
 
   # features
   feature: fbank
-  save_format: numpy
-  input_freq: 40
-  use_delta: True
-  use_double_delta: True
-  input_channel: 3
+  tool: htk
+  input_freq: 80
+  use_delta: False
+  use_double_delta: False
+  input_channel: 1
   splice: 1
   num_stack: 1
   num_skip: 1
+  min_frame_num: 40
   dynamic_batching: True
 
   # topology
-  model_type: attention
+  model_type: hierarchical_ctc
   encoder_type: lstm
   conv_channels: []
   conv_kernel_sizes: []
@@ -30,38 +32,25 @@ param:
   encoder_bidirectional: True
   encoder_residual: False
   encoder_dense_residual: False
-  decoder_residual: False
-  decoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 5
+  encoder_num_layers: 4
+  encoder_num_layers_sub: 4
   subsample_list:
     - False
     - True
     - True
     - False
-    - False
   subsample_type: drop
-  bridge_layer: True
-  attention_type: location
-  attention_dim: 128
-  decoder_type: lstm
-  decoder_num_units: 320
-  decoder_num_layers: 1
-  embedding_dim: 16
-  attention_conv_num_channels: 10
-  attention_conv_width: 201
-  decoding_order: attend_generate_update
-  bottleneck_dim: 0
-  num_heads: 1
+  fc_list: [320]
+  fc_list_sub: []
 
   # optimization
   batch_size: 50
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 100
-  convert_to_sgd_epoch: 100
-  pretrain_stage: False
+  num_epoch: 25
+  convert_to_sgd_epoch: 20
 
   # initialization
   parameter_init_distribution: uniform
@@ -72,32 +61,24 @@ param:
 
   # regularization
   clip_grad_norm: 5.0
-  clip_activation_encoder: 50
-  clip_activation_decoder: 50
+  clip_activation: 50
   dropout_input: 0
   dropout_encoder: 0.2
-  dropout_decoder: 0.2
-  dropout_embedding: 0.2
   weight_decay: 1e-6
-  init_dec_state: first
-  sharpening_factor: 1.0
-  logits_temperature: 1.0
-  sigmoid_smoothing: False
-  coverage_weight: 0
-  scheduled_sampling_prob: 0.2
-  scheduled_sampling_max_step: 50000
-  label_smoothing_prob: 0.2
+  logits_temperature: 1
+  label_smoothing_prob: 0
   weight_noise_std: 0
 
   # annealing
-  decay_start_epoch: 5
-  decay_rate: 0.8
+  decay_type: per_epoch
+  decay_start_epoch: 10
+  decay_rate: 0.95
   decay_patient_epoch: 0
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
   eval_start_epoch: 5
-  print_step: 200
+  print_step: 100
 
   # MTL
-  backward_loss_weight: 0
-  ctc_loss_weight: 0
+  main_loss_weight: 0.5
+  sub_loss_weight: 0.5

@@ -1,9 +1,10 @@
-parent: ../config/ctc/character/blstm_ctc_char_100h.yml
+parent: ../config/ctc/character/char_blstm_ctc_100h.yml
 param:
   # framework
   backend: pytorch
 
   # corpus
+  label_type: word
   data_size: 960h
 
   # topology
@@ -15,9 +16,8 @@ param:
     - False
     - False
 
-  # optimization
-  num_epoch: 40
-  convert_to_sgd_epoch: 30
+  # initialization
+  char_init: False
 
   # annealing
   print_step: 1000
