@@ -162,7 +162,9 @@ def read_audio(data_type, spk2audio, segment_dict, tool, config, normalize,
             female over the training set
         dtype (optional): the type of data, default is np.float32
     """
-    if 'train' not in data_type:
+    is_training = 'train' in data_type
+
+    if not is_training:
         if global_mean_male is None or global_mean_female is None:
             raise ValueError('Set mean & stddev computed in the training set.')
     if normalize not in ['global', 'speaker', 'utterance', 'no']:
@@ -180,7 +182,7 @@ def read_audio(data_type, spk2audio, segment_dict, tool, config, normalize,
     # NOTE: assume that speakers are different between sessions
 
     # Loop 1: Computing global mean and statistics
-    if 'train' in data_type and normalize != 'no':
+    if is_training and normalize != 'no':
         print('=====> Reading audio files...')
         for i, speaker in enumerate(tqdm(segment_dict.keys())):
             audio_path = spk2audio[speaker]
@@ -271,7 +273,7 @@ def read_audio(data_type, spk2audio, segment_dict, tool, config, normalize,
     for speaker in tqdm(segment_dict.keys()):
         audio_path = spk2audio[speaker]
 
-        if normalize == 'speaker' and 'train' in data_type:
+        if normalize == 'speaker' and is_training:
             speaker_mean = speaker_mean_dict[speaker]
         else:
             speaker_mean = None
@@ -281,7 +283,7 @@ def read_audio(data_type, spk2audio, segment_dict, tool, config, normalize,
             audio_path,
             speaker,
             segment_dict[speaker],
-            is_training='train' in data_type,
+            is_training=is_training,
             sil_duration=0,
             tool=tool,
             config=config,
@@ -291,7 +293,7 @@ def read_audio(data_type, spk2audio, segment_dict, tool, config, normalize,
         for utt_idx, feat_utt in feat_dict_speaker.items():
             if normalize == 'no':
                 pass
-            elif normalize == 'global' or 'train' not in data_type:
+            elif normalize == 'global' or not is_training:
                 # Normalize by mean & stddev over the training set per gender
                 if speaker[3] == 'M':
                     feat_utt -= global_mean_male

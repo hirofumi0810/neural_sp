@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Make dataset CSV files (WSJ corpus)."""
+"""Make dataset CSV files (CHiME5 corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -197,13 +197,12 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
 
                 # Capital-divided
                 if len(w) == 1:
-                    char_capital_set.add(w.upper())
-                    trans_capital += w.upper()
+                    char_capital_set.add(w)
+                    trans_capital += w
                 else:
                     # Replace the first character with the capital
                     # letter
                     w = w[0].upper() + w[1:]
-                    char_capital_set.add(w[0])
 
                     # Check double-letters
                     for i in range(0, len(w) - 1, 1):
@@ -237,11 +236,12 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
                 f.write('%s\n' % c)
 
     # Compute OOV rate
-    with codecs.open(mkdir_join(vocab_save_path, 'oov', data_type + '.txt'), 'w', 'utf-8') as f:
-        # word-level (threshold == 3)
-        oov_rate = compute_oov_rate(word_dict, word_vocab_path)
-        f.write('Word (freq3):\n')
-        f.write('  OOV rate: %f %%\n' % oov_rate)
+    if 'train' not in data_type:
+        with codecs.open(mkdir_join(vocab_save_path, 'oov', data_type + '.txt'), 'w', 'utf-8') as f:
+            # word-level (threshold == 3)
+            oov_rate = compute_oov_rate(word_dict, word_vocab_path)
+            f.write('Word (freq3):\n')
+            f.write('  OOV rate: %f %%\n' % oov_rate)
 
     # Convert to index
     print('=====> Convert to index...')
@@ -260,10 +260,12 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
             char_indices = char2idx(trans)
             char_capital_indices = char2idx_capital(trans)
 
-            word_indices = ' '.join(list(map(str, word_indices)))
-            char_indices = ' '.join(list(map(str, char_indices)))
+            word_indices = ' '.join(
+                list(map(str, word_indices.tolist())))
+            char_indices = ' '.join(
+                list(map(str, char_indices.tolist())))
             char_capital_indices = ' '.join(
-                list(map(str, char_capital_indices)))
+                list(map(str, char_capital_indices.tolist())))
 
             trans_dict[utt_idx] = {"word": word_indices,
                                    "char": char_indices,

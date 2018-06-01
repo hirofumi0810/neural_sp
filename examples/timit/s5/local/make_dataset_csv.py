@@ -186,12 +186,9 @@ def read_text(text_path, vocab_save_path, data_type, phone_map_file_path):
             phone48_indices = phone2idx_48(trans_phone48)
             phone39_indices = phone2idx_39(trans_phone39)
 
-            phone61_indices = ' '.join(
-                list(map(str, phone61_indices.tolist())))
-            phone48_indices = ' '.join(
-                list(map(str, phone48_indices.tolist())))
-            phone39_indices = ' '.join(
-                list(map(str, phone39_indices.tolist())))
+            phone61_indices = ' '.join(list(map(str, phone61_indices)))
+            phone48_indices = ' '.join(list(map(str, phone48_indices)))
+            phone39_indices = ' '.join(list(map(str, phone39_indices)))
 
             trans_dict[utt_idx] = [phone61_indices,
                                    phone48_indices,

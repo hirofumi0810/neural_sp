@@ -41,7 +41,7 @@ OOV = 'OOV'
 
 def main():
 
-    for data_type in ['train_' + args.data_size, 'dev-clean', 'dev-other', 'test-clean', 'test-other']:
+    for data_type in ['train_' + args.data_size, 'dev_clean', 'dev_other', 'test_clean', 'test_other']:
         print('=' * 50)
         print(' ' * 20 + data_type)
         print('=' * 50)
@@ -57,14 +57,14 @@ def main():
         # Make dataset file (.csv)
         print('=> Saving dataset files...')
         csv_save_path = mkdir_join(
-            args.data_save_path, 'dataset', args.tool, args.data_size, data_type.split('_')[0])
+            args.data_save_path, 'dataset', args.tool, args.data_size)
 
         df_columns = ['frame_num', 'input_path', 'transcript']
         df_word = pd.DataFrame([], columns=df_columns)
         df_char = pd.DataFrame([], columns=df_columns)
         df_char_capital = pd.DataFrame([], columns=df_columns)
 
-        with open(join(args.data_save_path, 'feature', args.tool, args.data_size, data_type.split('_')[0], 'frame_num.pickle'), 'rb') as f:
+        with open(join(args.data_save_path, 'feature', args.tool, args.data_size, data_type, 'frame_num.pickle'), 'rb') as f:
             frame_num_dict = pickle.load(f)
 
         utt_count = 0
@@ -72,9 +72,8 @@ def main():
         df_char_list, df_char_capital_list = [], []
         for utt_name, trans in tqdm(trans_dict.items()):
             speaker, chapter, utt_idx = utt_name.split('-')
-            feat_utt_save_path = join(
-                args.data_save_path, 'feature', args.tool, args.data_size, data_type.split('_')[
-                    0], speaker, chapter, utt_idx + '.npy')
+            feat_utt_save_path = mkdir_join(
+                args.data_save_path, 'feature', args.tool, args.data_size, data_type, speaker, chapter, utt_name + '.npy')
             frame_num = frame_num_dict[utt_name]
 
             if not isfile(feat_utt_save_path):
@@ -239,12 +238,10 @@ def read_text(text_path, vocab_save_path, data_type):
             char_indices = char2idx(trans)
             char_capital_indices = char2idx_capital(trans)
 
-            word_indices = ' '.join(
-                list(map(str, word_indices.tolist())))
-            char_indices = ' '.join(
-                list(map(str, char_indices.tolist())))
+            word_indices = ' '.join(list(map(str, word_indices)))
+            char_indices = ' '.join(list(map(str, char_indices)))
             char_capital_indices = ' '.join(
-                list(map(str, char_capital_indices.tolist())))
+                list(map(str, char_capital_indices)))
 
             trans_dict[utt_idx] = {"word": word_indices,
                                    "char": char_indices,
