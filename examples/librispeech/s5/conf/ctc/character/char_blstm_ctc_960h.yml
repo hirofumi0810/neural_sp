@@ -4,7 +4,7 @@ param:
   backend: pytorch
 
   # corpus
-  data_size: 960h
+  data_size: 960
 
   # topology
   encoder_num_layers: 5

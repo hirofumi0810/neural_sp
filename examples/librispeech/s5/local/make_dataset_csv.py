@@ -57,7 +57,7 @@ def main():
         # Make dataset file (.csv)
         print('=> Saving dataset files...')
         csv_save_path = mkdir_join(
-            args.data_save_path, 'dataset', args.tool, args.data_size)
+            args.data_save_path, 'dataset', args.tool, args.data_size, data_type)
 
         df_columns = ['frame_num', 'input_path', 'transcript']
         df_word = pd.DataFrame([], columns=df_columns)

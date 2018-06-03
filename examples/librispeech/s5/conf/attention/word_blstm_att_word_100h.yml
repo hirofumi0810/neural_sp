@@ -5,7 +5,6 @@ param:
 
   # corpus
   label_type: word
-  data_size: 100h
 
   # topology
   encoder_num_layers: 4

@@ -48,19 +48,18 @@ class Dataset(DatasetBase):
             splice (int): frames to splice. Default is 1 frame.
             num_stack (int): the number of frames to stack
             num_skip (int): the number of frames to skip
-            shuffle (bool): if True, shuffle utterances. This is
-                disabled when sort_utt is True.
-            sort_utt (bool): if True, sort all utterances in the
-                ascending order
-            reverse (bool): if True, sort utteraces in the
-                descending order
-            sort_stop_epoch (int): After sort_stop_epoch, training
-                will revert back to a random order
+            min_frame_num (int): Exclude utteraces shorter than this value
+            shuffle (bool): if True, shuffle utterances.
+                This is disabled when sort_utt is True.
+            sort_utt (bool): if True, sort all utterances in the ascending order
+            reverse (bool): if True, sort utteraces in the descending order
+            sort_stop_epoch (int): After sort_stop_epoch, training will revert
+                back to a random order
             num_gpus (int): the number of GPUs
             tool (string): htk or librosa or python_speech_features
             num_enque (int): the number of elements to enqueue
-            dynamic_batching (bool): if True, batch size will be
-                chainged dynamically in training
+            dynamic_batching (bool): if True, batch size will be chainged
+                dynamically in training
         """
         self.backend = backend
         self.input_freq = input_freq
@@ -85,11 +84,11 @@ class Dataset(DatasetBase):
         self.is_test = True if 'test' in data_type else False
 
         self.vocab_file_path = join(
-            data_save_path, 'vocab', data_size, label_type + '.txt')
+            data_save_path, 'vocab', self.data_size, label_type + '.txt')
         self.idx2word = Idx2word(self.vocab_file_path)
         self.word2idx = Word2idx(self.vocab_file_path)
         self.vocab_file_path_sub = join(
-            data_save_path, 'vocab', data_size, label_type_sub + '.txt')
+            data_save_path, 'vocab', self.data_size, label_type_sub + '.txt')
         self.idx2char = Idx2char(
             self.vocab_file_path_sub,
             capital_divide=label_type_sub == 'character_capital_divide')
@@ -101,10 +100,16 @@ class Dataset(DatasetBase):
                                       vocab_file_path_sub=self.vocab_file_path_sub)
 
         # Load dataset file
-        dataset_path = join(
-            data_save_path, 'dataset', tool, data_size, data_type, label_type + '.csv')
-        dataset_path_sub = join(
-            data_save_path, 'dataset', tool, data_size, data_type, label_type_sub + '.csv')
+        if data_type == 'train':
+            dataset_path = join(
+                data_save_path, 'dataset', tool, data_size, 'train_' + data_size, label_type + '.csv')
+            dataset_path_sub = join(
+                data_save_path, 'dataset', tool, data_size, 'train_' + data_size, label_type_sub + '.csv')
+        else:
+            dataset_path = join(
+                data_save_path, 'dataset', tool, data_size, data_type, label_type + '.csv')
+            dataset_path_sub = join(
+                data_save_path, 'dataset', tool, data_size, data_type, label_type_sub + '.csv')
         df = pd.read_csv(dataset_path)
         df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
         df_sub = pd.read_csv(dataset_path_sub)

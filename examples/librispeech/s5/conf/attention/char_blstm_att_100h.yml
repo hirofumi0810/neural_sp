@@ -4,7 +4,7 @@ param:
 
   # corpus
   corpus: librispeech
-  data_size: 100h
+  data_size: 100
   label_type: character
 
   # features
@@ -91,7 +91,7 @@ param:
   # annealing
   decay_type: per_epoch
   decay_start_epoch: 10
-  decay_rate: 0.95
+  decay_rate: 0.9
   decay_patient_epoch: 0
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5

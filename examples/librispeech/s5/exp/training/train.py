@@ -63,6 +63,7 @@ def main():
         params = load_config(os.path.join(args.saved_model_path, 'config.yml'))
     else:
         raise ValueError("Set model_save_path or saved_model_path.")
+    params['data_size'] = str(params['data_size'])
 
     # Load dataset
     train_data = Dataset(

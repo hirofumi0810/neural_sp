@@ -19,6 +19,7 @@ class TestLoadDataset(unittest.TestCase):
     def test(self):
 
         # data_type
+        self.check(data_type='train')
         self.check(data_type='dev_clean')
         self.check(data_type='dev_other')
         self.check(data_type='test_clean')

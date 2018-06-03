@@ -20,6 +20,8 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
 
         # data_type
         self.check(label_type='word', label_type_sub='character',
+                   data_type='train')
+        self.check(label_type='word', label_type_sub='character',
                    data_type='dev_clean')
         self.check(label_type='word', label_type_sub='character',
                    data_type='dev_other')
@@ -30,7 +32,7 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
 
     @measure_time
     def check(self, label_type, label_type_sub,
-              data_type='dev_clean', data_size='100h', backend='pytorch',
+              data_type='dev_clean', data_size='100', backend='pytorch',
               shuffle=False, sort_utt=True, sort_stop_epoch=None,
               frame_stacking=False, splice=1, num_gpus=1):
 

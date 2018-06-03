@@ -36,9 +36,9 @@ parser.add_argument('--coverage_penalty', type=float, default=0,
                     help='coverage penalty in beam search decoding')
 
 MAX_DECODE_LEN_WORD = 200
-MIN_DECODE_LEN_WORD = 0
+MIN_DECODE_LEN_WORD = 1
 MAX_DECODE_LEN_CHAR = 600
-MIN_DECODE_LEN_CHAR = 0
+MIN_DECODE_LEN_CHAR = 1
 
 
 def main():
@@ -47,6 +47,7 @@ def main():
 
     # Load a config file (.yml)
     params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
+    params['data_size'] = str(params['data_size'])
 
     logger = set_logger(args.model_path)
 

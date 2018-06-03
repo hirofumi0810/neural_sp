@@ -35,9 +35,9 @@ parser.add_argument('--coverage_penalty', type=float, default=0,
                     help='coverage penalty in beam search decoding')
 
 MAX_DECODE_LEN_WORD = 200
-MIN_DECODE_LEN_WORD = 0
+MIN_DECODE_LEN_WORD = 1
 MAX_DECODE_LEN_CHAR = 600
-MIN_DECODE_LEN_CHAR = 0
+MIN_DECODE_LEN_CHAR = 1
 
 
 def main():
@@ -46,6 +46,7 @@ def main():
 
     # Load a config file (.yml)
     params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
+    params['data_size'] = str(params['data_size'])
 
     # Load dataset
     dataset = Dataset(
@@ -60,8 +61,7 @@ def main():
         label_type=params['label_type'],
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=True, reverse=True, tool=params['tool'])
-
+        sort_utt=False, reverse=False, tool=params['tool'])
     params['num_classes'] = dataset.num_classes
 
     # Load model
