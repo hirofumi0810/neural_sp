@@ -29,26 +29,20 @@ class TestCharseqAttention(unittest.TestCase):
         print("Nested Attention Working check.")
 
         # Usage character-level decoder states
-        # self.check(usage_dec_sub='softmax', decoding_order='bahdanau')
-        # self.check(usage_dec_sub='update_decoder', decoding_order='bahdanau')
-        # self.check(usage_dec_sub='all', decoding_order='bahdanau')
+        self.check(usage_dec_sub='softmax')
+        self.check(usage_dec_sub='update_decoder')
+        self.check(usage_dec_sub='all')
 
-        self.check(usage_dec_sub='softmax', decoding_order='luong')
-        self.check(usage_dec_sub='update_decoder', decoding_order='luong')
-        self.check(usage_dec_sub='all', decoding_order='luong')
+        # gating mechanism
+        self.check(usage_dec_sub='all', gating=True)
 
-        self.check(usage_dec_sub='softmax', decoding_order='conditional')
-        self.check(usage_dec_sub='update_decoder',
-                   decoding_order='conditional')
-        self.check(usage_dec_sub='all', decoding_order='conditional')
+        # logits injection
+        self.check(logits_injection=True, usage_dec_sub='softmax')
 
-        # probability injection
-        self.check(cold_fusion_like_prob_injection=True,
-                   usage_dec_sub='softmax', decoding_order='bahdanau')
-        self.check(cold_fusion_like_prob_injection=True,
-                   usage_dec_sub='softmax', decoding_order='luong')
-        self.check(cold_fusion_like_prob_injection=True,
-                   usage_dec_sub='softmax', decoding_order='conditional')
+        # beam search
+        self.check(usage_dec_sub='softmax', beam_width=2)
+        self.check(usage_dec_sub='update_decoder', beam_width=2)
+        self.check(usage_dec_sub='all', beam_width=2)
 
         self.check(main_loss_weight=0)
 
@@ -72,26 +66,26 @@ class TestCharseqAttention(unittest.TestCase):
         self.check(dec_sigmoid_smoothing=True)
 
     @measure_time
-    def check(self, decoding_order='bahdanau', usage_dec_sub='all', att_reg_weight=1,
+    def check(self, usage_dec_sub='all', att_reg_weight=1,
               main_loss_weight=0.5, ctc_loss_weight_sub=0,
-              dec_attend_temperature=1,
-              dec_sigmoid_smoothing=False,
+              dec_attend_temperature=1, dec_sigmoid_smoothing=False,
               backward_sub=False, num_heads=1, second_pass=False,
-              relax_context_vec_dec=False, cold_fusion_like_prob_injection=False):
+              relax_context_vec_dec=False, logits_injection=False,
+              gating=False, beam_width=1):
 
         print('==================================================')
         print('  usage_dec_sub: %s' % usage_dec_sub)
-        print('  att_reg_weight: %s' % str(att_reg_weight))
-        print('  main_loss_weight: %s' % str(main_loss_weight))
-        print('  ctc_loss_weight_sub: %s' % str(ctc_loss_weight_sub))
+        print('  att_reg_weight: %f' % att_reg_weight)
+        print('  main_loss_weight: %f' % main_loss_weight)
+        print('  ctc_loss_weight_sub: %f' % ctc_loss_weight_sub)
         print('  dec_attend_temperature: %s' % str(dec_attend_temperature))
         print('  dec_sigmoid_smoothing: %s' % str(dec_sigmoid_smoothing))
         print('  backward_sub: %s' % str(backward_sub))
-        print('  num_heads: %s' % str(num_heads))
+        print('  num_heads: %d' % num_heads)
         print('  second_pass: %s' % str(second_pass))
         print('  relax_context_vec_dec: %s' % str(relax_context_vec_dec))
-        print('  cold_fusion_like_prob_injection: %s' %
-              str(cold_fusion_like_prob_injection))
+        print('  logits_injection: %s' % str(logits_injection))
+        print('  gating: %s' % str(gating))
         print('==================================================')
 
         # Load batch data
@@ -157,7 +151,7 @@ class TestCharseqAttention(unittest.TestCase):
             encoder_dense_residual=False,
             decoder_residual=False,
             decoder_dense_residual=False,
-            decoding_order=decoding_order,
+            decoding_order='bahdanau',
             bottleneck_dim=256,
             bottleneck_dim_sub=256,
             backward_sub=backward_sub,
@@ -170,7 +164,8 @@ class TestCharseqAttention(unittest.TestCase):
             dec_sigmoid_smoothing=dec_attend_temperature,
             relax_context_vec_dec=relax_context_vec_dec,
             dec_attention_type='location',
-            cold_fusion_like_prob_injection=cold_fusion_like_prob_injection)
+            logits_injection=logits_injection,
+            gating=gating)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):
@@ -190,6 +185,7 @@ class TestCharseqAttention(unittest.TestCase):
         # Define learning rate controller
         lr_controller = Controller(learning_rate_init=learning_rate,
                                    backend='pytorch',
+                                   decay_type='compare_metric',
                                    decay_start_epoch=20,
                                    decay_rate=0.9,
                                    decay_patient_epoch=10,
@@ -224,8 +220,10 @@ class TestCharseqAttention(unittest.TestCase):
                         xs, ys, x_lens, y_lens, ys_sub, y_lens_sub, is_eval=True)
 
                 best_hyps, _, best_hyps_sub, _, _, perm_idx = model.decode(
-                    xs, x_lens, beam_width=1,
+                    xs, x_lens,
+                    beam_width=beam_width,
                     max_decode_len=30,
+                    beam_width_sub=beam_width,
                     max_decode_len_sub=60)
 
                 str_hyp = idx2word(best_hyps[0][:-1])

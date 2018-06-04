@@ -40,17 +40,17 @@ class TestAttention(unittest.TestCase):
 
         # Decoding order
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', decoding_order='bahdanau_attention')
+                   decoder_type='lstm', decoding_order='bahdanau')
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', decoding_order='luong_attention')
+                   decoder_type='lstm', decoding_order='luong')
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', decoding_order='conditional')
 
         # Beam search
         self.check(encoder_type='lstm', bidirectional=True, beam_width=2,
-                   decoder_type='lstm', decoding_order='bahdanau_attention')
+                   decoder_type='lstm', decoding_order='bahdanau')
         self.check(encoder_type='lstm', bidirectional=True, beam_width=2,
-                   decoder_type='lstm', decoding_order='luong_attention')
+                   decoder_type='lstm', decoding_order='luong')
         self.check(encoder_type='lstm', bidirectional=True, beam_width=2,
                    decoder_type='lstm', decoding_order='conditional')
 
@@ -140,27 +140,27 @@ class TestAttention(unittest.TestCase):
               subsample=False, projection=False, init_dec_state='first',
               ctc_loss_weight=0, conv=False, batch_norm=False,
               residual=False, dense_residual=False,
-              decoding_order='bahdanau_attention',
-              backward_loss_weight=0, num_heads=1, beam_width=1):
+              decoding_order='bahdanau', beam_width=1,
+              backward_loss_weight=0, num_heads=1):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
-        print('  projection: %s' % str(projection))
+        print('  projection: %d' % projection)
         print('  decoder_type: %s' % decoder_type)
         print('  init_dec_state: %s' % init_dec_state)
         print('  attention_type: %s' % attention_type)
         print('  subsample: %s' % str(subsample))
-        print('  ctc_loss_weight: %s' % str(ctc_loss_weight))
+        print('  ctc_loss_weight: %f' % ctc_loss_weight)
         print('  conv: %s' % str(conv))
         print('  batch_norm: %s' % str(batch_norm))
         print('  residual: %s' % str(residual))
         print('  dense_residual: %s' % str(dense_residual))
         print('  decoding_order: %s' % decoding_order)
-        print('  backward_loss_weight: %s' % str(backward_loss_weight))
-        print('  num_heads: %s' % str(num_heads))
-        print('  beam_width: %s' % str(beam_width))
+        print('  beam_width: %d' % beam_width)
+        print('  backward_loss_weight: %f' % backward_loss_weight)
+        print('  num_heads: %d' % num_heads)
         print('==================================================')
 
         if conv or encoder_type == 'cnn':
@@ -271,6 +271,7 @@ class TestAttention(unittest.TestCase):
         # Define learning rate controller
         lr_controller = Controller(learning_rate_init=learning_rate,
                                    backend='pytorch',
+                                   decay_type='compare_metric',
                                    decay_start_epoch=20,
                                    decay_rate=0.9,
                                    decay_patient_epoch=10,

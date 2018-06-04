@@ -66,16 +66,16 @@ class AttentionSeq2seq(ModelBase):
             mean => initialize with the mean of encoder outputs in all time steps
             final => initialize with tha final encoder state
             first => initialize with tha first encoder state
-        sharpening_factor (float): a sharpening factor in the
-            softmax layer for computing attention weights
-        logits_temperature (float): a parameter for smoothing the
-            softmax layer in outputing probabilities
-        sigmoid_smoothing (bool): if True, replace softmax function
-            in computing attention weights with sigmoid function for smoothing
+        sharpening_factor (float): a sharpening factor in the softmax layer
+            for computing attention weights
+        logits_temperature (float): a parameter for smoothing the softmax layer
+            in outputing probabilities
+        sigmoid_smoothing (bool): if True, replace softmax function in
+            computing attention weights with sigmoid function for smoothing
         coverage_weight (float): the weight parameter for coverage computation
         ctc_loss_weight (float): A weight parameter for auxiliary CTC loss
-        attention_conv_num_channels (int): the number of channles of
-            conv outputs. This is used for location-based attention.
+        attention_conv_num_channels (int): the number of channles of conv outputs.
+            This is used for location-based attention.
         attention_conv_width (int): the size of kernel.
             This must be the odd number.
         num_stack (int): the number of frames to stack
@@ -158,7 +158,7 @@ class AttentionSeq2seq(ModelBase):
                  decoder_residual=False,
                  decoder_dense_residual=False,
                  decoding_order='bahdanau',
-                 bottleneck_dim=256,
+                 bottleneck_dim=None,
                  backward_loss_weight=0,
                  num_heads=1):
 
@@ -181,6 +181,7 @@ class AttentionSeq2seq(ModelBase):
         self.decoder_num_units_0 = decoder_num_units
         self.decoder_num_layers_0 = decoder_num_layers
         self.embedding_dim = embedding_dim
+        self.bottleneck_dim = decoder_num_units if bottleneck_dim is None else bottleneck_dim
         self.num_classes = num_classes + 1  # Add <EOS> class
         self.sos_0 = num_classes
         self.eos_0 = num_classes
@@ -352,13 +353,13 @@ class AttentionSeq2seq(ModelBase):
             # Output layer
             ##############################
             setattr(self, 'W_d_0_' + dir, LinearND(
-                decoder_num_units, bottleneck_dim,
+                decoder_num_units, self.bottleneck_dim,
                 dropout=dropout_decoder))
             setattr(self, 'W_c_0_' + dir, LinearND(
-                self.encoder_num_units, bottleneck_dim,
+                self.encoder_num_units, self.bottleneck_dim,
                 dropout=dropout_decoder))
             setattr(self, 'fc_0_' + dir,
-                    LinearND(bottleneck_dim, self.num_classes))
+                    LinearND(self.bottleneck_dim, self.num_classes))
 
         ##############################
         # Embedding
@@ -486,7 +487,7 @@ class AttentionSeq2seq(ModelBase):
                 xs, ys_in_fwd, ys_out_fwd, x_lens, y_lens_fwd,
                 task=0, dir='fwd') * self.fwd_weight_0
         else:
-            loss = self._create_var((1,), fill_value=0.)
+            loss = self._create_zero_var((1,))
 
         ##################################################
         # Compute loss for the backward decoder
@@ -721,10 +722,9 @@ class AttentionSeq2seq(ModelBase):
 
         # Initialize decoder state, decoder output, attention_weights
         dec_state, dec_out = self._init_dec_state(enc_out, x_lens, task, dir)
-        aw_step = self._create_var(
-            (batch_size, max_time, getattr(self, 'num_heads_' + str(task))), fill_value=0.)
-        context_vec = self._create_var(
-            (batch_size, 1, enc_out.size(-1)), fill_value=0.)
+        aw_step = self._create_zero_var(
+            (batch_size, max_time, getattr(self, 'num_heads_' + str(task))))
+        context_vec = self._create_zero_var((batch_size, 1, enc_out.size(-1)))
 
         # Pre-computation of embedding
         ys_emb = [getattr(self, 'embed_' + str(task))(ys[:, t:t + 1])
@@ -811,9 +811,8 @@ class AttentionSeq2seq(ModelBase):
             dec_out (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, decoder_num_units]`
         """
-        zero_state = self._create_var((enc_out.size(0), getattr(
-            self, 'decoder_num_units_' + str(task))),
-            fill_value=0., volatile=not self.training)
+        zero_state = self._create_zero_var((enc_out.size(0), getattr(
+            self, 'decoder_num_units_' + str(task))), volatile=not self.training)
 
         if getattr(self, 'init_dec_state_' + str(task) + '_' + dir) == 'zero':
             if self.decoder_type == 'lstm':
@@ -825,9 +824,8 @@ class AttentionSeq2seq(ModelBase):
                 hx_list = [zero_state] * \
                     getattr(self, 'decoder_num_layers_' + str(task))
 
-            dec_out = self._create_var((enc_out.size(0), 1, getattr(
-                self, 'decoder_num_units_' + str(task))),
-                fill_value=0., volatile=not self.training)
+            dec_out = self._create_zero_var((enc_out.size(0), 1, getattr(
+                self, 'decoder_num_units_' + str(task))), volatile=not self.training)
         else:
             # TODO: consider x_lens
 
@@ -934,11 +932,11 @@ class AttentionSeq2seq(ModelBase):
 
         # Initialize decoder state
         dec_state, dec_out = self._init_dec_state(enc_out, x_lens, task, dir)
-        aw_step = self._create_var((
+        aw_step = self._create_zero_var((
             batch_size, max_time, getattr(self, 'num_heads_' + str(task))),
-            fill_value=0., volatile=True)
-        context_vec = self._create_var(
-            (batch_size, 1, enc_out.size(-1)), fill_value=0., volatile=True)
+            volatile=True)
+        context_vec = self._create_zero_var(
+            (batch_size, 1, enc_out.size(-1)), volatile=True)
 
         # Start from <SOS>
         sos = getattr(self, 'sos_' + str(task))
@@ -955,7 +953,7 @@ class AttentionSeq2seq(ModelBase):
         best_hyps, aw = [], []
         y_lens = np.zeros((batch_size,), dtype=np.int32)
         eos_flag = [False] * batch_size
-        for t in range(max_decode_len):
+        for t in range(max_decode_len + 1):
             y = getattr(self, 'embed_' + str(task))(y)
 
             if self.decoding_order == 'bahdanau':
@@ -1003,7 +1001,6 @@ class AttentionSeq2seq(ModelBase):
             # Pick up 1-best
             y = torch.max(logits_step.squeeze(1), dim=1)[1].unsqueeze(1)
             best_hyps.append(y)
-
             aw.append(aw_step)
 
             # Count lengths of hypotheses
@@ -1076,11 +1073,11 @@ class AttentionSeq2seq(ModelBase):
             # Initialization per utterance
             dec_state, dec_out = self._init_dec_state(
                 enc_out[b:b + 1], x_lens[b:b + 1], task, dir)
-            aw_step = self._create_var(
-                (1,  x_lens[b].data[0], getattr(
-                    self, 'num_heads_' + str(task))), fill_value=0., volatile=True)
-            context_vec = self._create_var(
-                (1,  1, enc_out.size(-1)), fill_value=0., volatile=True)
+            aw_step = self._create_zero_var(
+                (1, x_lens[b].data[0], getattr(
+                    self, 'num_heads_' + str(task))), volatile=True)
+            context_vec = self._create_zero_var(
+                (1, 1, enc_out.size(-1)), volatile=True)
 
             complete = []
             beam = [{'hyp': [sos],
@@ -1089,7 +1086,7 @@ class AttentionSeq2seq(ModelBase):
                      'dec_out': dec_out,
                      'context_vec': context_vec,
                      'aw_steps': [aw_step]}]
-            for t in range(max_decode_len):
+            for t in range(max_decode_len + 1):
                 new_beam = []
                 for i_beam in range(len(beam)):
                     y = self._create_var(

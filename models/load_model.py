@@ -394,8 +394,7 @@ def load(model_type, params, backend):
         elif bool(params['decoder_dense_residual']):
             model.name += '_decdense'
         model.name += '_input' + str(model.input_size)
-        if params['decoding_order'] == 'conditional':
-            model.name += '_conditional'
+        model.name += '_' + params['decoding_order']
         if isdir(params['char_init']):
             model.name += '_charinit'
         if float(params['backward_loss_weight']) > 0:
@@ -533,8 +532,7 @@ def load(model_type, params, backend):
         if params['ctc_loss_weight_sub'] > 0:
             model.name += '_ctcsub' + str(params['ctc_loss_weight_sub'])
         model.name += '_input' + str(model.input_size)
-        if params['decoding_order'] == 'conditional':
-            model.name += '_conditional'
+        model.name += '_' + params['decoding_order']
         if isdir(params['char_init']):
             model.name += '_charinit'
         if bool(params['backward_sub']):
@@ -617,7 +615,9 @@ def load(model_type, params, backend):
             dec_attend_temperature=params['dec_attend_temperature'],
             dec_sigmoid_smoothing=params['dec_sigmoid_smoothing'],
             relax_context_vec_dec=params['relax_context_vec_dec'],
-            dec_attention_type=params['dec_attention_type'])
+            dec_attention_type=params['dec_attention_type'],
+            logits_injection=params['logits_injection'],
+            gating=params['gating'])
 
         model.name = model_name
         if params['encoder_type'] not in ['cnn', 'resnet']:
@@ -678,15 +678,11 @@ def load(model_type, params, backend):
         model.name += '_main' + str(params['main_loss_weight'])
         model.name += '_sub' + str(params['sub_loss_weight'])
         model.name += '_input' + str(model.input_size)
-        if params['decoding_order'] == 'conditional':
-            model.name += '_conditional'
-        if isdir(params['char_init']):
-            model.name += '_charinit'
+        model.name += '_' + params['decoding_order']
         if bool(params['backward_sub']):
             model.name += '_bwdsub'
         if int(params['num_heads']) > 1:
             model.name += '_head' + str(params['num_heads'])
-
         model.name += '_' + params['dec_attention_type']
         model.name += '_' + params['usage_dec_sub']
         if params['dec_attend_temperature'] != 1:
@@ -694,10 +690,16 @@ def load(model_type, params, backend):
                 str(params['dec_attend_temperature'])
         if bool(params['dec_sigmoid_smoothing']):
             model.name += '_sigsmooth'
-        if int(params['att_reg_weight']) > 0:
+        if float(params['att_reg_weight']) > 0:
             model.name += '_attreg' + \
                 str(params['att_reg_weight'])
         if bool(params['relax_context_vec_dec']):
             model.name += '_relax'
+        if bool(params['logits_injection']):
+            model.name += '_probinj'
+        if bool(params['gating']):
+            model.name += '_gate'
+        if isdir(params['char_init']):
+            model.name += '_charinit'
 
     return model

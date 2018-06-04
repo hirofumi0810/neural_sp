@@ -33,6 +33,7 @@ param:
     - False
     - False
   decoding_order: bahdanau
+  backward_sub: False
   num_heads: 1
 
   # optimization
@@ -57,7 +58,7 @@ param:
 
   # W2C attention
   usage_dec_sub: all
-  cold_fusion_like_prob_injection: False
+  logits_injection: False
   num_heads_dec: 1
   dec_attention_type: content
 
@@ -65,8 +66,5 @@ param:
   dec_attend_temperature: 1
   dec_sigmoid_smoothing: False
   att_reg_weight: 0
-
-  backward_sub: False
-
-  # regularization
   relax_context_vec_dec: False
+  gating: False

@@ -102,7 +102,7 @@ param:
   # annealing
   decay_type: per_epoch
   decay_start_epoch: 10
-  decay_rate: 0.95
+  decay_rate: 0.9
   decay_patient_epoch: 0
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
@@ -118,9 +118,9 @@ param:
 
   # W2C attention
   usage_dec_sub: all
-  cold_fusion_like_prob_injection: False
+  # usage_dec_sub: update_decoder
   # usage_dec_sub: softmax
-  # cold_fusion_like_prob_injection: True
+  logits_injection: False
   num_heads_dec: 1
   dec_attention_type: content
 
@@ -128,6 +128,6 @@ param:
   dec_attend_temperature: 1
   dec_sigmoid_smoothing: False
   att_reg_weight: 0
-
-  # regularization
   relax_context_vec_dec: False
+  gating: False
+  
