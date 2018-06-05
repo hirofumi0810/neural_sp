@@ -230,9 +230,6 @@ def main():
 
         pbar_epoch.update(len(batch_train['xs']))
 
-        if step > 300:
-            return model.save_path
-
         if (step + 1) % params['print_step'] == 0:
 
             # Compute loss in the dev set
