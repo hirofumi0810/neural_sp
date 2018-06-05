@@ -18,8 +18,8 @@ from utils.evaluation.resolving_unk import resolve_unk
 
 
 def eval_word(models, dataset, eval_batch_size,
-              beam_width, max_decode_len, min_decode_len=0,
-              beam_width_sub=1, max_decode_len_sub=200, min_decode_len_sub=0,
+              beam_width, max_decode_len, min_decode_len=1,
+              beam_width_sub=1, max_decode_len_sub=200, min_decode_len_sub=1,
               length_penalty=0, coverage_penalty=0,
               progressbar=False, resolving_unk=False, a2c_oracle=False,
               joint_decoding=None, score_sub_weight=0):
@@ -72,28 +72,25 @@ def eval_word(models, dataset, eval_batch_size,
                 if dataset.is_test:
                     max_label_num = 0
                     for b in range(batch_size):
-                        if max_label_num < len(list(batch['ys_sub'][b][0])):
-                            max_label_num = len(
-                                list(batch['ys_sub'][b][0]))
+                        if max_label_num < len(list(batch['ys_sub'][b])):
+                            max_label_num = len(list(batch['ys_sub'][b]))
 
                     ys_sub = np.zeros(
                         (batch_size, max_label_num), dtype=np.int32)
                     ys_sub -= 1  # pad with -1
                     y_lens_sub = np.zeros((batch_size,), dtype=np.int32)
                     for b in range(batch_size):
-                        indices = dataset.char2idx(batch['ys_sub'][b][0])
+                        indices = dataset.char2idx(batch['ys_sub'][b])
                         ys_sub[b, :len(indices)] = indices
                         y_lens_sub[b] = len(indices)
                         # NOTE: transcript is seperated by space('_')
                 else:
                     ys_sub = batch['ys_sub']
-                    y_lens_sub = batch['y_lens_sub']
             else:
                 ys_sub = None
-                y_lens_sub = None
 
             best_hyps, aw, best_hyps_sub, aw_sub, _, perm_idx = model.decode(
-                batch['xs'], batch['x_lens'],
+                batch['xs'],
                 beam_width=beam_width,
                 max_decode_len=max_decode_len,
                 min_decode_len=min_decode_len,
@@ -107,7 +104,7 @@ def eval_word(models, dataset, eval_batch_size,
                 y_lens_sub=y_lens_sub)
         elif model.model_type == 'hierarchical_attention' and joint_decoding is not None:
             best_hyps, aw, best_hyps_sub, aw_sub, perm_idx = model.decode(
-                batch['xs'], batch['x_lens'],
+                batch['xs'],
                 beam_width=beam_width,
                 max_decode_len=max_decode_len,
                 min_decode_len=min_decode_len,
@@ -122,7 +119,7 @@ def eval_word(models, dataset, eval_batch_size,
                 score_sub_weight=score_sub_weight)
         else:
             best_hyps, aw, perm_idx = model.decode(
-                batch['xs'], batch['x_lens'],
+                batch['xs'],
                 beam_width=beam_width,
                 max_decode_len=max_decode_len,
                 min_decode_len=min_decode_len,
@@ -130,7 +127,7 @@ def eval_word(models, dataset, eval_batch_size,
                 coverage_penalty=coverage_penalty)
             if resolving_unk:
                 best_hyps_sub, aw_sub, _ = model.decode(
-                    batch['xs'], batch['x_lens'],
+                    batch['xs'],
                     beam_width=beam_width,
                     max_decode_len=max_decode_len_sub,
                     min_decode_len=min_decode_len_sub,
@@ -138,19 +135,18 @@ def eval_word(models, dataset, eval_batch_size,
                     coverage_penalty=coverage_penalty,
                     task_index=1)
 
-        ys = batch['ys'][perm_idx]
-        y_lens = batch['y_lens'][perm_idx]
+        ys = [batch['ys'][i] for i in perm_idx]
 
         for b in range(batch_size):
             ##############################
             # Reference
             ##############################
             if dataset.is_test:
-                str_ref = ys[b][0]
+                str_ref = ys[b]
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
-                str_ref = dataset.idx2word(ys[b][:y_lens[b]])
+                str_ref = dataset.idx2word(ys[b])
 
             ##############################
             # Hypothesis

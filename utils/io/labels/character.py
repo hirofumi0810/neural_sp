@@ -5,7 +5,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import numpy as np
 import codecs
 
 
@@ -106,7 +105,6 @@ class Char2idx(object):
                     indices.append(self.map_dict['OOV'])
         # NOTE: OOV handling is prepared for Japanese and Chinese
 
-        # return np.array(indices)
         return indices
 
 

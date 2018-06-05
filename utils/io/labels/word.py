@@ -5,7 +5,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import numpy as np
 import codecs
 
 
@@ -36,7 +35,7 @@ class Word2idx(object):
         Args:
             str_word (string): a sequence of words
         Returns:
-            indices (np.ndarray): word indices
+            indices (list): word indices
         """
         word_list = str_word.split(self.space_mark)
         indices = []
@@ -49,7 +48,6 @@ class Word2idx(object):
                 # Replace with <UNK>
                 indices.append(self.map_dict['OOV'])
 
-        # return np.array(indices
         return indices
 
 
@@ -87,12 +85,10 @@ class Idx2word(object):
         """
         # Convert word indices into the corresponding strings
         word_list = list(map(lambda w: self.map_dict[w], indices))
-
         if return_list:
             return word_list
 
         str_word = self.space_mark.join(word_list)
-
         return str_word
 
 

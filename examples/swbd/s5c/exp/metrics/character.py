@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Define evaluation method by Character Error Rate (Switchboard corpus)."""
+"""Define evaluation method of character-level models (Switchboard corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -9,43 +9,38 @@ from __future__ import print_function
 
 from tqdm import tqdm
 import pandas as pd
+import re
 
-from utils.io.labels.character import Idx2char
 from utils.evaluation.edit_distance import compute_wer
 from examples.swbd.s5c.exp.metrics.glm import GLM
 from examples.swbd.s5c.exp.metrics.post_processing import fix_trans
 
 
-def eval_char(models, dataset, beam_width, max_decode_len,
-              eval_batch_size=None, length_penalty=0,
-              progressbar=False, temperature=1):
+def eval_char(models, eval_batch_size, dataset, beam_width,
+              max_decode_len, min_decode_len=0,
+              length_penalty=0, coverage_penalty=0,
+              progressbar=False):
     """Evaluate trained model by Character Error Rate.
     Args:
         models (list): the models to evaluate
         dataset: An instance of a `Dataset' class
+        eval_batch_size (int): the batch size when evaluating the model
         beam_width: (int): the size of beam
-        max_decode_len (int): the length of output sequences
-            to stop prediction when EOS token have not been emitted.
-            This is used for seq2seq models.
-        length_penalty (float, optional):
-        eval_batch_size (int, optional): the batch size when evaluating the model
-        progressbar (bool, optional): if True, visualize the progressbar
+        max_decode_len (int): the maximum sequence length to emit
+        min_decode_len (int): the minimum sequence length to emit
+        length_penalty (float): length penalty in beam search decoding
+        coverage_penalty (float): coverage penalty in beam search decoding
+        progressbar (bool): if True, visualize the progressbar
     Returns:
         wer (float): Word error rate
         cer (float): Character error rate
-        df_wer_cer (pd.DataFrame): dataframe of substitution, insertion, and deletion
+        df_word (pd.DataFrame): dataframe of substitution, insertion, and deletion
     """
     # Reset data counter
     dataset.reset()
 
-    if models[0].model_type in ['ctc', 'attention']:
-        idx2char = Idx2char(
-            vocab_file_path=dataset.vocab_file_path,
-            capital_divide=(dataset.label_type == 'character_capital_divide'))
-    else:
-        idx2char = Idx2char(
-            vocab_file_path=dataset.vocab_file_path_sub,
-            capital_divide=(dataset.label_type_sub == 'character_capital_divide'))
+    model = models[0]
+    # TODO: fix this
 
     # Read GLM file
     glm = GLM(
@@ -60,53 +55,45 @@ def eval_char(models, dataset, beam_width, max_decode_len,
     while True:
         batch, is_new_epoch = dataset.next(batch_size=eval_batch_size)
 
-        # TODO: add CTC ensemble
-
         # Decode
-        model = models[0]
-        # TODO: fix this
-
         if model.model_type in ['ctc', 'attention']:
             best_hyps, _, perm_idx = model.decode(
-                batch['xs'], batch['x_lens'],
+                batch['xs'],
                 beam_width=beam_width,
                 max_decode_len=max_decode_len,
-                length_penalty=length_penalty)
-            ys = batch['ys'][perm_idx]
-            y_lens = batch['y_lens'][perm_idx]
+                min_decode_len=min_decode_len,
+                length_penalty=length_penalty,
+                coverage_penalty=coverage_penalty,
+                task_index=0)
+            ys = [batch['ys'][i] for i in perm_idx]
         else:
             best_hyps, _, perm_idx = model.decode(
-                batch['xs'], batch['x_lens'],
+                batch['xs'],
                 beam_width=beam_width,
                 max_decode_len=max_decode_len,
+                min_decode_len=min_decode_len,
                 length_penalty=length_penalty,
+                coverage_penalty=coverage_penalty,
                 task_index=1)
-            ys = batch['ys_sub'][perm_idx]
-            y_lens = batch['y_lens_sub'][perm_idx]
+            ys = [batch['ys_sub'][i] for i in perm_idx]
 
         for b in range(len(batch['xs'])):
-
             ##############################
             # Reference
             ##############################
             if dataset.is_test:
-                str_ref = ys[b][0]
+                str_ref = ys[b]
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
-                str_ref = idx2char(ys[b][:y_lens[b]])
+                str_ref = dataset.idx2char(ys[b])
 
             ##############################
             # Hypothesis
             ##############################
-            str_hyp = idx2char(best_hyps[b])
-            if 'attention' in model.model_type:
-                str_hyp = str_hyp.split('>')[0]
-                # NOTE: Trancate by the first <EOS>
-
-                # Remove the last space
-                if len(str_hyp) > 0 and str_hyp[-1] == '_':
-                    str_hyp = str_hyp[:-1]
+            str_hyp = dataset.idx2char(best_hyps[b])
+            str_hyp = re.sub(r'(.*)>(.*)', r'\1', str_hyp)
+            # NOTE: Trancate by the first <EOS>
 
             ##############################
             # Post-proccessing
@@ -118,6 +105,7 @@ def eval_char(models, dataset, beam_width, max_decode_len,
                 if progressbar:
                     pbar.update(1)
                 continue
+            # TODO: fix this
 
             try:
                 # Compute WER
@@ -165,10 +153,10 @@ def eval_char(models, dataset, beam_width, max_decode_len,
     ins_char /= num_chars
     del_char /= num_chars
 
-    df_wer_cer = pd.DataFrame(
+    df_word = pd.DataFrame(
         {'SUB': [sub_word * 100, sub_char * 100],
          'INS': [ins_word * 100, ins_char * 100],
          'DEL': [del_word * 100, del_char * 100]},
         columns=['SUB', 'INS', 'DEL'], index=['WER', 'CER'])
 
-    return wer, cer, df_wer_cer
+    return wer, cer, df_word

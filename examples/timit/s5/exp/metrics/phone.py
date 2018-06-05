@@ -51,27 +51,25 @@ def eval_phone(model, dataset, map_file_path, eval_batch_size, beam_width,
 
         # Decode
         best_hyps, _, perm_idx = model.decode(
-            batch['xs'], batch['x_lens'],
+            batch['xs'],
             beam_width=beam_width,
             max_decode_len=max_decode_len,
             min_decode_len=min_decode_len,
             length_penalty=length_penalty,
             coverage_penalty=coverage_penalty)
 
-        ys = batch['ys'][perm_idx]
-        y_lens = batch['y_lens'][perm_idx]
+        ys = [batch['ys'][i] for i in perm_idx]
 
         for b in range(len(batch['xs'])):
             ##############################
             # Reference
             ##############################
             if dataset.is_test:
-                phone_ref_list = ys[b][0].split(' ')
+                phone_ref_list = ys[b].split(' ')
                 # NOTE: transcript is seperated by space(' ')
             else:
                 # Convert from index to phone (-> list of phone strings)
-                phone_ref_list = dataset.idx2phone(
-                    ys[b][:y_lens[b]]).split(' ')
+                phone_ref_list = dataset.idx2phone(ys[b]).split(' ')
 
             ##############################
             # Hypothesis

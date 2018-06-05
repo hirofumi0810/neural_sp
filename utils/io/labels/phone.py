@@ -5,7 +5,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import numpy as np
 import codecs
 
 
@@ -36,13 +35,12 @@ class Phone2idx(object):
         Args:
             str_phone (string): string of space-divided phones
         Returns:
-            indices (np.ndarray): phone indices
+            indices (list): phone indices
         """
         # Convert phone strings into the corresponding indices
         phone_list = str_phone.split(' ')
         indices = list(map(lambda x: self.map_dict[x], phone_list))
-
-        return np.array(indices)
+        return indices
 
 
 class Idx2phone(object):
@@ -77,5 +75,4 @@ class Idx2phone(object):
         # Convert phone indices to the corresponding strings
         phone_list = list(map(lambda x: self.map_dict[x], indices))
         str_phone = ' '.join(phone_list)
-
         return str_phone

@@ -15,7 +15,7 @@ from utils.evaluation.edit_distance import compute_wer
 
 
 def eval_char(models, dataset, eval_batch_size, beam_width,
-              max_decode_len, min_decode_len=0,
+              max_decode_len, min_decode_len=1,
               length_penalty=0, coverage_penalty=0, progressbar=False):
     """Evaluate trained model by Character Error Rate.
     Args:
@@ -52,24 +52,22 @@ def eval_char(models, dataset, eval_batch_size, beam_width,
         # Decode
         if model.model_type in ['ctc', 'attention']:
             best_hyps, _, perm_idx = model.decode(
-                batch['xs'], batch['x_lens'],
+                batch['xs'],
                 beam_width=beam_width,
                 max_decode_len=max_decode_len,
                 length_penalty=length_penalty,
                 coverage_penalty=coverage_penalty)
-            ys = batch['ys'][perm_idx]
-            y_lens = batch['y_lens'][perm_idx]
+            ys = [batch['ys'][i] for i in perm_idx]
             task_index = 0
         else:
             best_hyps, _, perm_idx = model.decode(
-                batch['xs'], batch['x_lens'],
+                batch['xs'],
                 beam_width=beam_width,
                 max_decode_len=max_decode_len,
                 length_penalty=length_penalty,
                 coverage_penalty=coverage_penalty,
                 task_index=1)
-            ys = batch['ys_sub'][perm_idx]
-            y_lens = batch['y_lens_sub'][perm_idx]
+            ys = [batch['ys_sub'][i] for i in perm_idx]
             task_index = 1
         # TODO: add nested_attention
 
@@ -78,11 +76,11 @@ def eval_char(models, dataset, eval_batch_size, beam_width,
             # Reference
             ##############################
             if dataset.is_test:
-                str_ref = ys[b][0]
+                str_ref = ys[b]
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
-                str_ref = dataset.idx2char(ys[b][:y_lens[b]])
+                str_ref = dataset.idx2char(ys[b])
 
             ##############################
             # Hypothesis
