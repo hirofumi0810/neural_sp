@@ -87,23 +87,14 @@ class TestLoadDataset(unittest.TestCase):
             map_fn = dataset.idx2char
 
         for batch, is_new_epoch in dataset:
-            if data_type == 'train' and backend == 'pytorch':
-                for i in range(len(batch['xs'])):
-                    if batch['xs'].shape[1] < batch['ys'].shape[1]:
-                        raise ValueError(
-                            'input length must be longer than label length.')
-
-            if dataset.is_test:
-                str_ref = batch['ys'][0][0]
-            else:
-                str_ref = map_fn(batch['ys'][0][:batch['y_lens'][0]])
+            str_ref = batch['ys'][0]
+            if not dataset.is_test:
+                str_ref = map_fn(str_ref)
 
             print('----- %s (epoch: %.3f, batch: %d) -----' %
                   (batch['input_names'][0], dataset.epoch_detail, len(batch['xs'])))
             print(str_ref)
-            print('x_lens: %d' % (batch['x_lens'][0] * num_stack))
-            if not dataset.is_test:
-                print('y_lens: %d' % batch['y_lens'][0])
+            print('x_lens: %d' % (len(batch['xs'][0]) * num_stack))
 
             if dataset.epoch_detail >= 1:
                 break

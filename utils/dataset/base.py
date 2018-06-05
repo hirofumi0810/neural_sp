@@ -33,7 +33,7 @@ class Base(object):
         self.queue = Queue()
         self.queue_size = 0
 
-        # Read the vocabulary file
+        # Load the vocabulary file
         vocab_count = 0
         with codecs.open(kwargs['vocab_file_path'], 'r', 'utf-8') as f:
             for line in f:
@@ -47,6 +47,15 @@ class Base(object):
                 for line in f:
                     vocab_count_sub += 1
             self.num_classes_sub = vocab_count_sub
+
+        if self.use_double_delta:
+            self.input_size = self.input_freq * 3
+        elif self.use_delta:
+            self.input_size = self.input_freq * 2
+        else:
+            self.input_size = self.input_freq
+        self.input_size *= self.num_stack
+        self.input_size *= self.splice
 
     def __len__(self):
         return len(self.df)
@@ -221,7 +230,6 @@ class Base(object):
 
     def load(self, path):
         ext = os.path.basename(path).split('.')[-1]
-
         if ext == 'npy':
             return self._load_npy(path)
         elif ext == 'htk':
@@ -248,7 +256,7 @@ class Base(object):
             spam = f.read(12)
             frame_num, sampPeriod, sampSize, parmKind = unpack(">IIHH", spam)
 
-            # Read data
+            # Load data
             feature_dim = int(sampSize / 4)
             f.seek(12, 0)
             input_data = np.fromfile(f, 'f')

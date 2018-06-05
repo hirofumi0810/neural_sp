@@ -11,8 +11,6 @@ import unittest
 
 sys.path.append(os.path.abspath('../../../../../../'))
 from examples.swbd.s5c.exp.dataset.load_dataset_hierarchical import Dataset
-from utils.io.labels.character import Idx2char
-from utils.io.labels.word import Idx2word
 from utils.measure_time_func import measure_time
 
 
@@ -21,19 +19,14 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
     def test(self):
 
         # data_type
-        # self.check(label_type='word5', label_type_sub='character',
-        #            data_type='train')
-        self.check(label_type='word5', label_type_sub='character',
+        self.check(label_type='word', label_type_sub='character',
+                   data_type='train')
+        self.check(label_type='word', label_type_sub='character',
                    data_type='dev')
-        self.check(label_type='word5', label_type_sub='character',
+        self.check(label_type='word', label_type_sub='character',
                    data_type='eval2000_swbd')
-        self.check(label_type='word5', label_type_sub='character',
+        self.check(label_type='word', label_type_sub='character',
                    data_type='eval2000_ch')
-
-        # label_type
-        self.check(label_type='word1', label_type_sub='character')
-        self.check(label_type='word10', label_type_sub='character')
-        self.check(label_type='word15', label_type_sub='character')
 
     @measure_time
     def check(self, label_type, label_type_sub,
@@ -58,42 +51,25 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
         num_stack = 3 if frame_stacking else 1
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
-            # data_save_path='/n/sd8/inaguma/corpus/swbd/kaldi/' + data_size,
             data_save_path='/n/sd8/inaguma/corpus/swbd/kaldi',
             backend=backend,
-            input_freq=40, use_delta=True, use_double_delta=True,
+            input_freq=81, use_delta=True, use_double_delta=True,
             data_type=data_type, data_size=data_size,
             label_type=label_type, label_type_sub=label_type_sub,
             batch_size=64, max_epoch=1, splice=splice,
             num_stack=num_stack, num_skip=num_skip,
-            shuffle=shuffle,
+            min_frame_num=40, shuffle=shuffle,
             sort_utt=sort_utt, reverse=True, sort_stop_epoch=sort_stop_epoch,
-            num_gpus=num_gpus, tool='htk',
-            num_enque=None)
+            num_gpus=num_gpus, tool='htk', num_enque=None)
 
         print('=> Loading mini-batch...')
-        idx2word = Idx2word(dataset.vocab_file_path)
-        idx2char = Idx2char(dataset.vocab_file_path_sub)
 
         for batch, is_new_epoch in dataset:
-            if data_type == 'train' and backend == 'pytorch':
-                for i in range(len(batch['xs'])):
-                    if batch['xs'].shape[1] < batch['ys'].shape[1]:
-                        raise ValueError(
-                            'input length must be longer than label length.')
-
-            if dataset.is_test:
-                str_ref = batch['ys'][0][0]
-                str_ref = str_ref.lower()
-                str_ref = str_ref.replace('(', '').replace(')', '')
-
-                str_ref_sub = batch['ys_sub'][0][0]
-                str_ref_sub = str_ref_sub.lower()
-                str_ref_sub = str_ref_sub.replace('(', '').replace(')', '')
-            else:
-                str_ref = idx2word(batch['ys'][0][:batch['y_lens'][0]])
-                str_ref_sub = idx2char(
-                    batch['ys_sub'][0][:batch['y_lens_sub'][0]])
+            str_ref = batch['ys'][0]
+            str_ref_sub = batch['ys_sub'][0]
+            if not dataset.is_test:
+                str_ref = dataset.idx2word(str_ref)
+                str_ref_sub = dataset.idx2char(str_ref_sub)
 
             print('----- %s (epoch: %.3f, batch: %d) -----' %
                   (batch['input_names'][0], dataset.epoch_detail, len(batch['xs'])))
@@ -101,10 +77,7 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
             print(str_ref)
             print('-' * 10)
             print(str_ref_sub)
-            print('x_lens: %d' % (batch['x_lens'][0] * num_stack))
-            if not dataset.is_test:
-                print('y_lens (word): %d' % batch['y_lens'][0])
-                print('y_lens_sub (char): %d' % batch['y_lens_sub'][0])
+            print('x_lens: %d' % (len(batch['xs'][0]) * num_stack))
 
             if dataset.epoch_detail >= 1:
                 break

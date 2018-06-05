@@ -26,8 +26,7 @@ class Dataset(DatasetBase):
                  backend, input_freq, use_delta, use_double_delta,
                  data_type, data_size, label_type,
                  batch_size, max_epoch=None, splice=1,
-                 num_stack=1, num_skip=1,
-                 min_frame_num=40,
+                 num_stack=1, num_skip=1, min_frame_num=40,
                  shuffle=False, sort_utt=False, reverse=False,
                  sort_stop_epoch=None, num_gpus=1, tool='htk',
                  num_enque=None, dynamic_batching=False):
@@ -105,7 +104,7 @@ class Dataset(DatasetBase):
             logger.info('Restricted utterance num: %d' % len(df))
 
         # Sort paths to input & label
-        if sort_utt and data_type != 'dev':
+        if sort_utt:
             df = df.sort_values(by='frame_num', ascending=not reverse)
         else:
             df = df.sort_values(by='input_path', ascending=True)

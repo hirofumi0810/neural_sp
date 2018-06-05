@@ -19,8 +19,8 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
     def test(self):
 
         # data_type
-        # self.check(label_type='word', label_type_sub='character_wb',
-        #            data_type='train')
+        self.check(label_type='word', label_type_sub='character_wb',
+                   data_type='train')
         self.check(label_type='word', label_type_sub='character_wb',
                    data_type='dev')
         self.check(label_type='word', label_type_sub='character_wb',
@@ -74,33 +74,21 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
         map_fn_sub = dataset.idx2char
 
         for batch, is_new_epoch in dataset:
-            if data_type == 'train' and backend == 'pytorch':
-                for i in range(len(batch['xs'])):
-                    if batch['xs'].shape[1] < batch['ys'].shape[1]:
-                        raise ValueError(
-                            'input length must be longer than label length.')
-
-            if dataset.is_test:
-                str_true = batch['ys'][0][0]
-                str_true_sub = batch['ys_sub'][0][0]
-            else:
-                str_true = map_fn(batch['ys'][0][:batch['y_lens'][0]])
-                str_true_sub = map_fn_sub(
-                    batch['ys_sub'][0][:batch['y_lens_sub'][0]])
+            str_ref = batch['ys'][0]
+            str_ref_sub = batch['ys_sub'][0]
+            if not dataset.is_test:
+                str_ref = map_fn(str_ref)
+                str_ref_sub = map_fn_sub(str_ref_sub)
 
             print('----- %s (epoch: %.3f, batch: %d) -----' %
                   (batch['input_names'][0], dataset.epoch_detail, len(batch['xs'])))
             print('=' * 20)
-            print(str_true)
+            print(str_ref)
             print('-' * 10)
-            print(str_true_sub)
-            print('x_lens: %d' % (batch['x_lens'][0] * num_stack))
-            if not dataset.is_test:
-                print('y_lens (word): %d' % batch['y_lens'].data[0])
-                print('y_lens_sub (char): %d' %
-                      batch['y_lens_sub'].data[0])
+            print(str_ref_sub)
+            print('x_lens: %d' % (len(batch['xs'][0]) * num_stack))
 
-            if dataset.epoch_detail >= 0.1:
+            if dataset.epoch_detail >= 1:
                 break
 
 

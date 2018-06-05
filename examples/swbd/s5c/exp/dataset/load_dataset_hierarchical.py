@@ -10,12 +10,14 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from os.path import join, isfile
+from os.path import join
 import pandas as pd
 import logging
 logger = logging.getLogger('training')
 
 from utils.dataset.loader_hierarchical import DatasetBase
+from utils.io.labels.word import Idx2word, Word2idx
+from utils.io.labels.character import Idx2char, Char2idx
 
 
 class Dataset(DatasetBase):
@@ -25,6 +27,7 @@ class Dataset(DatasetBase):
                  data_type, data_size, label_type, label_type_sub,
                  batch_size, max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
+                 min_frame_num=40,
                  shuffle=False, sort_utt=False, reverse=False,
                  sort_stop_epoch=None, num_gpus=1, tool='htk',
                  num_enque=None, dynamic_batching=False):
@@ -36,30 +39,27 @@ class Dataset(DatasetBase):
             use_delta (bool): if True, use the delta feature
             use_double_delta (bool): if True, use the acceleration feature
             data_type (string): train or dev or eval2000_swbd or eval2000_ch
-            data_size (string): 300h or 2000h
-            label_type (string): word1 or word5 or word10 or word15
+            data_size (string): 300h
+            label_type (string): word
             label_type_sub (string): characater or characater_capital_divide
             batch_size (int): the size of mini-batch
-            max_epoch (int, optional): the max epoch. None means infinite loop.
-            splice (int, optional): frames to splice. Default is 1 frame.
-            num_stack (int, optional): the number of frames to stack
-            num_skip (int, optional): the number of frames to skip
-            shuffle (bool, optional): if True, shuffle utterances. This is
-                disabled when sort_utt is True.
-            sort_utt (bool, optional): if True, sort all utterances in the
-                ascending order
-            reverse (bool, optional): if True, sort utteraces in the
-                descending order
-            sort_stop_epoch (int, optional): After sort_stop_epoch, training
-                will revert back to a random order
-            num_gpus (int, optional): the number of GPUs
-            tool (string, optional): htk or librosa or python_speech_features
-            num_enque (int, optional): the number of elements to enqueue
-            dynamic_batching (bool, optional): if True, batch size will be
-                chainged dynamically in training
+            max_epoch (int): the max epoch. None means infinite loop.
+            splice (int): frames to splice. Default is 1 frame.
+            num_stack (int): the number of frames to stack
+            num_skip (int): the number of frames to skip
+            min_frame_num (int): Exclude utteraces shorter than this value
+            shuffle (bool): if True, shuffle utterances.
+                This is disabled when sort_utt is True.
+            sort_utt (bool): if True, sort all utterances in the ascending order
+            reverse (bool): if True, sort utteraces in the descending order
+            sort_stop_epoch (int): After sort_stop_epoch, training will revert
+                back to a random order
+            num_gpus (int): the number of GPUs
+            tool (string): htk or librosa or python_speech_features
+            num_enque (int): the number of elements to enqueue
+            dynamic_batching (bool): if True, batch size will be chainged
+                dynamically in training
         """
-        self.is_test = True if 'eval' in data_type else False
-
         self.backend = backend
         self.input_freq = input_freq
         self.use_delta = use_delta
@@ -80,15 +80,20 @@ class Dataset(DatasetBase):
         self.tool = tool
         self.num_enque = num_enque
         self.dynamic_batching = dynamic_batching
-
-        if isfile(data_save_path):
-            data_save_path = data_save_path[:-3]
-        # TODO: fix this
+        self.is_test = True if 'eval' in data_type else False
 
         self.vocab_file_path = join(
             data_save_path, 'vocab', label_type + '.txt')
+        self.idx2word = Idx2word(self.vocab_file_path)
+        self.word2idx = Word2idx(self.vocab_file_path)
         self.vocab_file_path_sub = join(
             data_save_path, 'vocab', label_type_sub + '.txt')
+        self.idx2char = Idx2char(
+            self.vocab_file_path_sub,
+            capital_divide=label_type_sub == 'character_capital_divide')
+        self.char2idx = Char2idx(
+            self.vocab_file_path_sub,
+            capital_divide=label_type_sub == 'character_capital_divide')
 
         super(Dataset, self).__init__(vocab_file_path=self.vocab_file_path,
                                       vocab_file_path_sub=self.vocab_file_path_sub)
@@ -111,11 +116,13 @@ class Dataset(DatasetBase):
                                            <= 3 and x['frame_num'] >= 1000), axis=1)]
             df_sub = df_sub[df_sub.apply(lambda x: not(len(x['transcript'].split(' '))
                                                        <= 24 and x['frame_num'] >= 1000), axis=1)]
+            df = df[df.apply(
+                lambda x: min_frame_num <= x['frame_num'], axis=1)]
             logger.info('Restricted utterance num (main): %d' % len(df))
             logger.info('Restricted utterance num (sub): %d' % len(df_sub))
 
         # Sort paths to input & label
-        if sort_utt and data_type != 'dev':
+        if sort_utt:
             df = df.sort_values(by='frame_num', ascending=not reverse)
             df_sub = df_sub.sort_values(by='frame_num', ascending=not reverse)
         else:
@@ -132,7 +139,7 @@ class Dataset(DatasetBase):
         if not self.dynamic_batching:
             return batch_size
 
-        if min_frame_num_batch <= 900:
+        if min_frame_num_batch <= 800:
             pass
         elif min_frame_num_batch <= 1200:
             batch_size = int(batch_size / 2)
@@ -141,7 +148,7 @@ class Dataset(DatasetBase):
         elif min_frame_num_batch <= 1700:
             batch_size = int(batch_size / 4)
         else:
-            batch_size = 8
+            batch_size = int(batch_size / 8)
 
         if batch_size < 1:
             batch_size = 1

@@ -133,7 +133,7 @@ class Dataset(DatasetBase):
         if not self.dynamic_batching:
             return batch_size
 
-        if min_frame_num_batch <= 700:
+        if min_frame_num_batch <= 800:
             pass
         elif min_frame_num_batch <= 1200:
             batch_size = int(batch_size / 2)
