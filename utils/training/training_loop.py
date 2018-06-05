@@ -40,8 +40,7 @@ def train_step(model, batch, clip_grad_norm, backend):
         # Step for parameter update
         if backend == 'pytorch':
             model.optimizer.zero_grad()
-            loss_train = model(batch['xs'], batch['ys'],
-                               batch['x_lens'], batch['y_lens'])
+            loss_train = model(batch['xs'], batch['ys'])
             loss_train.backward()
             if clip_grad_norm > 0:
                 # torch.nn.utils.clip_grad_norm_(
@@ -56,8 +55,7 @@ def train_step(model, batch, clip_grad_norm, backend):
 
         elif backend == 'chainer':
             model.optimizer.target.cleargrads()
-            loss_train = model(batch['xs'], batch['ys'],
-                               batch['x_lens'], batch['y_lens'])
+            loss_train = model(batch['xs'], batch['ys'])
             loss_train.backward()
             loss_train.unchain_backward()
             model.optimizer.update()
@@ -68,10 +66,11 @@ def train_step(model, batch, clip_grad_norm, backend):
 
     except RuntimeError as e:
         logger.warning('!!!Skip mini-batch!!! (max_frame_num: %d, batch: %d)' %
-                       (max(batch['x_lens']) * model.num_stack, len(batch['xs'])))
+                       (max(len(x) for x in batch['xs']) * model.num_stack, len(batch['xs'])))
         if backend == 'pytorch':
             model.optimizer.zero_grad()
-            torch.cuda.empty_cache()
+            # if model.device_id >=0:
+            #     torch.cuda.empty_cache()
         elif backend == 'chainer':
             model.optimizer.target.cleargrads()
 
@@ -102,9 +101,7 @@ def train_hierarchical_step(model, batch, clip_grad_norm, backend):
         if backend == 'pytorch':
             model.optimizer.zero_grad()
             loss_train, loss_main_train, loss_sub_train = model(
-                batch['xs'], batch['ys'],
-                batch['x_lens'], batch['y_lens'],
-                batch['ys_sub'], batch['y_lens_sub'])
+                batch['xs'], batch['ys'])
             loss_train.backward()
             if clip_grad_norm > 0:
                 # torch.nn.utils.clip_grad_norm_(
@@ -124,9 +121,7 @@ def train_hierarchical_step(model, batch, clip_grad_norm, backend):
         elif backend == 'chainer':
             model.optimizer.target.cleargrads()
             loss_train, loss_main_train, loss_sub_train = model(
-                batch['xs'], batch['ys'],
-                batch['x_lens'], batch['y_lens'],
-                batch['ys_sub'], batch['y_lens_sub'])
+                batch['xs'], batch['ys'])
             loss_train.backward()
             loss_train.unchain_backward()
             model.optimizer.update()
@@ -139,10 +134,11 @@ def train_hierarchical_step(model, batch, clip_grad_norm, backend):
 
     except RuntimeError as e:
         logger.warning('!!!Skip mini-batch!!! (max_frame_num: %d, batch: %d)' %
-                       (max(batch['x_lens']) * model.num_stack, len(batch['xs'])))
+                       (max(len(x) for x in batch['xs']) * model.num_stack, len(batch['xs'])))
         if backend == 'pytorch':
             model.optimizer.zero_grad()
-            torch.cuda.empty_cache()
+            # if model.device_id >= 0:
+            #     torch.cuda.empty_cache()
         elif backend == 'chainer':
             model.optimizer.target.cleargrads()
 

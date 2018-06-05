@@ -6,6 +6,7 @@ from __future__ import division
 from __future__ import print_function
 
 import os
+from os.path import join, isfile
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
@@ -25,12 +26,14 @@ def plot_loss(train_losses, dev_losses, steps, save_path):
         steps (list): steps
     """
     # Save as csv file
+    if isfile(join(save_path, "loss.csv")):
+        # loss_graph = np.loadtxt(join(
+        #     save_path, "loss.csv"), delimiter=",")
+        os.remove(join(save_path, "loss.csv"))
     loss_graph = np.column_stack((steps, train_losses, dev_losses))
-    if os.path.isfile(os.path.join(save_path, "loss.csv")):
-        os.remove(os.path.join(save_path, "loss.csv"))
-    np.savetxt(os.path.join(save_path, "loss.csv"), loss_graph, delimiter=",")
-    # TODO: change to chainer reporter
+    np.savetxt(join(save_path, "loss.csv"), loss_graph, delimiter=",")
 
+    # TODO: change to chainer reporter
     # TODO: error check for inf loss
 
     # Plot & save as png file
@@ -40,9 +43,9 @@ def plot_loss(train_losses, dev_losses, steps, save_path):
     plt.xlabel('step', fontsize=12)
     plt.ylabel('loss', fontsize=12)
     plt.legend(loc="upper right", fontsize=12)
-    if os.path.isfile(os.path.join(save_path, "loss.png")):
-        os.remove(os.path.join(save_path, "loss.png"))
-    plt.savefig(os.path.join(save_path, "loss.png"), dvi=500)
+    if isfile(join(save_path, "loss.png")):
+        os.remove(join(save_path, "loss.png"))
+    plt.savefig(join(save_path, "loss.png"), dvi=500)
 
 
 def plot_ler(train_lers, dev_lers, steps, label_type, save_path):
@@ -63,9 +66,9 @@ def plot_ler(train_lers, dev_lers, steps, label_type, save_path):
 
     # Save as csv file
     loss_graph = np.column_stack((steps, train_lers, dev_lers))
-    if os.path.isfile(os.path.join(save_path, "ler.csv")):
-        os.remove(os.path.join(save_path, "ler.csv"))
-    np.savetxt(os.path.join(save_path, "ler.csv"), loss_graph, delimiter=",")
+    if isfile(join(save_path, "ler.csv")):
+        os.remove(join(save_path, "ler.csv"))
+    np.savetxt(join(save_path, "ler.csv"), loss_graph, delimiter=",")
 
     # Plot & save as png file
     plt.clf()
@@ -74,6 +77,6 @@ def plot_ler(train_lers, dev_lers, steps, label_type, save_path):
     plt.xlabel('step', fontsize=12)
     plt.ylabel(name, fontsize=12)
     plt.legend(loc="upper right", fontsize=12)
-    if os.path.isfile(os.path.join(save_path, name.lower() + '.png')):
-        os.remove(os.path.join(save_path, name.lower() + '.png'))
-    plt.savefig(os.path.join(save_path, name.lower() + '.png'), dvi=500)
+    if isfile(join(save_path, name.lower() + '.png')):
+        os.remove(join(save_path, name.lower() + '.png'))
+    plt.savefig(join(save_path, name.lower() + '.png'), dvi=500)

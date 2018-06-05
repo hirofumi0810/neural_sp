@@ -15,8 +15,9 @@ import copy
 import argparse
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
-
+import cProfile
 import torch
+
 torch.manual_seed(1623)
 torch.cuda.manual_seed_all(1623)
 
@@ -232,9 +233,7 @@ def main():
 
             # Compute loss in the dev set
             batch_dev = dev93_data.next()[0]
-            loss_dev = model(
-                batch_dev['xs'], batch_dev['ys'],
-                batch_dev['x_lens'], batch_dev['y_lens'], is_eval=True)
+            loss_dev = model(batch_dev['xs'], batch_dev['ys'], is_eval=True)
 
             loss_train_mean /= params['print_step']
             csv_steps.append(step)
@@ -257,7 +256,8 @@ def main():
                         (step + 1, train_data.epoch_detail,
                          loss_train_mean, loss_dev,
                          learning_rate, train_data.current_batch_size,
-                         max(batch_train['x_lens']) * params['num_stack'],
+                         max(len(x)
+                             for x in batch_train['xs']) * params['num_stack'],
                          duration_step / 60))
             start_time_step = time.time()
             loss_train_mean = 0.
@@ -385,4 +385,7 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    # Setting for profiling
+    pr = cProfile.Profile()
+    save_path = pr.runcall(main)
+    pr.dump_stats(os.path.join(save_path, 'train.profile'))
