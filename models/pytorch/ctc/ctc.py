@@ -83,14 +83,14 @@ class CTC(ModelBase):
         dropout_encoder (float): the probability to drop nodes in hidden-hidden connection
         num_classes (int): the number of classes of target labels
             (excluding the blank class)
-        parameter_init_distribution (string): uniform or normal or
-            orthogonal or constant distribution
-        parameter_init (float): Range of uniform distribution to
-            initialize weight parameters
-        recurrent_weight_orthogonal (bool): if True, recurrent
-            weights are orthogonalized
-        init_forget_gate_bias_with_one (bool): if True, initialize
-            the forget gate bias with 1
+        parameter_init_distribution (string): uniform or normal or orthogonal
+            or constant distribution
+        parameter_init (float): Range of uniform distribution to initialize
+            weight parameters
+        recurrent_weight_orthogonal (bool): if True, recurrent weights are
+            orthogonalized
+        init_forget_gate_bias_with_one (bool): if True, initialize the forget
+            gate bias with 1
         subsample_list (list): subsample in the corresponding layers (True)
             ex.) [False, True, True, False] means that subsample is conducted
                 in the 2nd and 3rd layers.

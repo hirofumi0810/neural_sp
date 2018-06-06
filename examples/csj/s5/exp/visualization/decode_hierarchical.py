@@ -40,13 +40,14 @@ parser.add_argument('--coverage_penalty', type=float, default=0,
 
 parser.add_argument('--resolving_unk', type=bool, default=False)
 parser.add_argument('--a2c_oracle', type=bool, default=False)
-parser.add_argument('--joint_decoding', choices=[None, 'onepass', 'rescoring'])
+parser.add_argument('--joint_decoding', choices=[None, 'onepass', 'rescoring'],
+                    default=None)
 parser.add_argument('--score_sub_weight', type=float, default=0)
 
 MAX_DECODE_LEN_WORD = 100
-MIN_DECODE_LEN_WORD = 0
+MIN_DECODE_LEN_WORD = 1
 MAX_DECODE_LEN_CHAR = 200
-MIN_DECODE_LEN_CHAR = 0
+MIN_DECODE_LEN_CHAR = 1
 
 
 def main():
@@ -71,7 +72,6 @@ def main():
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=False, reverse=False, tool=params['tool'])
-
     params['num_classes'] = dataset.num_classes
     params['num_classes_sub'] = dataset.num_classes_sub
 
@@ -97,7 +97,7 @@ def main():
         # Decode
         if model.model_type == 'nested_attention':
             best_hyps, aw, best_hyps_sub, aw_sub, _, perm_idx = model.decode(
-                batch['xs'], batch['x_lens'],
+                batch['xs'],
                 beam_width=args.beam_width,
                 beam_width_sub=args.beam_width_sub,
                 max_decode_len=MAX_DECODE_LEN_WORD,
@@ -106,14 +106,14 @@ def main():
                 coverage_penalty=args.coverage_penalty)
         else:
             best_hyps, aw, perm_idx = model.decode(
-                batch['xs'], batch['x_lens'],
+                batch['xs'],
                 beam_width=args.beam_width,
                 max_decode_len=MAX_DECODE_LEN_WORD,
                 min_decode_len=MIN_DECODE_LEN_WORD,
                 length_penalty=args.length_penalty,
                 coverage_penalty=args.coverage_penalty)
             best_hyps_sub, aw_sub, _ = model.decode(
-                batch['xs'], batch['x_lens'],
+                batch['xs'],
                 beam_width=args.beam_width_sub,
                 max_decode_len=MAX_DECODE_LEN_CHAR,
                 min_decode_len=MIN_DECODE_LEN_CHAR,
@@ -123,7 +123,7 @@ def main():
 
         if model.model_type == 'hierarchical_attention' and args.joint_decoding is not None:
             best_hyps_joint, aw_joint, best_hyps_sub_joint, aw_sub_joint, _ = model.decode(
-                batch['xs'], batch['x_lens'],
+                batch['xs'],
                 beam_width=args.beam_width,
                 max_decode_len=MAX_DECODE_LEN_WORD,
                 min_decode_len=MIN_DECODE_LEN_WORD,
@@ -137,23 +137,21 @@ def main():
                 idx2char=dataset.idx2char,
                 score_sub_weight=args.score_sub_weight)
 
-        ys = batch['ys'][perm_idx]
-        y_lens = batch['y_lens'][perm_idx]
-        ys_sub = batch['ys_sub'][perm_idx]
-        y_lens_sub = batch['y_lens_sub'][perm_idx]
+        ys = [batch['ys'][i] for i in perm_idx]
+        ys_sub = [batch['ys_sub'][i] for i in perm_idx]
 
         for b in range(len(batch['xs'])):
             ##############################
             # Reference
             ##############################
             if dataset.is_test:
-                str_ref = ys[b][0]
-                str_ref_sub = ys_sub[b][0]
+                str_ref = ys[b]
+                str_ref_sub = ys_sub[b]
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
-                str_ref = dataset.idx2word(ys[b][: y_lens[b]])
-                str_ref_sub = dataset.idx2char(ys_sub[b][:y_lens_sub[b]])
+                str_ref = dataset.idx2word(ys[b])
+                str_ref_sub = dataset.idx2char(ys_sub[b])
 
             ##############################
             # Hypothesis

@@ -18,10 +18,7 @@ echo "                                   CSJ                                    
 echo ============================================================================
 
 stage=0
-hierarchical_model=false
-# hierarchical_model=true
 run_background=true
-restart=false
 
 ### Set path to original data
 CSJDATATOP="/n/rd25/mimura/corpus/CSJ"
@@ -127,7 +124,7 @@ if [ $stage -le 1 ] && [ ! -e $DATA/.stage_1_$DATASIZE ]; then
 
   elif [ $TOOL = "htk" ]; then
     # Make a config file to covert from wav to htk file
-    python local/make_htk_config.py \
+    $PYTHON local/make_htk_config.py \
         --data_save_path $DATA \
         --config_save_path ./conf/fbank_htk.conf \
         --audio_file_type wav \
@@ -176,7 +173,7 @@ if [ $stage -le 1 ] && [ ! -e $DATA/.stage_1_$DATASIZE ]; then
     fi
   fi
 
-  python local/feature_extraction.py \
+  $PYTHON local/feature_extraction.py \
     --data_save_path $DATA \
     --data_size $DATASIZE \
     --tool $TOOL \
@@ -198,7 +195,7 @@ if [ $stage -le 2 ] && [ ! -e $DATA/.stage_2_$DATASIZE ]; then
   echo "                            Create dataset                                "
   echo ============================================================================
 
-  python local/make_dataset_csv.py \
+  $PYTHON local/make_dataset_csv.py \
     --data_save_path $DATA \
     --data_size $DATASIZE \
     --tool $TOOL || exit 1;
@@ -222,8 +219,8 @@ if [ $stage -le 3 ]; then
 
   echo "Start training..."
 
-  if $hierarchical_model; then
-    if $restart; then
+  if [ `echo $config_path | grep 'hierarchical'` ]; then
+    if [ `echo $config_path | grep 'result'` ]; then
       if $run_background; then
         CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
         nohup $PYTHON exp/training/train_hierarchical.py \
@@ -255,7 +252,7 @@ if [ $stage -le 3 ]; then
       fi
     fi
   else
-    if $restart; then
+    if [ `echo $config_path | grep 'result'` ]; then
       if $run_background; then
         CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
         nohup $PYTHON exp/training/train.py \

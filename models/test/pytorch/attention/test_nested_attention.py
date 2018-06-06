@@ -30,14 +30,12 @@ class TestCharseqAttention(unittest.TestCase):
 
         # Usage character-level decoder states
         self.check(usage_dec_sub='softmax')
+        self.check(logits_injection=True, usage_dec_sub='softmax')
         self.check(usage_dec_sub='update_decoder')
         self.check(usage_dec_sub='all')
 
         # gating mechanism
         self.check(usage_dec_sub='all', gating=True)
-
-        # logits injection
-        self.check(logits_injection=True, usage_dec_sub='softmax')
 
         # beam search
         self.check(usage_dec_sub='softmax', beam_width=2)
@@ -75,9 +73,9 @@ class TestCharseqAttention(unittest.TestCase):
 
         print('==================================================')
         print('  usage_dec_sub: %s' % usage_dec_sub)
-        print('  att_reg_weight: %f' % att_reg_weight)
-        print('  main_loss_weight: %f' % main_loss_weight)
-        print('  ctc_loss_weight_sub: %f' % ctc_loss_weight_sub)
+        print('  att_reg_weight: %.3f' % att_reg_weight)
+        print('  main_loss_weight: %.3f' % main_loss_weight)
+        print('  ctc_loss_weight_sub: %.3f' % ctc_loss_weight_sub)
         print('  dec_attend_temperature: %s' % str(dec_attend_temperature))
         print('  dec_sigmoid_smoothing: %s' % str(dec_sigmoid_smoothing))
         print('  backward_sub: %s' % str(backward_sub))
@@ -91,15 +89,14 @@ class TestCharseqAttention(unittest.TestCase):
         # Load batch data
         splice = 1
         num_stack = 1
-        xs, ys, ys_sub, x_lens, y_lens, y_lens_sub = generate_data(
-            label_type='word_char',
-            batch_size=2,
-            num_stack=num_stack,
-            splice=splice)
+        xs, ys, ys_sub = generate_data(label_type='word_char',
+                                       batch_size=2,
+                                       num_stack=num_stack,
+                                       splice=splice)
 
         # Load model
         model = NestedAttentionSeq2seq(
-            input_size=xs.shape[-1] // splice // num_stack,  # 120
+            input_size=xs[0].shape[-1] // splice // num_stack,  # 120
             encoder_type='lstm',
             encoder_bidirectional=True,
             encoder_num_units=256,
@@ -202,10 +199,9 @@ class TestCharseqAttention(unittest.TestCase):
             # Step for parameter update
             model.optimizer.zero_grad()
             if second_pass:
-                loss = model(xs, ys, x_lens, y_lens)
+                loss = model(xs, ys)
             else:
-                loss, loss_main, loss_sub = model(
-                    xs, ys, x_lens, y_lens, ys_sub, y_lens_sub)
+                loss, loss_main, loss_sub = model(xs, ys, ys_sub)
             loss.backward()
             # torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
             torch.nn.utils.clip_grad_norm(model.parameters(), 5)
@@ -214,17 +210,14 @@ class TestCharseqAttention(unittest.TestCase):
             if (step + 1) % 10 == 0:
                 # Compute loss
                 if second_pass:
-                    loss = model(xs, ys, x_lens, y_lens, is_eval=True)
+                    loss = model(xs, ys, is_eval=True)
                 else:
                     loss, loss_main, loss_sub = model(
-                        xs, ys, x_lens, y_lens, ys_sub, y_lens_sub, is_eval=True)
+                        xs, ys, ys_sub, is_eval=True)
 
                 best_hyps, _, best_hyps_sub, _, _, perm_idx = model.decode(
-                    xs, x_lens,
-                    beam_width=beam_width,
-                    max_decode_len=30,
-                    beam_width_sub=beam_width,
-                    max_decode_len_sub=60)
+                    xs, beam_width, max_decode_len=30,
+                    beam_width_sub=beam_width, max_decode_len_sub=60)
 
                 str_hyp = idx2word(best_hyps[0][:-1])
                 str_ref = idx2word(ys[0])

@@ -17,6 +17,7 @@ from examples.swbd.s5c.exp.dataset.load_dataset_hierarchical import Dataset
 from examples.swbd.s5c.exp.metrics.character import eval_char
 from examples.swbd.s5c.exp.metrics.word import eval_word
 from utils.config import load_config
+from utils.evaluation.logging import set_logger
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str,
@@ -25,124 +26,112 @@ parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
 parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
+parser.add_argument('--eval_batch_size', type=int, default=1,
+                    help='the size of mini-batch in evaluation')
 parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam in the main task')
 parser.add_argument('--beam_width_sub', type=int, default=1,
                     help='the size of beam in the sub task')
-parser.add_argument('--eval_batch_size', type=int, default=1,
-                    help='the size of mini-batch in evaluation')
-parser.add_argument('--length_penalty', type=float,
-                    help='length penalty in beam search decodding')
+parser.add_argument('--length_penalty', type=float, default=0,
+                    help='length penalty in beam search decoding')
+parser.add_argument('--coverage_penalty', type=float, default=0,
+                    help='coverage penalty in beam search decoding')
 
 MAX_DECODE_LEN_WORD = 100
+MIN_DECODE_LEN_WORD = 0
 MAX_DECODE_LEN_CHAR = 300
+MIN_DECODE_LEN_CHAR = 0
 
 
 def main():
+
+    a2c_oracle = False
+    resolving_unk = False
 
     args = parser.parse_args()
 
     # Load a config file (.yml)
     params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
-    # Load dataset
-    eval2000_swbd_data = Dataset(
-        data_save_path=args.data_save_path,
-        backend=params['backend'],
-        input_freq=params['input_freq'],
-        use_delta=params['use_delta'],
-        use_double_delta=params['use_double_delta'],
-        data_type='eval2000_swbd', data_size=params['data_size'],
-        label_type=params['label_type'], label_type_sub=params['label_type_sub'],
-        batch_size=args.eval_batch_size, splice=params['splice'],
-        num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=False, tool=params['tool'])
-    eval2000_ch_data = Dataset(
-        data_save_path=args.data_save_path,
-        backend=params['backend'],
-        input_freq=params['input_freq'],
-        use_delta=params['use_delta'],
-        use_double_delta=params['use_double_delta'],
-        data_type='eval2000_ch',  data_size=params['data_size'],
-        label_type=params['label_type'], label_type_sub=params['label_type_sub'],
-        batch_size=args.eval_batch_size, splice=params['splice'],
-        num_stack=params['num_stack'], num_skip=params['num_skip'],
-        sort_utt=False, tool=params['tool'])
+    # Setting for logging
+    logger = set_logger(args.model_path)
 
-    params['num_classes'] = eval2000_swbd_data.num_classes
-    params['num_classes_sub'] = eval2000_swbd_data.num_classes_sub
+    wer_mean, wer_sub_mean, cer_sub_mean = 0, 0, 0
+    for i, data_type in enumerate(['eval2000_swbd', 'eval2000_ch']):
+        # Load dataset
+        dataset = Dataset(
+            data_save_path=args.data_save_path,
+            backend=params['backend'],
+            input_freq=params['input_freq'],
+            use_delta=params['use_delta'],
+            use_double_delta=params['use_double_delta'],
+            data_type=data_type,
+            data_size=params['data_size'],
+            label_type=params['label_type'], label_type_sub=params['label_type_sub'],
+            batch_size=args.eval_batch_size, splice=params['splice'],
+            num_stack=params['num_stack'], num_skip=params['num_skip'],
+            shuffle=False, tool=params['tool'])
 
-    # Load model
-    model = load(model_type=params['model_type'],
-                 params=params,
-                 backend=params['backend'])
+        if i == 0:
+            params['num_classes'] = dataset.num_classes
+            params['num_classes_sub'] = dataset.num_classes_sub
 
-    # Restore the saved parameters
-    model.load_checkpoint(save_path=args.model_path, epoch=args.epoch)
+            # Load model
+            model = load(model_type=params['model_type'],
+                         params=params,
+                         backend=params['backend'])
 
-    # GPU setting
-    model.set_cuda(deterministic=False, benchmark=True)
+            # Restore the saved parameters
+            epoch, _, _, _ = model.load_checkpoint(
+                save_path=args.model_path, epoch=args.epoch)
 
-    a2c_oracle = False
-    resolving_unk = False
+            # GPU setting
+            model.set_cuda(deterministic=False, benchmark=True)
 
-    ##############################
-    # Switchboard
-    ##############################
-    wer_eval2000_swbd, df_wer_eval2000_swbd = eval_word(
-        models=[model],
-        dataset=eval2000_swbd_data,
-        beam_width=args.beam_width,
-        beam_width_sub=args.beam_width_sub,
-        max_decode_len=MAX_DECODE_LEN_WORD,
-        max_decode_len_sub=MAX_DECODE_LEN_CHAR,
-        eval_batch_size=args.eval_batch_size,
-        progressbar=True,
-        resolving_unk=resolving_unk,
-        a2c_oracle=a2c_oracle)
-    print('  WER (SWB, main): %.3f %%' % (wer_eval2000_swbd * 100))
-    print(df_wer_eval2000_swbd)
-    wer_eval2000_swbd_sub, cer_eval2000_swbd_sub, _ = eval_char(
-        models=[model],
-        dataset=eval2000_swbd_data,
-        beam_width=args.beam_width_sub,
-        max_decode_len=MAX_DECODE_LEN_CHAR,
-        eval_batch_size=args.eval_batch_size,
-        progressbar=True)
-    print(' WER / CER (SWB, sub): %.3f / %.3f %%' %
-          ((wer_eval2000_swbd_sub * 100), (cer_eval2000_swbd_sub * 100)))
+            logger.info('beam width (main): %d\n' % args.beam_width)
+            logger.info('beam width (sub) : %d\n' % args.beam_width_sub)
+            logger.info('epoch: %d' % (epoch - 1))
+            logger.info('a2c oracle: %s\n' % str(a2c_oracle))
+            logger.info('resolving_unk: %s\n' % str(resolving_unk))
 
-    ##############################
-    # Callhome
-    ##############################
-    wer_eval2000_ch, df_wer_eval2000_ch = eval_word(
-        models=[model],
-        dataset=eval2000_ch_data,
-        beam_width=args.beam_width,
-        beam_width_sub=args.beam_width_sub,
-        max_decode_len=MAX_DECODE_LEN_WORD,
-        max_decode_len_sub=MAX_DECODE_LEN_CHAR,
-        eval_batch_size=args.eval_batch_size,
-        progressbar=True,
-        resolving_unk=resolving_unk,
-        a2c_oracle=a2c_oracle)
-    print('  WER (CHE, main): %.3f %%' % (wer_eval2000_ch * 100))
-    print(df_wer_eval2000_ch)
-    wer_eval2000_ch_sub, cer_eval2000_ch_sub, _ = eval_char(
-        models=[model],
-        dataset=eval2000_ch_data,
-        beam_width=args.beam_width_sub,
-        max_decode_len=args.max_decode_len_sub,
-        eval_batch_size=args.eval_batch_size,
-        progressbar=True)
-    print('  WER / CER (CHE, sub): %.3f / %.3f %%' %
-          ((wer_eval2000_ch_sub * 100), (cer_eval2000_ch_sub * 100)))
+        wer, df = eval_word(
+            models=[model],
+            dataset=dataset,
+            eval_batch_size=args.eval_batch_size,
+            beam_width=args.beam_width,
+            max_decode_len=MAX_DECODE_LEN_WORD,
+            min_decode_len=MIN_DECODE_LEN_WORD,
+            beam_width_sub=args.beam_width_sub,
+            max_decode_len_sub=MAX_DECODE_LEN_CHAR,
+            min_decode_len_sub=MIN_DECODE_LEN_CHAR,
+            length_penalty=args.length_penalty,
+            coverage_penalty=args.coverage_penalty,
+            progressbar=True,
+            resolving_unk=resolving_unk,
+            a2c_oracle=a2c_oracle)
+        wer_mean += wer
+        logger.info('  WER (%s, main): %.3f %%' % (data_type, (wer * 100)))
+        logger.info(df)
 
-    print('  WER (mean, main): %.3f %%' %
-          ((wer_eval2000_swbd + wer_eval2000_ch) * 100 / 2))
-    print('  WER / CER (mean, sub): %.3f / %.3f %%' %
-          (((wer_eval2000_swbd_sub + wer_eval2000_ch_sub) * 100 / 2),
-           ((cer_eval2000_swbd_sub + cer_eval2000_ch_sub) * 100 / 2)))
+        wer_sub, cer_sub, df_sub = eval_char(
+            models=[model],
+            dataset=dataset,
+            eval_batch_size=args.eval_batch_size,
+            beam_width=args.beam_width_sub,
+            max_decode_len=MAX_DECODE_LEN_CHAR,
+            min_decode_len=MIN_DECODE_LEN_CHAR,
+            length_penalty=args.length_penalty,
+            coverage_penalty=args.coverage_penalty,
+            progressbar=True)
+        wer_sub_mean += wer_sub
+        cer_sub_mean += cer_sub
+        logger.info(' WER / CER (%s, sub): %.3f / %.3f %%' %
+                    (data_type, (wer_sub * 100), (cer_sub * 100)))
+        logger.info(df_sub)
+
+    logger.info('  WER (mean, main): %.3f %%' % (wer_mean * 100 / 2))
+    logger.info('  WER / CER (mean, sub): %.3f / %.3f %%' %
+                ((wer_sub_mean * 100 / 2), (cer_sub_mean * 100 / 2)))
 
 
 if __name__ == '__main__':

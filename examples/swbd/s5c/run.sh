@@ -18,10 +18,7 @@ echo "                           Switchboard (300h)                             
 echo ============================================================================
 
 stage=0
-# hierarchical_model=false
-hierarchical_model=true
 run_background=true
-restart=false
 
 ### Set path to original data
 SWBD_AUDIOPATH="/n/sd8/inaguma/corpus/swbd/data/LDC97S62"
@@ -193,7 +190,7 @@ if [ $stage -le 1 ] && [ ! -e $DATA/.stage_1 ]; then
     if [ $TOOL = "htk" ]; then
       # Make a config file to covert from wav to htk file
       # and split per channel
-      python local/make_htk_config.py \
+      $PYTHON local/make_htk_config.py \
           --data_save_path $DATA \
           --config_save_path ./conf/fbank_htk.conf \
           --channels $CHANNELS \
@@ -222,7 +219,7 @@ if [ $stage -le 1 ] && [ ! -e $DATA/.stage_1 ]; then
     fi
   fi
 
-  python local/feature_extraction.py \
+  $PYTHON local/feature_extraction.py \
     --data_save_path $DATA \
     --tool $TOOL \
     --normalize $NORMALIZE \
@@ -243,7 +240,7 @@ if [ $stage -le 2 ] && [ ! -e $DATA/.stage_2 ]; then
   echo "                            Create dataset                                "
   echo ============================================================================
 
-  python local/make_dataset_csv.py \
+  $PYTHON local/make_dataset_csv.py \
     --data_save_path $DATA \
     --tool $TOOL || exit 1;
 
@@ -266,8 +263,8 @@ if [ $stage -le 3 ]; then
 
   echo "Start training..."
 
-  if $hierarchical_model; then
-    if $restart; then
+  if [ `echo $config_path | grep 'hierarchical'` ]; then
+    if [ `echo $config_path | grep 'result'` ]; then
       if $run_background; then
         CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
         nohup $PYTHON exp/training/train_hierarchical.py \
@@ -299,7 +296,7 @@ if [ $stage -le 3 ]; then
       fi
     fi
   else
-    if $restart; then
+    if [ `echo $config_path | grep 'result'` ]; then
       if $run_background; then
         CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
         nohup $PYTHON exp/training/train.py \

@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Test attention-besed models (pytorch)."""
+"""Test RNN language models (pytorch)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -18,10 +18,9 @@ torch.manual_seed(1623)
 torch.cuda.manual_seed_all(1623)
 
 sys.path.append('../../../../')
-from models.pytorch.lm.rnnlm import RNNLM
-from models.test.data import generate_data, idx2char, idx2word
+from models.pytorch_v3.lm.rnnlm import RNNLM
+from models.test.data import generate_data
 from utils.measure_time_func import measure_time
-from utils.evaluation.edit_distance import compute_cer, compute_wer
 from utils.training.learning_rate_controller import Controller
 
 
@@ -37,8 +36,8 @@ class TestRNNLM(unittest.TestCase):
         self.check(rnn_type='gru', bidirectional=False)
 
         # Tie weights
-        self.check(rnn_type='lstm', bidirectional=False,
-                   tie_weights=True)
+        # self.check(rnn_type='lstm', bidirectional=False,
+        #            tie_weights=True)
 
         # word-level LM
         self.check(rnn_type='lstm', bidirectional=True,
@@ -56,31 +55,30 @@ class TestRNNLM(unittest.TestCase):
         print('==================================================')
 
         # Load batch data
-        _, ys, _, y_lens = generate_data(model_type='lm',
-                                         label_type=label_type,
+        _, ys, _, y_lens = generate_data(label_type=label_type,
                                          batch_size=2)
 
         if label_type == 'char':
             num_classes = 27
-            map_fn = idx2char
         elif label_type == 'word':
             num_classes = 11
-            map_fn = idx2word
 
         # Load model
         model = RNNLM(
-            num_classes,
             embedding_dim=128,
             rnn_type=rnn_type,
             bidirectional=bidirectional,
-            num_units=1024,
+            num_units=256,
             num_layers=1,
             dropout_embedding=0.1,
             dropout_hidden=0.1,
             dropout_output=0.1,
+            num_classes=num_classes,
             parameter_init_distribution='uniform',
             parameter_init=0.1,
-            tie_weights=False)
+            recurrent_weight_orthogonal=True,
+            init_forget_gate_bias_with_one=True,
+            tie_weights=tie_weights)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):
@@ -100,6 +98,7 @@ class TestRNNLM(unittest.TestCase):
         # Define learning rate controller
         lr_controller = Controller(learning_rate_init=learning_rate,
                                    backend='pytorch',
+                                   decay_type='per_epoch',
                                    decay_start_epoch=20,
                                    decay_rate=0.9,
                                    decay_patient_epoch=10,
@@ -109,7 +108,7 @@ class TestRNNLM(unittest.TestCase):
         model.set_cuda(deterministic=False, benchmark=True)
 
         # Train model
-        max_step = 1000
+        max_step = 300
         start_time_step = time.time()
         for step in range(max_step):
 
@@ -131,35 +130,10 @@ class TestRNNLM(unittest.TestCase):
                 # Compute PPL
                 ppl = math.exp(loss)
 
-                # Decode
-                # best_hyps, perm_idx = model.decode(
-                #     xs, x_lens,
-                #     # beam_width=1,
-                #     beam_width=2,
-                #     max_decode_len=60)
-
-                # Compute accuracy
-                # if label_type == 'char':
-                #     str_true = map_fn(ys[0, :y_lens[0]][1:-1])
-                #     str_pred = map_fn(best_hyps[0][0:-1]).split('>')[0]
-                #     ler = compute_cer(ref=str_true.replace('_', ''),
-                #                       hyp=str_pred.replace('_', ''),
-                #                       normalize=True)
-                # elif label_type == 'word':
-                #     str_true = map_fn(ys[0, : y_lens[0]][1: -1])
-                #     str_pred = map_fn(best_hyps[0][0: -1]).split('>')[0]
-                #     ler, _, _, _ = compute_wer(ref=str_true.split('_'),
-                #                                hyp=str_pred.split('_'),
-                #                                normalize=True)
-
                 duration_step = time.time() - start_time_step
                 print('Step %d: loss=%.3f / ppl=%.3f / lr=%.5f (%.3f sec)' %
                       (step + 1, loss, ppl, learning_rate, duration_step))
                 start_time_step = time.time()
-
-                # Visualize
-                # print('Ref: %s' % str_true)
-                # print('Hyp: %s' % str_pred)
 
                 if ppl == 0:
                     print('Modle is Converged.')

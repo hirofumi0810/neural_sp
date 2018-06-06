@@ -38,6 +38,9 @@ class TestAttention(unittest.TestCase):
     def test(self):
         print("Attention Working check.")
 
+        # CNN encoder
+        self.check(encoder_type='cnn', decoder_type='lstm', batch_norm=True)
+
         # Decoding order
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', decoding_order='bahdanau')
@@ -71,9 +74,8 @@ class TestAttention(unittest.TestCase):
                    decoder_type='lstm', backward_loss_weight=0.5)
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', backward_loss_weight=0.2)
-
-        # CNN encoder
-        self.check(encoder_type='cnn', decoder_type='lstm', batch_norm=True)
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', backward_loss_weight=0.8, beam_width=2)
 
         # CLDNN encoder
         self.check(encoder_type='lstm', bidirectional=True,
@@ -152,14 +154,14 @@ class TestAttention(unittest.TestCase):
         print('  init_dec_state: %s' % init_dec_state)
         print('  attention_type: %s' % attention_type)
         print('  subsample: %s' % str(subsample))
-        print('  ctc_loss_weight: %f' % ctc_loss_weight)
+        print('  ctc_loss_weight: %.3f' % ctc_loss_weight)
         print('  conv: %s' % str(conv))
         print('  batch_norm: %s' % str(batch_norm))
         print('  residual: %s' % str(residual))
         print('  dense_residual: %s' % str(dense_residual))
         print('  decoding_order: %s' % decoding_order)
         print('  beam_width: %d' % beam_width)
-        print('  backward_loss_weight: %f' % backward_loss_weight)
+        print('  backward_loss_weight: %.3f' % backward_loss_weight)
         print('  num_heads: %d' % num_heads)
         print('==================================================')
 
@@ -184,11 +186,10 @@ class TestAttention(unittest.TestCase):
         # Load batch data
         splice = 1
         num_stack = 1 if subsample or conv or encoder_type == 'cnn' else 3
-        xs, ys, x_lens, y_lens = generate_data(
-            label_type=label_type,
-            batch_size=2,
-            num_stack=num_stack,
-            splice=splice)
+        xs, ys = generate_data(label_type=label_type,
+                               batch_size=2,
+                               num_stack=num_stack,
+                               splice=splice)
 
         if label_type == 'char':
             num_classes = 27
@@ -199,7 +200,7 @@ class TestAttention(unittest.TestCase):
 
         # Load model
         model = AttentionSeq2seq(
-            input_size=xs.shape[-1] // splice // num_stack,  # 120
+            input_size=xs[0].shape[-1] // splice // num_stack,  # 120
             encoder_type=encoder_type,
             encoder_bidirectional=bidirectional,
             encoder_num_units=256,
@@ -281,13 +282,13 @@ class TestAttention(unittest.TestCase):
         model.set_cuda(deterministic=False, benchmark=True)
 
         # Train model
-        max_step = 300
+        max_step = 200
         start_time_step = time.time()
         for step in range(max_step):
 
             # Step for parameter update
             model.optimizer.zero_grad()
-            loss = model(xs, ys, x_lens, y_lens)
+            loss = model(xs, ys)
             loss.backward()
             # torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
             torch.nn.utils.clip_grad_norm(model.parameters(), 5)
@@ -300,14 +301,14 @@ class TestAttention(unittest.TestCase):
 
             if (step + 1) % 10 == 0:
                 # Compute loss
-                loss = model(xs, ys, x_lens, y_lens, is_eval=True)
+                loss = model(xs, ys, is_eval=True)
 
                 # Decode
                 best_hyps, _, perm_idx = model.decode(
-                    xs, x_lens, beam_width, max_decode_len=60)
+                    xs, beam_width, max_decode_len=60)
 
                 str_ref = map_fn(ys[0])
-                str_hyp = map_fn(best_hyps[0][:-1])
+                str_hyp = map_fn(best_hyps[0])
 
                 # Compute accuracy
                 try:
@@ -335,7 +336,7 @@ class TestAttention(unittest.TestCase):
                 # Decode by the CTC decoder
                 if model.ctc_loss_weight >= 0.1:
                     best_hyps_ctc, perm_idx = model.decode_ctc(
-                        xs, x_lens, beam_width=1)
+                        xs, beam_width)
                     str_pred_ctc = map_fn(best_hyps_ctc[0])
                     print('Hyp (CTC): %s' % str_pred_ctc)
 

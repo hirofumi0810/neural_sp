@@ -28,6 +28,9 @@ class TestHierarchicalAttention(unittest.TestCase):
     def test(self):
         print("Hierarchical Attention Working check.")
 
+        # CNN-CTC
+        self.check(encoder_type='cnn', decoder_type='lstm', batch_norm=True)
+
         # Multi-head attention
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', num_heads=2)
@@ -35,9 +38,6 @@ class TestHierarchicalAttention(unittest.TestCase):
         # Forward word decoder + backward char decoder
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', backward_sub=True)
-
-        # CNN-CTC
-        self.check(encoder_type='cnn', decoder_type='lstm', batch_norm=True)
 
         # CLDNN encoder
         self.check(encoder_type='lstm', bidirectional=True,
@@ -47,7 +47,7 @@ class TestHierarchicalAttention(unittest.TestCase):
 
         # Word attention + char CTC
         self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', ctc_loss_weight_sub=0.2)
+                   decoder_type='lstm', ctc_loss_weight_sub=0.5)
 
         # Pyramidal encoder
         self.check(encoder_type='lstm', bidirectional=True,
@@ -74,20 +74,22 @@ class TestHierarchicalAttention(unittest.TestCase):
               attention_type='location', subsample=False, projection=False,
               ctc_loss_weight_sub=0, conv=False, batch_norm=False,
               residual=False, dense_residual=False,
+              decoding_order='bahdanau', beam_width=1,
               num_heads=1, backward_sub=False):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
         print('  bidirectional: %s' % str(bidirectional))
-        print('  projection: %s' % str(projection))
+        print('  projection: %d' % projection)
         print('  decoder_type: %s' % decoder_type)
         print('  attention_type: %s' % attention_type)
         print('  subsample: %s' % str(subsample))
-        print('  ctc_loss_weight_sub: %s' % str(ctc_loss_weight_sub))
+        print('  ctc_loss_weight_sub: %.3f' % ctc_loss_weight_sub)
         print('  conv: %s' % str(conv))
         print('  batch_norm: %s' % str(batch_norm))
         print('  residual: %s' % str(residual))
         print('  dense_residual: %s' % str(dense_residual))
+        print('  beam_width: %d' % beam_width)
         print('  backward_sub: %s' % str(backward_sub))
         print('  num_heads: %s' % str(num_heads))
         print('==================================================')
@@ -113,15 +115,14 @@ class TestHierarchicalAttention(unittest.TestCase):
         # Load batch data
         splice = 1
         num_stack = 1 if subsample or conv or encoder_type == 'cnn' else 2
-        xs, ys, ys_sub, x_lens, y_lens, y_lens_sub = generate_data(
-            label_type='word_char',
-            batch_size=2,
-            num_stack=num_stack,
-            splice=splice)
+        xs, ys, ys_sub = generate_data(label_type='word_char',
+                                       batch_size=2,
+                                       num_stack=num_stack,
+                                       splice=splice)
 
         # Load model
         model = HierarchicalAttentionSeq2seq(
-            input_size=xs.shape[-1] // splice // num_stack,  # 120
+            input_size=xs[0].shape[-1] // splice // num_stack,  # 120
             encoder_type=encoder_type,
             encoder_bidirectional=bidirectional,
             encoder_num_units=256,
@@ -141,8 +142,8 @@ class TestHierarchicalAttention(unittest.TestCase):
             dropout_encoder=0.1,
             dropout_decoder=0.1,
             dropout_embedding=0.1,
-            main_loss_weight=0.8,
-            sub_loss_weight=0.2 if ctc_loss_weight_sub == 0 else 0,
+            main_loss_weight=0.5,
+            sub_loss_weight=0.5 if ctc_loss_weight_sub == 0 else 0,
             num_classes=11,
             num_classes_sub=27,
             parameter_init_distribution='uniform',
@@ -217,8 +218,7 @@ class TestHierarchicalAttention(unittest.TestCase):
 
             # Step for parameter update
             model.optimizer.zero_grad()
-            loss, loss_main, loss_sub = model(
-                xs, ys, x_lens, y_lens, ys_sub, y_lens_sub)
+            loss, loss_main, loss_sub = model(xs, ys, ys_sub)
             loss.backward()
             # torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
             torch.nn.utils.clip_grad_norm(model.parameters(), 5)
@@ -227,18 +227,13 @@ class TestHierarchicalAttention(unittest.TestCase):
             if (step + 1) % 10 == 0:
                 # Compute loss
                 loss, loss_main, loss_sub = model(
-                    xs, ys, x_lens, y_lens, ys_sub, y_lens_sub, is_eval=True)
+                    xs, ys, ys_sub, is_eval=True)
 
                 # Decode
                 best_hyps, _, perm_idx = model.decode(
-                    xs, x_lens,
-                    beam_width=1,
-                    max_decode_len=30)
+                    xs, beam_width, max_decode_len=30)
                 best_hyps_sub, _, _ = model.decode(
-                    xs, x_lens,
-                    beam_width=1,
-                    max_decode_len=60,
-                    task_index=1)
+                    xs, beam_width, max_decode_len=60, task_index=1)
                 # TODO: fix beam search
 
                 str_hyp = idx2word(best_hyps[0][:-1])

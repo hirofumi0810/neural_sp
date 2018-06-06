@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Evaluate the trained model (CSJ corpus)."""
+"""Evaluate the trained hierarchical model (CSJ corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -39,13 +39,14 @@ parser.add_argument('--coverage_penalty', type=float, default=0,
 
 parser.add_argument('--resolving_unk', type=bool, default=False)
 parser.add_argument('--a2c_oracle', type=bool, default=False)
-parser.add_argument('--joint_decoding', choices=[None, 'onepass', 'rescoring'])
+parser.add_argument('--joint_decoding', choices=[None, 'onepass', 'rescoring'],
+                    default=None)
 parser.add_argument('--score_sub_weight', type=float, default=0)
 
 MAX_DECODE_LEN_WORD = 100
-MIN_DECODE_LEN_WORD = 0
+MIN_DECODE_LEN_WORD = 1
 MAX_DECODE_LEN_CHAR = 200
-MIN_DECODE_LEN_CHAR = 0
+MIN_DECODE_LEN_CHAR = 1
 
 
 def main():

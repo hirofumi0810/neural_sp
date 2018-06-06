@@ -11,6 +11,7 @@ import numpy as np
 import copy
 import torch
 import torch.nn.functional as F
+from torch.autograd import Variable
 
 from models.pytorch_v3.attention.attention_seq2seq import AttentionSeq2seq
 from models.pytorch_v3.linear import LinearND, Embedding, Embedding_LS
@@ -19,6 +20,7 @@ from models.pytorch_v3.attention.rnn_decoder import RNNDecoder
 from models.pytorch_v3.attention.attention_layer import AttentionMechanism
 from models.pytorch_v3.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch_v3.ctc.decoders.beam_search_decoder import BeamSearchDecoder
+from models.pytorch_v3.utils import np2var, var2np
 
 
 class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
@@ -55,7 +57,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  subsample_list=[],
                  subsample_type='drop',
                  bridge_layer=False,
-                 init_dec_state='first',
+                 init_dec_state='zero',
                  sharpening_factor=1,
                  logits_temperature=1,
                  sigmoid_smoothing=False,
@@ -367,15 +369,12 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         if init_forget_gate_bias_with_one:
             self.init_forget_gate_bias_with_one()
 
-    def forward(self, xs, ys, x_lens, y_lens, ys_sub, y_lens_sub, is_eval=False):
+    def forward(self, xs, ys, ys_sub, is_eval=False):
         """Forward computation.
         Args:
-            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
-            ys (np.ndarray): A tensor of size `[B, T_out]`
-            x_lens (np.ndarray): A tensor of size `[B]`
-            y_lens (np.ndarray): A tensor of size `[B]`
-            ys_sub (np.ndarray): A tensor of size `[B, T_out_sub]`
-            y_lens_sub (np.ndarray): A tensor of size `[B]`
+            xs (list): A list of length `[B]`, which contains arrays of size `[T, input_size]`
+            ys (list): A list of lenght `[B]`, which contains arrays of size `[L]`
+            ys_sub (list): A list of lenght `[B]`, which contains arrays of size `[L_sub]`
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
@@ -392,87 +391,53 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             if self.weight_noise_injection:
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
-        # Reverse the order
-        if self.backward_1:
-            ys_sub_tmp = copy.deepcopy(ys_sub)
-            for b in range(len(xs)):
-                ys_sub_tmp[b, :y_lens_sub[b]] = ys_sub[b, :y_lens_sub[b]][::-1]
-        else:
-            ys_sub_tmp = ys_sub
-
-        # NOTE: ys and ys_sub are padded with -1 here
-        # ys_in and ys_in_sub areb padded with <EOS> in order to convert to
-        # one-hot vector, and added <SOS> before the first token
-        # ys_out and ys_out_sub are padded with -1, and added <EOS>
-        # after the last token
-        ys_in = self._create_var((ys.shape[0], ys.shape[1] + 1),
-                                 fill_value=self.eos_0, dtype='long')
-        ys_in_sub = self._create_var((ys_sub.shape[0], ys_sub.shape[1] + 1),
-                                     fill_value=self.eos_1, dtype='long')
-        ys_out = self._create_var((ys.shape[0], ys.shape[1] + 1),
-                                  fill_value=-1, dtype='long')
-        ys_out_sub = self._create_var((ys_sub.shape[0], ys_sub.shape[1] + 1),
-                                      fill_value=-1, dtype='long')
-
-        ys_in.data[:, 0] = self.sos_0
-        ys_in_sub.data[:, 0] = self.sos_1
-        for b in range(len(xs)):
-            ys_in.data[b, 1:y_lens[b] + 1] = torch.from_numpy(
-                ys[b, :y_lens[b]])
-            ys_in_sub.data[b, 1:y_lens_sub[b] + 1] = torch.from_numpy(
-                ys_sub_tmp[b, :y_lens_sub[b]])
-
-            ys_out.data[b, :y_lens[b]] = torch.from_numpy(ys[b, :y_lens[b]])
-            ys_out.data[b, y_lens[b]] = self.eos_0
-            ys_out_sub.data[b, :y_lens_sub[b]] = torch.from_numpy(
-                ys_sub_tmp[b, :y_lens_sub[b]])
-            ys_out_sub.data[b, y_lens_sub[b]] = self.eos_1
-
-        if self.use_cuda:
-            ys_in = ys_in.cuda()
-            ys_out = ys_out.cuda()
-            ys_in_sub = ys_in_sub.cuda()
-            ys_out_sub = ys_out_sub.cuda()
+        # Sort by lenghts in the descending order
+        if self.encoder_type != 'cnn':
+            perm_idx = sorted(list(range(0, len(xs), 1)),
+                              key=lambda i: xs[i].shape[0], reverse=True)
+            xs = [xs[i] for i in perm_idx]
+            ys = [ys[i] for i in perm_idx]
+            ys_sub = [ys_sub[i] for i in perm_idx]
 
         # Wrap by Variable
-        xs = self.np2var(xs)
-        x_lens = self.np2var(x_lens, dtype='int')
-        y_lens = self.np2var(y_lens, dtype='int')
-        y_lens_sub = self.np2var(y_lens_sub, dtype='int')
+        xs = [np2var(x, self.device_id).float() for x in xs]
+        x_lens = [len(x) for x in xs]
 
         # Encode acoustic features
-        xs, x_lens, xs_sub, x_lens_sub, perm_idx = self._encode(
+        xs, x_lens, xs_sub, x_lens_sub = self._encode(
             xs, x_lens, is_multi_task=True)
-
-        # Permutate indices
-        if perm_idx is not None:
-            ys_in = ys_in[perm_idx]
-            ys_out = ys_out[perm_idx]
-            y_lens = y_lens[perm_idx]
-
-            ys_in_sub = ys_in_sub[perm_idx]
-            ys_out_sub = ys_out_sub[perm_idx]
-            y_lens_sub = y_lens_sub[perm_idx]
 
         ##################################################
         # Main task
         ##################################################
         if self.main_loss_weight > 0:
+            # Wrap by Variable
+            ys = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()
+                  for y in ys]
+
             # Compute XE loss
             loss_main = self.compute_xe_loss(
-                xs, ys_in, ys_out, x_lens, y_lens,
+                xs, ys, x_lens,
                 task=0, dir='fwd') * self.main_loss_weight
         else:
-            loss_main = self._create_zero_var((1,))
+            loss_main = Variable(xs.data.new(1,).fill_(0.))
         loss = loss_main.clone()
 
         ##################################################
         # Sub task (attention)
         ##################################################
         if self.sub_loss_weight > 0:
+            # Wrap by Variable
+            if self.backward_1:
+                ys_sub = [np2var(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long()
+                          for y in ys_sub]
+            else:
+                ys_sub = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()
+                          for y in ys_sub]
+
             # Compute XE loss
             loss_sub = self.compute_xe_loss(
-                xs_sub, ys_in_sub, ys_out_sub, x_lens_sub, y_lens_sub,
+                xs_sub, ys_sub, x_lens_sub,
                 task=1, dir='bwd' if self.backward_1 else 'fwd') * self.sub_loss_weight
             loss += loss_sub
 
@@ -481,18 +446,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         ##################################################
         if self.ctc_loss_weight_sub > 0:
             # Wrap by Variable
-            ys_ctc_sub = self.np2var(ys_sub, dtype='long')
-
-            if self.use_cuda:
-                ys_ctc_sub = ys_ctc_sub.cuda()
-
-            # Permutate indices
-            if perm_idx is not None:
-                ys_ctc_sub = ys_ctc_sub[perm_idx]
+            ys_sub_ctc = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()
+                          for y in ys_sub]
 
             ctc_loss_sub = self.compute_ctc_loss(
-                xs_sub, ys_ctc_sub + 1,
-                x_lens_sub, y_lens_sub, task=1) * self.ctc_loss_weight_sub
+                xs_sub, ys_sub_ctc, x_lens_sub, task=1) * self.ctc_loss_weight_sub
             loss += ctc_loss_sub
 
         if is_eval:
@@ -514,14 +472,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         else:
             return loss, loss_main, ctc_loss_sub
 
-    def decode(self, xs, x_lens, beam_width, max_decode_len, min_decode_len=0,
+    def decode(self, xs, beam_width, max_decode_len, min_decode_len=0,
                length_penalty=0, coverage_penalty=0, task_index=0,
                joint_decoding=None, space_index=-1, oov_index=-1,
                word2char=None, score_sub_weight=0, idx2word=None, idx2char=None):
         """Decoding in the inference stage.
         Args:
-            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
-            x_lens (np.ndarray): A tensor of size `[B]`
+            xs (list): A list of length `[B]`, which contains arrays of size `[T, input_size]`
             beam_width (int): the size of beam
             max_decode_len (int): the maximum sequence length of tokens
             min_decode_len (int): the minimum sequence length of tokens
@@ -535,34 +492,44 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             score_sub_weight (float):
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
-            aw ():
-            perm_idx (np.ndarray): A tensor of size `[B]`
+            # aw (np.ndarray): A tensor of size `[B, L, T, num_heads]`
+            aw (np.ndarray): A tensor of size `[B, L, T]`
+            perm_idx (list): A list of length `[B]`
         """
         self.eval()
 
         if task_index > 0 and self.ctc_loss_weight_sub > self.sub_loss_weight:
             # Decode by CTC decoder
             best_hyps, perm_idx = self.decode_ctc(
-                xs, x_lens, beam_width, task_index)
+                xs, beam_width, task_index)
 
             return best_hyps, None, perm_idx
             # NOTE: None corresponds to aw in attention-based models
         else:
+            # Sort by lenghts in the descending order
+            if self.encoder_type != 'cnn':
+                perm_idx = sorted(list(range(0, len(xs), 1)),
+                                  key=lambda i: xs[i].shape[0], reverse=True)
+                xs = [xs[i] for i in perm_idx]
+                # NOTE: must be descending order for pack_padded_sequence
+            else:
+                perm_idx = list(range(0, len(xs), 1))
+
             # Wrap by Variable
-            xs = self.np2var(xs)
-            x_lens = self.np2var(x_lens, dtype='int')
+            xs = [np2var(x, self.device_id, volatile=True).float() for x in xs]
+            x_lens = [len(x) for x in xs]
 
             dir = 'bwd' if task_index == 1 and self.backward_1 else 'fwd'
 
             # Encode acoustic features
             if joint_decoding is not None and task_index == 0 and dir == 'fwd':
-                enc_out, x_lens, enc_out_sub, x_lens_sub, perm_idx = self._encode(
+                enc_out, x_lens, enc_out_sub, x_lens_sub = self._encode(
                     xs, x_lens, is_multi_task=True)
             elif task_index == 0:
-                enc_out, x_lens, _, _, perm_idx = self._encode(
+                enc_out, x_lens, _, _ = self._encode(
                     xs, x_lens, is_multi_task=True)
             elif task_index == 1:
-                _, _, enc_out, x_lens, perm_idx = self._encode(
+                _, _, enc_out, x_lens = self._encode(
                     xs, x_lens, is_multi_task=True)
             else:
                 raise NotImplementedError
@@ -588,12 +555,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 else:
                     raise ValueError(joint_decoding)
 
-                # Permutate indices to the original order
-                if perm_idx is None:
-                    perm_idx = np.arange(0, len(xs), 1)
-                else:
-                    perm_idx = self.var2np(perm_idx)
-
                 return best_hyps, aw, best_hyps_sub, aw_sub, perm_idx
             else:
                 if beam_width == 1:
@@ -603,16 +564,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     best_hyps, aw = self._decode_infer_beam(
                         enc_out, x_lens, beam_width, max_decode_len, min_decode_len,
                         length_penalty, coverage_penalty, task_index, dir)
-
-            # TODO: fix this
-            if beam_width == 1:
-                aw = aw[:, :, :, 0]
-
-            # Permutate indices to the original order
-            if perm_idx is None:
-                perm_idx = np.arange(0, len(xs), 1)
-            else:
-                perm_idx = self.var2np(perm_idx)
 
             return best_hyps, aw, perm_idx
 
@@ -624,11 +575,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         """Joint decoding (one-pass).
         Args:
             enc_out (torch.FloatTensor): A tensor of size
-                `[B, T_in, encoder_num_units]`
-            x_lens (torch.IntTensor): A tensor of size `[B]`
+                `[B, T, encoder_num_units]`
+            x_lens (list): A list of length `[B]`
             enc_out_sub (torch.FloatTensor): A tensor of size
                 `[B, T_in_sub, encoder_num_units]`
-            x_lens_sub (torch.IntTensor): A tensor of size `[B]`
+            x_lens_sub (list): A list of length `[B]`
             beam_width (int): the size of beam in the main task
             max_decode_len (int): the maximum sequence length of tokens
             min_decode_len (int): the minimum sequence length of tokens
@@ -641,11 +592,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             idx2word (): for debug
             idx2char (): for debug
         Returns:
-            best_hyps (np.ndarray): A tensor of size `[B, T_out]`
-            aw (np.ndarray): A tensor of size `[B, T_out, T_in]`
-            best_hyps_sub (np.ndarray): A tensor of size `[B, T_out_sub]`
-            aw_sub (np.ndarray): A tensor of size `[B, T_out_sub, T_in]`
-            aw_dec (np.ndarray): A tensor of size `[B, T_out, T_out_sub]`
+            best_hyps (np.ndarray): A tensor of size `[B, L]`
+            aw (np.ndarray): A tensor of size `[B, L, T]`
+            best_hyps_sub (np.ndarray): A tensor of size `[B, L_sub]`
+            aw_sub (np.ndarray): A tensor of size `[B, L_sub, T]`
+            aw_dec (np.ndarray): A tensor of size `[B, L, L_sub]`
         """
         batch_size, max_time = enc_out.size()[:2]
 
@@ -665,19 +616,18 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         for b in range(batch_size):
             # Initialization for the word model per utterance
             dec_state, dec_out = self._init_dec_state(
-                enc_out[b:b + 1], x_lens[b:b + 1], task=0, dir='fwd')
-            aw_step = self._create_zero_var(
-                (1, x_lens[b].data[0], self.num_heads_0), volatile=True)
-            context_vec = self._create_zero_var(
-                (1, 1, enc_out.size(-1)), volatile=True)
+                enc_out[b:b + 1], x_lens[b], task=0, dir='fwd')
+            aw_step = Variable(enc_out.data.new(
+                1, x_lens[b], self.num_heads_0).fill_(0.), volatile=True)
+            context_vec = Variable(enc_out.data.new(
+                1, 1, enc_out.size(-1)).fill_(0.), volatile=True)
 
-            # Initialization for the character model per utterance
             dec_state_sub, dec_out_sub = self._init_dec_state(
-                enc_out_sub[b: b + 1], x_lens_sub[b:b + 1], task=1, dir='fwd')
-            aw_step_sub = self._create_zero_var(
-                (1, x_lens_sub[b].data[0], self.num_heads_1), volatile=True)
-            context_vec_sub = self._create_zero_var(
-                (1, 1, enc_out_sub.size(-1)), volatile=True)
+                enc_out_sub[b:b + 1], x_lens_sub[b], task=1, dir='fwd')
+            aw_step_sub = Variable(enc_out.data.new(
+                1, x_lens_sub[b], self.num_heads_1).fill_(0.), volatile=True)
+            context_vec_sub = Variable(enc_out.data.new(
+                1, 1, enc_out_sub.size(-1)).fill_(0.), volatile=True)
 
             complete = []
             beam = [{'hyp': [self.sos_0],
@@ -695,8 +645,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             for t in range(max_decode_len + 1):
                 new_beam = []
                 for i_beam in range(len(beam)):
-                    y = self._create_var(
-                        (1, 1), fill_value=beam[i_beam]['hyp'][-1], dtype='long')
+                    y = Variable(enc_out.data.new(
+                        1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
                     y = self.embed_0(y)
 
                     if t == 0:
@@ -709,8 +659,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
                     # Score
                     context_vec, aw_step = self.attend_0_fwd(
-                        enc_out[b:b + 1, :x_lens.data[b]],
-                        enc_out_a[b:b + 1, :x_lens.data[b]],
+                        enc_out[b:b + 1, :x_lens[b]],
+                        enc_out_a[b:b + 1, :x_lens[b]],
                         x_lens[b:b + 1],
                         dec_out, beam[i_beam]['aw_steps'][-1])
 
@@ -766,19 +716,15 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                             # NOTE: Decode until outputting a space
                             t_sub = 0
                             dec_outs_sub = [beam[i_beam]['dec_out_sub']]
-                            dec_states_sub = [
-                                beam[i_beam]['dec_state_sub']]
-                            aw_steps_sub = [
-                                beam[i_beam]['aw_steps_sub'][-1]]
+                            dec_states_sub = [beam[i_beam]['dec_state_sub']]
+                            aw_steps_sub = [beam[i_beam]['aw_steps_sub'][-1]]
                             charseq = []
                             # TODO: add max OOV len
                             while True:
                                 # Score
                                 context_vec_sub, aw_step_sub = self.attend_1_fwd(
-                                    enc_out_sub[b:b + 1,
-                                                :x_lens_sub.data[b]],
-                                    enc_out_sub_a[b:b + 1,
-                                                  :x_lens_sub.data[b]],
+                                    enc_out_sub[b:b + 1, :x_lens_sub[b]],
+                                    enc_out_sub_a[b:b + 1, :x_lens_sub[b]],
                                     x_lens_sub[b:b + 1],
                                     dec_outs_sub[-1], aw_steps_sub[-1])
 
@@ -797,9 +743,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                                                     space_index]
                                     score_c2w_until_space += log_probs_sub.data[0,
                                                                                 space_index]
-                                    charseq.append(space_index)
-                                    y_sub = self._create_var(
-                                        (1, 1), fill_value=space_index, dtype='long')
+                                    charseq += [space_index]
+                                    y_sub = Variable(enc_out.data.new(
+                                        1, 1).fill_(space_index).long(), volatile=True)
                                 else:
                                     y_sub = torch.max(log_probs_sub, dim=1)[
                                         1].data[0]
@@ -812,9 +758,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                         break
 
                                     score_c2w += log_probs_sub.data[0, y_sub]
-                                    charseq.append(y_sub)
-                                    y_sub = self._create_var(
-                                        (1, 1), fill_value=y_sub, dtype='long')
+                                    charseq += [y_sub]
+                                    y_sub = Variable(enc_out.data.new(
+                                        1, 1).fill_(y_sub).long(), volatile=True)
                                 y_sub = self.embed_1(y_sub)
 
                                 # print(idx2word([word_idx]))
@@ -838,10 +784,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                         elif eos_flag:
                             # Score
                             context_vec_sub, aw_step_sub = self.attend_1_fwd(
-                                enc_out_sub[b:b + 1,
-                                            :x_lens_sub.data[b]],
-                                enc_out_sub_a[b:b + 1,
-                                              :x_lens_sub.data[b]],
+                                enc_out_sub[b:b + 1, :x_lens_sub[b]],
+                                enc_out_sub_a[b:b + 1, :x_lens_sub[b]],
                                 x_lens_sub[b:b + 1],
                                 beam[i_beam]['dec_out_sub'],
                                 beam[i_beam]['aw_steps_sub'][-1])
@@ -857,7 +801,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
                             charseq = [self.eos_1]
                             score_c2w += log_probs_sub.data[0, self.eos_1]
-                            aw_steps_sub.append(aw_step_sub)
+                            aw_steps_sub += [aw_step_sub]
 
                             # print(idx2word([word_idx]))
                             # print(idx2char([self.eos_1]))
@@ -880,10 +824,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                             for t_sub in range(len(charseq)):
                                 # Score
                                 context_vec_sub, aw_step_sub = self.attend_1_fwd(
-                                    enc_out_sub[b:b + 1,
-                                                :x_lens_sub.data[b]],
-                                    enc_out_sub_a[b:b + 1,
-                                                  :x_lens_sub.data[b]],
+                                    enc_out_sub[b:b + 1, :x_lens_sub[b]],
+                                    enc_out_sub_a[b:b + 1, :x_lens_sub[b]],
                                     x_lens_sub[b:b + 1],
                                     dec_out_sub, aw_step_sub)
 
@@ -901,11 +843,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                 if t_sub == 0 and t > 0:
                                     score_c2w_until_space += log_probs_sub.data[0,
                                                                                 charseq[t_sub]]
-                                aw_steps_sub.append(aw_step_sub)
+                                aw_steps_sub += [aw_step_sub]
 
                                 # teacher-forcing
-                                y_sub = self._create_var(
-                                    (1, 1), fill_value=charseq[t_sub], dtype='long')
+                                y_sub = Variable(enc_out.data.new(
+                                    1, 1).fill_(charseq[t_sub]).long(), volatile=True)
                                 y_sub = self.embed_1(y_sub)
 
                                 # Recurrency
@@ -939,9 +881,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 not_complete = []
                 for cand in new_beam[:beam_width]:
                     if cand['hyp'][-1] == self.eos_0:
-                        complete.append(cand)
+                        complete += [cand]
                     else:
-                        not_complete.append(cand)
+                        not_complete += [cand]
                 if len(complete) >= beam_width:
                     complete = complete[:beam_width]
                     break
@@ -952,25 +894,22 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
             complete = sorted(
                 complete, key=lambda x: x['score'], reverse=True)
-            best_hyps.append(np.array(complete[0]['hyp'][1:]))
-            aw.append(complete[0]['aw_steps'][1:])
+            best_hyps += [np.array(complete[0]['hyp'][1:])]
+            aw += [complete[0]['aw_steps'][1:]]
+            best_hyps_sub += [np.array(complete[0]['hyp_sub'][1:])]
+            aw_sub += [complete[0]['aw_steps_sub'][1:]]
 
-            best_hyps_sub.append(
-                np.array(complete[0]['hyp_sub'][1:]))
-            aw_sub.append(complete[0]['aw_steps_sub'][1:])
-
-        # Concatenate in T_out dimension
+        # Concatenate in L dimension
         for t_sub in range(len(aw)):
             for k in range(len(aw_sub[t_sub])):
                 # TODO: fix for MHA
                 aw_sub[t_sub][k] = aw_sub[t_sub][k][:, :, 0]
-            aw_sub[t_sub] = self.var2np(
-                torch.stack(aw_sub[t_sub], dim=1).squeeze(0))
+            aw_sub[t_sub] = var2np(torch.stack(
+                aw_sub[t_sub], dim=1).squeeze(0))
 
             for k in range(len(aw[t_sub])):
                 aw[t_sub][k] = aw[t_sub][k][:, :, 0]  # TODO: fix for MHA
-            aw[t_sub] = self.var2np(
-                torch.stack(aw[t_sub], dim=1).squeeze(0))
+            aw[t_sub] = var2np(torch.stack(aw[t_sub], dim=1).squeeze(0))
 
         return best_hyps, aw, best_hyps_sub, aw_sub
 
@@ -982,11 +921,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         """Joint decoding (rescoring).
         Args:
             enc_out (torch.FloatTensor): A tensor of size
-                `[B, T_in, encoder_num_units]`
-            x_lens (torch.IntTensor): A tensor of size `[B]`
+                `[B, T, encoder_num_units]`
+            x_lens (list): A list of length `[B]`
             enc_out_sub (torch.FloatTensor): A tensor of size
                 `[B, T_in_sub, encoder_num_units]`
-            x_lens_sub (torch.IntTensor): A tensor of size `[B]`
+            x_lens_sub (list): A list of length `[B]`
             beam_width (int): the size of beam in the main task
             max_decode_len (int): the maximum sequence length of tokens
             min_decode_len (int): the minimum sequence length of tokens
@@ -999,11 +938,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             idx2word (): for debug
             idx2char (): for debug
         Returns:
-            best_hyps (np.ndarray): A tensor of size `[B, T_out]`
-            aw (np.ndarray): A tensor of size `[B, T_out, T_in]`
-            best_hyps_sub (np.ndarray): A tensor of size `[B, T_out_sub]`
-            aw_sub (np.ndarray): A tensor of size `[B, T_out_sub, T_in]`
-            aw_dec (np.ndarray): A tensor of size `[B, T_out, T_out_sub]`
+            best_hyps (np.ndarray): A tensor of size `[B, L]`
+            aw (np.ndarray): A tensor of size `[B, L, T]`
+            best_hyps_sub (np.ndarray): A tensor of size `[B, L_sub]`
+            aw_sub (np.ndarray): A tensor of size `[B, L_sub, T]`
+            aw_dec (np.ndarray): A tensor of size `[B, L, L_sub]`
         """
         batch_size, max_time = enc_out.size()[:2]
 
@@ -1023,11 +962,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         for b in range(batch_size):
             # Initialization for the word model per utterance
             dec_state, dec_out = self._init_dec_state(
-                enc_out[b: b + 1], x_lens[b: b + 1], task=0, dir='fwd')
-            aw_step = self._create_zero_var(
-                (1, x_lens[b].data[0], self.num_heads_0), volatile=True)
-            context_vec = self._create_zero_var(
-                (1, 1, enc_out.size(-1)), volatile=True)
+                enc_out[b:b + 1], x_lens[b], task=0, dir='fwd')
+            aw_step = Variable(enc_out.data.new(
+                1, x_lens[b], self.num_heads_0).fill_(0.), volatile=True)
+            context_vec = Variable(enc_out.data.new(
+                1, 1, enc_out.size(-1)).fill_(0.), volatile=True)
 
             complete = []
             beam = [{'hyp': [self.sos_0],
@@ -1040,8 +979,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             for t in range(max_decode_len + 1):
                 new_beam = []
                 for i_beam in range(len(beam)):
-                    y = self._create_var(
-                        (1, 1), fill_value=beam[i_beam]['hyp'][-1], dtype='long')
+                    y = Variable(enc_out.data.new(
+                        1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
                     y = self.embed_0(y)
 
                     if t == 0:
@@ -1055,8 +994,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
                     # Score
                     context_vec, aw_step = self.attend_0_fwd(
-                        enc_out[b:b + 1, :x_lens.data[b]],
-                        enc_out_a[b:b + 1, :x_lens.data[b]],
+                        enc_out[b:b + 1, :x_lens[b]],
+                        enc_out_a[b:b + 1, :x_lens[b]],
                         x_lens[b:b + 1],
                         dec_out, beam[i_beam]['aw_steps'][-1])
 
@@ -1114,9 +1053,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 not_complete = []
                 for cand in new_beam[:beam_width]:
                     if cand['hyp'][-1] == self.eos_0:
-                        complete.append(cand)
+                        complete += [cand]
                     else:
-                        not_complete.append(cand)
+                        not_complete += [cand]
                 if len(complete) >= beam_width:
                     complete = complete[:beam_width]
                     break
@@ -1131,12 +1070,12 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             for i_beam in range(len(complete)):
                 # Initialization for the character model per utterance
                 dec_state_sub, dec_out_sub = self._init_dec_state(
-                    enc_out_sub[b: b + 1], x_lens_sub[b:b + 1], task=1, dir='fwd')
-                aw_step_sub = self._create_zero_var(
-                    (1, x_lens_sub[b].data[0], self.num_heads_1), volatile=True)
+                    enc_out_sub[b:b + 1], x_lens_sub[b], task=1, dir='fwd')
+                aw_step_sub = Variable(enc_out.data.new(
+                    1, x_lens_sub[b], self.num_heads_1).fill_(0.), volatile=True)
                 aw_steps_sub = [aw_step_sub]
-                context_vec_sub = self._create_zero_var(
-                    (1, 1, dec_out_sub.size(1)), volatile=True)
+                context_vec_sub = Variable(enc_out.data.new(
+                    1, 1, enc_out_sub.size(-1)).fill_(0.), volatile=True)
 
                 score_c2w = 0  # log 1
                 score_c2w_until_space = 0  # log 1
@@ -1158,10 +1097,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                         while True:
                             # Score
                             context_vec_sub, aw_step_sub = self.attend_1_fwd(
-                                enc_out_sub[b:b + 1,
-                                            :x_lens_sub.data[b]],
-                                enc_out_sub_a[b:b + 1,
-                                              :x_lens_sub.data[b]],
+                                enc_out_sub[b:b + 1, :x_lens_sub[b]],
+                                enc_out_sub_a[b:b + 1, :x_lens_sub[b]],
                                 x_lens_sub[b:b + 1],
                                 dec_outs_sub[-1], aw_steps_sub_tmp[-1])
 
@@ -1181,8 +1118,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                 score_c2w_until_space += log_probs_sub.data[0,
                                                                             space_index]
                                 charseq_tmp.append(space_index)
-                                y_sub = self._create_var(
-                                    (1, 1), fill_value=space_index, dtype='long')
+                                y_sub = Variable(enc_out.data.new(
+                                    1, 1).fill_(space_index).long(), volatile=True)
                             else:
                                 y_sub = torch.max(log_probs_sub, dim=1)[
                                     1].data[0]
@@ -1196,8 +1133,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
                                 score_c2w += log_probs_sub.data[0, y_sub]
                                 charseq_tmp.append(y_sub)
-                                y_sub = self._create_var(
-                                    (1, 1), fill_value=y_sub, dtype='long')
+                                y_sub = Variable(enc_out.data.new(
+                                    1, 1).fill_(y_sub).long(), volatile=True)
 
                             # print(idx2word([word_idx]))
                             # print(idx2char(charseq_tmp))
@@ -1216,18 +1153,15 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                             t_sub += 1
 
                         dec_out_sub = dec_outs_sub[-1]
-                        dec_state_sub = copy.deepcopy(
-                            dec_states_sub[-1])
+                        dec_state_sub = copy.deepcopy(dec_states_sub[-1])
                         aw_steps_sub += aw_steps_sub_tmp[:-1]
                         charseq += charseq_tmp
 
                     elif eos_flag:
                         # Score
                         context_vec_sub, aw_step_sub = self.attend_1_fwd(
-                            enc_out_sub[b:b + 1,
-                                        :x_lens_sub.data[b]],
-                            enc_out_sub_a[b:b + 1,
-                                          :x_lens_sub.data[b]],
+                            enc_out_sub[b:b + 1, :x_lens_sub[b]],
+                            enc_out_sub_a[b:b + 1, :x_lens_sub[b]],
                             x_lens_sub[b:b + 1],
                             dec_out_sub, aw_steps_sub[-1])
 
@@ -1261,10 +1195,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                         for t_sub in range(len(charseq_tmp)):
                             # Score
                             context_vec_sub, aw_step_sub = self.attend_1_fwd(
-                                enc_out_sub[b:b + 1,
-                                            :x_lens_sub.data[b]],
-                                enc_out_sub_a[b:b + 1,
-                                              :x_lens_sub.data[b]],
+                                enc_out_sub[b:b + 1, :x_lens_sub[b]],
+                                enc_out_sub_a[b:b + 1, :x_lens_sub[b]],
                                 x_lens_sub[b:b + 1],
                                 dec_out_sub, aw_steps_sub[-1])
 
@@ -1282,11 +1214,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                             if t_sub == 0 and t > 0:
                                 score_c2w_until_space += log_probs_sub.data[0,
                                                                             charseq_tmp[t_sub]]
-                            aw_steps_sub.append(aw_step_sub)
+                            aw_steps_sub += [aw_step_sub]
 
                             # teacher-forcing
-                            y_sub = self._create_var(
-                                (1, 1), fill_value=charseq_tmp[t_sub], dtype='long')
+                            y_sub = Variable(enc_out.data.new(
+                                1, 1).fill_(charseq_tmp[t_sub]).long(), volatile=True)
                             y_sub = self.embed_1(y_sub)
 
                             # Recurrency
@@ -1306,24 +1238,21 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
             complete = sorted(
                 complete, key=lambda x: x['score'], reverse=True)
-            best_hyps.append(np.array(complete[0]['hyp'][1:]))
-            aw.append(complete[0]['aw_steps'][1:])
+            best_hyps += [np.array(complete[0]['hyp'][1:])]
+            aw += [complete[0]['aw_steps'][1:]]
+            best_hyps_sub += [np.array(complete[0]['hyp_sub'][1:])]
+            aw_sub += [complete[0]['aw_steps_sub'][1:]]
 
-            best_hyps_sub.append(
-                np.array(complete[0]['hyp_sub'][1:]))
-            aw_sub.append(complete[0]['aw_steps_sub'][1:])
-
-        # Concatenate in T_out dimension
+        # Concatenate in L dimension
         for t_sub in range(len(aw)):
             for k in range(len(aw_sub[t_sub])):
                 # TODO: fix for MHA
                 aw_sub[t_sub][k] = aw_sub[t_sub][k][:, :, 0]
-            aw_sub[t_sub] = self.var2np(
-                torch.stack(aw_sub[t_sub], dim=1).squeeze(0))
+            aw_sub[t_sub] = var2np(torch.stack(
+                aw_sub[t_sub], dim=1).squeeze(0))
 
             for k in range(len(aw[t_sub])):
                 aw[t_sub][k] = aw[t_sub][k][:, :, 0]  # TODO: fix for MHA
-            aw[t_sub] = self.var2np(
-                torch.stack(aw[t_sub], dim=1).squeeze(0))
+            aw[t_sub] = var2np(torch.stack(aw[t_sub], dim=1).squeeze(0))
 
         return best_hyps, aw, best_hyps_sub, aw_sub

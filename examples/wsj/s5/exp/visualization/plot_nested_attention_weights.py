@@ -11,7 +11,6 @@ from os.path import join, abspath, isdir
 import sys
 import argparse
 import shutil
-import numpy as np
 
 import matplotlib
 matplotlib.use('Agg')
@@ -51,6 +50,9 @@ parser.add_argument('--length_penalty', type=float, default=0,
 parser.add_argument('--coverage_penalty', type=float, default=0,
                     help='coverage penalty in beam search decoding')
 
+from distutils.util import strtobool
+parser.add_argument('--a2c_oracle', type=strtobool, default=False)
+
 MAX_DECODE_LEN_WORD = 32
 MIN_DECODE_LEN_WORD = 2
 MAX_DECODE_LEN_CHAR = 199
@@ -77,7 +79,6 @@ def main():
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=False, reverse=False, tool=params['tool'])
-
     params['num_classes'] = dataset.num_classes
     params['num_classes_sub'] = dataset.num_classes_sub
 
@@ -92,8 +93,6 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
-    a2c_oracle = False
-
     save_path = mkdir_join(args.model_path, 'att_weights')
 
     ######################################################################
@@ -106,32 +105,25 @@ def main():
     for batch, is_new_epoch in dataset:
         batch_size = len(batch['xs'])
 
-        if a2c_oracle:
+        if args.a2c_oracle:
             if dataset.is_test:
                 max_label_num = 0
                 for b in range(batch_size):
-                    if max_label_num < len(list(batch['ys_sub'][b][0])):
-                        max_label_num = len(
-                            list(batch['ys_sub'][b][0]))
+                    if max_label_num < len(list(batch['ys_sub'][b])):
+                        max_label_num = len(list(batch['ys_sub'][b]))
 
-                ys_sub = np.zeros(
-                    (batch_size, max_label_num), dtype=np.int32)
-                ys_sub -= 1  # pad with -1
-                y_lens_sub = np.zeros((batch_size,), dtype=np.int32)
+                ys_sub = []
                 for b in range(batch_size):
-                    indices = dataset.char2idx(batch['ys_sub'][b][0])
-                    ys_sub[b, :len(indices)] = indices
-                    y_lens_sub[b] = len(indices)
+                    indices = dataset.char2idx(batch['ys_sub'][b])
+                    ys_sub += [indices]
                     # NOTE: transcript is seperated by space('_')
             else:
                 ys_sub = batch['ys_sub']
-                y_lens_sub = batch['y_lens_sub']
         else:
             ys_sub = None
-            y_lens_sub = None
 
         best_hyps, aw, best_hyps_sub, aw_sub, aw_dec, _ = model.decode(
-            batch['xs'], batch['x_lens'],
+            batch['xs'],
             beam_width=args.beam_width,
             max_decode_len=MAX_DECODE_LEN_WORD,
             min_decode_len=MIN_DECODE_LEN_WORD,
@@ -140,9 +132,8 @@ def main():
             min_decode_len_sub=MIN_DECODE_LEN_CHAR,
             length_penalty=args.length_penalty,
             coverage_penalty=args.coverage_penalty,
-            teacher_forcing=a2c_oracle,
-            ys_sub=ys_sub,
-            y_lens_sub=y_lens_sub)
+            teacher_forcing=args.a2c_oracle,
+            ys_sub=ys_sub)
 
         for b in range(batch_size):
             word_list = dataset.idx2word(best_hyps[b], return_list=True)
@@ -155,11 +146,11 @@ def main():
 
             # word to acoustic & character to acoustic
             plot_hierarchical_attention_weights(
-                aw[b][:len(word_list), :batch['x_lens'][b]],
-                aw_sub[b][:len(char_list), :batch['x_lens'][b]],
+                aw[b][:len(word_list)],
+                aw_sub[b][:len(char_list)],
                 label_list=word_list,
                 label_list_sub=char_list,
-                spectrogram=batch['xs'][b, :, :dataset.input_freq],
+                spectrogram=batch['xs'][b][:, :dataset.input_freq],
                 save_path=mkdir_join(
                     save_path, batch['input_names'][b] + '.png'),
                 figsize=(40, 8)
@@ -176,7 +167,7 @@ def main():
             )
 
             # with open(join(save_path, speaker, batch['input_names'][b] + '.txt'), 'w') as f:
-            #     f.write(batch['ys'][b][0])
+            #     f.write(batch['ys'][b])
 
         if is_new_epoch:
             break

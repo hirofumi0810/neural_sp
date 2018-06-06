@@ -39,57 +39,41 @@ def generate_data(label_type='char', batch_size=1,
         splice (int): frames to splice. Default is 1 frame.
         backend (string, optional): pytorch or chainer
     Returns:
-        xs (np.ndarray): A tensor of size `[B, T, input_size]`
-        ys (np.ndarray): `[B, max_label_seq_len]`
-        x_lens (np.ndarray): A tensor of size `[B]`
-        y_lens (np.ndarray): A tensor of size `[B]`
+        xs (list): A list of length `[B]`, which contains arrays of size `[T, input_size]`
+        ys (list): A list of length `[B]`
+        ys_sub (list): A list of length `[B]`
     """
     # Make input data
-    _xs, x_lens = wav2feature(
+    _xs, _ = wav2feature(
         ['../../sample/LDC93S1.wav'] * batch_size,
         feature_type='logfbank', feature_dim=40,
         energy=False, delta1=True, delta2=True, dtype=np.float32)
 
-    max_frame_num = math.ceil(x_lens[0] / num_stack)
-    if backend == 'pytorch':
-        xs = np.zeros((batch_size, max_frame_num, _xs.shape[-1] * num_stack * splice),
-                      dtype=np.float32)
-    elif backend == 'chainer':
-        xs = [None] * batch_size
-
+    xs = []
     for i, b in enumerate(range(batch_size)):
         # Frame stacking
-        data_i = stack_frame(_xs[b], num_stack=num_stack, num_skip=num_stack,
-                             dtype=np.float32)
-
-        # Splice
-        data_i = do_splice(data_i, splice=splice, num_stack=num_stack,
+        feat = stack_frame(_xs[b], num_stack=num_stack, num_skip=num_stack,
                            dtype=np.float32)
 
-        xs[b, :len(data_i) - i] = data_i[:len(data_i) - i]
-        x_lens[b] = len(data_i) - i
+        # Splice
+        feat = do_splice(feat, splice=splice, num_stack=num_stack,
+                         dtype=np.float32)
+
+        xs += [feat[: len(feat) - i]]
 
     # Make transcripts
     trans = _read_text('../../sample/LDC93S1.txt')
     trans = trans.replace('.', '').replace(' ', SPACE)
     if label_type == 'char':
-        ys = np.array([char2idx(trans)] * batch_size, dtype=np.int32)
-        y_lens = np.array([len(char2idx(trans))] * batch_size, dtype=np.int32)
-        return xs, ys, x_lens, y_lens
-
+        ys = [char2idx(trans)] * batch_size
+        return xs, ys
     elif label_type == 'word':
-        ys = np.array([word2idx(trans)] * batch_size, dtype=np.int32)
-        y_lens = np.array([len(word2idx(trans))] * batch_size, dtype=np.int32)
-        return xs, ys, x_lens, y_lens
-
+        ys = [word2idx(trans)] * batch_size
+        return xs, ys
     elif label_type == 'word_char':
-        ys = np.array([word2idx(trans)] * batch_size, dtype=np.int32)
-        ys_sub = np.array([char2idx(trans)] * batch_size, dtype=np.int32)
-        y_lens = np.array([len(word2idx(trans))] * batch_size, dtype=np.int32)
-        y_lens_sub = np.array(
-            [len(char2idx(trans))] * batch_size, dtype=np.int32)
-        return xs, ys, ys_sub, x_lens, y_lens, y_lens_sub
-
+        ys = [word2idx(trans)] * batch_size
+        ys_sub = [char2idx(trans)] * batch_size
+        return xs, ys, ys_sub
     else:
         raise NotImplementedError
 

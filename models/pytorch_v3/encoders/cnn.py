@@ -8,11 +8,8 @@ from __future__ import division
 from __future__ import print_function
 
 import math
-import numpy as np
 
-import torch
 import torch.nn as nn
-from torch.autograd import Variable
 
 from models.pytorch_v3.encoders.cnn_utils import ConvOutSize, Maxout
 
@@ -21,15 +18,15 @@ class CNNEncoder(nn.Module):
     """CNN encoder.
     Args:
         input_size (int): the dimension of input features (freq * channel)
-        input_channel (int, optional): the number of channels of input features
-        conv_channels (list, optional): the number of channles in CNN layers
-        conv_kernel_sizes (list, optional): the size of kernels in CNN layers
-        conv_strides (list, optional): strides in CNN layers
-        poolings (list, optional): the size of poolings in CNN layers
+        input_channel (int): the number of channels of input features
+        conv_channels (list): the number of channles in CNN layers
+        conv_kernel_sizes (list): the size of kernels in CNN layers
+        conv_strides (list): strides in CNN layers
+        poolings (list): the size of poolings in CNN layers
         dropout_input (float): the probability to drop nodes in input-hidden connection
         dropout_hidden (float): the probability to drop nodes in hidden-hidden connection
-        activation (string, optional): relu or prelu or hard_tanh or maxout
-        batch_norm (bool, optional): if True, apply batch normalization
+        activation (string): relu or prelu or hard_tanh or maxout
+        batch_norm (bool): if True, apply batch normalization
     """
 
     def __init__(self,
@@ -93,15 +90,20 @@ class CNNEncoder(nn.Module):
                                     stride=tuple(poolings[l]),
                                     # padding=(1, 1),
                                     padding=(0, 0),  # default
-                                    ceil_mode=False if first_max_pool else True)
+                                    ceil_mode=not first_max_pool)
+                layers.append(pool)
                 # NOTE: If ceil_mode is False, remove last feature when the
                 # dimension of features are odd.
+
                 first_max_pool = False
                 # NOTE: This is important for having the same frames as RNN models
 
-                layers.append(pool)
-                in_freq = math.floor(
-                    (in_freq + 2 * pool.padding[0] - pool.kernel_size[0]) / pool.stride[0] + 1)
+                if pool.ceil_mode:
+                    in_freq = math.ceil(
+                        (in_freq + 2 * pool.padding[0] - pool.kernel_size[0]) / pool.stride[0] + 1)
+                else:
+                    in_freq = math.floor(
+                        (in_freq + 2 * pool.padding[0] - pool.kernel_size[0]) / pool.stride[0] + 1)
 
             # Batch Normalization
             if batch_norm:
@@ -126,14 +128,13 @@ class CNNEncoder(nn.Module):
         Args:
             xs (torch.autograd.Variable, float): A tensor of size
                 `[B, T, input_size (+Δ, ΔΔ)]`
-            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            x_lens (list): A list of length `[B]`
         Returns:
             xs (torch.autograd.Variable, float): A tensor of size
                 `[B, T', feature_dim]`
-            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            x_lens (list): A list of length `[B]`
         """
         batch_size, max_time, input_size = xs.size()
-
         # assert input_size == self.input_freq * self.input_channel
 
         # Dropout for inputs-hidden connection
@@ -157,9 +158,6 @@ class CNNEncoder(nn.Module):
         xs = xs.view(batch_size, time, freq * output_channels)
 
         # Update x_lens
-        x_lens = np.array([self.get_conv_out_size(x, 1) for x in x_lens])
-        x_lens = Variable(torch.from_numpy(x_lens).int(), requires_grad=False)
-        if xs.is_cuda:
-            x_lens = x_lens.cuda()
+        x_lens = [self.get_conv_out_size(x_len, 1) for x_len in x_lens]
 
         return xs, x_lens

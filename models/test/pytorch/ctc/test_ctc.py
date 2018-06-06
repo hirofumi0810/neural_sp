@@ -29,11 +29,16 @@ class TestCTC(unittest.TestCase):
     def test(self):
         print("CTC Working check.")
 
-        # CNN-CTC
+        self.check(encoder_type='lstm', bidirectional=True, subsample=True)
+
+        # TODO: CNN-CTC
         self.check(encoder_type='cnn', batch_norm=True, activation='relu')
         self.check(encoder_type='cnn', batch_norm=True, activation='prelu')
         self.check(encoder_type='cnn', batch_norm=True, activation='hard_tanh')
-        # self.check(encoder_type='cnn', batch_norm=True, activation='maxout')
+        # self.check(encoder_type='cnn', batch_norm=True, activation='maxout') # TODO
+
+        # Beam search
+        self.check(encoder_type='lstm', bidirectional=True, beam_width=2)
 
         # CLDNN-CTC
         self.check(encoder_type='lstm', bidirectional=True,
@@ -73,7 +78,7 @@ class TestCTC(unittest.TestCase):
               subsample=False,  projection=False,
               conv=False, batch_norm=False, activation='relu',
               encoder_residual=False, encoder_dense_residual=False,
-              label_smoothing=False):
+              label_smoothing=False, beam_width=1):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
@@ -87,6 +92,7 @@ class TestCTC(unittest.TestCase):
         print('  encoder_residual: %s' % str(encoder_residual))
         print('  encoder_dense_residual: %s' % str(encoder_dense_residual))
         print('  label_smoothing: %s' % str(label_smoothing))
+        print('  beam_width: %d' % beam_width)
         print('==================================================')
 
         if conv or encoder_type == 'cnn':
@@ -113,11 +119,10 @@ class TestCTC(unittest.TestCase):
         # Load batch data
         splice = 1
         num_stack = 1 if subsample or conv or encoder_type == 'cnn' else 2
-        xs, ys, x_lens, y_lens = generate_data(
-            label_type=label_type,
-            batch_size=2,
-            num_stack=num_stack,
-            splice=splice)
+        xs, ys = generate_data(label_type=label_type,
+                               batch_size=2,
+                               num_stack=num_stack,
+                               splice=splice)
 
         if label_type == 'char':
             num_classes = 27
@@ -128,7 +133,7 @@ class TestCTC(unittest.TestCase):
 
         # Load model
         model = CTC(
-            input_size=xs.shape[-1] // splice // num_stack,  # 120
+            input_size=xs[0].shape[-1] // splice // num_stack,  # 120
             encoder_type=encoder_type,
             encoder_bidirectional=bidirectional,
             encoder_num_units=256,
@@ -175,6 +180,7 @@ class TestCTC(unittest.TestCase):
         # Define learning rate controller
         lr_controller = Controller(learning_rate_init=learning_rate,
                                    backend='pytorch',
+                                   decay_type='compare_metric',
                                    decay_start_epoch=20,
                                    decay_rate=0.9,
                                    decay_patient_epoch=10,
@@ -190,7 +196,7 @@ class TestCTC(unittest.TestCase):
 
             # Step for parameter update
             model.optimizer.zero_grad()
-            loss = model(xs, ys, x_lens, y_lens)
+            loss = model(xs, ys)
             loss.backward()
             # torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
             torch.nn.utils.clip_grad_norm(model.parameters(), 5)
@@ -203,12 +209,12 @@ class TestCTC(unittest.TestCase):
 
             if (step + 1) % 10 == 0:
                 # Compute loss
-                loss = model(xs, ys, x_lens, y_lens, is_eval=True)
+                loss = model(xs, ys, is_eval=True)
 
                 # Decode
-                best_hyps, _, _ = model.decode(xs, x_lens, beam_width=2)
+                best_hyps, _, _ = model.decode(xs, beam_width)
 
-                str_ref = map_fn(ys[0, :y_lens[0]])
+                str_ref = map_fn(ys[0])
                 str_hyp = map_fn(best_hyps[0])
 
                 # Compute accuracy

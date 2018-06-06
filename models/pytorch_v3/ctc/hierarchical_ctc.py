@@ -7,11 +7,15 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from models.pytorch_v3.ctc.ctc import CTC, _concatenate_labels
+import numpy as np
+import torch
+
+from models.pytorch_v3.ctc.ctc import CTC
 from models.pytorch_v3.linear import LinearND
 from models.pytorch_v3.encoders.load_encoder import load
 from models.pytorch_v3.ctc.ctc import my_warpctc
 from models.pytorch_v3.criterion import cross_entropy_label_smoothing
+from models.pytorch_v3.utils import np2var
 
 
 class HierarchicalCTC(CTC):
@@ -34,14 +38,14 @@ class HierarchicalCTC(CTC):
             (excluding the blank class)
         num_classes_sub (int): the number of classes of target labels of the sub task
             (excluding the blank class)
-        parameter_init_distribution (string): uniform or normal or
-            orthogonal or constant distribution
-        parameter_init (float): Range of uniform distribution to
-            initialize weight parameters
-        recurrent_weight_orthogonal (bool): if True, recurrent
-            weights are orthogonalized
-        init_forget_gate_bias_with_one (bool): if True, initialize
-            the forget gate bias with 1
+        parameter_init_distribution (string): uniform or normal or orthogonal
+            or constant distribution
+        parameter_init (float): Range of uniform distribution to initialize
+            weight parameters
+        recurrent_weight_orthogonal (bool): if True, recurrent weights are
+            orthogonalized
+        init_forget_gate_bias_with_one (bool): if True, initialize the forget
+            gate bias with 1
         subsample_list (list): subsample in the corresponding layers (True)
             ex.) [False, True, True, False] means that subsample is conducted
                 in the 2nd and 3rd layers.
@@ -261,15 +265,12 @@ class HierarchicalCTC(CTC):
         if init_forget_gate_bias_with_one:
             self.init_forget_gate_bias_with_one()
 
-    def forward(self, xs, ys, x_lens, y_lens, ys_sub, y_lens_sub, is_eval=False):
+    def forward(self, xs, ys, ys_sub, is_eval=False):
         """Forward computation.
         Args:
-            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
-            ys (np.ndarray): A tensor of size `[B, T_out]`
-            x_lens (np.ndarray): A tensor of size `[B]`
-            y_lens (np.ndarray): A tensor of size `[B]`
-            ys_sub (np.ndarray): A tensor of size `[B, T_out_sub]`
-            y_lens_sub (np.ndarray): A tensor of size `[B]`
+            xs (list): A list of length `[B]`, which contains arrays of size `[T, input_size]`
+            ys (list): A list of lenght `[B]`, which contains arrays of size `[L]`
+            ys_sub (list): A list of lenght `[B]`, which contains arrays of size `[L_sub]`
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
@@ -286,20 +287,21 @@ class HierarchicalCTC(CTC):
             if self.weight_noise_injection:
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
-        # Wrap by Variable
-        xs = self.np2var(xs)
-        ys = self.np2var(ys, dtype='int', cpu=True)
-        ys_sub = self.np2var(ys_sub, dtype='int', cpu=True)
-        x_lens = self.np2var(x_lens, dtype='int')
-        y_lens = self.np2var(y_lens, dtype='int', cpu=True)
-        y_lens_sub = self.np2var(y_lens_sub, dtype='int', cpu=True)
+        # Sort by lenghts in the descending order
+        if self.encoder_type != 'cnn':
+            perm_idx = sorted(list(range(0, len(xs), 1)),
+                              key=lambda i: xs[i].shape[0], reverse=True)
+            xs = [xs[i] for i in perm_idx]
+            ys = [ys[i] for i in perm_idx]
+            ys_sub = [ys_sub[i] for i in perm_idx]
+            # NOTE: must be descending order for pack_padded_sequence
 
-        # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
-        ys = ys + 1
-        ys_sub = ys_sub + 1
+        # Wrap by Variable
+        xs = [np2var(x, self.device_id).float() for x in xs]
+        x_lens = [len(x) for x in xs]
 
         # Encode acoustic features
-        logits_main, x_lens, logits_sub, x_lens_sub, perm_idx = self._encode(
+        logits_main, x_lens, logits_sub, x_lens_sub = self._encode(
             xs, x_lens, is_multi_task=True)
 
         # Output smoothing
@@ -307,35 +309,39 @@ class HierarchicalCTC(CTC):
             logits_main /= self.logits_temperature
             logits_sub /= self.logits_temperature
 
-        # Permutate indices
-        if perm_idx is not None:
-            ys = ys[perm_idx.cpu()]
-            ys_sub = ys_sub[perm_idx.cpu()]
-            y_lens = y_lens[perm_idx.cpu()]
-            y_lens_sub = y_lens_sub[perm_idx.cpu()]
+        # Wrap by Variable
+        ys = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()
+              for y in ys]
+        _x_lens = np2var(np.fromiter(x_lens, dtype=np.int32), -1).int()
+        y_lens = np2var(np.fromiter([y.size(0)
+                                     for y in ys], dtype=np.int32), -1).int()
+        ys_sub = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()
+                  for y in ys_sub]
+        _x_lens_sub = np2var(np.fromiter(x_lens_sub, dtype=np.int32), -1).int()
+        y_lens_sub = np2var(np.fromiter([y.size(0)
+                                         for y in ys_sub], dtype=np.int32), -1).int()
+        # NOTE: do not copy to GPUs
 
-        # Concatenate all labels for warpctc_pytorch
-        # `[B, T_out]` -> `[1,]`
-        concatenated_labels = _concatenate_labels(ys, y_lens)
-        concatenated_labels_sub = _concatenate_labels(ys_sub, y_lens_sub)
+        # Concatenate all elements in ys for warpctc_pytorch
+        ys = torch.cat(ys, dim=0).cpu().int() + 1
+        ys_sub = torch.cat(ys_sub, dim=0).cpu().int() + 1
+        # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
         # Compute CTC loss in the main & sub task
         loss_main = my_warpctc(
             logits_main.transpose(0, 1).contiguous(),  # time-major
-            concatenated_labels,
-            x_lens.cpu(), y_lens, size_average=False) / len(xs)
+            ys, _x_lens, y_lens, size_average=False) / len(xs)
+
         loss_sub = my_warpctc(
             logits_sub.transpose(0, 1).contiguous(),  # time-major
-            concatenated_labels_sub,
-            x_lens_sub.cpu(), y_lens_sub, size_average=False) / len(xs)
-
-        if self.use_cuda:
-            loss_main = loss_main.cuda()
-            loss_sub = loss_sub.cuda()
+            ys_sub, _x_lens_sub, y_lens_sub, size_average=False) / len(xs)
 
         # Label smoothing (with uniform distribution)
         if self.ls_prob > 0:
-            # XE
+            if self.device_id >= 0:
+                loss_main = loss_main.cuda(self.device_id)
+                loss_sub = loss_sub.cuda(self.device_id)
+
             loss_ls_main = cross_entropy_label_smoothing(
                 logits_main,
                 y_lens=x_lens,  # NOTE: CTC is frame-synchronous
@@ -363,6 +369,3 @@ class HierarchicalCTC(CTC):
             loss_sub = loss_sub.data[0]
 
         return loss, loss_main, loss_sub
-
-
-1

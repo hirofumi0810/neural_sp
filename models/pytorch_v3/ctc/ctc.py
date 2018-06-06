@@ -13,6 +13,7 @@ except:
     raise ImportError('Install warpctc_pytorch.')
 
 import numpy as np
+import copy
 import torch
 from torch.autograd import Variable
 import torch.nn.functional as F
@@ -25,6 +26,7 @@ from models.pytorch_v3.criterion import cross_entropy_label_smoothing
 from models.pytorch_v3.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch_v3.ctc.decoders.beam_search_decoder import BeamSearchDecoder
 # from models.pytorch_v3.ctc.decoders.beam_search_decoder2 import BeamSearchDecoder
+from models.pytorch_v3.utils import np2var, var2np, pad_list
 
 
 class _CTC(warpctc_pytorch._CTC):
@@ -83,14 +85,14 @@ class CTC(ModelBase):
         dropout_encoder (float): the probability to drop nodes in hidden-hidden connection
         num_classes (int): the number of classes of target labels
             (excluding the blank class)
-        parameter_init_distribution (string): uniform or normal or
-            orthogonal or constant distribution
-        parameter_init (float): Range of uniform distribution to
-            initialize weight parameters
-        recurrent_weight_orthogonal (bool): if True, recurrent
-            weights are orthogonalized
-        init_forget_gate_bias_with_one (bool): if True, initialize
-            the forget gate bias with 1
+        parameter_init_distribution (string): uniform or normal or orthogonal
+            or constant distribution
+        parameter_init (float): Range of uniform distribution to initialize
+            weight parameters
+        recurrent_weight_orthogonal (bool): if True, recurrent weights are
+            orthogonalized
+        init_forget_gate_bias_with_one (bool): if True, initialize the forget
+            gate bias with 1
         subsample_list (list): subsample in the corresponding layers (True)
             ex.) [False, True, True, False] means that subsample is conducted
                 in the 2nd and 3rd layers.
@@ -269,13 +271,11 @@ class CTC(ModelBase):
         # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
         # TODO: set space index
 
-    def forward(self, xs, ys, x_lens, y_lens, is_eval=False):
+    def forward(self, xs, ys, is_eval=False):
         """Forward computation.
         Args:
-            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
-            ys (np.ndarray): A tensor of size `[B, T_out]`
-            x_lens (np.ndarray): A tensor of size `[B]`
-            y_lens (np.ndarray): A tensor of size `[B]`
+            xs (list): A list of length `[B]`, which contains arrays of size `[T, input_size]`
+            ys (list): A list of length `[B]`, which contains arrays of size `[L]`
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
@@ -290,44 +290,50 @@ class CTC(ModelBase):
             if self.weight_noise_injection:
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
-        # Wrap by Variable
-        xs = self.np2var(xs)
-        ys = self.np2var(ys, dtype='int', cpu=True)
-        x_lens = self.np2var(x_lens, dtype='int')
-        y_lens = self.np2var(y_lens, dtype='int', cpu=True)
+        # Sort by lenghts in the descending order
+        if self.encoder_type != 'cnn':
+            perm_idx = sorted(list(range(0, len(xs), 1)),
+                              key=lambda i: xs[i].shape[0], reverse=True)
+            xs = [xs[i] for i in perm_idx]
+            ys = [ys[i] for i in perm_idx]
+            # NOTE: must be descending order for pack_padded_sequence
 
-        # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
-        ys = ys + 1
+        # Wrap by Variable
+        xs = [np2var(x, self.device_id).float() for x in xs]
+        x_lens = [len(x) for x in xs]
 
         # Encode acoustic features
-        logits, x_lens, perm_idx = self._encode(xs, x_lens)
+        logits, x_lens = self._encode(xs, x_lens)
 
         # Output smoothing
         if self.logits_temperature != 1:
             logits /= self.logits_temperature
 
-        # Permutate indices
-        if perm_idx is not None:
-            ys = ys[perm_idx.cpu()]
-            y_lens = y_lens[perm_idx.cpu()]
+        # Wrap by Variable
+        ys = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()
+              for y in ys]
+        _x_lens = np2var(np.fromiter(x_lens, dtype=np.int32), -1).int()
+        y_lens = np2var(np.fromiter([y.size(0)
+                                     for y in ys], dtype=np.int32), -1).int()
+        # NOTE: do not copy to GPUs
 
-        # Concatenate all labels for warpctc_pytorch
-        # `[B, T_out]` -> `[1,]`
-        concatenated_labels = _concatenate_labels(ys, y_lens)
+        # Concatenate all elements in ys for warpctc_pytorch
+        ys = torch.cat(ys, dim=0).cpu().int() + 1
+        # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
         # Compute CTC loss
         loss = my_warpctc(logits.transpose(0, 1),  # time-major
-                          concatenated_labels,
-                          x_lens.cpu(),
-                          y_lens,
+                          ys, _x_lens, y_lens,
                           size_average=False) / len(xs)
 
-        if self.use_cuda:
-            loss = loss.cuda()
+        # loss = warpctc(logits.transpose(0, 1),  # time-major
+        #                ys, _x_lens, y_lens) / len(xs)
+
+        if self.device_id >= 0:
+            loss = loss.cuda(self.device_id)
 
         # Label smoothing (with uniform distribution)
         if self.ls_prob > 0:
-            # XE
             loss_ls = cross_entropy_label_smoothing(
                 logits,
                 y_lens=x_lens,  # NOTE: CTC is frame-synchronous
@@ -344,36 +350,37 @@ class CTC(ModelBase):
     def _encode(self, xs, x_lens, is_multi_task=False):
         """Encode acoustic features.
         Args:
-            xs (torch.autograd.Variable, float): A tensor of size
-                `[B, T, input_size]`
-            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            xs (list): A list of length `[B]`, which contains Variables of size `[T, input_size]`
+            x_lens (list): A list of length `[B]`
             is_multi_task (bool):
         Returns:
-            logits (torch.autograd.Variable, float): A tensor of size
-                `[B, T, num_classes (including the blank class)]`
-            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
-            logits_sub (torch.autograd.Variable, float): A tensor of size
-                `[B, T, num_classes_sub (including the blank class)]`
-            x_lens_sub (torch.autograd.Variable, int): A tensor of size `[B]`
-            perm_idx (torch.autograd.Variable, long): A tensor of size `[B]`
+            xs (torch.autograd.Variable, float): A tensor of size
+                `[B, T, encoder_num_units]`
+            x_lens (list): A tensor of size `[B]`
+            OPTION:
+                xs_sub (torch.autograd.Variable, float): A tensor of size
+                    `[B, T, encoder_num_units]`
+                x_lens_sub (list): A tensor of size `[B]`
         """
+        # Convert list to Variables
+        xs = pad_list(xs)
+
         if is_multi_task:
             if self.encoder_type == 'cnn':
                 xs, x_lens = self.encoder(xs, x_lens)
-                perm_idx = None
                 xs_sub = xs.clone()
-                x_lens_sub = x_lens.clone()
-                # TODO: clone??
+                x_lens_sub = copy.deepcopy(x_lens)
             else:
-                xs, x_lens, xs_sub, x_lens_sub, perm_idx = self.encoder(
+                xs, x_lens, xs_sub, x_lens_sub = self.encoder(
                     xs, x_lens, volatile=not self.training)
         else:
             if self.encoder_type == 'cnn':
                 xs, x_lens = self.encoder(xs, x_lens)
-                perm_idx = None
             else:
-                xs, x_lens, perm_idx = self.encoder(
+                xs, x_lens = self.encoder(
                     xs, x_lens, volatile=not self.training)
+
+        print(xs.size())
 
         # Path through fully-connected layers
         if len(self.fc_list) > 0:
@@ -391,16 +398,15 @@ class CTC(ModelBase):
                 xs_sub = getattr(self, 'fc_sub_' + str(i))(xs_sub)
             logits_sub = self.fc_out_sub(xs_sub)
 
-            return logits, x_lens, logits_sub, x_lens_sub, perm_idx
+            return logits, x_lens, logits_sub, x_lens_sub
         else:
-            return logits, x_lens, perm_idx
+            return logits, x_lens
 
-    def decode(self, xs, x_lens, beam_width, max_decode_len=None,
+    def decode(self, xs, beam_width, max_decode_len=None,
                min_decode_len=0, length_penalty=0, coverage_penalty=0, task_index=0):
         """CTC decoding.
         Args:
-            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
-            x_lens (np.ndarray): A tensor of size `[B]`
+            xs (list): A list of length `[B]`, which contains arrays of size `[T, input_size]`
             beam_width (int): the size of beam
             max_decode_len: not used
             min_decode_len: not used
@@ -408,84 +414,91 @@ class CTC(ModelBase):
             coverage_penalty: not used
             task_index (bool): the index of a task
         Returns:
-            best_hyps (np.ndarray): A tensor of size `[B]`
+            best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
             None: this corresponds to aw in attention-based models
-            perm_idx (np.ndarray): A tensor of size `[B]`
+            perm_idx (list): A list of length `[B]`
         """
-        # Change to evaluation mode
         self.eval()
 
+        # Sort by lenghts in the descending order
+        if self.encoder_type != 'cnn':
+            perm_idx = sorted(list(range(0, len(xs), 1)),
+                              key=lambda i: xs[i].shape[0], reverse=True)
+            xs = [xs[i] for i in perm_idx]
+            # NOTE: must be descending order for pack_padded_sequence
+        else:
+            perm_idx = list(range(0, len(xs), 1))
+
         # Wrap by Variable
-        xs = self.np2var(xs)
-        x_lens = self.np2var(x_lens, dtype='int')
+        xs = [np2var(x, self.device_id, volatile=True).float() for x in xs]
+        x_lens = [len(x) for x in xs]
 
         # Encode acoustic features
         if hasattr(self, 'main_loss_weight'):
             if task_index == 0:
-                logits, x_lens, _, _, perm_idx = self._encode(
+                logits, x_lens, _, _ = self._encode(
                     xs, x_lens, is_multi_task=True)
             elif task_index == 1:
-                _, _, logits, x_lens, perm_idx = self._encode(
+                _, _, logits, x_lens = self._encode(
                     xs, x_lens, is_multi_task=True)
             else:
                 raise NotImplementedError
         else:
-            logits, x_lens, perm_idx = self._encode(xs, x_lens)
+            logits, x_lens = self._encode(xs, x_lens)
 
         if beam_width == 1:
-            best_hyps = self._decode_greedy_np(
-                self.var2np(logits), self.var2np(x_lens))
+            best_hyps = self._decode_greedy_np(var2np(logits), x_lens)
         else:
             best_hyps = self._decode_beam_np(
-                self.var2np(F.log_softmax(logits, dim=-1)),
-                self.var2np(x_lens), beam_width=beam_width)
+                var2np(F.log_softmax(logits, dim=-1)),
+                x_lens, beam_width=beam_width)
 
         # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
         best_hyps -= 1
 
-        # Permutate indices to the original order
-        if perm_idx is None:
-            perm_idx = np.arange(0, len(xs), 1)
-        else:
-            perm_idx = self.var2np(perm_idx)
-
         return best_hyps, None, perm_idx
         # NOTE: None corresponds to aw in attention-based models
 
-    def posteriors(self, xs, x_lens, temperature=1,
-                   blank_scale=None, task_idx=0):
+    def posteriors(self, xs, temperature=1, blank_scale=None, task_idx=0):
         """Returns CTC posteriors (after the softmax layer).
         Args:
-            xs (np.ndarray): A tensor of size `[B, T_in, input_size]`
-            x_lens (np.ndarray): A tensor of size `[B]`
+            xs (list): A list of length `[B]`, which contains arrays of size `[T, input_size]`
             temperature (float): the temperature parameter for the
                 softmax layer in the inference stage
             blank_scale (float):
             task_idx (int): the index ofta task
         Returns:
             probs (np.ndarray): A tensor of size `[B, T, num_classes]`
-            x_lens (np.ndarray): A tensor of size `[B]`
-            perm_idx (np.ndarray): A tensor of size `[B]`
+            x_lens (list): A list of length `[B]`
+            perm_idx (list): A list of length `[B]`
         """
-        # Change to evaluation mode
         self.eval()
 
+        # Sort by lenghts in the descending order
+        if self.encoder_type != 'cnn':
+            perm_idx = sorted(list(range(0, len(xs), 1)),
+                              key=lambda i: xs[i].shape[0], reverse=True)
+            xs = [xs[i] for i in perm_idx]
+            # NOTE: must be descending order for pack_padded_sequence
+        else:
+            perm_idx = list(range(0, len(xs), 1))
+
         # Wrap by Variable
-        xs = self.np2var(xs)
-        x_lens = self.np2var(x_lens, dtype='int')
+        xs = [np2var(x, self.device_id, volatile=True).float() for x in xs]
+        x_lens = [len(x) for x in xs]
 
         # Encode acoustic features
         if hasattr(self, 'main_loss_weight'):
             if task_idx == 0:
-                logits, x_lens, _, _, perm_idx = self._encode(
+                logits, x_lens, _, _ = self._encode(
                     xs, x_lens, is_multi_task=True)
             elif task_idx == 1:
-                _, _, logits, x_lens, perm_idx = self._encode(
+                _, _, logits, x_lens = self._encode(
                     xs, x_lens, is_multi_task=True)
             else:
                 raise NotImplementedError
         else:
-            logits, x_lens, perm_idx = self._encode(xs, x_lens)
+            logits, x_lens = self._encode(xs, x_lens)
 
         probs = F.softmax(logits / temperature, dim=-1)
 
@@ -493,13 +506,7 @@ class CTC(ModelBase):
         if blank_scale is not None:
             raise NotImplementedError
 
-        # Permutate indices to the original order
-        if perm_idx is None:
-            perm_idx = np.arange(0, len(xs), 1)
-        else:
-            perm_idx = self.var2np(perm_idx)
-
-        return self.var2np(probs), self.var2np(x_lens), perm_idx
+        return var2np(probs), x_lens, perm_idx
 
     def decode_from_probs(self, probs, x_lens, beam_width=1,
                           max_decode_len=None):
@@ -527,23 +534,3 @@ class CTC(ModelBase):
         best_hyps -= 1
 
         return best_hyps
-
-
-def _concatenate_labels(ys, y_lens):
-    """Concatenate all labels in mini-batch and convert to a 1D tensor.
-    Args:
-        ys (torch.autograd.Variable, long): A tensor of size `[B, T_out]`
-        y_lens (torch.autograd.Variable, int): A tensor of size `[B]`
-    Returns:
-        concatenated_labels (): A tensor of size `[all_label_num]`
-    """
-    batch_size = ys.size(0)
-    total_y_lens = y_lens.data.sum()
-    concatenated_labels = Variable(torch.zeros(total_y_lens)).int()
-    label_counter = 0
-    for b in range(batch_size):
-        concatenated_labels[label_counter:label_counter +
-                            y_lens.data[b]] = ys[b][:y_lens.data[b]]
-        label_counter += y_lens.data[b]
-
-    return concatenated_labels

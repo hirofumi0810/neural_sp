@@ -13,7 +13,7 @@ import argparse
 
 sys.path.append(abspath('../../../'))
 from models.load_model import load
-from examples.librispeech.s5.exp.datasetata.loas5.exp.dataset_dataset import Dataset
+from examples.librispeech.s5.exp.dataset.load_dataset import Dataset
 from examples.librispeech.s5.exp.metrics.character import eval_char
 from examples.librispeech.s5.exp.metrics.word import eval_word
 from utils.config import load_config

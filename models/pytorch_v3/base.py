@@ -18,6 +18,7 @@ logger = logging.getLogger('training')
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.autograd import Variable
 
 from models.pytorch_v3.tmp.lr_scheduler import ReduceLROnPlateau
 from utils.directory import mkdir
@@ -48,8 +49,8 @@ class ModelBase(nn.Module):
         Args:
             parameter_init (float):
             distribution (string): uniform or normal or orthogonal or constant
-            keys (list, optional):
-            ignore_keys (list, optional):
+            keys (list):
+            ignore_keys (list):
         """
         for name, param in self.named_parameters():
             if keys != [None] and len(list(filter(lambda k: k in name, keys))) == 0:
@@ -118,11 +119,18 @@ class ModelBase(nn.Module):
     def use_cuda(self):
         return torch.cuda.is_available()
 
+    @property
+    def device_id(self):
+        if not hasattr(self, '_device_id'):
+            self._device_id = torch.cuda.device_of(
+                next(self.parameters()).data).idx
+        return self._device_id
+
     def set_cuda(self, deterministic=False, benchmark=True):
         """Set model to the GPU version.
         Args:
-            deterministic (bool, optional):
-            benchmark (bool, optional):
+            deterministic (bool):
+            benchmark (bool):
         """
         if self.use_cuda:
             if benchmark:
@@ -136,7 +144,7 @@ class ModelBase(nn.Module):
                 logger.info('GPU mode')
             self = self.cuda()
         else:
-            logger.info('CPU mode')
+            logger.warning('CPU mode')
 
     def set_optimizer(self, optimizer, learning_rate_init,
                       weight_decay=0, clip_grad_norm=5,
@@ -145,12 +153,12 @@ class ModelBase(nn.Module):
         Args:
             optimizer (string): sgd or adam or adadelta or adagrad or rmsprop
             learning_rate_init (float): An initial learning rate
-            weight_decay (float, optional): L2 penalty
+            weight_decay (float): L2 penalty
             clip_grad_norm (float): not used here
-            lr_schedule (bool, optional): if True, wrap optimizer with
+            lr_schedule (bool): if True, wrap optimizer with
                 scheduler. Default is True.
-            factor (float, optional):
-            patience_epoch (int, optional):
+            factor (float):
+            patience_epoch (int):
         Returns:
             scheduler ():
         """
@@ -238,7 +246,7 @@ class ModelBase(nn.Module):
             step (int): the current step
             lr (float):
             metric_dev_best (float):
-            remove_old_checkpoints (bool, optional): if True, all checkpoints
+            remove_old_checkpoints (bool): if True, all checkpoints
                 other than the best one will be deleted
         Returns:
             model (string): path to the saved model (file)
@@ -268,9 +276,9 @@ class ModelBase(nn.Module):
         """Load checkpoint.
         Args:
             save_path (string): path to the saved models
-            epoch (int, optional): if -1 means the last saved model
-            restart (bool, optional): if True, restore the save optimizer
-            load_pretrained_model (bool, optional): if True, load all parameters
+            epoch (int): if -1 means the last saved model
+            restart (bool): if True, restore the save optimizer
+            load_pretrained_model (bool): if True, load all parameters
                 which match those of the new model's parameters
         Returns:
             epoch (int): the currnet epoch
@@ -339,70 +347,3 @@ class ModelBase(nn.Module):
 
         return (checkpoint['epoch'] + 1, checkpoint['step'] + 1,
                 checkpoint['lr'], checkpoint['metric_dev_best'])
-
-    def _create_var(self, size, fill_value=0, dtype='float', volatile=False):
-        """Initialize a variable with zero.
-        Args:
-            size (tuple):
-            fill_value (int or float, optional):
-            dtype (string): long or float
-            volatile (bool, optional):
-        Returns:
-            var (torch.autograd.Variable, float):
-        """
-        var = torch.autograd.Variable(torch.zeros(size).fill_(fill_value))
-        if dtype == 'long':
-            var = var.long()
-        if volatile:
-            var.volatile = True
-        if self.use_cuda:
-            var = var.cuda()
-        return var
-
-    def np2var(self, array, dtype=None, cpu=False):
-        """Convert form np.ndarray to Variable.
-        Args:
-            array (np.ndarray): A tensor of any sizes
-            type (string, optional): float or long or int
-            cpu (bool, optional):
-        Returns:
-            array (torch.autograd.Variable):
-        """
-        if isinstance(array, list):
-            array = np.array(array)
-
-        array = torch.from_numpy(array)
-        if dtype is not None:
-            if dtype == 'float':
-                array = array.float()
-            elif dtype == 'long':
-                array = array.long()
-            elif dtype == 'int':
-                array = array.int()
-
-        array = torch.autograd.Variable(array, requires_grad=False)
-
-        if not self.training:
-            array.volatile = True
-        if not cpu and self.use_cuda:
-            array = array.cuda()
-
-        return array
-
-    def var2np(self, var):
-        """Convert form Variable to np.ndarray.
-        Args:
-            var (torch.autograd.Variable):
-        Returns:
-            np.ndarray
-        """
-        return var.data.cpu().numpy()
-
-    def tensor2np(self, x):
-        """Convert tensor to np.ndarray.
-        Args:
-            x (torch.FloatTensor):
-        Returns:
-            np.ndarray
-        """
-        return x.cpu().numpy()

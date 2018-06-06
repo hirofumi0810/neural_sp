@@ -35,10 +35,9 @@ parser.add_argument('--coverage_penalty', type=float, default=0,
                     help='coverage penalty in beam search decoding')
 
 MAX_DECODE_LEN_WORD = 100
-MIN_DECODE_LEN_WORD = 0
-
+MIN_DECODE_LEN_WORD = 1
 MAX_DECODE_LEN_CHAR = 200
-MIN_DECODE_LEN_CHAR = 0
+MIN_DECODE_LEN_CHAR = 1
 
 
 def main():
@@ -63,7 +62,6 @@ def main():
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=False, reverse=False, tool=params['tool'])
-
     params['num_classes'] = dataset.num_classes
     params['num_classes_sub'] = dataset.num_classes
 
@@ -95,7 +93,7 @@ def main():
         # Decode
         if model.model_type == 'nested_attention':
             best_hyps, _, best_hyps_sub, _, perm_idx = model.decode(
-                batch['xs'], batch['x_lens'],
+                batch['xs'],
                 beam_width=args.beam_width,
                 max_decode_len=max_decode_len,
                 max_decode_len_sub=max_decode_len,
@@ -103,7 +101,7 @@ def main():
                 coverage_penalty=args.coverage_penalty)
         else:
             best_hyps, _, perm_idx = model.decode(
-                batch['xs'], batch['x_lens'],
+                batch['xs'],
                 beam_width=args.beam_width,
                 max_decode_len=max_decode_len,
                 min_decode_len=min_decode_len,
@@ -112,21 +110,20 @@ def main():
 
         if model.model_type == 'attention' and model.ctc_loss_weight > 0:
             best_hyps_ctc, perm_idx = model.decode_ctc(
-                batch['xs'], batch['x_lens'], beam_width=args.beam_width)
+                batch['xs'], beam_width=args.beam_width)
 
-        ys = batch['ys'][perm_idx]
-        y_lens = batch['y_lens'][perm_idx]
+        ys = [batch['ys'][i] for i in perm_idx]
 
         for b in range(len(batch['xs'])):
             ##############################
             # Reference
             ##############################
             if dataset.is_test:
-                str_ref = ys[b][0]
+                str_ref = ys[b]
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
-                str_ref = map_fn(ys[b][:y_lens[b]])
+                str_ref = map_fn(ys[b])
 
             ##############################
             # Hypothesis

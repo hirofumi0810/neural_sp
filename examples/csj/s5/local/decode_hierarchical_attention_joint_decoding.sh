@@ -21,9 +21,8 @@ length_penalty=0
 coverage_penalty=0
 joint_decoding=onepass
 # joint_decoding=rescoring
-# joint_decoding=None
 resolving_unk=true
-score_sub_weight=0.3
+score_sub_weight=0.1
 
 CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
 $PYTHON exp/visualization/decode_hierarchical.py \

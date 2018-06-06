@@ -76,8 +76,7 @@ def main():
 
     for batch, is_new_epoch in dataset:
         # Get CTC probs
-        probs, x_lens, _ = model.posteriors(
-            batch['xs'], batch['x_lens'], temperature=1)
+        probs, x_lens, _ = model.posteriors(batch['xs'], temperature=1)
         # NOTE: probs: '[B, T, num_classes]'
 
         # Visualize
@@ -85,10 +84,10 @@ def main():
             speaker, chapter = batch['input_names'][b].split('-')[:2]
 
             plot_ctc_probs(
-                probs[b, :x_lens[b], :],
+                probs[b, :x_lens[b]],
                 frame_num=x_lens[b],
                 num_stack=dataset.num_stack,
-                spectrogram=batch['xs'][b, :, :dataset.input_freq],
+                spectrogram=batch['xs'][b][:, :dataset.input_freq],
                 save_path=join(save_path, speaker, chapter,
                                batch['input_names'][b] + '.png'),
                 figsize=(14, 7))

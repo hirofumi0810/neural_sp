@@ -28,7 +28,11 @@ class TestCTC(unittest.TestCase):
     def test(self):
         print("Hierarchical CTC Working check.")
 
+        # Beam search
+        self.check(encoder_type='lstm', bidirectional=True, beam_width=2)
+
         # CNN-CTC
+        self.check(encoder_type='cnn', batch_norm=False, activation='relu')
         self.check(encoder_type='cnn', batch_norm=True, activation='relu')
 
         # CLDNN-CTC
@@ -61,7 +65,7 @@ class TestCTC(unittest.TestCase):
               subsample=False, projection=False,
               conv=False, batch_norm=False, activation='relu',
               encoder_residual=False, encoder_dense_residual=False,
-              label_smoothing=False):
+              label_smoothing=False, beam_width=1):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
@@ -73,6 +77,7 @@ class TestCTC(unittest.TestCase):
         print('  encoder_residual: %s' % str(encoder_residual))
         print('  encoder_dense_residual: %s' % str(encoder_dense_residual))
         print('  label_smoothing: %s' % str(label_smoothing))
+        print('  beam_width: %d' % beam_width)
         print('==================================================')
 
         if conv or encoder_type == 'cnn':
@@ -99,18 +104,17 @@ class TestCTC(unittest.TestCase):
         # Load batch data
         num_stack = 1 if subsample or conv or encoder_type == 'cnn' else 2
         splice = 1
-        xs, ys, ys_sub, x_lens, y_lens, y_lens_sub = generate_data(
-            label_type='word_char',
-            batch_size=2,
-            num_stack=num_stack,
-            splice=splice)
+        xs, ys, ys_sub = generate_data(label_type='word_char',
+                                       batch_size=2,
+                                       num_stack=num_stack,
+                                       splice=splice)
 
         num_classes = 11
         num_classes_sub = 27
 
         # Load model
         model = HierarchicalCTC(
-            input_size=xs.shape[-1] // splice // num_stack,   # 120
+            input_size=xs[0].shape[-1] // splice // num_stack,   # 120
             encoder_type=encoder_type,
             encoder_bidirectional=bidirectional,
             encoder_num_units=256,
@@ -121,8 +125,8 @@ class TestCTC(unittest.TestCase):
             fc_list_sub=fc_list,
             dropout_input=0.1,
             dropout_encoder=0.1,
-            main_loss_weight=0.8,
-            sub_loss_weight=0.2,
+            main_loss_weight=0.5,
+            sub_loss_weight=0.5,
             num_classes=num_classes,
             num_classes_sub=num_classes_sub,
             parameter_init_distribution='uniform',
@@ -161,6 +165,7 @@ class TestCTC(unittest.TestCase):
         # Define learning rate controller
         lr_controller = Controller(learning_rate_init=learning_rate,
                                    backend='pytorch',
+                                   decay_type='compare_metric',
                                    decay_start_epoch=20,
                                    decay_rate=0.9,
                                    decay_patient_epoch=10,
@@ -176,8 +181,7 @@ class TestCTC(unittest.TestCase):
 
             # Step for parameter update
             model.optimizer.zero_grad()
-            loss, loss_main, loss_sub = model(
-                xs, ys, x_lens, y_lens, ys_sub, y_lens_sub)
+            loss, loss_main, loss_sub = model(xs, ys, ys_sub)
             loss.backward()
             # torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
             torch.nn.utils.clip_grad_norm(model.parameters(), 5)
@@ -185,18 +189,16 @@ class TestCTC(unittest.TestCase):
 
             if (step + 1) % 10 == 0:
                 # Compute loss
-                loss, loss_main, loss_sub = model(
-                    xs, ys, x_lens, y_lens, ys_sub, y_lens_sub, is_eval=True)
+                loss, loss_main, loss_sub = model(xs, ys, ys_sub, is_eval=True)
 
                 # Decode
-                best_hyps, _, _ = model.decode(
-                    xs, x_lens, beam_width=2, task_index=0)
+                best_hyps, _, _ = model.decode(xs, beam_width, task_index=0)
                 best_hyps_sub, _, _ = model.decode(
-                    xs, x_lens, beam_width=2, task_index=1)
+                    xs, beam_width, task_index=1)
 
-                str_ref = idx2word(ys[0, :y_lens[0]])
+                str_ref = idx2word(ys[0])
                 str_hyp = idx2word(best_hyps[0])
-                str_ref_sub = idx2char(ys_sub[0, :y_lens_sub[0]])
+                str_ref_sub = idx2char(ys_sub[0])
                 str_hyp_sub = idx2char(best_hyps_sub[0])
 
                 # Compute accuracy

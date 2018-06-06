@@ -57,7 +57,6 @@ def main():
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=False, tool=params['tool'])
-
     params['num_classes'] = dataset.num_classes
 
     # Load model
@@ -83,15 +82,14 @@ def main():
     for batch, is_new_epoch in dataset:
         # Decode
         best_hyps, aw, perm_idx = model.decode(
-            batch['xs'], batch['x_lens'],
+            batch['xs'],
             beam_width=args.beam_width,
             max_decode_len=MAX_DECODE_LEN_PHONE,
             min_decode_len=MIN_DECODE_LEN_PHONE,
             length_penalty=args.length_penalty,
             coverage_penalty=args.coverage_penalty)
 
-        ys = batch['ys'][perm_idx]
-        y_lens = batch['y_lens'][perm_idx]
+        ys = [batch['ys'][i] for i in perm_idx]
 
         for b in range(len(batch['xs'])):
             ##############################
@@ -102,15 +100,15 @@ def main():
                 # NOTE: transcript is seperated by space(' ')
             else:
                 # Convert from list of index to string
-                str_ref = dataset.idx2phone(ys[b][:y_lens[b]])
+                str_ref = dataset.idx2phone(ys[b])
 
             token_list = dataset.idx2phone(best_hyps[b], return_list=True)
 
             plot_attention_weights(
-                aw[b][:len(token_list), :batch['x_lens'][b]],
+                aw[b][:len(token_list)],
                 # label_list=token_list,
                 label_list=[],
-                spectrogram=batch['xs'][b, :, :dataset.input_freq],
+                spectrogram=batch['xs'][b][:, :dataset.input_freq],
                 str_ref=str_ref,
                 save_path=join(save_path, batch['input_names'][b] + '.png'),
                 figsize=(20, 8))

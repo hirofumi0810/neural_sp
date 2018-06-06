@@ -75,7 +75,7 @@ if [ $stage -le 1 ] && [ ! -e $DATA/.stage_1 ]; then
 
   elif [ $TOOL = 'htk' ]; then
     # Make a config file to covert from wav to htk file
-    python local/make_htk_config.py \
+    $PYTHON local/make_htk_config.py \
         --data_save_path $DATA \
         --config_save_path ./conf/fbank_htk.conf \
         --audio_file_type nist \
@@ -117,7 +117,7 @@ if [ $stage -le 1 ] && [ ! -e $DATA/.stage_1 ]; then
     fi
   fi
 
-  python local/feature_extraction.py \
+  $PYTHON local/feature_extraction.py \
     --data_save_path $DATA \
     --tool $TOOL \
     --normalize $NORMALIZE \
@@ -138,7 +138,7 @@ if [ $stage -le 2 ] && [ ! -e $DATA/.stage_2 ]; then
   echo "                            Create dataset                                "
   echo ============================================================================
 
-  python local/make_dataset_csv.py \
+  $PYTHON local/make_dataset_csv.py \
     --data_save_path $DATA \
     --phone_map_file_path ./conf/phones.60-48-39.map \
     --tool $TOOL || exit 1;

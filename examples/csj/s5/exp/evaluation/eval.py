@@ -36,10 +36,9 @@ parser.add_argument('--coverage_penalty', type=float, default=0,
                     help='coverage penalty in beam search decoding')
 
 MAX_DECODE_LEN_WORD = 100
-MIN_DECODE_LEN_WORD = 0
-
+MIN_DECODE_LEN_WORD = 1
 MAX_DECODE_LEN_CHAR = 200
-MIN_DECODE_LEN_CHAR = 0
+MIN_DECODE_LEN_CHAR = 1
 
 
 def main():
@@ -84,7 +83,7 @@ def main():
             model.set_cuda(deterministic=False, benchmark=True)
 
             logger.info('beam width: %d' % args.beam_width)
-            logger.info('epoch: %d' % epoch)
+            logger.info('epoch: %d' % (epoch - 1))
 
         if params['label_type'] == 'word':
             wer, df = eval_word(
@@ -118,10 +117,10 @@ def main():
             logger.info(df)
 
     if params['label_type'] == 'word':
-        logger.info('  WER (mean): %.3f %%' % (wer * 100 / 3))
+        logger.info('  WER (mean): %.3f %%' % (wer_mean * 100 / 3))
     else:
         logger.info('  WER / CER (mean): %.3f / %.3f %%' %
-                    ((wer * 100 / 3), (cer * 100 / 3)))
+                    ((wer_mean * 100 / 3), (cer_mean * 100 / 3)))
 
 
 if __name__ == '__main__':

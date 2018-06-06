@@ -48,7 +48,6 @@ def main():
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=True, reverse=True, tool=params['tool'])
-
     params['num_classes'] = dataset.num_classes
 
     # Load model
@@ -73,17 +72,16 @@ def main():
 
     for batch, is_new_epoch in dataset:
         # Get CTC probs
-        probs, x_lens, _ = model.posteriors(
-            batch['xs'], batch['x_lens'], temperature=1)
+        probs, x_lens, _ = model.posteriors(batch['xs'], temperature=1)
         # NOTE: probs: '[B, T, num_classes]'
 
         # Visualize
         for b in range(len(batch['xs'])):
             plot_ctc_probs(
-                probs[b, : x_lens[b], :],
+                probs[b, : x_lens[b]],
                 frame_num=x_lens[b],
                 num_stack=dataset.num_stack,
-                spectrogram=batch['xs'][b, :, :40],
+                spectrogram=batch['xs'][b][:, :40],
                 save_path=join(save_path, batch['input_names'][b] + '.png'),
                 figsize=(14, 7))
 

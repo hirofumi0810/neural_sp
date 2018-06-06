@@ -10,14 +10,13 @@ from __future__ import print_function
 from os.path import join, abspath
 import sys
 import argparse
+import re
 
 sys.path.append(abspath('../../../'))
 from models.load_model import load
 from examples.swbd.s5c.exp.dataset.load_dataset_hierarchical import Dataset
 from examples.swbd.s5c.exp.metrics.glm import GLM
 from examples.swbd.s5c.exp.metrics.post_processing import fix_trans
-from utils.io.labels.character import Idx2char
-from utils.io.labels.word import Idx2word
 from utils.config import load_config
 from utils.evaluation.edit_distance import compute_wer
 from utils.evaluation.resolving_unk import resolve_unk
@@ -29,18 +28,26 @@ parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
 parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
+parser.add_argument('--eval_batch_size', type=int, default=1,
+                    help='the size of mini-batch in evaluation')
 parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam in the main task')
 parser.add_argument('--beam_width_sub', type=int, default=1,
                     help='the size of beam in the sub task')
-parser.add_argument('--eval_batch_size', type=int, default=1,
-                    help='the size of mini-batch in evaluation')
+parser.add_argument('--length_penalty', type=float, default=0,
+                    help='length penalty in beam search decoding')
+parser.add_argument('--coverage_penalty', type=float, default=0,
+                    help='coverage penalty in beam search decoding')
 
 MAX_DECODE_LEN_WORD = 100
+MIN_DECODE_LEN_WORD = 0
 MAX_DECODE_LEN_CHAR = 300
+MIN_DECODE_LEN_CHAR = 0
 
 
 def main():
+
+    resolving_unk = False
 
     args = parser.parse_args()
 
@@ -48,7 +55,7 @@ def main():
     params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
-    test_data = Dataset(
+    dataset = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
         input_freq=params['input_freq'],
@@ -63,8 +70,8 @@ def main():
         # sort_utt=True, reverse=True,
         sort_utt=False, reverse=False, tool=params['tool'])
 
-    params['num_classes'] = test_data.num_classes
-    params['num_classes_sub'] = test_data.num_classes_sub
+    params['num_classes'] = dataset.num_classes
+    params['num_classes_sub'] = dataset.num_classes_sub
 
     # Load model
     model = load(model_type=params['model_type'],
@@ -77,100 +84,69 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
-    # Visualize
-    decode(model=model,
-           dataset=test_data,
-           beam_width=args.beam_width,
-           beam_width_sub=args.beam_width_sub,
-           eval_batch_size=args.eval_batch_size,
-           save_path=None
-           # save_path=args.model_path
-           resolving_unk=False)
+    # sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
 
+    ######################################################################
 
-def decode(model, dataset, beam_width, beam_width_sub,
-           eval_batch_size=None, save_path=None, resolving_unk=False):
-    """Visualize label outputs.
-    Args:
-        model: the model to evaluate
-        dataset: An instance of a `Dataset` class
-        beam_width: (int): the size of beam in the main task
-        beam_width: (int): the size of beam in the sub task
-        eval_batch_size (int, optional): the batch size when evaluating the model
-        save_path (string): path to save decoding results
-        resolving_unk (bool, optional):
-    """
-    # Set batch size in the evaluation
-    if eval_batch_size is not None:
-        dataset.batch_size = eval_batch_size
-
-    idx2word = Idx2word(vocab_file_path=dataset.vocab_file_path)
-    idx2char = Idx2char(vocab_file_path=dataset.vocab_file_path_sub,
-                        capital_divide=dataset.label_type_sub == 'character_capital_divide')
+    # char2word = Char2word(dataset.vocab_file_path,
+    #                       dataset.vocab_file_path_sub)
 
     # Read GLM file
     glm = GLM(
         glm_path='/n/sd8/inaguma/corpus/swbd/data/eval2000/LDC2002T43/reference/en20000405_hub5.glm')
 
-    if save_path is not None:
-        sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
-
     for batch, is_new_epoch in dataset:
-
         # Decode
         if model.model_type == 'nested_attention':
-            best_hyps, aw, best_hyps_sub, aw_sub, perm_idx = model.decode(
-                batch['xs'], batch['x_lens'],
-                beam_width=beam_width,
-                beam_width_sub=beam_width_sub,
+            best_hyps, aw, best_hyps_sub, aw_sub, _, perm_idx = model.decode(
+                batch['xs'],
+                beam_width=args.beam_width,
                 max_decode_len=MAX_DECODE_LEN_WORD,
-                max_decode_len_sub=MAX_DECODE_LEN_CHAR)
+                min_decode_len=MIN_DECODE_LEN_WORD,
+                beam_width_sub=args.beam_width_sub,
+                max_decode_len_sub=MAX_DECODE_LEN_CHAR,
+                min_decode_len_sub=MIN_DECODE_LEN_CHAR,
+                length_penalty=args.length_penalty,
+                coverage_penalty=args.coverage_penalty)
         else:
             best_hyps, aw, perm_idx = model.decode(
-                batch['xs'], batch['x_lens'],
-                beam_width=beam_width,
-                max_decode_len=MAX_DECODE_LEN_WORD)
+                batch['xs'],
+                beam_width=args.beam_width,
+                max_decode_len=MAX_DECODE_LEN_WORD,
+                min_decode_len=MIN_DECODE_LEN_WORD,
+                length_penalty=args.length_penalty,
+                coverage_penalty=args.coverage_penalty)
             best_hyps_sub, aw_sub, _ = model.decode(
-                batch['xs'], batch['x_lens'],
-                beam_width=beam_width_sub,
+                batch['xs'],
+                beam_width=args.beam_width_sub,
                 max_decode_len=MAX_DECODE_LEN_CHAR,
+                min_decode_len=MIN_DECODE_LEN_CHAR,
+                length_penalty=args.length_penalty,
+                coverage_penalty=args.coverage_penalty,
                 task_index=1)
 
-        ys = batch['ys'][perm_idx]
-        y_lens = batch['y_lens'][perm_idx]
-        ys_sub = batch['ys_sub'][perm_idx]
-        y_lens_sub = batch['y_lens_sub'][perm_idx]
+        ys = [batch['ys'][i] for i in perm_idx]
+        ys_sub = [batch['ys_sub'][i] for i in perm_idx]
 
         for b in range(len(batch['xs'])):
-
             ##############################
             # Reference
             ##############################
             if dataset.is_test:
-                str_ref_original = ys[b][0]
-                str_ref_sub = ys_sub[b][0]
+                str_ref_original = ys[b]
+                str_ref_sub = ys_sub[b]
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
-                str_ref_original = idx2word(ys[b][: y_lens[b]])
-                str_ref_sub = idx2word(ys_sub[b][:y_lens_sub[b]])
+                str_ref_original = dataset.idx2word(ys[b])
+                str_ref_sub = dataset.idx2word(ys_sub[b])
 
             ##############################
             # Hypothesis
             ##############################
             # Convert from list of index to string
-            str_hyp = idx2word(best_hyps[b])
-            str_hyp_sub = idx2char(best_hyps_sub[b])
-
-            ##############################
-            # Resolving UNK
-            ##############################
-            if 'OOV' in str_hyp and resolving_unk:
-                str_hyp_no_unk = resolve_unk(
-                    str_hyp, best_hyps_sub[b], aw[b], aw_sub[b], idx2char)
-
-            # if 'OOV' not in str_hyp:
-            #     continue
+            str_hyp = dataset.idx2word(best_hyps[b])
+            str_hyp_sub = dataset.idx2char(best_hyps_sub[b])
 
             ##############################
             # Post-proccessing
@@ -179,10 +155,17 @@ def decode(model, dataset, beam_width, beam_width_sub,
             str_ref_sub = fix_trans(str_ref_sub, glm)
             str_hyp = fix_trans(str_hyp, glm)
             str_hyp_sub = fix_trans(str_hyp_sub, glm)
-            str_hyp_no_unk = fix_trans(str_hyp_no_unk, glm)
 
-            if len(str_ref) == 0:
-                continue
+            ##############################
+            # Resolving UNK
+            ##############################
+            if 'OOV' in str_hyp and resolving_unk:
+                str_hyp_no_unk = resolve_unk(
+                    str_hyp, best_hyps_sub[b], aw[b], aw_sub[b], dataset.idx2char)
+                str_hyp_no_unk = fix_trans(str_hyp_no_unk, glm)
+
+            # if len(str_ref) == 0:
+            #     continue
 
             print('----- wav: %s -----' % batch['input_names'][b])
             print('Ref         : %s' % str_ref.replace('_', ' '))
@@ -192,22 +175,22 @@ def decode(model, dataset, beam_width, beam_width_sub,
                 print('Hyp (no UNK): %s' % str_hyp_no_unk.replace('_', ' '))
 
             try:
-                # Compute WER
                 wer, _, _, _ = compute_wer(
                     ref=str_ref.split('_'),
-                    hyp=str_hyp.replace(r'_>.*', '').split('_'),
+                    hyp=re.sub(r'(.*)_>(.*)', r'\1', str_hyp).split('_'),
                     normalize=True)
                 print('WER (main)  : %.3f %%' % (wer * 100))
                 wer_sub, _, _, _ = compute_wer(
                     ref=str_ref_sub.split('_'),
-                    hyp=str_hyp_sub.replace(r'>.*', '').split('_'),
+                    hyp=re.sub(r'(.*)>(.*)', r'\1',
+                               str_hyp_sub).split('_'),
                     normalize=True)
-                print('WER (sub)   : %.3f %%' % (wer_sub * 100))
+                print('WER (sub)  : %.3f %%' % (wer_sub * 100))
                 if 'OOV' in str_hyp and resolving_unk:
                     wer_no_unk, _, _, _ = compute_wer(
                         ref=str_ref.split('_'),
-                        hyp=str_hyp_no_unk.replace(
-                            '*', '').replace(r'_>.*', '').split('_'),
+                        hyp=re.sub(r'(.*)_>(.*)', r'\1',
+                                   str_hyp_no_unk.replace('*', '')).split('_'),
                         normalize=True)
                     print('WER (no UNK): %.3f %%' % (wer_no_unk * 100))
             except:

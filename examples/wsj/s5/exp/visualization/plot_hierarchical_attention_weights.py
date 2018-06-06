@@ -69,7 +69,6 @@ def main():
         batch_size=args.eval_batch_size, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         sort_utt=False, reverse=False, tool=params['tool'])
-
     params['num_classes'] = dataset.num_classes
     params['num_classes_sub'] = dataset.num_classes_sub
 
@@ -100,7 +99,7 @@ def main():
         # Decode
         if model.model_type == 'hierarchical_attention' and args.joint_decoding is not None:
             best_hyps, aw, best_hyps_sub, aw_sub, _ = model.decode(
-                batch['xs'], batch['x_lens'],
+                batch['xs'],
                 beam_width=args.beam_width,
                 max_decode_len=MAX_DECODE_LEN_WORD,
                 min_decode_len=MIN_DECODE_LEN_WORD,
@@ -115,14 +114,14 @@ def main():
                 score_sub_weight=args.score_sub_weight)
         else:
             best_hyps, aw, perm_idx = model.decode(
-                batch['xs'], batch['x_lens'],
+                batch['xs'],
                 beam_width=args.beam_width,
                 max_decode_len=MAX_DECODE_LEN_WORD,
                 min_decode_len=MIN_DECODE_LEN_WORD,
                 length_penalty=args.length_penalty,
                 coverage_penalty=args.coverage_penalty)
             best_hyps_sub, aw_sub, _ = model.decode(
-                batch['xs'], batch['x_lens'],
+                batch['xs'],
                 beam_width=args.beam_width_sub,
                 max_decode_len=MAX_DECODE_LEN_CHAR,
                 min_decode_len=MIN_DECODE_LEN_CHAR,
@@ -136,11 +135,11 @@ def main():
 
             # Visualize
             plot_hierarchical_attention_weights(
-                aw[b][:len(word_list), :batch['x_lens'][b]],
-                aw_sub[b][:len(char_list), :batch['x_lens'][b]],
+                aw[b][:len(word_list)],
+                aw_sub[b][:len(char_list)],
                 label_list=word_list,
                 label_list_sub=char_list,
-                spectrogram=batch['xs'][b, :, :dataset.input_freq],
+                spectrogram=batch['xs'][b][:, :dataset.input_freq],
                 save_path=mkdir_join(
                     save_path, batch['input_names'][b] + '.png'),
                 figsize=(40, 8)

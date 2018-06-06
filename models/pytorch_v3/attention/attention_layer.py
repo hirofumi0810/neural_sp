@@ -124,19 +124,19 @@ class AttentionMechanism(nn.Module):
         """Forward computation.
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
-                `[B, T_in, encoder_num_units]`
+                `[B, T, encoder_num_units]`
             enc_out_a (torch.autograd.Variable, float): A tensor of size
-                `[B, T_in, attention_dim, num_heads]`
-            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+                `[B, T, attention_dim, num_heads]`
+            x_lens (list): A list of length `[B]`
             dec_out (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, decoder_num_units]`
             aw_step (torch.autograd.Variable, float): A tensor of size
-                `[B, T_in, num_heads]`
+                `[B, T, num_heads]`
         Returns:
             context_vec (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, encoder_num_units]`
             aw_step (torch.autograd.Variable, float): A tensor of size
-                `[B, T_in, num_heads]`
+                `[B, T, num_heads]`
         """
         batch_size, max_time = enc_out_a.size()[:2]
 
@@ -164,10 +164,10 @@ class AttentionMechanism(nn.Module):
                 # For 2D conv
                 conv_feat = getattr(self, 'conv_head' + str(h))(
                     aw_step[:, :, h].contiguous().view(batch_size, 1, 1, max_time)).squeeze(2)
+                # -> `[B, out_channels, T]`
 
-                # # -> `[B, out_channels, T_in]`
                 conv_feat = conv_feat.transpose(1, 2).contiguous()
-                # -> `[B, T_in, out_channels]`
+                # -> `[B, T, out_channels]`
 
                 dec_out = dec_out.expand_as(torch.zeros(
                     (batch_size, max_time, dec_out.size(2))))
@@ -215,14 +215,13 @@ class AttentionMechanism(nn.Module):
         aw_step = []
         for h in range(self.num_heads):
             # Mask attention distribution
-            energy_mask = Variable(torch.ones(batch_size, max_time))
-            if enc_out_a.is_cuda:
-                energy_mask = energy_mask.cuda()
+            energy_mask = Variable(enc_out.data.new(
+                batch_size, max_time).fill_(1))
             for b in range(batch_size):
-                if x_lens[b].data[0] < max_time:
-                    energy_mask.data[b, x_lens[b].data[0]:] = 0
+                if x_lens[b] < max_time:
+                    energy_mask.data[b, x_lens[b]:] = 0
             energy[h] *= energy_mask
-            # NOTE: energy[h]: `[B, T_in]`
+            # NOTE: energy[h]: `[B, T]`
 
             # Sharpening
             energy[h] *= self.sharpening_factor

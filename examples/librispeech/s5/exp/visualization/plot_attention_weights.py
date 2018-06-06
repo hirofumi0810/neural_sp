@@ -98,15 +98,14 @@ def main():
     for batch, is_new_epoch in dataset:
         # Decode
         best_hyps, aw, perm_idx = model.decode(
-            batch['xs'], batch['x_lens'],
+            batch['xs'],
             beam_width=args.beam_width,
             max_decode_len=max_decode_len,
             min_decode_len=min_decode_len,
             length_penalty=args.length_penalty,
             coverage_penalty=args.coverage_penalty)
 
-        ys = batch['ys'][perm_idx]
-        y_lens = batch['y_lens'][perm_idx]
+        ys = [batch['ys'][i] for i in perm_idx]
 
         for b in range(len(batch['xs'])):
             ##############################
@@ -117,15 +116,15 @@ def main():
                 # NOTE: transcript is seperated by space('_')
             else:
                 # Convert from list of index to string
-                str_ref = map_fn(ys[b][:y_lens[b]])
+                str_ref = map_fn(ys[b])
 
             token_list = map_fn(best_hyps[b], return_list=True)
             speaker, chapter = batch['input_names'][b].split('-')[:2]
 
             plot_attention_weights(
-                aw[b][:len(token_list), :batch['x_lens'][b]],
+                aw[b][:len(token_list)],
                 label_list=token_list,
-                spectrogram=batch['xs'][b, :, :dataset.input_freq],
+                spectrogram=batch['xs'][b][:dataset.input_freq],
                 str_ref=str_ref,
                 save_path=mkdir_join(save_path, speaker, chapter,
                                      batch['input_names'][b] + '.png'),

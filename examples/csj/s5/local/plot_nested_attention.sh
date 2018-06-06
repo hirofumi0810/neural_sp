@@ -20,6 +20,7 @@ beam_width=4
 beam_width_sub=4
 length_penalty=0
 coverage_penalty=0
+a2c_oracle=false
 
 CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
 $PYTHON exp/visualization/plot_nested_attention_weights.py \
@@ -30,4 +31,5 @@ $PYTHON exp/visualization/plot_nested_attention_weights.py \
   --beam_width $beam_width \
   --beam_width_sub $beam_width_sub \
   --length_penalty $length_penalty \
-  --coverage_penalty $coverage_penalty
+  --coverage_penalty $coverage_penalty \
+  --a2c_oracle $a2c_oracle
