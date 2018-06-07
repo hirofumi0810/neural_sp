@@ -25,16 +25,16 @@ class TestLoadDataset(unittest.TestCase):
         #
         # raise ValueError
 
-        # data_size
-        self.check(label_type='word', data_type='dev', data_size='aps_other')
-        self.check(label_type='word', data_type='dev', data_size='all')
-
         # data_type
         self.check(label_type='word', data_type='train')
         self.check(label_type='word', data_type='dev')
         self.check(label_type='word', data_type='eval1')
         self.check(label_type='word', data_type='eval2')
         self.check(label_type='word', data_type='eval3')
+
+        # data_size
+        self.check(label_type='word', data_type='dev', data_size='aps_other')
+        self.check(label_type='word', data_type='dev', data_size='all')
 
         # label_type
         self.check(label_type='character')
@@ -79,7 +79,7 @@ class TestLoadDataset(unittest.TestCase):
         dataset = Dataset(
             data_save_path='/n/sd8/inaguma/corpus/csj/kaldi',
             backend=backend,
-            input_freq=81, use_delta=True, use_double_delta=True,
+            input_freq=80, use_delta=False, use_double_delta=False,
             data_type=data_type, data_size=data_size,
             label_type=label_type, batch_size=64,
             max_epoch=1, splice=splice, num_stack=num_stack, num_skip=num_skip,

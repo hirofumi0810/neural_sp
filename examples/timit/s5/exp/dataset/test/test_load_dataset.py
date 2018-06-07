@@ -63,12 +63,11 @@ class TestLoadDataset(unittest.TestCase):
             backend=backend,
             input_freq=41, use_delta=True, use_double_delta=True,
             data_type=data_type, label_type=label_type,
-            batch_size=32, max_epoch=1,
+            batch_size=32, max_epoch=2,
             splice=splice, num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle,
             sort_utt=sort_utt, sort_stop_epoch=sort_stop_epoch,
-            tool='htk',
-            num_enque=None)
+            tool='htk', num_enque=None)
 
         print('=> Loading mini-batch...')
 

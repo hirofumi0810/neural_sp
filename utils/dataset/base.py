@@ -125,7 +125,7 @@ class Base(object):
                     self.data_indices_list.append(data_indices)
                     self.is_new_epoch_list.append(is_new_epoch)
                 self.preloading_process = Process(
-                    target=self.preloading_loop,
+                    target=preloading_loop,
                     args=(self.queue, self.data_indices_list))
                 self.preloading_process.start()
                 self.queue_size += self.num_enque
@@ -164,22 +164,23 @@ class Base(object):
                 # Change batch size dynamically
                 min_frame_num_batch = self.df[self.offset:self.offset +
                                               1]['frame_num'].values[0]
-                batch_size_tmp = self.select_batch_size(
+                _batch_size = self.select_batch_size(
                     batch_size, min_frame_num_batch)
-                # NOTE: this depends on each corpus
+                # NOTE: depends on each corpus
             else:
-                batch_size_tmp = batch_size
+                _batch_size = batch_size
 
-            if len(self.rest) > batch_size_tmp:
-                df_tmp = self.df[self.offset:self.offset + batch_size_tmp]
-                data_indices = list(df_tmp.index)
+            if len(self.rest) > _batch_size:
+                data_indices = list(
+                    self.df[self.offset:self.offset + _batch_size].index)
                 self.rest -= set(data_indices)
                 # NOTE: rest is in uttrance length order when sort_utt == True
                 # NOTE: otherwise in name length order when shuffle == False
                 self.offset += len(data_indices)
             else:
                 # Last mini-batch
-                data_indices = list(self.rest)
+                data_indices = list(self.df[self.offset: self.offset +
+                                            len(self.rest)].index)
                 self._reset()
                 is_new_epoch = True
                 self._epoch += 1
@@ -228,56 +229,63 @@ class Base(object):
         self.rest = set(list(self.df.index))
         self.offset = 0
 
-    def load(self, path):
-        ext = os.path.basename(path).split('.')[-1]
-        if ext == 'npy':
-            return self._load_npy(path)
-        elif ext == 'htk':
-            return self._load_htk(path)
 
-    def _load_npy(self, path):
-        """Load npy files.
-        Args:
-            path (string):
-        Returns:
-            input_data (np.ndarray): A tensor of size (frame_num, feature_dim)
-        """
-        return np.load(path)
+def preloading_loop(queue, data_indices_list):
+    """
+    Args:
+        queue ():
+        data_indices_list (np.ndarray):
+    """
+    # print("Pre-loading started.")
+    for i in range(len(data_indices_list)):
+        queue.put(self.make_batch(data_indices_list[i]))
+    # print("Pre-loading done.")
 
-    def _load_htk(htk_path):
-        """Load each HTK file.
-        Args:
-            htk_path (string): path to a HTK file
-        Returns:
-            input_data (np.ndarray): A tensor of size (frame_num, feature_dim)
-        """
-        with open(htk_path, "rb") as f:
+
+def split_per_device(x, num_gpus):
+    if num_gpus > 1:
+        return np.array_split(x, num_gpus, axis=0)
+    else:
+        return x[np.newaxis]
+
+
+def _load_feat(path):
+    ext = os.path.basename(path).split('.')[-1]
+    if ext == 'npy':
+        feat = np.load(path)
+
+    elif ext == 'htk':
+        with open(path, "rb") as f:
             # Read header
             spam = f.read(12)
-            frame_num, sampPeriod, sampSize, parmKind = unpack(">IIHH", spam)
+            frame_num, sampPeriod, sampSize, parmKind = unpack(
+                ">IIHH", spam)
 
             # Load data
-            feature_dim = int(sampSize / 4)
+            feat_dim = int(sampSize / 4)
             f.seek(12, 0)
-            input_data = np.fromfile(f, 'f')
-            input_data = input_data.reshape(-1, feature_dim)
-            input_data.byteswap(True)
+            feat = np.fromfile(f, 'f')
+            feat = feat.reshape(-1, feat_dim)
+            feat.byteswap(True)
 
-        return input_data
+    elif ext == 'ark':
+        raise NotImplementedError
+    else:
+        raise ValueError(ext)
 
-    def split_per_device(self, x, num_gpus):
-        if num_gpus > 1:
-            return np.array_split(x, num_gpus, axis=0)
-        else:
-            return x[np.newaxis]
+    return feat
 
-    def preloading_loop(self, queue, data_indices_list):
-        """
-        Args:
-            queue ():
-            data_indices_list (np.ndarray):
-        """
-        # print("Pre-loading started.")
-        for i in range(len(data_indices_list)):
-            queue.put(self.make_batch(data_indices_list[i]))
-        # print("Pre-loading done.")
+
+def load_feat(feat_path):
+    try:
+        feat = _load_feat(
+            feat_path.replace(
+                '/n/sd8/inaguma/corpus', '/data/inaguma'))
+    except:
+        try:
+            feat = _load_feat(
+                feat_path.replace(
+                    '/n/sd8/inaguma/corpus', '/tmp/inaguma'))
+        except:
+            feat = _load_feat(feat_path)
+    return feat

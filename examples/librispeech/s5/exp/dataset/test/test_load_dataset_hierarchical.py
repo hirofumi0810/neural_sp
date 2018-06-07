@@ -55,15 +55,14 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
         dataset = Dataset(
             data_save_path='/n/sd8/inaguma/corpus/librispeech/kaldi',
             backend=backend,
-            input_freq=81, use_delta=True, use_double_delta=True,
+            input_freq=80, use_delta=False, use_double_delta=False,
             data_type=data_type, data_size=data_size,
             label_type=label_type, label_type_sub=label_type_sub,
             batch_size=64, max_epoch=1, splice=splice,
             num_stack=num_stack, num_skip=num_skip,
             min_frame_num=40, shuffle=shuffle,
             sort_utt=sort_utt, reverse=True, sort_stop_epoch=sort_stop_epoch,
-            num_gpus=num_gpus, tool='htk',
-            num_enque=None)
+            num_gpus=num_gpus, tool='htk', num_enque=None)
 
         print('=> Loading mini-batch...')
 

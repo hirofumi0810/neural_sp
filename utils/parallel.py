@@ -19,15 +19,21 @@ def make_parallel(func, args, core=mp.cpu_count() - 1):
     Returns:
         result_tuple (tuple): tuple of returns
     """
-    p = mp.Pool(core)
+    try:
+        p = mp.Pool(core)
 
-    result_tuple = p.map(func, args)
-    # result_tuple = p.map_async(func, args).get(9999999)
-    # NOTE: for KeyboardInterrupt
+        result_tuple = p.map(func, args)
+        # result_tuple = p.map_async(func, args).get(9999999)
+        # NOTE: for KeyboardInterrupt
 
-    # Clean up
-    p.close()
-    p.terminate()
-    p.join()
+        # Clean up
+        p.close()
+        p.terminate()
+        p.join()
+    except KeyboardInterrupt:
+        p.close()
+        p.terminate()
+        p.join()
+        raise KeyboardInterrupt
 
     return result_tuple

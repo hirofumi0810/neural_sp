@@ -53,7 +53,7 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
         dataset = Dataset(
             data_save_path='/n/sd8/inaguma/corpus/swbd/kaldi',
             backend=backend,
-            input_freq=81, use_delta=True, use_double_delta=True,
+            input_freq=80, use_delta=False, use_double_delta=False,
             data_type=data_type, data_size=data_size,
             label_type=label_type, label_type_sub=label_type_sub,
             batch_size=64, max_epoch=1, splice=splice,
