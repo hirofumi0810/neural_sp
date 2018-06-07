@@ -28,7 +28,7 @@ from examples.swbd.s5c.exp.metrics.character import eval_char
 from examples.swbd.s5c.exp.metrics.word import eval_word
 from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
-from utils.training.training_loop import train_hierarchical_step
+from utils.training.updater_hierarchical import Updater
 from utils.training.logging import set_logger
 from utils.directory import mkdir_join
 from utils.config import load_config, save_config
@@ -48,6 +48,7 @@ MAX_DECODE_LEN_WORD = 100
 MAX_DECODE_LEN_CHAR = 300
 
 
+@profile
 def main():
 
     args = parser.parse_args()
@@ -117,7 +118,6 @@ def main():
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         tool=params['tool'])
-
     params['num_classes'] = train_data.num_classes
     params['num_classes_sub'] = train_data.num_classes_sub
 
@@ -130,7 +130,6 @@ def main():
                  backend=params['backend'])
 
     if args.model_save_path is not None:
-
         # Set save path
         save_path = mkdir_join(
             args.model_save_path, params['backend'],
@@ -174,7 +173,6 @@ def main():
 
     # NOTE: Retrain the saved model from the last checkpoint
     elif args.saved_model_path is not None:
-
         # Set save path
         model.save_path = args.saved_model_path
 
@@ -210,9 +208,6 @@ def main():
     setproctitle('swbd_' + params['backend'] + '_' + params['model_type'] + '_' +
                  params['label_type'] + '_' + params['label_type_sub'] + '_' + params['data_size'])
 
-    ##################################################
-    # TRAINING LOOP
-    ##################################################
     # Define learning rate controller
     lr_controller = Controller(
         learning_rate_init=learning_rate,
@@ -227,7 +222,12 @@ def main():
     if params['backend'] == 'pytorch':
         tf_writer = SummaryWriter(model.save_path)
 
-    # Train model
+    # Set the updater
+    update = Updater(params['clip_grad_norm'], params['backend'])
+
+    ##################################################
+    # TRAINING LOOP
+    ##################################################
     csv_steps, csv_loss_train, csv_loss_dev = [], [], []
     start_time_train = time.time()
     start_time_epoch = time.time()
@@ -239,21 +239,18 @@ def main():
     while True:
         # Compute loss in the training set (including parameter update)
         batch_train, is_new_epoch = train_data.next()
-        model, loss_train_val, loss_main_train_val, loss_sub_train_val = train_hierarchical_step(
-            model, batch_train, params['clip_grad_norm'], backend=params['backend'])
-        loss_train_mean += loss_train_val
-        loss_main_train_mean += loss_main_train_val
-        loss_sub_train_mean += loss_sub_train_val
-
+        model, loss_train, loss_main_train, loss_sub_train = update(
+            model, batch_train)
+        loss_train_mean += loss_train
+        loss_main_train_mean += loss_main_train
+        loss_sub_train_mean += loss_sub_train
         pbar_epoch.update(len(batch_train['xs']))
 
         if (step + 1) % params['print_step'] == 0:
-
             # Compute loss in the dev set
             batch_dev = dev_data.next()[0]
-            loss_dev, loss_main_dev, loss_sub_dev = model(
-                batch_dev['xs'], batch_dev['ys'],
-                batch_dev['ys_sub'], is_eval=True)
+            model, loss_dev, loss_main_dev, loss_sub_dev = update(
+                model, batch_dev, is_eval=True)
 
             loss_train_mean /= params['print_step']
             loss_main_train_mean /= params['print_step']
@@ -417,8 +414,8 @@ def main():
                         model.weight_noise_injection = True
 
             pbar_epoch = tqdm(total=len(train_data))
-            print('========== EPOCH:%d (%.3f min) ==========' %
-                  (epoch, duration_epoch / 60))
+            logger.info('========== EPOCH:%d (%.3f min) ==========' %
+                        (epoch, duration_epoch / 60))
 
             if epoch == params['num_epoch']:
                 break
@@ -434,10 +431,14 @@ def main():
         tf_writer.close()
 
     # TODO: evaluate the best model by beam search here
+    if best_model is not None:
+        pass
 
     # Training was finished correctly
     with open(os.path.join(model.save_path, 'COMPLETE'), 'w') as f:
         f.write('')
+
+    return model.save_path
 
 
 if __name__ == '__main__':

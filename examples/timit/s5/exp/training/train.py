@@ -7,6 +7,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import torch
 import os
 import sys
 import time
@@ -16,7 +17,7 @@ from tensorboardX import SummaryWriter
 from tqdm import tqdm
 import copy
 import cProfile
-import torch
+import line_profiler
 
 torch.manual_seed(1623)
 torch.cuda.manual_seed_all(1623)
@@ -27,7 +28,7 @@ from examples.timit.s5.exp.dataset.load_dataset import Dataset
 from examples.timit.s5.exp.metrics.phone import eval_phone
 from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
-from utils.training.training_loop import train_step
+from utils.training.updater import Updater
 from utils.training.logging import set_logger
 from utils.directory import mkdir_join
 from utils.config import load_config, save_config
@@ -47,6 +48,7 @@ parser.add_argument('--saved_model_path', type=str, default=None,
 MAX_DECODE_LEN_PHONE = 71
 
 
+@profile
 def main():
 
     args = parser.parse_args()
@@ -97,7 +99,6 @@ def main():
         batch_size=1, splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         tool=params['tool'])
-
     params['num_classes'] = train_data.num_classes
 
     ##################################################
@@ -190,9 +191,6 @@ def main():
     setproctitle('timit_' + params['backend'] + '_' +
                  params['model_type'] + '_' + params['label_type'])
 
-    ##################################################
-    # TRAINING LOOP
-    ##################################################
     # Define learning rate controller
     lr_controller = Controller(
         learning_rate_init=params['learning_rate'],
@@ -207,7 +205,12 @@ def main():
     if params['backend'] == 'pytorch':
         tf_writer = SummaryWriter(model.save_path)
 
-    # Train model
+    # Set the updater
+    update = Updater(params['clip_grad_norm'], params['backend'])
+
+    ##################################################
+    # TRAINING LOOP
+    ##################################################
     csv_steps, csv_loss_train, csv_loss_dev = [], [], []
     start_time_train = time.time()
     start_time_epoch = time.time()
@@ -219,17 +222,14 @@ def main():
     while True:
         # Compute loss in the training set (including parameter update)
         batch_train, is_new_epoch = train_data.next()
-        model, loss_train_val = train_step(
-            model, batch_train, params['clip_grad_norm'], params['backend'])
-        loss_train_mean += loss_train_val
-
+        model, loss_train = update(model, batch_train)
+        loss_train_mean += loss_train
         pbar_epoch.update(len(batch_train['xs']))
 
         if (step + 1) % params['print_step'] == 0:
-
             # Compute loss in the dev set
             batch_dev = dev_data.next()[0]
-            loss_dev = model(batch_dev['xs'], batch_dev['ys'], is_eval=True)
+            model, loss_dev = update(model, batch_dev, is_eval=True)
 
             loss_train_mean /= params['print_step']
             csv_steps.append(step)
@@ -338,8 +338,8 @@ def main():
                         model.weight_noise_injection = True
 
             pbar_epoch = tqdm(total=len(train_data))
-            print('========== EPOCH:%d (%.3f min) ==========' %
-                  (epoch, duration_epoch / 60))
+            logger.info('========== EPOCH:%d (%.3f min) ==========' %
+                        (epoch, duration_epoch / 60))
 
             if epoch == params['num_epoch']:
                 break
@@ -356,23 +356,31 @@ def main():
     pbar_epoch.close()
 
     # Evaluate the best model by beam search
-    per_test_best, _ = eval_phone(
-        model=best_model,
-        dataset=test_data,
-        beam_width=10,
-        max_decode_len=MAX_DECODE_LEN_PHONE,
-        eval_batch_size=1,
-        map_file_path='./conf/phones.60-48-39.map')
-    logger.info('  PER (test, beam: 10): %.3f %%' %
-                (per_test_best * 100))
+    if best_model is not None:
+        per_test_best, _ = eval_phone(
+            model=best_model,
+            dataset=test_data,
+            beam_width=10,
+            max_decode_len=MAX_DECODE_LEN_PHONE,
+            eval_batch_size=1,
+            map_file_path='./conf/phones.60-48-39.map')
+        logger.info('  PER (test, beam: 10): %.3f %%' %
+                    (per_test_best * 100))
 
     # Training was finished correctly
     with open(os.path.join(model.save_path, 'COMPLETE'), 'w') as f:
         f.write('')
 
+    return model.save_path
+
 
 if __name__ == '__main__':
-    # Setting for profiling
+    # Setting for profiling (cProfile)
     pr = cProfile.Profile()
     save_path = pr.runcall(main)
     pr.dump_stats(os.path.join(save_path, 'train.profile'))
+
+    # Setting for profiling (line_profiler)
+    # pr = line_profiler.LineProfiler()
+    # save_path = pr.runcall(main)
+    # pr.dump_stats(os.path.join(save_path, 'train.profile'))

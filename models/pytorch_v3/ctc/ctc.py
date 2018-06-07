@@ -279,7 +279,7 @@ class CTC(ModelBase):
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (torch.autograd.Variable(float) or float): A tensor of size `[1]`
+            loss (torch.autograd.Variable(float)): A tensor of size `[1]`
         """
         if is_eval:
             self.eval()
@@ -291,12 +291,13 @@ class CTC(ModelBase):
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
         # Sort by lenghts in the descending order
-        if self.encoder_type != 'cnn':
+        if is_eval and self.encoder_type != 'cnn':
             perm_idx = sorted(list(range(0, len(xs), 1)),
                               key=lambda i: xs[i].shape[0], reverse=True)
             xs = [xs[i] for i in perm_idx]
             ys = [ys[i] for i in perm_idx]
             # NOTE: must be descending order for pack_padded_sequence
+            # NOTE: assumed that xs is already sorted in the training stage
 
         # Wrap by Variable
         xs = [np2var(x, self.device_id).float() for x in xs]
@@ -342,9 +343,6 @@ class CTC(ModelBase):
                 size_average=False) / len(xs)
             loss = loss * (1 - self.ls_prob) + loss_ls
 
-        if is_eval:
-            loss = loss.data[0]
-
         return loss
 
     def _encode(self, xs, x_lens, is_multi_task=False):
@@ -379,8 +377,6 @@ class CTC(ModelBase):
             else:
                 xs, x_lens = self.encoder(
                     xs, x_lens, volatile=not self.training)
-
-        print(xs.size())
 
         # Path through fully-connected layers
         if len(self.fc_list) > 0:

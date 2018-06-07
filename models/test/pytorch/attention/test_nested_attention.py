@@ -203,6 +203,7 @@ class TestCharseqAttention(unittest.TestCase):
             else:
                 loss, loss_main, loss_sub = model(xs, ys, ys_sub)
             loss.backward()
+            loss.detach()
             # torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
             torch.nn.utils.clip_grad_norm(model.parameters(), 5)
             model.optimizer.step()
@@ -249,10 +250,10 @@ class TestCharseqAttention(unittest.TestCase):
                 duration_step = time.time() - start_time_step
                 if second_pass:
                     print('Step %d: loss=%.3f / wer=%.3f / cer=%.3f / lr=%.5f (%.3f sec)' %
-                          (step + 1, loss, wer, cer, learning_rate, duration_step))
+                          (step + 1, loss.data[0], wer, cer, learning_rate, duration_step))
                 else:
                     print('Step %d: loss=%.3f(%.3f/%.3f) / wer=%.3f / cer=%.3f / lr=%.5f (%.3f sec)' %
-                          (step + 1, loss, loss_main, loss_sub,
+                          (step + 1, loss.data[0], loss_main.data[0], loss_sub.data[0],
                            wer, cer, learning_rate, duration_step))
 
                 start_time_step = time.time()

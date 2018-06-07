@@ -198,6 +198,7 @@ class TestCTC(unittest.TestCase):
             model.optimizer.zero_grad()
             loss = model(xs, ys)
             loss.backward()
+            loss.detach()
             # torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
             torch.nn.utils.clip_grad_norm(model.parameters(), 5)
             model.optimizer.step()
@@ -233,7 +234,7 @@ class TestCTC(unittest.TestCase):
 
                 duration_step = time.time() - start_time_step
                 print('Step %d: loss=%.3f / ler=%.3f / lr=%.5f (%.3f sec)' %
-                      (step + 1, loss, ler, learning_rate, duration_step))
+                      (step + 1, loss.data, ler, learning_rate, duration_step))
                 start_time_step = time.time()
 
                 # Visualize

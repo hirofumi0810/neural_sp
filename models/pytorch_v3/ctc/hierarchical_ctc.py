@@ -274,9 +274,9 @@ class HierarchicalCTC(CTC):
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (torch.autograd.Variable(float) or float): A tensor of size `[1]`
-            loss_main (torch.autograd.Variable(float) or float): A tensor of size `[1]`
-            loss_sub (torch.autograd.Variable(float) or float): A tensor of size `[1]`
+            loss (torch.autograd.Variable(float)): A tensor of size `[1]`
+            loss_main (torch.autograd.Variable(float)): A tensor of size `[1]`
+            loss_sub (torch.autograd.Variable(float)): A tensor of size `[1]`
         """
         if is_eval:
             self.eval()
@@ -288,13 +288,14 @@ class HierarchicalCTC(CTC):
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
         # Sort by lenghts in the descending order
-        if self.encoder_type != 'cnn':
+        if is_eval and self.encoder_type != 'cnn':
             perm_idx = sorted(list(range(0, len(xs), 1)),
                               key=lambda i: xs[i].shape[0], reverse=True)
             xs = [xs[i] for i in perm_idx]
             ys = [ys[i] for i in perm_idx]
             ys_sub = [ys_sub[i] for i in perm_idx]
             # NOTE: must be descending order for pack_padded_sequence
+            # NOTE: assumed that xs is already sorted in the training stage
 
         # Wrap by Variable
         xs = [np2var(x, self.device_id).float() for x in xs]
@@ -362,10 +363,5 @@ class HierarchicalCTC(CTC):
         loss_main = loss_main * self.main_loss_weight
         loss_sub = loss_sub * self.sub_loss_weight
         loss = loss_main + loss_sub
-
-        if is_eval:
-            loss = loss.data[0]
-            loss_main = loss_main.data[0]
-            loss_sub = loss_sub.data[0]
 
         return loss, loss_main, loss_sub

@@ -7,6 +7,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import torch
 import os
 import sys
 import time
@@ -16,7 +17,7 @@ import argparse
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 import cProfile
-import torch
+import line_profiler
 
 torch.manual_seed(1623)
 torch.cuda.manual_seed_all(1623)
@@ -28,7 +29,7 @@ from examples.wsj.s5.exp.metrics.character import eval_char
 from examples.wsj.s5.exp.metrics.word import eval_word
 from utils.training.learning_rate_controller import Controller
 from utils.training.plot import plot_loss
-from utils.training.training_loop import train_step
+from utils.training.updater import Updater
 from utils.training.logging import set_logger
 from utils.directory import mkdir_join
 from utils.config import load_config, save_config
@@ -49,6 +50,7 @@ MAX_DECODE_LEN_WORD = 32
 MAX_DECODE_LEN_CHAR = 199
 
 
+@profile
 def main():
 
     args = parser.parse_args()
@@ -81,7 +83,7 @@ def main():
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
         tool=params['tool'], num_enque=None,
         dynamic_batching=params['dynamic_batching'])
-    dev93_data = Dataset(
+    dev_data = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
         input_freq=params['input_freq'],
@@ -92,7 +94,7 @@ def main():
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         shuffle=True, tool=params['tool'])
-    eval92_data = Dataset(
+    test_data = Dataset(
         data_save_path=args.data_save_path,
         backend=params['backend'],
         input_freq=params['input_freq'],
@@ -103,7 +105,6 @@ def main():
         batch_size=params['batch_size'], splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
         tool=params['tool'])
-
     params['num_classes'] = train_data.num_classes
 
     ##################################################
@@ -115,7 +116,6 @@ def main():
                  backend=params['backend'])
 
     if args.model_save_path is not None:
-
         # Set save path
         save_path = mkdir_join(
             args.model_save_path, params['backend'],
@@ -158,7 +158,6 @@ def main():
 
     # NOTE: Retrain the saved model from the last checkpoint
     elif args.saved_model_path is not None:
-
         # Set save path
         model.save_path = args.saved_model_path
 
@@ -194,9 +193,6 @@ def main():
     setproctitle('wsj_' + params['backend'] + '_' + params['model_type'] + '_' +
                  params['label_type'] + '_' + params['data_size'])
 
-    ##################################################
-    # TRAINING LOOP
-    ##################################################
     # Define learning rate controller
     lr_controller = Controller(
         learning_rate_init=learning_rate,
@@ -211,7 +207,12 @@ def main():
     if params['backend'] == 'pytorch':
         tf_writer = SummaryWriter(model.save_path)
 
-    # Train model
+    # Set the updater
+    update = Updater(params['clip_grad_norm'], params['backend'])
+
+    ##################################################
+    # TRAINING LOOP
+    ##################################################
     csv_steps, csv_loss_train, csv_loss_dev = [], [], []
     start_time_train = time.time()
     start_time_epoch = time.time()
@@ -223,17 +224,14 @@ def main():
     while True:
         # Compute loss in the training set (including parameter update)
         batch_train, is_new_epoch = train_data.next()
-        model, loss_train_val = train_step(
-            model, batch_train, params['clip_grad_norm'], backend=params['backend'])
-        loss_train_mean += loss_train_val
-
+        model, loss_train = update(model, batch_train)
+        loss_train_mean += loss_train
         pbar_epoch.update(len(batch_train['xs']))
 
         if (step + 1) % params['print_step'] == 0:
-
             # Compute loss in the dev set
-            batch_dev = dev93_data.next()[0]
-            loss_dev = model(batch_dev['xs'], batch_dev['ys'], is_eval=True)
+            batch_dev = dev_data.next()[0]
+            model, loss_dev = update(model, batch_dev, is_eval=True)
 
             loss_train_mean /= params['print_step']
             csv_steps.append(step)
@@ -283,7 +281,7 @@ def main():
                 if params['label_type'] == 'word':
                     metric_dev, _ = eval_word(
                         models=[model],
-                        dataset=dev93_data,
+                        dataset=dev_data,
                         eval_batch_size=1,
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_WORD)
@@ -291,7 +289,7 @@ def main():
                 else:
                     wer_dev, metric_dev, _ = eval_char(
                         models=[model],
-                        dataset=dev93_data,
+                        dataset=dev_data,
                         eval_batch_size=1,
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_CHAR)
@@ -312,7 +310,7 @@ def main():
                     if params['label_type'] == 'word':
                         wer_eval92, _ = eval_word(
                             models=[model],
-                            dataset=eval92_data,
+                            dataset=test_data,
                             eval_batch_size=1,
                             beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_WORD)
@@ -321,7 +319,7 @@ def main():
                     else:
                         wer_eval92, cer_eval92, _ = eval_char(
                             models=[model],
-                            dataset=eval92_data,
+                            dataset=test_data,
                             eval_batch_size=1,
                             beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_CHAR)
@@ -361,8 +359,8 @@ def main():
                         model.weight_noise_injection = True
 
             pbar_epoch = tqdm(total=len(train_data))
-            print('========== EPOCH:%d (%.3f min) ==========' %
-                  (epoch, duration_epoch / 60))
+            logger.info('========== EPOCH:%d (%.3f min) ==========' %
+                        (epoch, duration_epoch / 60))
 
             if epoch == params['num_epoch']:
                 break
@@ -372,6 +370,8 @@ def main():
             epoch += 1
 
     # TODO: evaluate the best model by beam search here
+    if best_model is not None:
+        pass
 
     duration_train = time.time() - start_time_train
     logger.info('Total time: %.3f hour' % (duration_train / 3600))
@@ -382,6 +382,8 @@ def main():
     # Training was finished correctly
     with open(os.path.join(model.save_path, 'COMPLETE'), 'w') as f:
         f.write('')
+
+    return model.save_path
 
 
 if __name__ == '__main__':
