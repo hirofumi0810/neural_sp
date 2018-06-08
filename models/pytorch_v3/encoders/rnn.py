@@ -317,20 +317,16 @@ class RNNEncoder(nn.Module):
             xs = xs.transpose(0, 1).contiguous()
 
         if self.fast_impl:
-            # Initialize hidden states (and memory cells) per mini-batch
-            h_0 = _init_hidden(xs, rnn_type=self.rnn_type,
-                               num_units=self.num_units,
-                               num_directions=self.num_directions,
-                               num_layers=self.num_layers)
+            if xs.is_cuda:
+                torch.cuda.empty_cache()
 
             # Pack encoder inputs
             if self.pack_sequence:
-                if not isinstance(xs, torch.nn.utils.rnn.PackedSequence):
-                    xs = pack_padded_sequence(
-                        xs, x_lens, batch_first=self.batch_first)
+                xs = pack_padded_sequence(
+                    xs, x_lens, batch_first=self.batch_first)
 
             # Path through RNN
-            xs, _ = getattr(self, self.rnn_type)(xs, hx=h_0)
+            xs, _ = getattr(self, self.rnn_type)(xs)
 
             # Unpack encoder outputs
             if self.pack_sequence:
@@ -340,28 +336,21 @@ class RNNEncoder(nn.Module):
 
             # Dropout for hidden-output connection
             xs = self.dropout_last(xs)
-
         else:
-            # Initialize hidden states (and memory cells) per mini-batch
-            h_0 = _init_hidden(xs, rnn_type=self.rnn_type,
-                               num_units=self.num_units,
-                               num_directions=self.num_directions,
-                               num_layers=1)
-
-            res_outputs_list = []
+            res_outputs = []
             for l in range(self.num_layers):
-                # if xs.is_cuda:
-                #     torch.cuda.empty_cache()
+                if xs.is_cuda:
+                    torch.cuda.empty_cache()
 
                 # Pack l-th encoder xs
                 if self.pack_sequence:
-                    if not isinstance(xs, torch.nn.utils.rnn.PackedSequence):
-                        xs = pack_padded_sequence(
-                            xs, x_lens, batch_first=self.batch_first)
+                    xs = pack_padded_sequence(
+                        xs, x_lens, batch_first=self.batch_first)
 
                 # Path through RNN
-                xs, _ = getattr(self, self.rnn_type + '_l' +
-                                str(l))(xs, hx=h_0)
+                xs, _ = getattr(self, self.rnn_type + '_l' + str(l))(xs)
+                getattr(self, self.rnn_type + '_l' +
+                        str(l)).flatten_parameters()
 
                 # Unpack l-th encoder outputs
                 if self.pack_sequence:
@@ -379,71 +368,67 @@ class RNNEncoder(nn.Module):
 
                 # NOTE: Exclude the last layer
                 if l != self.num_layers - 1:
-                    if self.residual or self.dense_residual or self.num_proj > 0 or self.subsample_list[l]:
-
-                        # Projection layer (affine transformation)
-                        if self.num_proj > 0:
-                            xs = F.tanh(getattr(self, 'proj_l' + str(l))(xs))
-
-                        # Subsampling
-                        if self.subsample_list[l]:
-                            if self.subsample_type == 'drop':
-                                if self.batch_first:
-                                    xs = xs[:, 1::2, :]
-                                else:
-                                    xs = xs[1::2, :, :]
-                                # NOTE: Pick up features at EVEN time step
-
-                            # Concatenate the successive frames
-                            elif self.subsample_type == 'concat':
-                                if self.batch_first:
-                                    xs = [torch.cat([xs[:, t - 1:t, :], xs[:, t:t + 1, :]], dim=2)
-                                          for t in range(xs.size(1)) if (t + 1) % 2 == 0]
-                                    xs = torch.cat(xs, dim=1)
-                                else:
-                                    xs = [torch.cat([xs[t - 1:t, :, :], xs[t:t + 1, :, :]], dim=2)
-                                          for t in range(xs.size(0)) if (t + 1) % 2 == 0]
-                                    xs = torch.cat(xs, dim=0)
-                                # NOTE: Exclude the last frame if the length of xs is odd
-
-                            # Update x_lens
+                    # Subsampling
+                    if self.subsample_list[l]:
+                        if self.subsample_type == 'drop':
                             if self.batch_first:
-                                x_lens = [x.size(0) for x in xs]
+                                xs = xs[:, 1::2, :]
                             else:
-                                x_lens = [xs[:, i].size(0)
-                                          for i in range(xs.size(1))]
+                                xs = xs[1::2, :, :]
+                            # NOTE: Pick up features at EVEN time step
 
-                        # NiN
-                        if self.nin > 0:
-                            raise NotImplementedError
+                        # Concatenate the successive frames
+                        elif self.subsample_type == 'concat':
+                            if self.batch_first:
+                                xs = [torch.cat([xs[:, t - 1:t, :], xs[:, t:t + 1, :]], dim=2)
+                                      for t in range(xs.size(1)) if (t + 1) % 2 == 0]
+                                xs = torch.cat(xs, dim=1)
+                            else:
+                                xs = [torch.cat([xs[t - 1:t, :, :], xs[t:t + 1, :, :]], dim=2)
+                                      for t in range(xs.size(0)) if (t + 1) % 2 == 0]
+                                xs = torch.cat(xs, dim=0)
+                            # NOTE: Exclude the last frame if the length of xs is odd
 
-                            # Batch normalization befor NiN
-                            if self.batch_norm:
-                                size = list(xs.size())
-                                xs = to2d(xs, size)
-                                xs = getattr(self, 'bn_0_l' + str(l))(xs)
-                                xs = F.relu(xs)
-                                xs = to3d(xs, size)
-                                # NOTE: mean and var are computed along all timesteps in the mini-batch
+                        # Update x_lens
+                        if self.batch_first:
+                            x_lens = [x.size(0) for x in xs]
+                        else:
+                            x_lens = [xs[:, i].size(0)
+                                      for i in range(xs.size(1))]
 
-                            xs = getattr(self, 'nin_l' + str(l))(xs)
+                    # Projection layer (affine transformation)
+                    if self.num_proj > 0:
+                        xs = F.tanh(getattr(self, 'proj_l' + str(l))(xs))
 
-                        # Residual connection
-                        if (not self.subsample_list[l]) and (self.residual or self.dense_residual):
-                            if l >= self.residual_start_layer - 1:
-                                for xs_lower in res_outputs_list:
-                                    xs = xs + xs_lower
-                                if self.residual:
-                                    res_outputs_list = [xs]
-                                elif self.dense_residual:
-                                    res_outputs_list.append(xs)
-                        # NOTE: Exclude residual connection from the raw inputs
+                    # NiN
+                    if self.nin > 0:
+                        raise NotImplementedError
+
+                        # Batch normalization befor NiN
+                        if self.batch_norm:
+                            size = list(xs.size())
+                            xs = to2d(xs, size)
+                            xs = getattr(self, 'bn_0_l' + str(l))(xs)
+                            xs = F.relu(xs)
+                            xs = to3d(xs, size)
+                            # NOTE: mean and var are computed along all timesteps in the mini-batch
+
+                        xs = getattr(self, 'nin_l' + str(l))(xs)
+
+                    # Residual connection
+                    if (not self.subsample_list[l]) and (self.residual or self.dense_residual):
+                        if l >= self.residual_start_layer - 1:
+                            for xs_lower in res_outputs:
+                                xs = xs + xs_lower
+                            if self.residual:
+                                res_outputs = [xs]
+                            elif self.dense_residual:
+                                res_outputs.append(xs)
+                    # NOTE: Exclude residual connection from the raw inputs
 
         # Sum bidirectional outputs
         if self.bidirectional and self.merge_bidirectional:
             xs = xs[:, :, :self.num_units] + xs[:, :, self.num_units:]
-
-        del h_0
 
         # For the sub task
         if self.num_layers_sub >= 1:
@@ -463,29 +448,3 @@ def to2d(xs, size):
 
 def to3d(xs, size):
     return xs.view(size)
-
-
-def _init_hidden(xs, rnn_type, num_units, num_directions, num_layers):
-    """Initialize hidden states.
-    Args:
-        xs (list): A list of length `[B]`, which contains Variables of size `[T, input_size]`
-        rnn_type (string): lstm or gru or rnn
-        num_units (int):
-        num_directions (int):
-        num_layers (int):
-    Returns:
-        if rnn_type is 'lstm', return a tuple of tensors (h_0, c_0).
-            h_0 (torch.autograd.Variable, float): A tensor of size
-                `[num_layers * num_directions, batch_size, num_units]`
-            c_0 (torch.autograd.Variable, float): A tensor of size
-                `[num_layers * num_directions, batch_size, num_units]`
-        otherwise return h_0.
-    """
-    h_0 = Variable(xs[0].data.new(
-        num_layers * num_directions, len(xs), num_units).zero_(), volatile=xs[0].volatile)
-    if rnn_type == 'lstm':
-        c_0 = Variable(xs[0].data.new(
-            num_layers * num_directions, len(xs), num_units).zero_(), volatile=xs[0].volatile)
-        return (h_0, c_0)
-    else:
-        return h_0
