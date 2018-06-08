@@ -548,7 +548,7 @@ class AttentionSeq2seq(ModelBase):
             loss = loss * (1 - self.ls_prob) + loss_ls
 
         # Add coverage term
-        if self.coverage_weight != 0:
+        if self.coverage_weight > 0:
             raise NotImplementedError
 
         return loss
@@ -673,8 +673,9 @@ class AttentionSeq2seq(ModelBase):
         dec_state, dec_out = self._init_dec_state(enc_out, x_lens, task, dir)
         aw_step = Variable(enc_out.data.new(
             batch_size, max_time, getattr(self, 'num_heads_' + str(task))).fill_(0.))
-        context_vec = Variable(enc_out.data.new(
-            batch_size, 1, enc_out.size(-1)).fill_(0.))
+        if self.decoding_order == 'luong':
+            context_vec = Variable(enc_out.data.new(
+                batch_size, 1, enc_out.size(-1)).fill_(0.))
 
         # Pre-computation of embedding
         ys_emb = [getattr(self, 'embed_' + str(task))(ys[:, t:t + 1])
@@ -740,11 +741,12 @@ class AttentionSeq2seq(ModelBase):
                 getattr(self, 'W_c_' + str(task) + '_' + dir)(context_vec)))
 
             logits += [logits_step]
-            aw += [aw_step]
+            if self.coverage_weight > 0:
+                aw += [aw_step]
 
-        # Concatenate in L-dimension
         logits = torch.cat(logits, dim=1)
-        aw = torch.stack(aw, dim=1)
+        if self.coverage_weight > 0:
+            aw = torch.stack(aw, dim=1)
 
         return logits, aw
 
@@ -765,6 +767,10 @@ class AttentionSeq2seq(ModelBase):
             enc_out.size(0), getattr(self, 'decoder_num_units_' + str(task))).fill_(0.),
             volatile=not self.training)
 
+        dec_out = Variable(enc_out.data.new(
+            enc_out.size(0), 1, getattr(self, 'decoder_num_units_' + str(task))).fill_(0.),
+            volatile=not self.training)
+
         if getattr(self, 'init_dec_state_' + str(task) + '_' + dir) == 'zero':
             if self.decoder_type == 'lstm':
                 hx_list = [zero_state] * \
@@ -775,9 +781,6 @@ class AttentionSeq2seq(ModelBase):
                 hx_list = [zero_state] * \
                     getattr(self, 'decoder_num_layers_' + str(task))
 
-            dec_out = Variable(enc_out.data.new(
-                enc_out.size(0), 1, getattr(self, 'decoder_num_units_' + str(task))).fill_(0.),
-                volatile=not self.training)
         else:
             # TODO: consider x_lens
 
@@ -884,8 +887,9 @@ class AttentionSeq2seq(ModelBase):
         dec_state, dec_out = self._init_dec_state(enc_out, x_lens, task, dir)
         aw_step = Variable(enc_out.data.new(
             batch_size, max_time, getattr(self, 'num_heads_' + str(task))).fill_(0.), volatile=True)
-        context_vec = Variable(enc_out.data.new(
-            batch_size, 1, enc_out.size(-1)).fill_(0.), volatile=True)
+        if self.decoding_order == 'luong':
+            context_vec = Variable(enc_out.data.new(
+                batch_size, 1, enc_out.size(-1)).fill_(0.), volatile=True)
 
         # Start from <SOS>
         sos = getattr(self, 'sos_' + str(task))
