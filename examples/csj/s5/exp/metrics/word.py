@@ -10,7 +10,6 @@ from __future__ import print_function
 import re
 from tqdm import tqdm
 import pandas as pd
-import numpy as np
 
 from utils.io.labels.word import Word2char
 from utils.evaluation.edit_distance import compute_wer
@@ -64,25 +63,19 @@ def eval_word(models, dataset, eval_batch_size,
     while True:
         batch, is_new_epoch = dataset.next(batch_size=eval_batch_size)
 
-        batch_size = len(batch['xs'])
-
         # Decode
         if model.model_type == 'nested_attention':
             if a2c_oracle:
                 if dataset.is_test:
                     max_label_num = 0
-                    for b in range(batch_size):
+                    for b in range(len(batch['xs'])):
                         if max_label_num < len(list(batch['ys_sub'][b])):
                             max_label_num = len(list(batch['ys_sub'][b]))
 
-                    ys_sub = np.zeros(
-                        (batch_size, max_label_num), dtype=np.int32)
-                    ys_sub -= 1  # pad with -1
-                    y_lens_sub = np.zeros((batch_size,), dtype=np.int32)
-                    for b in range(batch_size):
+                    ys_sub = []
+                    for b in range(len(batch['xs'])):
                         indices = dataset.char2idx(batch['ys_sub'][b])
-                        ys_sub[b, :len(indices)] = indices
-                        y_lens_sub[b] = len(indices)
+                        ys_sub += [indices]
                         # NOTE: transcript is seperated by space('_')
                 else:
                     ys_sub = batch['ys_sub']
@@ -100,8 +93,7 @@ def eval_word(models, dataset, eval_batch_size,
                 length_penalty=length_penalty,
                 coverage_penalty=coverage_penalty,
                 teacher_forcing=a2c_oracle,
-                ys_sub=ys_sub,
-                y_lens_sub=y_lens_sub)
+                ys_sub=ys_sub)
         elif model.model_type == 'hierarchical_attention' and joint_decoding is not None:
             best_hyps, aw, best_hyps_sub, aw_sub, perm_idx = model.decode(
                 batch['xs'],
@@ -137,7 +129,7 @@ def eval_word(models, dataset, eval_batch_size,
 
         ys = [batch['ys'][i] for i in perm_idx]
 
-        for b in range(batch_size):
+        for b in range(len(batch['xs'])):
             ##############################
             # Reference
             ##############################

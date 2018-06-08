@@ -677,10 +677,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             enc_out_sub, x_lens_sub, task=1, dir=dir)
         aw_step_sub = Variable(enc_out.data.new(
             batch_size, max_time_sub, self.num_heads_1).fill_(0.))
-        context_vec_sub = Variable(enc_out.data.new(
-            batch_size, 1, enc_out_sub.size(-1)).fill_(0.))
+        # context_vec_sub = Variable(enc_out.data.new(
+        #     batch_size, 1, enc_out_sub.size(-1)).fill_(0.))
 
-        dec_out_sub_seq, logits_sub, aw_sub = [], [], []
+        dec_outs_sub, logits_sub, aw_sub = [], [], []
         for t in range(ys_sub.size(1)):
             # Sample for scheduled sampling
             is_sample = self.ss_prob > 0 and t > 0 and self._step > 0 and random.random(
@@ -707,7 +707,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 getattr(self, 'W_d_1_' + dir)(dec_out_sub) +
                 getattr(self, 'W_c_1_' + dir)(context_vec_sub)))
 
-            dec_out_sub_seq += [dec_out_sub]
+            dec_outs_sub += [dec_out_sub]
             logits_sub += [logits_step_sub]
             if self.backward_1:
                 aw_sub = [aw_step_sub] + aw_sub
@@ -715,8 +715,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 aw_sub += [aw_step_sub]
             # NOTE: for attention regularization
 
-        # Concatenate in L dimension
-        dec_out_sub_seq = torch.cat(dec_out_sub_seq, dim=1)
+        dec_outs_sub = torch.cat(dec_outs_sub, dim=1)
         logits_sub = torch.cat(logits_sub, dim=1)
         aw_sub = torch.stack(aw_sub, dim=1)
 
@@ -730,11 +729,11 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         # Next, compute logits of the word model
         ##################################################
         # Pre-computation of encoder-side features computing scores
-        dec_out_sub_seq_a = []
+        dec_outs_sub_a = []
         for h in range(self.num_heads_dec):
-            dec_out_sub_seq_a += [getattr(self.attend_dec_sub,
-                                          'W_enc_head' + str(h))(dec_out_sub_seq)]
-        dec_out_sub_seq_a = torch.stack(dec_out_sub_seq_a, dim=-1)
+            dec_outs_sub_a += [getattr(self.attend_dec_sub,
+                                       'W_enc_head' + str(h))(dec_outs_sub)]
+        dec_outs_sub_a = torch.stack(dec_outs_sub_a, dim=-1)
 
         # Initialization for the word model
         dec_state, dec_out = self._init_dec_state(
@@ -742,11 +741,11 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         aw_step_enc = Variable(enc_out.data.new(
             batch_size, max_time, self.num_heads_0).fill_(0.))
         aw_step_dec = Variable(enc_out.data.new(
-            batch_size, dec_out_sub_seq.size(1), self.num_heads_dec).fill_(0.))
-        context_vec_enc = Variable(enc_out.data.new(
-            batch_size, 1, enc_out.size(-1)).fill_(0.))
-        context_vec_dec = Variable(enc_out.data.new(
-            batch_size, 1, dec_out.size(-1)).fill_(0.))
+            batch_size, dec_outs_sub.size(1), self.num_heads_dec).fill_(0.))
+        # context_vec_enc = Variable(enc_out.data.new(
+        #     batch_size, 1, enc_out.size(-1)).fill_(0.))
+        # context_vec_dec = Variable(enc_out.data.new(
+        #     batch_size, 1, dec_out.size(-1)).fill_(0.))
 
         logits, aw_enc, aw_dec = [], [], []
         for t in range(ys.size(1)):
@@ -771,7 +770,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             # Score for the second decoder states
             if self.logits_injection:
                 _, aw_step_dec = self.attend_dec_sub(
-                    dec_out_sub_seq, dec_out_sub_seq_a, y_lens_sub, dec_out, aw_step_dec)
+                    dec_outs_sub, dec_outs_sub_a, y_lens_sub, dec_out, aw_step_dec)
 
                 context_vec_dec = []
                 for h in range(self.num_heads_dec):
@@ -788,7 +787,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         context_vec_dec)
             else:
                 context_vec_dec, aw_step_dec = self.attend_dec_sub(
-                    dec_out_sub_seq, dec_out_sub_seq_a, y_lens_sub, dec_out, aw_step_dec)
+                    dec_outs_sub, dec_outs_sub_a, y_lens_sub, dec_out, aw_step_dec)
 
             if self.relax_context_vec_dec:
                 context_vec_dec = self.W_c_dec_relax(context_vec_dec)
@@ -809,12 +808,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             aw_enc += [aw_step_enc]
             aw_dec += [aw_step_dec]
 
-        # Concatenate in L dimension
         logits = torch.cat(logits, dim=1)
         aw_enc = torch.stack(aw_enc, dim=1)
         aw_dec = torch.stack(aw_dec, dim=1)
-        # NOTE; aw_enc in the training stage may be used for computing the
-        # coverage, so do not convert to numpy yet.
 
         # TODO: fix these
         aw_enc = aw_enc.squeeze(3)
@@ -976,8 +972,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             enc_out_sub, x_lens_sub, task=1, dir=dir)
         aw_step_sub = Variable(enc_out.data.new(
             batch_size, enc_out_sub.size(1), self.num_heads_1).fill_(0.), volatile=True)
-        context_vec_sub = Variable(enc_out.data.new(
-            batch_size, 1, enc_out.size(-1)).fill_(0.), volatile=True)
+        # context_vec_sub = Variable(enc_out.data.new(
+        #     batch_size, 1, enc_out.size(-1)).fill_(0.), volatile=True)
 
         # Start from <SOS>
         y_sub = Variable(enc_out.data.new(
@@ -1056,10 +1052,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             batch_size, max_time, self.num_heads_0).fill_(0.), volatile=True)
         aw_step_dec = Variable(enc_out.data.new(
             batch_size, dec_out_sub_seq.size(1), self.num_heads_dec).fill_(0.), volatile=True)
-        context_vec_enc = Variable(enc_out.data.new(
-            batch_size, 1, enc_out.size(-1)).fill_(0.), volatile=True)
-        context_vec_dec = Variable(enc_out.data.new(
-            batch_size, 1, dec_out.size(-1)).fill_(0.), volatile=True)
+        # context_vec_enc = Variable(enc_out.data.new(
+        #     batch_size, 1, enc_out.size(-1)).fill_(0.), volatile=True)
+        # context_vec_dec = Variable(enc_out.data.new(
+        #     batch_size, 1, dec_out.size(-1)).fill_(0.), volatile=True)
 
         # Start from <SOS>
         y = Variable(enc_out.data.new(

@@ -105,17 +105,15 @@ def main():
         mkdir(save_path)
 
     for batch, is_new_epoch in dataset:
-        batch_size = len(batch['xs'])
-
         if args.a2c_oracle:
             if dataset.is_test:
                 max_label_num = 0
-                for b in range(batch_size):
+                for b in range(len(batch['xs'])):
                     if max_label_num < len(list(batch['ys_sub'][b])):
                         max_label_num = len(list(batch['ys_sub'][b]))
 
                 ys_sub = []
-                for b in range(batch_size):
+                for b in range(len(batch['xs'])):
                     indices = dataset.char2idx(batch['ys_sub'][b])
                     ys_sub += [indices]
                     # NOTE: transcript is seperated by space('_')

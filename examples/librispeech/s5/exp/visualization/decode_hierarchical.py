@@ -96,6 +96,21 @@ def main():
     for batch, is_new_epoch in dataset:
         # Decode
         if model.model_type == 'nested_attention':
+            if args.a2c_oracle:
+                if dataset.is_test:
+                    max_label_num = 0
+                    for b in range(len(batch['xs'])):
+                        if max_label_num < len(list(batch['ys_sub'][b])):
+                            max_label_num = len(list(batch['ys_sub'][b]))
+
+                    ys_sub = []
+                    for b in range(len(batch['xs'])):
+                        indices = dataset.char2idx(batch['ys_sub'][b])
+                        ys_sub += [indices]
+                        # NOTE: transcript is seperated by space('_')
+            else:
+                ys_sub = batch['ys_sub']
+
             best_hyps, aw, best_hyps_sub, aw_sub, _, perm_idx = model.decode(
                 batch['xs'],
                 beam_width=args.beam_width,
@@ -105,7 +120,9 @@ def main():
                 max_decode_len_sub=MAX_DECODE_LEN_CHAR,
                 min_decode_len_sub=MIN_DECODE_LEN_CHAR,
                 length_penalty=args.length_penalty,
-                coverage_penalty=args.coverage_penalty)
+                coverage_penalty=args.coverage_penalty,
+                teacher_forcing=args.a2c_oracle,
+                ys_sub=ys_sub)
         else:
             best_hyps, aw, perm_idx = model.decode(
                 batch['xs'],
