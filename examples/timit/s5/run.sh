@@ -164,29 +164,29 @@ if [ $stage -le 3 ]; then
 
   if [ `echo $config_path | grep 'result'` ]; then
     if $run_background; then
-      CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-      nohup $PYTHON exp/training/train.py \
+      CUDA_VISIBLE_DEVICES=$gpu_index \
+      nohup $PYTHON -m memory_profiler exp/training/train.py \
         --gpu $gpu_index \
         --saved_model_path $config_path \
         --data_save_path $DATA > log/$filename".log" &
     else
-      CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-      $PYTHON exp/training/train.py \
+      CUDA_VISIBLE_DEVICES=$gpu_index \
+      $PYTHON -m memory_profiler exp/training/train.py \
         --gpu $gpu_index \
         --saved_model_path $config_path \
         --data_save_path $DATA || exit 1;
     fi
   else
     if $run_background; then
-      CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-      nohup $PYTHON exp/training/train.py \
+      CUDA_VISIBLE_DEVICES=$gpu_index \
+      nohup $PYTHON -m memory_profiler exp/training/train.py \
         --gpu $gpu_index \
         --config_path $config_path \
         --model_save_path $MODEL \
         --data_save_path $DATA > log/$filename".log" &
     else
-      CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
-      $PYTHON exp/training/train.py \
+      CUDA_VISIBLE_DEVICES=$gpu_index \
+      $PYTHON -m memory_profiler exp/training/train.py \
         --gpu $gpu_index \
         --config_path $config_path \
         --model_save_path $MODEL \
