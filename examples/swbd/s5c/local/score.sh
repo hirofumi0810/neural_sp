@@ -20,7 +20,7 @@ DATASIZE=300h
 saved_model_path=$1
 gpu_index=$2
 
-CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+CUDA_VISIBLE_DEVICES=$gpu_index \
 $PYTHON exp/evaluation/eval.py \
   --data_save_path $DATA_SAVEPATH \
   --model_path $saved_model_path \

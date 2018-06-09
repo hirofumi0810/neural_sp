@@ -22,8 +22,9 @@ length_penalty=0
 coverage_penalty=0
 resolving_unk=false
 a2c_oracle=false
+# a2c_oracle=true
 
-CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+CUDA_VISIBLE_DEVICES=$gpu_index \
 $PYTHON exp/visualization/decode_hierarchical.py \
   --data_save_path $DATA \
   --model_path $saved_model_path \

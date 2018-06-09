@@ -23,7 +23,7 @@ joint_decoding=onepass
 # joint_decoding=rescoring
 resolving_unk=true
 
-CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+CUDA_VISIBLE_DEVICES=$gpu_index \
 $PYTHON exp/evaluation/eval_hierarchical_tuning.py \
   --data_save_path $DATA \
   --model_path $saved_model_path \

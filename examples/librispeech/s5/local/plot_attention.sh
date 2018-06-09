@@ -16,12 +16,16 @@ DATA="/n/sd8/inaguma/corpus/librispeech/kaldi"
 saved_model_path=$1
 gpu_index=$2
 
-CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+beam_width=4
+length_penalty=0.1
+coverage_penalty=0
+
+CUDA_VISIBLE_DEVICES=$gpu_index \
 $PYTHON exp/visualization/plot_attention_weights.py \
   --data_save_path $DATA \
   --model_path $saved_model_path \
   --epoch -1 \
   --eval_batch_size 1 \
-  --beam_width 4 \
-  --length_penalty 0 \
-  --coverage_penalty 0
+  --beam_width $beam_width \
+  --length_penalty $length_penalty \
+  --coverage_penalty $coverage_penalty

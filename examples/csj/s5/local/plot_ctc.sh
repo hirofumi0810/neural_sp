@@ -16,7 +16,7 @@ DATA="/n/sd8/inaguma/corpus/csj/kaldi"
 saved_model_path=$1
 gpu_index=$2
 
-CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 \
+CUDA_VISIBLE_DEVICES=$gpu_index \
 $PYTHON exp/visualization/plot_ctc_probs.py \
   --data_save_path $DATA \
   --model_path $saved_model_path \
