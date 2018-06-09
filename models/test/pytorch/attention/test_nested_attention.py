@@ -28,6 +28,20 @@ class TestCharseqAttention(unittest.TestCase):
     def test(self):
         print("Nested Attention Working check.")
 
+        # Attend to word-level backward decoder
+        self.check(second_pass=True)
+
+        # Forward word decoder + backward char decoder
+        self.check(backward_sub=True)
+
+        self.check(att_reg_weight=1)
+
+        # Attention smoothing
+        self.check(dec_attend_temperature=2)
+        self.check(dec_sigmoid_smoothing=True)
+
+        raise ValueError
+
         # Usage character-level decoder states
         self.check(usage_dec_sub='softmax')
         self.check(logits_injection=True, usage_dec_sub='softmax')
@@ -64,7 +78,7 @@ class TestCharseqAttention(unittest.TestCase):
         self.check(dec_sigmoid_smoothing=True)
 
     @measure_time
-    def check(self, usage_dec_sub='all', att_reg_weight=1,
+    def check(self, usage_dec_sub='all', att_reg_weight=0,
               main_loss_weight=0.5, ctc_loss_weight_sub=0,
               dec_attend_temperature=1, dec_sigmoid_smoothing=False,
               backward_sub=False, num_heads=1, second_pass=False,
@@ -87,16 +101,11 @@ class TestCharseqAttention(unittest.TestCase):
         print('==================================================')
 
         # Load batch data
-        splice = 1
-        num_stack = 1
-        xs, ys, ys_sub = generate_data(label_type='word_char',
-                                       batch_size=2,
-                                       num_stack=num_stack,
-                                       splice=splice)
+        xs, ys, ys_sub = generate_data(label_type='word_char', batch_size=2)
 
         # Load model
         model = NestedAttentionSeq2seq(
-            input_size=xs[0].shape[-1] // splice // num_stack,  # 120
+            input_size=xs[0].shape[-1],
             encoder_type='lstm',
             encoder_bidirectional=True,
             encoder_num_units=256,
@@ -133,7 +142,8 @@ class TestCharseqAttention(unittest.TestCase):
             ctc_loss_weight_sub=ctc_loss_weight_sub,
             attention_conv_num_channels=10,
             attention_conv_width=201,
-            num_stack=num_stack,
+            num_stack=1,
+            num_skip=1,
             splice=1,
             conv_channels=[],
             conv_kernel_sizes=[],

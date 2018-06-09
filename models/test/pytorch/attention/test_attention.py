@@ -184,12 +184,7 @@ class TestAttention(unittest.TestCase):
             poolings = []
 
         # Load batch data
-        splice = 1
-        num_stack = 1 if subsample or conv or encoder_type == 'cnn' else 3
-        xs, ys = generate_data(label_type=label_type,
-                               batch_size=2,
-                               num_stack=num_stack,
-                               splice=splice)
+        xs, ys = generate_data(label_type=label_type, batch_size=2)
 
         if label_type == 'char':
             num_classes = 27
@@ -199,8 +194,9 @@ class TestAttention(unittest.TestCase):
             map_fn = idx2word
 
         # Load model
+        num_stack = 1 if subsample or conv or encoder_type == 'cnn' else 3
         model = AttentionSeq2seq(
-            input_size=xs[0].shape[-1] // splice // num_stack,  # 120
+            input_size=xs[0].shape[-1],
             encoder_type=encoder_type,
             encoder_bidirectional=bidirectional,
             encoder_num_units=256,
@@ -233,7 +229,8 @@ class TestAttention(unittest.TestCase):
             attention_conv_num_channels=10,
             attention_conv_width=201,
             num_stack=num_stack,
-            splice=splice,
+            num_skip=num_stack,
+            splice=1,
             input_channel=3,
             conv_channels=conv_channels,
             conv_kernel_sizes=conv_kernel_sizes,

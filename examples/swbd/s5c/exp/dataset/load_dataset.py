@@ -25,8 +25,7 @@ class Dataset(DatasetBase):
     def __init__(self, data_save_path,
                  input_freq, use_delta, use_double_delta,
                  data_type, label_type,
-                 batch_size, max_epoch=None, splice=1,
-                 num_stack=1, num_skip=1,
+                 batch_size, max_epoch=None,
                  max_frame_num=2000, min_frame_num=40,
                  shuffle=False, sort_utt=False, reverse=False,
                  sort_stop_epoch=None, num_gpus=1, tool='htk',
@@ -41,9 +40,6 @@ class Dataset(DatasetBase):
             label_type (string): word or characater or characater_capital_divide
             batch_size (int): the size of mini-batch
             max_epoch (int): the max epoch. None means infinite loop.
-            splice (int): frames to splice. Default is 1 frame.
-            num_stack (int): the number of frames to stack
-            num_skip (int): the number of frames to skip
             max_frame_num (int): Exclude utteraces longer than this value
             min_frame_num (int): Exclude utteraces shorter than this value
             shuffle (bool): if True, shuffle utterances.
@@ -65,9 +61,6 @@ class Dataset(DatasetBase):
         self.label_type = label_type
         self.batch_size = batch_size * num_gpus
         self.max_epoch = max_epoch
-        self.splice = splice
-        self.num_stack = num_stack
-        self.num_skip = num_skip
         self.shuffle = shuffle
         self.sort_utt = sort_utt
         self.sort_stop_epoch = sort_stop_epoch

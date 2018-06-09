@@ -117,12 +117,7 @@ class TestCTC(unittest.TestCase):
             fc_list = []
 
         # Load batch data
-        splice = 1
-        num_stack = 1 if subsample or conv or encoder_type == 'cnn' else 2
-        xs, ys = generate_data(label_type=label_type,
-                               batch_size=2,
-                               num_stack=num_stack,
-                               splice=splice)
+        xs, ys = generate_data(label_type=label_type, batch_size=2)
 
         if label_type == 'char':
             num_classes = 27
@@ -132,8 +127,9 @@ class TestCTC(unittest.TestCase):
             map_fn = idx2word
 
         # Load model
+        num_stack = 1 if subsample or conv or encoder_type == 'cnn' else 2
         model = CTC(
-            input_size=xs[0].shape[-1] // splice // num_stack,  # 120
+            input_size=xs[0].shape[-1],
             encoder_type=encoder_type,
             encoder_bidirectional=bidirectional,
             encoder_num_units=256,
@@ -149,7 +145,8 @@ class TestCTC(unittest.TestCase):
             init_forget_gate_bias_with_one=True,
             subsample_list=[] if not subsample else [True] * 2,
             num_stack=num_stack,
-            splice=splice,
+            num_skip=num_stack,
+            splice=1,
             input_channel=3,
             conv_channels=conv_channels,
             conv_kernel_sizes=conv_kernel_sizes,

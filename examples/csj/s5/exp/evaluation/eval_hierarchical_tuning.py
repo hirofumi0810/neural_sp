@@ -66,8 +66,7 @@ def main():
         data_type='eval1',
         data_size=params['data_size'],
         label_type=params['label_type'], label_type_sub=params['label_type_sub'],
-        batch_size=args.eval_batch_size, splice=params['splice'],
-        num_stack=params['num_stack'], num_skip=params['num_skip'],
+        batch_size=args.eval_batch_size,
         shuffle=False, tool=params['tool'])
     params['num_classes'] = dataset.num_classes
     params['num_classes_sub'] = dataset.num_classes_sub

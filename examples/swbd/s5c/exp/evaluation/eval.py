@@ -61,8 +61,7 @@ def main():
             use_double_delta=params['use_double_delta'],
             data_type=data_type,
             label_type=params['label_type'],
-            batch_size=args.eval_batch_size, splice=params['splice'],
-            num_stack=params['num_stack'], num_skip=params['num_skip'],
+            batch_size=args.eval_batch_size,
             shuffle=False, tool=params['tool'])
 
         if i == 0:

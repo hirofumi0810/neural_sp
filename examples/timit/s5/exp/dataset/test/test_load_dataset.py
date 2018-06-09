@@ -42,8 +42,7 @@ class TestLoadDataset(unittest.TestCase):
 
     @measure_time
     def check(self, label_type, data_type='dev',
-              shuffle=False, sort_utt=False, sort_stop_epoch=None,
-              frame_stacking=False, splice=1):
+              shuffle=False, sort_utt=False, sort_stop_epoch=None):
 
         print('========================================')
         print('  label_type: %s' % label_type)
@@ -51,18 +50,13 @@ class TestLoadDataset(unittest.TestCase):
         print('  shuffle: %s' % str(shuffle))
         print('  sort_utt: %s' % str(sort_utt))
         print('  sort_stop_epoch: %s' % str(sort_stop_epoch))
-        print('  frame_stacking: %s' % str(frame_stacking))
-        print('  splice: %d' % splice)
         print('========================================')
 
-        num_stack = 3 if frame_stacking else 1
-        num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
             data_save_path='/n/sd8/inaguma/corpus/timit/kaldi',
             input_freq=41, use_delta=True, use_double_delta=True,
             data_type=data_type, label_type=label_type,
             batch_size=32, max_epoch=2,
-            splice=splice, num_stack=num_stack, num_skip=num_skip,
             shuffle=shuffle, sort_utt=sort_utt, sort_stop_epoch=sort_stop_epoch,
             tool='htk', num_enque=None)
 
@@ -76,7 +70,7 @@ class TestLoadDataset(unittest.TestCase):
             print('----- %s (epoch: %.3f, batch: %d) -----' %
                   (batch['input_names'][0], dataset.epoch_detail, len(batch['xs'])))
             print(str_ref)
-            print('x_lens: %d' % (len(batch['xs'][0]) * num_stack))
+            print('x_lens: %d' % (len(batch['xs'][0])))
 
 
 if __name__ == '__main__':

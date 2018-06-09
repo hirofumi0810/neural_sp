@@ -74,9 +74,7 @@ def main():
         use_double_delta=params['use_double_delta'],
         data_type='train', data_size=params['data_size'],
         label_type=params['label_type'],
-        batch_size=params['batch_size'],
-        max_epoch=params['num_epoch'], splice=params['splice'],
-        num_stack=params['num_stack'], num_skip=params['num_skip'],
+        batch_size=params['batch_size'], max_epoch=params['num_epoch'],
         max_frame_num=params['max_frame_num'],
         min_frame_num=params['min_frame_num'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
@@ -89,8 +87,7 @@ def main():
         use_double_delta=params['use_double_delta'],
         data_type='dev_clean', data_size=params['data_size'],
         label_type=params['label_type'],
-        batch_size=params['batch_size'], splice=params['splice'],
-        num_stack=params['num_stack'], num_skip=params['num_skip'],
+        batch_size=params['batch_size'],
         shuffle=True, tool=params['tool'])
     test_data = Dataset(
         data_save_path=args.data_save_path,
@@ -99,9 +96,7 @@ def main():
         use_double_delta=params['use_double_delta'],
         data_type='test_clean', data_size=params['data_size'],
         label_type=params['label_type'],
-        batch_size=params['batch_size'], splice=params['splice'],
-        num_stack=params['num_stack'], num_skip=params['num_skip'],
-        tool=params['tool'])
+        batch_size=1, tool=params['tool'])
     params['num_classes'] = train_data.num_classes
 
     ##################################################

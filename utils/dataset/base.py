@@ -48,14 +48,13 @@ class Base(object):
                     vocab_count_sub += 1
             self.num_classes_sub = vocab_count_sub
 
-        if self.use_double_delta:
-            self.input_size = self.input_freq * 3
-        elif self.use_delta:
-            self.input_size = self.input_freq * 2
-        else:
-            self.input_size = self.input_freq
-        self.input_size *= self.num_stack
-        self.input_size *= self.splice
+        if hasattr(self, 'use_double_delta'):
+            if self.use_double_delta:
+                self.input_size = self.input_freq * 3
+            elif self.use_delta:
+                self.input_size = self.input_freq * 2
+            else:
+                self.input_size = self.input_freq
 
     def __len__(self):
         return len(self.df)
@@ -125,7 +124,7 @@ class Base(object):
                     self.data_indices_list.append(data_indices)
                     self.is_new_epoch_list.append(is_new_epoch)
                 self.preloading_process = Process(
-                    target=preloading_loop,
+                    target=self.preloading_loop,
                     args=(self.queue, self.data_indices_list))
                 self.preloading_process.start()
                 self.queue_size += self.num_enque
@@ -229,17 +228,16 @@ class Base(object):
         self.rest = set(list(self.df.index))
         self.offset = 0
 
-
-def preloading_loop(queue, data_indices_list):
-    """
-    Args:
-        queue ():
-        data_indices_list (np.ndarray):
-    """
-    # print("Pre-loading started.")
-    for i in range(len(data_indices_list)):
-        queue.put(self.make_batch(data_indices_list[i]))
-    # print("Pre-loading done.")
+    def preloading_loop(self, queue, data_indices_list):
+        """
+        Args:
+            queue ():
+            data_indices_list (np.ndarray):
+        """
+        # print("Pre-loading started.")
+        for i in range(len(data_indices_list)):
+            queue.put(self.make_batch(data_indices_list[i]))
+        # print("Pre-loading done.")
 
 
 def split_per_device(x, num_gpus):
@@ -258,8 +256,7 @@ def _load_feat(path):
         with open(path, "rb") as f:
             # Read header
             spam = f.read(12)
-            frame_num, sampPeriod, sampSize, parmKind = unpack(
-                ">IIHH", spam)
+            frame_num, sampPeriod, sampSize, parmKind = unpack(">IIHH", spam)
 
             # Load data
             feat_dim = int(sampSize / 4)

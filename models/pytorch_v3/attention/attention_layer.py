@@ -211,8 +211,7 @@ class AttentionMechanism(nn.Module):
 
             energy.append(energy_head)
 
-        context_vec = []
-        aw_step = []
+        context_vec, aw_step = [], []
         for h in range(self.num_heads):
             # Mask attention distribution
             energy_mask = Variable(enc_out.data.new(

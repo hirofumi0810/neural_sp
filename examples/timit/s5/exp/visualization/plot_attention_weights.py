@@ -53,8 +53,7 @@ def main():
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
         data_type='test', label_type=params['label_type'],
-        batch_size=args.eval_batch_size, splice=params['splice'],
-        num_stack=params['num_stack'], num_skip=params['num_skip'],
+        batch_size=args.eval_batch_size,
         shuffle=False, tool=params['tool'])
     params['num_classes'] = dataset.num_classes
 

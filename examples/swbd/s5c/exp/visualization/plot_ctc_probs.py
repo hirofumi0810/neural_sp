@@ -46,8 +46,7 @@ def main():
         data_type='eval2000_swbd',
         # data_type='eval2000_ch',
         label_type=params['label_type'],
-        batch_size=args.eval_batch_size, splice=params['splice'],
-        num_stack=params['num_stack'], num_skip=params['num_skip'],
+        batch_size=args.eval_batch_size,
         sort_utt=False, reverse=False, tool=params['tool'])
 
     params['num_classes'] = dataset.num_classes

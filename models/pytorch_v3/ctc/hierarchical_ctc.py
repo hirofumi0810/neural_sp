@@ -16,6 +16,8 @@ from models.pytorch_v3.encoders.load_encoder import load
 from models.pytorch_v3.ctc.ctc import my_warpctc
 from models.pytorch_v3.criterion import cross_entropy_label_smoothing
 from models.pytorch_v3.utils import np2var
+from utils.io.inputs.frame_stacking import stack_frame
+from utils.io.inputs.splicing import do_splice
 
 
 class HierarchicalCTC(CTC):
@@ -52,6 +54,7 @@ class HierarchicalCTC(CTC):
         subsample_type (string): drop or concat
         logits_temperature (float):
         num_stack (int): the number of frames to stack
+        num_skip (int): the number of frames to skip
         splice (int): frames to splice. Default is 1 frame.
         input_channel (int): the number of channels of input features
         conv_channels (list):
@@ -91,6 +94,7 @@ class HierarchicalCTC(CTC):
                  subsample_type='drop',
                  logits_temperature=1,
                  num_stack=1,
+                 num_skip=1,
                  splice=1,
                  input_channel=1,
                  conv_channels=[],
@@ -119,6 +123,7 @@ class HierarchicalCTC(CTC):
             subsample_type=subsample_type,
             fc_list=fc_list,
             num_stack=num_stack,
+            num_skip=num_skip,
             splice=splice,
             input_channel=input_channel,
             conv_channels=conv_channels,
@@ -296,6 +301,15 @@ class HierarchicalCTC(CTC):
             ys_sub = [ys_sub[i] for i in perm_idx]
             # NOTE: must be descending order for pack_padded_sequence
             # NOTE: assumed that xs is already sorted in the training stage
+
+        # Frame stacking
+        if self.num_stack > 1:
+            xs = [stack_frame(x, self.num_stack, self.num_skip)
+                  for x in xs]
+
+        # Splicing
+        if self.splice > 1:
+            xs = [do_splice(x, self.splice, self.num_stack) for x in xs]
 
         # Wrap by Variable
         xs = [np2var(x, self.device_id).float() for x in xs]

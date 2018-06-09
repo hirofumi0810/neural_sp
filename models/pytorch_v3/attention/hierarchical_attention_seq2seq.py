@@ -7,6 +7,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import math
 import numpy as np
 import copy
 import torch
@@ -21,6 +22,8 @@ from models.pytorch_v3.attention.attention_layer import AttentionMechanism
 from models.pytorch_v3.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch_v3.ctc.decoders.beam_search_decoder import BeamSearchDecoder
 from models.pytorch_v3.utils import np2var, var2np
+from utils.io.inputs.frame_stacking import stack_frame
+from utils.io.inputs.splicing import do_splice
 
 
 class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
@@ -66,6 +69,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  attention_conv_num_channels=10,
                  attention_conv_width=201,
                  num_stack=1,
+                 num_skip=1,
                  splice=1,
                  input_channel=1,
                  conv_channels=[],
@@ -120,6 +124,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             attention_conv_num_channels=attention_conv_num_channels,
             attention_conv_width=attention_conv_width,
             num_stack=num_stack,
+            num_skip=num_skip,
             splice=splice,
             input_channel=input_channel,
             conv_channels=conv_channels,
@@ -401,6 +406,15 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # NOTE: must be descending order for pack_padded_sequence
             # NOTE: assumed that xs is already sorted in the training stage
 
+        # Frame stacking
+        if self.num_stack > 1:
+            xs = [stack_frame(x, self.num_stack, self.num_skip)
+                  for x in xs]
+
+        # Splicing
+        if self.splice > 1:
+            xs = [do_splice(x, self.splice, self.num_stack) for x in xs]
+
         # Wrap by Variable
         xs = [np2var(x, self.device_id).float() for x in xs]
         x_lens = [len(x) for x in xs]
@@ -509,6 +523,15 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 # NOTE: must be descending order for pack_padded_sequence
             else:
                 perm_idx = list(range(0, len(xs), 1))
+
+            # Frame stacking
+            if self.num_stack > 1:
+                xs = [stack_frame(x, self.num_stack, self.num_skip)
+                      for x in xs]
+
+            # Splicing
+            if self.splice > 1:
+                xs = [do_splice(x, self.splice, self.num_stack) for x in xs]
 
             # Wrap by Variable
             xs = [np2var(x, self.device_id, volatile=True).float() for x in xs]
@@ -854,6 +877,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                         # Rescoreing
                         score += (score_c2w - score_c2w_until_space) * \
                             score_sub_weight
+                        # score += (score_c2w - score_c2w_until_space) * \
+                        #     math.log(len(charseq)) * score_sub_weight
 
                         new_beam.append(
                             {'hyp': beam[i_beam]['hyp'] + [indices_topk.data[0, k]],

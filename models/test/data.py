@@ -5,11 +5,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import math
 import numpy as np
 
-from utils.io.inputs.splicing import do_splice
-from utils.io.inputs.frame_stacking import stack_frame
 from utils.io.inputs.feature_extraction import wav2feature
 
 SPACE = '_'
@@ -30,14 +27,11 @@ def _read_text(trans_path):
     return transcript
 
 
-def generate_data(label_type='char', batch_size=1,
-                  num_stack=1, splice=1, backend='pytorch'):
+def generate_data(label_type='char', batch_size=1):
     """Generate dataset for unit test.
     Args:
         label_type (string, optional): char or word or word_char
         batch_size (int): the size of mini-batch
-        splice (int): frames to splice. Default is 1 frame.
-        backend (string, optional): pytorch or chainer
     Returns:
         xs (list): A list of length `[B]`, which contains arrays of size `[T, input_size]`
         ys (list): A list of length `[B]`
@@ -51,15 +45,7 @@ def generate_data(label_type='char', batch_size=1,
 
     xs = []
     for i, b in enumerate(range(batch_size)):
-        # Frame stacking
-        feat = stack_frame(_xs[b], num_stack=num_stack, num_skip=num_stack,
-                           dtype=np.float32)
-
-        # Splice
-        feat = do_splice(feat, splice=splice, num_stack=num_stack,
-                         dtype=np.float32)
-
-        xs += [feat[: len(feat) - i]]
+        xs += [_xs[b][: len(_xs[b]) - i]]
 
     # Make transcripts
     trans = _read_text('../../sample/LDC93S1.txt')

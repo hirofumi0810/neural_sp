@@ -27,6 +27,8 @@ from models.pytorch_v3.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch_v3.ctc.decoders.beam_search_decoder import BeamSearchDecoder
 # from models.pytorch_v3.ctc.decoders.beam_search_decoder2 import BeamSearchDecoder
 from models.pytorch_v3.utils import np2var, var2np, pad_list
+from utils.io.inputs.frame_stacking import stack_frame
+from utils.io.inputs.splicing import do_splice
 
 
 class _CTC(warpctc_pytorch._CTC):
@@ -99,6 +101,7 @@ class CTC(ModelBase):
         subsample_type (string): drop or concat
         logits_temperature (float):
         num_stack (int): the number of frames to stack
+        num_skip (int): the number of frames to skip
         splice (int): frames to splice. Default is 1 frame.
         input_channel (int): the number of channels of input features
         conv_channels (list):
@@ -133,6 +136,7 @@ class CTC(ModelBase):
                  subsample_type='drop',
                  logits_temperature=1,
                  num_stack=1,
+                 num_skip=1,
                  splice=1,
                  input_channel=1,
                  conv_channels=[],
@@ -152,6 +156,8 @@ class CTC(ModelBase):
         # Setting for the encoder
         self.input_size = input_size
         self.num_stack = num_stack
+        self.num_skip = num_skip
+        self.splice = splice
         self.encoder_type = encoder_type
         self.encoder_num_units = encoder_num_units
         if encoder_bidirectional:
@@ -299,6 +305,15 @@ class CTC(ModelBase):
             # NOTE: must be descending order for pack_padded_sequence
             # NOTE: assumed that xs is already sorted in the training stage
 
+        # Frame stacking
+        if self.num_stack > 1:
+            xs = [stack_frame(x, self.num_stack, self.num_skip)
+                  for x in xs]
+
+        # Splicing
+        if self.splice > 1:
+            xs = [do_splice(x, self.splice, self.num_stack) for x in xs]
+
         # Wrap by Variable
         xs = [np2var(x, self.device_id).float() for x in xs]
         x_lens = [len(x) for x in xs]
@@ -425,6 +440,15 @@ class CTC(ModelBase):
         else:
             perm_idx = list(range(0, len(xs), 1))
 
+        # Frame stacking
+        if self.num_stack > 1:
+            xs = [stack_frame(x, self.num_stack, self.num_skip)
+                  for x in xs]
+
+        # Splicing
+        if self.splice > 1:
+            xs = [do_splice(x, self.splice, self.num_stack) for x in xs]
+
         # Wrap by Variable
         xs = [np2var(x, self.device_id, volatile=True).float() for x in xs]
         x_lens = [len(x) for x in xs]
@@ -478,6 +502,15 @@ class CTC(ModelBase):
             # NOTE: must be descending order for pack_padded_sequence
         else:
             perm_idx = list(range(0, len(xs), 1))
+
+        # Frame stacking
+        if self.num_stack > 1:
+            xs = [stack_frame(x, self.num_stack, self.num_skip)
+                  for x in xs]
+
+        # Splicing
+        if self.splice > 1:
+            xs = [do_splice(x, self.splice, self.num_stack) for x in xs]
 
         # Wrap by Variable
         xs = [np2var(x, self.device_id, volatile=True).float() for x in xs]

@@ -14,8 +14,6 @@ from os.path import basename
 import numpy as np
 
 from utils.dataset.base import Base, load_feat
-from utils.io.inputs.frame_stacking import stack_frame
-from utils.io.inputs.splicing import do_splice
 from utils.parallel import make_parallel
 # NOTE: Loading numpy is faster than loading htk
 
@@ -76,15 +74,6 @@ class DatasetBase(Base):
                                    2:max_freq * 2 + self.input_freq]]
                 xs += [np.concatenate(x, axis=-1)]
 
-        # Frame stacking
-        if self.num_stack > 1:
-            xs = [stack_frame(x, self.num_stack, self.num_skip)
-                  for x in xs]
-
-        # Splicing
-        if self.splice > 1:
-            xs = [do_splice(x, self.splice, self.num_stack) for x in xs]
-
         #########################
         # transcript
         #########################
@@ -96,11 +85,8 @@ class DatasetBase(Base):
             ys = [list(map(int, transcripts[b].split(' ')))
                   for b in range(len(xs))]
 
-        input_names = np.array(list(
+        input_names = list(
             map(lambda path: basename(path).split('.')[0],
-                np.array(self.df['input_path'][data_indices]))))
+                self.df['input_path'][data_indices]))
 
-        batch = {'xs': xs, 'ys': ys,
-                 'input_names': input_names}
-
-        return batch
+        return {'xs': xs, 'ys': ys, 'input_names': input_names}

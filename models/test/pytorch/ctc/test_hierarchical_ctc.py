@@ -102,19 +102,15 @@ class TestCTC(unittest.TestCase):
             fc_list = []
 
         # Load batch data
-        num_stack = 1 if subsample or conv or encoder_type == 'cnn' else 2
-        splice = 1
-        xs, ys, ys_sub = generate_data(label_type='word_char',
-                                       batch_size=2,
-                                       num_stack=num_stack,
-                                       splice=splice)
+        xs, ys, ys_sub = generate_data(label_type='word_char', batch_size=2)
 
         num_classes = 11
         num_classes_sub = 27
 
         # Load model
+        num_stack = 1 if subsample or conv or encoder_type == 'cnn' else 2
         model = HierarchicalCTC(
-            input_size=xs[0].shape[-1] // splice // num_stack,   # 120
+            input_size=xs[0].shape[-1],
             encoder_type=encoder_type,
             encoder_bidirectional=bidirectional,
             encoder_num_units=256,
@@ -135,7 +131,8 @@ class TestCTC(unittest.TestCase):
             init_forget_gate_bias_with_one=True,
             subsample_list=[] if not subsample else [True, False],
             num_stack=num_stack,
-            splice=splice,
+            num_skip=num_stack,
+            splice=1,
             input_channel=3,
             conv_channels=conv_channels,
             conv_kernel_sizes=conv_kernel_sizes,

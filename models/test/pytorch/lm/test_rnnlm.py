@@ -55,8 +55,8 @@ class TestRNNLM(unittest.TestCase):
         print('==================================================')
 
         # Load batch data
-        _, ys, _, y_lens = generate_data(label_type=label_type,
-                                         batch_size=2)
+        _, ys = generate_data(label_type=label_type,
+                              batch_size=2)
 
         if label_type == 'char':
             num_classes = 27
@@ -64,21 +64,20 @@ class TestRNNLM(unittest.TestCase):
             num_classes = 11
 
         # Load model
-        model = RNNLM(
-            embedding_dim=128,
-            rnn_type=rnn_type,
-            bidirectional=bidirectional,
-            num_units=256,
-            num_layers=1,
-            dropout_embedding=0.1,
-            dropout_hidden=0.1,
-            dropout_output=0.1,
-            num_classes=num_classes,
-            parameter_init_distribution='uniform',
-            parameter_init=0.1,
-            recurrent_weight_orthogonal=True,
-            init_forget_gate_bias_with_one=True,
-            tie_weights=tie_weights)
+        model = RNNLM(embedding_dim=128,
+                      rnn_type=rnn_type,
+                      bidirectional=bidirectional,
+                      num_units=256,
+                      num_layers=1,
+                      dropout_embedding=0.1,
+                      dropout_hidden=0.1,
+                      dropout_output=0.1,
+                      num_classes=num_classes,
+                      parameter_init_distribution='uniform',
+                      parameter_init=0.1,
+                      recurrent_weight_orthogonal=True,
+                      init_forget_gate_bias_with_one=True,
+                      tie_weights=tie_weights)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):
@@ -98,7 +97,7 @@ class TestRNNLM(unittest.TestCase):
         # Define learning rate controller
         lr_controller = Controller(learning_rate_init=learning_rate,
                                    backend='pytorch',
-                                   decay_type='per_epoch',
+                                   decay_type='compare_metric',
                                    decay_start_epoch=20,
                                    decay_rate=0.9,
                                    decay_patient_epoch=10,
@@ -114,7 +113,7 @@ class TestRNNLM(unittest.TestCase):
 
             # Step for parameter update
             model.optimizer.zero_grad()
-            loss = model(ys, y_lens)
+            loss = model(ys)
             loss.backward()
             nn.utils.clip_grad_norm(model.parameters(), 5)
             model.optimizer.step()
@@ -125,7 +124,7 @@ class TestRNNLM(unittest.TestCase):
 
             if (step + 1) % 10 == 0:
                 # Compute loss
-                loss = model(ys, y_lens, is_eval=True)
+                loss = model(ys, is_eval=True)
 
                 # Compute PPL
                 ppl = math.exp(loss)
