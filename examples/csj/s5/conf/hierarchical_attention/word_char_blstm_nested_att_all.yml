@@ -1,4 +1,4 @@
-parent: ./conf/hierarchical_attention/word_char_blstm_hie_att_aps_other.yml
+parent: ./conf/hierarchical_attention/word_char_blstm_nested_att_aps_other.yml
 param:
   # framework
   backend: pytorch
@@ -35,3 +35,16 @@ param:
   main_loss_weight: 0.5
   sub_loss_weight: 0.5
   ctc_loss_weight_sub: 0
+
+  # W2C attention
+  usage_dec_sub: all
+  logits_injection: False
+  num_heads_dec: 1
+  dec_attention_type: content
+
+  # regularization
+  dec_attend_temperature: 1
+  dec_sigmoid_smoothing: True
+  att_reg_weight: 0
+  relax_context_vec_dec: False
+  gating: False

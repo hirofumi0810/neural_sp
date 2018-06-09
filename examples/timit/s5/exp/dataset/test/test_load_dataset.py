@@ -41,12 +41,11 @@ class TestLoadDataset(unittest.TestCase):
         self.check(label_type='phone61', splice=11)
 
     @measure_time
-    def check(self, label_type, data_type='dev', backend='pytorch',
+    def check(self, label_type, data_type='dev',
               shuffle=False, sort_utt=False, sort_stop_epoch=None,
               frame_stacking=False, splice=1):
 
         print('========================================')
-        print('  backend: %s' % backend)
         print('  label_type: %s' % label_type)
         print('  data_type: %s' % data_type)
         print('  shuffle: %s' % str(shuffle))
@@ -60,13 +59,11 @@ class TestLoadDataset(unittest.TestCase):
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
             data_save_path='/n/sd8/inaguma/corpus/timit/kaldi',
-            backend=backend,
             input_freq=41, use_delta=True, use_double_delta=True,
             data_type=data_type, label_type=label_type,
             batch_size=32, max_epoch=2,
             splice=splice, num_stack=num_stack, num_skip=num_skip,
-            shuffle=shuffle,
-            sort_utt=sort_utt, sort_stop_epoch=sort_stop_epoch,
+            shuffle=shuffle, sort_utt=sort_utt, sort_stop_epoch=sort_stop_epoch,
             tool='htk', num_enque=None)
 
         print('=> Loading mini-batch...')

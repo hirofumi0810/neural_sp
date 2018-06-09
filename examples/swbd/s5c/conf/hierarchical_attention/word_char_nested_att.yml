@@ -17,6 +17,7 @@ param:
   splice: 1
   num_stack: 1
   num_skip: 1
+  max_frame_num: 2000
   min_frame_num: 40
   dynamic_batching: True
 
@@ -108,8 +109,6 @@ param:
   eval_start_epoch: 5
   print_step: 200
 
-
-
   # MTL
   main_loss_weight: 0.5
   sub_loss_weight: 0.5
@@ -117,7 +116,7 @@ param:
 
   # W2C attention
   usage_dec_sub: all
-  cold_fusion_like_prob_injection: False
+  logits_injection: False
   num_heads_dec: 1
   dec_attention_type: content
 
@@ -125,6 +124,5 @@ param:
   dec_attend_temperature: 1
   dec_sigmoid_smoothing: True
   att_reg_weight: 0
-
-  # regularization
   relax_context_vec_dec: False
+  gating: False

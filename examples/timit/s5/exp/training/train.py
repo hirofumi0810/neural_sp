@@ -68,7 +68,6 @@ def main():
     # Load dataset
     train_data = Dataset(
         data_save_path=args.data_save_path,
-        backend=params['backend'],
         input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
@@ -81,7 +80,6 @@ def main():
         dynamic_batching=params['dynamic_batching'])
     dev_data = Dataset(
         data_save_path=args.data_save_path,
-        backend=params['backend'],
         input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
@@ -91,7 +89,6 @@ def main():
         shuffle=True, tool=params['tool'])
     test_data = Dataset(
         data_save_path=args.data_save_path,
-        backend=params['backend'],
         input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
@@ -338,8 +335,6 @@ def main():
                         model.weight_noise_injection = True
 
             pbar_epoch = tqdm(total=len(train_data))
-            logger.info('========== EPOCH:%d (%.3f min) ==========' %
-                        (epoch, duration_epoch / 60))
 
             if epoch == params['num_epoch']:
                 break

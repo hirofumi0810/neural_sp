@@ -23,29 +23,28 @@ from utils.io.labels.character import Idx2char, Char2idx
 class Dataset(DatasetBase):
 
     def __init__(self, data_save_path,
-                 backend, input_freq, use_delta, use_double_delta,
-                 data_type, data_size, label_type,
+                 input_freq, use_delta, use_double_delta,
+                 data_type, label_type,
                  batch_size, max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
-                 min_frame_num=40,
+                 max_frame_num=2000, min_frame_num=40,
                  shuffle=False, sort_utt=False, reverse=False,
                  sort_stop_epoch=None, num_gpus=1, tool='htk',
                  num_enque=None, dynamic_batching=False):
         """A class for loading dataset.
         Args:
             data_save_path (string): path to saved data
-            backend (string): pytorch or chainer
             input_freq (int): the number of dimensions of acoustics
             use_delta (bool): if True, use the delta feature
             use_double_delta (bool): if True, use the acceleration feature
             data_type (string): train or dev or eval2000_swbd or eval2000_ch
-            data_size (string): 300h
             label_type (string): word or characater or characater_capital_divide
             batch_size (int): the size of mini-batch
             max_epoch (int): the max epoch. None means infinite loop.
             splice (int): frames to splice. Default is 1 frame.
             num_stack (int): the number of frames to stack
             num_skip (int): the number of frames to skip
+            max_frame_num (int): Exclude utteraces longer than this value
             min_frame_num (int): Exclude utteraces shorter than this value
             shuffle (bool): if True, shuffle utterances.
                 This is disabled when sort_utt is True.
@@ -59,12 +58,10 @@ class Dataset(DatasetBase):
             dynamic_batching (bool): if True, batch size will be chainged
                 dynamically in training
         """
-        self.backend = backend
         self.input_freq = input_freq
         self.use_delta = use_delta
         self.use_double_delta = use_double_delta
         self.data_type = data_type
-        self.data_size = data_size
         self.label_type = label_type
         self.batch_size = batch_size * num_gpus
         self.max_epoch = max_epoch
@@ -111,7 +108,7 @@ class Dataset(DatasetBase):
                 df = df[df.apply(lambda x: not(len(x['transcript'].split(' '))
                                                <= 24 and x['frame_num'] >= 1000), axis=1)]
             df = df[df.apply(
-                lambda x: min_frame_num <= x['frame_num'], axis=1)]
+                lambda x: min_frame_num <= x['frame_num'] <= max_frame_num, axis=1)]
             logger.info('Restricted utterance num: %d' % len(df))
 
         # Sort paths to input & label

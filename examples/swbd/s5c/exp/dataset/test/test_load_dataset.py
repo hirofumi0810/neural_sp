@@ -44,15 +44,12 @@ class TestLoadDataset(unittest.TestCase):
 
     @measure_time
     def check(self, label_type='character', data_type='dev',
-              data_size='300h', backend='pytorch',
               shuffle=False, sort_utt=True, sort_stop_epoch=None,
               frame_stacking=False, splice=1, num_gpus=1):
 
         print('========================================')
-        print('  backend: %s' % backend)
         print('  label_type: %s' % label_type)
         print('  data_type: %s' % data_type)
-        print('  data_size: %s' % data_size)
         print('  shuffle: %s' % str(shuffle))
         print('  sort_utt: %s' % str(sort_utt))
         print('  sort_stop_epoch: %s' % str(sort_stop_epoch))
@@ -65,14 +62,13 @@ class TestLoadDataset(unittest.TestCase):
         num_skip = 3 if frame_stacking else 1
         dataset = Dataset(
             data_save_path='/n/sd8/inaguma/corpus/swbd/kaldi',
-            backend=backend,
             input_freq=80, use_delta=False, use_double_delta=False,
-            data_type=data_type, data_size=data_size,
+            data_type=data_type,
             label_type=label_type, batch_size=64,
             max_epoch=1, splice=splice,
             num_stack=num_stack, num_skip=num_skip,
-            min_frame_num=40, shuffle=shuffle,
-            sort_utt=sort_utt, reverse=True, sort_stop_epoch=sort_stop_epoch,
+            shuffle=shuffle, sort_utt=sort_utt,
+            reverse=True, sort_stop_epoch=sort_stop_epoch,
             num_gpus=num_gpus, tool='htk', num_enque=None)
 
         print('=> Loading mini-batch...')

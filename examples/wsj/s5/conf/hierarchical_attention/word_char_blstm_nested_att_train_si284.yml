@@ -109,8 +109,6 @@ param:
   eval_start_epoch: 5
   print_step: 100
 
-
-
   # MTL
   main_loss_weight: 0.5
   sub_loss_weight: 0.5
@@ -130,4 +128,3 @@ param:
   att_reg_weight: 0
   relax_context_vec_dec: False
   gating: False
-  

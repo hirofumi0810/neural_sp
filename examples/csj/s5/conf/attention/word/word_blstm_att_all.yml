@@ -12,7 +12,7 @@ param:
     - False
     - True
     - True
-    - True
+    - False
     - False
   decoding_order: bahdanau
   num_heads: 1

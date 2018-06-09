@@ -37,7 +37,7 @@ param:
   fc_list: [320]
 
   # optimization
-  batch_size: 20
+  batch_size: 30
 
   # initialization
   char_init: False

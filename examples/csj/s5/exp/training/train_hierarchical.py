@@ -17,7 +17,6 @@ import argparse
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 import cProfile
-import line_profiler
 
 torch.manual_seed(1623)
 torch.cuda.manual_seed_all(1623)
@@ -50,7 +49,6 @@ MAX_DECODE_LEN_WORD = 100
 MAX_DECODE_LEN_CHAR = 200
 
 
-@profile
 def main():
 
     args = parser.parse_args()
@@ -70,7 +68,6 @@ def main():
     # Load dataset
     train_data = Dataset(
         data_save_path=args.data_save_path,
-        backend=params['backend'],
         input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
@@ -80,13 +77,13 @@ def main():
         batch_size=params['batch_size'], max_epoch=params['num_epoch'],
         splice=params['splice'],
         num_stack=params['num_stack'], num_skip=params['num_skip'],
+        max_frame_num=params['max_frame_num'],
         min_frame_num=params['min_frame_num'],
         sort_utt=True, sort_stop_epoch=params['sort_stop_epoch'],
         tool=params['tool'], num_enque=None,
         dynamic_batching=params['dynamic_batching'])
     dev_data = Dataset(
         data_save_path=args.data_save_path,
-        backend=params['backend'],
         input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
@@ -98,7 +95,6 @@ def main():
         shuffle=True, tool=params['tool'])
     test_data = Dataset(
         data_save_path=args.data_save_path,
-        backend=params['backend'],
         input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
@@ -380,8 +376,6 @@ def main():
                         model.weight_noise_injection = True
 
             pbar_epoch = tqdm(total=len(train_data))
-            logger.info('========== EPOCH:%d (%.3f min) ==========' %
-                        (epoch, duration_epoch / 60))
 
             if epoch == params['num_epoch']:
                 break

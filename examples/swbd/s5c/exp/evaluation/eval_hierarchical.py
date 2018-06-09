@@ -61,12 +61,10 @@ def main():
         # Load dataset
         dataset = Dataset(
             data_save_path=args.data_save_path,
-            backend=params['backend'],
             input_freq=params['input_freq'],
             use_delta=params['use_delta'],
             use_double_delta=params['use_double_delta'],
             data_type=data_type,
-            data_size=params['data_size'],
             label_type=params['label_type'], label_type_sub=params['label_type_sub'],
             batch_size=args.eval_batch_size, splice=params['splice'],
             num_stack=params['num_stack'], num_skip=params['num_skip'],

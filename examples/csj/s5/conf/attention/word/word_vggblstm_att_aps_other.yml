@@ -35,7 +35,7 @@ param:
   num_heads: 1
 
   # optimization
-  batch_size: 20
+  batch_size: 30
 
   # initialization
   char_init: False

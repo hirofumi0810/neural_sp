@@ -20,7 +20,7 @@ from utils.io.labels.phone import Idx2phone
 class Dataset(DatasetBase):
 
     def __init__(self, data_save_path,
-                 backend, input_freq, use_delta, use_double_delta,
+                 input_freq, use_delta, use_double_delta,
                  data_type, label_type,
                  batch_size, max_epoch=None, splice=1,
                  num_stack=1, num_skip=1,
@@ -30,7 +30,6 @@ class Dataset(DatasetBase):
         """A class for loading dataset.
         Args:
             data_save_path (string): path to saved data
-            backend (string): pytorch or chainer
             input_freq (int): the number of dimensions of acoustics
             use_delta (bool): if True, use the delta feature
             use_double_delta (bool): if True, use the acceleration feature
@@ -54,7 +53,6 @@ class Dataset(DatasetBase):
             dynamic_batching (bool): if True, batch size will be
                 chainged dynamically in training
         """
-        self.backend = backend
         self.input_freq = input_freq
         self.use_delta = use_delta
         self.use_double_delta = use_double_delta

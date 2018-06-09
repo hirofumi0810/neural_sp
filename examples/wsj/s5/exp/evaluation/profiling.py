@@ -21,7 +21,7 @@ def main():
     args = parser.parse_args()
 
     stats = pstats.Stats(join(args.model_path, 'train.profile'))
-    stats.sort_stats('time').print_stats(100)
+    stats.sort_stats('time').print_stats(30)
 
 
 if __name__ == '__main__':
