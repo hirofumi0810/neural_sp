@@ -17,6 +17,7 @@ from models.load_model import load
 from examples.swbd.s5c.exp.dataset.load_dataset_hierarchical import Dataset
 from examples.swbd.s5c.exp.metrics.glm import GLM
 from examples.swbd.s5c.exp.metrics.post_processing import fix_trans
+from utils.io.labels.word import Word2char
 from utils.config import load_config
 from utils.evaluation.edit_distance import compute_wer
 from utils.evaluation.resolving_unk import resolve_unk
@@ -63,7 +64,6 @@ def main():
     # Load dataset
     dataset = Dataset(
         data_save_path=args.data_save_path,
-        backend=params['backend'],
         input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
@@ -168,42 +168,23 @@ def main():
         ys_sub = [batch['ys_sub'][i] for i in perm_idx]
 
         for b in range(len(batch['xs'])):
-            ##############################
             # Reference
-            ##############################
             if dataset.is_test:
-                str_ref_original = ys[b]
+                str_ref = ys[b]
                 str_ref_sub = ys_sub[b]
                 # NOTE: transcript is seperated by space('_')
             else:
-                # Convert from list of index to string
-                str_ref_original = dataset.idx2word(ys[b])
+                str_ref = dataset.idx2word(ys[b])
                 str_ref_sub = dataset.idx2word(ys_sub[b])
 
-            ##############################
             # Hypothesis
-            ##############################
-            # Convert from list of index to string
             str_hyp = dataset.idx2word(best_hyps[b])
             str_hyp_sub = dataset.idx2char(best_hyps_sub[b])
             if model.model_type == 'hierarchical_attention' and args.joint_decoding is not None:
                 str_hyp_joint = dataset.idx2word(best_hyps_joint[b])
                 str_hyp_sub_joint = dataset.idx2char(best_hyps_sub_joint[b])
 
-            ##############################
-            # Post-proccessing
-            ##############################
-            str_ref = fix_trans(str_ref_original, glm)
-            str_ref_sub = fix_trans(str_ref_sub, glm)
-            str_hyp = fix_trans(str_hyp, glm)
-            str_hyp_sub = fix_trans(str_hyp_sub, glm)
-            if model.model_type == 'hierarchical_attention' and args.joint_decoding is not None:
-                str_hyp_joint = fix_trans(str_hyp_joint, glm)
-                str_hyp_sub_joint = fix_trans(str_hyp_sub_joint, glm)
-
-            ##############################
             # Resolving UNK
-            ##############################
             if 'OOV' in str_hyp and args.resolving_unk:
                 str_hyp_no_unk = resolve_unk(
                     str_hyp, best_hyps_sub[b], aw[b], aw_sub[b], dataset.idx2char)
@@ -218,52 +199,69 @@ def main():
             print('Hyp (sub)   : %s' % str_hyp_sub.replace('_', ' '))
             if 'OOV' in str_hyp and args.resolving_unk:
                 print('Hyp (no UNK): %s' % str_hyp_no_unk.replace('_', ' '))
+
+            # Post-proccessing
+            str_ref = fix_trans(str_ref, glm)
+            str_ref_sub = fix_trans(str_ref_sub, glm)
+            str_hyp = fix_trans(str_hyp, glm)
+            str_hyp_sub = fix_trans(str_hyp_sub, glm)
+
+            if 'OOV' in str_hyp and args.resolving_unk:
+                str_hyp_no_unk = fix_trans(str_hyp_no_unk, glm)
+
+            try:
+                wer, _, _, _ = compute_wer(
+                    ref=str_ref.split('_'),
+                    hyp=str_hyp.split('_'),
+                    normalize=True)
+                print('WER (main)  : %.3f %%' % (wer * 100))
+                wer_sub, _, _, _ = compute_wer(
+                    ref=str_ref_sub.split('_'),
+                    hyp=str_hyp_sub.split('_'),
+                    normalize=True)
+                print('WER (sub)   : %.3f %%' % (wer_sub * 100))
+                if 'OOV' in str_hyp and args.resolving_unk:
+                    wer_no_unk, _, _, _ = compute_wer(
+                        ref=str_ref.split('_'),
+                        hyp=str_hyp_no_unk.replace('*', '').split('_'),
+                        normalize=True)
+                    print('WER (no UNK): %.3f %%' % (wer_no_unk * 100))
+            except:
+                print('--- skipped ---')
+
             if model.model_type == 'hierarchical_attention' and args.joint_decoding is not None:
-                print('===== joint decoding =====')
+                print('===== joint decoding (%s) =====' % args.joint_decoding)
                 print('Hyp (main)  : %s' % str_hyp_joint.replace('_', ' '))
                 print('Hyp (sub)   : %s' % str_hyp_sub_joint.replace('_', ' '))
                 if 'OOV' in str_hyp_joint and args.resolving_unk:
                     print('Hyp (no UNK): %s' %
                           str_hyp_no_unk_joint.replace('_', ' '))
 
-            try:
-                wer, _, _, _ = compute_wer(
-                    ref=str_ref.split('_'),
-                    hyp=re.sub(r'(.*)_>(.*)', r'\1', str_hyp).split('_'),
-                    normalize=True)
-                print('WER (main)  : %.3f %%' % (wer * 100))
-                wer_sub, _, _, _ = compute_wer(
-                    ref=str_ref_sub.split('_'),
-                    hyp=re.sub(r'(.*)>(.*)', r'\1',
-                               str_hyp_sub).split('_'),
-                    normalize=True)
-                print('WER (sub)   : %.3f %%' % (wer_sub * 100))
-                if 'OOV' in str_hyp and args.resolving_unk:
-                    wer_no_unk, _, _, _ = compute_wer(
-                        ref=str_ref.split('_'),
-                        hyp=re.sub(r'(.*)_>(.*)', r'\1',
-                                   str_hyp_no_unk.replace('*', '')).split('_'),
-                        normalize=True)
-                    print('WER (no UNK): %.3f %%' % (wer_no_unk * 100))
+                # Post-proccessing
+                str_hyp_joint = fix_trans(str_hyp_joint, glm)
+                str_hyp_sub_joint = fix_trans(str_hyp_sub_joint, glm)
 
-                if model.model_type == 'hierarchical_attention' and args.joint_decoding is not None:
-                    print('===== joint decoding =====')
+                if 'OOV' in str_hyp_joint and args.resolving_unk:
+                    str_hyp_no_unk_joint = fix_trans(str_hyp_no_unk_joint, glm)
+
+                try:
                     wer_joint, _, _, _ = compute_wer(
                         ref=str_ref.split('_'),
-                        hyp=re.sub(r'(.*)_>(.*)', r'\1',
-                                   str_hyp_joint).split('_'),
+                        hyp=str_hyp_joint.split('_'),
                         normalize=True)
                     print('WER (main)  : %.3f %%' % (wer_joint * 100))
                     if 'OOV' in str_hyp_joint and args.resolving_unk:
                         wer_no_unk_joint, _, _, _ = compute_wer(
                             ref=str_ref.split('_'),
-                            hyp=re.sub(r'(.*)_>(.*)', r'\1',
-                                       str_hyp_no_unk_joint.replace('*', '')).split('_'),
+                            hyp=str_hyp_no_unk_joint.replace(
+                                '*', '').split('_'),
                             normalize=True)
                         print('WER (no UNK): %.3f %%' %
                               (wer_no_unk_joint * 100))
-            except:
-                print('--- skipped ---')
+                except:
+                    print('--- skipped ---')
+
+            print('\n')
 
         if is_new_epoch:
             break

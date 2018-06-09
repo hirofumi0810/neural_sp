@@ -48,7 +48,6 @@ def main():
     # Load dataset
     dataset = Dataset(
         data_save_path=args.data_save_path,
-        backend=params['backend'],
         input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
@@ -91,20 +90,14 @@ def main():
         ys = [batch['ys'][i] for i in perm_idx]
 
         for b in range(len(batch['xs'])):
-            ##############################
             # Reference
-            ##############################
             if dataset.is_test:
                 str_ref = ys[b]
                 # NOTE: transcript is seperated by space(' ')
             else:
-                # Convert from list of index to string
                 str_ref = dataset.idx2phone(ys[b])
 
-            ##############################
             # Hypothesis
-            ##############################
-            # Convert from list of index to string
             str_hyp = dataset.idx2phone(best_hyps[b])
 
             print('----- wav: %s -----' % batch['input_names'][b])

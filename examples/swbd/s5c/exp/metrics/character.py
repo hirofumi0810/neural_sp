@@ -78,26 +78,17 @@ def eval_char(models, eval_batch_size, dataset, beam_width,
             ys = [batch['ys_sub'][i] for i in perm_idx]
 
         for b in range(len(batch['xs'])):
-            ##############################
             # Reference
-            ##############################
             if dataset.is_test:
                 str_ref = ys[b]
                 # NOTE: transcript is seperated by space('_')
             else:
-                # Convert from list of index to string
                 str_ref = dataset.idx2char(ys[b])
 
-            ##############################
             # Hypothesis
-            ##############################
             str_hyp = dataset.idx2char(best_hyps[b])
-            str_hyp = re.sub(r'(.*)>(.*)', r'\1', str_hyp)
-            # NOTE: Trancate by the first <EOS>
 
-            ##############################
             # Post-proccessing
-            ##############################
             str_ref = fix_trans(str_ref, glm)
             str_hyp = fix_trans(str_hyp, glm)
 

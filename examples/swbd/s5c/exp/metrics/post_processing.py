@@ -36,8 +36,8 @@ def fix_trans(transcript, glm):
     # transcript = transcript.replace(HESITATION, '')
 
     # Remove garbage labels
-    transcript = re.sub(r'[<>]+', '', transcript)
-    transcript = transcript.replace('-', '')
+    transcript = re.sub(r'[>]+', '', transcript)
+    # transcript = transcript.replace('-', '')
     # transcript = transcript.replace('\'', '')
 
     # Convert acronyms to character

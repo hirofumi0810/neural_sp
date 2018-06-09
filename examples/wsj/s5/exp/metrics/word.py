@@ -128,45 +128,34 @@ def eval_word(models, dataset, eval_batch_size,
         ys = [batch['ys'][i] for i in perm_idx]
 
         for b in range(len(batch['xs'])):
-            ##############################
             # Reference
-            ##############################
             if dataset.is_test:
                 str_ref = ys[b]
                 # NOTE: transcript is seperated by space('_')
             else:
-                # Convert from list of index to string
                 str_ref = dataset.idx2word(ys[b])
 
-            ##############################
             # Hypothesis
-            ##############################
             str_hyp = dataset.idx2word(best_hyps[b])
-            if dataset.label_type == 'word':
-                str_hyp = re.sub(r'(.*)_>(.*)', r'\1', str_hyp)
-            else:
-                str_hyp = re.sub(r'(.*)>(.*)', r'\1', str_hyp)
-            # NOTE: Trancate by the first <EOS>
 
-            ##############################
             # Resolving UNK
-            ##############################
             if resolving_unk and 'OOV' in str_hyp:
                 str_hyp = resolve_unk(
                     str_hyp, best_hyps_sub[b], aw[b], aw_sub[b], dataset.idx2char)
                 str_hyp = str_hyp.replace('*', '')
 
-            ##############################
-            # Post-proccessing
-            ##############################
-            # Remove garbage labels
-            str_ref = re.sub(r'[@>]+', '', str_ref)
+            # Remove noisy labels
+            str_ref = re.sub(r'[@]+', '', str_ref)
             str_hyp = re.sub(r'[@>]+', '', str_hyp)
             # NOTE: @ means noise
 
             # Remove consecutive spaces
             str_ref = re.sub(r'[_]+', '_', str_ref)
             str_hyp = re.sub(r'[_]+', '_', str_hyp)
+            if str_ref[-1] == '_':
+                str_ref = str_ref[:-1]
+            if str_hyp[-1] == '_':
+                str_hyp = str_hyp[:-1]
 
             # Compute WER
             try:

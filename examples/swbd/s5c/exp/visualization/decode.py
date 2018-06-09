@@ -52,7 +52,6 @@ def main():
     # Load dataset
     dataset = Dataset(
         data_save_path=args.data_save_path,
-        backend=params['backend'],
         input_freq=params['input_freq'],
         use_delta=params['use_delta'],
         use_double_delta=params['use_double_delta'],
@@ -120,51 +119,40 @@ def main():
         ys = [batch['ys'][i] for i in perm_idx]
 
         for b in range(len(batch['xs'])):
-            ##############################
             # Reference
-            ##############################
             if dataset.is_test:
-                str_ref_original = ys[b]
+                str_ref = ys[b]
                 # NOTE: transcript is seperated by space('_')
             else:
-                # Convert from list of index to string
-                str_ref_original = map_fn(ys[b])
+                str_ref = map_fn(ys[b])
 
-            ##############################
             # Hypothesis
-            ##############################
-            # Convert from list of index to string
             str_hyp = map_fn(best_hyps[b])
-
-            ##############################
-            # Post-proccessing
-            ##############################
-            str_ref = fix_trans(str_ref_original, glm)
-            str_hyp = fix_trans(str_hyp, glm)
-
-            # if len(str_ref) == 0:
-            #     continue
 
             print('----- wav: %s -----' % batch['input_names'][b])
             print('Ref: %s' % str_ref.replace('_', ' '))
             print('Hyp: %s' % str_hyp.replace('_', ' '))
-            if model.model_type == 'attention' and model.ctc_loss_weight > 0:
-                str_hyp_ctc = map_fn(best_hyps_ctc[b])
-                print('Hyp (CTC): %s' % str_hyp_ctc)
+
+            # if len(str_ref) == 0:
+            #     continue
+
+            # Post-proccessing
+            str_ref = fix_trans(str_ref, glm)
+            str_hyp = fix_trans(str_hyp, glm)
+
+            # Remove noisy labels
+            str_hyp = str_hyp.replace('>', '')
+
+            # Remove consecutive spaces
+            str_hyp = re.sub(r'[_]+', '_', str_hyp)
+            if str_hyp[-1] == '_':
+                str_hyp = str_hyp[:-1]
 
             try:
-                # Compute WER
-                wer, _, _, _ = compute_wer(
-                    ref=str_ref.split('_'),
-                    hyp=re.sub(r'(.*)[_]*>(.*)', r'\1', str_hyp).split('_'),
-                    normalize=True)
+                wer, _, _, _ = compute_wer(ref=str_ref.split('_'),
+                                           hyp=str_hyp.split('_'),
+                                           normalize=True)
                 print('WER: %.3f %%' % (wer * 100))
-                if model.model_type == 'attention' and model.ctc_loss_weight > 0:
-                    wer_ctc, _, _, _ = compute_wer(
-                        ref=str_ref.split('_'),
-                        hyp=str_hyp_ctc.split('_'),
-                        normalize=True)
-                    print('WER (CTC): %.3f %%' % (wer_ctc * 100))
             except:
                 print('--- skipped ---')
 
