@@ -18,7 +18,7 @@ param:
   splice: 1
   num_stack: 1
   num_skip: 1
-  max_frame\num: 2000
+  max_frame_num: 2000
   min_frame_num: 40
   dynamic_batching: True
 
