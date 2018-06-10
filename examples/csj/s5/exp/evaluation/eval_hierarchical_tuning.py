@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Tuning hyperparameters for the trained hierarchical model (CSJ corpus)."""
+"""Tuning hyperparameters for the joint decoding of the hierarchical attention model (CSJ corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -33,11 +33,12 @@ parser.add_argument('--beam_width', type=int, default=1,
 parser.add_argument('--beam_width_sub', type=int, default=1,
                     help='the size of beam in the sub task')
 parser.add_argument('--length_penalty', type=float, default=0,
-                    help='length penalty in beam search decoding')
+                    help='length penalty in the beam search decoding')
 parser.add_argument('--coverage_penalty', type=float, default=0,
-                    help='coverage penalty in beam search decoding')
+                    help='coverage penalty in the beam search decoding')
 
-parser.add_argument('--resolving_unk', type=bool, default=False)
+from distutils.util import strtobool
+parser.add_argument('--resolving_unk', type=strtobool, default=False)
 parser.add_argument('--joint_decoding', choices=[None, 'onepass', 'rescoring'],
                     default=None)
 
@@ -65,7 +66,8 @@ def main():
         use_double_delta=params['use_double_delta'],
         data_type='eval1',
         data_size=params['data_size'],
-        label_type=params['label_type'], label_type_sub=params['label_type_sub'],
+        label_type=params['label_type'],
+        label_type_sub=params['label_type_sub'],
         batch_size=args.eval_batch_size,
         shuffle=False, tool=params['tool'])
     params['num_classes'] = dataset.num_classes
@@ -75,6 +77,7 @@ def main():
     model = load(model_type=params['model_type'],
                  params=params,
                  backend=params['backend'])
+    assert model.model_type == 'hierarchical_attention'
 
     # Restore the saved parameters
     epoch, _, _, _ = model.load_checkpoint(
@@ -83,11 +86,11 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
-    logger.info('beam width (main): %d\n' % args.beam_width)
-    logger.info('beam width (sub) : %d\n' % args.beam_width_sub)
+    logger.info('beam width (main): %d' % args.beam_width)
+    logger.info('beam width (sub) : %d' % args.beam_width_sub)
     logger.info('epoch: %d' % (epoch - 1))
-    logger.info('resolving_unk: %s\n' % str(args.resolving_unk))
-    logger.info('joint_decoding: %s\n' % str(args.joint_decoding))
+    logger.info('resolving_unk: %s' % str(args.resolving_unk))
+    logger.info('joint_decoding: %s' % str(args.joint_decoding))
 
     for score_sub_weight in [w * 0.1 for w in range(1, 11, 2)]:
         logger.info('score_sub_weight : %f' % score_sub_weight)

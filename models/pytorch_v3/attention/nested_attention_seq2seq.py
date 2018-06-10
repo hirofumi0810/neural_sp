@@ -163,6 +163,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         self.decoder_num_units_1 = decoder_num_units_sub
         self.decoder_num_layers_1 = decoder_num_layers_sub
         self.num_classes_sub = num_classes_sub + 2  # Add <EOS> class
+        # TODO: fix this
         self.sos_1 = num_classes_sub
         self.eos_1 = num_classes_sub
         # NOTE: <SOS> and <EOS> have the same index
@@ -405,6 +406,11 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             self._decode_ctc_greedy_np = GreedyDecoder(blank_index=0)
             self._decode_ctc_beam_np = BeamSearchDecoder(blank_index=0)
             # NOTE: index 0 is reserved for the blank class
+
+        ##################################################
+        # RNNLM
+        ##################################################
+        self.rnnlm_1 = None
 
         ##################################################
         # Initialize parameters
@@ -834,8 +840,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
     def decode(self, xs, beam_width, max_decode_len, min_decode_len=0,
                beam_width_sub=1, max_decode_len_sub=None, min_decode_len_sub=0,
-               length_penalty=0, coverage_penalty=0, task_index=0,
-               teacher_forcing=False, ys_sub=None):
+               length_penalty=0, coverage_penalty=0,
+               rnnlm_weight=0, rnnlm_weight_sub=0,
+               task_index=0, teacher_forcing=False, ys_sub=None):
         """Decoding in the inference stage.
         Args:
             xs (np.ndarray): A tensor of size `[B, T, input_size]`
@@ -845,8 +852,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             beam_width_sub (int): the size of beam in the sub task
             max_decode_len_sub (int): the maximum sequence length of tokens in the sub task
             min_decode_len_sub (int): the minimum sequence length of tokens in the sub task
-            length_penalty (float):
-            coverage_penalty (float):
+            length_penalty (float): length penalty in the beam search decoding
+            coverage_penalty (float): coverage penalty in the beam search decoding
+            rnnlm_weight (float): the weight of RNNLM score of the main task in the beam search decoding
+            rnnlm_weight_sub (float): the weight of RNNLM score of the sub task in the beam search decoding
             task_index (int): the index of a task
             teacher_forcing (bool):
             ys_sub (list):
@@ -924,6 +933,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     min_decode_len_sub=min_decode_len_sub,
                     length_penalty=length_penalty,
                     coverage_penalty=coverage_penalty,
+                    rnnlm_weight=rnnlm_weight,
+                    rnnlm_weight_sub=rnnlm_weight_sub,
                     teacher_forcing=teacher_forcing,
                     ys_sub=ys_in_sub)
 
@@ -938,8 +949,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     enc_out, x_lens, max_decode_len, task=1, dir=dir)
             else:
                 best_hyps, aw = self._decode_infer_beam(
-                    enc_out, x_lens, beam_width, max_decode_len,
-                    length_penalty, coverage_penalty, task=1, dir=dir)
+                    enc_out, x_lens, beam_width, max_decode_len, min_decode_len,
+                    length_penalty, coverage_penalty, rnnlm_weight, task=1, dir=dir)
         else:
             raise ValueError
 
@@ -1197,6 +1208,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                                  beam_width, max_decode_len, min_decode_len,
                                  beam_width_sub, max_decode_len_sub, min_decode_len_sub,
                                  length_penalty, coverage_penalty,
+                                 rnnlm_weight, rnnlm_weight_sub,
                                  teacher_forcing=False, ys_sub=None,
                                  reverse_backward=True):
         """Beam search decoding in the inference stage.
@@ -1213,8 +1225,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             beam_width_sub (int): the size of beam in the sub task
             max_decode_len_sub (int): the maximum sequence length of tokens in the sub task
             min_decode_len_sub (int): the minimum sequence length of tokens in the sub task
-            length_penalty (float): length penalty in beam search decoding
-            coverage_penalty (float): coverage penalty in beam search decoding
+            length_penalty (float): length penalty
+            coverage_penalty (float): coverage penalty
+            rnnlm_weight (float): the weight of RNNLM score of the main task
+            rnnlm_weight_sub (float): the weight of RNNLM score of the sub task
             teacher_forcing (bool):
             ys_sub (list):
             reverse_backward (bool):
@@ -1265,7 +1279,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                          'dec_outs': [dec_out_sub],  # NOTE: keep all outputs
                          'context_vec': context_vec_sub,
                          'aw_steps': [aw_step_sub],
-                         'logits_sub': []}]
+                         'rnnlm_state': None,
+                         'logits': []}]
             for t_sub in range(max_decode_len_sub + 1):
                 new_beam_sub = []
                 for i_beam in range(len(beam_sub)):
@@ -1339,6 +1354,24 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                                 aw_steps_sub > threshold, aw_steps_sub, torch.zeros_like(aw_steps_sub)).sum(0)
                             score_sub += cov_sum * coverage_penalty
 
+                        # Add RNNLM score
+                        if rnnlm_weight_sub > 0 and self.rnnlm_1 is not None:
+                            y_sub_rnnlm = Variable(enc_out.data.new(
+                                1, 1).fill_(beam_sub[i_beam]['hyp'][-1]).long(), volatile=True)
+                            y_sub_rnnlm = self.rnnlm_1.embed(y_sub_rnnlm)
+                            rnnlm_out_sub, rnnlm_state_sub = self.rnnlm_1.rnn(
+                                y_sub_rnnlm, hx=beam_sub[i_beam]['rnnlm_state'])
+                            rnnlm_logits_step_sub = self.rnnlm_1.output(
+                                rnnlm_out_sub)
+                            rnnlm_log_probs_sub = F.log_softmax(
+                                rnnlm_logits_step_sub.squeeze(1), dim=1)
+                            # assert log_probs_sub.size() == rnnlm_log_probs_sub.size()
+                            # TODO: fix this
+                            score_sub += rnnlm_log_probs_sub.data[0,
+                                                                  indices_sub_topk.data[0, k]] * rnnlm_weight_sub
+                        else:
+                            rnnlm_state_sub = None
+
                         new_beam_sub.append(
                             {'hyp': beam_sub[i_beam]['hyp'] + [indices_sub_topk[0, k].data[0]],
                              'score': score_sub,
@@ -1346,7 +1379,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                              'dec_outs': beam_sub[i_beam]['dec_outs'] + [dec_out_sub],
                              'context_vec': context_vec_sub,
                              'aw_steps': beam_sub[i_beam]['aw_steps'] + [aw_step_sub],
-                             'logits_sub': beam_sub[i_beam]['logits_sub'] + [logits_step_sub]})
+                             'rnnlm_state': rnnlm_state_sub,
+                             #  'rnnlm_state': copy.deepcopy(rnnlm_state_sub),
+                             'logits': beam_sub[i_beam]['logits'] + [logits_step_sub]})
 
                 if teacher_forcing and t_sub == ys_sub.size(1) - 1:
                     break
@@ -1383,7 +1418,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             dec_out_sub_seq += [torch.cat(complete_sub[0]
                                           ['dec_outs'][1:], dim=1)]
             aw_sub += [complete_sub[0]['aw_steps'][1:]]
-            logits_sub += [torch.cat(complete_sub[0]['logits_sub'], dim=1)]
+            logits_sub += [torch.cat(complete_sub[0]['logits'], dim=1)]
             best_hyps_sub += [np.array(complete_sub[0]['hyp'][1:])]
             y_lens_sub[b] = len(complete_sub[0]['hyp'][1:])
 
@@ -1419,7 +1454,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                      'context_vec_enc': context_vec_enc,
                      'context_vec_dec': context_vec_dec,
                      'aw_steps_enc': [aw_step_enc],
-                     'aw_steps_dec': [aw_step_dec]}]
+                     'aw_steps_dec': [aw_step_dec],
+                     'rnnlm_state': None}]
             for t in range(max_decode_len + 1):
                 new_beam = []
                 for i_beam in range(len(beam)):
@@ -1524,6 +1560,22 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                                 aw_steps > threshold, aw_steps, torch.zeros_like(aw_steps)).sum(0)
                             score += cov_sum * coverage_penalty
 
+                        # Add RNNLM score
+                        if rnnlm_weight > 0 and self.rnnlm_0 is not None:
+                            y_rnnlm = Variable(enc_out.data.new(
+                                1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
+                            y_rnnlm = self.rnnlm_0.embed(y_rnnlm)
+                            rnnlm_out, rnnlm_state = self.rnnlm_0.rnn(
+                                y_rnnlm, hx=beam[i_beam]['rnnlm_state'])
+                            rnnlm_logits_step = self.rnnlm_0.output(rnnlm_out)
+                            rnnlm_log_probs = F.log_softmax(
+                                rnnlm_logits_step.squeeze(1), dim=1)
+                            assert log_probs.size() == rnnlm_log_probs.size()
+                            score += rnnlm_log_probs.data[0,
+                                                          indices_topk.data[0, k]] * rnnlm_weight
+                        else:
+                            rnnlm_state = None
+
                         new_beam.append(
                             {'hyp': beam[i_beam]['hyp'] + [indices_topk[0, k].data[0]],
                              'score': score,
@@ -1532,7 +1584,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                              'context_vec_enc': context_vec_enc,
                              'context_vec_dec': context_vec_dec,
                              'aw_steps_enc': beam[i_beam]['aw_steps_enc'] + [aw_step_enc],
-                             'aw_steps_dec': beam[i_beam]['aw_steps_dec'] + [aw_step_dec]})
+                             'aw_steps_dec': beam[i_beam]['aw_steps_dec'] + [aw_step_dec],
+                             'rnnlm_state': rnnlm_state})
 
                 new_beam = sorted(
                     new_beam, key=lambda x: x['score'], reverse=True)

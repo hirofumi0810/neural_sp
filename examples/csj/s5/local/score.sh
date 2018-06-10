@@ -19,6 +19,9 @@ gpu_index=$2
 beam_width=4
 length_penalty=0
 coverage_penalty=0
+rnnlm_weight=0.3
+# rnnlm_path=
+rnnlm_path="/n/sd8/inaguma/result/csj/pytorch/rnnlm/word/aps_other/lstm1024H1Lemb128_adam_lr1e-3_drophidden0.2out0.2emb0.2"
 
 CUDA_VISIBLE_DEVICES=$gpu_index \
 $PYTHON exp/evaluation/eval.py \
@@ -28,4 +31,6 @@ $PYTHON exp/evaluation/eval.py \
   --eval_batch_size 1 \
   --beam_width $beam_width \
   --length_penalty $length_penalty \
-  --coverage_penalty $coverage_penalty
+  --coverage_penalty $coverage_penalty \
+  --rnnlm_weight $rnnlm_weight \
+  --rnnlm_path $rnnlm_path

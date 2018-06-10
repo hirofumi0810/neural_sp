@@ -16,7 +16,8 @@ from utils.evaluation.edit_distance import compute_wer
 
 def eval_char(models, dataset, eval_batch_size, beam_width,
               max_decode_len, min_decode_len=1,
-              length_penalty=0, coverage_penalty=0, progressbar=False):
+              length_penalty=0, coverage_penalty=0, rnnlm_weight=0,
+              progressbar=False):
     """Evaluate trained model by Character Error Rate.
     Args:
         models (list): the models to evaluate
@@ -25,8 +26,9 @@ def eval_char(models, dataset, eval_batch_size, beam_width,
         beam_width: (int): the size of beam
         max_decode_len (int): the maximum sequence length to emit in seq2seq
         min_decode_len (int): the minimum sequence length to emit in seq2seq
-        length_penalty (float): length penalty in beam search decoding
-        coverage_penalty (float): coverage penalty in beam search decoding
+        length_penalty (float): length penalty in the beam search decoding
+        coverage_penalty (float): coverage penalty in the beam search decoding
+        rnnlm_weight (float): the weight of RNNLM score in the beam search decoding
         progressbar (bool): if True, visualize the progressbar
         temperature (int):
     Returns:
@@ -55,8 +57,10 @@ def eval_char(models, dataset, eval_batch_size, beam_width,
                 batch['xs'],
                 beam_width=beam_width,
                 max_decode_len=max_decode_len,
+                min_decode_len=min_decode_len,
                 length_penalty=length_penalty,
-                coverage_penalty=coverage_penalty)
+                coverage_penalty=coverage_penalty,
+                rnnlm_weight=rnnlm_weight)
             ys = [batch['ys'][i] for i in perm_idx]
             task_index = 0
         else:
@@ -64,8 +68,10 @@ def eval_char(models, dataset, eval_batch_size, beam_width,
                 batch['xs'],
                 beam_width=beam_width,
                 max_decode_len=max_decode_len,
+                min_decode_len=min_decode_len,
                 length_penalty=length_penalty,
                 coverage_penalty=coverage_penalty,
+                rnnlm_weight=rnnlm_weight,
                 task_index=1)
             ys = [batch['ys_sub'][i] for i in perm_idx]
             task_index = 1

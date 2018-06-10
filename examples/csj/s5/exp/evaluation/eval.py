@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Evaluate the trained model (CSJ corpus)."""
+"""Evaluate the ASR model (CSJ corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -34,6 +34,10 @@ parser.add_argument('--length_penalty', type=float, default=0,
                     help='length penalty in beam search decoding')
 parser.add_argument('--coverage_penalty', type=float, default=0,
                     help='coverage penalty in beam search decoding')
+parser.add_argument('--rnnlm_weight', type=float, default=0,
+                    help='the weight of RNNLM score in beam search decoding')
+parser.add_argument('--rnnlm_path', default=None, type=str, nargs='?',
+                    help='path to the RMMLM')
 
 MAX_DECODE_LEN_WORD = 100
 MIN_DECODE_LEN_WORD = 1
@@ -68,7 +72,7 @@ def main():
         if i == 0:
             params['num_classes'] = dataset.num_classes
 
-            # Load model
+            # Load the ASR model
             model = load(model_type=params['model_type'],
                          params=params,
                          backend=params['backend'])
@@ -77,10 +81,38 @@ def main():
             epoch, _, _, _ = model.load_checkpoint(
                 save_path=args.model_path, epoch=args.epoch)
 
+            if args.rnnlm_path is not None and args.rnnlm_weight > 0:
+                # Load a config file (.yml)
+                params_rnnlm = load_config(
+                    join(args.rnnlm_path, 'config.yml'), is_eval=True)
+
+                assert params['label_type'] == params_rnnlm['label_type']
+                params_rnnlm['num_classes'] = dataset.num_classes
+
+                # Load RNLM
+                rnnlm = load(model_type=params_rnnlm['model_type'],
+                             params=params_rnnlm,
+                             backend=params_rnnlm['backend'])
+
+                # Restore the saved parameters
+                rnnlm.load_checkpoint(save_path=args.rnnlm_path, epoch=-1)
+                # NOTE: load the best model
+
+                # NOTE: after load the rnn params are not a continuous chunk of memory
+                # this makes them a continuous chunk, and will speed up forward pass
+                rnnlm.rnn.flatten_parameters()
+                # https://github.com/pytorch/examples/blob/master/word_language_model/main.py
+
+                # Resister to the ASR model
+                model.rnnlm_0 = rnnlm
+
             # GPU setting
             model.set_cuda(deterministic=False, benchmark=True)
 
             logger.info('beam width: %d' % args.beam_width)
+            if args.rnnlm_path is not None:
+                logger.info('RNNLM path: %s' % args.rnnlm_path)
+            logger.info('RNNLM weight: %.3f' % args.rnnlm_weight)
             logger.info('epoch: %d' % (epoch - 1))
 
         if params['label_type'] == 'word':
@@ -93,6 +125,7 @@ def main():
                 min_decode_len=MIN_DECODE_LEN_WORD,
                 length_penalty=args.length_penalty,
                 coverage_penalty=args.coverage_penalty,
+                rnnlm_weight=args.rnnlm_weight,
                 progressbar=True)
             wer_mean += wer
             logger.info('  WER (%s): %.3f %%' % (data_type, (wer * 100)))
@@ -107,6 +140,7 @@ def main():
                 min_decode_len=MIN_DECODE_LEN_CHAR,
                 length_penalty=args.length_penalty,
                 coverage_penalty=args.coverage_penalty,
+                rnnlm_weight=args.rnnlm_weight,
                 progressbar=True)
             wer_mean += wer
             cer_mean += cer

@@ -413,8 +413,9 @@ class CTC(ModelBase):
         else:
             return logits, x_lens
 
-    def decode(self, xs, beam_width, max_decode_len=None,
-               min_decode_len=0, length_penalty=0, coverage_penalty=0, task_index=0):
+    def decode(self, xs, beam_width, max_decode_len=None, min_decode_len=0,
+               length_penalty=0, coverage_penalty=0, rnnlm_weight=0,
+               task_index=0):
         """CTC decoding.
         Args:
             xs (list): A list of length `[B]`, which contains arrays of size `[T, input_size]`
@@ -423,6 +424,7 @@ class CTC(ModelBase):
             min_decode_len: not used
             length_penalty: not used
             coverage_penalty: not used
+            rnnlm_weight (float): the weight of RNNLM score in the beam search decoding
             task_index (bool): the index of a task
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
@@ -465,6 +467,9 @@ class CTC(ModelBase):
                 raise NotImplementedError
         else:
             logits, x_lens = self._encode(xs, x_lens)
+
+        if rnnlm_weight > 0:
+            raise NotImplementedError
 
         if beam_width == 1:
             best_hyps = self._decode_greedy_np(var2np(logits), x_lens)

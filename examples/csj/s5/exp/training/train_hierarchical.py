@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Train the hierarchical model (CSJ corpus)."""
+"""Train the hierarchical ASR model (CSJ corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division

@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Decode the model's outputs (CSJ corpus)."""
+"""Generate texts by the ASR model (CSJ corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -30,9 +30,13 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
 parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam')
 parser.add_argument('--length_penalty', type=float, default=0,
-                    help='length penalty in beam search decoding')
+                    help='length penalty in the beam search decoding')
 parser.add_argument('--coverage_penalty', type=float, default=0,
-                    help='coverage penalty in beam search decoding')
+                    help='coverage penalty in the beam search decoding')
+parser.add_argument('--rnnlm_weight', type=float, default=0,
+                    help='the weight of RNNLM score in the beam search decoding')
+parser.add_argument('--rnnlm_path', default=None, type=str,  args='?',
+                    help='path to the RMMLM')
 
 MAX_DECODE_LEN_WORD = 100
 MIN_DECODE_LEN_WORD = 1
@@ -63,13 +67,38 @@ def main():
     params['num_classes'] = dataset.num_classes
     params['num_classes_sub'] = dataset.num_classes
 
-    # Load model
+    # Load the ASR model
     model = load(model_type=params['model_type'],
                  params=params,
                  backend=params['backend'])
 
     # Restore the saved parameters
     model.load_checkpoint(save_path=args.model_path, epoch=args.epoch)
+
+    if args.rnnlm_path is not None and args.rnnlm_weight > 0:
+        # Load a config file (.yml)
+        params_rnnlm = load_config(
+            join(args.rnnlm_path, 'config.yml'), is_eval=True)
+
+        assert params['label_type'] == params_rnnlm['label_type']
+        params_rnnlm['num_classes'] = dataset.num_classes
+
+        # Load RNLM
+        rnnlm = load(model_type=params_rnnlm['model_type'],
+                     params=params_rnnlm,
+                     backend=params_rnnlm['backend'])
+
+        # Restore the saved parameters
+        rnnlm.load_checkpoint(save_path=args.rnnlm_path, epoch=-1)
+        # NOTE: load the best model
+
+        # NOTE: after load the rnn params are not a continuous chunk of memory
+        # this makes them a continuous chunk, and will speed up forward pass
+        rnnlm.rnn.flatten_parameters()
+        # https://github.com/pytorch/examples/blob/master/word_language_model/main.py
+
+        # Resister to the ASR model
+        model.rnnlm_0 = rnnlm
 
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
@@ -96,7 +125,8 @@ def main():
                 max_decode_len=max_decode_len,
                 max_decode_len_sub=max_decode_len,
                 length_penalty=args.length_penalty,
-                coverage_penalty=args.coverage_penalty)
+                coverage_penalty=args.coverage_penalty,
+                rnnlm_weight=args.rnnlm_weight)
         else:
             best_hyps, _, perm_idx = model.decode(
                 batch['xs'],
@@ -104,11 +134,8 @@ def main():
                 max_decode_len=max_decode_len,
                 min_decode_len=min_decode_len,
                 length_penalty=args.length_penalty,
-                coverage_penalty=args.coverage_penalty)
-
-        if model.model_type == 'attention' and model.ctc_loss_weight > 0:
-            best_hyps_ctc, perm_idx = model.decode_ctc(
-                batch['xs'], beam_width=args.beam_width)
+                coverage_penalty=args.coverage_penalty,
+                rnnlm_weight=args.rnnlm_weight)
 
         ys = [batch['ys'][i] for i in perm_idx]
 

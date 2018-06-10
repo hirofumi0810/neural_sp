@@ -19,6 +19,9 @@ gpu_index=$2
 beam_width=4
 length_penalty=0
 coverage_penalty=0
+rnnlm_weight=0.3
+# rnnlm_path=
+rnnlm_path="/n/sd8/inaguma/result/csj/pytorch/rnnlm/word/aps_other/lstm1024H1Lemb128_adam_lr1e-3_drophidden0.2out0.2emb0.2"
 joint_decoding=onepass
 # joint_decoding=rescoring
 score_sub_weight=0.3
@@ -33,5 +36,7 @@ $PYTHON exp/visualization/plot_hierarchical_attention_weights.py \
   --beam_width_sub 1 \
   --length_penalty $length_penalty \
   --coverage_penalty $coverage_penalty \
+  --rnnlm_weight $rnnlm_weight \
+  --rnnlm_path $rnnlm_path \
   --joint_decoding $joint_decoding \
   --score_sub_weight $score_sub_weight

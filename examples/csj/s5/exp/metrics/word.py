@@ -20,6 +20,7 @@ def eval_word(models, dataset, eval_batch_size,
               beam_width, max_decode_len, min_decode_len=1,
               beam_width_sub=1, max_decode_len_sub=200, min_decode_len_sub=1,
               length_penalty=0, coverage_penalty=0,
+              rnnlm_weight=0, rnnlm_weight_sub=0,
               progressbar=False, resolving_unk=False, a2c_oracle=False,
               joint_decoding=None, score_sub_weight=0):
     """Evaluate trained model by Word Error Rate.
@@ -34,8 +35,10 @@ def eval_word(models, dataset, eval_batch_size,
             This is used for the nested attention
         max_decode_len_sub (int): the maximum sequence length of tokens in the sub task
         min_decode_len_sub (int): the minimum sequence length of tokens in the sub task
-        length_penalty (float): length penalty in beam search decoding
-        coverage_penalty (float): coverage penalty in beam search decoding
+        length_penalty (float): length penalty in the beam search decoding
+        coverage_penalty (float): coverage penalty in the beam search decoding
+        rnnlm_weight (float): the weight of RNNLM score of the main task in the beam search decoding
+        rnnlm_weight_sub (float): the weight of RNNLM score of the sub task in the beam search decoding
         progressbar (bool): if True, visualize the progressbar
         resolving_unk (bool):
         a2c_oracle (bool):
@@ -92,6 +95,8 @@ def eval_word(models, dataset, eval_batch_size,
                 min_decode_len_sub=min_decode_len_sub,
                 length_penalty=length_penalty,
                 coverage_penalty=coverage_penalty,
+                rnnlm_weight=rnnlm_weight,
+                rnnlm_weight_sub=rnnlm_weight_sub,
                 teacher_forcing=a2c_oracle,
                 ys_sub=ys_sub)
         elif model.model_type == 'hierarchical_attention' and joint_decoding is not None:
@@ -102,6 +107,7 @@ def eval_word(models, dataset, eval_batch_size,
                 min_decode_len=min_decode_len,
                 length_penalty=length_penalty,
                 coverage_penalty=coverage_penalty,
+                rnnlm_weight=rnnlm_weight,
                 joint_decoding=joint_decoding,
                 space_index=dataset.char2idx('_')[0],
                 oov_index=dataset.word2idx('OOV')[0],
@@ -116,7 +122,8 @@ def eval_word(models, dataset, eval_batch_size,
                 max_decode_len=max_decode_len,
                 min_decode_len=min_decode_len,
                 length_penalty=length_penalty,
-                coverage_penalty=coverage_penalty)
+                coverage_penalty=coverage_penalty,
+                rnnlm_weight=rnnlm_weight)
             if resolving_unk:
                 best_hyps_sub, aw_sub, _ = model.decode(
                     batch['xs'],
@@ -125,6 +132,7 @@ def eval_word(models, dataset, eval_batch_size,
                     min_decode_len=min_decode_len_sub,
                     length_penalty=length_penalty,
                     coverage_penalty=coverage_penalty,
+                    rnnlm_weight_sub=rnnlm_weight_sub,
                     task_index=1)
 
         ys = [batch['ys'][i] for i in perm_idx]

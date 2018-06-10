@@ -235,9 +235,9 @@ class AttentionSeq2seq(ModelBase):
         # Setting for MTL
         self.ctc_loss_weight = ctc_loss_weight
 
-        ##############################
+        ##################################################
         # Encoder
-        ##############################
+        ##################################################
         if encoder_type in ['lstm', 'gru', 'rnn']:
             self.encoder = load(encoder_type=encoder_type)(
                 input_size=input_size,
@@ -312,9 +312,9 @@ class AttentionSeq2seq(ModelBase):
                 setattr(self, 'W_dec_init_0_' + dir, LinearND(
                     self.encoder_num_units, decoder_num_units))
 
-            ##############################
+            ##################################################
             # Decoder
-            ##############################
+            ##################################################
             if decoding_order == 'conditional':
                 setattr(self, 'decoder_first_0_' + dir, RNNDecoder(
                     input_size=embedding_dim,
@@ -343,9 +343,9 @@ class AttentionSeq2seq(ModelBase):
                     residual=decoder_residual,
                     dense_residual=decoder_dense_residual))
 
-            ##############################
+            ##################################################
             # Attention layer
-            ##############################
+            ##################################################
             setattr(self, 'attend_0_' + dir, AttentionMechanism(
                 encoder_num_units=self.encoder_num_units,
                 decoder_num_units=decoder_num_units,
@@ -357,9 +357,9 @@ class AttentionSeq2seq(ModelBase):
                 kernel_size=attention_conv_width,
                 num_heads=num_heads))
 
-            ##############################
+            ##################################################
             # Output layer
-            ##############################
+            ##################################################
             setattr(self, 'W_d_0_' + dir, LinearND(
                 decoder_num_units, self.bottleneck_dim,
                 dropout=dropout_decoder))
@@ -369,9 +369,9 @@ class AttentionSeq2seq(ModelBase):
             setattr(self, 'fc_0_' + dir,
                     LinearND(self.bottleneck_dim, self.num_classes))
 
-        ##############################
+        ##################################################
         # Embedding
-        ##############################
+        ##################################################
         if label_smoothing_prob > 0:
             self.embed_0 = Embedding_LS(
                 num_classes=self.num_classes,
@@ -384,9 +384,9 @@ class AttentionSeq2seq(ModelBase):
                 embedding_dim=embedding_dim,
                 dropout=dropout_embedding)
 
-        ##############################
+        ##################################################
         # CTC
-        ##############################
+        ##################################################
         if ctc_loss_weight > 0:
             if self.is_bridge:
                 self.fc_ctc_0 = LinearND(
@@ -399,6 +399,11 @@ class AttentionSeq2seq(ModelBase):
             self._decode_ctc_greedy_np = GreedyDecoder(blank_index=0)
             self._decode_ctc_beam_np = BeamSearchDecoder(blank_index=0)
             # TODO: set space index
+
+        ##################################################
+        # RNNLM
+        ##################################################
+        self.rnnlm_0 = None
 
         ##################################################
         # Initialize parameters
@@ -466,34 +471,32 @@ class AttentionSeq2seq(ModelBase):
             xs = [do_splice(x, self.splice, self.num_stack) for x in xs]
 
         # Wrap by Variable
-        xs = [np2var(x, self.device_id).float() for x in xs]
         x_lens = [len(x) for x in xs]
-        ys_fwd = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()
-                  for y in ys]
+        xs = [np2var(x, self.device_id).float() for x in xs]
+        if self.fwd_weight_0 > 0 or self.ctc_loss_weight > 0:
+            ys_fwd = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()
+                      for y in ys]
+        if self.bwd_weight_0 > 0:
+            ys_bwd = [np2var(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long()
+                      for y in ys]
+            # NOTE: reverse the order
 
         # Encode acoustic features
         xs, x_lens = self._encode(xs, x_lens)
 
         ##################################################
-        # Compute loss for the forward decoder
+        # Compute XE loss for the forward decoder
         ##################################################
         if self.fwd_weight_0 > 0:
-            # Compute XE loss
             loss = self.compute_xe_loss(
                 xs, ys_fwd, x_lens, task=0, dir='fwd') * self.fwd_weight_0
         else:
             loss = Variable(xs.data.new(1,).fill_(0.))
 
         ##################################################
-        # Compute loss for the backward decoder
+        # Compute XE loss for the backward decoder
         ##################################################
         if self.bwd_weight_0 > 0:
-            # Wrap by Variable
-            ys_bwd = [np2var(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long()
-                      for y in ys]
-            # NOTE: reverse the order
-
-            # Compute XE loss
             loss += self.compute_xe_loss(
                 xs, ys_bwd, x_lens, task=0, dir='bwd') * self.bwd_weight_0
 
@@ -832,16 +835,17 @@ class AttentionSeq2seq(ModelBase):
         return dec_state, dec_out
 
     def decode(self, xs, beam_width, max_decode_len, min_decode_len=0,
-               length_penalty=0, coverage_penalty=0, task_index=0,
-               resolving_unk=False):
+               length_penalty=0, coverage_penalty=0, rnnlm_weight=0,
+               task_index=0, resolving_unk=False):
         """Decoding in the inference stage.
         Args:
             xs (list): A list of length `[B]`, which contains arrays of size `[T, input_size]`
             beam_width (int): the size of beam
             max_decode_len (int): the maximum sequence length of tokens
             min_decode_len (int): the minimum sequence length of tokens
-            length_penalty (float): length penalty in beam search decoding
-            coverage_penalty (float): coverage penalty in beam search decoding
+            length_penalty (float): length penalty in the beam search decoding
+            coverage_penalty (float): coverage penalty in the beam search decoding
+            rnnlm_weight (float): the weight of RNNLM score in the beam search decoding
             task_index (int): not used (to make compatible)
             resolving_unk (bool): not used (to make compatible)
         Returns:
@@ -885,7 +889,7 @@ class AttentionSeq2seq(ModelBase):
         else:
             best_hyps, aw = self._decode_infer_beam(
                 enc_out, x_lens, beam_width, max_decode_len, min_decode_len,
-                length_penalty, coverage_penalty, task=0, dir=dir)
+                length_penalty, coverage_penalty, rnnlm_weight, task=0, dir=dir)
 
         return best_hyps, aw, perm_idx
 
@@ -894,7 +898,7 @@ class AttentionSeq2seq(ModelBase):
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T, encoder_num_units]`
-            x_lens (torch.autograd.Variable, int): A tensor of size `[B]`
+            x_lens (list): A list of length `[B]`
             max_decode_len (int): the maximum sequence length of tokens
             task (int): the index of a task
             dir (str): fwd or bwd
@@ -1019,7 +1023,8 @@ class AttentionSeq2seq(ModelBase):
 
     def _decode_infer_beam(self, enc_out, x_lens, beam_width,
                            max_decode_len, min_decode_len,
-                           length_penalty, coverage_penalty, task, dir):
+                           length_penalty, coverage_penalty, rnnlm_weight,
+                           task, dir):
         """Beam search decoding in the inference stage.
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
@@ -1028,8 +1033,9 @@ class AttentionSeq2seq(ModelBase):
             beam_width (int): the size of beam
             max_decode_len (int): the maximum sequence length of tokens
             min_decode_len (int): the minimum sequence length of tokens
-            length_penalty (float): length penalty in beam search decoding
-            coverage_penalty (float): coverage penalty in beam search decoding
+            length_penalty (float): length penalty
+            coverage_penalty (float): coverage penalty
+            rnnlm_weight (float): the weight of RNNLM score
             task (int): the index of a task
             dir (str): fwd or bwd
         Returns:
@@ -1069,7 +1075,8 @@ class AttentionSeq2seq(ModelBase):
                      'dec_state': dec_state,
                      'dec_out': dec_out,
                      'context_vec': context_vec,
-                     'aw_steps': [aw_step]}]
+                     'aw_steps': [aw_step],
+                     'rnnlm_state': None}]
             for t in range(max_decode_len + 1):
                 new_beam = []
                 for i_beam in range(len(beam)):
@@ -1170,13 +1177,33 @@ class AttentionSeq2seq(ModelBase):
                                 aw_steps > threshold, aw_steps, torch.zeros_like(aw_steps)).sum(0)
                             score += cov_sum * coverage_penalty
 
+                        # Add RNNLM score
+                        if rnnlm_weight > 0 and getattr(self, 'rnnlm_' + str(task)) is not None:
+                            y_rnnlm = Variable(enc_out.data.new(
+                                1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
+                            y_rnnlm = getattr(
+                                self, 'rnnlm_' + str(task)).embed(y_rnnlm)
+                            rnnlm_out, rnnlm_state = getattr(self, 'rnnlm_' + str(task)).rnn(
+                                y_rnnlm, hx=beam[i_beam]['rnnlm_state'])
+                            rnnlm_logits_step = getattr(
+                                self, 'rnnlm_' + str(task)).output(rnnlm_out)
+                            rnnlm_log_probs = F.log_softmax(
+                                rnnlm_logits_step.squeeze(1), dim=1)
+                            # assert log_probs.size() == rnnlm_log_probs.size()
+                            # TODO: turn on after fixing nested attention
+                            score += rnnlm_log_probs.data[0,
+                                                          indices_topk.data[0, k]] * rnnlm_weight
+                        else:
+                            rnnlm_state = None
+
                         new_beam.append(
                             {'hyp': beam[i_beam]['hyp'] + [indices_topk.data[0, k]],
                              'score': score,
                              'dec_state': copy.deepcopy(dec_state),
                              'dec_out': dec_out,
                              'context_vec': context_vec,
-                             'aw_steps': beam[i_beam]['aw_steps'] + [aw_step]})
+                             'aw_steps': beam[i_beam]['aw_steps'] + [aw_step],
+                             'rnnlm_state': rnnlm_state})
 
                 new_beam = sorted(
                     new_beam, key=lambda x: x['score'], reverse=True)

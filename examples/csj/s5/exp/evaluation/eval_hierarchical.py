@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Evaluate the trained hierarchical model (CSJ corpus)."""
+"""Evaluate the hierarchical ASR model (CSJ corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -33,12 +33,21 @@ parser.add_argument('--beam_width', type=int, default=1,
 parser.add_argument('--beam_width_sub', type=int, default=1,
                     help='the size of beam in the sub task')
 parser.add_argument('--length_penalty', type=float, default=0,
-                    help='length penalty in beam search decoding')
+                    help='length penalty in the beam search decoding')
 parser.add_argument('--coverage_penalty', type=float, default=0,
-                    help='coverage penalty in beam search decoding')
+                    help='coverage penalty in the beam search decoding')
+parser.add_argument('--rnnlm_weight', type=float, default=0,
+                    help='the weight of RNNLM score of the main task in the beam search decoding')
+parser.add_argument('--rnnlm_weight_sub', type=float, default=0,
+                    help='the weight of RNNLM score of the sub task in the beam search decoding')
+parser.add_argument('--rnnlm_path', default=None, type=str, nargs='?',
+                    help='path to the RMMLM of the main task')
+parser.add_argument('--rnnlm_path_sub', default=None, type=str, nargs='?',
+                    help='path to the RMMLM of the sub task')
 
-parser.add_argument('--resolving_unk', type=bool, default=False)
-parser.add_argument('--a2c_oracle', type=bool, default=False)
+from distutils.util import strtobool
+parser.add_argument('--resolving_unk', type=strtobool, default=False)
+parser.add_argument('--a2c_oracle', type=strtobool, default=False)
 parser.add_argument('--joint_decoding', choices=[None, 'onepass', 'rescoring'],
                     default=None)
 parser.add_argument('--score_sub_weight', type=float, default=0)
@@ -69,15 +78,16 @@ def main():
             use_double_delta=params['use_double_delta'],
             data_type=data_type,
             data_size=params['data_size'],
-            label_type=params['label_type'], label_type_sub=params['label_type_sub'],
-            batch_size=args.eval_batch_size, s
+            label_type=params['label_type'],
+            label_type_sub=params['label_type_sub'],
+            batch_size=args.eval_batch_size,
             shuffle=False, tool=params['tool'])
 
         if i == 0:
             params['num_classes'] = dataset.num_classes
             params['num_classes_sub'] = dataset.num_classes_sub
 
-            # Load model
+            # Load the ASR model
             model = load(model_type=params['model_type'],
                          params=params,
                          backend=params['backend'])
@@ -86,15 +96,67 @@ def main():
             epoch, _, _, _ = model.load_checkpoint(
                 save_path=args.model_path, epoch=args.epoch)
 
+            if args.rnnlm_path is not None and args.rnnlm_weight > 0:
+                # Load a config file (.yml)
+                params_rnnlm = load_config(
+                    join(args.rnnlm_path, 'config.yml'), is_eval=True)
+
+                assert params['label_type'] == params_rnnlm['label_type']
+                params_rnnlm['num_classes'] = dataset.num_classes
+
+                # Load RNLM
+                rnnlm = load(model_type=params_rnnlm['model_type'],
+                             params=params_rnnlm,
+                             backend=params_rnnlm['backend'])
+
+                # Restore the saved parameters
+                rnnlm.load_checkpoint(save_path=args.rnnlm_path, epoch=-1)
+                # NOTE: load the best model
+
+                # NOTE: after load the rnn params are not a continuous chunk of memory
+                # this makes them a continuous chunk, and will speed up forward pass
+                rnnlm.rnn.flatten_parameters()
+                # https://github.com/pytorch/examples/blob/master/word_language_model/main.py
+
+                # Resister to the ASR model
+                model.rnnlm_0 = rnnlm
+
+            if args.rnnlm_path_sub is not None and args.rnnlm_weight_sub > 0:
+                # Load a config file (.yml)
+                params_rnnlm_sub = load_config(
+                    join(args.rnnlm_path_sub, 'config.yml'), is_eval=True)
+
+                assert params['label_type_sub'] == params_rnnlm_sub['label_type']
+                params_rnnlm_sub['num_classes'] = dataset.num_classes_sub
+
+                # Load RNLM
+                rnnlm_sub = load(model_type=params_rnnlm_sub['model_type'],
+                                 params=params_rnnlm_sub,
+                                 backend=params_rnnlm_sub['backend'])
+
+                # Restore the saved parameters
+                rnnlm_sub.load_checkpoint(
+                    save_path=args.rnnlm_path_sub, epoch=-1)
+                rnnlm_sub.rnn.flatten_parameters()
+
+                # Resister to the ASR model
+                model.rnnlm_1 = rnnlm_sub
+
             # GPU setting
             model.set_cuda(deterministic=False, benchmark=True)
 
-            logger.info('beam width (main): %d\n' % args.beam_width)
-            logger.info('beam width (sub) : %d\n' % args.beam_width_sub)
+            logger.info('beam width (main): %d' % args.beam_width)
+            if args.rnnlm_path is not None:
+                logger.info('RNNLM path (main): %s' % args.rnnlm_path)
+            logger.info('RNNLM weight (main): %.3f' % args.rnnlm_weight)
+            logger.info('beam width (sub) : %d' % args.beam_width_sub)
+            if args.rnnlm_path_sub is not None:
+                logger.info('RNNLM path (sub): %s' % args.rnnlm_path_sub)
+            logger.info('RNNLM weight (sub): %.3f' % args.rnnlm_weight_sub)
             logger.info('epoch: %d' % (epoch - 1))
-            logger.info('a2c oracle: %s\n' % str(args.a2c_oracle))
-            logger.info('resolving_unk: %s\n' % str(args.resolving_unk))
-            logger.info('joint_decoding: %s\n' % str(args.joint_decoding))
+            logger.info('a2c oracle: %s' % str(args.a2c_oracle))
+            logger.info('resolving_unk: %s' % str(args.resolving_unk))
+            logger.info('joint_decoding: %s' % str(args.joint_decoding))
             logger.info('score_sub_weight : %f' % args.score_sub_weight)
 
         wer, df = eval_word(
@@ -109,6 +171,8 @@ def main():
             min_decode_len_sub=MIN_DECODE_LEN_CHAR,
             length_penalty=args.length_penalty,
             coverage_penalty=args.coverage_penalty,
+            rnnlm_weight=args.rnnlm_weight,
+            rnnlm_weight_sub=args.rnnlm_weight_sub,
             progressbar=True,
             resolving_unk=args.resolving_unk,
             a2c_oracle=args.a2c_oracle,
@@ -127,6 +191,7 @@ def main():
             min_decode_len=MIN_DECODE_LEN_CHAR,
             length_penalty=args.length_penalty,
             coverage_penalty=args.coverage_penalty,
+            rnnlm_weight=args.rnnlm_weight_sub,
             progressbar=True)
         wer_sub_mean += wer_sub
         cer_sub_mean += cer_sub
