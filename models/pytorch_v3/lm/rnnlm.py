@@ -7,14 +7,16 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from models.pytorch_v3.base import ModelBase
 from models.pytorch_v3.linear import LinearND, Embedding
-from models.pytorch_v3.encoders.rnn import _init_hidden
+from models.pytorch_v3.utils import np2var, var2np, pad_list
 
 
 class RNNLM(ModelBase):
@@ -68,6 +70,7 @@ class RNNLM(ModelBase):
         self.parameter_init = parameter_init
         self.tie_weights = tie_weights
         self.num_classes = num_classes + 1  # Add <EOS> class
+        self.sos = num_classes
         self.eos = num_classes
 
         self.embed = Embedding(num_classes=self.num_classes,
@@ -114,11 +117,13 @@ class RNNLM(ModelBase):
         # and
         # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
         # https://arxiv.org/abs/1611.01462
-        # if tie_weights:
-        #     if num_units != embedding_dim:
-        #         raise ValueError(
-        #             'When using the tied flag, num_units must be equal to embedding_dim')
-        #     self.output.fc.weight = self.embed.embed.weight
+        if tie_weights:
+            raise NotImplementedError
+
+            if num_units != embedding_dim:
+                raise ValueError(
+                    'When using the tied flag, num_units must be equal to embedding_dim')
+            self.output.fc.weight = self.embed.embed.weight
 
         ##################################################
         # Initialize parameters
@@ -141,15 +146,16 @@ class RNNLM(ModelBase):
         if init_forget_gate_bias_with_one:
             self.init_forget_gate_bias_with_one()
 
-    def forward(self, ys, y_lens, is_eval=False):
+    def forward(self, ys, is_eval=False):
         """Forward computation.
         Args:
-            ys (np.ndarray): A tensor of size `[B, T]`
-            y_lens (np.ndarray): A tensor of size `[B]`
+            ys (list): A list of length `[B]`, which contains arrays of size `[L]`
+            is_eval (bool): if True, the history will not be saved.
+                This should be used in inference model for memory efficiency.
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (torch.autograd.Variable(float) or float): A tensor of size `[1]`
+            loss (torch.autograd.Variable(float)): A tensor of size `[1]`
         """
         if is_eval:
             self.eval()
@@ -160,51 +166,36 @@ class RNNLM(ModelBase):
             # if self.weight_noise_injection:
             #     self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
-        # NOTE: ys is padded with -1 here
-        # ys_in is padded with <EOS> in order to convert to one-hot vector,
-        # and added <SOS> before the first token
-        # ys_out_fwd is padded with -1, and added <EOS> after the last token
-        ys_in = self._create_var((ys.shape[0], ys.shape[1]),
-                                 fill_value=self.eos, dtype='long')
-        ys_out = self._create_var((ys.shape[0], ys.shape[1]),
-                                  fill_value=-1, dtype='long')
-        for b in range(len(ys)):
-            ys_in.data[b, :y_lens[b]] = torch.from_numpy(
-                ys[b, :y_lens[b]])
-            ys_out.data[b, :y_lens[b] - 1] = torch.from_numpy(
-                ys[b, 1:y_lens[b]])
-            ys_out.data[b, y_lens[b] - 1] = self.eos
-
-        if self.use_cuda:
-            ys_in = ys_in.cuda()
-            ys_out = ys_out.cuda()
+        # Sort by lenghts in the descending order
+        perm_idx = sorted(list(range(0, len(ys), 1)),
+                          key=lambda i: len(ys[i]), reverse=True)
+        ys = [ys[i] for i in perm_idx]
+        # NOTE: must be descending order for pack_padded_sequence
 
         # Wrap by Variable
-        y_lens = self.np2var(y_lens, dtype='int')
+        y_lens = [len(y) + 1 for y in ys]
+        ys = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()
+              for y in ys]
 
-        # Sort by lengths in descending order
-        y_lens, perm_idx = y_lens.sort(dim=0, descending=True)
-        ys_in = ys_in[perm_idx]
-        ys_out = ys_out[perm_idx]
+        sos = Variable(ys[0].data.new(1,).fill_(self.sos).long())
+        eos = Variable(ys[0].data.new(1,).fill_(self.eos).long())
+
+        # Append <SOS> and <EOS>
+        ys_in = [torch.cat([sos, y], dim=0) for y in ys]
+        ys_out = [torch.cat([y, eos], dim=0) for y in ys]
+
+        # Convert list to Variable
+        ys_in = pad_list(ys_in, self.eos)
+        ys_out = pad_list(ys_out, -1)
 
         # Path through embedding
         ys_in = self.embed(ys_in)
 
-        # Initialize hidden states (and memory cells) per mini-batch
-        h_0 = _init_hidden(batch_size=len(ys),
-                           rnn_type=self.rnn_type,
-                           num_units=self.num_units,
-                           num_directions=self.num_directions,
-                           num_layers=self.num_layers,
-                           use_cuda=self.use_cuda,
-                           volatile=is_eval)
-
         # Pack RNN inputs
-        ys_in = pack_padded_sequence(
-            ys_in, self.var2np(y_lens).tolist(), batch_first=True)
+        ys_in = pack_padded_sequence(ys_in, y_lens, batch_first=True)
 
         # Path through RNN
-        ys_in, _ = self.rnn(ys_in, hx=h_0)
+        ys_in, _ = self.rnn(ys_in, hx=None)
 
         # Unpack RNN outputs
         ys_in, unpacked_seq_len = pad_packed_sequence(
@@ -213,28 +204,112 @@ class RNNLM(ModelBase):
 
         logits = self.output(ys_in)
 
-        # TODO: add BPTT
-
         # Compute XE sequence loss
         loss = F.cross_entropy(
             input=logits.view((-1, logits.size(2))),
             target=ys_out.contiguous().view(-1),
-            ignore_index=-1, size_average=False) / len(ys)
-
-        if is_eval:
-            loss = loss.data[0]
+            ignore_index=-1, size_average=False) / (ys_out.size(0) * ys_out.size(1))
 
         return loss
 
-    def decode(self, start_token, beam_width, max_decode_len):
+    def _init_hidden(self, batch_size, use_cuda, volatile):
+        """Initialize hidden states.
+        Args:
+            batch_size (int): the size of mini-batch
+            use_cuda (bool, optional):
+            volatile (bool): if True, the history will not be saved.
+                This should be used in inference model for memory efficiency.
+        Returns:
+            if rnn_type is 'lstm', return a tuple of tensors (h_0, c_0).
+                h_0 (torch.autograd.Variable, float): A tensor of size
+                    `[num_layers * num_directions, batch_size, num_units]`
+                c_0 (torch.autograd.Variable, float): A tensor of size
+                    `[num_layers * num_directions, batch_size, num_units]`
+            otherwise return h_0.
+        """
+        h_0 = Variable(torch.zeros(
+            self.num_layers * self.num_directions, batch_size, self.num_units))
+        if volatile:
+            h_0.volatile = True
+        if use_cuda:
+            h_0 = h_0.cuda()
+
+        if self.rnn_type == 'lstm':
+            c_0 = Variable(torch.zeros(
+                self.num_layers * self.num_directions, batch_size, self.num_units))
+            if volatile:
+                c_0.volatile = True
+            if use_cuda:
+                c_0 = c_0.cuda()
+
+            return (h_0, c_0)
+        else:
+            return h_0
+
+    def decode(self, start_tokens, max_decode_len):
         """Decoding in the inference stage.
         Args:
-            start_token (np.ndarray): A tensor of size `[B]`
-            beam_width (int): the size of beam
+            start_tokens (list): A list of length `[B]`
             max_decode_len (int): the length of output sequences
                 to stop prediction when EOS token have not been emitted
         Returns:
-            best_hyps (np.ndarray): A tensor of size `[B]`
-            perm_idx (np.ndarray): A tensor of size `[B]`
+            best_hyps (list): A list of length `[B]`
+            perm_idx (list): A list of length `[B]`
         """
-        raise NotImplementedError
+        self.eval()
+
+        batch_size = len(start_tokens)
+
+        # Wrap by Variable
+        ys = [np2var(np.fromiter([y], dtype=np.int64), self.device_id, volatile=True).long()
+              for y in start_tokens]
+        y_lens = [1] * batch_size
+
+        # Convert list to Variable
+        y_in = pad_list(ys, -1)
+
+        # Initialize hidden states
+        # h = self._init_hidden(batch_size=batch_size,
+        #                       use_cuda=self.use_cuda,
+        #                       volatile=True)
+        h = None
+
+        _best_hyps = []
+        eos_flag = [False] * batch_size
+        for t in range(max_decode_len):
+            # Path through embedding
+            y_in = self.embed(y_in)
+
+            # Path through RNN
+            y_in, h = self.rnn(y_in, hx=h)
+
+            logits_step = self.output(y_in)
+
+            # Pick up 1-best
+            y_in = torch.max(logits_step.squeeze(1), dim=1)[1].unsqueeze(1)
+            _best_hyps += [y_in]
+
+            # Count lengths of hypotheses
+            for b in range(batch_size):
+                if not eos_flag[b]:
+                    if y_in.data.cpu().numpy()[b] == self.eos:
+                        eos_flag[b] = True
+                    y_lens[b] += 1
+                    # NOTE: include <EOS>
+
+            # Break if <EOS> is outputed in all mini-batch
+            if sum(eos_flag) == batch_size:
+                break
+
+        # Concatenate in L dimension
+        _best_hyps = torch.cat(_best_hyps, dim=1)
+
+        # Convert to numpy
+        _best_hyps = var2np(_best_hyps)
+
+        # Truncate by <EOS>
+        best_hyps = []
+        for b in range(batch_size):
+            best_hyps += [_best_hyps[b, :y_lens[b]]]
+
+        return best_hyps

@@ -20,24 +20,22 @@ def load(model_type, params, backend):
     Returns:
         model (nn.Module): An encoder class
     """
-    model_name = params['encoder_type']
-    if params['encoder_type'] in ['cnn', 'resnet']:
-        for c in params['conv_channels']:
-            model_name += '_' + str(c)
-    else:
-        if params['encoder_bidirectional']:
-            model_name = 'b' + model_name
-        if len(params['conv_channels']) != 0:
-            name_tmp = model_name
-            model_name = 'conv_'
+    if model_type != 'rnnlm':
+        model_name = params['encoder_type']
+        if params['encoder_type'] in ['cnn', 'resnet']:
             for c in params['conv_channels']:
-                model_name += str(c) + '_'
-            model_name += name_tmp
+                model_name += '_' + str(c)
+        else:
+            if params['encoder_bidirectional']:
+                model_name = 'b' + model_name
+            if len(params['conv_channels']) != 0:
+                name_tmp = model_name
+                model_name = 'conv_'
+                for c in params['conv_channels']:
+                    model_name += str(c) + '_'
+                model_name += name_tmp
 
     if model_type == 'ctc':
-        if 'activation' not in params.keys():
-            params['activation'] = 'relu'
-
         if backend == 'pytorch':
             from models.pytorch_v3.ctc.ctc import CTC
         elif backend == 'chainer':
@@ -117,83 +115,7 @@ def load(model_type, params, backend):
         if isdir(params['char_init']):
             model.name += '_charinit'
 
-    elif model_type == 'student_ctc':
-        if 'activation' not in params.keys():
-            params['activation'] = 'relu'
-
-        if backend == 'pytorch':
-            from models.pytorch_v3.ctc.student_ctc import StudentCTC
-        elif backend == 'chainer':
-            raise NotImplementedError
-
-        model = StudentCTC(
-            input_size=params['input_freq'] *
-            (1 + int(params['use_delta'] + int(params['use_double_delta']))),
-            encoder_type=params['encoder_type'],
-            encoder_bidirectional=params['encoder_bidirectional'],
-            encoder_num_units=params['encoder_num_units'],
-            encoder_num_proj=params['encoder_num_proj'],
-            encoder_num_layers=params['encoder_num_layers'],
-            fc_list=params['fc_list'],
-            dropout_input=params['dropout_input'],
-            dropout_encoder=params['dropout_encoder'],
-            num_classes=params['num_classes'],
-            parameter_init_distribution=params['parameter_init_distribution'],
-            parameter_init=params['parameter_init'],
-            recurrent_weight_orthogonal=params['recurrent_weight_orthogonal'],
-            init_forget_gate_bias_with_one=params['init_forget_gate_bias_with_one'],
-            subsample_list=params['subsample_list'],
-            subsample_type=params['subsample_type'],
-            logits_temperature=params['logits_temperature'],
-            num_stack=params['num_stack'],
-            num_skip=params['num_skip'],
-            splice=params['splice'],
-            input_channel=params['input_channel'],
-            conv_channels=params['conv_channels'],
-            conv_kernel_sizes=params['conv_kernel_sizes'],
-            conv_strides=params['conv_strides'],
-            poolings=params['poolings'],
-            activation=params['activation'],
-            batch_norm=params['batch_norm'],
-            weight_noise_std=params['weight_noise_std'],
-            encoder_residual=params['encoder_residual'],
-            encoder_dense_residual=params['encoder_dense_residual'])
-
-        model.name = model_name
-        if params['encoder_type'] not in ['cnn', 'resnet']:
-            model.name += str(params['encoder_num_units']) + 'H'
-            model.name += str(params['encoder_num_layers']) + 'L'
-            if params['encoder_num_proj'] != 0:
-                model.name += '_proj' + str(params['encoder_num_proj'])
-            if sum(params['subsample_list']) > 0:
-                model.name += '_' + params['subsample_type'] + \
-                    str(2 ** sum(params['subsample_list']))
-            if params['num_stack'] != 1:
-                model.name += '_stack' + str(params['num_stack'])
-        if len(params['fc_list']) != 0:
-            model.name += '_fc'
-            for l in params['fc_list']:
-                model.name += '_' + str(l)
-        model.name += '_' + params['optimizer']
-        model.name += '_lr' + str(params['learning_rate'])
-        if params['dropout_encoder'] != 0:
-            model.name += '_drop'
-            if params['dropout_input'] != 0:
-                model.name += 'in' + str(params['dropout_input'])
-            model.name += 'en' + str(params['dropout_encoder'])
-        if params['logits_temperature'] != 1:
-            model.name += '_temp' + str(params['logits_temperature'])
-        if params['weight_noise_std'] != 0:
-            model.name += '_noise' + str(params['weight_noise_std'])
-        if bool(params['encoder_residual']):
-            model.name += '_res'
-        if bool(params['encoder_dense_residual']):
-            model.name += '_dense_res'
-
     elif params['model_type'] == 'hierarchical_ctc':
-        if 'activation' not in params.keys():
-            params['activation'] = 'relu'
-
         if backend == 'pytorch':
             from models.pytorch_v3.ctc.hierarchical_ctc import HierarchicalCTC
         elif backend == 'chainer':
@@ -280,7 +202,6 @@ def load(model_type, params, backend):
             model.name += '_charinit'
 
     elif model_type == 'attention':
-
         if backend == 'pytorch':
             from models.pytorch_v3.attention.attention_seq2seq import AttentionSeq2seq
         elif backend == 'chainer':
@@ -407,7 +328,6 @@ def load(model_type, params, backend):
             model.name += '_head' + str(params['num_heads'])
 
     elif params['model_type'] == 'hierarchical_attention':
-
         if backend == 'pytorch':
             from models.pytorch_v3.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
         elif backend == 'chainer':
@@ -707,5 +627,48 @@ def load(model_type, params, backend):
             model.name += '_gate'
         if isdir(params['char_init']):
             model.name += '_charinit'
+
+    elif model_type == 'rnnlm':
+        if backend == 'pytorch':
+            from models.pytorch_v3.lm.rnnlm import RNNLM
+        elif backend == 'chainer':
+            from models.chainer.lm.rnnlm import RNNLM
+
+        model = RNNLM(
+            embedding_dim=params['embedding_dim'],
+            rnn_type=params['rnn_type'],
+            bidirectional=params['bidirectional'],
+            num_units=params['num_units'],
+            num_layers=params['num_layers'],
+            dropout_embedding=params['dropout_embedding'],
+            dropout_hidden=params['dropout_hidden'],
+            dropout_output=params['dropout_output'],
+            num_classes=params['num_classes'],
+            parameter_init_distribution=params['parameter_init_distribution'],
+            parameter_init=params['parameter_init'],
+            recurrent_weight_orthogonal=params['recurrent_weight_orthogonal'],
+            init_forget_gate_bias_with_one=params['init_forget_gate_bias_with_one'],
+            tie_weights=params['tie_weights'])
+
+        model_name = params['rnn_type']
+        if params['bidirectional']:
+            model_name = 'b' + model_name
+        model.name = model_name
+        model.name += str(params['num_units']) + 'H'
+        model.name += str(params['num_layers']) + 'L'
+        # if params['num_proj'] != 0:
+        #     model.name += '_proj' + str(params['num_proj'])
+        model.name += 'emb' + str(params['embedding_dim'])
+        model.name += '_' + params['optimizer']
+        model.name += '_lr' + str(params['learning_rate'])
+        model.name += '_drop'
+        # if params['dropout_input'] != 0:
+        #     model.name += 'in' + str(params['dropout_input'])
+        if params['dropout_hidden'] != 0:
+            model.name += 'hidden' + str(params['dropout_hidden'])
+        if params['dropout_output'] != 0:
+            model.name += 'out' + str(params['dropout_output'])
+        if params['dropout_embedding'] != 0:
+            model.name += 'emb' + str(params['dropout_embedding'])
 
     return model

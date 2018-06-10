@@ -56,6 +56,8 @@ class Updater(object):
                         batch['xs'], batch['ys'], batch['ys_sub'], is_eval=True)
                 else:
                     model.optimizer.zero_grad()
+                    if model.device_id >= 0:
+                        torch.cuda.empty_cache()
                     loss, loss_main, loss_sub = model(
                         batch['xs'], batch['ys'], batch['ys_sub'])
                     loss.backward()
@@ -63,11 +65,10 @@ class Updater(object):
                     if self.clip_grad_norm > 0:
                         # torch.nn.utils.clip_grad_norm_(
                         #     model.parameters(), self.clip_grad_norm)
-                        torch.nn.utils.self.clip_grad_norm(
+                        torch.nn.utils.clip_grad_norm(
                             model.parameters(), self.clip_grad_norm)
                     model.optimizer.step()
                     # TODO: Add scheduler
-
                 # loss_val = loss.item()
                 # loss_main_val = loss_main.item()
                 # loss_sub_val = loss_sub.item()
@@ -97,7 +98,7 @@ class Updater(object):
 
         except RuntimeError as e:
             logger.warning('!!!Skip mini-batch!!! (max_frame_num: %d, batch: %d)' %
-                           (max(len(x) for x in batch['xs']) * model.num_stack, len(batch['xs'])))
+                           (max(len(x) for x in batch['xs']), len(batch['xs'])))
             if self.backend == 'pytorch':
                 model.optimizer.zero_grad()
                 if model.device_id >= 0:
@@ -109,5 +110,8 @@ class Updater(object):
             logger.warning(
                 "WARNING: received an inf loss, setting loss value to 0 (total loss).")
             loss_val, loss_main_val, loss_sub_val = 0., 0., 0.
+
+        # Delete features
+        del batch
 
         return model, loss_val, loss_main_val, loss_sub_val

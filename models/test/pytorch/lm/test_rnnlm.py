@@ -19,7 +19,7 @@ torch.cuda.manual_seed_all(1623)
 
 sys.path.append('../../../../')
 from models.pytorch_v3.lm.rnnlm import RNNLM
-from models.test.data import generate_data
+from models.test.data import generate_data, idx2char, idx2word
 from utils.measure_time_func import measure_time
 from utils.training.learning_rate_controller import Controller
 
@@ -39,19 +39,20 @@ class TestRNNLM(unittest.TestCase):
         # self.check(rnn_type='lstm', bidirectional=False,
         #            tie_weights=True)
 
-        # word-level LM
+        # character-level LM
         self.check(rnn_type='lstm', bidirectional=True,
                    label_type='word')
 
     @measure_time
     def check(self, rnn_type, bidirectional=False,
-              label_type='char', tie_weights=False):
+              label_type='char', tie_weights=False, bptt=35):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
         print('  rnn_type: %s' % rnn_type)
         print('  bidirectional: %s' % str(bidirectional))
         print('  tie_weights: %s' % str(tie_weights))
+        print('  bptt: %d' % bptt)
         print('==================================================')
 
         # Load batch data
@@ -60,8 +61,10 @@ class TestRNNLM(unittest.TestCase):
 
         if label_type == 'char':
             num_classes = 27
+            map_fn = idx2char
         elif label_type == 'word':
             num_classes = 11
+            map_fn = idx2word
 
         # Load model
         model = RNNLM(embedding_dim=128,
@@ -115,12 +118,15 @@ class TestRNNLM(unittest.TestCase):
             model.optimizer.zero_grad()
             loss = model(ys)
             loss.backward()
+            loss.detach()
+            # torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
             nn.utils.clip_grad_norm(model.parameters(), 5)
             model.optimizer.step()
+            # TODO: add BPTT
 
             # Inject Gaussian noise to all parameters
-            if loss.data[0] < 50:
-                model.weight_noise_injection = True
+            # if loss.data[0] < 50:
+            #     model.weight_noise_injection = True
 
             if (step + 1) % 10 == 0:
                 # Compute loss
@@ -134,7 +140,11 @@ class TestRNNLM(unittest.TestCase):
                       (step + 1, loss, ppl, learning_rate, duration_step))
                 start_time_step = time.time()
 
-                if ppl == 0:
+                # Visualize
+                best_hyps = model.decode([model.sos], max_decode_len=60)
+                print(map_fn(best_hyps[0]))
+
+                if ppl == 1:
                     print('Modle is Converged.')
                     break
 

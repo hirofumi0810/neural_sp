@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Training loop."""
+"""Training loop for RNNLMs."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -50,14 +50,15 @@ class Updater(object):
             # Step for parameter update
             if self.backend == 'pytorch':
                 if is_eval:
-                    loss = model(batch['xs'], batch['ys'], is_eval=True)
+                    loss = model(batch['ys'], is_eval=True)
                 else:
                     model.optimizer.zero_grad()
                     if model.device_id >= 0:
                         torch.cuda.empty_cache()
-                    loss = model(batch['xs'], batch['ys'])
+                    loss = model(batch['ys'])
                     loss.backward()
                     loss.detach()  # Trancate the graph
+                    # TODO: add BPTT
                     if self.clip_grad_norm > 0:
                         # torch.nn.utils.clip_grad_norm_(
                         #     model.parameters(), self.clip_grad_norm)
@@ -71,19 +72,19 @@ class Updater(object):
             elif self.backend == 'chainer':
                 if is_eval:
                     model.optimizer.target.cleargrads()
-                    loss = model(batch['xs'], batch['ys'])
+                    loss = model(batch['ys'])
                     loss.backward()
                     loss.unchain_backward()
                     model.optimizer.update()
                 else:
-                    loss = model(batch['xs'], batch['ys'], is_eval=True)
+                    loss = model(batch['ys'], is_eval=True)
                 loss_val = loss.data
 
             del loss
 
         except RuntimeError as e:
-            logger.warning('!!!Skip mini-batch!!! (max_frame_num: %d, batch: %d)' %
-                           (max(len(x) for x in batch['xs']), len(batch['xs'])))
+            logger.warning('!!!Skip mini-batch!!! (max_label_num: %d, batch: %d)' %
+                           (max(len(x) for x in batch['ys']), len(batch['ys'])))
             if self.backend == 'pytorch':
                 model.optimizer.zero_grad()
                 if model.device_id >= 0:
