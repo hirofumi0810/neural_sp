@@ -10,28 +10,28 @@ from __future__ import print_function
 from os.path import isdir
 
 
-def load(model_type, params, backend):
+def load(model_type, config, backend):
     """Load an encoder.
     Args:
         model_type (string): ctc or student_ctc or attention or
             hierarchical_ctc or hierarchical_attention or nested_attention
-        params (dict): dict of hyperparameters
+        config (dict): dict of hyperparameters
         backend (string): pytorch or chainer
     Returns:
         model (nn.Module): An encoder class
     """
     if model_type != 'rnnlm':
-        model_name = params['encoder_type']
-        if params['encoder_type'] in ['cnn', 'resnet']:
-            for c in params['conv_channels']:
+        model_name = config['encoder_type']
+        if config['encoder_type'] in ['cnn', 'resnet']:
+            for c in config['conv_channels']:
                 model_name += '_' + str(c)
         else:
-            if params['encoder_bidirectional']:
+            if config['encoder_bidirectional']:
                 model_name = 'b' + model_name
-            if len(params['conv_channels']) != 0:
+            if len(config['conv_channels']) != 0:
                 name_tmp = model_name
                 model_name = 'conv_'
-                for c in params['conv_channels']:
+                for c in config['conv_channels']:
                     model_name += str(c) + '_'
                 model_name += name_tmp
 
@@ -42,164 +42,164 @@ def load(model_type, params, backend):
             from models.chainer.ctc.ctc import CTC
 
         model = CTC(
-            input_size=params['input_freq'] *
-            (1 + int(params['use_delta'] + int(params['use_double_delta']))),
-            encoder_type=params['encoder_type'],
-            encoder_bidirectional=params['encoder_bidirectional'],
-            encoder_num_units=params['encoder_num_units'],
-            encoder_num_proj=params['encoder_num_proj'],
-            encoder_num_layers=params['encoder_num_layers'],
-            fc_list=params['fc_list'],
-            dropout_input=params['dropout_input'],
-            dropout_encoder=params['dropout_encoder'],
-            num_classes=params['num_classes'],
-            parameter_init_distribution=params['parameter_init_distribution'],
-            parameter_init=params['parameter_init'],
-            recurrent_weight_orthogonal=params['recurrent_weight_orthogonal'],
-            init_forget_gate_bias_with_one=params['init_forget_gate_bias_with_one'],
-            subsample_list=params['subsample_list'],
-            subsample_type=params['subsample_type'],
-            logits_temperature=params['logits_temperature'],
-            num_stack=params['num_stack'],
-            num_skip=params['num_skip'],
-            splice=params['splice'],
-            input_channel=params['input_channel'],
-            conv_channels=params['conv_channels'],
-            conv_kernel_sizes=params['conv_kernel_sizes'],
-            conv_strides=params['conv_strides'],
-            poolings=params['poolings'],
-            activation=params['activation'],
-            batch_norm=params['batch_norm'],
-            label_smoothing_prob=params['label_smoothing_prob'],
-            weight_noise_std=params['weight_noise_std'],
-            encoder_residual=params['encoder_residual'],
-            encoder_dense_residual=params['encoder_dense_residual'])
+            input_size=config['input_freq'] *
+            (1 + int(config['use_delta'] + int(config['use_double_delta']))),
+            encoder_type=config['encoder_type'],
+            encoder_bidirectional=config['encoder_bidirectional'],
+            encoder_num_units=config['encoder_num_units'],
+            encoder_num_proj=config['encoder_num_proj'],
+            encoder_num_layers=config['encoder_num_layers'],
+            fc_list=config['fc_list'],
+            dropout_input=config['dropout_input'],
+            dropout_encoder=config['dropout_encoder'],
+            num_classes=config['num_classes'],
+            parameter_init_distribution=config['parameter_init_distribution'],
+            parameter_init=config['parameter_init'],
+            recurrent_weight_orthogonal=config['recurrent_weight_orthogonal'],
+            init_forget_gate_bias_with_one=config['init_forget_gate_bias_with_one'],
+            subsample_list=config['subsample_list'],
+            subsample_type=config['subsample_type'],
+            logits_temperature=config['logits_temperature'],
+            num_stack=config['num_stack'],
+            num_skip=config['num_skip'],
+            splice=config['splice'],
+            input_channel=config['input_channel'],
+            conv_channels=config['conv_channels'],
+            conv_kernel_sizes=config['conv_kernel_sizes'],
+            conv_strides=config['conv_strides'],
+            poolings=config['poolings'],
+            activation=config['activation'],
+            batch_norm=config['batch_norm'],
+            label_smoothing_prob=config['label_smoothing_prob'],
+            weight_noise_std=config['weight_noise_std'],
+            encoder_residual=config['encoder_residual'],
+            encoder_dense_residual=config['encoder_dense_residual'])
 
         model.name = model_name
-        if params['encoder_type'] not in ['cnn', 'resnet']:
-            model.name += str(params['encoder_num_units']) + 'H'
-            model.name += str(params['encoder_num_layers']) + 'L'
-            if params['encoder_num_proj'] != 0:
-                model.name += '_proj' + str(params['encoder_num_proj'])
-            if sum(params['subsample_list']) > 0:
-                model.name += '_' + params['subsample_type'] + \
-                    str(2 ** sum(params['subsample_list']))
-            if params['num_stack'] != 1:
-                model.name += '_stack' + str(params['num_stack'])
-        if len(params['fc_list']) != 0:
+        if config['encoder_type'] not in ['cnn', 'resnet']:
+            model.name += str(config['encoder_num_units']) + 'H'
+            model.name += str(config['encoder_num_layers']) + 'L'
+            if config['encoder_num_proj'] != 0:
+                model.name += '_proj' + str(config['encoder_num_proj'])
+            if sum(config['subsample_list']) > 0:
+                model.name += '_' + config['subsample_type'] + \
+                    str(2 ** sum(config['subsample_list']))
+            if config['num_stack'] != 1:
+                model.name += '_stack' + str(config['num_stack'])
+        if len(config['fc_list']) != 0:
             model.name += '_fc'
-            for l in params['fc_list']:
+            for l in config['fc_list']:
                 model.name += '_' + str(l)
-        if bool(params['batch_norm']):
+        if bool(config['batch_norm']):
             model.name += '_bn'
-        model.name += '_' + params['optimizer']
-        model.name += '_lr' + str(params['learning_rate'])
-        if params['dropout_encoder'] != 0:
+        model.name += '_' + config['optimizer']
+        model.name += '_lr' + str(config['learning_rate'])
+        if config['dropout_encoder'] != 0:
             model.name += '_drop'
-            if params['dropout_input'] != 0:
-                model.name += 'in' + str(params['dropout_input'])
-            model.name += 'en' + str(params['dropout_encoder'])
-        if params['logits_temperature'] != 1:
-            model.name += '_temp' + str(params['logits_temperature'])
-        if params['label_smoothing_prob'] > 0:
-            model.name += '_ls' + str(params['label_smoothing_prob'])
-        if params['weight_noise_std'] != 0:
-            model.name += '_noise' + str(params['weight_noise_std'])
-        if params['encoder_type'] == 'cnn':
-            model.name += '_' + params['activation']
-        if bool(params['encoder_residual']):
+            if config['dropout_input'] != 0:
+                model.name += 'in' + str(config['dropout_input'])
+            model.name += 'en' + str(config['dropout_encoder'])
+        if config['logits_temperature'] != 1:
+            model.name += '_temp' + str(config['logits_temperature'])
+        if config['label_smoothing_prob'] > 0:
+            model.name += '_ls' + str(config['label_smoothing_prob'])
+        if config['weight_noise_std'] != 0:
+            model.name += '_noise' + str(config['weight_noise_std'])
+        if config['encoder_type'] == 'cnn':
+            model.name += '_' + config['activation']
+        if bool(config['encoder_residual']):
             model.name += '_res'
-        if bool(params['encoder_dense_residual']):
+        if bool(config['encoder_dense_residual']):
             model.name += '_dense_res'
         model.name += '_input' + str(model.input_size)
-        if isdir(params['char_init']):
-            model.name += '_charinit'
+        if isdir(config['pretrained_model_path']):
+            model.name += '_pretrain'
 
-    elif params['model_type'] == 'hierarchical_ctc':
+    elif config['model_type'] == 'hierarchical_ctc':
         if backend == 'pytorch':
             from models.pytorch_v3.ctc.hierarchical_ctc import HierarchicalCTC
         elif backend == 'chainer':
             from models.chainer.ctc.hierarchical_ctc import HierarchicalCTC
 
         model = HierarchicalCTC(
-            input_size=params['input_freq'] *
-            (1 + int(params['use_delta'] + int(params['use_double_delta']))),
-            encoder_type=params['encoder_type'],
-            encoder_bidirectional=params['encoder_bidirectional'],
-            encoder_num_units=params['encoder_num_units'],
-            encoder_num_proj=params['encoder_num_proj'],
-            encoder_num_layers=params['encoder_num_layers'],
-            encoder_num_layers_sub=params['encoder_num_layers_sub'],
-            fc_list=params['fc_list'],
-            fc_list_sub=params['fc_list_sub'],
-            dropout_input=params['dropout_input'],
-            dropout_encoder=params['dropout_encoder'],
-            main_loss_weight=params['main_loss_weight'],
-            sub_loss_weight=params['sub_loss_weight'],
-            num_classes=params['num_classes'],
-            num_classes_sub=params['num_classes_sub'],
-            parameter_init_distribution=params['parameter_init_distribution'],
-            parameter_init=params['parameter_init'],
-            recurrent_weight_orthogonal=params['recurrent_weight_orthogonal'],
-            init_forget_gate_bias_with_one=params['init_forget_gate_bias_with_one'],
-            subsample_list=params['subsample_list'],
-            subsample_type=params['subsample_type'],
-            logits_temperature=params['logits_temperature'],
-            num_stack=params['num_stack'],
-            num_skip=params['num_skip'],
-            splice=params['splice'],
-            input_channel=params['input_channel'],
-            conv_channels=params['conv_channels'],
-            conv_kernel_sizes=params['conv_kernel_sizes'],
-            conv_strides=params['conv_strides'],
-            poolings=params['poolings'],
-            activation=params['activation'],
-            batch_norm=params['batch_norm'],
-            label_smoothing_prob=params['label_smoothing_prob'],
-            weight_noise_std=params['weight_noise_std'],
-            encoder_residual=params['encoder_residual'],
-            encoder_dense_residual=params['encoder_dense_residual'])
+            input_size=config['input_freq'] *
+            (1 + int(config['use_delta'] + int(config['use_double_delta']))),
+            encoder_type=config['encoder_type'],
+            encoder_bidirectional=config['encoder_bidirectional'],
+            encoder_num_units=config['encoder_num_units'],
+            encoder_num_proj=config['encoder_num_proj'],
+            encoder_num_layers=config['encoder_num_layers'],
+            encoder_num_layers_sub=config['encoder_num_layers_sub'],
+            fc_list=config['fc_list'],
+            fc_list_sub=config['fc_list_sub'],
+            dropout_input=config['dropout_input'],
+            dropout_encoder=config['dropout_encoder'],
+            main_loss_weight=config['main_loss_weight'],
+            sub_loss_weight=config['sub_loss_weight'],
+            num_classes=config['num_classes'],
+            num_classes_sub=config['num_classes_sub'],
+            parameter_init_distribution=config['parameter_init_distribution'],
+            parameter_init=config['parameter_init'],
+            recurrent_weight_orthogonal=config['recurrent_weight_orthogonal'],
+            init_forget_gate_bias_with_one=config['init_forget_gate_bias_with_one'],
+            subsample_list=config['subsample_list'],
+            subsample_type=config['subsample_type'],
+            logits_temperature=config['logits_temperature'],
+            num_stack=config['num_stack'],
+            num_skip=config['num_skip'],
+            splice=config['splice'],
+            input_channel=config['input_channel'],
+            conv_channels=config['conv_channels'],
+            conv_kernel_sizes=config['conv_kernel_sizes'],
+            conv_strides=config['conv_strides'],
+            poolings=config['poolings'],
+            activation=config['activation'],
+            batch_norm=config['batch_norm'],
+            label_smoothing_prob=config['label_smoothing_prob'],
+            weight_noise_std=config['weight_noise_std'],
+            encoder_residual=config['encoder_residual'],
+            encoder_dense_residual=config['encoder_dense_residual'])
 
         model.name = model_name
-        if params['encoder_type'] not in ['cnn', 'resnet']:
-            model.name += str(params['encoder_num_units']) + 'H'
-            model.name += str(params['encoder_num_layers']) + 'L'
-            model.name += str(params['encoder_num_layers_sub']) + 'L'
-            if params['encoder_num_proj'] != 0:
-                model.name += '_proj' + str(params['encoder_num_proj'])
-            if sum(params['subsample_list']) > 0:
-                model.name += '_' + params['subsample_type'] + \
-                    str(2 ** sum(params['subsample_list']))
-            if params['num_stack'] != 1:
-                model.name += '_stack' + str(params['num_stack'])
-        if len(params['fc_list']) != 0:
+        if config['encoder_type'] not in ['cnn', 'resnet']:
+            model.name += str(config['encoder_num_units']) + 'H'
+            model.name += str(config['encoder_num_layers']) + 'L'
+            model.name += str(config['encoder_num_layers_sub']) + 'L'
+            if config['encoder_num_proj'] != 0:
+                model.name += '_proj' + str(config['encoder_num_proj'])
+            if sum(config['subsample_list']) > 0:
+                model.name += '_' + config['subsample_type'] + \
+                    str(2 ** sum(config['subsample_list']))
+            if config['num_stack'] != 1:
+                model.name += '_stack' + str(config['num_stack'])
+        if len(config['fc_list']) != 0:
             model.name += '_fc'
-            for l in params['fc_list']:
+            for l in config['fc_list']:
                 model.name += '_' + str(l)
-        if bool(params['batch_norm']):
+        if bool(config['batch_norm']):
             model.name += '_bn'
-        model.name += '_' + params['optimizer']
-        model.name += '_lr' + str(params['learning_rate'])
-        if params['dropout_encoder'] != 0:
+        model.name += '_' + config['optimizer']
+        model.name += '_lr' + str(config['learning_rate'])
+        if config['dropout_encoder'] != 0:
             model.name += '_drop'
-            if params['dropout_input'] != 0:
-                model.name += 'in' + str(params['dropout_input'])
-            model.name += 'en' + str(params['dropout_encoder'])
-        if params['logits_temperature'] != 1:
-            model.name += '_temp' + str(params['logits_temperature'])
-        if params['label_smoothing_prob'] > 0:
-            model.name += '_ls' + str(params['label_smoothing_prob'])
-        if params['weight_noise_std'] != 0:
-            model.name += '_noise' + str(params['weight_noise_std'])
-        if bool(params['encoder_residual']):
+            if config['dropout_input'] != 0:
+                model.name += 'in' + str(config['dropout_input'])
+            model.name += 'en' + str(config['dropout_encoder'])
+        if config['logits_temperature'] != 1:
+            model.name += '_temp' + str(config['logits_temperature'])
+        if config['label_smoothing_prob'] > 0:
+            model.name += '_ls' + str(config['label_smoothing_prob'])
+        if config['weight_noise_std'] != 0:
+            model.name += '_noise' + str(config['weight_noise_std'])
+        if bool(config['encoder_residual']):
             model.name += '_res'
-        if bool(params['encoder_dense_residual']):
+        if bool(config['encoder_dense_residual']):
             model.name += '_dense_res'
-        model.name += '_main' + str(params['main_loss_weight'])
-        model.name += '_sub' + str(params['sub_loss_weight'])
+        model.name += '_main' + str(config['main_loss_weight'])
+        model.name += '_sub' + str(config['sub_loss_weight'])
         model.name += '_input' + str(model.input_size)
-        if isdir(params['char_init']):
-            model.name += '_charinit'
+        if isdir(config['pretrained_model_path']):
+            model.name += '_pretrain'
 
     elif model_type == 'attention':
         if backend == 'pytorch':
@@ -207,426 +207,449 @@ def load(model_type, params, backend):
         elif backend == 'chainer':
             from models.chainer.attention.attention_seq2seq import AttentionSeq2seq
 
+        # TODO: remove these later
+        if 'rnnlm_fusion_type' not in config.keys():
+            config['rnnlm_fusion_type'] = False
+        if 'rnnlm_config' not in config.keys():
+            config['rnnlm_config'] = False
+        if 'rnnlm_joint_training' not in config.keys():
+            config['rnnlm_joint_training'] = False
+        if 'rnnlm_weight' not in config.keys():
+            config['rnnlm_weight'] = 0
+        if 'concat_embedding' not in config.keys():
+            config['concat_embedding'] = False
+
         model = AttentionSeq2seq(
-            input_size=params['input_freq'] *
-            (1 + int(params['use_delta'] + int(params['use_double_delta']))),
-            encoder_type=params['encoder_type'],
-            encoder_bidirectional=params['encoder_bidirectional'],
-            encoder_num_units=params['encoder_num_units'],
-            encoder_num_proj=params['encoder_num_proj'],
-            encoder_num_layers=params['encoder_num_layers'],
-            attention_type=params['attention_type'],
-            attention_dim=params['attention_dim'],
-            decoder_type=params['decoder_type'],
-            decoder_num_units=params['decoder_num_units'],
-            decoder_num_layers=params['decoder_num_layers'],
-            embedding_dim=params['embedding_dim'],
-            dropout_input=params['dropout_input'],
-            dropout_encoder=params['dropout_encoder'],
-            dropout_decoder=params['dropout_decoder'],
-            dropout_embedding=params['dropout_embedding'],
-            num_classes=params['num_classes'],
-            parameter_init_distribution=params['parameter_init_distribution'],
-            parameter_init=params['parameter_init'],
-            recurrent_weight_orthogonal=params['recurrent_weight_orthogonal'],
-            init_forget_gate_bias_with_one=params['init_forget_gate_bias_with_one'],
-            subsample_list=params['subsample_list'],
-            subsample_type=params['subsample_type'],
-            bridge_layer=params['bridge_layer'],
-            init_dec_state=params['init_dec_state'],
-            sharpening_factor=params['sharpening_factor'],
-            logits_temperature=params['logits_temperature'],
-            sigmoid_smoothing=params['sigmoid_smoothing'],
-            coverage_weight=params['coverage_weight'],
-            ctc_loss_weight=params['ctc_loss_weight'],
-            attention_conv_num_channels=params['attention_conv_num_channels'],
-            attention_conv_width=params['attention_conv_width'],
-            num_stack=params['num_stack'],
-            num_skip=params['num_skip'],
-            splice=params['splice'],
-            input_channel=params['input_channel'],
-            conv_channels=params['conv_channels'],
-            conv_kernel_sizes=params['conv_kernel_sizes'],
-            conv_strides=params['conv_strides'],
-            poolings=params['poolings'],
-            batch_norm=params['batch_norm'],
-            scheduled_sampling_prob=params['scheduled_sampling_prob'],
-            scheduled_sampling_max_step=params['scheduled_sampling_max_step'],
-            label_smoothing_prob=params['label_smoothing_prob'],
-            weight_noise_std=params['weight_noise_std'],
-            encoder_residual=params['encoder_residual'],
-            encoder_dense_residual=params['encoder_dense_residual'],
-            decoder_residual=params['decoder_residual'],
-            decoder_dense_residual=params['decoder_dense_residual'],
-            decoding_order=params['decoding_order'],
-            bottleneck_dim=params['bottleneck_dim'],
-            backward_loss_weight=params['backward_loss_weight'],
-            num_heads=params['num_heads'])
+            input_size=config['input_freq'] *
+            (1 + int(config['use_delta'] + int(config['use_double_delta']))),
+            encoder_type=config['encoder_type'],
+            encoder_bidirectional=config['encoder_bidirectional'],
+            encoder_num_units=config['encoder_num_units'],
+            encoder_num_proj=config['encoder_num_proj'],
+            encoder_num_layers=config['encoder_num_layers'],
+            attention_type=config['attention_type'],
+            attention_dim=config['attention_dim'],
+            decoder_type=config['decoder_type'],
+            decoder_num_units=config['decoder_num_units'],
+            decoder_num_layers=config['decoder_num_layers'],
+            embedding_dim=config['embedding_dim'],
+            dropout_input=config['dropout_input'],
+            dropout_encoder=config['dropout_encoder'],
+            dropout_decoder=config['dropout_decoder'],
+            dropout_embedding=config['dropout_embedding'],
+            num_classes=config['num_classes'],
+            parameter_init_distribution=config['parameter_init_distribution'],
+            parameter_init=config['parameter_init'],
+            recurrent_weight_orthogonal=config['recurrent_weight_orthogonal'],
+            init_forget_gate_bias_with_one=config['init_forget_gate_bias_with_one'],
+            subsample_list=config['subsample_list'],
+            subsample_type=config['subsample_type'],
+            bridge_layer=config['bridge_layer'],
+            init_dec_state=config['init_dec_state'],
+            sharpening_factor=config['sharpening_factor'],
+            logits_temperature=config['logits_temperature'],
+            sigmoid_smoothing=config['sigmoid_smoothing'],
+            coverage_weight=config['coverage_weight'],
+            ctc_loss_weight=config['ctc_loss_weight'],
+            attention_conv_num_channels=config['attention_conv_num_channels'],
+            attention_conv_width=config['attention_conv_width'],
+            num_stack=config['num_stack'],
+            num_skip=config['num_skip'],
+            splice=config['splice'],
+            input_channel=config['input_channel'],
+            conv_channels=config['conv_channels'],
+            conv_kernel_sizes=config['conv_kernel_sizes'],
+            conv_strides=config['conv_strides'],
+            poolings=config['poolings'],
+            batch_norm=config['batch_norm'],
+            scheduled_sampling_prob=config['scheduled_sampling_prob'],
+            scheduled_sampling_max_step=config['scheduled_sampling_max_step'],
+            label_smoothing_prob=config['label_smoothing_prob'],
+            weight_noise_std=config['weight_noise_std'],
+            encoder_residual=config['encoder_residual'],
+            encoder_dense_residual=config['encoder_dense_residual'],
+            decoder_residual=config['decoder_residual'],
+            decoder_dense_residual=config['decoder_dense_residual'],
+            decoding_order=config['decoding_order'],
+            bottleneck_dim=config['bottleneck_dim'],
+            backward_loss_weight=config['backward_loss_weight'],
+            num_heads=config['num_heads'],
+            rnnlm_fusion_type=config['rnnlm_fusion_type'],
+            rnnlm_config=config['rnnlm_config'],
+            rnnlm_joint_training=config['rnnlm_joint_training'],
+            rnnlm_weight=config['rnnlm_weight'],
+            concat_embedding=config['concat_embedding'])
 
         model.name = model_name
-        if params['encoder_type'] not in ['cnn', 'resnet']:
-            model.name += str(params['encoder_num_units']) + 'H'
-            model.name += str(params['encoder_num_layers']) + 'L'
-            if params['encoder_num_proj'] != 0:
-                model.name += '_proj' + str(params['encoder_num_proj'])
-            if sum(params['subsample_list']) > 0:
-                model.name += '_' + params['subsample_type'] + \
-                    str(2 ** sum(params['subsample_list']))
-            if params['num_stack'] != 1:
-                model.name += '_stack' + str(params['num_stack'])
-        if bool(params['batch_norm']):
+        if config['encoder_type'] not in ['cnn', 'resnet']:
+            model.name += str(config['encoder_num_units']) + 'H'
+            model.name += str(config['encoder_num_layers']) + 'L'
+            if config['encoder_num_proj'] != 0:
+                model.name += '_proj' + str(config['encoder_num_proj'])
+            if sum(config['subsample_list']) > 0:
+                model.name += '_' + config['subsample_type'] + \
+                    str(2 ** sum(config['subsample_list']))
+            if config['num_stack'] != 1:
+                model.name += '_stack' + str(config['num_stack'])
+        if bool(config['batch_norm']):
             model.name += '_bn'
-        model.name += '_' + params['decoder_type']
-        model.name += str(params['decoder_num_units']) + 'H'
-        model.name += str(params['decoder_num_layers']) + 'L'
-        model.name += '_' + params['optimizer']
-        model.name += '_lr' + str(params['learning_rate'])
-        model.name += '_' + params['attention_type']
-        if params['bottleneck_dim'] != params['decoder_num_units']:
-            model.name += '_fc' + str(params['bottleneck_dim'])
-        if params['dropout_encoder'] != 0 or params['dropout_decoder'] != 0:
+        model.name += '_' + config['decoder_type']
+        model.name += str(config['decoder_num_units']) + 'H'
+        model.name += str(config['decoder_num_layers']) + 'L'
+        model.name += '_' + config['optimizer']
+        model.name += '_lr' + str(config['learning_rate'])
+        model.name += '_' + config['attention_type']
+        if config['bottleneck_dim'] != config['decoder_num_units']:
+            model.name += '_fc' + str(config['bottleneck_dim'])
+        if config['dropout_encoder'] != 0 or config['dropout_decoder'] != 0:
             model.name += '_drop'
-            if params['dropout_input'] != 0:
-                model.name += 'in' + str(params['dropout_input'])
-            if params['dropout_encoder'] != 0:
-                model.name += 'en' + str(params['dropout_encoder'])
-            if params['dropout_decoder'] != 0:
-                model.name += 'de' + str(params['dropout_decoder'])
-            if params['dropout_embedding'] != 0:
-                model.name += 'emb' + str(params['dropout_embedding'])
-        if params['sharpening_factor'] != 1:
-            model.name += '_sharp' + str(params['sharpening_factor'])
-        if params['logits_temperature'] != 1:
-            model.name += '_temp' + str(params['logits_temperature'])
-        if bool(params['sigmoid_smoothing']):
+            if config['dropout_input'] != 0:
+                model.name += 'in' + str(config['dropout_input'])
+            if config['dropout_encoder'] != 0:
+                model.name += 'en' + str(config['dropout_encoder'])
+            if config['dropout_decoder'] != 0:
+                model.name += 'de' + str(config['dropout_decoder'])
+            if config['dropout_embedding'] != 0:
+                model.name += 'emb' + str(config['dropout_embedding'])
+        if config['sharpening_factor'] != 1:
+            model.name += '_sharp' + str(config['sharpening_factor'])
+        if config['logits_temperature'] != 1:
+            model.name += '_temp' + str(config['logits_temperature'])
+        if bool(config['sigmoid_smoothing']):
             model.name += '_sigsmooth'
-        if params['coverage_weight'] > 0:
-            model.name += '_coverage' + str(params['coverage_weight'])
-        if params['ctc_loss_weight'] > 0:
-            model.name += '_ctc' + str(params['ctc_loss_weight'])
-        if params['scheduled_sampling_prob'] > 0:
-            model.name += '_ss' + str(params['scheduled_sampling_prob'])
-        if params['label_smoothing_prob'] > 0:
-            model.name += '_ls' + str(params['label_smoothing_prob'])
-        if params['weight_noise_std'] != 0:
-            model.name += '_noise' + str(params['weight_noise_std'])
-        if bool(params['encoder_residual']):
+        if config['coverage_weight'] > 0:
+            model.name += '_coverage' + str(config['coverage_weight'])
+        if config['ctc_loss_weight'] > 0:
+            model.name += '_ctc' + str(config['ctc_loss_weight'])
+        if config['scheduled_sampling_prob'] > 0:
+            model.name += '_ss' + str(config['scheduled_sampling_prob'])
+        if config['label_smoothing_prob'] > 0:
+            model.name += '_ls' + str(config['label_smoothing_prob'])
+        if config['weight_noise_std'] != 0:
+            model.name += '_noise' + str(config['weight_noise_std'])
+        if bool(config['encoder_residual']):
             model.name += '_encres'
-        elif bool(params['encoder_dense_residual']):
+        elif bool(config['encoder_dense_residual']):
             model.name += '_encdense'
-        if bool(params['decoder_residual']):
+        if bool(config['decoder_residual']):
             model.name += '_decres'
-        elif bool(params['decoder_dense_residual']):
+        elif bool(config['decoder_dense_residual']):
             model.name += '_decdense'
         model.name += '_input' + str(model.input_size)
-        model.name += '_' + params['decoding_order']
-        if isdir(params['char_init']):
-            model.name += '_charinit'
-        if float(params['backward_loss_weight']) > 0:
-            model.name += '_bwd' + str(params['backward_loss_weight'])
-        if int(params['num_heads']) > 1:
-            model.name += '_head' + str(params['num_heads'])
+        model.name += '_' + config['decoding_order']
+        if isdir(config['pretrained_model_path']):
+            model.name += '_pretrain'
+        if float(config['backward_loss_weight']) > 0:
+            model.name += '_bwd' + str(config['backward_loss_weight'])
+        if int(config['num_heads']) > 1:
+            model.name += '_head' + str(config['num_heads'])
+        if config['rnnlm_fusion_type']:
+            model.name += '_' + config['rnnlm_fusion_type']
+        if bool(config['rnnlm_joint_training']):
+            model.name += '_lmjoint'
+        if bool(config['concat_embedding']) > 0:
+            model.name += '_concatemb'
 
-    elif params['model_type'] == 'hierarchical_attention':
+    elif config['model_type'] == 'hierarchical_attention':
         if backend == 'pytorch':
             from models.pytorch_v3.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
         elif backend == 'chainer':
             from models.chainer.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
 
         model = HierarchicalAttentionSeq2seq(
-            input_size=params['input_freq'] *
-            (1 + int(params['use_delta'] + int(params['use_double_delta']))),
-            encoder_type=params['encoder_type'],
-            encoder_bidirectional=params['encoder_bidirectional'],
-            encoder_num_units=params['encoder_num_units'],
-            encoder_num_proj=params['encoder_num_proj'],
-            encoder_num_layers=params['encoder_num_layers'],
-            encoder_num_layers_sub=params['encoder_num_layers_sub'],
-            attention_type=params['attention_type'],
-            attention_dim=params['attention_dim'],
-            decoder_type=params['decoder_type'],
-            decoder_num_units=params['decoder_num_units'],
-            decoder_num_layers=params['decoder_num_layers'],
-            decoder_num_units_sub=params['decoder_num_units_sub'],
-            decoder_num_layers_sub=params['decoder_num_layers_sub'],
-            embedding_dim=params['embedding_dim'],
-            embedding_dim_sub=params['embedding_dim_sub'],
-            dropout_input=params['dropout_input'],
-            dropout_encoder=params['dropout_encoder'],
-            dropout_decoder=params['dropout_decoder'],
-            dropout_embedding=params['dropout_embedding'],
-            main_loss_weight=params['main_loss_weight'],
-            sub_loss_weight=params['sub_loss_weight'],
-            num_classes=params['num_classes'],
-            num_classes_sub=params['num_classes_sub'],
-            parameter_init_distribution=params['parameter_init_distribution'],
-            parameter_init=params['parameter_init'],
-            recurrent_weight_orthogonal=params['recurrent_weight_orthogonal'],
-            init_forget_gate_bias_with_one=params['init_forget_gate_bias_with_one'],
-            subsample_list=params['subsample_list'],
-            subsample_type=params['subsample_type'],
-            bridge_layer=params['bridge_layer'],
-            init_dec_state=params['init_dec_state'],
-            sharpening_factor=params['sharpening_factor'],
-            logits_temperature=params['logits_temperature'],
-            sigmoid_smoothing=params['sigmoid_smoothing'],
-            coverage_weight=params['coverage_weight'],
-            ctc_loss_weight_sub=params['ctc_loss_weight_sub'],
-            attention_conv_num_channels=params['attention_conv_num_channels'],
-            attention_conv_width=params['attention_conv_width'],
-            num_stack=params['num_stack'],
-            num_skip=params['num_skip'],
-            splice=params['splice'],
-            input_channel=params['input_channel'],
-            conv_channels=params['conv_channels'],
-            conv_kernel_sizes=params['conv_kernel_sizes'],
-            conv_strides=params['conv_strides'],
-            poolings=params['poolings'],
-            batch_norm=params['batch_norm'],
-            scheduled_sampling_prob=params['scheduled_sampling_prob'],
-            scheduled_sampling_max_step=params['scheduled_sampling_max_step'],
-            label_smoothing_prob=params['label_smoothing_prob'],
-            weight_noise_std=params['weight_noise_std'],
-            encoder_residual=params['encoder_residual'],
-            encoder_dense_residual=params['encoder_dense_residual'],
-            decoder_residual=params['decoder_residual'],
-            decoder_dense_residual=params['decoder_dense_residual'],
-            decoding_order=params['decoding_order'],
-            bottleneck_dim=params['bottleneck_dim'],
-            bottleneck_dim_sub=params['bottleneck_dim_sub'],
-            backward_sub=params['backward_sub'],
-            num_heads=params['num_heads'],
-            num_heads_sub=params['num_heads_sub'])
+            input_size=config['input_freq'] *
+            (1 + int(config['use_delta'] + int(config['use_double_delta']))),
+            encoder_type=config['encoder_type'],
+            encoder_bidirectional=config['encoder_bidirectional'],
+            encoder_num_units=config['encoder_num_units'],
+            encoder_num_proj=config['encoder_num_proj'],
+            encoder_num_layers=config['encoder_num_layers'],
+            encoder_num_layers_sub=config['encoder_num_layers_sub'],
+            attention_type=config['attention_type'],
+            attention_dim=config['attention_dim'],
+            decoder_type=config['decoder_type'],
+            decoder_num_units=config['decoder_num_units'],
+            decoder_num_layers=config['decoder_num_layers'],
+            decoder_num_units_sub=config['decoder_num_units_sub'],
+            decoder_num_layers_sub=config['decoder_num_layers_sub'],
+            embedding_dim=config['embedding_dim'],
+            embedding_dim_sub=config['embedding_dim_sub'],
+            dropout_input=config['dropout_input'],
+            dropout_encoder=config['dropout_encoder'],
+            dropout_decoder=config['dropout_decoder'],
+            dropout_embedding=config['dropout_embedding'],
+            main_loss_weight=config['main_loss_weight'],
+            sub_loss_weight=config['sub_loss_weight'],
+            num_classes=config['num_classes'],
+            num_classes_sub=config['num_classes_sub'],
+            parameter_init_distribution=config['parameter_init_distribution'],
+            parameter_init=config['parameter_init'],
+            recurrent_weight_orthogonal=config['recurrent_weight_orthogonal'],
+            init_forget_gate_bias_with_one=config['init_forget_gate_bias_with_one'],
+            subsample_list=config['subsample_list'],
+            subsample_type=config['subsample_type'],
+            bridge_layer=config['bridge_layer'],
+            init_dec_state=config['init_dec_state'],
+            sharpening_factor=config['sharpening_factor'],
+            logits_temperature=config['logits_temperature'],
+            sigmoid_smoothing=config['sigmoid_smoothing'],
+            coverage_weight=config['coverage_weight'],
+            ctc_loss_weight_sub=config['ctc_loss_weight_sub'],
+            attention_conv_num_channels=config['attention_conv_num_channels'],
+            attention_conv_width=config['attention_conv_width'],
+            num_stack=config['num_stack'],
+            num_skip=config['num_skip'],
+            splice=config['splice'],
+            input_channel=config['input_channel'],
+            conv_channels=config['conv_channels'],
+            conv_kernel_sizes=config['conv_kernel_sizes'],
+            conv_strides=config['conv_strides'],
+            poolings=config['poolings'],
+            batch_norm=config['batch_norm'],
+            scheduled_sampling_prob=config['scheduled_sampling_prob'],
+            scheduled_sampling_max_step=config['scheduled_sampling_max_step'],
+            label_smoothing_prob=config['label_smoothing_prob'],
+            weight_noise_std=config['weight_noise_std'],
+            encoder_residual=config['encoder_residual'],
+            encoder_dense_residual=config['encoder_dense_residual'],
+            decoder_residual=config['decoder_residual'],
+            decoder_dense_residual=config['decoder_dense_residual'],
+            decoding_order=config['decoding_order'],
+            bottleneck_dim=config['bottleneck_dim'],
+            bottleneck_dim_sub=config['bottleneck_dim_sub'],
+            backward_sub=config['backward_sub'],
+            num_heads=config['num_heads'],
+            num_heads_sub=config['num_heads_sub'])
 
         model.name = model_name
-        if params['encoder_type'] not in ['cnn', 'resnet']:
-            model.name += str(params['encoder_num_units']) + 'H'
-            model.name += str(params['encoder_num_layers']) + 'L'
-            model.name += str(params['encoder_num_layers_sub']) + 'L'
-            if params['encoder_num_proj'] != 0:
-                model.name += '_proj' + str(params['encoder_num_proj'])
-            if sum(params['subsample_list']) > 0:
-                model.name += '_' + params['subsample_type'] + \
-                    str(2 ** sum(params['subsample_list']))
-            if params['num_stack'] != 1:
-                model.name += '_stack' + str(params['num_stack'])
-        if bool(params['batch_norm']):
+        if config['encoder_type'] not in ['cnn', 'resnet']:
+            model.name += str(config['encoder_num_units']) + 'H'
+            model.name += str(config['encoder_num_layers']) + 'L'
+            model.name += str(config['encoder_num_layers_sub']) + 'L'
+            if config['encoder_num_proj'] != 0:
+                model.name += '_proj' + str(config['encoder_num_proj'])
+            if sum(config['subsample_list']) > 0:
+                model.name += '_' + config['subsample_type'] + \
+                    str(2 ** sum(config['subsample_list']))
+            if config['num_stack'] != 1:
+                model.name += '_stack' + str(config['num_stack'])
+        if bool(config['batch_norm']):
             model.name += '_bn'
-        model.name += '_' + params['decoder_type']
-        model.name += str(params['decoder_num_units']) + 'H'
-        model.name += str(params['decoder_num_layers']) + 'L'
-        model.name += '_' + params['optimizer']
-        model.name += '_lr' + str(params['learning_rate'])
-        model.name += '_' + params['attention_type']
-        if params['bottleneck_dim'] != params['decoder_num_units']:
-            model.name += '_fc' + str(params['bottleneck_dim'])
-        if params['dropout_encoder'] != 0 or params['dropout_decoder'] != 0:
+        model.name += '_' + config['decoder_type']
+        model.name += str(config['decoder_num_units']) + 'H'
+        model.name += str(config['decoder_num_layers']) + 'L'
+        model.name += '_' + config['optimizer']
+        model.name += '_lr' + str(config['learning_rate'])
+        model.name += '_' + config['attention_type']
+        if config['bottleneck_dim'] != config['decoder_num_units']:
+            model.name += '_fc' + str(config['bottleneck_dim'])
+        if config['dropout_encoder'] != 0 or config['dropout_decoder'] != 0:
             model.name += '_drop'
-            if params['dropout_input'] != 0:
-                model.name += 'in' + str(params['dropout_input'])
-            if params['dropout_encoder'] != 0:
-                model.name += 'en' + str(params['dropout_encoder'])
-            if params['dropout_decoder'] != 0:
-                model.name += 'de' + str(params['dropout_decoder'])
-            if params['dropout_embedding'] != 0:
-                model.name += 'emb' + str(params['dropout_embedding'])
-        if params['sharpening_factor'] != 1:
-            model.name += '_sharp' + str(params['sharpening_factor'])
-        if params['logits_temperature'] != 1:
-            model.name += '_temp' + str(params['logits_temperature'])
-        if bool(params['sigmoid_smoothing']):
+            if config['dropout_input'] != 0:
+                model.name += 'in' + str(config['dropout_input'])
+            if config['dropout_encoder'] != 0:
+                model.name += 'en' + str(config['dropout_encoder'])
+            if config['dropout_decoder'] != 0:
+                model.name += 'de' + str(config['dropout_decoder'])
+            if config['dropout_embedding'] != 0:
+                model.name += 'emb' + str(config['dropout_embedding'])
+        if config['sharpening_factor'] != 1:
+            model.name += '_sharp' + str(config['sharpening_factor'])
+        if config['logits_temperature'] != 1:
+            model.name += '_temp' + str(config['logits_temperature'])
+        if bool(config['sigmoid_smoothing']):
             model.name += '_sigsmooth'
-        if params['coverage_weight'] > 0:
-            model.name += '_coverage' + str(params['coverage_weight'])
-        if params['scheduled_sampling_prob'] > 0:
-            model.name += '_ss' + str(params['scheduled_sampling_prob'])
-        if params['label_smoothing_prob'] > 0:
-            model.name += '_ls' + str(params['label_smoothing_prob'])
-        if params['weight_noise_std'] != 0:
-            model.name += '_noise' + str(params['weight_noise_std'])
-        if bool(params['encoder_residual']):
+        if config['coverage_weight'] > 0:
+            model.name += '_coverage' + str(config['coverage_weight'])
+        if config['scheduled_sampling_prob'] > 0:
+            model.name += '_ss' + str(config['scheduled_sampling_prob'])
+        if config['label_smoothing_prob'] > 0:
+            model.name += '_ls' + str(config['label_smoothing_prob'])
+        if config['weight_noise_std'] != 0:
+            model.name += '_noise' + str(config['weight_noise_std'])
+        if bool(config['encoder_residual']):
             model.name += '_encres'
-        elif bool(params['encoder_dense_residual']):
+        elif bool(config['encoder_dense_residual']):
             model.name += '_encdense'
-        if bool(params['decoder_residual']):
+        if bool(config['decoder_residual']):
             model.name += '_decres'
-        elif bool(params['decoder_dense_residual']):
+        elif bool(config['decoder_dense_residual']):
             model.name += '_decdense'
-        model.name += '_main' + str(params['main_loss_weight'])
-        model.name += '_sub' + str(params['sub_loss_weight'])
-        if params['ctc_loss_weight_sub'] > 0:
-            model.name += '_ctcsub' + str(params['ctc_loss_weight_sub'])
+        model.name += '_main' + str(config['main_loss_weight'])
+        model.name += '_sub' + str(config['sub_loss_weight'])
+        if config['ctc_loss_weight_sub'] > 0:
+            model.name += '_ctcsub' + str(config['ctc_loss_weight_sub'])
         model.name += '_input' + str(model.input_size)
-        model.name += '_' + params['decoding_order']
-        if isdir(params['char_init']):
-            model.name += '_charinit'
-        if bool(params['backward_sub']):
+        model.name += '_' + config['decoding_order']
+        if isdir(config['pretrained_model_path']):
+            model.name += '_pretrain'
+        if bool(config['backward_sub']):
             model.name += '_bwdsub'
-        if int(params['num_heads']) > 1:
-            model.name += '_head' + str(params['num_heads'])
+        if int(config['num_heads']) > 1:
+            model.name += '_head' + str(config['num_heads'])
 
-    elif params['model_type'] == 'nested_attention':
+    elif config['model_type'] == 'nested_attention':
         if backend == 'pytorch':
             from models.pytorch_v3.attention.nested_attention_seq2seq import NestedAttentionSeq2seq
         elif backend == 'chainer':
             raise NotImplementedError
 
         model = NestedAttentionSeq2seq(
-            input_size=params['input_freq'] *
-            (1 + int(params['use_delta'] + int(params['use_double_delta']))),
-            encoder_type=params['encoder_type'],
-            encoder_bidirectional=params['encoder_bidirectional'],
-            encoder_num_units=params['encoder_num_units'],
-            encoder_num_proj=params['encoder_num_proj'],
-            encoder_num_layers=params['encoder_num_layers'],
-            encoder_num_layers_sub=params['encoder_num_layers_sub'],
-            attention_type=params['attention_type'],
-            attention_dim=params['attention_dim'],
-            decoder_type=params['decoder_type'],
-            decoder_num_units=params['decoder_num_units'],
-            decoder_num_layers=params['decoder_num_layers'],
-            decoder_num_units_sub=params['decoder_num_units_sub'],
-            decoder_num_layers_sub=params['decoder_num_layers_sub'],
-            embedding_dim=params['embedding_dim'],
-            embedding_dim_sub=params['embedding_dim_sub'],
-            dropout_input=params['dropout_input'],
-            dropout_encoder=params['dropout_encoder'],
-            dropout_decoder=params['dropout_decoder'],
-            dropout_embedding=params['dropout_embedding'],
-            main_loss_weight=params['main_loss_weight'],
-            sub_loss_weight=params['sub_loss_weight'],
-            num_classes=params['num_classes'],
-            num_classes_sub=params['num_classes_sub'],
-            parameter_init_distribution=params['parameter_init_distribution'],
-            parameter_init=params['parameter_init'],
-            recurrent_weight_orthogonal=params['recurrent_weight_orthogonal'],
-            init_forget_gate_bias_with_one=params['init_forget_gate_bias_with_one'],
-            subsample_list=params['subsample_list'],
-            subsample_type=params['subsample_type'],
-            bridge_layer=params['bridge_layer'],
-            init_dec_state=params['init_dec_state'],
-            sharpening_factor=params['sharpening_factor'],
-            logits_temperature=params['logits_temperature'],
-            sigmoid_smoothing=params['sigmoid_smoothing'],
-            coverage_weight=params['coverage_weight'],
-            ctc_loss_weight_sub=params['ctc_loss_weight_sub'],
-            attention_conv_num_channels=params['attention_conv_num_channels'],
-            attention_conv_width=params['attention_conv_width'],
-            num_stack=params['num_stack'],
-            num_skip=params['num_skip'],
-            splice=params['splice'],
-            input_channel=params['input_channel'],
-            conv_channels=params['conv_channels'],
-            conv_kernel_sizes=params['conv_kernel_sizes'],
-            conv_strides=params['conv_strides'],
-            poolings=params['poolings'],
-            batch_norm=params['batch_norm'],
-            scheduled_sampling_prob=params['scheduled_sampling_prob'],
-            scheduled_sampling_max_step=params['scheduled_sampling_max_step'],
-            label_smoothing_prob=params['label_smoothing_prob'],
-            weight_noise_std=params['weight_noise_std'],
-            encoder_residual=params['encoder_residual'],
-            encoder_dense_residual=params['encoder_dense_residual'],
-            decoder_residual=params['decoder_residual'],
-            decoder_dense_residual=params['decoder_dense_residual'],
-            decoding_order=params['decoding_order'],
-            bottleneck_dim=params['bottleneck_dim'],
-            bottleneck_dim_sub=params['bottleneck_dim_sub'],
-            backward_sub=params['backward_sub'],
-            num_heads=params['num_heads'],
-            num_heads_sub=params['num_heads_sub'],
-            num_heads_dec=params['num_heads_dec'],
-            usage_dec_sub=params['usage_dec_sub'],
-            att_reg_weight=params['att_reg_weight'],
-            dec_attend_temperature=params['dec_attend_temperature'],
-            dec_sigmoid_smoothing=params['dec_sigmoid_smoothing'],
-            relax_context_vec_dec=params['relax_context_vec_dec'],
-            dec_attention_type=params['dec_attention_type'],
-            logits_injection=params['logits_injection'],
-            gating=params['gating'])
+            input_size=config['input_freq'] *
+            (1 + int(config['use_delta'] + int(config['use_double_delta']))),
+            encoder_type=config['encoder_type'],
+            encoder_bidirectional=config['encoder_bidirectional'],
+            encoder_num_units=config['encoder_num_units'],
+            encoder_num_proj=config['encoder_num_proj'],
+            encoder_num_layers=config['encoder_num_layers'],
+            encoder_num_layers_sub=config['encoder_num_layers_sub'],
+            attention_type=config['attention_type'],
+            attention_dim=config['attention_dim'],
+            decoder_type=config['decoder_type'],
+            decoder_num_units=config['decoder_num_units'],
+            decoder_num_layers=config['decoder_num_layers'],
+            decoder_num_units_sub=config['decoder_num_units_sub'],
+            decoder_num_layers_sub=config['decoder_num_layers_sub'],
+            embedding_dim=config['embedding_dim'],
+            embedding_dim_sub=config['embedding_dim_sub'],
+            dropout_input=config['dropout_input'],
+            dropout_encoder=config['dropout_encoder'],
+            dropout_decoder=config['dropout_decoder'],
+            dropout_embedding=config['dropout_embedding'],
+            main_loss_weight=config['main_loss_weight'],
+            sub_loss_weight=config['sub_loss_weight'],
+            num_classes=config['num_classes'],
+            num_classes_sub=config['num_classes_sub'],
+            parameter_init_distribution=config['parameter_init_distribution'],
+            parameter_init=config['parameter_init'],
+            recurrent_weight_orthogonal=config['recurrent_weight_orthogonal'],
+            init_forget_gate_bias_with_one=config['init_forget_gate_bias_with_one'],
+            subsample_list=config['subsample_list'],
+            subsample_type=config['subsample_type'],
+            bridge_layer=config['bridge_layer'],
+            init_dec_state=config['init_dec_state'],
+            sharpening_factor=config['sharpening_factor'],
+            logits_temperature=config['logits_temperature'],
+            sigmoid_smoothing=config['sigmoid_smoothing'],
+            coverage_weight=config['coverage_weight'],
+            ctc_loss_weight_sub=config['ctc_loss_weight_sub'],
+            attention_conv_num_channels=config['attention_conv_num_channels'],
+            attention_conv_width=config['attention_conv_width'],
+            num_stack=config['num_stack'],
+            num_skip=config['num_skip'],
+            splice=config['splice'],
+            input_channel=config['input_channel'],
+            conv_channels=config['conv_channels'],
+            conv_kernel_sizes=config['conv_kernel_sizes'],
+            conv_strides=config['conv_strides'],
+            poolings=config['poolings'],
+            batch_norm=config['batch_norm'],
+            scheduled_sampling_prob=config['scheduled_sampling_prob'],
+            scheduled_sampling_max_step=config['scheduled_sampling_max_step'],
+            label_smoothing_prob=config['label_smoothing_prob'],
+            weight_noise_std=config['weight_noise_std'],
+            encoder_residual=config['encoder_residual'],
+            encoder_dense_residual=config['encoder_dense_residual'],
+            decoder_residual=config['decoder_residual'],
+            decoder_dense_residual=config['decoder_dense_residual'],
+            decoding_order=config['decoding_order'],
+            bottleneck_dim=config['bottleneck_dim'],
+            bottleneck_dim_sub=config['bottleneck_dim_sub'],
+            backward_sub=config['backward_sub'],
+            num_heads=config['num_heads'],
+            num_heads_sub=config['num_heads_sub'],
+            num_heads_dec=config['num_heads_dec'],
+            usage_dec_sub=config['usage_dec_sub'],
+            att_reg_weight=config['att_reg_weight'],
+            dec_attend_temperature=config['dec_attend_temperature'],
+            dec_sigmoid_smoothing=config['dec_sigmoid_smoothing'],
+            relax_context_vec_dec=config['relax_context_vec_dec'],
+            dec_attention_type=config['dec_attention_type'],
+            logits_injection=config['logits_injection'],
+            gating=config['gating'])
 
         model.name = model_name
-        if params['encoder_type'] not in ['cnn', 'resnet']:
-            model.name += str(params['encoder_num_units']) + 'H'
-            model.name += str(params['encoder_num_layers']) + 'L'
-            model.name += str(params['encoder_num_layers_sub']) + 'L'
-            if params['encoder_num_proj'] != 0:
-                model.name += '_proj' + str(params['encoder_num_proj'])
-            if sum(params['subsample_list']) > 0:
-                model.name += '_' + params['subsample_type'] + \
-                    str(2 ** sum(params['subsample_list']))
-            if params['num_stack'] != 1:
-                model.name += '_stack' + str(params['num_stack'])
-        if bool(params['batch_norm']):
+        if config['encoder_type'] not in ['cnn', 'resnet']:
+            model.name += str(config['encoder_num_units']) + 'H'
+            model.name += str(config['encoder_num_layers']) + 'L'
+            model.name += str(config['encoder_num_layers_sub']) + 'L'
+            if config['encoder_num_proj'] != 0:
+                model.name += '_proj' + str(config['encoder_num_proj'])
+            if sum(config['subsample_list']) > 0:
+                model.name += '_' + config['subsample_type'] + \
+                    str(2 ** sum(config['subsample_list']))
+            if config['num_stack'] != 1:
+                model.name += '_stack' + str(config['num_stack'])
+        if bool(config['batch_norm']):
             model.name += '_bn'
-        model.name += '_' + params['decoder_type']
-        model.name += str(params['decoder_num_units']) + 'H'
-        model.name += str(params['decoder_num_layers']) + 'L'
-        model.name += '_' + params['optimizer']
-        model.name += '_lr' + str(params['learning_rate'])
-        model.name += '_' + params['attention_type']
-        if params['bottleneck_dim'] != params['decoder_num_units']:
-            model.name += '_fc' + str(params['bottleneck_dim'])
-        if params['dropout_encoder'] != 0 or params['dropout_decoder'] != 0:
+        model.name += '_' + config['decoder_type']
+        model.name += str(config['decoder_num_units']) + 'H'
+        model.name += str(config['decoder_num_layers']) + 'L'
+        model.name += '_' + config['optimizer']
+        model.name += '_lr' + str(config['learning_rate'])
+        model.name += '_' + config['attention_type']
+        if config['bottleneck_dim'] != config['decoder_num_units']:
+            model.name += '_fc' + str(config['bottleneck_dim'])
+        if config['dropout_encoder'] != 0 or config['dropout_decoder'] != 0:
             model.name += '_drop'
-            if params['dropout_input'] != 0:
-                model.name += 'in' + str(params['dropout_input'])
-            if params['dropout_encoder'] != 0:
-                model.name += 'en' + str(params['dropout_encoder'])
-            if params['dropout_decoder'] != 0:
-                model.name += 'de' + str(params['dropout_decoder'])
-            if params['dropout_embedding'] != 0:
-                model.name += 'emb' + str(params['dropout_embedding'])
-        if params['sharpening_factor'] != 1:
-            model.name += '_sharp' + str(params['sharpening_factor'])
-        if params['logits_temperature'] != 1:
-            model.name += '_temp' + str(params['logits_temperature'])
-        if bool(params['sigmoid_smoothing']):
+            if config['dropout_input'] != 0:
+                model.name += 'in' + str(config['dropout_input'])
+            if config['dropout_encoder'] != 0:
+                model.name += 'en' + str(config['dropout_encoder'])
+            if config['dropout_decoder'] != 0:
+                model.name += 'de' + str(config['dropout_decoder'])
+            if config['dropout_embedding'] != 0:
+                model.name += 'emb' + str(config['dropout_embedding'])
+        if config['sharpening_factor'] != 1:
+            model.name += '_sharp' + str(config['sharpening_factor'])
+        if config['logits_temperature'] != 1:
+            model.name += '_temp' + str(config['logits_temperature'])
+        if bool(config['sigmoid_smoothing']):
             model.name += '_sigsmooth'
-        if params['coverage_weight'] > 0:
-            model.name += '_coverage' + str(params['coverage_weight'])
-        if params['ctc_loss_weight_sub'] > 0:
-            model.name += '_ctcsub' + str(params['ctc_loss_weight_sub'])
-        if params['scheduled_sampling_prob'] > 0:
-            model.name += '_ss' + str(params['scheduled_sampling_prob'])
-        if params['label_smoothing_prob'] > 0:
-            model.name += '_ls' + str(params['label_smoothing_prob'])
-        if params['weight_noise_std'] != 0:
-            model.name += '_noise' + str(params['weight_noise_std'])
-        if bool(params['encoder_residual']):
+        if config['coverage_weight'] > 0:
+            model.name += '_coverage' + str(config['coverage_weight'])
+        if config['ctc_loss_weight_sub'] > 0:
+            model.name += '_ctcsub' + str(config['ctc_loss_weight_sub'])
+        if config['scheduled_sampling_prob'] > 0:
+            model.name += '_ss' + str(config['scheduled_sampling_prob'])
+        if config['label_smoothing_prob'] > 0:
+            model.name += '_ls' + str(config['label_smoothing_prob'])
+        if config['weight_noise_std'] != 0:
+            model.name += '_noise' + str(config['weight_noise_std'])
+        if bool(config['encoder_residual']):
             model.name += '_encres'
-        elif bool(params['encoder_dense_residual']):
+        elif bool(config['encoder_dense_residual']):
             model.name += '_encdense'
-        if bool(params['decoder_residual']):
+        if bool(config['decoder_residual']):
             model.name += '_decres'
-        elif bool(params['decoder_dense_residual']):
+        elif bool(config['decoder_dense_residual']):
             model.name += '_decdense'
-        model.name += '_main' + str(params['main_loss_weight'])
-        model.name += '_sub' + str(params['sub_loss_weight'])
+        model.name += '_main' + str(config['main_loss_weight'])
+        model.name += '_sub' + str(config['sub_loss_weight'])
         model.name += '_input' + str(model.input_size)
-        model.name += '_' + params['decoding_order']
-        if bool(params['backward_sub']):
+        model.name += '_' + config['decoding_order']
+        if bool(config['backward_sub']):
             model.name += '_bwdsub'
-        if int(params['num_heads']) > 1:
-            model.name += '_head' + str(params['num_heads'])
-        model.name += '_' + params['dec_attention_type']
-        model.name += '_' + params['usage_dec_sub']
-        if params['dec_attend_temperature'] != 1:
+        if int(config['num_heads']) > 1:
+            model.name += '_head' + str(config['num_heads'])
+        model.name += '_' + config['dec_attention_type']
+        model.name += '_' + config['usage_dec_sub']
+        if config['dec_attend_temperature'] != 1:
             model.name += '_temp' + \
-                str(params['dec_attend_temperature'])
-        if bool(params['dec_sigmoid_smoothing']):
+                str(config['dec_attend_temperature'])
+        if bool(config['dec_sigmoid_smoothing']):
             model.name += '_sigsmooth'
-        if float(params['att_reg_weight']) > 0:
+        if float(config['att_reg_weight']) > 0:
             model.name += '_attreg' + \
-                str(params['att_reg_weight'])
-        if bool(params['relax_context_vec_dec']):
+                str(config['att_reg_weight'])
+        if bool(config['relax_context_vec_dec']):
             model.name += '_relax'
-        if bool(params['logits_injection']):
+        if bool(config['logits_injection']):
             model.name += '_probinj'
-        if bool(params['gating']):
+        if bool(config['gating']):
             model.name += '_gate'
-        if isdir(params['char_init']):
-            model.name += '_charinit'
+        if isdir(config['pretrained_model_path']):
+            model.name += '_pretrain'
 
     elif model_type == 'rnnlm':
         if backend == 'pytorch':
@@ -635,40 +658,40 @@ def load(model_type, params, backend):
             from models.chainer.lm.rnnlm import RNNLM
 
         model = RNNLM(
-            embedding_dim=params['embedding_dim'],
-            rnn_type=params['rnn_type'],
-            bidirectional=params['bidirectional'],
-            num_units=params['num_units'],
-            num_layers=params['num_layers'],
-            dropout_embedding=params['dropout_embedding'],
-            dropout_hidden=params['dropout_hidden'],
-            dropout_output=params['dropout_output'],
-            num_classes=params['num_classes'],
-            parameter_init_distribution=params['parameter_init_distribution'],
-            parameter_init=params['parameter_init'],
-            recurrent_weight_orthogonal=params['recurrent_weight_orthogonal'],
-            init_forget_gate_bias_with_one=params['init_forget_gate_bias_with_one'],
-            tie_weights=params['tie_weights'])
+            embedding_dim=config['embedding_dim'],
+            rnn_type=config['rnn_type'],
+            bidirectional=config['bidirectional'],
+            num_units=config['num_units'],
+            num_layers=config['num_layers'],
+            dropout_embedding=config['dropout_embedding'],
+            dropout_hidden=config['dropout_hidden'],
+            dropout_output=config['dropout_output'],
+            num_classes=config['num_classes'],
+            parameter_init_distribution=config['parameter_init_distribution'],
+            parameter_init=config['parameter_init'],
+            recurrent_weight_orthogonal=config['recurrent_weight_orthogonal'],
+            init_forget_gate_bias_with_one=config['init_forget_gate_bias_with_one'],
+            tie_weights=config['tie_weights'])
 
-        model_name = params['rnn_type']
-        if params['bidirectional']:
+        model_name = config['rnn_type']
+        if config['bidirectional']:
             model_name = 'b' + model_name
         model.name = model_name
-        model.name += str(params['num_units']) + 'H'
-        model.name += str(params['num_layers']) + 'L'
-        # if params['num_proj'] != 0:
-        #     model.name += '_proj' + str(params['num_proj'])
-        model.name += 'emb' + str(params['embedding_dim'])
-        model.name += '_' + params['optimizer']
-        model.name += '_lr' + str(params['learning_rate'])
+        model.name += str(config['num_units']) + 'H'
+        model.name += str(config['num_layers']) + 'L'
+        # if config['num_proj'] != 0:
+        #     model.name += '_proj' + str(config['num_proj'])
+        model.name += 'emb' + str(config['embedding_dim'])
+        model.name += '_' + config['optimizer']
+        model.name += '_lr' + str(config['learning_rate'])
         model.name += '_drop'
-        # if params['dropout_input'] != 0:
-        #     model.name += 'in' + str(params['dropout_input'])
-        if params['dropout_hidden'] != 0:
-            model.name += 'hidden' + str(params['dropout_hidden'])
-        if params['dropout_output'] != 0:
-            model.name += 'out' + str(params['dropout_output'])
-        if params['dropout_embedding'] != 0:
-            model.name += 'emb' + str(params['dropout_embedding'])
+        # if config['dropout_input'] != 0:
+        #     model.name += 'in' + str(config['dropout_input'])
+        if config['dropout_hidden'] != 0:
+            model.name += 'hidden' + str(config['dropout_hidden'])
+        if config['dropout_output'] != 0:
+            model.name += 'out' + str(config['dropout_output'])
+        if config['dropout_embedding'] != 0:
+            model.name += 'emb' + str(config['dropout_embedding'])
 
     return model

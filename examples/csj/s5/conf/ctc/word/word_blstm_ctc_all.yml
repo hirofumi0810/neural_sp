@@ -17,10 +17,10 @@ param:
   fc_list: [320]
 
   # optimization
-  batch_size: 50
+  batch_size: 60
 
   # initialization
-  char_init: False
+  pretrained_model_path: False
 
   # annealing
   print_step: 400

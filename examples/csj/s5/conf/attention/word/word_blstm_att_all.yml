@@ -12,16 +12,16 @@ param:
     - False
     - True
     - True
-    - False
+    - True
     - False
   decoding_order: bahdanau
   num_heads: 1
 
   # optimization
-  batch_size: 50
+  batch_size: 60
 
   # initialization
-  char_init: False
+  pretrained_model_path: False
 
   # regularization
   scheduled_sampling_max_step: 100000
@@ -32,3 +32,10 @@ param:
   # MTL
   backward_loss_weight: 0
   ctc_loss_weight: 0
+
+  # RNNLM fusion
+  fusion_type: False
+  rnnlm_path: False
+  rnnlm_joint_training: False
+  rnnlm_weight: 0
+  concat_embedding: False

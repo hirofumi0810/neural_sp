@@ -20,8 +20,15 @@ param:
   num_heads: 1
 
   # initialization
-  char_init: False
+  pretrained_model_path: False
 
   # MTL
   backward_loss_weight: 0
   ctc_loss_weight: 0
+
+  # RNNLM fusion
+  fusion_type: False
+  rnnlm_path: False
+  rnnlm_joint_training: False
+  rnnlm_weight: 0
+  concat_embedding: False

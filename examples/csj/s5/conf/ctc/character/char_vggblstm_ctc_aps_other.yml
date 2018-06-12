@@ -40,7 +40,7 @@ param:
   batch_size: 30
 
   # initialization
-  char_init: False
+  pretrained_model_path: False
 
   # annealing
   print_step: 400

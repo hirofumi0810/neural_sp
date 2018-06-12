@@ -195,6 +195,13 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         if backward_sub:
             self.bwd_weight_1 = sub_loss_weight
 
+        # Setting for the RNNLM fusion
+        self.rnnlm_fusion_type = False
+        self.rnnlm_1 = None
+        self.rnnlm_joint_training = False
+        self.rnnlm_weight = 0
+        self.concat_embedding = False
+
         # Setting for decoder attention
         assert usage_dec_sub in ['update_decoder', 'all', 'softmax']
         self.usage_dec_sub = usage_dec_sub
@@ -407,14 +414,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             self._decode_ctc_beam_np = BeamSearchDecoder(blank_index=0)
             # NOTE: index 0 is reserved for the blank class
 
-        ##################################################
-        # RNNLM
-        ##################################################
-        self.rnnlm_1 = None
-
-        ##################################################
-        # Initialize parameters
-        ##################################################
+        # Initialize weight matrices
         self.init_weights(parameter_init,
                           distribution=parameter_init_distribution,
                           ignore_keys=['bias'])
@@ -502,17 +502,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         xs, x_lens, xs_sub, x_lens_sub = self._encode(
             xs, x_lens, is_multi_task=True)
 
-        ##################################################
-        # Main + Sub task (attention)
-        ##################################################
-        # Compute XE loss
+        # Compute XE loss (main + sub)
         loss_main, loss_sub = self.compute_xe_loss_mtl(
             xs, ys, x_lens, xs_sub, ys_sub, x_lens_sub)
         loss = loss_main + loss_sub
 
-        ##################################################
         # Sub task (CTC)
-        ##################################################
         if self.ctc_loss_weight_sub > 0:
             # Wrap by Variable
             ys_sub_ctc = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()
@@ -677,7 +672,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         ys_emb = [self.embed_0(ys[:, t:t + 1])for t in range(ys.size(1))]
         ys_emb = torch.cat(ys_emb, dim=1)
 
-        # Pre-computation of encoder-side features computing scores
+        # Pre-computation of encoder-side features for computing scores
         enc_out_a, enc_out_sub_a = [], []
         for h in range(self.num_heads_0):
             enc_out_a += [getattr(self.attend_0_fwd,
@@ -747,7 +742,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         ##################################################
         # Next, compute logits of the word model
         ##################################################
-        # Pre-computation of encoder-side features computing scores
+        # Pre-computation of encoder-side features for computing scores
         dec_outs_sub_a = []
         for h in range(self.num_heads_dec):
             dec_outs_sub_a += [getattr(self.attend_dec_sub,
@@ -819,7 +814,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
             # Generate
             out = self.W_d_0_fwd(dec_out) + self.W_c_0_fwd(context_vec_enc)
-            if self.usage_dec_sub in ['all', 'softmax']:
+            if self.usage_dec_sub != 'update_decoder':
                 out += self.W_c_dec(context_vec_dec)
             logits_step = self.fc_0_fwd(F.tanh(out))
 
@@ -915,7 +910,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             else:
                 ys_in_sub = None
 
-            if beam_width == 1:
+            if beam_width == 1 and beam_width_sub == 1:
                 best_hyps, aw, best_hyps_sub, aw_sub, aw_dec = self._decode_infer_joint_greedy(
                     enc_out, x_lens, enc_out_sub, x_lens_sub,
                     max_decode_len=max_decode_len,
@@ -986,7 +981,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         batch_size, max_time = enc_out.size()[:2]
         dir = 'bwd' if self.backward_1 else 'fwd'
 
-        # Pre-computation of encoder-side features computing scores
+        # Pre-computation of encoder-side features for computing scores
         enc_out_a, enc_out_sub_a = [], []
         for h in range(self.num_heads_1):
             enc_out_sub_a += [getattr(self.attend_1_fwd,
@@ -1012,7 +1007,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         y_sub = Variable(enc_out.data.new(
             batch_size, 1).fill_(self.sos_1).long(), volatile=True)
 
-        dec_out_sub_seq = []
+        dec_outs_sub = []
         _best_hyps_sub, _aw_sub = [], []
         logits_sub = []
         y_lens_sub = np.zeros((batch_size,), dtype=np.int32)
@@ -1040,7 +1035,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             # Pick up 1-best
             y_sub = torch.max(logits_step_sub.squeeze(1), dim=1)[
                 1].unsqueeze(1)
-            dec_out_sub_seq += [dec_out_sub]
+            dec_outs_sub += [dec_out_sub]
             logits_sub += [logits_step_sub]
             _aw_sub += [aw_step_sub]
             _best_hyps_sub += [y_sub]
@@ -1060,7 +1055,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 break
 
         # Concatenate in L dimension
-        dec_out_sub_seq = torch.cat(dec_out_sub_seq, dim=1)
+        dec_outs_sub = torch.cat(dec_outs_sub, dim=1)
         logits_sub = torch.cat(logits_sub, dim=1)
         _aw_sub = torch.stack(_aw_sub, dim=1)
         _best_hyps_sub = torch.cat(_best_hyps_sub, dim=1)
@@ -1071,12 +1066,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         ##################################################
         # Next, compute logits of the word model
         ##################################################
-        # Pre-computation of encoder-side features computing scores
-        dec_out_sub_seq_a = []
+        # Pre-computation of encoder-side features for computing scores
+        dec_outs_sub_a = []
         for h in range(self.num_heads_dec):
-            dec_out_sub_seq_a += [getattr(self.attend_dec_sub,
-                                          'W_enc_head' + str(h))(dec_out_sub_seq)]
-        dec_out_sub_seq_a = torch.stack(dec_out_sub_seq_a, dim=-1)
+            dec_outs_sub_a += [getattr(self.attend_dec_sub,
+                                       'W_enc_head' + str(h))(dec_outs_sub)]
+        dec_outs_sub_a = torch.stack(dec_outs_sub_a, dim=-1)
 
         # Initialization for the word model
         dec_state, dec_out = self._init_dec_state(
@@ -1084,7 +1079,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         aw_step_enc = Variable(enc_out.data.new(
             batch_size, max_time, self.num_heads_0).fill_(0.), volatile=True)
         aw_step_dec = Variable(enc_out.data.new(
-            batch_size, dec_out_sub_seq.size(1), self.num_heads_dec).fill_(0.), volatile=True)
+            batch_size, dec_outs_sub.size(1), self.num_heads_dec).fill_(0.), volatile=True)
         # context_vec_enc = Variable(enc_out.data.new(
         #     batch_size, 1, enc_out.size(-1)).fill_(0.), volatile=True)
         # context_vec_dec = Variable(enc_out.data.new(
@@ -1115,7 +1110,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             # Score for the second decoder states
             if self.logits_injection:
                 _, aw_step_dec = self.attend_dec_sub(
-                    dec_out_sub_seq, dec_out_sub_seq_a, y_lens_sub, dec_out, aw_step_dec)
+                    dec_outs_sub, dec_outs_sub_a, y_lens_sub, dec_out, aw_step_dec)
 
                 context_vec_dec = []
                 for h in range(self.num_heads_dec):
@@ -1132,7 +1127,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         context_vec_dec)
             else:
                 context_vec_dec, aw_step_dec = self.attend_dec_sub(
-                    dec_out_sub_seq, dec_out_sub_seq_a, y_lens_sub, dec_out, aw_step_dec)
+                    dec_outs_sub, dec_outs_sub_a, y_lens_sub, dec_out, aw_step_dec)
 
             if self.relax_context_vec_dec:
                 context_vec_dec = self.W_c_dec_relax(context_vec_dec)
@@ -1145,7 +1140,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
             # Generate
             out = self.W_d_0_fwd(dec_out) + self.W_c_0_fwd(context_vec_enc)
-            if self.usage_dec_sub in ['all', 'softmax']:
+            if self.usage_dec_sub != 'update_decoder':
                 out += self.W_c_dec(context_vec_dec)
             logits_step = self.fc_0_fwd(F.tanh(out))
 
@@ -1244,9 +1239,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         if teacher_forcing:
             beam_width_sub = 1
 
-        min_decode_len_ratio_sub = 0.2
+        # min_decode_len_ratio_sub = 0.2
 
-        # Pre-computation of encoder-side features computing scores
+        # Pre-computation of encoder-side features for computing scores
         enc_out_a, enc_out_sub_a = [], []
         for h in range(self.num_heads_1):
             enc_out_sub_a += [getattr(self.attend_1_fwd,
@@ -1260,9 +1255,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         ##################################################
         # At first, decode by the second decoder
         ##################################################
-        dec_out_sub_seq, aw_sub, best_hyps_sub = [], [], []
-        logits_sub = []
-        y_lens_sub = np.zeros((batch_size,), dtype=np.int32)
+        best_hyps, aw_enc, aw_dec = [], [], []
+        best_hyps_sub, aw_sub = [], []
         for b in range(batch_size):
             # Initialization for the character model per utterance
             dec_state_sub, dec_out_sub = self._init_dec_state(
@@ -1414,25 +1408,22 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
             complete_sub = sorted(
                 complete_sub, key=lambda x: x['score'], reverse=True)
-
-            dec_out_sub_seq += [torch.cat(complete_sub[0]
-                                          ['dec_outs'][1:], dim=1)]
+            dec_outs_sub = torch.cat(complete_sub[0]
+                                     ['dec_outs'][1:], dim=1)
             aw_sub += [complete_sub[0]['aw_steps'][1:]]
-            logits_sub += [torch.cat(complete_sub[0]['logits'], dim=1)]
+            logits_sub = torch.cat(complete_sub[0]['logits'], dim=1)
             best_hyps_sub += [np.array(complete_sub[0]['hyp'][1:])]
-            y_lens_sub[b] = len(complete_sub[0]['hyp'][1:])
+            y_len_sub = len(complete_sub[0]['hyp'][1:])
 
-        ##################################################
-        # Next, decode by the first decoder
-        ##################################################
-        best_hyps, aw, aw_dec = [], [], []
-        for b in range(enc_out.size(0)):
-            # Pre-computation of encoder-side features computing scores
-            dec_out_sub_seq_a = []
+            ##################################################
+            # Next, decode by the first decoder
+            ##################################################
+            # Pre-computation of encoder-side features for computing scores
+            dec_outs_sub_a = []
             for h in range(self.num_heads_dec):
-                dec_out_sub_seq_a += [getattr(self.attend_dec_sub,
-                                              'W_enc_head' + str(h))(dec_out_sub_seq[b])]
-            dec_out_sub_seq_a = torch.stack(dec_out_sub_seq_a, dim=-1)
+                dec_outs_sub_a += [getattr(self.attend_dec_sub,
+                                           'W_enc_head' + str(h))(dec_outs_sub)]
+            dec_outs_sub_a = torch.stack(dec_outs_sub_a, dim=-1)
 
             # Initialization for the word model per utterance
             dec_state, dec_out = self._init_dec_state(
@@ -1440,7 +1431,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             aw_step_enc = Variable(enc_out.data.new(
                 1, x_lens[b], self.num_heads_0).fill_(0.), volatile=True)
             aw_step_dec = Variable(enc_out.data.new(
-                1, dec_out_sub_seq[b].size(1), self.num_heads_dec).fill_(0.), volatile=True)
+                1, y_len_sub, self.num_heads_dec).fill_(0.), volatile=True)
             context_vec_enc = Variable(enc_out.data.new(
                 1, 1, enc_out.size(-1)).fill_(0.), volatile=True)
             context_vec_dec = Variable(enc_out.data.new(
@@ -1484,16 +1475,14 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     # Score for the second decoder states
                     if self.logits_injection:
                         _, aw_step_dec = self.attend_dec_sub(
-                            dec_out_sub_seq[b][: y_lens_sub[b]],
-                            dec_out_sub_seq_a[0:1, :y_lens_sub[b]],
-                            y_lens_sub[b:b + 1],
-                            dec_out, beam[i_beam]['aw_steps_dec'][-1])
+                            dec_outs_sub, dec_outs_sub_a,
+                            [y_len_sub], dec_out, beam[i_beam]['aw_steps_dec'][-1])
 
                         context_vec_dec = []
                         for h in range(self.num_heads_dec):
                             # Compute context vector
                             context_vec_dec_head = torch.sum(
-                                logits_sub[b] * aw_step_dec[0:1, :, h:h + 1], dim=1, keepdim=True)
+                                logits_sub * aw_step_dec[:, :, h:h + 1], dim=1, keepdim=True)
                             context_vec_dec += [context_vec_dec_head]
 
                         # Concatenate all convtext vectors and attention distributions
@@ -1504,14 +1493,11 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                                 context_vec_dec)
                     else:
                         context_vec_dec, aw_step_dec = self.attend_dec_sub(
-                            dec_out_sub_seq[b][: y_lens_sub[b]],
-                            dec_out_sub_seq_a[0:1, :y_lens_sub[b]],
-                            y_lens_sub[b:b + 1],
-                            dec_out, beam[i_beam]['aw_steps_dec'][-1])
+                            dec_outs_sub, dec_outs_sub_a,
+                            [y_len_sub], dec_out, beam[i_beam]['aw_steps_dec'][-1])
 
                     if self.relax_context_vec_dec:
-                        context_vec_dec = self.W_c_dec_relax(
-                            context_vec_dec)
+                        context_vec_dec = self.W_c_dec_relax(context_vec_dec)
 
                     # Fine-grained gating
                     if self.gating:
@@ -1522,7 +1508,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     # Generate
                     out = self.W_d_0_fwd(dec_out) + \
                         self.W_c_0_fwd(context_vec_enc)
-                    if self.usage_dec_sub in ['all', 'softmax']:
+                    if self.usage_dec_sub != 'update_decoder':
                         out += self.W_c_dec(context_vec_dec)
                     logits_step = self.fc_0_fwd(F.tanh(out))
 
@@ -1615,20 +1601,20 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
             complete = sorted(
                 complete, key=lambda x: x['score'], reverse=True)
-            aw += [complete[0]['aw_steps_enc'][1:]]
+            aw_enc += [complete[0]['aw_steps_enc'][1:]]
             aw_dec += [complete[0]['aw_steps_dec'][1:]]
             best_hyps += [np.array(complete[0]['hyp'][1:])]
 
         # Concatenate in L dimension
-        for j in range(len(aw)):
+        for j in range(len(aw_enc)):
             for k in range(len(aw_sub[j])):
                 aw_sub[j][k] = aw_sub[j][k][:, :, 0]  # TODO: fix for MHA
             aw_sub[j] = var2np(torch.stack(aw_sub[j], dim=1).squeeze(0))
 
-            for k in range(len(aw[j])):
-                aw[j][k] = aw[j][k][:, :, 0]  # TODO: fix for MHA
+            for k in range(len(aw_enc[j])):
+                aw_enc[j][k] = aw_enc[j][k][:, :, 0]  # TODO: fix for MHA
                 aw_dec[j][k] = aw_dec[j][k][:, :, 0]  # TODO: fix for MHA
-            aw[j] = var2np(torch.stack(aw[j], dim=1).squeeze(0))
+            aw_enc[j] = var2np(torch.stack(aw_enc[j], dim=1).squeeze(0))
             aw_dec[j] = var2np(torch.stack(aw_dec[j], dim=1).squeeze(0))
 
         # Reverse the order
@@ -1637,4 +1623,4 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 best_hyps_sub[b] = best_hyps_sub[b][::-1]
                 aw_sub[b] = aw_sub[b][::-1]
 
-        return best_hyps, aw, best_hyps_sub, aw_sub, aw_dec
+        return best_hyps, aw_enc, best_hyps_sub, aw_sub, aw_dec

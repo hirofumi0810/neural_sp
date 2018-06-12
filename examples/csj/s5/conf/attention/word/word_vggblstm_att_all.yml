@@ -31,7 +31,7 @@ param:
   encoder_num_layers: 5
   subsample_list:
     - False
-    - False
+    - True
     - False
     - False
     - False
@@ -42,7 +42,7 @@ param:
   batch_size: 30
 
   # initialization
-  char_init: False
+  pretrained_model_path: False
 
   # regularization
   scheduled_sampling_max_step: 200000
@@ -51,5 +51,12 @@ param:
   print_step: 800
 
   # MTL
-  backward_loss_weight: 0.5
+  backward_loss_weight: 0
   ctc_loss_weight: 0
+
+  # RNNLM fusion
+  fusion_type: False
+  rnnlm_path: False
+  rnnlm_joint_training: False
+  rnnlm_weight: 0
+  concat_embedding: False

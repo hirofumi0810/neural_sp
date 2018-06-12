@@ -49,55 +49,58 @@ def main():
 
     args = parser.parse_args()
 
-    # Load a config file (.yml)
-    params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
+    # Load a ASR config file
+    config = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
     dataset = Dataset(
         data_save_path=args.data_save_path,
-        input_freq=params['input_freq'],
-        use_delta=params['use_delta'],
-        use_double_delta=params['use_double_delta'],
+        input_freq=config['input_freq'],
+        use_delta=config['use_delta'],
+        use_double_delta=config['use_double_delta'],
         data_type='eval1',
         # data_type='eval2',
         # data_type='eval3',
-        data_size=params['data_size'],
-        label_type=params['label_type'],
+        data_size=config['data_size'],
+        label_type=config['label_type'],
         batch_size=args.eval_batch_size,
-        sort_utt=False, reverse=False, tool=params['tool'])
-    params['num_classes'] = dataset.num_classes
+        sort_utt=False, reverse=False, tool=config['tool'])
+    config['num_classes'] = dataset.num_classes
+
+    # For cold fusion
+    if config['rnnlm_fusion_type'] and config['rnnlm_path']:
+        # Load a RNNLM config file
+        rnnlm_config = load_config(join(args.model_path, 'config_rnnlm.yml'))
+
+        assert config['label_type'] == rnnlm_config['label_type']
+        rnnlm_config['num_classes'] = dataset.num_classes
+        config['rnnlm_config'] = rnnlm_config
+    else:
+        config['rnnlm_config'] = None
 
     # Load the ASR model
-    model = load(model_type=params['model_type'],
-                 params=params,
-                 backend=params['backend'])
+    model = load(model_type=config['model_type'],
+                 config=config,
+                 backend=config['backend'])
 
     # Restore the saved parameters
     model.load_checkpoint(save_path=args.model_path, epoch=args.epoch)
 
-    if args.rnnlm_path is not None and args.rnnlm_weight > 0:
-        # Load a config file (.yml)
-        params_rnnlm = load_config(
+    # For shallow fusion
+    if not (config['rnnlm_fusion_type'] and config['rnnlm_path']) and args.rnnlm_path is not None and args.rnnlm_weight > 0:
+        # Load a RNNLM config file
+        config_rnnlm = load_config(
             join(args.rnnlm_path, 'config.yml'), is_eval=True)
 
-        assert params['label_type'] == params_rnnlm['label_type']
-        params_rnnlm['num_classes'] = dataset.num_classes
+        assert config['label_type'] == config_rnnlm['label_type']
+        config_rnnlm['num_classes'] = dataset.num_classes
 
-        # Load RNLM
-        rnnlm = load(model_type=params_rnnlm['model_type'],
-                     params=params_rnnlm,
-                     backend=params_rnnlm['backend'])
-
-        # Restore the saved parameters
+        # Load the pre-trianed RNNLM
+        rnnlm = load(model_type=config_rnnlm['model_type'],
+                     config=config_rnnlm,
+                     backend=config_rnnlm['backend'])
         rnnlm.load_checkpoint(save_path=args.rnnlm_path, epoch=-1)
-        # NOTE: load the best model
-
-        # NOTE: after load the rnn params are not a continuous chunk of memory
-        # this makes them a continuous chunk, and will speed up forward pass
         rnnlm.rnn.flatten_parameters()
-        # https://github.com/pytorch/examples/blob/master/word_language_model/main.py
-
-        # Resister to the ASR model
         model.rnnlm_0 = rnnlm
 
     # GPU setting

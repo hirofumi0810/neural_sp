@@ -33,8 +33,8 @@ def main():
 
     args = parser.parse_args()
 
-    # Load a config file (.yml)
-    params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
+    # Load a config file
+    config = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Setting for logging
     logger = set_logger(args.model_path)
@@ -42,23 +42,22 @@ def main():
     ppl_mean = 0
     for i, data_type in enumerate(['eval1', 'eval2', 'eval3']):
         # Load dataset
-        dataset = Dataset(
-            data_save_path=args.data_save_path,
-            data_type=data_type,
-            data_size=params['data_size'],
-            label_type=params['label_type'],
-            batch_size=args.eval_batch_size,
-            shuffle=False, tool=params['tool'])
+        dataset = Dataset(data_save_path=args.data_save_path,
+                          data_type=data_type,
+                          data_size=config['data_size'],
+                          label_type=config['label_type'],
+                          batch_size=args.eval_batch_size,
+                          shuffle=False, tool=config['tool'])
 
         if i == 0:
-            params['num_classes'] = dataset.num_classes
+            config['num_classes'] = dataset.num_classes
 
             # Load model
-            model = load(model_type=params['model_type'],
-                         params=params,
-                         backend=params['backend'])
+            model = load(model_type=config['model_type'],
+                         config=config,
+                         backend=config['backend'])
 
-            # NOTE: after load the rnn params are not a continuous chunk of memory
+            # NOTE: after load the rnn config are not a continuous chunk of memory
             # this makes them a continuous chunk, and will speed up forward pass
             model.rnn.flatten_parameters()
             # https://github.com/pytorch/examples/blob/master/word_language_model/main.py

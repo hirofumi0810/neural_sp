@@ -49,8 +49,8 @@ def main():
 
     args = parser.parse_args()
 
-    # Load a config file (.yml)
-    params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
+    # Load a ASR config file
+    config = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Setting for logging
     logger = set_logger(args.model_path)
@@ -58,97 +58,101 @@ def main():
     wer_mean, cer_mean = 0, 0
     for i, data_type in enumerate(['eval1', 'eval2', 'eval3']):
         # Load dataset
-        dataset = Dataset(
-            data_save_path=args.data_save_path,
-            input_freq=params['input_freq'],
-            use_delta=params['use_delta'],
-            use_double_delta=params['use_double_delta'],
-            data_type=data_type,
-            data_size=params['data_size'],
-            label_type=params['label_type'],
-            batch_size=args.eval_batch_size,
-            shuffle=False, tool=params['tool'])
+        dataset = Dataset(data_save_path=args.data_save_path,
+                          input_freq=config['input_freq'],
+                          use_delta=config['use_delta'],
+                          use_double_delta=config['use_double_delta'],
+                          data_type=data_type,
+                          data_size=config['data_size'],
+                          label_type=config['label_type'],
+                          batch_size=args.eval_batch_size,
+                          shuffle=False, tool=config['tool'])
 
         if i == 0:
-            params['num_classes'] = dataset.num_classes
+            config['num_classes'] = dataset.num_classes
+
+            # For cold fusion
+            if config['rnnlm_fusion_type'] and config['rnnlm_path']:
+                # Load a RNNLM config file
+                rnnlm_config = load_config(
+                    join(args.model_path, 'config_rnnlm.yml'))
+
+                assert config['label_type'] == rnnlm_config['label_type']
+                rnnlm_config['num_classes'] = dataset.num_classes
+                config['rnnlm_config'] = rnnlm_config
+            else:
+                config['rnnlm_config'] = None
 
             # Load the ASR model
-            model = load(model_type=params['model_type'],
-                         params=params,
-                         backend=params['backend'])
+            model = load(model_type=config['model_type'],
+                         config=config,
+                         backend=config['backend'])
 
             # Restore the saved parameters
             epoch, _, _, _ = model.load_checkpoint(
                 save_path=args.model_path, epoch=args.epoch)
 
-            if args.rnnlm_path is not None and args.rnnlm_weight > 0:
-                # Load a config file (.yml)
-                params_rnnlm = load_config(
+            # For shallow fusion
+            if not (config['rnnlm_fusion_type'] and config['rnnlm_path']) and args.rnnlm_path is not None and args.rnnlm_weight > 0:
+                # Load a RNNLM config file
+                config_rnnlm = load_config(
                     join(args.rnnlm_path, 'config.yml'), is_eval=True)
 
-                assert params['label_type'] == params_rnnlm['label_type']
-                params_rnnlm['num_classes'] = dataset.num_classes
+                assert config['label_type'] == config_rnnlm['label_type']
+                config_rnnlm['num_classes'] = dataset.num_classes
 
-                # Load RNLM
-                rnnlm = load(model_type=params_rnnlm['model_type'],
-                             params=params_rnnlm,
-                             backend=params_rnnlm['backend'])
-
-                # Restore the saved parameters
+                # Load the pre-trianed RNNLM
+                rnnlm = load(model_type=config_rnnlm['model_type'],
+                             config=config_rnnlm,
+                             backend=config_rnnlm['backend'])
                 rnnlm.load_checkpoint(save_path=args.rnnlm_path, epoch=-1)
-                # NOTE: load the best model
-
-                # NOTE: after load the rnn params are not a continuous chunk of memory
-                # this makes them a continuous chunk, and will speed up forward pass
                 rnnlm.rnn.flatten_parameters()
-                # https://github.com/pytorch/examples/blob/master/word_language_model/main.py
-
-                # Resister to the ASR model
                 model.rnnlm_0 = rnnlm
 
             # GPU setting
             model.set_cuda(deterministic=False, benchmark=True)
 
             logger.info('beam width: %d' % args.beam_width)
+            if config['rnnlm_fusion_type'] and config['rnnlm_path']:
+                logger.info('RNNLM path: %s' % config['rnnlm_path'])
+                logger.info('RNNLM weight: %.3f' % args.rnnlm_weight)
             if args.rnnlm_path is not None:
                 logger.info('RNNLM path: %s' % args.rnnlm_path)
-            logger.info('RNNLM weight: %.3f' % args.rnnlm_weight)
+                logger.info('RNNLM weight: %.3f' % args.rnnlm_weight)
             logger.info('epoch: %d' % (epoch - 1))
 
-        if params['label_type'] == 'word':
-            wer, df = eval_word(
-                models=[model],
-                dataset=dataset,
-                eval_batch_size=args.eval_batch_size,
-                beam_width=args.beam_width,
-                max_decode_len=MAX_DECODE_LEN_WORD,
-                min_decode_len=MIN_DECODE_LEN_WORD,
-                length_penalty=args.length_penalty,
-                coverage_penalty=args.coverage_penalty,
-                rnnlm_weight=args.rnnlm_weight,
-                progressbar=True)
+        if config['label_type'] == 'word':
+            wer, df = eval_word(models=[model],
+                                dataset=dataset,
+                                eval_batch_size=args.eval_batch_size,
+                                beam_width=args.beam_width,
+                                max_decode_len=MAX_DECODE_LEN_WORD,
+                                min_decode_len=MIN_DECODE_LEN_WORD,
+                                length_penalty=args.length_penalty,
+                                coverage_penalty=args.coverage_penalty,
+                                rnnlm_weight=args.rnnlm_weight,
+                                progressbar=True)
             wer_mean += wer
             logger.info('  WER (%s): %.3f %%' % (data_type, (wer * 100)))
             logger.info(df)
         else:
-            wer, cer, df = eval_char(
-                models=[model],
-                dataset=dataset,
-                eval_batch_size=args.eval_batch_size,
-                beam_width=args.beam_width,
-                max_decode_len=MAX_DECODE_LEN_CHAR,
-                min_decode_len=MIN_DECODE_LEN_CHAR,
-                length_penalty=args.length_penalty,
-                coverage_penalty=args.coverage_penalty,
-                rnnlm_weight=args.rnnlm_weight,
-                progressbar=True)
+            wer, cer, df = eval_char(models=[model],
+                                     dataset=dataset,
+                                     eval_batch_size=args.eval_batch_size,
+                                     beam_width=args.beam_width,
+                                     max_decode_len=MAX_DECODE_LEN_CHAR,
+                                     min_decode_len=MIN_DECODE_LEN_CHAR,
+                                     length_penalty=args.length_penalty,
+                                     coverage_penalty=args.coverage_penalty,
+                                     rnnlm_weight=args.rnnlm_weight,
+                                     progressbar=True)
             wer_mean += wer
             cer_mean += cer
             logger.info(' WER / CER (%s, sub): %.3f / %.3f %%' %
                         (data_type, (wer * 100), (cer * 100)))
             logger.info(df)
 
-    if params['label_type'] == 'word':
+    if config['label_type'] == 'word':
         logger.info('  WER (mean): %.3f %%' % (wer_mean * 100 / 3))
     else:
         logger.info('  WER / CER (mean): %.3f / %.3f %%' %

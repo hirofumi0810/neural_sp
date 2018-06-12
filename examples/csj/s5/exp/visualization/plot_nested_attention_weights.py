@@ -11,6 +11,7 @@ from os.path import join, abspath, isdir
 import sys
 import argparse
 import shutil
+from distutils.util import strtobool
 
 import matplotlib
 matplotlib.use('Agg')
@@ -57,8 +58,6 @@ parser.add_argument('--rnnlm_path', default=None, type=str, nargs='?',
                     help='path to the RMMLM of the main task')
 parser.add_argument('--rnnlm_path_sub', default=None, type=str, nargs='?',
                     help='path to the RMMLM of the sub task')
-
-from distutils.util import strtobool
 parser.add_argument('--a2c_oracle', type=strtobool, default=False)
 
 MAX_DECODE_LEN_WORD = 100
@@ -71,86 +70,72 @@ def main():
 
     args = parser.parse_args()
 
-    # Load a config file (.yml)
-    params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
+    # Load a config file
+    config = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
-    dataset = Dataset(
-        data_save_path=args.data_save_path,
-        input_freq=params['input_freq'],
-        use_delta=params['use_delta'],
-        use_double_delta=params['use_double_delta'],
-        data_type='eval1',
-        # data_type='eval2',
-        # data_type='eval3',
-        data_size=params['data_size'],
-        label_type=params['label_type'],
-        label_type_sub=params['label_type_sub'],
-        batch_size=args.eval_batch_size,
-        sort_utt=False, reverse=False, tool=params['tool'])
-    params['num_classes'] = dataset.num_classes
-    params['num_classes_sub'] = dataset.num_classes_sub
+    dataset = Dataset(data_save_path=args.data_save_path,
+                      input_freq=config['input_freq'],
+                      use_delta=config['use_delta'],
+                      use_double_delta=config['use_double_delta'],
+                      data_type='eval1',
+                      # data_type='eval2',
+                      # data_type='eval3',
+                      data_size=config['data_size'],
+                      label_type=config['label_type'],
+                      label_type_sub=config['label_type_sub'],
+                      batch_size=args.eval_batch_size,
+                      sort_utt=False, reverse=False, tool=config['tool'])
+    config['num_classes'] = dataset.num_classes
+    config['num_classes_sub'] = dataset.num_classes_sub
+
+    # TODO: add cold fusion
 
     # Load the ASR model
-    model = load(model_type=params['model_type'],
-                 params=params,
-                 backend=params['backend'])
+    model = load(model_type=config['model_type'],
+                 config=config,
+                 backend=config['backend'])
 
     # Restore the saved parameters
     model.load_checkpoint(save_path=args.model_path, epoch=args.epoch)
 
-    if args.rnnlm_path is not None and args.rnnlm_weight > 0:
-        # Load a config file (.yml)
-        params_rnnlm = load_config(
+    # For shallow fusion
+    if not (config['rnnlm_fusion_type'] and config['rnnlm_path']) and args.rnnlm_path is not None and args.rnnlm_weight > 0:
+        # Load a RNNLM config file
+        config_rnnlm = load_config(
             join(args.rnnlm_path, 'config.yml'), is_eval=True)
 
-        assert params['label_type'] == params_rnnlm['label_type']
-        params_rnnlm['num_classes'] = dataset.num_classes
+        assert config['label_type'] == config_rnnlm['label_type']
+        config_rnnlm['num_classes'] = dataset.num_classes
 
-        # Load RNLM
-        rnnlm = load(model_type=params_rnnlm['model_type'],
-                     params=params_rnnlm,
-                     backend=params_rnnlm['backend'])
-
-        # Restore the saved parameters
+        # Load the pre-trianed RNNLM
+        rnnlm = load(model_type=config_rnnlm['model_type'],
+                     config=config_rnnlm,
+                     backend=config_rnnlm['backend'])
         rnnlm.load_checkpoint(save_path=args.rnnlm_path, epoch=-1)
-        # NOTE: load the best model
-
-        # NOTE: after load the rnn params are not a continuous chunk of memory
-        # this makes them a continuous chunk, and will speed up forward pass
         rnnlm.rnn.flatten_parameters()
-        # https://github.com/pytorch/examples/blob/master/word_language_model/main.py
-
-        # Resister to the ASR model
         model.rnnlm_0 = rnnlm
 
-    if args.rnnlm_path_sub is not None and args.rnnlm_weight_sub > 0:
-        # Load a config file (.yml)
-        params_rnnlm_sub = load_config(
+    if not (config['rnnlm_fusion_type'] and config['rnnlm_path_sub']) and args.rnnlm_path_sub is not None and args.rnnlm_weight_sub > 0:
+        # Load a RNNLM config file
+        config_rnnlm_sub = load_config(
             join(args.rnnlm_path_sub, 'config.yml'), is_eval=True)
 
-        assert params['label_type_sub'] == params_rnnlm_sub['label_type']
-        params_rnnlm_sub['num_classes'] = dataset.num_classes_sub
+        assert config['label_type_sub'] == config_rnnlm_sub['label_type']
+        config_rnnlm_sub['num_classes'] = dataset.num_classes_sub
 
-        # Load RNLM
-        rnnlm_sub = load(model_type=params_rnnlm_sub['model_type'],
-                         params=params_rnnlm_sub,
-                         backend=params_rnnlm_sub['backend'])
-
-        # Restore the saved parameters
-        rnnlm_sub.load_checkpoint(
-            save_path=args.rnnlm_path_sub, epoch=-1)
+        # Load the pre-trianed RNNLM
+        rnnlm_sub = load(model_type=config_rnnlm_sub['model_type'],
+                         config=config_rnnlm_sub,
+                         backend=config_rnnlm_sub['backend'])
+        rnnlm_sub.load_checkpoint(save_path=args.rnnlm_path_sub, epoch=-1)
         rnnlm_sub.rnn.flatten_parameters()
-
-        # Resister to the ASR model
         model.rnnlm_1 = rnnlm_sub
 
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
     save_path = mkdir_join(args.model_path, 'att_weights')
-
-    ######################################################################
 
     # Clean directory
     if save_path is not None and isdir(save_path):
