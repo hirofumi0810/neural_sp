@@ -40,6 +40,7 @@ class RNNLM(ModelBase):
         init_forget_gate_bias_with_one (bool): if True, initialize the forget
             gate bias with 1
         tie_weights (bool):
+        backward (bool): if True, backward RNNLM
     """
 
     def __init__(self,
@@ -56,7 +57,8 @@ class RNNLM(ModelBase):
                  parameter_init=0.1,
                  recurrent_weight_orthogonal=False,
                  init_forget_gate_bias_with_one=True,
-                 tie_weights=False):
+                 tie_weights=False,
+                 backward=False):
 
         super(ModelBase, self).__init__()
         self.model_type = 'rnnlm'
@@ -69,6 +71,7 @@ class RNNLM(ModelBase):
         self.num_layers = num_layers
         self.parameter_init = parameter_init
         self.tie_weights = tie_weights
+        self.backward = backward
         self.num_classes = num_classes + 1  # Add <EOS> class
         self.sos = num_classes
         self.eos = num_classes
@@ -125,9 +128,7 @@ class RNNLM(ModelBase):
                     'When using the tied flag, num_units must be equal to embedding_dim')
             self.output.fc.weight = self.embed.embed.weight
 
-        ##################################################
-        # Initialize parameters
-        ##################################################
+        # Initialize weight matrices
         self.init_weights(parameter_init,
                           distribution=parameter_init_distribution,
                           ignore_keys=['bias'])
@@ -174,8 +175,13 @@ class RNNLM(ModelBase):
 
         # Wrap by Variable
         y_lens = [len(y) + 1 for y in ys]
-        ys = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()
-              for y in ys]
+        if self.backward:
+            ys = [np2var(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long()
+                  for y in ys]
+            # NOTE: reverse the order
+        else:
+            ys = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()
+                  for y in ys]
 
         sos = Variable(ys[0].data.new(1,).fill_(self.sos).long())
         eos = Variable(ys[0].data.new(1,).fill_(self.eos).long())
@@ -205,10 +211,9 @@ class RNNLM(ModelBase):
         logits = self.output(ys_in)
 
         # Compute XE sequence loss
-        loss = F.cross_entropy(
-            input=logits.view((-1, logits.size(2))),
-            target=ys_out.contiguous().view(-1),
-            ignore_index=-1, size_average=False) / (ys_out.size(0) * ys_out.size(1))
+        loss = F.cross_entropy(input=logits.view((-1, logits.size(2))),
+                               target=ys_out.contiguous().view(-1),
+                               ignore_index=-1, size_average=True)
 
         return loss
 
@@ -310,6 +315,9 @@ class RNNLM(ModelBase):
         # Truncate by <EOS>
         best_hyps = []
         for b in range(batch_size):
-            best_hyps += [_best_hyps[b, :y_lens[b]]]
+            if self.backward:
+                best_hyps += [_best_hyps[b, :y_lens[b]][::-1]]
+            else:
+                best_hyps += [_best_hyps[b, :y_lens[b]]]
 
         return best_hyps

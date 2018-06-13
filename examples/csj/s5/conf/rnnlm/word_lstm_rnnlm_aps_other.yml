@@ -4,7 +4,10 @@ param:
 
   # corpus
   corpus: csj
-  data_size: aps_other
+  # data_size: aps_other
+  # vocab: False
+  data_size: all
+  vocab: aps_other
   label_type: word
 
   # features
@@ -22,6 +25,7 @@ param:
   num_layers: 1
   embedding_dim: 128
   tie_weights: False
+  backward: False
 
   # optimization
   batch_size: 128

@@ -29,6 +29,9 @@ class TestRNNLM(unittest.TestCase):
     def test(self):
         print("RNNLM Working check.")
 
+        # backward
+        self.check(rnn_type='lstm', bidirectional=False, backward=True)
+
         # unidirectional & bidirectional
         self.check(rnn_type='lstm', bidirectional=True)
         self.check(rnn_type='lstm', bidirectional=False)
@@ -41,11 +44,11 @@ class TestRNNLM(unittest.TestCase):
 
         # character-level LM
         self.check(rnn_type='lstm', bidirectional=True,
-                   label_type='word')
+                   label_type='word', backward=False)
 
     @measure_time
     def check(self, rnn_type, bidirectional=False,
-              label_type='char', tie_weights=False, bptt=35):
+              label_type='char', tie_weights=False, backward=False, bptt=35):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
@@ -53,6 +56,7 @@ class TestRNNLM(unittest.TestCase):
         print('  bidirectional: %s' % str(bidirectional))
         print('  tie_weights: %s' % str(tie_weights))
         print('  bptt: %d' % bptt)
+        print('  backward: %s' % str(backward))
         print('==================================================')
 
         # Load batch data
@@ -80,7 +84,8 @@ class TestRNNLM(unittest.TestCase):
                       parameter_init=0.1,
                       recurrent_weight_orthogonal=True,
                       init_forget_gate_bias_with_one=True,
-                      tie_weights=tie_weights)
+                      tie_weights=tie_weights,
+                      backward=backward)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):
