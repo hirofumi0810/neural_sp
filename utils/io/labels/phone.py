@@ -38,7 +38,7 @@ class Phone2idx(object):
             indices (list): phone indices
         """
         # Convert phone strings into the corresponding indices
-        phone_list = str_phone.split(' ')
+        phone_list = str_phone.split('_')
         indices = list(map(lambda x: self.map_dict[x], phone_list))
         return indices
 
@@ -74,5 +74,5 @@ class Idx2phone(object):
         """
         # Convert phone indices to the corresponding strings
         phone_list = list(map(lambda x: self.map_dict[x], indices))
-        str_phone = ' '.join(phone_list)
+        str_phone = '_'.join(phone_list)
         return str_phone

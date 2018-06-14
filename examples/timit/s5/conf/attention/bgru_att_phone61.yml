@@ -68,8 +68,7 @@ param:
   parameter_init: 0.1
   recurrent_weight_orthogonal: True
   init_forget_gate_bias_with_one: True
-  char_init: False
-  # NOTE: phone_init in the case of TIMIT
+  pretrained_model_path: False
 
   # regularization
   clip_grad_norm: 5.0
@@ -103,3 +102,10 @@ param:
   # MTL
   backward_loss_weight: 0
   ctc_loss_weight: 0
+
+  # RNNLM fusion (not used)
+  rnnlm_fusion_type: False
+  rnnlm_path: False
+  rnnlm_joint_training: False
+  rnnlm_weight: 0
+  concat_embedding: False

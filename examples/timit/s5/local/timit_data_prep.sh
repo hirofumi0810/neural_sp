@@ -9,8 +9,8 @@ if [ $# -ne 1 ]; then
    exit 1;
 fi
 
-dir=$DATA_SAVEPATH/local/data
-lmdir=$DATA_SAVEPATH/local/nist_lm
+dir=${data}/local/data
+lmdir=${data}/local/nist_lm
 mkdir -p $dir $lmdir
 local=`pwd`/local
 utils=`pwd`/utils

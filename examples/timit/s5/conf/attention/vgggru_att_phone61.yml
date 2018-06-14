@@ -39,7 +39,7 @@ param:
   batch_size: 16
 
   # initialization
-  char_init: False
+  pretrained_model_path: False
 
   # regularization
   scheduled_sampling_max_step: 8000

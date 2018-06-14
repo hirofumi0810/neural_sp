@@ -159,9 +159,9 @@ def read_text(text_path, vocab_save_path, data_type, phone_map_file_path):
                 phone39_list.remove('')
 
             # Convert to string
-            trans_phone61 = ' '.join(phone61_list)
-            trans_phone48 = ' '.join(phone48_list)
-            trans_phone39 = ' '.join(phone39_list)
+            trans_phone61 = '_'.join(phone61_list)
+            trans_phone48 = '_'.join(phone48_list)
+            trans_phone39 = '_'.join(phone39_list)
 
             # for debug
             # print(trans_phone61)
@@ -178,8 +178,7 @@ def read_text(text_path, vocab_save_path, data_type, phone_map_file_path):
     phone2idx_39 = Phone2idx(phone39_vocab_path)
     for utt_idx, [trans_phone61, trans_phone48, trans_phone39] in tqdm(trans_dict.items()):
         if data_type == 'test':
-            pass
-            # trans_dict[utt_idx] = [trans_phone61, trans_phone48, trans_phone39]
+            continue
             # NOTE: save as it is
         else:
             phone61_indices = phone2idx_61(trans_phone61)

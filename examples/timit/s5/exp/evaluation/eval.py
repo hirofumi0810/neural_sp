@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Evaluate the trained model (TIMIT corpus)."""
+"""Evaluate the ASR model (TIMIT corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -30,9 +30,9 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
 parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam')
 parser.add_argument('--length_penalty', type=float, default=0,
-                    help='length penalty in beam search decoding')
+                    help='length penalty in the beam search decoding')
 parser.add_argument('--coverage_penalty', type=float, default=0,
-                    help='coverage penalty in beam search decoding')
+                    help='coverage penalty in the beam search decoding')
 
 MAX_DECODE_LEN_PHONE = 71
 MIN_DECODE_LEN_PHONE = 13
@@ -45,31 +45,30 @@ def main():
 
     args = parser.parse_args()
 
-    # Load a config file (.yml)
-    params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
+    # Load a config file
+    config = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Setting for logging
     logger = set_logger(args.model_path)
 
     for i, data_type in enumerate(['dev', 'test']):
         # Load dataset
-        dataset = Dataset(
-            data_save_path=args.data_save_path,
-            input_freq=params['input_freq'],
-            use_delta=params['use_delta'],
-            use_double_delta=params['use_double_delta'],
-            data_type=data_type,
-            label_type=params['label_type'],
-            batch_size=args.eval_batch_size,
-            sort_utt=False, tool=params['tool'])
+        dataset = Dataset(data_save_path=args.data_save_path,
+                          input_freq=config['input_freq'],
+                          use_delta=config['use_delta'],
+                          use_double_delta=config['use_double_delta'],
+                          data_type=data_type,
+                          label_type=config['label_type'],
+                          batch_size=args.eval_batch_size,
+                          sort_utt=False, tool=config['tool'])
 
         if i == 0:
-            params['num_classes'] = dataset.num_classes
+            config['num_classes'] = dataset.num_classes
 
             # Load model
-            model = load(model_type=params['model_type'],
-                         params=params,
-                         backend=params['backend'])
+            model = load(model_type=config['model_type'],
+                         config=config,
+                         backend=config['backend'])
 
             # Restore the saved parameters
             epoch, _, _, _ = model.load_checkpoint(
