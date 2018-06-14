@@ -36,5 +36,8 @@ param:
   # optimization
   batch_size: 20
 
+  # initialization
+  pretrained_model_path: False
+
   # annealing
   print_step: 200

@@ -15,5 +15,8 @@ param:
     - False
     - False
 
+  # initialization
+  pretrained_model_path: False
+  
   # annealing
   print_step: 1000

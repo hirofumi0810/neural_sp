@@ -17,4 +17,4 @@ param:
   fc_list: [320]
 
   # initialization
-  char_init: False
+  pretrained_model_path: False

@@ -34,28 +34,27 @@ def main():
 
     args = parser.parse_args()
 
-    # Load a config file (.yml)
-    params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
-    params['data_size'] = str(params['data_size'])
+    # Load a config file
+    config = load_config(join(args.model_path, 'config.yml'), is_eval=True)
+    config['data_size'] = str(config['data_size'])
 
     # Load dataset
-    dataset = Dataset(
-        data_save_path=args.data_save_path,
-        input_freq=params['input_freq'],
-        use_delta=params['use_delta'],
-        use_double_delta=params['use_double_delta'],
-        data_type='test_clean',
-        # data_type='test_other',
-        data_size=params['data_size'],
-        label_type=params['label_type'],
-        batch_size=args.eval_batch_size,
-        sort_utt=False, reverse=False, tool=params['tool'])
-    params['num_classes'] = dataset.num_classes
+    dataset = Dataset(data_save_path=args.data_save_path,
+                      input_freq=config['input_freq'],
+                      use_delta=config['use_delta'],
+                      use_double_delta=config['use_double_delta'],
+                      data_type='test_clean',
+                      # data_type='test_other',
+                      data_size=config['data_size'],
+                      label_type=config['label_type'],
+                      batch_size=args.eval_batch_size,
+                      sort_utt=False, reverse=False, tool=config['tool'])
+    config['num_classes'] = dataset.num_classes
 
     # Load model
-    model = load(model_type=params['model_type'],
-                 params=params,
-                 backend=params['backend'])
+    model = load(model_type=config['model_type'],
+                 config=config,
+                 backend=config['backend'])
 
     # Restore the saved parameters
     model.load_checkpoint(save_path=args.model_path, epoch=args.epoch)
@@ -64,8 +63,6 @@ def main():
     model.set_cuda(deterministic=False, benchmark=True)
 
     save_path = mkdir_join(args.model_path, 'ctc_probs')
-
-    ######################################################################
 
     # Clean directory
     if save_path is not None and isdir(save_path):

@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Decode the hierarchical model's outputs (Librispeech corpus)."""
+"""Generate texts by the hierarchical ASR model (Librispeech corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -11,6 +11,7 @@ from os.path import join, abspath
 import sys
 import argparse
 import re
+from distutils.util import strtobool
 
 sys.path.append(abspath('../../../'))
 from models.load_model import load
@@ -37,11 +38,9 @@ parser.add_argument('--length_penalty', type=float, default=0,
                     help='length penalty in beam search decoding')
 parser.add_argument('--coverage_penalty', type=float, default=0,
                     help='coverage penalty in beam search decoding')
-
-parser.add_argument('--resolving_unk', type=bool, default=False)
-parser.add_argument('--a2c_oracle', type=bool, default=False)
-parser.add_argument('--joint_decoding', choices=[None, 'onepass', 'rescoring'],
-                    default=None)
+parser.add_argument('--resolving_unk', type=strtobool, default=False)
+parser.add_argument('--a2c_oracle', type=strtobool, default=False)
+parser.add_argument('--joint_decoding', type=strtobool, default=False)
 parser.add_argument('--score_sub_weight', type=float, default=0)
 
 MAX_DECODE_LEN_WORD = 200
@@ -54,29 +53,29 @@ def main():
 
     args = parser.parse_args()
 
-    # Load a config file (.yml)
-    params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
-    params['data_size'] = str(params['data_size'])
+    # Load a config file
+    config = load_config(join(args.model_path, 'config.yml'), is_eval=True)
+    config['data_size'] = str(config['data_size'])
 
     # Load dataset
-    dataset = Dataset(
-        data_save_path=args.data_save_path,
-        input_freq=params['input_freq'],
-        use_delta=params['use_delta'],
-        use_double_delta=params['use_double_delta'],
-        data_type='test_clean',
-        # data_type='test_other',
-        data_size=params['data_size'],
-        label_type=params['label_type'], label_type_sub=params['label_type_sub'],
-        batch_size=args.eval_batch_size,
-        sort_utt=False, reverse=False, tool=params['tool'])
-    params['num_classes'] = dataset.num_classes
-    params['num_classes_sub'] = dataset.num_classes_sub
+    dataset = Dataset(data_save_path=args.data_save_path,
+                      input_freq=config['input_freq'],
+                      use_delta=config['use_delta'],
+                      use_double_delta=config['use_double_delta'],
+                      data_type='test_clean',
+                      # data_type='test_other',
+                      data_size=config['data_size'],
+                      label_type=config['label_type'],
+                      label_type_sub=config['label_type_sub'],
+                      batch_size=args.eval_batch_size,
+                      sort_utt=False, reverse=False, tool=config['tool'])
+    config['num_classes'] = dataset.num_classes
+    config['num_classes_sub'] = dataset.num_classes_sub
 
     # Load model
-    model = load(model_type=params['model_type'],
-                 params=params,
-                 backend=params['backend'])
+    model = load(model_type=config['model_type'],
+                 config=config,
+                 backend=config['backend'])
 
     # Restore the saved parameters
     model.load_checkpoint(save_path=args.model_path, epoch=args.epoch)
@@ -85,8 +84,6 @@ def main():
     model.set_cuda(deterministic=False, benchmark=True)
 
     # sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
-
-    ######################################################################
 
     word2char = Word2char(dataset.vocab_file_path,
                           dataset.vocab_file_path_sub)
@@ -210,15 +207,13 @@ def main():
                     str_hyp_no_unk = str_hyp_no_unk[:-1]
 
             try:
-                wer, _, _, _ = compute_wer(
-                    ref=str_ref.split('_'),
-                    hyp=str_hyp.split('_'),
-                    normalize=True)
+                wer, _, _, _ = compute_wer(ref=str_ref.split('_'),
+                                           hyp=str_hyp.split('_'),
+                                           normalize=True)
                 print('WER (main)  : %.3f %%' % (wer * 100))
-                wer_sub, _, _, _ = compute_wer(
-                    ref=str_ref_sub.split('_'),
-                    hyp=str_hyp_sub.split('_'),
-                    normalize=True)
+                wer_sub, _, _, _ = compute_wer(ref=str_ref_sub.split('_'),
+                                               hyp=str_hyp_sub.split('_'),
+                                               normalize=True)
                 print('WER (sub)   : %.3f %%' % (wer_sub * 100))
                 if 'OOV' in str_hyp and args.resolving_unk:
                     wer_no_unk, _, _, _ = compute_wer(

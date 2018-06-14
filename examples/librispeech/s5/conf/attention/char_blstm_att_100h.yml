@@ -17,7 +17,7 @@ param:
   splice: 1
   num_stack: 1
   num_skip: 1
-  max_frame\num: 2000
+  max_frame_num: 2000
   min_frame_num: 40
   dynamic_batching: True
 
@@ -57,7 +57,7 @@ param:
   num_heads: 1
 
   # optimization
-  batch_size: 50
+  batch_size: 60
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 25
@@ -68,7 +68,7 @@ param:
   parameter_init: 0.1
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
-  char_init: False
+  pretrained_model_path: False
 
   # regularization
   clip_grad_norm: 5.0
@@ -102,3 +102,10 @@ param:
   # MTL
   backward_loss_weight: 0
   ctc_loss_weight: 0
+
+  # RNNLM fusion
+  rnnlm_fusion_type: False
+  rnnlm_joint_training: False
+  rnnlm_path: False
+  rnnlm_weight: 0
+  concat_embedding: False

@@ -95,7 +95,7 @@ class Dataset(DatasetBase):
         else:
             dataset_path = join(
                 data_save_path, 'dataset', tool, data_size, data_type, label_type + '.csv')
-        df = pd.read_csv(dataset_path)
+        df = pd.read_csv(dataset_path, encoding='utf-8')
         df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
 
         # Remove inappropriate utteraces
@@ -120,14 +120,10 @@ class Dataset(DatasetBase):
 
         if min_frame_num_batch <= 800:
             pass
-        elif min_frame_num_batch <= 1200:
+        elif min_frame_num_batch <= 1600:
             batch_size = int(batch_size / 2)
-        elif min_frame_num_batch <= 1500:
-            batch_size = int(batch_size / 2)
-        elif min_frame_num_batch <= 1700:
-            batch_size = int(batch_size / 4)
         else:
-            batch_size = int(batch_size / 8)
+            batch_size = int(batch_size / 4)
 
         if batch_size < 1:
             batch_size = 1
