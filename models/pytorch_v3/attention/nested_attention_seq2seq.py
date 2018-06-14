@@ -833,8 +833,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         return logits, aw_enc, logits_sub, aw_sub, aw_dec
 
-    def decode(self, xs, beam_width, max_decode_len, min_decode_len=0,
-               beam_width_sub=1, max_decode_len_sub=None, min_decode_len_sub=0,
+    def decode(self, xs, beam_width, max_decode_len, min_decode_len=0, min_decode_len_ratio=0,
+               beam_width_sub=1, max_decode_len_sub=None, min_decode_len_sub=0, min_decode_len_ratio_sub=0,
                length_penalty=0, coverage_penalty=0,
                rnnlm_weight=0, rnnlm_weight_sub=0,
                task_index=0, teacher_forcing=False, ys_sub=None):
@@ -844,9 +844,11 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             beam_width (int): the size of beam in the main task
             max_decode_len (int): the maximum sequence length of tokens in the main task
             min_decode_len (int): the minimum sequence length of tokens in the main task
+            min_decode_len_ratio (float):
             beam_width_sub (int): the size of beam in the sub task
             max_decode_len_sub (int): the maximum sequence length of tokens in the sub task
             min_decode_len_sub (int): the minimum sequence length of tokens in the sub task
+            min_decode_len_ratio_sub (float):
             length_penalty (float): length penalty in the beam search decoding
             coverage_penalty (float): coverage penalty in the beam search decoding
             rnnlm_weight (float): the weight of RNNLM score of the main task in the beam search decoding
@@ -923,9 +925,11 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     beam_width=beam_width,
                     max_decode_len=max_decode_len,
                     min_decode_len=min_decode_len,
+                    min_decode_len_ratio=min_decode_len_ratio,
                     beam_width_sub=beam_width_sub,
                     max_decode_len_sub=max_decode_len_sub,
                     min_decode_len_sub=min_decode_len_sub,
+                    min_decode_len_ratio_sub=min_decode_len_ratio_sub,
                     length_penalty=length_penalty,
                     coverage_penalty=coverage_penalty,
                     rnnlm_weight=rnnlm_weight,
@@ -945,7 +949,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             else:
                 best_hyps, aw = self._decode_infer_beam(
                     enc_out, x_lens, beam_width, max_decode_len, min_decode_len,
-                    length_penalty, coverage_penalty, rnnlm_weight, task=1, dir=dir)
+                    min_decode_len_ratio, length_penalty, coverage_penalty,
+                    rnnlm_weight, task=1, dir=dir)
         else:
             raise ValueError
 
@@ -1200,8 +1205,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         return best_hyps, aw_enc, best_hyps_sub, aw_sub, aw_dec
 
     def _decode_infer_joint_beam(self, enc_out, x_lens, enc_out_sub, x_lens_sub,
-                                 beam_width, max_decode_len, min_decode_len,
-                                 beam_width_sub, max_decode_len_sub, min_decode_len_sub,
+                                 beam_width, max_decode_len, min_decode_len, min_decode_len_ratio,
+                                 beam_width_sub, max_decode_len_sub, min_decode_len_sub, min_decode_len_ratio_sub,
                                  length_penalty, coverage_penalty,
                                  rnnlm_weight, rnnlm_weight_sub,
                                  teacher_forcing=False, ys_sub=None,
@@ -1217,9 +1222,11 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             beam_width (int): the size of beam in the main task
             max_decode_len (int): the maximum sequence length of tokens in the main task
             min_decode_len (int): the minimum sequence length of tokens in the main task
+            min_decode_len_ratio (float):
             beam_width_sub (int): the size of beam in the sub task
             max_decode_len_sub (int): the maximum sequence length of tokens in the sub task
             min_decode_len_sub (int): the minimum sequence length of tokens in the sub task
+            min_decode_len_ratio_sub (float):
             length_penalty (float): length penalty
             coverage_penalty (float): coverage penalty
             rnnlm_weight (float): the weight of RNNLM score of the main task
@@ -1274,6 +1281,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                          'context_vec': context_vec_sub,
                          'aw_steps': [aw_step_sub],
                          'rnnlm_state': None,
+                         'previous_coverage': 0,
                          'logits': []}]
             for t_sub in range(max_decode_len_sub + 1):
                 new_beam_sub = []
@@ -1322,9 +1330,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         # Exclude short hypotheses
                         if indices_sub_topk[0, k].data[0] == self.eos_1 and len(beam_sub[i_beam]['hyp']) < min_decode_len_sub:
                             continue
-                        # if indices_sub_topk[0, k].data[0] == self.eos_1 and len(beam_sub[i_beam]['hyp']) < x_lens_sub[b] * min_decode_len_ratio_sub:
-                        #     continue
-                        # TODO: controll by beam width
+                        if indices_sub_topk[0, k].data[0] == self.eos_1 and len(beam_sub[i_beam]['hyp']) < x_lens_sub[b] * min_decode_len_ratio_sub:
+                            continue
 
                         # Add length penalty
                         score_sub = beam_sub[i_beam]['score'] + \
@@ -1332,21 +1339,23 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
                         # Add coverage penalty
                         if coverage_penalty > 0:
-                            raise NotImplementedError
+                            # Recompute converage penalty in each step
+                            score_sub -= beam_sub[i_beam]['previous_coverage'] * \
+                                coverage_penalty
 
-                            threshold = 0.5
-                            aw_steps_sub = torch.cat(
-                                beam_sub[i_beam]['aw_steps'], dim=0).sum(0).squeeze(1)
+                            cov_threshold = 0.5
+                            aw_steps_sub = torch.stack(
+                                beam_sub[i_beam]['aw_steps'] + [aw_step_sub], dim=1)
+                            # aw_steps_sub: `[B, L, T, num_heads]`
 
-                            # Google NMT
-                            # cov_sum = torch.where(
-                            #     aw_steps_sub < threshold, aw_steps_sub, torch.ones_like(aw_steps_sub) * threshold).sum(0)
-                            # score_sub += torch.log(cov_sum) * coverage_penalty
-
-                            # Toward better decoding
-                            cov_sum = torch.where(
-                                aw_steps_sub > threshold, aw_steps_sub, torch.zeros_like(aw_steps_sub)).sum(0)
-                            score_sub += cov_sum * coverage_penalty
+                            cov_sum_sub = aw_steps_sub.data[0, :, :, 0].cpu(
+                            ).numpy()
+                            cov_sum_sub = np.sum(cov_sum_sub[np.where(
+                                cov_sum_sub > cov_threshold)[0]])
+                            # TODO: fix for MHA
+                            score_sub += cov_sum_sub * coverage_penalty
+                        else:
+                            cov_sum_sub = 0
 
                         # Add RNNLM score
                         if rnnlm_weight_sub > 0 and self.rnnlm_1 is not None:
@@ -1374,7 +1383,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                              'context_vec': context_vec_sub,
                              'aw_steps': beam_sub[i_beam]['aw_steps'] + [aw_step_sub],
                              'rnnlm_state': rnnlm_state_sub,
-                             #  'rnnlm_state': copy.deepcopy(rnnlm_state_sub),
+                             'previous_coverage': cov_sum_sub,
                              'logits': beam_sub[i_beam]['logits'] + [logits_step_sub]})
 
                 if teacher_forcing and t_sub == ys_sub.size(1) - 1:
@@ -1446,7 +1455,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                      'context_vec_dec': context_vec_dec,
                      'aw_steps_enc': [aw_step_enc],
                      'aw_steps_dec': [aw_step_dec],
-                     'rnnlm_state': None}]
+                     'rnnlm_state': None,
+                     'previous_coverage': 0}]
             for t in range(max_decode_len + 1):
                 new_beam = []
                 for i_beam in range(len(beam)):
@@ -1523,6 +1533,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         # Exclude short hypotheses
                         if indices_topk[0, k].data[0] == self.eos_0 and len(beam[i_beam]['hyp']) < min_decode_len:
                             continue
+                        if indices_topk[0, k].data[0] == self.eos_0 and len(beam[i_beam]['hyp']) < x_lens[b] * min_decode_len_ratio:
+                            continue
 
                         # Add length penalty
                         score = beam[i_beam]['score'] + \
@@ -1530,21 +1542,22 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
                         # Add coverage penalty
                         if coverage_penalty > 0:
-                            raise NotImplementedError
+                            # Recompute converage penalty in each step
+                            score -= beam[i_beam]['previous_coverage'] * \
+                                coverage_penalty
 
-                            threshold = 0.5
-                            aw_steps = torch.cat(
-                                beam[i_beam]['aw_steps'], dim=0).sum(0).squeeze(1)
+                            cov_threshold = 0.5
+                            aw_steps = torch.stack(
+                                beam[i_beam]['aw_steps'] + [aw_step], dim=1)
+                            # aw_steps: `[B, L, T, num_heads]`
 
-                            # Google NMT
-                            # cov_sum = torch.where(
-                            #     aw_steps < threshold, aw_steps, torch.ones_like(aw_steps) * threshold).sum(0)
-                            # score += torch.log(cov_sum) * coverage_penalty
-
-                            # Toward better decoding
-                            cov_sum = torch.where(
-                                aw_steps > threshold, aw_steps, torch.zeros_like(aw_steps)).sum(0)
+                            cov_sum = aw_steps.data[0, :, :, 0].cpu().numpy()
+                            cov_sum = np.sum(cov_sum[np.where(
+                                cov_sum > cov_threshold)[0]])
+                            # TODO: fix for MHA
                             score += cov_sum * coverage_penalty
+                        else:
+                            cov_sum = 0
 
                         # Add RNNLM score
                         if rnnlm_weight > 0 and self.rnnlm_0 is not None:
@@ -1571,7 +1584,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                              'context_vec_dec': context_vec_dec,
                              'aw_steps_enc': beam[i_beam]['aw_steps_enc'] + [aw_step_enc],
                              'aw_steps_dec': beam[i_beam]['aw_steps_dec'] + [aw_step_dec],
-                             'rnnlm_state': rnnlm_state})
+                             'rnnlm_state': rnnlm_state,
+                             'previous_coverage': cov_sum})
 
                 new_beam = sorted(
                     new_beam, key=lambda x: x['score'], reverse=True)

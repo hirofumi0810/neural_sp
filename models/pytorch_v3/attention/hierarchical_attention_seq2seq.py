@@ -23,6 +23,7 @@ from models.pytorch_v3.ctc.decoders.beam_search_decoder import BeamSearchDecoder
 from models.pytorch_v3.utils import np2var, var2np
 from utils.io.inputs.frame_stacking import stack_frame
 from utils.io.inputs.splicing import do_splice
+from models.pytorch_v3.lm.rnnlm import RNNLM
 
 
 class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
@@ -90,7 +91,14 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  bottleneck_dim_sub=256,  # ***
                  backward_sub=False,  # ***
                  num_heads=1,
-                 num_heads_sub=1):  # ***
+                 num_heads_sub=1,  # ***
+                 rnnlm_fusion_type=None,
+                 rnnlm_config=None,
+                 rnnlm_config_sub=None,  # ***
+                 rnnlm_joint_training=False,
+                 rnnlm_weight=0,
+                 rnnlm_weight_sub=0,  # ***
+                 concat_embedding=False):
 
         super(HierarchicalAttentionSeq2seq, self).__init__(
             input_size=input_size,
@@ -141,7 +149,12 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             decoding_order=decoding_order,
             bottleneck_dim=bottleneck_dim,
             backward_loss_weight=0,
-            num_heads=num_heads)
+            num_heads=num_heads,
+            rnnlm_fusion_type=rnnlm_fusion_type,
+            rnnlm_config=rnnlm_config,
+            rnnlm_joint_training=rnnlm_joint_training,
+            rnnlm_weight=rnnlm_weight,
+            concat_embedding=concat_embedding)
         self.model_type = 'hierarchical_attention'
 
         # Setting for the encoder
@@ -157,6 +170,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         self.eos_1 = num_classes_sub
         # NOTE: <SOS> and <EOS> have the same index
         self.backward_1 = backward_sub
+        dir_sub = 'bwd' if backward_sub else 'fwd'
 
         # Setting for the decoder initialization in the sub task
         if backward_sub:
@@ -184,11 +198,41 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             self.bwd_weight_1 = sub_loss_weight
 
         # Setting for the RNNLM fusion
-        self.rnnlm_fusion_type = False
-        self.rnnlm_1 = None
-        self.rnnlm_joint_training = False
-        self.rnnlm_weight = 0
-        self.concat_embedding = False
+        self.rnnlm_1_fwd = None
+        self.rnnlm_1_bwd = None
+        self.rnnlm_weight_1 = rnnlm_weight_sub
+
+        # RNNLM fusion
+        if rnnlm_fusion_type:
+            assert rnnlm_config_sub is not None
+            self.rnnlm_1_fwd = RNNLM(
+                embedding_dim=rnnlm_config_sub['embedding_dim'],
+                rnn_type=rnnlm_config_sub['rnn_type'],
+                bidirectional=rnnlm_config_sub['bidirectional'],
+                num_units=rnnlm_config_sub['num_units'],
+                num_layers=rnnlm_config_sub['num_layers'],
+                dropout_embedding=rnnlm_config_sub['dropout_embedding'],
+                dropout_hidden=rnnlm_config_sub['dropout_hidden'],
+                dropout_output=rnnlm_config_sub['dropout_output'],
+                num_classes=rnnlm_config_sub['num_classes'],
+                parameter_init_distribution=rnnlm_config_sub['parameter_init_distribution'],
+                parameter_init=rnnlm_config_sub['parameter_init'],
+                recurrent_weight_orthogonal=rnnlm_config_sub['recurrent_weight_orthogonal'],
+                init_forget_gate_bias_with_one=rnnlm_config_sub['init_forget_gate_bias_with_one'],
+                tie_weights=rnnlm_config_sub['tie_weights'])
+
+            self.W_rnnlm_logits_1_fwd = LinearND(
+                self.rnnlm_1_fwd.num_classes, decoder_num_units,
+                dropout=dropout_decoder)
+            self.W_rnnlm_gate_1_fwd = LinearND(
+                decoder_num_units * 2, self.bottleneck_dim,
+                dropout=dropout_decoder)
+
+            # Fix RNNLM parameters
+            if not rnnlm_joint_training:
+                for param in self.rnnlm_1_fwd.parameters():
+                    param.requires_grad = False
+        # TODO: backward RNNLM
 
         # Encoder
         # NOTE: overide encoder
@@ -237,7 +281,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         else:
             raise NotImplementedError
 
-        dir = 'bwd' if backward_sub else 'fwd'
         self.is_bridge_sub = False
         if self.sub_loss_weight > 0:
             # Bridge layer between the encoder and decoder
@@ -257,21 +300,24 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 self.is_bridge_sub = False
 
             # Initialization of the decoder
-            if getattr(self, 'init_dec_state_1_' + dir) != 'zero':
-                setattr(self, 'W_dec_init_1_' + dir, LinearND(
+            if getattr(self, 'init_dec_state_1_' + dir_sub) != 'zero':
+                setattr(self, 'W_dec_init_1_' + dir_sub, LinearND(
                     self.encoder_num_units_sub, decoder_num_units_sub))
 
             # Decoder (sub)
+            embedding_size_sub = embedding_dim_sub
+            if rnnlm_fusion_type and concat_embedding:
+                embedding_size_sub += self.rnnlm_1_fwd.embedding_dim
             if decoding_order == 'conditional':
-                setattr(self, 'decoder_first_1_' + dir, RNNDecoder(
-                    input_size=embedding_dim_sub,
+                setattr(self, 'decoder_first_1_' + dir_sub, RNNDecoder(
+                    input_size=embedding_size_sub,
                     rnn_type=decoder_type,
                     num_units=decoder_num_units_sub,
                     num_layers=1,
                     dropout=dropout_decoder,
                     residual=False,
                     dense_residual=False))
-                setattr(self, 'decoder_second_1_' + dir, RNNDecoder(
+                setattr(self, 'decoder_second_1_' + dir_sub, RNNDecoder(
                     input_size=self.encoder_num_units_sub,
                     rnn_type=decoder_type,
                     num_units=decoder_num_units_sub,
@@ -281,8 +327,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     dense_residual=False))
                 # NOTE; the conditional decoder only supports the 1 layer
             else:
-                setattr(self, 'decoder_1_' + dir, RNNDecoder(
-                    input_size=self.encoder_num_units_sub + embedding_dim_sub,
+                setattr(self, 'decoder_1_' + dir_sub, RNNDecoder(
+                    input_size=self.encoder_num_units_sub + embedding_size_sub,
                     rnn_type=decoder_type,
                     num_units=decoder_num_units_sub,
                     num_layers=decoder_num_layers_sub,
@@ -291,7 +337,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     dense_residual=decoder_dense_residual))
 
             # Attention layer (sub)
-            setattr(self, 'attend_1_' + dir, AttentionMechanism(
+            setattr(self, 'attend_1_' + dir_sub, AttentionMechanism(
                 encoder_num_units=self.encoder_num_units_sub,
                 decoder_num_units=decoder_num_units_sub,
                 attention_type=attention_type,
@@ -303,13 +349,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 num_heads=num_heads_sub))
 
             # Output layer (sub)
-            setattr(self, 'W_d_1_' + dir, LinearND(
+            setattr(self, 'W_d_1_' + dir_sub, LinearND(
                 decoder_num_units_sub, bottleneck_dim_sub,
                 dropout=dropout_decoder))
-            setattr(self, 'W_c_1_' + dir, LinearND(
+            setattr(self, 'W_c_1_' + dir_sub, LinearND(
                 self.encoder_num_units_sub, bottleneck_dim_sub,
                 dropout=dropout_decoder))
-            setattr(self, 'fc_1_' + dir, LinearND(
+            setattr(self, 'fc_1_' + dir_sub, LinearND(
                 bottleneck_dim_sub, self.num_classes_sub))
 
             # Embedding (sub)
@@ -463,7 +509,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         else:
             return loss, loss_main, ctc_loss_sub
 
-    def decode(self, xs, beam_width, max_decode_len, min_decode_len=0,
+    def decode(self, xs, beam_width, max_decode_len, min_decode_len=0, min_decode_len_ratio=0,
                length_penalty=0, coverage_penalty=0, rnnlm_weight=0,
                task_index=0, joint_decoding=False, space_index=-1, oov_index=-1,
                word2char=None, score_sub_weight=0, idx2word=None, idx2char=None):
@@ -473,6 +519,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             beam_width (int): the size of beam
             max_decode_len (int): the maximum sequence length of tokens
             min_decode_len (int): the minimum sequence length of tokens
+            min_decode_len_ratio (float):
             length_penalty (float): length penalty in the beam search decoding
             coverage_penalty (float): coverage penalty in the beam search decoding
             rnnlm_weight (float): the weight of RNNLM score in the beam search decoding
@@ -540,7 +587,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 best_hyps, aw, best_hyps_sub, aw_sub, = self._decode_infer_joint(
                     enc_out, x_lens,
                     enc_out_sub, x_lens_sub,
-                    beam_width, max_decode_len, min_decode_len,
+                    beam_width, max_decode_len, min_decode_len, min_decode_len_ratio,
                     length_penalty, coverage_penalty, rnnlm_weight,
                     space_index, oov_index, word2char, score_sub_weight,
                     idx2word, idx2char)
@@ -553,13 +600,14 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 else:
                     best_hyps, aw = self._decode_infer_beam(
                         enc_out, x_lens, beam_width, max_decode_len, min_decode_len,
-                        length_penalty, coverage_penalty, rnnlm_weight, task_index, dir)
+                        min_decode_len_ratio, length_penalty, coverage_penalty,
+                        rnnlm_weight, task_index, dir)
 
             return best_hyps, aw, perm_idx
 
     def _decode_infer_joint(self, enc_out, x_lens, enc_out_sub, x_lens_sub,
                             beam_width, max_decode_len, min_decode_len,
-                            length_penalty, coverage_penalty, rnnlm_weight,
+                            length_penalty, coverage_penalty, rnnlm_weight, min_decode_len_ratio,
                             space_index, oov_index, word2char, score_sub_weight,
                             idx2word, idx2char):
         """Joint decoding (one-pass).
@@ -573,6 +621,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             beam_width (int): the size of beam in the main task
             max_decode_len (int): the maximum sequence length of tokens
             min_decode_len (int): the minimum sequence length of tokens
+            min_decode_len_ratio (float):
             length_penalty (float): length penalty
             coverage_penalty (float): coverage penalty
             rnnlm_weight (float): the weight of RNNLM score of the main task
@@ -633,7 +682,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                      'context_vec_sub': context_vec_sub,
                      'aw_steps': [aw_step],
                      'aw_steps_sub':[aw_step_sub],
-                     'rnnlm_state': None}]
+                     'rnnlm_state': None,
+                     'previous_coverage': 0}]
             for t in range(max_decode_len + 1):
                 new_beam = []
                 for i_beam in range(len(beam)):
@@ -672,8 +722,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                         # Exclude short hypotheses
                         if indices_topk[0, k].data[0] == self.eos_0 and len(beam[i_beam]['hyp']) < min_decode_len:
                             continue
-                        # if indices_topk[0, k].data[0] == self.eos_0 and len(beam[i_beam]['hyp']) < x_lens[b].data[0] * min_decode_len_ratio:
-                        #     continue
+                        if indices_topk[0, k].data[0] == self.eos_0 and len(beam[i_beam]['hyp']) < x_lens[b] * min_decode_len_ratio:
+                            continue
 
                         # Add length penalty
                         score = beam[i_beam]['score'] + \
@@ -681,21 +731,22 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
                         # Add coverage penalty
                         if coverage_penalty > 0:
-                            raise NotImplementedError
+                            # Recompute converage penalty in each step
+                            score -= beam[i_beam]['previous_coverage'] * \
+                                coverage_penalty
 
-                            threshold = 0.5
-                            aw_steps = torch.cat(
-                                beam[i_beam]['aw_steps'], dim=0).sum(0).squeeze(1)
+                            cov_threshold = 0.5
+                            aw_steps = torch.stack(
+                                beam[i_beam]['aw_steps'] + [aw_step], dim=1)
+                            # aw_steps: `[B, L, T, num_heads]`
 
-                            # Google NMT
-                            # cov_sum = torch.where(
-                            #     aw_steps < threshold, aw_steps, torch.ones_like(aw_steps) * threshold).sum(0)
-                            # score += torch.log(cov_sum) * coverage_penalty
-
-                            # Toward better decoding
-                            cov_sum = torch.where(
-                                aw_steps > threshold, aw_steps, torch.zeros_like(aw_steps)).sum(0)
+                            cov_sum = aw_steps.data[0, :, :, 0].cpu().numpy()
+                            cov_sum = np.sum(cov_sum[np.where(
+                                cov_sum > cov_threshold)[0]])
+                            # TODO: fix for MHA
                             score += cov_sum * coverage_penalty
+                        else:
+                            cov_sum = 0
 
                         # Add RNNLM score
                         if rnnlm_weight > 0 and self.rnnlm_0 is not None:
@@ -884,7 +935,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                              'context_vec_sub': context_vec_sub,
                              'aw_steps': beam[i_beam]['aw_steps'] + [aw_step],
                              'aw_steps_sub': beam[i_beam]['aw_steps_sub'] + aw_steps_sub,
-                             'rnnlm_state': rnnlm_state})
+                             'rnnlm_state': rnnlm_state,
+                             'previous_coverage': cov_sum})
 
                 new_beam = sorted(
                     new_beam, key=lambda x: x['score'], reverse=True)

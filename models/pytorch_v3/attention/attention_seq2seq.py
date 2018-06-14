@@ -114,7 +114,7 @@ class AttentionSeq2seq(ModelBase):
         rnnlm_fusion_type (string): False or cold_fusion or logits_fusion
         rnnlm_config (dict): configuration of the pre-trained RNNLM
         rnnlm_joint_training (bool): if True, RNNLM is jointly trained
-        rnnlm_weight (float):
+        rnnlm_weight (float): the weight for XE loss of RNNLM
         concat_embedding (int): if True, concat embeddings of ASR and RMMLM
     """
 
@@ -248,14 +248,16 @@ class AttentionSeq2seq(ModelBase):
 
         # Setting for the RNNLM fusion
         self.rnnlm_fusion_type = rnnlm_fusion_type
-        self.rnnlm_0 = None
+        self.rnnlm_0_fwd = None
+        self.rnnlm_0_bwd = None
         self.rnnlm_joint_training = rnnlm_joint_training
-        self.rnnlm_weight = rnnlm_weight
+        self.rnnlm_weight_0 = rnnlm_weight
         self.concat_embedding = concat_embedding
 
         # RNNLM fusion
         if rnnlm_fusion_type:
-            self.rnnlm_0 = RNNLM(
+            assert rnnlm_config is not None
+            self.rnnlm_0_fwd = RNNLM(
                 embedding_dim=rnnlm_config['embedding_dim'],
                 rnn_type=rnnlm_config['rnn_type'],
                 bidirectional=rnnlm_config['bidirectional'],
@@ -271,17 +273,18 @@ class AttentionSeq2seq(ModelBase):
                 init_forget_gate_bias_with_one=rnnlm_config['init_forget_gate_bias_with_one'],
                 tie_weights=rnnlm_config['tie_weights'])
 
-            self.W_rnnlm_logits = LinearND(
-                self.rnnlm_0.num_classes, decoder_num_units,
+            self.W_rnnlm_logits_0_fwd = LinearND(
+                self.rnnlm_0_fwd.num_classes, decoder_num_units,
                 dropout=dropout_decoder)
-            self.W_rnnlm_gate = LinearND(
+            self.W_rnnlm_gate_0_fwd = LinearND(
                 decoder_num_units * 2, self.bottleneck_dim,
                 dropout=dropout_decoder)
 
             # Fix RNNLM parameters
             if not rnnlm_joint_training:
-                for param in self.rnnlm_0.parameters():
+                for param in self.rnnlm_0_fwd.parameters():
                     param.requires_grad = False
+        # TODO: backward RNNLM
 
         # Encoder
         if encoder_type in ['lstm', 'gru', 'rnn']:
@@ -357,7 +360,7 @@ class AttentionSeq2seq(ModelBase):
             # Decoder
             embedding_size = embedding_dim
             if rnnlm_fusion_type and concat_embedding:
-                embedding_size += self.rnnlm_0.embedding_dim
+                embedding_size += self.rnnlm_0_fwd.embedding_dim
             if decoding_order == 'conditional':
                 setattr(self, 'decoder_first_0_' + dir, RNNDecoder(
                     input_size=embedding_size,
@@ -590,13 +593,13 @@ class AttentionSeq2seq(ModelBase):
 
         # Compute XE loss for RNNLM
         if self.rnnlm_fusion_type and self.rnnlm_joint_training:
+            assert getattr(self, 'rnnlm_weight_' + str(task)) > 0
             if dir == 'fwd':
                 loss_rnnlm = F.cross_entropy(
                     input=logits_rnnlm.view((-1, logits_rnnlm.size(2))),
                     target=ys_out.contiguous().view(-1),
-                    ignore_index=-1, size_average=False) / (ys_out.size(0) * ys_out.size(1))
-                loss += loss_rnnlm * self.rnnlm_weight
-            # TODO: add backward RNNLM
+                    ignore_index=-1, size_average=True)
+                loss += loss_rnnlm * getattr(self, 'rnnlm_weight_' + str(task))
 
         # Add coverage term
         if self.coverage_weight > 0:
@@ -721,6 +724,7 @@ class AttentionSeq2seq(ModelBase):
                 `[B, L, num_classes]`
         """
         batch_size, max_time = enc_out.size()[:2]
+        taskdir = '_' + str(task) + '_' + dir
 
         # Initialize decoder state, decoder output, attention_weights
         dec_state, dec_out = self._init_dec_state(enc_out, x_lens, task, dir)
@@ -736,7 +740,7 @@ class AttentionSeq2seq(ModelBase):
                   for t in range(ys.size(1))]
         ys_emb = torch.cat(ys_emb, dim=1)
         if self.rnnlm_fusion_type:
-            ys_rnnlm_emb = [getattr(self, 'rnnlm_' + str(task)).embed(ys[:, t:t + 1])
+            ys_rnnlm_emb = [getattr(self, 'rnnlm' + taskdir).embed(ys[:, t:t + 1])
                             for t in range(ys.size(1))]
             ys_rnnlm_emb = torch.cat(ys_rnnlm_emb, dim=1)
 
@@ -760,14 +764,14 @@ class AttentionSeq2seq(ModelBase):
             # Update RNNLM states
             if self.rnnlm_fusion_type:
                 if is_sample:
-                    y_rnnlm = getattr(self, 'rnnlm_' + str(task)).embed(
+                    y_rnnlm = getattr(self, 'rnnlm' + taskdir).embed(
                         torch.max(logits[-1], dim=2)[1]).detach()
                 else:
                     y_rnnlm = ys_rnnlm_emb[:, t:t + 1]
-                rnnlm_out, rnnlm_state = getattr(self, 'rnnlm_' + str(task)).rnn(
+                rnnlm_out, rnnlm_state = getattr(self, 'rnnlm' + taskdir).rnn(
                     y_rnnlm, hx=rnnlm_state)
-                logits_step_rnnlm = getattr(
-                    self, 'rnnlm_' + str(task)).output(rnnlm_out)
+                logits_step_rnnlm = getattr(self, 'rnnlm' + taskdir).output(
+                    rnnlm_out)
                 logits_rnnlm += [logits_step_rnnlm]
 
             if self.decoding_order == 'bahdanau':
@@ -776,11 +780,11 @@ class AttentionSeq2seq(ModelBase):
                     if self.rnnlm_fusion_type and self.concat_embedding:
                         y = torch.cat([y, y_rnnlm], dim=-1)
                     dec_in = torch.cat([y, context_vec], dim=-1)
-                    dec_out, dec_state = getattr(
-                        self, 'decoder_' + str(task) + '_' + dir)(dec_in, dec_state)
+                    dec_out, dec_state = getattr(self, 'decoder' + taskdir)(
+                        dec_in, dec_state)
 
                 # Score
-                context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
+                context_vec, aw_step = getattr(self, 'attend' + taskdir)(
                     enc_out, enc_out_a, x_lens, dec_out, aw_step)
 
             elif self.decoding_order == 'luong':
@@ -788,45 +792,46 @@ class AttentionSeq2seq(ModelBase):
                 if self.rnnlm_fusion_type and self.concat_embedding:
                     y = torch.cat([y, y_rnnlm], dim=-1)
                 dec_in = torch.cat([y, context_vec], dim=-1)
-                dec_out, dec_state = getattr(
-                    self, 'decoder_' + str(task) + '_' + dir)(dec_in, dec_state)
+                dec_out, dec_state = getattr(self, 'decoder' + taskdir)(
+                    dec_in, dec_state)
 
                 # Score
-                context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
+                context_vec, aw_step = getattr(self, 'attend' + taskdir)(
                     enc_out, enc_out_a, x_lens, dec_out, aw_step)
 
             elif self.decoding_order == 'conditional':
                 # Recurrency of the first decoder
                 if self.rnnlm_fusion_type and self.concat_embedding:
                     y = torch.cat([y, y_rnnlm], dim=-1)
-                _dec_out, _dec_state = getattr(self, 'decoder_first_' + str(task) + '_' + dir)(
+                _dec_out, _dec_state = getattr(self, 'decoder_first' + taskdir)(
                     y, dec_state)
 
                 # Score
-                context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
+                context_vec, aw_step = getattr(self, 'attend' + taskdir)(
                     enc_out, enc_out_a, x_lens, _dec_out, aw_step)
 
                 # Recurrency of the second decoder
-                dec_out, dec_state = getattr(self, 'decoder_second_' + str(task) + '_' + dir)(
+                dec_out, dec_state = getattr(self, 'decoder_second' + taskdir)(
                     context_vec, _dec_state)
 
             else:
                 raise ValueError(self.decoding_order)
 
             # Generate
-            pre_softmax = getattr(self, 'W_d_' + str(task) + '_' + dir)(dec_out) +\
-                getattr(self, 'W_c_' + str(task) + '_' + dir)(context_vec)
+            pre_softmax = getattr(self, 'W_d' + taskdir)(dec_out) + \
+                getattr(self, 'W_c' + taskdir)(context_vec)
 
             # RNNLM fusion
             if self.rnnlm_fusion_type == 'cold_fusion':
-                logits_step_rnnlm = self.W_rnnlm_logits(logits_step_rnnlm)
-                gate = F.sigmoid(self.W_rnnlm_gate(
+                logits_step_rnnlm = getattr(self, 'W_rnnlm_logits' + taskdir)(
+                    logits_step_rnnlm)
+                gate = F.sigmoid(getattr(self, 'W_rnnlm_gate' + taskdir)(
                     torch.cat([dec_out, logits_step_rnnlm], dim=-1)))
                 pre_softmax += gate * logits_step_rnnlm
                 non_linear = F.relu
             else:
                 non_linear = F.tanh
-            logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(
+            logits_step = getattr(self, 'fc' + taskdir)(
                 non_linear(pre_softmax))
             if self.rnnlm_fusion_type == 'logits_fusion':
                 logits_step += logits_step_rnnlm
@@ -856,6 +861,8 @@ class AttentionSeq2seq(ModelBase):
             dec_out (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, decoder_num_units]`
         """
+        taskdir = '_' + str(task) + '_' + dir
+
         zero_state = Variable(enc_out.data.new(
             enc_out.size(0), getattr(self, 'decoder_num_units_' + str(task))).fill_(0.),
             volatile=not self.training)
@@ -864,7 +871,7 @@ class AttentionSeq2seq(ModelBase):
             enc_out.size(0), 1, getattr(self, 'decoder_num_units_' + str(task))).fill_(0.),
             volatile=not self.training)
 
-        if getattr(self, 'init_dec_state_' + str(task) + '_' + dir) == 'zero':
+        if getattr(self, 'init_dec_state' + taskdir) == 'zero':
             if self.decoder_type == 'lstm':
                 hx_list = [zero_state] * \
                     getattr(self, 'decoder_num_layers_' + str(task))
@@ -877,13 +884,13 @@ class AttentionSeq2seq(ModelBase):
         else:
             # TODO: consider x_lens
 
-            if getattr(self, 'init_dec_state_' + str(task) + '_' + dir) == 'mean':
+            if getattr(self, 'init_dec_state' + taskdir) == 'mean':
                 # Initialize with mean of all encoder outputs
                 h_0 = enc_out.mean(dim=1, keepdim=False)
-            elif getattr(self, 'init_dec_state_' + str(task) + '_' + dir) == 'final':
+            elif getattr(self, 'init_dec_state' + taskdir) == 'final':
                 # Initialize with the final encoder output
                 h_0 = enc_out[:, -1, :]
-            elif getattr(self, 'init_dec_state_' + str(task) + '_' + dir) == 'first':
+            elif getattr(self, 'init_dec_state' + taskdir) == 'first':
                 # Initialize with the first encoder output
                 h_0 = enc_out[:, 0, :]
             # NOTE: h_0: `[B, encoder_num_units]`
@@ -910,14 +917,15 @@ class AttentionSeq2seq(ModelBase):
         return dec_state, dec_out
 
     def decode(self, xs, beam_width, max_decode_len, min_decode_len=0,
-               length_penalty=0, coverage_penalty=0, rnnlm_weight=0,
-               task_index=0, resolving_unk=False):
+               min_decode_len_ratio=0, length_penalty=0, coverage_penalty=0,
+               rnnlm_weight=0, task_index=0, resolving_unk=False):
         """Decoding in the inference stage.
         Args:
             xs (list): A list of length `[B]`, which contains arrays of size `[T, input_size]`
             beam_width (int): the size of beam
             max_decode_len (int): the maximum sequence length of tokens
             min_decode_len (int): the minimum sequence length of tokens
+            min_decode_len_ratio (float):
             length_penalty (float): length penalty in the beam search decoding
             coverage_penalty (float): coverage penalty in the beam search decoding
             rnnlm_weight (float): the weight of RNNLM score in the beam search decoding
@@ -964,7 +972,8 @@ class AttentionSeq2seq(ModelBase):
         else:
             best_hyps, aw = self._decode_infer_beam(
                 enc_out, x_lens, beam_width, max_decode_len, min_decode_len,
-                length_penalty, coverage_penalty, rnnlm_weight, task=0, dir=dir)
+                min_decode_len_ratio, length_penalty, coverage_penalty,
+                rnnlm_weight, task=0, dir=dir)
 
         return best_hyps, aw, perm_idx
 
@@ -985,6 +994,7 @@ class AttentionSeq2seq(ModelBase):
             assert getattr(self, 'bwd_weight_' + str(task)) > 0
 
         batch_size, max_time = enc_out.size()[:2]
+        taskdir = '_' + str(task) + '_' + dir
 
         # Initialize decoder state
         dec_state, dec_out = self._init_dec_state(enc_out, x_lens, task, dir)
@@ -1004,8 +1014,8 @@ class AttentionSeq2seq(ModelBase):
         # Pre-computation of encoder-side features for computing scores
         enc_out_a = []
         for h in range(getattr(self, 'num_heads_' + str(task))):
-            enc_out_a += [getattr(getattr(self, 'attend_' +
-                                          str(task) + '_' + dir), 'W_enc_head' + str(h))(enc_out)]
+            enc_out_a += [getattr(getattr(self, 'attend' + taskdir),
+                                  'W_enc_head' + str(h))(enc_out)]
         enc_out_a = torch.stack(enc_out_a, dim=-1)
 
         _best_hyps, _aw = [], []
@@ -1016,11 +1026,11 @@ class AttentionSeq2seq(ModelBase):
 
             # Update RNNLM states
             if self.rnnlm_fusion_type:
-                y_rnnlm = getattr(self, 'rnnlm_' + str(task)).embed(y)
-                rnnlm_out, rnnlm_state = getattr(self, 'rnnlm_' + str(task)).rnn(
+                y_rnnlm = getattr(self, 'rnnlm' + taskdir).embed(y)
+                rnnlm_out, rnnlm_state = getattr(self, 'rnnlm' + taskdir).rnn(
                     y_rnnlm, hx=rnnlm_state)
-                logits_step_rnnlm = getattr(
-                    self, 'rnnlm_' + str(task)).output(rnnlm_out)
+                logits_step_rnnlm = getattr(self, 'rnnlm' + taskdir).output(
+                    rnnlm_out)
 
             if self.decoding_order == 'bahdanau':
                 if t > 0:
@@ -1028,11 +1038,11 @@ class AttentionSeq2seq(ModelBase):
                     if self.rnnlm_fusion_type and self.concat_embedding:
                         y = torch.cat([y, y_rnnlm], dim=-1)
                     dec_in = torch.cat([y, context_vec], dim=-1)
-                    dec_out, dec_state = getattr(
-                        self, 'decoder_' + str(task) + '_' + dir)(dec_in, dec_state)
+                    dec_out, dec_state = getattr(self, 'decoder' + taskdir)(
+                        dec_in, dec_state)
 
                 # Score
-                context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
+                context_vec, aw_step = getattr(self, 'attend' + taskdir)(
                     enc_out, enc_out_a, x_lens, dec_out, aw_step)
 
             elif self.decoding_order == 'luong':
@@ -1040,45 +1050,46 @@ class AttentionSeq2seq(ModelBase):
                 if self.rnnlm_fusion_type and self.concat_embedding:
                     y = torch.cat([y, y_rnnlm], dim=-1)
                 dec_in = torch.cat([y, context_vec], dim=-1)
-                dec_out, dec_state = getattr(
-                    self, 'decoder_' + str(task) + '_' + dir)(dec_in, dec_state)
+                dec_out, dec_state = getattr(self, 'decoder' + taskdir)(
+                    dec_in, dec_state)
 
                 # Score
-                context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
+                context_vec, aw_step = getattr(self, 'attend' + taskdir)(
                     enc_out, enc_out_a, x_lens, dec_out, aw_step)
 
             elif self.decoding_order == 'conditional':
                 # Recurrency of the first decoder
                 if self.rnnlm_fusion_type and self.concat_embedding:
                     y = torch.cat([y, y_rnnlm], dim=-1)
-                _dec_out, _dec_state = getattr(self, 'decoder_first_' + str(task) + '_' + dir)(
+                _dec_out, _dec_state = getattr(self, 'decoder_first' + taskdir)(
                     y, dec_state)
 
                 # Score
-                context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
+                context_vec, aw_step = getattr(self, 'attend' + taskdir)(
                     enc_out, enc_out_a, x_lens, _dec_out, aw_step)
 
                 # Recurrency of the second decoder
-                dec_out, dec_state = getattr(self, 'decoder_second_' + str(task) + '_' + dir)(
+                dec_out, dec_state = getattr(self, 'decoder_second' + taskdir)(
                     context_vec, _dec_state)
 
             else:
                 raise ValueError(self.decoding_order)
 
             # Generate
-            pre_softmax = getattr(self, 'W_d_' + str(task) + '_' + dir)(dec_out) +\
-                getattr(self, 'W_c_' + str(task) + '_' + dir)(context_vec)
+            pre_softmax = getattr(self, 'W_d' + taskdir)(dec_out) + \
+                getattr(self, 'W_c' + taskdir)(context_vec)
 
             # RNNLM fusion
             if self.rnnlm_fusion_type == 'cold_fusion':
-                rnnlm_feat = self.W_rnnlm_logits(logits_step_rnnlm)
-                gate = F.sigmoid(self.W_rnnlm_gate(
+                rnnlm_feat = getattr(self, 'W_rnnlm_logits' + taskdir)(
+                    logits_step_rnnlm)
+                gate = F.sigmoid(getattr(self, 'W_rnnlm_gate' + taskdir)(
                     torch.cat([dec_out, rnnlm_feat], dim=-1)))
                 pre_softmax += gate * rnnlm_feat
                 non_linear = F.relu
             else:
                 non_linear = F.tanh
-            logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(
+            logits_step = getattr(self, 'fc' + taskdir)(
                 non_linear(pre_softmax))
             if self.rnnlm_fusion_type == 'logits_fusion':
                 logits_step += logits_step_rnnlm
@@ -1125,7 +1136,7 @@ class AttentionSeq2seq(ModelBase):
         return best_hyps, aw
 
     def _decode_infer_beam(self, enc_out, x_lens, beam_width,
-                           max_decode_len, min_decode_len,
+                           max_decode_len, min_decode_len, min_decode_len_ratio,
                            length_penalty, coverage_penalty, rnnlm_weight,
                            task, dir):
         """Beam search decoding in the inference stage.
@@ -1136,6 +1147,7 @@ class AttentionSeq2seq(ModelBase):
             beam_width (int): the size of beam
             max_decode_len (int): the maximum sequence length of tokens
             min_decode_len (int): the minimum sequence length of tokens
+            min_decode_len_ratio (float):
             length_penalty (float): length penalty
             coverage_penalty (float): coverage penalty
             rnnlm_weight (float): the weight of RNNLM score
@@ -1148,17 +1160,17 @@ class AttentionSeq2seq(ModelBase):
         if dir == 'bwd':
             assert getattr(self, 'bwd_weight_' + str(task)) > 0
 
+        taskdir = '_' + str(task) + '_' + dir
+
         # Start from <SOS>
         sos = getattr(self, 'sos_' + str(task))
         eos = getattr(self, 'eos_' + str(task))
 
-        # min_decode_len_ratio = 0.2
-
         # Pre-computation of encoder-side features for computing scores
         enc_out_a = []
         for h in range(getattr(self, 'num_heads_' + str(task))):
-            enc_out_a += [getattr(getattr(self, 'attend_' +
-                                          str(task) + '_' + dir), 'W_enc_head' + str(h))(enc_out)]
+            enc_out_a += [getattr(getattr(self, 'attend' + taskdir),
+                                  'W_enc_head' + str(h))(enc_out)]
         enc_out_a = torch.stack(enc_out_a, dim=-1)
 
         best_hyps, aw = [], []
@@ -1179,7 +1191,8 @@ class AttentionSeq2seq(ModelBase):
                      'dec_out': dec_out,
                      'context_vec': context_vec,
                      'aw_steps': [aw_step],
-                     'rnnlm_state': None}]
+                     'rnnlm_state': None,
+                     'previous_coverage': 0}]
             for t in range(max_decode_len + 1):
                 new_beam = []
                 for i_beam in range(len(beam)):
@@ -1188,15 +1201,15 @@ class AttentionSeq2seq(ModelBase):
                     y = getattr(self, 'embed_' + str(task))(y)
 
                     # Update RNNLM states
-                    if (rnnlm_weight > 0 or self.rnnlm_fusion_type) and getattr(self, 'rnnlm_' + str(task)) is not None:
+                    if (rnnlm_weight > 0 or self.rnnlm_fusion_type) and getattr(self, 'rnnlm' + taskdir) is not None:
                         y_rnnlm = Variable(enc_out.data.new(
                             1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
-                        y_rnnlm = getattr(
-                            self, 'rnnlm_' + str(task)).embed(y_rnnlm)
-                        rnnlm_out, rnnlm_state = getattr(self, 'rnnlm_' + str(task)).rnn(
+                        y_rnnlm = getattr(self, 'rnnlm' + taskdir).embed(
+                            y_rnnlm)
+                        rnnlm_out, rnnlm_state = getattr(self, 'rnnlm' + taskdir).rnn(
                             y_rnnlm, hx=beam[i_beam]['rnnlm_state'])
-                        logits_step_rnnlm = getattr(
-                            self, 'rnnlm_' + str(task)).output(rnnlm_out)
+                        logits_step_rnnlm = getattr(self, 'rnnlm' + taskdir).output(
+                            rnnlm_out)
 
                     if self.decoding_order == 'bahdanau':
                         if t == 0:
@@ -1207,11 +1220,11 @@ class AttentionSeq2seq(ModelBase):
                                 y = torch.cat([y, y_rnnlm], dim=-1)
                             dec_in = torch.cat(
                                 [y, beam[i_beam]['context_vec']], dim=-1)
-                            dec_out, dec_state = getattr(
-                                self, 'decoder_' + str(task) + '_' + dir)(dec_in, beam[i_beam]['dec_state'])
+                            dec_out, dec_state = getattr(self, 'decoder' + taskdir)(
+                                dec_in, beam[i_beam]['dec_state'])
 
                         # Score
-                        context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
+                        context_vec, aw_step = getattr(self, 'attend' + taskdir)(
                             enc_out[b:b + 1, :x_lens[b]],
                             enc_out_a[b:b + 1, :x_lens[b]],
                             x_lens[b:b + 1],
@@ -1223,11 +1236,11 @@ class AttentionSeq2seq(ModelBase):
                             y = torch.cat([y, y_rnnlm], dim=-1)
                         dec_in = torch.cat(
                             [y, beam[i_beam]['context_vec']], dim=-1)
-                        dec_out, dec_state = getattr(self, 'decoder_' + str(task) + '_' + dir)(
+                        dec_out, dec_state = getattr(self, 'decoder' + taskdir)(
                             dec_in, beam[i_beam]['dec_state'])
 
                         # Score
-                        context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
+                        context_vec, aw_step = getattr(self, 'attend' + taskdir)(
                             enc_out[b:b + 1, :x_lens[b]],
                             enc_out_a[b:b + 1, :x_lens[b]],
                             x_lens[b:b + 1],
@@ -1237,38 +1250,38 @@ class AttentionSeq2seq(ModelBase):
                         # Recurrency of the first decoder
                         if self.rnnlm_fusion_type and self.concat_embedding:
                             y = torch.cat([y, y_rnnlm], dim=-1)
-                        _dec_out, _dec_state = getattr(self, 'decoder_first_' + str(task) + '_' + dir)(
+                        _dec_out, _dec_state = getattr(self, 'decoder_first' + taskdir)(
                             y, beam[i_beam]['dec_state'])
 
                         # Score
-                        context_vec, aw_step = getattr(self, 'attend_' + str(task) + '_' + dir)(
+                        context_vec, aw_step = getattr(self, 'attend' + taskdir)(
                             enc_out[b:b + 1, :x_lens[b]],
                             enc_out_a[b:b + 1, :x_lens[b]],
                             x_lens[b:b + 1],
                             _dec_out, beam[i_beam]['aw_steps'][-1])
 
                         # Recurrency of the second decoder
-                        dec_out, dec_state = getattr(self, 'decoder_second_' + str(task) + '_' + dir)(
+                        dec_out, dec_state = getattr(self, 'decoder_second' + taskdir)(
                             context_vec, _dec_state)
 
                     else:
                         raise ValueError(self.decoding_order)
 
                     # Generate
-                    pre_softmax = getattr(self, 'W_d_' + str(task) + '_' + dir)(dec_out) +\
-                        getattr(self, 'W_c_' + str(task) +
-                                '_' + dir)(context_vec)
+                    pre_softmax = getattr(self, 'W_d' + taskdir)(dec_out) +\
+                        getattr(self, 'W_c' + taskdir)(context_vec)
 
                     # RNNLM fusion
                     if self.rnnlm_fusion_type == 'cold_fusion':
-                        rnnlm_feat = self.W_rnnlm_logits(logits_step_rnnlm)
-                        gate = F.sigmoid(self.W_rnnlm_gate(
+                        rnnlm_feat = getattr(self, 'W_rnnlm_logits' + taskdir)(
+                            logits_step_rnnlm)
+                        gate = F.sigmoid(getattr(self, 'W_rnnlm_gate' + taskdir)(
                             torch.cat([dec_out, rnnlm_feat], dim=-1)))
                         pre_softmax += gate * rnnlm_feat
                         non_linear = F.relu
                     else:
                         non_linear = F.tanh
-                    logits_step = getattr(self, 'fc_' + str(task) + '_' + dir)(
+                    logits_step = getattr(self, 'fc' + taskdir)(
                         non_linear(pre_softmax))
                     if self.rnnlm_fusion_type == 'logits_fusion':
                         logits_step += logits_step_rnnlm
@@ -1286,8 +1299,8 @@ class AttentionSeq2seq(ModelBase):
                         # Exclude short hypotheses
                         if indices_topk[0, k].data[0] == eos and len(beam[i_beam]['hyp']) < min_decode_len:
                             continue
-                        # if indices_topk[0, k].data[0] == eos and len(beam[i_beam]['hyp']) < x_lens[b].data[0] * min_decode_len_ratio:
-                        #     continue
+                        if indices_topk[0, k].data[0] == eos and len(beam[i_beam]['hyp']) < x_lens[b] * min_decode_len_ratio:
+                            continue
 
                         # Add length penalty
                         score = beam[i_beam]['score'] + \
@@ -1295,24 +1308,25 @@ class AttentionSeq2seq(ModelBase):
 
                         # Add coverage penalty
                         if coverage_penalty > 0:
-                            raise NotImplementedError
+                            # Recompute converage penalty in each step
+                            score -= beam[i_beam]['previous_coverage'] * \
+                                coverage_penalty
 
-                            threshold = 0.5
-                            aw_steps = torch.cat(
-                                beam[i_beam]['aw_steps'], dim=0).sum(0).squeeze(1)
+                            cov_threshold = 0.5
+                            aw_steps = torch.stack(
+                                beam[i_beam]['aw_steps'] + [aw_step], dim=1)
+                            # aw_steps: `[B, L, T, num_heads]`
 
-                            # Google NMT
-                            # cov_sum = torch.where(
-                            #     aw_steps < threshold, aw_steps, torch.ones_like(aw_steps) * threshold).sum(0)
-                            # score += torch.log(cov_sum) * coverage_penalty
-
-                            # Toward better decoding
-                            cov_sum = torch.where(
-                                aw_steps > threshold, aw_steps, torch.zeros_like(aw_steps)).sum(0)
+                            cov_sum = aw_steps.data[0, :, :, 0].cpu().numpy()
+                            cov_sum = np.sum(cov_sum[np.where(
+                                cov_sum > cov_threshold)[0]])
+                            # TODO: fix for MHA
                             score += cov_sum * coverage_penalty
+                        else:
+                            cov_sum = 0
 
                         # Add RNNLM score
-                        if rnnlm_weight > 0 and getattr(self, 'rnnlm_' + str(task)) is not None:
+                        if rnnlm_weight > 0 and getattr(self, 'rnnlm' + taskdir) is not None:
                             rnnlm_log_probs = F.log_softmax(
                                 logits_step_rnnlm.squeeze(1), dim=1)
                             # assert log_probs.size() == rnnlm_log_probs.size()
@@ -1329,7 +1343,8 @@ class AttentionSeq2seq(ModelBase):
                              'dec_out': dec_out,
                              'context_vec': context_vec,
                              'aw_steps': beam[i_beam]['aw_steps'] + [aw_step],
-                             'rnnlm_state': rnnlm_state})
+                             'rnnlm_state': rnnlm_state,
+                             'previous_coverage': cov_sum})
 
                 new_beam = sorted(
                     new_beam, key=lambda x: x['score'], reverse=True)
