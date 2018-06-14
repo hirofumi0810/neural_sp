@@ -9,14 +9,17 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from os.path import join
+from os.path import join, isfile
 import pandas as pd
+import codecs
 import logging
 logger = logging.getLogger('training')
+from tqdm import tqdm
 
 from utils.dataset.loader_lm import DatasetBase
 from utils.io.labels.word import Idx2word, Word2idx
 from utils.io.labels.character import Idx2char, Char2idx
+from utils.directory import mkdir_join
 
 
 class Dataset(DatasetBase):
@@ -27,7 +30,7 @@ class Dataset(DatasetBase):
                  max_frame_num=2000, min_frame_num=40,
                  shuffle=False, sort_utt=False, reverse=False,
                  sort_stop_epoch=None, num_gpus=1, tool='htk',
-                 num_enque=None, dynamic_batching=False):
+                 num_enque=None, dynamic_batching=False, vocab=False):
         """A class for loading dataset.
         Args:
             data_save_path (string): path to saved data
@@ -49,6 +52,7 @@ class Dataset(DatasetBase):
             num_enque (int): the number of elements to enqueue
             dynamic_batching (bool): if True, batch size will be chainged
                 dynamically in training
+            vocab (bool or string):
         """
         self.data_type = data_type
         self.data_size = data_size
@@ -64,8 +68,14 @@ class Dataset(DatasetBase):
         self.dynamic_batching = dynamic_batching
         self.is_test = True if 'eval' in data_type else False
 
-        self.vocab_file_path = join(
-            data_save_path, 'vocab', data_size, label_type + '.txt')
+        if vocab and data_size != vocab:
+            self.vocab_file_path = join(
+                data_save_path, 'vocab', vocab, label_type + '.txt')
+            vocab_file_path_org = join(
+                data_save_path, 'vocab', data_size, label_type + '.txt')
+        else:
+            self.vocab_file_path = join(
+                data_save_path, 'vocab', data_size, label_type + '.txt')
         if label_type == 'word':
             self.idx2word = Idx2word(self.vocab_file_path)
             self.word2idx = Word2idx(self.vocab_file_path)
@@ -76,10 +86,56 @@ class Dataset(DatasetBase):
         super(Dataset, self).__init__(vocab_file_path=self.vocab_file_path)
 
         # Load dataset file
-        dataset_path = join(
-            data_save_path, 'dataset', tool, data_size, data_type, label_type + '.csv')
-        df = pd.read_csv(dataset_path, encoding='utf-8')
-        df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
+        if vocab and data_size != vocab and not self.is_test:
+            dataset_path = mkdir_join(
+                data_save_path, 'dataset', tool, data_size + '_' + vocab, data_type, label_type + '.csv')
+
+            # Change token indices
+            if not isfile(dataset_path):
+                dataset_path_org = join(
+                    data_save_path, 'dataset', tool, data_size, data_type, label_type + '.csv')
+                df = pd.read_csv(dataset_path_org, encoding='utf-8')
+                df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
+
+                # Change vocabulary
+                org2new = {}
+                str2idx_org = {}
+                str2idx_new = {}
+                # new vocab
+                with codecs.open(self.vocab_file_path, 'r', 'utf-8') as f:
+                    vocab_count = 0
+                    for line in f:
+                        if line.strip() != '':
+                            str2idx_new[line.strip()] = vocab_count
+                            vocab_count += 1
+                # original vocab
+                with codecs.open(vocab_file_path_org, 'r', 'utf-8') as f:
+                    vocab_count = 0
+                    for line in f:
+                        if line.strip() != '':
+                            str2idx_org[line.strip()] = vocab_count
+                            vocab_count += 1
+                for k, v in str2idx_org.items():
+                    if k in str2idx_new.keys():
+                        org2new[v] = str2idx_new[k]
+                    else:
+                        org2new[v] = str2idx_new['OOV']
+
+                # Update the transcript
+                for i in tqdm(df['transcript'].index):
+                    df['transcript'][i] = ' '.join(
+                        list(map(lambda x: str(org2new[int(x)]), df['transcript'][i].split(' '))))
+
+                # Save as a new file
+                df.to_csv(dataset_path, encoding='utf-8')
+            else:
+                df = pd.read_csv(dataset_path, encoding='utf-8')
+                df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
+        else:
+            dataset_path = join(
+                data_save_path, 'dataset', tool, data_size, data_type, label_type + '.csv')
+            df = pd.read_csv(dataset_path, encoding='utf-8')
+            df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
 
         # Remove inappropriate utteraces
         if not self.is_test:

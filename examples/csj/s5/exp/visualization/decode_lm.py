@@ -47,7 +47,8 @@ def main():
                       data_size=config['data_size'],
                       label_type=config['label_type'],
                       batch_size=args.eval_batch_size,
-                      sort_utt=False, reverse=False, tool=config['tool'])
+                      sort_utt=False, reverse=False, tool=config['tool'],
+                      vocab=config['vocab'])
     config['num_classes'] = dataset.num_classes
 
     # Load model

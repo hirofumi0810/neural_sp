@@ -67,19 +67,21 @@ def main():
         max_frame_num=config['max_frame_num'],
         min_frame_num=config['min_frame_num'],
         sort_utt=True, sort_stop_epoch=config['sort_stop_epoch'],
-        tool=config['tool'],
-        dynamic_batching=config['dynamic_batching'])
+        tool=config['tool'], dynamic_batching=config['dynamic_batching'],
+        vocab=config['vocab'])
     dev_data = Dataset(
         data_save_path=args.data_save_path,
         data_type='dev', data_size=config['data_size'],
         label_type=config['label_type'],
         batch_size=config['batch_size'],
-        shuffle=True, tool=config['tool'])
+        shuffle=True, tool=config['tool'],
+        vocab=config['vocab'])
     test_data = Dataset(
         data_save_path=args.data_save_path,
         data_type='eval1', data_size=config['data_size'],
         label_type=config['label_type'],
-        batch_size=1, tool=config['tool'])
+        batch_size=1, tool=config['tool'],
+        vocab=config['vocab'])
     config['num_classes'] = train_data.num_classes
 
     # Model setting
@@ -99,6 +101,9 @@ def main():
 
         # Setting for logging
         logger = set_logger(model.save_path)
+
+        for k, v in sorted(config.items(), key=lambda x: x[0]):
+            logger.info('%s: %s' % (k, str(v)))
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):
@@ -166,7 +171,8 @@ def main():
         decay_start_epoch=config['decay_start_epoch'],
         decay_rate=config['decay_rate'],
         decay_patient_epoch=config['decay_patient_epoch'],
-        lower_better=True)
+        lower_better=True,
+        best_value=metric_dev_best)
 
     # Setting for tensorboard
     if config['backend'] == 'pytorch':
@@ -242,7 +248,7 @@ def main():
                 # dev
                 ppl_dev = eval_ppl(models=[model],
                                    dataset=dev_data)
-                logger.info(' PPL (dev): %.3f %%' % ppl_dev)
+                logger.info(' PPL (dev): %.3f' % ppl_dev)
 
                 if ppl_dev < metric_dev_best:
                     metric_dev_best = ppl_dev
@@ -256,7 +262,7 @@ def main():
                     # test
                     ppl_eval1 = eval_ppl(models=[model],
                                          dataset=test_data)
-                    logger.info(' PPL (eval1): %.3f %%' % ppl_eval1)
+                    logger.info(' PPL (eval1): %.3f' % ppl_eval1)
                 else:
                     not_improved_epoch += 1
 

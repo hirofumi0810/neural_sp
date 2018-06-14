@@ -18,6 +18,12 @@ class TestLoadDataset(unittest.TestCase):
 
     def test(self):
 
+        # Change vocab
+        self.check(label_type='word', data_type='train',
+                   data_size='all', vocab='aps_other')
+        self.check(label_type='character_wb', data_type='train',
+                   data_size='all', vocab='aps_other')
+
         # data_type
         self.check(label_type='word', data_type='train')
         self.check(label_type='word', data_type='dev')
@@ -34,12 +40,14 @@ class TestLoadDataset(unittest.TestCase):
         self.check(label_type='character_wb')
 
     @measure_time
-    def check(self, label_type, data_type='dev', data_size='all'):
+    def check(self, label_type, data_type='dev', data_size='aps_other',
+              vocab=False):
 
         print('========================================')
         print('  label_type: %s' % label_type)
         print('  data_type: %s' % data_type)
         print('  data_size: %s' % data_size)
+        print('  vocab: %s' % str(vocab))
         print('========================================')
 
         dataset = Dataset(
@@ -48,7 +56,7 @@ class TestLoadDataset(unittest.TestCase):
             label_type=label_type, batch_size=64, max_epoch=1,
             shuffle=False, sort_utt=True,
             reverse=False, sort_stop_epoch=None,
-            num_gpus=1, num_enque=None)
+            num_gpus=1, num_enque=None, vocab=vocab)
 
         print('=> Loading mini-batch...')
         if label_type == 'word':

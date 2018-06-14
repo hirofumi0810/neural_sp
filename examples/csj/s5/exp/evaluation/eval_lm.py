@@ -47,7 +47,8 @@ def main():
                           data_size=config['data_size'],
                           label_type=config['label_type'],
                           batch_size=args.eval_batch_size,
-                          shuffle=False, tool=config['tool'])
+                          shuffle=False, tool=config['tool'],
+                          vocab=config['vocab'])
 
         if i == 0:
             config['num_classes'] = dataset.num_classes
@@ -75,9 +76,9 @@ def main():
                        dataset=dataset,
                        progressbar=True)
         ppl_mean += ppl
-        logger.info('  PPL (%s): %.3f %%' % (data_type, ppl))
+        logger.info('  PPL (%s): %.3f' % (data_type, ppl))
 
-    logger.info('PPL (mean): %.3f %%' % (ppl_mean / 3))
+    logger.info('PPL (mean): %.3f' % (ppl_mean / 3))
 
 
 if __name__ == '__main__':

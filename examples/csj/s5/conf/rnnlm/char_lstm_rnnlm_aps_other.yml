@@ -4,10 +4,8 @@ param:
 
   # corpus
   corpus: csj
-  # data_size: aps_other
-  # vocab: False
-  data_size: all
-  vocab: aps_other
+  data_size: aps_other
+  vocab: False
   label_type: character_wb
 
   # features
@@ -20,9 +18,9 @@ param:
   model_type: rnnlm
   rnn_type: lstm
   bidirectional: False
-  num_units: 1024
+  num_units: 512
   num_proj: 0
-  num_layers: 1
+  num_layers: 2
   embedding_dim: 64
   tie_weights: False
   backward: False
@@ -31,8 +29,8 @@ param:
   batch_size: 128
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 50
-  convert_to_sgd_epoch: 40
+  num_epoch: 100
+  convert_to_sgd_epoch: 20
 
   # initialization
   parameter_init_distribution: uniform
@@ -54,8 +52,8 @@ param:
 
   # annealing
   decay_type: per_epoch
-  decay_start_epoch: 10
-  decay_rate: 0.9
+  decay_start_epoch: 20
+  decay_rate: 0.95
   decay_patient_epoch: 0
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
