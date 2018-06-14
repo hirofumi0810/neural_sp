@@ -37,11 +37,12 @@ parser.add_argument('--gpu', type=int, default=-1,
                     help='the index of GPU (negative value indicates CPU)')
 parser.add_argument('--config_path', type=str, default=None,
                     help='path to the configuration file')
-parser.add_argument('--model_save_path', type=str,
+parser.add_argument('--data_save_path', type=str,
+                    help='path to saved data')
+parser.add_argument('--model_save_path', type=str, default=None,
                     help='path to save the model')
 parser.add_argument('--saved_model_path', type=str, default=None,
                     help='path to the saved model to retrain')
-parser.add_argument('--data_save_path', type=str, help='path to saved data')
 
 MAX_DECODE_LEN_WORD = 200
 MAX_DECODE_LEN_CHAR = 600
@@ -111,7 +112,7 @@ def main():
             config['data_size'], model.name)
         model.set_save_path(save_path)
 
-        # Save config file
+        # Save the config file
         save_config(config_path=args.config_path, save_path=model.save_path)
 
         # Setting for logging
@@ -249,7 +250,7 @@ def main():
                 #     if param.grad is not None:
                 #         tf_writer.add_histogram(
                 #             name + '/grad', param.grad.data.cpu().numpy(), step + 1)
-                #     # TODO: fix this
+                # TODO: fix this
 
             duration_step = time.time() - start_time_step
             logger.info("...Step:%d(epoch:%.3f) loss:%.3f/%.3f/%.3f(%.3f/%.3f/%.3f)/lr:%.5f/batch:%d/x_lens:%d (%.3f min)" %

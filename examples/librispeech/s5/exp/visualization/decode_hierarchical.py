@@ -38,6 +38,14 @@ parser.add_argument('--length_penalty', type=float, default=0,
                     help='length penalty in beam search decoding')
 parser.add_argument('--coverage_penalty', type=float, default=0,
                     help='coverage penalty in beam search decoding')
+parser.add_argument('--rnnlm_weight', type=float, default=0,
+                    help='the weight of RNNLM score of the main task in the beam search decoding')
+parser.add_argument('--rnnlm_weight_sub', type=float, default=0,
+                    help='the weight of RNNLM score of the sub task in the beam search decoding')
+parser.add_argument('--rnnlm_path', default=None, type=str,  nargs='?',
+                    help='path to the RMMLM of the main task')
+parser.add_argument('--rnnlm_path_sub', default=None, type=str, nargs='?',
+                    help='path to the RMMLM of the sub task')
 parser.add_argument('--resolving_unk', type=strtobool, default=False)
 parser.add_argument('--a2c_oracle', type=strtobool, default=False)
 parser.add_argument('--joint_decoding', type=strtobool, default=False)
@@ -72,13 +80,68 @@ def main():
     config['num_classes'] = dataset.num_classes
     config['num_classes_sub'] = dataset.num_classes_sub
 
-    # Load model
+    # For cold fusion
+    if config['rnnlm_fusion_type'] and config['rnnlm_path']:
+        # Load a RNNLM config file
+        rnnlm_config = load_config(join(args.model_path, 'config_rnnlm.yml'))
+
+        assert config['label_type'] == rnnlm_config['label_type']
+        rnnlm_config['num_classes'] = dataset.num_classes
+        config['rnnlm_config'] = rnnlm_config
+    else:
+        config['rnnlm_config'] = None
+
+    if config['rnnlm_fusion_type'] and config['rnnlm_path_sub']:
+        # Load a RNNLM config file
+        rnnlm_config_sub = load_config(
+            join(args.model_path, 'config_rnnlm_sub.yml'))
+
+        assert config['label_type_sub'] == rnnlm_config_sub['label_type']
+        rnnlm_config_sub['num_classes'] = dataset.num_classes_sub
+        config['rnnlm_config_sub'] = rnnlm_config_sub
+    else:
+        config['rnnlm_config_sub'] = None
+
+    # Load the ASR model
     model = load(model_type=config['model_type'],
                  config=config,
                  backend=config['backend'])
 
     # Restore the saved parameters
     model.load_checkpoint(save_path=args.model_path, epoch=args.epoch)
+
+    # For shallow fusion
+    if not (config['rnnlm_fusion_type'] and config['rnnlm_path']) and args.rnnlm_path is not None and args.rnnlm_weight > 0:
+        # Load a RNNLM config file
+        config_rnnlm = load_config(
+            join(args.rnnlm_path, 'config.yml'), is_eval=True)
+
+        assert config['label_type'] == config_rnnlm['label_type']
+        config_rnnlm['num_classes'] = dataset.num_classes
+
+        # Load the pre-trianed RNNLM
+        rnnlm = load(model_type=config_rnnlm['model_type'],
+                     config=config_rnnlm,
+                     backend=config_rnnlm['backend'])
+        rnnlm.load_checkpoint(save_path=args.rnnlm_path, epoch=-1)
+        rnnlm.rnn.flatten_parameters()
+        model.rnnlm_0_fwd = rnnlm
+
+    if not (config['rnnlm_fusion_type'] and config['rnnlm_path_sub']) and args.rnnlm_path_sub is not None and args.rnnlm_weight_sub > 0:
+        # Load a RNNLM config file
+        config_rnnlm_sub = load_config(
+            join(args.rnnlm_path_sub, 'config.yml'), is_eval=True)
+
+        assert config['label_type_sub'] == config_rnnlm_sub['label_type']
+        config_rnnlm_sub['num_classes'] = dataset.num_classes_sub
+
+        # Load the pre-trianed RNNLM
+        rnnlm_sub = load(model_type=config_rnnlm_sub['model_type'],
+                         config=config_rnnlm_sub,
+                         backend=config_rnnlm_sub['backend'])
+        rnnlm_sub.load_checkpoint(save_path=args.rnnlm_path_sub, epoch=-1)
+        rnnlm_sub.rnn.flatten_parameters()
+        model.rnnlm_1_fwd = rnnlm_sub
 
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
@@ -116,6 +179,8 @@ def main():
                 min_decode_len_sub=MIN_DECODE_LEN_CHAR,
                 length_penalty=args.length_penalty,
                 coverage_penalty=args.coverage_penalty,
+                rnnlm_weight=args.rnnlm_weight,
+                rnnlm_weight_sub=args.rnnlm_weight_sub,
                 teacher_forcing=args.a2c_oracle,
                 ys_sub=ys_sub)
         else:
@@ -125,7 +190,8 @@ def main():
                 max_decode_len=MAX_DECODE_LEN_WORD,
                 min_decode_len=MIN_DECODE_LEN_WORD,
                 length_penalty=args.length_penalty,
-                coverage_penalty=args.coverage_penalty)
+                coverage_penalty=args.coverage_penalty,
+                rnnlm_weight=args.rnnlm_weight)
             best_hyps_sub, aw_sub, _ = model.decode(
                 batch['xs'],
                 beam_width=args.beam_width_sub,
@@ -133,6 +199,7 @@ def main():
                 min_decode_len=MIN_DECODE_LEN_CHAR,
                 length_penalty=args.length_penalty,
                 coverage_penalty=args.coverage_penalty,
+                rnnlm_weight=args.rnnlm_weight_sub,
                 task_index=1)
 
         if model.model_type == 'hierarchical_attention' and args.joint_decoding is not None:
@@ -143,6 +210,7 @@ def main():
                 min_decode_len=MIN_DECODE_LEN_WORD,
                 length_penalty=args.length_penalty,
                 coverage_penalty=args.coverage_penalty,
+                rnnlm_weight=args.rnnlm_weight,
                 joint_decoding=args.joint_decoding,
                 space_index=dataset.char2idx('_')[0],
                 oov_index=dataset.word2idx('OOV')[0],

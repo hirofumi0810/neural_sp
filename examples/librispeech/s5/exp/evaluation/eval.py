@@ -34,6 +34,10 @@ parser.add_argument('--length_penalty', type=float, default=0,
                     help='length penalty in beam search decoding')
 parser.add_argument('--coverage_penalty', type=float, default=0,
                     help='coverage penalty in beam search decoding')
+parser.add_argument('--rnnlm_weight', type=float, default=0,
+                    help='the weight of RNNLM score in beam search decoding')
+parser.add_argument('--rnnlm_path', default=None, type=str, nargs='?',
+                    help='path to the RMMLM')
 
 MAX_DECODE_LEN_WORD = 200
 MIN_DECODE_LEN_WORD = 1
@@ -66,7 +70,19 @@ def main():
         if i == 0:
             config['num_classes'] = dataset.num_classes
 
-            # Load model
+            # For cold fusion
+            if config['rnnlm_fusion_type'] and config['rnnlm_path']:
+                # Load a RNNLM config file
+                rnnlm_config = load_config(
+                    join(args.model_path, 'config_rnnlm.yml'))
+
+                assert config['label_type'] == rnnlm_config['label_type']
+                rnnlm_config['num_classes'] = dataset.num_classes
+                config['rnnlm_config'] = rnnlm_config
+            else:
+                config['rnnlm_config'] = None
+
+            # Load the ASR model
             model = load(model_type=config['model_type'],
                          config=config,
                          backend=config['backend'])
@@ -75,10 +91,34 @@ def main():
             epoch, _, _, _ = model.load_checkpoint(
                 save_path=args.model_path, epoch=args.epoch)
 
+            # For shallow fusion
+            if not (config['rnnlm_fusion_type'] and config['rnnlm_path']) and args.rnnlm_path is not None and args.rnnlm_weight > 0:
+                # Load a RNNLM config file
+                config_rnnlm = load_config(
+                    join(args.rnnlm_path, 'config.yml'), is_eval=True)
+
+                assert config['label_type'] == config_rnnlm['label_type']
+                config_rnnlm['num_classes'] = dataset.num_classes
+
+                # Load the pre-trianed RNNLM
+                rnnlm = load(model_type=config_rnnlm['model_type'],
+                             config=config_rnnlm,
+                             backend=config_rnnlm['backend'])
+                rnnlm.load_checkpoint(save_path=args.rnnlm_path, epoch=-1)
+                rnnlm.rnn.flatten_parameters()
+                model.rnnlm_0_fwd = rnnlm
+                # TODO: add backward RNNLM
+
             # GPU setting
             model.set_cuda(deterministic=False, benchmark=True)
 
             logger.info('beam width: %d' % args.beam_width)
+            if config['rnnlm_fusion_type'] and config['rnnlm_path']:
+                logger.info('RNNLM path: %s' % config['rnnlm_path'])
+                logger.info('RNNLM weight: %.3f' % args.rnnlm_weight)
+            if args.rnnlm_path is not None:
+                logger.info('RNNLM path: %s' % args.rnnlm_path)
+                logger.info('RNNLM weight: %.3f' % args.rnnlm_weight)
             logger.info('epoch: %d' % (epoch - 1))
 
         if config['label_type'] == 'word':
@@ -90,6 +130,7 @@ def main():
                                 min_decode_len=MIN_DECODE_LEN_WORD,
                                 length_penalty=args.length_penalty,
                                 coverage_penalty=args.coverage_penalty,
+                                rnnlm_weight=args.rnnlm_weight,
                                 progressbar=True)
             logger.info('  WER (%s): %.3f %%' %
                         (dataset.label_type, (wer * 100)))
@@ -103,6 +144,7 @@ def main():
                                      min_decode_len=MIN_DECODE_LEN_CHAR,
                                      length_penalty=args.length_penalty,
                                      coverage_penalty=args.coverage_penalty,
+                                     rnnlm_weight=args.rnnlm_weight,
                                      progressbar=True)
             logger.info('  WER / CER (%s): %.3f / %.3f %%' %
                         (dataset.label_type, (wer * 100), (cer * 100)))

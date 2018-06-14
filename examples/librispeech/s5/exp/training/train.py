@@ -39,7 +39,7 @@ parser.add_argument('--config_path', type=str, default=None,
                     help='path to the configuration file')
 parser.add_argument('--data_save_path', type=str,
                     help='path to saved data')
-parser.add_argument('--model_save_path', type=str,
+parser.add_argument('--model_save_path', type=str, default=None,
                     help='path to save the model')
 parser.add_argument('--saved_model_path', type=str, default=None,
                     help='path to the saved model to retrain')
@@ -94,6 +94,20 @@ def main():
         batch_size=1, tool=config['tool'])
     config['num_classes'] = train_data.num_classes
 
+    # Load a RNNLM config file
+    if config['rnnlm_fusion_type'] and config['rnnlm_path']:
+        if args.model_save_path is not None:
+            rnnlm_config = load_config(
+                os.path.join(config['rnnlm_path'], 'config.yml'), is_eval=True)
+        elif args.saved_model_path is not None:
+            config = load_config(os.path.join(
+                args.saved_model_path, 'config_rnnlm.yml'))
+
+        assert config['label_type'] == rnnlm_config['label_type']
+        rnnlm_config['num_classes'] = train_data.num_classes
+        config['rnnlm_config'] = rnnlm_config
+    else:
+        config['rnnlm_config'] = None
     # Model setting
     model = load(model_type=config['model_type'],
                  config=config,
@@ -106,7 +120,7 @@ def main():
                                config['data_size'], model.name)
         model.set_save_path(save_path)
 
-        # Save config file
+        # Save the config file
         save_config(config_path=args.config_path, save_path=model.save_path)
 
         # Setting for logging
@@ -163,6 +177,7 @@ def main():
         # Restore the last saved model
         epoch, step, learning_rate, metric_dev_best = model.load_checkpoint(
             save_path=args.saved_model_path, epoch=-1, restart=True)
+        model.rnnlm_0.rnn.flatten_parameters()
 
     else:
         raise ValueError("Set model_save_path or saved_model_path.")
@@ -225,12 +240,13 @@ def main():
             if config['backend'] == 'pytorch':
                 tf_writer.add_scalar('train/loss', loss_train_mean, step + 1)
                 tf_writer.add_scalar('dev/loss', loss_dev, step + 1)
-                for name, param in model.named_parameters():
-                    name = name.replace('.', '/')
-                    tf_writer.add_histogram(
-                        name, param.data.cpu().numpy(), step + 1)
-                    tf_writer.add_histogram(
-                        name + '/grad', param.grad.data.cpu().numpy(), step + 1)
+                # for name, param in model.named_parameters():
+                #     name = name.replace('.', '/')
+                #     tf_writer.add_histogram(
+                #         name, param.data.cpu().numpy(), step + 1)
+                #     tf_writer.add_histogram(
+                #         name + '/grad', param.grad.data.cpu().numpy(), step + 1)
+                # TODO: fix this
 
             duration_step = time.time() - start_time_step
             logger.info("...Step:%d(epoch:%.3f) loss:%.3f(%.3f)/lr:%.5f/batch:%d/x_lens:%d (%.3f min)" %
@@ -276,7 +292,7 @@ def main():
                         eval_batch_size=1,
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_CHAR)
-                    logger.info('  WER / CER (dev-clean): %.3f %% / %.3f %%' %
+                    logger.info('  WER / CER (dev-clean): %.3f / %.3f %%' %
                                 ((wer_dev * 100), (metric_dev * 100)))
 
                 if metric_dev < metric_dev_best:
@@ -305,7 +321,7 @@ def main():
                             eval_batch_size=1,
                             beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_CHAR)
-                        logger.info('  WER / CER (test-clean): %.3f %% / %.3f %%' %
+                        logger.info('  WER / CER (test-clean): %.3f / %.3f %%' %
                                     ((wer_test * 100), (cer_eval92 * 100)))
                 else:
                     not_improved_epoch += 1
