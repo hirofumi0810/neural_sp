@@ -73,7 +73,7 @@ def eval_phone(model, dataset, map_file_path, eval_batch_size, beam_width,
 
             # Remove <EOS>
             str_hyp = re.sub(r'[>]+', '', str_hyp)
-            if str_hyp[-1] == '_':
+            if len(str_hyp) > 0 and str_hyp[-1] == '_':
                 str_hyp = str_hyp[:-1]
 
             phone_hyp_list = str_hyp.split('_')

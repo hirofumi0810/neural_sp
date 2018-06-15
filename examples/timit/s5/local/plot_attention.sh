@@ -13,11 +13,15 @@ fi
 ### Set path to save dataset
 data=/n/sd8/inaguma/corpus/timit/kaldi
 
+beam_width=10
+length_penalty=0
+coverage_penalty=0
+
 CUDA_VISIBLE_DEVICES=$2 ${PYTHON} exp/visualization/plot_attention_weights.py \
   --data_save_path ${data} \
   --model_path $1 \
   --epoch -1 \
   --eval_batch_size 1 \
-  --beam_width 10 \
-  --length_penalty 0 \
-  --coverage_penalty 0
+  --beam_width ${beam_width} \
+  --length_penalty ${length_penalty} \
+  --coverage_penalty ${coverage_penalty}

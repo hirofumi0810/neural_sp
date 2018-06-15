@@ -45,6 +45,10 @@ parser.add_argument('--saved_model_path', type=str, default=None,
                     help='path to the saved model to retrain')
 
 MAX_DECODE_LEN_PHONE = 71
+MIN_DECODE_LEN_PHONE = 13
+# NOTE*
+# dev: 13-71
+# test: 13-69
 
 
 @profile
@@ -340,7 +344,8 @@ def main():
             map_file_path='./conf/phones.60-48-39.map',
             eval_batch_size=1,
             beam_width=10,
-            max_decode_len=MAX_DECODE_LEN_PHONE)
+            max_decode_len=MAX_DECODE_LEN_PHONE,
+            min_decode_len=MIN_DECODE_LEN_PHONE)
         logger.info('  PER (test (best), beam: 10): %.3f %%' %
                     (per_test_best * 100))
 

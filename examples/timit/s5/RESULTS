@@ -7,16 +7,14 @@ Phone mapping  : Training with 61 phonemes, for testing mapped to 39 phonemes
 
 
 # CTC (pytorch), beam=10
-%PER (dev)  19.17 | blstm256H5L_adam_lr1e-3_dropin0.2en0.5_noise1e-9_input123
-%PER (test) 21.11 | blstm256H5L_adam_lr1e-3_dropin0.2en0.5_noise1e-9_input123
+%PER (dev)  18.609 | blstm256H5L_adam_lr1e-3_dropin0.2en0.5_noise1e-9_input123
+%PER (test) 20.416 | blstm256H5L_adam_lr1e-3_dropin0.2en0.5_noise1e-9_input123
 
 # CTC (chainer), beam=10
 
 
 # Attention (pytorch), beam=10
-%PER (dev)  18.178 | bgru256H5L_gru256H1L_adam_lr1e-3_location_dropin0.2en0.5de0.2emb0.2_ss0.2_ls0.1_noise1e-9_input123_bahdanau
-%PER (test) 20.055 | bgru256H5L_gru256H1L_adam_lr1e-3_location_dropin0.2en0.5de0.2emb0.2_ss0.2_ls0.1_noise1e-9_input123_bahdanau
-%PER (dev)  17.753 | bgru256H5L_gru256H1L_adam_lr1e-3_location_dropin0.2en0.5de0.2emb0.2_ss0.2_ls0.1_noise1e-9_input123_luong
-%PER (test) 19.584 | bgru256H5L_gru256H1L_adam_lr1e-3_location_dropin0.2en0.5de0.2emb0.2_ss0.2_ls0.1_noise1e-9_input123_luong
+%PER (dev)  17.799 | bgru256H5L_gru256H1L_adam_lr1e-3_location_dropin0.2en0.5de0.2emb0.2_ss0.2_ls0.1_noise1e-9_input123_bahdanau
+%PER (test) 19.279 | bgru256H5L_gru256H1L_adam_lr1e-3_location_dropin0.2en0.5de0.2emb0.2_ss0.2_ls0.1_noise1e-9_input123_bahdanau
 
 # Attention (chainer), beam=10
