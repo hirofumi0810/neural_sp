@@ -128,7 +128,7 @@ class Dataset(DatasetBase):
         if self.data_size in ['aps_other', 'aps']:
             if min_frame_num_batch <= 800:
                 pass
-            elif min_frame_num_batch <= 1600:
+            elif min_frame_num_batch <= 1400:
                 batch_size = int(batch_size / 2)
             else:
                 batch_size = int(batch_size / 4)
@@ -136,7 +136,7 @@ class Dataset(DatasetBase):
         elif self.data_size in ['all_except_dialog', 'all']:
             if min_frame_num_batch <= 800:
                 pass
-            elif min_frame_num_batch <= 1600:
+            elif min_frame_num_batch <= 1400:
                 batch_size = int(batch_size / 2)
             else:
                 batch_size = int(batch_size / 4)

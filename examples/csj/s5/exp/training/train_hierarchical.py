@@ -39,7 +39,7 @@ parser.add_argument('--config_path', type=str, default=None,
                     help='path to the configuration file')
 parser.add_argument('--data_save_path', type=str,
                     help='path to saved data')
-parser.add_argument('--model_save_path', type=str,
+parser.add_argument('--model_save_path', type=str, default=None,
                     help='path to save the model')
 parser.add_argument('--saved_model_path', type=str, default=None,
                     help='path to the saved model to retrain')
@@ -74,8 +74,7 @@ def main():
         max_frame_num=config['max_frame_num'],
         min_frame_num=config['min_frame_num'],
         sort_utt=True, sort_stop_epoch=config['sort_stop_epoch'],
-        tool=config['tool'],
-        dynamic_batching=config['dynamic_batching'])
+        tool=config['tool'], dynamic_batching=config['dynamic_batching'])
     dev_data = Dataset(
         data_save_path=args.data_save_path,
         input_freq=config['input_freq'],
@@ -106,7 +105,7 @@ def main():
     if args.model_save_path is not None:
         # Set save path
         save_path = mkdir_join(
-            args.model_save_path,  config['backend'],
+            args.model_save_path, config['backend'],
             config['model_type'],
             config['label_type'] + '_' + config['label_type_sub'],
             config['data_size'], model.name)
@@ -117,6 +116,9 @@ def main():
 
         # Setting for logging
         logger = set_logger(model.save_path)
+
+        for k, v in sorted(config.items(), key=lambda x: x[0]):
+            logger.info('%s: %s' % (k, str(v)))
 
         if os.path.isdir(config['pretrained_model_path']):
             # NOTE: Start training from the pre-trained model
@@ -145,7 +147,7 @@ def main():
         learning_rate = float(config['learning_rate'])
         metric_dev_best = 1
 
-    # NOTE: Retrain the saved model from the last checkpoint
+    # NOTE: Restart from the last checkpoint
     elif args.saved_model_path is not None:
         # Set save path
         model.save_path = args.saved_model_path
@@ -190,7 +192,8 @@ def main():
         decay_start_epoch=config['decay_start_epoch'],
         decay_rate=config['decay_rate'],
         decay_patient_epoch=config['decay_patient_epoch'],
-        lower_better=True)
+        lower_better=True,
+        best_value=metric_dev_best)
 
     # Setting for tensorboard
     if config['backend'] == 'pytorch':
@@ -233,9 +236,9 @@ def main():
             if config['backend'] == 'pytorch':
                 tf_writer.add_scalar('train/loss', loss_train_mean, step + 1)
                 tf_writer.add_scalar(
-                    'train/loss_main', loss_main_train, step + 1)
+                    'train/loss_main', loss_main_train_mean, step + 1)
                 tf_writer.add_scalar(
-                    'train/loss_sub', loss_sub_train, step + 1)
+                    'train/loss_sub', loss_sub_train_mean, step + 1)
                 tf_writer.add_scalar('dev/loss', loss_dev, step + 1)
                 tf_writer.add_scalar('dev/loss_main', loss_main_dev, step + 1)
                 tf_writer.add_scalar('dev/loss_sub', loss_sub_dev, step + 1)
@@ -283,11 +286,12 @@ def main():
                         dataset=dev_data,
                         eval_batch_size=1,
                         beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_WORD)
+                        max_decode_len=MAX_DECODE_LEN_WORD,
+                        max_decode_len_sub=MAX_DECODE_LEN_CHAR)
                     logger.info('  WER (dev, main): %.3f %%' %
                                 (metric_dev * 100))
                 else:
-                    wer_dev_sub, metric_dev,  _ = eval_char(
+                    wer_dev_sub, metric_dev, _ = eval_char(
                         models=[model],
                         dataset=dev_data,
                         eval_batch_size=1,
@@ -312,7 +316,8 @@ def main():
                             dataset=test_data,
                             eval_batch_size=1,
                             beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_WORD)
+                            max_decode_len=MAX_DECODE_LEN_WORD,
+                            max_decode_len_sub=MAX_DECODE_LEN_CHAR)
                         logger.info('  WER (eval1, main): %.3f %%' %
                                     (wer_eval1 * 100))
                     else:

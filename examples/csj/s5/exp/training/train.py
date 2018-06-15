@@ -73,8 +73,7 @@ def main():
         max_frame_num=config['max_frame_num'],
         min_frame_num=config['min_frame_num'],
         sort_utt=True, sort_stop_epoch=config['sort_stop_epoch'],
-        tool=config['tool'],
-        dynamic_batching=config['dynamic_batching'])
+        tool=config['tool'], dynamic_batching=config['dynamic_batching'])
     dev_data = Dataset(
         data_save_path=args.data_save_path,
         input_freq=config['input_freq'],
@@ -135,6 +134,9 @@ def main():
 
         # Setting for logging
         logger = set_logger(model.save_path)
+
+        for k, v in sorted(config.items(), key=lambda x: x[0]):
+            logger.info('%s: %s' % (k, str(v)))
 
         if os.path.isdir(config['pretrained_model_path']):
             # NOTE: Start training from the pre-trained model
@@ -209,7 +211,8 @@ def main():
         decay_start_epoch=config['decay_start_epoch'],
         decay_rate=config['decay_rate'],
         decay_patient_epoch=config['decay_patient_epoch'],
-        lower_better=True)
+        lower_better=True,
+        best_value=metric_dev_best)
 
     # Setting for tensorboard
     if config['backend'] == 'pytorch':
@@ -317,7 +320,7 @@ def main():
                             dataset=test_data,
                             eval_batch_size=1,
                             beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_CHAR)
+                            max_decode_len=MAX_DECODE_LEN_WORD)
                         logger.info('  WER (eval1): %.3f %%' %
                                     (wer_eval1 * 100))
                     else:

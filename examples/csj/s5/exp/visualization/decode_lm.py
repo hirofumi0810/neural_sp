@@ -91,7 +91,7 @@ def main():
             ys = batch['ys']
 
         # Decode
-        best_hyps = model.decode([y[0] for y in ys],
+        best_hyps = model.decode([y[:5] for y in ys],
                                  max_decode_len=max_decode_len)
 
         for b in range(len(batch['ys'])):

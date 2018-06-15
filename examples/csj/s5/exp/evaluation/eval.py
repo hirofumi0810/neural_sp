@@ -66,7 +66,7 @@ def main():
                           data_size=config['data_size'],
                           label_type=config['label_type'],
                           batch_size=args.eval_batch_size,
-                          shuffle=False, tool=config['tool'])
+                          sort_utt=False, tool=config['tool'])
 
         if i == 0:
             config['num_classes'] = dataset.num_classes
@@ -78,8 +78,11 @@ def main():
                     join(args.model_path, 'config_rnnlm.yml'))
 
                 assert config['label_type'] == rnnlm_config['label_type']
+                assert args.rnnlm_weight > 0
                 rnnlm_config['num_classes'] = dataset.num_classes
                 config['rnnlm_config'] = rnnlm_config
+                logger.info('RNNLM path: %s' % config['rnnlm_path'])
+                logger.info('RNNLM weight): %.3f' % args.rnnlm_weight)
             else:
                 config['rnnlm_config'] = None
 
@@ -107,18 +110,17 @@ def main():
                              backend=config_rnnlm['backend'])
                 rnnlm.load_checkpoint(save_path=args.rnnlm_path, epoch=-1)
                 rnnlm.rnn.flatten_parameters()
-                model.rnnlm_0 = rnnlm
+                if config_rnnlm['backward']:
+                    model.rnnlm_0_bwd = rnnlm
+                else:
+                    model.rnnlm_0_fwd = rnnlm
+                logger.info('RNNLM path: %s' % args.rnnlm_path)
+                logger.info('RNNLM weight): %.3f' % args.rnnlm_weight)
 
             # GPU setting
             model.set_cuda(deterministic=False, benchmark=True)
 
             logger.info('beam width: %d' % args.beam_width)
-            if config['rnnlm_fusion_type'] and config['rnnlm_path']:
-                logger.info('RNNLM path: %s' % config['rnnlm_path'])
-                logger.info('RNNLM weight: %.3f' % args.rnnlm_weight)
-            if args.rnnlm_path is not None:
-                logger.info('RNNLM path: %s' % args.rnnlm_path)
-                logger.info('RNNLM weight: %.3f' % args.rnnlm_weight)
             logger.info('epoch: %d' % (epoch - 1))
 
         if config['label_type'] == 'word':

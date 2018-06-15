@@ -53,18 +53,17 @@ def main():
     config = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
-    dataset = Dataset(
-        data_save_path=args.data_save_path,
-        input_freq=config['input_freq'],
-        use_delta=config['use_delta'],
-        use_double_delta=config['use_double_delta'],
-        data_type='eval1',
-        # data_type='eval2',
-        # data_type='eval3',
-        data_size=config['data_size'],
-        label_type=config['label_type'],
-        batch_size=args.eval_batch_size,
-        sort_utt=False, reverse=False, tool=config['tool'])
+    dataset = Dataset(data_save_path=args.data_save_path,
+                      input_freq=config['input_freq'],
+                      use_delta=config['use_delta'],
+                      use_double_delta=config['use_double_delta'],
+                      data_type='eval1',
+                      # data_type='eval2',
+                      # data_type='eval3',
+                      data_size=config['data_size'],
+                      label_type=config['label_type'],
+                      batch_size=args.eval_batch_size,
+                      sort_utt=False, reverse=False, tool=config['tool'])
     config['num_classes'] = dataset.num_classes
 
     # For cold fusion
@@ -73,6 +72,7 @@ def main():
         rnnlm_config = load_config(join(args.model_path, 'config_rnnlm.yml'))
 
         assert config['label_type'] == rnnlm_config['label_type']
+        assert args.rnnlm_weight > 0
         rnnlm_config['num_classes'] = dataset.num_classes
         config['rnnlm_config'] = rnnlm_config
     else:
@@ -101,14 +101,15 @@ def main():
                      backend=config_rnnlm['backend'])
         rnnlm.load_checkpoint(save_path=args.rnnlm_path, epoch=-1)
         rnnlm.rnn.flatten_parameters()
-        model.rnnlm_0 = rnnlm
+        if config_rnnlm['backward']:
+            model.rnnlm_0_bwd = rnnlm
+        else:
+            model.rnnlm_0_fwd = rnnlm
 
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
     save_path = mkdir_join(args.model_path, 'att_weights')
-
-    ######################################################################
 
     # Clean directory
     if save_path is not None and isdir(save_path):

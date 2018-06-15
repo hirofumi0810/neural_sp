@@ -5,8 +5,8 @@ param:
 
   # corpus
   data_size: all
-  # vocab: False
-  vocab: aps_other
+  vocab: False
+  # vocab: aps_other
   label_type: word
 
   # topology

@@ -36,7 +36,7 @@ class TestLoadDatasetHierarchical(unittest.TestCase):
         # self.check(label_type='character', label_type_sub='phone')
 
     @measure_time
-    def check(self, label_type, label_type_sub, data_type='dev', data_size='all',
+    def check(self, label_type, label_type_sub, data_type='dev', data_size='aps_other',
               shuffle=False, sort_utt=True, sort_stop_epoch=None, num_gpus=1):
 
         print('========================================')

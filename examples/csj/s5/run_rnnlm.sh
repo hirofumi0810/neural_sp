@@ -19,12 +19,13 @@ echo ===========================================================================
 
 stage=0
 run_background=true
+# run_background=false
 
 ### Select data size
-# export datasize=aps_other
+export datasize=aps_other
 # export datasize=aps
 # export datasize=all_except_dialog
-export datasize=all
+# export datasize=all
 
 # NOTE:
 # aps_other=default using "Academic lecture" and "other" data,
@@ -40,19 +41,19 @@ export data="/n/sd8/inaguma/corpus/csj/kaldi"
 
 
 if [ ${stage} -le 0 ] && [ ! -e ${data}/.stage_0_${datasize} ]; then
-  exit "Run ./run.sh at first"
+  echo "Run ./run.sh at first"
   exit 1;
 fi
 
 
 if [ ${stage} -le 1 ] && [ ! -e ${data}/.stage_1_${datasize} ]; then
-  exit "Run ./run.sh at first"
+  echo "Run ./run.sh at first"
   exit 1;
 fi
 
 
 if [ ${stage} -le 2 ] && [ ! -e ${data}/.stage_2_${datasize} ]; then
-  exit "Run ./run.sh at first"
+  echo "Run ./run.sh at first"
   exit 1;
 fi
 

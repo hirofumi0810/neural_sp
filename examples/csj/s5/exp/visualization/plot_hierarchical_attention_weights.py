@@ -84,6 +84,7 @@ def main():
         rnnlm_config = load_config(join(args.model_path, 'config_rnnlm.yml'))
 
         assert config['label_type'] == rnnlm_config['label_type']
+        assert args.rnnlm_weight > 0
         rnnlm_config['num_classes'] = dataset.num_classes
         config['rnnlm_config'] = rnnlm_config
     else:
@@ -95,6 +96,7 @@ def main():
             join(args.model_path, 'config_rnnlm_sub.yml'))
 
         assert config['label_type_sub'] == rnnlm_config_sub['label_type']
+        assert args.rnnlm_weight_sub > 0
         rnnlm_config_sub['num_classes'] = dataset.num_classes_sub
         config['rnnlm_config_sub'] = rnnlm_config_sub
     else:
@@ -123,7 +125,7 @@ def main():
                      backend=config_rnnlm['backend'])
         rnnlm.load_checkpoint(save_path=args.rnnlm_path, epoch=-1)
         rnnlm.rnn.flatten_parameters()
-        model.rnnlm_0 = rnnlm
+        model.rnnlm_0_fwd = rnnlm
 
     if not (config['rnnlm_fusion_type'] and config['rnnlm_path_sub']) and args.rnnlm_path_sub is not None and args.rnnlm_weight_sub > 0:
         # Load a RNNLM config file
@@ -139,14 +141,12 @@ def main():
                          backend=config_rnnlm_sub['backend'])
         rnnlm_sub.load_checkpoint(save_path=args.rnnlm_path_sub, epoch=-1)
         rnnlm_sub.rnn.flatten_parameters()
-        model.rnnlm_1 = rnnlm_sub
+        model.rnnlm_1_fwd = rnnlm_sub
 
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
     save_path = mkdir_join(args.model_path, 'att_weights')
-
-    ######################################################################
 
     word2char = Word2char(dataset.vocab_file_path,
                           dataset.vocab_file_path_sub)
@@ -158,7 +158,7 @@ def main():
 
     for batch, is_new_epoch in dataset:
         # Decode
-        if model.model_type == 'hierarchical_attention' and args.joint_decoding is not None:
+        if model.model_type == 'hierarchical_attention' and args.joint_decoding:
             best_hyps, aw, best_hyps_sub, aw_sub, _ = model.decode(
                 batch['xs'],
                 beam_width=args.beam_width,
@@ -200,11 +200,11 @@ def main():
             speaker = batch['input_names'][b].split('_')[0]
 
             plot_hierarchical_attention_weights(
-                aw[b][:len(word_list), :batch['x_lens'][b]],  # TODO: fix this
-                aw_sub[b][:len(char_list), :batch['x_lens'][b]],
+                aw[b][:len(word_list)],  # TODO: fix this
+                aw_sub[b][:len(char_list)],
                 label_list=word_list,
                 label_list_sub=char_list,
-                spectrogram=batch['xs'][b, :, :dataset.input_freq],
+                spectrogram=batch['xs'][b][:, :dataset.input_freq],
                 save_path=mkdir_join(save_path, speaker,
                                      batch['input_names'][b] + '.png'),
                 figsize=(40, 8)

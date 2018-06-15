@@ -8,7 +8,7 @@ set -e
 
 if [ $# -ne 2 ]; then
   echo "Error: set GPU number & config path." 1>&2
-  echo "Usage: ./run.sh path_to_config_file gpu_index or ./run.sh path_to_saved_model gpu_index" 1>&2
+  echo "Usage: ./run.sh path_to_config_file gpu_id or ./run.sh path_to_saved_model gpu_id" 1>&2
   exit 1
 fi
 
@@ -19,10 +19,11 @@ echo ===========================================================================
 
 stage=0
 run_background=true
+# run_background=false
 
 ### Set path to original data
 CSJDATATOP="/n/rd25/mimura/corpus/CSJ"
-#CSJDATATOP=/db/laputa1/$DATA/processed/public/CSJ ## CSJ database top directory.
+#CSJDATATOP=/db/laputa1/${data}/processed/public/CSJ ## CSJ database top directory.
 CSJVER=dvd  ## Set your CSJ format (dvd or usb).
             ## Usage    :
             ## Case DVD : We assume CSJ DVDs are copied in this directory with the names dvd1, dvd2,...,dvd17.
@@ -46,41 +47,41 @@ export DATASIZE=aps_other
 # all=using All data
 
 ### Set path to save the model
-MODEL="/n/sd8/inaguma/result/csj"
+model="/n/sd8/inaguma/result/csj"
 
 ### Set path to save dataset
-export DATA="/n/sd8/inaguma/corpus/csj/kaldi"
+export data="/n/sd8/inaguma/corpus/csj/kaldi"
 
 ### Select one tool to extract features (HTK is the fastest)
-# TOOL=kaldi
-TOOL=htk
-# TOOL=python_speech_features
-# TOOL=librosa
+# tool=kaldi
+tool=htk
+# tool=python_speech_features
+# tool=librosa
 
 ### Configuration of feature extranction
-CHANNELS=80
-WINDOW=0.025
-SLIDE=0.01
-ENERGY=1
-DELTA=1
-DELTADELTA=1
-# NORMALIZE=global
-NORMALIZE=speaker
-# NORMALIZE=utterance
+channels=80
+window=0.025
+slide=0.01
+energy=1
+delta=1
+deltadelta=1
+# normalize=global
+normalize=speaker
+# normalize=utterance
 
 
 train=train_$DATASIZE
 
-if [ $stage -le 0 ] && [ ! -e $DATA/.stage_0_$DATASIZE ]; then
+if [ $stage -le 0 ] && [ ! -e ${data}/.stage_0_$DATASIZE ]; then
   echo ============================================================================
   echo "                           Data Preparation                               "
   echo ============================================================================
 
-  local/csj_make_trans/csj_autorun.sh $CSJDATATOP $DATA/csj-data $CSJVER || exit 1;
+  local/csj_make_trans/csj_autorun.sh $CSJDATATOP ${data}/csj-data $CSJVER || exit 1;
 
   # Prepare Corpus of Spontaneous Japanese (CSJ) data.
   # Processing CSJ data to KALDI format based on switchboard recipe.
-  local/csj_data_prep.sh $DATA/csj-data $DATASIZE || exit 1;
+  local/csj_data_prep.sh ${data}/csj-data $DATASIZE || exit 1;
 
   local/csj_prepare_dict.sh || exit 1;
 
@@ -89,62 +90,62 @@ if [ $stage -le 0 ] && [ ! -e $DATA/.stage_0_$DATASIZE ]; then
   # so the 1st 4k won't have been used in the LM training data.
   # However, they will be in the lexicon, plus speakers may overlap,
   # so it's still not quite equivalent to a test set.
-  utils/subset_data_dir.sh --first $DATA/$train 4000 $DATA/dev || exit 1; # 6hr 31min
-  n=$[`cat $DATA/$train/segments | wc -l` - 4000]
-  utils/subset_data_dir.sh --last $DATA/$train $n $DATA/tmp || exit 1;
+  utils/subset_data_dir.sh --first ${data}/$train 4000 ${data}/dev || exit 1; # 6hr 31min
+  n=$[`cat ${data}/$train/segments | wc -l` - 4000]
+  utils/subset_data_dir.sh --last ${data}/$train $n ${data}/tmp || exit 1;
 
   # Finally, the full training set:
-  rm -rf $DATA/$train
-  utils/data/remove_dup_utts.sh 300 $DATA/tmp $DATA/$train || exit 1;  # 233hr 36min
-  rm -rf $DATA/tmp
+  rm -rf ${data}/$train
+  utils/data/remove_dup_utts.sh 300 ${data}/tmp ${data}/$train || exit 1;  # 233hr 36min
+  rm -rf ${data}/tmp
 
   # Data preparation and formatting for evaluation set.
   # CSJ has 3 types of evaluation data
   #local/csj_eval_data_prep.sh <SPEECH_and_TRANSCRIPTION_DATA_DIRECTORY_ABOUT_EVALUATION_DATA> <EVAL_NUM>
   for eval_num in eval1 eval2 eval3 ; do
-    local/csj_eval_data_prep.sh $DATA/csj-data/eval $eval_num || exit 1;
+    local/csj_eval_data_prep.sh ${data}/csj-data/eval $eval_num || exit 1;
   done
 
-  touch $DATA/.stage_0_$DATASIZE
+  touch ${data}/.stage_0_$DATASIZE
   echo "Finish data preparation (stage: 0)."
 fi
 
 
-if [ $stage -le 1 ] && [ ! -e $DATA/.stage_1_$DATASIZE ]; then
+if [ $stage -le 1 ] && [ ! -e ${data}/.stage_1_$DATASIZE ]; then
   echo ============================================================================
   echo "                        Feature extranction                               "
   echo ============================================================================
 
-  if [ $TOOL = "kaldi" ]; then
+  if [ ${tool} = "kaldi" ]; then
     for x in train dev eval1 eval2 eval3; do
-      steps/make_fbank.sh --nj 8 --cmd run.pl $DATA/$x $DATA/make_fbank/$x $DATA/fbank || exit 1;
-      steps/compute_cmvn_stats.sh $DATA/$x $DATA/make_fbank/$x $DATA/fbank || exit 1;
-      utils/fix_data_dir.sh $DATA/$x || exit 1;
+      steps/make_fbank.sh --nj 8 --cmd run.pl ${data}/$x ${data}/make_fbank/$x ${data}/fbank || exit 1;
+      steps/compute_cmvn_stats.sh ${data}/$x ${data}/make_fbank/$x ${data}/fbank || exit 1;
+      utils/fix_data_dir.sh ${data}/$x || exit 1;
     done
 
-  elif [ $TOOL = "htk" ]; then
+  elif [ ${tool} = "htk" ]; then
     # Make a config file to covert from wav to htk file
-    $PYTHON local/make_htk_config.py \
-        --data_save_path $DATA \
+    ${PYTHON} local/make_htk_config.py \
+        --data_save_path ${data} \
         --config_save_path ./conf/fbank_htk.conf \
         --audio_file_type wav \
-        --channels $CHANNELS \
+        --channels $channels \
         --sampling_rate 16000 \
-        --window $WINDOW \
-        --slide $SLIDE \
-        --energy $ENERGY \
-        --delta $DELTA \
-        --deltadelta $DELTADELTA || exit 1;
+        --window $window \
+        --slide $slide \
+        --energy $energy \
+        --delta $delta \
+        --deltadelta $deltadelta || exit 1;
 
     for data_type in $train dev eval1 eval2 eval3; do
       if [ `echo $data_type | grep 'train'` ]; then
-        mkdir -p $DATA/htk/train
+        mkdir -p ${data}/htk/train
       else
-        mkdir -p $DATA/htk/$data_type
+        mkdir -p ${data}/htk/$data_type
       fi
-      [ -e $DATA/$data_type/htk.scp ] && rm $DATA/$data_type/htk.scp
-      touch $DATA/$data_type/htk.scp
-      cat $DATA/$data_type/wav.scp | while read line
+      [ -e ${data}/$data_type/htk.scp ] && rm ${data}/$data_type/htk.scp
+      touch ${data}/$data_type/htk.scp
+      cat ${data}/$data_type/wav.scp | while read line
       do
         wav_path=`echo $line | awk -F " " '{ print $(NF - 1) }'`
         file_name=`basename $wav_path`
@@ -153,16 +154,16 @@ if [ $stage -le 1 ] && [ ! -e $DATA/.stage_1_$DATASIZE ]; then
 
         # Convert from wav to htk files
         if [ `echo $data_type | grep 'train'` ]; then
-          htk_path=$DATA/htk/train/$base".htk"
+          htk_path=${data}/htk/train/$base".htk"
         else
-          htk_path=$DATA/htk/$data_type/$base".htk"
+          htk_path=${data}/htk/$data_type/$base".htk"
         fi
         if [ ! -e $htk_path ]; then
           echo $wav_path  $htk_path > ./tmp.scp
           $HCOPY -T 1 -C ./conf/fbank_htk.conf -S ./tmp.scp || exit 1;
           rm ./tmp.scp
         fi
-        echo $htk_path >> $DATA/$data_type/htk.scp
+        echo $htk_path >> ${data}/$data_type/htk.scp
       done
     done
 
@@ -173,34 +174,34 @@ if [ $stage -le 1 ] && [ ! -e $DATA/.stage_1_$DATASIZE ]; then
     fi
   fi
 
-  $PYTHON local/feature_extraction.py \
-    --data_save_path $DATA \
+  ${PYTHON} local/feature_extraction.py \
+    --data_save_path ${data} \
     --data_size $DATASIZE \
-    --tool $TOOL \
-    --normalize $NORMALIZE \
-    --channels $CHANNELS \
-    --window $WINDOW \
-    --slide $SLIDE \
-    --energy $ENERGY \
-    --delta $DELTA \
-    --deltadelta $DELTADELTA || exit 1;
+    --tool ${tool} \
+    --normalize $normalize \
+    --channels $channels \
+    --window $window \
+    --slide $slide \
+    --energy $energy \
+    --delta $delta \
+    --deltadelta $deltadelta || exit 1;
 
-  touch $DATA/.stage_1_$DATASIZE
+  touch ${data}/.stage_1_$DATASIZE
   echo "Finish feature extranction (stage: 1)."
 fi
 
 
-if [ $stage -le 2 ] && [ ! -e $DATA/.stage_2_$DATASIZE ]; then
+if [ $stage -le 2 ] && [ ! -e ${data}/.stage_2_$DATASIZE ]; then
   echo ============================================================================
   echo "                            Create dataset                                "
   echo ============================================================================
 
-  $PYTHON local/make_dataset_csv.py \
-    --data_save_path $DATA \
+  ${PYTHON} local/make_dataset_csv.py \
+    --data_save_path ${data} \
     --data_size $DATASIZE \
-    --tool $TOOL || exit 1;
+    --tool ${tool} || exit 1;
 
-  touch $DATA/.stage_2_$DATASIZE
+  touch ${data}/.stage_2_$DATASIZE
   echo "Finish creating dataset (stage: 2)."
 fi
 
@@ -211,76 +212,76 @@ if [ $stage -le 3 ]; then
   echo ============================================================================
 
   config_path=$1
-  gpu_index=$2
-  filename=$(basename $config_path | awk -F. '{print $1}')
+  gpu_id=$2
+  filename=$(basename ${config_path} | awk -F. '{print $1}')
 
   mkdir -p log
-  mkdir -p $MODEL
+  mkdir -p ${model}
 
   echo "Start training..."
 
-  if [ `echo $config_path | grep 'hierarchical'` ]; then
-    if [ `echo $config_path | grep 'result'` ]; then
+  if [ `echo ${config_path} | grep 'hierarchical'` ]; then
+    if [ `echo ${config_path} | grep 'result'` ]; then
       if $run_background; then
-        CUDA_VISIBLE_DEVICES=$gpu_index \
-        nohup $PYTHON exp/training/train_hierarchical.py \
-          --gpu $gpu_index \
-          --saved_model_path $config_path \
-          --data_save_path $DATA > log/$filename".log" &
+        CUDA_VISIBLE_DEVICES=${gpu_id} \
+        nohup ${PYTHON} exp/training/train_hierarchical.py \
+          --gpu ${gpu_id} \
+          --saved_model_path ${config_path} \
+          --data_save_path ${data} > log/$filename".log" &
       else
-        CUDA_VISIBLE_DEVICES=$gpu_index \
-        nohup $PYTHON exp/training/train_hierarchical.py \
-          --gpu $gpu_index \
-          --saved_model_path $config_path \
-          --data_save_path $DATA || exit 1;
+        CUDA_VISIBLE_DEVICES=${gpu_id} \
+        nohup ${PYTHON} exp/training/train_hierarchical.py \
+          --gpu ${gpu_id} \
+          --saved_model_path ${config_path} \
+          --data_save_path ${data} || exit 1;
       fi
     else
       if $run_background; then
-        CUDA_VISIBLE_DEVICES=$gpu_index \
-        nohup $PYTHON exp/training/train_hierarchical.py \
-          --gpu $gpu_index \
-          --config_path $config_path \
-          --model_save_path $MODEL \
-          --data_save_path $DATA > log/$filename".log" &
+        CUDA_VISIBLE_DEVICES=${gpu_id} \
+        nohup ${PYTHON} exp/training/train_hierarchical.py \
+          --gpu ${gpu_id} \
+          --config_path ${config_path} \
+          --model_save_path ${model} \
+          --data_save_path ${data} > log/$filename".log" &
       else
-        CUDA_VISIBLE_DEVICES=$gpu_index \
-        $PYTHON exp/training/train_hierarchical.py \
-          --gpu $gpu_index \
-          --config_path $config_path \
-          --model_save_path $MODEL \
-          --data_save_path $DATA || exit 1;
+        CUDA_VISIBLE_DEVICES=${gpu_id} \
+        ${PYTHON} exp/training/train_hierarchical.py \
+          --gpu ${gpu_id} \
+          --config_path ${config_path} \
+          --model_save_path ${model} \
+          --data_save_path ${data} || exit 1;
       fi
     fi
   else
-    if [ `echo $config_path | grep 'result'` ]; then
+    if [ `echo ${config_path} | grep 'result'` ]; then
       if $run_background; then
-        CUDA_VISIBLE_DEVICES=$gpu_index \
-        nohup $PYTHON exp/training/train.py \
-          --gpu $gpu_index \
-          --saved_model_path $config_path \
-          --data_save_path $DATA > log/$filename".log" &
+        CUDA_VISIBLE_DEVICES=${gpu_id} \
+        nohup ${PYTHON} exp/training/train.py \
+          --gpu ${gpu_id} \
+          --saved_model_path ${config_path} \
+          --data_save_path ${data} > log/$filename".log" &
       else
-        CUDA_VISIBLE_DEVICES=$gpu_index \
-        $PYTHON exp/training/train.py \
-          --gpu $gpu_index \
-          --saved_model_path $config_path \
-          --data_save_path $DATA || exit 1;
+        CUDA_VISIBLE_DEVICES=${gpu_id} \
+        ${PYTHON} exp/training/train.py \
+          --gpu ${gpu_id} \
+          --saved_model_path ${config_path} \
+          --data_save_path ${data} || exit 1;
       fi
     else
       if $run_background; then
-        CUDA_VISIBLE_DEVICES=$gpu_index \
-        nohup $PYTHON exp/training/train.py \
-          --gpu $gpu_index \
-          --config_path $config_path \
-          --model_save_path $MODEL \
-          --data_save_path $DATA > log/$filename".log" &
+        CUDA_VISIBLE_DEVICES=${gpu_id} \
+        nohup ${PYTHON} exp/training/train.py \
+          --gpu ${gpu_id} \
+          --config_path ${config_path} \
+          --model_save_path ${model} \
+          --data_save_path ${data} > log/$filename".log" &
       else
-        CUDA_VISIBLE_DEVICES=$gpu_index \
-        $PYTHON exp/training/train.py \
-          --gpu $gpu_index \
-          --config_path $config_path \
-          --model_save_path $MODEL \
-          --data_save_path $DATA || exit 1;
+        CUDA_VISIBLE_DEVICES=${gpu_id} \
+        ${PYTHON} exp/training/train.py \
+          --gpu ${gpu_id} \
+          --config_path ${config_path} \
+          --model_save_path ${model} \
+          --data_save_path ${data} || exit 1;
       fi
     fi
   fi
@@ -310,17 +311,17 @@ fi
 echo "Done."
 
 
-# utils/prepare_lang.sh --num-sil-states 4 $DATA/local/dict_nosp "<unk>" $DATA/local/lang_nosp $DATA/lang_nosp
+# utils/prepare_lang.sh --num-sil-states 4 ${data}/local/dict_nosp "<unk>" ${data}/local/lang_nosp ${data}/lang_nosp
 
 # Now train the language models.
-# local/csj_train_lms.sh $DATA/local/train/text $DATA/local/dict_nosp/lexicon.txt $DATA/local/lm
+# local/csj_train_lms.sh ${data}/local/train/text ${data}/local/dict_nosp/lexicon.txt ${data}/local/lm
 
 # We don't really need all these options for SRILM, since the LM training script
 # does some of the same processing (e.g. -subset -tolower)
 # srilm_opts="-subset -prune-lowprobs -unk -tolower -order 3"
-# LM=$DATA/local/lm/csj.o3g.kn.gz
+# LM=${data}/local/lm/csj.o3g.kn.gz
 # utils/format_lm_sri.sh --srilm-opts "$srilm_opts" \
-#   $DATA/lang_nosp $LM $DATA/local/dict_nosp/lexicon.txt $DATA/lang_nosp_csj_tg
+#   ${data}/lang_nosp $LM ${data}/local/dict_nosp/lexicon.txt ${data}/lang_nosp_csj_tg
 
 
 # getting results (see RESULTS file)

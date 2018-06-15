@@ -109,8 +109,6 @@ param:
   eval_start_epoch: 5
   print_step: 200
 
-
-
   # MTL
   main_loss_weight: 0.5
   sub_loss_weight: 0.5

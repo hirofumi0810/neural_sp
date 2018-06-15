@@ -72,6 +72,7 @@ def main():
         rnnlm_config = load_config(join(args.model_path, 'config_rnnlm.yml'))
 
         assert config['label_type'] == rnnlm_config['label_type']
+        assert args.rnnlm_weight > 0
         rnnlm_config['num_classes'] = dataset.num_classes
         config['rnnlm_config'] = rnnlm_config
     else:
@@ -100,7 +101,10 @@ def main():
                      backend=config_rnnlm['backend'])
         rnnlm.load_checkpoint(save_path=args.rnnlm_path, epoch=-1)
         rnnlm.rnn.flatten_parameters()
-        model.rnnlm_0 = rnnlm
+        if config_rnnlm['backward']:
+            model.rnnlm_0_bwd = rnnlm
+        else:
+            model.rnnlm_0_fwd = rnnlm
 
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)

@@ -114,3 +114,16 @@ param:
   main_loss_weight: 0.5
   sub_loss_weight: 0.5
   ctc_loss_weight_sub: 0
+
+  # RNNLM fusion
+  rnnlm_fusion_type: False
+  # rnnlm_fusion_type: cold_fusion
+  # rnnlm_fusion_type: logits_fusion
+  rnnlm_path: False
+  # rnnlm_path: /n/sd8/inaguma/result/csj/pytorch/rnnlm/word/aps_other/lstm512H2Lemb128_adam_lr1e-3_drophidden0.2out0.2emb0.2
+  rnnlm_path_sub: False
+  # rnnlm_path_sub: /n/sd8/inaguma/result/csj/pytorch/rnnlm/character_wb/aps_other/lstm512H2Lemb64_adam_lr1e-3_drophidden0.2out0.2emb0.2
+  rnnlm_joint_training: False
+  rnnlm_weight: 0
+  rnnlm_weight_sub: 0
+  concat_embedding: False

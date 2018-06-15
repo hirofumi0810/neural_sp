@@ -86,6 +86,7 @@ def main():
         rnnlm_config = load_config(join(args.model_path, 'config_rnnlm.yml'))
 
         assert config['label_type'] == rnnlm_config['label_type']
+        assert args.rnnlm_weight > 0
         rnnlm_config['num_classes'] = dataset.num_classes
         config['rnnlm_config'] = rnnlm_config
     else:
@@ -97,6 +98,7 @@ def main():
             join(args.model_path, 'config_rnnlm_sub.yml'))
 
         assert config['label_type_sub'] == rnnlm_config_sub['label_type']
+        assert args.rnnlm_weight_sub > 0
         rnnlm_config_sub['num_classes'] = dataset.num_classes_sub
         config['rnnlm_config_sub'] = rnnlm_config_sub
     else:
@@ -125,7 +127,7 @@ def main():
                      backend=config_rnnlm['backend'])
         rnnlm.load_checkpoint(save_path=args.rnnlm_path, epoch=-1)
         rnnlm.rnn.flatten_parameters()
-        model.rnnlm_0 = rnnlm
+        model.rnnlm_0_fwd = rnnlm
 
     if not (config['rnnlm_fusion_type'] and config['rnnlm_path_sub']) and args.rnnlm_path_sub is not None and args.rnnlm_weight_sub > 0:
         # Load a RNNLM config file
@@ -141,7 +143,7 @@ def main():
                          backend=config_rnnlm_sub['backend'])
         rnnlm_sub.load_checkpoint(save_path=args.rnnlm_path_sub, epoch=-1)
         rnnlm_sub.rnn.flatten_parameters()
-        model.rnnlm_1 = rnnlm_sub
+        model.rnnlm_1_fwd = rnnlm_sub
 
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
@@ -172,9 +174,11 @@ def main():
             best_hyps, aw, best_hyps_sub, aw_sub, _, perm_idx = model.decode(
                 batch['xs'],
                 beam_width=args.beam_width,
-                beam_width_sub=args.beam_width_sub,
                 max_decode_len=MAX_DECODE_LEN_WORD,
+                min_decode_len=MIN_DECODE_LEN_WORD,
+                beam_width_sub=args.beam_width_sub,
                 max_decode_len_sub=MAX_DECODE_LEN_CHAR,
+                min_decode_len_sub=MIN_DECODE_LEN_CHAR,
                 length_penalty=args.length_penalty,
                 coverage_penalty=args.coverage_penalty,
                 rnnlm_weight=args.rnnlm_weight,

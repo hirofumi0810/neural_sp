@@ -91,8 +91,11 @@ def main():
                     join(args.model_path, 'config_rnnlm.yml'))
 
                 assert config['label_type'] == rnnlm_config['label_type']
+                assert args.rnnlm_weight > 0
                 rnnlm_config['num_classes'] = dataset.num_classes
                 config['rnnlm_config'] = rnnlm_config
+                logger.info('RNNLM path (main): %s' % config['rnnlm_path'])
+                logger.info('RNNLM weight (main)): %.3f' % args.rnnlm_weight)
             else:
                 config['rnnlm_config'] = None
 
@@ -102,8 +105,11 @@ def main():
                     join(args.model_path, 'config_rnnlm_sub.yml'))
 
                 assert config['label_type_sub'] == rnnlm_config_sub['label_type']
+                assert args.rnnlm_weight_sub > 0
                 rnnlm_config_sub['num_classes'] = dataset.num_classes_sub
                 config['rnnlm_config_sub'] = rnnlm_config_sub
+                logger.info('RNNLM path (sub): %s' % config['rnnlm_path_sub'])
+                logger.info('RNNLM weight (sub): %.3f' % args.rnnlm_weight_sub)
             else:
                 config['rnnlm_config_sub'] = None
 
@@ -131,7 +137,9 @@ def main():
                              backend=config_rnnlm['backend'])
                 rnnlm.load_checkpoint(save_path=args.rnnlm_path, epoch=-1)
                 rnnlm.rnn.flatten_parameters()
-                model.rnnlm_0 = rnnlm
+                model.rnnlm_0_fwd = rnnlm
+                logger.info('RNNLM path (main): %s' % args.rnnlm_path)
+                logger.info('RNNLM weight (main)): %.3f' % args.rnnlm_weight)
 
             if not (config['rnnlm_fusion_type'] and config['rnnlm_path_sub']) and args.rnnlm_path_sub is not None and args.rnnlm_weight_sub > 0:
                 # Load a RNNLM config file
@@ -148,25 +156,15 @@ def main():
                 rnnlm_sub.load_checkpoint(
                     save_path=args.rnnlm_path_sub, epoch=-1)
                 rnnlm_sub.rnn.flatten_parameters()
-                model.rnnlm_1 = rnnlm_sub
+                model.rnnlm_1_fwd = rnnlm_sub
+                logger.info('RNNLM path (sub): %s' % args.rnnlm_path_sub)
+                logger.info('RNNLM weight (sub): %.3f' % args.rnnlm_weight_sub)
 
             # GPU setting
             model.set_cuda(deterministic=False, benchmark=True)
 
             logger.info('beam width (main): %d' % args.beam_width)
-            if config['rnnlm_fusion_type'] and config['rnnlm_path']:
-                logger.info('RNNLM path: %s' % config['rnnlm_path'])
-                logger.info('RNNLM weight: %.3f' % args.rnnlm_weight)
-            if args.rnnlm_path is not None:
-                logger.info('RNNLM path (main): %s' % args.rnnlm_path)
-                logger.info('RNNLM weight (main): %.3f' % args.rnnlm_weight)
             logger.info('beam width (sub) : %d' % args.beam_width_sub)
-            if config['rnnlm_fusion_type'] and config['rnnlm_path_sub']:
-                logger.info('RNNLM path (sub): %s' % config['rnnlm_path_sub'])
-                logger.info('RNNLM weight (sub): %.3f' % args.rnnlm_weight_sub)
-            elif args.rnnlm_path_sub is not None:
-                logger.info('RNNLM path (sub): %s' % args.rnnlm_path_sub)
-                logger.info('RNNLM weight (sub): %.3f' % args.rnnlm_weight_sub)
             logger.info('epoch: %d' % (epoch - 1))
             logger.info('a2c oracle: %s' % str(args.a2c_oracle))
             logger.info('resolving_unk: %s' % str(args.resolving_unk))

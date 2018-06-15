@@ -114,7 +114,7 @@ def main():
                      backend=config_rnnlm['backend'])
         rnnlm.load_checkpoint(save_path=args.rnnlm_path, epoch=-1)
         rnnlm.rnn.flatten_parameters()
-        model.rnnlm_0 = rnnlm
+        model.rnnlm_0_fwd = rnnlm
 
     if not (config['rnnlm_fusion_type'] and config['rnnlm_path_sub']) and args.rnnlm_path_sub is not None and args.rnnlm_weight_sub > 0:
         # Load a RNNLM config file
@@ -130,7 +130,7 @@ def main():
                          backend=config_rnnlm_sub['backend'])
         rnnlm_sub.load_checkpoint(save_path=args.rnnlm_path_sub, epoch=-1)
         rnnlm_sub.rnn.flatten_parameters()
-        model.rnnlm_1 = rnnlm_sub
+        model.rnnlm_1_fwd = rnnlm_sub
 
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)

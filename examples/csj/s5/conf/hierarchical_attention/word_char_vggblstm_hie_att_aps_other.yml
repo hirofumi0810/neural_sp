@@ -52,3 +52,12 @@ param:
   main_loss_weight: 0.5
   sub_loss_weight: 0.5
   ctc_loss_weight_sub: 0
+
+  # RNNLM fusion
+  rnnlm_fusion_type: False
+  rnnlm_path: False
+  rnnlm_path_sub: False
+  rnnlm_joint_training: False
+  rnnlm_weight: 0
+  rnnlm_weight_sub: 0
+  concat_embedding: False
