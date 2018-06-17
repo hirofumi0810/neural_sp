@@ -63,7 +63,13 @@ def save_config(config_path, save_path):
             shutil.copyfile(config['parent'], join(
                 save_path, 'config_parent.yml'))
 
-        # Ssve pre-trained RNNLM config
-        if config['rnnlm_path']:
-            shutil.copyfile(config['rnnlm_path'], join(
+        # Save pre-trained RNNLM config
+        if 'rnnlm_path' in config['param'].keys() and config['param']['rnnlm_path']:
+            shutil.copyfile(join(config['param']['rnnlm_path'], 'config.yml'), join(
                 save_path, 'config_rnnlm.yml'))
+        elif 'parent' in config.keys():
+            with open(config['parent'], "r") as f_:
+                config_parent = yaml.load(f_)
+                if 'rnnlm_path' in config_parent['param'].keys() and config_parent['param']['rnnlm_path']:
+                    shutil.copyfile(join(config_parent['param']['rnnlm_path'], 'config.yml'), join(
+                        save_path, 'config_rnnlm.yml'))
