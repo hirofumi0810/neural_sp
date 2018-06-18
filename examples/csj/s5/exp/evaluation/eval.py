@@ -31,11 +31,11 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
 parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam')
 parser.add_argument('--length_penalty', type=float, default=0,
-                    help='length penalty in beam search decoding')
+                    help='length penalty')
 parser.add_argument('--coverage_penalty', type=float, default=0,
-                    help='coverage penalty in beam search decoding')
+                    help='coverage penalty')
 parser.add_argument('--rnnlm_weight', type=float, default=0,
-                    help='the weight of RNNLM score in beam search decoding')
+                    help='the weight of RNNLM score')
 parser.add_argument('--rnnlm_path', default=None, type=str, nargs='?',
                     help='path to the RMMLM')
 
@@ -66,7 +66,7 @@ def main():
                           data_size=config['data_size'],
                           label_type=config['label_type'],
                           batch_size=args.eval_batch_size,
-                          sort_utt=False, tool=config['tool'])
+                          tool=config['tool'])
 
         if i == 0:
             config['num_classes'] = dataset.num_classes
@@ -74,15 +74,14 @@ def main():
             # For cold fusion
             if config['rnnlm_fusion_type'] and config['rnnlm_path']:
                 # Load a RNNLM config file
-                rnnlm_config = load_config(
+                config['rnnlm_config'] = load_config(
                     join(args.model_path, 'config_rnnlm.yml'))
 
-                assert config['label_type'] == rnnlm_config['label_type']
+                assert config['label_type'] == config['rnnlm_config']['label_type']
                 assert args.rnnlm_weight > 0
-                rnnlm_config['num_classes'] = dataset.num_classes
-                config['rnnlm_config'] = rnnlm_config
+                config['rnnlm_config']['num_classes'] = dataset.num_classes
                 logger.info('RNNLM path: %s' % config['rnnlm_path'])
-                logger.info('RNNLM weight): %.3f' % args.rnnlm_weight)
+                logger.info('RNNLM weight: %.3f' % args.rnnlm_weight)
             else:
                 config['rnnlm_config'] = None
 
@@ -115,7 +114,7 @@ def main():
                 else:
                     model.rnnlm_0_fwd = rnnlm
                 logger.info('RNNLM path: %s' % args.rnnlm_path)
-                logger.info('RNNLM weight): %.3f' % args.rnnlm_weight)
+                logger.info('RNNLM weight: %.3f' % args.rnnlm_weight)
 
             # GPU setting
             model.set_cuda(deterministic=False, benchmark=True)

@@ -94,18 +94,16 @@ def main():
     config['num_classes'] = train_data.num_classes
     config['num_classes_sub'] = train_data.num_classes
 
-    # Load a RNNLM config file
+    # Load a RNNLM config file for cold fusion
     if config['rnnlm_fusion_type'] and config['rnnlm_path']:
         if args.model_save_path is not None:
-            rnnlm_config = load_config(
+            config['rnnlm_config'] = load_config(
                 os.path.join(config['rnnlm_path'], 'config.yml'), is_eval=True)
         elif args.saved_model_path is not None:
             config = load_config(os.path.join(
                 args.saved_model_path, 'config_rnnlm.yml'))
-
-        assert config['label_type'] == rnnlm_config['label_type']
-        rnnlm_config['num_classes'] = train_data.num_classes
-        config['rnnlm_config'] = rnnlm_config
+        assert config['label_type'] == config['rnnlm_config']['label_type']
+        config['rnnlm_config']['num_classes'] = train_data.num_classes
     else:
         config['rnnlm_config'] = None
 
@@ -117,11 +115,17 @@ def main():
     if args.model_save_path is not None:
         if config['rnnlm_fusion_type'] and config['rnnlm_path']:
             # Load pre-trained RNNLM
-            rnnlm = load(model_type=rnnlm_config['model_type'],
-                         config=rnnlm_config,
-                         backend=rnnlm_config['backend'])
+            rnnlm = load(model_type=config['rnnlm_config']['model_type'],
+                         config=config['rnnlm_config'],
+                         backend=config['rnnlm_config']['backend'])
             rnnlm.load_checkpoint(save_path=config['rnnlm_path'], epoch=-1)
             rnnlm.rnn.flatten_parameters()
+
+            # Set pre-trained parameters
+            if config['rnnlm_config']['backward']:
+                model.rnnlm_0_bwd = rnnlm
+            else:
+                model.rnnlm_0_fwd = rnnlm
 
         # Set save path
         save_path = mkdir_join(args.model_save_path, config['backend'],

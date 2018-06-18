@@ -97,6 +97,8 @@ def main():
     config['num_classes'] = train_data.num_classes
     config['num_classes_sub'] = train_data.num_classes_sub
 
+    # TODO: add mult-level cold fusion
+
     # Model setting
     model = load(model_type=config['model_type'],
                  config=config,

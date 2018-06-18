@@ -34,9 +34,9 @@ parser.add_argument('--beam_width', type=int, default=1,
 parser.add_argument('--beam_width_sub', type=int, default=1,
                     help='the size of beam in the sub task')
 parser.add_argument('--length_penalty', type=float, default=0,
-                    help='length penalty in the beam search decoding')
+                    help='length penalty')
 parser.add_argument('--coverage_penalty', type=float, default=0,
-                    help='coverage penalty in the beam search decoding')
+                    help='coverage penalty')
 parser.add_argument('--resolving_unk', type=strtobool, default=False)
 parser.add_argument('--joint_decoding', type=strtobool, default=False)
 
@@ -66,7 +66,7 @@ def main():
                       label_type=config['label_type'],
                       label_type_sub=config['label_type_sub'],
                       batch_size=args.eval_batch_size,
-                      shuffle=False, tool=config['tool'])
+                      tool=config['tool'])
     config['num_classes'] = dataset.num_classes
     config['num_classes_sub'] = dataset.num_classes_sub
 

@@ -34,13 +34,13 @@ parser.add_argument('--beam_width', type=int, default=1,
 parser.add_argument('--beam_width_sub', type=int, default=1,
                     help='the size of beam in the sub task')
 parser.add_argument('--length_penalty', type=float, default=0,
-                    help='length penalty in the beam search decoding')
+                    help='length penalty')
 parser.add_argument('--coverage_penalty', type=float, default=0,
-                    help='coverage penalty in the beam search decoding')
+                    help='coverage penalty')
 parser.add_argument('--rnnlm_weight', type=float, default=0,
-                    help='the weight of RNNLM score of the main task in the beam search decoding')
+                    help='the weight of RNNLM score of the main task')
 parser.add_argument('--rnnlm_weight_sub', type=float, default=0,
-                    help='the weight of RNNLM score of the sub task in the beam search decoding')
+                    help='the weight of RNNLM score of the sub task')
 parser.add_argument('--rnnlm_path', default=None, type=str, nargs='?',
                     help='path to the RMMLM of the main task')
 parser.add_argument('--rnnlm_path_sub', default=None, type=str, nargs='?',
@@ -78,7 +78,7 @@ def main():
                           label_type=config['label_type'],
                           label_type_sub=config['label_type_sub'],
                           batch_size=args.eval_batch_size,
-                          shuffle=False, tool=config['tool'])
+                          tool=config['tool'])
 
         if i == 0:
             config['num_classes'] = dataset.num_classes
@@ -87,27 +87,25 @@ def main():
             # For cold fusion
             if config['rnnlm_fusion_type'] and config['rnnlm_path']:
                 # Load a RNNLM config file
-                rnnlm_config = load_config(
+                config['rnnlm_config'] = load_config(
                     join(args.model_path, 'config_rnnlm.yml'))
 
-                assert config['label_type'] == rnnlm_config['label_type']
+                assert config['label_type'] == config['rnnlm_config']['label_type']
                 assert args.rnnlm_weight > 0
-                rnnlm_config['num_classes'] = dataset.num_classes
-                config['rnnlm_config'] = rnnlm_config
+                config['rnnlm_config']['num_classes'] = dataset.num_classes
                 logger.info('RNNLM path (main): %s' % config['rnnlm_path'])
-                logger.info('RNNLM weight (main)): %.3f' % args.rnnlm_weight)
+                logger.info('RNNLM weight (main): %.3f' % args.rnnlm_weight)
             else:
                 config['rnnlm_config'] = None
 
             if config['rnnlm_fusion_type'] and config['rnnlm_path_sub']:
                 # Load a RNNLM config file
-                rnnlm_config_sub = load_config(
+                config['rnnlm_config_sub'] = load_config(
                     join(args.model_path, 'config_rnnlm_sub.yml'))
 
-                assert config['label_type_sub'] == rnnlm_config_sub['label_type']
+                assert config['label_type_sub'] == config['rnnlm_config_sub']['label_type']
                 assert args.rnnlm_weight_sub > 0
-                rnnlm_config_sub['num_classes'] = dataset.num_classes_sub
-                config['rnnlm_config_sub'] = rnnlm_config_sub
+                config['rnnlm_config_sub']['num_classes'] = dataset.num_classes_sub
                 logger.info('RNNLM path (sub): %s' % config['rnnlm_path_sub'])
                 logger.info('RNNLM weight (sub): %.3f' % args.rnnlm_weight_sub)
             else:
@@ -139,7 +137,7 @@ def main():
                 rnnlm.rnn.flatten_parameters()
                 model.rnnlm_0_fwd = rnnlm
                 logger.info('RNNLM path (main): %s' % args.rnnlm_path)
-                logger.info('RNNLM weight (main)): %.3f' % args.rnnlm_weight)
+                logger.info('RNNLM weight (main): %.3f' % args.rnnlm_weight)
 
             if not (config['rnnlm_fusion_type'] and config['rnnlm_path_sub']) and args.rnnlm_path_sub is not None and args.rnnlm_weight_sub > 0:
                 # Load a RNNLM config file
