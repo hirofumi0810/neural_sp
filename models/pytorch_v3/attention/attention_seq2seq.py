@@ -18,12 +18,12 @@ from models.pytorch_v3.base import ModelBase
 from models.pytorch_v3.linear import LinearND, Embedding, Embedding_LS
 from models.pytorch_v3.encoders.load_encoder import load
 from models.pytorch_v3.attention.rnn_decoder import RNNDecoder
-from models.pytorch_v3.attention.attention_layer import AttentionMechanism
+from models.pytorch_v3.attention.attention_layer import AttentionMechanism, MultiheadAttentionMechanism
 from models.pytorch_v3.ctc.ctc import my_warpctc
 from models.pytorch_v3.criterion import cross_entropy_label_smoothing
 from models.pytorch_v3.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch_v3.ctc.decoders.beam_search_decoder import BeamSearchDecoder
-from models.pytorch_v3.utils import np2var, var2np, pad_list
+from models.pytorch_v3.utils import np2var, var2np, pad_list, to_onehot
 from utils.io.inputs.frame_stacking import stack_frame
 from utils.io.inputs.splicing import do_splice
 from models.pytorch_v3.lm.rnnlm import RNNLM
@@ -204,6 +204,7 @@ class AttentionSeq2seq(ModelBase):
         self.num_classes = num_classes + 1  # Add <EOS> class
         self.sos_0 = num_classes
         self.eos_0 = num_classes
+        self.pad_index = -1024
         # NOTE: <SOS> and <EOS> have the same index
         self.decoding_order = decoding_order
         assert 0 <= backward_loss_weight <= 1
@@ -227,7 +228,7 @@ class AttentionSeq2seq(ModelBase):
 
         # Setting for the attention
         self.sharpening_factor = sharpening_factor
-        self.logits_temperature = logits_temperature
+        self.logits_temp = logits_temperature
         self.sigmoid_smoothing = sigmoid_smoothing
         self.coverage_weight = coverage_weight
         self.num_heads_0 = num_heads
@@ -271,7 +272,8 @@ class AttentionSeq2seq(ModelBase):
                 parameter_init=rnnlm_config['parameter_init'],
                 recurrent_weight_orthogonal=rnnlm_config['recurrent_weight_orthogonal'],
                 init_forget_gate_bias_with_one=rnnlm_config['init_forget_gate_bias_with_one'],
-                tie_weights=rnnlm_config['tie_weights'])
+                tie_weights=rnnlm_config['tie_weights'],
+                backward=rnnlm_config['backward'])
 
             self.W_rnnlm_logits_0_fwd = LinearND(
                 self.rnnlm_0_fwd.num_classes, decoder_num_units,
@@ -390,16 +392,27 @@ class AttentionSeq2seq(ModelBase):
                     dense_residual=decoder_dense_residual))
 
             # Attention layer
-            setattr(self, 'attend_0_' + dir, AttentionMechanism(
-                encoder_num_units=self.encoder_num_units,
-                decoder_num_units=decoder_num_units,
-                attention_type=attention_type,
-                attention_dim=attention_dim,
-                sharpening_factor=sharpening_factor,
-                sigmoid_smoothing=sigmoid_smoothing,
-                out_channels=attention_conv_num_channels,
-                kernel_size=attention_conv_width,
-                num_heads=num_heads))
+            if num_heads > 1:
+                setattr(self, 'attend_0_' + dir, MultiheadAttentionMechanism(
+                    encoder_num_units=self.encoder_num_units,
+                    decoder_num_units=decoder_num_units,
+                    attention_type=attention_type,
+                    attention_dim=attention_dim,
+                    sharpening_factor=sharpening_factor,
+                    sigmoid_smoothing=sigmoid_smoothing,
+                    out_channels=attention_conv_num_channels,
+                    kernel_size=attention_conv_width,
+                    num_heads=num_heads))
+            else:
+                setattr(self, 'attend_0_' + dir, AttentionMechanism(
+                    encoder_num_units=self.encoder_num_units,
+                    decoder_num_units=decoder_num_units,
+                    attention_type=attention_type,
+                    attention_dim=attention_dim,
+                    sharpening_factor=sharpening_factor,
+                    sigmoid_smoothing=sigmoid_smoothing,
+                    out_channels=attention_conv_num_channels,
+                    kernel_size=attention_conv_width))
 
             # Output layer
             setattr(self, 'W_d_0_' + dir, LinearND(
@@ -422,7 +435,8 @@ class AttentionSeq2seq(ModelBase):
             self.embed_0 = Embedding(
                 num_classes=self.num_classes,
                 embedding_dim=embedding_dim,
-                dropout=dropout_embedding)
+                dropout=dropout_embedding,
+                ignore_index=self.eos_0)
 
         # CTC
         if ctc_loss_weight > 0:
@@ -564,32 +578,31 @@ class AttentionSeq2seq(ModelBase):
 
         # Convert list to Variable
         ys_in = pad_list(ys_in, getattr(self, 'eos_' + str(task)))
-        ys_out = pad_list(ys_out, -1)
+        ys_out = pad_list(ys_out, self.pad_index)
 
         # Teacher-forcing
         logits, aw, logits_rnnlm = self._decode_train(
             enc_out, x_lens, ys_in, task, dir)
 
         # Output smoothing
-        if self.logits_temperature != 1:
-            logits /= self.logits_temperature
+        if self.logits_temp != 1:
+            logits /= self.logits_temp
 
         # Compute XE sequence loss
-        loss = F.cross_entropy(
-            input=logits.view((-1, logits.size(2))),
-            target=ys_out.view(-1),  # long
-            ignore_index=-1, size_average=False) / len(enc_out)
-
-        # Label smoothing (with uniform distribution)
         if self.ls_prob > 0:
-            y_lens = [y.size(0) for y in ys_in]
-            loss_ls = cross_entropy_label_smoothing(
+            # Label smoothing (with uniform distribution)
+            y_lens = [y.size(0) + 1 for y in ys]   # Add <SOS>
+            loss = cross_entropy_label_smoothing(
                 logits,
+                ys=to_onehot(ys_out, logits.size(-1), y_lens),
                 y_lens=y_lens,
                 label_smoothing_prob=self.ls_prob,
-                distribution='uniform',
-                size_average=True)
-            loss = loss * (1 - self.ls_prob) + loss_ls
+                distribution='uniform') / len(enc_out)
+        else:
+            loss = F.cross_entropy(
+                input=logits.view((-1, logits.size(2))),
+                target=ys_out.view(-1),  # long
+                ignore_index=self.pad_index, size_average=False) / len(enc_out)
 
         # Compute XE loss for RNNLM
         if self.rnnlm_fusion_type and self.rnnlm_joint_training:
@@ -598,7 +611,7 @@ class AttentionSeq2seq(ModelBase):
                 loss_rnnlm = F.cross_entropy(
                     input=logits_rnnlm.view((-1, logits_rnnlm.size(2))),
                     target=ys_out.contiguous().view(-1),
-                    ignore_index=-1, size_average=True)
+                    ignore_index=self.pad_index, size_average=True)
                 loss += loss_rnnlm * getattr(self, 'rnnlm_weight_' + str(task))
 
         # Add coverage term
@@ -726,30 +739,21 @@ class AttentionSeq2seq(ModelBase):
         batch_size, max_time = enc_out.size()[:2]
         taskdir = '_' + str(task) + '_' + dir
 
-        # Initialize decoder state, decoder output, attention_weights
+        # Initialization
         dec_state, dec_out = self._init_dec_state(enc_out, x_lens, task, dir)
-        aw_step = Variable(enc_out.data.new(
-            batch_size, max_time, getattr(self, 'num_heads_' + str(task))).fill_(0.))
+        getattr(self, 'attend_' + str(task) + '_' + dir).reset()
+        aw_step = None
         if self.decoding_order == 'luong':
             context_vec = Variable(enc_out.data.new(
                 batch_size, 1, enc_out.size(-1)).fill_(0.))
         rnnlm_state = None
 
         # Pre-computation of embedding
-        ys_emb = [getattr(self, 'embed_' + str(task))(ys[:, t:t + 1])
-                  for t in range(ys.size(1))]
-        ys_emb = torch.cat(ys_emb, dim=1)
+        ys_emb = getattr(self, 'embed_' + str(task))(ys)
         if self.rnnlm_fusion_type:
             ys_rnnlm_emb = [getattr(self, 'rnnlm' + taskdir).embed(ys[:, t:t + 1])
                             for t in range(ys.size(1))]
             ys_rnnlm_emb = torch.cat(ys_rnnlm_emb, dim=1)
-
-        # Pre-computation of encoder-side features for computing scores
-        enc_out_a = []
-        for h in range(getattr(self, 'num_heads_' + str(task))):
-            enc_out_a += [getattr(getattr(self, 'attend_' +
-                                          str(task) + '_' + dir), 'W_enc_head' + str(h))(enc_out)]
-        enc_out_a = torch.stack(enc_out_a, dim=-1)
 
         logits, aw, logits_rnnlm = [], [], []
         for t in range(ys.size(1)):
@@ -785,7 +789,7 @@ class AttentionSeq2seq(ModelBase):
 
                 # Score
                 context_vec, aw_step = getattr(self, 'attend' + taskdir)(
-                    enc_out, enc_out_a, x_lens, dec_out, aw_step)
+                    enc_out, x_lens, dec_out, aw_step)
 
             elif self.decoding_order == 'luong':
                 # Recurrency
@@ -797,7 +801,7 @@ class AttentionSeq2seq(ModelBase):
 
                 # Score
                 context_vec, aw_step = getattr(self, 'attend' + taskdir)(
-                    enc_out, enc_out_a, x_lens, dec_out, aw_step)
+                    enc_out, x_lens, dec_out, aw_step)
 
             elif self.decoding_order == 'conditional':
                 # Recurrency of the first decoder
@@ -808,7 +812,7 @@ class AttentionSeq2seq(ModelBase):
 
                 # Score
                 context_vec, aw_step = getattr(self, 'attend' + taskdir)(
-                    enc_out, enc_out_a, x_lens, _dec_out, aw_step)
+                    enc_out, x_lens, _dec_out, aw_step)
 
                 # Recurrency of the second decoder
                 dec_out, dec_state = getattr(self, 'decoder_second' + taskdir)(
@@ -926,14 +930,13 @@ class AttentionSeq2seq(ModelBase):
             max_decode_len (int): the maximum sequence length of tokens
             min_decode_len (int): the minimum sequence length of tokens
             min_decode_len_ratio (float):
-            length_penalty (float): length penalty in the beam search decoding
-            coverage_penalty (float): coverage penalty in the beam search decoding
-            rnnlm_weight (float): the weight of RNNLM score in the beam search decoding
+            length_penalty (float): length penalty
+            coverage_penalty (float): coverage penalty
+            rnnlm_weight (float): the weight of RNNLM score
             task_index (int): not used (to make compatible)
             resolving_unk (bool): not used (to make compatible)
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
-            # aw (list): A list of length `[B]`, which contains arrays of size `[L, T, nun_heads]`
             aw (list): A list of length `[B]`, which contains arrays of size `[L, T]`
             perm_idx (list): A list of length `[B]`
         """
@@ -996,10 +999,10 @@ class AttentionSeq2seq(ModelBase):
         batch_size, max_time = enc_out.size()[:2]
         taskdir = '_' + str(task) + '_' + dir
 
-        # Initialize decoder state
+        # Initialization
         dec_state, dec_out = self._init_dec_state(enc_out, x_lens, task, dir)
-        aw_step = Variable(enc_out.data.new(
-            batch_size, max_time, getattr(self, 'num_heads_' + str(task))).fill_(0.), volatile=True)
+        getattr(self, 'attend_' + str(task) + '_' + dir).reset()
+        aw_step = None
         if self.decoding_order == 'luong':
             context_vec = Variable(enc_out.data.new(
                 batch_size, 1, enc_out.size(-1)).fill_(0.), volatile=True)
@@ -1011,19 +1014,10 @@ class AttentionSeq2seq(ModelBase):
         y = Variable(enc_out.data.new(
             batch_size, 1).fill_(sos).long(), volatile=True)
 
-        # Pre-computation of encoder-side features for computing scores
-        enc_out_a = []
-        for h in range(getattr(self, 'num_heads_' + str(task))):
-            enc_out_a += [getattr(getattr(self, 'attend' + taskdir),
-                                  'W_enc_head' + str(h))(enc_out)]
-        enc_out_a = torch.stack(enc_out_a, dim=-1)
-
         _best_hyps, _aw = [], []
         y_lens = np.zeros((batch_size,), dtype=np.int32)
         eos_flag = [False] * batch_size
         for t in range(max_decode_len + 1):
-            y = getattr(self, 'embed_' + str(task))(y)
-
             # Update RNNLM states
             if self.rnnlm_fusion_type:
                 y_rnnlm = getattr(self, 'rnnlm' + taskdir).embed(y)
@@ -1031,6 +1025,8 @@ class AttentionSeq2seq(ModelBase):
                     y_rnnlm, hx=rnnlm_state)
                 logits_step_rnnlm = getattr(self, 'rnnlm' + taskdir).output(
                     rnnlm_out)
+
+            y = getattr(self, 'embed_' + str(task))(y)
 
             if self.decoding_order == 'bahdanau':
                 if t > 0:
@@ -1043,7 +1039,7 @@ class AttentionSeq2seq(ModelBase):
 
                 # Score
                 context_vec, aw_step = getattr(self, 'attend' + taskdir)(
-                    enc_out, enc_out_a, x_lens, dec_out, aw_step)
+                    enc_out, x_lens, dec_out, aw_step)
 
             elif self.decoding_order == 'luong':
                 # Recurrency
@@ -1055,7 +1051,7 @@ class AttentionSeq2seq(ModelBase):
 
                 # Score
                 context_vec, aw_step = getattr(self, 'attend' + taskdir)(
-                    enc_out, enc_out_a, x_lens, dec_out, aw_step)
+                    enc_out, x_lens, dec_out, aw_step)
 
             elif self.decoding_order == 'conditional':
                 # Recurrency of the first decoder
@@ -1066,7 +1062,7 @@ class AttentionSeq2seq(ModelBase):
 
                 # Score
                 context_vec, aw_step = getattr(self, 'attend' + taskdir)(
-                    enc_out, enc_out_a, x_lens, _dec_out, aw_step)
+                    enc_out, x_lens, _dec_out, aw_step)
 
                 # Recurrency of the second decoder
                 dec_out, dec_state = getattr(self, 'decoder_second' + taskdir)(
@@ -1119,8 +1115,9 @@ class AttentionSeq2seq(ModelBase):
         _best_hyps = var2np(_best_hyps)
         _aw = var2np(_aw)
 
-        # TODO: fix for MHA
-        _aw = _aw[:, :, :, 0]
+        if getattr(self, 'num_heads_' + str(task)) > 1:
+            _aw = _aw[:, :, :, 0]
+            # TODO: fix for MHA
 
         # Truncate by <EOS>
         best_hyps, aw = [], []
@@ -1166,23 +1163,15 @@ class AttentionSeq2seq(ModelBase):
         sos = getattr(self, 'sos_' + str(task))
         eos = getattr(self, 'eos_' + str(task))
 
-        # Pre-computation of encoder-side features for computing scores
-        enc_out_a = []
-        for h in range(getattr(self, 'num_heads_' + str(task))):
-            enc_out_a += [getattr(getattr(self, 'attend' + taskdir),
-                                  'W_enc_head' + str(h))(enc_out)]
-        enc_out_a = torch.stack(enc_out_a, dim=-1)
-
         best_hyps, aw = [], []
         y_lens = np.zeros((enc_out.size(0),), dtype=np.int32)
         for b in range(enc_out.size(0)):
             # Initialization per utterance
             dec_state, dec_out = self._init_dec_state(
                 enc_out[b:b + 1], x_lens[b], task, dir)
-            aw_step = Variable(enc_out.data.new(
-                1, x_lens[b], getattr(self, 'num_heads_' + str(task))).fill_(0.), volatile=True)
             context_vec = Variable(enc_out.data.new(
                 1, 1, enc_out.size(-1)).fill_(0.), volatile=True)
+            getattr(self, 'attend_' + str(task) + '_' + dir).reset()
 
             complete = []
             beam = [{'hyp': [sos],
@@ -1190,16 +1179,12 @@ class AttentionSeq2seq(ModelBase):
                      'dec_state': dec_state,
                      'dec_out': dec_out,
                      'context_vec': context_vec,
-                     'aw_steps': [aw_step],
+                     'aw_steps': [None],
                      'rnnlm_state': None,
                      'previous_coverage': 0}]
             for t in range(max_decode_len + 1):
                 new_beam = []
                 for i_beam in range(len(beam)):
-                    y = Variable(enc_out.data.new(
-                        1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
-                    y = getattr(self, 'embed_' + str(task))(y)
-
                     # Update RNNLM states
                     if (rnnlm_weight > 0 or self.rnnlm_fusion_type) and getattr(self, 'rnnlm' + taskdir) is not None:
                         y_rnnlm = Variable(enc_out.data.new(
@@ -1210,6 +1195,10 @@ class AttentionSeq2seq(ModelBase):
                             y_rnnlm, hx=beam[i_beam]['rnnlm_state'])
                         logits_step_rnnlm = getattr(self, 'rnnlm' + taskdir).output(
                             rnnlm_out)
+
+                    y = Variable(enc_out.data.new(
+                        1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
+                    y = getattr(self, 'embed_' + str(task))(y)
 
                     if self.decoding_order == 'bahdanau':
                         if t == 0:
@@ -1225,9 +1214,7 @@ class AttentionSeq2seq(ModelBase):
 
                         # Score
                         context_vec, aw_step = getattr(self, 'attend' + taskdir)(
-                            enc_out[b:b + 1, :x_lens[b]],
-                            enc_out_a[b:b + 1, :x_lens[b]],
-                            x_lens[b:b + 1],
+                            enc_out[b:b + 1, :x_lens[b]], x_lens[b:b + 1],
                             dec_out, beam[i_beam]['aw_steps'][-1])
 
                     elif self.decoding_order == 'luong':
@@ -1241,9 +1228,7 @@ class AttentionSeq2seq(ModelBase):
 
                         # Score
                         context_vec, aw_step = getattr(self, 'attend' + taskdir)(
-                            enc_out[b:b + 1, :x_lens[b]],
-                            enc_out_a[b:b + 1, :x_lens[b]],
-                            x_lens[b:b + 1],
+                            enc_out[b:b + 1, :x_lens[b]], x_lens[b:b + 1],
                             dec_out, beam[i_beam]['aw_steps'][-1])
 
                     elif self.decoding_order == 'conditional':
@@ -1255,9 +1240,7 @@ class AttentionSeq2seq(ModelBase):
 
                         # Score
                         context_vec, aw_step = getattr(self, 'attend' + taskdir)(
-                            enc_out[b:b + 1, :x_lens[b]],
-                            enc_out_a[b:b + 1, :x_lens[b]],
-                            x_lens[b:b + 1],
+                            enc_out[b:b + 1, :x_lens[b]], x_lens[b:b + 1],
                             _dec_out, beam[i_beam]['aw_steps'][-1])
 
                         # Recurrency of the second decoder
@@ -1313,14 +1296,18 @@ class AttentionSeq2seq(ModelBase):
                                 coverage_penalty
 
                             cov_threshold = 0.5
+                            # TODO: make this parameter
                             aw_steps = torch.stack(
-                                beam[i_beam]['aw_steps'] + [aw_step], dim=1)
-                            # aw_steps: `[B, L, T, num_heads]`
+                                beam[i_beam]['aw_steps'][1:] + [aw_step], dim=1)
 
-                            cov_sum = aw_steps.data[0, :, :, 0].cpu().numpy()
+                            if getattr(self, 'num_heads_' + str(task)) > 1:
+                                cov_sum = aw_steps.data[0,
+                                                        :, :, 0].cpu().numpy()
+                                # TODO: fix for MHA
+                            else:
+                                cov_sum = aw_steps.data[0].cpu().numpy()
                             cov_sum = np.sum(cov_sum[np.where(
                                 cov_sum > cov_threshold)[0]])
-                            # TODO: fix for MHA
                             score += cov_sum * coverage_penalty
                         else:
                             cov_sum = 0
@@ -1329,8 +1316,7 @@ class AttentionSeq2seq(ModelBase):
                         if rnnlm_weight > 0 and getattr(self, 'rnnlm' + taskdir) is not None:
                             rnnlm_log_probs = F.log_softmax(
                                 logits_step_rnnlm.squeeze(1), dim=1)
-                            # assert log_probs.size() == rnnlm_log_probs.size()
-                            # TODO: turn on after fixing nested attention
+                            assert log_probs.size() == rnnlm_log_probs.size()
                             score += rnnlm_log_probs.data[0,
                                                           indices_topk.data[0, k]] * rnnlm_weight
                         else:
@@ -1372,10 +1358,11 @@ class AttentionSeq2seq(ModelBase):
             y_lens[b] = len(complete[0]['hyp'][1:])
 
         # Concatenate in L dimension
-        for j in range(len(aw)):
-            for k in range(len(aw[j])):
-                aw[j][k] = aw[j][k][:, :, 0]  # TODO: fix for MHA
-            aw[j] = var2np(torch.stack(aw[j], dim=1).squeeze(0))
+        for b in range(len(aw)):
+            aw[b] = var2np(torch.stack(aw[b], dim=1).squeeze(0))
+            if getattr(self, 'num_heads_' + str(task)) > 1:
+                aw[b] = aw[b][:, :, 0]
+                # TODO: fix for MHA
 
         # Reverse the order
         if dir == 'bwd':

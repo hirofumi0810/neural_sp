@@ -211,7 +211,7 @@ def load(model_type, config, backend):
         if 'rnnlm_fusion_type' not in config.keys():
             config['rnnlm_fusion_type'] = False
         if 'rnnlm_config' not in config.keys():
-            config['rnnlm_config'] = False
+            config['rnnlm_config'] = None
         if 'rnnlm_joint_training' not in config.keys():
             config['rnnlm_joint_training'] = False
         if 'rnnlm_weight' not in config.keys():
@@ -346,7 +346,7 @@ def load(model_type, config, backend):
         if config['rnnlm_fusion_type']:
             model.name += '_' + config['rnnlm_fusion_type']
         if bool(config['rnnlm_joint_training']):
-            model.name += '_lmjoint'
+            model.name += '_lmjoint' + str(config['rnnlm_weight'])
         if bool(config['concat_embedding']) > 0:
             model.name += '_concatemb'
 
@@ -355,6 +355,22 @@ def load(model_type, config, backend):
             from models.pytorch_v3.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
         elif backend == 'chainer':
             from models.chainer.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
+
+        # TODO: remove these later
+        if 'rnnlm_fusion_type' not in config.keys():
+            config['rnnlm_fusion_type'] = False
+        if 'rnnlm_config' not in config.keys():
+            config['rnnlm_config'] = None
+        if 'rnnlm_config_sub' not in config.keys():
+            config['rnnlm_config_sub'] = None
+        if 'rnnlm_joint_training' not in config.keys():
+            config['rnnlm_joint_training'] = False
+        if 'rnnlm_weight' not in config.keys():
+            config['rnnlm_weight'] = 0
+        if 'rnnlm_weight_sub' not in config.keys():
+            config['rnnlm_weight_sub'] = 0
+        if 'concat_embedding' not in config.keys():
+            config['concat_embedding'] = False
 
         model = HierarchicalAttentionSeq2seq(
             input_size=config['input_freq'] *
@@ -419,7 +435,14 @@ def load(model_type, config, backend):
             bottleneck_dim_sub=config['bottleneck_dim_sub'],
             backward_sub=config['backward_sub'],
             num_heads=config['num_heads'],
-            num_heads_sub=config['num_heads_sub'])
+            num_heads_sub=config['num_heads_sub'],
+            rnnlm_fusion_type=config['rnnlm_fusion_type'],
+            rnnlm_config=config['rnnlm_config'],
+            rnnlm_config_sub=config['rnnlm_config_sub'],
+            rnnlm_joint_training=config['rnnlm_joint_training'],
+            rnnlm_weight=config['rnnlm_weight'],
+            rnnlm_weight_sub=config['rnnlm_weight_sub'],
+            concat_embedding=config['concat_embedding'])
 
         model.name = model_name
         if config['encoder_type'] not in ['cnn', 'resnet']:
@@ -487,6 +510,13 @@ def load(model_type, config, backend):
             model.name += '_bwdsub'
         if int(config['num_heads']) > 1:
             model.name += '_head' + str(config['num_heads'])
+        if config['rnnlm_fusion_type']:
+            model.name += '_' + config['rnnlm_fusion_type']
+        if bool(config['rnnlm_joint_training']):
+            model.name += '_lmjoint' + \
+                str(config['rnnlm_weight']) + str(config['rnnlm_weight_sub'])
+        if bool(config['concat_embedding']) > 0:
+            model.name += '_concatemb'
 
     elif config['model_type'] == 'nested_attention':
         if backend == 'pytorch':
@@ -671,7 +701,8 @@ def load(model_type, config, backend):
             parameter_init=config['parameter_init'],
             recurrent_weight_orthogonal=config['recurrent_weight_orthogonal'],
             init_forget_gate_bias_with_one=config['init_forget_gate_bias_with_one'],
-            tie_weights=config['tie_weights'])
+            tie_weights=config['tie_weights'],
+            backward=config['backward'])
 
         model_name = config['rnn_type']
         if config['bidirectional']:
@@ -693,5 +724,9 @@ def load(model_type, config, backend):
             model.name += 'out' + str(config['dropout_output'])
         if config['dropout_embedding'] != 0:
             model.name += 'emb' + str(config['dropout_embedding'])
+        if bool(config['backward']):
+            model.name += '_backward'
+        if config['vocab']:
+            model.name += '_' + config['vocab']
 
     return model

@@ -320,19 +320,19 @@ class HierarchicalCTC(CTC):
             xs, x_lens, is_multi_task=True)
 
         # Output smoothing
-        if self.logits_temperature != 1:
-            logits_main /= self.logits_temperature
-            logits_sub /= self.logits_temperature
+        if self.logits_temp != 1:
+            logits_main /= self.logits_temp
+            logits_sub /= self.logits_temp
 
         # Wrap by Variable
         ys = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()
               for y in ys]
-        _x_lens = np2var(np.fromiter(x_lens, dtype=np.int32), -1).int()
+        x_lens = np2var(np.fromiter(x_lens, dtype=np.int32), -1).int()
         y_lens = np2var(np.fromiter([y.size(0)
                                      for y in ys], dtype=np.int32), -1).int()
         ys_sub = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()
                   for y in ys_sub]
-        _x_lens_sub = np2var(np.fromiter(x_lens_sub, dtype=np.int32), -1).int()
+        x_lens_sub = np2var(np.fromiter(x_lens_sub, dtype=np.int32), -1).int()
         y_lens_sub = np2var(np.fromiter([y.size(0)
                                          for y in ys_sub], dtype=np.int32), -1).int()
         # NOTE: do not copy to GPUs
@@ -345,33 +345,35 @@ class HierarchicalCTC(CTC):
         # Compute CTC loss in the main & sub task
         loss_main = my_warpctc(
             logits_main.transpose(0, 1).contiguous(),  # time-major
-            ys, _x_lens, y_lens, size_average=False) / len(xs)
+            ys, x_lens, y_lens, size_average=False) / len(xs)
 
         loss_sub = my_warpctc(
             logits_sub.transpose(0, 1).contiguous(),  # time-major
-            ys_sub, _x_lens_sub, y_lens_sub, size_average=False) / len(xs)
+            ys_sub, x_lens_sub, y_lens_sub, size_average=False) / len(xs)
 
         # Label smoothing (with uniform distribution)
         if self.ls_prob > 0:
-            if self.device_id >= 0:
-                loss_main = loss_main.cuda(self.device_id)
-                loss_sub = loss_sub.cuda(self.device_id)
+            raise NotImplementedError
 
-            loss_ls_main = cross_entropy_label_smoothing(
-                logits_main,
-                y_lens=x_lens,  # NOTE: CTC is frame-synchronous
-                label_smoothing_prob=self.ls_prob,
-                distribution='uniform',
-                size_average=False) / len(xs)
-            loss_main = loss_main * (1 - self.ls_prob) + loss_ls_main
-
-            loss_ls_sub = cross_entropy_label_smoothing(
-                logits_sub,
-                y_lens=x_lens_sub,  # NOTE: CTC is frame-synchronous
-                label_smoothing_prob=self.ls_prob,
-                distribution='uniform',
-                size_average=False) / len(xs)
-            loss_sub = loss_sub * (1 - self.ls_prob) + loss_ls_sub
+            # if self.device_id >= 0:
+            #     loss_main = loss_main.cuda(self.device_id)
+            #     loss_sub = loss_sub.cuda(self.device_id)
+            #
+            # loss_ls_main = cross_entropy_label_smoothing(
+            #     logits_main,
+            #     y_lens=x_lens,  # NOTE: CTC is frame-synchronous
+            #     label_smoothing_prob=self.ls_prob,
+            #     distribution='uniform',
+            #     size_average=False) / len(xs)
+            # loss_main = loss_main * (1 - self.ls_prob) + loss_ls_main
+            #
+            # loss_ls_sub = cross_entropy_label_smoothing(
+            #     logits_sub,
+            #     y_lens=x_lens_sub,  # NOTE: CTC is frame-synchronous
+            #     label_smoothing_prob=self.ls_prob,
+            #     distribution='uniform',
+            #     size_average=False) / len(xs)
+            # loss_sub = loss_sub * (1 - self.ls_prob) + loss_ls_sub
 
         # Compute total loss
         loss_main = loss_main * self.main_loss_weight

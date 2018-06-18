@@ -28,20 +28,6 @@ class TestCharseqAttention(unittest.TestCase):
     def test(self):
         print("Nested Attention Working check.")
 
-        # Attend to word-level backward decoder
-        self.check(second_pass=True)
-
-        # Forward word decoder + backward char decoder
-        self.check(backward_sub=True)
-
-        self.check(att_reg_weight=1)
-
-        # Attention smoothing
-        self.check(dec_attend_temperature=2)
-        self.check(dec_sigmoid_smoothing=True)
-
-        raise ValueError
-
         # Usage character-level decoder states
         self.check(usage_dec_sub='softmax')
         self.check(logits_injection=True, usage_dec_sub='softmax')

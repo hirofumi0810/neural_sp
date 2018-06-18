@@ -163,31 +163,33 @@ class ModelBase(nn.Module):
             scheduler ():
         """
         optimizer = optimizer.lower()
+        parameters = [p for p in self.parameters() if p.requires_grad]
+
         if optimizer not in OPTIMIZER_CLS_NAMES:
             raise ValueError(
                 "Optimizer name should be one of [%s], you provided %s." %
                 (", ".join(OPTIMIZER_CLS_NAMES), optimizer))
 
         if optimizer == 'sgd':
-            self.optimizer = optim.SGD(self.parameters(),
+            self.optimizer = optim.SGD(parameters,
                                        lr=learning_rate_init,
                                        weight_decay=weight_decay,
                                        nesterov=False)
         elif optimizer == 'momentum':
-            self.optimizer = optim.SGD(self.parameters(),
+            self.optimizer = optim.SGD(parameters,
                                        lr=learning_rate_init,
                                        momentum=0.9,
                                        weight_decay=weight_decay,
                                        nesterov=False)
         elif optimizer == 'nesterov':
-            self.optimizer = optim.SGD(self.parameters(),
+            self.optimizer = optim.SGD(parameters,
                                        lr=learning_rate_init,
                                        momentum=0.9,
                                        weight_decay=weight_decay,
                                        nesterov=True)
         elif optimizer == 'adadelta':
             self.optimizer = optim.Adadelta(
-                self.parameters(),
+                parameters,
                 # rho=0.9,  # default
                 rho=0.95,
                 # eps=1e-6,  # default
@@ -197,7 +199,7 @@ class ModelBase(nn.Module):
 
         else:
             self.optimizer = OPTIMIZER_CLS_NAMES[optimizer](
-                self.parameters(),
+                parameters,
                 lr=learning_rate_init,
                 weight_decay=weight_decay)
 

@@ -28,12 +28,12 @@ class TestHierarchicalAttention(unittest.TestCase):
     def test(self):
         print("Hierarchical Attention Working check.")
 
-        # CNN-CTC
-        self.check(encoder_type='cnn', decoder_type='lstm', batch_norm=True)
-
         # Multi-head attention
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', num_heads=2)
+
+        # CNN-CTC
+        self.check(encoder_type='cnn', decoder_type='lstm', batch_norm=True)
 
         # Forward word decoder + backward char decoder
         self.check(encoder_type='lstm', bidirectional=True,

@@ -167,7 +167,7 @@ class CTC(ModelBase):
 
         # Setting for CTC
         self.num_classes = num_classes + 1  # Add the blank class
-        self.logits_temperature = logits_temperature
+        self.logits_temp = logits_temperature
 
         # Setting for regualarization
         self.weight_noise_injection = False
@@ -322,13 +322,13 @@ class CTC(ModelBase):
         logits, x_lens = self._encode(xs, x_lens)
 
         # Output smoothing
-        if self.logits_temperature != 1:
-            logits /= self.logits_temperature
+        if self.logits_temp != 1:
+            logits /= self.logits_temp
 
         # Wrap by Variable
         ys = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()
               for y in ys]
-        _x_lens = np2var(np.fromiter(x_lens, dtype=np.int32), -1).int()
+        x_lens = np2var(np.fromiter(x_lens, dtype=np.int32), -1).int()
         y_lens = np2var(np.fromiter([y.size(0)
                                      for y in ys], dtype=np.int32), -1).int()
         # NOTE: do not copy to GPUs
@@ -339,24 +339,24 @@ class CTC(ModelBase):
 
         # Compute CTC loss
         loss = my_warpctc(logits.transpose(0, 1),  # time-major
-                          ys, _x_lens, y_lens,
+                          ys, x_lens, y_lens,
                           size_average=False) / len(xs)
-
         # loss = warpctc(logits.transpose(0, 1),  # time-major
-        #                ys, _x_lens, y_lens) / len(xs)
+        #                ys, x_lens, y_lens) / len(xs)
 
         if self.device_id >= 0:
             loss = loss.cuda(self.device_id)
 
         # Label smoothing (with uniform distribution)
         if self.ls_prob > 0:
-            loss_ls = cross_entropy_label_smoothing(
-                logits,
-                y_lens=x_lens,  # NOTE: CTC is frame-synchronous
-                label_smoothing_prob=self.ls_prob,
-                distribution='uniform',
-                size_average=False) / len(xs)
-            loss = loss * (1 - self.ls_prob) + loss_ls
+            raise NotImplementedError
+            # loss_ls = cross_entropy_label_smoothing(
+            #     logits,
+            #     ys=to_onehot(ys_out, logits.size(-1), y_lens),
+            #     y_lens=x_lens,  # NOTE: CTC is frame-synchronous
+            #     label_smoothing_prob=self.ls_prob,
+            #     distribution='uniform') / len(xs)
+            # loss = loss * (1 - self.ls_prob) + loss_ls
 
         return loss
 
@@ -414,14 +414,15 @@ class CTC(ModelBase):
             return logits, x_lens
 
     def decode(self, xs, beam_width, max_decode_len=None, min_decode_len=0,
-               length_penalty=0, coverage_penalty=0, rnnlm_weight=0,
-               task_index=0):
+               min_decode_len_ratio=0, length_penalty=0, coverage_penalty=0,
+               rnnlm_weight=0, task_index=0):
         """CTC decoding.
         Args:
             xs (list): A list of length `[B]`, which contains arrays of size `[T, input_size]`
             beam_width (int): the size of beam
             max_decode_len: not used
             min_decode_len: not used
+            min_decode_len_ratio: not used
             length_penalty: not used
             coverage_penalty: not used
             rnnlm_weight (float): the weight of RNNLM score in the beam search decoding
