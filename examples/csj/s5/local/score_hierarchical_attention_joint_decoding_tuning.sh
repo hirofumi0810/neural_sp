@@ -16,8 +16,7 @@ data=/n/sd8/inaguma/corpus/csj/kaldi
 beam_width=4
 length_penalty=0
 coverage_penalty=0
-joint_decoding=true
-resolving_unk=true
+resolving_unk=false
 
 CUDA_VISIBLE_DEVICES=$2 ${PYTHON} exp/evaluation/eval_hierarchical_tuning.py \
   --data_save_path $[data] \
@@ -29,4 +28,4 @@ CUDA_VISIBLE_DEVICES=$2 ${PYTHON} exp/evaluation/eval_hierarchical_tuning.py \
   --length_penalty ${length_penalty} \
   --coverage_penalty ${coverage_penalty} \
   --resolving_unk ${resolving_unk} \
-  --joint_decoding ${joint_decoding}
+  --joint_decoding true

@@ -24,8 +24,7 @@ rnnlm_path=
 rnnlm_path_sub=
 # rnnlm_path_sub=/n/sd8/inaguma/result/csj/pytorch/rnnlm/character_wb/aps_other/lstm512H2Lemb64_adam_lr1e-3_drophidden0.2out0.2emb0.2
 # rnnlm_path_sub=/n/sd8/inaguma/result/csj/pytorch/rnnlm/character_wb/all/lstm512H2Lemb64_adam_lr1e-3_drophidden0.2out0.2emb0.2_aps_other
-joint_decoding=true
-resolving_unk=true
+resolving_unk=false
 score_sub_weight=0.3
 
 CUDA_VISIBLE_DEVICES=$2 ${PYTHON} exp/visualization/decode_hierarchical.py \
@@ -39,6 +38,8 @@ CUDA_VISIBLE_DEVICES=$2 ${PYTHON} exp/visualization/decode_hierarchical.py \
   --coverage_penalty ${coverage_penalty} \
   --rnnlm_weight ${rnnlm_weight} \
   --rnnlm_path ${rnnlm_path} \
+  --rnnlm_weight_sub ${rnnlm_weight_sub} \
+  --rnnlm_path_sub ${rnnlm_path_sub} \
   --resolving_unk ${resolving_unk} \
-  --joint_decoding ${joint_decoding} \
+  --joint_decoding true \
   --score_sub_weight ${score_sub_weight}

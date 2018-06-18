@@ -17,7 +17,6 @@ beam_width=4
 beam_width_sub=4
 length_penalty=0
 coverage_penalty=0
-resolving_unk=false
 rnnlm_weight=0.3
 rnnlm_weight_sub=0.3
 rnnlm_path=
@@ -26,6 +25,7 @@ rnnlm_path=
 rnnlm_path_sub=
 # rnnlm_path_sub=/n/sd8/inaguma/result/csj/pytorch/rnnlm/character_wb/aps_other/lstm512H2Lemb64_adam_lr1e-3_drophidden0.2out0.2emb0.2
 # rnnlm_path_sub=/n/sd8/inaguma/result/csj/pytorch/rnnlm/character_wb/all/lstm512H2Lemb64_adam_lr1e-3_drophidden0.2out0.2emb0.2_aps_other
+resolving_unk=false
 a2c_oracle=false
 
 CUDA_VISIBLE_DEVICES=$2 ${PYTHON} exp/visualization/decode_hierarchical.py \

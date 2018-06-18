@@ -31,11 +31,11 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
 parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam')
 parser.add_argument('--length_penalty', type=float, default=0,
-                    help='length penalty in the beam search decoding')
+                    help='length penalty')
 parser.add_argument('--coverage_penalty', type=float, default=0,
-                    help='coverage penalty in the beam search decoding')
+                    help='coverage penalty')
 parser.add_argument('--rnnlm_weight', type=float, default=0,
-                    help='the weight of RNNLM score in the beam search decoding')
+                    help='the weight of RNNLM score')
 parser.add_argument('--rnnlm_path', default=None, type=str, nargs='?',
                     help='path to the RMMLM')
 
@@ -69,12 +69,11 @@ def main():
     # For cold fusion
     if config['rnnlm_fusion_type'] and config['rnnlm_path']:
         # Load a RNNLM config file
-        rnnlm_config = load_config(join(args.model_path, 'config_rnnlm.yml'))
-
-        assert config['label_type'] == rnnlm_config['label_type']
+        config['rnnlm_config'] = load_config(
+            join(args.model_path, 'config_rnnlm.yml'))
+        assert config['label_type'] == config['rnnlm_config']['label_type']
         assert args.rnnlm_weight > 0
-        rnnlm_config['num_classes'] = dataset.num_classes
-        config['rnnlm_config'] = rnnlm_config
+        config['rnnlm_config']['num_classes'] = dataset.num_classes
     else:
         config['rnnlm_config'] = None
 
@@ -91,7 +90,6 @@ def main():
         # Load a RNNLM config file
         config_rnnlm = load_config(
             join(args.rnnlm_path, 'config.yml'), is_eval=True)
-
         assert config['label_type'] == config_rnnlm['label_type']
         config_rnnlm['num_classes'] = dataset.num_classes
 
@@ -139,6 +137,17 @@ def main():
         ys = [batch['ys'][i] for i in perm_idx]
 
         for b in range(len(batch['xs'])):
+            token_list = map_fn(best_hyps[b], return_list=True)
+
+            speaker = batch['input_names'][b].split('_')[0]
+            plot_attention_weights(
+                aw[b][:len(token_list)],
+                label_list=token_list,
+                spectrogram=batch['xs'][b][:, :dataset.input_freq],
+                save_path=mkdir_join(save_path, speaker,
+                                     batch['input_names'][b] + '.png'),
+                figsize=(20, 8))
+
             # Reference
             if dataset.is_test:
                 str_ref = ys[b]
@@ -146,17 +155,8 @@ def main():
             else:
                 str_ref = map_fn(ys[b])
 
-            token_list = map_fn(best_hyps[b], return_list=True)
-
-            speaker = batch['input_names'][b].split('_')[0]
-            plot_attention_weights(
-                aw[b][:len(token_list)],  # TODO: fix this
-                label_list=token_list,
-                spectrogram=batch['xs'][b][:, :dataset.input_freq],
-                str_ref=str_ref,
-                save_path=mkdir_join(save_path, speaker,
-                                     batch['input_names'][b] + '.png'),
-                figsize=(20, 8))
+            with open(join(save_path, speaker, batch['input_names'][b] + '.txt'), 'w') as f:
+                f.write(str_ref)
 
         if is_new_epoch:
             break

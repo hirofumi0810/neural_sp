@@ -30,11 +30,11 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
 parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam')
 parser.add_argument('--length_penalty', type=float, default=0,
-                    help='length penalty in the beam search decoding')
+                    help='length penalty')
 parser.add_argument('--coverage_penalty', type=float, default=0,
-                    help='coverage penalty in the beam search decoding')
+                    help='coverage penalty')
 parser.add_argument('--rnnlm_weight', type=float, default=0,
-                    help='the weight of RNNLM score in the beam search decoding')
+                    help='the weight of RNNLM score')
 parser.add_argument('--rnnlm_path', default=None, type=str, nargs='?',
                     help='path to the RMMLM')
 
@@ -69,12 +69,11 @@ def main():
     # For cold fusion
     if config['rnnlm_fusion_type'] and config['rnnlm_path']:
         # Load a RNNLM config file
-        rnnlm_config = load_config(join(args.model_path, 'config_rnnlm.yml'))
-
-        assert config['label_type'] == rnnlm_config['label_type']
+        config['rnnlm_config'] = load_config(
+            join(args.model_path, 'config_rnnlm.yml'))
+        assert config['label_type'] == config['rnnlm_config']['label_type']
         assert args.rnnlm_weight > 0
-        rnnlm_config['num_classes'] = dataset.num_classes
-        config['rnnlm_config'] = rnnlm_config
+        config['rnnlm_config']['num_classes'] = dataset.num_classes
     else:
         config['rnnlm_config'] = None
 
@@ -91,7 +90,6 @@ def main():
         # Load a RNNLM config file
         config_rnnlm = load_config(
             join(args.rnnlm_path, 'config.yml'), is_eval=True)
-
         assert config['label_type'] == config_rnnlm['label_type']
         config_rnnlm['num_classes'] = dataset.num_classes
 
@@ -109,7 +107,7 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
-    # sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
+    sys.stdout = open(join(args.model_path, 'decode.txt'), 'w')
 
     if dataset.label_type == 'word':
         map_fn = dataset.idx2word
@@ -159,12 +157,7 @@ def main():
             print('Hyp: %s' % str_hyp.replace('_', ' '))
 
             # Remove noisy labels
-            str_hyp = str_hyp.replace('>', '')
-
-            # Remove consecutive spaces
-            str_hyp = re.sub(r'[_]+', '_', str_hyp)
-            if str_hyp[-1] == '_':
-                str_hyp = str_hyp[:-1]
+            str_hyp = str_hyp.replace('_>', '').replace('>', '')
 
             try:
                 if dataset.label_type in ['word', 'character_wb']:

@@ -35,13 +35,13 @@ parser.add_argument('--beam_width', type=int, default=1,
 parser.add_argument('--beam_width_sub', type=int, default=1,
                     help='the size of beam in the sub task')
 parser.add_argument('--length_penalty', type=float, default=0,
-                    help='length penalty in the beam search decoding')
+                    help='length penalty')
 parser.add_argument('--coverage_penalty', type=float, default=0,
-                    help='coverage penalty in the beam search decoding')
+                    help='coverage penalty')
 parser.add_argument('--rnnlm_weight', type=float, default=0,
-                    help='the weight of RNNLM score of the main task in the beam search decoding')
+                    help='the weight of RNNLM score of the main task')
 parser.add_argument('--rnnlm_weight_sub', type=float, default=0,
-                    help='the weight of RNNLM score of the sub task in the beam search decoding')
+                    help='the weight of RNNLM score of the sub task')
 parser.add_argument('--rnnlm_path', default=None, type=str,  nargs='?',
                     help='path to the RMMLM of the main task')
 parser.add_argument('--rnnlm_path_sub', default=None, type=str, nargs='?',
@@ -83,24 +83,21 @@ def main():
     # For cold fusion
     if config['rnnlm_fusion_type'] and config['rnnlm_path']:
         # Load a RNNLM config file
-        rnnlm_config = load_config(join(args.model_path, 'config_rnnlm.yml'))
-
-        assert config['label_type'] == rnnlm_config['label_type']
+        config['rnnlm_config'] = load_config(
+            join(args.model_path, 'config_rnnlm.yml'))
+        assert config['label_type'] == config['rnnlm_config']['label_type']
         assert args.rnnlm_weight > 0
-        rnnlm_config['num_classes'] = dataset.num_classes
-        config['rnnlm_config'] = rnnlm_config
+        config['rnnlm_config']['num_classes'] = dataset.num_classes
     else:
         config['rnnlm_config'] = None
 
     if config['rnnlm_fusion_type'] and config['rnnlm_path_sub']:
         # Load a RNNLM config file
-        rnnlm_config_sub = load_config(
+        config['rnnlm_config_sub'] = load_config(
             join(args.model_path, 'config_rnnlm_sub.yml'))
-
-        assert config['label_type_sub'] == rnnlm_config_sub['label_type']
+        assert config['label_type_sub'] == config['rnnlm_config_sub']['label_type']
         assert args.rnnlm_weight_sub > 0
-        rnnlm_config_sub['num_classes'] = dataset.num_classes_sub
-        config['rnnlm_config_sub'] = rnnlm_config_sub
+        config['rnnlm_config_sub']['num_classes'] = dataset.num_classes_sub
     else:
         config['rnnlm_config_sub'] = None
 
@@ -117,7 +114,6 @@ def main():
         # Load a RNNLM config file
         config_rnnlm = load_config(
             join(args.rnnlm_path, 'config.yml'), is_eval=True)
-
         assert config['label_type'] == config_rnnlm['label_type']
         config_rnnlm['num_classes'] = dataset.num_classes
 
@@ -133,7 +129,6 @@ def main():
         # Load a RNNLM config file
         config_rnnlm_sub = load_config(
             join(args.rnnlm_path_sub, 'config.yml'), is_eval=True)
-
         assert config['label_type_sub'] == config_rnnlm_sub['label_type']
         config_rnnlm_sub['num_classes'] = dataset.num_classes_sub
 
@@ -148,7 +143,7 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
-    # sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
+    sys.stdout = open(join(args.model_path, 'decode.txt'), 'w')
 
     word2char = Word2char(dataset.vocab_file_path,
                           dataset.vocab_file_path_sub)
@@ -213,6 +208,7 @@ def main():
                 length_penalty=args.length_penalty,
                 coverage_penalty=args.coverage_penalty,
                 rnnlm_weight=args.rnnlm_weight,
+                rnnlm_weight_sub=args.rnnlm_weight_sub,
                 joint_decoding=args.joint_decoding,
                 space_index=dataset.char2idx('_')[0],
                 oov_index=dataset.word2idx('OOV')[0],
@@ -258,16 +254,8 @@ def main():
                 print('Hyp (no UNK): %s' % str_hyp_no_unk.replace('_', ' '))
 
             # Remove noisy labels
-            str_hyp = str_hyp.replace('>', '')
-            str_hyp_sub = str_hyp_sub.replace('>', '')
-
-            # Remove consecutive spaces
-            str_hyp = re.sub(r'[_]+', '_', str_hyp)
-            str_hyp_sub = re.sub(r'[_]+', '_', str_hyp_sub)
-            if str_hyp[-1] == '_':
-                str_hyp = str_hyp[:-1]
-            if str_hyp_sub[-1] == '_':
-                str_hyp_sub = str_hyp_sub[:-1]
+            str_hyp = str_hyp.replace('_>', '').replace('>', '')
+            str_hyp_sub = str_hyp_sub.replace('_>', '').replace('>', '')
 
             # Resolving UNK
             if 'OOV' in str_hyp and args.resolving_unk:
@@ -303,7 +291,7 @@ def main():
                 print('--- skipped ---')
 
             if model.model_type == 'hierarchical_attention' and args.joint_decoding is not None:
-                print('===== joint decoding (%s) =====' % args.joint_decoding)
+                print('===== joint decoding =====')
                 print('Hyp (main)  : %s' % str_hyp_joint.replace('_', ' '))
                 print('Hyp (sub)   : %s' % str_hyp_sub_joint.replace('_', ' '))
                 if 'OOV' in str_hyp_joint and args.resolving_unk:

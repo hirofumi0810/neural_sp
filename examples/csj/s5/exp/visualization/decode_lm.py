@@ -67,7 +67,7 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
-    # sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
+    sys.stdout = open(join(args.model_path, 'decode.txt'), 'w')
 
     if dataset.label_type == 'word':
         map_fn = dataset.idx2word

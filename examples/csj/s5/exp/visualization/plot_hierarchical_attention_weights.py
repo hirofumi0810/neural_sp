@@ -35,13 +35,13 @@ parser.add_argument('--beam_width', type=int, default=1,
 parser.add_argument('--beam_width_sub', type=int, default=1,
                     help='the size of beam in the sub task')
 parser.add_argument('--length_penalty', type=float, default=0,
-                    help='length penalty in the beam search decoding')
+                    help='length penalty')
 parser.add_argument('--coverage_penalty', type=float, default=0,
-                    help='coverage penalty in the beam search decoding')
+                    help='coverage penalty')
 parser.add_argument('--rnnlm_weight', type=float, default=0,
-                    help='the weight of RNNLM score of the main task in the beam search decoding')
+                    help='the weight of RNNLM score of the main task')
 parser.add_argument('--rnnlm_weight_sub', type=float, default=0,
-                    help='the weight of RNNLM score of the sub task in the beam search decoding')
+                    help='the weight of RNNLM score of the sub task')
 parser.add_argument('--rnnlm_path', default=None, type=str, nargs='?',
                     help='path to the RMMLM of the main task')
 parser.add_argument('--rnnlm_path_sub', default=None, type=str, nargs='?',
@@ -81,24 +81,21 @@ def main():
     # For cold fusion
     if config['rnnlm_fusion_type'] and config['rnnlm_path']:
         # Load a RNNLM config file
-        rnnlm_config = load_config(join(args.model_path, 'config_rnnlm.yml'))
-
-        assert config['label_type'] == rnnlm_config['label_type']
+        config['rnnlm_config'] = load_config(
+            join(args.model_path, 'config_rnnlm.yml'))
+        assert config['label_type'] == config['rnnlm_config']['label_type']
         assert args.rnnlm_weight > 0
-        rnnlm_config['num_classes'] = dataset.num_classes
-        config['rnnlm_config'] = rnnlm_config
+        config['rnnlm_config']['num_classes'] = dataset.num_classes
     else:
         config['rnnlm_config'] = None
 
     if config['rnnlm_fusion_type'] and config['rnnlm_path_sub']:
         # Load a RNNLM config file
-        rnnlm_config_sub = load_config(
+        config['rnnlm_config_sub'] = load_config(
             join(args.model_path, 'config_rnnlm_sub.yml'))
-
-        assert config['label_type_sub'] == rnnlm_config_sub['label_type']
+        assert config['label_type_sub'] == config['rnnlm_config_sub']['label_type']
         assert args.rnnlm_weight_sub > 0
-        rnnlm_config_sub['num_classes'] = dataset.num_classes_sub
-        config['rnnlm_config_sub'] = rnnlm_config_sub
+        config['rnnlm_config_sub']['num_classes'] = dataset.num_classes_sub
     else:
         config['rnnlm_config_sub'] = None
 
@@ -115,7 +112,6 @@ def main():
         # Load a RNNLM config file
         config_rnnlm = load_config(
             join(args.rnnlm_path, 'config.yml'), is_eval=True)
-
         assert config['label_type'] == config_rnnlm['label_type']
         config_rnnlm['num_classes'] = dataset.num_classes
 
@@ -131,7 +127,6 @@ def main():
         # Load a RNNLM config file
         config_rnnlm_sub = load_config(
             join(args.rnnlm_path_sub, 'config.yml'), is_eval=True)
-
         assert config['label_type_sub'] == config_rnnlm_sub['label_type']
         config_rnnlm_sub['num_classes'] = dataset.num_classes_sub
 
@@ -193,6 +188,8 @@ def main():
                 rnnlm_weight=args.rnnlm_weight_sub,
                 task_index=1)
 
+        ys = [batch['ys'][i] for i in perm_idx]
+
         for b in range(len(batch['xs'])):
             word_list = dataset.idx2word(best_hyps[b], return_list=True)
             char_list = dataset.idx2char(best_hyps_sub[b], return_list=True)
@@ -209,6 +206,16 @@ def main():
                                      batch['input_names'][b] + '.png'),
                 figsize=(40, 8)
             )
+
+            # Reference
+            if dataset.is_test:
+                str_ref = ys[b]
+                # NOTE: transcript is seperated by space('_')
+            else:
+                str_ref = dataset.idx2word(ys[b])
+
+            with open(join(save_path, speaker, batch['input_names'][b] + '.txt'), 'w') as f:
+                f.write(str_ref)
 
         if is_new_epoch:
             break

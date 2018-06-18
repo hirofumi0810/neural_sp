@@ -24,7 +24,6 @@ rnnlm_path=
 rnnlm_path_sub=
 # rnnlm_path_sub=/n/sd8/inaguma/result/csj/pytorch/rnnlm/character_wb/aps_other/lstm512H2Lemb64_adam_lr1e-3_drophidden0.2out0.2emb0.2
 # rnnlm_path_sub=/n/sd8/inaguma/result/csj/pytorch/rnnlm/character_wb/all/lstm512H2Lemb64_adam_lr1e-3_drophidden0.2out0.2emb0.2_aps_other
-joint_decoding=true
 score_sub_weight=0.3
 
 CUDA_VISIBLE_DEVICES=$2 ${PYTHON} exp/visualization/plot_hierarchical_attention_weights.py \
@@ -38,5 +37,7 @@ CUDA_VISIBLE_DEVICES=$2 ${PYTHON} exp/visualization/plot_hierarchical_attention_
   --coverage_penalty ${coverage_penalty} \
   --rnnlm_weight ${rnnlm_weight} \
   --rnnlm_path ${rnnlm_path} \
-  --joint_decoding ${joint_decoding} \
+  --rnnlm_weight_sub ${rnnlm_weight_sub} \
+  --rnnlm_path_sub ${rnnlm_path_sub} \
+  --joint_decoding true \
   --score_sub_weight ${score_sub_weight}

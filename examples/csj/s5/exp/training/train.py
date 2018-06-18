@@ -190,7 +190,12 @@ def main():
         # Restore the last saved model
         epoch, step, learning_rate, metric_dev_best = model.load_checkpoint(
             save_path=args.saved_model_path, epoch=-1, restart=True)
-        model.rnnlm_0.rnn.flatten_parameters()
+
+        if config['rnnlm_fusion_type'] and config['rnnlm_path']:
+            if config['rnnlm_config']['backward']:
+                model.rnnlm_0_bwd.rnn.flatten_parameters()
+            else:
+                model.rnnlm_0_fwd.rnn.flatten_parameters()
 
     else:
         raise ValueError("Set model_save_path or saved_model_path.")
@@ -253,13 +258,12 @@ def main():
             if config['backend'] == 'pytorch':
                 tf_writer.add_scalar('train/loss', loss_train_mean, step + 1)
                 tf_writer.add_scalar('dev/loss', loss_dev, step + 1)
-                # for name, param in model.named_parameters():
-                #     name = name.replace('.', '/')
-                #     tf_writer.add_histogram(
-                #         name, param.data.cpu().numpy(), step + 1)
-                #     tf_writer.add_histogram(
-                #         name + '/grad', param.grad.data.cpu().numpy(), step + 1)
-                # TODO: fix this
+                for name, param in model.named_parameters():
+                    name = name.replace('.', '/')
+                    tf_writer.add_histogram(
+                        name, param.data.cpu().numpy(), step + 1)
+                    tf_writer.add_histogram(
+                        name + '/grad', param.grad.data.cpu().numpy(), step + 1)
 
             duration_step = time.time() - start_time_step
             logger.info("...Step:%d(epoch:%.3f) loss:%.3f(%.3f)/lr:%.5f/batch:%d/x_lens:%d (%.3f min)" %

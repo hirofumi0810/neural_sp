@@ -42,7 +42,7 @@ def eval_word(models, dataset, eval_batch_size,
         progressbar (bool): if True, visualize the progressbar
         resolving_unk (bool):
         a2c_oracle (bool):
-        joint_decoding (bool): onepass or resocring or None
+        joint_decoding (bool):
         score_sub_weight (float):
     Returns:
         wer (float): Word error rate
@@ -54,7 +54,7 @@ def eval_word(models, dataset, eval_batch_size,
     model = models[0]
     # TODO: fix this
 
-    if model.model_type == 'hierarchical_attention' and joint_decoding is not None:
+    if model.model_type == 'hierarchical_attention' and joint_decoding:
         word2char = Word2char(dataset.vocab_file_path,
                               dataset.vocab_file_path_sub)
 
@@ -99,7 +99,7 @@ def eval_word(models, dataset, eval_batch_size,
                 rnnlm_weight_sub=rnnlm_weight_sub,
                 teacher_forcing=a2c_oracle,
                 ys_sub=ys_sub)
-        elif model.model_type == 'hierarchical_attention' and joint_decoding is not None:
+        elif model.model_type == 'hierarchical_attention' and joint_decoding:
             best_hyps, aw, best_hyps_sub, aw_sub, perm_idx = model.decode(
                 batch['xs'],
                 beam_width=beam_width,
@@ -156,15 +156,15 @@ def eval_word(models, dataset, eval_batch_size,
 
             # Remove noisy labels
             str_ref = re.sub(r'[@]+', '', str_ref)
-            str_hyp = re.sub(r'[@>]+', '', str_hyp)
+            str_hyp = re.sub(r'[@]+', '', str_hyp)
             # NOTE: @ means <sp>
 
             # Remove consecutive spaces
             str_ref = re.sub(r'[_]+', '_', str_ref)
             str_hyp = re.sub(r'[_]+', '_', str_hyp)
-            if str_ref[-1] == '_':
+            if len(str_ref) > 0 and str_ref[-1] == '_':
                 str_ref = str_ref[:-1]
-            if str_hyp[-1] == '_':
+            if len(str_hyp) > 0 and str_hyp[-1] == '_':
                 str_hyp = str_hyp[:-1]
 
             # Compute WER

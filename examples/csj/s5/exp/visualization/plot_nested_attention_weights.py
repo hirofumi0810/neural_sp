@@ -91,7 +91,7 @@ def main():
 
     # TODO: add cold fusion
 
-    # Load the ASR model
+    # Load the model
     model = load(model_type=config['model_type'],
                  config=config,
                  backend=config['backend'])
@@ -104,7 +104,6 @@ def main():
         # Load a RNNLM config file
         config_rnnlm = load_config(
             join(args.rnnlm_path, 'config.yml'), is_eval=True)
-
         assert config['label_type'] == config_rnnlm['label_type']
         config_rnnlm['num_classes'] = dataset.num_classes
 
@@ -120,7 +119,6 @@ def main():
         # Load a RNNLM config file
         config_rnnlm_sub = load_config(
             join(args.rnnlm_path_sub, 'config.yml'), is_eval=True)
-
         assert config['label_type_sub'] == config_rnnlm_sub['label_type']
         config_rnnlm_sub['num_classes'] = dataset.num_classes_sub
 
@@ -160,7 +158,7 @@ def main():
         else:
             ys_sub = None
 
-        best_hyps, aw, best_hyps_sub, aw_sub, aw_dec, _ = model.decode(
+        best_hyps, aw, best_hyps_sub, aw_sub, aw_dec, perm_idx = model.decode(
             batch['xs'],
             beam_width=args.beam_width,
             max_decode_len=MAX_DECODE_LEN_WORD,
@@ -174,6 +172,8 @@ def main():
             rnnlm_weight_sub=args.rnnlm_weight_sub,
             teacher_forcing=args.a2c_oracle,
             ys_sub=ys_sub)
+
+        ys = [batch['ys'][i] for i in perm_idx]
 
         for b in range(len(batch['xs'])):
             word_list = dataset.idx2word(best_hyps[b], return_list=True)
@@ -208,8 +208,15 @@ def main():
                 figsize=(40, 8)
             )
 
-            # with open(join(save_path, speaker, batch['input_names'][b] + '.txt'), 'w') as f:
-            #     f.write(batch['ys'][b])
+            # Reference
+            if dataset.is_test:
+                str_ref = ys[b]
+                # NOTE: transcript is seperated by space('_')
+            else:
+                str_ref = dataset.idx2word(ys[b])
+
+            with open(join(save_path, speaker, batch['input_names'][b] + '.txt'), 'w') as f:
+                f.write(str_ref)
 
         if is_new_epoch:
             break

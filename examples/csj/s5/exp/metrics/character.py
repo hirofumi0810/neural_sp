@@ -96,9 +96,9 @@ def eval_char(models, dataset, eval_batch_size, beam_width,
             # Remove consecutive spaces
             str_ref = re.sub(r'[_]+', '_', str_ref)
             str_hyp = re.sub(r'[_]+', '_', str_hyp)
-            if str_ref[-1] == '_':
+            if len(str_ref) > 0 and str_ref[-1] == '_':
                 str_ref = str_ref[:-1]
-            if str_hyp[-1] == '_':
+            if len(str_hyp) > 0 and str_hyp[-1] == '_':
                 str_hyp = str_hyp[:-1]
 
             if dataset.label_type == 'character_wb' or (task_index > 0 and dataset.label_type_sub == 'character_wb'):
