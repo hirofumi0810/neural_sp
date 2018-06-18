@@ -7,11 +7,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import re
 from tqdm import tqdm
 import pandas as pd
 
 from utils.evaluation.edit_distance import compute_wer
+from utils.evaluation.normalization import normalize
 
 
 def eval_char(models, dataset, eval_batch_size, beam_width,
@@ -88,18 +88,9 @@ def eval_char(models, dataset, eval_batch_size, beam_width,
             # Hypothesis
             str_hyp = dataset.idx2char(best_hyps[b])
 
-            # Remove noisy labels
-            str_ref = re.sub(r'[@]+', '', str_ref)
-            str_hyp = re.sub(r'[@>]+', '', str_hyp)
+            str_ref = normalize(str_ref, remove_tokens=['@'])
+            str_hyp = normalize(str_hyp, remove_tokens=['@', '>'])
             # NOTE: @ means <sp>
-
-            # Remove consecutive spaces
-            str_ref = re.sub(r'[_]+', '_', str_ref)
-            str_hyp = re.sub(r'[_]+', '_', str_hyp)
-            if len(str_ref) > 0 and str_ref[-1] == '_':
-                str_ref = str_ref[:-1]
-            if len(str_hyp) > 0 and str_hyp[-1] == '_':
-                str_hyp = str_hyp[:-1]
 
             if dataset.label_type == 'character_wb' or (task_index > 0 and dataset.label_type_sub == 'character_wb'):
                 # Compute WER
@@ -155,10 +146,10 @@ def eval_char(models, dataset, eval_batch_size, beam_width,
     ins_char /= num_chars
     del_char /= num_chars
 
-    df_char = pd.DataFrame(
-        {'SUB': [sub_word * 100, sub_char * 100],
-         'INS': [ins_word * 100, ins_char * 100],
-         'DEL': [del_word * 100, del_char * 100]},
-        columns=['SUB', 'INS', 'DEL'], index=['WER', 'CER'])
+    df_char = pd.DataFrame({'SUB': [sub_word, sub_char],
+                            'INS': [ins_word, ins_char],
+                            'DEL': [del_word, del_char]},
+                           columns=['SUB', 'INS', 'DEL'],
+                           index=['WER', 'CER'])
 
     return wer, cer, df_char

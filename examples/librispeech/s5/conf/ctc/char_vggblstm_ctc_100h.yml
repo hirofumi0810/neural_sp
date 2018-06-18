@@ -34,7 +34,7 @@ param:
   fc_list: [320]
 
   # optimization
-  batch_size: 20
+  batch_size: 25
 
   # initialization
   pretrained_model_path: False

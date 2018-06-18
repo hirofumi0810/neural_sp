@@ -95,7 +95,7 @@ param:
   decay_rate: 0.97
   decay_patient_epoch: 1
   sort_stop_epoch: 100
-  not_improved_patient_epoch: 10
+  not_improved_patient_epoch: 20
   eval_start_epoch: 10
   print_step: 10
 

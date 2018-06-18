@@ -15,8 +15,8 @@ from distutils.util import strtobool
 sys.path.append(abspath('../../../'))
 from models.load_model import load
 from examples.librispeech.s5.exp.dataset.load_dataset_hierarchical import Dataset
-from examples.wsj.s5.exp.metrics.character import eval_char
-from examples.wsj.s5.exp.metrics.word import eval_word
+from examples.librispeech.s5.exp.metrics.character import eval_char
+from examples.librispeech.s5.exp.metrics.word import eval_word
 from utils.config import load_config
 from utils.evaluation.logging import set_logger
 
@@ -27,20 +27,20 @@ parser.add_argument('--model_path', type=str,
                     help='path to the model to evaluate')
 parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
+parser.add_argument('--eval_batch_size', type=int, default=1,
+                    help='the size of mini-batch in evaluation')
 parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam in the main task')
 parser.add_argument('--beam_width_sub', type=int, default=1,
                     help='the size of beam in the sub task')
-parser.add_argument('--eval_batch_size', type=int, default=1,
-                    help='the size of mini-batch in evaluation')
 parser.add_argument('--length_penalty', type=float, default=0,
-                    help='length penalty in beam search decoding')
+                    help='length penalty')
 parser.add_argument('--coverage_penalty', type=float, default=0,
-                    help='coverage penalty in beam search decoding')
+                    help='coverage penalty')
 parser.add_argument('--rnnlm_weight', type=float, default=0,
-                    help='the weight of RNNLM score of the main task in the beam search decoding')
+                    help='the weight of RNNLM score of the main task')
 parser.add_argument('--rnnlm_weight_sub', type=float, default=0,
-                    help='the weight of RNNLM score of the sub task in the beam search decoding')
+                    help='the weight of RNNLM score of the sub task')
 parser.add_argument('--rnnlm_path', default=None, type=str, nargs='?',
                     help='path to the RMMLM of the main task')
 parser.add_argument('--rnnlm_path_sub', default=None, type=str, nargs='?',
@@ -52,8 +52,10 @@ parser.add_argument('--score_sub_weight', type=float, default=0)
 
 MAX_DECODE_LEN_WORD = 200
 MIN_DECODE_LEN_WORD = 1
+MIN_DECODE_LEN_RATIO_WORD = 0
 MAX_DECODE_LEN_CHAR = 600
 MIN_DECODE_LEN_CHAR = 1
+MIN_DECODE_LEN_RATIO_CHAR = 0.2
 
 
 def main():
@@ -78,7 +80,7 @@ def main():
                           label_type=config['label_type'],
                           label_type_sub=config['label_type_sub'],
                           batch_size=args.eval_batch_size,
-                          sort_utt=False, tool=config['tool'])
+                          tool=config['tool'])
 
         if i == 0:
             config['num_classes'] = dataset.num_classes
@@ -87,23 +89,25 @@ def main():
             # For cold fusion
             if config['rnnlm_fusion_type'] and config['rnnlm_path']:
                 # Load a RNNLM config file
-                rnnlm_config = load_config(
+                config['rnnlm_config'] = load_config(
                     join(args.model_path, 'config_rnnlm.yml'))
-
-                assert config['label_type'] == rnnlm_config['label_type']
-                rnnlm_config['num_classes'] = dataset.num_classes
-                config['rnnlm_config'] = rnnlm_config
+                assert config['label_type'] == config['rnnlm_config']['label_type']
+                assert args.rnnlm_weight > 0
+                config['rnnlm_config']['num_classes'] = dataset.num_classes
+                logger.info('RNNLM path (main): %s' % config['rnnlm_path'])
+                logger.info('RNNLM weight (main): %.3f' % args.rnnlm_weight)
             else:
                 config['rnnlm_config'] = None
 
             if config['rnnlm_fusion_type'] and config['rnnlm_path_sub']:
                 # Load a RNNLM config file
-                rnnlm_config_sub = load_config(
+                config['rnnlm_config_sub'] = load_config(
                     join(args.model_path, 'config_rnnlm_sub.yml'))
-
-                assert config['label_type_sub'] == rnnlm_config_sub['label_type']
-                rnnlm_config_sub['num_classes'] = dataset.num_classes_sub
-                config['rnnlm_config_sub'] = rnnlm_config_sub
+                assert config['label_type_sub'] == config['rnnlm_config_sub']['label_type']
+                assert args.rnnlm_weight_sub > 0
+                config['rnnlm_config_sub']['num_classes'] = dataset.num_classes_sub
+                logger.info('RNNLM path (sub): %s' % config['rnnlm_path_sub'])
+                logger.info('RNNLM weight (sub): %.3f' % args.rnnlm_weight_sub)
             else:
                 config['rnnlm_config_sub'] = None
 
@@ -121,7 +125,6 @@ def main():
                 # Load a RNNLM config file
                 config_rnnlm = load_config(
                     join(args.rnnlm_path, 'config.yml'), is_eval=True)
-
                 assert config['label_type'] == config_rnnlm['label_type']
                 config_rnnlm['num_classes'] = dataset.num_classes
 
@@ -132,12 +135,13 @@ def main():
                 rnnlm.load_checkpoint(save_path=args.rnnlm_path, epoch=-1)
                 rnnlm.rnn.flatten_parameters()
                 model.rnnlm_0_fwd = rnnlm
+                logger.info('RNNLM path (main): %s' % args.rnnlm_path)
+                logger.info('RNNLM weight (main): %.3f' % args.rnnlm_weight)
 
             if not (config['rnnlm_fusion_type'] and config['rnnlm_path_sub']) and args.rnnlm_path_sub is not None and args.rnnlm_weight_sub > 0:
                 # Load a RNNLM config file
                 config_rnnlm_sub = load_config(
                     join(args.rnnlm_path_sub, 'config.yml'), is_eval=True)
-
                 assert config['label_type_sub'] == config_rnnlm_sub['label_type']
                 config_rnnlm_sub['num_classes'] = dataset.num_classes_sub
 
@@ -149,24 +153,14 @@ def main():
                     save_path=args.rnnlm_path_sub, epoch=-1)
                 rnnlm_sub.rnn.flatten_parameters()
                 model.rnnlm_1_fwd = rnnlm_sub
+                logger.info('RNNLM path (sub): %s' % args.rnnlm_path_sub)
+                logger.info('RNNLM weight (sub): %.3f' % args.rnnlm_weight_sub)
 
             # GPU setting
             model.set_cuda(deterministic=False, benchmark=True)
 
             logger.info('beam width (main): %d' % args.beam_width)
-            if config['rnnlm_fusion_type'] and config['rnnlm_path']:
-                logger.info('RNNLM path: %s' % config['rnnlm_path'])
-                logger.info('RNNLM weight: %.3f' % args.rnnlm_weight)
-            if args.rnnlm_path is not None:
-                logger.info('RNNLM path (main): %s' % args.rnnlm_path)
-                logger.info('RNNLM weight (main): %.3f' % args.rnnlm_weight)
             logger.info('beam width (sub) : %d' % args.beam_width_sub)
-            if config['rnnlm_fusion_type'] and config['rnnlm_path_sub']:
-                logger.info('RNNLM path (sub): %s' % config['rnnlm_path_sub'])
-                logger.info('RNNLM weight (sub): %.3f' % args.rnnlm_weight_sub)
-            elif args.rnnlm_path_sub is not None:
-                logger.info('RNNLM path (sub): %s' % args.rnnlm_path_sub)
-                logger.info('RNNLM weight (sub): %.3f' % args.rnnlm_weight_sub)
             logger.info('epoch: %d' % (epoch - 1))
             logger.info('a2c oracle: %s' % str(args.a2c_oracle))
             logger.info('resolving_unk: %s' % str(args.resolving_unk))
@@ -179,9 +173,11 @@ def main():
                             beam_width=args.beam_width,
                             max_decode_len=MAX_DECODE_LEN_WORD,
                             min_decode_len=MIN_DECODE_LEN_WORD,
+                            min_decode_len_ratio=MIN_DECODE_LEN_RATIO_WORD,
                             beam_width_sub=args.beam_width_sub,
                             max_decode_len_sub=MAX_DECODE_LEN_CHAR,
                             min_decode_len_sub=MIN_DECODE_LEN_CHAR,
+                            min_decode_len_ratio_sub=MIN_DECODE_LEN_RATIO_CHAR,
                             length_penalty=args.length_penalty,
                             coverage_penalty=args.coverage_penalty,
                             rnnlm_weight=args.rnnlm_weight,
@@ -191,8 +187,7 @@ def main():
                             a2c_oracle=args.a2c_oracle,
                             joint_decoding=args.joint_decoding,
                             score_sub_weight=args.score_sub_weight)
-        logger.info('  WER (%s, main): %.3f %%' %
-                    (dataset.data_type, (wer * 100)))
+        logger.info('  WER (%s, main): %.3f %%' % (data_type, wer))
         logger.info(df)
 
         wer, cer, df = eval_char(models=[model],
@@ -201,12 +196,13 @@ def main():
                                  beam_width=args.beam_width_sub,
                                  max_decode_len=MAX_DECODE_LEN_CHAR,
                                  min_decode_len=MIN_DECODE_LEN_CHAR,
+                                 min_decode_len_ratio=MIN_DECODE_LEN_RATIO_CHAR,
                                  length_penalty=args.length_penalty,
                                  coverage_penalty=args.coverage_penalty,
                                  rnnlm_weight=args.rnnlm_weight_sub,
                                  progressbar=True)
         logger.info(' WER / CER (%s, sub): %.3f / %.3f %%' %
-                    (dataset.data_type, (wer * 100), (cer * 100)))
+                    (data_type, wer, cer))
         logger.info(df)
 
 

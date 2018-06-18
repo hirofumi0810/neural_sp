@@ -98,6 +98,8 @@ def main():
     config['num_classes'] = train_data.num_classes
     config['num_classes_sub'] = train_data.num_classes_sub
 
+    # TODO: add mult-level cold fusion
+
     # Model setting
     model = load(model_type=config['model_type'],
                  config=config,
@@ -146,7 +148,7 @@ def main():
 
         epoch, step = 1, 0
         learning_rate = float(config['learning_rate'])
-        metric_dev_best = 1
+        metric_dev_best = 100
 
     # NOTE: Restart from the last checkpoint
     elif args.saved_model_path is not None:
@@ -243,14 +245,13 @@ def main():
                 tf_writer.add_scalar('dev/loss', loss_dev, step + 1)
                 tf_writer.add_scalar('dev/loss_main', loss_main_dev, step + 1)
                 tf_writer.add_scalar('dev/loss_sub', loss_sub_dev, step + 1)
-                # for name, param in model.named_parameters():
-                #     name = name.replace('.', '/')
-                #     tf_writer.add_histogram(
-                #         name, param.data.cpu().numpy(), step + 1)
-                #     if param.grad is not None:
-                #         tf_writer.add_histogram(
-                #             name + '/grad', param.grad.data.cpu().numpy(), step + 1)
-                # TODO: fix this
+                for name, param in model.named_parameters():
+                    name = name.replace('.', '/')
+                    tf_writer.add_histogram(
+                        name, param.data.cpu().numpy(), step + 1)
+                    if param.grad is not None:
+                        tf_writer.add_histogram(
+                            name + '/grad', param.grad.data.cpu().numpy(), step + 1)
 
             duration_step = time.time() - start_time_step
             logger.info("...Step:%d(epoch:%.3f) loss:%.3f/%.3f/%.3f(%.3f/%.3f/%.3f)/lr:%.5f/batch:%d/x_lens:%d (%.3f min)" %
@@ -289,8 +290,8 @@ def main():
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_WORD,
                         max_decode_len_sub=MAX_DECODE_LEN_CHAR)
-                    logger.info('  WER (dev-clean, main): %.3f %%' %
-                                (metric_dev * 100))
+                    logger.info('  WER (%s, main): %.3f %%' %
+                                (dev_data.data_type, metric_dev))
                 else:
                     wer_dev_sub, metric_dev, _ = eval_char(
                         models=[model],
@@ -298,8 +299,8 @@ def main():
                         eval_batch_size=1,
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_CHAR)
-                    logger.info('  WER / CER (dev-clean, sub): %.3f / %.3f %%' %
-                                ((wer_dev_sub * 100), (metric_dev * 100)))
+                    logger.info('  WER / CER (%s, sub): %.3f / %.3f %%' %
+                                (dev_data.data_type, wer_dev_sub, metric_dev))
 
                 if metric_dev < metric_dev_best:
                     metric_dev_best = metric_dev
@@ -319,8 +320,8 @@ def main():
                             beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_WORD,
                             max_decode_len_sub=MAX_DECODE_LEN_CHAR)
-                        logger.info('  WER (test-clean, main): %.3f %%' %
-                                    (wer_test * 100))
+                        logger.info('  WER (%s, main): %.3f %%' %
+                                    (test_data.data_type, wer_test))
                     else:
                         wer_test_sub, cer_test_sub, _ = eval_char(
                             models=[model],
@@ -328,8 +329,8 @@ def main():
                             eval_batch_size=1,
                             beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_CHAR)
-                        logger.info(' WER / CER (test-clean, sub): %.3f / %.3f %%' %
-                                    ((wer_test_sub * 100), (cer_test_sub * 100)))
+                        logger.info('  WER / CER (%s, sub): %.3f / %.3f %%' %
+                                    (test_data.data_type, wer_test_sub, cer_test_sub))
                 else:
                     not_improved_epoch += 1
 

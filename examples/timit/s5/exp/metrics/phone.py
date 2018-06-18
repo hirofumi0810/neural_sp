@@ -7,11 +7,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import re
 from tqdm import tqdm
 import pandas as pd
 
 from utils.evaluation.edit_distance import compute_wer
+from utils.evaluation.normalization import normalize
 
 
 def eval_phone(model, dataset, map_file_path, eval_batch_size, beam_width,
@@ -71,10 +71,7 @@ def eval_phone(model, dataset, map_file_path, eval_batch_size, beam_width,
             # Hypothesis
             str_hyp = dataset.idx2phone(best_hyps[b])
 
-            # Remove <EOS>
-            str_hyp = re.sub(r'[>]+', '', str_hyp)
-            if len(str_hyp) > 0 and str_hyp[-1] == '_':
-                str_hyp = str_hyp[:-1]
+            str_hyp = normalize(str_hyp, remove_tokens=['>'])
 
             phone_hyp_list = str_hyp.split('_')
 
@@ -85,10 +82,9 @@ def eval_phone(model, dataset, map_file_path, eval_batch_size, beam_width,
 
             # Compute PER
             try:
-                per_b, sub_b, ins_b, del_b = compute_wer(
-                    ref=phone_ref_list,
-                    hyp=phone_hyp_list,
-                    normalize=False)
+                per_b, sub_b, ins_b, del_b = compute_wer(ref=phone_ref_list,
+                                                         hyp=phone_hyp_list,
+                                                         normalize=False)
                 per += per_b
                 sub += sub_b
                 ins += ins_b
@@ -114,9 +110,9 @@ def eval_phone(model, dataset, map_file_path, eval_batch_size, beam_width,
     ins /= num_phones
     dele /= num_phones
 
-    df_phone = pd.DataFrame(
-        {'SUB': [sub * 100], 'INS': [ins * 100], 'DEL': [dele * 100]},
-        columns=['SUB', 'INS', 'DEL'], index=['PER'])
+    df_phone = pd.DataFrame({'SUB': [sub], 'INS': [ins], 'DEL': [dele]},
+                            columns=['SUB', 'INS', 'DEL'],
+                            index=['PER'])
 
     return per, df_phone
 

@@ -107,8 +107,7 @@ def main():
                             resolving_unk=args.resolving_unk,
                             joint_decoding=args.joint_decoding,
                             score_sub_weight=score_sub_weight)
-        logger.info('  WER (%s, main): %.3f %%' %
-                    (dataset.data_type, (wer * 100)))
+        logger.info('  WER (%s, main): %.3f %%' % (dataset.data_type, wer))
         logger.info(df)
 
 

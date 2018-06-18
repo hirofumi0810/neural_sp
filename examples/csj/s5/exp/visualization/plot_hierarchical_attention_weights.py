@@ -193,11 +193,10 @@ def main():
         for b in range(len(batch['xs'])):
             word_list = dataset.idx2word(best_hyps[b], return_list=True)
             char_list = dataset.idx2char(best_hyps_sub[b], return_list=True)
-
             speaker = batch['input_names'][b].split('_')[0]
 
             plot_hierarchical_attention_weights(
-                aw[b][:len(word_list)],  # TODO: fix this
+                aw[b][:len(word_list)],
                 aw_sub[b][:len(char_list)],
                 label_list=word_list,
                 label_list_sub=char_list,

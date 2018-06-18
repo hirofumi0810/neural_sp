@@ -17,6 +17,7 @@ echo ===========================================================================
 
 stage=0
 run_background=true
+# run_background=false
 
 ### Set path to original data
 TIMITDATATOP="/n/rd21/corpora_1/TIMIT"

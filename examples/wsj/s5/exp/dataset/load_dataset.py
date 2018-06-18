@@ -116,14 +116,10 @@ class Dataset(DatasetBase):
 
         if min_frame_num_batch <= 800:
             pass
-        elif min_frame_num_batch <= 1200:
+        elif min_frame_num_batch <= 1600:
             batch_size = int(batch_size / 2)
-        elif min_frame_num_batch <= 1500:
-            batch_size = int(batch_size / 2)
-        elif min_frame_num_batch <= 1700:
-            batch_size = int(batch_size / 4)
         else:
-            batch_size = int(batch_size / 8)
+            batch_size = int(batch_size / 4)
 
         if batch_size < 1:
             batch_size = 1

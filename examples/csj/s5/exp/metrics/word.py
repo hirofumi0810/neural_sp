@@ -7,13 +7,13 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import re
 from tqdm import tqdm
 import pandas as pd
 
 from utils.io.labels.word import Word2char
 from utils.evaluation.edit_distance import compute_wer
 from utils.evaluation.resolving_unk import resolve_unk
+from utils.evaluation.normalization import normalize
 
 
 def eval_word(models, dataset, eval_batch_size,
@@ -154,18 +154,9 @@ def eval_word(models, dataset, eval_batch_size,
                     str_hyp, best_hyps_sub[b], aw[b], aw_sub[b], dataset.idx2char)
                 str_hyp = str_hyp.replace('*', '')
 
-            # Remove noisy labels
-            str_ref = re.sub(r'[@]+', '', str_ref)
-            str_hyp = re.sub(r'[@]+', '', str_hyp)
+            str_ref = normalize(str_ref, remove_tokens=['@'])
+            str_hyp = normalize(str_hyp, remove_tokens=['@', '>'])
             # NOTE: @ means <sp>
-
-            # Remove consecutive spaces
-            str_ref = re.sub(r'[_]+', '_', str_ref)
-            str_hyp = re.sub(r'[_]+', '_', str_hyp)
-            if len(str_ref) > 0 and str_ref[-1] == '_':
-                str_ref = str_ref[:-1]
-            if len(str_hyp) > 0 and str_hyp[-1] == '_':
-                str_hyp = str_hyp[:-1]
 
             # Compute WER
             try:
@@ -198,8 +189,8 @@ def eval_word(models, dataset, eval_batch_size,
     ins /= num_words
     dele /= num_words
 
-    df_word = pd.DataFrame(
-        {'SUB': [sub * 100], 'INS': [ins * 100], 'DEL': [dele * 100]},
-        columns=['SUB', 'INS', 'DEL'], index=['WER'])
+    df_word = pd.DataFrame({'SUB': [sub], 'INS': [ins], 'DEL': [dele]},
+                           columns=['SUB', 'INS', 'DEL'],
+                           index=['WER'])
 
     return wer, df_word

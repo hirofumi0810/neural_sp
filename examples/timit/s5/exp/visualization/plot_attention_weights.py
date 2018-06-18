@@ -31,9 +31,9 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
 parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam')
 parser.add_argument('--length_penalty', type=float, default=0,
-                    help='length penalty in the beam search decoding')
+                    help='length penalty')
 parser.add_argument('--coverage_penalty', type=float, default=0,
-                    help='coverage penalty in the beam search decoding')
+                    help='coverage penalty')
 
 MAX_DECODE_LEN_PHONE = 71
 MIN_DECODE_LEN_PHONE = 13

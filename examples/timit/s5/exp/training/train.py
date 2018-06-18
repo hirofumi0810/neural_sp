@@ -138,7 +138,7 @@ def main():
 
         epoch, step = 1, 0
         learning_rate = float(config['learning_rate'])
-        metric_dev_best = 1
+        metric_dev_best = 100
 
     # NOTE: Retrain the saved model from the last checkpoint
     elif args.saved_model_path is not None:
@@ -266,7 +266,8 @@ def main():
                     eval_batch_size=1,
                     beam_width=1,
                     max_decode_len=MAX_DECODE_LEN_PHONE)
-                logger.info('  PER (dev): %.3f %%' % (per_dev_epoch * 100))
+                logger.info('  PER (%s): %.3f %%' %
+                            (dev_data.data_type, per_dev_epoch))
 
                 if per_dev_epoch < metric_dev_best:
                     metric_dev_best = per_dev_epoch
@@ -286,7 +287,8 @@ def main():
                         eval_batch_size=1,
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_PHONE)
-                    logger.info('  PER (test): %.3f %%' % (per_test * 100))
+                    logger.info('  PER (%s): %.3f %%' %
+                                (test_data.data_type, per_test))
                 else:
                     not_improved_epoch += 1
 
@@ -338,6 +340,18 @@ def main():
 
     # Evaluate the best model by beam search
     if best_model is not None:
+        logger.info('========== Best model ==========')
+        per_dev_best, _ = eval_phone(
+            model=best_model,
+            dataset=dev_data,
+            map_file_path='./conf/phones.60-48-39.map',
+            eval_batch_size=1,
+            beam_width=10,
+            max_decode_len=MAX_DECODE_LEN_PHONE,
+            min_decode_len=MIN_DECODE_LEN_PHONE)
+        logger.info('  PER (%s, beam: 10): %.3f %%' %
+                    (dev_data.data_type, per_dev_best))
+
         per_test_best, _ = eval_phone(
             model=best_model,
             dataset=test_data,
@@ -346,8 +360,8 @@ def main():
             beam_width=10,
             max_decode_len=MAX_DECODE_LEN_PHONE,
             min_decode_len=MIN_DECODE_LEN_PHONE)
-        logger.info('  PER (test (best), beam: 10): %.3f %%' %
-                    (per_test_best * 100))
+        logger.info('  PER (%s, beam: 10): %.3f %%' %
+                    (test_data.data_type, per_test_best))
 
     # Training was finished correctly
     with open(os.path.join(model.save_path, 'COMPLETE'), 'w') as f:

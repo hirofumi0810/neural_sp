@@ -209,13 +209,12 @@ def main():
             if config['backend'] == 'pytorch':
                 tf_writer.add_scalar('train/loss', loss_train_mean, step + 1)
                 tf_writer.add_scalar('dev/loss', loss_dev, step + 1)
-                # for name, param in model.named_parameters():
-                #     name = name.replace('.', '/')
-                #     tf_writer.add_histogram(
-                #         name, param.data.cpu().numpy(), step + 1)
-                #     tf_writer.add_histogram(
-                #         name + '/grad', param.grad.data.cpu().numpy(), step + 1)
-                # TODO: fix this
+                for name, param in model.named_parameters():
+                    name = name.replace('.', '/')
+                    tf_writer.add_histogram(
+                        name, param.data.cpu().numpy(), step + 1)
+                    tf_writer.add_histogram(
+                        name + '/grad', param.grad.data.cpu().numpy(), step + 1)
 
             duration_step = time.time() - start_time_step
             logger.info("...Step:%d(epoch:%.3f) loss:%.3f(%.3f)/ppl:%.3f(%.3f)/lr:%.5f/batch:%d/y_lens:%d (%.3f min)" %
@@ -248,7 +247,7 @@ def main():
                 # dev
                 ppl_dev = eval_ppl(models=[model],
                                    dataset=dev_data)
-                logger.info(' PPL (dev): %.3f' % ppl_dev)
+                logger.info(' PPL (%s): %.3f' % (dev_data.data_type, ppl_dev))
 
                 if ppl_dev < metric_dev_best:
                     metric_dev_best = ppl_dev
@@ -260,9 +259,10 @@ def main():
                                           learning_rate, metric_dev_best)
 
                     # test
-                    ppl_eval1 = eval_ppl(models=[model],
-                                         dataset=test_data)
-                    logger.info(' PPL (eval1): %.3f' % ppl_eval1)
+                    ppl_test = eval_ppl(models=[model],
+                                        dataset=test_data)
+                    logger.info(' PPL (%s): %.3f' %
+                                (test_data.data_type, ppl_test))
                 else:
                     not_improved_epoch += 1
 

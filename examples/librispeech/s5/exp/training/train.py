@@ -94,26 +94,39 @@ def main():
         batch_size=1, tool=config['tool'])
     config['num_classes'] = train_data.num_classes
 
-    # Load a RNNLM config file
+    # Load a RNNLM config file for cold fusion
     if config['rnnlm_fusion_type'] and config['rnnlm_path']:
         if args.model_save_path is not None:
-            rnnlm_config = load_config(
+            config['rnnlm_config'] = load_config(
                 os.path.join(config['rnnlm_path'], 'config.yml'), is_eval=True)
         elif args.saved_model_path is not None:
             config = load_config(os.path.join(
                 args.saved_model_path, 'config_rnnlm.yml'))
-
-        assert config['label_type'] == rnnlm_config['label_type']
-        rnnlm_config['num_classes'] = train_data.num_classes
-        config['rnnlm_config'] = rnnlm_config
+        assert config['label_type'] == config['rnnlm_config']['label_type']
+        config['rnnlm_config']['num_classes'] = train_data.num_classes
     else:
         config['rnnlm_config'] = None
+
     # Model setting
     model = load(model_type=config['model_type'],
                  config=config,
                  backend=config['backend'])
 
     if args.model_save_path is not None:
+        if config['rnnlm_fusion_type'] and config['rnnlm_path']:
+            # Load pre-trained RNNLM
+            rnnlm = load(model_type=config['rnnlm_config']['model_type'],
+                         config=config['rnnlm_config'],
+                         backend=config['rnnlm_config']['backend'])
+            rnnlm.load_checkpoint(save_path=config['rnnlm_path'], epoch=-1)
+            rnnlm.rnn.flatten_parameters()
+
+            # Set pre-trained parameters
+            if config['rnnlm_config']['backward']:
+                model.rnnlm_0_bwd = rnnlm
+            else:
+                model.rnnlm_0_fwd = rnnlm
+
         # Set save path
         save_path = mkdir_join(args.model_save_path, config['backend'],
                                config['model_type'], config['label_type'],
@@ -154,7 +167,7 @@ def main():
 
         epoch, step = 1, 0
         learning_rate = float(config['learning_rate'])
-        metric_dev_best = 1
+        metric_dev_best = 100
 
     # NOTE: Restart from the last checkpoint
     elif args.saved_model_path is not None:
@@ -177,7 +190,12 @@ def main():
         # Restore the last saved model
         epoch, step, learning_rate, metric_dev_best = model.load_checkpoint(
             save_path=args.saved_model_path, epoch=-1, restart=True)
-        model.rnnlm_0.rnn.flatten_parameters()
+
+        if config['rnnlm_fusion_type'] and config['rnnlm_path']:
+            if config['rnnlm_config']['backward']:
+                model.rnnlm_0_bwd.rnn.flatten_parameters()
+            else:
+                model.rnnlm_0_fwd.rnn.flatten_parameters()
 
     else:
         raise ValueError("Set model_save_path or saved_model_path.")
@@ -240,13 +258,12 @@ def main():
             if config['backend'] == 'pytorch':
                 tf_writer.add_scalar('train/loss', loss_train_mean, step + 1)
                 tf_writer.add_scalar('dev/loss', loss_dev, step + 1)
-                # for name, param in model.named_parameters():
-                #     name = name.replace('.', '/')
-                #     tf_writer.add_histogram(
-                #         name, param.data.cpu().numpy(), step + 1)
-                #     tf_writer.add_histogram(
-                #         name + '/grad', param.grad.data.cpu().numpy(), step + 1)
-                # TODO: fix this
+                for name, param in model.named_parameters():
+                    name = name.replace('.', '/')
+                    tf_writer.add_histogram(
+                        name, param.data.cpu().numpy(), step + 1)
+                    tf_writer.add_histogram(
+                        name + '/grad', param.grad.data.cpu().numpy(), step + 1)
 
             duration_step = time.time() - start_time_step
             logger.info("...Step:%d(epoch:%.3f) loss:%.3f(%.3f)/lr:%.5f/batch:%d/x_lens:%d (%.3f min)" %
@@ -283,8 +300,8 @@ def main():
                         eval_batch_size=1,
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_WORD)
-                    logger.info('  WER (dev-clean): %.3f %%' %
-                                (metric_dev * 100))
+                    logger.info('  WER (%s): %.3f %%' %
+                                (dev_data.data_type, metric_dev))
                 else:
                     wer_dev, metric_dev, _ = eval_char(
                         models=[model],
@@ -292,8 +309,8 @@ def main():
                         eval_batch_size=1,
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_CHAR)
-                    logger.info('  WER / CER (dev-clean): %.3f / %.3f %%' %
-                                ((wer_dev * 100), (metric_dev * 100)))
+                    logger.info('  WER / CER (%s): %.3f / %.3f %%' %
+                                (dev_data.data_type, wer_dev, metric_dev))
 
                 if metric_dev < metric_dev_best:
                     metric_dev_best = metric_dev
@@ -312,17 +329,17 @@ def main():
                             eval_batch_size=1,
                             beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_WORD)
-                        logger.info('  WER (test-clean): %.3f %%' %
-                                    (wer_test * 100))
+                        logger.info('  WER (%s): %.3f %%' %
+                                    (test_data.data_type, wer_test))
                     else:
-                        wer_test, cer_eval92, _ = eval_char(
+                        wer_test, cer_test, _ = eval_char(
                             models=[model],
                             dataset=test_data,
                             eval_batch_size=1,
                             beam_width=1,
                             max_decode_len=MAX_DECODE_LEN_CHAR)
-                        logger.info('  WER / CER (test-clean): %.3f / %.3f %%' %
-                                    ((wer_test * 100), (cer_eval92 * 100)))
+                        logger.info('  WER / CER (%s): %.3f / %.3f %%' %
+                                    (test_data.data_type, wer_test, cer_test))
                 else:
                     not_improved_epoch += 1
 

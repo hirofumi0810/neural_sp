@@ -11,6 +11,7 @@ from os.path import join, abspath, isdir
 import sys
 import argparse
 import shutil
+from distutils.util import strtobool
 
 import matplotlib
 matplotlib.use('Agg')
@@ -46,11 +47,9 @@ parser.add_argument('--beam_width', type=int, default=1,
 parser.add_argument('--beam_width_sub', type=int, default=1,
                     help='the size of beam in the sub task')
 parser.add_argument('--length_penalty', type=float, default=0,
-                    help='length penalty in beam search decoding')
+                    help='length penalty')
 parser.add_argument('--coverage_penalty', type=float, default=0,
-                    help='coverage penalty in beam search decoding')
-
-from distutils.util import strtobool
+                    help='coverage penalty')
 parser.add_argument('--a2c_oracle', type=strtobool, default=False)
 
 MAX_DECODE_LEN_WORD = 32
@@ -63,27 +62,27 @@ def main():
 
     args = parser.parse_args()
 
-    # Load a config file (.yml)
-    params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
+    # Load a config file
+    config = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
-    dataset = Dataset(
-        data_save_path=args.data_save_path,
-        input_freq=params['input_freq'],
-        use_delta=params['use_delta'],
-        use_double_delta=params['use_double_delta'],
-        data_type='test_eval92',
-        data_size=params['data_size'],
-        label_type=params['label_type'], label_type_sub=params['label_type_sub'],
-        batch_size=args.eval_batch_size,
-        sort_utt=False, reverse=False, tool=params['tool'])
-    params['num_classes'] = dataset.num_classes
-    params['num_classes_sub'] = dataset.num_classes_sub
+    dataset = Dataset(data_save_path=args.data_save_path,
+                      input_freq=config['input_freq'],
+                      use_delta=config['use_delta'],
+                      use_double_delta=config['use_double_delta'],
+                      data_type='test_eval92',
+                      data_size=config['data_size'],
+                      label_type=config['label_type'],
+                      label_type_sub=config['label_type_sub'],
+                      batch_size=args.eval_batch_size,
+                      sort_utt=False, reverse=False, tool=config['tool'])
+    config['num_classes'] = dataset.num_classes
+    config['num_classes_sub'] = dataset.num_classes_sub
 
     # Load model
-    model = load(model_type=params['model_type'],
-                 params=params,
-                 backend=params['backend'])
+    model = load(model_type=config['model_type'],
+                 config=config,
+                 backend=config['backend'])
 
     # Restore the saved parameters
     model.load_checkpoint(save_path=args.model_path, epoch=args.epoch)
@@ -92,8 +91,6 @@ def main():
     model.set_cuda(deterministic=False, benchmark=True)
 
     save_path = mkdir_join(args.model_path, 'att_weights')
-
-    ######################################################################
 
     # Clean directory
     if save_path is not None and isdir(save_path):
@@ -118,7 +115,7 @@ def main():
         else:
             ys_sub = None
 
-        best_hyps, aw, best_hyps_sub, aw_sub, aw_dec, _ = model.decode(
+        best_hyps, aw, best_hyps_sub, aw_sub, aw_dec, perm_idx = model.decode(
             batch['xs'],
             beam_width=args.beam_width,
             max_decode_len=MAX_DECODE_LEN_WORD,
@@ -130,6 +127,8 @@ def main():
             coverage_penalty=args.coverage_penalty,
             teacher_forcing=args.a2c_oracle,
             ys_sub=ys_sub)
+
+        ys = [batch['ys'][i] for i in perm_idx]
 
         for b in range(len(batch['xs'])):
             word_list = dataset.idx2word(best_hyps[b], return_list=True)
@@ -162,8 +161,15 @@ def main():
                 figsize=(40, 8)
             )
 
-            # with open(join(save_path, speaker, batch['input_names'][b] + '.txt'), 'w') as f:
-            #     f.write(batch['ys'][b])
+            # Reference
+            if dataset.is_test:
+                str_ref = ys[b]
+                # NOTE: transcript is seperated by space('_')
+            else:
+                str_ref = dataset.idx2word(ys[b])
+
+            with open(join(save_path, speaker, batch['input_names'][b] + '.txt'), 'w') as f:
+                f.write(str_ref)
 
         if is_new_epoch:
             break

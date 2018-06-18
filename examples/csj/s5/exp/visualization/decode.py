@@ -10,13 +10,13 @@ from __future__ import print_function
 from os.path import join, abspath
 import sys
 import argparse
-import re
 
 sys.path.append(abspath('../../../'))
 from models.load_model import load
 from examples.csj.s5.exp.dataset.load_dataset import Dataset
 from utils.config import load_config
-from utils.evaluation.edit_distance import compute_wer
+from utils.evaluation.edit_distance import wer_align
+from utils.evaluation.normalization import normalize
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str,
@@ -153,26 +153,21 @@ def main():
             str_hyp = map_fn(best_hyps[b])
 
             print('----- wav: %s -----' % batch['input_names'][b])
-            print('Ref: %s' % str_ref.replace('_', ' '))
-            print('Hyp: %s' % str_hyp.replace('_', ' '))
 
-            # Remove noisy labels
-            str_hyp = str_hyp.replace('_>', '').replace('>', '')
+            str_hyp = normalize(str_hyp)
 
-            try:
-                if dataset.label_type in ['word', 'character_wb']:
-                    wer, _, _, _ = compute_wer(ref=str_ref.split('_'),
-                                               hyp=str_hyp.split('_'),
-                                               normalize=True)
-                    print('WER: %.3f %%' % (wer * 100))
-                else:
-                    cer, _, _, _ = compute_wer(
-                        ref=list(str_ref.replace('_', '')),
-                        hyp=list(str_hyp.replace('_', '')),
-                        normalize=True)
-                    print('CER: %.3f %%' % (cer * 100))
-            except:
-                print('--- skipped ---')
+            if dataset.label_type in ['word', 'character_wb']:
+                wer = wer_align(ref=str_ref.split('_'),
+                                hyp=str_hyp.split('_'),
+                                normalize=True,
+                                japanese=True)[0]
+                print('\nWER: %.3f %%' % wer)
+            else:
+                cer = wer_align(ref=list(str_ref.replace('_', '')),
+                                hyp=list(str_hyp.replace('_', '')),
+                                normalize=True,
+                                japanese=True)[0]
+                print('\nCER: %.3f %%' % cer)
 
         if is_new_epoch:
             break

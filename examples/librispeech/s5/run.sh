@@ -19,6 +19,7 @@ echo ===========================================================================
 
 stage=0
 run_background=true
+# run_background=false
 
 ### Select data size
 datasize=100

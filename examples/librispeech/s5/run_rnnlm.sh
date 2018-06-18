@@ -19,6 +19,7 @@ echo ===========================================================================
 
 stage=0
 run_background=true
+# run_background=false
 
 ### Select data size
 # datasize=100
@@ -32,19 +33,19 @@ model="/n/sd8/inaguma/result/librispeech"
 export data="/n/sd8/inaguma/corpus/librispeech/kaldi"
 
 if [ ${stage} -le 0 ] && [ ! -e ${data}/.stage_0_${datasize} ]; then
-  exit "Run ./run.sh at first"
+  echo "Run ./run.sh at first"
   exit 1;
 fi
 
 
 if [ ${stage} -le 1 ] && [ ! -e ${data}/.stage_1_${datasize} ]; then
-  exit "Run ./run.sh at first"
+  echo "Run ./run.sh at first"
   exit 1;
 fi
 
 
 if [ ${stage} -le 2 ] && [ ! -e ${data}/.stage_2_${datasize} ]; then
-  exit "Run ./run.sh at first"
+  echo "Run ./run.sh at first"
   exit 1;
 fi
 

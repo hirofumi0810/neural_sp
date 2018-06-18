@@ -89,7 +89,6 @@ def main():
                 # Load a RNNLM config file
                 config['rnnlm_config'] = load_config(
                     join(args.model_path, 'config_rnnlm.yml'))
-
                 assert config['label_type'] == config['rnnlm_config']['label_type']
                 assert args.rnnlm_weight > 0
                 config['rnnlm_config']['num_classes'] = dataset.num_classes
@@ -102,7 +101,6 @@ def main():
                 # Load a RNNLM config file
                 config['rnnlm_config_sub'] = load_config(
                     join(args.model_path, 'config_rnnlm_sub.yml'))
-
                 assert config['label_type_sub'] == config['rnnlm_config_sub']['label_type']
                 assert args.rnnlm_weight_sub > 0
                 config['rnnlm_config_sub']['num_classes'] = dataset.num_classes_sub
@@ -125,7 +123,6 @@ def main():
                 # Load a RNNLM config file
                 config_rnnlm = load_config(
                     join(args.rnnlm_path, 'config.yml'), is_eval=True)
-
                 assert config['label_type'] == config_rnnlm['label_type']
                 config_rnnlm['num_classes'] = dataset.num_classes
 
@@ -143,7 +140,6 @@ def main():
                 # Load a RNNLM config file
                 config_rnnlm_sub = load_config(
                     join(args.rnnlm_path_sub, 'config.yml'), is_eval=True)
-
                 assert config['label_type_sub'] == config_rnnlm_sub['label_type']
                 config_rnnlm_sub['num_classes'] = dataset.num_classes_sub
 
@@ -188,7 +184,7 @@ def main():
                             joint_decoding=args.joint_decoding,
                             score_sub_weight=args.score_sub_weight)
         wer_mean += wer
-        logger.info('  WER (%s, main): %.3f %%' % (data_type, (wer * 100)))
+        logger.info('  WER (%s, main): %.3f %%' % (data_type, wer))
         logger.info(df)
 
         wer, cer, df = eval_char(models=[model],
@@ -204,12 +200,12 @@ def main():
         wer_sub_mean += wer
         cer_sub_mean += cer
         logger.info(' WER / CER (%s, sub): %.3f / %.3f %%' %
-                    (data_type, (wer * 100), (cer * 100)))
+                    (data_type, wer, cer))
         logger.info(df)
 
-    logger.info('  WER (mean, main): %.3f %%' % (wer_mean * 100 / 3))
+    logger.info('  WER (mean, main): %.3f %%' % (wer_mean / 3))
     logger.info('  WER / CER (mean, sub): %.3f / %.3f %%' %
-                ((wer_sub_mean * 100 / 3), (cer_sub_mean * 100 / 3)))
+                (wer_sub_mean / 3, cer_sub_mean / 3))
 
 
 if __name__ == '__main__':

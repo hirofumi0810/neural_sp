@@ -32,7 +32,7 @@ def compute_per(ref, hyp, normalize=False):
     per = lev.distance(''.join(phones_ref), ''.join(phones_hyp))
     if normalize:
         per /= len(ref)
-    return per
+    return per * 100
 
 
 def compute_cer(ref, hyp, normalize=False):
@@ -47,7 +47,7 @@ def compute_cer(ref, hyp, normalize=False):
     cer = lev.distance(hyp, ref)
     if normalize:
         cer /= len(list(ref))
-    return cer
+    return cer * 100
 
 
 def compute_wer(ref, hyp, normalize=False):
@@ -123,21 +123,28 @@ def compute_wer(ref, hyp, normalize=False):
     if normalize:
         wer /= len(ref)
 
-    return wer, sub, ins, dele
+    return wer * 100, sub * 100, ins * 100, dele * 100
 
 
-def wer_align(ref, hyp):
+def wer_align(ref, hyp, normalize=False, japanese=False):
     """Compute Word Error Rate.
         [Reference]
             https://github.com/zszyellow/WER-in-python
     Args:
         ref (list): words in the reference transcript
         hyp (list): words in the predicted transcript
+        normalize (bool, optional): if True, divide by the length of ref
     Returns:
+        wer (float): Word Error Rate between ref and hyp
         sub (int): the number of substitution error
         ins (int): the number of insertion error
         dele (int): the number of deletion error
     """
+    space_char = "　" if japanese else " "
+    s_char = "Ｓ" if japanese else "S"
+    i_char = "Ｉ" if japanese else "I"
+    d_char = "Ｄ" if japanese else "D"
+
     # Build the matrix
     d = np.zeros((len(ref) + 1) * (len(hyp) + 1),
                  dtype=np.uint8).reshape((len(ref) + 1, len(hyp) + 1))
@@ -156,8 +163,7 @@ def wer_align(ref, hyp):
                 ins = d[i][j - 1] + 1
                 dele = d[i - 1][j] + 1
                 d[i][j] = min(sub, ins, dele)
-    result = float(d[len(ref)][len(hyp)]) / len(ref) * 100
-    result = str("%.2f" % result) + "%"
+    wer = float(d[len(ref)][len(hyp)])
 
     # Find out the manipulation steps
     x = len(ref)
@@ -194,7 +200,7 @@ def wer_align(ref, hyp):
                 if error_list[j] == "D":
                     count += 1
             index = i - count
-            print(" " * (len(hyp[index])), end=' ')
+            print(space_char * (len(hyp[index])), end=' ')
         elif error_list[i] == "S":
             count1 = 0
             for j in range(i):
@@ -207,7 +213,7 @@ def wer_align(ref, hyp):
                     count2 += 1
             index2 = i - count2
             if len(ref[index1]) < len(hyp[index2]):
-                print(ref[index1] + " " *
+                print(ref[index1] + space_char *
                       (len(hyp[index2]) - len(ref[index1])), end=' ')
             else:
                 print(ref[index1], end=' ')
@@ -227,7 +233,7 @@ def wer_align(ref, hyp):
                 if error_list[j] == "I":
                     count += 1
             index = i - count
-            print(" " * (len(ref[index])), end=' ')
+            print(space_char * (len(ref[index])), end=' ')
         elif error_list[i] == "S":
             count1 = 0
             for j in range(i):
@@ -240,7 +246,7 @@ def wer_align(ref, hyp):
                     count2 += 1
             index2 = i - count2
             if len(ref[index1]) > len(hyp[index2]):
-                print(hyp[index2] + " " *
+                print(hyp[index2] + space_char *
                       (len(ref[index1]) - len(hyp[index2])), end=' ')
             else:
                 print(hyp[index2], end=' ')
@@ -260,14 +266,14 @@ def wer_align(ref, hyp):
                 if error_list[j] == "I":
                     count += 1
             index = i - count
-            print("D" + " " * (len(ref[index]) - 1), end=' ')
+            print(d_char + space_char * (len(ref[index]) - 1), end=' ')
         elif error_list[i] == "I":
             count = 0
             for j in range(i):
                 if error_list[j] == "D":
                     count += 1
             index = i - count
-            print("I" + " " * (len(hyp[index]) - 1), end=' ')
+            print(i_char + space_char * (len(hyp[index]) - 1), end=' ')
         elif error_list[i] == "S":
             count1 = 0
             for j in range(i):
@@ -280,21 +286,26 @@ def wer_align(ref, hyp):
                     count2 += 1
             index2 = i - count2
             if len(ref[index1]) > len(hyp[index2]):
-                print("S" + " " * (len(ref[index1]) - 1), end=' ')
+                print(s_char + space_char * (len(ref[index1]) - 1), end=' ')
             else:
-                print("S" + " " * (len(hyp[index2]) - 1), end=' ')
+                print(s_char + space_char * (len(hyp[index2]) - 1), end=' ')
         else:
             count = 0
             for j in range(i):
                 if error_list[j] == "I":
                     count += 1
             index = i - count
-            print(" " * (len(ref[index])), end=' ')
-
-    print("\nWER: " + result)
+            print(space_char * (len(ref[index])), end=' ')
 
     sub = error_list.count("S")
     ins = error_list.count("I")
     dele = error_list.count("D")
+    corr = error_list.count("C")
 
-    return sub, ins, dele
+    assert wer == (sub + ins + dele)
+    assert corr == (len(ref) - sub - dele)
+
+    if normalize:
+        wer /= len(ref)
+
+    return wer * 100, sub * 100, ins * 100, dele * 100

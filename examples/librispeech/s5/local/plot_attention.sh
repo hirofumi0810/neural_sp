@@ -15,9 +15,10 @@ data=/n/sd8/inaguma/corpus/librispeech/kaldi
 
 beam_width=4
 length_penalty=0.1
-coverage_penalty=0
+coverage_penalty=1.5
 rnnlm_weight=0.3
 rnnlm_path=
+# rnnlm_path="/n/sd8/inaguma/result/librispeech/pytorch/rnnlm/character/960/lstm512H2Lemb32_adam_lr1e-3_drophidden0.2out0.2emb0.2"
 
 CUDA_VISIBLE_DEVICES=$2 ${PYTHON} exp/visualization/plot_attention_weights.py \
   --data_save_path ${data} \

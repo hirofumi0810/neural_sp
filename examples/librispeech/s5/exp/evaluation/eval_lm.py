@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Evaluate the ASR model (TIMIT corpus)."""
+"""Evaluate the RNNLM (Librispeech corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -13,8 +13,8 @@ import argparse
 
 sys.path.append(abspath('../../../'))
 from models.load_model import load
-from examples.timit.s5.exp.dataset.load_dataset import Dataset
-from examples.timit.s5.exp.metrics.phone import eval_phone
+from examples.librispeech.s5.exp.dataset.load_dataset_lm import Dataset
+from examples.librispeech.s5.exp.metrics.lm import eval_ppl
 from utils.config import load_config
 from utils.evaluation.logging import set_logger
 
@@ -27,18 +27,6 @@ parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--beam_width', type=int, default=1,
-                    help='the size of beam')
-parser.add_argument('--length_penalty', type=float, default=0,
-                    help='length penaltyg')
-parser.add_argument('--coverage_penalty', type=float, default=0,
-                    help='coverage penaltyg')
-
-MAX_DECODE_LEN_PHONE = 71
-MIN_DECODE_LEN_PHONE = 13
-# NOTE*
-# dev: 13-71
-# test: 13-69
 
 
 def main():
@@ -47,20 +35,21 @@ def main():
 
     # Load a config file
     config = load_config(join(args.model_path, 'config.yml'), is_eval=True)
+    config['data_size'] = str(config['data_size'])
 
     # Setting for logging
     logger = set_logger(args.model_path)
 
-    for i, data_type in enumerate(['dev', 'test']):
+    ppl_mean = 0
+    for i, data_type in enumerate(['dev_clean', 'dev_other', 'test_clean', 'test_other']):
         # Load dataset
         dataset = Dataset(data_save_path=args.data_save_path,
-                          input_freq=config['input_freq'],
-                          use_delta=config['use_delta'],
-                          use_double_delta=config['use_double_delta'],
                           data_type=data_type,
+                          data_size=config['data_size'],
                           label_type=config['label_type'],
                           batch_size=args.eval_batch_size,
-                          sort_utt=False, tool=config['tool'])
+                          shuffle=False, tool=config['tool'],
+                          vocab=config['vocab'])
 
         if i == 0:
             config['num_classes'] = dataset.num_classes
@@ -70,6 +59,11 @@ def main():
                          config=config,
                          backend=config['backend'])
 
+            # NOTE: after load the rnn config are not a continuous chunk of memory
+            # this makes them a continuous chunk, and will speed up forward pass
+            model.rnn.flatten_parameters()
+            # https://github.com/pytorch/examples/blob/master/word_language_model/main.py
+
             # Restore the saved parameters
             epoch, _, _, _ = model.load_checkpoint(
                 save_path=args.model_path, epoch=args.epoch)
@@ -77,21 +71,15 @@ def main():
             # GPU setting
             model.set_cuda(deterministic=False, benchmark=True)
 
-            logger.info('beam width: %d' % args.beam_width)
             logger.info('epoch: %d' % (epoch - 1))
 
-        per, df = eval_phone(model=model,
-                             dataset=dataset,
-                             map_file_path='./conf/phones.60-48-39.map',
-                             eval_batch_size=args.eval_batch_size,
-                             beam_width=args.beam_width,
-                             max_decode_len=MAX_DECODE_LEN_PHONE,
-                             min_decode_len=MIN_DECODE_LEN_PHONE,
-                             length_penalty=args.length_penalty,
-                             coverage_penalty=args.coverage_penalty,
-                             progressbar=True)
-        logger.info('  PER (%s): %.3f %%' % (data_type, per))
-        logger.info(df)
+        ppl = eval_ppl(models=[model],
+                       dataset=dataset,
+                       progressbar=True)
+        ppl_mean += ppl
+        logger.info('  PPL (%s): %.3f' % (data_type, ppl))
+
+    logger.info('PPL (mean): %.3f' % (ppl_mean / 3))
 
 
 if __name__ == '__main__':

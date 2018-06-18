@@ -10,13 +10,13 @@ from __future__ import print_function
 from os.path import join, abspath
 import sys
 import argparse
-import re
 
 sys.path.append(abspath('../../../'))
 from models.load_model import load
 from examples.librispeech.s5.exp.dataset.load_dataset import Dataset
 from utils.config import load_config
-from utils.evaluation.edit_distance import compute_wer
+from utils.evaluation.edit_distance import wer_align
+from utils.evaluation.normalization import normalize
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str,
@@ -30,18 +30,20 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
 parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam')
 parser.add_argument('--length_penalty', type=float, default=0,
-                    help='length penalty in the beam search decoding')
+                    help='length penalty')
 parser.add_argument('--coverage_penalty', type=float, default=0,
-                    help='coverage penalty in the beam search decoding')
+                    help='coverage penalty')
 parser.add_argument('--rnnlm_weight', type=float, default=0,
-                    help='the weight of RNNLM score in the beam search decoding')
+                    help='the weight of RNNLM score')
 parser.add_argument('--rnnlm_path', default=None, type=str, nargs='?',
                     help='path to the RMMLM')
 
 MAX_DECODE_LEN_WORD = 200
 MIN_DECODE_LEN_WORD = 1
+MIN_DECODE_LEN_RATIO_WORD = 0
 MAX_DECODE_LEN_CHAR = 600
 MIN_DECODE_LEN_CHAR = 1
+MIN_DECODE_LEN_RATIO_CHAR = 0.2
 
 
 def main():
@@ -64,15 +66,16 @@ def main():
                       batch_size=args.eval_batch_size,
                       sort_utt=False, reverse=False, tool=config['tool'])
     config['num_classes'] = dataset.num_classes
+    config['num_classes_sub'] = dataset.num_classes
 
     # For cold fusion
     if config['rnnlm_fusion_type'] and config['rnnlm_path']:
         # Load a RNNLM config file
-        rnnlm_config = load_config(join(args.model_path, 'config_rnnlm.yml'))
-
-        assert config['label_type'] == rnnlm_config['label_type']
-        rnnlm_config['num_classes'] = dataset.num_classes
-        config['rnnlm_config'] = rnnlm_config
+        config['rnnlm_config'] = load_config(
+            join(args.model_path, 'config_rnnlm.yml'))
+        assert config['label_type'] == config['rnnlm_config']['label_type']
+        assert args.rnnlm_weight > 0
+        config['rnnlm_config']['num_classes'] = dataset.num_classes
     else:
         config['rnnlm_config'] = None
 
@@ -89,7 +92,6 @@ def main():
         # Load a RNNLM config file
         config_rnnlm = load_config(
             join(args.rnnlm_path, 'config.yml'), is_eval=True)
-
         assert config['label_type'] == config_rnnlm['label_type']
         config_rnnlm['num_classes'] = dataset.num_classes
 
@@ -99,22 +101,26 @@ def main():
                      backend=config_rnnlm['backend'])
         rnnlm.load_checkpoint(save_path=args.rnnlm_path, epoch=-1)
         rnnlm.rnn.flatten_parameters()
-        model.rnnlm_0_fwd = rnnlm
-        # TODO: add backward RNNLM
+        if config_rnnlm['backward']:
+            model.rnnlm_0_bwd = rnnlm
+        else:
+            model.rnnlm_0_fwd = rnnlm
 
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
-    # sys.stdout = open(join(model.model_dir, 'decode.txt'), 'w')
+    # sys.stdout = open(join(args.model_path, 'decode.txt'), 'w')
 
     if dataset.label_type == 'word':
         map_fn = dataset.idx2word
         max_decode_len = MAX_DECODE_LEN_WORD
         min_decode_len = MIN_DECODE_LEN_WORD
+        min_decode_len_ratio = MIN_DECODE_LEN_RATIO_WORD
     else:
         map_fn = dataset.idx2char
         max_decode_len = MAX_DECODE_LEN_CHAR
         min_decode_len = MIN_DECODE_LEN_CHAR
+        min_decode_len_ratio = MIN_DECODE_LEN_RATIO_CHAR
 
     for batch, is_new_epoch in dataset:
         # Decode
@@ -133,13 +139,10 @@ def main():
                 beam_width=args.beam_width,
                 max_decode_len=max_decode_len,
                 min_decode_len=min_decode_len,
+                min_decode_len_ratio=min_decode_len_ratio,
                 length_penalty=args.length_penalty,
                 coverage_penalty=args.coverage_penalty,
                 rnnlm_weight=args.rnnlm_weight)
-
-        if model.model_type == 'attention' and model.ctc_loss_weight > 0:
-            best_hyps_ctc, perm_idx = model.decode_ctc(
-                batch['xs'], batch['x_lens'], beam_width=args.beam_width)
 
         ys = [batch['ys'][i] for i in perm_idx]
 
@@ -155,24 +158,13 @@ def main():
             str_hyp = map_fn(best_hyps[b])
 
             print('----- wav: %s -----' % batch['input_names'][b])
-            print('Ref: %s' % str_ref.replace('_', ' '))
-            print('Hyp: %s' % str_hyp.replace('_', ' '))
 
-            # Remove noisy labels
-            str_hyp = str_hyp.replace('>', '')
+            str_hyp = normalize(str_hyp)
 
-            # Remove consecutive spaces
-            str_hyp = re.sub(r'[_]+', '_', str_hyp)
-            if str_hyp[-1] == '_':
-                str_hyp = str_hyp[:-1]
-
-            try:
-                wer, _, _, _ = compute_wer(ref=str_ref.split('_'),
-                                           hyp=str_hyp.split('_'),
-                                           normalize=True)
-                print('WER: %.3f %%' % (wer * 100))
-            except:
-                print('--- skipped ---')
+            wer = wer_align(ref=str_ref.split('_'),
+                            hyp=str_hyp.split('_'),
+                            normalize=True)[0]
+            print('\nWER: %.3f %%' % wer)
 
         if is_new_epoch:
             break

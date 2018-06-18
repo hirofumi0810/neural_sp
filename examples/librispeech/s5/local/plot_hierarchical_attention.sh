@@ -22,7 +22,7 @@ rnnlm_weight_sub=0.3
 rnnlm_path=
 rnnlm_path_sub=
 
-CUDA_VISIBLE_DEVICES=$gpu_id ${PYTHON} exp/visualization/plot_hierarchical_attention_weights.py \
+CUDA_VISIBLE_DEVICES=$2 ${PYTHON} exp/visualization/plot_hierarchical_attention_weights.py \
   --data_save_path ${data} \
   --model_path $1 \
   --epoch -1 \

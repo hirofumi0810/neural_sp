@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Plot attention weights (WSJs corpus)."""
+"""Plot attention weights of the attention model (WSJ corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -31,40 +31,41 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
 parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam')
 parser.add_argument('--length_penalty', type=float, default=0,
-                    help='length penalty in beam search decoding')
+                    help='length penalty')
 parser.add_argument('--coverage_penalty', type=float, default=0,
-                    help='coverage penalty in beam search decoding')
+                    help='coverage penalty')
 
 MAX_DECODE_LEN_WORD = 32
 MIN_DECODE_LEN_WORD = 2
+MIN_DECODE_LEN_RATIO_WORD = 0
 MAX_DECODE_LEN_CHAR = 199
 MIN_DECODE_LEN_CHAR = 10
+MIN_DECODE_LEN_RATIO_CHAR = 0.2
 
 
 def main():
 
     args = parser.parse_args()
 
-    # Load a config file (.yml)
-    params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
+    # Load a config file
+    config = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
-    dataset = Dataset(
-        data_save_path=args.data_save_path,
-        input_freq=params['input_freq'],
-        use_delta=params['use_delta'],
-        use_double_delta=params['use_double_delta'],
-        data_type='test_eval92',
-        data_size=params['data_size'],
-        label_type=params['label_type'],
-        batch_size=args.eval_batch_size,
-        sort_utt=False, reverse=False, tool=params['tool'])
-    params['num_classes'] = dataset.num_classes
+    dataset = Dataset(data_save_path=args.data_save_path,
+                      input_freq=config['input_freq'],
+                      use_delta=config['use_delta'],
+                      use_double_delta=config['use_double_delta'],
+                      data_type='test_eval92',
+                      data_size=config['data_size'],
+                      label_type=config['label_type'],
+                      batch_size=args.eval_batch_size,
+                      sort_utt=False, reverse=False, tool=config['tool'])
+    config['num_classes'] = dataset.num_classes
 
     # Load model
-    model = load(model_type=params['model_type'],
-                 params=params,
-                 backend=params['backend'])
+    model = load(model_type=config['model_type'],
+                 config=config,
+                 backend=config['backend'])
 
     # Restore the saved parameters
     model.load_checkpoint(save_path=args.model_path, epoch=args.epoch)
@@ -73,8 +74,6 @@ def main():
     model.set_cuda(deterministic=False, benchmark=True)
 
     save_path = mkdir_join(args.model_path, 'att_weights')
-
-    ######################################################################
 
     # Clean directory
     if save_path is not None and isdir(save_path):
@@ -85,10 +84,12 @@ def main():
         map_fn = dataset.idx2word
         max_decode_len = MAX_DECODE_LEN_WORD
         min_decode_len = MIN_DECODE_LEN_WORD
+        min_decode_len_ratio = MIN_DECODE_LEN_RATIO_WORD
     else:
         map_fn = dataset.idx2char
         max_decode_len = MAX_DECODE_LEN_CHAR
         min_decode_len = MIN_DECODE_LEN_CHAR
+        min_decode_len_ratio = MIN_DECODE_LEN_RATIO_CHAR
 
     for batch, is_new_epoch in dataset:
         # Decode
@@ -97,6 +98,7 @@ def main():
             beam_width=args.beam_width,
             max_decode_len=max_decode_len,
             min_decode_len=min_decode_len,
+            min_decode_len_ratio=min_decode_len_ratio,
             length_penalty=args.length_penalty,
             coverage_penalty=args.coverage_penalty)
 
@@ -120,6 +122,9 @@ def main():
                 save_path=mkdir_join(save_path,
                                      batch['input_names'][b] + '.png'),
                 figsize=(20, 4))
+
+            with open(join(save_path, batch['input_names'][b] + '.txt'), 'w') as f:
+                f.write(str_ref)
 
         if is_new_epoch:
             break

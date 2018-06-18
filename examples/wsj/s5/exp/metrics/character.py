@@ -7,16 +7,16 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import re
 from tqdm import tqdm
 import pandas as pd
 
 from utils.evaluation.edit_distance import compute_wer
+from utils.evaluation.normalization import normalize
 
 
 def eval_char(models, eval_batch_size, dataset, beam_width,
-              max_decode_len, min_decode_len=10,
-              length_penalty=0, coverage_penalty=0,
+              max_decode_len, min_decode_len=10, min_decode_len_ratio=0,
+              length_penalty=0, coverage_penalty=0, rnnlm_weight=0,
               progressbar=False):
     """Evaluate trained model by Character Error Rate.
     Args:
@@ -26,8 +26,10 @@ def eval_char(models, eval_batch_size, dataset, beam_width,
         beam_width: (int): the size of beam
         max_decode_len (int): the maximum sequence length to emit
         min_decode_len (int): the minimum sequence length to emit
-        length_penalty (float): length penalty in beam search decoding
-        coverage_penalty (float): coverage penalty in beam search decoding
+        min_decode_len_ratio (float):
+        length_penalty (float): length penalty in the beam search decoding
+        coverage_penalty (float): coverage penalty in the beam search decoding
+        rnnlm_weight (float): the weight of RNNLM score in the beam search decoding
         progressbar (bool): if True, visualize the progressbar
     Returns:
         wer (float): Word error rate
@@ -56,8 +58,10 @@ def eval_char(models, eval_batch_size, dataset, beam_width,
                 beam_width=beam_width,
                 max_decode_len=max_decode_len,
                 min_decode_len=min_decode_len,
+                min_decode_len_ratio=min_decode_len_ratio,
                 length_penalty=length_penalty,
                 coverage_penalty=coverage_penalty,
+                rnnlm_weight=rnnlm_weight,
                 task_index=0)
             ys = [batch['ys'][i] for i in perm_idx]
         else:
@@ -66,8 +70,10 @@ def eval_char(models, eval_batch_size, dataset, beam_width,
                 beam_width=beam_width,
                 max_decode_len=max_decode_len,
                 min_decode_len=min_decode_len,
+                min_decode_len_ratio=min_decode_len_ratio,
                 length_penalty=length_penalty,
                 coverage_penalty=coverage_penalty,
+                rnnlm_weight=rnnlm_weight,
                 task_index=1)
             ys = [batch['ys_sub'][i] for i in perm_idx]
 
@@ -82,18 +88,9 @@ def eval_char(models, eval_batch_size, dataset, beam_width,
             # Hypothesis
             str_hyp = dataset.idx2char(best_hyps[b])
 
-            # Remove noisy labels
-            str_ref = re.sub(r'[@]+', '', str_ref)
-            str_hyp = re.sub(r'[@>]+', '', str_hyp)
+            str_ref = normalize(str_ref, remove_tokens=['@'])
+            str_hyp = normalize(str_hyp, remove_tokens=['@', '>'])
             # NOTE: @ means noise
-
-            # Remove consecutive spaces
-            str_ref = re.sub(r'[_]+', '_', str_ref)
-            str_hyp = re.sub(r'[_]+', '_', str_hyp)
-            if str_ref[-1] == '_':
-                str_ref = str_ref[:-1]
-            if str_hyp[-1] == '_':
-                str_hyp = str_hyp[:-1]
 
             try:
                 # Compute WER
@@ -141,10 +138,10 @@ def eval_char(models, eval_batch_size, dataset, beam_width,
     ins_char /= num_chars
     del_char /= num_chars
 
-    df_word = pd.DataFrame(
-        {'SUB': [sub_word * 100, sub_char * 100],
-         'INS': [ins_word * 100, ins_char * 100],
-         'DEL': [del_word * 100, del_char * 100]},
-        columns=['SUB', 'INS', 'DEL'], index=['WER', 'CER'])
+    df_word = pd.DataFrame({'SUB': [sub_word, sub_char],
+                            'INS': [ins_word, ins_char],
+                            'DEL': [del_word, del_char]},
+                           columns=['SUB', 'INS', 'DEL'],
+                           index=['WER', 'CER'])
 
     return wer, cer, df_word

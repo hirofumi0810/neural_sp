@@ -47,13 +47,13 @@ parser.add_argument('--beam_width', type=int, default=1,
 parser.add_argument('--beam_width_sub', type=int, default=1,
                     help='the size of beam in the sub task')
 parser.add_argument('--length_penalty', type=float, default=0,
-                    help='length penalty in the beam search decoding')
+                    help='length penalty')
 parser.add_argument('--coverage_penalty', type=float, default=0,
-                    help='coverage penalty in the beam search decoding')
+                    help='coverage penalty')
 parser.add_argument('--rnnlm_weight', type=float, default=0,
-                    help='the weight of RNNLM score of the main task in the beam search decoding')
+                    help='the weight of RNNLM score of the main task')
 parser.add_argument('--rnnlm_weight_sub', type=float, default=0,
-                    help='the weight of RNNLM score of the sub task in the beam search decoding')
+                    help='the weight of RNNLM score of the sub task')
 parser.add_argument('--rnnlm_path', default=None, type=str, nargs='?',
                     help='path to the RMMLM of the main task')
 parser.add_argument('--rnnlm_path_sub', default=None, type=str, nargs='?',
@@ -183,12 +183,11 @@ def main():
             else:
                 char_list = dataset.idx2char(
                     best_hyps_sub[b], return_list=True)
-
             speaker = batch['input_names'][b].split('_')[0]
 
             # word to acoustic & character to acoustic
             plot_hierarchical_attention_weights(
-                aw[b][:len(word_list)],  # TODO: fix this
+                aw[b][:len(word_list)],
                 aw_sub[b][:len(char_list)],
                 label_list=word_list,
                 label_list_sub=char_list,

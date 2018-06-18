@@ -99,7 +99,6 @@ def main():
                 # Load a RNNLM config file
                 config_rnnlm = load_config(
                     join(args.rnnlm_path, 'config.yml'), is_eval=True)
-
                 assert config['label_type'] == config_rnnlm['label_type']
                 config_rnnlm['num_classes'] = dataset.num_classes
 
@@ -134,7 +133,7 @@ def main():
                                 rnnlm_weight=args.rnnlm_weight,
                                 progressbar=True)
             wer_mean += wer
-            logger.info('  WER (%s): %.3f %%' % (data_type, (wer * 100)))
+            logger.info('  WER (%s): %.3f %%' % (data_type, wer))
             logger.info(df)
         else:
             wer, cer, df = eval_char(models=[model],
@@ -149,15 +148,15 @@ def main():
                                      progressbar=True)
             wer_mean += wer
             cer_mean += cer
-            logger.info(' WER / CER (%s, sub): %.3f / %.3f %%' %
-                        (data_type, (wer * 100), (cer * 100)))
+            logger.info('  WER / CER (%s): %.3f / %.3f %%' %
+                        (data_type, wer, cer))
             logger.info(df)
 
     if config['label_type'] == 'word':
-        logger.info('  WER (mean): %.3f %%' % (wer_mean * 100 / 3))
+        logger.info('  WER (mean): %.3f %%' % (wer_mean / 3))
     else:
         logger.info('  WER / CER (mean): %.3f / %.3f %%' %
-                    ((wer_mean * 100 / 3), (cer_mean * 100 / 3)))
+                    (wer_mean / 3, cer_mean / 3))
 
 
 if __name__ == '__main__':

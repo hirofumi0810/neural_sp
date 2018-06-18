@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Generate texts by the ASR model (TIMIT corpus)."""
+"""Generate texts by the RNNLM (Librispeech corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -13,10 +13,8 @@ import argparse
 
 sys.path.append(abspath('../../../'))
 from models.load_model import load
-from examples.timit.s5.exp.dataset.load_dataset import Dataset
+from examples.librispeech.s5.exp.dataset.load_dataset_lm import Dataset
 from utils.config import load_config
-from utils.evaluation.edit_distance import wer_align
-from utils.evaluation.normalization import normalize
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str,
@@ -27,15 +25,11 @@ parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
-parser.add_argument('--beam_width', type=int, default=1,
-                    help='the size of beam')
-parser.add_argument('--length_penalty', type=float, default=0,
-                    help='length penalty')
-parser.add_argument('--coverage_penalty', type=float, default=0,
-                    help='coverage penalty')
 
-MAX_DECODE_LEN_PHONE = 71
-MIN_DECODE_LEN_PHONE = 13
+MAX_DECODE_LEN_WORD = 200
+MIN_DECODE_LEN_WORD = 1
+MAX_DECODE_LEN_CHAR = 600
+MIN_DECODE_LEN_CHAR = 1
 
 
 def main():
@@ -44,16 +38,17 @@ def main():
 
     # Load a config file
     config = load_config(join(args.model_path, 'config.yml'), is_eval=True)
+    config['data_size'] = str(config['data_size'])
 
     # Load dataset
     dataset = Dataset(data_save_path=args.data_save_path,
-                      input_freq=config['input_freq'],
-                      use_delta=config['use_delta'],
-                      use_double_delta=config['use_double_delta'],
-                      data_type='test',
+                      data_type='test_clean',
+                      # data_type='test_other',
+                      data_size=config['data_size'],
                       label_type=config['label_type'],
                       batch_size=args.eval_batch_size,
-                      sort_utt=True, reverse=True, tool=config['tool'])
+                      sort_utt=False, reverse=False, tool=config['tool'],
+                      vocab=config['vocab'])
     config['num_classes'] = dataset.num_classes
 
     # Load model
@@ -64,47 +59,55 @@ def main():
     # Restore the saved parameters
     model.load_checkpoint(save_path=args.model_path, epoch=args.epoch)
 
+    # NOTE: after load the rnn config are not a continuous chunk of memory
+    # this makes them a continuous chunk, and will speed up forward pass
+    model.rnn.flatten_parameters()
+    # https://github.com/pytorch/examples/blob/master/word_language_model/main.py
+
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
     sys.stdout = open(join(args.model_path, 'decode.txt'), 'w')
 
+    if dataset.label_type == 'word':
+        map_fn = dataset.idx2word
+        max_decode_len = MAX_DECODE_LEN_WORD
+    else:
+        map_fn = dataset.idx2char
+        max_decode_len = MAX_DECODE_LEN_CHAR
+
     for batch, is_new_epoch in dataset:
+
+        if dataset.is_test:
+            ys = []
+            for b in range(len(batch['ys'])):
+                if dataset.label_type == 'word':
+                    indices = dataset.word2idx(batch['ys'][b])
+                else:
+                    indices = dataset.char2idx(batch['ys'][b])
+                ys += [indices]
+                # NOTE: transcript is seperated by space('_')
+        else:
+            ys = batch['ys']
+
         # Decode
-        best_hyps, _, perm_idx = model.decode(
-            batch['xs'],
-            beam_width=args.beam_width,
-            max_decode_len=MAX_DECODE_LEN_PHONE,
-            min_decode_len=MIN_DECODE_LEN_PHONE,
-            length_penalty=args.length_penalty,
-            coverage_penalty=args.coverage_penalty)
+        best_hyps = model.decode([y[:5] for y in ys],
+                                 max_decode_len=max_decode_len)
 
-        if model.model_type == 'attention' and model.ctc_loss_weight > 0:
-            best_hyps_ctc, perm_idx = model.decode_ctc(
-                batch['xs'], beam_width=args.beam_width)
-
-        ys = [batch['ys'][i] for i in perm_idx]
-
-        for b in range(len(batch['xs'])):
+        for b in range(len(batch['ys'])):
             # Reference
             if dataset.is_test:
-                str_ref = ys[b]
+                str_ref = batch['ys'][b]
                 # NOTE: transcript is seperated by space('_')
             else:
-                str_ref = dataset.idx2phone(ys[b])
+                str_ref = map_fn(batch['ys'][b])
 
             # Hypothesis
-            str_hyp = dataset.idx2phone(best_hyps[b])
+            str_hyp = map_fn(best_hyps[b])
 
             print('----- wav: %s -----' % batch['input_names'][b])
-
-            str_hyp = normalize(str_hyp)
-
-            # Compute PER
-            per = wer_align(ref=str_ref.split('_'),
-                            hyp=str_hyp.split('_'),
-                            normalize=True)[0]
-            print('\nPER: %.3f %%' % per)
+            print('Ref: %s' % str_ref.replace('_', ' '))
+            print('Hyp: %s' % str_hyp.replace('_', ' '))
 
         if is_new_epoch:
             break

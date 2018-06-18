@@ -138,8 +138,8 @@ def main():
 
         for b in range(len(batch['xs'])):
             token_list = map_fn(best_hyps[b], return_list=True)
-
             speaker = batch['input_names'][b].split('_')[0]
+
             plot_attention_weights(
                 aw[b][:len(token_list)],
                 label_list=token_list,
