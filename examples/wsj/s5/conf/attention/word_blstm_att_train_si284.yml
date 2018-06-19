@@ -32,6 +32,5 @@ param:
   # RNNLM fusion
   rnnlm_fusion_type: False
   rnnlm_path: False
-  rnnlm_joint_training: False
   rnnlm_weight: 0
   concat_embedding: False

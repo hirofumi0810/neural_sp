@@ -95,7 +95,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  rnnlm_fusion_type=None,
                  rnnlm_config=None,
                  rnnlm_config_sub=None,  # ***
-                 rnnlm_joint_training=False,
                  rnnlm_weight=0,
                  rnnlm_weight_sub=0,  # ***
                  concat_embedding=False):
@@ -152,7 +151,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             num_heads=num_heads,
             rnnlm_fusion_type=rnnlm_fusion_type,
             rnnlm_config=rnnlm_config,
-            rnnlm_joint_training=rnnlm_joint_training,
             rnnlm_weight=rnnlm_weight,
             concat_embedding=concat_embedding)
         self.model_type = 'hierarchical_attention'
@@ -229,7 +227,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 dropout=dropout_decoder)
 
             # Fix RNNLM parameters
-            if not rnnlm_joint_training:
+            if rnnlm_weight_sub == 0:
                 for param in self.rnnlm_1_fwd.parameters():
                     param.requires_grad = False
         # TODO: backward RNNLM
@@ -654,6 +652,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             aw_dec (np.ndarray): A tensor of size `[B, L, L_sub]`
         """
         batch_size, max_time = enc_out.size()[:2]
+
+        if (rnnlm_weight > 0 or self.rnnlm_fusion_type) and self.rnnlm_0_fwd is not None:
+            assert not self.rnnlm_0_fwd.training
+        if (rnnlm_weight_sub > 0 and self.rnnlm_fusion_type)and self.rnnlm_1_fwd is not None:
+            assert not self.rnnlm_1_fwd.training
 
         best_hyps, aw = [], []
         best_hyps_sub, aw_sub = [], []

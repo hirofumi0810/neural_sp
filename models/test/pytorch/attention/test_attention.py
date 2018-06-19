@@ -186,7 +186,7 @@ class TestAttention(unittest.TestCase):
             poolings = []
 
         # Load batch data
-        xs, ys = generate_data(label_type=label_type, batch_size=2)
+        xs, ys = generate_data(label_type=label_type, batch_size=32)
 
         if label_type == 'char':
             num_classes = 27
@@ -287,6 +287,8 @@ class TestAttention(unittest.TestCase):
 
             # Step for parameter update
             model.optimizer.zero_grad()
+            if model.device_id >= 0:
+                torch.cuda.empty_cache()
             loss = model(xs, ys)
             loss.backward()
             loss.detach()

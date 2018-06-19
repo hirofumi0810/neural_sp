@@ -215,6 +215,8 @@ class TestHierarchicalAttention(unittest.TestCase):
 
             # Step for parameter update
             model.optimizer.zero_grad()
+            if model.device_id >= 0:
+                torch.cuda.empty_cache()
             loss, loss_main, loss_sub = model(xs, ys, ys_sub)
             loss.backward()
             loss.detach()

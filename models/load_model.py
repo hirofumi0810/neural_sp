@@ -212,8 +212,6 @@ def load(model_type, config, backend):
             config['rnnlm_fusion_type'] = False
         if 'rnnlm_config' not in config.keys():
             config['rnnlm_config'] = None
-        if 'rnnlm_joint_training' not in config.keys():
-            config['rnnlm_joint_training'] = False
         if 'rnnlm_weight' not in config.keys():
             config['rnnlm_weight'] = 0
         if 'concat_embedding' not in config.keys():
@@ -276,7 +274,6 @@ def load(model_type, config, backend):
             num_heads=config['num_heads'],
             rnnlm_fusion_type=config['rnnlm_fusion_type'],
             rnnlm_config=config['rnnlm_config'],
-            rnnlm_joint_training=config['rnnlm_joint_training'],
             rnnlm_weight=config['rnnlm_weight'],
             concat_embedding=config['concat_embedding'])
 
@@ -345,7 +342,7 @@ def load(model_type, config, backend):
             model.name += '_head' + str(config['num_heads'])
         if config['rnnlm_fusion_type']:
             model.name += '_' + config['rnnlm_fusion_type']
-        if bool(config['rnnlm_joint_training']):
+        if float(config['rnnlm_weight']) > 0:
             model.name += '_lmjoint' + str(config['rnnlm_weight'])
         if bool(config['concat_embedding']) > 0:
             model.name += '_concatemb'
@@ -363,8 +360,6 @@ def load(model_type, config, backend):
             config['rnnlm_config'] = None
         if 'rnnlm_config_sub' not in config.keys():
             config['rnnlm_config_sub'] = None
-        if 'rnnlm_joint_training' not in config.keys():
-            config['rnnlm_joint_training'] = False
         if 'rnnlm_weight' not in config.keys():
             config['rnnlm_weight'] = 0
         if 'rnnlm_weight_sub' not in config.keys():
@@ -439,7 +434,6 @@ def load(model_type, config, backend):
             rnnlm_fusion_type=config['rnnlm_fusion_type'],
             rnnlm_config=config['rnnlm_config'],
             rnnlm_config_sub=config['rnnlm_config_sub'],
-            rnnlm_joint_training=config['rnnlm_joint_training'],
             rnnlm_weight=config['rnnlm_weight'],
             rnnlm_weight_sub=config['rnnlm_weight_sub'],
             concat_embedding=config['concat_embedding'])
@@ -512,7 +506,7 @@ def load(model_type, config, backend):
             model.name += '_head' + str(config['num_heads'])
         if config['rnnlm_fusion_type']:
             model.name += '_' + config['rnnlm_fusion_type']
-        if bool(config['rnnlm_joint_training']):
+        if float(config['rnnlm_weight']) > 0 or float(config['rnnlm_weight_sub']) > 0:
             model.name += '_lmjoint' + \
                 str(config['rnnlm_weight']) + str(config['rnnlm_weight_sub'])
         if bool(config['concat_embedding']) > 0:

@@ -37,8 +37,10 @@ param:
   ctc_loss_weight: 0
 
   # RNNLM fusion
-  fusion_type: False
+  rnnlm_fusion_type: False
+  # rnnlm_fusion_type: cold_fusion
+  # rnnlm_fusion_type: logits_fusion
   rnnlm_path: False
-  rnnlm_joint_training: False
+  # rnnlm_path: /n/sd8/inaguma/result/csj/pytorch/rnnlm/character_wb/all/lstm512H2Lemb64_adam_lr1e-3_drophidden0.2out0.2emb0.2
   rnnlm_weight: 0
   concat_embedding: False

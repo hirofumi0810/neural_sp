@@ -113,7 +113,6 @@ class AttentionSeq2seq(ModelBase):
         num_heads (int): the number of heads in the multi-head attention
         rnnlm_fusion_type (string): False or cold_fusion or logits_fusion
         rnnlm_config (dict): configuration of the pre-trained RNNLM
-        rnnlm_joint_training (bool): if True, RNNLM is jointly trained
         rnnlm_weight (float): the weight for XE loss of RNNLM
         concat_embedding (int): if True, concat embeddings of ASR and RMMLM
     """
@@ -175,7 +174,6 @@ class AttentionSeq2seq(ModelBase):
                  num_heads=1,
                  rnnlm_fusion_type=None,
                  rnnlm_config=None,
-                 rnnlm_joint_training=False,
                  rnnlm_weight=0,
                  concat_embedding=False):
 
@@ -251,7 +249,6 @@ class AttentionSeq2seq(ModelBase):
         self.rnnlm_fusion_type = rnnlm_fusion_type
         self.rnnlm_0_fwd = None
         self.rnnlm_0_bwd = None
-        self.rnnlm_joint_training = rnnlm_joint_training
         self.rnnlm_weight_0 = rnnlm_weight
         self.concat_embedding = concat_embedding
 
@@ -283,7 +280,7 @@ class AttentionSeq2seq(ModelBase):
                 dropout=dropout_decoder)
 
             # Fix RNNLM parameters
-            if not rnnlm_joint_training:
+            if rnnlm_weight == 0:
                 for param in self.rnnlm_0_fwd.parameters():
                     param.requires_grad = False
         # TODO: backward RNNLM
@@ -580,6 +577,10 @@ class AttentionSeq2seq(ModelBase):
         ys_in = pad_list(ys_in, getattr(self, 'eos_' + str(task)))
         ys_out = pad_list(ys_out, self.pad_index)
 
+        # NOTE: change RNNLM to the evaluation mode in case of cold fusion
+        if self.rnnlm_fusion_type and getattr(self, 'rnnlm_' + str(task) + '_' + dir) == 0 and getattr(self, 'rnnlm_' + str(task) + '_' + dir) is not None:
+            getattr(self, 'rnnlm_' + str(task) + '_' + dir).eval()
+
         # Teacher-forcing
         logits, aw, logits_rnnlm = self._decode_train(
             enc_out, x_lens, ys_in, task, dir)
@@ -605,8 +606,7 @@ class AttentionSeq2seq(ModelBase):
                 ignore_index=self.pad_index, size_average=False) / len(enc_out)
 
         # Compute XE loss for RNNLM
-        if self.rnnlm_fusion_type and self.rnnlm_joint_training:
-            assert getattr(self, 'rnnlm_weight_' + str(task)) > 0
+        if self.rnnlm_fusion_type and getattr(self, 'rnnlm_weight_' + str(task)) > 0:
             if dir == 'fwd':
                 loss_rnnlm = F.cross_entropy(
                     input=logits_rnnlm.view((-1, logits_rnnlm.size(2))),
@@ -822,7 +822,7 @@ class AttentionSeq2seq(ModelBase):
                 raise ValueError(self.decoding_order)
 
             # Generate
-            pre_softmax = getattr(self, 'W_d' + taskdir)(dec_out) + \
+            logits_step = getattr(self, 'W_d' + taskdir)(dec_out) + \
                 getattr(self, 'W_c' + taskdir)(context_vec)
 
             # RNNLM fusion
@@ -831,12 +831,12 @@ class AttentionSeq2seq(ModelBase):
                     logits_step_rnnlm)
                 gate = F.sigmoid(getattr(self, 'W_rnnlm_gate' + taskdir)(
                     torch.cat([dec_out, logits_step_rnnlm], dim=-1)))
-                pre_softmax += gate * logits_step_rnnlm
+                logits_step += gate * logits_step_rnnlm
                 non_linear = F.relu
             else:
                 non_linear = F.tanh
             logits_step = getattr(self, 'fc' + taskdir)(
-                non_linear(pre_softmax))
+                non_linear(logits_step))
             if self.rnnlm_fusion_type == 'logits_fusion':
                 logits_step += logits_step_rnnlm
 
@@ -1072,7 +1072,7 @@ class AttentionSeq2seq(ModelBase):
                 raise ValueError(self.decoding_order)
 
             # Generate
-            pre_softmax = getattr(self, 'W_d' + taskdir)(dec_out) + \
+            logits_step = getattr(self, 'W_d' + taskdir)(dec_out) + \
                 getattr(self, 'W_c' + taskdir)(context_vec)
 
             # RNNLM fusion
@@ -1081,12 +1081,12 @@ class AttentionSeq2seq(ModelBase):
                     logits_step_rnnlm)
                 gate = F.sigmoid(getattr(self, 'W_rnnlm_gate' + taskdir)(
                     torch.cat([dec_out, rnnlm_feat], dim=-1)))
-                pre_softmax += gate * rnnlm_feat
+                logits_step += gate * rnnlm_feat
                 non_linear = F.relu
             else:
                 non_linear = F.tanh
             logits_step = getattr(self, 'fc' + taskdir)(
-                non_linear(pre_softmax))
+                non_linear(logits_step))
             if self.rnnlm_fusion_type == 'logits_fusion':
                 logits_step += logits_step_rnnlm
 
@@ -1156,8 +1156,10 @@ class AttentionSeq2seq(ModelBase):
         """
         if dir == 'bwd':
             assert getattr(self, 'bwd_weight_' + str(task)) > 0
-
         taskdir = '_' + str(task) + '_' + dir
+
+        if (rnnlm_weight > 0 or self.rnnlm_fusion_type) and getattr(self, 'rnnlm' + taskdir) is not None:
+            assert not getattr(self, 'rnnlm' + taskdir).training
 
         # Start from <SOS>
         sos = getattr(self, 'sos_' + str(task))
@@ -1251,7 +1253,7 @@ class AttentionSeq2seq(ModelBase):
                         raise ValueError(self.decoding_order)
 
                     # Generate
-                    pre_softmax = getattr(self, 'W_d' + taskdir)(dec_out) +\
+                    logits_step = getattr(self, 'W_d' + taskdir)(dec_out) +\
                         getattr(self, 'W_c' + taskdir)(context_vec)
 
                     # RNNLM fusion
@@ -1260,12 +1262,12 @@ class AttentionSeq2seq(ModelBase):
                             logits_step_rnnlm)
                         gate = F.sigmoid(getattr(self, 'W_rnnlm_gate' + taskdir)(
                             torch.cat([dec_out, rnnlm_feat], dim=-1)))
-                        pre_softmax += gate * rnnlm_feat
+                        logits_step += gate * rnnlm_feat
                         non_linear = F.relu
                     else:
                         non_linear = F.tanh
                     logits_step = getattr(self, 'fc' + taskdir)(
-                        non_linear(pre_softmax))
+                        non_linear(logits_step))
                     if self.rnnlm_fusion_type == 'logits_fusion':
                         logits_step += logits_step_rnnlm
 

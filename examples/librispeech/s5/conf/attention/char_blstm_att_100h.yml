@@ -36,10 +36,9 @@ param:
   decoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 5
+  encoder_num_layers: 4
   subsample_list:
     - False
-    - True
     - True
     - True
     - False
@@ -58,7 +57,7 @@ param:
   num_heads: 1
 
   # optimization
-  batch_size: 60
+  batch_size: 50
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 25
@@ -107,8 +106,8 @@ param:
   # RNNLM fusion
   rnnlm_fusion_type: False
   # rnnlm_fusion_type: cold_fusion
+  # rnnlm_fusion_type: logits_fusion
   rnnlm_path: False
   # rnnlm_path: /n/sd8/inaguma/result/librispeech/pytorch/rnnlm/character/960/lstm512H2Lemb32_adam_lr1e-3_drophidden0.2out0.2emb0.2
-  rnnlm_joint_training: False
   rnnlm_weight: 0
   concat_embedding: False
