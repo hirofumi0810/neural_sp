@@ -4,11 +4,11 @@
 . ./path.sh
 set -e
 
-. utils/parse_options.sh  # e.g. this parses the --stage option if supplied.
+. utils/parse_options.sh  # e.g. this parses the --{stage} option if supplied.
 
 if [ $# -ne 2 ]; then
   echo "Error: set GPU number & config path." 1>&2
-  echo "Usage: ./run.sh path_to_config_file gpu_index" 1>&2
+  echo "Usage: ./run.sh path_to_config_file {gpu_id}" 1>&2
   exit 1
 fi
 
@@ -28,41 +28,40 @@ wsj1="/n/rd21/corpora_1/WSJ/wsj1"
 # Sometimes, we have seen WSJ distributions that do not have subdirectories
 # like '11-13.1', but instead have 'doc', 'si_et_05', etc. directly under the
 # wsj0 or wsj1 directories. In such cases, try the following:
-# corpus=/exports/work/inf_hcrc_cstr_general/corpora/wsj
-corpus="/n/rd21/corpora_1/WSJ"
-# $corpus must contain a 'wsj0' and a 'wsj1' subdirectory for this to work.
+CSTR_WSJTATATOP="/n/rd21/corpora_1/WSJ"
+# $CSTR_WSJTATATOP must contain a 'wsj0' and a 'wsj1' subdirectory for this to work.
 
 directory_type=cstr # or original
 
 ### Set path to save dataset
-export DATA="/n/sd8/inaguma/corpus/wsj/kaldi"
+export data="/n/sd8/inaguma/corpus/wsj/kaldi"
 
 ### Set path to save the model
-MODEL="/n/sd8/inaguma/result/wsj"
+model="/n/sd8/inaguma/result/wsj"
 
 ### Select one tool to extract features (HTK is the fastest)
-# TOOL=kaldi
-TOOL=htk
-# TOOL=python_speech_features
-# TOOL=librosa
+# tool=kaldi
+tool=htk
+# tool=python_speech_features
+# tool=librosa
 
 ### Configuration of feature extranction
-CHANNELS=80
-WINDOW=0.025
-SLIDE=0.01
-ENERGY=1
-DELTA=1
-DELTADELTA=1
-# NORMALIZE=global
-NORMALIZE=speaker
-# NORMALIZE=utterance
+channels=80
+window=0.025
+slide=0.01
+energy=1
+delta=1
+deltadelta=1
+# normalize=global
+normalize=speaker
+# normalize=utterance
 
 
-if [ ! -e $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe ]; then
+if [ ! -e ${KALDI_ROOT}/tools/sph2pipe_v2.5/sph2pipe ]; then
   echo ============================================================================
   echo "                           Install sph2pipe                               "
   echo ============================================================================
-  SWBD_REPO=`pwd`
+  cur_dir=`pwd`
   # Install instructions for sph2pipe_v2.5.tar.gz
   if ! which wget >&/dev/null; then
     echo "This script requires you to first install wget";
@@ -77,32 +76,32 @@ if [ ! -e $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe ]; then
     sleep 1
   fi
 
-  if [ ! -e KALDI_ROOT/tools/sph2pipe_v2.5.tar.gz ]; then
-    wget -T 3 -t 3 http://www.openslr.org/resources/3/sph2pipe_v2.5.tar.gz -P KALDI_ROOT/tools
+  if [ ! -e ${KALDI_ROOT}/tools/sph2pipe_v2.5.tar.gz ]; then
+    wget -T 3 -t 3 http://www.openslr.org/resources/3/sph2pipe_v2.5.tar.gz -P ${KALDI_ROOT}/tools
   else
     echo "sph2pipe_v2.5.tar.gz is already downloaded."
   fi
-  tar -xovzf KALDI_ROOT/tools/sph2pipe_v2.5.tar.gz -C $KALDI_ROOT/tools
-  rm $KALDI_ROOT/tools/sph2pipe_v2.5.tar.gz
-  echo "Enter into $KALDI_ROOT/tools/sph2pipe_v2.5 ..."
-  cd $KALDI_ROOT/tools/sph2pipe_v2.5
+  tar -xovzf ${KALDI_ROOT}/tools/sph2pipe_v2.5.tar.gz -C ${KALDI_ROOT}/tools
+  rm ${KALDI_ROOT}/tools/sph2pipe_v2.5.tar.gz
+  echo "Enter into ${KALDI_ROOT}/tools/sph2pipe_v2.5 ..."
+  cd ${KALDI_ROOT}/tools/sph2pipe_v2.5
   gcc -o sph2pipe *.c -lm
-  echo "Get out of $KALDI_ROOT/tools/sph2pipe_v2.5 ..."
-  cd $SWBD_REPO
+  echo "Get out of ${KALDI_ROOT}/tools/sph2pipe_v2.5 ..."
+  cd ${cur_dir}
 fi
 
 
-if [ $stage -le 0 ] && [ ! -e $DATA/.stage_0 ]; then
+if [ ${stage} -le 0 ] && [ ! -e ${data}/.stage_0 ]; then
   echo ============================================================================
   echo "                           Data Preparation                               "
   echo ============================================================================
 
   # data preparation.
   if [ $directory_type = "original" ]; then
-    local/wsj_data_prep.sh $wsj0/??-{?,??}.? $wsj1/??-{?,??}.?  || exit 1;
+    local/wsj_data_prep.sh ${wsj0}/??-{?,??}.? ${wsj1}/??-{?,??}.?  || exit 1;
   elif [ $directory_type = "cstr" ]; then
-    local/cstr_wsj_data_prep.sh $corpus || exit 1;
-    # rm $DATA/local/dict/lexiconp.txt
+    local/cstr_wsj_data_prep.sh $CSTR_WSJTATATOP || exit 1;
+    # rm ${data}/local/dict/lexiconp.txt
   else
     echo "directory_type is original or cstr.";
     exit 1;
@@ -112,13 +111,13 @@ if [ $stage -le 0 ] && [ ! -e $DATA/.stage_0 ]; then
   # probabilities are added.
   # local/wsj_prepare_dict.sh --dict-suffix "_nosp" || exit 1;
 
-  # utils/prepare_lang.sh $DATA/local/dict_nosp \
-  #                       "<SPOKEN_NOISE>" $DATA/local/lang_tmp_nosp data/lang_nosp || exit 1;
+  # utils/prepare_lang.sh ${data}/local/dict_nosp \
+  #                       "<SPOKEN_NOISE>" ${data}/local/lang_tmp_nosp data/lang_nosp || exit 1;
 
   local/wsj_format_data.sh --lang-suffix "_nosp" || exit 1;
 
   # TODO:
-  # local/cstr_wsj_extend_dict.sh --dict-suffix "_nosp" $corpus/wsj1/doc/
+  # local/cstr_wsj_extend_dict.sh --dict-suffix "_nosp" $CSTR_WSJTATATOP/wsj1/doc/
 
   # We suggest to run the next three commands in the background,
   # as they are not a precondition for the system building and
@@ -129,76 +128,76 @@ if [ $stage -le 0 ] && [ ! -e $DATA/.stage_0 ]; then
   # Caution: the commands below will only work if $decode_cmd
   # is setup to use qsub.  Else, just remove the --cmd option.
   # NOTE: If you have a setup corresponding to the older cstr_wsj_data_prep.sh style,
-  # use local/cstr_wsj_extend_dict.sh --dict-suffix "_nosp" $corpus/wsj1/doc/ instead.
+  # use local/cstr_wsj_extend_dict.sh --dict-suffix "_nosp" $CSTR_WSJTATATOP/wsj1/doc/ instead.
   # (
-  #   local/wsj_extend_dict.sh --dict-suffix "_nosp" $wsj1/13-32.1  && \
-  #     utils/prepare_lang.sh $DATA/local/dict_nosp_larger \
-  #                           "<SPOKEN_NOISE>" $DATA/local/lang_tmp_nosp_larger data/lang_nosp_bd && \
+  #   local/wsj_extend_dict.sh --dict-suffix "_nosp" ${wsj1}/13-32.1  && \
+  #     utils/prepare_lang.sh ${data}/local/dict_nosp_larger \
+  #                           "<SPOKEN_NOISE>" ${data}/local/lang_tmp_nosp_larger data/lang_nosp_bd && \
   #     local/wsj_train_lms.sh --dict-suffix "_nosp" &&
   #     local/wsj_format_local_lms.sh --lang-suffix "_nosp" # &&
   # ) &
 
-  utils/subset_data_dir.sh --first $DATA/train_si284 7138 $DATA/train_si84 || exit 1
+  utils/subset_data_dir.sh --first ${data}/train_si284 7138 ${data}/train_si84 || exit 1
 
-  touch $DATA/.stage_0
-  echo "Finish data preparation (stage: 0)."
+  touch ${data}/.stage_0
+  echo "Finish data preparation ({stage}: 0)."
 fi
 
 
-if [ $stage -le 1 ] && [ ! -e $DATA/.stage_1 ]; then
+if [ ${stage} -le 1 ] && [ ! -e ${data}/.stage_1 ]; then
   echo ============================================================================
   echo "                        Feature extranction                               "
   echo ============================================================================
 
-  if [ $TOOL = "kaldi" ]; then
+  if [ ${tool} = "kaldi" ]; then
     for x in train_si84 train_si284 test_dev93 test_eval92; do
-      steps/make_fbank.sh --nj 8 --cmd run.pl $DATA/$x exp/make_fbank/$x $DATA/fbank || exit 1;
-      steps/compute_cmvn_stats.sh $DATA/$x exp/make_fbank/$x $DATA/fbank || exit 1;
-      utils/fix_data_dir.sh $DATA/$x || exit 1;
+      steps/make_fbank.sh --nj 8 --cmd run.pl ${data}/$x exp/make_fbank/$x ${data}/fbank || exit 1;
+      steps/compute_cmvn_stats.sh ${data}/$x exp/make_fbank/$x ${data}/fbank || exit 1;
+      utils/fix_data_dir.sh ${data}/$x || exit 1;
     done
 
-  elif [ $TOOL = "htk" ]; then
+  elif [ ${tool} = "htk" ]; then
     # Make a config file to covert from wav to htk file
-    $PYTHON local/make_htk_config.py \
-        --data_save_path $DATA \
+    ${PYTHON} local/make_htk_config.py \
+        --data_save_path ${data} \
         --config_save_path ./conf/fbank_htk.conf \
         --audio_file_type wav \
-        --channels $CHANNELS \
+        --channels ${channels} \
         --sampling_rate 16000 \
-        --window $WINDOW \
-        --slide $SLIDE \
-        --energy $ENERGY \
-        --delta $DELTA \
-        --deltadelta $DELTADELTA || exit 1;
+        --window ${window} \
+        --slide ${slide} \
+        --energy ${energy} \
+        --delta ${delta} \
+        --deltadelta ${deltadelta} || exit 1;
 
     for data_type in train_si84 train_si284 test_dev93 test_eval92; do
-      mkdir -p $DATA/wav/$data_type
-      mkdir -p $DATA/htk/$data_type
-      [ -e $DATA/$data_type/htk.scp ] && rm $DATA/$data_type/htk.scp
-      touch $DATA/$data_type/htk.scp
-      cat $DATA/$data_type/wav.scp | while read line
+      mkdir -p ${data}/wav/$data_type
+      mkdir -p ${data}/htk/$data_type
+      [ -e ${data}/$data_type/htk.scp ] && rm ${data}/$data_type/htk.scp
+      touch ${data}/$data_type/htk.scp
+      cat ${data}/$data_type/wav.scp | while read line
       do
         # Convert from sph to wav files
         sph_path=`echo $line | awk -F " " '{ print $(NF - 1) }'`
         speaker=`echo $line | awk -F "/" '{ print $(NF - 1) }'`
-        mkdir -p $DATA/wav/$data_type/$speaker
+        mkdir -p ${data}/wav/$data_type/$speaker
         file_name=`basename $sph_path`
         base=${file_name%.*}
         # ext=${file_name##*.}
-        wav_path=$DATA/wav/$data_type/$speaker/$base".wav"
+        wav_path=${data}/wav/$data_type/$speaker/$base".wav"
         if [ ! -e $wav_path ]; then
-          $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe -f wav $sph_path $wav_path || exit 1;
+          ${KALDI_ROOT}/tools/sph2pipe_v2.5/sph2pipe -f wav $sph_path $wav_path || exit 1;
         fi
 
         # Convert from wav to htk files
-        mkdir -p $DATA/htk/$data_type/$speaker
-        htk_path=$DATA/htk/$data_type/$speaker/$base".htk"
+        mkdir -p ${data}/htk/$data_type/$speaker
+        htk_path=${data}/htk/$data_type/$speaker/$base".htk"
         if [ ! -e $htk_path ]; then
           echo $wav_path  $htk_path > ./tmp.scp
           $HCOPY -T 1 -C ./conf/fbank_htk.conf -S ./tmp.scp || exit 1;
           rm ./tmp.scp
         fi
-        echo $htk_path >> $DATA/$data_type/htk.scp
+        echo $htk_path >> ${data}/$data_type/htk.scp
       done
     done
 
@@ -209,117 +208,117 @@ if [ $stage -le 1 ] && [ ! -e $DATA/.stage_1 ]; then
     fi
   fi
 
-  $PYTHON local/feature_extraction.py \
-    --data_save_path $DATA \
-    --tool $TOOL \
-    --normalize $NORMALIZE \
-    --channels $CHANNELS \
-    --window $WINDOW \
-    --slide $SLIDE \
-    --energy $ENERGY \
-    --delta $DELTA \
-    --deltadelta $DELTADELTA || exit 1;
+  ${PYTHON} local/feature_extraction.py \
+    --data_save_path ${data} \
+    --tool ${tool} \
+    --normalize ${normalize} \
+    --channels ${channels} \
+    --window ${window} \
+    --slide ${slide} \
+    --energy ${energy} \
+    --delta ${delta} \
+    --deltadelta ${deltadelta} || exit 1;
 
-  touch $DATA/.stage_1
-  echo "Finish feature extranction (stage: 1)."
+  touch ${data}/.stage_1
+  echo "Finish feature extranction ({stage}: 1)."
 fi
 
 
-if [ $stage -le 2 ] && [ ! -e $DATA/.stage_2 ]; then
+if [ ${stage} -le 2 ] && [ ! -e ${data}/.stage_2 ]; then
   echo ============================================================================
   echo "                            Create dataset                                "
   echo ============================================================================
 
-  $PYTHON local/make_dataset_csv.py \
-    --data_save_path $DATA \
-    --tool $TOOL || exit 1;
+  ${PYTHON} local/make_dataset_csv.py \
+    --data_save_path ${data} \
+    --tool ${tool} || exit 1;
 
-  touch $DATA/.stage_2
-  echo "Finish creating dataset (stage: 2)."
+  touch ${data}/.stage_2
+  echo "Finish creating dataset ({stage}: 2)."
 fi
 
 
-if [ $stage -le 3 ]; then
+if [ ${stage} -le 3 ]; then
   echo ============================================================================
   echo "                             Training stage                               "
   echo ============================================================================
 
   config_path=$1
-  gpu_index=$2
+  gpu_id=$2
   filename=$(basename $config_path | awk -F. '{print $1}')
 
   mkdir -p log
-  mkdir -p $MODEL
+  mkdir -p ${model}
 
   echo "Start training..."
 
   if [ `echo $config_path | grep 'hierarchical'` ]; then
     if [ `echo $config_path | grep 'result'` ]; then
-      if $run_background; then
-        CUDA_VISIBLE_DEVICES=$gpu_index \
-        nohup $PYTHON exp/training/train_hierarchical.py \
-          --gpu $gpu_index \
+      if ${run_background}; then
+        CUDA_VISIBLE_DEVICES=${gpu_id} \
+        nohup ${PYTHON} exp/training/train_hierarchical.py \
+          --gpu ${gpu_id} \
           --saved_model_path $config_path \
-          --data_save_path $DATA > log/$filename".log" &
+          --data_save_path ${data} > log/$filename".log" &
       else
-        CUDA_VISIBLE_DEVICES=$gpu_index \
-        nohup $PYTHON exp/training/train_hierarchical.py \
-          --gpu $gpu_index \
+        CUDA_VISIBLE_DEVICES=${gpu_id} \
+        nohup ${PYTHON} exp/training/train_hierarchical.py \
+          --gpu ${gpu_id} \
           --saved_model_path $config_path \
-          --data_save_path $DATA || exit 1;
+          --data_save_path ${data} || exit 1;
       fi
     else
-      if $run_background; then
-        CUDA_VISIBLE_DEVICES=$gpu_index \
-        nohup $PYTHON exp/training/train_hierarchical.py \
-          --gpu $gpu_index \
+      if ${run_background}; then
+        CUDA_VISIBLE_DEVICES=${gpu_id} \
+        nohup ${PYTHON} exp/training/train_hierarchical.py \
+          --gpu ${gpu_id} \
           --config_path $config_path \
-          --model_save_path $MODEL \
-          --data_save_path $DATA > log/$filename".log" &
+          --model_save_path ${model} \
+          --data_save_path ${data} > log/$filename".log" &
       else
-        CUDA_VISIBLE_DEVICES=$gpu_index \
-        $PYTHON exp/training/train_hierarchical.py \
-          --gpu $gpu_index \
+        CUDA_VISIBLE_DEVICES=${gpu_id} \
+        ${PYTHON} exp/training/train_hierarchical.py \
+          --gpu ${gpu_id} \
           --config_path $config_path \
-          --model_save_path $MODEL \
-          --data_save_path $DATA || exit 1;
+          --model_save_path ${model} \
+          --data_save_path ${data} || exit 1;
       fi
     fi
   else
     if [ `echo $config_path | grep 'result'` ]; then
-      if $run_background; then
-        CUDA_VISIBLE_DEVICES=$gpu_index \
-        nohup $PYTHON exp/training/train.py \
-          --gpu $gpu_index \
+      if ${run_background}; then
+        CUDA_VISIBLE_DEVICES=${gpu_id} \
+        nohup ${PYTHON} exp/training/train.py \
+          --gpu ${gpu_id} \
           --saved_model_path $config_path \
-          --data_save_path $DATA > log/$filename".log" &
+          --data_save_path ${data} > log/$filename".log" &
       else
-        CUDA_VISIBLE_DEVICES=$gpu_index \
-        $PYTHON exp/training/train.py \
-          --gpu $gpu_index \
+        CUDA_VISIBLE_DEVICES=${gpu_id} \
+        ${PYTHON} exp/training/train.py \
+          --gpu ${gpu_id} \
           --saved_model_path $config_path \
-          --data_save_path $DATA || exit 1;
+          --data_save_path ${data} || exit 1;
       fi
     else
-      if $run_background; then
-        CUDA_VISIBLE_DEVICES=$gpu_index \
-        nohup $PYTHON exp/training/train.py \
-          --gpu $gpu_index \
+      if ${run_background}; then
+        CUDA_VISIBLE_DEVICES=${gpu_id} \
+        nohup ${PYTHON} exp/training/train.py \
+          --gpu ${gpu_id} \
           --config_path $config_path \
-          --model_save_path $MODEL \
-          --data_save_path $DATA > log/$filename".log" &
+          --model_save_path ${model} \
+          --data_save_path ${data} > log/$filename".log" &
       else
-        CUDA_VISIBLE_DEVICES=$gpu_index \
-        $PYTHON exp/training/train.py \
-          --gpu $gpu_index \
+        CUDA_VISIBLE_DEVICES=${gpu_id} \
+        ${PYTHON} exp/training/train.py \
+          --gpu ${gpu_id} \
           --config_path $config_path \
-          --model_save_path $MODEL \
-          --data_save_path $DATA|| exit 1;
+          --model_save_path ${model} \
+          --data_save_path ${data}|| exit 1;
       fi
     fi
   fi
 
-  echo "Finish model training (stage: 3)."
+  echo "Finish model training ({stage}: 3)."
 fi
 
 
@@ -329,18 +328,18 @@ echo "Done."
 # echo ============================================================================
 # echo "                             LM training                                 "
 # echo ============================================================================
-# if [ $stage -le 4 ]; then
+# if [ ${stage} -le 4 ]; then
 #
-#   echo "Finish LM training (stage: 4)."
+#   echo "Finish LM training ({stage}: 4)."
 # fi
 
 
 # echo ============================================================================
 # echo "                              Rescoring                                   "
 # echo ============================================================================
-# if [ $stage -le 5 ]; then
+# if [ ${stage} -le 5 ]; then
 #
-#   echo "Finish rescoring (stage: 5)."
+#   echo "Finish rescoring ({stage}: 5)."
 # fi
 
 

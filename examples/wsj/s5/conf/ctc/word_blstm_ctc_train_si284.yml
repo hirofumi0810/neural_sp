@@ -19,8 +19,8 @@ param:
   fc_list: [256]
 
   # initialization
-  char_init: False
-  # char_init: /n/sd8/inaguma/result/wsj/pytorch/ctc/character/train_si284/blstm256H4L_drop4_adam_lr1e-3_dropen0.2_input80
+  pretrained_model_path: False
+  # pretrained_model_path: /n/sd8/inaguma/result/wsj/pytorch/ctc/character/train_si284/blstm256H4L_drop4_adam_lr1e-3_dropen0.2_input80
 
   # annealing
   print_step: 100

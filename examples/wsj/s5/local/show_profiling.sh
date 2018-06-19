@@ -10,9 +10,4 @@ if [ $# -ne 1 ]; then
   exit 1
 fi
 
-### Set path to save dataset
-DATA="/n/sd8/inaguma/corpus/wsj/kaldi"
-
-saved_model_path=$1
-
-$PYTHON exp/evaluation/profiling.py --model_path $saved_model_path
+${PYTHON} exp/evaluation/profiling.py --model_path $1
