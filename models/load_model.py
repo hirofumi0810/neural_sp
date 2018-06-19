@@ -101,8 +101,7 @@ def load(model_type, config, backend):
             model.name += 'en' + str(config['dropout_encoder'])
         if config['logits_temperature'] != 1:
             model.name += '_temp' + str(config['logits_temperature'])
-        if config['label_smoothing_prob'] > 0:
-            model.name += '_ls' + str(config['label_smoothing_prob'])
+
         if config['weight_noise_std'] != 0:
             model.name += '_noise' + str(config['weight_noise_std'])
         if config['encoder_type'] == 'cnn':
@@ -695,6 +694,7 @@ def load(model_type, config, backend):
             parameter_init=config['parameter_init'],
             recurrent_weight_orthogonal=config['recurrent_weight_orthogonal'],
             init_forget_gate_bias_with_one=config['init_forget_gate_bias_with_one'],
+            label_smoothing_prob=config['label_smoothing_prob'],
             tie_weights=config['tie_weights'],
             backward=config['backward'])
 
@@ -718,6 +718,8 @@ def load(model_type, config, backend):
             model.name += 'out' + str(config['dropout_output'])
         if config['dropout_embedding'] != 0:
             model.name += 'emb' + str(config['dropout_embedding'])
+        if config['label_smoothing_prob'] > 0:
+            model.name += '_ls' + str(config['label_smoothing_prob'])
         if bool(config['backward']):
             model.name += '_backward'
         if config['vocab']:

@@ -15,8 +15,9 @@ from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from models.pytorch_v3.base import ModelBase
-from models.pytorch_v3.linear import LinearND, Embedding
-from models.pytorch_v3.utils import np2var, var2np, pad_list
+from models.pytorch_v3.linear import LinearND, Embedding, Embedding_LS
+from models.pytorch_v3.utils import np2var, var2np, pad_list, to_onehot
+from models.pytorch_v3.criterion import cross_entropy_label_smoothing
 
 
 class RNNLM(ModelBase):
@@ -39,6 +40,7 @@ class RNNLM(ModelBase):
             orthogonalized
         init_forget_gate_bias_with_one (bool): if True, initialize the forget
             gate bias with 1
+        label_smoothing_prob (float):
         tie_weights (bool):
         backward (bool): if True, backward RNNLM
     """
@@ -57,6 +59,7 @@ class RNNLM(ModelBase):
                  parameter_init=0.1,
                  recurrent_weight_orthogonal=False,
                  init_forget_gate_bias_with_one=True,
+                 label_smoothing_prob=0,
                  tie_weights=False,
                  backward=False):
 
@@ -76,10 +79,22 @@ class RNNLM(ModelBase):
         self.sos = num_classes
         self.eos = num_classes
 
-        self.embed = Embedding(num_classes=self.num_classes,
-                               embedding_dim=embedding_dim,
-                               dropout=dropout_embedding)
-        # TODO: add label smoothing
+        # Setting for regularization
+        self.weight_noise_injection = False
+        self.ls_prob = label_smoothing_prob
+
+        if label_smoothing_prob > 0:
+            self.embed = Embedding_LS(
+                num_classes=self.num_classes,
+                embedding_dim=embedding_dim,
+                dropout=dropout_embedding,
+                label_smoothing_prob=label_smoothing_prob)
+        else:
+            self.embed = Embedding(
+                num_classes=self.num_classes,
+                embedding_dim=embedding_dim,
+                dropout=dropout_embedding,
+                ignore_index=self.eos)
 
         if rnn_type == 'lstm':
             self.rnn = nn.LSTM(embedding_dim,
@@ -164,8 +179,8 @@ class RNNLM(ModelBase):
             self.train()
 
             # Gaussian noise injection
-            # if self.weight_noise_injection:
-            #     self.inject_weight_noise(mean=0, std=self.weight_noise_std)
+            if self.weight_noise_injection:
+                self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
         # Sort by lenghts in the descending order
         perm_idx = sorted(list(range(0, len(ys), 1)),
@@ -211,9 +226,19 @@ class RNNLM(ModelBase):
         logits = self.output(ys_in)
 
         # Compute XE sequence loss
-        loss = F.cross_entropy(input=logits.view((-1, logits.size(2))),
-                               target=ys_out.contiguous().view(-1),
-                               ignore_index=-1, size_average=True)
+        if self.ls_prob > 0:
+            # Label smoothing (with uniform distribution)
+            y_lens = [y.size(0) + 1 for y in ys]   # Add <EOS>
+            loss = cross_entropy_label_smoothing(
+                logits,
+                ys=to_onehot(ys_out, logits.size(-1), y_lens),
+                y_lens=y_lens,
+                label_smoothing_prob=self.ls_prob,
+                distribution='uniform') / sum(logits.size()[:2])
+        else:
+            loss = F.cross_entropy(input=logits.view((-1, logits.size(2))),
+                                   target=ys_out.contiguous().view(-1),
+                                   ignore_index=-1, size_average=True)
 
         return loss
 
@@ -266,9 +291,9 @@ class RNNLM(ModelBase):
         batch_size = len(start_tokens)
 
         # Wrap by Variable
-        ys = [np2var(np.fromiter([y], dtype=np.int64), self.device_id, volatile=True).long()
+        ys = [np2var(np.fromiter([self.sos] + y, dtype=np.int64), self.device_id, volatile=True).long()
               for y in start_tokens]
-        y_lens = [1] * batch_size
+        y_lens = [0] * batch_size
 
         # Convert list to Variable
         y_in = pad_list(ys, -1)
@@ -283,21 +308,24 @@ class RNNLM(ModelBase):
         eos_flag = [False] * batch_size
         for t in range(max_decode_len):
             # Path through embedding
-            y_in = self.embed(y_in)
+            if t < 2:
+                y = self.embed(y_in[:, t:t + 1])
+            else:
+                y = self.embed(y)
 
             # Path through RNN
-            y_in, h = self.rnn(y_in, hx=h)
+            y, h = self.rnn(y, hx=h)
 
-            logits_step = self.output(y_in)
+            logits_step = self.output(y)
 
             # Pick up 1-best
-            y_in = torch.max(logits_step.squeeze(1), dim=1)[1].unsqueeze(1)
-            _best_hyps += [y_in]
+            y = torch.max(logits_step.squeeze(1), dim=1)[1].unsqueeze(1)
+            _best_hyps += [y]
 
             # Count lengths of hypotheses
             for b in range(batch_size):
                 if not eos_flag[b]:
-                    if y_in.data.cpu().numpy()[b] == self.eos:
+                    if y.data.cpu().numpy()[b] == self.eos:
                         eos_flag[b] = True
                     y_lens[b] += 1
                     # NOTE: include <EOS>

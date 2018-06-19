@@ -29,6 +29,9 @@ class TestRNNLM(unittest.TestCase):
     def test(self):
         print("RNNLM Working check.")
 
+        # label smoothing
+        self.check(rnn_type='lstm', label_smoothing_prob=0.1)
+
         # backward
         self.check(rnn_type='lstm', bidirectional=False, backward=True)
 
@@ -48,7 +51,8 @@ class TestRNNLM(unittest.TestCase):
 
     @measure_time
     def check(self, rnn_type, bidirectional=False,
-              label_type='char', tie_weights=False, backward=False, bptt=35):
+              label_type='char', tie_weights=False, backward=False,
+              label_smoothing_prob=0, bptt=35):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
@@ -57,6 +61,7 @@ class TestRNNLM(unittest.TestCase):
         print('  tie_weights: %s' % str(tie_weights))
         print('  bptt: %d' % bptt)
         print('  backward: %s' % str(backward))
+        print('  label_smoothing_prob: %.3f' % label_smoothing_prob)
         print('==================================================')
 
         # Load batch data
@@ -84,6 +89,7 @@ class TestRNNLM(unittest.TestCase):
                       parameter_init=0.1,
                       recurrent_weight_orthogonal=True,
                       init_forget_gate_bias_with_one=True,
+                      label_smoothing_prob=label_smoothing_prob,
                       tie_weights=tie_weights,
                       backward=backward)
 
@@ -146,7 +152,7 @@ class TestRNNLM(unittest.TestCase):
                 start_time_step = time.time()
 
                 # Visualize
-                best_hyps = model.decode([model.sos], max_decode_len=60)
+                best_hyps = model.decode([[model.sos]], max_decode_len=60)
                 print(map_fn(best_hyps[0]))
 
                 if ppl == 1:
