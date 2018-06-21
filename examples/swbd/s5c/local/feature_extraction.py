@@ -98,26 +98,27 @@ def main():
         if args.tool == 'htk':
             with open(join(args.data_save_path, data_type_tmp, 'htk.scp'), 'r') as f:
                 for line in f:
-                    line = line.strip()
-                    htk_path = line.split('  ')[1]
+                    htk_path = line.strip()
                     speaker = basename(htk_path).split('.')[0]
                     if data_type == 'eval2000_swbd' and speaker[:2] == 'en':
                         continue
                     if data_type == 'eval2000_ch' and speaker[:2] == 'sw':
                         continue
-
                     spk2audio[speaker] = htk_path
         else:
             with open(join(args.data_save_path, data_type_tmp, 'wav.scp'), 'r') as f:
                 for line in f:
-                    line = line.strip()
-                    speaker = line.split(' ')[0]
+                    speaker = line.strip().split(' ')[0]
+                    if data_type == 'eval2000_swbd' and speaker[:2] == 'en':
+                        continue
+                    if data_type == 'eval2000_ch' and speaker[:2] == 'sw':
+                        continue
                     if data_type == 'dev':
                         wav_path = join(args.data_save_path,
-                                        'wav_1ch', 'train', speaker + '.wav')
+                                        'wav', 'train', speaker + '.wav')
                     else:
                         wav_path = join(args.data_save_path,
-                                        'wav_1ch', data_type, speaker + '.wav')
+                                        'wav', data_type, speaker + '.wav')
                     spk2audio[speaker] = wav_path
 
         if data_type == 'train':
