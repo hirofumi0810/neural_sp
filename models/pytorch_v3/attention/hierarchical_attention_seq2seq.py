@@ -14,7 +14,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 
 from models.pytorch_v3.attention.attention_seq2seq import AttentionSeq2seq
-from models.pytorch_v3.linear import LinearND, Embedding, Embedding_LS
+from models.pytorch_v3.linear import LinearND, Embedding
 from models.pytorch_v3.encoders.load_encoder import load
 from models.pytorch_v3.attention.rnn_decoder import RNNDecoder
 from models.pytorch_v3.attention.attention_layer import AttentionMechanism, MultiheadAttentionMechanism
@@ -81,6 +81,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  scheduled_sampling_prob=0,
                  scheduled_sampling_max_step=0,
                  label_smoothing_prob=0,
+                 label_smoothing_type='unigram',
                  weight_noise_std=0,
                  encoder_residual=False,
                  encoder_dense_residual=False,
@@ -140,6 +141,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             scheduled_sampling_prob=scheduled_sampling_prob,
             scheduled_sampling_max_step=scheduled_sampling_max_step,
             label_smoothing_prob=label_smoothing_prob,
+            label_smoothing_type=label_smoothing_type,
             weight_noise_std=weight_noise_std,
             encoder_residual=encoder_residual,
             encoder_dense_residual=encoder_dense_residual,
@@ -368,18 +370,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 bottleneck_dim_sub, self.num_classes_sub))
 
             # Embedding (sub)
-            if label_smoothing_prob > 0:
-                self.embed_1 = Embedding_LS(
-                    num_classes=self.num_classes_sub,
-                    embedding_dim=embedding_dim_sub,
-                    dropout=dropout_embedding,
-                    label_smoothing_prob=label_smoothing_prob)
-            else:
-                self.embed_1 = Embedding(
-                    num_classes=self.num_classes_sub,
-                    embedding_dim=embedding_dim_sub,
-                    dropout=dropout_embedding,
-                    ignore_index=self.eos_1)
+            self.embed_1 = Embedding(num_classes=self.num_classes_sub,
+                                     embedding_dim=embedding_dim_sub,
+                                     dropout=dropout_embedding,
+                                     ignore_index=self.eos_1)
 
         # CTC (sub)
         if ctc_loss_weight_sub > 0:

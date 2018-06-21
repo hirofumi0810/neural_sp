@@ -15,8 +15,8 @@ from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from models.pytorch_v3.base import ModelBase
-from models.pytorch_v3.linear import LinearND, Embedding, Embedding_LS
-from models.pytorch_v3.utils import np2var, var2np, pad_list, to_onehot
+from models.pytorch_v3.linear import LinearND, Embedding
+from models.pytorch_v3.utils import np2var, var2np, pad_list
 from models.pytorch_v3.criterion import cross_entropy_label_smoothing
 
 
@@ -41,6 +41,7 @@ class RNNLM(ModelBase):
         init_forget_gate_bias_with_one (bool): if True, initialize the forget
             gate bias with 1
         label_smoothing_prob (float):
+        label_smoothing_type (string): uniform or unigram
         tie_weights (bool):
         backward (bool): if True, backward RNNLM
     """
@@ -60,6 +61,7 @@ class RNNLM(ModelBase):
                  recurrent_weight_orthogonal=False,
                  init_forget_gate_bias_with_one=True,
                  label_smoothing_prob=0,
+                 label_smoothing_type='unigram',
                  tie_weights=False,
                  backward=False):
 
@@ -82,19 +84,12 @@ class RNNLM(ModelBase):
         # Setting for regularization
         self.weight_noise_injection = False
         self.ls_prob = label_smoothing_prob
+        self.ls_type = label_smoothing_type
 
-        if label_smoothing_prob > 0:
-            self.embed = Embedding_LS(
-                num_classes=self.num_classes,
-                embedding_dim=embedding_dim,
-                dropout=dropout_embedding,
-                label_smoothing_prob=label_smoothing_prob)
-        else:
-            self.embed = Embedding(
-                num_classes=self.num_classes,
-                embedding_dim=embedding_dim,
-                dropout=dropout_embedding,
-                ignore_index=self.eos)
+        self.embed = Embedding(num_classes=self.num_classes,
+                               embedding_dim=embedding_dim,
+                               dropout=dropout_embedding,
+                               ignore_index=self.eos)
 
         if rnn_type == 'lstm':
             self.rnn = nn.LSTM(embedding_dim,
@@ -230,11 +225,10 @@ class RNNLM(ModelBase):
             # Label smoothing (with uniform distribution)
             y_lens = [y.size(0) + 1 for y in ys]   # Add <EOS>
             loss = cross_entropy_label_smoothing(
-                logits,
-                ys=to_onehot(ys_out, logits.size(-1), y_lens),
-                y_lens=y_lens,
+                logits, ys=ys_out, y_lens=y_lens,
                 label_smoothing_prob=self.ls_prob,
-                distribution='uniform') / sum(logits.size()[:2])
+                label_smoothing_type=self.ls_type,
+                size_average=False) / sum(logits.size()[:2])
         else:
             loss = F.cross_entropy(input=logits.view((-1, logits.size(2))),
                                    target=ys_out.contiguous().view(-1),

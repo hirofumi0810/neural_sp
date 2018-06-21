@@ -9,7 +9,6 @@ from __future__ import print_function
 
 import numpy as np
 import torch.nn as nn
-from models.pytorch_v3.utils import to_onehot
 
 
 class LinearND(nn.Module):
@@ -74,39 +73,39 @@ class Embedding(nn.Module):
         return self.dropout(self.embed(y))
 
 
-class Embedding_LS(nn.Module):
-
-    def __init__(self, num_classes, embedding_dim, dropout=0,
-                 label_smoothing_prob=0.):
-        """Embedding layer with label smoothing.
-        Args:
-            num_classes (int): the number of nodes in softmax layer
-                (including <SOS> and <EOS> classes)
-            embedding_dim (int): the dimension of the embedding in target spaces
-            dropout (float, optional): the probability to drop nodes of the embedding
-            label_smoothing_prob (float, optional):
-        """
-        super(Embedding_LS, self).__init__()
-
-        self.num_classes = num_classes
-        self.ls_prob = label_smoothing_prob
-        assert label_smoothing_prob > 0
-        self.embed = LinearND(num_classes, embedding_dim,
-                              bias=False,
-                              dropout=dropout)
-
-    def forward(self, ys):
-        """Forward computation.
-        Args:
-            ys (torch.autograd.Variable, long): A tensor of size
-                `[B, L]`
-        Returns:
-            ys (torch.autograd.Variable, float): A tensor of size
-                `[B, L, embedding_dim]`
-        """
-        # Label smoothing
-        ys = to_onehot(ys, self.num_classes) * (1 - self.ls_prob) + \
-            (1 / self.num_classes) * self.ls_prob
-        # ys: `[B, L, num_classes]`
-
-        return self.embed(ys)
+# class Embedding_LS(nn.Module):
+#
+#     def __init__(self, num_classes, embedding_dim, dropout=0,
+#                  label_smoothing_prob=0.):
+#         """Embedding layer with label smoothing.
+#         Args:
+#             num_classes (int): the number of nodes in softmax layer
+#                 (including <SOS> and <EOS> classes)
+#             embedding_dim (int): the dimension of the embedding in target spaces
+#             dropout (float, optional): the probability to drop nodes of the embedding
+#             label_smoothing_prob (float, optional):
+#         """
+#         super(Embedding_LS, self).__init__()
+#
+#         self.num_classes = num_classes
+#         self.ls_prob = label_smoothing_prob
+#         assert label_smoothing_prob > 0
+#         self.embed = LinearND(num_classes, embedding_dim,
+#                               bias=False,
+#                               dropout=dropout)
+#
+#     def forward(self, ys):
+#         """Forward computation.
+#         Args:
+#             ys (torch.autograd.Variable, long): A tensor of size
+#                 `[B, L]`
+#         Returns:
+#             ys (torch.autograd.Variable, float): A tensor of size
+#                 `[B, L, embedding_dim]`
+#         """
+#         # Label smoothing
+#         ys = to_onehot(ys, self.num_classes) * (1 - self.ls_prob) + \
+#             (1 / self.num_classes) * self.ls_prob
+#         # ys: `[B, L, num_classes]`
+#
+#         return self.embed(ys)

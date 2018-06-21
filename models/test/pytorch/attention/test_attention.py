@@ -307,7 +307,7 @@ class TestAttention(unittest.TestCase):
             if (step + 1) % 10 == 0:
                 # Compute loss
                 loss, acc = model(xs, ys, is_eval=True)
-                loss = loss.data[0] if model.torch_version < 0.4 else loss.imem()
+                loss = loss.data[0] if model.torch_version < 0.4 else loss.item()
 
                 # Decode
                 best_hyps, _, perm_idx = model.decode(
@@ -321,11 +321,11 @@ class TestAttention(unittest.TestCase):
                     if label_type == 'char':
                         ler = compute_wer(ref=list(str_ref.replace('_', '')),
                                           hyp=list(str_hyp.replace('_', '')),
-                                          normalize=True)
+                                          normalize=True)[0]
                     elif label_type == 'word':
                         ler = compute_wer(ref=str_ref.split('_'),
                                           hyp=str_hyp.split('_'),
-                                          normalize=True)
+                                          normalize=True)[0]
                 except:
                     ler = 100
 
@@ -345,7 +345,7 @@ class TestAttention(unittest.TestCase):
                     str_pred_ctc = map_fn(best_hyps_ctc[0])
                     print('Hyp (CTC): %s' % str_pred_ctc)
 
-                if ler < 1:
+                if ler < 5:
                     print('Modle is Converged.')
                     break
 

@@ -15,14 +15,14 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 
 from models.pytorch_v3.attention.attention_seq2seq import AttentionSeq2seq
-from models.pytorch_v3.linear import LinearND, Embedding, Embedding_LS
+from models.pytorch_v3.linear import LinearND, Embedding
 from models.pytorch_v3.encoders.load_encoder import load
 from models.pytorch_v3.attention.rnn_decoder import RNNDecoder
 from models.pytorch_v3.attention.attention_layer import AttentionMechanism, MultiheadAttentionMechanism
 from models.pytorch_v3.criterion import cross_entropy_label_smoothing
 from models.pytorch_v3.ctc.decoders.greedy_decoder import GreedyDecoder
 from models.pytorch_v3.ctc.decoders.beam_search_decoder import BeamSearchDecoder
-from models.pytorch_v3.utils import np2var, var2np, pad_list, to_onehot
+from models.pytorch_v3.utils import np2var, var2np, pad_list
 from utils.io.inputs.frame_stacking import stack_frame
 from utils.io.inputs.splicing import do_splice
 
@@ -82,6 +82,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                  scheduled_sampling_prob=0,
                  scheduled_sampling_max_step=0,
                  label_smoothing_prob=0,
+                 label_smoothing_type='unigram',
                  weight_noise_std=0,
                  encoder_residual=False,
                  encoder_dense_residual=False,
@@ -143,6 +144,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             scheduled_sampling_prob=scheduled_sampling_prob,
             scheduled_sampling_max_step=scheduled_sampling_max_step,
             label_smoothing_prob=label_smoothing_prob,
+            label_smoothing_type=label_smoothing_type,
             weight_noise_std=weight_noise_std,
             encoder_residual=encoder_residual,
             encoder_dense_residual=encoder_dense_residual,
@@ -423,18 +425,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             bottleneck_dim_sub, self.num_classes_sub))
 
         # Embedding (sub)
-        if label_smoothing_prob > 0:
-            self.embed_1 = Embedding_LS(
-                num_classes=self.num_classes_sub,
-                embedding_dim=embedding_dim_sub,
-                dropout=dropout_embedding,
-                label_smoothing_prob=label_smoothing_prob)
-        else:
-            self.embed_1 = Embedding(
-                num_classes=self.num_classes_sub,
-                embedding_dim=embedding_dim_sub,
-                dropout=dropout_embedding,
-                ignore_index=self.eos_1)
+        self.embed_1 = Embedding(num_classes=self.num_classes_sub,
+                                 embedding_dim=embedding_dim_sub,
+                                 dropout=dropout_embedding,
+                                 ignore_index=self.eos_1)
 
         # CTC (sub)
         if ctc_loss_weight_sub > 0:
@@ -616,11 +610,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 # Label smoothing (with uniform distribution)
                 y_lens = [y.size(0) + 1 for y in ys]  # Add <EOS>
                 loss_main = cross_entropy_label_smoothing(
-                    logits,
-                    ys=to_onehot(ys_out, logits.size(-1), y_lens),
-                    y_lens=y_lens,
+                    logits, ys=ys_out, y_lens=y_lens,
                     label_smoothing_prob=self.ls_prob,
-                    distribution='uniform') / len(enc_out)
+                    label_smoothing_type=self.ls_type, size_average=True)
             else:
                 loss_main = F.cross_entropy(
                     input=logits.view((-1, logits.size(2))),
@@ -651,11 +643,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             # Label smoothing (with uniform distribution)
             y_lens_sub = [y.size(0) + 1 for y in ys_sub]   # Add <EOS>
             loss_sub = cross_entropy_label_smoothing(
-                logits_sub,
-                ys=to_onehot(ys_out_sub, logits_sub.size(-1), y_lens_sub),
-                y_lens=y_lens_sub,  # long
+                logits_sub, ys=ys_out_sub, y_lens=y_lens_sub,
                 label_smoothing_prob=self.ls_prob,
-                distribution='uniform') / len(enc_out)
+                label_smoothing_type=self.ls_type, size_average=True)
         else:
             loss_sub = F.cross_entropy(
                 input=logits_sub.view((-1, logits_sub.size(2))),

@@ -97,7 +97,7 @@ class TestRNNLM(unittest.TestCase):
         for name in sorted(list(model.num_params_dict.keys())):
             num_params = model.num_params_dict[name]
             print("%s %d" % (name, num_params))
-        print("Total %.3f M parameters" % (model.total_parameters / 1000000))
+        print("Total %.2f M parameters" % (model.total_parameters / 1000000))
 
         # Define optimizer
         learning_rate = 1e-3
@@ -130,8 +130,12 @@ class TestRNNLM(unittest.TestCase):
             loss = model(ys)
             loss.backward()
             loss.detach()
-            # torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
-            nn.utils.clip_grad_norm(model.parameters(), 5)
+            if model.torch_version < 0.4:
+                torch.nn.utils.clip_grad_norm(model.parameters(), 5)
+                loss = loss.data[0]
+            else:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
+                loss = loss.item()
             model.optimizer.step()
             # TODO: add BPTT
 
@@ -147,7 +151,7 @@ class TestRNNLM(unittest.TestCase):
                 ppl = math.exp(loss)
 
                 duration_step = time.time() - start_time_step
-                print('Step %d: loss=%.3f / ppl=%.3f / lr=%.5f (%.3f sec)' %
+                print('Step %d: loss=%.2f/ppl=%.2f/lr=%.5f (%.2f sec)' %
                       (step + 1, loss, ppl, learning_rate, duration_step))
                 start_time_step = time.time()
 

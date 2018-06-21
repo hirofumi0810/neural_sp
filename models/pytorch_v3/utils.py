@@ -21,7 +21,7 @@ def tensor2np(x):
     return x.cpu().numpy()
 
 
-def np2var(array, device_id=-1, async=True, volatile=False):
+def np2var(array, device_id=-1, async=False, volatile=False):
     """Convert form np.ndarray to Variable.
     Args:
         array (np.ndarray): A tensor of any sizes
@@ -74,27 +74,3 @@ def pad_list(xs, pad_value=float("nan")):
     for b in range(batch_size):
         xs_pad[b, :xs[b].size(0)] = xs[b]
     return xs_pad
-
-
-def to_onehot(ys, num_classes, y_lens=None):
-    """Convert indices into one-hot encoding.
-    Args:
-        ys (torch.autograd.Variable, long): Indices of labels.
-            A tensor of size `[B, L]`.
-        num_classes (int): the number of classes
-        y_lens (list):
-    Returns:
-        ys (torch.autograd.Variable, float): A tensor of size
-            `[B, L, num_classes]`
-    """
-    batch_size, num_tokens = ys.size()[:2]
-
-    ys_onehot = Variable(ys.float().data.new(
-        batch_size, num_tokens, num_classes).fill_(0.))
-    for b in range(batch_size):
-        for t in range(num_tokens if y_lens is None else y_lens[b]):
-            ys_onehot.data[b, t, ys.data[b, t]] = 1.
-
-    if ys.volatile:
-        ys_onehot.volatile = True
-    return ys_onehot
