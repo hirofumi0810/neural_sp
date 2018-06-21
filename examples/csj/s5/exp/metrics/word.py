@@ -61,6 +61,7 @@ def eval_word(models, dataset, eval_batch_size,
     wer = 0
     sub, ins, dele, = 0, 0, 0
     num_words = 0
+    num_oov = 0
     if progressbar:
         pbar = tqdm(total=len(dataset))  # TODO: fix this
     while True:
@@ -147,6 +148,7 @@ def eval_word(models, dataset, eval_batch_size,
 
             # Hypothesis
             str_hyp = dataset.idx2word(best_hyps[b])
+            num_oov += str_hyp.count('OOV')
 
             # Resolving UNK
             if resolving_unk and 'OOV' in str_hyp:
@@ -189,8 +191,8 @@ def eval_word(models, dataset, eval_batch_size,
     ins /= num_words
     dele /= num_words
 
-    df_word = pd.DataFrame({'SUB': [sub], 'INS': [ins], 'DEL': [dele]},
-                           columns=['SUB', 'INS', 'DEL'],
+    df_word = pd.DataFrame({'SUB': [sub], 'INS': [ins], 'DEL': [dele], 'OOV': [num_oov]},
+                           columns=['SUB', 'INS', 'DEL', 'OOV'],
                            index=['WER'])
 
     return wer, df_word
