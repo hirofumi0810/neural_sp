@@ -43,6 +43,10 @@ class ModelBase(nn.Module):
     def forward(self, inputs):
         raise NotImplementedError
 
+    @property
+    def torch_version(self):
+        return float('.'.join(torch.__version__.split('.')[:2]))
+
     def init_weights(self, parameter_init, distribution,
                      keys=[None], ignore_keys=[None]):
         """Initialize parameters.

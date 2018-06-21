@@ -28,6 +28,8 @@ class TestCharseqAttention(unittest.TestCase):
     def test(self):
         print("Nested Attention Working check.")
 
+        self.check(fix_second_decoder=True)
+
         # Usage character-level decoder states
         self.check(usage_dec_sub='softmax')
         self.check(logits_injection=True, usage_dec_sub='softmax')
@@ -69,13 +71,13 @@ class TestCharseqAttention(unittest.TestCase):
               dec_attend_temperature=1, dec_sigmoid_smoothing=False,
               backward_sub=False, num_heads=1, second_pass=False,
               relax_context_vec_dec=False, logits_injection=False,
-              gating=False, beam_width=1):
+              gating=False, beam_width=1, fix_second_decoder=False):
 
         print('==================================================')
         print('  usage_dec_sub: %s' % usage_dec_sub)
-        print('  att_reg_weight: %.3f' % att_reg_weight)
-        print('  main_loss_weight: %.3f' % main_loss_weight)
-        print('  ctc_loss_weight_sub: %.3f' % ctc_loss_weight_sub)
+        print('  att_reg_weight: %.2f' % att_reg_weight)
+        print('  main_loss_weight: %.2f' % main_loss_weight)
+        print('  ctc_loss_weight_sub: %.2f' % ctc_loss_weight_sub)
         print('  dec_attend_temperature: %s' % str(dec_attend_temperature))
         print('  dec_sigmoid_smoothing: %s' % str(dec_sigmoid_smoothing))
         print('  backward_sub: %s' % str(backward_sub))
@@ -84,6 +86,7 @@ class TestCharseqAttention(unittest.TestCase):
         print('  relax_context_vec_dec: %s' % str(relax_context_vec_dec))
         print('  logits_injection: %s' % str(logits_injection))
         print('  gating: %s' % str(gating))
+        print('  gating: %s' % str(fix_second_decoder))
         print('==================================================')
 
         # Load batch data
@@ -156,7 +159,7 @@ class TestCharseqAttention(unittest.TestCase):
             dec_attend_temperature=dec_attend_temperature,
             dec_sigmoid_smoothing=dec_attend_temperature,
             relax_context_vec_dec=relax_context_vec_dec,
-            dec_attention_type='location',
+            dec_attention_type='content',
             logits_injection=logits_injection,
             gating=gating)
 
@@ -164,7 +167,7 @@ class TestCharseqAttention(unittest.TestCase):
         for name in sorted(list(model.num_params_dict.keys())):
             num_params = model.num_params_dict[name]
             print("%s %d" % (name, num_params))
-        print("Total %.3f M parameters" % (model.total_parameters / 1000000))
+        print("Total %.2f M parameters" % (model.total_parameters / 1000000))
 
         # Define optimizer
         learning_rate = 1e-3
@@ -194,23 +197,44 @@ class TestCharseqAttention(unittest.TestCase):
 
             # Step for parameter update
             model.optimizer.zero_grad()
+            if model.device_id >= 0:
+                torch.cuda.empty_cache()
             if second_pass:
-                loss = model(xs, ys)
+                loss, acc = model(xs, ys)
             else:
-                loss, loss_main, loss_sub = model(xs, ys, ys_sub)
+                loss, loss_main, loss_sub, acc_main, acc_sub = model(
+                    xs, ys, ys_sub)
             loss.backward()
             loss.detach()
-            # torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
+            if model.torch_version < 0.4:
+                torch.nn.utils.clip_grad_norm(model.parameters(), 5)
+            else:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
             torch.nn.utils.clip_grad_norm(model.parameters(), 5)
             model.optimizer.step()
+
+            if fix_second_decoder and step == 100:
+                model.fix_second_decoder()
 
             if (step + 1) % 10 == 0:
                 # Compute loss
                 if second_pass:
-                    loss = model(xs, ys, is_eval=True)
+                    loss, acc = model(xs, ys, is_eval=True)
+                    if model.torch_version < 0.4:
+                        loss = loss.data[0]
+                    else:
+                        loss = loss.item()
                 else:
-                    loss, loss_main, loss_sub = model(
+                    loss, loss_main, loss_sub, acc_main, acc_sub = model(
                         xs, ys, ys_sub, is_eval=True)
+                    if model.torch_version < 0.4:
+                        loss = loss.data[0]
+                        loss_main = loss_main.data[0]
+                        loss_sub = loss_sub.data[0]
+                    else:
+                        loss = loss.item()
+                        loss_main = loss_main.item()
+                        loss_sub = loss_sub.item()
 
                 best_hyps, _, best_hyps_sub, _, _, perm_idx = model.decode(
                     xs, beam_width, max_decode_len=30,
@@ -227,29 +251,32 @@ class TestCharseqAttention(unittest.TestCase):
 
                 # Compute accuracy
                 try:
-                    wer, _, _, _ = compute_wer(ref=str_ref.split('_'),
-                                               hyp=str_hyp.split('_'),
-                                               normalize=True)
+                    wer = compute_wer(ref=str_ref.split('_'),
+                                      hyp=str_hyp.split('_'),
+                                      normalize=True)[0]
                     if second_pass:
-                        cer, _, _, _ = compute_wer(ref=str_ref.split('_'),
-                                                   hyp=str_hyp_sub.split('_'),
-                                                   normalize=True)
+                        wer_bwd = compute_wer(ref=str_ref.split('_'),
+                                              hyp=str_hyp_sub.split('_'),
+                                              normalize=True)[0]
                     else:
-                        cer, _, _, _ = compute_wer(
+                        cer = compute_wer(
                             ref=list(str_ref_sub.replace('_', '')),
                             hyp=list(str_hyp_sub.replace('_', '')),
-                            normalize=True)
+                            normalize=True)[0]
                 except:
-                    wer = 1
-                    cer = 1
+                    wer = 100
+                    if second_pass:
+                        wer_bwd = 100
+                    else:
+                        cer = 100
 
                 duration_step = time.time() - start_time_step
                 if second_pass:
-                    print('Step %d: loss=%.3f / wer=%.3f / cer=%.3f / lr=%.5f (%.3f sec)' %
-                          (step + 1, loss.data[0], wer, cer, learning_rate, duration_step))
+                    print('Step %d: loss=%.2f/acc=%.2f/wer=%.2f%%/wer(bwd)=%.2f%%/lr=%.5f (%.2f sec)' %
+                          (step + 1, loss, acc, wer, wer_bwd, learning_rate, duration_step))
                 else:
-                    print('Step %d: loss=%.3f(%.3f/%.3f) / wer=%.3f / cer=%.3f / lr=%.5f (%.3f sec)' %
-                          (step + 1, loss.data[0], loss_main.data[0], loss_sub.data[0],
+                    print('Step %d: loss=%.2f(%.2f/%.2f)/acc=%.2f/%.2f/wer=%.2f%%/cer=%.2f%%/lr=%.5f (%.2f sec)' %
+                          (step + 1, loss, loss_main, loss_sub, acc_main, acc_sub,
                            wer, cer, learning_rate, duration_step))
 
                 start_time_step = time.time()
@@ -259,7 +286,8 @@ class TestCharseqAttention(unittest.TestCase):
                 print('Hyp (word): %s' % str_hyp)
                 print('Hyp (char): %s' % str_hyp_sub)
 
-                if cer < 0.1:
+                metric = wer_bwd if second_pass else cer
+                if metric < 1:
                     print('Modle is Converged.')
                     break
 

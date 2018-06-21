@@ -484,6 +484,7 @@ class AttentionSeq2seq(ModelBase):
                 This should be used in inference model for memory efficiency.
         Returns:
             loss (torch.autograd.Variable(float)): A tensor of size `[1]`
+            acc (float): Token-level accuracy in teacher-forcing
         """
         if is_eval:
             self.eval()
@@ -528,15 +529,20 @@ class AttentionSeq2seq(ModelBase):
 
         # Compute XE loss for the forward decoder
         if self.fwd_weight_0 > 0:
-            loss = self.compute_xe_loss(
-                xs, ys_fwd, x_lens, task=0, dir='fwd') * self.fwd_weight_0
+            loss, acc = self.compute_xe_loss(
+                xs, ys_fwd, x_lens, task=0, dir='fwd')
+            loss *= self.fwd_weight_0
+            acc *= self.fwd_weight_0
         else:
             loss = Variable(xs.data.new(1,).fill_(0.))
+            acc = 0.
 
         # Compute XE loss for the backward decoder
         if self.bwd_weight_0 > 0:
-            loss += self.compute_xe_loss(
-                xs, ys_bwd, x_lens, task=0, dir='bwd') * self.bwd_weight_0
+            loss_bwd, acc_bwd = self.compute_xe_loss(
+                xs, ys_bwd, x_lens, task=0, dir='bwd')
+            loss += loss_bwd * self.bwd_weight_0
+            acc += acc_bwd * self.bwd_weight_0
 
         # Auxiliary CTC loss
         if self.ctc_loss_weight > 0:
@@ -550,7 +556,7 @@ class AttentionSeq2seq(ModelBase):
                 self._ss_prob = min(
                     self.ss_prob, self.ss_prob / self.ss_max_step * self._step)
 
-        return loss
+        return loss, acc
 
     def compute_xe_loss(self, enc_out, ys, x_lens, task, dir):
         """Compute XE loss.
@@ -563,6 +569,7 @@ class AttentionSeq2seq(ModelBase):
             dir (str): fwd or bwd
         Returns:
             loss (torch.autograd.Variable, float): A tensor of size `[1]`
+            acc (float): Token-level accuracy in teacher-forcing
         """
         sos = Variable(enc_out.data.new(1,).fill_(
             getattr(self, 'sos_' + str(task))).long())
@@ -592,7 +599,7 @@ class AttentionSeq2seq(ModelBase):
         # Compute XE sequence loss
         if self.ls_prob > 0:
             # Label smoothing (with uniform distribution)
-            y_lens = [y.size(0) + 1 for y in ys]   # Add <SOS>
+            y_lens = [y.size(0) + 1 for y in ys]   # Add <EOS>
             loss = cross_entropy_label_smoothing(
                 logits,
                 ys=to_onehot(ys_out, logits.size(-1), y_lens),
@@ -618,7 +625,16 @@ class AttentionSeq2seq(ModelBase):
         if self.coverage_weight > 0:
             raise NotImplementedError
 
-        return loss
+        # Compute token-level accuracy in teacher-forcing
+        pad_pred = logits.data.view(ys_out.size(
+            0), ys_out.size(1), logits.size(-1)).max(2)[1]
+        mask = ys_out.data != self.pad_index
+        numerator = torch.sum(pad_pred.masked_select(
+            mask) == ys_out.data.masked_select(mask))
+        denominator = torch.sum(mask)
+        acc = float(numerator) / float(denominator)
+
+        return loss, acc
 
     def compute_ctc_loss(self, enc_out, ys, x_lens, task=0):
         """Compute CTC loss.

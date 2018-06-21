@@ -358,7 +358,7 @@ class CTC(ModelBase):
             #     distribution='uniform') / len(xs)
             # loss = loss * (1 - self.ls_prob) + loss_ls
 
-        return loss
+        return loss, 0.
 
     def _encode(self, xs, x_lens, is_multi_task=False):
         """Encode acoustic features.

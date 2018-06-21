@@ -145,7 +145,7 @@ class AttentionMechanism(nn.Module):
             # energy = <v, tanh(W([h_dec; h_enc] + b))>
             ##############################################################
             energy = self.V_head0(F.tanh(
-                self.enc_out_a + self.W_dec_head0)(dec_out)).squeeze(2)
+                self.enc_out_a + self.W_dec_head0(dec_out))).squeeze(2)
 
         elif self.attention_type == 'location':
             ##############################################################

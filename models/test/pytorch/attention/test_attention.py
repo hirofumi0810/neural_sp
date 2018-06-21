@@ -156,14 +156,14 @@ class TestAttention(unittest.TestCase):
         print('  init_dec_state: %s' % init_dec_state)
         print('  attention_type: %s' % attention_type)
         print('  subsample: %s' % str(subsample))
-        print('  ctc_loss_weight: %.3f' % ctc_loss_weight)
+        print('  ctc_loss_weight: %.2f' % ctc_loss_weight)
         print('  conv: %s' % str(conv))
         print('  batch_norm: %s' % str(batch_norm))
         print('  residual: %s' % str(residual))
         print('  dense_residual: %s' % str(dense_residual))
         print('  decoding_order: %s' % decoding_order)
         print('  beam_width: %d' % beam_width)
-        print('  backward_loss_weight: %.3f' % backward_loss_weight)
+        print('  backward_loss_weight: %.2f' % backward_loss_weight)
         print('  num_heads: %d' % num_heads)
         print('==================================================')
 
@@ -257,7 +257,7 @@ class TestAttention(unittest.TestCase):
         for name in sorted(list(model.num_params_dict.keys())):
             num_params = model.num_params_dict[name]
             print("%s %d" % (name, num_params))
-        print("Total %.3f M parameters" % (model.total_parameters / 1000000))
+        print("Total %.2f M parameters" % (model.total_parameters / 1000000))
 
         # Define optimizer
         learning_rate = 1e-3
@@ -289,21 +289,25 @@ class TestAttention(unittest.TestCase):
             model.optimizer.zero_grad()
             if model.device_id >= 0:
                 torch.cuda.empty_cache()
-            loss = model(xs, ys)
+            loss, acc = model(xs, ys)
             loss.backward()
             loss.detach()
-            # torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
-            torch.nn.utils.clip_grad_norm(model.parameters(), 5)
+            if model.torch_version < 0.4:
+                torch.nn.utils.clip_grad_norm(model.parameters(), 5)
+                loss = loss.data[0]
+            else:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
+                loss = loss.item()
             model.optimizer.step()
 
             # Inject Gaussian noise to all parameters
-            # if loss.item() < 50:
-            if loss.data[0] < 50:
+            if loss < 50:
                 model.weight_noise_injection = True
 
             if (step + 1) % 10 == 0:
                 # Compute loss
-                loss = model(xs, ys, is_eval=True)
+                loss, acc = model(xs, ys, is_eval=True)
+                loss = loss.data[0] if model.torch_version < 0.4 else loss.imem()
 
                 # Decode
                 best_hyps, _, perm_idx = model.decode(
@@ -315,20 +319,19 @@ class TestAttention(unittest.TestCase):
                 # Compute accuracy
                 try:
                     if label_type == 'char':
-                        ler, _, _, _ = compute_wer(
-                            ref=list(str_ref.replace('_', '')),
-                            hyp=list(str_hyp.replace('_', '')),
-                            normalize=True)
+                        ler = compute_wer(ref=list(str_ref.replace('_', '')),
+                                          hyp=list(str_hyp.replace('_', '')),
+                                          normalize=True)
                     elif label_type == 'word':
-                        ler, _, _, _ = compute_wer(ref=str_ref.split('_'),
-                                                   hyp=str_hyp.split('_'),
-                                                   normalize=True)
+                        ler = compute_wer(ref=str_ref.split('_'),
+                                          hyp=str_hyp.split('_'),
+                                          normalize=True)
                 except:
-                    ler = 1
+                    ler = 100
 
                 duration_step = time.time() - start_time_step
-                print('Step %d: loss=%.3f / ler=%.3f / lr=%.5f (%.3f sec)' %
-                      (step + 1, loss.data[0], ler, learning_rate, duration_step))
+                print('Step %d: loss=%.2f/acc=%.2f/ler=%.2f%%/lr=%.5f (%.2f sec)' %
+                      (step + 1, loss, acc, ler, learning_rate, duration_step))
                 start_time_step = time.time()
 
                 # Visualize
@@ -342,7 +345,7 @@ class TestAttention(unittest.TestCase):
                     str_pred_ctc = map_fn(best_hyps_ctc[0])
                     print('Hyp (CTC): %s' % str_pred_ctc)
 
-                if ler < 0.1:
+                if ler < 1:
                     print('Modle is Converged.')
                     break
 

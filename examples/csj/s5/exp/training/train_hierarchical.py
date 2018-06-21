@@ -26,7 +26,7 @@ from examples.csj.s5.exp.dataset.load_dataset_hierarchical import Dataset
 from examples.csj.s5.exp.metrics.character import eval_char
 from examples.csj.s5.exp.metrics.word import eval_word
 from utils.training.learning_rate_controller import Controller
-from utils.training.plot import plot_loss
+from utils.training.reporter_hierarchical import Reporter
 from utils.training.updater_hierarchical import Updater
 from utils.training.logging import set_logger
 from utils.directory import mkdir_join
@@ -132,7 +132,7 @@ def main():
         for name in sorted(list(model.num_params_dict.keys())):
             num_params = model.num_params_dict[name]
             logger.info("%s %d" % (name, num_params))
-        logger.info("Total %.3f M parameters" %
+        logger.info("Total %.2f M parameters" %
                     (model.total_parameters / 1000000))
 
         # Define optimizer
@@ -186,7 +186,7 @@ def main():
     setproctitle('csj_' + config['backend'] + '_' + config['model_type'] + '_' +
                  config['label_type'] + '_' + config['label_type_sub'] + '_' + config['data_size'])
 
-    # Define learning rate controller
+    # Set learning rate controller
     lr_controller = Controller(
         learning_rate_init=learning_rate,
         backend=config['backend'],
@@ -197,42 +197,50 @@ def main():
         lower_better=True,
         best_value=metric_dev_best)
 
-    # Setting for tensorboard
-    if config['backend'] == 'pytorch':
-        tf_writer = SummaryWriter(model.save_path)
+    # Set reporter
+    reporter = Reporter(model.save_path)
 
     # Set the updater
     updater = Updater(config['clip_grad_norm'], config['backend'])
 
-    csv_steps, csv_loss_train, csv_loss_dev = [], [], []
+    # Setting for tensorboard
+    if config['backend'] == 'pytorch':
+        tf_writer = SummaryWriter(model.save_path)
+
     start_time_train = time.time()
     start_time_epoch = time.time()
     start_time_step = time.time()
     not_improved_epoch = 0
     loss_train_mean, loss_main_train_mean, loss_sub_train_mean = 0., 0., 0.
+    acc_main_train_mean, acc_sub_train_mean = 0., 0.
     pbar_epoch = tqdm(total=len(train_data))
     while True:
         # Compute loss in the training set (including parameter update)
         batch_train, is_new_epoch = train_data.next()
-        model, loss_train, loss_main_train, loss_sub_train = updater(
+        model, loss_train, loss_main_train, loss_sub_train, acc_main_train, acc_sub_train = updater(
             model, batch_train)
         loss_train_mean += loss_train
         loss_main_train_mean += loss_main_train
         loss_sub_train_mean += loss_sub_train
+        acc_main_train_mean += acc_main_train
+        acc_sub_train_mean += acc_sub_train
         pbar_epoch.update(len(batch_train['xs']))
 
         if (step + 1) % config['print_step'] == 0:
             # Compute loss in the dev set
             batch_dev = dev_data.next()[0]
-            model, loss_dev, loss_main_dev, loss_sub_dev = updater(
+            model, loss_dev, loss_main_dev, loss_sub_dev, acc_main_dev, acc_sub_dev = updater(
                 model, batch_dev, is_eval=True)
 
             loss_train_mean /= config['print_step']
             loss_main_train_mean /= config['print_step']
             loss_sub_train_mean /= config['print_step']
-            csv_steps.append(step)
-            csv_loss_train.append(loss_train_mean)
-            csv_loss_dev.append(loss_dev)
+            acc_main_train_mean /= config['print_step']
+            acc_sub_train_mean /= config['print_step']
+            reporter.step(step, loss_train_mean, loss_main_train_mean, loss_sub_train_mean,
+                          loss_dev, loss_main_dev, loss_sub_dev,
+                          acc_main_train_mean, acc_sub_train_mean,
+                          acc_main_dev, acc_sub_dev)
 
             # Logging by tensorboard
             if config['backend'] == 'pytorch':
@@ -253,26 +261,27 @@ def main():
                             name + '/grad', param.grad.data.cpu().numpy(), step + 1)
 
             duration_step = time.time() - start_time_step
-            logger.info("...Step:%d(epoch:%.3f) loss:%.3f/%.3f/%.3f(%.3f/%.3f/%.3f)/lr:%.5f/batch:%d/x_lens:%d (%.3f min)" %
+            logger.info("...Step:%d(epoch:%.2f) loss:%.2f/%.2f/%.2f(%.2f/%.2f/%.2f)/acc:%.2f/%.2f(%.2f/%.2f)/lr:%.5f/batch:%d/x_lens:%d (%.2f min)" %
                         (step + 1, train_data.epoch_detail,
                          loss_train_mean, loss_main_train_mean, loss_sub_train_mean,
                          loss_dev, loss_main_dev, loss_sub_dev,
+                         acc_main_train_mean, acc_sub_train_mean, acc_main_dev, acc_sub_dev,
                          learning_rate, train_data.current_batch_size,
                          max(len(x) for x in batch_train['xs']),
                          duration_step / 60))
             start_time_step = time.time()
             loss_train_mean, loss_main_train_mean, loss_sub_train_mean = 0., 0., 0.
+            acc_main_train_mean, acc_sub_train_mean = 0., 0.
         step += 1
 
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:
             duration_epoch = time.time() - start_time_epoch
-            logger.info('===== EPOCH:%d (%.3f min) =====' %
+            logger.info('===== EPOCH:%d (%.2f min) =====' %
                         (epoch, duration_epoch / 60))
 
-            # Save fugure of loss
-            plot_loss(csv_loss_train, csv_loss_dev, csv_steps,
-                      save_path=model.save_path)
+            # Save fugures of loss and accuracy
+            reporter.epoch()
 
             if epoch < config['eval_start_epoch']:
                 # Save the model
@@ -334,7 +343,7 @@ def main():
                     not_improved_epoch += 1
 
                 duration_eval = time.time() - start_time_eval
-                logger.info('Evaluation time: %.3f min' % (duration_eval / 60))
+                logger.info('Evaluation time: %.2f min' % (duration_eval / 60))
 
                 # Early stopping
                 if not_improved_epoch == config['not_improved_patient_epoch']:
@@ -348,6 +357,11 @@ def main():
                     value=metric_dev)
 
                 if epoch == config['convert_to_sgd_epoch']:
+                    # For nested attention
+                    if 'fix_second_decoder' in config.keys() and config['fix_second_decoder'] and model.model_type == 'nested_attention':
+                        logger.info('========== Fix second decoder ==========')
+                        model.fix_second_decoder()
+
                     # Convert to fine-tuning stage
                     model.set_optimizer(
                         'sgd',
@@ -373,10 +387,11 @@ def main():
             epoch += 1
 
     duration_train = time.time() - start_time_train
-    logger.info('Total time: %.3f hour' % (duration_train / 3600))
+    logger.info('Total time: %.2f hour' % (duration_train / 3600))
 
     if config['backend'] == 'pytorch':
         tf_writer.close()
+    pbar_epoch.close()
 
     # Training was finished correctly
     with open(os.path.join(model.save_path, 'COMPLETE'), 'w') as f:

@@ -197,7 +197,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         # Setting for the RNNLM fusion
         self.rnnlm_fusion_type = False
         self.rnnlm_1 = None
-        self.rnnlm_joint_training = False
         self.rnnlm_weight = 0
         self.concat_embedding = False
 
@@ -213,6 +212,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         # Regularization
         self.relax_context_vec_dec = relax_context_vec_dec
+        self._fix_second_decoder = False
 
         assert decoding_order == 'bahdanau'
 
@@ -484,6 +484,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             loss (torch.autograd.Variable(float)): A tensor of size `[1]`
             loss_main (torch.autograd.Variable(float)): A tensor of size `[1]`
             loss_sub (torch.autograd.Variable(float)): A tensor of size `[1]`
+            acc_main (float): Token-level accuracy in teacher-forcing in the main task
+            acc_sub (float): Token-level accuracy in teacher-forcing in the sub task
         """
         if is_eval:
             self.eval()
@@ -493,6 +495,11 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             # Gaussian noise injection
             if self.weight_noise_injection:
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
+
+        second_pass = False
+        if ys_sub is None:
+            ys_sub = copy.deepcopy(ys)
+            second_pass = True
 
         # Sort by lenghts in the descending order
         if is_eval and self.encoder_type != 'cnn':
@@ -513,11 +520,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         if self.splice > 1:
             xs = [do_splice(x, self.splice, self.num_stack) for x in xs]
 
-        second_pass = False
-        if ys_sub is None:
-            ys_sub = copy.deepcopy(ys)
-            second_pass = True
-
         # Wrap by Variable
         xs = [np2var(x, self.device_id).float() for x in xs]
         x_lens = [len(x) for x in xs]
@@ -535,7 +537,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             xs, x_lens, is_multi_task=True)
 
         # Compute XE loss (main + sub)
-        loss_main, loss_sub = self.compute_xe_loss_mtl(
+        loss_main, loss_sub, acc_main, acc_sub = self.compute_xe_loss_mtl(
             xs, ys, x_lens, xs_sub, ys_sub, x_lens_sub)
         loss = loss_main + loss_sub
 
@@ -557,9 +559,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     self.ss_prob, self.ss_prob / self.ss_max_step * self._step)
 
         if second_pass:
-            return loss
+            acc = acc_main * self.main_loss_weight + acc_sub * self.sub_loss_weight
+            return loss, acc
         else:
-            return loss, loss_main, loss_sub
+            return loss, loss_main, loss_sub, acc_main, acc_sub
 
     def compute_xe_loss_mtl(self, enc_out, ys, x_lens,
                             enc_out_sub, ys_sub, x_lens_sub):
@@ -576,6 +579,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         Returns:
             loss_main (torch.autograd.Variable, float): A tensor of size `[1]`
             loss_sub (torch.autograd.Variable, float): A tensor of size `[1]`
+            acc_main (float): Token-level accuracy in teacher-forcing in the main task
+            acc_sub (float): Token-level accuracy in teacher-forcing in the sub task
         """
         sos = Variable(enc_out.data.new(1,).fill_(self.sos_0).long())
         eos = Variable(enc_out.data.new(1,).fill_(self.eos_0).long())
@@ -596,29 +601,29 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         ys_out_sub = pad_list(ys_out_sub, -1)
 
         # Teacher-forcing
-        logits_main, aw, logits_sub, aw_sub, aw_dec = self._decode_train(
+        logits, aw, logits_sub, aw_sub, aw_dec = self._decode_train(
             enc_out, x_lens, ys_in,
             enc_out_sub, x_lens_sub, ys_in_sub, y_lens_sub)
 
         # Output smoothing
         if self.logits_temp != 1:
-            logits_main /= self.logits_temp
+            logits /= self.logits_temp
             logits_sub /= self.logits_temp
 
         # Compute XE sequence loss in the main task
         if self.main_loss_weight > 0:
             if self.ls_prob > 0:
                 # Label smoothing (with uniform distribution)
-                y_lens = [y.size(0) + 1 for y in ys]  # Add <SOS>
+                y_lens = [y.size(0) + 1 for y in ys]  # Add <EOS>
                 loss_main = cross_entropy_label_smoothing(
-                    logits_main,
-                    ys=to_onehot(ys_out, logits_main.size(-1), y_lens),
+                    logits,
+                    ys=to_onehot(ys_out, logits.size(-1), y_lens),
                     y_lens=y_lens,
                     label_smoothing_prob=self.ls_prob,
                     distribution='uniform') / len(enc_out)
             else:
                 loss_main = F.cross_entropy(
-                    input=logits_main.view((-1, logits_main.size(2))),
+                    input=logits.view((-1, logits.size(2))),
                     target=ys_out.view(-1),  # Long
                     ignore_index=self.pad_index, size_average=False) / len(enc_out)
             loss_main = loss_main * self.main_loss_weight
@@ -632,10 +637,19 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         else:
             loss_main = Variable(enc_out.data.new(1,).fill_(0.))
 
+        # Compute token-level accuracy in teacher-forcing in th main task
+        pad_pred = logits.data.view(ys_out.size(
+            0), ys_out.size(1), logits.size(-1)).max(2)[1]
+        mask = ys_out.data != self.pad_index
+        numerator = torch.sum(pad_pred.masked_select(
+            mask) == ys_out.data.masked_select(mask))
+        denominator = torch.sum(mask)
+        acc_main = float(numerator) / float(denominator)
+
         # Compute XE sequence loss in the sub task
         if self.ls_prob > 0:
             # Label smoothing (with uniform distribution)
-            y_lens_sub = [y.size(0) + 1 for y in ys_sub]   # Add <SOS>
+            y_lens_sub = [y.size(0) + 1 for y in ys_sub]   # Add <EOS>
             loss_sub = cross_entropy_label_smoothing(
                 logits_sub,
                 ys=to_onehot(ys_out_sub, logits_sub.size(-1), y_lens_sub),
@@ -653,7 +667,44 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         if self.coverage_weight != 0:
             raise NotImplementedError
 
-        return loss_main, loss_sub
+        # Compute token-level accuracy in teacher-forcing in th main task
+        pad_pred_sub = logits_sub.data.view(ys_out_sub.size(
+            0), ys_out_sub.size(1), logits_sub.size(-1)).max(2)[1]
+        mask_sub = ys_out_sub.data != self.pad_index
+        numerator_sub = torch.sum(pad_pred_sub.masked_select(
+            mask_sub) == ys_out_sub.data.masked_select(mask_sub))
+        denominator_sub = torch.sum(mask_sub)
+        acc_sub = float(numerator_sub) / float(denominator_sub)
+
+        return loss_main, loss_sub, acc_main, acc_sub
+
+    def fix_second_decoder(self):
+        self._fix_second_decoder = True
+
+        # dir_sub = 'bwd' if self.backward_1 else 'fwd'
+
+        # Fix parameters in the sub task
+        # for param in getattr(self, 'attend_1_' + dir_sub).parameters():
+        #     param.requires_grad = False
+        #
+        # for param in getattr(self, 'decoder_1_' + dir_sub).parameters():
+        #     param.requires_grad = False
+        #
+        # for param in self.embed_1.parameters():
+        #     param.requires_grad = False
+        #
+        # for param in getattr(self, 'fc_1_' + dir_sub).parameters():
+        #     param.requires_grad = False
+        #
+        # for param in getattr(self, 'W_c_1_' + dir_sub).parameters():
+        #     param.requires_grad = False
+        #
+        # for param in getattr(self, 'W_d_1_' + dir_sub).parameters():
+        #     param.requires_grad = False
+        #
+        # if self.logits_injection:
+        #     for param in self.W_logits_sub.parameters():
+        #         param.requires_grad = False
 
     def _decode_train(self, enc_out, x_lens, ys,
                       enc_out_sub, x_lens_sub, ys_sub, y_lens_sub):
@@ -684,15 +735,14 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         max_time_sub = enc_out_sub.size(1)
         dir_sub = 'bwd' if self.backward_1 else 'fwd'
 
-        # Pre-computation of embedding
-        ys_emb_sub = self.embed_1(ys_sub)
-        ys_emb = self.embed_0(ys)
-
         # TODO: add cold fusion
 
         ##################################################
         # At first, compute logits in the sub task
         ##################################################
+        # Pre-computation of embedding
+        ys_emb_sub = self.embed_1(ys_sub)
+
         # Initialization
         dec_state_sub, dec_out_sub = self._init_dec_state(
             enc_out_sub, x_lens_sub, task=1, dir=dir_sub)
@@ -703,16 +753,20 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         dec_outs_sub, logits_sub, aw_sub = [], [], []
         for t in range(ys_sub.size(1)):
-            # Sample for scheduled sampling
-            is_sample = self.ss_prob > 0 and t > 0 and self._step > 0 and random.random(
-            ) < self._ss_prob
-            if is_sample:
-                y_sub = self.embed_1(
-                    torch.max(logits_sub[-1], dim=2)[1]).detach()
-            else:
-                y_sub = ys_emb_sub[:, t:t + 1]
 
             if t > 0:
+                # Sample for scheduled sampling
+                if self._fix_second_decoder:
+                    is_sample = True
+                else:
+                    is_sample = self.ss_prob > 0 and t > 0 and self._step > 0 and random.random(
+                    ) < self._ss_prob
+                if is_sample:
+                    y_sub = self.embed_1(
+                        torch.max(logits_sub[-1], dim=2)[1]).detach()
+                else:
+                    y_sub = ys_emb_sub[:, t:t + 1]
+
                 # Recurrency
                 dec_in_sub = torch.cat([y_sub, context_vec_sub], dim=-1)
                 dec_out_sub, dec_state_sub = getattr(self, 'decoder_1_' + dir_sub)(
@@ -747,6 +801,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         ##################################################
         # Next, compute logits in the main task
         ##################################################
+        # Pre-computation of embedding
+        ys_emb = self.embed_0(ys)
+
         # Initialization
         dec_state, dec_out = self._init_dec_state(
             enc_out, x_lens, task=0, dir='fwd')
@@ -1266,18 +1323,18 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         dec_in_sub = torch.cat(
                             [y_sub, context_vec_sub], dim=-1)
                         dec_out_sub, dec_state_sub = getattr(
-                            self, 'decoder_1_' + dir)(dec_in_sub, beam_sub[i_beam]['dec_state'])
+                            self, 'decoder_1_' + dir_sub)(dec_in_sub, beam_sub[i_beam]['dec_state'])
 
                     # Score
-                    context_vec_sub, aw_step_sub = getattr(self, 'attend_1_' + dir)(
+                    context_vec_sub, aw_step_sub = getattr(self, 'attend_1_' + dir_sub)(
                         enc_out_sub[b:b + 1, :x_lens_sub[b]],
                         x_lens_sub[b:b + 1],
                         dec_out_sub, beam_sub[i_beam]['aw_steps'][-1])
 
                     # Generate
-                    logits_step_sub = getattr(self, 'fc_1_' + dir)(F.tanh(
-                        getattr(self, 'W_d_1_' + dir)(dec_out_sub) +
-                        getattr(self, 'W_c_1_' + dir)(context_vec_sub)))
+                    logits_step_sub = getattr(self, 'fc_1_' + dir_sub)(F.tanh(
+                        getattr(self, 'W_d_1_' + dir_sub)(dec_out_sub) +
+                        getattr(self, 'W_c_1_' + dir_sub)(context_vec_sub)))
 
                     # Path through the softmax layer & convert to log-scale
                     log_probs_sub = F.log_softmax(

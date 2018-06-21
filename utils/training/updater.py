@@ -44,39 +44,45 @@ class Updater(object):
         Returns:
             model (torch.nn.Module or chainer.Chain):
             loss_val (float):
+            acc (float): Token-level accuracy in teacher-forcing
         """
         loss_val = 0.
         try:
             # Step for parameter update
             if self.backend == 'pytorch':
                 if is_eval:
-                    loss = model(batch['xs'], batch['ys'], is_eval=True)
+                    loss, acc = model(batch['xs'], batch['ys'], is_eval=True)
                 else:
                     model.optimizer.zero_grad()
                     if model.device_id >= 0:
                         torch.cuda.empty_cache()
-                    loss = model(batch['xs'], batch['ys'])
+                    loss, acc = model(batch['xs'], batch['ys'])
                     loss.backward()
                     loss.detach()  # Trancate the graph
                     if self.clip_grad_norm > 0:
-                        # torch.nn.utils.clip_grad_norm_(
-                        #     model.parameters(), self.clip_grad_norm)
-                        torch.nn.utils.clip_grad_norm(
-                            model.parameters(), self.clip_grad_norm)
+                        if model.torch_version < 0.4:
+                            torch.nn.utils.clip_grad_norm(
+                                model.parameters(), self.clip_grad_norm)
+                        else:
+                            torch.nn.utils.clip_grad_norm_(
+                                model.parameters(), self.clip_grad_norm)
                     model.optimizer.step()
                     # TODO: Add scheduler
-                # loss_val = loss.item()
-                loss_val = loss.data[0]
+
+                if model.torch_version < 0.4:
+                    loss_val = loss.data[0]
+                else:
+                    loss_val = loss.item()
 
             elif self.backend == 'chainer':
                 if is_eval:
                     model.optimizer.target.cleargrads()
-                    loss = model(batch['xs'], batch['ys'])
+                    loss, acc = model(batch['xs'], batch['ys'])
                     loss.backward()
                     loss.unchain_backward()
                     model.optimizer.update()
                 else:
-                    loss = model(batch['xs'], batch['ys'], is_eval=True)
+                    loss, acc = model(batch['xs'], batch['ys'], is_eval=True)
                 loss_val = loss.data
 
             del loss
@@ -99,4 +105,4 @@ class Updater(object):
         # Delete features
         del batch
 
-        return model, loss_val
+        return model, loss_val, acc

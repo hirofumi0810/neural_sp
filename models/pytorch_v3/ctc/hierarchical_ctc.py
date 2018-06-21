@@ -192,9 +192,7 @@ class HierarchicalCTC(CTC):
         else:
             raise NotImplementedError
 
-        ##################################################
         # Fully-connected layers in the main task
-        ##################################################
         if len(fc_list) > 0:
             for i in range(len(fc_list)):
                 if i == 0:
@@ -220,9 +218,7 @@ class HierarchicalCTC(CTC):
         else:
             self.fc_out = LinearND(self.encoder_num_units, self.num_classes)
 
-        ##################################################
         # Fully-connected layers in the sub task
-        ##################################################
         if len(fc_list_sub) > 0:
             for i in range(len(fc_list_sub)):
                 if i == 0:
@@ -249,9 +245,7 @@ class HierarchicalCTC(CTC):
             self.fc_out_sub = LinearND(
                 self.encoder_num_units, self.num_classes_sub)
 
-        ##################################################
-        # Initialize parameters
-        ##################################################
+        # Initialize weight matricess
         self.init_weights(parameter_init,
                           distribution=parameter_init_distribution,
                           ignore_keys=['bias'])
@@ -380,4 +374,4 @@ class HierarchicalCTC(CTC):
         loss_sub = loss_sub * self.sub_loss_weight
         loss = loss_main + loss_sub
 
-        return loss, loss_main, loss_sub
+        return loss, loss_main, loss_sub, 0., 0.

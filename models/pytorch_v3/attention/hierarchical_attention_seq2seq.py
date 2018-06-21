@@ -429,6 +429,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             loss (torch.autograd.Variable(float)): A tensor of size `[1]`
             loss_main (torch.autograd.Variable(float)): A tensor of size `[1]`
             loss_sub (torch.autograd.Variable(float)): A tensor of size `[1]`
+            acc_main (float): Token-level accuracy in teacher-forcing in the main task
+            acc_sub (float): Token-level accuracy in teacher-forcing in the sub task
         """
         if is_eval:
             self.eval()
@@ -473,11 +475,12 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                   for y in ys]
 
             # Compute XE loss
-            loss_main = self.compute_xe_loss(
-                xs, ys, x_lens,
-                task=0, dir='fwd') * self.main_loss_weight
+            loss_main, acc_main = self.compute_xe_loss(
+                xs, ys, x_lens, task=0, dir='fwd')
+            loss_main *= self.main_loss_weight
         else:
             loss_main = Variable(xs.data.new(1,).fill_(0.))
+            acc_main = 0.
         loss = loss_main.clone()
 
         # Sub task (attention)
@@ -491,10 +494,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                           for y in ys_sub]
 
             # Compute XE loss
-            loss_sub = self.compute_xe_loss(
+            loss_sub, acc_sub = self.compute_xe_loss(
                 xs_sub, ys_sub, x_lens_sub,
-                task=1, dir='bwd' if self.backward_1 else 'fwd') * self.sub_loss_weight
-            loss += loss_sub
+                task=1, dir='bwd' if self.backward_1 else 'fwd')
+            loss_sub *= self.sub_loss_weight
+        else:
+            loss_sub = Variable(xs.data.new(1,).fill_(0.))
+            acc_sub = 0.
 
         # Sub task (CTC)
         if self.ctc_loss_weight_sub > 0:
@@ -503,8 +509,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                           for y in ys_sub]
 
             ctc_loss_sub = self.compute_ctc_loss(
-                xs_sub, ys_sub_ctc, x_lens_sub, task=1) * self.ctc_loss_weight_sub
-            loss += ctc_loss_sub
+                xs_sub, ys_sub_ctc, x_lens_sub, task=1)
+            loss_sub += ctc_loss_sub * self.ctc_loss_weight_sub
+        loss += loss_sub
 
         if not is_eval:
             # Update the probability of scheduled sampling
@@ -513,10 +520,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 self._ss_prob = min(
                     self.ss_prob, self.ss_prob / self.ss_max_step * self._step)
 
-        if self.sub_loss_weight > self.ctc_loss_weight_sub:
-            return loss, loss_main, loss_sub
-        else:
-            return loss, loss_main, ctc_loss_sub
+        return loss, loss_main, loss_sub, acc_main, acc_sub
 
     def decode(self, xs, beam_width, max_decode_len, min_decode_len=0, min_decode_len_ratio=0,
                length_penalty=0, coverage_penalty=0, rnnlm_weight=0,
@@ -826,9 +830,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                             rnnlm_logits_step_sub.squeeze(1), dim=1)
                                         assert log_probs_sub.size() == rnnlm_log_probs_sub.size()
                                         score_c2w += rnnlm_log_probs_sub.data[0,
-                                                                              space_index] * rnnlm_weight_sub
+                                                                              space_index] * rnnlm_weight_sub / score_sub_weight
                                         score_c2w_until_space += rnnlm_log_probs_sub.data[0,
-                                                                                          space_index] * rnnlm_weight_sub
+                                                                                          space_index] * rnnlm_weight_sub / score_sub_weight
                                     else:
                                         rnnlm_state_sub = None
 
@@ -864,7 +868,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                             rnnlm_logits_step_sub.squeeze(1), dim=1)
                                         assert log_probs_sub.size() == rnnlm_log_probs_sub.size()
                                         score_c2w += rnnlm_log_probs_sub.data[0,
-                                                                              y_sub] * rnnlm_weight_sub
+                                                                              y_sub] * rnnlm_weight_sub / score_sub_weight
                                     else:
                                         rnnlm_state_sub = None
 
@@ -925,7 +929,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                     rnnlm_logits_step_sub.squeeze(1), dim=1)
                                 assert log_probs_sub.size() == rnnlm_log_probs_sub.size()
                                 score_c2w += rnnlm_log_probs_sub.data[0,
-                                                                      self.eos_1] * rnnlm_weight_sub
+                                                                      self.eos_1] * rnnlm_weight_sub / score_sub_weight
                             else:
                                 rnnlm_state_sub = None
 
@@ -992,10 +996,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                         rnnlm_logits_step_sub.squeeze(1), dim=1)
                                     assert log_probs_sub.size() == rnnlm_log_probs_sub.size()
                                     score_c2w += rnnlm_log_probs_sub.data[0,
-                                                                          charseq[t_sub]] * rnnlm_weight_sub
+                                                                          charseq[t_sub]] * rnnlm_weight_sub / score_sub_weight
                                     if t_sub == 0 and t > 0:
                                         score_c2w_until_space += rnnlm_log_probs_sub.data[0,
-                                                                                          charseq[t_sub]] * rnnlm_weight_sub
+                                                                                          charseq[t_sub]] * rnnlm_weight_sub / score_sub_weight
                                 else:
                                     rnnlm_state_sub = None
 

@@ -41,9 +41,9 @@ class TestCTC(unittest.TestCase):
         self.check(encoder_type='lstm', bidirectional=True,
                    conv=True, batch_norm=True)
 
-        # Label smoothing
-        self.check(encoder_type='lstm', bidirectional=True,
-                   label_smoothing=True)
+        # TODO: Label smoothing
+        # self.check(encoder_type='lstm', bidirectional=True,
+        #            label_smoothing=True)
 
         # Pyramidal encoder
         self.check(encoder_type='lstm', bidirectional=True, subsample=True)
@@ -148,7 +148,7 @@ class TestCTC(unittest.TestCase):
         for name in sorted(list(model.num_params_dict.keys())):
             num_params = model.num_params_dict[name]
             print("%s %d" % (name, num_params))
-        print("Total %.3f M parameters" % (model.total_parameters / 1000000))
+        print("Total %.2f M parameters" % (model.total_parameters / 1000000))
 
         # Define optimizer
         learning_rate = 1e-3
@@ -178,16 +178,23 @@ class TestCTC(unittest.TestCase):
 
             # Step for parameter update
             model.optimizer.zero_grad()
-            loss, loss_main, loss_sub = model(xs, ys, ys_sub)
+            if model.device_id >= 0:
+                torch.cuda.empty_cache()
+            loss, loss_main, loss_sub, _, _ = model(xs, ys, ys_sub)
             loss.backward()
             loss.detach()
-            # torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
-            torch.nn.utils.clip_grad_norm(model.parameters(), 5)
+            if model.torch_version < 0.4:
+                torch.nn.utils.clip_grad_norm(model.parameters(), 5)
+                loss = loss.data[0]
+            else:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
+                loss = loss.item()
             model.optimizer.step()
 
             if (step + 1) % 10 == 0:
                 # Compute loss
-                loss, loss_main, loss_sub = model(xs, ys, ys_sub, is_eval=True)
+                loss, loss_main, loss_sub, _, _ = model(
+                    xs, ys, ys_sub, is_eval=True)
 
                 # Decode
                 best_hyps, _, _ = model.decode(xs, beam_width, task_index=0)
@@ -209,11 +216,11 @@ class TestCTC(unittest.TestCase):
                         hyp=list(str_hyp_sub.replace('_', '')),
                         normalize=True)
                 except:
-                    wer = 1
-                    cer = 1
+                    wer = 100
+                    cer = 100
 
                 duration_step = time.time() - start_time_step
-                print('Step %d: loss=%.3f(%.3f/%.3f) / wer=%.3f / cer=%.3f / lr=%.5f (%.3f sec)' %
+                print('Step %d: loss=%.2f(%.2f/%.2f)/wer=%.2f%%/cer=%.2f%%/lr=%.5f (%.2f sec)' %
                       (step + 1, loss.data[0], loss_main.data[0], loss_sub.data[0],
                        wer, cer, learning_rate, duration_step))
                 start_time_step = time.time()
@@ -223,7 +230,7 @@ class TestCTC(unittest.TestCase):
                 print('Hyp (word): %s' % str_hyp)
                 print('Hyp (char): %s' % str_hyp_sub)
 
-                if cer < 0.1:
+                if cer < 1:
                     print('Modle is Converged.')
                     break
 

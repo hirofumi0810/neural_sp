@@ -84,7 +84,7 @@ class TestHierarchicalAttention(unittest.TestCase):
         print('  decoder_type: %s' % decoder_type)
         print('  attention_type: %s' % attention_type)
         print('  subsample: %s' % str(subsample))
-        print('  ctc_loss_weight_sub: %.3f' % ctc_loss_weight_sub)
+        print('  ctc_loss_weight_sub: %.2f' % ctc_loss_weight_sub)
         print('  conv: %s' % str(conv))
         print('  batch_norm: %s' % str(batch_norm))
         print('  residual: %s' % str(residual))
@@ -185,7 +185,7 @@ class TestHierarchicalAttention(unittest.TestCase):
         for name in sorted(list(model.num_params_dict.keys())):
             num_params = model.num_params_dict[name]
             print("%s %d" % (name, num_params))
-        print("Total %.3f M parameters" % (model.total_parameters / 1000000))
+        print("Total %.2f M parameters" % (model.total_parameters / 1000000))
 
         # Define optimizer
         learning_rate = 1e-3
@@ -217,24 +217,34 @@ class TestHierarchicalAttention(unittest.TestCase):
             model.optimizer.zero_grad()
             if model.device_id >= 0:
                 torch.cuda.empty_cache()
-            loss, loss_main, loss_sub = model(xs, ys, ys_sub)
+            loss, loss_main, loss_sub, acc_main, acc_sub = model(
+                xs, ys, ys_sub)
             loss.backward()
             loss.detach()
-            # torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
-            torch.nn.utils.clip_grad_norm(model.parameters(), 5)
+            if model.torch_version < 0.4:
+                torch.nn.utils.clip_grad_norm(model.parameters(), 5)
+            else:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
             model.optimizer.step()
 
             if (step + 1) % 10 == 0:
                 # Compute loss
-                loss, loss_main, loss_sub = model(
+                loss, loss_main, loss_sub, acc_main, acc_sub = model(
                     xs, ys, ys_sub, is_eval=True)
+                if model.torch_version < 0.4:
+                    loss = loss.data[0]
+                    loss_main = loss_main.data[0]
+                    loss_sub = loss_sub.data[0]
+                else:
+                    loss = loss.item()
+                    loss_main = loss_main.item()
+                    loss_sub = loss_sub.item()
 
                 # Decode
                 best_hyps, _, perm_idx = model.decode(
                     xs, beam_width, max_decode_len=30)
                 best_hyps_sub, _, _ = model.decode(
                     xs, beam_width, max_decode_len=60, task_index=1)
-                # TODO: fix beam search
 
                 str_hyp = idx2word(best_hyps[0][:-1])
                 str_ref = idx2word(ys[0])
@@ -243,20 +253,19 @@ class TestHierarchicalAttention(unittest.TestCase):
 
                 # Compute accuracy
                 try:
-                    wer, _, _, _ = compute_wer(ref=str_ref.split('_'),
-                                               hyp=str_hyp.split('_'),
-                                               normalize=True)
-                    cer, _, _, _ = compute_wer(
-                        ref=list(str_ref_sub.replace('_', '')),
-                        hyp=list(str_hyp_sub.replace('_', '')),
-                        normalize=True)
+                    wer = compute_wer(ref=str_ref.split('_'),
+                                      hyp=str_hyp.split('_'),
+                                      normalize=True)[0]
+                    cer = compute_wer(ref=list(str_ref_sub.replace('_', '')),
+                                      hyp=list(str_hyp_sub.replace('_', '')),
+                                      normalize=True)[0]
                 except:
-                    wer = 1
-                    cer = 1
+                    wer = 100
+                    cer = 100
 
                 duration_step = time.time() - start_time_step
-                print('Step %d: loss=%.3f(%.3f/%.3f) / wer=%.3f / cer=%.3f / lr=%.5f (%.3f sec)' %
-                      (step + 1, loss.data[0], loss_main.data[0], loss_sub.data[0],
+                print('Step %d: loss=%.2f(%.2f/%.2f)/acc=%.2f/%.2f/wer=%.2f%%/cer=%.2f%%/lr=%.5f (%.2f sec)' %
+                      (step + 1, loss, loss_main, loss_sub, acc_main, acc_sub,
                        wer, cer, learning_rate, duration_step))
                 start_time_step = time.time()
 
@@ -265,7 +274,7 @@ class TestHierarchicalAttention(unittest.TestCase):
                 print('Hyp (word): %s' % str_hyp)
                 print('Hyp (char): %s' % str_hyp_sub)
 
-                if cer < 0.1:
+                if cer < 1:
                     print('Modle is Converged.')
                     break
 

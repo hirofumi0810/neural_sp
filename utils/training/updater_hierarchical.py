@@ -46,43 +46,49 @@ class Updater(object):
             loss_val (float):
             loss_main_val (float):
             loss_sub_val (float):
+            acc_main (float): Token-level accuracy in teacher-forcing in the main task
+            acc_sub (float): Token-level accuracy in teacher-forcing in the sub task
         """
         loss_val, loss_main_val, loss_sub_val = 0., 0., 0.
         try:
             # Step for parameter update
             if self.backend == 'pytorch':
                 if is_eval:
-                    loss, loss_main, loss_sub = model(
+                    loss, loss_main, loss_sub, acc_main, acc_sub = model(
                         batch['xs'], batch['ys'], batch['ys_sub'], is_eval=True)
                 else:
                     model.optimizer.zero_grad()
                     if model.device_id >= 0:
                         torch.cuda.empty_cache()
-                    loss, loss_main, loss_sub = model(
+                    loss, loss_main, loss_sub, acc_main, acc_sub = model(
                         batch['xs'], batch['ys'], batch['ys_sub'])
                     loss.backward()
                     loss.detach()  # Trancate the graph
                     if self.clip_grad_norm > 0:
-                        # torch.nn.utils.clip_grad_norm_(
-                        #     model.parameters(), self.clip_grad_norm)
-                        torch.nn.utils.clip_grad_norm(
-                            model.parameters(), self.clip_grad_norm)
+                        if model.torch_version < 0.4:
+                            torch.nn.utils.clip_grad_norm(
+                                model.parameters(), self.clip_grad_norm)
+                        else:
+                            torch.nn.utils.clip_grad_norm_(
+                                model.parameters(), self.clip_grad_norm)
                     model.optimizer.step()
                     # TODO: Add scheduler
-                # loss_val = loss.item()
-                # loss_main_val = loss_main.item()
-                # loss_sub_val = loss_sub.item()
-                loss_val = loss.data[0]
-                loss_main_val = loss_main.data[0]
-                loss_sub_val = loss_sub.data[0]
+                if model.torch_version < 0.4:
+                    loss_val = loss.data[0]
+                    loss_main_val = loss_main.data[0]
+                    loss_sub_val = loss_sub.data[0]
+                else:
+                    loss_val = loss.item()
+                    loss_main_val = loss_main.item()
+                    loss_sub_val = loss_sub.item()
 
             elif self.backend == 'chainer':
                 if is_eval:
-                    loss, loss_main, loss_sub = model(
+                    loss, loss_main, loss_sub, acc_main, acc_sub = model(
                         batch['xs'], batch['ys'], batch['ys_sub'], is_eval=True)
                 else:
                     model.optimizer.target.cleargrads()
-                    loss, loss_main, loss_sub = model(
+                    loss, loss_main, loss_sub, acc_main, acc_sub = model(
                         batch['xs'], batch['ys'], batch['ys_sub'])
                     loss.backward()
                     loss.unchain_backward()
@@ -114,4 +120,4 @@ class Updater(object):
         # Delete features
         del batch
 
-        return model, loss_val, loss_main_val, loss_sub_val
+        return model, loss_val, loss_main_val, loss_sub_val, acc_main, acc_sub
