@@ -138,7 +138,7 @@ def main():
         # Set save path
         save_path = mkdir_join(args.model_save_path, config['backend'],
                                config['model_type'], config['label_type'],
-                               config['data_size'], model.name)
+                               model.name)
         model.set_save_path(save_path)
 
         # Save the config file
@@ -218,7 +218,7 @@ def main():
 
     # Set process name
     setproctitle('swbd_' + config['backend'] + '_' + config['model_type'] + '_' +
-                 config['label_type'] + '_' + config['data_size'])
+                 config['label_type'])
 
     # Set learning rate controller
     lr_controller = Controller(

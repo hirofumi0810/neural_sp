@@ -28,6 +28,7 @@ param:
   conv_kernel_sizes: []
   conv_strides: []
   poolings: []
+  activation: relu
   batch_norm: False
   encoder_bidirectional: True
   encoder_residual: False
@@ -36,10 +37,11 @@ param:
   decoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 4
+  encoder_num_layers: 5
   encoder_num_layers_sub: 4
   subsample_list:
     - False
+    - True
     - True
     - True
     - False
@@ -65,7 +67,7 @@ param:
   num_heads_sub: 1
 
   # optimization
-  batch_size: 40
+  batch_size: 50
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 25
@@ -76,8 +78,8 @@ param:
   parameter_init: 0.1
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
-  char_init: False
-  # char_init: /n/sd8/inaguma/result/swbd/pytorch/ctc/character/blstm320H4L_drop4_adam_lr1e-3_dropen0.2_input80
+  pretrained_model_path: False
+  # pretrained_model_path: /n/sd8/inaguma/result/swbd/pytorch/ctc/character/blstm320H4L_drop4_adam_lr1e-3_dropen0.2_input80
 
   # regularization
   clip_grad_norm: 5.0
@@ -101,7 +103,7 @@ param:
   # annealing
   decay_type: per_epoch
   decay_start_epoch: 10
-  decay_rate: 0.95
+  decay_rate: 0.9
   decay_patient_epoch: 0
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
@@ -111,4 +113,12 @@ param:
   # MTL
   main_loss_weight: 0.5
   sub_loss_weight: 0.5
-  ctc_loss_weight_sub: 0.0
+  ctc_loss_weight_sub: 0
+
+  # RNNLM fusion
+  rnnlm_fusion_type: False
+  rnnlm_path: False
+  rnnlm_path_sub: False
+  rnnlm_weight: 0
+  rnnlm_weight_sub: 0
+  concat_embedding: False

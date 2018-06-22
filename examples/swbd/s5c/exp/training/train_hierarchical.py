@@ -117,7 +117,7 @@ def main():
             args.model_save_path, config['backend'],
             config['model_type'],
             config['label_type'] + '_' + config['label_type_sub'],
-            config['data_size'], model.name)
+            model.name)
         model.set_save_path(save_path)
 
         # Save the config file
@@ -191,7 +191,7 @@ def main():
 
     # Set process name
     setproctitle('swbd_' + config['backend'] + '_' + config['model_type'] + '_' +
-                 config['label_type'] + '_' + config['label_type_sub'] + '_' + config['data_size'])
+                 config['label_type'] + '_' + config['label_type_sub'])
 
     # Set learning rate controller
     lr_controller = Controller(
@@ -208,7 +208,7 @@ def main():
     reporter = Reporter(model.save_path)
 
     # Set the updater
-    updater s = Updater(config['clip_grad_norm'], config['backend'])
+    updater = Updater(config['clip_grad_norm'], config['backend'])
 
     # Setting for tensorboard
     if config['backend'] == 'pytorch':
@@ -391,6 +391,7 @@ def main():
                     if 'fix_second_decoder' in config.keys() and config['fix_second_decoder'] and model.model_type == 'nested_attention':
                         logger.info('========== Fix second decoder ==========')
                         model.fix_second_decoder()
+
                     # Convert to fine-tuning stage
                     model.set_optimizer(
                         'sgd',

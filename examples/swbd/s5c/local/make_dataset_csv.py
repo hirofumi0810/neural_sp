@@ -14,41 +14,53 @@ from tqdm import tqdm
 import pandas as pd
 import pickle
 import re
+from distutils.util import strtobool
 
 sys.path.append('../../../')
 # from utils.io.labels.phone import Phone2idx
 from utils.io.labels.character import Char2idx
 from utils.io.labels.word import Word2idx
 from utils.directory import mkdir_join
-# from utils.feature_extraction.wav_split import split_wav
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str,
                     help='path to save dataset')
 parser.add_argument('--tool', type=str,
-                    choices=['wav', 'htk', 'python_speech_features', 'librosa'])
-
-args = parser.parse_args()
+                    choices=['htk', 'python_speech_features', 'librosa'])
+parser.add_argument('--has_fisher', nargs='?', type=strtobool, default=False,
+                    help='')
 
 DOUBLE_LETTERS = ['aa', 'bb', 'cc', 'dd', 'ee', 'ff', 'gg', 'hh', 'ii', 'jj',
                   'kk', 'll', 'mm', 'nn', 'oo', 'pp', 'qq', 'rr', 'ss', 'tt',
                   'uu', 'vv', 'ww', 'xx', 'yy', 'zz']
 SPACE = '_'
-LAUGHTER = 'LA'
-NOISE = 'NZ'
-VOCALIZED_NOISE = 'VN'
+LAUGHTER = 'L'
+NOISE = 'N'
+VOCALIZED_NOISE = 'V'
 OOV = 'OOV'
 
 SOF = 'F'
-EOF = 'f'
+EOF = 'G'
 SOD = 'D'
-EOD = 'd'
+EOD = 'E'
+SOB = 'B'
+EOB = 'C'
+
+HESITATIONS = ['UH', 'UM', 'EH', 'MM',  'HM', 'AH',
+               'HUH', 'HA', 'ER', 'OOF', 'HEE', 'ACH', 'EEE' 'EW']
+BACKCHANNELS = ['UH-HUH', 'UM-HUM', 'MHM', 'MMHM', 'MM-HM', 'MM-HUH', 'HUH-UH']
 
 
 def main():
 
-    # for data_type in ['train', 'dev', 'eval2000_swbd', 'eval2000_ch']:
-    for data_type in ['eval2000_swbd', 'eval2000_ch']:
+    args = parser.parse_args()
+
+    data_types = ['train', 'dev', 'eval2000_swbd', 'eval2000_ch']
+    if args.has_fisher:
+        data_types += ['train_fisher']
+
+    # for data_type in data_types:
+    for data_type in ['train_fisher']:
         print('=' * 50)
         print(' ' * 20 + data_type)
         print('=' * 50)
@@ -72,11 +84,7 @@ def main():
             args.data_save_path, 'dataset', args.tool, data_type)
 
         df_columns = ['frame_num', 'input_path', 'transcript']
-        df_word1 = pd.DataFrame([], columns=df_columns)
-        df_word5 = pd.DataFrame([], columns=df_columns)
-        df_word10 = pd.DataFrame([], columns=df_columns)
-        df_word15 = pd.DataFrame([], columns=df_columns)
-        df_word20 = pd.DataFrame([], columns=df_columns)
+        df_word = pd.DataFrame([], columns=df_columns)
         df_char = pd.DataFrame([], columns=df_columns)
         df_char_capital = pd.DataFrame([], columns=df_columns)
         df_char_left = pd.DataFrame([], columns=df_columns)
@@ -84,34 +92,35 @@ def main():
         df_char_both = pd.DataFrame([], columns=df_columns)
         df_char_remove = pd.DataFrame([], columns=df_columns)
 
-        with open(join(args.data_save_path, 'feature', args.tool, data_type,
-                       'frame_num.pickle'), 'rb') as f:
-            frame_num_dict = pickle.load(f)
+        if data_type != 'train_fisher':
+            with open(join(args.data_save_path, 'feature', args.tool, data_type,
+                           'frame_num.pickle'), 'rb') as f:
+                frame_num_dict = pickle.load(f)
 
         utt_count = 0
-        df_word1_list, df_word5_list, df_word10_list, df_word15_list, df_word20_list = [], [], [], [], []
+        df_word_list = []
         df_char_list, df_char_capital_list = [], []
         df_char_left_list, df_char_right_list, df_char_both_list, df_char_remove_list = [], [], [], []
         for utt_idx, trans in tqdm(trans_dict.items()):
-            speaker = '_'.join(utt_idx.split('_')[:2])
-            feat_utt_save_path = join(
-                args.data_save_path, 'feature', args.tool, data_type,
-                speaker, utt_idx + '.npy')
-            frame_num = frame_num_dict[utt_idx]
+            if data_type == 'train_fisher':
+                feat_utt_save_path = ''
+                frame_num = len(trans.split('_'))
+            else:
+                if 'eval2000' in data_type:
+                    speaker = '_'.join(utt_idx.split('_')[:2])
+                else:
+                    speaker = utt_idx.split('_')[0]
+                feat_utt_save_path = join(
+                    args.data_save_path, 'feature', args.tool, data_type,
+                    speaker, utt_idx + '.npy')
+                frame_num = frame_num_dict[utt_idx]
 
-            if not isfile(feat_utt_save_path):
-                raise ValueError('There is no file: %s' % feat_utt_save_path)
+                if not isfile(feat_utt_save_path):
+                    raise ValueError('There is no file: %s' %
+                                     feat_utt_save_path)
 
-            df_word1 = add_element(
-                df_word1, [frame_num, feat_utt_save_path, trans['word1']])
-            df_word5 = add_element(
-                df_word5, [frame_num, feat_utt_save_path, trans['word5']])
-            df_word10 = add_element(
-                df_word10, [frame_num, feat_utt_save_path, trans['word10']])
-            df_word15 = add_element(
-                df_word15, [frame_num, feat_utt_save_path, trans['word15']])
-            df_word20 = add_element(
-                df_word20, [frame_num, feat_utt_save_path, trans['word20']])
+            df_word = add_element(
+                df_word, [frame_num, feat_utt_save_path, trans['word']])
             df_char = add_element(
                 df_char, [frame_num, feat_utt_save_path, trans['char']])
             df_char_capital = add_element(
@@ -128,11 +137,7 @@ def main():
 
             # Reset
             if utt_count == 10000:
-                df_word1_list.append(df_word1)
-                df_word5_list.append(df_word5)
-                df_word10_list.append(df_word10)
-                df_word15_list.append(df_word15)
-                df_word20_list.append(df_word20)
+                df_word_list.append(df_word)
                 df_char_list.append(df_char)
                 df_char_capital_list.append(df_char_capital)
                 df_char_left_list.append(df_char_left)
@@ -140,11 +145,7 @@ def main():
                 df_char_both_list.append(df_char_both)
                 df_char_remove_list.append(df_char_remove)
 
-                df_word1 = pd.DataFrame([], columns=df_columns)
-                df_word5 = pd.DataFrame([], columns=df_columns)
-                df_word10 = pd.DataFrame([], columns=df_columns)
-                df_word15 = pd.DataFrame([], columns=df_columns)
-                df_word20 = pd.DataFrame([], columns=df_columns)
+                df_word = pd.DataFrame([], columns=df_columns)
                 df_char = pd.DataFrame([], columns=df_columns)
                 df_char_capital = pd.DataFrame([], columns=df_columns)
                 df_char_left = pd.DataFrame([], columns=df_columns)
@@ -155,11 +156,7 @@ def main():
                 utt_count = 0
 
         # Last dataframe
-        df_word1_list.append(df_word1)
-        df_word5_list.append(df_word5)
-        df_word10_list.append(df_word10)
-        df_word15_list.append(df_word15)
-        df_word20_list.append(df_word20)
+        df_word_list.append(df_word)
         df_char_list.append(df_char)
         df_char_capital_list.append(df_char_capital)
         df_char_left_list.append(df_char_left)
@@ -168,11 +165,7 @@ def main():
         df_char_remove_list.append(df_char_remove)
 
         # Concatenate all dataframes
-        df_word1 = df_word1_list[0]
-        df_word5 = df_word5_list[0]
-        df_word10 = df_word10_list[0]
-        df_word15 = df_word15_list[0]
-        df_word20 = df_word20_list[0]
+        df_word = df_word_list[0]
         df_char = df_char_list[0]
         df_char_capital = df_char_capital_list[0]
         df_char_left = df_char_left_list[0]
@@ -180,16 +173,8 @@ def main():
         df_char_both = df_char_both_list[0]
         df_char_remove = df_char_remove_list[0]
 
-        for i in df_word1_list[1:]:
-            df_word1 = pd.concat([df_word1, i], axis=0)
-        for i in df_word5_list[1:]:
-            df_word5 = pd.concat([df_word5, i], axis=0)
-        for i in df_word10_list[1:]:
-            df_word10 = pd.concat([df_word10, i], axis=0)
-        for i in df_word15_list[1:]:
-            df_word15 = pd.concat([df_word15, i], axis=0)
-        for i in df_word15_list[1:]:
-            df_word20 = pd.concat([df_word20, i], axis=0)
+        for i in df_word_list[1:]:
+            df_word = pd.concat([df_word, i], axis=0)
         for i in df_char_list[1:]:
             df_char = pd.concat([df_char, i], axis=0)
         for i in df_char_capital_list[1:]:
@@ -203,11 +188,7 @@ def main():
         for i in df_char_remove_list[1:]:
             df_char_remove = pd.concat([df_char_remove, i], axis=0)
 
-        df_word1.to_csv(join(csv_save_path, 'word1.csv'), encoding='utf-8')
-        df_word5.to_csv(join(csv_save_path, 'word5.csv'), encoding='utf-8')
-        df_word10.to_csv(join(csv_save_path, 'word10.csv'), encoding='utf-8')
-        df_word15.to_csv(join(csv_save_path, 'word15.csv'), encoding='utf-8')
-        df_word20.to_csv(join(csv_save_path, 'word20.csv'), encoding='utf-8')
+        df_word.to_csv(join(csv_save_path, 'word.csv'), encoding='utf-8')
         df_char.to_csv(join(csv_save_path, 'character.csv'), encoding='utf-8')
         df_char_capital.to_csv(
             join(csv_save_path, 'character_capital_divide.csv'), encoding='utf-8')
@@ -219,8 +200,6 @@ def main():
             join(csv_save_path, 'char_both.csv'), encoding='utf-8')
         df_char_remove.to_csv(
             join(csv_save_path, 'char_remove.csv'), encoding='utf-8')
-
-        # TODO: word5でremove
 
 
 def add_element(df, elem_list):
@@ -241,17 +220,14 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
             key (string) => speaker
             value (dict) => the dictionary of utterance information of each speaker
                 key (string) => utterance index
-                value (list) => list of
-                    [word1_indices, word5_indices,
-                     word10_indices, word15_indices
-                     char_indices, char_capital_indices]
+                value (dict) => the dictionary of utterance information of each speaker
+                    key (string) => utterance index
+                    value (dict)
+                        key => label type
+                        value => indices
     """
     # Make vocabulary files
-    word1_vocab_path = mkdir_join(vocab_save_path, 'word1.txt')
-    word5_vocab_path = mkdir_join(vocab_save_path, 'word5.txt')
-    word10_vocab_path = mkdir_join(vocab_save_path, 'word10.txt')
-    word15_vocab_path = mkdir_join(vocab_save_path, 'word15.txt')
-    word20_vocab_path = mkdir_join(vocab_save_path, 'word20.txt')
+    word_vocab_path = mkdir_join(vocab_save_path, 'word.txt')
     char_vocab_path = mkdir_join(vocab_save_path, 'character.txt')
     char_capital_vocab_path = mkdir_join(
         vocab_save_path, 'character_capital_divide.txt')
@@ -261,12 +237,10 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
     char_remove_vocab_path = mkdir_join(
         vocab_save_path, 'character_remove.txt')
 
-    # TODO: ここまで
-    raise ValueError
-
     trans_dict = {}
     char_set = set([])
     char_capital_set = set([])
+    char_set_remove = set([])
     word_set = set([])
     word_dict = {}
     with open(text_path, 'r') as f:
@@ -284,40 +258,92 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
             trans = trans.replace('[laughter]', LAUGHTER)
             trans = trans.replace('[noise]', NOISE)
             trans = trans.replace('[vocalized-noise]', VOCALIZED_NOISE)
+            if data_type == 'train_fisher':
+                trans = trans.replace("[[skip]]", "")
+                trans = trans.replace("[pause]", "")
+                trans = trans.replace("[laugh]", LAUGHTER)
+                trans = trans.replace("[sigh]", NOISE)
+                trans = trans.replace("[cough]", NOISE)
+                trans = trans.replace("[mn]", NOISE)
+                trans = trans.replace("[breath]", NOISE)
+                trans = trans.replace("[lipsmack]", NOISE)
+                trans = trans.replace("[sneeze]", NOISE)
+                trans = re.sub(r'[,?*~]', '', trans)
 
-            if 'eval' in data_type:
+                # spellings = spellings:gsub("401k", "four-o-one-k")
+                # spellings = spellings:gsub("ak%-47", "ak-forty-seven")
+                # spellings = spellings:gsub("ak47", "ak-forty-seven")
+                # spellings = spellings:gsub("u2", "u-two")
+                # spellings = spellings:gsub("v8", "v-eight")
+                # spellings = spellings:gsub("mp3", "m-p-three")
+                # spellings = spellings:gsub("m16", "m-sixteen")
+                # spellings = spellings:gsub("f16", "f-sixteen")
+                # spellings = spellings:gsub("dc3", "dc-three")
+                # spellings = spellings:gsub("y2k", "y-two-k")
+                # spellings = spellings:gsub("3d", "three-d")
+                # spellings = spellings:gsub("espn2", "e-s-p-n-two")
+                # spellings = spellings:gsub("vh1", "vh-one")
+                # spellings = spellings:gsub("s2b", "s-two-b")
+                # spellings = spellings:gsub("90210", "nine-o-two-one-o")
+                # spellings = spellings:gsub("2", "two")
+                # spellings = spellings:gsub('%&', '-n-')
+                # spellings = spellings:gsub('_', '')
+                # spellings = spellings:gsub('-', '')
+                # spellings = spellings:gsub('%.', '')
+                # spellings = spellings:gsub('%s+', ' ')
+                # spellings = spellings:gsub('^%s+', '')
+                # spellings = spellings:gsub('%s+$', '')
+                # spellings = spellings:gsub('%s', '|'):gsub('(.)', '%1 '):gsub(' $', '')
+
+            if 'eval2000' in data_type:
                 trans = trans.replace('<b_aside>', '')
                 trans = trans.replace('<e_aside>', '')
                 trans = re.sub(r'[()]+', '', trans)
 
-                # Remove consecutive spaces
-                trans = re.sub(r'[\s]+', ' ', trans)
+            if len(trans) == 0:
+                continue
 
-                # Remove the first and last spaces
-                if trans[0] == ' ':
-                    trans = trans[1:]
-                if trans[-1] == ' ':
-                    trans = trans[:-1]
+            # Remove consecutive spaces
+            trans = re.sub(r'[\s]+', ' ', trans)
+
+            # Remove the first and last spaces
+            if trans[0] == ' ':
+                trans = trans[1:]
+            if trans[-1] == ' ':
+                trans = trans[:-1]
+
+            if '[' in trans:
+                print(trans)
 
             ###################################
             # with filler and disfluency
             ###################################
             trans_left_list, trans_right_list, trans_both_list, trans_remove_list = [], [], [], []
             for w in trans.split(' '):
-                if '言いよどみ' in w:
-                    w_left = SOD + w.split('+')[0]
-                    w_right = w.split('+')[0] + EOD
-                    w_both = SOD + w.split('+')[0] + EOD
-                elif '感動詞' in w:
-                    w_left = SOF + w.split('+')[0]
-                    w_right = w.split('+')[0] + EOF
-                    w_both = SOF + w.split('+')[0] + EOF
+                if len(w) == 0:
+                    print(trans.replace(' ', '_'))
+
+                if w[-1] == '-':
+                    w_left = SOD + w[:-1]
+                    w_right = w[:-1] + SOD
+                    w_both = SOD + w[:-1] + EOD
+                elif w[0] == '-':
+                    w_left = SOD + w[1:]
+                    w_right = w[1:] + SOD
+                    w_both = SOD + w[1:] + EOD
+                elif w.upper() in HESITATIONS:
+                    w_left = SOF + w
+                    w_right = w + SOF
+                    w_both = SOF + w + EOF
+                elif w.upper() in BACKCHANNELS:
+                    w_left = SOB + w
+                    w_right = w + SOB
+                    w_both = SOB + w + EOB
                 else:
-                    w_left = w.split('+')[0]
-                    w_right = w.split('+')[0]
-                    w_both = w.split('+')[0]
-                    if w != SHORT_PAUSE:
-                        trans_remove_list.append(w.split('+')[0])
+                    w_left = w
+                    w_right = w
+                    w_both = w
+                    trans_remove_list.append(w)
                 trans_left_list.append(w_left)
                 trans_right_list.append(w_right)
                 trans_both_list.append(w_both)
@@ -325,81 +351,60 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
             trans_right = SPACE.join(trans_right_list)
             trans_both = SPACE.join(trans_both_list)
             trans_remove = SPACE.join(trans_remove_list)
-
             trans = trans.replace(' ', SPACE)
 
             trans_capital = ''
-            for word in trans.split(SPACE):
+            for w in trans.split(SPACE):
                 # Count word frequency
-                if word not in word_dict.keys():
-                    word_dict[word] = 1
+                if w not in word_dict.keys():
+                    word_dict[w] = 1
                 else:
-                    word_dict[word] += 1
+                    word_dict[w] += 1
 
-                word_set.add(word)
-                char_set |= set(list(word))
+                word_set.add(w)
+                char_set |= set(list(w))
 
                 # Capital-divided
-                if len(word) == 1:
-                    char_capital_set.add(word)
-                    trans_capital += word
+                if len(w) == 1:
+                    char_capital_set.add(w.upper())
+                    trans_capital += w.upper()
                 else:
                     # Replace the first character with the capital
                     # letter
-                    word = word[0].upper() + word[1:]
+                    w = w[0].upper() + w[1:]
+                    char_capital_set.add(w[0])
 
                     # Check double-letters
-                    for i in range(0, len(word) - 1, 1):
-                        if word[i:i + 2] in DOUBLE_LETTERS:
-                            char_capital_set.add(word[i:i + 2])
+                    for i in range(0, len(w) - 1, 1):
+                        if w[i:i + 2] in DOUBLE_LETTERS:
+                            char_capital_set.add(w[i:i + 2])
                         else:
-                            char_capital_set.add(word[i])
-                    trans_capital += word
+                            char_capital_set.add(w[i])
+                    trans_capital += w
+
+                for w in trans_remove.split(SPACE):
+                    char_set_remove |= set(list(w))
 
             trans_dict[utt_idx] = [trans, trans_capital,
                                    trans_left, trans_right, trans_both, trans_remove]
 
     # Reserve some indices
     char_set.discard('L')
-    char_set.discard('A')
     char_set.discard('N')
-    char_set.discard('Z')
     char_set.discard('V')
+    char_set.discard('B')
+    char_set.discard('C')
+    char_set.discard('D')
+    char_set.discard('E')
+    char_set.discard('F')
+    char_set.discard('G')
 
     # Save vocabulary files
     if data_type == 'train':
-        # word-level (threshold == 1)
-        with open(word1_vocab_path, 'w') as f:
-            word_list = sorted(list(word_set)) + [OOV]
-            for w in word_list:
-                f.write('%s\n' % w)
-            # NOTE: OOV index is reserved for the dev set
-
         # word-level (threshold == 5)
-        with open(word5_vocab_path, 'w') as f:
+        with open(word_vocab_path, 'w') as f:
             word_list = sorted([w for w, freq in list(word_dict.items())
                                 if freq >= 5]) + [OOV]
-            for w in word_list:
-                f.write('%s\n' % w)
-
-        # word-level (threshold == 10)
-        with open(word10_vocab_path, 'w') as f:
-            word_list = sorted([w for w, freq in list(word_dict.items())
-                                if freq >= 10]) + [OOV]
-            for w in word_list:
-                f.write('%s\n' % w)
-
-        # word-level (threshold == 15)
-        with open(word15_vocab_path, 'w') as f:
-            word_list = sorted([w for w, freq in list(word_dict.items())
-                                if freq >= 15]) + [OOV]
-            for w in word_list:
-                f.write('%s\n' % w)
-
-        # word-level (threshold == 20)
-        with open(word20_vocab_path, 'w') as f:
-            word_list = sorted([w for w, freq in list(word_dict.items())
-                                if freq >= 20]) + [OOV]
             for w in word_list:
                 f.write('%s\n' % w)
 
@@ -417,50 +422,32 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
             for c in char_capital_list:
                 f.write('%s\n' % c)
 
-        # character-level
-        # with open(char_left_vocab_path, 'w') as f:
-        #     char_left_list = sorted(list(char_set)) + \
-        #         [SPACE, LAUGHTER, NOISE, VOCALIZED_NOISE]
-        #     for c in char_left_list:
-        #         f.write('%s\n' % c)
-        raise ValueError
+        # character-level (char_wb + left, right, both, remove)
+        with open(char_left_vocab_path, 'w') as f:
+            for c in char_list + [SPACE, LAUGHTER, NOISE, VOCALIZED_NOISE, SOF, SOD, SOB]:
+                f.write('%s\n' % c)
+        with open(char_right_vocab_path, 'w') as f:
+            for c in char_list + [SPACE, LAUGHTER, NOISE, VOCALIZED_NOISE, SOF, SOD, SOB]:
+                f.write('%s\n' % c)
+        with open(char_both_vocab_path, 'w') as f:
+            for c in char_list + [SPACE, LAUGHTER, NOISE, VOCALIZED_NOISE, SOF, SOD, SOB, EOF, EOD, EOB]:
+                f.write('%s\n' % c)
+        with open(char_remove_vocab_path, 'w') as f:
+            char_list_remove = sorted(list(char_set_remove))
+            for c in char_list_remove + [SPACE, LAUGHTER, NOISE, VOCALIZED_NOISE]:
+                f.write('%s\n' % c)
 
     # Compute OOV rate
     if data_type != 'train':
         with open(mkdir_join(vocab_save_path, 'oov', data_type + '.txt'), 'w') as f:
-
-            # word-level (threshold == 1)
-            oov_rate = compute_oov_rate(word_dict, word1_vocab_path)
-            f.write('Word (freq1):\n')
-            f.write('  OOV rate: %f %%\n' % oov_rate)
-
             # word-level (threshold == 5)
-            oov_rate = compute_oov_rate(word_dict, word5_vocab_path)
+            oov_rate = compute_oov_rate(word_dict, word_vocab_path)
             f.write('Word (freq5):\n')
-            f.write('  OOV rate: %f %%\n' % oov_rate)
-
-            # word-level (threshold == 10)
-            oov_rate = compute_oov_rate(word_dict, word10_vocab_path)
-            f.write('Word (freq10):\n')
-            f.write('  OOV rate: %f %%\n' % oov_rate)
-
-            # word-level (threshold == 15)
-            oov_rate = compute_oov_rate(word_dict, word15_vocab_path)
-            f.write('Word (freq15):\n')
-            f.write('  OOV rate: %f %%\n' % oov_rate)
-
-            # word-level (threshold == 20)
-            oov_rate = compute_oov_rate(word_dict, word20_vocab_path)
-            f.write('Word (freq20):\n')
             f.write('  OOV rate: %f %%\n' % oov_rate)
 
     # Convert to index
     print('=====> Convert to index...')
-    word2idx_freq1 = Word2idx(word1_vocab_path)
-    word2idx_freq5 = Word2idx(word5_vocab_path)
-    word2idx_freq10 = Word2idx(word10_vocab_path)
-    word2idx_freq15 = Word2idx(word15_vocab_path)
-    word2idx_freq20 = Word2idx(word20_vocab_path)
+    word2idx = Word2idx(word_vocab_path)
     char2idx = Char2idx(char_vocab_path)
     char2idx_capital = Char2idx(char_capital_vocab_path, capital_divide=True)
     char2idx_left = Char2idx(char_left_vocab_path)
@@ -468,14 +455,10 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
     char2idx_both = Char2idx(char_both_vocab_path)
     char2idx_remove = Char2idx(char_remove_vocab_path)
 
-    for utt_idx, [trans, trans_left, trans_right, trans_both, trans_remove] in tqdm(trans_dict.items()):
+    for utt_idx, [trans, trans_capital, trans_left, trans_right, trans_both, trans_remove] in tqdm(trans_dict.items()):
         if 'eval' in data_type:
             trans_dict[utt_idx] = {
-                "word1": trans,
-                "word5": trans,
-                "word10": trans,
-                "word15": trans,
-                "word20": trans,
+                "word": trans,
                 "char": trans,
                 "char_capital": trans,
                 "char_left": trans,
@@ -485,47 +468,25 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
             }
             # NOTE: save as it is
         else:
-            word1_indices = word2idx_freq1(trans)
-            word5_indices = word2idx_freq5(trans)
-            word10_indices = word2idx_freq10(trans)
-            word15_indices = word2idx_freq15(trans)
-            word20_indices = word2idx_freq20(trans)
+            word_indices = word2idx(trans)
             char_indices = char2idx(trans)
-            char_capital_indices = char2idx_capital(trans)
+            char_capital_indices = char2idx_capital(trans_capital)
             char_left_indices = char2idx_left(trans_left)
             char_right_indices = char2idx_right(trans_right)
             char_both_indices = char2idx_both(trans_both)
             char_remove_indices = char2idx_remove(trans_remove)
 
-            word1_indices = ' '.join(
-                list(map(str, word1_indices.tolist())))
-            word5_indices = ' '.join(
-                list(map(str, word5_indices.tolist())))
-            word10_indices = ' '.join(
-                list(map(str, word10_indices.tolist())))
-            word15_indices = ' '.join(
-                list(map(str, word15_indices.tolist())))
-            word20_indices = ' '.join(
-                list(map(str, word20_indices.tolist())))
-            char_indices = ' '.join(
-                list(map(str, char_indices.tolist())))
+            word_indices = ' '.join(list(map(str, word_indices)))
+            char_indices = ' '.join(list(map(str, char_indices)))
             char_capital_indices = ' '.join(
-                list(map(str, char_capital_indices.tolist())))
-            char_left_indices = ' '.join(
-                list(map(str, char_left_indices.tolist())))
-            char_right_indices = ' '.join(
-                list(map(str, char_right_indices.tolist())))
-            char_both_indices = ' '.join(
-                list(map(str, char_both_indices.tolist())))
-            char_remove_indices = ' '.join(
-                list(map(str, char_remove_indices.tolist())))
+                list(map(str, char_capital_indices)))
+            char_left_indices = ' '.join(list(map(str, char_left_indices)))
+            char_right_indices = ' '.join(list(map(str, char_right_indices)))
+            char_both_indices = ' '.join(list(map(str, char_both_indices)))
+            char_remove_indices = ' '.join(list(map(str, char_remove_indices)))
 
             trans_dict[utt_idx] = {
-                "word1": word1_indices,
-                "word5": word5_indices,
-                "word10": word10_indices,
-                "word15": word15_indices,
-                "word20": word20_indices,
+                "word": word_indices,
                 "char": char_indices,
                 "char_capital": char_capital_indices,
                 "char_left": char_left_indices,
@@ -558,8 +519,8 @@ def compute_oov_rate(word_dict, vocab_path):
             continue
 
         word_num += freq
-        if word not in vocab_set and word.replace('-', '') not in vocab_set:
-            print(word)
+        # if word not in vocab_set and word.replace('-', '') not in vocab_set:
+        if word not in vocab_set:
             oov_count += freq
 
     oov_rate = oov_count * 100 / word_num

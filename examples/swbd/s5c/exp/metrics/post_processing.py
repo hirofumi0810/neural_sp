@@ -8,48 +8,40 @@ from __future__ import division
 from __future__ import print_function
 
 import re
+from utils.evaluation.normalization import normalize
 
-LAUGHTER = 'LA'
-NOISE = 'NZ'
-VOCALIZED_NOISE = 'VN'
+LAUGHTER = 'L'
+NOISE = 'N'
+VOCALIZED_NOISE = 'V'
 HESITATION = '%hesitation'
 
 
-def fix_trans(transcript, glm):
+def fix_trans(trans, glm):
     """Fix transcription.
     Args:
-        transcript (string):
+        trans (string):
     Returns:
-        transcript (string):
+        trans (string):
     """
     # Remove consecutive spaces
-    transcript = re.sub(r'[_]+', '_', transcript)
+    trans = re.sub(r'[_]+', '_', trans)
 
     # Fix abbreviation, hesitation
-    transcript = glm.fix_trans(transcript)
+    trans = glm(trans)
     # TODO: 省略は元に戻すのではなく，逆に全てを省略形にする方が良い？？
 
-    # Remove NOISE, LAUGHTER, VOCALIZED-NOISE, HESITATION
-    transcript = transcript.replace(NOISE, '')
-    transcript = transcript.replace(LAUGHTER, '')
-    transcript = transcript.replace(VOCALIZED_NOISE, '')
-    # transcript = transcript.replace(HESITATION, '')
+    # Replace OOV temporaly
+    trans = trans.replace('OOV', '@')
 
-    # Remove garbage labels
-    transcript = re.sub(r'[>]+', '', transcript)
-    # transcript = transcript.replace('-', '')
-    # transcript = transcript.replace('\'', '')
+    # Remove noisy labels
+    trans = normalize(trans, remove_tokens=[
+                      NOISE, LAUGHTER, VOCALIZED_NOISE, '>'])
+    # trans = trans.replace(HESITATION, '')
+    trans = trans.replace('-', '')
+    # trans = trans.replace('\'', '')
+    # trans = trans.replace('.', '')
 
-    # Convert acronyms to character
-    transcript = transcript.replace('.', '')
+    # Replace back OOV
+    trans = trans.replace('@', 'OOV')
 
-    # Remove consecutive spaces again
-    transcript = re.sub(r'[_]+', '_', transcript)
-
-    # Remove the first and last space
-    if len(transcript) > 0 and transcript[0] == '_':
-        transcript = transcript[1:]
-    if len(transcript) > 0 and transcript[-1] == '_':
-        transcript = transcript[: -1]
-
-    return transcript
+    return trans

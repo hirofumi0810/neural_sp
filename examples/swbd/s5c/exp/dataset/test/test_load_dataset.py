@@ -19,6 +19,7 @@ class TestLoadDataset(unittest.TestCase):
     def test(self):
 
         # data_type
+        self.check(data_type='train', label_type='word')
         self.check(data_type='train')
         self.check(data_type='dev')
         self.check(data_type='eval2000_swbd')
@@ -32,15 +33,6 @@ class TestLoadDataset(unittest.TestCase):
         self.check(sort_utt=True)
         self.check(sort_utt=True, sort_stop_epoch=2)
         self.check(shuffle=True)
-
-        # frame stacking
-        self.check(frame_stacking=True)
-
-        # splicing
-        self.check(splice=11)
-
-        # multi-GPU
-        # self.check(num_gpus=8)
 
     @measure_time
     def check(self, label_type='character', data_type='dev',
@@ -78,7 +70,12 @@ class TestLoadDataset(unittest.TestCase):
             print('----- %s (epoch: %.3f, batch: %d) -----' %
                   (batch['input_names'][0], dataset.epoch_detail, len(batch['xs'])))
             print(str_ref)
-            print('x_lens: %d' % (len(batch['xs'][0])))
+            if label_type == 'word':
+                print('x_lens: %d' % (len(batch['xs'][0]) / 8))
+            else:
+                print('x_lens: %d' % (len(batch['xs'][0]) / 4))
+            if not dataset.is_test:
+                print('y_lens: %d' % (len(batch['ys'][0])))
 
             if dataset.epoch_detail >= 1:
                 break

@@ -39,11 +39,12 @@ param:
     - True
     - True
     - False
+    - False
   subsample_type: drop
   fc_list: []
 
   # optimization
-  batch_size: 50
+  batch_size: 60
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 25
@@ -54,7 +55,7 @@ param:
   parameter_init: 0.1
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
-  char_init: False
+  pretrained_model_path: False
 
   # regularization
   clip_grad_norm: 5.0
@@ -69,7 +70,7 @@ param:
   # annealing
   decay_type: per_epoch
   decay_start_epoch: 10
-  decay_rate: 0.95
+  decay_rate: 0.9
   decay_patient_epoch: 0
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5

@@ -13,10 +13,10 @@ import re
 class GLM(object):
     """docstring for GLM."""
 
-    def __init__(self, glm_path, space_mark='_'):
+    def __init__(self, glm_path, space='_'):
         super(GLM, self).__init__()
 
-        self.space_mark = space_mark
+        self.space = space
 
         self.map_dict = {}
         with open(glm_path, 'r')as f:
@@ -45,25 +45,25 @@ class GLM(object):
                 # For debug
                 # print(before + ' => ' + after)
 
-    def fix_trans(self, transcript):
+    def __call__(self, trans):
         """
         Args:
-            transcript (string):
+            trans (string):
         Returns:
-            transcript_fixed (string):
+            trans (string):
         """
         # Fix abbreviation, hesitation based on GLM
-        word_list = transcript.split(self.space_mark)
+        word_list = trans.split(self.space)
         word_list_mapped = []
-        for word in word_list:
-            if word in self.map_dict.keys():
-                word_fixed = self.map_dict[word]
+        for w in word_list:
+            if w in self.map_dict.keys():
+                word_fixed = self.map_dict[w]
                 word_list_mapped.extend(word_fixed.split(' '))
 
                 # For debug
-                # print('fixed: %s => %s' % (word, word_fixed))
+                # print('fixed: %s => %s' % (w, word_fixed))
             else:
-                word_list_mapped.append(word)
-        transcript_fixed = self.space_mark.join(word_list_mapped)
+                word_list_mapped.append(w)
+        trans = self.space.join(word_list_mapped)
 
-        return transcript_fixed
+        return trans

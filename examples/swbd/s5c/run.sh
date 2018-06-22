@@ -8,53 +8,53 @@ set -e
 
 if [ $# -ne 2 ]; then
   echo "Error: set GPU number & config path." 1>&2
-  echo "Usage: ./run.sh path_to_config_file gpu_index" 1>&2
+  echo "Usage: ./run.sh path_to_config_file gpu_id" 1>&2
   exit 1
 fi
 
 
 echo ============================================================================
-echo "                           Switchboard (300h)                             "
+echo "                              Switchboard                                 "
 echo ============================================================================
 
 stage=0
 run_background=true
+# run_background=false
 
 ### Set path to original data
-SWBD_AUDIOPATH="/n/sd8/inaguma/corpus/swbd/data/LDC97S62"
-EVAL2000_AUDIOPATH="/n/sd8/inaguma/corpus/swbd/data/eval2000/LDC2002S09"
-EVAL2000_TRANSPATH="/n/sd8/inaguma/corpus/swbd/data/eval2000/LDC2002T43"
-has_fisher=false
+SWBD_AUDIOPATH="/n/rd21/corpora_7/swb"
+EVAL2000_AUDIOPATH="/n/rd21/corpora_7/hub5_english/LDC2002S09"
+EVAL2000_TRANSPATH="/n/rd21/corpora_7/hub5_english/LDC2002T43"
+FISHER_PATH="/n/rd7/fisher_english"
 
 ### Set path to save dataset
-DATA="/n/sd8/inaguma/corpus/swbd/kaldi"
+export data="/n/sd8/inaguma/corpus/swbd/kaldi"
 
 ### Set path to save the model
-MODEL="/n/sd8/inaguma/result/swbd"
+model="/n/sd8/inaguma/result/swbd"
 
 ### Select one tool to extract features (HTK is the fastest)
-# TOOL=kaldi
-TOOL=htk
-# TOOL=python_speech_features
-# TOOL=librosa
+# tool=kaldi
+tool=htk
+# tool=python_speech_features
+# tool=librosa
 
 ### Configuration of feature extranction
-CHANNELS=40
-WINDOW=0.025
-SLIDE=0.01
-ENERGY=0
-DELTA=1
-DELTADELTA=1
-# NORMALIZE=global
-NORMALIZE=speaker
-# NORMALIZE=utterance
+channles=80
+window=0.025
+slide=0.01
+energy=1
+delta=1
+deltadelta=1
+# normalize=global
+normalize=speaker
+# normalize=utterance
 
-
-if [ ! -e $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe ]; then
+if [ ! -e ${KALDI_ROOT}/tools/sph2pipe_v2.5/sph2pipe ]; then
   echo ============================================================================
   echo "                           Install sph2pipe                               "
   echo ============================================================================
-  SWBD_REPO=`pwd`
+  cur_dir=`pwd`
   # Install instructions for sph2pipe_v2.5.tar.gz
   if ! which wget >&/dev/null; then
     echo "This script requires you to first install wget";
@@ -69,32 +69,32 @@ if [ ! -e $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe ]; then
     sleep 1
   fi
 
-  if [ ! -e KALDI_ROOT/tools/sph2pipe_v2.5.tar.gz ]; then
-    wget -T 3 -t 3 http://www.openslr.org/resources/3/sph2pipe_v2.5.tar.gz -P KALDI_ROOT/tools
+  if [ ! -e ${KALDI_ROOT}/tools/sph2pipe_v2.5.tar.gz ]; then
+    wget -T 3 -t 3 http://www.openslr.org/resources/3/sph2pipe_v2.5.tar.gz -P ${KALDI_ROOT}/tools
   else
     echo "sph2pipe_v2.5.tar.gz is already downloaded."
   fi
-  tar -xovzf KALDI_ROOT/tools/sph2pipe_v2.5.tar.gz -C $KALDI_ROOT/tools
-  rm $KALDI_ROOT/tools/sph2pipe_v2.5.tar.gz
-  echo "Enter into $KALDI_ROOT/tools/sph2pipe_v2.5 ..."
-  cd $KALDI_ROOT/tools/sph2pipe_v2.5
+  tar -xovzf ${KALDI_ROOT}/tools/sph2pipe_v2.5.tar.gz -C ${KALDI_ROOT}/tools
+  rm ${KALDI_ROOT}/tools/sph2pipe_v2.5.tar.gz
+  echo "Enter into ${KALDI_ROOT}/tools/sph2pipe_v2.5 ..."
+  cd ${KALDI_ROOT}/tools/sph2pipe_v2.5
   gcc -o sph2pipe *.c -lm
-  echo "Get out of $KALDI_ROOT/tools/sph2pipe_v2.5 ..."
-  cd $SWBD_REPO
+  echo "Get out of ${KALDI_ROOT}/tools/sph2pipe_v2.5 ..."
+  cd ${cur_dir}
 fi
 
 
-if [ $stage -le 0 ] && [ ! -e $DATA/.stage_0 ]; then
+if [ ${stage} -le 0 ] && [ ! -e ${data}/.stage_0 ]; then
   echo ============================================================================
   echo "                           Data Preparation                               "
   echo ============================================================================
 
-  local/swbd1_data_download.sh $SWBD_AUDIOPATH || exit 1;
+  local/swbd1_data_download.sh ${SWBD_AUDIOPATH} || exit 1;
   # local/swbd1_data_download.sh /mnt/matylda2/data/SWITCHBOARD_1R2 # BUT,
 
   # prepare SWBD dictionary first since we want to find acronyms according to pronunciations
   # before mapping lexicon and transcripts
-  local/swbd1_prepare_dict.sh || exit 1;
+  # local/swbd1_prepare_dict.sh || exit 1;
 
   # Prepare Switchboard data. This command can also take a second optional argument
   # which specifies the directory to Switchboard documentations. Specifically, if
@@ -105,226 +105,219 @@ if [ $stage -le 0 ] && [ ! -e $DATA/.stage_0 ]; then
   # Note: if you are using this link, make sure you rename conv_tab.csv to conv.tab
   # after downloading.
   # Usage: local/swbd1_data_prep.sh /path/to/SWBD [/path/to/SWBD_docs]
-  local/swbd1_data_prep.sh $SWBD_AUDIOPATH || exit 1;
+  local/swbd1_data_prep.sh ${SWBD_AUDIOPATH} || exit 1;
 
   # Use the first 4k sentences as dev set.  Note: when we trained the LM, we used
   # the 1st 10k sentences as dev set, so the 1st 4k won't have been used in the
   # LM training data.   However, they will be in the lexicon, plus speakers
   # may overlap, so it's still not quite equivalent to a test set.
-  utils/subset_data_dir.sh --first $DATA/train 4000 $DATA/dev || exit 1; # 5hr 6min
-  n=$[`cat $DATA/train/segments | wc -l` - 4000]
-  utils/subset_data_dir.sh --last $DATA/train $n $DATA/train_nodev || exit 1;
-
-  # Take the first 100k utterances (just under half the data); we'll use
-  # this for later stages of training.
-  # utils/subset_data_dir.sh --first $DATA/train_nodev 100000 $DATA/train_100k || exit 1;
-  # utils/data/remove_dup_utts.sh 200 $DATA/train_100k $DATA/train_100k_nodup || exit 1;  # 110hr
+  utils/subset_data_dir.sh --first ${data}/train 4000 ${data}/dev || exit 1; # 5hr 6min
+  n=$[`cat ${data}/train/segments | wc -l` - 4000]
+  utils/subset_data_dir.sh --last ${data}/train $n ${data}/train_nodev || exit 1;
 
   # Finally, the full training set:
-  rm -rf $DATA/train
-  utils/data/remove_dup_utts.sh 300 $DATA/train_nodev $DATA/train || exit 1;  # 286hr
-  rm -rf $DATA/train_nodev
+  rm -rf ${data}/train
+  utils/data/remove_dup_utts.sh 300 ${data}/train_nodev ${data}/train || exit 1;  # 286hr
+  rm -rf ${data}/train_nodev
 
   # Data preparation and formatting for eval2000 (note: the "text" file
   # is not very much preprocessed; for actual WER reporting we'll use
   # sclite.
-  local/eval2000_data_prep.sh $EVAL2000_AUDIOPATH $EVAL2000_TRANSPATH || exit 1;
+  local/eval2000_data_prep.sh ${EVAL2000_AUDIOPATH} ${EVAL2000_TRANSPATH} || exit 1;
 
   # prepare the rt03 data.  Note: this isn't 100% necessary for this
   # recipe, not all parts actually test using rt03.
   # local/rt03_data_prep.sh /export/corpora/LDC/LDC2007S10
 
-  touch $DATA/.stage_0
+  # prepare fisher data for language models (optional)
+  if [ -d ${FISHER_PATH} ]; then
+    # prepare fisher data and put it under data/train_fisher
+    local/fisher_data_prep.sh ${FISHER_PATH}
+  fi
+
+  touch ${data}/.stage_0
   echo "Finish data preparation (stage: 0)."
 fi
 
 
-if [ $stage -le 1 ] && [ ! -e $DATA/.stage_1 ]; then
+if [ ${stage} -le 1 ] && [ ! -e ${data}/.stage_1 ]; then
   echo ============================================================================
   echo "                        Feature extranction                               "
   echo ============================================================================
 
-  if [ $TOOL = "kaldi" ]; then
+  if [ ${tool} = "kaldi" ]; then
     for x in train dev eval2000; do
-      steps/make_fbank.sh --nj 8 --cmd run.pl $DATA/$x exp/make_fbank/$x $DATA/fbank || exit 1;
-      steps/compute_cmvn_stats.sh $DATA/$x exp/make_fbank/$x $DATA/fbank || exit 1;
-      utils/fix_data_dir.sh $DATA/$x || exit 1;
+      steps/make_fbank.sh --nj 8 --cmd run.pl ${data}/$x exp/make_fbank/$x ${data}/fbank || exit 1;
+      steps/compute_cmvn_stats.sh ${data}/$x exp/make_fbank/$x ${data}/fbank || exit 1;
+      utils/fix_data_dir.sh ${data}/$x || exit 1;
     done
 
   else
-    # Convert .sph (2ch) to .wav (1ch)
-    if [ ! -e $DATA/wav_1ch/.done_wav_1ch ]; then
-      # train, dev set
-      train_sph_paths=$(find $SWBD_AUDIOPATH/. -iname '*.sph')
-      mkdir -p $DATA/wav_1ch/train
-      for sph_path in $train_sph_paths ; do
-        file_name=$(basename $sph_path)
-        base=${file_name%.*}
-        ext=${file_name##*.}
-        wav_path_A=$DATA/wav_1ch/train/$base"-A.wav"
-        wav_path_B=$DATA/wav_1ch/train/$base"-B.wav"
-        echo "Converting from "$sph_path" to "$wav_path_A
-        $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe -f wav -p -c 1 $sph_path $wav_path_A || exit 1;
-        echo "Converting from "$sph_path" to "$wav_path_B
-        $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe -f wav -p -c 2 $sph_path $wav_path_B || exit 1;
-      done
-
-      # eval2000
-      eval2000_sph_paths=$(find $EVAL2000_AUDIOPATH/. -iname '*.sph')
-      mkdir -p $DATA/wav_1ch/eval2000
-      for sph_path in $eval2000_sph_paths ; do
-        file_name=$(basename $sph_path)
-        base=${file_name%.*}
-        ext=${file_name##*.}
-        wav_path_A=$DATA/wav_1ch/eval2000/$base"-A.wav"
-        wav_path_B=$DATA/wav_1ch/eval2000/$base"-B.wav"
-        echo "Converting from "$sph_path" to "$wav_path_A
-        $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe -f wav -p -c 1 $sph_path $wav_path_A || exit 1;
-        echo "Converting from "$sph_path" to "$wav_path_B
-        $KALDI_ROOT/tools/sph2pipe_v2.5/sph2pipe -f wav -p -c 2 $sph_path $wav_path_B || exit 1;
-      done
-
-      touch $DATA/wav_1ch/.done_wav_1ch
+    if [ ${tool} = "htk" ]; then
+      # Make a config file to covert from wav to htk file and split per channel
+      ${PYTHON} local/make_htk_config.py \
+          --data_save_path ${data} \
+          --config_save_path ./conf/fbank_htk.conf \
+          --audio_file_type wav \
+          --channels ${channles} \
+          --sampling_rate 8000 \
+          --window ${window} \
+          --slide ${slide} \
+          --energy ${energy} \
+          --delta ${delta} \
+          --deltadelta ${deltadelta} || exit 1;
     fi
 
-    if [ $TOOL = "htk" ]; then
-      # Make a config file to covert from wav to htk file
-      # and split per channel
-      $PYTHON local/make_htk_config.py \
-          --data_save_path $DATA \
-          --config_save_path ./conf/fbank_htk.conf \
-          --channels $CHANNELS \
-          --window $WINDOW \
-          --slide $SLIDE \
-          --energy $ENERGY \
-          --delta $DELTA \
-          --deltadelta $DELTADELTA || exit 1;
+    for data_type in train dev eval2000; do
+      mkdir -p ${data}/wav/$data_type
+      mkdir -p ${data}/htk/$data_type
+      [ -e ${data}/$data_type/htk.scp ] && rm ${data}/$data_type/htk.scp
+      touch ${data}/$data_type/htk.scp
+      cat ${data}/$data_type/wav.scp | while read line
+      do
+        # Convert from sph (2ch) to wav files (1ch)
+        sph_path=`echo $line | awk -F " " '{ print $(NF - 1) }'`
+        file_name=`basename $sph_path`
+        base=${file_name%.*}
+        # ext=${file_name##*.}
+        wav_path_a=${data}/wav/$data_type/$base"-A.wav"
+        wav_path_b=${data}/wav/$data_type/$base"-B.wav"
+        if [ ! -e $wav_path_a ] || [ ! -e $wav_path_b ]; then
+          echo "Converting "$sph_path
+          ${KALDI_ROOT}/tools/sph2pipe_v2.5/sph2pipe -f wav -p -c 1 $sph_path $wav_path_a || exit 1;
+          ${KALDI_ROOT}/tools/sph2pipe_v2.5/sph2pipe -f wav -p -c 2 $sph_path $wav_path_b || exit 1;
+        fi
 
-      # Convert from wav to htk files
-      for data_type in train dev eval2000 ; do
-        mkdir -p $DATA/htk
-        mkdir -p $DATA/htk/$data_type
-
-        if [ ! -e $DATA/htk/$data_type/.done_make_htk ]; then
-          $HCOPY -T 1 -C ./conf/fbank_htk.conf -S $DATA/$data_type/wav2htk.scp || exit 1;
-          touch $DATA/htk/$data_type/.done_make_htk
+        if [ ${tool} = "htk" ]; then
+          # Convert from wav to htk files
+          htk_path_a=${data}/htk/$data_type/$base"-A.htk"
+          htk_path_b=${data}/htk/$data_type/$base"-B.htk"
+          if [ ! -e $htk_path_a ] || [ ! -e $htk_path_b ]; then
+            echo $wav_path_a  $htk_path_a > ./tmp.scp
+            echo $wav_path_b  $htk_path_b >> ./tmp.scp
+            $HCOPY -T 1 -C ./conf/fbank_htk.conf -S ./tmp.scp || exit 1;
+            rm ./tmp.scp
+          fi
+          echo $htk_path_a >> ${data}/$data_type/htk.scp
+          echo $htk_path_b >> ${data}/$data_type/htk.scp
         fi
       done
-
-    else
-      if ! which sox >&/dev/null; then
-        echo "This script requires you to first install sox";
-        exit 1;
-      fi
-    fi
+    done
   fi
 
-  $PYTHON local/feature_extraction.py \
-    --data_save_path $DATA \
-    --tool $TOOL \
-    --normalize $NORMALIZE \
-    --channels $CHANNELS \
-    --window $WINDOW \
-    --slide $SLIDE \
-    --energy $ENERGY \
-    --delta $DELTA \
-    --deltadelta $DELTADELTA || exit 1;
+  ${PYTHON} local/feature_extraction.py \
+    --data_save_path ${data} \
+    --tool ${tool} \
+    --normalize ${normalize} \
+    --channels ${channles} \
+    --window ${window} \
+    --slide ${slide} \
+    --energy ${energy} \
+    --delta ${delta} \
+    --deltadelta ${deltadelta} || exit 1;
 
-  touch $DATA/.stage_1
+  touch ${data}/.stage_1
   echo "Finish feature extranction (stage: 1)."
 fi
 
 
-if [ $stage -le 2 ] && [ ! -e $DATA/.stage_2 ]; then
+if [ ${stage} -le 2 ] && [ ! -e ${data}/.stage_2 ]; then
   echo ============================================================================
   echo "                            Create dataset                                "
   echo ============================================================================
 
-  $PYTHON local/make_dataset_csv.py \
-    --data_save_path $DATA \
-    --tool $TOOL || exit 1;
+  if [ -d ${FISHER_PATH} ]; then
+    has_fisher=true
+  else
+    has_fisher=false
+  fi
 
-  touch $DATA/.stage_2
+  ${PYTHON} local/make_dataset_csv.py \
+    --data_save_path ${data} \
+    --tool ${tool} \
+    --has_fisher $has_fisher || exit 1;
+
+  touch ${data}/.stage_2
   echo "Finish creating dataset (stage: 2)."
 fi
 
 
-if [ $stage -le 3 ]; then
+if [ ${stage} -le 3 ]; then
   echo ============================================================================
   echo "                             Training stage                               "
   echo ============================================================================
 
   config_path=$1
-  gpu_index=$2
-  filename=$(basename $config_path | awk -F. '{print $1}')
+  gpu_id=$2
+  filename=$(basename ${config_path} | awk -F. '{print $1}')
 
   mkdir -p log
-  mkdir -p $MODEL
+  mkdir -p ${model}
 
   echo "Start training..."
 
-  if [ `echo $config_path | grep 'hierarchical'` ]; then
-    if [ `echo $config_path | grep 'result'` ]; then
+  if [ `echo ${config_path} | grep 'hierarchical'` ]; then
+    if [ `echo ${config_path} | grep 'result'` ]; then
       if $run_background; then
-        CUDA_VISIBLE_DEVICES=$gpu_index \
-        nohup $PYTHON exp/training/train_hierarchical.py \
-          --gpu $gpu_index \
-          --saved_model_path $config_path \
-          --data_save_path $DATA > log/$filename".log" &
+        CUDA_VISIBLE_DEVICES=${gpu_id} \
+        nohup ${PYTHON} exp/training/train_hierarchical.py \
+          --gpu ${gpu_id} \
+          --saved_model_path ${config_path} \
+          --data_save_path ${data} > log/$filename".log" &
       else
-        CUDA_VISIBLE_DEVICES=$gpu_index \
-        nohup $PYTHON exp/training/train_hierarchical.py \
-          --gpu $gpu_index \
-          --saved_model_path $config_path \
-          --data_save_path $DATA || exit 1;
+        CUDA_VISIBLE_DEVICES=${gpu_id} \
+        nohup ${PYTHON} exp/training/train_hierarchical.py \
+          --gpu ${gpu_id} \
+          --saved_model_path ${config_path} \
+          --data_save_path ${data} || exit 1;
       fi
     else
       if $run_background; then
-        CUDA_VISIBLE_DEVICES=$gpu_index \
-        nohup $PYTHON exp/training/train_hierarchical.py \
-          --gpu $gpu_index \
-          --config_path $config_path \
-          --model_save_path $MODEL \
-          --data_save_path $DATA > log/$filename".log" &
+        CUDA_VISIBLE_DEVICES=${gpu_id} \
+        nohup ${PYTHON} exp/training/train_hierarchical.py \
+          --gpu ${gpu_id} \
+          --config_path ${config_path} \
+          --model_save_path ${model} \
+          --data_save_path ${data} > log/$filename".log" &
       else
-        CUDA_VISIBLE_DEVICES=$gpu_index \
-        $PYTHON exp/training/train_hierarchical.py \
-          --gpu $gpu_index \
-          --config_path $config_path \
-          --model_save_path $MODEL \
-          --data_save_path $DATA || exit 1;
+        CUDA_VISIBLE_DEVICES=${gpu_id} \
+        ${PYTHON} exp/training/train_hierarchical.py \
+          --gpu ${gpu_id} \
+          --config_path ${config_path} \
+          --model_save_path ${model} \
+          --data_save_path ${data} || exit 1;
       fi
     fi
   else
-    if [ `echo $config_path | grep 'result'` ]; then
+    if [ `echo ${config_path} | grep 'result'` ]; then
       if $run_background; then
-        CUDA_VISIBLE_DEVICES=$gpu_index \
-        nohup $PYTHON exp/training/train.py \
-          --gpu $gpu_index \
-          --saved_model_path $config_path \
-          --data_save_path $DATA > log/$filename".log" &
+        CUDA_VISIBLE_DEVICES=${gpu_id} \
+        nohup ${PYTHON} exp/training/train.py \
+          --gpu ${gpu_id} \
+          --saved_model_path ${config_path} \
+          --data_save_path ${data} > log/$filename".log" &
       else
-        CUDA_VISIBLE_DEVICES=$gpu_index \
-        $PYTHON exp/training/train.py \
-          --gpu $gpu_index \
-          --saved_model_path $config_path \
-          --data_save_path $DATA || exit 1;
+        CUDA_VISIBLE_DEVICES=${gpu_id} \
+        ${PYTHON} exp/training/train.py \
+          --gpu ${gpu_id} \
+          --saved_model_path ${config_path} \
+          --data_save_path ${data} || exit 1;
       fi
     else
       if $run_background; then
-        CUDA_VISIBLE_DEVICES=$gpu_index \
-        nohup $PYTHON exp/training/train.py \
-          --gpu $gpu_index \
-          --config_path $config_path \
-          --model_save_path $MODEL \
-          --data_save_path $DATA > log/$filename".log" &
+        CUDA_VISIBLE_DEVICES=${gpu_id} \
+        nohup ${PYTHON} exp/training/train.py \
+          --gpu ${gpu_id} \
+          --config_path ${config_path} \
+          --model_save_path ${model} \
+          --data_save_path ${data} > log/$filename".log" &
       else
-        CUDA_VISIBLE_DEVICES=$gpu_index \
-        $PYTHON exp/training/train.py \
-          --gpu $gpu_index \
-          --config_path $config_path \
-          --model_save_path $MODEL \
-          --data_save_path $DATA　|| exit 1;
+        CUDA_VISIBLE_DEVICES=${gpu_id} \
+        ${PYTHON} exp/training/train.py \
+          --gpu ${gpu_id} \
+          --config_path ${config_path} \
+          --model_save_path ${model} \
+          --data_save_path ${data}　|| exit 1;
       fi
     fi
   fi
@@ -333,16 +326,7 @@ if [ $stage -le 3 ]; then
 fi
 
 
-if [ $stage -le 4 ]; then
-  echo ============================================================================
-  echo "                             LM training                                 "
-  echo ============================================================================
-
-  echo "Finish LM training (stage: 4)."
-fi
-
-
-if [ $stage -le 5 ]; then
+if [ ${stage} -le 5 ]; then
   echo ============================================================================
   echo "                              Rescoring                                   "
   echo ============================================================================
@@ -365,8 +349,8 @@ echo "Done."
 # fisher_dirs="/export/corpora3/LDC/LDC2004T19/fe_03_p1_tran/ /export/corpora3/LDC/LDC2005T19/fe_03_p2_tran/"
 # fisher_dirs="/exports/work/inf_hcrc_cstr_general/corpora/fisher/transcripts" # Edinburgh,
 # fisher_dirs="/mnt/matylda2/data/FISHER/fe_03_p1_tran /mnt/matylda2/data/FISHER/fe_03_p2_tran" # BUT,
-# local/swbd1_train_lms.sh $DATA/local/train/text \
-#                          $DATA/local/dict_nosp/lexicon.txt $DATA/local/lm $fisher_dirs
+# local/swbd1_train_lms.sh ${data}/local/train/text \
+#                          ${data}/local/dict_nosp/lexicon.txt ${data}/local/lm $fisher_dirs
 
 
 # getting results (see RESULTS file)

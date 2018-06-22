@@ -18,6 +18,7 @@ logger = logging.getLogger('training')
 from utils.dataset.loader import DatasetBase
 from utils.io.labels.word import Idx2word, Word2idx
 from utils.io.labels.character import Idx2char, Char2idx
+from examples.swbd.s5c.exp.metrics.glm import GLM
 
 
 class Dataset(DatasetBase):
@@ -113,20 +114,19 @@ class Dataset(DatasetBase):
         self.df = df
         self.rest = set(list(df.index))
 
+        # Read GLM file
+        self.glm = GLM(join(data_save_path, 'eval2000', 'glm'))
+
     def select_batch_size(self, batch_size, min_frame_num_batch):
         if not self.dynamic_batching:
             return batch_size
 
         if min_frame_num_batch <= 800:
             pass
-        elif min_frame_num_batch <= 1200:
+        elif min_frame_num_batch <= 1600:
             batch_size = int(batch_size / 2)
-        elif min_frame_num_batch <= 1500:
-            batch_size = int(batch_size / 2)
-        elif min_frame_num_batch <= 1700:
-            batch_size = int(batch_size / 4)
         else:
-            batch_size = int(batch_size / 8)
+            batch_size = int(batch_size / 4)
 
         if batch_size < 1:
             batch_size = 1

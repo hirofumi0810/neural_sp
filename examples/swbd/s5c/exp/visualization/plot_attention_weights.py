@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Plot attention weights (Switchboard corpus)."""
+"""Plot attention weights of the attention model (Switchboard corpus)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -31,52 +31,81 @@ parser.add_argument('--eval_batch_size', type=int, default=1,
 parser.add_argument('--beam_width', type=int, default=1,
                     help='the size of beam')
 parser.add_argument('--length_penalty', type=float, default=0,
-                    help='length penalty in beam search decoding')
+                    help='length penalty')
 parser.add_argument('--coverage_penalty', type=float, default=0,
-                    help='coverage penalty in beam search decoding')
-
+                    help='coverage penalty')
+parser.add_argument('--rnnlm_weight', type=float, default=0,
+                    help='the weight of RNNLM score')
+parser.add_argument('--rnnlm_path', default=None, type=str, nargs='?',
+                    help='path to the RMMLM')
 
 MAX_DECODE_LEN_WORD = 100
-MIN_DECODE_LEN_WORD = 0
+MIN_DECODE_LEN_WORD = 1
 MAX_DECODE_LEN_CHAR = 300
-MIN_DECODE_LEN_CHAR = 0
+MIN_DECODE_LEN_CHAR = 1
 
 
 def main():
 
     args = parser.parse_args()
 
-    # Load a config file (.yml)
-    params = load_config(join(args.model_path, 'config.yml'), is_eval=True)
+    # Load a ASR config file
+    config = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
-    dataset = Dataset(
-        data_save_path=args.data_save_path,
-        input_freq=params['input_freq'],
-        use_delta=params['use_delta'],
-        use_double_delta=params['use_double_delta'],
-        data_type='eval2000_swbd',
-        # data_type='eval2000_ch',
-        label_type=params['label_type'],
-        batch_size=args.eval_batch_size,
-        sort_utt=False, reverse=False, tool=params['tool'])
+    dataset = Dataset(data_save_path=args.data_save_path,
+                      input_freq=config['input_freq'],
+                      use_delta=config['use_delta'],
+                      use_double_delta=config['use_double_delta'],
+                      data_type='eval2000_swbd',
+                      # data_type='eval2000_ch',
+                      label_type=config['label_type'],
+                      batch_size=args.eval_batch_size,
+                      sort_utt=False, reverse=False, tool=config['tool'])
+    config['num_classes'] = dataset.num_classes
 
-    params['num_classes'] = dataset.num_classes
+    # For cold fusion
+    if config['rnnlm_fusion_type'] and config['rnnlm_path']:
+        # Load a RNNLM config file
+        config['rnnlm_config'] = load_config(
+            join(args.model_path, 'config_rnnlm.yml'))
+        assert config['label_type'] == config['rnnlm_config']['label_type']
+        assert args.rnnlm_weight > 0
+        config['rnnlm_config']['num_classes'] = dataset.num_classes
+    else:
+        config['rnnlm_config'] = None
 
-    # Load model
-    model = load(model_type=params['model_type'],
-                 params=params,
-                 backend=params['backend'])
+    # Load the ASR model
+    model = load(model_type=config['model_type'],
+                 config=config,
+                 backend=config['backend'])
 
     # Restore the saved parameters
     model.load_checkpoint(save_path=args.model_path, epoch=args.epoch)
+
+    # For shallow fusion
+    if not (config['rnnlm_fusion_type'] and config['rnnlm_path']) and args.rnnlm_path is not None and args.rnnlm_weight > 0:
+        # Load a RNNLM config file
+        config_rnnlm = load_config(
+            join(args.rnnlm_path, 'config.yml'), is_eval=True)
+        assert config['label_type'] == config_rnnlm['label_type']
+        config_rnnlm['num_classes'] = dataset.num_classes
+
+        # Load the pre-trianed RNNLM
+        rnnlm = load(model_type=config_rnnlm['model_type'],
+                     config=config_rnnlm,
+                     backend=config_rnnlm['backend'])
+        rnnlm.load_checkpoint(save_path=args.rnnlm_path, epoch=-1)
+        rnnlm.rnn.flatten_parameters()
+        if config_rnnlm['backward']:
+            model.rnnlm_0_bwd = rnnlm
+        else:
+            model.rnnlm_0_fwd = rnnlm
 
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
     save_path = mkdir_join(args.model_path, 'att_weights')
-
-    ######################################################################
 
     # Clean directory
     if save_path is not None and isdir(save_path):
@@ -100,11 +129,23 @@ def main():
             max_decode_len=max_decode_len,
             min_decode_len=min_decode_len,
             length_penalty=args.length_penalty,
-            coverage_penalty=args.coverage_penalty)
+            coverage_penalty=args.coverage_penalty,
+            rnnlm_weight=args.rnnlm_weight)
 
         ys = [batch['ys'][i] for i in perm_idx]
 
         for b in range(len(batch['xs'])):
+            token_list = map_fn(best_hyps[b], return_list=True)
+            speaker = '_'.join(batch['input_names'][b].split('_')[:2])
+
+            plot_attention_weights(
+                aw[b][:len(token_list)],
+                label_list=token_list,
+                spectrogram=batch['xs'][b][:, :dataset.input_freq],
+                save_path=mkdir_join(save_path, speaker,
+                                     batch['input_names'][b] + '.png'),
+                figsize=(20, 4))
+
             # Reference
             if dataset.is_test:
                 str_ref = ys[b]
@@ -112,17 +153,8 @@ def main():
             else:
                 str_ref = map_fn(ys[b])
 
-            token_list = map_fn(best_hyps[b], return_list=True)
-
-            speaker = '_'.join(batch['input_names'][b].split('_')[:2])
-            plot_attention_weights(
-                aw[b][:len(token_list)],
-                label_list=token_list,
-                spectrogram=batch['xs'][b][:, :dataset.input_freq],
-                str_ref=str_ref,
-                save_path=mkdir_join(save_path, speaker,
-                                     batch['input_names'][b] + '.png'),
-                figsize=(20, 4))
+            with open(join(save_path, speaker, batch['input_names'][b] + '.txt'), 'w') as f:
+                f.write(str_ref)
 
         if is_new_epoch:
             break
