@@ -12,7 +12,7 @@ param:
     - False
     - True
     - True
-    - False
+    - True
     - False
   fc_list: [320]
 

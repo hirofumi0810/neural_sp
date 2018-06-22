@@ -8,10 +8,9 @@ param:
   label_type: character_wb
 
   # topology
-  encoder_num_layers: 5
+  encoder_num_layers: 4
   subsample_list:
     - False
-    - True
     - True
     - True
     - False

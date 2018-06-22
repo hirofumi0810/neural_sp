@@ -38,10 +38,11 @@ param:
   decoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 4
-  encoder_num_layers_sub: 4
+  encoder_num_layers: 5
+  encoder_num_layers_sub: 5
   subsample_list:
     - False
+    - True
     - True
     - True
     - False

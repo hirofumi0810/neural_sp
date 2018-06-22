@@ -47,7 +47,7 @@ param:
   dropout_output: 0.2
   dropout_embedding: 0.2
   weight_decay: 1e-6
-  label_smoothing_prob: 0.1
+  label_smoothing_prob: 0
   weight_noise_std: 0
 
   # annealing

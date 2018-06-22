@@ -35,9 +35,10 @@ param:
   encoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 4
+  encoder_num_layers: 5
   subsample_list:
     - False
+    - True
     - True
     - True
     - False
@@ -77,3 +78,9 @@ param:
   not_improved_patient_epoch: 5
   eval_start_epoch: 5
   print_step: 200
+
+  # RNNLM fusion (not used)
+  rnnlm_fusion_type: False
+  rnnlm_path: False
+  rnnlm_weight: 0
+  concat_embedding: False

@@ -8,7 +8,7 @@ param:
 
   # topology
   encoder_num_layers: 5
-  encoder_num_layers_sub: 5
+  encoder_num_layers_sub: 4
   subsample_list:
     - False
     - True
@@ -40,7 +40,6 @@ param:
   rnnlm_fusion_type: False
   rnnlm_path: False
   rnnlm_path_sub: False
-  rnnlm_joint_training: False
   rnnlm_weight: 0
   rnnlm_weight_sub: 0
   concat_embedding: False

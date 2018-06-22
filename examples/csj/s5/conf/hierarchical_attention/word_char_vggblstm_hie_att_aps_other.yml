@@ -25,12 +25,11 @@ param:
   encoder_bidirectional: True
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 4
-  encoder_num_layers_sub: 4
+  encoder_num_layers: 3
+  encoder_num_layers_sub: 2
   subsample_list:
     - False
-    - False
-    - False
+    - True
     - False
   decoding_order: bahdanau
   num_heads: 1
@@ -57,7 +56,6 @@ param:
   rnnlm_fusion_type: False
   rnnlm_path: False
   rnnlm_path_sub: False
-  rnnlm_joint_training: False
   rnnlm_weight: 0
   rnnlm_weight_sub: 0
   concat_embedding: False

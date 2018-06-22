@@ -25,11 +25,10 @@ param:
   encoder_bidirectional: True
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 4
+  encoder_num_layers: 3
   subsample_list:
     - False
-    - False
-    - False
+    - True
     - False
   decoding_order: bahdanau
   num_heads: 1
