@@ -22,15 +22,15 @@ torch.manual_seed(1623)
 torch.cuda.manual_seed_all(1623)
 
 sys.path.append(os.path.abspath('../../../'))
-from models.load_model import load
+from src.models.load_model import load
 from src.dataset.loader_lm import Dataset
 from src.metrics.lm import eval_ppl
 from src.bin.training.utils.learning_rate_controller import Controller
 from src.bin.training.utils.reporter import Reporter
 from src.bin.training.utils.updater_lm import Updater
 from src.utils.logging import set_logger
-from utils.directory import mkdir_join
-from utils.config import load_config, save_config
+from src.utils.directory import mkdir_join
+from src.utils.config import load_config, save_config
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu_ids', type=int, default=0,
@@ -178,8 +178,9 @@ def main():
     logger.info('USERNAME: %s' % os.uname()[1])
 
     # Set process name
-    title = args.corpus + '_' + config['backend'] + '_' + config['model_type'] + '_' +
-        config['label_type']
+    title = args.corpus + '_' + \
+        config['backend'] + '_' + config['model_type'] + \
+        '_' + config['label_type']
     if config['data_size'] != '':
         title += '_' + config['data_size']
     setproctitle(title)

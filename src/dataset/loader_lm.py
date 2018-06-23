@@ -196,8 +196,10 @@ class Dataset(Base):
             ys = [list(map(int, transcripts[b].split(' ')))
                   for b in range(len(data_indices))]
 
-        input_names = list(
-            map(lambda path: basename(path).split('.')[0],
-                self.df['input_path'][data_indices]))
+        # TODO: fix later
+        # input_names = list(
+        #     map(lambda path: basename(path).split('.')[0],
+        #         self.df['input_path'][data_indices]))
+        input_names = self.df.index.values.tolist()
 
         return {'ys': ys, 'input_names': input_names}
