@@ -9,6 +9,9 @@ export PATH=$PWD/utils/:$KALDI_ROOT/tools/openfst/bin:$PWD:$PATH
 . $KALDI_ROOT/tools/config/common_path.sh
 export LC_ALL=C
 
+### Set path to save dataset
+data=/n/sd8/inaguma/corpus/librispeech/kaldi
+corpus=librispeech
 
 ### python
 export PYTHON=/home/inaguma/.pyenv/versions/anaconda3-4.1.1/envs/`hostname`/bin/python

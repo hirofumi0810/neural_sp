@@ -81,8 +81,8 @@ def main():
             with open(join(args.data_save_path, data_type, 'wav.scp'), 'r') as f:
                 for line in f:
                     line = line.strip()
-                    wav_path = line.split(' ')[4]
-                    audio_paths.append(wav_path)
+                    flac_path = line.split(' ')[4]
+                    audio_paths.append(flac_path)
 
         spk2gender = {}
         with open(join(args.data_save_path, data_type, 'spk2gender'), 'r') as f:

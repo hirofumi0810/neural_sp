@@ -34,13 +34,14 @@ dict_suffix=
 echo "$0 $@"  # Print the command line for logging
 . utils/parse_options.sh || exit 1;
 
-dir=$DATA/local/dict${dict_suffix}
+dir=${data}/local/dict${dict_suffix}
 mkdir -p $dir
 
 
 # (1) Get the CMU dictionary
-svn co  https://svn.code.sf.net/p/cmusphinx/code/trunk/cmudict \
-  $dir/cmudict || exit 1;
+# svn co  https://svn.code.sf.net/p/cmusphinx/code/trunk/cmudict \
+#   $dir/cmudict || exit 1;
+# TODO: fix this
 
 # can add -r 10966 for strict compatibility.
 

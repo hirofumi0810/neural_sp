@@ -11,8 +11,8 @@ dict_suffix=
 echo "$0 $@"  # Print the command line for logging
 . utils/parse_options.sh || exit 1;
 
-dir=$DATA/local/local_lm
-srcdir=$DATA/local/dict${dict_suffix}_larger
+dir=${data}/local/local_lm
+srcdir=${data}/local/dict${dict_suffix}_larger
 mkdir -p $dir
 . ./path.sh || exit 1; # for KALDI_ROOT
 export PATH=$KALDI_ROOT/tools/kaldi_lm:$PATH

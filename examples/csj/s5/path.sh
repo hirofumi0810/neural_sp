@@ -9,6 +9,9 @@ export PATH=$PWD/utils/:$KALDI_ROOT/tools/openfst/bin:$PWD:$PATH
 . $KALDI_ROOT/tools/config/common_path.sh
 # export LC_ALL=C
 
+### Set path to save dataset
+data=/n/sd8/inaguma/corpus/csj/kaldi
+corpus=csj
 
 ### Python
 export PYTHON=/home/inaguma/.pyenv/versions/anaconda3-4.1.1/envs/`hostname`/bin/python
@@ -19,5 +22,3 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64:/usr/local/cuda/ex
 
 # NOTE: set when using HTK toolkit
 export HCOPY='/home/inaguma/htk-3.4/bin/HCopy'
-
-export PYTHONIOENCODING='utf-8'

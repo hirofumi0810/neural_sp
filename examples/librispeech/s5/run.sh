@@ -8,7 +8,7 @@ set -e
 
 if [ $# -ne 2 ]; then
   echo "Error: set GPU number & config path." 1>&2
-  echo "Usage: ./run.sh path_to_config_file gpu_index" 1>&2
+  echo "Usage: ./run.sh path_to_config_file gpu_ids" 1>&2
   exit 1
 fi
 
@@ -22,12 +22,9 @@ run_background=true
 # run_background=false
 
 ### Select data size
-datasize=100
-# datasize=460
+# datasize=100
+datasize=460
 # datasize=960
-
-### Set path to save dataset
-data="/n/sd8/inaguma/corpus/librispeech/kaldi"
 
 ### Set path to save the model
 model="/n/sd8/inaguma/result/librispeech"
@@ -190,16 +187,11 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.stage_1_${datasize} ]; then
         flac_path=`echo $line | awk -F " " '{ print $(NF - 1) }'`
         speaker=`echo $line | awk -F "/" '{ print $(NF - 2) }'`
         chapter=`echo $line | awk -F "/" '{ print $(NF - 1) }'`
+        dir_name=`dirname $flac_path`
         file_name=`basename $flac_path`
         base=${file_name%.*}
+        wav_path=$dir_name/$basename".wav"
         # ext=${file_name##*.}
-        if [ `echo $data_type | grep 'train'` ]; then
-          mkdir -p ${data}/wav/train/$speaker/$chapter
-          wav_path=${data}/wav/train/$speaker/$chapter/$base".wav"
-        else
-          mkdir -p ${data}/wav/$data_type/$speaker/$chapter
-          wav_path=${data}/wav/$data_type/$speaker/$chapter/$base".wav"
-        fi
         if [ ! -e $wav_path ]; then
           sox $flac_path -t wav $wav_path
         fi
@@ -266,7 +258,7 @@ if [ ${stage} -le 3 ]; then
   echo ============================================================================
 
   config_path=$1
-  gpu_index=$2
+  gpu_ids=$2
   filename=$(basename ${config_path} | awk -F. '{print $1}')
 
   mkdir -p log
@@ -277,30 +269,46 @@ if [ ${stage} -le 3 ]; then
   if [ `echo ${config_path} | grep 'hierarchical'` ]; then
     if [ `echo ${config_path} | grep 'result'` ]; then
       if $run_background; then
-        CUDA_VISIBLE_DEVICES=${gpu_index} \
-        nohup ${PYTHON} exp/training/train_hierarchical.py \
-          --gpu ${gpu_index} \
+        CUDA_VISIBLE_DEVICES=${gpu_ids} \
+        nohup ${PYTHON} ../../../src/bin/training/train_hierarchical.py \
+          --corpus ${corpus} \
+          --gpu_ids ${gpu_ids} \
+          --train_set train \
+          --dev_set dev_clean \
+          --eval_sets test_clean \
           --saved_model_path ${config_path} \
           --data_save_path ${data} > log/$filename".log" &
       else
-        CUDA_VISIBLE_DEVICES=${gpu_index} \
-        nohup ${PYTHON} exp/training/train_hierarchical.py \
-          --gpu ${gpu_index} \
+        CUDA_VISIBLE_DEVICES=${gpu_ids} \
+        nohup ${PYTHON} ../../../src/bin/training/train_hierarchical.py \
+          --corpus ${corpus} \
+          --gpu_ids ${gpu_ids} \
+          --train_set train \
+          --dev_set dev_clean \
+          --eval_sets test_clean \
           --saved_model_path ${config_path} \
           --data_save_path ${data} || exit 1;
       fi
     else
       if $run_background; then
-        CUDA_VISIBLE_DEVICES=${gpu_index} \
-        nohup ${PYTHON} exp/training/train_hierarchical.py \
-          --gpu ${gpu_index} \
+        CUDA_VISIBLE_DEVICES=${gpu_ids} \
+        nohup ${PYTHON} ../../../src/bin/training/train_hierarchical.py \
+          --corpus ${corpus} \
+          --gpu_ids ${gpu_ids} \
+          --train_set train \
+          --dev_set dev_clean \
+          --eval_sets test_clean \
           --config_path ${config_path} \
           --model_save_path ${model} \
           --data_save_path ${data} > log/$filename".log" &
       else
-        CUDA_VISIBLE_DEVICES=${gpu_index} \
-        ${PYTHON} exp/training/train_hierarchical.py \
-          --gpu ${gpu_index} \
+        CUDA_VISIBLE_DEVICES=${gpu_ids} \
+        ${PYTHON} ../../../src/bin/training/train_hierarchical.py \
+          --corpus ${corpus} \
+          --gpu_ids ${gpu_ids} \
+          --train_set train \
+          --dev_set dev_clean \
+          --eval_sets test_clean \
           --config_path ${config_path} \
           --model_save_path ${model} \
           --data_save_path ${data} || exit 1;
@@ -309,30 +317,46 @@ if [ ${stage} -le 3 ]; then
   else
     if [ `echo ${config_path} | grep 'result'` ]; then
       if $run_background; then
-        CUDA_VISIBLE_DEVICES=${gpu_index} \
-        nohup ${PYTHON} exp/training/train.py \
-          --gpu ${gpu_index} \
+        CUDA_VISIBLE_DEVICES=${gpu_ids} \
+        nohup ${PYTHON} ../../../src/bin/training/train.py \
+          --corpus ${corpus} \
+          --gpu_ids ${gpu_ids} \
+          --train_set train \
+          --dev_set dev_clean \
+          --eval_sets test_clean \
           --saved_model_path ${config_path} \
           --data_save_path ${data} > log/$filename".log" &
       else
-        CUDA_VISIBLE_DEVICES=${gpu_index} \
-        ${PYTHON} exp/training/train.py \
-          --gpu ${gpu_index} \
+        CUDA_VISIBLE_DEVICES=${gpu_ids} \
+        ${PYTHON} ../../../src/bin/training/train.py \
+          --corpus ${corpus} \
+          --gpu_ids ${gpu_ids} \
+          --train_set train \
+          --dev_set dev_clean \
+          --eval_sets test_clean \
           --saved_model_path ${config_path} \
           --data_save_path ${data} || exit 1;
       fi
     else
       if $run_background; then
-        CUDA_VISIBLE_DEVICES=${gpu_index} \
-        nohup ${PYTHON} exp/training/train.py \
-          --gpu ${gpu_index} \
+        CUDA_VISIBLE_DEVICES=${gpu_ids} \
+        nohup ${PYTHON} ../../../src/bin/training/train.py \
+          --corpus ${corpus} \
+          --gpu_ids ${gpu_ids} \
+          --train_set train \
+          --dev_set dev_clean \
+          --eval_sets test_clean \
           --config_path ${config_path} \
           --model_save_path ${model} \
           --data_save_path ${data} > log/$filename".log" &
       else
-        CUDA_VISIBLE_DEVICES=${gpu_index} \
-        ${PYTHON} exp/training/train.py \
-          --gpu ${gpu_index} \
+        CUDA_VISIBLE_DEVICES=${gpu_ids} \
+        ${PYTHON} ../../../src/bin/training/train.py \
+          --corpus ${corpus} \
+          --gpu_ids ${gpu_ids} \
+          --train_set train \
+          --dev_set dev_clean \
+          --eval_sets test_clean \
           --config_path ${config_path} \
           --model_save_path ${model} \
           --data_save_path ${data} || exit 1;

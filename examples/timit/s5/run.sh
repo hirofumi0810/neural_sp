@@ -6,7 +6,7 @@ set -e
 
 if [ $# -ne 2 ]; then
   echo "Error: set GPU number & config path." 1>&2
-  echo "Usage: ./run.sh path_to_config_file {gpu_id}" 1>&2
+  echo "Usage: ./run.sh path_to_config_file gpu_ids" 1>&2
   exit 1
 fi
 
@@ -153,7 +153,7 @@ if [ ${stage} -le 3 ]; then
   echo ============================================================================
 
   config_path=$1
-  gpu_id=$2
+  gpu_ids=$2
   filename=$(basename ${config_path} | awk -F. '{print $1}')
 
   mkdir -p log
@@ -163,30 +163,46 @@ if [ ${stage} -le 3 ]; then
 
   if [ `echo ${config_path} | grep 'result'` ]; then
     if $run_background; then
-      CUDA_VISIBLE_DEVICES=${gpu_id} \
-      nohup ${PYTHON} -m memory_profiler exp/training/train.py \
-        --gpu ${gpu_id} \
+      CUDA_VISIBLE_DEVICES=${gpu_ids} \
+      nohup ${PYTHON} ../../../src/bin/training/train.py \
+        --corpus ${corpus} \
+        --gpu_ids ${gpu_ids} \
+        --train_set train \
+        --dev_set dev \
+        --eval_sets test \
         --saved_model_path ${config_path} \
         --data_save_path ${data} > log/${filename}".log" &
     else
-      CUDA_VISIBLE_DEVICES=${gpu_id} \
-      ${PYTHON} -m memory_profiler exp/training/train.py \
-        --gpu ${gpu_id} \
+      CUDA_VISIBLE_DEVICES=${gpu_ids} \
+      ${PYTHON} ../../../src/bin/training/train.py \
+        --corpus ${corpus} \
+        --gpu_ids ${gpu_ids} \
+        --train_set train \
+        --dev_set dev \
+        --eval_sets test \
         --saved_model_path ${config_path} \
         --data_save_path ${data} || exit 1;
     fi
   else
     if $run_background; then
-      CUDA_VISIBLE_DEVICES=${gpu_id} \
-      nohup ${PYTHON} -m memory_profiler exp/training/train.py \
-        --gpu ${gpu_id} \
+      CUDA_VISIBLE_DEVICES=${gpu_ids} \
+      nohup ${PYTHON} ../../../src/bin/training/train.py \
+        --corpus ${corpus} \
+        --gpu_ids ${gpu_ids} \
+        --train_set train \
+        --dev_set dev \
+        --eval_sets test \
         --config_path ${config_path} \
         --model_save_path ${model} \
         --data_save_path ${data} > log/${filename}".log" &
     else
-      CUDA_VISIBLE_DEVICES=${gpu_id} \
-      ${PYTHON} -m memory_profiler exp/training/train.py \
-        --gpu ${gpu_id} \
+      CUDA_VISIBLE_DEVICES=${gpu_ids} \
+      ${PYTHON} ../../../src/bin/training/train.py \
+        --corpus ${corpus} \
+        --gpu_ids ${gpu_ids} \
+        --train_set train \
+        --dev_set dev \
+        --eval_sets test \
         --config_path ${config_path} \
         --model_save_path ${model} \
         --data_save_path ${data} || exit 1;

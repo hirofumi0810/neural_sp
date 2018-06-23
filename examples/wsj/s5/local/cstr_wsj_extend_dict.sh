@@ -30,20 +30,20 @@ if [ ! -d $srcdir/lng_modl ]; then
   exit 1
 fi
 
-mkdir -p $DATA/local/dict${dict_suffix}_larger
-dir=data/local/dict${dict_suffix}_larger
-cp $DATA/local/dict${dict_suffix}/* $DATA/local/dict${dict_suffix}_larger # Various files describing phones etc.
+mkdir -p ${data}/local/dict${dict_suffix}_larger
+dir=${data}/local/dict${dict_suffix}_larger
+cp ${data}/local/dict${dict_suffix}/* ${data}/local/dict${dict_suffix}_larger # Various files describing phones etc.
   # are there; we just want to copy them as the phoneset is the same.
-rm $DATA/local/dict${dict_suffix}_larger/lexicon.txt # we don't want this.
-rm $DATA/local/dict${dict_suffix}_larger/lexiconp.txt # we don't want this either.
+rm ${data}/local/dict${dict_suffix}_larger/lexicon.txt # we don't want this.
+rm ${data}/local/dict${dict_suffix}_larger/lexiconp.txt # we don't want this either.
 mincount=2 # Minimum count of an OOV we will try to generate a pron for.
 
-[ ! -f $DATA/local/dict${dict_suffix}/cmudict/cmudict.0.7a ] && echo "CMU dict not in expected place" && exit 1;
+[ ! -f ${data}/local/dict${dict_suffix}/cmudict/cmudict.0.7a ] && echo "CMU dict not in expected place" && exit 1;
 
 # Remove comments from cmudict; print first field; remove
 # words like FOO(1) which are alternate prons: our dict format won't
 # include these markers.
-grep -v ';;;' $DATA/local/dict${dict_suffix}/cmudict/cmudict.0.7a |
+grep -v ';;;' ${data}/local/dict${dict_suffix}/cmudict/cmudict.0.7a |
  perl -ane 's/^(\S+)\(\d+\)/$1/; print; ' | sort | uniq > $dir/dict.cmu
 
 cat $dir/dict.cmu | awk '{print $1}' | sort | uniq > $dir/wordlist.cmu
@@ -78,6 +78,8 @@ else
   }
  ' $dir/wordlist.cmu | gzip -c > $dir/cleaned.gz
 fi
+
+gunzip -c $dir/cleaned.gz > $dir/cleaned
 
 # get unigram counts
 echo "Getting unigram counts"

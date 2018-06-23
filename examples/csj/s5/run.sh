@@ -8,7 +8,7 @@ set -e
 
 if [ $# -ne 2 ]; then
   echo "Error: set GPU number & config path." 1>&2
-  echo "Usage: ./run.sh path_to_config_file gpu_id or ./run.sh path_to_saved_model gpu_id" 1>&2
+  echo "Usage: ./run.sh path_to_config_file gpu_ids or ./run.sh path_to_saved_model gpu_ids" 1>&2
   exit 1
 fi
 
@@ -20,6 +20,9 @@ echo ===========================================================================
 stage=0
 run_background=true
 # run_background=false
+
+### Set path to save the model
+model=/n/sd8/inaguma/result/csj
 
 ### Set path to original data
 CSJDATATOP="/n/rd25/mimura/corpus/CSJ"
@@ -35,22 +38,14 @@ CSJVER=dvd  ## Set your CSJ format (dvd or usb).
             ## Case merl :MERL setup. Neccesary directory is WAV and sdb
 
 ### Select data size
-export DATASIZE=aps_other
-# export DATASIZE=aps
-# export DATASIZE=all_except_dialog
-# export DATASIZE=all
-
-# NOTE:
-# aps_other=default using "Academic lecture" and "other" data,
-# aps=using "Academic lecture" data,
-# all_except_dialog=using All data except for "dialog" data,
-# all=using All data
-
-### Set path to save the model
-model="/n/sd8/inaguma/result/csj"
-
-### Set path to save dataset
-export data="/n/sd8/inaguma/corpus/csj/kaldi"
+export datasize=aps_other
+# export datasize=aps
+# export datasize=all_except_dialog
+# export datasize=all
+# NOTE: aps_other=default using "Academic lecture" and "other" data,
+#       aps=using "Academic lecture" data,
+#       all_except_dialog=using All data except for "dialog" data,
+#       all=using All data
 
 ### Select one tool to extract features (HTK is the fastest)
 # tool=kaldi
@@ -70,9 +65,9 @@ normalize=speaker
 # normalize=utterance
 
 
-train=train_$DATASIZE
+train=train_${datasize}
 
-if [ $stage -le 0 ] && [ ! -e ${data}/.stage_0_$DATASIZE ]; then
+if [ $stage -le 0 ] && [ ! -e ${data}/.stage_0_${datasize} ]; then
   echo ============================================================================
   echo "                           Data Preparation                               "
   echo ============================================================================
@@ -81,7 +76,7 @@ if [ $stage -le 0 ] && [ ! -e ${data}/.stage_0_$DATASIZE ]; then
 
   # Prepare Corpus of Spontaneous Japanese (CSJ) data.
   # Processing CSJ data to KALDI format based on switchboard recipe.
-  local/csj_data_prep.sh ${data}/csj-data $DATASIZE || exit 1;
+  local/csj_data_prep.sh ${data}/csj-data ${datasize} || exit 1;
 
   local/csj_prepare_dict.sh || exit 1;
 
@@ -106,12 +101,12 @@ if [ $stage -le 0 ] && [ ! -e ${data}/.stage_0_$DATASIZE ]; then
     local/csj_eval_data_prep.sh ${data}/csj-data/eval $eval_num || exit 1;
   done
 
-  touch ${data}/.stage_0_$DATASIZE
+  touch ${data}/.stage_0_${datasize}
   echo "Finish data preparation (stage: 0)."
 fi
 
 
-if [ $stage -le 1 ] && [ ! -e ${data}/.stage_1_$DATASIZE ]; then
+if [ $stage -le 1 ] && [ ! -e ${data}/.stage_1_${datasize} ]; then
   echo ============================================================================
   echo "                        Feature extranction                               "
   echo ============================================================================
@@ -176,7 +171,7 @@ if [ $stage -le 1 ] && [ ! -e ${data}/.stage_1_$DATASIZE ]; then
 
   ${PYTHON} local/feature_extraction.py \
     --data_save_path ${data} \
-    --data_size $DATASIZE \
+    --data_size ${datasize} \
     --tool ${tool} \
     --normalize $normalize \
     --channels $channels \
@@ -186,22 +181,22 @@ if [ $stage -le 1 ] && [ ! -e ${data}/.stage_1_$DATASIZE ]; then
     --delta $delta \
     --deltadelta $deltadelta || exit 1;
 
-  touch ${data}/.stage_1_$DATASIZE
+  touch ${data}/.stage_1_${datasize}
   echo "Finish feature extranction (stage: 1)."
 fi
 
 
-if [ $stage -le 2 ] && [ ! -e ${data}/.stage_2_$DATASIZE ]; then
+if [ $stage -le 2 ] && [ ! -e ${data}/.stage_2_${datasize} ]; then
   echo ============================================================================
   echo "                            Create dataset                                "
   echo ============================================================================
 
   ${PYTHON} local/make_dataset_csv.py \
     --data_save_path ${data} \
-    --data_size $DATASIZE \
+    --data_size ${datasize} \
     --tool ${tool} || exit 1;
 
-  touch ${data}/.stage_2_$DATASIZE
+  touch ${data}/.stage_2_${datasize}
   echo "Finish creating dataset (stage: 2)."
 fi
 
@@ -212,7 +207,7 @@ if [ $stage -le 3 ]; then
   echo ============================================================================
 
   config_path=$1
-  gpu_id=$2
+  gpu_ids=$2
   filename=$(basename ${config_path} | awk -F. '{print $1}')
 
   mkdir -p log
@@ -223,30 +218,46 @@ if [ $stage -le 3 ]; then
   if [ `echo ${config_path} | grep 'hierarchical'` ]; then
     if [ `echo ${config_path} | grep 'result'` ]; then
       if $run_background; then
-        CUDA_VISIBLE_DEVICES=${gpu_id} \
-        nohup ${PYTHON} exp/training/train_hierarchical.py \
-          --gpu ${gpu_id} \
+        CUDA_VISIBLE_DEVICES=${gpu_ids} \
+        nohup ${PYTHON} ../../../src/bin/training/train_hierarchical.py \
+          --corpus ${corpus} \
+          --train_set train \
+          --dev_set dev \
+          --eval_sets eval1 \
+          --gpu_ids ${gpu_ids} \
           --saved_model_path ${config_path} \
           --data_save_path ${data} > log/$filename".log" &
       else
-        CUDA_VISIBLE_DEVICES=${gpu_id} \
-        nohup ${PYTHON} exp/training/train_hierarchical.py \
-          --gpu ${gpu_id} \
+        CUDA_VISIBLE_DEVICES=${gpu_ids} \
+        nohup ${PYTHON} ../../../src/bin/training/train_hierarchical.py \
+          --corpus ${corpus} \
+          --gpu_ids ${gpu_ids} \
+          --train_set train \
+          --dev_set dev \
+          --eval_sets eval1 \
           --saved_model_path ${config_path} \
           --data_save_path ${data} || exit 1;
       fi
     else
       if $run_background; then
-        CUDA_VISIBLE_DEVICES=${gpu_id} \
-        nohup ${PYTHON} exp/training/train_hierarchical.py \
-          --gpu ${gpu_id} \
+        CUDA_VISIBLE_DEVICES=${gpu_ids} \
+        nohup ${PYTHON} ../../../src/bin/training/train_hierarchical.py \
+          --corpus ${corpus} \
+          --gpu_ids ${gpu_ids} \
+          --train_set train \
+          --dev_set dev \
+          --eval_sets eval1 \
           --config_path ${config_path} \
           --model_save_path ${model} \
           --data_save_path ${data} > log/$filename".log" &
       else
-        CUDA_VISIBLE_DEVICES=${gpu_id} \
-        ${PYTHON} exp/training/train_hierarchical.py \
-          --gpu ${gpu_id} \
+        CUDA_VISIBLE_DEVICES=${gpu_ids} \
+        ${PYTHON} ../../../src/bin/training/train_hierarchical.py \
+          --corpus ${corpus} \
+          --gpu_ids ${gpu_ids} \
+          --train_set train \
+          --dev_set dev \
+          --eval_sets eval1 \
           --config_path ${config_path} \
           --model_save_path ${model} \
           --data_save_path ${data} || exit 1;
@@ -255,30 +266,46 @@ if [ $stage -le 3 ]; then
   else
     if [ `echo ${config_path} | grep 'result'` ]; then
       if $run_background; then
-        CUDA_VISIBLE_DEVICES=${gpu_id} \
-        nohup ${PYTHON} exp/training/train.py \
-          --gpu ${gpu_id} \
+        CUDA_VISIBLE_DEVICES=${gpu_ids} \
+        nohup ${PYTHON} ../../../src/bin/training/train.py \
+          --corpus ${corpus} \
+          --gpu_ids ${gpu_ids} \
+          --train_set train \
+          --dev_set dev \
+          --eval_sets eval1 \
           --saved_model_path ${config_path} \
           --data_save_path ${data} > log/$filename".log" &
       else
-        CUDA_VISIBLE_DEVICES=${gpu_id} \
-        ${PYTHON} exp/training/train.py \
-          --gpu ${gpu_id} \
+        CUDA_VISIBLE_DEVICES=${gpu_ids} \
+        ${PYTHON} ../../../src/bin/training/train.py \
+          --corpus ${corpus} \
+          --gpu_ids ${gpu_ids} \
+          --train_set train \
+          --dev_set dev \
+          --eval_sets eval1 \
           --saved_model_path ${config_path} \
           --data_save_path ${data} || exit 1;
       fi
     else
       if $run_background; then
-        CUDA_VISIBLE_DEVICES=${gpu_id} \
-        nohup ${PYTHON} exp/training/train.py \
-          --gpu ${gpu_id} \
+        CUDA_VISIBLE_DEVICES=${gpu_ids} \
+        nohup ${PYTHON} ../../../src/bin/training/train.py \
+          --corpus ${corpus} \
+          --gpu_ids ${gpu_ids} \
+          --train_set train \
+          --dev_set dev \
+          --eval_sets eval1 \
           --config_path ${config_path} \
           --model_save_path ${model} \
           --data_save_path ${data} > log/$filename".log" &
       else
-        CUDA_VISIBLE_DEVICES=${gpu_id} \
-        ${PYTHON} exp/training/train.py \
-          --gpu ${gpu_id} \
+        CUDA_VISIBLE_DEVICES=${gpu_ids} \
+        ${PYTHON} ../../../src/bin/training/train.py \
+          --corpus ${corpus} \
+          --gpu_ids ${gpu_ids} \
+          --train_set train \
+          --dev_set dev \
+          --eval_sets eval1 \
           --config_path ${config_path} \
           --model_save_path ${model} \
           --data_save_path ${data} || exit 1;
@@ -327,5 +354,5 @@ echo "Done."
 # getting results (see RESULTS file)
 # for eval_num in eval1 eval2 eval3 $dev_set ; do
 #     echo "=== evaluation set $eval_num ===" ;
-#     for x in exp/{tri,dnn}*/decode_${eval_num}*; do [ -d $x ] && grep WER $x/wer_* | utils/best_wer.sh; done ;
+#     for x in ../../../src/bin/{tri,dnn}*/decode_${eval_num}*; do [ -d $x ] && grep WER $x/wer_* | utils/best_wer.sh; done ;
 # done

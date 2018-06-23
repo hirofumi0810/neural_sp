@@ -18,8 +18,8 @@ fi
 
 CORPUS=$1
 
-dir=$DATA/local/data
-lmdir=$DATA/local/nist_lm
+dir=${data}/local/data
+lmdir=${data}/local/nist_lm
 mkdir -p $dir $lmdir
 local=`pwd`/local
 utils=`pwd`/utils
