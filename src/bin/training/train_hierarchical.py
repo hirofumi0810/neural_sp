@@ -96,7 +96,12 @@ def main():
         max_frame_num=config['max_frame_num'],
         min_frame_num=config['min_frame_num'],
         sort_utt=True, sort_stop_epoch=config['sort_stop_epoch'],
-        tool=config['tool'], dynamic_batching=config['dynamic_batching'])
+        tool=config['tool'], dynamic_batching=config['dynamic_batching'],
+        use_ctc=config['model_type'] == 'hierarchical_ctc',
+        subsampling_factor=2 ** sum(config['subsample_list']),
+        use_ctc_sub=config['model_type'] == 'hierarchical_ctc' or (
+            config['model_type'] == 'hierarchical_attention' and config['ctc_loss_weight_sub'] > 0),
+        subsampling_factor_sub=2 ** sum(config['subsample_list'][:config['encoder_num_layers_sub'] - 1]))
     dev_set = Dataset(
         corpus=args.corpus,
         data_save_path=args.data_save_path,
@@ -108,7 +113,12 @@ def main():
         label_type=config['label_type'],
         label_type_sub=config['label_type_sub'],
         batch_size=config['batch_size'],
-        shuffle=True, tool=config['tool'])
+        shuffle=True, tool=config['tool'],
+        use_ctc=config['model_type'] == 'hierarchical_ctc',
+        subsampling_factor=2 ** sum(config['subsample_list']),
+        use_ctc_sub=config['model_type'] == 'hierarchical_ctc' or (
+            config['model_type'] == 'hierarchical_attention' and config['ctc_loss_weight_sub'] > 0),
+        subsampling_factor_sub=2 ** sum(config['subsample_list'][:config['encoder_num_layers_sub'] - 1]))
     eval_sets = []
     for data_type in args.eval_sets:
         eval_sets += [Dataset(

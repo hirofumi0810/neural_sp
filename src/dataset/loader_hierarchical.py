@@ -33,7 +33,9 @@ class Dataset(Base):
                  max_frame_num=2000, min_frame_num=40,
                  shuffle=False, sort_utt=False, reverse=False,
                  sort_stop_epoch=None, num_gpus=1, tool='htk',
-                 num_enque=None, dynamic_batching=False):
+                 num_enque=None, dynamic_batching=False,
+                 use_ctc=False, subsampling_factor=1,
+                 use_ctc_sub=False, subsampling_factor_sub=1):
         """A class for loading dataset.
         Args:
             data_save_path (string): path to saved data
@@ -59,6 +61,10 @@ class Dataset(Base):
             num_enque (int): the number of elements to enqueue
             dynamic_batching (bool): if True, batch size will be chainged
                 dynamically in training
+            use_ctc (bool):
+            subsampling_factor (int):
+            use_ctc_sub (bool):
+            subsampling_factor_sub (int):
         """
         self.corpus = corpus
         self.input_freq = input_freq
@@ -125,8 +131,10 @@ class Dataset(Base):
 
         # Remove inappropriate utteraces
         if not self.is_test:
-            logger.info('Original utterance num (main): %d' % len(df))
-            logger.info('Original utterance num (sub): %d' % len(df_sub))
+            print('Original utterance num (main): %d' % len(df))
+            print('Original utterance num (sub): %d' % len(df_sub))
+            utt_num_orig = len(df)
+            utt_num_orig_sub = len(df_sub)
 
             # For Switchboard
             if corpus == 'swbd' and 'train' in data_type:
@@ -135,13 +143,38 @@ class Dataset(Base):
                 df_sub = df_sub[df_sub.apply(lambda x: not(len(x['transcript'].split(' '))
                                                            <= 24 and x['frame_num'] >= 1000), axis=1)]
 
+            # Remove by threshold
             df = df[df.apply(
                 lambda x: min_frame_num <= x['frame_num'] <= max_frame_num, axis=1)]
             df_sub = df_sub[df_sub.apply(
                 lambda x: min_frame_num <= x['frame_num'] <= max_frame_num, axis=1)]
+            print('Restricted utterance num (main): %d' %
+                  (utt_num_orig - len(df)))
+            print('Restricted utterance num (sub): %d' %
+                  (utt_num_orig_sub - len(df_sub)))
 
-            logger.info('Restricted utterance num (main): %d' % len(df))
-            logger.info('Restricted utterance num (sub): %d' % len(df_sub))
+            # Rempve for CTC loss calculatioon
+            if use_ctc and subsampling_factor > 1:
+                print('Chacking utterances for CTC (main)')
+                utt_num_orig = len(df)
+                df = df[df.apply(
+                    lambda x: len(x['transcript'].split(' ')) <= x['frame_num'] // subsampling_factor, axis=1)]
+                print('Remove utterances (for CTC, main): %d' %
+                      (utt_num_orig - len(df)))
+            if use_ctc_sub and subsampling_factor_sub > 1:
+                print('Chacking utterances for CTC (sub)')
+                utt_num_orig_sub = len(df_sub)
+                df_sub = df_sub[df_sub.apply(
+                    lambda x: len(x['transcript'].split(' ')) <= x['frame_num'] // subsampling_factor_sub, axis=1)]
+                print('Remove utterances (for CTC, sub): %d' %
+                      (utt_num_orig_sub - len(df_sub)))
+
+            # Make up the number
+            if len(df) != len(df_sub):
+                diff = df.index.difference(df_sub.index)
+                df = df.drop(diff)
+                diff = df.index.difference(df_sub.index)
+                df_sub = df_sub.drop(diff)
 
         # Sort paths to input & label
         if sort_utt:

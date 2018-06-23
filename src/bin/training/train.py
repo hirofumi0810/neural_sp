@@ -102,7 +102,10 @@ def main():
         min_frame_num=config['min_frame_num'] if 'min_frame_num' in config.keys(
         ) else 0,
         sort_utt=True, sort_stop_epoch=config['sort_stop_epoch'],
-        tool=config['tool'], dynamic_batching=config['dynamic_batching'])
+        tool=config['tool'], dynamic_batching=config['dynamic_batching'],
+        use_ctc=config['model_type'] == 'ctc' or (
+            config['model_type'] == 'attention' and config['ctc_loss_weight'] > 0),
+        subsampling_factor=2 ** sum(config['subsample_list']))
     dev_set = Dataset(
         corpus=args.corpus,
         data_save_path=args.data_save_path,
@@ -113,7 +116,10 @@ def main():
         data_size=config['data_size'],
         label_type=config['label_type'],
         batch_size=config['batch_size'],
-        shuffle=True, tool=config['tool'])
+        shuffle=True, tool=config['tool'],
+        use_ctc=config['model_type'] == 'ctc' or (
+            config['model_type'] == 'attention' and config['ctc_loss_weight'] > 0),
+        subsampling_factor=2 ** sum(config['subsample_list']))
     eval_sets = []
     for data_type in args.eval_sets:
         eval_sets += [Dataset(
