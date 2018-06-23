@@ -275,7 +275,7 @@ def main():
         best_value=metric_dev_best)
 
     # Set reporter
-    reporter = Reporter(model.save_path)
+    reporter = Reporter(model.save_path, max_loss=300)
 
     # Set the updater
     updater = Updater(config['clip_grad_norm'], config['backend'])
