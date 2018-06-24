@@ -44,12 +44,11 @@ class Updater(object):
         Returns:
             model (torch.nn.Module or chainer.Chain):
             loss_val (float):
-            loss_main_val (float):
-            loss_sub_val (float):
+            loss_main (float):
+            loss_sub (float):
             acc_main (float): Token-level accuracy in teacher-forcing in the main task
             acc_sub (float): Token-level accuracy in teacher-forcing in the sub task
         """
-        loss_val, loss_main_val, loss_sub_val = 0., 0., 0.
         try:
             # Step for parameter update
             if self.backend == 'pytorch':
@@ -75,12 +74,8 @@ class Updater(object):
                     # TODO: Add scheduler
                 if model.torch_version < 0.4:
                     loss_val = loss.data[0]
-                    loss_main_val = loss_main.data[0]
-                    loss_sub_val = loss_sub.data[0]
                 else:
                     loss_val = loss.item()
-                    loss_main_val = loss_main.item()
-                    loss_sub_val = loss_sub.item()
 
             elif self.backend == 'chainer':
                 if is_eval:
@@ -95,12 +90,8 @@ class Updater(object):
                     model.optimizer.update()
 
                 loss_val = loss.data
-                loss_main_val = loss_main.data
-                loss_sub_val = loss_sub.data
 
             del loss
-            del loss_main
-            del loss_sub
 
         except RuntimeError as e:
             logger.warning('!!!Skip mini-batch!!! (max_frame_num: %d, batch: %d)' %
@@ -111,13 +102,12 @@ class Updater(object):
                     torch.cuda.empty_cache()
             elif self.backend == 'chainer':
                 model.optimizer.target.cleargrads()
+            loss_val = 0.
 
         if loss_val == INF or loss_val == -INF:
-            logger.warning(
-                "WARNING: received an inf loss, setting loss value to 0 (total loss).")
-            loss_val, loss_main_val, loss_sub_val = 0., 0., 0.
+            logger.warning("WARNING: received an inf loss.")
 
         # Delete features
         del batch
 
-        return model, loss_val, loss_main_val, loss_sub_val, acc_main, acc_sub
+        return model, loss_val, loss_main, loss_sub, acc_main, acc_sub

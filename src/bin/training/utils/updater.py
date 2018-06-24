@@ -46,7 +46,6 @@ class Updater(object):
             loss_val (float):
             acc (float): Token-level accuracy in teacher-forcing
         """
-        loss_val = 0.
         try:
             # Step for parameter update
             if self.backend == 'pytorch':
@@ -96,11 +95,10 @@ class Updater(object):
                     torch.cuda.empty_cache()
             elif self.backend == 'chainer':
                 model.optimizer.target.cleargrads()
+            loss_val = 0.
 
         if loss_val == INF or loss_val == -INF:
-            logger.warning(
-                "WARNING: received an inf loss, setting loss value to 0.")
-            loss_val = 0
+            logger.warning("WARNING: received an inf loss.")
 
         # Delete features
         del batch

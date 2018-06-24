@@ -421,8 +421,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 This should be used in inference model for memory efficiency.
         Returns:
             loss (torch.autograd.Variable(float)): A tensor of size `[1]`
-            loss_main (torch.autograd.Variable(float)): A tensor of size `[1]`
-            loss_sub (torch.autograd.Variable(float)): A tensor of size `[1]`
+            loss_main (float):
+            loss_sub (float):
             acc_main (float): Token-level accuracy in teacher-forcing in the main task
             acc_sub (float): Token-level accuracy in teacher-forcing in the sub task
         """
@@ -454,40 +454,32 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         if self.splice > 1:
             xs = [do_splice(x, self.splice, self.num_stack) for x in xs]
 
-        # Wrap by Variable
+        # Encode acoustic features
         xs = [np2var(x, self.device_id).float() for x in xs]
         x_lens = [len(x) for x in xs]
-
-        # Encode acoustic features
         xs, x_lens, xs_sub, x_lens_sub = self._encode(
             xs, x_lens, is_multi_task=True)
 
         # Main task
         if self.main_loss_weight > 0:
-            # Wrap by Variable
             ys = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()
                   for y in ys]
-
-            # Compute XE loss
-            loss_main, acc_main = self.compute_xe_loss(
+            loss, acc_main = self.compute_xe_loss(
                 xs, ys, x_lens, task=0, dir='fwd')
-            loss_main *= self.main_loss_weight
+            loss *= self.main_loss_weight
         else:
-            loss_main = Variable(xs.data.new(1,).fill_(0.))
+            loss = Variable(xs.data.new(1,).fill_(0.))
             acc_main = 0.
-        loss = loss_main.clone()
+        loss_main = loss.data[0]
 
         # Sub task (attention)
         if self.sub_loss_weight > 0:
-            # Wrap by Variable
             if self.backward_1:
                 ys_sub = [np2var(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long()
                           for y in ys_sub]
             else:
                 ys_sub = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()
                           for y in ys_sub]
-
-            # Compute XE loss
             loss_sub, acc_sub = self.compute_xe_loss(
                 xs_sub, ys_sub, x_lens_sub,
                 task=1, dir='bwd' if self.backward_1 else 'fwd')
@@ -498,10 +490,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         # Sub task (CTC)
         if self.ctc_loss_weight_sub > 0:
-            # Wrap by Variable
             ys_sub_ctc = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()
                           for y in ys_sub]
-
             ctc_loss_sub = self.compute_ctc_loss(
                 xs_sub, ys_sub_ctc, x_lens_sub, task=1)
             loss_sub += ctc_loss_sub * self.ctc_loss_weight_sub
@@ -514,7 +504,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 self._ss_prob = min(
                     self.ss_prob, self.ss_prob / self.ss_max_step * self._step)
 
-        return loss, loss_main, loss_sub, acc_main, acc_sub
+        return loss, loss_main, loss_sub.data[0], acc_main, acc_sub
 
     def decode(self, xs, beam_width, max_decode_len, min_decode_len=0, min_decode_len_ratio=0,
                length_penalty=0, coverage_penalty=0, rnnlm_weight=0,

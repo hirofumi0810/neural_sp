@@ -218,9 +218,7 @@ class CTC(ModelBase):
         else:
             raise NotImplementedError
 
-        ##################################################
         # Fully-connected layers
-        ##################################################
         if len(fc_list) > 0:
             for i in range(len(fc_list)):
                 if i == 0:
@@ -250,9 +248,7 @@ class CTC(ModelBase):
         else:
             self.fc_out = LinearND(self.encoder_num_units, self.num_classes)
 
-        ##################################################
-        # Initialize parameters
-        ##################################################
+        # Initialize weight matrices
         self.init_weights(parameter_init,
                           distribution=parameter_init_distribution,
                           ignore_keys=['bias'])

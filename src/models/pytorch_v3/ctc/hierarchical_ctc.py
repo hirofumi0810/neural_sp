@@ -274,8 +274,8 @@ class HierarchicalCTC(CTC):
                 This should be used in inference model for memory efficiency.
         Returns:
             loss (torch.autograd.Variable(float)): A tensor of size `[1]`
-            loss_main (torch.autograd.Variable(float)): A tensor of size `[1]`
-            loss_sub (torch.autograd.Variable(float)): A tensor of size `[1]`
+            loss_main (float):
+            loss_sub (float):
         """
         if is_eval:
             self.eval()
@@ -305,11 +305,9 @@ class HierarchicalCTC(CTC):
         if self.splice > 1:
             xs = [do_splice(x, self.splice, self.num_stack) for x in xs]
 
-        # Wrap by Variable
+        # Encode acoustic features
         xs = [np2var(x, self.device_id).float() for x in xs]
         x_lens = [len(x) for x in xs]
-
-        # Encode acoustic features
         logits_main, x_lens, logits_sub, x_lens_sub = self._encode(
             xs, x_lens, is_multi_task=True)
 
@@ -340,7 +338,6 @@ class HierarchicalCTC(CTC):
         loss_main = my_warpctc(
             logits_main.transpose(0, 1).contiguous(),  # time-major
             ys, x_lens, y_lens, size_average=False) / len(xs)
-
         loss_sub = my_warpctc(
             logits_sub.transpose(0, 1).contiguous(),  # time-major
             ys_sub, x_lens_sub, y_lens_sub, size_average=False) / len(xs)
@@ -349,10 +346,10 @@ class HierarchicalCTC(CTC):
         if self.ls_prob > 0:
             raise NotImplementedError
 
-            # if self.device_id >= 0:
-            #     loss_main = loss_main.cuda(self.device_id)
-            #     loss_sub = loss_sub.cuda(self.device_id)
-            #
+            if self.device_id >= 0:
+                loss_main = loss_main.cuda(self.device_id)
+                loss_sub = loss_sub.cuda(self.device_id)
+
             # loss_ls_main = cross_entropy_label_smoothing(
             #     logits_main,
             #     y_lens=x_lens,  # NOTE: CTC is frame-synchronous
@@ -374,4 +371,7 @@ class HierarchicalCTC(CTC):
         loss_sub = loss_sub * self.sub_loss_weight
         loss = loss_main + loss_sub
 
-        return loss, loss_main, loss_sub, 0., 0.
+        if self.device_id >= 0:
+            loss = loss.cuda(self.device_id)
+
+        return loss, loss_main.data[0], loss_sub.data[0], 0., 0.

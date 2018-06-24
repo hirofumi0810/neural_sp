@@ -325,7 +325,9 @@ class RNNEncoder(nn.Module):
                     xs, x_lens, batch_first=self.batch_first)
 
             # Path through RNN
+            getattr(self, self.rnn_type).flatten_parameters()
             xs, _ = getattr(self, self.rnn_type)(xs, hx=None)
+            # getattr(self, self.rnn_type).flatten_parameters()
 
             # Unpack encoder outputs
             if self.pack_sequence:
@@ -347,10 +349,12 @@ class RNNEncoder(nn.Module):
                         xs, x_lens, batch_first=self.batch_first)
 
                 # Path through RNN
-                xs, _ = getattr(self, self.rnn_type +
-                                '_l' + str(l))(xs, hx=None)
                 getattr(self, self.rnn_type + '_l' +
                         str(l)).flatten_parameters()
+                xs, _ = getattr(self, self.rnn_type +
+                                '_l' + str(l))(xs, hx=None)
+                # getattr(self, self.rnn_type + '_l' +
+                #         str(l)).flatten_parameters()
 
                 # Unpack l-th encoder outputs
                 if self.pack_sequence:

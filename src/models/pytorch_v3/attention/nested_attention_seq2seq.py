@@ -476,8 +476,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 This should be used in inference model for memory efficiency.
         Returns:
             loss (torch.autograd.Variable(float)): A tensor of size `[1]`
-            loss_main (torch.autograd.Variable(float)): A tensor of size `[1]`
-            loss_sub (torch.autograd.Variable(float)): A tensor of size `[1]`
+            loss_main (float):
+            loss_sub (float):
             acc_main (float): Token-level accuracy in teacher-forcing in the main task
             acc_sub (float): Token-level accuracy in teacher-forcing in the sub task
         """
@@ -556,7 +556,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             acc = acc_main * self.main_loss_weight + acc_sub * self.sub_loss_weight
             return loss, acc
         else:
-            return loss, loss_main, loss_sub, acc_main, acc_sub
+            return loss, loss_main.data[0], loss_sub.data[0], acc_main, acc_sub
 
     def compute_xe_loss_mtl(self, enc_out, ys, x_lens,
                             enc_out_sub, ys_sub, x_lens_sub):
@@ -618,13 +618,13 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     input=logits.view((-1, logits.size(2))),
                     target=ys_out.view(-1),  # Long
                     ignore_index=self.pad_index, size_average=False) / len(enc_out)
-            loss_main = loss_main * self.main_loss_weight
+            loss_main *= self.main_loss_weight
 
             # Attention regularization
             if self.att_reg_weight > 0:
                 loss_main += F.mse_loss(
                     torch.bmm(aw_dec, aw_sub),
-                    Variable(aw.data).cuda(),
+                    Variable(aw.data).cuda(self.device_id),
                     size_average=True, reduce=True) * self.att_reg_weight
         else:
             loss_main = Variable(enc_out.data.new(1,).fill_(0.))
