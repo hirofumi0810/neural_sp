@@ -72,11 +72,24 @@ def main():
 
         # Convert transcript to index
         print('=> Processing transcripts...')
-        trans_dict = read_text(
-            text_path=join(args.data_save_path, data_type_tmp, 'text'),
-            vocab_save_path=mkdir_join(args.data_save_path, 'vocab'),
-            data_type=data_type,
-            lexicon_path=None)
+        if data_type == 'train_fisher':
+            trans_dict = read_text(
+                text_path=join(args.data_save_path, 'train', 'text'),
+                vocab_save_path=mkdir_join(args.data_save_path, 'vocab'),
+                data_type=data_type,
+                lexicon_path=None)
+            trans_dict_fisher = read_text(
+                text_path=join(args.data_save_path, 'train_fisher', 'text'),
+                vocab_save_path=mkdir_join(args.data_save_path, 'vocab'),
+                data_type=data_type,
+                lexicon_path=None)
+            trans_dict.update(trans_dict_fisher)
+        else:
+            trans_dict = read_text(
+                text_path=join(args.data_save_path, data_type_tmp, 'text'),
+                vocab_save_path=mkdir_join(args.data_save_path, 'vocab'),
+                data_type=data_type,
+                lexicon_path=None)
 
         # Make dataset file (.csv)
         print('=> Saving dataset files...')
@@ -103,8 +116,20 @@ def main():
         df_char_left_list, df_char_right_list, df_char_both_list, df_char_remove_list = [], [], [], []
         for utt_idx, trans in tqdm(trans_dict.items()):
             if data_type == 'train_fisher':
-                feat_utt_save_path = ''
-                frame_num = len(trans.split('_'))
+                df_word = add_element(
+                    df_word, [len(trans['word'].split('_')), '', trans['word']])
+                df_char = add_element(
+                    df_char, [len(trans['char'].split('_')), '', trans['char']])
+                df_char_capital = add_element(
+                    df_char_capital, [len(trans['char_capital'].split('_')), '', trans['char_capital']])
+                df_char_left = add_element(
+                    df_char_left, [len(trans['char_left'].split('_')), '', trans['char_left']])
+                df_char_right = add_element(
+                    df_char_right, [len(trans['char_right'].split('_')), '', trans['char_right']])
+                df_char_both = add_element(
+                    df_char_both, [len(trans['char_both'].split('_')), '', trans['char_both']])
+                df_char_remove = add_element(
+                    df_char_remove, [len(trans['char_remove'].split('_')), '', trans['char_remove']])
             else:
                 if 'eval2000' in data_type:
                     speaker = '_'.join(utt_idx.split('_')[:2])
@@ -119,20 +144,20 @@ def main():
                     raise ValueError('There is no file: %s' %
                                      feat_utt_save_path)
 
-            df_word = add_element(
-                df_word, [frame_num, feat_utt_save_path, trans['word']])
-            df_char = add_element(
-                df_char, [frame_num, feat_utt_save_path, trans['char']])
-            df_char_capital = add_element(
-                df_char_capital, [frame_num, feat_utt_save_path, trans['char_capital']])
-            df_char_left = add_element(
-                df_char_left, [frame_num, feat_utt_save_path, trans['char_left']])
-            df_char_right = add_element(
-                df_char_right, [frame_num, feat_utt_save_path, trans['char_right']])
-            df_char_both = add_element(
-                df_char_both, [frame_num, feat_utt_save_path, trans['char_both']])
-            df_char_remove = add_element(
-                df_char_remove, [frame_num, feat_utt_save_path, trans['char_remove']])
+                df_word = add_element(
+                    df_word, [frame_num, feat_utt_save_path, trans['word']])
+                df_char = add_element(
+                    df_char, [frame_num, feat_utt_save_path, trans['char']])
+                df_char_capital = add_element(
+                    df_char_capital, [frame_num, feat_utt_save_path, trans['char_capital']])
+                df_char_left = add_element(
+                    df_char_left, [frame_num, feat_utt_save_path, trans['char_left']])
+                df_char_right = add_element(
+                    df_char_right, [frame_num, feat_utt_save_path, trans['char_right']])
+                df_char_both = add_element(
+                    df_char_both, [frame_num, feat_utt_save_path, trans['char_both']])
+                df_char_remove = add_element(
+                    df_char_remove, [frame_num, feat_utt_save_path, trans['char_remove']])
             utt_count += 1
 
             # Reset
@@ -258,6 +283,7 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
             trans = trans.replace('[laughter]', LAUGHTER)
             trans = trans.replace('[noise]', NOISE)
             trans = trans.replace('[vocalized-noise]', VOCALIZED_NOISE)
+
             if data_type == 'train_fisher':
                 trans = trans.replace("[[skip]]", "")
                 trans = trans.replace("[pause]", "")
@@ -270,30 +296,13 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
                 trans = trans.replace("[sneeze]", NOISE)
                 trans = re.sub(r'[,?*~]', '', trans)
 
-                # spellings = spellings:gsub("401k", "four-o-one-k")
-                # spellings = spellings:gsub("ak%-47", "ak-forty-seven")
-                # spellings = spellings:gsub("ak47", "ak-forty-seven")
-                # spellings = spellings:gsub("u2", "u-two")
-                # spellings = spellings:gsub("v8", "v-eight")
-                # spellings = spellings:gsub("mp3", "m-p-three")
-                # spellings = spellings:gsub("m16", "m-sixteen")
-                # spellings = spellings:gsub("f16", "f-sixteen")
-                # spellings = spellings:gsub("dc3", "dc-three")
-                # spellings = spellings:gsub("y2k", "y-two-k")
-                # spellings = spellings:gsub("3d", "three-d")
-                # spellings = spellings:gsub("espn2", "e-s-p-n-two")
-                # spellings = spellings:gsub("vh1", "vh-one")
-                # spellings = spellings:gsub("s2b", "s-two-b")
-                # spellings = spellings:gsub("90210", "nine-o-two-one-o")
-                # spellings = spellings:gsub("2", "two")
-                # spellings = spellings:gsub('%&', '-n-')
-                # spellings = spellings:gsub('_', '')
-                # spellings = spellings:gsub('-', '')
-                # spellings = spellings:gsub('%.', '')
-                # spellings = spellings:gsub('%s+', ' ')
-                # spellings = spellings:gsub('^%s+', '')
-                # spellings = spellings:gsub('%s+$', '')
-                # spellings = spellings:gsub('%s', '|'):gsub('(.)', '%1 '):gsub(' $', '')
+                # trans = trans.replace('_', '')
+                # trans = trans.replace('-', '')
+                # trans = trans.replace('%.', '')
+                # trans = trans.replace('%s+', ' ')
+                # trans = trans.replace('^%s+', '')
+                # trans = trans.replace('%s+$', '')
+                # trans = trans.replace('%s', '|').replace('(.)', '%1 ').replace(' $', '')
 
             if 'eval2000' in data_type:
                 trans = trans.replace('<b_aside>', '')
@@ -312,17 +321,11 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
             if trans[-1] == ' ':
                 trans = trans[:-1]
 
-            if '[' in trans:
-                print(trans)
-
             ###################################
             # with filler and disfluency
             ###################################
             trans_left_list, trans_right_list, trans_both_list, trans_remove_list = [], [], [], []
             for w in trans.split(' '):
-                if len(w) == 0:
-                    print(trans.replace(' ', '_'))
-
                 if w[-1] == '-':
                     w_left = SOD + w[:-1]
                     w_right = w[:-1] + SOD

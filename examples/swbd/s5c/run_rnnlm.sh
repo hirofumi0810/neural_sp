@@ -30,6 +30,8 @@ FISHER_PATH="/n/rd7/fisher_english"
 ### Set path to save the model
 model="/n/sd8/inaguma/result/swbd"
 
+# train_set=train
+train_set=train_fisher
 
 if [ ${stage} -le 0 ] && [ ! -e ${data}/.stage_0 ]; then
   echo "Run ./run.sh at first"
@@ -69,7 +71,7 @@ if [ ${stage} -le 3 ]; then
       nohup ${PYTHON} ../../../src/bin/training/train_lm.py \
         --corpus ${corpus} \
         --gpu_ids ${gpu_ids} \
-        --train_set train \
+        --train_set ${train_set} \
         --dev_set dev \
         --eval_sets eval2000_swbd eval2000_ch \
         --saved_model_path ${config_path} \
@@ -79,7 +81,7 @@ if [ ${stage} -le 3 ]; then
       ${PYTHON} ../../../src/bin/training/train_lm.py \
         --corpus ${corpus} \
         --gpu_ids ${gpu_ids} \
-        --train_set train \
+        --train_set ${train_set} \
         --dev_set dev \
         --eval_sets eval2000_swbd eval2000_ch \
         --saved_model_path ${config_path} \
@@ -91,7 +93,7 @@ if [ ${stage} -le 3 ]; then
       nohup ${PYTHON} ../../../src/bin/training/train_lm.py \
         --corpus ${corpus} \
         --gpu_ids ${gpu_ids} \
-        --train_set train \
+        --train_set ${train_set} \
         --dev_set dev \
         --eval_sets eval2000_swbd eval2000_ch \
         --config_path ${config_path} \
@@ -102,7 +104,7 @@ if [ ${stage} -le 3 ]; then
       ${PYTHON} ../../../src/bin/training/train_lm.py \
         --corpus ${corpus} \
         --gpu_ids ${gpu_ids} \
-        --train_set train \
+        --train_set ${train_set} \
         --dev_set dev \
         --eval_sets eval2000_swbd eval2000_ch \
         --config_path ${config_path} \
