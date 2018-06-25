@@ -47,7 +47,6 @@ def eval_char(models, dataset, eval_batch_size, beam_width,
     sub_word, ins_word, del_word = 0, 0, 0
     sub_char, ins_char, del_char = 0, 0, 0
     num_words, num_chars = 0, 0
-    num_skip = 0
     if progressbar:
         pbar = tqdm(total=len(dataset))  # TODO: fix this
     while True:
@@ -106,36 +105,31 @@ def eval_char(models, dataset, eval_batch_size, beam_width,
             else:
                 raise ValueError(dataset.corpus)
 
+            if len(str_ref) == 0:
+                continue
+
             if dataset.corpus != 'csj' or dataset.label_type == 'character_wb' or (task_index > 0 and dataset.label_type_sub == 'character_wb'):
                 # Compute WER
-                try:
-                    wer_b, sub_b, ins_b, del_b = compute_wer(
-                        ref=str_ref.split('_'),
-                        hyp=str_hyp.split('_'),
-                        normalize=False)
-                    wer += wer_b
-                    sub_word += sub_b
-                    ins_word += ins_b
-                    del_word += del_b
-                    num_words += len(str_ref.split('_'))
-                except:
-                    pass
+                wer_b, sub_b, ins_b, del_b = compute_wer(
+                    ref=str_ref.split('_'),
+                    hyp=str_hyp.split('_'),
+                    normalize=False)
+                wer += wer_b
+                sub_word += sub_b
+                ins_word += ins_b
+                del_word += del_b
+                num_words += len(str_ref.split('_'))
 
             # Compute CER
-            try:
-                cer_b, sub_b, ins_b, del_b = compute_wer(
-                    ref=list(str_ref.replace('_', '')),
-                    hyp=list(str_hyp.replace('_', '')),
-                    normalize=False)
-                cer += cer_b
-                sub_char += sub_b
-                ins_char += ins_b
-                del_char += del_b
-                num_chars += len(str_ref.replace('_', ''))
-            except:
-                print('REF: ' + str_ref)
-                print('HYP: ' + str_hyp)
-                num_skip += 1
+            cer_b, sub_b, ins_b, del_b = compute_wer(
+                ref=list(str_ref.replace('_', '')),
+                hyp=list(str_hyp.replace('_', '')),
+                normalize=False)
+            cer += cer_b
+            sub_char += sub_b
+            ins_char += ins_b
+            del_char += del_b
+            num_chars += len(str_ref.replace('_', ''))
 
             if progressbar:
                 pbar.update(1)
@@ -164,9 +158,8 @@ def eval_char(models, dataset, eval_batch_size, beam_width,
 
     df = pd.DataFrame({'SUB': [sub_word, sub_char],
                        'INS': [ins_word, ins_char],
-                       'DEL': [del_word, del_char],
-                       'SKIP': [num_skip, num_skip]},
-                      columns=['SUB', 'INS', 'DEL', 'SKIP'],
+                       'DEL': [del_word, del_char]},
+                      columns=['SUB', 'INS', 'DEL'],
                       index=['WER', 'CER'])
 
     return wer, cer, df

@@ -68,7 +68,6 @@ def eval_word(models, dataset, eval_batch_size,
     sub, ins, dele, = 0, 0, 0
     num_words = 0
     num_oov = 0
-    num_skip = 0
     if progressbar:
         pbar = tqdm(total=len(dataset))  # TODO: fix this
     while True:
@@ -186,21 +185,19 @@ def eval_word(models, dataset, eval_batch_size,
             else:
                 raise ValueError(dataset.corpus)
 
+            if len(str_ref) == 0:
+                continue
+
             # Compute WER
-            try:
-                wer_b, sub_b, ins_b, del_b = compute_wer(
-                    ref=str_ref.split('_'),
-                    hyp=str_hyp.split('_'),
-                    normalize=False)
-                wer += wer_b
-                sub += sub_b
-                ins += ins_b
-                dele += del_b
-                num_words += len(str_ref.split('_'))
-            except:
-                print('REF: ' + str_ref)
-                print('HYP: ' + str_hyp)
-                num_skip += 1
+            wer_b, sub_b, ins_b, del_b = compute_wer(
+                ref=str_ref.split('_'),
+                hyp=str_hyp.split('_'),
+                normalize=False)
+            wer += wer_b
+            sub += sub_b
+            ins += ins_b
+            dele += del_b
+            num_words += len(str_ref.split('_'))
 
             if progressbar:
                 pbar.update(1)
@@ -219,8 +216,8 @@ def eval_word(models, dataset, eval_batch_size,
     ins /= num_words
     dele /= num_words
 
-    df = pd.DataFrame({'SUB': [sub], 'INS': [ins], 'DEL': [dele], 'OOV': [num_oov], 'SKIP': [num_skip]},
-                      columns=['SUB', 'INS', 'DEL', 'OOV', 'SKIP'],
+    df = pd.DataFrame({'SUB': [sub], 'INS': [ins], 'DEL': [dele], 'OOV': [num_oov]},
+                      columns=['SUB', 'INS', 'DEL', 'OOV'],
                       index=['WER'])
 
     return wer, df

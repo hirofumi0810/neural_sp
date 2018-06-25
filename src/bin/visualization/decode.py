@@ -238,30 +238,25 @@ def main():
             else:
                 str_hyp = normalize(str_hyp)
 
-            try:
-                if dataset.label_type in ['word', 'character_wb'] or (args.corpus != 'csj' and dataset.label_type == 'character'):
-                    wer = wer_align(ref=str_ref.split('_'),
-                                    hyp=str_hyp.split('_'),
-                                    normalize=True,
-                                    japanese=True if args.corpus == 'csj' else False)[0]
-                    print('\nWER: %.3f %%' % wer)
-                elif dataset.label_type == 'character':
-                    cer = wer_align(ref=list(str_ref.replace('_', '')),
-                                    hyp=list(str_hyp.replace('_', '')),
-                                    normalize=True,
-                                    japanese=True if args.corpus == 'csj' else False)[0]
-                    print('\nCER: %.3f %%' % cer)
-                elif 'phone' in dataset.label_type:
-                    per = wer_align(ref=str_ref.split('_'),
-                                    hyp=str_hyp.split('_'),
-                                    normalize=True)[0]
-                    print('\nPER: %.3f %%' % per)
-
-                else:
-                    raise ValueError
-            except:
-                print('REF: ' + str_ref)
-                print('HYP: ' + str_hyp)
+            if dataset.label_type in ['word', 'character_wb'] or (args.corpus != 'csj' and dataset.label_type == 'character'):
+                wer = wer_align(ref=str_ref.split('_'),
+                                hyp=str_hyp.split('_'),
+                                normalize=True,
+                                japanese=True if args.corpus == 'csj' else False)[0]
+                print('\nWER: %.3f %%' % wer)
+            elif dataset.label_type == 'character':
+                cer = wer_align(ref=list(str_ref.replace('_', '')),
+                                hyp=list(str_hyp.replace('_', '')),
+                                normalize=True,
+                                japanese=True if args.corpus == 'csj' else False)[0]
+                print('\nCER: %.3f %%' % cer)
+            elif 'phone' in dataset.label_type:
+                per = wer_align(ref=str_ref.split('_'),
+                                hyp=str_hyp.split('_'),
+                                normalize=True)[0]
+                print('\nPER: %.3f %%' % per)
+            else:
+                raise ValueError(dataset.label_type)
 
         if is_new_epoch:
             break

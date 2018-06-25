@@ -95,22 +95,33 @@ def compute_wer(ref, hyp, normalize=False):
         if x == 0 and y == 0:
             break
         else:
-            if d[x][y] == d[x - 1][y - 1] and ref[x - 1] == hyp[y - 1]:
-                error_list.append("C")
-                x = x - 1
-                y = y - 1
-            elif d[x][y] == d[x][y - 1] + 1:
-                error_list.append("I")
-                x = x
-                y = y - 1
-            elif d[x][y] == d[x - 1][y - 1] + 1:
-                error_list.append("S")
-                x = x - 1
-                y = y - 1
-            else:
+            if x > 0 and y > 0:
+                if d[x][y] == d[x - 1][y - 1] and ref[x - 1] == hyp[y - 1]:
+                    error_list.append("C")
+                    x = x - 1
+                    y = y - 1
+                elif d[x][y] == d[x][y - 1] + 1:
+                    error_list.append("I")
+                    y = y - 1
+                elif d[x][y] == d[x - 1][y - 1] + 1:
+                    error_list.append("S")
+                    x = x - 1
+                    y = y - 1
+                else:
+                    error_list.append("D")
+                    x = x - 1
+            elif x == 0 and y > 0:
+                if d[x][y] == d[x][y - 1] + 1:
+                    error_list.append("I")
+                    y = y - 1
+                else:
+                    error_list.append("D")
+                    x = x - 1
+            elif y == 0 and x > 0:
                 error_list.append("D")
                 x = x - 1
-                y = y
+            else:
+                raise ValueError
 
     sub = error_list.count("S")
     ins = error_list.count("I")
@@ -173,22 +184,33 @@ def wer_align(ref, hyp, normalize=False, japanese=False):
         if x == 0 and y == 0:
             break
         else:
-            if d[x][y] == d[x - 1][y - 1] and ref[x - 1] == hyp[y - 1]:
-                error_list.append("C")
-                x = x - 1
-                y = y - 1
-            elif d[x][y] == d[x][y - 1] + 1:
-                error_list.append("I")
-                x = x
-                y = y - 1
-            elif d[x][y] == d[x - 1][y - 1] + 1:
-                error_list.append("S")
-                x = x - 1
-                y = y - 1
-            else:
+            if x > 0 and y > 0:
+                if d[x][y] == d[x - 1][y - 1] and ref[x - 1] == hyp[y - 1]:
+                    error_list.append("C")
+                    x = x - 1
+                    y = y - 1
+                elif d[x][y] == d[x][y - 1] + 1:
+                    error_list.append("I")
+                    y = y - 1
+                elif d[x][y] == d[x - 1][y - 1] + 1:
+                    error_list.append("S")
+                    x = x - 1
+                    y = y - 1
+                else:
+                    error_list.append("D")
+                    x = x - 1
+            elif x == 0 and y > 0:
+                if d[x][y] == d[x][y - 1] + 1:
+                    error_list.append("I")
+                    y = y - 1
+                else:
+                    error_list.append("D")
+                    x = x - 1
+            elif y == 0 and x > 0:
                 error_list.append("D")
                 x = x - 1
-                y = y
+            else:
+                raise ValueError
     error_list = error_list[::-1]
 
     # Print the result in aligned way
