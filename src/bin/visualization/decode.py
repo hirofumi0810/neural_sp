@@ -10,13 +10,14 @@ from __future__ import print_function
 from os.path import join, abspath
 import sys
 import argparse
+from distutils.util import strtobool
 
 sys.path.append(abspath('../../../'))
 from src.models.load_model import load
 from src.dataset.loader import Dataset
 from src.utils.config import load_config
 from src.utils.evaluation.edit_distance import wer_align
-from src.utils.evaluation.normalization import normalize
+from src.utils.evaluation.normalization import normalize, normalize_swbd, GLM
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--corpus', type=str,
@@ -41,6 +42,7 @@ parser.add_argument('--rnnlm_weight', type=float, default=0,
                     help='the weight of RNNLM score')
 parser.add_argument('--rnnlm_path', default=None, type=str, nargs='?',
                     help='path to the RMMLM')
+parser.add_argument('--stdout', type=strtobool, default=False)
 args = parser.parse_args()
 
 # corpus depending
@@ -126,6 +128,9 @@ def main():
     config['num_classes'] = dataset.num_classes
     config['num_classes_sub'] = dataset.num_classes
 
+    if args.corpus == 'swbd':
+        dataset.glm_path = join(args.data_save_path, 'eval2000', 'glm')
+
     # For cold fusion
     if config['rnnlm_fusion_type'] and config['rnnlm_path']:
         # Load a RNNLM config file
@@ -167,7 +172,8 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
-    # sys.stdout = open(join(args.model_path, 'decode.txt'), 'w')
+    if not args.stdout:
+        sys.stdout = open(join(args.model_path, 'decode.txt'), 'w')
 
     if dataset.label_type == 'word':
         map_fn = dataset.idx2word
@@ -223,9 +229,14 @@ def main():
             # Hypothesis
             str_hyp = map_fn(best_hyps[b])
 
-            print('----- wav: %s -----' % batch['input_names'][b])
+            print('\n----- wav: %s -----' % batch['input_names'][b])
 
-            str_hyp = normalize(str_hyp)
+            if dataset.corpus == 'swbd':
+                glm = GLM(dataset.glm_path)
+                str_ref = normalize_swbd(str_ref, glm)
+                str_hyp = normalize_swbd(str_hyp, glm)
+            else:
+                str_hyp = normalize(str_hyp)
 
             try:
                 if dataset.label_type in ['word', 'character_wb'] or (args.corpus != 'csj' and dataset.label_type == 'character'):

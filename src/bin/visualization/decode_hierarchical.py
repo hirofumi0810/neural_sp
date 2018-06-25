@@ -19,7 +19,7 @@ from src.utils.io.labels.word import Word2char
 from src.utils.config import load_config
 from src.utils.evaluation.edit_distance import wer_align
 from src.utils.evaluation.resolving_unk import resolve_unk
-from src.utils.evaluation.normalization import normalize
+from src.utils.evaluation.normalization import normalize, normalize_swbd, GLM
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--corpus', type=str,
@@ -54,6 +54,7 @@ parser.add_argument('--resolving_unk', type=strtobool, default=False)
 parser.add_argument('--a2c_oracle', type=strtobool, default=False)
 parser.add_argument('--joint_decoding', type=strtobool, default=False)
 parser.add_argument('--score_sub_weight', type=float, default=0)
+parser.add_argument('--stdout', type=strtobool, default=False)
 args = parser.parse_args()
 
 # corpus depending
@@ -132,6 +133,9 @@ def main():
     config['num_classes'] = dataset.num_classes
     config['num_classes_sub'] = dataset.num_classes_sub
 
+    if args.corpus == 'swbd':
+        dataset.glm_path = join(args.data_save_path, 'eval2000', 'glm')
+
     # For cold fusion
     if config['rnnlm_fusion_type'] and config['rnnlm_path']:
         # Load a RNNLM config file
@@ -195,7 +199,8 @@ def main():
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)
 
-    sys.stdout = open(join(args.model_path, 'decode.txt'), 'w')
+    if not args.stdout:
+        sys.stdout = open(join(args.model_path, 'decode.txt'), 'w')
 
     word2char = Word2char(dataset.vocab_file_path,
                           dataset.vocab_file_path_sub)
@@ -281,11 +286,9 @@ def main():
             # Reference
             if dataset.is_test:
                 str_ref = ys[b]
-                str_ref_sub = ys_sub[b]
                 # NOTE: transcript is seperated by space('_')
             else:
                 str_ref = dataset.idx2word(ys[b])
-                str_ref_sub = dataset.idx2char(ys_sub[b])
 
             # Hypothesis
             str_hyp = dataset.idx2word(best_hyps[b])
@@ -297,66 +300,95 @@ def main():
             # Resolving UNK
             if 'OOV' in str_hyp and args.resolving_unk:
                 str_hyp_no_unk = resolve_unk(
-                    str_hyp, best_hyps_sub[b], aw[b], aw_sub[b], dataset.idx2char)
+                    str_hyp, best_hyps_sub[b], aw[b], aw_sub[b], dataset.idx2char,
+                    diff_time_resolution=2 ** sum(model.subsample_list) // 2 ** sum(model.subsample_list[:model.encoder_num_layers_sub - 1]))
             if model.model_type == 'hierarchical_attention' and args.joint_decoding:
                 if 'OOV' in str_hyp_joint and args.resolving_unk:
                     str_hyp_no_unk_joint = resolve_unk(
-                        str_hyp_joint, best_hyps_sub_joint[b], aw_joint[b], aw_sub_joint[b], dataset.idx2char)
+                        str_hyp_joint, best_hyps_sub_joint[b], aw_joint[b], aw_sub_joint[b], dataset.idx2char,
+                        diff_time_resolution=2 ** sum(model.subsample_list) // 2 ** sum(model.subsample_list[:model.encoder_num_layers_sub - 1]))
 
-            print('----- wav: %s -----' % batch['input_names'][b])
+            print('\n----- wav: %s -----' % batch['input_names'][b])
 
-            str_hyp = normalize(str_hyp)
-            str_hyp_sub = normalize(str_hyp_sub)
+            if dataset.corpus == 'swbd':
+                glm = GLM(dataset.glm_path)
+                str_ref = normalize_swbd(str_ref, glm)
+                str_hyp = normalize_swbd(str_hyp, glm)
+                str_hyp_sub = normalize_swbd(str_hyp_sub, glm)
+            else:
+                str_hyp = normalize(str_hyp, remove_tokens=['>'])
+                str_hyp_sub = normalize(str_hyp_sub, remove_tokens=['>'])
 
             # Resolving UNK
             if 'OOV' in str_hyp and args.resolving_unk:
-                str_hyp_no_unk = normalize(str_hyp_no_unk)
+                if dataset.corpus == 'swbd':
+                    str_hyp_no_unk = normalize_swbd(str_hyp_no_unk, glm)
+                else:
+                    str_hyp_no_unk = normalize(
+                        str_hyp_no_unk, remove_tokens=['>'])
 
-            wer = wer_align(ref=str_ref.split('_'),
-                            hyp=str_hyp.split('_'),
-                            normalize=True,
-                            japanese=True if dataset.corpus == 'csj' else False)[0]
-            print('\nWER (main)  : %.3f %%' % wer)
-            if dataset.corpus != 'csj' or dataset.label_type_sub == 'character_wb':
-                wer_sub = wer_align(ref=str_ref_sub.split('_'),
-                                    hyp=str_hyp_sub.split('_'),
-                                    normalize=True,
-                                    japanese=True if dataset.corpus == 'csj' else False)[0]
-                print('\nWER (sub)   : %.3f %%' % wer_sub)
-            else:
-                cer = wer_align(ref=list(str_ref.replace('_', '')),
-                                hyp=list(str_hyp_sub.replace('_', '')),
+            try:
+                wer = wer_align(ref=str_ref.split('_'),
+                                hyp=str_hyp.split('_'),
                                 normalize=True,
                                 japanese=True if dataset.corpus == 'csj' else False)[0]
-                print('\nCER (sub)   : %.3f %%' % cer)
-            if 'OOV' in str_hyp and args.resolving_unk:
-                wer_no_unk = wer_align(
-                    ref=str_ref.split('_'),
-                    hyp=str_hyp_no_unk.replace('*', '').split('_'),
-                    normalize=True,
-                    japanese=True if dataset.corpus == 'csj' else False)[0]
-                print('\nWER (no UNK): %.3f %%' % wer_no_unk)
-
-            if model.model_type == 'hierarchical_attention' and args.joint_decoding:
-                print('===== joint decoding =====')
-                str_hyp_joint = normalize(str_hyp_joint)
-                str_hyp_joint_sub = normalize(str_hyp_joint_sub)
-
-                if 'OOV' in str_hyp_joint and args.resolving_unk:
-                    str_hyp_no_unk_joint = normalize(str_hyp_no_unk_joint)
-
-                wer_joint = wer_align(ref=str_ref.split('_'),
-                                      hyp=str_hyp_joint.split('_'),
-                                      normalize=True,
-                                      japanese=True if dataset.corpus == 'csj' else False)[0]
-                print('\nWER (main)  : %.3f %%' % wer_joint)
-                if 'OOV' in str_hyp_joint and args.resolving_unk:
-                    wer_no_unk_joint = wer_align(
+                print('\nWER (main)  : %.3f %%' % wer)
+                if dataset.corpus != 'csj' or dataset.label_type_sub == 'character_wb':
+                    wer_sub = wer_align(ref=str_ref.split('_'),
+                                        hyp=str_hyp_sub.split('_'),
+                                        normalize=True,
+                                        japanese=True if dataset.corpus == 'csj' else False)[0]
+                    print('\nWER (sub)   : %.3f %%' % wer_sub)
+                else:
+                    cer = wer_align(ref=list(str_ref.replace('_', '')),
+                                    hyp=list(str_hyp_sub.replace('_', '')),
+                                    normalize=True,
+                                    japanese=True if dataset.corpus == 'csj' else False)[0]
+                    print('\nCER (sub)   : %.3f %%' % cer)
+                if 'OOV' in str_hyp and args.resolving_unk:
+                    wer_no_unk = wer_align(
                         ref=str_ref.split('_'),
-                        hyp=str_hyp_no_unk_joint.replace('*', '').split('_'),
+                        hyp=str_hyp_no_unk.replace('*', '').split('_'),
                         normalize=True,
                         japanese=True if dataset.corpus == 'csj' else False)[0]
-                    print('\nWER (no UNK): %.3f %%' % wer_no_unk_joint)
+                    print('\nWER (no UNK): %.3f %%' % wer_no_unk)
+
+                if model.model_type == 'hierarchical_attention' and args.joint_decoding:
+                    print('===== joint decoding =====')
+                    if dataset.corpus == 'swbd':
+                        str_hyp_joint = normalize_swbd(str_hyp_joint, glm)
+                        str_hyp_joint_sub = normalize_swbd(
+                            str_hyp_joint_sub, glm)
+                    else:
+                        str_hyp_joint = normalize(
+                            str_hyp_joint, remove_tokens=['>'])
+                        str_hyp_joint_sub = normalize(
+                            str_hyp_joint_sub, remove_tokens=['>'])
+
+                    if 'OOV' in str_hyp_joint and args.resolving_unk:
+                        if dataset.corpus == 'swbd':
+                            str_hyp_no_unk_joint = normalize_swbd(
+                                str_hyp_no_unk_joint, glm)
+                        else:
+                            str_hyp_no_unk_joint = normalize(
+                                str_hyp_no_unk_joint, remove_tokens=['>'])
+
+                    wer_joint = wer_align(ref=str_ref.split('_'),
+                                          hyp=str_hyp_joint.split('_'),
+                                          normalize=True,
+                                          japanese=True if dataset.corpus == 'csj' else False)[0]
+                    print('\nWER (main)  : %.3f %%' % wer_joint)
+                    if 'OOV' in str_hyp_joint and args.resolving_unk:
+                        wer_no_unk_joint = wer_align(
+                            ref=str_ref.split('_'),
+                            hyp=str_hyp_no_unk_joint.replace(
+                                '*', '').split('_'),
+                            normalize=True,
+                            japanese=True if dataset.corpus == 'csj' else False)[0]
+                        print('\nWER (no UNK): %.3f %%' % wer_no_unk_joint)
+            except:
+                print('REF: ' + str_ref)
+                print('HYP: ' + str_hyp)
 
         if is_new_epoch:
             break

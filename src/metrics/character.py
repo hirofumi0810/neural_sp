@@ -11,10 +11,7 @@ from tqdm import tqdm
 import pandas as pd
 
 from src.utils.evaluation.edit_distance import compute_wer
-from src.utils.evaluation.normalization import normalize
-
-# for Switchboard
-from src.post_processing import normalize_swbd, GLM
+from src.utils.evaluation.normalization import normalize, normalize_swbd, GLM
 
 
 def eval_char(models, dataset, eval_batch_size, beam_width,

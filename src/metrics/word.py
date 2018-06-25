@@ -13,10 +13,7 @@ import pandas as pd
 from src.utils.io.labels.word import Word2char
 from src.utils.evaluation.edit_distance import compute_wer
 from src.utils.evaluation.resolving_unk import resolve_unk
-from src.utils.evaluation.normalization import normalize
-
-# for Switchboard
-from src.post_processing import normalize_swbd, GLM
+from src.utils.evaluation.normalization import normalize, normalize_swbd, GLM
 
 
 def eval_word(models, dataset, eval_batch_size,
@@ -139,6 +136,10 @@ def eval_word(models, dataset, eval_batch_size,
                 coverage_penalty=coverage_penalty,
                 rnnlm_weight=rnnlm_weight)
             if resolving_unk:
+                # assert sum(model.subsample_list) == sum(
+                #     model.subsample_list[:model.encoder_num_layers_sub - 1])
+                # NOTE: time-resolution must be the same
+
                 best_hyps_sub, aw_sub, _ = model.decode(
                     batch['xs'],
                     beam_width=beam_width,
@@ -167,7 +168,8 @@ def eval_word(models, dataset, eval_batch_size,
             # Resolving UNK
             if resolving_unk and 'OOV' in str_hyp:
                 str_hyp = resolve_unk(
-                    str_hyp, best_hyps_sub[b], aw[b], aw_sub[b], dataset.idx2char)
+                    str_hyp, best_hyps_sub[b], aw[b], aw_sub[b], dataset.idx2char,
+                    diff_time_resolution=2 ** sum(model.subsample_list) // 2 ** sum(model.subsample_list[:model.encoder_num_layers_sub - 1]))
                 str_hyp = str_hyp.replace('*', '')
 
             # Post-proccessing
