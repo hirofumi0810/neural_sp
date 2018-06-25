@@ -43,6 +43,7 @@ class RNNLM(ModelBase):
         label_smoothing_prob (float):
         label_smoothing_type (string): uniform or unigram
         tie_weights (bool):
+        residual_connection (bool):
         backward (bool): if True, backward RNNLM
     """
 
@@ -63,6 +64,7 @@ class RNNLM(ModelBase):
                  label_smoothing_prob=0,
                  label_smoothing_type='unigram',
                  tie_weights=False,
+                 residual_connection=False,
                  backward=False):
 
         super(ModelBase, self).__init__()
@@ -76,6 +78,7 @@ class RNNLM(ModelBase):
         self.num_layers = num_layers
         self.parameter_init = parameter_init
         self.tie_weights = tie_weights
+        self.residual_connection = residual_connection
         self.backward = backward
         self.num_classes = num_classes + 1  # Add <EOS> class
         self.sos = num_classes
@@ -92,34 +95,57 @@ class RNNLM(ModelBase):
                                dropout=dropout_embedding,
                                ignore_index=self.eos)
 
-        if rnn_type == 'lstm':
-            self.rnn = nn.LSTM(embedding_dim,
-                               hidden_size=num_units,
-                               num_layers=num_layers,
-                               bias=True,
-                               batch_first=True,
-                               dropout=dropout_hidden,
-                               bidirectional=bidirectional)
-        elif rnn_type == 'gru':
-            self.rnn = nn.GRU(embedding_dim,
-                              hidden_size=num_units,
-                              num_layers=num_layers,
-                              bias=True,
-                              batch_first=True,
-                              dropout=dropout_hidden,
-                              bidirectional=bidirectional)
-        elif rnn_type == 'rnn':
-            self.rnn = nn.RNN(embedding_dim,
-                              hidden_size=num_units,
-                              num_layers=num_layers,
-                              nonlinearity='tanh',
-                              # nonlinearity='relu',
-                              bias=True,
-                              batch_first=True,
-                              dropout=dropout_hidden,
-                              bidirectional=bidirectional)
+        if residual_connection:
+            for i_l in range(num_layers):
+                if i_l == 0:
+                    encoder_input_size = embedding_dim
+                else:
+                    encoder_input_size = num_units * self.num_directions
+
+                if rnn_type == 'lstm':
+                    rnn_i = nn.LSTM(encoder_input_size,
+                                    hidden_size=num_units,
+                                    num_layers=1,
+                                    bias=True,
+                                    batch_first=True,
+                                    dropout=0,
+                                    bidirectional=bidirectional)
+                elif rnn_type == 'gru':
+                    rnn_i = nn.GRU(encoder_input_size,
+                                   hidden_size=num_units,
+                                   num_layers=1,
+                                   bias=True,
+                                   batch_first=True,
+                                   dropout=0,
+                                   bidirectional=bidirectional)
+                else:
+                    raise ValueError(
+                        'rnn_type must be "lstm" or "gru".')
+
+                setattr(self, rnn_type + '_l' + str(i_l), rnn_i)
+
+                # Dropout for hidden-hidden or hidden-output connection
+                setattr(self, 'dropout_l' + str(i_l),
+                        nn.Dropout(p=dropout_hidden))
         else:
-            raise ValueError('rnn_type must be "lstm" or "gru" or "rnn".')
+            if rnn_type == 'lstm':
+                self.rnn = nn.LSTM(embedding_dim,
+                                   hidden_size=num_units,
+                                   num_layers=num_layers,
+                                   bias=True,
+                                   batch_first=True,
+                                   dropout=dropout_hidden,
+                                   bidirectional=bidirectional)
+            elif rnn_type == 'gru':
+                self.rnn = nn.GRU(embedding_dim,
+                                  hidden_size=num_units,
+                                  num_layers=num_layers,
+                                  bias=True,
+                                  batch_first=True,
+                                  dropout=dropout_hidden,
+                                  bidirectional=bidirectional)
+            else:
+                raise ValueError('rnn_type must be "lstm" or "gru".')
 
         self.output = LinearND(
             num_units * self.num_directions, self.num_classes,
@@ -209,16 +235,46 @@ class RNNLM(ModelBase):
         # Path through embedding
         ys_in = self.embed(ys_in)
 
-        # Pack RNN inputs
-        ys_in = pack_padded_sequence(ys_in, y_lens, batch_first=True)
-
         # Path through RNN
-        ys_in, _ = self.rnn(ys_in, hx=None)
+        if self.residual_connection:
+            res_outputs_prev = None
+            for i_l in range(self.num_layers):
+                # Pack i_l-th encoder xs
+                ys_in = pack_padded_sequence(ys_in, y_lens, batch_first=True)
 
-        # Unpack RNN outputs
-        ys_in, unpacked_seq_len = pad_packed_sequence(
-            ys_in, batch_first=True, padding_value=0)
-        # assert y_lens - 1 == unpacked_seq_len
+                # Path through RNN
+                getattr(self, self.rnn_type + '_l' +
+                        str(i_l)).flatten_parameters()
+                ys_in, _ = getattr(self, self.rnn_type +
+                                   '_l' + str(i_l))(ys_in, hx=None)
+                if i_l == self.num_layers - 1:
+                    getattr(self, self.rnn_type + '_l' +
+                            str(i_l)).flatten_parameters()
+
+                # Unpack i_l-th encoder outputs
+                ys_in, unpacked_seq_len = pad_packed_sequence(
+                    ys_in, batch_first=True, padding_value=0)
+                # assert y_lens == unpacked_seq_len
+
+                # Dropout for hidden-hidden or hidden-output connection
+                ys_in_tmp = getattr(self, 'dropout_l' + str(i_l))(ys_in)
+
+                # Residual connection
+                if res_outputs_prev is not None:
+                    ys_in = ys_in_tmp + res_outputs_prev
+                else:
+                    ys_in = ys_in_tmp
+                res_outputs_prev = ys_in_tmp
+        else:
+            # Pack RNN inputs
+            ys_in = pack_padded_sequence(ys_in, y_lens, batch_first=True)
+
+            ys_in, _ = self.rnn(ys_in, hx=None)
+
+            # Unpack RNN outputs
+            ys_in, unpacked_seq_len = pad_packed_sequence(
+                ys_in, batch_first=True, padding_value=0)
+            # assert y_lens - 1 == unpacked_seq_len
 
         logits = self.output(ys_in)
 
@@ -311,6 +367,7 @@ class RNNLM(ModelBase):
 
         _best_hyps = []
         eos_flag = [False] * batch_size
+        res_outputs_prev = None
         for t in range(max_decode_len):
             # Path through embedding
             if t < 2:
@@ -318,8 +375,30 @@ class RNNLM(ModelBase):
             else:
                 y = self.embed(y)
 
-            # Path through RNN
-            y, h = self.rnn(y, hx=h)
+            if self.residual_connection:
+                for i_l in range(self.num_layers):
+                    # Path through RNN
+                    getattr(self, self.rnn_type + '_l' +
+                            str(i_l)).flatten_parameters()
+                    y, _ = getattr(self, self.rnn_type +
+                                   '_l' + str(i_l))(y, hx=h)
+                    if i_l == self.num_layers - 1:
+                        getattr(self, self.rnn_type + '_l' +
+                                str(i_l)).flatten_parameters()
+
+                    # Dropout for hidden-hidden or hidden-output connection
+                    y_tmp = getattr(self, 'dropout_l' + str(i_l))(y)
+
+                    # Residual connection
+                    if res_outputs_prev is not None:
+                        y = y_tmp + res_outputs_prev
+                    else:
+                        y = y_tmp
+                    res_outputs_prev = y_tmp
+                res_outputs_prev = None
+            else:
+                # Path through RNN
+                y, h = self.rnn(y, hx=h)
 
             logits_step = self.output(y)
 

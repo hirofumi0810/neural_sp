@@ -680,6 +680,10 @@ def load(model_type, config, backend):
         elif backend == 'chainer':
             from src.models.chainer.lm.rnnlm import RNNLM
 
+        # TODO: remove later
+        if 'residual_connection' not in config.keys():
+            config['residual_connection'] = False
+
         model = RNNLM(
             embedding_dim=config['embedding_dim'],
             rnn_type=config['rnn_type'],
@@ -696,6 +700,7 @@ def load(model_type, config, backend):
             init_forget_gate_bias_with_one=config['init_forget_gate_bias_with_one'],
             label_smoothing_prob=config['label_smoothing_prob'],
             tie_weights=config['tie_weights'],
+            residual_connection=config['residual_connection'],
             backward=config['backward'])
 
         model_name = config['rnn_type']
@@ -720,6 +725,10 @@ def load(model_type, config, backend):
             model.name += 'emb' + str(config['dropout_embedding'])
         if config['label_smoothing_prob'] > 0:
             model.name += '_ls' + str(config['label_smoothing_prob'])
+        if bool(config['tie_weights']):
+            model.name += '_tie'
+        if bool(config['residual_connection']):
+            model.name += '_res'
         if bool(config['backward']):
             model.name += '_backward'
         if config['vocab']:

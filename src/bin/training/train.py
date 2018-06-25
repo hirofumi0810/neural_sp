@@ -22,6 +22,7 @@ torch.cuda.manual_seed_all(1623)
 
 sys.path.append(os.path.abspath('../../../'))
 from src.models.load_model import load
+from src.models.pytorch_v3.data_parallel import CustomDataParallel
 from src.dataset.loader import Dataset
 from src.metrics.phone import eval_phone
 from src.metrics.character import eval_char
@@ -34,8 +35,8 @@ from src.utils.directory import mkdir_join
 from src.utils.config import load_config, save_config
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--gpu_ids', type=int, default=0,
-                    help='the index of GPU (negative value indicates CPU)')
+parser.add_argument('--ngpus', type=int, default=0,
+                    help='the number of GPUs (negative value indicates CPU)')
 parser.add_argument('--corpus', type=str,
                     help='the name of corpus')
 parser.add_argument('--train_set', type=str,
@@ -86,6 +87,13 @@ def main():
     if 'data_size' not in config.keys():
         config['data_size'] = ''
 
+    # Automatically reduce batch size in multi-GPU setting
+    if args.ngpus > 1:
+        config['batch_size'] -= 10
+        config['print_step'] //= args.ngpus
+        if 'scheduled_sampling_max_step' in config.keys():
+            config['scheduled_sampling_max_step'] //= args.ngpus
+
     # Load dataset
     train_set = Dataset(
         corpus=args.corpus,
@@ -96,7 +104,8 @@ def main():
         data_type=args.train_set,
         data_size=config['data_size'],
         label_type=config['label_type'],
-        batch_size=config['batch_size'], max_epoch=config['num_epoch'],
+        batch_size=config['batch_size'] * args.ngpus,
+        max_epoch=config['num_epoch'],
         max_frame_num=config['max_frame_num'] if 'max_frame_num' in config.keys(
         ) else 10000,
         min_frame_num=config['min_frame_num'] if 'min_frame_num' in config.keys(
@@ -115,7 +124,7 @@ def main():
         data_type=args.dev_set,
         data_size=config['data_size'],
         label_type=config['label_type'],
-        batch_size=config['batch_size'],
+        batch_size=config['batch_size'] * args.ngpus,
         shuffle=True, tool=config['tool'],
         use_ctc=config['model_type'] == 'ctc' or (
             config['model_type'] == 'attention' and config['ctc_loss_weight'] > 0),
@@ -256,7 +265,11 @@ def main():
     train_set.epoch = epoch - 1
 
     # GPU setting
-    model.set_cuda(deterministic=False, benchmark=True)
+    if args.ngpus >= 1:
+        model = CustomDataParallel(
+            model, device_ids=list(range(0, args.ngpus, 1)),
+            benchmark=True)
+        model.cuda()
 
     logger.info('PID: %s' % os.getpid())
     logger.info('USERNAME: %s' % os.uname()[1])
@@ -281,14 +294,14 @@ def main():
         best_value=metric_dev_best)
 
     # Set reporter
-    reporter = Reporter(model.save_path, max_loss=300)
+    reporter = Reporter(model.module.save_path, max_loss=300)
 
     # Set the updater
     updater = Updater(config['clip_grad_norm'], config['backend'])
 
     # Setting for tensorboard
     if config['backend'] == 'pytorch':
-        tf_writer = SummaryWriter(model.save_path)
+        tf_writer = SummaryWriter(model.module.save_path)
 
     start_time_train = time.time()
     start_time_epoch = time.time()
@@ -318,7 +331,7 @@ def main():
             if config['backend'] == 'pytorch':
                 tf_writer.add_scalar('train/loss', loss_train_mean, step + 1)
                 tf_writer.add_scalar('dev/loss', loss_dev, step + 1)
-                for name, param in model.named_parameters():
+                for name, param in model.module.named_parameters():
                     name = name.replace('.', '/')
                     tf_writer.add_histogram(
                         name, param.data.cpu().numpy(), step + 1)
@@ -334,7 +347,7 @@ def main():
                          duration_step / 60))
             start_time_step = time.time()
             loss_train_mean, acc_train_mean = 0., 0.
-        step += 1
+        step += args.ngpus
 
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:
@@ -347,14 +360,15 @@ def main():
 
             if epoch < config['eval_start_epoch']:
                 # Save the model
-                model.save_checkpoint(model.save_path, epoch, step,
-                                      learning_rate, metric_dev_best)
+                model.module.save_checkpoint(
+                    model.module.save_path, epoch, step,
+                    learning_rate, metric_dev_best)
             else:
                 start_time_eval = time.time()
                 # dev
                 if config['label_type'] == 'word':
                     metric_dev, _ = eval_word(
-                        models=[model],
+                        models=[model.module],
                         dataset=dev_set,
                         eval_batch_size=1,
                         beam_width=1,
@@ -363,7 +377,7 @@ def main():
                                 (dev_set.data_type, metric_dev))
                 elif 'character' in config['label_type']:
                     wer_dev, metric_dev, _ = eval_char(
-                        models=[model],
+                        models=[model.module],
                         dataset=dev_set,
                         eval_batch_size=1,
                         beam_width=1,
@@ -372,7 +386,7 @@ def main():
                                 (dev_set.data_type, wer_dev, metric_dev))
                 elif 'phone' in config['label_type']:
                     per_dev_epoch, _ = eval_phone(
-                        model=model,
+                        model=[model.module],
                         dataset=dev_set,
                         eval_batch_size=1,
                         beam_width=1,
@@ -388,14 +402,15 @@ def main():
                     logger.info('||||| Best Score |||||')
 
                     # Save the model
-                    model.save_checkpoint(model.save_path, epoch, step,
-                                          learning_rate, metric_dev_best)
+                    model.module.save_checkpoint(
+                        model.module.save_path, epoch, step,
+                        learning_rate, metric_dev_best)
 
                     # test
                     for eval_set in eval_sets:
                         if config['label_type'] == 'word':
                             wer_test, _ = eval_word(
-                                models=[model],
+                                models=[model.module],
                                 dataset=eval_set,
                                 eval_batch_size=1,
                                 beam_width=1,
@@ -404,7 +419,7 @@ def main():
                                         (eval_set.data_type, wer_test))
                         elif 'character' in config['label_type']:
                             wer_test, cer_test, _ = eval_char(
-                                models=[model],
+                                models=[model.module],
                                 dataset=eval_set,
                                 eval_batch_size=1,
                                 beam_width=1,
@@ -413,7 +428,7 @@ def main():
                                         (eval_set.data_type, wer_test, cer_test))
                         elif 'phone' in config['label_type']:
                             per_test, _ = eval_phone(
-                                model=model,
+                                models=[model.module],
                                 dataset=eval_set,
                                 eval_batch_size=1,
                                 beam_width=1,
@@ -433,30 +448,30 @@ def main():
                     break
 
                 # NOTE: special learning rate annealing for WSJ
-                if args.corpus == 'wsj':
-                    if 80000 <= step < 90000:
-                        learning_rate = 1e-4
-                    elif 90000 <= step:
-                        learning_rate = 1e-5
+                # if args.corpus == 'wsj':
+                #     if 80000 <= step < 90000:
+                #         learning_rate = 1e-4
+                #     elif 90000 <= step:
+                #         learning_rate = 1e-5
 
                 # Update learning rate
-                model.optimizer, learning_rate = lr_controller.decay_lr(
-                    optimizer=model.optimizer,
+                model.module.optimizer, learning_rate = lr_controller.decay_lr(
+                    optimizer=model.module.optimizer,
                     learning_rate=learning_rate,
                     epoch=epoch,
                     value=metric_dev)
 
                 # Inject Gaussian noise to all parameters
-                if float(config['weight_noise_std']) > 0:
-                    if args.corpus == 'wsj':
-                        if step >= 20000:
-                            model.weight_noise_injection = True
-                    elif args.corpus == 'timit':
-                        pass
+                # if float(config['weight_noise_std']) > 0:
+                #     if args.corpus == 'wsj':
+                #         if step >= 20000:
+                #             model.module.weight_noise_injection = True
+                #     elif args.corpus == 'timit':
+                #         pass
 
                 if epoch == config['convert_to_sgd_epoch']:
                     # Convert to fine-tuning stage
-                    model.set_optimizer(
+                    model.module.set_optimizer(
                         'sgd',
                         learning_rate_init=learning_rate,
                         weight_decay=float(config['weight_decay']),
@@ -468,7 +483,7 @@ def main():
 
                     # Inject Gaussian noise to all parameters
                     if float(config['weight_noise_std']) > 0:
-                        model.weight_noise_injection = True
+                        model.module.weight_noise_injection = True
 
             pbar_epoch = tqdm(total=len(train_set))
 
@@ -487,10 +502,10 @@ def main():
     pbar_epoch.close()
 
     # Training was finished correctly
-    with open(os.path.join(model.save_path, 'COMPLETE'), 'w') as f:
+    with open(os.path.join(model.module.save_path, 'COMPLETE'), 'w') as f:
         f.write('')
 
-    return model.save_path
+    return model.module.save_path
 
 
 if __name__ == '__main__':

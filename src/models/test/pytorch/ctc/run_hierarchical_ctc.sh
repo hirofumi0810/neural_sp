@@ -1,10 +1,22 @@
 #!/bin/bash
 
 # Select GPU
-if [ $# -ne 1 ]; then
-  echo "Error: set GPU index." 1>&2
-  echo "Usage: ./run_hierarchical_ctc.sh gpu_index" 1>&2
+if [ $# -lt 1 ]; then
+  echo "Error: set GPU number." 1>&2
+  echo "Usage: ./run_hierarchical_ctc.sh gpu_id1 gpu_id2... (arbitrary number)" 1>&2
   exit 1
+fi
+
+ngpus=`expr $#`
+gpu_ids=$1
+
+if [ $# -gt 1 ]; then
+  rest_ngpus=`expr $ngpus - 1`
+  for i in `seq 1 $rest_ngpus`
+  do
+    gpu_ids=$gpu_ids","${2}
+    shift
+  done
 fi
 
 # Set path to CUDA
@@ -14,8 +26,5 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64:/usr/local/cuda/ex
 # Set path to python
 PYTHON=/home/inaguma/.pyenv/versions/anaconda3-4.1.1/envs/`hostname`/bin/python
 
-gpu_index=$1
-
 # Background job version
-# CUDA_VISIBLE_DEVICES=$gpu_index CUDA_LAUNCH_BLOCKING=1 $PYTHON test_hierarchical_ctc.py
-CUDA_VISIBLE_DEVICES=$gpu_index $PYTHON test_hierarchical_ctc.py
+CUDA_VISIBLE_DEVICES=${gpu_ids} $PYTHON test_hierarchical_ctc.py --ngpus ${ngpus}

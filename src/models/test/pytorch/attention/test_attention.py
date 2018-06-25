@@ -10,6 +10,7 @@ from __future__ import print_function
 import sys
 import time
 import unittest
+import argparse
 
 import torch
 torch.manual_seed(1623)
@@ -27,10 +28,16 @@ green = '#006400'
 
 sys.path.append('../../../../../')
 from src.models.pytorch_v3.attention.attention_seq2seq import AttentionSeq2seq
+from src.models.pytorch_v3.data_parallel import CustomDataParallel
 from src.models.test.data import generate_data, idx2char, idx2word
 from src.utils.measure_time_func import measure_time
 from src.utils.evaluation.edit_distance import compute_wer
 from src.bin.training.utils.learning_rate_controller import Controller
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--ngpus', type=int, default=0,
+                    help='the number of GPUs (negative value indicates CPU)')
+args = parser.parse_args()
 
 
 class TestAttention(unittest.TestCase):
@@ -186,7 +193,8 @@ class TestAttention(unittest.TestCase):
             poolings = []
 
         # Load batch data
-        xs, ys = generate_data(label_type=label_type, batch_size=32)
+        xs, ys = generate_data(label_type=label_type,
+                               batch_size=2 * args.ngpus)
 
         if label_type == 'char':
             num_classes = 27
@@ -263,7 +271,7 @@ class TestAttention(unittest.TestCase):
         learning_rate = 1e-3
         model.set_optimizer('adam',
                             learning_rate_init=learning_rate,
-                            weight_decay=1e-8,
+                            weight_decay=1e-6,
                             lr_schedule=False,
                             factor=0.1,
                             patience_epoch=5)
@@ -278,7 +286,11 @@ class TestAttention(unittest.TestCase):
                                    lower_better=True)
 
         # GPU setting
-        model.set_cuda(deterministic=False, benchmark=True)
+        if args.ngpus >= 1:
+            model = CustomDataParallel(
+                model, device_ids=list(range(0, args.ngpus, 1)),
+                benchmark=True)
+            model.cuda()
 
         # Train model
         max_step = 200
@@ -286,31 +298,35 @@ class TestAttention(unittest.TestCase):
         for step in range(max_step):
 
             # Step for parameter update
-            model.optimizer.zero_grad()
-            if model.device_id >= 0:
+            model.module.optimizer.zero_grad()
+            if args.ngpus > 1:
                 torch.cuda.empty_cache()
             loss, acc = model(xs, ys)
-            loss.backward()
+            if args.ngpus > 1:
+                loss.backward(torch.ones(args.ngpus))
+            else:
+                loss.backward()
             loss.detach()
-            if model.torch_version < 0.4:
-                torch.nn.utils.clip_grad_norm(model.parameters(), 5)
+            if model.module.torch_version < 0.4:
+                torch.nn.utils.clip_grad_norm(model.module.parameters(), 5)
                 loss = loss.data[0]
             else:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
+                torch.nn.utils.clip_grad_norm_(model.module.parameters(), 5)
                 loss = loss.item()
-            model.optimizer.step()
+            model.module.optimizer.step()
 
             # Inject Gaussian noise to all parameters
             if loss < 50:
-                model.weight_noise_injection = True
+                model.module.weight_noise_injection = True
 
             if (step + 1) % 10 == 0:
                 # Compute loss
                 loss, acc = model(xs, ys, is_eval=True)
-                loss = loss.data[0] if model.torch_version < 0.4 else loss.item()
+                loss = loss.data[0] if model.module.torch_version < 0.4 else loss.item(
+                )
 
                 # Decode
-                best_hyps, _, perm_idx = model.decode(
+                best_hyps, _, perm_idx = model.module.decode(
                     xs, beam_width, max_decode_len=60)
 
                 str_ref = map_fn(ys[0])
@@ -339,8 +355,8 @@ class TestAttention(unittest.TestCase):
                 print('Hyp: %s' % str_hyp)
 
                 # Decode by the CTC decoder
-                if model.ctc_loss_weight >= 0.1:
-                    best_hyps_ctc, perm_idx = model.decode_ctc(
+                if model.module.ctc_loss_weight >= 0.1:
+                    best_hyps_ctc, perm_idx = model.module.decode_ctc(
                         xs, beam_width)
                     str_pred_ctc = map_fn(best_hyps_ctc[0])
                     print('Hyp (CTC): %s' % str_pred_ctc)
@@ -350,12 +366,15 @@ class TestAttention(unittest.TestCase):
                     break
 
                 # Update learning rate
-                model.optimizer, learning_rate = lr_controller.decay_lr(
-                    optimizer=model.optimizer,
+                model.module.optimizer, learning_rate = lr_controller.decay_lr(
+                    optimizer=model.module.optimizer,
                     learning_rate=learning_rate,
                     epoch=step,
                     value=ler)
 
 
 if __name__ == "__main__":
+    if sys.argv:
+        del sys.argv[1:]
+
     unittest.main()

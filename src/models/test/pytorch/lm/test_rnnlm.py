@@ -11,6 +11,7 @@ import sys
 import time
 import unittest
 import math
+import argparse
 
 import torch
 torch.manual_seed(1623)
@@ -18,15 +19,24 @@ torch.cuda.manual_seed_all(1623)
 
 sys.path.append('../../../../../')
 from src.models.pytorch_v3.lm.rnnlm import RNNLM
+from src.models.pytorch_v3.data_parallel import CustomDataParallel
 from src.models.test.data import generate_data, idx2char, idx2word
 from src.utils.measure_time_func import measure_time
 from src.bin.training.utils.learning_rate_controller import Controller
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--ngpus', type=int, default=0,
+                    help='the number of GPUs (negative value indicates CPU)')
+args = parser.parse_args()
 
 
 class TestRNNLM(unittest.TestCase):
 
     def test(self):
         print("RNNLM Working check.")
+
+        # residual connection
+        self.check(rnn_type='lstm', residual_connection=True)
 
         # label smoothing
         self.check(rnn_type='lstm', label_smoothing_prob=0.1)
@@ -50,8 +60,8 @@ class TestRNNLM(unittest.TestCase):
 
     @measure_time
     def check(self, rnn_type, bidirectional=False,
-              label_type='char', tie_weights=False, backward=False,
-              label_smoothing_prob=0, bptt=35):
+              label_type='word', tie_weights=False, residual_connection=False,
+              backward=False, label_smoothing_prob=0, bptt=35):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
@@ -59,13 +69,14 @@ class TestRNNLM(unittest.TestCase):
         print('  bidirectional: %s' % str(bidirectional))
         print('  tie_weights: %s' % str(tie_weights))
         print('  bptt: %d' % bptt)
+        print('  residual_connection: %s' % str(residual_connection))
         print('  backward: %s' % str(backward))
         print('  label_smoothing_prob: %.3f' % label_smoothing_prob)
         print('==================================================')
 
         # Load batch data
         _, ys = generate_data(label_type=label_type,
-                              batch_size=2)
+                              batch_size=2 * args.ngpus)
 
         if label_type == 'char':
             num_classes = 27
@@ -90,6 +101,7 @@ class TestRNNLM(unittest.TestCase):
                       init_forget_gate_bias_with_one=True,
                       label_smoothing_prob=label_smoothing_prob,
                       tie_weights=tie_weights,
+                      residual_connection=residual_connection,
                       backward=backward)
 
         # Count total parameters
@@ -117,7 +129,11 @@ class TestRNNLM(unittest.TestCase):
                                    lower_better=True)
 
         # GPU setting
-        model.set_cuda(deterministic=False, benchmark=True)
+        if args.ngpus >= 1:
+            model = CustomDataParallel(
+                model, device_ids=list(range(0, args.ngpus, 1)),
+                benchmark=True)
+            model.cuda()
 
         # Train model
         max_step = 300
@@ -125,17 +141,22 @@ class TestRNNLM(unittest.TestCase):
         for step in range(max_step):
 
             # Step for parameter update
-            model.optimizer.zero_grad()
+            model.module.optimizer.zero_grad()
+            if args.ngpus > 1:
+                torch.cuda.empty_cache()
             loss, acc = model(ys)
-            loss.backward()
+            if args.ngpus > 1:
+                loss.backward(torch.ones(args.ngpus))
+            else:
+                loss.backward()
             loss.detach()
-            if model.torch_version < 0.4:
-                torch.nn.utils.clip_grad_norm(model.parameters(), 5)
+            if model.module.torch_version < 0.4:
+                torch.nn.utils.clip_grad_norm(model.module.parameters(), 5)
                 loss = loss.data[0]
             else:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
+                torch.nn.utils.clip_grad_norm_(model.module.parameters(), 5)
                 loss = loss.item()
-            model.optimizer.step()
+            model.module.optimizer.step()
             # TODO: add BPTT
 
             # Inject Gaussian noise to all parameters
@@ -145,6 +166,8 @@ class TestRNNLM(unittest.TestCase):
             if (step + 1) % 10 == 0:
                 # Compute loss
                 loss, acc = model(ys, is_eval=True)
+                loss = loss.data[0] if model.module.torch_version < 0.4 else loss.item(
+                )
 
                 # Compute PPL
                 ppl = math.exp(loss)
@@ -155,7 +178,8 @@ class TestRNNLM(unittest.TestCase):
                 start_time_step = time.time()
 
                 # Visualize
-                best_hyps = model.decode([[model.sos]], max_decode_len=60)
+                best_hyps = model.module.decode(
+                    [[model.module.sos]], max_decode_len=60)
                 print(map_fn(best_hyps[0]))
 
                 if ppl == 1:
@@ -163,12 +187,15 @@ class TestRNNLM(unittest.TestCase):
                     break
 
                 # Update learning rate
-                model.optimizer, learning_rate = lr_controller.decay_lr(
-                    optimizer=model.optimizer,
+                model.module.optimizer, learning_rate = lr_controller.decay_lr(
+                    optimizer=model.module.optimizer,
                     learning_rate=learning_rate,
                     epoch=step,
                     value=ppl)
 
 
 if __name__ == "__main__":
+    if sys.argv:
+        del sys.argv[1:]
+
     unittest.main()

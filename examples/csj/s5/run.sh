@@ -4,13 +4,27 @@
 . ./path.sh
 set -e
 
-# . utils/parse_options.sh  # e.g. this parses the --stage option if supplied.
+. utils/parse_options.sh  # e.g. this parses the --stage option if supplied.
 
-if [ $# -ne 2 ]; then
+if [ $# -lt 2 ]; then
   echo "Error: set GPU number & config path." 1>&2
-  echo "Usage: ./run.sh path_to_config_file gpu_ids or ./run.sh path_to_saved_model gpu_ids" 1>&2
+  echo "Usage: ./run.sh path_to_config_file (or path_to_saved_model) gpu_id1 gpu_id2... (arbitrary number)" 1>&2
   exit 1
 fi
+
+ngpus=`expr $# - 1`
+config_path=$1
+gpu_ids=$2
+
+if [ $# -gt 2 ]; then
+  rest_ngpus=`expr $ngpus - 1`
+  for i in `seq 1 $rest_ngpus`
+  do
+    gpu_ids=$gpu_ids","${3}
+    shift
+  done
+fi
+
 
 
 echo ============================================================================
@@ -206,10 +220,7 @@ if [ $stage -le 3 ]; then
   echo "                             Training stage                               "
   echo ============================================================================
 
-  config_path=$1
-  gpu_ids=$2
   filename=$(basename ${config_path} | awk -F. '{print $1}')
-
   mkdir -p log
   mkdir -p ${model}
 
@@ -224,14 +235,14 @@ if [ $stage -le 3 ]; then
           --train_set train \
           --dev_set dev \
           --eval_sets eval1 \
-          --gpu_ids ${gpu_ids} \
+          --ngpus ${ngpus} \
           --saved_model_path ${config_path} \
           --data_save_path ${data} > log/$filename".log" &
       else
         CUDA_VISIBLE_DEVICES=${gpu_ids} \
         nohup ${PYTHON} ../../../src/bin/training/train_hierarchical.py \
           --corpus ${corpus} \
-          --gpu_ids ${gpu_ids} \
+          --ngpus ${ngpus} \
           --train_set train \
           --dev_set dev \
           --eval_sets eval1 \
@@ -243,7 +254,7 @@ if [ $stage -le 3 ]; then
         CUDA_VISIBLE_DEVICES=${gpu_ids} \
         nohup ${PYTHON} ../../../src/bin/training/train_hierarchical.py \
           --corpus ${corpus} \
-          --gpu_ids ${gpu_ids} \
+          --ngpus ${ngpus} \
           --train_set train \
           --dev_set dev \
           --eval_sets eval1 \
@@ -254,7 +265,7 @@ if [ $stage -le 3 ]; then
         CUDA_VISIBLE_DEVICES=${gpu_ids} \
         ${PYTHON} ../../../src/bin/training/train_hierarchical.py \
           --corpus ${corpus} \
-          --gpu_ids ${gpu_ids} \
+          --ngpus ${ngpus} \
           --train_set train \
           --dev_set dev \
           --eval_sets eval1 \
@@ -269,7 +280,7 @@ if [ $stage -le 3 ]; then
         CUDA_VISIBLE_DEVICES=${gpu_ids} \
         nohup ${PYTHON} ../../../src/bin/training/train.py \
           --corpus ${corpus} \
-          --gpu_ids ${gpu_ids} \
+          --ngpus ${ngpus} \
           --train_set train \
           --dev_set dev \
           --eval_sets eval1 \
@@ -279,7 +290,7 @@ if [ $stage -le 3 ]; then
         CUDA_VISIBLE_DEVICES=${gpu_ids} \
         ${PYTHON} ../../../src/bin/training/train.py \
           --corpus ${corpus} \
-          --gpu_ids ${gpu_ids} \
+          --ngpus ${ngpus} \
           --train_set train \
           --dev_set dev \
           --eval_sets eval1 \
@@ -291,7 +302,7 @@ if [ $stage -le 3 ]; then
         CUDA_VISIBLE_DEVICES=${gpu_ids} \
         nohup ${PYTHON} ../../../src/bin/training/train.py \
           --corpus ${corpus} \
-          --gpu_ids ${gpu_ids} \
+          --ngpus ${ngpus} \
           --train_set train \
           --dev_set dev \
           --eval_sets eval1 \
@@ -302,7 +313,7 @@ if [ $stage -le 3 ]; then
         CUDA_VISIBLE_DEVICES=${gpu_ids} \
         ${PYTHON} ../../../src/bin/training/train.py \
           --corpus ${corpus} \
-          --gpu_ids ${gpu_ids} \
+          --ngpus ${ngpus} \
           --train_set train \
           --dev_set dev \
           --eval_sets eval1 \

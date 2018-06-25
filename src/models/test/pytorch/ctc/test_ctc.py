@@ -10,6 +10,7 @@ from __future__ import print_function
 import sys
 import time
 import unittest
+import argparse
 
 import torch
 torch.manual_seed(1623)
@@ -18,10 +19,16 @@ torch.cuda.manual_seed_all(1623)
 sys.path.append('../../../../../')
 # from models.pytorch.ctc.ctc import CTC
 from src.models.pytorch_v3.ctc.ctc import CTC
+from src.models.pytorch_v3.data_parallel import CustomDataParallel
 from src.models.test.data import generate_data, idx2char, idx2word
 from src.utils.measure_time_func import measure_time
 from src.utils.evaluation.edit_distance import compute_wer
 from src.bin.training.utils.learning_rate_controller import Controller
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--ngpus', type=int, default=0,
+                    help='the number of GPUs (negative value indicates CPU)')
+args = parser.parse_args()
 
 
 class TestCTC(unittest.TestCase):
@@ -117,7 +124,8 @@ class TestCTC(unittest.TestCase):
             fc_list = []
 
         # Load batch data
-        xs, ys = generate_data(label_type=label_type, batch_size=2)
+        xs, ys = generate_data(label_type=label_type,
+                               batch_size=2 * args.ngpus)
 
         if label_type == 'char':
             num_classes = 27
@@ -184,7 +192,11 @@ class TestCTC(unittest.TestCase):
                                    lower_better=True)
 
         # GPU setting
-        model.set_cuda(deterministic=False, benchmark=True)
+        if args.ngpus >= 1:
+            model = CustomDataParallel(
+                model, device_ids=list(range(0, args.ngpus, 1)),
+                benchmark=True)
+            model.cuda()
 
         # Train model
         max_step = 300
@@ -192,30 +204,37 @@ class TestCTC(unittest.TestCase):
         for step in range(max_step):
 
             # Step for parameter update
-            model.optimizer.zero_grad()
-            if model.device_id >= 0:
+            model.module.optimizer.zero_grad()
+            if args.ngpus > 1:
                 torch.cuda.empty_cache()
             loss, _ = model(xs, ys)
-            loss.backward()
+            if args.ngpus > 1:
+                loss.backward(torch.ones(args.ngpus))
+            else:
+                loss.backward()
             loss.detach()
-            if model.torch_version < 0.4:
-                torch.nn.utils.clip_grad_norm(model.parameters(), 5)
+            if model.module.torch_version < 0.4:
+                torch.nn.utils.clip_grad_norm(model.module.parameters(), 5)
                 loss = loss.data[0]
             else:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
+                torch.nn.utils.clip_grad_norm_(model.module.parameters(), 5)
                 loss = loss.item()
-            model.optimizer.step()
+            model.module.optimizer.step()
 
             # Inject Gaussian noise to all parameters
             if loss < 50:
-                model.weight_noise_injection = True
+                model.module.weight_noise_injection = True
 
             if (step + 1) % 10 == 0:
                 # Compute loss
                 loss, _ = model(xs, ys, is_eval=True)
+                if args.ngpus > 1:
+                    loss /= args.ngpus
+                loss = loss.data[0] if model.module.torch_version < 0.4 else loss.item(
+                )
 
                 # Decode
-                best_hyps, _, _ = model.decode(xs, beam_width)
+                best_hyps, _, _ = model.module.decode(xs, beam_width)
 
                 str_ref = map_fn(ys[0])
                 str_hyp = map_fn(best_hyps[0])
@@ -236,7 +255,7 @@ class TestCTC(unittest.TestCase):
 
                 duration_step = time.time() - start_time_step
                 print('Step %d: loss=%.2f/ler=%.2f%%/lr=%.5f (%.2f sec)' %
-                      (step + 1, loss.data, ler, learning_rate, duration_step))
+                      (step + 1, loss, ler, learning_rate, duration_step))
                 start_time_step = time.time()
 
                 # Visualize
@@ -248,12 +267,15 @@ class TestCTC(unittest.TestCase):
                     break
 
                 # Update learning rate
-                model.optimizer, learning_rate = lr_controller.decay_lr(
-                    optimizer=model.optimizer,
+                model.module.optimizer, learning_rate = lr_controller.decay_lr(
+                    optimizer=model.module.optimizer,
                     learning_rate=learning_rate,
                     epoch=step,
                     value=ler)
 
 
 if __name__ == "__main__":
+    if sys.argv:
+        del sys.argv[1:]
+
     unittest.main()

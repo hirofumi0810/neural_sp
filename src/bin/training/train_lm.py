@@ -283,11 +283,15 @@ def main():
                                           learning_rate, metric_dev_best)
 
                     # test
+                    ppl_test_mean = 0.
                     for test_set in test_sets:
                         ppl_test = eval_ppl(models=[model],
                                             dataset=test_set)
                         logger.info(' PPL (%s): %.3f' %
                                     (test_set.data_type, ppl_test))
+                        ppl_test_mean += ppl_test
+                    logger.info(' PPL (mean): %.3f' %
+                                (ppl_test / len(test_sets)))
                 else:
                     not_improved_epoch += 1
 

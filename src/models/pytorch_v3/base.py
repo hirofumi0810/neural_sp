@@ -40,12 +40,33 @@ class ModelBase(nn.Module):
     def __init__(self, *args, **kwargs):
         raise NotImplementedError
 
-    def forward(self, inputs):
-        raise NotImplementedError
-
     @property
     def torch_version(self):
         return float('.'.join(torch.__version__.split('.')[:2]))
+
+    @property
+    def num_params_dict(self):
+        if not hasattr(self, '_num_params_dict'):
+            self._num_params_dict = {}
+            for name, param in self.named_parameters():
+                self._num_params_dict[name] = param.view(-1).size(0)
+        return self._num_params_dict
+
+    @property
+    def total_parameters(self):
+        if not hasattr(self, '_num_params'):
+            self._num_params = 0
+            for name, param in self.named_parameters():
+                self._num_params += param.view(-1).size(0)
+        return self._num_params
+
+    @property
+    def use_cuda(self):
+        return torch.cuda.is_available()
+
+    @property
+    def device_id(self):
+        return torch.cuda.device_of(next(self.parameters()).data).idx
 
     def init_weights(self, parameter_init, distribution,
                      keys=[None], ignore_keys=[None]):
@@ -93,42 +114,15 @@ class ModelBase(nn.Module):
         # for name, param in self.named_parameters():
         #     noise = m.sample()
         #     if self.use_cuda:
-        #         noise = noise.cuda()
+        #         noise = noise.cuda(self.device_id)
         #     param.data += noise
 
         for name, param in self.named_parameters():
             noise = np.random.normal(loc=mean, scale=std, size=param.size())
             noise = torch.FloatTensor(noise)
             if self.use_cuda:
-                noise = noise.cuda()
+                noise = noise.cuda(self.device_id)
             param.data += noise
-
-    @property
-    def num_params_dict(self):
-        if not hasattr(self, '_num_params_dict'):
-            self._num_params_dict = {}
-            for name, param in self.named_parameters():
-                self._num_params_dict[name] = param.view(-1).size(0)
-        return self._num_params_dict
-
-    @property
-    def total_parameters(self):
-        if not hasattr(self, '_num_params'):
-            self._num_params = 0
-            for name, param in self.named_parameters():
-                self._num_params += param.view(-1).size(0)
-        return self._num_params
-
-    @property
-    def use_cuda(self):
-        return torch.cuda.is_available()
-
-    @property
-    def device_id(self):
-        if not hasattr(self, '_device_id'):
-            self._device_id = torch.cuda.device_of(
-                next(self.parameters()).data).idx
-        return self._device_id
 
     def set_cuda(self, deterministic=False, benchmark=True):
         """Set model to the GPU version.
@@ -146,7 +140,7 @@ class ModelBase(nn.Module):
                 # NOTE: this is slower than GPU mode.
             else:
                 logger.info('GPU mode')
-            self = self.cuda()
+            self = self.cuda(self.device_id)
         else:
             logger.warning('CPU mode')
 
@@ -341,7 +335,7 @@ class ModelBase(nn.Module):
                     for state in self.optimizer.state.values():
                         for k, v in state.items():
                             if torch.is_tensor(v):
-                                state[k] = v.cuda()
+                                state[k] = v.cuda(self.device_id)
                     # NOTE: from https://github.com/pytorch/pytorch/issues/2830
                 else:
                     raise ValueError('Set optimizer.')

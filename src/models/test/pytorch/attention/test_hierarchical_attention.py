@@ -10,6 +10,7 @@ from __future__ import print_function
 import sys
 import time
 import unittest
+import argparse
 
 import torch
 torch.manual_seed(1623)
@@ -17,10 +18,16 @@ torch.cuda.manual_seed_all(1623)
 
 sys.path.append('../../../../../')
 from src.models.pytorch_v3.attention.hierarchical_attention_seq2seq import HierarchicalAttentionSeq2seq
+from src.models.pytorch_v3.data_parallel import CustomDataParallel
 from src.models.test.data import generate_data, idx2char, idx2word
 from src.utils.measure_time_func import measure_time
 from src.utils.evaluation.edit_distance import compute_wer
 from src.bin.training.utils.learning_rate_controller import Controller
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--ngpus', type=int, default=0,
+                    help='the number of GPUs (negative value indicates CPU)')
+args = parser.parse_args()
 
 
 class TestHierarchicalAttention(unittest.TestCase):
@@ -206,7 +213,11 @@ class TestHierarchicalAttention(unittest.TestCase):
                                    lower_better=True)
 
         # GPU setting
-        model.set_cuda(deterministic=False, benchmark=True)
+        if args.ngpus >= 1:
+            model = CustomDataParallel(
+                model, device_ids=list(range(0, args.ngpus, 1)),
+                benchmark=True)
+            model.cuda()
 
         # Train model
         max_step = 300
@@ -214,36 +225,33 @@ class TestHierarchicalAttention(unittest.TestCase):
         for step in range(max_step):
 
             # Step for parameter update
-            model.optimizer.zero_grad()
-            if model.device_id >= 0:
+            model.module.optimizer.zero_grad()
+            if args.ngpus > 1:
                 torch.cuda.empty_cache()
             loss, loss_main, loss_sub, acc_main, acc_sub = model(
                 xs, ys, ys_sub)
-            loss.backward()
-            loss.detach()
-            if model.torch_version < 0.4:
-                torch.nn.utils.clip_grad_norm(model.parameters(), 5)
+            if args.ngpus > 1:
+                loss.backward(torch.ones(args.ngpus))
             else:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
-            model.optimizer.step()
+                loss.backward()
+            loss.detach()
+            if model.module.torch_version < 0.4:
+                torch.nn.utils.clip_grad_norm(model.module.parameters(), 5)
+            else:
+                torch.nn.utils.clip_grad_norm_(model.module.parameters(), 5)
+            model.module.optimizer.step()
 
             if (step + 1) % 10 == 0:
                 # Compute loss
                 loss, loss_main, loss_sub, acc_main, acc_sub = model(
                     xs, ys, ys_sub, is_eval=True)
-                if model.torch_version < 0.4:
-                    loss = loss.data[0]
-                    loss_main = loss_main.data[0]
-                    loss_sub = loss_sub.data[0]
-                else:
-                    loss = loss.item()
-                    loss_main = loss_main.item()
-                    loss_sub = loss_sub.item()
+                loss = loss.data[0] if model.module.torch_version < 0.4 else loss.item(
+                )
 
                 # Decode
-                best_hyps, _, perm_idx = model.decode(
+                best_hyps, _, perm_idx = model.module.decode(
                     xs, beam_width, max_decode_len=30)
-                best_hyps_sub, _, _ = model.decode(
+                best_hyps_sub, _, _ = model.module.decode(
                     xs, beam_width, max_decode_len=60, task_index=1)
 
                 str_hyp = idx2word(best_hyps[0][:-1])
@@ -279,12 +287,15 @@ class TestHierarchicalAttention(unittest.TestCase):
                     break
 
                 # Update learning rate
-                model.optimizer, learning_rate = lr_controller.decay_lr(
-                    optimizer=model.optimizer,
+                model.module.optimizer, learning_rate = lr_controller.decay_lr(
+                    optimizer=model.module.optimizer,
                     learning_rate=learning_rate,
                     epoch=step,
                     value=wer)
 
 
 if __name__ == "__main__":
+    if sys.argv:
+        del sys.argv[1:]
+
     unittest.main()
