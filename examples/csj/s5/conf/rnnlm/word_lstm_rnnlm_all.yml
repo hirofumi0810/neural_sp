@@ -18,14 +18,15 @@ param:
   num_layers: 2
   embedding_dim: 128
   tie_weights: False
+  residual_connection: True
   backward: False
 
   # optimization
   batch_size: 128
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 100
-  convert_to_sgd_epoch: 20
+  num_epoch: 70
+  convert_to_sgd_epoch: 10
 
   # annealing
   print_step: 200

@@ -1,13 +1,11 @@
-parent: ./conf/rnnlm/word_lstm_rnnlm_aps_other.yml
+parent: ./conf/rnnlm/word_lstm_rnnlm_swbd.yml
 param:
   # framework
   backend: pytorch
 
   # corpus
-  data_size: all
-  # vocab: False
-  vocab: aps_other
-  label_type: character_wb
+  vocab: fisher
+  label_type: word
 
   # topology
   model_type: rnnlm
@@ -16,7 +14,7 @@ param:
   num_units: 512
   num_proj: 0
   num_layers: 2
-  embedding_dim: 64
+  embedding_dim: 128
   tie_weights: False
   residual_connection: True
   backward: False
@@ -25,8 +23,15 @@ param:
   batch_size: 128
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 70
+  num_epoch: 30
   convert_to_sgd_epoch: 10
 
   # annealing
-  print_step: 200
+  decay_type: per_epoch
+  decay_start_epoch: 10
+  decay_rate: 0.9
+  decay_patient_epoch: 0
+  sort_stop_epoch: 30
+  not_improved_patient_epoch: 10
+  eval_start_epoch: 5
+  print_step: 1000

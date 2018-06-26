@@ -3,10 +3,9 @@ param:
   backend: pytorch
 
   # corpus
-  corpus: librispeech
-  data_size: 960
+  corpus: switchboard
   vocab: False
-  label_type: character
+  label_type: word
 
   # features
   tool: htk
@@ -19,7 +18,7 @@ param:
   num_units: 512
   num_proj: 0
   num_layers: 2
-  embedding_dim: 32
+  embedding_dim: 128
   tie_weights: False
   residual_connection: True
   backward: False
@@ -57,4 +56,4 @@ param:
   sort_stop_epoch: 70
   not_improved_patient_epoch: 10
   eval_start_epoch: 5
-  print_step: 300
+  print_step: 100

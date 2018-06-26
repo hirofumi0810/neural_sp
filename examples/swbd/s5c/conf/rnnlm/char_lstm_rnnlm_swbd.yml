@@ -3,8 +3,7 @@ param:
   backend: pytorch
 
   # corpus
-  corpus: librispeech
-  data_size: 960
+  corpus: switchboard
   vocab: False
   label_type: character
 
@@ -57,4 +56,4 @@ param:
   sort_stop_epoch: 70
   not_improved_patient_epoch: 10
   eval_start_epoch: 5
-  print_step: 300
+  print_step: 100
