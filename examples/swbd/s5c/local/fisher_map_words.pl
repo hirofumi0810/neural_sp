@@ -26,7 +26,7 @@ use strict;
 while (<>) {
   chomp;
 
-  $_ = lc($_);  # few things aren't lowercased in the data, e.g. I'm
+  # $_ = lc($_);  # few things aren't lowercased in the data, e.g. I'm
   s/\*//g;  # *mandatory -> mandatory
   s/\(//g;  s/\)//g;  # Remove parentheses
   next if /^\s*$/;    # Skip empty lines
@@ -43,9 +43,9 @@ while (<>) {
   s/( |^)\'(blade|cause|course|frisco|okay|plain|specially)( |$)/ $2 /g;
   s/\'em/-em/g;
 
-  # Remove an opening ' if there is a matching closing ' since some word 
+  # Remove an opening ' if there is a matching closing ' since some word
   # fragments are annotated as: 'kay, etc.
-  # The substitution is done twice, since matching once doesn't capture 
+  # The substitution is done twice, since matching once doesn't capture
   # consequetive quoted segments (the space in between is used up).
   s/(^| )\'(.*?)\'( |$)/ $2 /g;
   s/(^| )\'(.*?)\'( |$)/ $2 /g;
@@ -59,7 +59,7 @@ while (<>) {
   s/( |-)(acceptable|arthritis|ball|cause|comes|course|eight|eighty|field|giving|habitating|heard|hood|how|king|ninety|okay|paper|press|scripts|store|till|vascular|wood|what|york)(-| )/ $2 /g;
 
   # Remove [[skip]] and [pause]
-  s/\[\[skip\]\]/ /g;  
+  s/\[\[skip\]\]/ /g;
   s/\[pause\]/ /g;
 
   # [breath], [cough], [lipsmack], [sigh], [sneeze] -> [noise]

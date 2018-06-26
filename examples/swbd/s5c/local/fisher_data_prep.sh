@@ -93,7 +93,7 @@ dir=${data}/train_fisher
 
 if [ $stage -le 1 ]; then
   mkdir -p $dir
-# touch ${data}/train_fisher/reco2file_and_channel
+  # touch ${data}/train_fisher/reco2file_and_channel
 
 ## fe_03_00004.sph
 ## Transcpribed at the LDC
@@ -144,7 +144,8 @@ if [ $stage -le 2 ]; then
     sed 's:\[mn\]:[noise]:g' | \
     sed 's:\[breath\]:[noise]:g' | \
     sed 's:\[lipsmack\]:[noise]:g' > $tmpdir/text.2
-  cp $tmpdir/text.2 $dir/text
+  cat $tmpdir/text.2 | local/fisher_map_words.pl > $tmpdir/text.3
+  cp $tmpdir/text.3 $dir/text
   # create segments file and utt2spk file...
   ! cat $dir/text | perl -ane 'm:([^-]+)-([AB])-(\S+): || die "Bad line $_;"; print "$1-$2-$3 $1-$2\n"; ' > $dir/utt2spk  \
      && echo "Error producing utt2spk file" && exit 1;
