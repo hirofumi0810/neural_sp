@@ -84,6 +84,9 @@ class RNNLM(ModelBase):
         self.sos = num_classes
         self.eos = num_classes
         self.pad_index = -1024
+        assert rnn_type in ['lstm', 'gru']
+        assert not (bidirectional and backward)
+        # NOTE: backward LM is only supported for unidirectional LM
 
         # Setting for regularization
         self.weight_noise_injection = False
@@ -109,7 +112,7 @@ class RNNLM(ModelBase):
                                     bias=True,
                                     batch_first=True,
                                     dropout=0,
-                                    bidirectional=bidirectional)
+                                    bidirectional=False)
                 elif rnn_type == 'gru':
                     rnn_i = nn.GRU(encoder_input_size,
                                    hidden_size=num_units,
@@ -117,16 +120,44 @@ class RNNLM(ModelBase):
                                    bias=True,
                                    batch_first=True,
                                    dropout=0,
-                                   bidirectional=bidirectional)
-                else:
-                    raise ValueError(
-                        'rnn_type must be "lstm" or "gru".')
+                                   bidirectional=False)
 
                 setattr(self, rnn_type + '_l' + str(i_l), rnn_i)
 
                 # Dropout for hidden-hidden or hidden-output connection
                 setattr(self, 'dropout_l' + str(i_l),
                         nn.Dropout(p=dropout_hidden))
+        elif bidirectional:
+            if rnn_type == 'lstm':
+                self.rnn_fwd = nn.LSTM(embedding_dim,
+                                       hidden_size=num_units,
+                                       num_layers=num_layers,
+                                       bias=True,
+                                       batch_first=True,
+                                       dropout=dropout_hidden,
+                                       bidirectional=False)
+                self.rnn_bwd = nn.LSTM(embedding_dim,
+                                       hidden_size=num_units,
+                                       num_layers=num_layers,
+                                       bias=True,
+                                       batch_first=True,
+                                       dropout=dropout_hidden,
+                                       bidirectional=False)
+            elif rnn_type == 'gru':
+                self.rnn_fwd = nn.GRU(embedding_dim,
+                                      hidden_size=num_units,
+                                      num_layers=num_layers,
+                                      bias=True,
+                                      batch_first=True,
+                                      dropout=dropout_hidden,
+                                      bidirectional=False)
+                self.rnn_bwd = nn.GRU(embedding_dim,
+                                      hidden_size=num_units,
+                                      num_layers=num_layers,
+                                      bias=True,
+                                      batch_first=True,
+                                      dropout=dropout_hidden,
+                                      bidirectional=False)
         else:
             if rnn_type == 'lstm':
                 self.rnn = nn.LSTM(embedding_dim,
@@ -135,7 +166,7 @@ class RNNLM(ModelBase):
                                    bias=True,
                                    batch_first=True,
                                    dropout=dropout_hidden,
-                                   bidirectional=bidirectional)
+                                   bidirectional=False)
             elif rnn_type == 'gru':
                 self.rnn = nn.GRU(embedding_dim,
                                   hidden_size=num_units,
@@ -143,9 +174,7 @@ class RNNLM(ModelBase):
                                   bias=True,
                                   batch_first=True,
                                   dropout=dropout_hidden,
-                                  bidirectional=bidirectional)
-            else:
-                raise ValueError('rnn_type must be "lstm" or "gru".')
+                                  bidirectional=False)
 
         self.output = LinearND(
             num_units * self.num_directions, self.num_classes,
@@ -212,7 +241,10 @@ class RNNLM(ModelBase):
         # NOTE: must be descending order for pack_padded_sequence
 
         # Wrap by Variable
-        y_lens = [len(y) + 1 for y in ys]
+        if self.bidirectional:
+            y_lens = [len(y) + 2 for y in ys]
+        else:
+            y_lens = [len(y) + 1 for y in ys]
         if self.backward:
             ys = [np2var(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long()
                   for y in ys]
@@ -225,8 +257,12 @@ class RNNLM(ModelBase):
         eos = Variable(ys[0].data.new(1,).fill_(self.eos).long())
 
         # Append <SOS> and <EOS>
-        ys_in = [torch.cat([sos, y], dim=0) for y in ys]
-        ys_out = [torch.cat([y, eos], dim=0) for y in ys]
+        if self.bidirectional:
+            ys_in = [torch.cat([sos, y, eos], dim=0) for y in ys]
+            ys_out = [y for y in ys]
+        else:
+            ys_in = [torch.cat([sos, y], dim=0) for y in ys]
+            ys_out = [torch.cat([y, eos], dim=0) for y in ys]
 
         # Convert list to Variable
         ys_in = pad_list(ys_in, self.eos)
@@ -237,9 +273,13 @@ class RNNLM(ModelBase):
 
         # Path through RNN
         if self.residual_connection:
+            # TODO:
+            if self.bidirectional:
+                raise NotImplementedError
+
             res_outputs_prev = None
             for i_l in range(self.num_layers):
-                # Pack i_l-th encoder xs
+                # Pack i_l-th encoder inputs
                 ys_in = pack_padded_sequence(ys_in, y_lens, batch_first=True)
 
                 # Path through RNN
@@ -265,6 +305,20 @@ class RNNLM(ModelBase):
                 else:
                     ys_in = ys_in_tmp
                 res_outputs_prev = ys_in_tmp
+            logits = self.output(ys_in)
+
+        elif self.bidirectional:
+            logits = []
+            for t in range(ys_out.size(1)):
+                ys_in_fwd, _ = self.rnn_fwd(ys_in[:, :t + 1], hx=None)
+                ys_in_bwd, _ = self.rnn_bwd(ys_in[:, t + 1:], hx=None)
+
+                logits_step = self.output(
+                    torch.cat([ys_in_fwd[:, -1].unsqueeze(1),
+                               ys_in_bwd[:, 0].unsqueeze(1)], dim=-1))
+                logits += [logits_step]
+            logits = torch.cat(logits, dim=1)
+
         else:
             # Pack RNN inputs
             ys_in = pack_padded_sequence(ys_in, y_lens, batch_first=True)
@@ -276,7 +330,7 @@ class RNNLM(ModelBase):
                 ys_in, batch_first=True, padding_value=0)
             # assert y_lens - 1 == unpacked_seq_len
 
-        logits = self.output(ys_in)
+            logits = self.output(ys_in)
 
         # Compute XE sequence loss
         if self.ls_prob > 0:
@@ -302,6 +356,39 @@ class RNNLM(ModelBase):
         acc = float(numerator) / float(denominator)
 
         return loss, acc
+
+    def flatten_parameters(self):
+        if self.residual_connection:
+            for i_l in range(self.num_layers):
+                getattr(self, self.rnn_type + '_l' +
+                        str(i_l)).flatten_parameters()
+        else:
+            self.rnn.flatten_parameters()
+
+    def predict(self, y, h):
+        if self.residual_connection:
+            res_outputs_prev = None
+            for i_l in range(self.num_layers):
+                # Path through RNN
+                y, state = getattr(self, self.rnn_type +
+                                   '_l' + str(i_l))(y, hx=h)
+
+                # Dropout for hidden-hidden or hidden-output connection
+                y_tmp = getattr(self, 'dropout_l' + str(i_l))(y)
+
+                # Residual connection
+                if res_outputs_prev is not None:
+                    y = y_tmp + res_outputs_prev
+                else:
+                    y = y_tmp
+                res_outputs_prev = y_tmp
+        else:
+            # Path through RNN
+            y, h = self.rnn(y, hx=h)
+
+        logits_step = self.output(y)
+
+        return logits_step, h, state
 
     def _init_hidden(self, batch_size, use_cuda, volatile):
         """Initialize hidden states.
@@ -348,6 +435,9 @@ class RNNLM(ModelBase):
             perm_idx (list): A list of length `[B]`
         """
         self.eval()
+
+        if self.bidirectional:
+            raise NotImplementedError
 
         batch_size = len(start_tokens)
 

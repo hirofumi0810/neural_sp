@@ -139,10 +139,6 @@ def main():
             config['num_classes'] = eval_set.num_classes
             config['num_classes_sub'] = eval_set.num_classes_sub
 
-            if args.corpus == 'swbd':
-                eval_set.glm_path = join(
-                    args.data_save_path, 'eval2000', 'glm')
-
             # For cold fusion
             if config['rnnlm_fusion_type'] and config['rnnlm_path']:
                 # Load a RNNLM config file
@@ -190,7 +186,7 @@ def main():
                              config=config_rnnlm,
                              backend=config_rnnlm['backend'])
                 rnnlm.load_checkpoint(save_path=args.rnnlm_path, epoch=-1)
-                rnnlm.rnn.flatten_parameters()
+                rnnlm.flatten_parameters()
                 model.rnnlm_0_fwd = rnnlm
                 logger.info('RNNLM path (main): %s' % args.rnnlm_path)
                 logger.info('RNNLM weight (main): %.3f' % args.rnnlm_weight)
@@ -208,7 +204,7 @@ def main():
                                  backend=config_rnnlm_sub['backend'])
                 rnnlm_sub.load_checkpoint(
                     save_path=args.rnnlm_path_sub, epoch=-1)
-                rnnlm_sub.rnn.flatten_parameters()
+                rnnlm_sub.flatten_parameters()
                 model.rnnlm_1_fwd = rnnlm_sub
                 logger.info('RNNLM path (sub): %s' % args.rnnlm_path_sub)
                 logger.info('RNNLM weight (sub): %.3f' % args.rnnlm_weight_sub)
@@ -268,8 +264,9 @@ def main():
         logger.info(df)
 
     logger.info('  WER (mean, main): %.3f %%' % (wer_mean / 3))
-    logger.info('  WER / CER (mean, sub): %.3f / %.3f %%' %
-                (wer_sub_mean / 3, cer_sub_mean / 3))
+    logger.info('  WER / CER (mean, sub): %.3f / %.3f %%\n' %
+                (wer_sub_mean / len(args.eval_sets),
+                 cer_sub_mean / len(args.eval_sets)))
 
 
 if __name__ == '__main__':

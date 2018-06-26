@@ -1379,10 +1379,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                             y_sub_rnnlm = Variable(enc_out.data.new(
                                 1, 1).fill_(beam_sub[i_beam]['hyp'][-1]).long(), volatile=True)
                             y_sub_rnnlm = self.rnnlm_1.embed(y_sub_rnnlm)
-                            rnnlm_out_sub, rnnlm_state_sub = self.rnnlm_1.rnn(
-                                y_sub_rnnlm, hx=beam_sub[i_beam]['rnnlm_state'])
-                            rnnlm_logits_step_sub = self.rnnlm_1.output(
-                                rnnlm_out_sub)
+                            rnnlm_logits_step_sub, rnnlm_out_sub, rnnlm_state_sub = self.rnnlm_1.predict(
+                                y_sub_rnnlm, h=beam_sub[i_beam]['rnnlm_state'])
                             rnnlm_log_probs_sub = F.log_softmax(
                                 rnnlm_logits_step_sub.squeeze(1), dim=1)
                             assert log_probs_sub.size() == rnnlm_log_probs_sub.size()
@@ -1575,9 +1573,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                             y_rnnlm = Variable(enc_out.data.new(
                                 1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
                             y_rnnlm = self.rnnlm_0.embed(y_rnnlm)
-                            rnnlm_out, rnnlm_state = self.rnnlm_0.rnn(
-                                y_rnnlm, hx=beam[i_beam]['rnnlm_state'])
-                            rnnlm_logits_step = self.rnnlm_0.output(rnnlm_out)
+                            rnnlm_logits_step, rnnlm_out, rnnlm_state = self.rnnlm_0.predict(
+                                y_rnnlm, h=beam[i_beam]['rnnlm_state'])
                             rnnlm_log_probs = F.log_softmax(
                                 rnnlm_logits_step.squeeze(1), dim=1)
                             assert log_probs.size() == rnnlm_log_probs.size()

@@ -144,12 +144,6 @@ def main():
     config['num_classes'] = train_set.num_classes
     config['num_classes_sub'] = train_set.num_classes_sub
 
-    if args.corpus == 'swbd':
-        dev_set.glm_path = os.path.join(
-            args.data_save_path, 'eval2000', 'glm')
-        eval_sets[0].glm_path = os.path.join(
-            args.data_save_path, 'eval2000', 'glm')
-
     # TODO: add mult-level cold fusion
 
     # Model setting

@@ -144,16 +144,6 @@ def main():
     config['num_classes'] = train_set.num_classes
     config['num_classes_sub'] = train_set.num_classes
 
-    if args.corpus == 'timit':
-        # Set path to phones.60-48-39.map
-        dev_set.phone_map_path = './conf/phones.60-48-39.map'
-        eval_sets[0].phone_map_path = './conf/phones.60-48-39.map'
-    elif args.corpus == 'swbd':
-        dev_set.glm_path = os.path.join(
-            args.data_save_path, 'eval2000', 'glm')
-        eval_sets[0].glm_path = os.path.join(
-            args.data_save_path, 'eval2000', 'glm')
-
     # Load a RNNLM config file for cold fusion
     if config['rnnlm_fusion_type'] and config['rnnlm_path']:
         if args.model_save_path is not None:
@@ -255,9 +245,9 @@ def main():
 
         if config['rnnlm_fusion_type'] and config['rnnlm_path']:
             if config['rnnlm_config']['backward']:
-                model.rnnlm_0_bwd.rnn.flatten_parameters()
+                model.rnnlm_0_bwd.flatten_parameters()
             else:
-                model.rnnlm_0_fwd.rnn.flatten_parameters()
+                model.rnnlm_0_fwd.flatten_parameters()
 
     else:
         raise ValueError("Set model_save_path or saved_model_path.")

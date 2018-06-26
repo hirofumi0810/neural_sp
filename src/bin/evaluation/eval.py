@@ -136,13 +136,6 @@ def main():
             config['num_classes'] = eval_set.num_classes
             config['num_classes_sub'] = eval_set.num_classes
 
-            if args.corpus == 'timit':
-                # Set path to phones.60-48-39.map
-                eval_set.phone_map_path = './conf/phones.60-48-39.map'
-            elif args.corpus == 'swbd':
-                eval_set.glm_path = join(
-                    args.data_save_path, 'eval2000', 'glm')
-
             # For cold fusion
             if config['rnnlm_fusion_type'] and config['rnnlm_path']:
                 # Load a RNNLM config file
@@ -179,11 +172,12 @@ def main():
                              config=config_rnnlm,
                              backend=config_rnnlm['backend'])
                 rnnlm.load_checkpoint(save_path=args.rnnlm_path, epoch=-1)
-                rnnlm.rnn.flatten_parameters()
+                rnnlm.flatten_parameters()
                 if config_rnnlm['backward']:
                     model.rnnlm_0_bwd = rnnlm
                 else:
                     model.rnnlm_0_fwd = rnnlm
+
                 logger.info('RNNLM path: %s' % args.rnnlm_path)
                 logger.info('RNNLM weight: %.3f' % args.rnnlm_weight)
 
@@ -229,7 +223,7 @@ def main():
             logger.info(df)
         elif 'phone' in config['label_type']:
             per, df = eval_phone(
-                model=model,
+                models=[model],
                 dataset=eval_set,
                 eval_batch_size=args.eval_batch_size,
                 beam_width=args.beam_width,
@@ -245,10 +239,11 @@ def main():
             raise ValueError(config['label_type'])
 
     if config['label_type'] == 'word':
-        logger.info('  WER (mean): %.3f %%' % (wer_mean / 3))
+        logger.info('  WER (mean): %.3f %%\n' % (wer_mean / 3))
     elif 'character' in config['label_type']:
-        logger.info('  WER / CER (mean): %.3f / %.3f %%' %
-                    (wer_mean / 3, cer_mean / 3))
+        logger.info('  WER / CER (mean): %.3f / %.3f %%\n' %
+                    (wer_mean / len(args.eval_sets),
+                     cer_mean / len(args.eval_sets)))
 
 
 if __name__ == '__main__':

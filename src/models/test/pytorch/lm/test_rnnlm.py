@@ -35,6 +35,10 @@ class TestRNNLM(unittest.TestCase):
     def test(self):
         print("RNNLM Working check.")
 
+        # bidirectional
+        self.check(rnn_type='lstm', bidirectional=True)
+        self.check(rnn_type='gru', bidirectional=True)
+
         # residual connection
         self.check(rnn_type='lstm', residual_connection=True)
 
@@ -44,10 +48,8 @@ class TestRNNLM(unittest.TestCase):
         # backward
         self.check(rnn_type='lstm', bidirectional=False, backward=True)
 
-        # unidirectional & bidirectional
-        self.check(rnn_type='lstm', bidirectional=True)
+        # unidirectional
         self.check(rnn_type='lstm', bidirectional=False)
-        self.check(rnn_type='gru', bidirectional=True)
         self.check(rnn_type='gru', bidirectional=False)
 
         # Tie weights
@@ -173,16 +175,17 @@ class TestRNNLM(unittest.TestCase):
                 ppl = math.exp(loss)
 
                 duration_step = time.time() - start_time_step
-                print('Step %d: loss=%.2f/acc=%.2f//ppl=%.2f/lr=%.5f (%.2f sec)' %
+                print('Step %d: loss=%.2f/acc=%.2f/ppl=%.2f/lr=%.5f (%.2f sec)' %
                       (step + 1, loss, acc, ppl, learning_rate, duration_step))
                 start_time_step = time.time()
 
                 # Visualize
-                best_hyps = model.module.decode(
-                    [[model.module.sos]], max_decode_len=60)
-                print(map_fn(best_hyps[0]))
+                if not bidirectional:
+                    best_hyps = model.module.decode(
+                        [[model.module.sos]], max_decode_len=60)
+                    print(map_fn(best_hyps[0]))
 
-                if ppl == 1:
+                if ppl == 1 or loss == 0:
                     print('Modle is Converged.')
                     break
 

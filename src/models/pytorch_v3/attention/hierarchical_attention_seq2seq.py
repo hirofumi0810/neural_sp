@@ -161,6 +161,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         self.encoder_num_units_sub = encoder_num_units
         if encoder_bidirectional:
             self.encoder_num_units_sub *= 2
+        self.encoder_num_layers_sub = encoder_num_layers_sub
 
         # Setting for the decoder in the sub task
         self.decoder_num_units_1 = decoder_num_units_sub
@@ -749,10 +750,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                             y_rnnlm = Variable(enc_out.data.new(
                                 1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
                             y_rnnlm = self.rnnlm_0_fwd.embed(y_rnnlm)
-                            rnnlm_out, rnnlm_state = self.rnnlm_0_fwd.rnn(
-                                y_rnnlm, hx=beam[i_beam]['rnnlm_state'])
-                            rnnlm_logits_step = self.rnnlm_0_fwd.output(
-                                rnnlm_out)
+                            rnnlm_logits_step, rnnlm_out, rnnlm_state = self.rnnlm_0_fwd.predict(
+                                y_rnnlm, h=beam[i_beam]['rnnlm_state'])
                             rnnlm_log_probs = F.log_softmax(
                                 rnnlm_logits_step.squeeze(1), dim=1)
                             assert log_probs.size() == rnnlm_log_probs.size()
@@ -806,10 +805,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                             1, 1).fill_(beam[i_beam]['hyp_sub'][-1]).long(), volatile=True)
                                         y_rnnlm_sub = self.rnnlm_1_fwd.embed(
                                             y_rnnlm_sub)
-                                        rnnlm_out_sub, rnnlm_state_sub = self.rnnlm_1_fwd.rnn(
-                                            y_rnnlm_sub, hx=rnnlm_state_sub)
-                                        rnnlm_logits_step_sub = self.rnnlm_1_fwd.output(
-                                            rnnlm_out_sub)
+                                        rnnlm_logits_step_sub, rnnlm_out_sub, rnnlm_state_sub = self.rnnlm_1_fwd.predict(
+                                            y_rnnlm_sub, h=rnnlm_state_sub)
                                         rnnlm_log_probs_sub = F.log_softmax(
                                             rnnlm_logits_step_sub.squeeze(1), dim=1)
                                         assert log_probs_sub.size() == rnnlm_log_probs_sub.size()
@@ -844,10 +841,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                                 1, 1).fill_(charseq[t_sub - 1]).long(), volatile=True)
                                         y_rnnlm_sub = self.rnnlm_1_fwd.embed(
                                             y_rnnlm_sub)
-                                        rnnlm_out_sub, rnnlm_state_sub = self.rnnlm_1_fwd.rnn(
-                                            y_rnnlm_sub, hx=rnnlm_state_sub)
-                                        rnnlm_logits_step_sub = self.rnnlm_1_fwd.output(
-                                            rnnlm_out_sub)
+                                        rnnlm_logits_step_sub, rnnlm_out_sub, rnnlm_state_sub = self.rnnlm_1_fwd.predict(
+                                            y_rnnlm_sub, h=rnnlm_state_sub)
                                         rnnlm_log_probs_sub = F.log_softmax(
                                             rnnlm_logits_step_sub.squeeze(1), dim=1)
                                         assert log_probs_sub.size() == rnnlm_log_probs_sub.size()
@@ -905,10 +900,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                     1, 1).fill_(beam[i_beam]['hyp_sub'][-1]).long(), volatile=True)
                                 y_rnnlm_sub = self.rnnlm_1_fwd.embed(
                                     y_rnnlm_sub)
-                                rnnlm_out_sub, rnnlm_state_sub = self.rnnlm_1_fwd.rnn(
-                                    y_rnnlm_sub, hx=beam[i_beam]['rnnlm_state_sub'])
-                                rnnlm_logits_step_sub = self.rnnlm_1_fwd.output(
-                                    rnnlm_out_sub)
+                                rnnlm_logits_step_sub, rnnlm_out_sub, rnnlm_state_sub = self.rnnlm_1_fwd.predict(
+                                    y_rnnlm_sub, h=beam[i_beam]['rnnlm_state_sub'])
                                 rnnlm_log_probs_sub = F.log_softmax(
                                     rnnlm_logits_step_sub.squeeze(1), dim=1)
                                 assert log_probs_sub.size() == rnnlm_log_probs_sub.size()
@@ -972,10 +965,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                             1, 1).fill_(charseq[t_sub - 1]).long(), volatile=True)
                                     y_rnnlm_sub = self.rnnlm_1_fwd.embed(
                                         y_rnnlm_sub)
-                                    rnnlm_out_sub, rnnlm_state_sub = self.rnnlm_1_fwd.rnn(
-                                        y_rnnlm_sub, hx=rnnlm_state_sub)
-                                    rnnlm_logits_step_sub = self.rnnlm_1_fwd.output(
-                                        rnnlm_out_sub)
+                                    rnnlm_logits_step_sub, rnnlm_out_sub, rnnlm_state_sub = self.rnnlm_1_fwd.predict(
+                                        y_rnnlm_sub, h=rnnlm_state_sub)
                                     rnnlm_log_probs_sub = F.log_softmax(
                                         rnnlm_logits_step_sub.squeeze(1), dim=1)
                                     assert log_probs_sub.size() == rnnlm_log_probs_sub.size()

@@ -768,10 +768,8 @@ class AttentionSeq2seq(ModelBase):
                         torch.max(logits[-1], dim=2)[1]).detach()
                 else:
                     y_rnnlm = ys_rnnlm_emb[:, t:t + 1]
-                rnnlm_out, rnnlm_state = getattr(self, 'rnnlm' + taskdir).rnn(
-                    y_rnnlm, hx=rnnlm_state)
-                logits_step_rnnlm = getattr(self, 'rnnlm' + taskdir).output(
-                    rnnlm_out)
+                logits_step_rnnlm, rnnlm_out, rnnlm_state = getattr(self, 'rnnlm' + taskdir).predict(
+                    y_rnnlm, h=rnnlm_state)
                 logits_rnnlm += [logits_step_rnnlm]
 
             if self.decoding_order == 'bahdanau':
@@ -1017,10 +1015,8 @@ class AttentionSeq2seq(ModelBase):
             # Update RNNLM states
             if self.rnnlm_fusion_type:
                 y_rnnlm = getattr(self, 'rnnlm' + taskdir).embed(y)
-                rnnlm_out, rnnlm_state = getattr(self, 'rnnlm' + taskdir).rnn(
-                    y_rnnlm, hx=rnnlm_state)
-                logits_step_rnnlm = getattr(self, 'rnnlm' + taskdir).output(
-                    rnnlm_out)
+                logits_step_rnnlm, rnnlm_out, rnnlm_state = getattr(self, 'rnnlm' + taskdir).predict(
+                    y_rnnlm, h=rnnlm_state)
 
             y = getattr(self, 'embed_' + str(task))(y)
 
@@ -1189,10 +1185,8 @@ class AttentionSeq2seq(ModelBase):
                             1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
                         y_rnnlm = getattr(self, 'rnnlm' + taskdir).embed(
                             y_rnnlm)
-                        rnnlm_out, rnnlm_state = getattr(self, 'rnnlm' + taskdir).rnn(
-                            y_rnnlm, hx=beam[i_beam]['rnnlm_state'])
-                        logits_step_rnnlm = getattr(self, 'rnnlm' + taskdir).output(
-                            rnnlm_out)
+                        logits_step_rnnlm, rnnlm_out, rnnlm_state = getattr(self, 'rnnlm' + taskdir).predict(
+                            y_rnnlm, h=beam[i_beam]['rnnlm_state'])
 
                     y = Variable(enc_out.data.new(
                         1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)

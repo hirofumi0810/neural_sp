@@ -66,7 +66,7 @@ def main():
 
             # NOTE: after load the rnn config are not a continuous chunk of memory
             # this makes them a continuous chunk, and will speed up forward pass
-            model.rnn.flatten_parameters()
+            model.flatten_parameters()
             # https://github.com/pytorch/examples/blob/master/word_language_model/main.py
 
             # Restore the saved parameters
@@ -84,7 +84,7 @@ def main():
         ppl_mean += ppl
         logger.info('  PPL (%s): %.3f' % (data_type, ppl))
 
-    logger.info('PPL (mean): %.3f' % (ppl_mean / 3))
+    logger.info('PPL (mean): %.3f\n' % (ppl_mean / len(args.eval_sets)))
 
 
 if __name__ == '__main__':
