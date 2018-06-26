@@ -15,19 +15,20 @@ import pandas as pd
 import pickle
 import codecs
 import re
+from distutils.util import strtobool
 
 sys.path.append('../../../')
-# from utils.io.labels.phone import Phone2idx
-from utils.io.labels.character import Char2idx
-from utils.io.labels.word import Word2idx
-from utils.directory import mkdir_join
+from src.utils.io.labels.character import Char2idx
+from src.utils.io.labels.word import Word2idx
+from src.utils.directory import mkdir_join
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str,
                     help='path to save dataset')
 parser.add_argument('--tool', type=str,
                     choices=['htk', 'python_speech_features', 'librosa'])
-
+parser.add_argument('--has_extended_text', nargs='?', type=strtobool, default=False,
+                    help='')
 args = parser.parse_args()
 
 DOUBLE_LETTERS = ['aa', 'bb', 'cc', 'dd', 'ee', 'ff', 'gg', 'hh', 'ii', 'jj',
@@ -41,22 +42,42 @@ OOV = 'OOV'
 def main():
 
     for data_size in ['train_si84', 'train_si284']:
-        print('=' * 100)
-        print(' ' * 40 + data_size)
-        print('=' * 100)
-        for data_type in [data_size, 'test_dev93', 'test_eval92']:
+        print('=' * 70)
+        print(' ' * 30 + data_size)
+        print('=' * 70)
+
+        data_types = [data_size, 'test_dev93', 'test_eval92']
+        if args.has_extended_text:
+            data_types = ['train_lm'] + data_types
+        for data_type in data_types:
             print('=' * 50)
             print(' ' * 20 + data_type)
             print('=' * 50)
 
             # Convert transcript to index
             print('=> Processing transcripts...')
-            trans_dict = read_text(
-                text_path=join(args.data_save_path, data_type, 'text'),
-                vocab_save_path=mkdir_join(
-                    args.data_save_path, 'vocab', data_size),
-                data_type=data_type,
-                lexicon_path=None)
+            if data_type == 'train_lm':
+                trans_dict = read_text(
+                    join(args.data_save_path, 'train_si284', 'text'),
+                    vocab_save_path=mkdir_join(
+                        args.data_save_path, 'vocab', data_size),
+                    data_type='train_si284',
+                    lexicon_path=None)
+                trans_dict_extend = read_text(
+                    join(args.data_save_path, 'local/dict_nosp_larger/cleaned'),
+                    vocab_save_path=mkdir_join(
+                        args.data_save_path, 'vocab', data_size),
+                    data_type=data_type,
+                    lexicon_path=None)
+                trans_dict.update(trans_dict_extend)
+                # NOTE; always use all text data
+            else:
+                trans_dict = read_text(
+                    join(args.data_save_path, data_type, 'text'),
+                    vocab_save_path=mkdir_join(
+                        args.data_save_path, 'vocab', data_size),
+                    data_type=data_type,
+                    lexicon_path=None)
 
             # Make dataset file (.csv)
             print('=> Saving dataset files...')
@@ -68,29 +89,38 @@ def main():
             df_char = pd.DataFrame([], columns=df_columns)
             df_char_capital = pd.DataFrame([], columns=df_columns)
 
-            with open(join(args.data_save_path, 'feature', args.tool, data_size, data_type, 'frame_num.pickle'), 'rb') as f:
-                frame_num_dict = pickle.load(f)
+            if data_type != 'train_lm':
+                with open(join(args.data_save_path, 'feature', args.tool, data_size, data_type, 'frame_num.pickle'), 'rb') as f:
+                    frame_num_dict = pickle.load(f)
 
             utt_count = 0
             df_word_list = []
             df_char_list, df_char_capital_list = [], []
             for utt_idx, trans in tqdm(trans_dict.items()):
-                speaker = utt_idx[:3]
-                feat_utt_save_path = join(
-                    args.data_save_path, 'feature', args.tool, data_size, data_type,
-                    speaker, utt_idx + '.npy')
-                frame_num = frame_num_dict[utt_idx]
+                if data_type == 'train_lm':
+                    df_word = add_element(
+                        df_word, [len(trans['word'].split('_')), '', trans['word']])
+                    df_char = add_element(
+                        df_char, [len(trans['char'].split('_')), '', trans['char']])
+                    df_char_capital = add_element(
+                        df_char_capital, [len(trans['char_capital'].split('_')), '', trans['char_capital']])
+                else:
+                    speaker = utt_idx[:3]
+                    feat_utt_save_path = join(
+                        args.data_save_path, 'feature', args.tool, data_size, data_type,
+                        speaker, utt_idx + '.npy')
+                    frame_num = frame_num_dict[utt_idx]
 
-                if not isfile(feat_utt_save_path):
-                    raise ValueError('There is no file: %s' %
-                                     feat_utt_save_path)
+                    if not isfile(feat_utt_save_path):
+                        raise ValueError('There is no file: %s' %
+                                         feat_utt_save_path)
 
-                df_word = add_element(
-                    df_word, [frame_num, feat_utt_save_path, trans['word']])
-                df_char = add_element(
-                    df_char, [frame_num, feat_utt_save_path, trans['char']])
-                df_char_capital = add_element(
-                    df_char_capital, [frame_num, feat_utt_save_path, trans['char_capital']])
+                    df_word = add_element(
+                        df_word, [frame_num, feat_utt_save_path, trans['word']])
+                    df_char = add_element(
+                        df_char, [frame_num, feat_utt_save_path, trans['char']])
+                    df_char_capital = add_element(
+                        df_char_capital, [frame_num, feat_utt_save_path, trans['char_capital']])
                 utt_count += 1
 
                 # Reset
@@ -141,7 +171,7 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
     Args:
         text_path (string): path to a text file of kaldi
         vocab_save_path (string): path to save vocabulary files
-        data_type (string): train or dev or eval2000_swbd or eval2000_ch
+        data_type (string): train_si84 or train_si284 or test_dev93 or test_eval92
         lexicon_path (string):
     Returns:
         speaker_dict (dict): the dictionary of utterances of each speaker
@@ -162,19 +192,51 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
     word_set = set([])
     word_dict = {}
     with open(text_path, 'r') as f:
-        for line in f:
+        for i, line in enumerate(f):
             line = line.strip()
-            utt_idx = line.split(' ')[0]
-            trans = ' '.join(line.split(' ')[1:]).lower()
+            if data_type == 'train_lm':
+                utt_idx = i
+                trans = line.lower()
+                trans = re.sub(r'[*\\$^]+', '', trans)
 
-            # text normalization
-            trans = trans.replace('<noise>', NOISE)
-            trans = trans.replace('.period', 'period')
-            trans = trans.replace('\'single-quote', 'single-quote')
-            trans = trans.replace('-hyphen', 'hyphen')
-            trans = trans.replace('`', '\'')  # 47rc020w (typo)
-            trans = re.sub(r'[(){}*,?!":;&/~]+', '', trans)
-            trans = re.sub(r'<.*>', '', trans)
+                # Replace digits
+                trans = ' '.join([w for w in trans.split(
+                    ' ') if re.search(r'[0-9]+st', w) is None])
+                trans = ' '.join([w for w in trans.split(
+                    ' ') if re.search(r'[0-9]+nd', w) is None])
+                trans = ' '.join([w for w in trans.split(
+                    ' ') if re.search(r'[0-9]+rd', w) is None])
+                trans = ' '.join([w for w in trans.split(
+                    ' ') if re.search(r'[0-9]+th', w) is None])
+                trans = trans.replace('\'87', 'eighty seven')
+                trans = trans.replace(' 1 ', ' one ')
+                trans = trans.replace(' 20 ', ' twenty ')
+                trans = trans.replace(' 5 ', ' five ')
+                trans = trans.replace(' 6 ', ' six ')
+                trans = trans.replace(' 2 ', ' two ')
+                trans = trans.replace('6000', 'six thousand')
+                trans = trans.replace('7000', 'seven thousand')
+                trans = trans.replace('8000', 'eight thousand')
+                trans = trans.replace('i2d2', 'i two d two')
+                trans = trans.replace(' 8 ', ' eight ')
+                trans = trans.replace(' 10 ', ' ten ')
+
+                # Remove the first and last spaces
+                # if trans[0] == ' ':
+                #     trans = trans[1:]
+                if trans[-1] == ' ':
+                    trans = trans[:-1]
+            else:
+                utt_idx = line.split(' ')[0]
+                trans = ' '.join(line.split(' ')[1:]).lower()
+                trans = trans.replace('<noise>', NOISE)
+                trans = trans.replace('.period', 'period')
+                trans = trans.replace('\'single-quote', 'single-quote')
+                trans = trans.replace('-hyphen', 'hyphen')
+                trans = trans.replace('`', '\'')  # 47rc020w (typo)
+                trans = re.sub(r'[(){}*,?!":;&/~]+', '', trans)
+                trans = re.sub(r'<.*>', '', trans)
+
             trans = re.sub(r'[\s]+', ' ', trans)
             trans = trans.replace(' ', SPACE)
 
@@ -200,9 +262,12 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
                     char_capital_set.add(w.upper())
                     trans_capital += w.upper()
                 else:
-                    # Replace the first character with the capital
-                    # letter
-                    w = w[0].upper() + w[1:]
+                    # Replace the first character with the capital letter
+                    try:
+                        w = w[0].upper() + w[1:]
+                    except:
+                        print(trans)
+                        raise ValueError
                     char_capital_set.add(w[0])
 
                     # Check double-letters
@@ -216,7 +281,7 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
             trans_dict[utt_idx] = [trans, trans_capital]
 
     # Save vocabulary files
-    if 'train' in data_type:
+    if 'train_si' in data_type:
         # word-level (threshold == 3)
         with codecs.open(word_vocab_path, 'w', 'utf-8') as f:
             word_list = sorted([w for w, freq in list(word_dict.items())
