@@ -15,10 +15,10 @@ import pandas as pd
 import pickle
 
 sys.path.append('../../../')
-from utils.io.labels.phone import Phone2idx
-from utils.io.labels.character import Char2idx
-from utils.io.labels.word import Word2idx
-from utils.directory import mkdir_join
+from src.utils.io.labels.phone import Phone2idx
+from src.utils.io.labels.character import Char2idx
+from src.utils.io.labels.word import Word2idx
+from src.utils.directory import mkdir_join
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str,
@@ -27,7 +27,6 @@ parser.add_argument('--data_size', type=str,
                     choices=['100', '460', '960'])
 parser.add_argument('--tool', type=str,
                     choices=['htk', 'python_speech_features', 'librosa'])
-
 args = parser.parse_args()
 
 DOUBLE_LETTERS = ['aa', 'bb', 'cc', 'dd', 'ee', 'ff', 'gg', 'hh', 'ii', 'jj',

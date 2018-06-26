@@ -16,8 +16,8 @@ import argparse
 from collections import OrderedDict
 
 sys.path.append('../../../')
-from utils.directory import mkdir_join
-from utils.feature_extraction.segmentation import segment
+from src.utils.directory import mkdir_join
+from src.utils.feature_extraction.segmentation import segment
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str, help='path to save data')
@@ -37,7 +37,6 @@ parser.add_argument('--energy', type=int, help='if 1, add the energy feature')
 parser.add_argument('--delta', type=int, help='if 1, add the energy feature')
 parser.add_argument('--deltadelta', type=int,
                     help='if 1, double delta features are also extracted')
-
 args = parser.parse_args()
 
 

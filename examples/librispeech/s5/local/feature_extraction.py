@@ -16,10 +16,10 @@ import argparse
 import codecs
 
 sys.path.append('../../../')
-from utils.directory import mkdir_join
-from utils.feature_extraction.htk import read
-from utils.feature_extraction.wav2feature_python_speech_features import wav2feature as w2f_psf
-from utils.feature_extraction.wav2feature_librosa import wav2feature as w2f_librosa
+from src.utils.directory import mkdir_join
+from src.utils.feature_extraction.htk import read
+from src.utils.feature_extraction.wav2feature_python_speech_features import wav2feature as w2f_psf
+from src.utils.feature_extraction.wav2feature_librosa import wav2feature as w2f_librosa
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str, help='path to save data')
@@ -41,7 +41,6 @@ parser.add_argument('--energy', type=int, help='if 1, add the energy feature')
 parser.add_argument('--delta', type=int, help='if 1, add the energy feature')
 parser.add_argument('--deltadelta', type=int,
                     help='if 1, double delta features are also extracted')
-
 args = parser.parse_args()
 
 
@@ -58,6 +57,7 @@ CONFIG = {
 
 
 def main():
+
     print('=> Processing input data...')
     for data_type in ['train_' + args.data_size, 'dev_clean', 'dev_other', 'test_clean', 'test_other']:
 

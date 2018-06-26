@@ -16,8 +16,8 @@ import pickle
 import re
 
 sys.path.append('../../../')
-from utils.io.labels.phone import Phone2idx
-from utils.directory import mkdir_join
+from src.utils.io.labels.phone import Phone2idx
+from src.utils.directory import mkdir_join
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str,
@@ -26,7 +26,6 @@ parser.add_argument('--phone_map_file_path', type=str,
                     help='path to phones.60-48-39.map')
 parser.add_argument('--tool', type=str,
                     choices=['wav', 'htk', 'python_speech_features', 'librosa'])
-
 args = parser.parse_args()
 
 

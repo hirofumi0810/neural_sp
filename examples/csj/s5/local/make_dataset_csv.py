@@ -16,10 +16,10 @@ import pickle
 import codecs
 
 sys.path.append('../../../')
-from utils.io.labels.phone import Phone2idx
-from utils.io.labels.character import Char2idx
-from utils.io.labels.word import Word2idx
-from utils.directory import mkdir_join
+from src.utils.io.labels.phone import Phone2idx
+from src.utils.io.labels.character import Char2idx
+from src.utils.io.labels.word import Word2idx
+from src.utils.directory import mkdir_join
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str,
@@ -28,7 +28,6 @@ parser.add_argument('--data_size', type=str,
                     choices=['aps_other', 'aps', 'all_except_dialog', 'all'])
 parser.add_argument('--tool', type=str,
                     choices=['htk', 'python_speech_features', 'librosa'])
-
 args = parser.parse_args()
 
 SPACE = '_'
@@ -288,8 +287,7 @@ def read_text(text_path, vocab_save_path, data_type,
                     w_left = w.split('+')[0]
                     w_right = w.split('+')[0]
                     w_both = w.split('+')[0]
-                    if w != SHORT_PAUSE:
-                        trans_remove_list.append(w.split('+')[0])
+                    trans_remove_list.append(w.split('+')[0])
                 trans_left_list.append(w_left)
                 trans_right_list.append(w_right)
                 trans_both_list.append(w_both)
@@ -341,10 +339,10 @@ def read_text(text_path, vocab_save_path, data_type,
             for c in char_list + [SPACE, OOV, SOF, SOD]:
                 f.write('%s\n' % c)
         with codecs.open(char_wb_right_vocab_path, 'w', 'utf-8') as f:
-            for c in char_list + [SPACE, OOV, EOF, EOD]:
+            for c in char_list + [SPACE, OOV, SOF, SOD]:
                 f.write('%s\n' % c)
         with codecs.open(char_wb_both_vocab_path, 'w', 'utf-8') as f:
-            for c in char_list + [SPACE, OOV, SOF, EOF, SOD, EOD]:
+            for c in char_list + [SPACE, OOV, SOF, SOD, EOF, EOD]:
                 f.write('%s\n' % c)
         with codecs.open(char_wb_remove_vocab_path, 'w', 'utf-8') as f:
             char_list_remove = sorted(list(char_set_remove))

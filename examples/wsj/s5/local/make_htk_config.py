@@ -11,7 +11,7 @@ import sys
 import argparse
 
 sys.path.append('../../../')
-from utils.feature_extraction.htk import save_config
+from src.utils.feature_extraction.htk import save_config
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str,

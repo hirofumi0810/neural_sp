@@ -17,8 +17,8 @@ import codecs
 from collections import OrderedDict
 
 sys.path.append('../../../')
-from utils.directory import mkdir_join
-from utils.feature_extraction.segmentation import segment
+from src.utils.directory import mkdir_join
+from src.utils.feature_extraction.segmentation import segment
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_save_path', type=str,
@@ -43,9 +43,7 @@ parser.add_argument('--delta', type=int,
                     help='if 1, add the energy feature')
 parser.add_argument('--deltadelta', type=int,
                     help='if 1, double delta features are also extracted')
-
 args = parser.parse_args()
-
 
 CONFIG = {
     'feature_type': 'fbank',
@@ -60,6 +58,7 @@ CONFIG = {
 
 
 def main():
+
     print('=> Processing input data...')
     for data_type in ['train_' + args.data_size, 'dev', 'eval1', 'eval2', 'eval3']:
         print('===> %s' % data_type)
