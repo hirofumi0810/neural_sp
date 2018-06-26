@@ -235,11 +235,12 @@ def main():
                 tf_writer.add_scalar('train/loss', loss_train_mean, step + 1)
                 tf_writer.add_scalar('dev/loss', loss_dev, step + 1)
                 for name, param in model.named_parameters():
-                    name = name.replace('.', '/')
-                    tf_writer.add_histogram(
-                        name, param.data.cpu().numpy(), step + 1)
-                    tf_writer.add_histogram(
-                        name + '/grad', param.grad.data.cpu().numpy(), step + 1)
+                    if param.grad is not None:
+                        name = name.replace('.', '/')
+                        tf_writer.add_histogram(
+                            name, param.data.cpu().numpy(), step + 1)
+                        tf_writer.add_histogram(
+                            name + '/grad', param.grad.data.cpu().numpy(), step + 1)
 
             duration_step = time.time() - start_time_step
             logger.info("...Step:%d(epoch:%.2f) loss:%.2f(%.2f)/acc:%.2f(%.2f)/ppl:%.2f(%.2f)/lr:%.5f/batch:%d/y_lens:%d (%.2f min)" %

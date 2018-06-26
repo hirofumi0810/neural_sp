@@ -169,7 +169,7 @@ def main():
                          config=config['rnnlm_config'],
                          backend=config['rnnlm_config']['backend'])
             rnnlm.load_checkpoint(save_path=config['rnnlm_path'], epoch=-1)
-            rnnlm.rnn.flatten_parameters()
+            rnnlm.flatten_parameters()
 
             # Set pre-trained parameters
             if config['rnnlm_config']['backward']:
@@ -322,11 +322,12 @@ def main():
                 tf_writer.add_scalar('train/loss', loss_train_mean, step + 1)
                 tf_writer.add_scalar('dev/loss', loss_dev, step + 1)
                 for name, param in model.module.named_parameters():
-                    name = name.replace('.', '/')
-                    tf_writer.add_histogram(
-                        name, param.data.cpu().numpy(), step + 1)
-                    tf_writer.add_histogram(
-                        name + '/grad', param.grad.data.cpu().numpy(), step + 1)
+                    if param.grad is not None:
+                        name = name.replace('.', '/')
+                        tf_writer.add_histogram(
+                            name, param.data.cpu().numpy(), step + 1)
+                        tf_writer.add_histogram(
+                            name + '/grad', param.grad.data.cpu().numpy(), step + 1)
 
             duration_step = time.time() - start_time_step
             logger.info("...Step:%d(epoch:%.2f) loss:%.2f(%.2f)/acc:%.2f(%.2f)/lr:%.5f/batch:%d/x_lens:%d (%.2f min)" %
