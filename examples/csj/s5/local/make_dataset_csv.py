@@ -56,7 +56,7 @@ def main():
                 args.data_save_path, 'vocab', args.data_size),
             data_type=data_type,
             kana2phone_path='./local/csj_make_trans/kana2phone',
-            lexicon_path=None)
+            lexicon_path=join(args.data_save_path, 'local/dict_nosp/lexicon.txt'))
 
         # Make dataset file (.csv)
         print('=> Saving dataset files...')
@@ -71,8 +71,9 @@ def main():
         df_char_wb_right = pd.DataFrame([], columns=df_columns)
         df_char_wb_both = pd.DataFrame([], columns=df_columns)
         df_char_wb_remove = pd.DataFrame([], columns=df_columns)
-        # df_phone = pd.DataFrame([], columns=df_columns)
-        # df_phone_wb = pd.DataFrame([], columns=df_columns)
+        if 'eval' not in data_type:
+            df_phone = pd.DataFrame([], columns=df_columns)
+            df_phone_wb = pd.DataFrame([], columns=df_columns)
         df_pos = pd.DataFrame([], columns=df_columns)
 
         with open(join(args.data_save_path, 'feature', args.tool, args.data_size, data_type.split('_')[0], 'frame_num.pickle'), 'rb') as f:
@@ -83,7 +84,7 @@ def main():
         df_char_list, df_char_wb_list = [], []
         df_char_wb_left_list, df_char_wb_right_list = [], []
         df_char_wb_both_list, df_char_wb_remove_list = [], []
-        # df_phone_list, df_phone_wb_list = [], []
+        df_phone_list, df_phone_wb_list = [], []
         df_pos_list = []
         for utt_idx, trans in tqdm(trans_dict.items()):
             speaker = utt_idx.split('_')[0]
@@ -108,10 +109,11 @@ def main():
                 df_char_wb_both, [frame_num, feat_utt_save_path, trans['char_wb_both']])
             df_char_wb_remove = add_element(
                 df_char_wb_remove, [frame_num, feat_utt_save_path, trans['char_wb_remove']])
-            # df_phone = add_element(
-            #     df_phone, [frame_num, feat_utt_save_path, phone_indices])
-            # df_phone_wb = add_element(
-            #     df_phone_wb, [frame_num, feat_utt_save_path, phone_wb_indices])
+            if 'eval' not in data_type:
+                df_phone = add_element(
+                    df_phone, [frame_num, feat_utt_save_path, trans['phone']])
+                df_phone_wb = add_element(
+                    df_phone_wb, [frame_num, feat_utt_save_path, trans['phone_wb']])
             df_pos = add_element(
                 df_pos, [frame_num, feat_utt_save_path,  trans['pos']])
             utt_count += 1
@@ -125,8 +127,9 @@ def main():
                 df_char_wb_right_list.append(df_char_wb_right)
                 df_char_wb_both_list.append(df_char_wb_both)
                 df_char_wb_remove_list.append(df_char_wb_remove)
-                # df_phone_list.append(df_phone)
-                # df_phone_wb_list.append(df_phone_wb)
+                if 'eval' not in data_type:
+                    df_phone_list.append(df_phone)
+                    df_phone_wb_list.append(df_phone_wb)
                 df_pos_list.append(df_pos)
 
                 df_word = pd.DataFrame([], columns=df_columns)
@@ -136,8 +139,9 @@ def main():
                 df_char_wb_right = pd.DataFrame([], columns=df_columns)
                 df_char_wb_both = pd.DataFrame([], columns=df_columns)
                 df_char_wb_remove = pd.DataFrame([], columns=df_columns)
-                # df_phone = pd.DataFrame([], columns=df_columns)
-                # df_phone_wb = pd.DataFrame([], columns=df_columns)
+                if 'eval' not in data_type:
+                    df_phone = pd.DataFrame([], columns=df_columns)
+                    df_phone_wb = pd.DataFrame([], columns=df_columns)
                 df_pos = pd.DataFrame([], columns=df_columns)
                 utt_count = 0
 
@@ -149,8 +153,9 @@ def main():
         df_char_wb_right_list.append(df_char_wb_right)
         df_char_wb_both_list.append(df_char_wb_both)
         df_char_wb_remove_list.append(df_char_wb_remove)
-        # df_phone_list.append(df_phone)
-        # df_phone_wb_list.append(df_phone_wb)
+        if 'eval' not in data_type:
+            df_phone_list.append(df_phone)
+            df_phone_wb_list.append(df_phone_wb)
         df_pos_list.append(df_pos)
 
         # Concatenate all dataframes
@@ -161,8 +166,9 @@ def main():
         df_char_wb_right = df_char_wb_right_list[0]
         df_char_wb_both = df_char_wb_both_list[0]
         df_char_wb_remove = df_char_wb_remove_list[0]
-        # df_phone = df_phone_list[0]
-        # df_phone_wb = df_phone_wb_list[0]
+        if 'eval' not in data_type:
+            df_phone = df_phone_list[0]
+            df_phone_wb = df_phone_wb_list[0]
         df_pos = df_pos_list[0]
 
         for i in df_word_list[1:]:
@@ -179,10 +185,11 @@ def main():
             df_char_wb_both = pd.concat([df_char_wb_both, i], axis=0)
         for i in df_char_wb_remove_list[1:]:
             df_char_wb_remove = pd.concat([df_char_wb_remove, i], axis=0)
-        # for i in df_phone_list[1:]:
-        #     df_phone = pd.concat([df_phone, i], axis=0)
-        # for i in df_phone_wb_list[1:]:
-        #     df_phone_wb = pd.concat([df_phone_wb, i], axis=0)
+        if 'eval' not in data_type:
+            for i in df_phone_list[1:]:
+                df_phone = pd.concat([df_phone, i], axis=0)
+            for i in df_phone_wb_list[1:]:
+                df_phone_wb = pd.concat([df_phone_wb, i], axis=0)
         for i in df_pos_list[1:]:
             df_pos = pd.concat([df_pos, i], axis=0)
 
@@ -198,11 +205,11 @@ def main():
             join(csv_save_path, 'character_wb_both.csv'), encoding='utf-8')
         df_char_wb_remove.to_csv(
             join(csv_save_path, 'character_wb_remove.csv'), encoding='utf-8')
-        # df_phone.to_csv(join(csv_save_path, 'phone.csv'), encoding='utf-8')
-        # df_phone_wb.to_csv(join(csv_save_path, 'phone_wb.csv'), encoding='utf-8')
+        if 'eval' not in data_type:
+            df_phone.to_csv(join(csv_save_path, 'phone.csv'), encoding='utf-8')
+            df_phone_wb.to_csv(
+                join(csv_save_path, 'phone_wb.csv'), encoding='utf-8')
         df_pos.to_csv(join(csv_save_path, 'pos.csv'), encoding='utf-8')
-
-        # TODO: word5でremove
 
 
 def add_element(df, elem_list):
@@ -212,7 +219,7 @@ def add_element(df, elem_list):
 
 
 def read_text(text_path, vocab_save_path, data_type,
-              kana2phone_path, lexicon_path=None):
+              kana2phone_path, lexicon_path):
     """Read transcripts (.sdb) & save files (.npy).
     Args:
         text_path (string): path to a text file of kaldi
@@ -229,6 +236,18 @@ def read_text(text_path, vocab_save_path, data_type,
                     key => label type
                     value => indices
     """
+    # Read the lexicon file
+    word2phone = {}
+    phone_set = set([])
+    with open(lexicon_path, 'r') as f:
+        for line in f:
+            word = line.strip().split(' ')[0]
+            phones = line.strip().split(' ')[1:]
+            phone_set |= set(phones)
+            word2phone[word] = ' '.join(phones)
+        phone_set.add(SHORT_PAUSE)
+        word2phone[SHORT_PAUSE] = SHORT_PAUSE
+
     # Make kana set
     kana_set = set([])
     with codecs.open(kana2phone_path, 'r', 'utf-8') as f:
@@ -249,8 +268,8 @@ def read_text(text_path, vocab_save_path, data_type,
         vocab_save_path, 'character_wb_both.txt')
     char_wb_remove_vocab_path = mkdir_join(
         vocab_save_path, 'character_wb_remove.txt')
-    # phone_vocab_path = mkdir_join(vocab_save_path, 'phone' + '.txt')
-    # phone_wb_vocab_path = mkdir_join(vocab_save_path, 'phone_wb' + '.txt')
+    phone_vocab_path = mkdir_join(vocab_save_path, 'phone' + '.txt')
+    phone_wb_vocab_path = mkdir_join(vocab_save_path, 'phone_wb' + '.txt')
     pos_vocab_path = mkdir_join(vocab_save_path, 'pos' + '.txt')
 
     trans_dict = {}
@@ -270,9 +289,7 @@ def read_text(text_path, vocab_save_path, data_type,
                                     for w in trans_w_pos.split(' ')])
             # NOTE: word and POS sequence are the same length
 
-            ###################################
             # with filler and disfluency
-            ###################################
             trans_left_list, trans_right_list, trans_both_list, trans_remove_list = [], [], [], []
             for w in trans_w_pos.split(' '):
                 if '言いよどみ' in w:
@@ -296,9 +313,6 @@ def read_text(text_path, vocab_save_path, data_type,
             trans_both = SPACE.join(trans_both_list)
             trans_remove = SPACE.join(trans_remove_list)
 
-            trans_dict[utt_idx] = [trans, trans_pos,
-                                   trans_left, trans_right, trans_both, trans_remove]
-
             for w in trans.split(SPACE):
                 # Count word frequency
                 if w not in word_dict.keys():
@@ -311,10 +325,20 @@ def read_text(text_path, vocab_save_path, data_type,
             for w in trans_remove.split(SPACE):
                 char_set_remove |= set(list(w))
 
+            # Phoneme
+            trans_phone = ''
+            if 'eval' not in data_type:
+                words = trans_w_pos.split(' ')
+                for i, w in enumerate(words):
+                    trans_phone += word2phone[w].replace(' ', SPACE)
+                    if i != len(words) - 1:
+                        trans_phone += SPACE + '<wb>' + SPACE
+
             for pos in trans_pos.split(SPACE):
                 pos_set.add(pos)
 
-    # TODO: load lexicon
+            trans_dict[utt_idx] = [trans, trans_left, trans_right, trans_both, trans_remove,
+                                   trans_phone, trans_pos]
 
     # Save vocabulary files
     if 'train' in data_type:
@@ -350,12 +374,12 @@ def read_text(text_path, vocab_save_path, data_type,
                 f.write('%s\n' % c)
 
         # phone-level (phone, phone_wb)
-        # with codecs.open(phone_vocab_path, 'w', 'utf-8') as f, codecs.open(phone_wb_vocab_path, 'w', 'utf-8') as f_wb:
-        #     phone_list = sorted(list(phone_set))
-        #     for phone in phone_list:
-        #         f.write('%s\n' % phone)
-        #     for phone in phone_list + [SIL]:
-        #         f_wb.write('%s\n' % phone)
+        with codecs.open(phone_vocab_path, 'w', 'utf-8') as f, codecs.open(phone_wb_vocab_path, 'w', 'utf-8') as f_wb:
+            phone_list = sorted(list(phone_set))
+            for phone in phone_list:
+                f.write('%s\n' % phone)
+            for phone in phone_list + ['<wb>']:
+                f_wb.write('%s\n' % phone)
 
         # pos-level
         with codecs.open(pos_vocab_path, 'w', 'utf-8') as f:
@@ -379,11 +403,11 @@ def read_text(text_path, vocab_save_path, data_type,
     char2idx_wb_right = Char2idx(char_wb_right_vocab_path)
     char2idx_wb_both = Char2idx(char_wb_both_vocab_path)
     char2idx_wb_remove = Char2idx(char_wb_remove_vocab_path)
-    # phone2idx = Phone2idx(phone_vocab_path)
-    # phone2idx_wb = Phone2idx(phone_wb_vocab_path)
+    phone2idx = Phone2idx(phone_vocab_path)
+    phone2idx_wb = Phone2idx(phone_wb_vocab_path)
     pos2idx = Word2idx(pos_vocab_path)
 
-    for utt_idx, [trans, trans_pos, trans_left, trans_right, trans_both, trans_remove] in tqdm(trans_dict.items()):
+    for utt_idx, [trans, trans_left, trans_right, trans_both, trans_remove, trans_phone, trans_pos] in tqdm(trans_dict.items()):
         if 'eval' in data_type:
             trans_dict[utt_idx] = {
                 "word": trans,
@@ -393,10 +417,8 @@ def read_text(text_path, vocab_save_path, data_type,
                 "char_wb_right": trans,
                 "char_wb_both": trans,
                 "char_wb_remove": trans_remove,
-                "phone": None,
-                # "phone": trans_phone,
-                "phone_wb": None,
-                # "phone_wb": trans_phone.replace(SIL, '').replace('  ', ' '),
+                "phone": trans_phone.replace('_<wb>_', '_'),
+                "phone_wb": trans_phone,
                 "pos": trans_pos,
             }
             # NOTE: save as it is
@@ -408,9 +430,9 @@ def read_text(text_path, vocab_save_path, data_type,
             char_wb_right_indices = char2idx_wb_right(trans_right)
             char_wb_both_indices = char2idx_wb_both(trans_both)
             char_wb_remove_indices = char2idx_wb_remove(trans_remove)
-            # phone_indices = phone2idx(
-            #     trans_phone.replace(SIL, '').replace('  ', ' '))
-            # phone_wb_indices = phone2idx_wb(trans_phone)
+            if 'eval' not in data_type:
+                phone_indices = phone2idx(trans_phone.replace('_<wb>_', '_'))
+                phone_wb_indices = phone2idx_wb(trans_phone)
             pos_indices = pos2idx(trans_pos)
 
             word_indices = ' '.join(list(map(str, word_indices)))
@@ -424,10 +446,12 @@ def read_text(text_path, vocab_save_path, data_type,
                 list(map(str, char_wb_both_indices)))
             char_wb_remove_indices = ' '.join(
                 list(map(str, char_wb_remove_indices)))
-            # phone_indices = ' '.join(
-            # list(map(str, phone_indices)))
-            # phone_wb_indices = ' '.join(
-            # list(map(str, phone_wb_indices)))
+            if 'eval' not in data_type:
+                phone_indices = ' '.join(list(map(str, phone_indices)))
+                phone_wb_indices = ' '.join(list(map(str, phone_wb_indices)))
+            else:
+                phone_indices = None
+                phone_wb_indices = None
             pos_indices = ' '.join(list(map(str, pos_indices)))
 
             trans_dict[utt_idx] = {
@@ -438,8 +462,8 @@ def read_text(text_path, vocab_save_path, data_type,
                 "char_wb_right": char_wb_right_indices,
                 "char_wb_both": char_wb_both_indices,
                 "char_wb_remove": char_wb_remove_indices,
-                # "phone": phone_indices,
-                # "phone_wb": phone_wb_indices,
+                "phone": phone_indices,
+                "phone_wb": phone_wb_indices,
                 "pos": pos_indices,
             }
 

@@ -28,6 +28,8 @@ class TestLoadDataset(unittest.TestCase):
         # label_type
         self.check(label_type='word')
         self.check(label_type='character_capital_divide')
+        self.check(label_type='phone_wb')
+        self.check(label_type='phone')
 
         # sort
         self.check(sort_utt=True)
@@ -60,8 +62,10 @@ class TestLoadDataset(unittest.TestCase):
         print('=> Loading mini-batch...')
         if label_type == 'word':
             map_fn = dataset.idx2word
-        else:
+        elif 'character' in label_type:
             map_fn = dataset.idx2char
+        elif 'phone' in label_type:
+            map_fn = dataset.idx2phone
 
         for batch, is_new_epoch in dataset:
             str_ref = batch['ys'][0]

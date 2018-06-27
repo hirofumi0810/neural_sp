@@ -20,7 +20,7 @@ from src.dataset.base import Base, load_feat
 from src.utils.parallel import make_parallel
 from src.utils.io.labels.word import Idx2word, Word2idx
 from src.utils.io.labels.character import Idx2char, Char2idx
-from src.utils.io.labels.phone import Idx2phone
+from src.utils.io.labels.phone import Idx2phone, Phone2idx
 
 
 class Dataset(Base):
@@ -94,6 +94,7 @@ class Dataset(Base):
 
         self.vocab_file_path = join(
             data_save_path, 'vocab', data_size, label_type + '.txt')
+
         if label_type == 'word':
             self.idx2word = Idx2word(self.vocab_file_path)
             self.word2idx = Word2idx(self.vocab_file_path)
@@ -106,6 +107,7 @@ class Dataset(Base):
                 capital_divide=label_type == 'character_capital_divide')
         elif 'phone' in label_type:
             self.idx2phone = Idx2phone(self.vocab_file_path)
+            self.phone2idx = Phone2idx(self.vocab_file_path)
         else:
             raise ValueError(label_type)
 
@@ -154,6 +156,19 @@ class Dataset(Base):
 
         self.df = df
         self.rest = set(list(df.index))
+
+        # Setting for each corpus
+        if corpus == 'timit':
+            # Set path to phones.60-48-39.map
+            self.phone_map_path = './conf/phones.60-48-39.map'
+        elif corpus == 'swbd':
+            if 'eval2000' in data_type:
+                self.glm_path = join(data_save_path, 'eval2000', 'glm')
+                self.acronyms_map_path = join(
+                    data_save_path, 'eval2000', 'acronyms.map')
+            else:
+                self.glm_path = None
+                self.acronyms_map_path = None
 
     def make_batch(self, data_indices):
         """Create mini-batch per step.

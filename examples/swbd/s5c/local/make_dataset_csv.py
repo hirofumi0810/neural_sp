@@ -51,6 +51,8 @@ HESITATIONS = ['UH', 'UM', 'EH', 'MM',  'HM', 'AH',
                'HUH', 'HA', 'ER', 'OOF', 'HEE', 'ACH', 'EEE' 'EW']
 BACKCHANNELS = ['UH-HUH', 'UM-HUM', 'MHM', 'MMHM', 'MM-HM', 'MM-HUH', 'HUH-UH']
 
+# TODO: add lexicon of swbd+fisher
+
 
 def main():
 
@@ -132,7 +134,7 @@ def main():
                     df_char_both, [len(trans['char_both'].split('_')), '', trans['char_both']])
                 df_char_remove = add_element(
                     df_char_remove, [len(trans['char_remove'].split('_')), '', trans['char_remove']])
-                if data_type != 'train_fisher':
+                if data_type not in ['train_fisher', 'eval2000_swbd', 'eval2000_ch']:
                     df_phone = add_element(
                         df_phone, [len(trans['phone'].split('_')), '', trans['phone']])
                     df_phone_wb = add_element(
@@ -165,7 +167,7 @@ def main():
                     df_char_both, [frame_num, feat_utt_save_path, trans['char_both']])
                 df_char_remove = add_element(
                     df_char_remove, [frame_num, feat_utt_save_path, trans['char_remove']])
-                if data_type != 'train_fisher':
+                if data_type not in ['train_fisher', 'eval2000_swbd', 'eval2000_ch']:
                     df_phone = add_element(
                         df_phone, [frame_num, feat_utt_save_path, trans['phone']])
                     df_phone_wb = add_element(
@@ -181,7 +183,7 @@ def main():
                 df_char_right_list.append(df_char_right)
                 df_char_both_list.append(df_char_both)
                 df_char_remove_list.append(df_char_remove)
-                if data_type != 'train_fisher':
+                if data_type not in ['train_fisher', 'eval2000_swbd', 'eval2000_ch']:
                     df_phone_list.append(df_phone)
                     df_phone_wb_list.append(df_phone_wb)
 
@@ -192,10 +194,9 @@ def main():
                 df_char_right = pd.DataFrame([], columns=df_columns)
                 df_char_both = pd.DataFrame([], columns=df_columns)
                 df_char_remove = pd.DataFrame([], columns=df_columns)
-                if data_type != 'train_fisher':
+                if data_type not in ['train_fisher', 'eval2000_swbd', 'eval2000_ch']:
                     df_phone = pd.DataFrame([], columns=df_columns)
                     df_phone_wb = pd.DataFrame([], columns=df_columns)
-
                 utt_count = 0
 
         # Last dataframe
@@ -206,7 +207,7 @@ def main():
         df_char_right_list.append(df_char_right)
         df_char_both_list.append(df_char_both)
         df_char_remove_list.append(df_char_remove)
-        if data_type != 'train_fisher':
+        if data_type not in ['train_fisher', 'eval2000_swbd', 'eval2000_ch']:
             df_phone_list.append(df_phone)
             df_phone_wb_list.append(df_phone_wb)
 
@@ -218,7 +219,7 @@ def main():
         df_char_right = df_char_right_list[0]
         df_char_both = df_char_both_list[0]
         df_char_remove = df_char_remove_list[0]
-        if data_type != 'train_fisher':
+        if data_type not in ['train_fisher', 'eval2000_swbd', 'eval2000_ch']:
             df_phone = df_phone_list[0]
             df_phone_wb = df_phone_wb_list[0]
 
@@ -236,7 +237,7 @@ def main():
             df_char_both = pd.concat([df_char_both, i], axis=0)
         for i in df_char_remove_list[1:]:
             df_char_remove = pd.concat([df_char_remove, i], axis=0)
-        if data_type != 'train_fisher':
+        if data_type not in ['train_fisher', 'eval2000_swbd', 'eval2000_ch']:
             for i in df_phone_list[1:]:
                 df_phone = pd.concat([df_phone, i], axis=0)
             for i in df_phone_wb_list[1:]:
@@ -254,7 +255,7 @@ def main():
             join(csv_save_path, 'char_both.csv'), encoding='utf-8')
         df_char_remove.to_csv(
             join(csv_save_path, 'char_remove.csv'), encoding='utf-8')
-        if data_type != 'train_fisher':
+        if data_type not in ['train_fisher', 'eval2000_swbd', 'eval2000_ch']:
             df_phone.to_csv(
                 join(csv_save_path, 'phone.csv'), encoding='utf-8')
             df_phone_wb.to_csv(
@@ -287,10 +288,12 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path):
     """
     # Read the lexicon file
     word2phone = {}
+    phone_set = set([])
     with open(lexicon_path, 'r') as f:
         for line in f:
             word = line.strip().split(' ')[0]
             phones = line.strip().split(' ')[1:]
+            phone_set |= set(phones)
             word2phone[word] = ' '.join(phones)
         word2phone[LAUGHTER] = LAUGHTER
         word2phone[NOISE] = NOISE
@@ -310,7 +313,6 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path):
     phone_wb_vocab_path = mkdir_join(vocab_save_path, 'phone_wb.txt')
 
     trans_dict = {}
-    phone_set = set([])
     char_set = set([])
     char_capital_set = set([])
     char_set_remove = set([])
@@ -331,14 +333,6 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path):
             if data_type == 'train_fisher':
                 pass
                 trans = re.sub(r'[~,]', '', trans)
-                # trans = re.sub(r'[,?*~]', '', trans)
-                # trans = trans.replace('_', '')
-                # trans = trans.replace('-', '')
-                # trans = trans.replace('%.', '')
-                # trans = trans.replace('%s+', ' ')
-                # trans = trans.replace('^%s+', '')
-                # trans = trans.replace('%s+$', '')
-                # trans = trans.replace('%s', '|').replace('(.)', '%1 ').replace(' $', '')
 
             trans = trans.replace('[laughter]', LAUGHTER)
             trans = trans.replace('[noise]', NOISE)
@@ -428,13 +422,12 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path):
 
             # Phoneme
             trans_phone = ''
-            if data_type != 'train_fisher':
+            if data_type not in ['train_fisher', 'eval2000_swbd', 'eval2000_ch']:
                 words = trans.split(' ')
                 for i, w in enumerate(words):
                     trans_phone += word2phone[w].replace(' ', SPACE)
                     if i != len(words) - 1:
                         trans_phone += SPACE + '<wb>' + SPACE
-                    phone_set |= set(word2phone[w].split(' '))
             trans = trans.replace(' ', SPACE)
 
             trans_dict[utt_idx] = [trans, trans_capital,
@@ -451,9 +444,6 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path):
     char_set.discard('E')
     char_set.discard('F')
     char_set.discard('G')
-    phone_set.discard(LAUGHTER)
-    phone_set.discard(NOISE)
-    phone_set.discard(VOCALIZED_NOISE)
 
     # Save vocabulary files
     if data_type == 'train':
@@ -545,7 +535,7 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path):
             char_right_indices = char2idx_right(trans_right)
             char_both_indices = char2idx_both(trans_both)
             char_remove_indices = char2idx_remove(trans_remove)
-            if data_type != 'train_fisher':
+            if data_type not in ['train_fisher', 'eval2000_swbd', 'eval2000_ch']:
                 phone_indices = phone2idx(trans_phone.replace('_<wb>_', '_'))
                 phone_wb_indices = phone2idx_wb(trans_phone)
 
@@ -557,7 +547,7 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path):
             char_right_indices = ' '.join(list(map(str, char_right_indices)))
             char_both_indices = ' '.join(list(map(str, char_both_indices)))
             char_remove_indices = ' '.join(list(map(str, char_remove_indices)))
-            if data_type != 'train_fisher':
+            if data_type not in ['train_fisher', 'eval2000_swbd', 'eval2000_ch']:
                 phone_indices = ' '.join(list(map(str, phone_indices)))
                 phone_wb_indices = ' '.join(list(map(str, phone_wb_indices)))
             else:

@@ -59,9 +59,11 @@ args = parser.parse_args()
 if args.corpus == 'csj':
     MAX_DECODE_LEN_WORD = 100
     MAX_DECODE_LEN_CHAR = 200
+    MAX_DECODE_LEN_PHONE = 200
 elif args.corpus == 'swbd':
     MAX_DECODE_LEN_WORD = 100
     MAX_DECODE_LEN_CHAR = 300
+    MAX_DECODE_LEN_PHONE = 300
 elif args.corpus == 'librispeech':
     raise NotImplementedError
 elif args.corpus == 'wsj':
@@ -70,7 +72,7 @@ elif args.corpus == 'wsj':
 elif args.corpus == 'timit':
     MAX_DECODE_LEN_PHONE = 71
 else:
-    raise ValueError
+    raise ValueError(args.corpus)
 
 
 def main():
@@ -131,6 +133,8 @@ def main():
         subsampling_factor=2 ** sum(config['subsample_list']))
     eval_sets = []
     for data_type in args.eval_sets:
+        if 'phone' in config['label_type'] and args.corpus != 'timit':
+            continue
         eval_sets += [Dataset(
             corpus=args.corpus,
             data_save_path=args.data_save_path,

@@ -56,6 +56,10 @@ if args.corpus == 'csj':
     MAX_DECODE_LEN_RATIO_CHAR = 1
     MIN_DECODE_LEN_RATIO_CHAR = 0.2
 
+    MAX_DECODE_LEN_PHONE = 200
+    MIN_DECODE_LEN_PHONE = 1
+    MAX_DECODE_LEN_RATIO_PHONE = 1
+    MIN_DECODE_LEN_RATIO_PHONE = 0
 elif args.corpus == 'swbd':
     MAX_DECODE_LEN_WORD = 100
     MIN_DECODE_LEN_WORD = 1
@@ -66,6 +70,11 @@ elif args.corpus == 'swbd':
     MIN_DECODE_LEN_CHAR = 1
     MAX_DECODE_LEN_RATIO_CHAR = 1
     MIN_DECODE_LEN_RATIO_CHAR = 0.2
+
+    MAX_DECODE_LEN_PHONE = 300
+    MIN_DECODE_LEN_PHONE = 1
+    MAX_DECODE_LEN_RATIO_PHONE = 1
+    MIN_DECODE_LEN_RATIO_PHONE = 0
 elif args.corpus == 'librispeech':
     MAX_DECODE_LEN_WORD = 200
     MIN_DECODE_LEN_WORD = 1
@@ -76,7 +85,6 @@ elif args.corpus == 'librispeech':
     MIN_DECODE_LEN_CHAR = 1
     MAX_DECODE_LEN_RATIO_CHAR = 1
     MIN_DECODE_LEN_RATIO_CHAR = 0.2
-
 elif args.corpus == 'wsj':
     MAX_DECODE_LEN_WORD = 32
     MIN_DECODE_LEN_WORD = 2
@@ -87,13 +95,11 @@ elif args.corpus == 'wsj':
     MIN_DECODE_LEN_CHAR = 10
     MAX_DECODE_LEN_RATIO_CHAR = 1
     MIN_DECODE_LEN_RATIO_CHAR = 0.2
-
     # NOTE:
     # dev93 (char): 10-199
     # test_eval92 (char): 16-195
     # dev93 (word): 2-32
     # test_eval92 (word): 3-30
-
 elif args.corpus == 'timit':
     MAX_DECODE_LEN_PHONE = 71
     MIN_DECODE_LEN_PHONE = 13
@@ -103,7 +109,7 @@ elif args.corpus == 'timit':
     # dev: 13-71
     # test: 13-69
 else:
-    raise ValueError
+    raise ValueError(args.corpus)
 
 
 def main():

@@ -1,0 +1,37 @@
+parent: ./conf/attention/char_att.yml
+param:
+  # framework
+  backend: pytorch
+
+  # corpus
+  corpus: switchboard
+  label_type: phone_wb
+
+  # topology
+  encoder_num_units: 320
+  encoder_num_proj: 0
+  encoder_num_layers: 5
+  subsample_list:
+    - False
+    - True
+    - True
+    - False
+    - False
+  attention_dim: 128
+  decoder_num_units: 320
+  embedding_dim: 32
+  decoding_order: bahdanau
+  bottleneck_dim: 320
+  num_heads: 1
+
+  # initialization
+  pretrained_model_path: False
+
+  # MTL
+  backward_loss_weight: 0
+  ctc_loss_weight: 0
+
+  # RNNLM fusion (not used)
+  rnnlm_fusion_type: False
+  rnnlm_path: False
+  rnnlm_weight: 0
