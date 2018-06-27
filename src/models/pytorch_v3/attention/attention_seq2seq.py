@@ -112,10 +112,15 @@ class AttentionSeq2seq(ModelBase):
         backward_loss_weight (int): A weight parameter for the loss of the backward decdoer,
             where the model predicts each token in the reverse order
         num_heads (int): the number of heads in the multi-head attention
-        rnnlm_fusion_type (string): False or cold_fusion or logits_fusion
+        rnnlm_fusion_type (string):
+            False:
+            cold_fusion:
+            logits_fusion:
+            state_fusion:
+            embedding_fusion:
+            state_embedding_fusion:
         rnnlm_config (dict): configuration of the pre-trained RNNLM
         rnnlm_weight (float): the weight for XE loss of RNNLM
-        concat_embedding (int): if True, concat embeddings of ASR and RMMLM
     """
 
     def __init__(self,
@@ -176,8 +181,7 @@ class AttentionSeq2seq(ModelBase):
                  num_heads=1,
                  rnnlm_fusion_type=None,
                  rnnlm_config=None,
-                 rnnlm_weight=0,
-                 concat_embedding=False):
+                 rnnlm_weight=0):
 
         super(ModelBase, self).__init__()
         self.model_type = 'attention'
@@ -253,7 +257,6 @@ class AttentionSeq2seq(ModelBase):
         self.rnnlm_0_fwd = None
         self.rnnlm_0_bwd = None
         self.rnnlm_weight_0 = rnnlm_weight
-        self.concat_embedding = concat_embedding
 
         # RNNLM fusion
         if rnnlm_fusion_type:
@@ -272,7 +275,9 @@ class AttentionSeq2seq(ModelBase):
                 parameter_init=rnnlm_config['parameter_init'],
                 recurrent_weight_orthogonal=rnnlm_config['recurrent_weight_orthogonal'],
                 init_forget_gate_bias_with_one=rnnlm_config['init_forget_gate_bias_with_one'],
+                label_smoothing_prob=rnnlm_config['label_smoothing_prob'],
                 tie_weights=rnnlm_config['tie_weights'],
+                residual_connection=rnnlm_config['residual_connection'],
                 backward=rnnlm_config['backward'])
 
             self.W_rnnlm_logits_0_fwd = LinearND(
@@ -360,12 +365,15 @@ class AttentionSeq2seq(ModelBase):
                     self.encoder_num_units, decoder_num_units))
 
             # Decoder
-            embedding_size = embedding_dim
-            if rnnlm_fusion_type and concat_embedding:
-                embedding_size += self.rnnlm_0_fwd.embedding_dim
             if decoding_order == 'conditional':
+                decoder_input_size_first = embedding_dim
+                decoder_input_size_second = self.encoder_num_units
+                if rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
+                    decoder_input_size_first += self.rnnlm_0_fwd.embedding_dim
+                if rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
+                    decoder_input_size_second += self.rnnlm_0_fwd.num_units
                 setattr(self, 'decoder_first_0_' + dir, RNNDecoder(
-                    input_size=embedding_size,
+                    input_size=decoder_input_size_first,
                     rnn_type=decoder_type,
                     num_units=decoder_num_units,
                     num_layers=1,
@@ -373,7 +381,7 @@ class AttentionSeq2seq(ModelBase):
                     residual=False,
                     dense_residual=False))
                 setattr(self, 'decoder_second_0_' + dir, RNNDecoder(
-                    input_size=self.encoder_num_units,
+                    input_size=decoder_input_size_second,
                     rnn_type=decoder_type,
                     num_units=decoder_num_units,
                     num_layers=1,
@@ -382,8 +390,13 @@ class AttentionSeq2seq(ModelBase):
                     dense_residual=False))
                 # NOTE; the conditional decoder only supports the 1 layer
             else:
+                decoder_input_size = embedding_dim + self.encoder_num_units
+                if rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
+                    decoder_input_size += self.rnnlm_0_fwd.embedding_dim
+                if rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
+                    decoder_input_size += self.rnnlm_0_fwd.num_units
                 setattr(self, 'decoder_0_' + dir, RNNDecoder(
-                    input_size=self.encoder_num_units + embedding_size,
+                    input_size=decoder_input_size,
                     rnn_type=decoder_type,
                     num_units=decoder_num_units,
                     num_layers=decoder_num_layers,
@@ -775,8 +788,11 @@ class AttentionSeq2seq(ModelBase):
             if self.decoding_order == 'bahdanau':
                 if t > 0:
                     # Recurrency
-                    if self.rnnlm_fusion_type and self.concat_embedding:
+                    if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
                         y = torch.cat([y, y_rnnlm], dim=-1)
+                    if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
+                        context_vec = torch.cat(
+                            [context_vec, rnnlm_out], dim=-1)
                     dec_in = torch.cat([y, context_vec], dim=-1)
                     dec_out, dec_state = getattr(self, 'decoder' + taskdir)(
                         dec_in, dec_state)
@@ -787,8 +803,11 @@ class AttentionSeq2seq(ModelBase):
 
             elif self.decoding_order == 'luong':
                 # Recurrency
-                if self.rnnlm_fusion_type and self.concat_embedding:
+                if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
                     y = torch.cat([y, y_rnnlm], dim=-1)
+                if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
+                    context_vec = torch.cat(
+                        [context_vec, rnnlm_out], dim=-1)
                 dec_in = torch.cat([y, context_vec], dim=-1)
                 dec_out, dec_state = getattr(self, 'decoder' + taskdir)(
                     dec_in, dec_state)
@@ -799,7 +818,7 @@ class AttentionSeq2seq(ModelBase):
 
             elif self.decoding_order == 'conditional':
                 # Recurrency of the first decoder
-                if self.rnnlm_fusion_type and self.concat_embedding:
+                if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
                     y = torch.cat([y, y_rnnlm], dim=-1)
                 _dec_out, _dec_state = getattr(self, 'decoder_first' + taskdir)(
                     y, dec_state)
@@ -809,6 +828,9 @@ class AttentionSeq2seq(ModelBase):
                     enc_out, x_lens, _dec_out, aw_step)
 
                 # Recurrency of the second decoder
+                if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
+                    context_vec = torch.cat(
+                        [context_vec, rnnlm_out], dim=-1)
                 dec_out, dec_state = getattr(self, 'decoder_second' + taskdir)(
                     context_vec, _dec_state)
 
@@ -1023,8 +1045,11 @@ class AttentionSeq2seq(ModelBase):
             if self.decoding_order == 'bahdanau':
                 if t > 0:
                     # Recurrency
-                    if self.rnnlm_fusion_type and self.concat_embedding:
+                    if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
                         y = torch.cat([y, y_rnnlm], dim=-1)
+                    if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
+                        context_vec = torch.cat(
+                            [context_vec, rnnlm_out], dim=-1)
                     dec_in = torch.cat([y, context_vec], dim=-1)
                     dec_out, dec_state = getattr(self, 'decoder' + taskdir)(
                         dec_in, dec_state)
@@ -1035,8 +1060,11 @@ class AttentionSeq2seq(ModelBase):
 
             elif self.decoding_order == 'luong':
                 # Recurrency
-                if self.rnnlm_fusion_type and self.concat_embedding:
+                if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
                     y = torch.cat([y, y_rnnlm], dim=-1)
+                if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
+                    context_vec = torch.cat(
+                        [context_vec, rnnlm_out], dim=-1)
                 dec_in = torch.cat([y, context_vec], dim=-1)
                 dec_out, dec_state = getattr(self, 'decoder' + taskdir)(
                     dec_in, dec_state)
@@ -1047,7 +1075,7 @@ class AttentionSeq2seq(ModelBase):
 
             elif self.decoding_order == 'conditional':
                 # Recurrency of the first decoder
-                if self.rnnlm_fusion_type and self.concat_embedding:
+                if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
                     y = torch.cat([y, y_rnnlm], dim=-1)
                 _dec_out, _dec_state = getattr(self, 'decoder_first' + taskdir)(
                     y, dec_state)
@@ -1057,6 +1085,9 @@ class AttentionSeq2seq(ModelBase):
                     enc_out, x_lens, _dec_out, aw_step)
 
                 # Recurrency of the second decoder
+                if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
+                    context_vec = torch.cat(
+                        [context_vec, rnnlm_out], dim=-1)
                 dec_out, dec_state = getattr(self, 'decoder_second' + taskdir)(
                     context_vec, _dec_state)
 
@@ -1197,8 +1228,11 @@ class AttentionSeq2seq(ModelBase):
                             dec_out = beam[i_beam]['dec_out']
                         else:
                             # Recurrency
-                            if self.rnnlm_fusion_type and self.concat_embedding:
+                            if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
                                 y = torch.cat([y, y_rnnlm], dim=-1)
+                            if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
+                                beam[i_beam]['context_vec'] = torch.cat(
+                                    [beam[i_beam]['context_vec'], rnnlm_out], dim=-1)
                             dec_in = torch.cat(
                                 [y, beam[i_beam]['context_vec']], dim=-1)
                             dec_out, dec_state = getattr(self, 'decoder' + taskdir)(
@@ -1211,8 +1245,11 @@ class AttentionSeq2seq(ModelBase):
 
                     elif self.decoding_order == 'luong':
                         # Recurrency
-                        if self.rnnlm_fusion_type and self.concat_embedding:
+                        if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
                             y = torch.cat([y, y_rnnlm], dim=-1)
+                        if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
+                            beam[i_beam]['context_vec'] = torch.cat(
+                                [beam[i_beam]['context_vec'], rnnlm_out], dim=-1)
                         dec_in = torch.cat(
                             [y, beam[i_beam]['context_vec']], dim=-1)
                         dec_out, dec_state = getattr(self, 'decoder' + taskdir)(
@@ -1225,7 +1262,7 @@ class AttentionSeq2seq(ModelBase):
 
                     elif self.decoding_order == 'conditional':
                         # Recurrency of the first decoder
-                        if self.rnnlm_fusion_type and self.concat_embedding:
+                        if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
                             y = torch.cat([y, y_rnnlm], dim=-1)
                         _dec_out, _dec_state = getattr(self, 'decoder_first' + taskdir)(
                             y, beam[i_beam]['dec_state'])
@@ -1236,6 +1273,9 @@ class AttentionSeq2seq(ModelBase):
                             _dec_out, beam[i_beam]['aw_steps'][-1])
 
                         # Recurrency of the second decoder
+                        if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
+                            context_vec = torch.cat(
+                                [context_vec, rnnlm_out], dim=-1)
                         dec_out, dec_state = getattr(self, 'decoder_second' + taskdir)(
                             context_vec, _dec_state)
 

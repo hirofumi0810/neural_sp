@@ -213,8 +213,6 @@ def load(model_type, config, backend):
             config['rnnlm_config'] = None
         if 'rnnlm_weight' not in config.keys():
             config['rnnlm_weight'] = 0
-        if 'concat_embedding' not in config.keys():
-            config['concat_embedding'] = False
 
         model = AttentionSeq2seq(
             input_size=config['input_freq'] *
@@ -273,8 +271,7 @@ def load(model_type, config, backend):
             num_heads=config['num_heads'],
             rnnlm_fusion_type=config['rnnlm_fusion_type'],
             rnnlm_config=config['rnnlm_config'],
-            rnnlm_weight=config['rnnlm_weight'],
-            concat_embedding=config['concat_embedding'])
+            rnnlm_weight=config['rnnlm_weight'])
 
         model.name = model_name
         if config['encoder_type'] not in ['cnn', 'resnet']:
@@ -343,8 +340,6 @@ def load(model_type, config, backend):
             model.name += '_' + config['rnnlm_fusion_type']
         if float(config['rnnlm_weight']) > 0:
             model.name += '_lmjoint' + str(config['rnnlm_weight'])
-        if bool(config['concat_embedding']) > 0:
-            model.name += '_concatemb'
 
     elif config['model_type'] == 'hierarchical_attention':
         if backend == 'pytorch':
@@ -363,8 +358,6 @@ def load(model_type, config, backend):
             config['rnnlm_weight'] = 0
         if 'rnnlm_weight_sub' not in config.keys():
             config['rnnlm_weight_sub'] = 0
-        if 'concat_embedding' not in config.keys():
-            config['concat_embedding'] = False
 
         model = HierarchicalAttentionSeq2seq(
             input_size=config['input_freq'] *
@@ -434,8 +427,7 @@ def load(model_type, config, backend):
             rnnlm_config=config['rnnlm_config'],
             rnnlm_config_sub=config['rnnlm_config_sub'],
             rnnlm_weight=config['rnnlm_weight'],
-            rnnlm_weight_sub=config['rnnlm_weight_sub'],
-            concat_embedding=config['concat_embedding'])
+            rnnlm_weight_sub=config['rnnlm_weight_sub'])
 
         model.name = model_name
         if config['encoder_type'] not in ['cnn', 'resnet']:
@@ -508,8 +500,6 @@ def load(model_type, config, backend):
         if float(config['rnnlm_weight']) > 0 or float(config['rnnlm_weight_sub']) > 0:
             model.name += '_lmjoint' + \
                 str(config['rnnlm_weight']) + str(config['rnnlm_weight_sub'])
-        if bool(config['concat_embedding']) > 0:
-            model.name += '_concatemb'
 
     elif config['model_type'] == 'nested_attention':
         if backend == 'pytorch':

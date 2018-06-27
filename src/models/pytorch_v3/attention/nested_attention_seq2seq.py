@@ -200,7 +200,6 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         self.rnnlm_fusion_type = False
         self.rnnlm_1 = None
         self.rnnlm_weight = 0
-        self.concat_embedding = False
 
         # Setting for decoder attention
         assert usage_dec_sub in ['update_decoder', 'all', 'softmax']

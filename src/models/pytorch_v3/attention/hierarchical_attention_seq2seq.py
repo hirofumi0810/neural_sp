@@ -97,8 +97,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  rnnlm_config=None,
                  rnnlm_config_sub=None,  # ***
                  rnnlm_weight=0,
-                 rnnlm_weight_sub=0,  # ***
-                 concat_embedding=False):
+                 rnnlm_weight_sub=0):  # ***
 
         super(HierarchicalAttentionSeq2seq, self).__init__(
             input_size=input_size,
@@ -153,8 +152,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             num_heads=num_heads,
             rnnlm_fusion_type=rnnlm_fusion_type,
             rnnlm_config=rnnlm_config,
-            rnnlm_weight=rnnlm_weight,
-            concat_embedding=concat_embedding)
+            rnnlm_weight=rnnlm_weight)
         self.model_type = 'hierarchical_attention'
 
         # Setting for the encoder
@@ -306,12 +304,12 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     self.encoder_num_units_sub, decoder_num_units_sub))
 
             # Decoder (sub)
-            embedding_size_sub = embedding_dim_sub
-            if rnnlm_fusion_type and concat_embedding:
-                embedding_size_sub += self.rnnlm_1_fwd.embedding_dim
+            decoder_input_size_sub = embedding_dim_sub
+            if rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
+                decoder_input_size_sub += self.rnnlm_1_fwd.embedding_dim
             if decoding_order == 'conditional':
                 setattr(self, 'decoder_first_1_' + dir_sub, RNNDecoder(
-                    input_size=embedding_size_sub,
+                    input_size=decoder_input_size_sub,
                     rnn_type=decoder_type,
                     num_units=decoder_num_units_sub,
                     num_layers=1,
@@ -329,7 +327,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 # NOTE; the conditional decoder only supports the 1 layer
             else:
                 setattr(self, 'decoder_1_' + dir_sub, RNNDecoder(
-                    input_size=self.encoder_num_units_sub + embedding_size_sub,
+                    input_size=self.encoder_num_units_sub + decoder_input_size_sub,
                     rnn_type=decoder_type,
                     num_units=decoder_num_units_sub,
                     num_layers=decoder_num_layers_sub,
@@ -912,7 +910,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
                             charseq = [self.eos_1]
                             score_c2w += log_probs_sub.data[0, self.eos_1]
-                            aw_steps_sub += [aw_step_sub]
+                            aw_steps_sub = [aw_step_sub]
 
                             # print(idx2word([word_idx]))
                             # print(idx2char([self.eos_1]))
