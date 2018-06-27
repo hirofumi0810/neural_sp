@@ -97,9 +97,12 @@ def eval_char(models, dataset, eval_batch_size, beam_width,
                 str_hyp = normalize(str_hyp, remove_tokens=['@', '>'])
                 # NOTE: @ means <sp> (CSJ), noise (WSJ)
             elif dataset.corpus == 'swbd':
-                glm = GLM(dataset.glm_path)
-                str_ref = normalize_swbd(str_ref, glm)
-                str_hyp = normalize_swbd(str_hyp, glm)
+                if 'eval2000' in dataset.data_type:
+                    glm = GLM(dataset.glm_path)
+                    str_ref = normalize_swbd(str_ref, glm)
+                    str_hyp = normalize_swbd(str_hyp, glm)
+                else:
+                    str_hyp = normalize(str_hyp, remove_tokens=['>'])
             elif dataset.corpus == 'librispeech':
                 str_hyp = normalize(str_hyp, remove_tokens=['>'])
             else:

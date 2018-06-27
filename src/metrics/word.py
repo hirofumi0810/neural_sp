@@ -134,21 +134,6 @@ def eval_word(models, dataset, eval_batch_size,
                 length_penalty=length_penalty,
                 coverage_penalty=coverage_penalty,
                 rnnlm_weight=rnnlm_weight)
-            if resolving_unk:
-                # assert sum(model.subsample_list) == sum(
-                #     model.subsample_list[:model.encoder_num_layers_sub - 1])
-                # NOTE: time-resolution must be the same
-
-                best_hyps_sub, aw_sub, _ = model.decode(
-                    batch['xs'],
-                    beam_width=beam_width,
-                    max_decode_len=max_decode_len_sub,
-                    min_decode_len=min_decode_len_sub,
-                    min_decode_len_ratio=min_decode_len_ratio_sub,
-                    length_penalty=length_penalty,
-                    coverage_penalty=coverage_penalty,
-                    rnnlm_weight_sub=rnnlm_weight_sub,
-                    task_index=1)
 
         ys = [batch['ys'][i] for i in perm_idx]
 
@@ -166,8 +151,20 @@ def eval_word(models, dataset, eval_batch_size,
 
             # Resolving UNK
             if resolving_unk and 'OOV' in str_hyp:
+                if not (model.model_type == 'hierarchical_attention' and joint_decoding):
+                    best_hyps_sub, aw_sub, _ = model.decode(
+                        batch['xs'][b:b + 1],
+                        beam_width=beam_width,
+                        max_decode_len=max_decode_len_sub,
+                        min_decode_len=min_decode_len_sub,
+                        min_decode_len_ratio=min_decode_len_ratio_sub,
+                        length_penalty=length_penalty,
+                        coverage_penalty=coverage_penalty,
+                        rnnlm_weight_sub=rnnlm_weight_sub,
+                        task_index=1)
+
                 str_hyp = resolve_unk(
-                    str_hyp, best_hyps_sub[b], aw[b], aw_sub[b], dataset.idx2char,
+                    str_hyp, best_hyps_sub[0], aw[b], aw_sub[0], dataset.idx2char,
                     diff_time_resolution=2 ** sum(model.subsample_list) // 2 ** sum(model.subsample_list[:model.encoder_num_layers_sub - 1]))
                 str_hyp = str_hyp.replace('*', '')
 
@@ -177,9 +174,12 @@ def eval_word(models, dataset, eval_batch_size,
                 str_hyp = normalize(str_hyp, remove_tokens=['@', '>'])
                 # NOTE: @ means <sp> (CSJ), noise (WSJ)
             elif dataset.corpus == 'swbd':
-                glm = GLM(dataset.glm_path)
-                str_ref = normalize_swbd(str_ref, glm)
-                str_hyp = normalize_swbd(str_hyp, glm)
+                if 'eval2000' in dataset.data_type:
+                    glm = GLM(dataset.glm_path)
+                    str_ref = normalize_swbd(str_ref, glm)
+                    str_hyp = normalize_swbd(str_hyp, glm)
+                else:
+                    str_hyp = normalize(str_hyp, remove_tokens=['>'])
             elif dataset.corpus == 'librispeech':
                 str_hyp = normalize(str_hyp, remove_tokens=['>'])
             else:

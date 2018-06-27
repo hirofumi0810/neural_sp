@@ -26,6 +26,9 @@ def eval_ppl(models, dataset, progressbar=False):
     model = models[0]
     # TODO: fix this
 
+    # Change to the evaluation mode
+    model.eval()
+
     loss = 0
     num_utt = 0
     if progressbar:

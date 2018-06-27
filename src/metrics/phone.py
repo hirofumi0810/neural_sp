@@ -14,13 +14,13 @@ from src.utils.evaluation.edit_distance import compute_wer
 from src.utils.evaluation.normalization import normalize
 
 
-def eval_phone(model, dataset, eval_batch_size, beam_width,
+def eval_phone(models, dataset, eval_batch_size, beam_width,
                max_decode_len, min_decode_len=0, min_decode_len_ratio=0,
                length_penalty=0, coverage_penalty=0,
                progressbar=False):
     """Evaluate a model by PER.
     Args:
-        model: the model to evaluate
+        models (list): the models to evaluate
         dataset: An instance of a `Dataset' class
         eval_batch_size (int): the batch size when evaluating the model
         beam_width: (int): the size of beam
@@ -36,6 +36,9 @@ def eval_phone(model, dataset, eval_batch_size, beam_width,
     """
     # Reset data counter
     dataset.reset()
+
+    model = models[0]
+    # TODO: fix this
 
     if dataset.corpus == 'timit':
         map2phone39 = Map2phone39(label_type=dataset.label_type,
