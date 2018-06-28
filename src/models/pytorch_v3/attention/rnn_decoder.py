@@ -60,22 +60,19 @@ class RNNDecoder(nn.Module):
             # Dropout for hidden-hidden or hidden-output connection
             setattr(self, 'dropout_l' + str(i_l), nn.Dropout(p=dropout))
 
-    def forward(self, dec_in, dec_state):
+    def forward(self, dec_in, hx_list, cx_list):
         """Forward computation.
         Args:
             dec_in (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, embedding_dim + encoder_num_units]`
-            dec_state (torch.autograd.Variable(float) or tuple):
+            hx_list (list of torch.autograd.Variable(float)):
+            cx_list (list of torch.autograd.Variable(float)):
         Returns:
             dec_out (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, num_units]`
-            dec_state (torch.autograd.Variable(float) or tuple):
+            hx_list (list of torch.autograd.Variable(float)):
+            cx_list (list of torch.autograd.Variable(float)):
         """
-        if self.rnn_type == 'lstm':
-            hx_list, cx_list = dec_state
-        elif self.rnn_type == 'gru':
-            hx_list = dec_state
-
         dec_in = dec_in.squeeze(1)
         # NOTE: exclude residual connection from decoder's inputs
         for i_l in range(self.num_layers):
@@ -105,9 +102,4 @@ class RNNDecoder(nn.Module):
 
         dec_out = hx_list[-1].unsqueeze(1)
 
-        if self.rnn_type == 'lstm':
-            dec_state = (hx_list, cx_list)
-        elif self.rnn_type == 'gru':
-            dec_state = hx_list
-
-        return dec_out, dec_state
+        return dec_out, hx_list, cx_list

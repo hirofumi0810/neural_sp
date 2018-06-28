@@ -8,11 +8,12 @@ param:
   label_type: character_wb
 
   # topology
-  encoder_num_layers: 4
+  encoder_num_layers: 5
   subsample_list:
+    - True
+    - True
     - False
-    - True
-    - True
+    - False
     - False
   decoder_num_layers: 1
   embedding_dim: 64
@@ -27,10 +28,12 @@ param:
   ctc_loss_weight: 0
 
   # RNNLM fusion
-  rnnlm_fusion_type: False
-  # rnnlm_fusion_type: cold_fusion
+  # rnnlm_fusion_type: False
+  rnnlm_fusion_type: cold_fusion
   # rnnlm_fusion_type: logits_fusion
-  rnnlm_path: False
-  # rnnlm_path: /n/sd8/inaguma/result/csj/pytorch/rnnlm/character_wb/all/lstm512H2Lemb64_adam_lr1e-3_drophidden0.2out0.2emb0.2_aps_other
+  # rnnlm_fusion_type: state_fusion
+  # rnnlm_fusion_type: state_embedding_fusion
+  # rnnlm_fusion_type: embedding_fusion
+  # rnnlm_path: False
+  rnnlm_path: /n/sd8/inaguma/result/csj/pytorch/rnnlm/character_wb/all/lstm512H2Lemb64_adam_lr1e-3_drophidden0.5emb0.2_res_aps_other
   rnnlm_weight: 0
-  concat_embedding: False

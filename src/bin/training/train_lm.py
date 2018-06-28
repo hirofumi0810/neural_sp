@@ -279,6 +279,13 @@ def main():
                     not_improved_epoch = 0
                     logger.info('||||| Best Score |||||')
 
+                    # Update learning rate
+                    model.optimizer, learning_rate = lr_controller.decay_lr(
+                        optimizer=model.optimizer,
+                        learning_rate=learning_rate,
+                        epoch=epoch,
+                        value=ppl_dev)
+
                     # Save the model
                     model.save_checkpoint(model.save_path, epoch, step,
                                           learning_rate, metric_dev_best)
@@ -296,6 +303,13 @@ def main():
                         logger.info(' PPL (mean): %.3f' %
                                     (ppl_test_mean / len(test_sets)))
                 else:
+                    # Update learning rate
+                    model.optimizer, learning_rate = lr_controller.decay_lr(
+                        optimizer=model.optimizer,
+                        learning_rate=learning_rate,
+                        epoch=epoch,
+                        value=ppl_dev)
+
                     not_improved_epoch += 1
 
                 duration_eval = time.time() - start_time_eval
@@ -304,13 +318,6 @@ def main():
                 # Early stopping
                 if not_improved_epoch == config['not_improved_patient_epoch']:
                     break
-
-                # Update learning rate
-                model.optimizer, learning_rate = lr_controller.decay_lr(
-                    optimizer=model.optimizer,
-                    learning_rate=learning_rate,
-                    epoch=epoch,
-                    value=ppl_dev)
 
                 if epoch == config['convert_to_sgd_epoch']:
                     # Convert to fine-tuning stage

@@ -25,6 +25,9 @@ class TestLoadDataset(unittest.TestCase):
         self.check(data_type='eval2000_swbd')
         self.check(data_type='eval2000_ch')
 
+        # data_size
+        # self.check(label_type='word', data_type='dev', data_size='swbd_fisher')
+
         # label_type
         self.check(label_type='word')
         self.check(label_type='character_capital_divide')
@@ -37,8 +40,8 @@ class TestLoadDataset(unittest.TestCase):
         self.check(shuffle=True)
 
     @measure_time
-    def check(self, label_type='character', data_type='dev',
-              shuffle=False, sort_utt=True, sort_stop_epoch=None, num_gpus=1):
+    def check(self, label_type='character', data_type='dev', data_size='swbd',
+              shuffle=False, sort_utt=True, sort_stop_epoch=None):
 
         print('========================================')
         print('  label_type: %s' % label_type)
@@ -46,18 +49,17 @@ class TestLoadDataset(unittest.TestCase):
         print('  shuffle: %s' % str(shuffle))
         print('  sort_utt: %s' % str(sort_utt))
         print('  sort_stop_epoch: %s' % str(sort_stop_epoch))
-        print('  num_gpus: %d' % num_gpus)
         print('========================================')
 
         dataset = Dataset(
             corpus='swbd',
             data_save_path='/n/sd8/inaguma/corpus/swbd/kaldi',
             input_freq=80, use_delta=False, use_double_delta=False,
-            data_size='', data_type=data_type,
+            data_size=data_size, data_type=data_type,
             label_type=label_type, batch_size=64, max_epoch=1,
             shuffle=shuffle, sort_utt=sort_utt,
             reverse=True, sort_stop_epoch=sort_stop_epoch,
-            num_gpus=num_gpus, tool='htk', num_enque=None)
+            tool='htk', num_enque=None)
 
         print('=> Loading mini-batch...')
         if label_type == 'word':

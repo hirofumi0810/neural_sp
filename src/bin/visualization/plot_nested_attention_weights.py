@@ -30,7 +30,7 @@ sys.path.append(abspath('../../../'))
 from src.models.load_model import load
 from src.dataset.loader_hierarchical import Dataset
 from src.utils.directory import mkdir_join, mkdir
-from src.utils.visualization.attention import plot_hierarchical_attention_weights, plot_nested_attention_weights
+from src.bin.visualization.utils.visualization.attention import plot_hierarchical_attention_weights, plot_nested_attention_weights
 from src.utils.config import load_config
 
 parser = argparse.ArgumentParser()
@@ -77,6 +77,10 @@ if args.corpus == 'csj':
     MAX_DECODE_LEN_RATIO_CHAR = 1
     MIN_DECODE_LEN_RATIO_CHAR = 0.2
 
+    MAX_DECODE_LEN_PHONE = 200
+    MIN_DECODE_LEN_PHONE = 1
+    MAX_DECODE_LEN_RATIO_PHONE = 1
+    MIN_DECODE_LEN_RATIO_PHONE = 0
 elif args.corpus == 'swbd':
     MAX_DECODE_LEN_WORD = 100
     MIN_DECODE_LEN_WORD = 1
@@ -88,6 +92,10 @@ elif args.corpus == 'swbd':
     MAX_DECODE_LEN_RATIO_CHAR = 1
     MIN_DECODE_LEN_RATIO_CHAR = 0.2
 
+    MAX_DECODE_LEN_PHONE = 300
+    MIN_DECODE_LEN_PHONE = 1
+    MAX_DECODE_LEN_RATIO_PHONE = 1
+    MIN_DECODE_LEN_RATIO_PHONE = 0
 elif args.corpus == 'librispeech':
     MAX_DECODE_LEN_WORD = 200
     MIN_DECODE_LEN_WORD = 1
@@ -98,7 +106,6 @@ elif args.corpus == 'librispeech':
     MIN_DECODE_LEN_CHAR = 1
     MAX_DECODE_LEN_RATIO_CHAR = 1
     MIN_DECODE_LEN_RATIO_CHAR = 0.2
-
 elif args.corpus == 'wsj':
     MAX_DECODE_LEN_WORD = 32
     MIN_DECODE_LEN_WORD = 2
@@ -109,15 +116,21 @@ elif args.corpus == 'wsj':
     MIN_DECODE_LEN_CHAR = 10
     MAX_DECODE_LEN_RATIO_CHAR = 1
     MIN_DECODE_LEN_RATIO_CHAR = 0.2
-
     # NOTE:
     # dev93 (char): 10-199
     # test_eval92 (char): 16-195
     # dev93 (word): 2-32
     # test_eval92 (word): 3-30
-
+elif args.corpus == 'timit':
+    MAX_DECODE_LEN_PHONE = 71
+    MIN_DECODE_LEN_PHONE = 13
+    MAX_DECODE_LEN_RATIO_PHONE = 1
+    MIN_DECODE_LEN_RATIO_PHONE = 0
+    # NOTE*
+    # dev: 13-71
+    # test: 13-69
 else:
-    raise ValueError
+    raise ValueError(args.corpus)
 
 
 def main():
@@ -126,18 +139,22 @@ def main():
     config = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
-    dataset = Dataset(
-        corpus=args.corpus,
-        data_save_path=args.data_save_path,
-        input_freq=config['input_freq'],
-        use_delta=config['use_delta'],
-        use_double_delta=config['use_double_delta'],
-        data_size=config['data_size'] if 'data_size' in config.keys() else '',
-        data_type=args.data_type,
-        label_type=config['label_type'],
-        label_type_sub=config['label_type_sub'],
-        batch_size=args.eval_batch_size,
-        sort_utt=False, reverse=False, tool=config['tool'])
+    if config['input_type'] == 'speech':
+        dataset = Dataset(
+            corpus=args.corpus,
+            data_save_path=args.data_save_path,
+            input_freq=config['input_freq'],
+            use_delta=config['use_delta'],
+            use_double_delta=config['use_double_delta'],
+            data_size=config['data_size'] if 'data_size' in config.keys(
+            ) else '',
+            data_type=args.data_type,
+            label_type=config['label_type'],
+            label_type_sub=config['label_type_sub'],
+            batch_size=args.eval_batch_size,
+            sort_utt=False, reverse=False, tool=config['tool'])
+    elif config['input_type'] == 'text':
+        raise NotImplementedError
     config['num_classes'] = dataset.num_classes
     config['num_classes_sub'] = dataset.num_classes_sub
 
@@ -164,7 +181,7 @@ def main():
                      config=config_rnnlm,
                      backend=config_rnnlm['backend'])
         rnnlm.load_checkpoint(save_path=args.rnnlm_path, epoch=-1)
-        rnnlm.rnn.flatten_parameters()
+        rnnlm.flatten_parameters()
         model.rnnlm_0_fwd = rnnlm
 
     if not (config['rnnlm_fusion_type'] and config['rnnlm_path_sub']) and args.rnnlm_path_sub is not None and args.rnnlm_weight_sub > 0:
@@ -179,7 +196,7 @@ def main():
                          config=config_rnnlm_sub,
                          backend=config_rnnlm_sub['backend'])
         rnnlm_sub.load_checkpoint(save_path=args.rnnlm_path_sub, epoch=-1)
-        rnnlm_sub.rnn.flatten_parameters()
+        rnnlm_sub.flatten_parameters()
         model.rnnlm_1_fwd = rnnlm_sub
 
     # GPU setting

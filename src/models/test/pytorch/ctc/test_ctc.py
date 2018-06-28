@@ -137,6 +137,7 @@ class TestCTC(unittest.TestCase):
         # Load model
         num_stack = 1 if subsample or conv or encoder_type == 'cnn' else 2
         model = CTC(
+            input_type='speech',
             input_size=xs[0].shape[-1],
             encoder_type=encoder_type,
             encoder_bidirectional=bidirectional,

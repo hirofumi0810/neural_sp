@@ -10,16 +10,16 @@ param:
   encoder_num_layers: 5
   encoder_num_layers_sub: 4
   subsample_list:
+    - True
+    - True
     - False
-    - True
-    - True
     - True
     - False
   decoding_order: bahdanau
   num_heads: 1
 
   # optimization
-  batch_size: 50
+  batch_size: 40
 
   # initialization
   pretrained_model_path: False
@@ -42,4 +42,3 @@ param:
   rnnlm_path_sub: False
   rnnlm_weight: 0
   rnnlm_weight_sub: 0
-  concat_embedding: False

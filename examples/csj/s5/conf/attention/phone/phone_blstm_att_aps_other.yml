@@ -10,15 +10,18 @@ param:
   # topology
   encoder_num_layers: 5
   subsample_list:
+    - True
+    - True
     - False
-    - True
-    - True
     - False
     - False
   decoder_num_layers: 1
   embedding_dim: 64
   decoding_order: bahdanau
   num_heads: 1
+
+  # optimization
+  batch_size: 50
 
   # initialization
   pretrained_model_path: False

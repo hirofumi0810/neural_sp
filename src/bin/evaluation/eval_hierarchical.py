@@ -14,7 +14,8 @@ from distutils.util import strtobool
 
 sys.path.append(abspath('../../../'))
 from src.models.load_model import load
-from src.dataset.loader_hierarchical import Dataset
+from src.dataset.loader import Dataset as Dataset_asr
+from src.dataset.loader_hierarchical_p2w import Dataset as Dataset_p2w
 from src.metrics.character import eval_char
 from src.metrics.word import eval_word
 from src.utils.config import load_config
@@ -53,6 +54,7 @@ parser.add_argument('--resolving_unk', type=strtobool, default=False)
 parser.add_argument('--a2c_oracle', type=strtobool, default=False)
 parser.add_argument('--joint_decoding', type=strtobool, default=False)
 parser.add_argument('--score_sub_weight', type=float, default=0)
+parser.add_argument('--score_sub_task', type=strtobool, default=False)
 args = parser.parse_args()
 
 # corpus depending
@@ -67,6 +69,10 @@ if args.corpus == 'csj':
     MAX_DECODE_LEN_RATIO_CHAR = 1
     MIN_DECODE_LEN_RATIO_CHAR = 0.2
 
+    MAX_DECODE_LEN_PHONE = 200
+    MIN_DECODE_LEN_PHONE = 1
+    MAX_DECODE_LEN_RATIO_PHONE = 1
+    MIN_DECODE_LEN_RATIO_PHONE = 0
 elif args.corpus == 'swbd':
     MAX_DECODE_LEN_WORD = 100
     MIN_DECODE_LEN_WORD = 1
@@ -78,6 +84,10 @@ elif args.corpus == 'swbd':
     MAX_DECODE_LEN_RATIO_CHAR = 1
     MIN_DECODE_LEN_RATIO_CHAR = 0.2
 
+    MAX_DECODE_LEN_PHONE = 300
+    MIN_DECODE_LEN_PHONE = 1
+    MAX_DECODE_LEN_RATIO_PHONE = 1
+    MIN_DECODE_LEN_RATIO_PHONE = 0
 elif args.corpus == 'librispeech':
     MAX_DECODE_LEN_WORD = 200
     MIN_DECODE_LEN_WORD = 1
@@ -88,7 +98,6 @@ elif args.corpus == 'librispeech':
     MIN_DECODE_LEN_CHAR = 1
     MAX_DECODE_LEN_RATIO_CHAR = 1
     MIN_DECODE_LEN_RATIO_CHAR = 0.2
-
 elif args.corpus == 'wsj':
     MAX_DECODE_LEN_WORD = 32
     MIN_DECODE_LEN_WORD = 2
@@ -99,15 +108,21 @@ elif args.corpus == 'wsj':
     MIN_DECODE_LEN_CHAR = 10
     MAX_DECODE_LEN_RATIO_CHAR = 1
     MIN_DECODE_LEN_RATIO_CHAR = 0.2
-
     # NOTE:
     # dev93 (char): 10-199
     # test_eval92 (char): 16-195
     # dev93 (word): 2-32
     # test_eval92 (word): 3-30
-
+elif args.corpus == 'timit':
+    MAX_DECODE_LEN_PHONE = 71
+    MIN_DECODE_LEN_PHONE = 13
+    MAX_DECODE_LEN_RATIO_PHONE = 1
+    MIN_DECODE_LEN_RATIO_PHONE = 0
+    # NOTE*
+    # dev: 13-71
+    # test: 13-69
 else:
-    raise ValueError
+    raise ValueError(args.corpus)
 
 
 def main():
@@ -121,19 +136,39 @@ def main():
     wer_mean, wer_sub_mean, cer_sub_mean = 0, 0, 0
     for i, data_type in enumerate(args.eval_sets):
         # Load dataset
-        eval_set = Dataset(
-            corpus=args.corpus,
-            data_save_path=args.data_save_path,
-            input_freq=config['input_freq'],
-            use_delta=config['use_delta'],
-            use_double_delta=config['use_double_delta'],
-            data_size=config['data_size'] if 'data_size' in config.keys(
-            ) else '',
-            data_type=data_type,
-            label_type=config['label_type'],
-            label_type_sub=config['label_type_sub'],
-            batch_size=args.eval_batch_size,
-            tool=config['tool'])
+        if config['input_type'] == 'speech':
+            eval_set = Dataset_asr(
+                corpus=args.corpus,
+                data_save_path=args.data_save_path,
+                input_freq=config['input_freq'],
+                use_delta=config['use_delta'],
+                use_double_delta=config['use_double_delta'],
+                data_size=config['data_size'] if 'data_size' in config.keys(
+                ) else '',
+                data_type=data_type,
+                label_type=config['label_type'],
+                label_type_sub=config['label_type_sub'],
+                batch_size=args.eval_batch_size,
+                tool=config['tool'])
+        elif config['input_type'] == 'text':
+            eval_set = Dataset_p2w(
+                corpus=args.corpus,
+                data_save_path=args.data_save_path,
+                data_type=data_type,
+                data_size=config['data_size'],
+                label_type_in=config['label_type_in'],
+                label_type=config['label_type'],
+                label_type_sub=config['label_type_sub'],
+                batch_size=args.eval_batch_size,
+                sort_utt=False, reverse=False, tool=config['tool'],
+                vocab=config['vocab'],
+                use_ctc=config['model_type'] == 'hierarchical_ctc',
+                subsampling_factor=2 ** sum(config['subsample_list']),
+                use_ctc_sub=config['model_type'] == 'hierarchical_ctc' or (
+                    config['model_type'] == 'hierarchical_attention' and config['ctc_loss_weight_sub'] > 0),
+                subsampling_factor_sub=2 ** sum(config['subsample_list'][:config['encoder_num_layers_sub'] - 1]))
+            if i == 0:
+                config['num_classes_input'] = eval_set.num_classes_in
 
         if i == 0:
             config['num_classes'] = eval_set.num_classes
@@ -245,25 +280,27 @@ def main():
         logger.info('  WER (%s, main): %.3f %%' % (data_type, wer))
         logger.info(df)
 
-        wer, cer, df = eval_char(
-            models=[model],
-            dataset=eval_set,
-            eval_batch_size=args.eval_batch_size,
-            beam_width=args.beam_width_sub,
-            max_decode_len=MAX_DECODE_LEN_CHAR,
-            min_decode_len=MIN_DECODE_LEN_CHAR,
-            min_decode_len_ratio=MIN_DECODE_LEN_RATIO_CHAR,
-            length_penalty=args.length_penalty,
-            coverage_penalty=args.coverage_penalty,
-            rnnlm_weight=args.rnnlm_weight_sub,
-            progressbar=True)
-        wer_sub_mean += wer
-        cer_sub_mean += cer
-        logger.info(' WER / CER (%s, sub): %.3f / %.3f %%' %
-                    (data_type, wer, cer))
-        logger.info(df)
+        if args.score_sub_task:
+            wer, cer, df = eval_char(
+                models=[model],
+                dataset=eval_set,
+                eval_batch_size=args.eval_batch_size,
+                beam_width=args.beam_width_sub,
+                max_decode_len=MAX_DECODE_LEN_CHAR,
+                min_decode_len=MIN_DECODE_LEN_CHAR,
+                min_decode_len_ratio=MIN_DECODE_LEN_RATIO_CHAR,
+                length_penalty=args.length_penalty,
+                coverage_penalty=args.coverage_penalty,
+                rnnlm_weight=args.rnnlm_weight_sub,
+                progressbar=True)
+            wer_sub_mean += wer
+            cer_sub_mean += cer
+            logger.info(' WER / CER (%s, sub): %.3f / %.3f %%' %
+                        (data_type, wer, cer))
+            logger.info(df)
 
-    logger.info('  WER (mean, main): %.3f %%' % (wer_mean / 3))
+    logger.info('  WER (mean, main): %.3f %%' %
+                (wer_mean / len(args.eval_sets)))
     logger.info('  WER / CER (mean, sub): %.3f / %.3f %%\n' %
                 (wer_sub_mean / len(args.eval_sets),
                  cer_sub_mean / len(args.eval_sets)))

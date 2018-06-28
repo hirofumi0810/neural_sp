@@ -58,4 +58,3 @@ param:
   rnnlm_path_sub: False
   rnnlm_weight: 0
   rnnlm_weight_sub: 0
-  concat_embedding: False

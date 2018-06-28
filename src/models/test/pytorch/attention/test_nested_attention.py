@@ -99,8 +99,9 @@ class TestCharseqAttention(unittest.TestCase):
         print('==================================================')
 
         # Load batch data
-        xs, ys, ys_sub = generate_data(label_type='word_char',
-                                       batch_size=2 * args.ngpus)
+        xs, ys, ys_sub = generate_data(
+            label_type='word_char',
+            batch_size=2 * args.ngpus)
 
         # Load model
         model = NestedAttentionSeq2seq(

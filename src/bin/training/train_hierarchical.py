@@ -23,7 +23,8 @@ torch.cuda.manual_seed_all(1623)
 sys.path.append(os.path.abspath('../../../'))
 from src.models.load_model import load
 from src.models.pytorch_v3.data_parallel import CustomDataParallel
-from src.dataset.loader_hierarchical import Dataset
+from src.dataset.loader_hierarchical import Dataset as Dataset_asr
+from src.dataset.loader_hierarchical_p2w import Dataset as Dataset_p2w
 from src.metrics.character import eval_char
 from src.metrics.word import eval_word
 from src.bin.training.utils.learning_rate_controller import Controller
@@ -58,14 +59,16 @@ args = parser.parse_args()
 if args.corpus == 'csj':
     MAX_DECODE_LEN_WORD = 100
     MAX_DECODE_LEN_CHAR = 200
+    MAX_DECODE_LEN_PHONE = 200
 elif args.corpus == 'swbd':
     MAX_DECODE_LEN_WORD = 100
     MAX_DECODE_LEN_CHAR = 300
+    MAX_DECODE_LEN_PHONE = 300
 elif args.corpus == 'wsj':
     MAX_DECODE_LEN_WORD = 32
     MAX_DECODE_LEN_CHAR = 199
 else:
-    raise ValueError
+    raise ValueError(args.corpus)
 
 
 def main():
@@ -90,57 +93,109 @@ def main():
             config['scheduled_sampling_max_step'] //= args.ngpus
 
     # Load dataset
-    train_set = Dataset(
-        corpus=args.corpus,
-        data_save_path=args.data_save_path,
-        input_freq=config['input_freq'],
-        use_delta=config['use_delta'],
-        use_double_delta=config['use_double_delta'],
-        data_type=args.train_set,
-        data_size=config['data_size'],
-        label_type=config['label_type'],
-        label_type_sub=config['label_type_sub'],
-        batch_size=config['batch_size'] * args.ngpus,
-        max_epoch=config['num_epoch'],
-        max_frame_num=config['max_frame_num'],
-        min_frame_num=config['min_frame_num'],
-        sort_utt=True, sort_stop_epoch=config['sort_stop_epoch'],
-        tool=config['tool'], dynamic_batching=config['dynamic_batching'],
-        use_ctc=config['model_type'] == 'hierarchical_ctc',
-        subsampling_factor=2 ** sum(config['subsample_list']),
-        use_ctc_sub=config['model_type'] == 'hierarchical_ctc' or (
-            config['model_type'] == 'hierarchical_attention' and config['ctc_loss_weight_sub'] > 0),
-        subsampling_factor_sub=2 ** sum(config['subsample_list'][:config['encoder_num_layers_sub'] - 1]))
-    dev_set = Dataset(
-        corpus=args.corpus,
-        data_save_path=args.data_save_path,
-        input_freq=config['input_freq'],
-        use_delta=config['use_delta'],
-        use_double_delta=config['use_double_delta'],
-        data_type=args.dev_set,
-        data_size=config['data_size'] * args.ngpus,
-        label_type=config['label_type'],
-        label_type_sub=config['label_type_sub'],
-        batch_size=config['batch_size'],
-        shuffle=True, tool=config['tool'],
-        use_ctc=config['model_type'] == 'hierarchical_ctc',
-        subsampling_factor=2 ** sum(config['subsample_list']),
-        use_ctc_sub=config['model_type'] == 'hierarchical_ctc' or (
-            config['model_type'] == 'hierarchical_attention' and config['ctc_loss_weight_sub'] > 0),
-        subsampling_factor_sub=2 ** sum(config['subsample_list'][:config['encoder_num_layers_sub'] - 1]))
-    eval_sets = []
-    for data_type in args.eval_sets:
-        eval_sets += [Dataset(
+    if config['input_type'] == 'speech':
+        train_set = Dataset_asr(
             corpus=args.corpus,
             data_save_path=args.data_save_path,
             input_freq=config['input_freq'],
             use_delta=config['use_delta'],
             use_double_delta=config['use_double_delta'],
-            data_type=data_type,
+            data_type=args.train_set,
             data_size=config['data_size'],
             label_type=config['label_type'],
             label_type_sub=config['label_type_sub'],
-            batch_size=1, tool=config['tool'])]
+            batch_size=config['batch_size'] * args.ngpus,
+            max_epoch=config['num_epoch'],
+            max_frame_num=config['max_frame_num'],
+            min_frame_num=config['min_frame_num'],
+            sort_utt=True, sort_stop_epoch=config['sort_stop_epoch'],
+            tool=config['tool'], dynamic_batching=config['dynamic_batching'],
+            use_ctc=config['model_type'] == 'hierarchical_ctc',
+            subsampling_factor=2 ** sum(config['subsample_list']),
+            use_ctc_sub=config['model_type'] == 'hierarchical_ctc' or (
+                config['model_type'] == 'hierarchical_attention' and config['ctc_loss_weight_sub'] > 0),
+            subsampling_factor_sub=2 ** sum(config['subsample_list'][:config['encoder_num_layers_sub'] - 1]))
+        dev_set = Dataset_asr(
+            corpus=args.corpus,
+            data_save_path=args.data_save_path,
+            input_freq=config['input_freq'],
+            use_delta=config['use_delta'],
+            use_double_delta=config['use_double_delta'],
+            data_type=args.dev_set,
+            data_size=config['data_size'] * args.ngpus,
+            label_type=config['label_type'],
+            label_type_sub=config['label_type_sub'],
+            batch_size=config['batch_size'],
+            shuffle=True, tool=config['tool'],
+            use_ctc=config['model_type'] == 'hierarchical_ctc',
+            subsampling_factor=2 ** sum(config['subsample_list']),
+            use_ctc_sub=config['model_type'] == 'hierarchical_ctc' or (
+                config['model_type'] == 'hierarchical_attention' and config['ctc_loss_weight_sub'] > 0),
+            subsampling_factor_sub=2 ** sum(config['subsample_list'][:config['encoder_num_layers_sub'] - 1]))
+        eval_sets = []
+        for data_type in args.eval_sets:
+            eval_sets += [Dataset_asr(
+                corpus=args.corpus,
+                data_save_path=args.data_save_path,
+                input_freq=config['input_freq'],
+                use_delta=config['use_delta'],
+                use_double_delta=config['use_double_delta'],
+                data_type=data_type,
+                data_size=config['data_size'],
+                label_type=config['label_type'],
+                label_type_sub=config['label_type_sub'],
+                batch_size=1, tool=config['tool'])]
+    elif config['input_type'] == 'text':
+        train_set = Dataset_p2w(
+            corpus=args.corpus,
+            data_save_path=args.data_save_path,
+            data_type=args.train_set,
+            data_size=config['data_size'],
+            label_type_in=config['label_type_in'],
+            label_type=config['label_type'],
+            label_type_sub=config['label_type_sub'],
+            batch_size=config['batch_size'] * args.ngpus,
+            max_epoch=config['num_epoch'],
+            max_frame_num=config['max_frame_num'] if 'max_frame_num' in config.keys(
+            ) else 10000,
+            min_frame_num=config['min_frame_num'] if 'min_frame_num' in config.keys(
+            ) else 0,
+            sort_utt=True, sort_stop_epoch=config['sort_stop_epoch'],
+            tool=config['tool'], dynamic_batching=config['dynamic_batching'],
+            use_ctc=config['model_type'] == 'ctc' or (
+                config['model_type'] == 'attention' and config['ctc_loss_weight'] > 0),
+            subsampling_factor=2 ** sum(config['subsample_list']),
+            vocab=config['vocab'])
+        dev_set = Dataset_p2w(
+            corpus=args.corpus,
+            data_save_path=args.data_save_path,
+            data_type=args.dev_set,
+            data_size=config['data_size'],
+            label_type_in=config['label_type_in'],
+            label_type=config['label_type'],
+            label_type_sub=config['label_type_sub'],
+            batch_size=config['batch_size'] * args.ngpus,
+            shuffle=True, tool=config['tool'],
+            use_ctc=config['model_type'] == 'ctc' or (
+                config['model_type'] == 'attention' and config['ctc_loss_weight'] > 0),
+            subsampling_factor=2 ** sum(config['subsample_list']),
+            vocab=config['vocab'])
+        eval_sets = []
+        for data_type in args.eval_sets:
+            if 'phone' in config['label_type_in']:
+                continue
+            eval_sets += [Dataset_p2w(
+                corpus=args.corpus,
+                data_save_path=args.data_save_path,
+                data_type=data_type,
+                data_size=config['data_size'],
+                label_type_in=config['label_type_in'],
+                label_type=config['label_type'],
+                label_type_sub=config['label_type_sub'],
+                batch_size=1, tool=config['tool'],
+                vocab=config['vocab'])]
+        config['num_classes_input'] = train_set.num_classes_in
+
     config['num_classes'] = train_set.num_classes
     config['num_classes_sub'] = train_set.num_classes_sub
 
@@ -349,56 +404,111 @@ def main():
                 start_time_eval = time.time()
                 # dev
                 if model.module.main_loss_weight > 0:
-                    metric_dev, _ = eval_word(
-                        models=[model.module],
-                        dataset=dev_set,
-                        eval_batch_size=1,
-                        beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_WORD,
-                        max_decode_len_sub=MAX_DECODE_LEN_CHAR)
-                    logger.info('  WER (%s, main): %.3f %%' %
-                                (dev_set.data_type, metric_dev))
+                    if config['label_type'] == 'word':
+                        metric_dev, _ = eval_word(
+                            models=[model.module],
+                            dataset=dev_set,
+                            eval_batch_size=1,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_WORD,
+                            max_decode_len_sub=MAX_DECODE_LEN_CHAR if 'character' in config['label_type_sub'] else MAX_DECODE_LEN_PHONE)
+                        logger.info('  WER (%s, main): %.3f %%' %
+                                    (dev_set.data_type, metric_dev))
+                    elif 'character' in config['label_type']:
+                        wer_dev, metric_dev, _ = eval_char(
+                            models=[model.module],
+                            dataset=dev_set,
+                            eval_batch_size=1,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_CHAR,
+                            max_decode_len_sub=MAX_DECODE_LEN_PHONE)
+                        logger.info('  WER / CER (%s): %.3f / %.3f %%' %
+                                    (dev_set.data_type, wer_dev, metric_dev))
                 else:
-                    wer_dev_sub, metric_dev, _ = eval_char(
-                        models=[model.module],
-                        dataset=dev_set,
-                        eval_batch_size=1,
-                        beam_width=1,
-                        max_decode_len=MAX_DECODE_LEN_CHAR)
-                    logger.info('  WER / CER (%s, sub): %.3f / %.3f %%' %
-                                (dev_set.data_type, wer_dev_sub, metric_dev))
+                    if 'character' in config['label_type_sub']:
+                        wer_dev_sub, metric_dev, _ = eval_char(
+                            models=[model.module],
+                            dataset=dev_set,
+                            eval_batch_size=1,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_CHAR)
+                        logger.info('  WER / CER (%s, sub): %.3f / %.3f %%' %
+                                    (dev_set.data_type, wer_dev_sub, metric_dev))
+                    else 'phone' in config['label_type_sub']:
+                        metric_dev, _ = eval_phone(
+                            model=[model.module],
+                            dataset=dev_set,
+                            eval_batch_size=1,
+                            beam_width=1,
+                            max_decode_len=MAX_DECODE_LEN_PHONE)
+                        logger.info('  PER (%s): %.3f %%' %
+                                    (dev_set.data_type, metric_dev))
 
                 if metric_dev < metric_dev_best:
                     metric_dev_best = metric_dev
                     not_improved_epoch = 0
                     logger.info('||||| Best Score |||||')
 
+                    # Update learning rate
+                    model.module.optimizer, learning_rate = lr_controller.decay_lr(
+                        optimizer=model.module.optimizer,
+                        learning_rate=learning_rate,
+                        epoch=epoch,
+                        value=metric_dev)
+
                     # Save the model
                     model.module.save_checkpoint(model.module.save_path, epoch, step,
                                                  learning_rate, metric_dev_best)
 
                     # test
-                    for test_set in eval_sets:
+                    for eval_set in eval_sets:
                         if model.module.main_loss_weight > 0:
-                            wer_test, _ = eval_word(
-                                models=[model.module],
-                                dataset=test_set,
-                                eval_batch_size=1,
-                                beam_width=1,
-                                max_decode_len=MAX_DECODE_LEN_WORD,
-                                max_decode_len_sub=MAX_DECODE_LEN_CHAR)
-                            logger.info('  WER (%s, main): %.3f %%' %
-                                        (test_set.data_type, wer_test))
+                            if config['label_type'] == 'word':
+                                wer_test, _ = eval_word(
+                                    models=[model.module],
+                                    dataset=eval_set,
+                                    eval_batch_size=1,
+                                    beam_width=1,
+                                    max_decode_len=MAX_DECODE_LEN_WORD,
+                                    max_decode_len_sub=MAX_DECODE_LEN_CHAR)
+                                logger.info('  WER (%s, main): %.3f %%' %
+                                            (eval_set.data_type, wer_test))
+                            elif 'character' in config['label_type']:
+                                wer_test, cer_test, _ = eval_char(
+                                    models=[model.module],
+                                    dataset=eval_set,
+                                    eval_batch_size=1,
+                                    beam_width=1,
+                                    max_decode_len=MAX_DECODE_LEN_CHAR)
+                                logger.info('  WER / CER (%s): %.3f / %.3f %%' %
+                                            (eval_set.data_type, wer_test, cer_test))
                         else:
-                            wer_test_sub, cer_test_sub, _ = eval_char(
-                                models=[model.module],
-                                dataset=test_set,
-                                eval_batch_size=1,
-                                beam_width=1,
-                                max_decode_len=MAX_DECODE_LEN_CHAR)
-                            logger.info('  WER / CER (%s, sub): %.3f / %.3f %%' %
-                                        (test_set.data_type, wer_test_sub, cer_test_sub))
+                            if 'character' in config['label_type_sub']:
+                                wer_test_sub, cer_test_sub, _ = eval_char(
+                                    models=[model.module],
+                                    dataset=eval_set,
+                                    eval_batch_size=1,
+                                    beam_width=1,
+                                    max_decode_len=MAX_DECODE_LEN_CHAR)
+                                logger.info('  WER / CER (%s, sub): %.3f / %.3f %%' %
+                                            (eval_set.data_type, wer_test_sub, cer_test_sub))
+                            else 'phone' in config['label_type_sub']:
+                                per_test, _ = eval_phone(
+                                    models=[model.module],
+                                    dataset=eval_set,
+                                    eval_batch_size=1,
+                                    beam_width=1,
+                                    max_decode_len=MAX_DECODE_LEN_PHONE)
+                                logger.info('  PER (%s): %.3f %%' %
+                                            (eval_set.data_type, per_test))
                 else:
+                    # Update learning rate
+                    model.module.optimizer, learning_rate = lr_controller.decay_lr(
+                        optimizer=model.module.optimizer,
+                        learning_rate=learning_rate,
+                        epoch=epoch,
+                        value=metric_dev)
+
                     not_improved_epoch += 1
 
                 duration_eval = time.time() - start_time_eval
@@ -407,13 +517,6 @@ def main():
                 # Early stopping
                 if not_improved_epoch == config['not_improved_patient_epoch']:
                     break
-
-                # Update learning rate
-                model.module.optimizer, learning_rate = lr_controller.decay_lr(
-                    optimizer=model.module.optimizer,
-                    learning_rate=learning_rate,
-                    epoch=epoch,
-                    value=metric_dev)
 
                 if epoch == config['convert_to_sgd_epoch']:
                     # For nested attention

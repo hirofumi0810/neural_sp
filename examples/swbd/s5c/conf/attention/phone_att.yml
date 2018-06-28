@@ -12,9 +12,9 @@ param:
   encoder_num_proj: 0
   encoder_num_layers: 5
   subsample_list:
+    - True
+    - True
     - False
-    - True
-    - True
     - False
     - False
   attention_dim: 128
@@ -23,6 +23,9 @@ param:
   decoding_order: bahdanau
   bottleneck_dim: 320
   num_heads: 1
+
+  # optimization
+  batch_size: 50
 
   # initialization
   pretrained_model_path: False

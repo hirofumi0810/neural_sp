@@ -23,7 +23,8 @@ torch.cuda.manual_seed_all(1623)
 sys.path.append(os.path.abspath('../../../'))
 from src.models.load_model import load
 from src.models.pytorch_v3.data_parallel import CustomDataParallel
-from src.dataset.loader import Dataset
+from src.dataset.loader import Dataset as Dataset_asr
+from src.dataset.loader_p2w import Dataset as Dataset_p2w
 from src.metrics.phone import eval_phone
 from src.metrics.character import eval_char
 from src.metrics.word import eval_word
@@ -97,54 +98,103 @@ def main():
             config['scheduled_sampling_max_step'] //= args.ngpus
 
     # Load dataset
-    train_set = Dataset(
-        corpus=args.corpus,
-        data_save_path=args.data_save_path,
-        input_freq=config['input_freq'],
-        use_delta=config['use_delta'],
-        use_double_delta=config['use_double_delta'],
-        data_type=args.train_set,
-        data_size=config['data_size'],
-        label_type=config['label_type'],
-        batch_size=config['batch_size'] * args.ngpus,
-        max_epoch=config['num_epoch'],
-        max_frame_num=config['max_frame_num'] if 'max_frame_num' in config.keys(
-        ) else 10000,
-        min_frame_num=config['min_frame_num'] if 'min_frame_num' in config.keys(
-        ) else 0,
-        sort_utt=True, sort_stop_epoch=config['sort_stop_epoch'],
-        tool=config['tool'], dynamic_batching=config['dynamic_batching'],
-        use_ctc=config['model_type'] == 'ctc' or (
-            config['model_type'] == 'attention' and config['ctc_loss_weight'] > 0),
-        subsampling_factor=2 ** sum(config['subsample_list']))
-    dev_set = Dataset(
-        corpus=args.corpus,
-        data_save_path=args.data_save_path,
-        input_freq=config['input_freq'],
-        use_delta=config['use_delta'],
-        use_double_delta=config['use_double_delta'],
-        data_type=args.dev_set,
-        data_size=config['data_size'],
-        label_type=config['label_type'],
-        batch_size=config['batch_size'] * args.ngpus,
-        shuffle=True, tool=config['tool'],
-        use_ctc=config['model_type'] == 'ctc' or (
-            config['model_type'] == 'attention' and config['ctc_loss_weight'] > 0),
-        subsampling_factor=2 ** sum(config['subsample_list']))
-    eval_sets = []
-    for data_type in args.eval_sets:
-        if 'phone' in config['label_type'] and args.corpus != 'timit':
-            continue
-        eval_sets += [Dataset(
+    if config['input_type'] == 'speech':
+        train_set = Dataset_asr(
             corpus=args.corpus,
             data_save_path=args.data_save_path,
             input_freq=config['input_freq'],
             use_delta=config['use_delta'],
             use_double_delta=config['use_double_delta'],
-            data_type=data_type,
+            data_type=args.train_set,
             data_size=config['data_size'],
             label_type=config['label_type'],
-            batch_size=1, tool=config['tool'])]
+            batch_size=config['batch_size'] * args.ngpus,
+            max_epoch=config['num_epoch'],
+            max_frame_num=config['max_frame_num'] if 'max_frame_num' in config.keys(
+            ) else 10000,
+            min_frame_num=config['min_frame_num'] if 'min_frame_num' in config.keys(
+            ) else 0,
+            sort_utt=True, sort_stop_epoch=config['sort_stop_epoch'],
+            tool=config['tool'], dynamic_batching=config['dynamic_batching'],
+            use_ctc=config['model_type'] == 'ctc' or (
+                config['model_type'] == 'attention' and config['ctc_loss_weight'] > 0),
+            subsampling_factor=2 ** sum(config['subsample_list']))
+        dev_set = Dataset_asr(
+            corpus=args.corpus,
+            data_save_path=args.data_save_path,
+            input_freq=config['input_freq'],
+            use_delta=config['use_delta'],
+            use_double_delta=config['use_double_delta'],
+            data_type=args.dev_set,
+            data_size=config['data_size'],
+            label_type=config['label_type'],
+            batch_size=config['batch_size'] * args.ngpus,
+            shuffle=True, tool=config['tool'],
+            use_ctc=config['model_type'] == 'ctc' or (
+                config['model_type'] == 'attention' and config['ctc_loss_weight'] > 0),
+            subsampling_factor=2 ** sum(config['subsample_list']))
+        eval_sets = []
+        for data_type in args.eval_sets:
+            if 'phone' in config['label_type'] and args.corpus != 'timit':
+                continue
+            eval_sets += [Dataset_asr(
+                corpus=args.corpus,
+                data_save_path=args.data_save_path,
+                input_freq=config['input_freq'],
+                use_delta=config['use_delta'],
+                use_double_delta=config['use_double_delta'],
+                data_type=data_type,
+                data_size=config['data_size'],
+                label_type=config['label_type'],
+                batch_size=1, tool=config['tool'])]
+    else:
+        train_set = Dataset_p2w(
+            corpus=args.corpus,
+            data_save_path=args.data_save_path,
+            data_type=args.train_set,
+            data_size=config['data_size'],
+            label_type_in=config['label_type_in'],
+            label_type=config['label_type'],
+            batch_size=config['batch_size'] * args.ngpus,
+            max_epoch=config['num_epoch'],
+            max_frame_num=config['max_frame_num'] if 'max_frame_num' in config.keys(
+            ) else 10000,
+            min_frame_num=config['min_frame_num'] if 'min_frame_num' in config.keys(
+            ) else 0,
+            sort_utt=True, sort_stop_epoch=config['sort_stop_epoch'],
+            tool=config['tool'], dynamic_batching=config['dynamic_batching'],
+            use_ctc=config['model_type'] == 'ctc' or (
+                config['model_type'] == 'attention' and config['ctc_loss_weight'] > 0),
+            subsampling_factor=2 ** sum(config['subsample_list']),
+            vocab=config['vocab'])
+        dev_set = Dataset_p2w(
+            corpus=args.corpus,
+            data_save_path=args.data_save_path,
+            data_type=args.dev_set,
+            data_size=config['data_size'],
+            label_type_in=config['label_type_in'],
+            label_type=config['label_type'],
+            batch_size=config['batch_size'] * args.ngpus,
+            shuffle=True, tool=config['tool'],
+            use_ctc=config['model_type'] == 'ctc' or (
+                config['model_type'] == 'attention' and config['ctc_loss_weight'] > 0),
+            subsampling_factor=2 ** sum(config['subsample_list']),
+            vocab=config['vocab'])
+        eval_sets = []
+        for data_type in args.eval_sets:
+            if 'phone' in config['label_type_in']:
+                continue
+            eval_sets += [Dataset_p2w(
+                corpus=args.corpus,
+                data_save_path=args.data_save_path,
+                data_type=data_type,
+                data_size=config['data_size'],
+                label_type_in=config['label_type_in'],
+                label_type=config['label_type'],
+                batch_size=1, tool=config['tool'],
+                vocab=config['vocab'])]
+        config['num_classes_input'] = train_set.num_classes_in
+
     config['num_classes'] = train_set.num_classes
     config['num_classes_sub'] = train_set.num_classes
 
@@ -380,14 +430,14 @@ def main():
                     logger.info('  WER / CER (%s): %.3f / %.3f %%' %
                                 (dev_set.data_type, wer_dev, metric_dev))
                 elif 'phone' in config['label_type']:
-                    per_dev_epoch, _ = eval_phone(
-                        model=[model.module],
+                    metric_dev, _ = eval_phone(
+                        models=[model.module],
                         dataset=dev_set,
                         eval_batch_size=1,
                         beam_width=1,
                         max_decode_len=MAX_DECODE_LEN_PHONE)
                     logger.info('  PER (%s): %.3f %%' %
-                                (dev_set.data_type, per_dev_epoch))
+                                (dev_set.data_type, metric_dev))
                 else:
                     raise ValueError(config['label_type'])
 
@@ -395,6 +445,13 @@ def main():
                     metric_dev_best = metric_dev
                     not_improved_epoch = 0
                     logger.info('||||| Best Score |||||')
+
+                    # Update learning rate
+                    model.module.optimizer, learning_rate = lr_controller.decay_lr(
+                        optimizer=model.module.optimizer,
+                        learning_rate=learning_rate,
+                        epoch=epoch,
+                        value=metric_dev)
 
                     # Save the model
                     model.module.save_checkpoint(
@@ -433,6 +490,13 @@ def main():
                         else:
                             raise ValueError(config['label_type'])
                 else:
+                    # Update learning rate
+                    model.module.optimizer, learning_rate = lr_controller.decay_lr(
+                        optimizer=model.module.optimizer,
+                        learning_rate=learning_rate,
+                        epoch=epoch,
+                        value=metric_dev)
+
                     not_improved_epoch += 1
 
                 duration_eval = time.time() - start_time_eval
@@ -441,28 +505,6 @@ def main():
                 # Early stopping
                 if not_improved_epoch == config['not_improved_patient_epoch']:
                     break
-
-                # NOTE: special learning rate annealing for WSJ
-                # if args.corpus == 'wsj':
-                #     if 80000 <= step < 90000:
-                #         learning_rate = 1e-4
-                #     elif 90000 <= step:
-                #         learning_rate = 1e-5
-
-                # Update learning rate
-                model.module.optimizer, learning_rate = lr_controller.decay_lr(
-                    optimizer=model.module.optimizer,
-                    learning_rate=learning_rate,
-                    epoch=epoch,
-                    value=metric_dev)
-
-                # Inject Gaussian noise to all parameters
-                # if float(config['weight_noise_std']) > 0:
-                #     if args.corpus == 'wsj':
-                #         if step >= 20000:
-                #             model.module.weight_noise_injection = True
-                #     elif args.corpus == 'timit':
-                #         pass
 
                 if epoch == config['convert_to_sgd_epoch']:
                     # Convert to fine-tuning stage

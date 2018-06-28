@@ -14,9 +14,10 @@ import shutil
 
 sys.path.append(abspath('../../../'))
 from src.models.load_model import load
-from src.dataset.loader import Dataset
+from src.dataset.loader import Dataset as Dataset_asr
+from src.dataset.loader_p2w import Dataset as Dataset_p2w
 from src.utils.directory import mkdir_join, mkdir
-from src.utils.visualization.ctc import plot_ctc_probs
+from src.bin.visualization.utils.visualization.ctc import plot_ctc_probs
 from src.utils.config import load_config
 
 parser = argparse.ArgumentParser()
@@ -41,18 +42,37 @@ def main():
     config = load_config(join(args.model_path, 'config.yml'), is_eval=True)
 
     # Load dataset
-    dataset = Dataset(
-        corpus=args.corpus,
-        data_save_path=args.data_save_path,
-        input_freq=config['input_freq'],
-        use_delta=config['use_delta'],
-        use_double_delta=config['use_double_delta'],
-        data_size=config['data_size'] if 'data_size' in config.keys() else '',
-        data_type=args.data_type,
-        label_type=config['label_type'],
-        batch_size=args.eval_batch_size,
-        sort_utt=False, reverse=False, tool=config['tool'])
+    if config['input_type'] == 'speech':
+        dataset = Dataset_asr(
+            corpus=args.corpus,
+            data_save_path=args.data_save_path,
+            input_freq=config['input_freq'],
+            use_delta=config['use_delta'],
+            use_double_delta=config['use_double_delta'],
+            data_size=config['data_size'] if 'data_size' in config.keys(
+            ) else '',
+            data_type=args.data_type,
+            label_type=config['label_type'],
+            batch_size=args.eval_batch_size,
+            sort_utt=False, reverse=False, tool=config['tool'])
+    elif config['input_type'] == 'text':
+        dataset = Dataset_p2w(
+            corpus=args.corpus,
+            data_save_path=args.data_save_path,
+            data_type=args.data_type,
+            data_size=config['data_size'],
+            label_type_in=config['label_type_in'],
+            label_type=config['label_type'],
+            batch_size=args.eval_batch_size,
+            sort_utt=False, reverse=False, tool=config['tool'],
+            vocab=config['vocab'],
+            use_ctc=config['model_type'] == 'ctc' or (
+                config['model_type'] == 'attention' and config['ctc_loss_weight'] > 0),
+            subsampling_factor=2 ** sum(config['subsample_list']))
+        config['num_classes_input'] = dataset.num_classes_in
+
     config['num_classes'] = dataset.num_classes
+    config['num_classes_sub'] = dataset.num_classes
 
     # Load model
     model = load(model_type=config['model_type'],
@@ -92,7 +112,8 @@ def main():
                 probs[b, :x_lens[b]],
                 frame_num=x_lens[b],
                 num_stack=model.num_stack,
-                spectrogram=batch['xs'][b][:, :dataset.input_freq],
+                spectrogram=batch['xs'][b][:,
+                                           :dataset.input_freq]if config['input_type'] == 'speech' else None,
                 save_path=mkdir_join(save_path, speaker,
                                      batch['input_names'][b] + '.png'),
                 figsize=(20, 8))

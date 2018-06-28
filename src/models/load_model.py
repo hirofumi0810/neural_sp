@@ -41,7 +41,12 @@ def load(model_type, config, backend):
         elif backend == 'chainer':
             from src.models.chainer.ctc.ctc import CTC
 
+        # TODO: remove these later
+        if 'input_type' not in config.keys():
+            config['input_type'] = 'speech'
+
         model = CTC(
+            input_type=config['input_type'],
             input_size=config['input_freq'] *
             (1 + int(config['use_delta'] + int(config['use_double_delta']))),
             encoder_type=config['encoder_type'],
@@ -73,7 +78,8 @@ def load(model_type, config, backend):
             label_smoothing_prob=config['label_smoothing_prob'],
             weight_noise_std=config['weight_noise_std'],
             encoder_residual=config['encoder_residual'],
-            encoder_dense_residual=config['encoder_dense_residual'])
+            encoder_dense_residual=config['encoder_dense_residual'],
+            num_classes_input=config['num_classes_input'] if config['input_type'] == 'text' else 0)
 
         model.name = model_name
         if config['encoder_type'] not in ['cnn', 'resnet']:
@@ -82,8 +88,8 @@ def load(model_type, config, backend):
             if config['encoder_num_proj'] != 0:
                 model.name += '_proj' + str(config['encoder_num_proj'])
             if sum(config['subsample_list']) > 0:
-                model.name += '_' + config['subsample_type'] + \
-                    str(2 ** sum(config['subsample_list']))
+                model.name += '_' + config['subsample_type'] + ''.join(
+                    [str(i + 1) for i, b in enumerate(config['subsample_list']) if b])
             if config['num_stack'] != 1:
                 model.name += '_stack' + str(config['num_stack'])
         if len(config['fc_list']) != 0:
@@ -113,6 +119,8 @@ def load(model_type, config, backend):
         model.name += '_input' + str(model.input_size)
         if isdir(config['pretrained_model_path']):
             model.name += '_pretrain'
+        if config['input_type'] == 'text':
+            model.name += '_p2w'
 
     elif config['model_type'] == 'hierarchical_ctc':
         if backend == 'pytorch':
@@ -120,7 +128,12 @@ def load(model_type, config, backend):
         elif backend == 'chainer':
             from src.models.chainer.ctc.hierarchical_ctc import HierarchicalCTC
 
+        # TODO: remove these later
+        if 'input_type' not in config.keys():
+            config['input_type'] = 'speech'
+
         model = HierarchicalCTC(
+            input_type=config['input_type'],
             input_size=config['input_freq'] *
             (1 + int(config['use_delta'] + int(config['use_double_delta']))),
             encoder_type=config['encoder_type'],
@@ -157,7 +170,8 @@ def load(model_type, config, backend):
             label_smoothing_prob=config['label_smoothing_prob'],
             weight_noise_std=config['weight_noise_std'],
             encoder_residual=config['encoder_residual'],
-            encoder_dense_residual=config['encoder_dense_residual'])
+            encoder_dense_residual=config['encoder_dense_residual'],
+            num_classes_input=config['num_classes_input'] if config['input_type'] == 'text' else 0)
 
         model.name = model_name
         if config['encoder_type'] not in ['cnn', 'resnet']:
@@ -167,8 +181,8 @@ def load(model_type, config, backend):
             if config['encoder_num_proj'] != 0:
                 model.name += '_proj' + str(config['encoder_num_proj'])
             if sum(config['subsample_list']) > 0:
-                model.name += '_' + config['subsample_type'] + \
-                    str(2 ** sum(config['subsample_list']))
+                model.name += '_' + config['subsample_type'] + ''.join(
+                    [str(i + 1) for i, b in enumerate(config['subsample_list']) if b])
             if config['num_stack'] != 1:
                 model.name += '_stack' + str(config['num_stack'])
         if len(config['fc_list']) != 0:
@@ -199,6 +213,8 @@ def load(model_type, config, backend):
         model.name += '_input' + str(model.input_size)
         if isdir(config['pretrained_model_path']):
             model.name += '_pretrain'
+        if config['input_type'] == 'text':
+            model.name += '_p2w'
 
     elif model_type == 'attention':
         if backend == 'pytorch':
@@ -214,7 +230,11 @@ def load(model_type, config, backend):
         if 'rnnlm_weight' not in config.keys():
             config['rnnlm_weight'] = 0
 
+        if 'input_type' not in config.keys():
+            config['input_type'] = 'speech'
+
         model = AttentionSeq2seq(
+            input_type=config['input_type'],
             input_size=config['input_freq'] *
             (1 + int(config['use_delta'] + int(config['use_double_delta']))),
             encoder_type=config['encoder_type'],
@@ -271,7 +291,8 @@ def load(model_type, config, backend):
             num_heads=config['num_heads'],
             rnnlm_fusion_type=config['rnnlm_fusion_type'],
             rnnlm_config=config['rnnlm_config'],
-            rnnlm_weight=config['rnnlm_weight'])
+            rnnlm_weight=config['rnnlm_weight'],
+            num_classes_input=config['num_classes_input'] if config['input_type'] == 'text' else 0)
 
         model.name = model_name
         if config['encoder_type'] not in ['cnn', 'resnet']:
@@ -280,8 +301,8 @@ def load(model_type, config, backend):
             if config['encoder_num_proj'] != 0:
                 model.name += '_proj' + str(config['encoder_num_proj'])
             if sum(config['subsample_list']) > 0:
-                model.name += '_' + config['subsample_type'] + \
-                    str(2 ** sum(config['subsample_list']))
+                model.name += '_' + config['subsample_type'] + ''.join(
+                    [str(i + 1) for i, b in enumerate(config['subsample_list']) if b])
             if config['num_stack'] != 1:
                 model.name += '_stack' + str(config['num_stack'])
         if bool(config['batch_norm']):
@@ -340,6 +361,8 @@ def load(model_type, config, backend):
             model.name += '_' + config['rnnlm_fusion_type']
         if float(config['rnnlm_weight']) > 0:
             model.name += '_lmjoint' + str(config['rnnlm_weight'])
+        if config['input_type'] == 'text':
+            model.name += '_p2w'
 
     elif config['model_type'] == 'hierarchical_attention':
         if backend == 'pytorch':
@@ -359,7 +382,11 @@ def load(model_type, config, backend):
         if 'rnnlm_weight_sub' not in config.keys():
             config['rnnlm_weight_sub'] = 0
 
+        if 'input_type' not in config.keys():
+            config['input_type'] = 'speech'
+
         model = HierarchicalAttentionSeq2seq(
+            input_type=config['input_type'],
             input_size=config['input_freq'] *
             (1 + int(config['use_delta'] + int(config['use_double_delta']))),
             encoder_type=config['encoder_type'],
@@ -427,7 +454,8 @@ def load(model_type, config, backend):
             rnnlm_config=config['rnnlm_config'],
             rnnlm_config_sub=config['rnnlm_config_sub'],
             rnnlm_weight=config['rnnlm_weight'],
-            rnnlm_weight_sub=config['rnnlm_weight_sub'])
+            rnnlm_weight_sub=config['rnnlm_weight_sub'],
+            num_classes_input=config['num_classes_input'] if config['input_type'] == 'text' else 0)
 
         model.name = model_name
         if config['encoder_type'] not in ['cnn', 'resnet']:
@@ -437,8 +465,8 @@ def load(model_type, config, backend):
             if config['encoder_num_proj'] != 0:
                 model.name += '_proj' + str(config['encoder_num_proj'])
             if sum(config['subsample_list']) > 0:
-                model.name += '_' + config['subsample_type'] + \
-                    str(2 ** sum(config['subsample_list']))
+                model.name += '_' + config['subsample_type'] + ''.join(
+                    [str(i + 1) for i, b in enumerate(config['subsample_list']) if b])
             if config['num_stack'] != 1:
                 model.name += '_stack' + str(config['num_stack'])
         if bool(config['batch_norm']):
@@ -500,6 +528,8 @@ def load(model_type, config, backend):
         if float(config['rnnlm_weight']) > 0 or float(config['rnnlm_weight_sub']) > 0:
             model.name += '_lmjoint' + \
                 str(config['rnnlm_weight']) + str(config['rnnlm_weight_sub'])
+        if config['input_type'] == 'text':
+            model.name += '_p2w'
 
     elif config['model_type'] == 'nested_attention':
         if backend == 'pytorch':
@@ -589,8 +619,8 @@ def load(model_type, config, backend):
             if config['encoder_num_proj'] != 0:
                 model.name += '_proj' + str(config['encoder_num_proj'])
             if sum(config['subsample_list']) > 0:
-                model.name += '_' + config['subsample_type'] + \
-                    str(2 ** sum(config['subsample_list']))
+                model.name += '_' + config['subsample_type'] + ''.join(
+                    [str(i + 1) for i, b in enumerate(config['subsample_list']) if b])
             if config['num_stack'] != 1:
                 model.name += '_stack' + str(config['num_stack'])
         if bool(config['batch_norm']):

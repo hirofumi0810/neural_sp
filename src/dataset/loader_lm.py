@@ -29,9 +29,8 @@ class Dataset(Base):
     def __init__(self, corpus, data_save_path,
                  data_size, data_type, label_type,
                  batch_size, max_epoch=None,
-                 max_frame_num=10000, min_frame_num=0,
                  shuffle=False, sort_utt=False, reverse=False,
-                 sort_stop_epoch=None, num_gpus=1, tool='htk',
+                 sort_stop_epoch=None, tool='htk',
                  num_enque=None, dynamic_batching=False, vocab=False):
         """A class for loading dataset.
         Args:
@@ -41,15 +40,12 @@ class Dataset(Base):
             label_type (string):
             batch_size (int): the size of mini-batch
             max_epoch (int): the max epoch. None means infinite loop.
-            max_frame_num (int): Exclude utteraces longer than this value
-            min_frame_num (int): Exclude utteraces shorter than this value
             shuffle (bool): if True, shuffle utterances.
                 This is disabled when sort_utt is True.
             sort_utt (bool): if True, sort all utterances in the ascending order
             reverse (bool): if True, sort utteraces in the descending order
             sort_stop_epoch (int): After sort_stop_epoch, training will revert
                 back to a random order
-            num_gpus, int): the number of GPUs
             tool (string): htk or librosa or python_speech_features
             num_enque (int): the number of elements to enqueue
             dynamic_batching (bool): if True, batch size will be chainged
@@ -60,12 +56,11 @@ class Dataset(Base):
         self.data_type = data_type
         self.data_size = data_size
         self.label_type = label_type
-        self.batch_size = batch_size * num_gpus
+        self.batch_size = batch_size
         self.max_epoch = max_epoch
         self.shuffle = shuffle
         self.sort_utt = sort_utt
         self.sort_stop_epoch = sort_stop_epoch
-        self.num_gpus = num_gpus
         self.tool = tool
         self.num_enque = num_enque
         self.dynamic_batching = dynamic_batching
@@ -83,7 +78,7 @@ class Dataset(Base):
             if data_type == 'train':
                 data_type += '_' + data_size
 
-        if vocab and data_size != vocab:
+        if vocab and data_size != '' and data_size != vocab:
             self.vocab_file_path = join(
                 data_save_path, 'vocab', vocab, label_type + '.txt')
             vocab_file_path_org = join(
@@ -91,6 +86,7 @@ class Dataset(Base):
         else:
             self.vocab_file_path = join(
                 data_save_path, 'vocab', data_size, label_type + '.txt')
+
         if label_type == 'word':
             self.idx2word = Idx2word(self.vocab_file_path)
             self.word2idx = Word2idx(self.vocab_file_path)
@@ -103,7 +99,7 @@ class Dataset(Base):
         super(Dataset, self).__init__(vocab_file_path=self.vocab_file_path)
 
         # Load dataset file
-        if vocab and data_size != vocab and not self.is_test:
+        if vocab and data_size != '' and data_size != vocab and not self.is_test:
             dataset_path = mkdir_join(
                 data_save_path, 'dataset', tool, data_size + '_' + vocab, data_type, label_type + '.csv')
 
@@ -154,13 +150,6 @@ class Dataset(Base):
             df = pd.read_csv(dataset_path, encoding='utf-8')
             df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
 
-        # Remove inappropriate utteraces
-        if not self.is_test:
-            logger.info('Original utterance num: %d' % len(df))
-            df = df[df.apply(
-                lambda x: min_frame_num <= x['frame_num'] < max_frame_num, axis=1)]
-            logger.info('Restricted utterance num: %d' % len(df))
-
         # Sort paths to input & label
         if sort_utt:
             df = df.sort_values(by='frame_num', ascending=not reverse)
@@ -185,9 +174,6 @@ class Dataset(Base):
         # Load dataset in mini-batch
         transcripts = np.array(self.df['transcript'][data_indices])
 
-        #########################
-        # transcript
-        #########################
         if self.is_test:
             ys = [self.df['transcript'][data_indices[b]]
                   for b in range(len(data_indices))]

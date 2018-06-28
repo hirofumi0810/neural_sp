@@ -328,29 +328,6 @@ if [ $stage -le 3 ]; then
 fi
 
 
-if [ $stage -le 4 ]; then
-  echo ============================================================================
-  echo "                             LM training                                 "
-  echo ============================================================================
-
-  echo "Finish LM training (stage: 4)."
-fi
-
-
-if [ $stage -le 5 ]; then
-  echo ============================================================================
-  echo "                              Rescoring                                   "
-  echo ============================================================================
-
-  echo "Finish rescoring (stage: 5)."
-fi
-
-
-echo "Done."
-
-
-# utils/prepare_lang.sh --num-sil-states 4 ${data}/local/dict_nosp "<unk>" ${data}/local/lang_nosp ${data}/lang_nosp
-
 # Now train the language models.
 # local/csj_train_lms.sh ${data}/local/train/text ${data}/local/dict_nosp/lexicon.txt ${data}/local/lm
 
@@ -360,10 +337,4 @@ echo "Done."
 # LM=${data}/local/lm/csj.o3g.kn.gz
 # utils/format_lm_sri.sh --srilm-opts "$srilm_opts" \
 #   ${data}/lang_nosp $LM ${data}/local/dict_nosp/lexicon.txt ${data}/lang_nosp_csj_tg
-
-
-# getting results (see RESULTS file)
-# for eval_num in eval1 eval2 eval3 $dev_set ; do
-#     echo "=== evaluation set $eval_num ===" ;
-#     for x in ../../../src/bin/{tri,dnn}*/decode_${eval_num}*; do [ -d $x ] && grep WER $x/wer_* | utils/best_wer.sh; done ;
 # done

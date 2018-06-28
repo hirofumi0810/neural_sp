@@ -19,7 +19,6 @@ from src.models.pytorch_v3.linear import LinearND, Embedding
 from src.models.pytorch_v3.encoders.load_encoder import load
 from src.models.pytorch_v3.attention.rnn_decoder import RNNDecoder
 from src.models.pytorch_v3.attention.attention_layer import AttentionMechanism, MultiheadAttentionMechanism
-from src.models.pytorch_v3.ctc.ctc import my_warpctc
 from src.models.pytorch_v3.criterion import cross_entropy_label_smoothing
 from src.models.pytorch_v3.ctc.decoders.greedy_decoder import GreedyDecoder
 from src.models.pytorch_v3.ctc.decoders.beam_search_decoder import BeamSearchDecoder
@@ -32,6 +31,8 @@ from src.utils.io.inputs.splicing import do_splice
 class AttentionSeq2seq(ModelBase):
     """Attention-based sequence-to-sequence model.
     Args:
+        input_type (string): speech or text
+            speech means ASR, and text means NMT or P2W and so on...
         input_size (int): the dimension of input features (freq * channel)
         encoder_type (string): the type of the encoder. Set lstm or gru or rnn.
         encoder_bidirectional (bool): if True, create a bidirectional encoder
@@ -121,9 +122,11 @@ class AttentionSeq2seq(ModelBase):
             state_embedding_fusion:
         rnnlm_config (dict): configuration of the pre-trained RNNLM
         rnnlm_weight (float): the weight for XE loss of RNNLM
+        num_classes_input (int):
     """
 
     def __init__(self,
+                 input_type,
                  input_size,
                  encoder_type,
                  encoder_bidirectional,
@@ -181,12 +184,15 @@ class AttentionSeq2seq(ModelBase):
                  num_heads=1,
                  rnnlm_fusion_type=None,
                  rnnlm_config=None,
-                 rnnlm_weight=0):
+                 rnnlm_weight=0,
+                 num_classes_input=0):
 
         super(ModelBase, self).__init__()
         self.model_type = 'attention'
 
         # Setting for the encoder
+        self.input_type = input_type
+        assert input_type in ['speech', 'text']
         self.input_size = input_size
         self.num_stack = num_stack
         self.num_skip = num_skip
@@ -251,12 +257,18 @@ class AttentionSeq2seq(ModelBase):
 
         # Setting for MTL
         self.ctc_loss_weight = ctc_loss_weight
+        if ctc_loss_weight > 0:
+            from src.models.pytorch_v3.ctc.ctc import my_warpctc
+            self.warp_ctc = my_warpctc
 
         # Setting for the RNNLM fusion
         self.rnnlm_fusion_type = rnnlm_fusion_type
         self.rnnlm_0_fwd = None
         self.rnnlm_0_bwd = None
         self.rnnlm_weight_0 = rnnlm_weight
+
+        # Setting for text input
+        self.num_classes_input = num_classes_input + 1
 
         # RNNLM fusion
         if rnnlm_fusion_type:
@@ -442,6 +454,11 @@ class AttentionSeq2seq(ModelBase):
                                  embedding_dim=embedding_dim,
                                  dropout=dropout_embedding,
                                  ignore_index=self.eos_0)
+        if input_type == 'text':
+            self.embed_in = Embedding(num_classes=self.num_classes_input,
+                                      embedding_dim=input_size,
+                                      dropout=dropout_embedding,
+                                      ignore_index=self.num_classes_input - 1)
 
         # CTC
         if ctc_loss_weight > 0:
@@ -504,26 +521,14 @@ class AttentionSeq2seq(ModelBase):
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
         # Sort by lenghts in the descending order
-        if is_eval and self.encoder_type != 'cnn':
+        if is_eval and self.encoder_type != 'cnn' or self.input_type == 'text':
             perm_idx = sorted(list(range(0, len(xs), 1)),
-                              key=lambda i: xs[i].shape[0], reverse=True)
+                              key=lambda i: len(xs[i]), reverse=True)
             xs = [xs[i] for i in perm_idx]
             ys = [ys[i] for i in perm_idx]
             # NOTE: must be descending order for pack_padded_sequence
             # NOTE: assumed that xs is already sorted in the training stage
 
-        # Frame stacking
-        if self.num_stack > 1:
-            xs = [stack_frame(x, self.num_stack, self.num_skip)
-                  for x in xs]
-
-        # Splicing
-        if self.splice > 1:
-            xs = [do_splice(x, self.splice, self.num_stack) for x in xs]
-
-        # Wrap by Variable
-        x_lens = [len(x) for x in xs]
-        xs = [np2var(x, self.device_id).float() for x in xs]
         if self.fwd_weight_0 > 0 or self.ctc_loss_weight > 0:
             ys_fwd = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()
                       for y in ys]
@@ -532,8 +537,8 @@ class AttentionSeq2seq(ModelBase):
                       for y in ys]
             # NOTE: reverse the order
 
-        # Encode acoustic features
-        xs, x_lens = self._encode(xs, x_lens)
+        # Encode input features
+        xs, x_lens = self._encode(xs)
 
         # Compute XE loss for the forward decoder
         if self.fwd_weight_0 > 0:
@@ -668,22 +673,21 @@ class AttentionSeq2seq(ModelBase):
         logits = getattr(self, 'fc_ctc_' + str(task))(enc_out)
 
         # Compute CTC loss
-        loss = my_warpctc(logits.transpose(0, 1),  # time-major
-                          ys_ctc,  # int
-                          x_lens,  # int
-                          y_lens,  # int
-                          size_average=False) / len(enc_out)
+        loss = self.warp_ctc(logits.transpose(0, 1),  # time-major
+                             ys_ctc,  # int
+                             x_lens,  # int
+                             y_lens,  # int
+                             size_average=False) / len(enc_out)
 
         if self.device_id >= 0:
             loss = loss.cuda(self.device_id)
 
         return loss
 
-    def _encode(self, xs, x_lens, is_multi_task=False):
+    def _encode(self, xs, is_multi_task=False):
         """Encode acoustic features.
         Args:
             xs (list): A list of length `[B]`, which contains Variables of size `[T, input_size]`
-            x_lens (list): A list of length `[B]`
             is_multi_task (bool): Set True in the case of MTL
         Returns:
             xs (torch.autograd.Variable, float): A tensor of size
@@ -694,8 +698,28 @@ class AttentionSeq2seq(ModelBase):
                     `[B, T, encoder_num_units]`
                 x_lens_sub (list): A tensor of size `[B]`
         """
-        # Convert list to Variables
-        xs = pad_list(xs)
+        if self.input_type == 'speech':
+            # Frame stacking
+            if self.num_stack > 1:
+                xs = [stack_frame(x, self.num_stack, self.num_skip)
+                      for x in xs]
+
+            # Splicing
+            if self.splice > 1:
+                xs = [do_splice(x, self.splice, self.num_stack) for x in xs]
+
+            # Wrap by Variable
+            x_lens = [len(x) for x in xs]
+            xs = [np2var(x, self.device_id).float() for x in xs]
+            xs = pad_list(xs)
+
+        elif self.input_type == 'text':
+            # Wrap by Variable
+            x_lens = [len(x) for x in xs]
+            xs = [np2var(np.fromiter(x, dtype=np.int64), self.device_id).long()
+                  for x in xs]
+            xs = pad_list(xs, self.num_classes_input - 1)
+            xs = self.embed_in(xs)
 
         if is_multi_task:
             if self.encoder_type == 'cnn':
@@ -749,7 +773,8 @@ class AttentionSeq2seq(ModelBase):
         taskdir = '_' + str(task) + '_' + dir
 
         # Initialization
-        dec_state, dec_out = self._init_dec_state(enc_out, x_lens, task, dir)
+        dec_out, hx_list, cx_list = self._init_dec_state(
+            enc_out, x_lens, task, dir)
         getattr(self, 'attend_' + str(task) + '_' + dir).reset()
         aw_step = None
         if self.decoding_order == 'luong':
@@ -794,8 +819,8 @@ class AttentionSeq2seq(ModelBase):
                         context_vec = torch.cat(
                             [context_vec, rnnlm_out], dim=-1)
                     dec_in = torch.cat([y, context_vec], dim=-1)
-                    dec_out, dec_state = getattr(self, 'decoder' + taskdir)(
-                        dec_in, dec_state)
+                    dec_out, hx_list, cx_list = getattr(self, 'decoder' + taskdir)(
+                        dec_in, hx_list, cx_list)
 
                 # Score
                 context_vec, aw_step = getattr(self, 'attend' + taskdir)(
@@ -809,8 +834,8 @@ class AttentionSeq2seq(ModelBase):
                     context_vec = torch.cat(
                         [context_vec, rnnlm_out], dim=-1)
                 dec_in = torch.cat([y, context_vec], dim=-1)
-                dec_out, dec_state = getattr(self, 'decoder' + taskdir)(
-                    dec_in, dec_state)
+                dec_out, hx_list, cx_list = getattr(self, 'decoder' + taskdir)(
+                    dec_in, hx_list, cx_list)
 
                 # Score
                 context_vec, aw_step = getattr(self, 'attend' + taskdir)(
@@ -820,8 +845,8 @@ class AttentionSeq2seq(ModelBase):
                 # Recurrency of the first decoder
                 if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
                     y = torch.cat([y, y_rnnlm], dim=-1)
-                _dec_out, _dec_state = getattr(self, 'decoder_first' + taskdir)(
-                    y, dec_state)
+                _dec_out, _hx_list, _cx_list = getattr(self, 'decoder_first' + taskdir)(
+                    y, hx_list, cx_list)
 
                 # Score
                 context_vec, aw_step = getattr(self, 'attend' + taskdir)(
@@ -831,8 +856,8 @@ class AttentionSeq2seq(ModelBase):
                 if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
                     context_vec = torch.cat(
                         [context_vec, rnnlm_out], dim=-1)
-                dec_out, dec_state = getattr(self, 'decoder_second' + taskdir)(
-                    context_vec, _dec_state)
+                dec_out, hx_list, cx_list = getattr(self, 'decoder_second' + taskdir)(
+                    context_vec, _hx_list, _cx_list)
 
             else:
                 raise ValueError(self.decoding_order)
@@ -877,9 +902,10 @@ class AttentionSeq2seq(ModelBase):
             task (int): the index of a task
             dir (str): fwd or bwd
         Returns:
-            dec_state (list or tuple of list):
             dec_out (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, decoder_num_units]`
+            hx_list (list of torch.autograd.Variable(float)):
+            cx_list (list of torch.autograd.Variable(float)):
         """
         taskdir = '_' + str(task) + '_' + dir
 
@@ -900,7 +926,7 @@ class AttentionSeq2seq(ModelBase):
             else:
                 hx_list = [zero_state] * \
                     getattr(self, 'decoder_num_layers_' + str(task))
-
+                cx_list = None
         else:
             # TODO: consider x_lens
 
@@ -926,15 +952,12 @@ class AttentionSeq2seq(ModelBase):
             if self.decoder_type == 'lstm':
                 cx_list = [zero_state] * \
                     getattr(self, 'decoder_num_layers_' + str(task))
+            else:
+                cx_list = None
 
             dec_out = h_0.unsqueeze(1)
 
-        if self.decoder_type == 'lstm':
-            dec_state = (hx_list, cx_list)
-        else:
-            dec_state = hx_list
-
-        return dec_state, dec_out
+        return dec_out, hx_list, cx_list
 
     def decode(self, xs, beam_width, max_decode_len, min_decode_len=0,
                min_decode_len_ratio=0, length_penalty=0, coverage_penalty=0,
@@ -959,29 +982,16 @@ class AttentionSeq2seq(ModelBase):
         self.eval()
 
         # Sort by lenghts in the descending order
-        if self.encoder_type != 'cnn':
+        if self.encoder_type != 'cnn' or self.input_type == 'text':
             perm_idx = sorted(list(range(0, len(xs), 1)),
-                              key=lambda i: xs[i].shape[0], reverse=True)
+                              key=lambda i: len(xs[i]), reverse=True)
             xs = [xs[i] for i in perm_idx]
             # NOTE: must be descending order for pack_padded_sequence
         else:
             perm_idx = list(range(0, len(xs), 1))
 
-        # Frame stacking
-        if self.num_stack > 1:
-            xs = [stack_frame(x, self.num_stack, self.num_skip)
-                  for x in xs]
-
-        # Splicing
-        if self.splice > 1:
-            xs = [do_splice(x, self.splice, self.num_stack) for x in xs]
-
-        # Wrap by Variable
-        xs = [np2var(x, self.device_id, volatile=True).float() for x in xs]
-        x_lens = [len(x) for x in xs]
-
-        # Encode acoustic features
-        enc_out, x_lens = self._encode(xs, x_lens)
+        # Encode input features
+        enc_out, x_lens = self._encode(xs)
 
         dir = 'fwd' if self.fwd_weight_0 >= self.bwd_weight_0 else 'bwd'
 
@@ -1016,7 +1026,8 @@ class AttentionSeq2seq(ModelBase):
         taskdir = '_' + str(task) + '_' + dir
 
         # Initialization
-        dec_state, dec_out = self._init_dec_state(enc_out, x_lens, task, dir)
+        dec_out, hx_list, cx_list = self._init_dec_state(
+            enc_out, x_lens, task, dir)
         getattr(self, 'attend_' + str(task) + '_' + dir).reset()
         aw_step = None
         if self.decoding_order == 'luong':
@@ -1051,8 +1062,8 @@ class AttentionSeq2seq(ModelBase):
                         context_vec = torch.cat(
                             [context_vec, rnnlm_out], dim=-1)
                     dec_in = torch.cat([y, context_vec], dim=-1)
-                    dec_out, dec_state = getattr(self, 'decoder' + taskdir)(
-                        dec_in, dec_state)
+                    dec_out, hx_list, cx_list = getattr(self, 'decoder' + taskdir)(
+                        dec_in, hx_list, cx_list)
 
                 # Score
                 context_vec, aw_step = getattr(self, 'attend' + taskdir)(
@@ -1066,8 +1077,8 @@ class AttentionSeq2seq(ModelBase):
                     context_vec = torch.cat(
                         [context_vec, rnnlm_out], dim=-1)
                 dec_in = torch.cat([y, context_vec], dim=-1)
-                dec_out, dec_state = getattr(self, 'decoder' + taskdir)(
-                    dec_in, dec_state)
+                dec_out, hx_list, cx_list = getattr(self, 'decoder' + taskdir)(
+                    dec_in, hx_list, cx_list)
 
                 # Score
                 context_vec, aw_step = getattr(self, 'attend' + taskdir)(
@@ -1077,8 +1088,8 @@ class AttentionSeq2seq(ModelBase):
                 # Recurrency of the first decoder
                 if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
                     y = torch.cat([y, y_rnnlm], dim=-1)
-                _dec_out, _dec_state = getattr(self, 'decoder_first' + taskdir)(
-                    y, dec_state)
+                _dec_out, _hx_list, _cx_list = getattr(self, 'decoder_first' + taskdir)(
+                    y, hx_list, cx_list)
 
                 # Score
                 context_vec, aw_step = getattr(self, 'attend' + taskdir)(
@@ -1088,8 +1099,8 @@ class AttentionSeq2seq(ModelBase):
                 if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
                     context_vec = torch.cat(
                         [context_vec, rnnlm_out], dim=-1)
-                dec_out, dec_state = getattr(self, 'decoder_second' + taskdir)(
-                    context_vec, _dec_state)
+                dec_out, hx_list, cx_list = getattr(self, 'decoder_second' + taskdir)(
+                    context_vec, _hx_list, _cx_list)
 
             else:
                 raise ValueError(self.decoding_order)
@@ -1192,7 +1203,7 @@ class AttentionSeq2seq(ModelBase):
         y_lens = np.zeros((enc_out.size(0),), dtype=np.int32)
         for b in range(enc_out.size(0)):
             # Initialization per utterance
-            dec_state, dec_out = self._init_dec_state(
+            dec_out, hx_list, cx_list = self._init_dec_state(
                 enc_out[b:b + 1], x_lens[b], task, dir)
             context_vec = Variable(enc_out.data.new(
                 1, 1, enc_out.size(-1)).fill_(0.), volatile=True)
@@ -1201,8 +1212,9 @@ class AttentionSeq2seq(ModelBase):
             complete = []
             beam = [{'hyp': [sos],
                      'score': 0,  # log 1
-                     'dec_state': dec_state,
                      'dec_out': dec_out,
+                     'hx_list': hx_list,
+                     'cx_list': cx_list,
                      'context_vec': context_vec,
                      'aw_steps': [None],
                      'rnnlm_state': None,
@@ -1235,8 +1247,8 @@ class AttentionSeq2seq(ModelBase):
                                     [beam[i_beam]['context_vec'], rnnlm_out], dim=-1)
                             dec_in = torch.cat(
                                 [y, beam[i_beam]['context_vec']], dim=-1)
-                            dec_out, dec_state = getattr(self, 'decoder' + taskdir)(
-                                dec_in, beam[i_beam]['dec_state'])
+                            dec_out, hx_list, cx_list = getattr(self, 'decoder' + taskdir)(
+                                dec_in, beam[i_beam]['hx_list'], beam[i_beam]['cx_list'])
 
                         # Score
                         context_vec, aw_step = getattr(self, 'attend' + taskdir)(
@@ -1252,8 +1264,8 @@ class AttentionSeq2seq(ModelBase):
                                 [beam[i_beam]['context_vec'], rnnlm_out], dim=-1)
                         dec_in = torch.cat(
                             [y, beam[i_beam]['context_vec']], dim=-1)
-                        dec_out, dec_state = getattr(self, 'decoder' + taskdir)(
-                            dec_in, beam[i_beam]['dec_state'])
+                        dec_out, hx_list, cx_list = getattr(self, 'decoder' + taskdir)(
+                            dec_in, beam[i_beam]['hx_list'], beam[i_beam]['cx_list'])
 
                         # Score
                         context_vec, aw_step = getattr(self, 'attend' + taskdir)(
@@ -1264,8 +1276,8 @@ class AttentionSeq2seq(ModelBase):
                         # Recurrency of the first decoder
                         if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
                             y = torch.cat([y, y_rnnlm], dim=-1)
-                        _dec_out, _dec_state = getattr(self, 'decoder_first' + taskdir)(
-                            y, beam[i_beam]['dec_state'])
+                        _dec_out, _hx_list, _cx_list = getattr(self, 'decoder_first' + taskdir)(
+                            y, beam[i_beam]['hx_list'], beam[i_beam]['cx_list'])
 
                         # Score
                         context_vec, aw_step = getattr(self, 'attend' + taskdir)(
@@ -1276,8 +1288,8 @@ class AttentionSeq2seq(ModelBase):
                         if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
                             context_vec = torch.cat(
                                 [context_vec, rnnlm_out], dim=-1)
-                        dec_out, dec_state = getattr(self, 'decoder_second' + taskdir)(
-                            context_vec, _dec_state)
+                        dec_out, hx_list, cx_list = getattr(self, 'decoder_second' + taskdir)(
+                            context_vec, _hx_list, _cx_list)
 
                     else:
                         raise ValueError(self.decoding_order)
@@ -1357,7 +1369,8 @@ class AttentionSeq2seq(ModelBase):
                         new_beam.append(
                             {'hyp': beam[i_beam]['hyp'] + [indices_topk.data[0, k]],
                              'score': score,
-                             'dec_state': copy.deepcopy(dec_state),
+                             'hx_list': hx_list,
+                             'cx_list': cx_list,
                              'dec_out': dec_out,
                              'context_vec': context_vec,
                              'aw_steps': beam[i_beam]['aw_steps'] + [aw_step],
@@ -1418,33 +1431,19 @@ class AttentionSeq2seq(ModelBase):
         self.eval()
 
         # Sort by lenghts in the descending order
-        if self.encoder_type != 'cnn':
+        if self.encoder_type != 'cnn' or self.input_type == 'text':
             perm_idx = sorted(list(range(0, len(xs), 1)),
-                              key=lambda i: xs[i].shape[0], reverse=True)
+                              key=lambda i: len(xs[i]), reverse=True)
             xs = [xs[i] for i in perm_idx]
             # NOTE: must be descending order for pack_padded_sequence
         else:
             perm_idx = list(range(0, len(xs), 1))
 
-        # Frame stacking
-        if self.num_stack > 1:
-            xs = [stack_frame(x, self.num_stack, self.num_skip)
-                  for x in xs]
-
-        # Splicing
-        if self.splice > 1:
-            xs = [do_splice(x, self.splice, self.num_stack) for x in xs]
-
-        # Wrap by Variable
-        xs = [np2var(x, self.device_id, volatile=True).float() for x in xs]
-        x_lens = [len(x) for x in xs]
-
-        # Encode acoustic features
+        # Encode input features
         if task_index == 0:
-            enc_out, x_lens = self._encode(xs, x_lens)
+            enc_out, x_lens = self._encode(xs)
         elif task_index == 1:
-            _, _, enc_out, x_lens = self._encode(
-                xs, x_lens, is_multi_task=True)
+            _, _, enc_out, x_lens = self._encode(xs, is_multi_task=True)
         else:
             raise NotImplementedError
 

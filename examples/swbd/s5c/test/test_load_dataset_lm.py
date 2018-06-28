@@ -19,8 +19,8 @@ class TestLoadDataset(unittest.TestCase):
     def test(self):
 
         # data_type
-        # self.check(label_type='word', data_type='train')
         self.check(label_type='word', data_type='train_fisher')
+        self.check(label_type='word', data_type='train')
         self.check(label_type='word', data_type='dev')
         self.check(label_type='word', data_type='eval2000_swbd')
         self.check(label_type='word', data_type='eval2000_ch')

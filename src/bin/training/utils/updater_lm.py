@@ -91,6 +91,7 @@ class Updater(object):
             elif self.backend == 'chainer':
                 model.optimizer.target.cleargrads()
             loss_val = 0.
+            acc = 0.
 
         if loss_val == INF or loss_val == -INF:
             logger.warning("WARNING: received an inf loss.")

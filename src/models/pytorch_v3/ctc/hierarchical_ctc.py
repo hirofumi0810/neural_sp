@@ -23,6 +23,8 @@ from src.utils.io.inputs.splicing import do_splice
 class HierarchicalCTC(CTC):
     """Hierarchical CTC model.
     Args:
+        input_type (string): speech or text
+            speech means ASR, and text means NMT or P2W and so on...
         input_size (int): the dimension of input features
         encoder_type (string): the type of the encoder. Set lstm or gru or rnn.
         encoder_bidirectional (bool): if True create a bidirectional encoder
@@ -68,9 +70,11 @@ class HierarchicalCTC(CTC):
         weight_noise_std (float):
         encoder_residual (bool):
         encoder_dense_residual (bool):
+        num_classes_input (int):
     """
 
     def __init__(self,
+                 input_type,
                  input_size,
                  encoder_type,
                  encoder_bidirectional,
@@ -106,9 +110,11 @@ class HierarchicalCTC(CTC):
                  label_smoothing_prob=0,
                  weight_noise_std=0,
                  encoder_residual=False,
-                 encoder_dense_residual=False):
+                 encoder_dense_residual=False,
+                 num_classes_input=0):
 
         super(HierarchicalCTC, self).__init__(
+            input_type=input_type,
             input_size=input_size,
             encoder_type=encoder_type,
             encoder_bidirectional=encoder_bidirectional,
@@ -133,7 +139,8 @@ class HierarchicalCTC(CTC):
             logits_temperature=logits_temperature,
             batch_norm=batch_norm,
             label_smoothing_prob=label_smoothing_prob,
-            weight_noise_std=weight_noise_std)
+            weight_noise_std=weight_noise_std,
+            num_classes_input=num_classes_input)
         self.model_type = 'hierarchical_ctc'
 
         # Setting for the encoder
@@ -287,7 +294,7 @@ class HierarchicalCTC(CTC):
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
         # Sort by lenghts in the descending order
-        if is_eval and self.encoder_type != 'cnn':
+        if is_eval and self.encoder_type != 'cnn' or self.input_type == 'text':
             perm_idx = sorted(list(range(0, len(xs), 1)),
                               key=lambda i: xs[i].shape[0], reverse=True)
             xs = [xs[i] for i in perm_idx]
@@ -296,20 +303,9 @@ class HierarchicalCTC(CTC):
             # NOTE: must be descending order for pack_padded_sequence
             # NOTE: assumed that xs is already sorted in the training stage
 
-        # Frame stacking
-        if self.num_stack > 1:
-            xs = [stack_frame(x, self.num_stack, self.num_skip)
-                  for x in xs]
-
-        # Splicing
-        if self.splice > 1:
-            xs = [do_splice(x, self.splice, self.num_stack) for x in xs]
-
-        # Encode acoustic features
-        xs = [np2var(x, self.device_id).float() for x in xs]
-        x_lens = [len(x) for x in xs]
+        # Encode input features
         logits_main, x_lens, logits_sub, x_lens_sub = self._encode(
-            xs, x_lens, is_multi_task=True)
+            xs, is_multi_task=True)
 
         # Output smoothing
         if self.logits_temp != 1:

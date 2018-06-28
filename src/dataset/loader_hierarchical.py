@@ -20,8 +20,7 @@ from src.dataset.base import Base, load_feat
 from src.utils.parallel import make_parallel
 from src.utils.io.labels.word import Idx2word, Word2idx
 from src.utils.io.labels.character import Idx2char, Char2idx
-
-# NOTE: Loading numpy is faster than loading htk
+from src.utils.io.labels.phone import Idx2phone, Phone2idx
 
 
 class Dataset(Base):
@@ -32,7 +31,7 @@ class Dataset(Base):
                  batch_size, max_epoch=None,
                  max_frame_num=2000, min_frame_num=40,
                  shuffle=False, sort_utt=False, reverse=False,
-                 sort_stop_epoch=None, num_gpus=1, tool='htk',
+                 sort_stop_epoch=None, tool='htk',
                  num_enque=None, dynamic_batching=False,
                  use_ctc=False, subsampling_factor=1,
                  use_ctc_sub=False, subsampling_factor_sub=1):
@@ -56,7 +55,6 @@ class Dataset(Base):
             reverse (bool): if True, sort utteraces in the descending order
             sort_stop_epoch (int): After sort_stop_epoch, training will revert
                 back to a random order
-            num_gpus (int): the number of GPUs
             tool (string): htk or librosa or python_speech_features
             num_enque (int): the number of elements to enqueue
             dynamic_batching (bool): if True, batch size will be chainged
@@ -73,12 +71,11 @@ class Dataset(Base):
         self.data_type = data_type
         self.label_type = label_type
         self.label_type_sub = label_type_sub
-        self.batch_size = batch_size * num_gpus
+        self.batch_size = batch_size
         self.max_epoch = max_epoch
         self.shuffle = shuffle
         self.sort_utt = sort_utt
         self.sort_stop_epoch = sort_stop_epoch
-        self.num_gpus = num_gpus
         self.tool = tool
         self.num_enque = num_enque
         self.dynamic_batching = dynamic_batching
@@ -98,12 +95,22 @@ class Dataset(Base):
 
         self.vocab_file_path = join(
             data_save_path, 'vocab', data_size, label_type + '.txt')
+
+        # main task
         if label_type == 'word':
             self.idx2word = Idx2word(self.vocab_file_path)
             self.word2idx = Word2idx(self.vocab_file_path)
+        elif 'character' in label_type:
+            self.idx2char = Idx2char(
+                self.vocab_file_path,
+                capital_divide=label_type == 'character_capital_divide')
+            self.char2idx = Char2idx(
+                self.vocab_file_path,
+                capital_divide=label_type == 'character_capital_divide')
         else:
-            raise NotImplementedError
+            raise ValueError(label_type)
 
+        # sub task
         self.vocab_file_path_sub = join(
             data_save_path, 'vocab', data_size, label_type_sub + '.txt')
         if 'character' in label_type_sub:
@@ -113,8 +120,11 @@ class Dataset(Base):
             self.char2idx = Char2idx(
                 self.vocab_file_path_sub,
                 capital_divide=label_type_sub == 'character_capital_divide')
+        elif 'phone' in label_type_sub:
+            self.idx2phone = Idx2phone(self.vocab_file_path_sub)
+            self.phone2idx = Phone2idx(self.vocab_file_path_sub)
         else:
-            raise NotImplementedError
+            raise NotImplementedError(label_type_sub)
 
         super(Dataset, self).__init__(vocab_file_path=self.vocab_file_path,
                                       vocab_file_path_sub=self.vocab_file_path_sub)
@@ -153,16 +163,16 @@ class Dataset(Base):
             print('Restricted utterance num (sub): %d' %
                   (utt_num_orig_sub - len(df_sub)))
 
-            # Rempve for CTC loss calculatioon
+            # Remove for CTC loss calculatioon
             if use_ctc and subsampling_factor > 1:
-                print('Chacking utterances for CTC (main)')
+                print('Checking utterances for CTC (main)')
                 utt_num_orig = len(df)
                 df = df[df.apply(
                     lambda x: len(x['transcript'].split(' ')) <= x['frame_num'] // subsampling_factor, axis=1)]
                 print('Remove utterances (for CTC, main): %d' %
                       (utt_num_orig - len(df)))
             if use_ctc_sub and subsampling_factor_sub > 1:
-                print('Chacking utterances for CTC (sub)')
+                print('Checking utterances for CTC (sub)')
                 utt_num_orig_sub = len(df_sub)
                 df_sub = df_sub[df_sub.apply(
                     lambda x: len(x['transcript'].split(' ')) <= x['frame_num'] // subsampling_factor_sub, axis=1)]
@@ -191,6 +201,19 @@ class Dataset(Base):
         self.df_sub = df_sub
         self.rest = set(list(df.index))
 
+        # Setting for each corpus
+        if corpus == 'timit':
+            # Set path to phones.60-48-39.map
+            self.phone_map_path = './conf/phones.60-48-39.map'
+        elif corpus == 'swbd':
+            if 'eval2000' in data_type:
+                self.glm_path = join(data_save_path, 'eval2000', 'glm')
+                self.acronyms_map_path = join(
+                    data_save_path, 'eval2000', 'acronyms.map')
+            else:
+                self.glm_path = None
+                self.acronyms_map_path = None
+
     def make_batch(self, data_indices):
         """Create mini-batch per step.
         Args:
@@ -210,9 +233,6 @@ class Dataset(Base):
         transcripts = np.array(self.df['transcript'][data_indices])
         transcripts_sub = np.array(self.df_sub['transcript'][data_indices])
 
-        ##############################
-        # features
-        ##############################
         # Load features in parallel
         # feats = make_parallel(load_feat, feat_paths, core=4)
         feats = [load_feat(p) for p in feat_paths]
@@ -246,9 +266,7 @@ class Dataset(Base):
                                    2:max_freq * 2 + self.input_freq]]
                 xs += [np.concatenate(x, axis=-1)]
 
-        #########################
         # transcript
-        #########################
         if self.is_test:
             ys = [self.df['transcript'][data_indices[b]]
                   for b in range(len(xs))]

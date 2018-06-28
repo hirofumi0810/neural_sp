@@ -31,7 +31,7 @@ class Dataset(Base):
                  batch_size, max_epoch=None,
                  max_frame_num=2000, min_frame_num=40,
                  shuffle=False, sort_utt=False, reverse=False,
-                 sort_stop_epoch=None, num_gpus=1, tool='htk',
+                 sort_stop_epoch=None, tool='htk',
                  num_enque=None, dynamic_batching=False,
                  use_ctc=False, subsampling_factor=1):
         """A class for loading dataset.
@@ -54,7 +54,6 @@ class Dataset(Base):
             reverse (bool): if True, sort utteraces in the descending order
             sort_stop_epoch (int): After sort_stop_epoch, training will revert
                 back to a random order
-            num_gpus, int): the number of GPUs
             tool (string): htk or librosa or python_speech_features
             num_enque (int): the number of elements to enqueue
             dynamic_batching (bool): if True, batch size will be chainged
@@ -69,12 +68,11 @@ class Dataset(Base):
         self.data_type = data_type
         self.data_size = data_size
         self.label_type = label_type
-        self.batch_size = batch_size * num_gpus
+        self.batch_size = batch_size
         self.max_epoch = max_epoch
         self.shuffle = shuffle
         self.sort_utt = sort_utt
         self.sort_stop_epoch = sort_stop_epoch
-        self.num_gpus = num_gpus
         self.tool = tool
         self.num_enque = num_enque
         self.dynamic_batching = dynamic_batching
@@ -141,7 +139,7 @@ class Dataset(Base):
 
             # Rempve for CTC loss calculatioon
             if use_ctc and subsampling_factor > 1:
-                print('Chacking utterances for CTC')
+                print('Checking utterances for CTC')
                 utt_num_orig = len(df)
                 df = df[df.apply(
                     lambda x: len(x['transcript'].split(' ')) <= x['frame_num'] // subsampling_factor, axis=1)]
@@ -185,9 +183,6 @@ class Dataset(Base):
         feat_paths = np.array(self.df['input_path'][data_indices])
         transcripts = np.array(self.df['transcript'][data_indices])
 
-        ##############################
-        # features
-        ##############################
         # Load features in parallel
         # feats = make_parallel(load_feat, feat_paths, core=4)
         feats = [load_feat(p) for p in feat_paths]
@@ -221,9 +216,7 @@ class Dataset(Base):
                                    2:max_freq * 2 + self.input_freq]]
                 xs += [np.concatenate(x, axis=-1)]
 
-        #########################
         # transcript
-        #########################
         if self.is_test:
             ys = [self.df['transcript'][data_indices[b]]
                   for b in range(len(xs))]

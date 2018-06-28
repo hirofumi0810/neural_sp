@@ -24,7 +24,7 @@ class TestLoadDataset(unittest.TestCase):
         # self.check(label_type='character_wb_remove', data_type='eva1')
 
         # data_type
-        # self.check(label_type='character_wb', data_type='train')
+        self.check(label_type='character_wb', data_type='train')
         self.check(label_type='word', data_type='train')
         self.check(label_type='word', data_type='dev')
         self.check(label_type='word', data_type='eval1')
@@ -39,15 +39,15 @@ class TestLoadDataset(unittest.TestCase):
         self.check(label_type='character')
         self.check(label_type='character_wb')
         self.check(label_type='pos')
-        # self.check(label_type='phone')
-        # self.check(label_type='phone_wb')
+        self.check(label_type='phone')
+        self.check(label_type='phone_wb')
 
         # sort
         self.check(label_type='word', sort_utt=True)
 
     @measure_time
     def check(self, label_type, data_type='dev', data_size='aps_other',
-              shuffle=False, sort_utt=True, sort_stop_epoch=None, num_gpus=1):
+              shuffle=False, sort_utt=True, sort_stop_epoch=None):
 
         print('========================================')
         print('  label_type: %s' % label_type)
@@ -56,7 +56,6 @@ class TestLoadDataset(unittest.TestCase):
         print('  shuffle: %s' % str(shuffle))
         print('  sort_utt: %s' % str(sort_utt))
         print('  sort_stop_epoch: %s' % str(sort_stop_epoch))
-        print('  num_gpus: %d' % num_gpus)
         print('========================================')
 
         dataset = Dataset(
@@ -67,13 +66,15 @@ class TestLoadDataset(unittest.TestCase):
             label_type=label_type, batch_size=64, max_epoch=1,
             shuffle=shuffle, sort_utt=sort_utt,
             reverse=True, sort_stop_epoch=sort_stop_epoch,
-            num_gpus=num_gpus, tool='htk', num_enque=None)
+            tool='htk', num_enque=None)
 
         print('=> Loading mini-batch...')
         if label_type == 'word':
             map_fn = dataset.idx2word
-        else:
+        elif 'character' in label_type:
             map_fn = dataset.idx2char
+        elif 'phone' in label_type:
+            map_fn = dataset.idx2phone
 
         for batch, is_new_epoch in dataset:
             str_ref = batch['ys'][0]
@@ -83,7 +84,6 @@ class TestLoadDataset(unittest.TestCase):
             print('----- %s (epoch: %.3f, batch: %d) -----' %
                   (batch['input_names'][0], dataset.epoch_detail, len(batch['xs'])))
             print(str_ref)
-            # print('x_lens: %d' % (len(batch['xs'][0]) / 4))
             print('x_lens: %d' % (len(batch['xs'][0]) / 8))
             if not dataset.is_test:
                 print('y_lens: %d' % (len(batch['ys'][0])))

@@ -59,7 +59,7 @@ def main():
 
     # NOTE: after load the rnn config are not a continuous chunk of memory
     # this makes them a continuous chunk, and will speed up forward pass
-    model.rnn.flatten_parameters()
+    model.flatten_parameters()
     # https://github.com/pytorch/examples/blob/master/word_language_model/main.py
 
     # GPU setting

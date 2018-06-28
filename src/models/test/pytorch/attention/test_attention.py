@@ -46,107 +46,73 @@ class TestAttention(unittest.TestCase):
         print("Attention Working check.")
 
         # Multi-head attention
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', attention_type='content', num_heads=2)
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', attention_type='location', num_heads=2)
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', attention_type='location', num_heads=2, beam_width=2)
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', attention_type='dot_product', num_heads=2)
+        self.check(attention_type='content', num_heads=2)
+        self.check(attention_type='location', num_heads=2)
+        self.check(attention_type='location', num_heads=2, beam_width=2)
+        self.check(attention_type='dot_product', num_heads=2)
 
         # CNN encoder
-        self.check(encoder_type='cnn', decoder_type='lstm', batch_norm=True)
+        self.check(encoder_type='cnn', batch_norm=True)
 
         # Decoding order
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', decoding_order='bahdanau')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', decoding_order='luong')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', decoding_order='conditional')
+        self.check(decoding_order='bahdanau')
+        self.check(decoding_order='luong')
+        self.check(decoding_order='conditional')
 
         # Beam search
-        self.check(encoder_type='lstm', bidirectional=True, beam_width=2,
-                   decoder_type='lstm', decoding_order='bahdanau')
-        self.check(encoder_type='lstm', bidirectional=True, beam_width=2,
-                   decoder_type='lstm', decoding_order='luong')
-        self.check(encoder_type='lstm', bidirectional=True, beam_width=2,
-                   decoder_type='lstm', decoding_order='conditional')
+        self.check(beam_width=2, decoding_order='bahdanau')
+        self.check(beam_width=2, decoding_order='luong')
+        self.check(beam_width=2, decoding_order='conditional')
 
         # Backward decoder
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', backward_loss_weight=1)
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', backward_loss_weight=0.8)
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', backward_loss_weight=0.5)
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', backward_loss_weight=0.2)
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', backward_loss_weight=0.8, beam_width=2)
+        self.check(backward_loss_weight=1)
+        self.check(backward_loss_weight=0.8)
+        self.check(backward_loss_weight=0.5)
+        self.check(backward_loss_weight=0.2)
+        self.check(backward_loss_weight=0.8, beam_width=2)
 
         # CLDNN encoder
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', conv=True)
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', conv=True, batch_norm=True)
+        self.check(conv=True)
+        self.check(conv=True, batch_norm=True)
 
         # Joint CTC-Attention
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', ctc_loss_weight=0.2)
+        self.check(ctc_loss_weight=0.2)
 
         # Initialize decoder state
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', init_dec_state='first')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', init_dec_state='final')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', init_dec_state='mean')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', init_dec_state='zero')
+        self.check(init_dec_state='first')
+        self.check(init_dec_state='final')
+        self.check(init_dec_state='mean')
+        self.check(init_dec_state='zero')
 
         # Pyramidal encoder
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', subsample='drop')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', subsample='concat')
+        self.check(subsample='drop')
+        self.check(subsample='concat')
 
         # Projection layer
-        self.check(encoder_type='lstm', bidirectional=True, projection=True,
-                   decoder_type='lstm')
+        self.check(projection=True)
 
         # Residual connection
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', residual=True)
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', dense_residual=True)
+        self.check(residual=True)
+        self.check(dense_residual=True)
 
         # word-level attention
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', attention_type='dot_product',
-                   label_type='word')
+        self.check(label_type='word')
+        # self.check(label_type='phone')
 
         # unidirectional & bidirectional
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm')
-        self.check(encoder_type='lstm', bidirectional=False,
-                   decoder_type='lstm')
-        self.check(encoder_type='gru', bidirectional=True,
-                   decoder_type='gru')
+        self.check(bidirectional=True)
+        self.check(bidirectional=False)
+        self.check(encoder_type='gru', decoder_type='gru')
         self.check(encoder_type='gru', bidirectional=False,
                    decoder_type='gru')
 
         # Attention type
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', attention_type='content')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', attention_type='location')
-        self.check(encoder_type='lstm', bidirectional=True,
-                   decoder_type='lstm', attention_type='dot_product')
+        self.check(attention_type='content')
+        self.check(attention_type='location')
+        self.check(attention_type='dot_product')
 
     @measure_time
-    def check(self, encoder_type, decoder_type, bidirectional=False,
+    def check(self, encoder_type='lstm', decoder_type='lstm', bidirectional=True,
               attention_type='location', label_type='char',
               subsample=False, projection=False, init_dec_state='first',
               ctc_loss_weight=0, conv=False, batch_norm=False,
@@ -206,6 +172,7 @@ class TestAttention(unittest.TestCase):
         # Load model
         num_stack = 1 if subsample or conv or encoder_type == 'cnn' else 3
         model = AttentionSeq2seq(
+            input_type='speech',
             input_size=xs[0].shape[-1],
             encoder_type=encoder_type,
             encoder_bidirectional=bidirectional,
@@ -330,7 +297,8 @@ class TestAttention(unittest.TestCase):
                     xs, beam_width, max_decode_len=60)
 
                 str_ref = map_fn(ys[0])
-                str_hyp = map_fn(best_hyps[0])
+                str_hyp = map_fn(best_hyps[0]).replace(
+                    '_>', '').replace('>', '')
 
                 # Compute accuracy
                 try:

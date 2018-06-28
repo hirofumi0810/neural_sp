@@ -1,0 +1,84 @@
+param:
+  # framework
+  backend: pytorch
+
+  # corpus
+  corpus: csj
+  data_size: aps_other
+  label_type: phone_wb
+
+  # features
+  input_type: speech
+  feature: fbank
+  tool: htk
+  input_freq: 80
+  use_delta: False
+  use_double_delta: False
+  input_channel: 1
+  splice: 1
+  num_stack: 1
+  num_skip: 1
+  max_frame_num: 2000
+  min_frame_num: 40
+  dynamic_batching: True
+
+  # topology
+  model_type: ctc
+  encoder_type: lstm
+  conv_channels: []
+  conv_kernel_sizes: []
+  conv_strides: []
+  poolings: []
+  activation: relu
+  batch_norm: False
+  encoder_bidirectional: True
+  encoder_residual: False
+  encoder_dense_residual: False
+  encoder_num_units: 320
+  encoder_num_proj: 0
+  encoder_num_layers: 3
+  subsample_list:
+    - True
+    - True
+    - False
+  subsample_type: drop
+  fc_list: [320]
+
+  # optimization
+  batch_size: 60
+  optimizer: adam
+  learning_rate: 1e-3
+  num_epoch: 25
+  convert_to_sgd_epoch: 20
+
+  # initialization
+  parameter_init_distribution: uniform
+  parameter_init: 0.1
+  recurrent_weight_orthogonal: False
+  init_forget_gate_bias_with_one: True
+  pretrained_model_path: False
+
+  # regularization
+  clip_grad_norm: 5.0
+  clip_activation: 50
+  dropout_input: 0
+  dropout_encoder: 0.2
+  weight_decay: 1e-6
+  logits_temperature: 1
+  label_smoothing_prob: 0
+  weight_noise_std: 0
+
+  # annealing
+  decay_type: per_epoch
+  decay_start_epoch: 10
+  decay_rate: 0.9
+  decay_patient_epoch: 0
+  sort_stop_epoch: 100
+  not_improved_patient_epoch: 5
+  eval_start_epoch: 5
+  print_step: 200
+
+  # RNNLM fusion (not used)
+  rnnlm_fusion_type: False
+  rnnlm_path: False
+  rnnlm_weight: 0

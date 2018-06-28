@@ -41,9 +41,9 @@ param:
   encoder_num_layers: 5
   encoder_num_layers_sub: 4
   subsample_list:
+    - True
+    - True
     - False
-    - True
-    - True
     - True
     - False
   subsample_type: drop
@@ -68,7 +68,7 @@ param:
   num_heads_sub: 1
 
   # optimization
-  batch_size: 50
+  batch_size: 40
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 25
@@ -80,7 +80,7 @@ param:
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
   pretrained_model_path: False
-  # pretrained_model_path: /n/sd8/inaguma/result/csj/pytorch/ctc/character_wb/aps_other/blstm320H4L_drop4_fc_320_adam_lr1e-3_dropen0.2_input80
+  # pretrained_model_path: /n/sd8/inaguma/result/csj/pytorch/ctc/character_wb/aps_other/blstm320H5L_drop4_fc_320_adam_lr1e-3_dropen0.2_input80
 
   # regularization
   clip_grad_norm: 5.0
@@ -118,12 +118,7 @@ param:
 
   # RNNLM fusion
   rnnlm_fusion_type: False
-  # rnnlm_fusion_type: cold_fusion
-  # rnnlm_fusion_type: logits_fusion
   rnnlm_path: False
-  # rnnlm_path: /n/sd8/inaguma/result/csj/pytorch/rnnlm/word/aps_other/lstm512H2Lemb128_adam_lr1e-3_drophidden0.2out0.2emb0.2
   rnnlm_path_sub: False
-  # rnnlm_path_sub: /n/sd8/inaguma/result/csj/pytorch/rnnlm/character_wb/aps_other/lstm512H2Lemb64_adam_lr1e-3_drophidden0.2out0.2emb0.2
   rnnlm_weight: 0
   rnnlm_weight_sub: 0
-  concat_embedding: False

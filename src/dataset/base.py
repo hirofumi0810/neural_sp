@@ -34,12 +34,13 @@ class Base(object):
         self.queue_size = 0
 
         # Load the vocabulary file
-        vocab_count = 0
-        with codecs.open(kwargs['vocab_file_path'], 'r', 'utf-8') as f:
-            for line in f:
-                if line.strip() != '':
-                    vocab_count += 1
-        self.num_classes = vocab_count
+        if 'vocab_file_path' in kwargs.keys():
+            vocab_count = 0
+            with codecs.open(kwargs['vocab_file_path'], 'r', 'utf-8') as f:
+                for line in f:
+                    if line.strip() != '':
+                        vocab_count += 1
+            self.num_classes = vocab_count
 
         if 'vocab_file_path_sub' in kwargs.keys():
             vocab_count_sub = 0
@@ -47,6 +48,14 @@ class Base(object):
                 for line in f:
                     vocab_count_sub += 1
             self.num_classes_sub = vocab_count_sub
+
+        if 'vocab_file_path_in' in kwargs.keys():
+            vocab_count = 0
+            with codecs.open(kwargs['vocab_file_path_in'], 'r', 'utf-8') as f:
+                for line in f:
+                    if line.strip() != '':
+                        vocab_count += 1
+            self.num_classes_in = vocab_count
 
         if hasattr(self, 'use_double_delta'):
             if self.use_double_delta:

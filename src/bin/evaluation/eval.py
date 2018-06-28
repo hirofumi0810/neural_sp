@@ -13,7 +13,8 @@ import argparse
 
 sys.path.append(abspath('../../../'))
 from src.models.load_model import load
-from src.dataset.loader import Dataset
+from src.dataset.loader import Dataset as Dataset_asr
+from src.dataset.loader_p2w import Dataset as Dataset_p2w
 from src.metrics.phone import eval_phone
 from src.metrics.character import eval_char
 from src.metrics.word import eval_word
@@ -121,21 +122,38 @@ def main():
     # Setting for logging
     logger = set_logger(args.model_path)
 
-    wer_mean, cer_mean = 0, 0
+    wer_mean, cer_mean, per_mean = 0, 0, 0
     for i, data_type in enumerate(args.eval_sets):
         # Load dataset
-        eval_set = Dataset(
-            corpus=args.corpus,
-            data_save_path=args.data_save_path,
-            input_freq=config['input_freq'],
-            use_delta=config['use_delta'],
-            use_double_delta=config['use_double_delta'],
-            data_size=config['data_size'] if 'data_size' in config.keys(
-            ) else '',
-            data_type=data_type,
-            label_type=config['label_type'],
-            batch_size=args.eval_batch_size,
-            tool=config['tool'])
+        if config['input_type'] == 'speech':
+            eval_set = Dataset_asr(
+                corpus=args.corpus,
+                data_save_path=args.data_save_path,
+                input_freq=config['input_freq'],
+                use_delta=config['use_delta'],
+                use_double_delta=config['use_double_delta'],
+                data_size=config['data_size'] if 'data_size' in config.keys(
+                ) else '',
+                data_type=data_type,
+                label_type=config['label_type'],
+                batch_size=args.eval_batch_size,
+                tool=config['tool'])
+        elif config['input_type'] == 'text':
+            eval_set = Dataset_p2w(
+                corpus=args.corpus,
+                data_save_path=args.data_save_path,
+                data_type=data_type,
+                data_size=config['data_size'],
+                label_type_in=config['label_type_in'],
+                label_type=config['label_type'],
+                batch_size=args.eval_batch_size,
+                sort_utt=False, reverse=False, tool=config['tool'],
+                vocab=config['vocab'],
+                use_ctc=config['model_type'] == 'ctc' or (
+                    config['model_type'] == 'attention' and config['ctc_loss_weight'] > 0),
+                subsampling_factor=2 ** sum(config['subsample_list']))
+            if i == 0:
+                config['num_classes_input'] = eval_set.num_classes_in
 
         if i == 0:
             config['num_classes'] = eval_set.num_classes
@@ -238,17 +256,22 @@ def main():
                 length_penalty=args.length_penalty,
                 coverage_penalty=args.coverage_penalty,
                 progressbar=True)
+            per_mean += per
             logger.info('  PER (%s): %.3f %%' % (data_type, per))
             logger.info(df)
         else:
             raise ValueError(config['label_type'])
 
     if config['label_type'] == 'word':
-        logger.info('  WER (mean): %.3f %%\n' % (wer_mean / 3))
+        logger.info('  WER (mean): %.3f %%\n' %
+                    (wer_mean / len(args.eval_sets)))
     elif 'character' in config['label_type']:
         logger.info('  WER / CER (mean): %.3f / %.3f %%\n' %
                     (wer_mean / len(args.eval_sets),
                      cer_mean / len(args.eval_sets)))
+    elif 'phone' in config['label_type']:
+        logger.info('  PER (mean): %.3f %%\n' %
+                    (per_mean / len(args.eval_sets)))
 
 
 if __name__ == '__main__':

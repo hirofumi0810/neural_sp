@@ -105,6 +105,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                  gating=False):  # ***
 
         super(NestedAttentionSeq2seq, self).__init__(
+            input_type='speech',
             input_size=input_size,
             encoder_type=encoder_type,
             encoder_bidirectional=encoder_bidirectional,
@@ -504,18 +505,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             # NOTE: must be descending order for pack_padded_sequence
             # NOTE: assumed that xs is already sorted in the training stage
 
-        # Frame stacking
-        if self.num_stack > 1:
-            xs = [stack_frame(x, self.num_stack, self.num_skip)
-                  for x in xs]
-
-        # Splicing
-        if self.splice > 1:
-            xs = [do_splice(x, self.splice, self.num_stack) for x in xs]
-
         # Wrap by Variable
-        xs = [np2var(x, self.device_id).float() for x in xs]
-        x_lens = [len(x) for x in xs]
         ys = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()
               for y in ys]
         if self.backward_1:
@@ -526,8 +516,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                       for y in ys_sub]
 
         # Encode acoustic features
-        xs, x_lens, xs_sub, x_lens_sub = self._encode(
-            xs, x_lens, is_multi_task=True)
+        xs, x_lens, xs_sub, x_lens_sub = self._encode(xs, is_multi_task=True)
 
         # Compute XE loss (main + sub)
         loss_main, loss_sub, acc_main, acc_sub = self.compute_xe_loss_mtl(
@@ -733,7 +722,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         ys_emb_sub = self.embed_1(ys_sub)
 
         # Initialization
-        dec_state_sub, dec_out_sub = self._init_dec_state(
+        dec_out_sub, hx_list_sub, cx_list_sub = self._init_dec_state(
             enc_out_sub, x_lens_sub, task=1, dir=dir_sub)
         aw_step_sub = Variable(enc_out.data.new(
             batch_size, max_time_sub, self.num_heads_1).fill_(0.))
@@ -758,8 +747,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
                 # Recurrency
                 dec_in_sub = torch.cat([y_sub, context_vec_sub], dim=-1)
-                dec_out_sub, dec_state_sub = getattr(self, 'decoder_1_' + dir_sub)(
-                    dec_in_sub, dec_state_sub)
+                dec_out_sub, hx_list_sub, cx_list_sub = getattr(self, 'decoder_1_' + dir_sub)(
+                    dec_in_sub, hx_list_sub, cx_list_sub)
 
             # Score
             context_vec_sub, aw_step_sub = getattr(self, 'attend_1_' + dir_sub)(
@@ -794,7 +783,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         ys_emb = self.embed_0(ys)
 
         # Initialization
-        dec_state, dec_out = self._init_dec_state(
+        dec_out, hx_list, cx_list = self._init_dec_state(
             enc_out, x_lens, task=0, dir='fwd')
         self.attend_0_fwd.reset()
         self.attend_dec_sub.reset()
@@ -813,7 +802,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 dec_in = torch.cat([y, context_vec_enc], dim=-1)
                 if self.usage_dec_sub != 'softmax':
                     dec_in = torch.cat([dec_in, context_vec_dec], dim=-1)
-                dec_out, dec_state = self.decoder_0_fwd(dec_in, dec_state)
+                dec_out, hx_list, cx_list = self.decoder_0_fwd(
+                    dec_in, hx_list, cx_list)
 
             # Score for the encoder
             context_vec_enc, aw_step_enc = self.attend_0_fwd(
@@ -921,23 +911,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         else:
             perm_idx = list(range(0, len(xs), 1))
 
-        # Frame stacking
-        if self.num_stack > 1:
-            xs = [stack_frame(x, self.num_stack, self.num_skip)
-                  for x in xs]
-
-        # Splicing
-        if self.splice > 1:
-            xs = [do_splice(x, self.splice, self.num_stack) for x in xs]
-
-        # Wrap by Variable
-        xs = [np2var(x, self.device_id, volatile=True).float() for x in xs]
-        x_lens = [len(x) for x in xs]
-
         # Encode acoustic features
         if task_index == 0:
             enc_out, x_lens, enc_out_sub, x_lens_sub = self._encode(
-                xs, x_lens, is_multi_task=True)
+                xs, is_multi_task=True)
 
             # Next, decode by word-based decoder with character outputs
             if teacher_forcing:
@@ -1036,7 +1013,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         # At first, decode by the second decoder
         ##################################################
         # Initialization
-        dec_state_sub, dec_out_sub = self._init_dec_state(
+        dec_out_sub, hx_list_sub, cx_list_sub = self._init_dec_state(
             enc_out_sub, x_lens_sub, task=1, dir=dir_sub)
         getattr(self, 'attend_1_' + dir_sub).reset()
         aw_step_sub = None
@@ -1058,8 +1035,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             if t_sub > 0:
                 # Recurrency
                 dec_in_sub = torch.cat([y_sub, context_vec_sub], dim=-1)
-                dec_out_sub, dec_state_sub = getattr(self, 'decoder_1_' + dir_sub)(
-                    dec_in_sub, dec_state_sub)
+                dec_out_sub, hx_list_sub, cx_list_sub = getattr(self, 'decoder_1_' + dir_sub)(
+                    dec_in_sub, hx_list_sub, cx_list_sub)
 
             # Score
             context_vec_sub, aw_step_sub = getattr(self, 'attend_1_' + dir_sub)(
@@ -1105,7 +1082,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         # Next, decode by the main decoder
         ##################################################
         # Initialization
-        dec_state, dec_out = self._init_dec_state(
+        dec_out, hx_list, cx_list = self._init_dec_state(
             enc_out, x_lens, task=0, dir='fwd')
         self.attend_0_fwd.reset()
         self.attend_dec_sub.reset()
@@ -1126,7 +1103,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 dec_in = torch.cat([y, context_vec_enc], dim=-1)
                 if self.usage_dec_sub != 'softmax':
                     dec_in = torch.cat([dec_in, context_vec_dec], dim=-1)
-                dec_out, dec_state = self.decoder_0_fwd(dec_in, dec_state)
+                dec_out, hx_list, cx_list = self.decoder_0_fwd(
+                    dec_in, hx_list, cx_list)
 
             # Score for the encoder
             context_vec_enc, aw_step_enc = self.attend_0_fwd(
@@ -1281,15 +1259,16 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         best_hyps_sub, aw_sub = [], []
         for b in range(batch_size):
             # Initialization per utterance
-            dec_state_sub, dec_out_sub = self._init_dec_state(
+            dec_out_sub, hx_list_sub, cx_list_sub = self._init_dec_state(
                 enc_out_sub[b: b + 1], x_lens_sub[b], task=1, dir=dir_sub)
             getattr(self, 'attend_1_' + dir_sub).reset()
 
             complete_sub = []
             beam_sub = [{'hyp': [self.sos_1],
                          'score': 0,  # log 1
-                         'dec_state': dec_state_sub,
                          'dec_outs': [dec_out_sub],  # NOTE: keep all outputs
+                         'hx_list': hx_list_sub,
+                         'cx_list': cx_list_sub,
                          'context_vec': None,
                          'aw_steps': [None],
                          'rnnlm_state': None,
@@ -1310,9 +1289,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     else:
                         # Recurrency
                         dec_in_sub = torch.cat(
-                            [y_sub, context_vec_sub], dim=-1)
-                        dec_out_sub, dec_state_sub = getattr(
-                            self, 'decoder_1_' + dir_sub)(dec_in_sub, beam_sub[i_beam]['dec_state'])
+                            [y_sub, beam_sub[i_beam]['context_vec']], dim=-1)
+                        dec_out_sub, hx_list_sub, cx_list = getattr(
+                            self, 'decoder_1_' + dir_sub)(dec_in_sub, beam_sub[i_beam]['hx_list'], beam_sub[i_beam]['cx_list'])
 
                     # Score
                     context_vec_sub, aw_step_sub = getattr(self, 'attend_1_' + dir_sub)(
@@ -1391,8 +1370,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         new_beam_sub.append(
                             {'hyp': beam_sub[i_beam]['hyp'] + [indices_sub_topk[0, k].data[0]],
                              'score': score_sub,
-                             'dec_state': copy.deepcopy(dec_state_sub),
                              'dec_outs': beam_sub[i_beam]['dec_outs'] + [dec_out_sub],
+                             'hx_list': hx_list_sub,
+                             'cx_list': cx_list_sub,
                              'context_vec': context_vec_sub,
                              'aw_steps': beam_sub[i_beam]['aw_steps'] + [aw_step_sub],
                              'rnnlm_state': rnnlm_state_sub,
@@ -1441,7 +1421,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             # Next, decode by the first decoder
             ##################################################
             # Initialization per utterance
-            dec_state, dec_out = self._init_dec_state(
+            dec_out, hx_list, cx_list = self._init_dec_state(
                 enc_out[b: b + 1], x_lens[b], task=0, dir='fwd')
             self.attend_0_fwd.reset()
             self.attend_dec_sub.reset()
@@ -1449,8 +1429,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             complete = []
             beam = [{'hyp': [self.sos_0],
                      'score': 0,  # log 1
-                     'dec_state': dec_state,
                      'dec_out': dec_out,
+                     'hx_list': hx_list,
+                     'cx_list': cx_list,
                      'context_vec_enc': None,
                      'context_vec_dec': None,
                      'aw_steps_enc': [None],
@@ -1468,12 +1449,13 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         dec_out = beam[i_beam]['dec_out']
                     else:
                         # Recurrency
-                        dec_in = torch.cat([y, context_vec_enc], dim=-1)
+                        dec_in = torch.cat(
+                            [y, beam[i_beam]['context_vec_enc']], dim=-1)
                         if self.usage_dec_sub != 'softmax':
                             dec_in = torch.cat(
-                                [dec_in, context_vec_dec], dim=-1)
-                        dec_out, dec_state = self.decoder_0_fwd(
-                            dec_in, beam[i_beam]['dec_state'])
+                                [dec_in, beam[i_beam]['context_vec_dec']], dim=-1)
+                        dec_out, hx_list, cx_list = self.decoder_0_fwd(
+                            dec_in, beam[i_beam]['hx_list'], beam[i_beam]['cx_list'])
 
                     # Score for the encoder
                     context_vec_enc, aw_step_enc = self.attend_0_fwd(
@@ -1585,8 +1567,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         new_beam.append(
                             {'hyp': beam[i_beam]['hyp'] + [indices_topk[0, k].data[0]],
                              'score': score,
-                             'dec_state': copy.deepcopy(dec_state),
                              'dec_out': dec_out,
+                             'hx_list': hx_list,
+                             'cx_list': cx_list,
                              'context_vec_enc': context_vec_enc,
                              'context_vec_dec': context_vec_dec,
                              'aw_steps_enc': beam[i_beam]['aw_steps_enc'] + [aw_step_enc],

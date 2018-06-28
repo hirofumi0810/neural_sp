@@ -25,8 +25,10 @@ class Reporter(object):
 
     """
 
-    def __init__(self, save_path):
+    def __init__(self, save_path, max_loss=500):
         self.save_path = save_path
+        self.max_loss = max_loss
+
         self.steps = []
         self.losses_train = []
         self.losses_main_train = []
@@ -74,7 +76,7 @@ class Reporter(object):
                  orange, label="Dev (sub)", ls=":")
         plt.xlabel('step', fontsize=12)
         plt.ylabel('loss', fontsize=12)
-        plt.ylim([0, 500])
+        plt.ylim([0, self.max_loss])
         plt.legend(loc="upper right", fontsize=12)
         if os.path.isfile(os.path.join(self.save_path, "loss.png")):
             os.remove(os.path.join(self.save_path, "loss.png"))

@@ -9,6 +9,9 @@ from __future__ import print_function
 
 import numpy as np
 import copy
+import math
+from scipy.stats import entropy
+
 import torch
 import torch.nn.functional as F
 from torch.autograd import Variable
@@ -22,13 +25,12 @@ from src.models.pytorch_v3.ctc.decoders.greedy_decoder import GreedyDecoder
 from src.models.pytorch_v3.ctc.decoders.beam_search_decoder import BeamSearchDecoder
 from src.models.pytorch_v3.utils import np2var, var2np
 from src.models.pytorch_v3.lm.rnnlm import RNNLM
-from src.utils.io.inputs.frame_stacking import stack_frame
-from src.utils.io.inputs.splicing import do_splice
 
 
 class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
     def __init__(self,
+                 input_type,
                  input_size,
                  encoder_type,
                  encoder_bidirectional,
@@ -97,9 +99,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  rnnlm_config=None,
                  rnnlm_config_sub=None,  # ***
                  rnnlm_weight=0,
-                 rnnlm_weight_sub=0):  # ***
+                 rnnlm_weight_sub=0,  # ***
+                 num_classes_input=0):
 
         super(HierarchicalAttentionSeq2seq, self).__init__(
+            input_type=input_type,
             input_size=input_size,
             encoder_type=encoder_type,
             encoder_bidirectional=encoder_bidirectional,
@@ -152,7 +156,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             num_heads=num_heads,
             rnnlm_fusion_type=rnnlm_fusion_type,
             rnnlm_config=rnnlm_config,
-            rnnlm_weight=rnnlm_weight)
+            rnnlm_weight=rnnlm_weight,
+            num_classes_input=num_classes_input)
         self.model_type = 'hierarchical_attention'
 
         # Setting for the encoder
@@ -435,7 +440,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
         # Sort by lenghts in the descending order
-        if is_eval and self.encoder_type != 'cnn':
+        if is_eval and self.encoder_type != 'cnn' or self.input_type == 'text':
             perm_idx = sorted(list(range(0, len(xs), 1)),
                               key=lambda i: xs[i].shape[0], reverse=True)
             xs = [xs[i] for i in perm_idx]
@@ -444,20 +449,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # NOTE: must be descending order for pack_padded_sequence
             # NOTE: assumed that xs is already sorted in the training stage
 
-        # Frame stacking
-        if self.num_stack > 1:
-            xs = [stack_frame(x, self.num_stack, self.num_skip)
-                  for x in xs]
-
-        # Splicing
-        if self.splice > 1:
-            xs = [do_splice(x, self.splice, self.num_stack) for x in xs]
-
-        # Encode acoustic features
-        xs = [np2var(x, self.device_id).float() for x in xs]
-        x_lens = [len(x) for x in xs]
-        xs, x_lens, xs_sub, x_lens_sub = self._encode(
-            xs, x_lens, is_multi_task=True)
+        # Encode input features
+        xs, x_lens, xs_sub, x_lens_sub = self._encode(xs, is_multi_task=True)
 
         # Main task
         if self.main_loss_weight > 0:
@@ -508,8 +501,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
     def decode(self, xs, beam_width, max_decode_len, min_decode_len=0, min_decode_len_ratio=0,
                length_penalty=0, coverage_penalty=0, rnnlm_weight=0,
                task_index=0, joint_decoding=False, space_index=-1, oov_index=-1,
-               word2char=None, score_sub_weight=0, idx2word=None, idx2char=None,
-               rnnlm_weight_sub=0):
+               word2char=None, score_sub_weight=0, entropy_threshold=1,
+               idx2word=None, idx2char=None, rnnlm_weight_sub=0):
         """Decoding in the inference stage.
         Args:
             xs (list): A list of length `[B]`, which contains arrays of size `[T, input_size]`
@@ -526,6 +519,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             oov_index (int):
             word2char ():
             score_sub_weight (float):
+            entropy_threshold (float):
             idx2word: for debug
             idx2char: for debug
             rnnlm_weight_sub (float): the weight of RNNLM score of the sub task
@@ -545,7 +539,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # NOTE: None corresponds to aw in attention-based models
         else:
             # Sort by lenghts in the descending order
-            if self.encoder_type != 'cnn':
+            if self.encoder_type != 'cnn' or self.input_type == 'text':
                 perm_idx = sorted(list(range(0, len(xs), 1)),
                                   key=lambda i: xs[i].shape[0], reverse=True)
                 xs = [xs[i] for i in perm_idx]
@@ -553,31 +547,16 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             else:
                 perm_idx = list(range(0, len(xs), 1))
 
-            # Frame stacking
-            if self.num_stack > 1:
-                xs = [stack_frame(x, self.num_stack, self.num_skip)
-                      for x in xs]
-
-            # Splicing
-            if self.splice > 1:
-                xs = [do_splice(x, self.splice, self.num_stack) for x in xs]
-
-            # Wrap by Variable
-            xs = [np2var(x, self.device_id, volatile=True).float() for x in xs]
-            x_lens = [len(x) for x in xs]
-
             dir = 'bwd' if task_index == 1 and self.backward_1 else 'fwd'
 
-            # Encode acoustic features
+            # Encode input features
             if joint_decoding and task_index == 0 and dir == 'fwd':
                 enc_out, x_lens, enc_out_sub, x_lens_sub = self._encode(
-                    xs, x_lens, is_multi_task=True)
+                    xs, is_multi_task=True)
             elif task_index == 0:
-                enc_out, x_lens, _, _ = self._encode(
-                    xs, x_lens, is_multi_task=True)
+                enc_out, x_lens, _, _ = self._encode(xs, is_multi_task=True)
             elif task_index == 1:
-                _, _, enc_out, x_lens = self._encode(
-                    xs, x_lens, is_multi_task=True)
+                _, _, enc_out, x_lens = self._encode(xs, is_multi_task=True)
             else:
                 raise NotImplementedError
 
@@ -588,7 +567,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     enc_out_sub, x_lens_sub,
                     beam_width, max_decode_len, min_decode_len, min_decode_len_ratio,
                     length_penalty, coverage_penalty, rnnlm_weight, rnnlm_weight_sub,
-                    space_index, oov_index, word2char, score_sub_weight,
+                    space_index, oov_index, word2char, score_sub_weight, entropy_threshold,
                     idx2word, idx2char)
 
                 return best_hyps, aw, best_hyps_sub, aw_sub, perm_idx
@@ -607,7 +586,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
     def _decode_infer_joint(self, enc_out, x_lens, enc_out_sub, x_lens_sub,
                             beam_width, max_decode_len, min_decode_len, min_decode_len_ratio,
                             length_penalty, coverage_penalty, rnnlm_weight, rnnlm_weight_sub,
-                            space_index, oov_index, word2char, score_sub_weight,
+                            space_index, oov_index, word2char, score_sub_weight, entropy_threshold,
                             idx2word, idx2char):
         """Joint decoding (one-pass).
         Args:
@@ -629,6 +608,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             oov_index (int):
             word2char ():
             score_sub_weight (float):
+            entropy_threshold (flaot):
             idx2word (): for debug
             idx2char (): for debug
         Returns:
@@ -638,6 +618,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             aw_sub (np.ndarray): A tensor of size `[B, L_sub, T]`
             aw_dec (np.ndarray): A tensor of size `[B, L, L_sub]`
         """
+        debug = False
+
         batch_size, max_time = enc_out.size()[:2]
 
         if (rnnlm_weight > 0 or self.rnnlm_fusion_type) and self.rnnlm_0_fwd is not None:
@@ -649,13 +631,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         best_hyps_sub, aw_sub = [], []
         for b in range(batch_size):
             # Initialization for the word model per utterance
-            dec_state, dec_out = self._init_dec_state(
+            dec_out, hx_list, cx_list = self._init_dec_state(
                 enc_out[b:b + 1], x_lens[b], task=0, dir='fwd')
             context_vec = Variable(enc_out.data.new(
                 1, 1, enc_out.size(-1)).fill_(0.), volatile=True)
             self.attend_0_fwd.reset()
 
-            dec_state_sub, dec_out_sub = self._init_dec_state(
+            dec_out_sub, hx_list_sub, cx_list_sub = self._init_dec_state(
                 enc_out_sub[b:b + 1], x_lens_sub[b], task=1, dir='fwd')
             context_vec_sub = Variable(enc_out.data.new(
                 1, 1, enc_out_sub.size(-1)).fill_(0.), volatile=True)
@@ -666,10 +648,12 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                      'hyp_sub': [self.sos_1],
                      'score': 0,  # log1
                      'score_sub': 0,  # log 1
-                     'dec_state': dec_state,
-                     'dec_state_sub': dec_state_sub,
+                     'cx_list': cx_list,
+                     'hx_list': hx_list,
                      'dec_out': dec_out,
                      'dec_out_sub': dec_out_sub,
+                     'cx_list_sub': cx_list_sub,
+                     'hx_list_sub': hx_list_sub,
                      'context_vec': context_vec,
                      'context_vec_sub': context_vec_sub,
                      'aw_steps': [None],
@@ -680,6 +664,14 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             for t in range(max_decode_len + 1):
                 new_beam = []
                 for i_beam in range(len(beam)):
+                    # Update RNNLM states
+                    if (rnnlm_weight > 0 or self.rnnlm_fusion_type) and self.rnnlm_0_fwd is not None:
+                        y_rnnlm = Variable(enc_out.data.new(
+                            1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
+                        y_rnnlm = self.rnnlm_0_fwd.embed(y_rnnlm)
+                        rnnlm_logits_step, rnnlm_out, rnnlm_state = self.rnnlm_0_fwd.predict(
+                            y_rnnlm, h=beam[i_beam]['rnnlm_state'])
+
                     y = Variable(enc_out.data.new(
                         1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
                     y = self.embed_0(y)
@@ -688,9 +680,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                         dec_out = beam[i_beam]['dec_out']
                     else:
                         # Recurrency
-                        dec_in = torch.cat([y, context_vec], dim=-1)
-                        dec_out, dec_state = self.decoder_0_fwd(
-                            dec_in, beam[i_beam]['dec_state'])
+                        dec_in = torch.cat(
+                            [y,  beam[i_beam]['context_vec']], dim=-1)
+                        dec_out, hx_list, cx_list = self.decoder_0_fwd(
+                            dec_in, beam[i_beam]['hx_list'], beam[i_beam]['cx_list'])
 
                     # Score
                     context_vec, aw_step = self.attend_0_fwd(
@@ -704,6 +697,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
                     # Path through the log-softmax layer
                     log_probs = F.log_softmax(logits_step.squeeze(1), dim=1)
+
+                    ent = entropy(F.softmax(logits_step, dim=-
+                                            1).data.cpu().numpy()[0, 0])
 
                     # Pick up the top-k scores
                     log_probs_topk, indices_topk = log_probs.topk(
@@ -745,11 +741,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
                         # Add RNNLM score
                         if rnnlm_weight > 0 and self.rnnlm_0_fwd is not None:
-                            y_rnnlm = Variable(enc_out.data.new(
-                                1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
-                            y_rnnlm = self.rnnlm_0_fwd.embed(y_rnnlm)
-                            rnnlm_logits_step, rnnlm_out, rnnlm_state = self.rnnlm_0_fwd.predict(
-                                y_rnnlm, h=beam[i_beam]['rnnlm_state'])
                             rnnlm_log_probs = F.log_softmax(
                                 rnnlm_logits_step.squeeze(1), dim=1)
                             assert log_probs.size() == rnnlm_log_probs.size()
@@ -769,7 +760,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                             # NOTE: Decode until outputting a space
                             t_sub = 0
                             dec_outs_sub = [beam[i_beam]['dec_out_sub']]
-                            dec_states_sub = [beam[i_beam]['dec_state_sub']]
+                            hx_list_sub_list = [beam[i_beam]['hx_list_sub']]
+                            cx_list_sub_list = [beam[i_beam]['cx_list_sub']]
                             aw_steps_sub = [beam[i_beam]['aw_steps_sub'][-1]]
                             charseq = []
                             # TODO: add max OOV len
@@ -856,24 +848,26 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
                                 y_sub = self.embed_1(y_sub)
 
-                                # print(idx2word([word_idx]))
-                                # print(idx2char(charseq))
+                                if ent > entropy_threshold and debug:
+                                    print(idx2word([word_idx]))
+                                    print(idx2char(charseq))
 
                                 # Recurrency
                                 dec_in_sub = torch.cat(
                                     [y_sub, context_vec_sub], dim=-1)
-                                dec_out_sub, dec_state_sub = self.decoder_1_fwd(
-                                    dec_in_sub, dec_states_sub[-1])
+                                dec_out_sub, hx_list_sub, cx_list_sub = self.decoder_1_fwd(
+                                    dec_in_sub, hx_list_sub_list[-1], cx_list_sub_list[-1])
 
                                 dec_outs_sub += [dec_out_sub]
-                                dec_states_sub += [dec_state_sub]
+                                hx_list_sub_list += [hx_list_sub]
+                                cx_list_sub_list += [cx_list_sub]
                                 aw_steps_sub += [aw_step_sub]
                                 t_sub += 1
 
                             aw_steps_sub = aw_steps_sub[1:]  # remove start aw
                             dec_out_sub = dec_outs_sub[-1]
-                            dec_state_sub = copy.deepcopy(
-                                dec_states_sub[-1])
+                            hx_list_sub = hx_list_sub_list[-1]
+                            cx_list_sub = cx_list_sub_list[-1]
 
                         elif eos_flag:
                             # Score
@@ -912,8 +906,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                             score_c2w += log_probs_sub.data[0, self.eos_1]
                             aw_steps_sub = [aw_step_sub]
 
-                            # print(idx2word([word_idx]))
-                            # print(idx2char([self.eos_1]))
+                            if ent > entropy_threshold and debug:
+                                print(idx2word([word_idx]))
+                                print(idx2char([self.eos_1]))
 
                         else:
                             # Decompose a word to characters
@@ -923,11 +918,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                             if t > 0:
                                 charseq = [space_index] + charseq
 
-                            # print(idx2word([word_idx]))
-                            # print(idx2char(charseq))
+                            if ent > entropy_threshold and debug:
+                                print(idx2word([word_idx]))
+                                print(idx2char(charseq))
 
                             dec_out_sub = beam[i_beam]['dec_out_sub']
-                            dec_state_sub = beam[i_beam]['dec_state_sub']
+                            hx_list_sub = beam[i_beam]['hx_list_sub']
+                            cx_list_sub = beam[i_beam]['cx_list_sub']
                             aw_step_sub = beam[i_beam]['aw_steps_sub'][-1]
                             aw_steps_sub = []
                             rnnlm_state_sub = beam[i_beam]['rnnlm_state_sub']
@@ -986,25 +983,26 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                 # Recurrency
                                 dec_in_sub = torch.cat(
                                     [y_sub, context_vec_sub], dim=-1)
-                                dec_out_sub, dec_state_sub = self.decoder_1_fwd(
-                                    dec_in_sub, dec_state_sub)
+                                dec_out_sub, hx_list_sub, cx_list_sub = self.decoder_1_fwd(
+                                    dec_in_sub, hx_list_sub, cx_list_sub)
 
                         # Rescoreing
-                        score += (score_c2w - score_c2w_until_space) * \
-                            score_sub_weight
-                        # score += (score_c2w - score_c2w_until_space) * \
-                        #     math.log(len(charseq)) * score_sub_weight
-                        # TODO: consider length of characters
+                        if ent > entropy_threshold:
+                            score += (score_c2w - score_c2w_until_space +
+                                      math.log(len(charseq)) * 0.1) * score_sub_weight
+                            # NOTE: consider length of characters
 
                         new_beam.append(
                             {'hyp': beam[i_beam]['hyp'] + [indices_topk.data[0, k]],
                              'hyp_sub': beam[i_beam]['hyp_sub'] + charseq,
                              'score': score,
                              'score_sub': score_c2w,
-                             'dec_state': copy.deepcopy(dec_state),
-                             'dec_state_sub': copy.deepcopy(dec_state_sub),
                              'dec_out': dec_out,
+                             'hx_list': hx_list,
+                             'cx_list': cx_list,
                              'dec_out_sub': dec_out_sub,
+                             'hx_list_sub': hx_list_sub,
+                             'cx_list_sub': cx_list_sub,
                              'context_vec': context_vec,
                              'context_vec_sub': context_vec_sub,
                              'aw_steps': beam[i_beam]['aw_steps'] + [aw_step],
@@ -1037,6 +1035,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             aw += [complete[0]['aw_steps'][1:]]
             best_hyps_sub += [np.array(complete[0]['hyp_sub'][1:])]
             aw_sub += [complete[0]['aw_steps_sub'][1:]]
+
+            if debug:
+                print(complete[0]['score'])
+                print(complete[0]['score_sub'] * score_sub_weight)
 
         # Concatenate in L dimension
         for b in range(len(aw)):

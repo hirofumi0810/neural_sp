@@ -30,7 +30,7 @@ echo ===========================================================================
 echo "                              Switchboard                                 "
 echo ============================================================================
 
-stage=2
+stage=0
 run_background=true
 # run_background=false
 
@@ -38,6 +38,7 @@ run_background=true
 SWBD_AUDIOPATH="/n/rd21/corpora_7/swb"
 EVAL2000_AUDIOPATH="/n/rd21/corpora_7/hub5_english/LDC2002S09"
 EVAL2000_TRANSPATH="/n/rd21/corpora_7/hub5_english/LDC2002T43"
+RT03_PATH=""
 FISHER_PATH="/n/rd7/fisher_english"
 
 ### Set path to save dataset
@@ -108,7 +109,7 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.stage_0 ]; then
 
   # prepare SWBD dictionary first since we want to find acronyms according to pronunciations
   # before mapping lexicon and transcripts
-  # local/swbd1_prepare_dict.sh || exit 1;
+  local/swbd1_prepare_dict.sh || exit 1;
 
   # Prepare Switchboard data. This command can also take a second optional argument
   # which specifies the directory to Switchboard documentations. Specifically, if
@@ -125,14 +126,14 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.stage_0 ]; then
   # the 1st 10k sentences as dev set, so the 1st 4k won't have been used in the
   # LM training data.   However, they will be in the lexicon, plus speakers
   # may overlap, so it's still not quite equivalent to a test set.
-  utils/subset_data_dir.sh --first ${data}/train 4000 ${data}/dev || exit 1; # 5hr 6min
-  n=$[`cat ${data}/train/segments | wc -l` - 4000]
-  utils/subset_data_dir.sh --last ${data}/train $n ${data}/train_nodev || exit 1;
+  utils/subset_data_dir.sh --first ${data}/train_swbd 4000 ${data}/dev || exit 1; # 5hr 6min
+  n=$[`cat ${data}/train_swbd/segments | wc -l` - 4000]
+  utils/subset_data_dir.sh --last ${data}/train_swbd $n ${data}/train_swbd_nodev || exit 1;
 
   # Finally, the full training set:
-  rm -rf ${data}/train
-  utils/data/remove_dup_utts.sh 300 ${data}/train_nodev ${data}/train || exit 1;  # 286hr
-  rm -rf ${data}/train_nodev
+  rm -rf ${data}/train_swbd
+  utils/data/remove_dup_utts.sh 300 ${data}/train_swbd_nodev ${data}/train_swbd || exit 1;  # 286hr
+  rm -rf ${data}/train_swbd_nodev
 
   # Data preparation and formatting for eval2000 (note: the "text" file
   # is not very much preprocessed; for actual WER reporting we'll use
@@ -141,12 +142,22 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.stage_0 ]; then
 
   # prepare the rt03 data.  Note: this isn't 100% necessary for this
   # recipe, not all parts actually test using rt03.
-  # local/rt03_data_prep.sh /export/corpora/LDC/LDC2007S10
+  # if [ -d ${RT03_PATH} ]; then
+  #   # local/rt03_data_prep.sh /export/corpora/LDC/LDC2007S10
+  #   local/rt03_data_prep.sh ${RT03_PATH}
+  # fi
 
   # prepare fisher data for language models (optional)
   if [ -d ${FISHER_PATH} ]; then
     # prepare fisher data and put it under data/train_fisher
     local/fisher_data_prep.sh ${FISHER_PATH}
+    local/fisher_swbd_prepare_dict.sh
+
+    # merge two datasets into one
+    mkdir -p ${data}/train_swbd_fisher
+    for f in spk2utt utt2spk wav.scp text segments; do
+      cat ${data}/train_fisher/$f ${data}/train_swbd/$f > ${data}/train_swbd_fisher/$f
+    done
   fi
 
   touch ${data}/.stage_0
@@ -160,7 +171,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.stage_1 ]; then
   echo ============================================================================
 
   if [ ${tool} = "kaldi" ]; then
-    for x in train dev eval2000; do
+    for x in train_swbd dev eval2000; do
       steps/make_fbank.sh --nj 8 --cmd run.pl ${data}/$x exp/make_fbank/$x ${data}/fbank || exit 1;
       steps/compute_cmvn_stats.sh ${data}/$x exp/make_fbank/$x ${data}/fbank || exit 1;
       utils/fix_data_dir.sh ${data}/$x || exit 1;
@@ -182,7 +193,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.stage_1 ]; then
           --deltadelta ${deltadelta} || exit 1;
     fi
 
-    for data_type in train dev eval2000; do
+    for data_type in train_swbd dev eval2000; do
       mkdir -p ${data}/wav/$data_type
       mkdir -p ${data}/htk/$data_type
       [ -e ${data}/$data_type/htk.scp ] && rm ${data}/$data_type/htk.scp
@@ -369,32 +380,4 @@ if [ ${stage} -le 3 ]; then
 fi
 
 
-if [ ${stage} -le 5 ]; then
-  echo ============================================================================
-  echo "                              Rescoring                                   "
-  echo ============================================================================
-
-  echo "Finish rescoring (stage: 5)."
-fi
-
-
 echo "Done."
-
-
-# utils/prepare_lang.sh data/local/dict_nosp \
-#                         "<unk>"  data/local/lang_nosp data/lang_nosp
-
-# Now train the language models. We are using SRILM and interpolating with an
-# LM trained on the Fisher transcripts (part 2 disk is currently missing; so
-# only part 1 transcripts ~700hr are used)
-
-# If you have the Fisher data, you can set this "fisher_dir" variable.
-# fisher_dirs="/export/corpora3/LDC/LDC2004T19/fe_03_p1_tran/ /export/corpora3/LDC/LDC2005T19/fe_03_p2_tran/"
-# fisher_dirs="/exports/work/inf_hcrc_cstr_general/corpora/fisher/transcripts" # Edinburgh,
-# fisher_dirs="/mnt/matylda2/data/FISHER/fe_03_p1_tran /mnt/matylda2/data/FISHER/fe_03_p2_tran" # BUT,
-# local/swbd1_train_lms.sh ${data}/local/train/text \
-#                          ${data}/local/dict_nosp/lexicon.txt ${data}/local/lm $fisher_dirs
-
-
-# getting results (see RESULTS file)
-# for x in 1 2 3a 3b 4a; do grep 'Percent Total Error' exp/tri$x/decode_eval2000_sw1_tg/score_*/eval2000.ctm.filt.dtl | sort -k5 -g | head -1; done

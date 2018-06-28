@@ -9,9 +9,9 @@ param:
   # topology
   encoder_num_layers: 5
   subsample_list:
+    - True
+    - True
     - False
-    - True
-    - True
     - True
     - False
   fc_list: [320]

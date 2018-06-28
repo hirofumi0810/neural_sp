@@ -9,9 +9,9 @@ param:
   # topology
   encoder_num_layers: 5
   subsample_list:
+    - True
+    - True
     - False
-    - True
-    - True
     - True
     - False
   decoding_order: bahdanau
@@ -34,8 +34,6 @@ param:
   ctc_loss_weight: 0
 
   # RNNLM fusion
-  fusion_type: False
+  rnnlm_fusion_type: False
   rnnlm_path: False
-  # rnnlm_path: /n/sd8/inaguma/result/csj/pytorch/rnnlm/word/all/lstm512H2Lemb128_adam_lr1e-3_drophidden0.2out0.2emb0.2
   rnnlm_weight: 0
-  concat_embedding: False

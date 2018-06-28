@@ -4,9 +4,11 @@ param:
 
   # corpus
   corpus: switchboard
+  data_size: swbd
   label_type: character
 
   # features
+  input_type: speech
   feature: fbank
   tool: htk
   input_freq: 80
@@ -27,17 +29,18 @@ param:
   conv_kernel_sizes: []
   conv_strides: []
   poolings: []
+  activation: relu
   batch_norm: False
   encoder_bidirectional: True
   encoder_residual: False
   encoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 4
+  encoder_num_layers: 5
   subsample_list:
+    - True
+    - True
     - False
-    - True
-    - True
     - False
     - False
   subsample_type: drop
@@ -76,3 +79,8 @@ param:
   not_improved_patient_epoch: 5
   eval_start_epoch: 5
   print_step: 200
+
+  # RNNLM fusion (not used)
+  rnnlm_fusion_type: False
+  rnnlm_path: False
+  rnnlm_weight: 0

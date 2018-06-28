@@ -22,7 +22,7 @@ sdir=$1
 
 . ./path.sh
 
-dir=$DATA/local/rt03
+dir=${data}/local/rt03
 mkdir -p $dir
 
 rtroot=$sdir

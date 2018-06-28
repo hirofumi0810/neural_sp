@@ -9,6 +9,7 @@ param:
   label_type_sub: word
 
   # features
+  input_type: speech
   feature: fbank
   tool: htk
   input_freq: 80
@@ -41,9 +42,9 @@ param:
   encoder_num_layers: 5
   encoder_num_layers_sub: 5
   subsample_list:
+    - True
+    - True
     - False
-    - True
-    - True
     - True
     - False
   subsample_type: drop

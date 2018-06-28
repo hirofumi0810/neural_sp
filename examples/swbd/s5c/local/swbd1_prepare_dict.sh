@@ -10,8 +10,8 @@
 #check existing directories
 [ $# != 0 ] && echo "Usage: local/swbd1_data_prep.sh" && exit 1;
 
-srcdir=${data}/local/train  # This is where we downloaded some stuff..
-dir=${data}/local/dict_nosp
+srcdir=${data}/local/train_swbd  # This is where we downloaded some stuff..
+dir=${data}/local/dict_nosp_swbd
 mkdir -p $dir
 srcdict=$srcdir/swb_ms98_transcriptions/sw-ms98-dict.text
 
@@ -20,14 +20,18 @@ srcdict=$srcdir/swb_ms98_transcriptions/sw-ms98-dict.text
 
 rm -f $dir/lexicon0.txt
 cp $srcdict $dir/lexicon0.txt || exit 1;
-patch <local/dict.patch $dir/lexicon0.txt || exit 1;
+# patch <local/dict.patch $dir/lexicon0.txt || exit 1;
 
 #(2a) Dictionary preparation:
 # Pre-processing (remove comments)
-grep -v '^#' $dir/lexicon0.txt | awk 'NF>0' | sort > $dir/lexicon1.txt || exit 1;
+grep -v '^#' $dir/lexicon0.txt | awk 'NF>0' | grep -v $SWB/data/dictionary/sw-ms98-dict.text | sort > $dir/lexicon1.txt || exit 1;
+# NOTE: bugs in kaldi-asr
 
+# cat $dir/lexicon1.txt | awk '{ for(n=2;n<=NF;n++){ phones[$n] = 1; }} END{for (p in phones) print p;}' | \
+#   grep -v sil | sort | uniq > $dir/nonsilence_phones.txt  || exit 1;
 cat $dir/lexicon1.txt | awk '{ for(n=2;n<=NF;n++){ phones[$n] = 1; }} END{for (p in phones) print p;}' | \
-  grep -v sil > $dir/nonsilence_phones.txt  || exit 1;
+  grep -v sil | grep -v ax | grep -v en | grep -v el | sort | uniq > $dir/nonsilence_phones.txt  || exit 1;
+# NOTE: make compatible with Fisher phone mapping
 
 ( echo sil; echo spn; echo nsn; echo lau ) > $dir/silence_phones.txt
 
@@ -86,8 +90,15 @@ cat $dir/acronyms_raw.map | sort -u > $dir/acronyms.map
 
 ( echo 'i ay' )| cat - $dir/lexicon4.txt | tr '[A-Z]' '[a-z]' | sort -u > $dir/lexicon5.txt
 
+cat $dir/lexicon5.txt |\
+  sed 's/ ax/ ah/g' |\
+  sed 's/ en/ ah n/g' |\
+  sed 's/ el/ ah l/g' \
+  > $dir/lexicon6.txt
+# NOTE: make compatible with Fisher phone mapping
+
 pushd $dir >&/dev/null
-ln -sf lexicon5.txt lexicon.txt # This is the final lexicon.
+ln -sf lexicon6.txt lexicon.txt # This is the final lexicon.
 popd >&/dev/null
 rm $dir/lexiconp.txt 2>/dev/null
 echo Prepared input dictionary and phone-sets for Switchboard phase 1.

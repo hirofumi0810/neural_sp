@@ -76,9 +76,9 @@ def plot_ctc_probs(probs, frame_num, num_stack, space_index=None, str_pred='',
 
         # Plot spectrogram
         plt.subplot(212)
-        imgplot = plt.imshow(spectrogram.T,
-                             cmap='viridis',
-                             aspect='auto', origin='lower')
+        plt.imshow(spectrogram.T,
+                   cmap='viridis',
+                   aspect='auto', origin='lower')
         plt.xlabel('Time [msec]', fontsize=12)
         plt.ylabel('Frequency bin', fontsize=12)
         # plt.colorbar()

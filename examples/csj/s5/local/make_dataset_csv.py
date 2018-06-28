@@ -34,6 +34,7 @@ SPACE = '_'
 SIL = 'sil'
 OOV = 'OOV'
 SHORT_PAUSE = '@'
+WORD_BOUNDARY = 'wb'
 
 SOF = 'F'
 EOF = 'f'
@@ -332,7 +333,7 @@ def read_text(text_path, vocab_save_path, data_type,
                 for i, w in enumerate(words):
                     trans_phone += word2phone[w].replace(' ', SPACE)
                     if i != len(words) - 1:
-                        trans_phone += SPACE + '<wb>' + SPACE
+                        trans_phone += SPACE + WORD_BOUNDARY + SPACE
 
             for pos in trans_pos.split(SPACE):
                 pos_set.add(pos)
@@ -378,7 +379,7 @@ def read_text(text_path, vocab_save_path, data_type,
             phone_list = sorted(list(phone_set))
             for phone in phone_list:
                 f.write('%s\n' % phone)
-            for phone in phone_list + ['<wb>']:
+            for phone in phone_list + [WORD_BOUNDARY]:
                 f_wb.write('%s\n' % phone)
 
         # pos-level
@@ -417,7 +418,7 @@ def read_text(text_path, vocab_save_path, data_type,
                 "char_wb_right": trans,
                 "char_wb_both": trans,
                 "char_wb_remove": trans_remove,
-                "phone": trans_phone.replace('_<wb>_', '_'),
+                "phone": trans_phone.replace('_' + WORD_BOUNDARY + '_', '_'),
                 "phone_wb": trans_phone,
                 "pos": trans_pos,
             }
@@ -431,7 +432,8 @@ def read_text(text_path, vocab_save_path, data_type,
             char_wb_both_indices = char2idx_wb_both(trans_both)
             char_wb_remove_indices = char2idx_wb_remove(trans_remove)
             if 'eval' not in data_type:
-                phone_indices = phone2idx(trans_phone.replace('_<wb>_', '_'))
+                phone_indices = phone2idx(
+                    trans_phone.replace('_' + WORD_BOUNDARY + '_', '_'))
                 phone_wb_indices = phone2idx_wb(trans_phone)
             pos_indices = pos2idx(trans_pos)
 

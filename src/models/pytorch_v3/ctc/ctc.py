@@ -20,7 +20,7 @@ import torch.nn.functional as F
 from torch.nn.modules.loss import _assert_no_grad
 
 from src.models.pytorch_v3.base import ModelBase
-from src.models.pytorch_v3.linear import LinearND
+from src.models.pytorch_v3.linear import LinearND, Embedding
 from src.models.pytorch_v3.encoders.load_encoder import load
 from src.models.pytorch_v3.criterion import cross_entropy_label_smoothing
 from src.models.pytorch_v3.ctc.decoders.greedy_decoder import GreedyDecoder
@@ -76,6 +76,8 @@ warpctc = warpctc_pytorch.CTCLoss()
 class CTC(ModelBase):
     """The Connectionist Temporal Classification model.
     Args:
+        input_type (string): speech or text
+            speech means ASR, and text means NMT or P2W and so on...
         input_size (int): the dimension of input features
         encoder_type (string): the type of the encoder. Set lstm or gru or rnn.
         encoder_bidirectional (bool): if True create a bidirectional encoder
@@ -115,9 +117,11 @@ class CTC(ModelBase):
         weight_noise_std (float):
         encoder_residual (bool):
         encoder_dense_residual (bool):
+        num_classes_input (int):
     """
 
     def __init__(self,
+                 input_type,
                  input_size,
                  encoder_type,
                  encoder_bidirectional,
@@ -148,12 +152,15 @@ class CTC(ModelBase):
                  label_smoothing_prob=0,
                  weight_noise_std=0,
                  encoder_residual=False,
-                 encoder_dense_residual=False):
+                 encoder_dense_residual=False,
+                 num_classes_input=0):
 
         super(ModelBase, self).__init__()
         self.model_type = 'ctc'
 
         # Setting for the encoder
+        self.input_type = input_type
+        assert input_type in ['speech', 'text']
         self.input_size = input_size
         self.num_stack = num_stack
         self.num_skip = num_skip
@@ -173,6 +180,15 @@ class CTC(ModelBase):
         self.weight_noise_injection = False
         self.weight_noise_std = float(weight_noise_std)
         self.ls_prob = label_smoothing_prob
+
+        # Setting for text input
+        self.num_classes_input = num_classes_input + 1
+
+        if input_type == 'text':
+            self.embed_in = Embedding(num_classes=self.num_classes_input,
+                                      embedding_dim=input_size,
+                                      dropout=dropout_encoder,
+                                      ignore_index=self.num_classes_input - 1)
 
         # Call the encoder function
         if encoder_type in ['lstm', 'gru', 'rnn']:
@@ -293,29 +309,16 @@ class CTC(ModelBase):
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
         # Sort by lenghts in the descending order
-        if is_eval and self.encoder_type != 'cnn':
+        if is_eval and self.encoder_type != 'cnn' or self.input_type == 'text':
             perm_idx = sorted(list(range(0, len(xs), 1)),
-                              key=lambda i: xs[i].shape[0], reverse=True)
+                              key=lambda i: len(xs[i]), reverse=True)
             xs = [xs[i] for i in perm_idx]
             ys = [ys[i] for i in perm_idx]
             # NOTE: must be descending order for pack_padded_sequence
             # NOTE: assumed that xs is already sorted in the training stage
 
-        # Frame stacking
-        if self.num_stack > 1:
-            xs = [stack_frame(x, self.num_stack, self.num_skip)
-                  for x in xs]
-
-        # Splicing
-        if self.splice > 1:
-            xs = [do_splice(x, self.splice, self.num_stack) for x in xs]
-
-        # Wrap by Variable
-        xs = [np2var(x, self.device_id).float() for x in xs]
-        x_lens = [len(x) for x in xs]
-
         # Encode acoustic features
-        logits, x_lens = self._encode(xs, x_lens)
+        logits, x_lens = self._encode(xs)
 
         # Output smoothing
         if self.logits_temp != 1:
@@ -356,11 +359,10 @@ class CTC(ModelBase):
 
         return loss, 0.
 
-    def _encode(self, xs, x_lens, is_multi_task=False):
+    def _encode(self, xs, is_multi_task=False):
         """Encode acoustic features.
         Args:
             xs (list): A list of length `[B]`, which contains Variables of size `[T, input_size]`
-            x_lens (list): A list of length `[B]`
             is_multi_task (bool):
         Returns:
             xs (torch.autograd.Variable, float): A tensor of size
@@ -371,8 +373,28 @@ class CTC(ModelBase):
                     `[B, T, encoder_num_units]`
                 x_lens_sub (list): A tensor of size `[B]`
         """
-        # Convert list to Variables
-        xs = pad_list(xs)
+        if self.input_type == 'speech':
+            # Frame stacking
+            if self.num_stack > 1:
+                xs = [stack_frame(x, self.num_stack, self.num_skip)
+                      for x in xs]
+
+            # Splicing
+            if self.splice > 1:
+                xs = [do_splice(x, self.splice, self.num_stack) for x in xs]
+
+            # Wrap by Variable
+            xs = [np2var(x, self.device_id).float() for x in xs]
+            x_lens = [len(x) for x in xs]
+            xs = pad_list(xs)
+
+        elif self.input_type == 'text':
+            # Wrap by Variable
+            x_lens = [len(x) for x in xs]
+            xs = [np2var(np.fromiter(x, dtype=np.int64), self.device_id).long()
+                  for x in xs]
+            xs = pad_list(xs, self.num_classes_input - 1)
+            xs = self.embed_in(xs)
 
         if is_multi_task:
             if self.encoder_type == 'cnn':
@@ -431,42 +453,27 @@ class CTC(ModelBase):
         self.eval()
 
         # Sort by lenghts in the descending order
-        if self.encoder_type != 'cnn':
+        if self.encoder_type != 'cnn' or self.input_type == 'text':
             perm_idx = sorted(list(range(0, len(xs), 1)),
-                              key=lambda i: xs[i].shape[0], reverse=True)
+                              key=lambda i: len(xs[i]), reverse=True)
             xs = [xs[i] for i in perm_idx]
             # NOTE: must be descending order for pack_padded_sequence
         else:
             perm_idx = list(range(0, len(xs), 1))
 
-        # Frame stacking
-        if self.num_stack > 1:
-            xs = [stack_frame(x, self.num_stack, self.num_skip)
-                  for x in xs]
-
-        # Splicing
-        if self.splice > 1:
-            xs = [do_splice(x, self.splice, self.num_stack) for x in xs]
-
-        # Wrap by Variable
-        xs = [np2var(x, self.device_id, volatile=True).float() for x in xs]
-        x_lens = [len(x) for x in xs]
-
         # Encode acoustic features
         if hasattr(self, 'main_loss_weight'):
             if task_index == 0:
-                logits, x_lens, _, _ = self._encode(
-                    xs, x_lens, is_multi_task=True)
+                logits, x_lens, _, _ = self._encode(xs, is_multi_task=True)
             elif task_index == 1:
-                _, _, logits, x_lens = self._encode(
-                    xs, x_lens, is_multi_task=True)
+                _, _, logits, x_lens = self._encode(xs, is_multi_task=True)
             else:
                 raise NotImplementedError
         else:
-            logits, x_lens = self._encode(xs, x_lens)
+            logits, x_lens = self._encode(xs)
 
         if rnnlm_weight > 0:
-            raise NotImplementedError
+            pass
 
         if beam_width == 1:
             best_hyps = self._decode_greedy_np(var2np(logits), x_lens)
@@ -497,39 +504,24 @@ class CTC(ModelBase):
         self.eval()
 
         # Sort by lenghts in the descending order
-        if self.encoder_type != 'cnn':
+        if self.encoder_type != 'cnn' or self.input_type == 'text':
             perm_idx = sorted(list(range(0, len(xs), 1)),
-                              key=lambda i: xs[i].shape[0], reverse=True)
+                              key=lambda i: len(xs[i]), reverse=True)
             xs = [xs[i] for i in perm_idx]
             # NOTE: must be descending order for pack_padded_sequence
         else:
             perm_idx = list(range(0, len(xs), 1))
 
-        # Frame stacking
-        if self.num_stack > 1:
-            xs = [stack_frame(x, self.num_stack, self.num_skip)
-                  for x in xs]
-
-        # Splicing
-        if self.splice > 1:
-            xs = [do_splice(x, self.splice, self.num_stack) for x in xs]
-
-        # Wrap by Variable
-        xs = [np2var(x, self.device_id, volatile=True).float() for x in xs]
-        x_lens = [len(x) for x in xs]
-
         # Encode acoustic features
         if hasattr(self, 'main_loss_weight'):
             if task_idx == 0:
-                logits, x_lens, _, _ = self._encode(
-                    xs, x_lens, is_multi_task=True)
+                logits, x_lens, _, _ = self._encode(xs, is_multi_task=True)
             elif task_idx == 1:
-                _, _, logits, x_lens = self._encode(
-                    xs, x_lens, is_multi_task=True)
+                _, _, logits, x_lens = self._encode(xs, is_multi_task=True)
             else:
                 raise NotImplementedError
         else:
-            logits, x_lens = self._encode(xs, x_lens)
+            logits, x_lens = self._encode(xs)
 
         probs = F.softmax(logits / temperature, dim=-1)
 

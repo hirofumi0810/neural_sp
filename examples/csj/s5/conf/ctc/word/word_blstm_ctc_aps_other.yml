@@ -8,6 +8,7 @@ param:
   label_type: word
 
   # features
+  input_type: speech
   feature: fbank
   tool: htk
   input_freq: 80
@@ -37,9 +38,9 @@ param:
   encoder_num_proj: 0
   encoder_num_layers: 5
   subsample_list:
+    - True
+    - True
     - False
-    - True
-    - True
     - True
     - False
   subsample_type: drop
@@ -83,4 +84,3 @@ param:
   rnnlm_fusion_type: False
   rnnlm_path: False
   rnnlm_weight: 0
-  concat_embedding: False

@@ -52,23 +52,26 @@ class Updater(object):
                 if is_eval:
                     loss, acc = model(batch['xs'], batch['ys'], is_eval=True)
                 else:
-                    model.optimizer.zero_grad()
-                    if model.device_id >= 0:
+                    model.module.optimizer.zero_grad()
+                    if len(model.device_ids) >= 1:
                         torch.cuda.empty_cache()
                     loss, acc = model(batch['xs'], batch['ys'])
-                    loss.backward()
+                    if len(model.device_ids) > 1:
+                        loss.backward(torch.ones(len(model.device_ids)))
+                    else:
+                        loss.backward()
                     loss.detach()  # Trancate the graph
                     if self.clip_grad_norm > 0:
-                        if model.torch_version < 0.4:
+                        if model.module.torch_version < 0.4:
                             torch.nn.utils.clip_grad_norm(
-                                model.parameters(), self.clip_grad_norm)
+                                model.module.parameters(), self.clip_grad_norm)
                         else:
                             torch.nn.utils.clip_grad_norm_(
-                                model.parameters(), self.clip_grad_norm)
-                    model.optimizer.step()
+                                model.module.parameters(), self.clip_grad_norm)
+                    model.module.optimizer.step()
                     # TODO: Add scheduler
 
-                if model.torch_version < 0.4:
+                if model.module.torch_version < 0.4:
                     loss_val = loss.data[0]
                 else:
                     loss_val = loss.item()
@@ -90,12 +93,13 @@ class Updater(object):
             logger.warning('!!!Skip mini-batch!!! (max_frame_num: %d, batch: %d)' %
                            (max(len(x) for x in batch['xs']), len(batch['xs'])))
             if self.backend == 'pytorch':
-                model.optimizer.zero_grad()
-                if model.device_id >= 0:
+                model.module.optimizer.zero_grad()
+                if len(model.device_ids) >= 1:
                     torch.cuda.empty_cache()
             elif self.backend == 'chainer':
                 model.optimizer.target.cleargrads()
             loss_val = 0.
+            acc = 0.
 
         if loss_val == INF or loss_val == -INF:
             logger.warning("WARNING: received an inf loss.")

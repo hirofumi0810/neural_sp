@@ -4,6 +4,7 @@ param:
 
   # corpus
   corpus: switchboard
+  data_size: swbd
   label_type: word
   label_type_sub: character
 
@@ -28,6 +29,7 @@ param:
   conv_kernel_sizes: []
   conv_strides: []
   poolings: []
+  activation: relu
   batch_norm: False
   encoder_bidirectional: True
   encoder_residual: False
@@ -37,9 +39,9 @@ param:
   encoder_num_layers: 5
   encoder_num_layers_sub: 4
   subsample_list:
+    - True
+    - True
     - False
-    - True
-    - True
     - True
     - False
   subsample_type: drop
