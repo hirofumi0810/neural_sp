@@ -10,8 +10,8 @@
 #check existing directories
 [ $# != 0 ] && echo "Usage: local/csj_data_prep.sh" && exit 1;
 
-srcdir=$DATA/local/train_$DATASIZE
-dir=$DATA/local/dict_nosp
+srcdir=${data}/local/train_${datasize}
+dir=${data}/local/dict_nosp
 mkdir -p $dir
 srcdict=$srcdir/lexicon.txt
 

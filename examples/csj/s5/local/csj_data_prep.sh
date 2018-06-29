@@ -31,13 +31,9 @@ if [ $# -ne 1 ] && [ $# -ne 2 ]; then
 fi
 
 CSJ=$1
-mode=0
+mode=$2
 
-if [ $# -eq 2 ]; then
-  mode=$2
-fi
-
-dir=$DATA/local/train_$mode
+dir=${data}/local/train_$mode
 mkdir -p $dir
 
 # Audio data directory check
@@ -81,9 +77,11 @@ awk '{
       split(spkutt_id,T,"[_ ]");
       name=T[1]; stime=$2; etime=$3;
       printf("%s_%07.0f_%07.0f",name, int(1000*stime), int(1000*etime));
-      for(i=4;i<=NF;i++) printf(" %s", tolower($i)); printf "\n"
+      # for(i=4;i<=NF;i++) printf(" %s", tolower($i)); printf "\n"
+      for(i=4;i<=NF;i++) printf(" %s", $i); printf "\n"
 }' $CSJ/*/*/*-trans.text | sort > $dir/transcripts1.txt # This data is for training language models
 # Except evaluation set (30 speakers)
+# NOTE: do not convert to lowercase for lexicon
 
 # test if trans. file is sorted
 export LC_ALL=C;
@@ -121,11 +119,11 @@ awk '{segment=$1; split(segment,S,"[_]"); spkid=S[1]; print $1 " " spkid}' $dir/
 sort -k 2 $dir/utt2spk | utils/utt2spk_to_spk2utt.pl > $dir/spk2utt || exit 1;
 
 # Copy stuff into its final locations [this has been moved from the format_data script]
-mkdir -p $DATA/train_$mode
+mkdir -p ${data}/train_$mode
 for f in spk2utt utt2spk wav.scp text segments; do
-  cp $DATA/local/train_$mode/$f $DATA/train_$mode || exit 1;
+  cp ${data}/local/train_$mode/$f ${data}/train_$mode || exit 1;
 done
 
 echo "CSJ data preparation succeeded."
 
-utils/fix_data_dir.sh $DATA/train_$mode
+utils/fix_data_dir.sh ${data}/train_$mode

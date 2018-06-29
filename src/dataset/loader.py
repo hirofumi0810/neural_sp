@@ -134,7 +134,7 @@ class Dataset(Base):
             # Remove by threshold
             df = df[df.apply(
                 lambda x: min_frame_num <= x['frame_num'] <= max_frame_num, axis=1)]
-            print('Remove utterances (threshold): %d' %
+            print('Removed utterance num (threshold): %d' %
                   (utt_num_orig - len(df)))
 
             # Rempve for CTC loss calculatioon
@@ -143,7 +143,7 @@ class Dataset(Base):
                 utt_num_orig = len(df)
                 df = df[df.apply(
                     lambda x: len(x['transcript'].split(' ')) <= x['frame_num'] // subsampling_factor, axis=1)]
-                print('Remove utterances (for CTC): %d' %
+                print('Removed utterance num (for CTC): %d' %
                       (utt_num_orig - len(df)))
 
         # Sort paths to input & label

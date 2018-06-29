@@ -237,11 +237,11 @@ class Dataset(Base):
                 lambda x: min_frame_num <= x['frame_num'] <= max_frame_num, axis=1)]
             df_sub = df_sub[df_sub.apply(
                 lambda x: min_frame_num <= x['frame_num'] <= max_frame_num, axis=1)]
-            print('Restricted utterance num (input): %d' %
+            print('Removed utterance num (threshold, input): %d' %
                   (utt_num_orig_in - len(df_in)))
-            print('Restricted utterance num (output, main): %d' %
+            print('Removed utterance num (threshold, output, main): %d' %
                   (utt_num_orig - len(df)))
-            print('Restricted utterance num (output, sub): %d' %
+            print('Removed utterance num (threshold, output, sub): %d' %
                   (utt_num_orig_sub - len(df_sub)))
 
             # Remove for CTC loss calculatioon
@@ -254,15 +254,21 @@ class Dataset(Base):
             if not (len(df_in) == len(df) == len(df)):
                 diff = df_in.index.difference(df.index)
                 df_in = df_in.drop(diff)
-                diff = df_in.index.difference(df.index)
+                diff = df.index.difference(df_in.index)
                 df = df.drop(diff)
                 assert len(df_in) == len(df)
 
-                diff = df_sub.index.difference(df.index)
+                diff = df_in.index.difference(df_sub.index)
                 df_in = df_in.drop(diff)
+                diff = df_sub.index.difference(df_in.index)
+                df_sub = df_sub.drop(diff)
+                assert len(df_in) == len(df_sub)
+
+                diff = df.index.difference(df_sub.index)
                 df = df.drop(diff)
                 diff = df_sub.index.difference(df.index)
                 df_sub = df_sub.drop(diff)
+                assert len(df) == len(df_sub)
 
         # Sort paths to input & label
         if sort_utt:

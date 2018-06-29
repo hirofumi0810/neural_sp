@@ -158,9 +158,9 @@ class Dataset(Base):
                 lambda x: min_frame_num <= x['frame_num'] <= max_frame_num, axis=1)]
             df_sub = df_sub[df_sub.apply(
                 lambda x: min_frame_num <= x['frame_num'] <= max_frame_num, axis=1)]
-            print('Restricted utterance num (main): %d' %
+            print('Removed utterance num (threshold, main): %d' %
                   (utt_num_orig - len(df)))
-            print('Restricted utterance num (sub): %d' %
+            print('Removed utterance num (threshold, sub): %d' %
                   (utt_num_orig_sub - len(df_sub)))
 
             # Remove for CTC loss calculatioon
@@ -169,28 +169,25 @@ class Dataset(Base):
                 utt_num_orig = len(df)
                 df = df[df.apply(
                     lambda x: len(x['transcript'].split(' ')) <= x['frame_num'] // subsampling_factor, axis=1)]
-                print('Remove utterances (for CTC, main): %d' %
+                print('Removed utterance num (for CTC, main): %d' %
                       (utt_num_orig - len(df)))
             if use_ctc_sub and subsampling_factor_sub > 1:
                 print('Checking utterances for CTC (sub)')
                 utt_num_orig_sub = len(df_sub)
                 df_sub = df_sub[df_sub.apply(
                     lambda x: len(x['transcript'].split(' ')) <= x['frame_num'] // subsampling_factor_sub, axis=1)]
-                print('Remove utterances (for CTC, sub): %d' %
+                print('Removed utterance num (for CTC, sub): %d' %
                       (utt_num_orig_sub - len(df_sub)))
 
             # Make up the number
             if len(df) != len(df_sub):
-                diff = df.index.difference(df_sub.index)
-                df = df.drop(diff)
-                diff = df.index.difference(df_sub.index)
-                df_sub = df_sub.drop(diff)
+                df = df.drop(df.index.difference(df_sub.index))
+                df_sub = df_sub.drop(df_sub.index.difference(df.index))
 
         # Sort paths to input & label
         if sort_utt:
             df = df.sort_values(by='frame_num', ascending=not reverse)
-            df_sub = df_sub.sort_values(
-                by='frame_num', ascending=not reverse)
+            df_sub = df_sub.sort_values(by='frame_num', ascending=not reverse)
         else:
             df = df.sort_values(by='input_path', ascending=True)
             df_sub = df_sub.sort_values(by='input_path', ascending=True)

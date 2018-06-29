@@ -132,8 +132,7 @@ class Dataset(Base):
                 dataset_path_org = join(
                     data_save_path, 'dataset', tool, data_size, data_type, label_type + '.csv')
                 df = pd.read_csv(dataset_path_org, encoding='utf-8')
-                df = df.loc[:, [
-                    'frame_num', 'input_path', 'transcript']]
+                df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
 
                 # Change vocabulary
                 org2new = {}
@@ -201,21 +200,27 @@ class Dataset(Base):
                 lambda x: min_frame_num <= x['frame_num'] <= max_frame_num, axis=1)]
             df = df[df.apply(
                 lambda x: min_frame_num <= x['frame_num'] <= max_frame_num, axis=1)]
-            print('Restricted utterance num (input): %d' %
+            print('Removed utterance num (threshold, input): %d' %
                   (utt_num_orig_in - len(df_in)))
-            print('Restricted utterance num (output): %d' %
+            print('Removed utterance num (threshold, output): %d' %
                   (utt_num_orig - len(df)))
 
             # Remove for CTC loss calculatioon
-            if use_ctc and subsampling_factor > 1:
-                pass
+            if subsampling_factor > 1:
+                print('Checking utterances for subsampling')
+                utt_num_orig_in = len(df_in)
+                df_in = df_in[df_in.apply(
+                    lambda x: len(x['transcript'].split(' ')) // subsampling_factor > 0, axis=1)]
+                print('Removed utterance num (for subsampling): %d' %
+                      (utt_num_orig_in - len(df_in)))
+
+                if use_ctc:
+                    pass
 
             # Make up the number
             if len(df_in) != len(df):
-                diff = df_in.index.difference(df.index)
-                df_in = df_in.drop(diff)
-                diff = df_in.index.difference(df.index)
-                df = df.drop(diff)
+                df_in = df_in.drop(df_in.index.difference(df.index))
+                df = df.drop(df.index.difference(df_in.index))
 
         # Sort paths to input & label
         if sort_utt:

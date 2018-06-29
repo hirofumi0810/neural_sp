@@ -72,9 +72,8 @@ def main():
         df_char_wb_right = pd.DataFrame([], columns=df_columns)
         df_char_wb_both = pd.DataFrame([], columns=df_columns)
         df_char_wb_remove = pd.DataFrame([], columns=df_columns)
-        if 'eval' not in data_type:
-            df_phone = pd.DataFrame([], columns=df_columns)
-            df_phone_wb = pd.DataFrame([], columns=df_columns)
+        df_phone = pd.DataFrame([], columns=df_columns)
+        df_phone_wb = pd.DataFrame([], columns=df_columns)
         df_pos = pd.DataFrame([], columns=df_columns)
 
         with open(join(args.data_save_path, 'feature', args.tool, args.data_size, data_type.split('_')[0], 'frame_num.pickle'), 'rb') as f:
@@ -110,11 +109,10 @@ def main():
                 df_char_wb_both, [frame_num, feat_utt_save_path, trans['char_wb_both']])
             df_char_wb_remove = add_element(
                 df_char_wb_remove, [frame_num, feat_utt_save_path, trans['char_wb_remove']])
-            if 'eval' not in data_type:
-                df_phone = add_element(
-                    df_phone, [frame_num, feat_utt_save_path, trans['phone']])
-                df_phone_wb = add_element(
-                    df_phone_wb, [frame_num, feat_utt_save_path, trans['phone_wb']])
+            df_phone = add_element(
+                df_phone, [frame_num, feat_utt_save_path, trans['phone']])
+            df_phone_wb = add_element(
+                df_phone_wb, [frame_num, feat_utt_save_path, trans['phone_wb']])
             df_pos = add_element(
                 df_pos, [frame_num, feat_utt_save_path,  trans['pos']])
             utt_count += 1
@@ -128,9 +126,8 @@ def main():
                 df_char_wb_right_list.append(df_char_wb_right)
                 df_char_wb_both_list.append(df_char_wb_both)
                 df_char_wb_remove_list.append(df_char_wb_remove)
-                if 'eval' not in data_type:
-                    df_phone_list.append(df_phone)
-                    df_phone_wb_list.append(df_phone_wb)
+                df_phone_list.append(df_phone)
+                df_phone_wb_list.append(df_phone_wb)
                 df_pos_list.append(df_pos)
 
                 df_word = pd.DataFrame([], columns=df_columns)
@@ -140,9 +137,8 @@ def main():
                 df_char_wb_right = pd.DataFrame([], columns=df_columns)
                 df_char_wb_both = pd.DataFrame([], columns=df_columns)
                 df_char_wb_remove = pd.DataFrame([], columns=df_columns)
-                if 'eval' not in data_type:
-                    df_phone = pd.DataFrame([], columns=df_columns)
-                    df_phone_wb = pd.DataFrame([], columns=df_columns)
+                df_phone = pd.DataFrame([], columns=df_columns)
+                df_phone_wb = pd.DataFrame([], columns=df_columns)
                 df_pos = pd.DataFrame([], columns=df_columns)
                 utt_count = 0
 
@@ -154,9 +150,8 @@ def main():
         df_char_wb_right_list.append(df_char_wb_right)
         df_char_wb_both_list.append(df_char_wb_both)
         df_char_wb_remove_list.append(df_char_wb_remove)
-        if 'eval' not in data_type:
-            df_phone_list.append(df_phone)
-            df_phone_wb_list.append(df_phone_wb)
+        df_phone_list.append(df_phone)
+        df_phone_wb_list.append(df_phone_wb)
         df_pos_list.append(df_pos)
 
         # Concatenate all dataframes
@@ -167,9 +162,8 @@ def main():
         df_char_wb_right = df_char_wb_right_list[0]
         df_char_wb_both = df_char_wb_both_list[0]
         df_char_wb_remove = df_char_wb_remove_list[0]
-        if 'eval' not in data_type:
-            df_phone = df_phone_list[0]
-            df_phone_wb = df_phone_wb_list[0]
+        df_phone = df_phone_list[0]
+        df_phone_wb = df_phone_wb_list[0]
         df_pos = df_pos_list[0]
 
         for i in df_word_list[1:]:
@@ -186,11 +180,10 @@ def main():
             df_char_wb_both = pd.concat([df_char_wb_both, i], axis=0)
         for i in df_char_wb_remove_list[1:]:
             df_char_wb_remove = pd.concat([df_char_wb_remove, i], axis=0)
-        if 'eval' not in data_type:
-            for i in df_phone_list[1:]:
-                df_phone = pd.concat([df_phone, i], axis=0)
-            for i in df_phone_wb_list[1:]:
-                df_phone_wb = pd.concat([df_phone_wb, i], axis=0)
+        for i in df_phone_list[1:]:
+            df_phone = pd.concat([df_phone, i], axis=0)
+        for i in df_phone_wb_list[1:]:
+            df_phone_wb = pd.concat([df_phone_wb, i], axis=0)
         for i in df_pos_list[1:]:
             df_pos = pd.concat([df_pos, i], axis=0)
 
@@ -206,10 +199,9 @@ def main():
             join(csv_save_path, 'character_wb_both.csv'), encoding='utf-8')
         df_char_wb_remove.to_csv(
             join(csv_save_path, 'character_wb_remove.csv'), encoding='utf-8')
-        if 'eval' not in data_type:
-            df_phone.to_csv(join(csv_save_path, 'phone.csv'), encoding='utf-8')
-            df_phone_wb.to_csv(
-                join(csv_save_path, 'phone_wb.csv'), encoding='utf-8')
+        df_phone.to_csv(join(csv_save_path, 'phone.csv'), encoding='utf-8')
+        df_phone_wb.to_csv(
+            join(csv_save_path, 'phone_wb.csv'), encoding='utf-8')
         df_pos.to_csv(join(csv_save_path, 'pos.csv'), encoding='utf-8')
 
 

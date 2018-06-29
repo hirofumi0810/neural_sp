@@ -21,7 +21,7 @@ tdir=$1
 eval_num=$2
 . ./path.sh
 
-dir=$DATA/local/$eval_num
+dir=${data}/local/$eval_num
 mkdir -p $dir
 
 cat $tdir/$eval_num/*/*-wav.list | sort > $dir/wav.flist
@@ -72,7 +72,7 @@ awk '{
 awk '{segment=$1; split(segment,S,"[_]"); spkid=S[1]; print $1 " " spkid}' $dir/segments > $dir/utt2spk || exit 1;
 sort -k 2 $dir/utt2spk | utils/utt2spk_to_spk2utt.pl > $dir/spk2utt || exit 1;
 
-dest=$DATA/$eval_num
+dest=${data}/$eval_num
 mkdir -p $dest
 for x in wav.scp segments text utt2spk spk2utt; do
   cp $dir/$x $dest/$x
