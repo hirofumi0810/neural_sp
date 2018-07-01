@@ -16,13 +16,10 @@ coverage_penalty=0
 rnnlm_weight=0.3
 rnnlm_path=
 # word
-# rnnlm_path=/n/sd8/inaguma/result/swbd/pytorch/rnnlm/word/aps_other/lstm512H2Lemb128_adam_lr1e-3_drophidden0.2out0.2emb0.2
-# rnnlm_path=/n/sd8/inaguma/result/swbd/pytorch/rnnlm/word/all/lstm512H2Lemb128_adam_lr1e-3_drophidden0.2out0.2emb0.2_aps_other
+# rnnlm_path=/n/sd8/inaguma/result/swbd/pytorch/rnnlm/word/swbd_fisher/
 
 # char
-# rnnlm_path=/n/sd8/inaguma/result/swbd/pytorch/rnnlm/character_wb/aps_other/lstm512H2Lemb64_adam_lr1e-3_drophidden0.2out0.2emb0.2
-# rnnlm_path=/n/sd8/inaguma/result/swbd/pytorch/rnnlm/character_wb/all/lstm512H2Lemb64_adam_lr1e-3_drophidden0.2out0.2emb0.2_aps_other
-
+# rnnlm_path=/n/sd8/inaguma/result/swbd/pytorch/rnnlm/character/swbd_fisher/
 
 CUDA_VISIBLE_DEVICES=$2 ${PYTHON} ../../../src/bin/evaluation/eval.py \
   --corpus ${corpus} \

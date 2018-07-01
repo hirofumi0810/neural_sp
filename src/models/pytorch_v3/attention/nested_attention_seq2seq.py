@@ -497,7 +497,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         # Sort by lenghts in the descending order
         if is_eval and self.encoder_type != 'cnn':
             perm_idx = sorted(list(range(0, len(xs), 1)),
-                              key=lambda i: xs[i].shape[0], reverse=True)
+                              key=lambda i: len(xs[i]), reverse=True)
             xs = [xs[i] for i in perm_idx]
             ys = [ys[i] for i in perm_idx]
             ys_sub = [ys_sub[i] for i in perm_idx]
@@ -870,9 +870,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         return logits, aw_enc, logits_sub, aw_sub, aw_dec
 
     def decode(self, xs, beam_width, max_decode_len, min_decode_len=0, min_decode_len_ratio=0,
+               length_penalty=0, coverage_penalty=0, rnnlm_weight=0,
                beam_width_sub=1, max_decode_len_sub=None, min_decode_len_sub=0, min_decode_len_ratio_sub=0,
-               length_penalty=0, coverage_penalty=0,
-               rnnlm_weight=0, rnnlm_weight_sub=0,
+               length_penalty_sub=0, coverage_penalty_sub=0, rnnlm_weight_sub=0,
                task_index=0, teacher_forcing=False, ys_sub=None):
         """Decoding in the inference stage.
         Args:
@@ -881,13 +881,15 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             max_decode_len (int): the maximum sequence length of tokens in the main task
             min_decode_len (int): the minimum sequence length of tokens in the main task
             min_decode_len_ratio (float):
+            length_penalty (float): length penalty of the main task
+            coverage_penalty (float): coverage penalty of the main task
+            rnnlm_weight (float): the weight of RNNLM score of the main task
             beam_width_sub (int): the size of beam in the sub task
             max_decode_len_sub (int): the maximum sequence length of tokens in the sub task
             min_decode_len_sub (int): the minimum sequence length of tokens in the sub task
             min_decode_len_ratio_sub (float):
-            length_penalty (float): length penalty
-            coverage_penalty (float): coverage penalty
-            rnnlm_weight (float): the weight of RNNLM score of the main task
+            length_penalty_sub (float): length penalty of the sub task
+            coverage_penalty_sub (float): coverage penalty of the sub task
             rnnlm_weight_sub (float): the weight of RNNLM score of the sub task
             task_index (int): the index of a task
             teacher_forcing (bool):
@@ -905,7 +907,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         # Sort by lenghts in the descending order
         if self.encoder_type != 'cnn':
             perm_idx = sorted(list(range(0, len(xs), 1)),
-                              key=lambda i: xs[i].shape[0], reverse=True)
+                              key=lambda i: len(xs[i]), reverse=True)
             xs = [xs[i] for i in perm_idx]
             # NOTE: must be descending order for pack_padded_sequence
         else:
@@ -935,8 +937,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             else:
                 ys_in_sub = None
 
-            # if beam_width == 1 and beam_width_sub == 1:
-            if False:
+            if beam_width == 1 and beam_width_sub == 1:
                 best_hyps, aw, best_hyps_sub, aw_sub, aw_dec = self._decode_infer_joint_greedy(
                     enc_out, x_lens, enc_out_sub, x_lens_sub,
                     max_decode_len=max_decode_len,
@@ -950,13 +951,15 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     max_decode_len=max_decode_len,
                     min_decode_len=min_decode_len,
                     min_decode_len_ratio=min_decode_len_ratio,
+                    rnnlm_weight=rnnlm_weight,
+                    length_penalty=length_penalty,
+                    coverage_penalty=coverage_penalty,
                     beam_width_sub=beam_width_sub,
                     max_decode_len_sub=max_decode_len_sub,
                     min_decode_len_sub=min_decode_len_sub,
                     min_decode_len_ratio_sub=min_decode_len_ratio_sub,
-                    length_penalty=length_penalty,
-                    coverage_penalty=coverage_penalty,
-                    rnnlm_weight=rnnlm_weight,
+                    length_penalty_sub=length_penalty_sub,
+                    coverage_penalty_sub=coverage_penalty_sub,
                     rnnlm_weight_sub=rnnlm_weight_sub,
                     teacher_forcing=teacher_forcing,
                     ys_sub=ys_in_sub)
@@ -1212,11 +1215,10 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
     def _decode_infer_joint_beam(self, enc_out, x_lens, enc_out_sub, x_lens_sub,
                                  beam_width, max_decode_len, min_decode_len, min_decode_len_ratio,
+                                 length_penalty, coverage_penalty, rnnlm_weight,
                                  beam_width_sub, max_decode_len_sub, min_decode_len_sub, min_decode_len_ratio_sub,
-                                 length_penalty, coverage_penalty,
-                                 rnnlm_weight, rnnlm_weight_sub,
-                                 teacher_forcing=False, ys_sub=None,
-                                 reverse_backward=True):
+                                 length_penalty_sub, coverage_penalty_sub, rnnlm_weight_sub,
+                                 teacher_forcing=False, ys_sub=None, reverse_backward=True):
         """Beam search decoding in the inference stage.
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
@@ -1229,13 +1231,15 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             max_decode_len (int): the maximum sequence length of tokens in the main task
             min_decode_len (int): the minimum sequence length of tokens in the main task
             min_decode_len_ratio (float):
+            length_penalty (float): length penalty of the main task
+            coverage_penalty (float): coverage penalty of the main task
+            rnnlm_weight (float): the weight of RNNLM score of the main task
             beam_width_sub (int): the size of beam in the sub task
             max_decode_len_sub (int): the maximum sequence length of tokens in the sub task
             min_decode_len_sub (int): the minimum sequence length of tokens in the sub task
             min_decode_len_ratio_sub (float):
-            length_penalty (float): length penalty
-            coverage_penalty (float): coverage penalty
-            rnnlm_weight (float): the weight of RNNLM score of the main task
+            length_penalty_sub (float): length penalty of the sub task
+            coverage_penalty_sub (float): coverage penalty of the sub task
             rnnlm_weight_sub (float): the weight of RNNLM score of the sub task
             teacher_forcing (bool):
             ys_sub (list):
@@ -1325,13 +1329,13 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
                         # Add length penalty
                         score_sub = beam_sub[i_beam]['score'] + \
-                            log_probs_sub_topk.data[0, k] + length_penalty
+                            log_probs_sub_topk.data[0, k] + length_penalty_sub
 
                         # Add coverage penalty
-                        if coverage_penalty > 0:
+                        if coverage_penalty_sub > 0:
                             # Recompute converage penalty in each step
                             score_sub -= beam_sub[i_beam]['previous_coverage'] * \
-                                coverage_penalty
+                                coverage_penalty_sub
 
                             cov_threshold = 0.5
                             # TODO: make this parameter
@@ -1348,7 +1352,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
                             cov_sum_sub = np.sum(cov_sum_sub[np.where(
                                 cov_sum_sub > cov_threshold)[0]])
-                            score_sub += cov_sum_sub * coverage_penalty
+                            score_sub += cov_sum_sub * coverage_penalty_sub
                         else:
                             cov_sum_sub = 0
 

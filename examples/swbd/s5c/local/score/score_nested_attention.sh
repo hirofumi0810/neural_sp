@@ -6,7 +6,7 @@ set -e
 ### Select GPU
 if [ $# -ne 2 ]; then
   echo "Error: set GPU number & config path." 1>&2
-  echo "Usage: ./plot_hierarchical_attention.sh path_to_saved_model gpu_id" 1>&2
+  echo "Usage: ./score_nested_attention.sh path_to_saved_model gpu_id" 1>&2
   exit 1
 fi
 
@@ -16,8 +16,7 @@ length_penalty=0
 coverage_penalty=0
 rnnlm_weight=0.3
 rnnlm_path=
-# rnnlm_path=/n/sd8/inaguma/result/csj/pytorch/rnnlm/word/aps_other/
-# rnnlm_path=/n/sd8/inaguma/result/csj/pytorch/rnnlm/word/all/
+# rnnlm_path=/n/sd8/inaguma/result/swbd/pytorch/rnnlm/word/swbd_fisher/
 
 # sub task
 beam_width_sub=4
@@ -25,15 +24,15 @@ length_penalty_sub=0
 coverage_penalty_sub=0
 rnnlm_weight_sub=0.3
 rnnlm_path_sub=
-# rnnlm_path_sub=/n/sd8/inaguma/result/csj/pytorch/rnnlm/character_wb/aps_other/
-# rnnlm_path_sub=/n/sd8/inaguma/result/csj/pytorch/rnnlm/character_wb/all/
+# rnnlm_path_sub=/n/sd8/inaguma/result/swbd/pytorch/rnnlm/character/swbd_fisher/
 
-joint_decoding=false
-score_sub_weight=0.3
+resolving_unk=true
+# resolving_unk=false
+a2c_oracle=false
 
-CUDA_VISIBLE_DEVICES=$2 ${PYTHON} ../../../src/bin/visualization/plot_hierarchical_attention_weights.py \
+CUDA_VISIBLE_DEVICES=$2 ${PYTHON} ../../../src/bin/evaluation/eval_hierarchical.py \
   --corpus ${corpus} \
-  --data_type eval1 \
+  --eval_sets eval2000_swbd eval2000_ch \
   --data_save_path ${data} \
   --model_path $1 \
   --epoch -1 \
@@ -48,5 +47,5 @@ CUDA_VISIBLE_DEVICES=$2 ${PYTHON} ../../../src/bin/visualization/plot_hierarchic
   --coverage_penalty_sub ${coverage_penalty_sub} \
   --rnnlm_weight_sub ${rnnlm_weight_sub} \
   --rnnlm_path_sub ${rnnlm_path_sub} \
-  --joint_decoding ${joint_decoding} \
-  --score_sub_weight ${score_sub_weight}
+  --resolving_unk ${resolving_unk}
+  --a2c_oracle ${a2c_oracle}

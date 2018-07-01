@@ -35,22 +35,31 @@ parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
+
+# main task
 parser.add_argument('--beam_width', type=int, default=1,
-                    help='the size of beam in the main task')
-parser.add_argument('--beam_width_sub', type=int, default=1,
-                    help='the size of beam in the sub task')
+                    help='the size of beam of the main task')
 parser.add_argument('--length_penalty', type=float, default=0,
-                    help='length penalty')
+                    help='length penalty of the main task')
 parser.add_argument('--coverage_penalty', type=float, default=0,
-                    help='coverage penalty')
+                    help='coverage penalty of the main task')
 parser.add_argument('--rnnlm_weight', type=float, default=0,
                     help='the weight of RNNLM score of the main task')
+parser.add_argument('--rnnlm_path', default=None, type=str,  nargs='?',
+                    help='path to the RMMLM of the main task')
+
+# sub task
+parser.add_argument('--beam_width_sub', type=int, default=1,
+                    help='the size of beam of the sub task')
+parser.add_argument('--length_penalty_sub', type=float, default=0,
+                    help='length penalty of the sub task')
+parser.add_argument('--coverage_penalty_sub', type=float, default=0,
+                    help='coverage penalty_sub of the sub task')
 parser.add_argument('--rnnlm_weight_sub', type=float, default=0,
                     help='the weight of RNNLM score of the sub task')
-parser.add_argument('--rnnlm_path', default=None, type=str, nargs='?',
-                    help='path to the RMMLM of the main task')
 parser.add_argument('--rnnlm_path_sub', default=None, type=str, nargs='?',
                     help='path to the RMMLM of the sub task')
+
 parser.add_argument('--joint_decoding', type=strtobool, default=False)
 parser.add_argument('--score_sub_weight', type=float, default=0)
 args = parser.parse_args()
@@ -275,8 +284,8 @@ def main():
                 max_decode_len=MAX_DECODE_LEN_CHAR,
                 min_decode_len=MIN_DECODE_LEN_CHAR,
                 min_decode_len_ratio=MIN_DECODE_LEN_RATIO_CHAR,
-                length_penalty=args.length_penalty,
-                coverage_penalty=args.coverage_penalty,
+                length_penalty=args.length_penalty_sub,
+                coverage_penalty=args.coverage_penalty_sub,
                 rnnlm_weight=args.rnnlm_weight_sub,
                 task_index=1)
 

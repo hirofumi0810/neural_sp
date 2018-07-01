@@ -21,6 +21,7 @@ length_penalty_p2w=0
 coverage_penalty_p2w=0
 rnnlm_weight=0.3
 rnnlm_path=
+# rnnlm_path=/n/sd8/inaguma/result/swbd/pytorch/rnnlm/word/swbd_fisher/
 
 CUDA_VISIBLE_DEVICES=$3 ${PYTHON} ../../../src/bin/evaluation/eval_modular.py \
   --corpus ${corpus} \

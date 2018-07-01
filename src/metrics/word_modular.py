@@ -181,8 +181,8 @@ def eval_word(models_a2p, models_p2w, dataset_a2p, dataset_p2w, eval_batch_size,
             if len(str_ref) == 0:
                 continue
 
-            print(str_ref)
-            print(str_hyp)
+            # print(str_ref)
+            # print(str_hyp)
 
             # Compute WER
             wer_b, sub_b, ins_b, del_b = compute_wer(ref=str_ref.split('_'),

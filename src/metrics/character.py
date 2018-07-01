@@ -31,7 +31,6 @@ def eval_char(models, dataset, eval_batch_size, beam_width,
         coverage_penalty (float): coverage penalty
         rnnlm_weight (float): the weight of RNNLM score
         progressbar (bool): if True, visualize the progressbar
-        temperature (int):
     Returns:
         wer (float): Word error rate
         cer (float): Character error rate
@@ -42,6 +41,9 @@ def eval_char(models, dataset, eval_batch_size, beam_width,
 
     model = models[0]
     # TODO: fix this
+
+    if dataset.corpus == 'swbd' and 'eval2000' in dataset.data_type:
+        glm = GLM(dataset.glm_path)
 
     wer, cer = 0, 0
     sub_word, ins_word, del_word = 0, 0, 0
@@ -98,7 +100,6 @@ def eval_char(models, dataset, eval_batch_size, beam_width,
                 # NOTE: @ means <sp> (CSJ), noise (WSJ)
             elif dataset.corpus == 'swbd':
                 if 'eval2000' in dataset.data_type:
-                    glm = GLM(dataset.glm_path)
                     str_ref = normalize_swbd(str_ref, glm)
                     str_hyp = normalize_swbd(str_hyp, glm)
                 else:

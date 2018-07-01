@@ -18,11 +18,9 @@ from src.utils.evaluation.normalization import normalize, normalize_swbd, GLM
 
 def eval_word(models, dataset, eval_batch_size,
               beam_width, max_decode_len, min_decode_len=1, min_decode_len_ratio=0,
+              length_penalty=0, coverage_penalty=0, rnnlm_weight=0,
               beam_width_sub=1, max_decode_len_sub=300, min_decode_len_sub=1, min_decode_len_ratio_sub=0,
-              length_penalty=0, coverage_penalty=0,
-              length_penalty_sub=0, coverage_penalty_sub=0,
-
-              rnnlm_weight=0, rnnlm_weight_sub=0,
+              length_penalty_sub=0, coverage_penalty_sub=0, rnnlm_weight_sub=0,
               progressbar=False, resolving_unk=False, a2c_oracle=False,
               joint_decoding=None, score_sub_weight=0):
     """Evaluate a model by WER.
@@ -30,20 +28,20 @@ def eval_word(models, dataset, eval_batch_size,
         models (list): the models to evaluate
         dataset: An instance of a `Dataset' class
         eval_batch_size (int): the batch size when evaluating the model
-        beam_width (int): the size of beam in ths main task
+        beam_width (int): the size of beam in the main task
         max_decode_len (int): the maximum sequence length of tokens in the main task
         min_decode_len (int): the minimum sequence length of tokens in the main task
         min_decode_len_ratio (float):
-        beam_width_sub (int): the size of beam in ths sub task
+        length_penalty (float): length penalty
+        coverage_penalty (float): coverage penalty
+        rnnlm_weight (float): the weight of RNNLM score of the main task
+        beam_width_sub (int): the size of beam in the sub task
             This is used for the nested attention
         max_decode_len_sub (int): the maximum sequence length of tokens in the sub task
         min_decode_len_sub (int): the minimum sequence length of tokens in the sub task
         min_decode_len_ratio_sub (float):
-        length_penalty (float): length penalty
-        coverage_penalty (float): coverage penalty
         length_penalty_sub (float): length penalty
         coverage_penalty_sub (float): coverage penalty
-        rnnlm_weight (float): the weight of RNNLM score of the main task
         rnnlm_weight_sub (float): the weight of RNNLM score of the sub task
         progressbar (bool): if True, visualize the progressbar
         resolving_unk (bool):
@@ -63,6 +61,9 @@ def eval_word(models, dataset, eval_batch_size,
     if model.model_type == 'hierarchical_attention' and joint_decoding:
         word2char = Word2char(dataset.vocab_file_path,
                               dataset.vocab_file_path_sub)
+
+    if dataset.corpus == 'swbd' and 'eval2000' in dataset.data_type:
+        glm = GLM(dataset.glm_path)
 
     wer = 0
     sub, ins, dele, = 0, 0, 0
@@ -151,15 +152,15 @@ def eval_word(models, dataset, eval_batch_size,
 
             # Resolving UNK
             if resolving_unk and 'OOV' in str_hyp:
-                if not (model.model_type == 'hierarchical_attention' and joint_decoding):
+                if not (model.model_type == 'hierarchical_attention' and joint_decoding) and model.model_type != 'nested_attention':
                     best_hyps_sub, aw_sub, _ = model.decode(
                         batch['xs'][b:b + 1],
-                        beam_width=beam_width,
+                        beam_width=beam_width_sub,
                         max_decode_len=max_decode_len_sub,
                         min_decode_len=min_decode_len_sub,
                         min_decode_len_ratio=min_decode_len_ratio_sub,
-                        length_penalty=length_penalty,
-                        coverage_penalty=coverage_penalty,
+                        length_penalty=length_penalty_sub,
+                        coverage_penalty=coverage_penalty_sub,
                         rnnlm_weight_sub=rnnlm_weight_sub,
                         task_index=1)
 
@@ -175,7 +176,6 @@ def eval_word(models, dataset, eval_batch_size,
                 # NOTE: @ means <sp> (CSJ), noise (WSJ)
             elif dataset.corpus == 'swbd':
                 if 'eval2000' in dataset.data_type:
-                    glm = GLM(dataset.glm_path)
                     str_ref = normalize_swbd(str_ref, glm)
                     str_hyp = normalize_swbd(str_hyp, glm)
                 else:
@@ -189,10 +189,9 @@ def eval_word(models, dataset, eval_batch_size,
                 continue
 
             # Compute WER
-            wer_b, sub_b, ins_b, del_b = compute_wer(
-                ref=str_ref.split('_'),
-                hyp=str_hyp.split('_'),
-                normalize=False)
+            wer_b, sub_b, ins_b, del_b = compute_wer(ref=str_ref.split('_'),
+                                                     hyp=str_hyp.split('_'),
+                                                     normalize=False)
             wer += wer_b
             sub += sub_b
             ins += ins_b

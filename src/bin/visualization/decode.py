@@ -237,8 +237,8 @@ def main():
                 beam_width=args.beam_width,
                 max_decode_len=max_decode_len,
                 min_decode_len=min_decode_len,
-                length_penalty=args.length_penalty,
                 min_decode_len_ratio=min_decode_len_ratio,
+                length_penalty=args.length_penalty,
                 coverage_penalty=args.coverage_penalty,
                 rnnlm_weight=args.rnnlm_weight)
 

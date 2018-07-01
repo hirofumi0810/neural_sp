@@ -10,18 +10,24 @@ if [ $# -ne 2 ]; then
   exit 1
 fi
 
-beam_width=1
-beam_width_sub=4
+# main task
+beam_width=4
 length_penalty=0
 coverage_penalty=0
 rnnlm_weight=0.3
-rnnlm_weight_sub=0.3
 rnnlm_path=
-# rnnlm_path=/n/sd8/inaguma/result/csj/pytorch/rnnlm/word/aps_other/lstm1024H1Lemb128_adam_lr1e-3_drophidden0.2out0.2emb0.2
-# rnnlm_path=/n/sd8/inaguma/result/csj/pytorch/rnnlm/word/all/lstm512H2Lemb128_adam_lr1e-3_drophidden0.2out0.2emb0.2_aps_other
+# rnnlm_path=/n/sd8/inaguma/result/csj/pytorch/rnnlm/word/aps_other/
+# rnnlm_path=/n/sd8/inaguma/result/csj/pytorch/rnnlm/word/all/
+
+# sub task
+beam_width_sub=4
+length_penalty_sub=0
+coverage_penalty_sub=0
+rnnlm_weight_sub=0.3
 rnnlm_path_sub=
-# rnnlm_path_sub=/n/sd8/inaguma/result/csj/pytorch/rnnlm/character_wb/aps_other/lstm1024H1Lemb64_adam_lr1e-3_drophidden0.2out0.2emb0.2
-# rnnlm_path_sub=/n/sd8/inaguma/result/csj/pytorch/rnnlm/character_wb/all/lstm512H2Lemb64_adam_lr1e-3_drophidden0.2out0.2emb0.2_aps_other
+# rnnlm_path_sub=/n/sd8/inaguma/result/csj/pytorch/rnnlm/character_wb/aps_other/
+# rnnlm_path_sub=/n/sd8/inaguma/result/csj/pytorch/rnnlm/character_wb/all/
+
 a2c_oracle=false
 
 CUDA_VISIBLE_DEVICES=$2 ${PYTHON} ../../../src/bin/visualization/plot_nested_attention_weights.py \
@@ -32,11 +38,13 @@ CUDA_VISIBLE_DEVICES=$2 ${PYTHON} ../../../src/bin/visualization/plot_nested_att
   --epoch -1 \
   --eval_batch_size 1 \
   --beam_width ${beam_width} \
-  --beam_width_sub ${beam_width_sub} \
   --length_penalty ${length_penalty} \
   --coverage_penalty ${coverage_penalty} \
   --rnnlm_weight ${rnnlm_weight} \
   --rnnlm_path ${rnnlm_path} \
+  --beam_width_sub ${beam_width_sub} \
+  --length_penalty_sub ${length_penalty_sub} \
+  --coverage_penalty_sub ${coverage_penalty_sub} \
   --rnnlm_weight_sub ${rnnlm_weight_sub} \
   --rnnlm_path_sub ${rnnlm_path_sub} \
   --a2c_oracle ${a2c_oracle}

@@ -16,16 +16,16 @@ coverage_penalty=0
 rnnlm_weight=0.3
 rnnlm_path=
 # word
-# rnnlm_path=/n/sd8/inaguma/result/csj/pytorch/rnnlm/word/aps_other/lstm512H2Lemb128_adam_lr1e-3_drophidden0.2out0.2emb0.2
-# rnnlm_path=/n/sd8/inaguma/result/csj/pytorch/rnnlm/word/all/lstm512H2Lemb128_adam_lr1e-3_drophidden0.2out0.2emb0.2_aps_other
+# rnnlm_path=/n/sd8/inaguma/result/csj/pytorch/rnnlm/word/aps_other/
+# rnnlm_path=/n/sd8/inaguma/result/csj/pytorch/rnnlm/word/all/
 
 # char
-# rnnlm_path=/n/sd8/inaguma/result/csj/pytorch/rnnlm/character_wb/aps_other/lstm512H2Lemb64_adam_lr1e-3_drophidden0.2out0.2emb0.2
-# rnnlm_path=/n/sd8/inaguma/result/csj/pytorch/rnnlm/character_wb/all/lstm512H2Lemb64_adam_lr1e-3_drophidden0.2out0.2emb0.2_aps_other
+# rnnlm_path_sub=/n/sd8/inaguma/result/csj/pytorch/rnnlm/character_wb/aps_other/
+# rnnlm_path_sub=/n/sd8/inaguma/result/csj/pytorch/rnnlm/character_wb/all/
 
 CUDA_VISIBLE_DEVICES=$2 ${PYTHON} ../../../src/bin/visualization/plot_attention_weights.py \
   --corpus ${corpus} \
-  --data_type eval1 \
+  --data_type dev \
   --data_save_path ${data} \
   --model_path $1 \
   --epoch -1 \

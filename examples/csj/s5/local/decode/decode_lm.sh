@@ -10,10 +10,14 @@ if [ $# -ne 2 ]; then
   exit 1
 fi
 
+stdout=true
+# stdout=false
+
 CUDA_VISIBLE_DEVICES=$2 ${PYTHON} ../../../src/bin/visualization/decode_lm.py \
   --corpus ${corpus} \
   --data_type eval1 \
   --data_save_path ${data} \
   --model_path $1 \
   --epoch -1 \
-  --eval_batch_size 1
+  --eval_batch_size 1 \
+  --stdout ${stdout}
