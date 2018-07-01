@@ -11,7 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 from os.path import basename, isfile, join
-import numpy as np
 import pandas as pd
 import codecs
 import logging
@@ -26,7 +25,7 @@ from src.utils.directory import mkdir_join
 
 class Dataset(Base):
 
-    def __init__(self, corpus, data_save_path,
+    def __init__(self, corpus, data_save_path, model_type,
                  data_size, data_type, label_type,
                  batch_size, max_epoch=None,
                  shuffle=False, sort_utt=False, reverse=False,
@@ -34,7 +33,9 @@ class Dataset(Base):
                  num_enque=None, dynamic_batching=False, vocab=False):
         """A class for loading dataset.
         Args:
+            corpus (string): the name of corpus
             data_save_path (string): path to saved data
+            model_type (string):
             data_size (string):
             data_type (string):
             label_type (string):
@@ -53,6 +54,7 @@ class Dataset(Base):
             vocab (bool or string):
         """
         self.corpus = corpus
+        self.model_type = model_type
         self.data_type = data_type
         self.data_size = data_size
         self.label_type = label_type
@@ -171,21 +173,20 @@ class Dataset(Base):
                 ys (list): target labels in the main task of size `[B, L]`
                 input_names (list): file names of input data of size `[B]`
         """
-        # Load dataset in mini-batch
-        transcripts = np.array(self.df['transcript'][data_indices])
-
         if self.is_test:
             ys = [self.df['transcript'][data_indices[b]]
                   for b in range(len(data_indices))]
             # NOTE: transcript is not tokenized
         else:
-            ys = [list(map(int, transcripts[b].split(' ')))
-                  for b in range(len(data_indices))]
+            ys = [list(map(int, self.df['transcript'][i].split(' ')))
+                  for i in data_indices]
 
         # TODO: fix later
-        # input_names = list(
-        #     map(lambda path: basename(path).split('.')[0],
-        #         self.df['input_path'][data_indices]))
-        input_names = self.df.index.values.tolist()
+        try:
+            input_names = list(
+                map(lambda path: basename(path).split('.')[0],
+                    self.df['input_path'][data_indices]))
+        except:
+            input_names = self.df.index.values.tolist()
 
         return {'ys': ys, 'input_names': input_names}

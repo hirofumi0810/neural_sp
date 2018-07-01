@@ -25,7 +25,7 @@ from src.utils.io.labels.phone import Idx2phone, Phone2idx
 
 class Dataset(Base):
 
-    def __init__(self, corpus, data_save_path,
+    def __init__(self, corpus, data_save_path, model_type,
                  input_freq, use_delta, use_double_delta,
                  data_size, data_type, label_type, label_type_sub,
                  batch_size, max_epoch=None,
@@ -37,7 +37,9 @@ class Dataset(Base):
                  use_ctc_sub=False, subsampling_factor_sub=1):
         """A class for loading dataset.
         Args:
+            corpus (string): the name of corpus
             data_save_path (string): path to saved data
+            model_type (string):
             input_freq (int): the number of dimensions of acoustics
             use_delta (bool): if True, use the delta feature
             use_double_delta (bool): if True, use the acceleration feature
@@ -65,6 +67,7 @@ class Dataset(Base):
             subsampling_factor_sub (int):
         """
         self.corpus = corpus
+        self.model_type = model_type
         self.input_freq = input_freq
         self.use_delta = use_delta
         self.use_double_delta = use_double_delta
@@ -220,19 +223,10 @@ class Dataset(Base):
                 xs (list): input data of size `[B, T, input_size]`
                 ys (list): target labels in the main task of size `[B, L]`
                 ys_sub (list): target labels in the sub task of size `[B, L_sub]`
-                x_lens (list): lengths of inputs of of size `[B]`
-                y_lens (list): lengths of target labels in the main task of size `[B]`
-                y_lens_sub (list): lengths of target labels in the sub task of size `[B]`
                 input_names (list): file names of input data of size `[B]`
         """
-        # Load dataset in mini-batch
-        feat_paths = np.array(self.df['input_path'][data_indices])
-        transcripts = np.array(self.df['transcript'][data_indices])
-        transcripts_sub = np.array(self.df_sub['transcript'][data_indices])
-
-        # Load features in parallel
-        # feats = make_parallel(load_feat, feat_paths, core=4)
-        feats = [load_feat(p) for p in feat_paths]
+        # features
+        feats = [load_feat(self.df['input_path'][i]) for i in data_indices]
 
         if (not self.use_delta) and (not self.use_double_delta):
             xs = [feat[:, :self.input_freq] for feat in feats]
@@ -265,16 +259,14 @@ class Dataset(Base):
 
         # transcript
         if self.is_test:
-            ys = [self.df['transcript'][data_indices[b]]
-                  for b in range(len(xs))]
-            ys_sub = [self.df_sub['transcript'][data_indices[b]]
-                      for b in range(len(xs))]
+            ys = [self.df['transcript'][i] for i in data_indices]
+            ys_sub = [self.df_sub['transcript'][i] for i in data_indices]
             # NOTE: transcript is not tokenized
         else:
-            ys = [list(map(int, transcripts[b].split(' ')))
-                  for b in range(len(xs))]
-            ys_sub = [list(map(int, transcripts_sub[b].split(' ')))
-                      for b in range(len(xs))]
+            ys = [list(map(int, self.df['transcript'][i].split(' ')))
+                  for i in data_indices]
+            ys_sub = [list(map(int, self.df_sub['transcript'][i].split(' ')))
+                      for i in data_indices]
 
         input_names = list(
             map(lambda path: basename(path).split('.')[0],

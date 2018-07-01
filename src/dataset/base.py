@@ -225,6 +225,13 @@ class Base(object):
         if self.corpus == 'timit':
             if min_frame_num_batch < 700:
                 batch_size = int(batch_size / 2)
+        elif self.model_type in ['nested_attention', 'hierarchical_attention']:
+            if min_frame_num_batch <= 800:
+                pass
+            elif min_frame_num_batch <= 1400:
+                batch_size = int(batch_size / 2)
+            else:
+                batch_size = int(batch_size / 4)
         else:
             if min_frame_num_batch <= 800:
                 pass

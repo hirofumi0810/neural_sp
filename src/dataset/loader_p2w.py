@@ -11,7 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 from os.path import basename, isfile, join
-import numpy as np
 import pandas as pd
 import codecs
 import logging
@@ -27,7 +26,7 @@ from src.utils.directory import mkdir_join
 
 class Dataset(Base):
 
-    def __init__(self, corpus, data_save_path,
+    def __init__(self, corpus, data_save_path, model_type,
                  data_size, data_type, label_type_in, label_type,
                  batch_size, max_epoch=None,
                  max_frame_num=2000, min_frame_num=40,
@@ -37,7 +36,9 @@ class Dataset(Base):
                  use_ctc=False, subsampling_factor=1):
         """A class for loading dataset.
         Args:
+            corpus (string): the name of corpus
             data_save_path (string): path to saved data
+            model_type (string):
             data_size (string):
             data_type (string):
             label_type_in (string):
@@ -61,6 +62,7 @@ class Dataset(Base):
             subsampling_factor (int):
         """
         self.corpus = corpus
+        self.model_type = model_type
         self.data_type = data_type
         self.data_size = data_size
         self.label_type_in = label_type_in
@@ -87,27 +89,21 @@ class Dataset(Base):
             if data_type == 'train':
                 data_type += '_' + data_size
 
+        self.vocab_file_path_in = join(
+            data_save_path, 'vocab', data_size, label_type_in + '.txt')
         if vocab and data_size != '' and data_size != vocab:
-            self.vocab_file_path_in = join(
-                data_save_path, 'vocab', vocab, label_type_in + '.txt')
             self.vocab_file_path = join(
                 data_save_path, 'vocab', vocab, label_type + '.txt')
             vocab_file_path_org = join(
-                data_save_path, 'vocab', data_size, label_type_in + '.txt')
+                data_save_path, 'vocab', data_size, label_type + '.txt')
         else:
-            self.vocab_file_path_in = join(
-                data_save_path, 'vocab', data_size, label_type_in + '.txt')
             self.vocab_file_path = join(
                 data_save_path, 'vocab', data_size, label_type + '.txt')
 
-        if 'phone' in label_type_in:
-            self.idx2phone = Idx2phone(self.vocab_file_path_in)
-            self.phone2idx = Phone2idx(self.vocab_file_path_in)
-        elif 'character' in label_type_in:
-            self.idx2char = Idx2char(self.vocab_file_path_in)
-            self.char2idx = Char2idx(self.vocab_file_path_in)
-        else:
-            raise ValueError(label_type_in)
+        self.idx2phone = Idx2phone(self.vocab_file_path_in)
+        self.phone2idx = Phone2idx(self.vocab_file_path_in)
+        assert 'phone' in label_type_in
+
         if label_type == 'word':
             self.idx2word = Idx2word(self.vocab_file_path)
             self.word2idx = Word2idx(self.vocab_file_path)
@@ -123,7 +119,7 @@ class Dataset(Base):
         # Load dataset file
         if vocab and data_size != '' and data_size != vocab and not self.is_test:
             dataset_path_in = mkdir_join(
-                data_save_path, 'dataset', tool, data_size + '_' + vocab, data_type, label_type_in + '.csv')
+                data_save_path, 'dataset', tool, data_size, data_type, label_type_in + '.csv')
             dataset_path = mkdir_join(
                 data_save_path, 'dataset', tool, data_size + '_' + vocab, data_type, label_type + '.csv')
 
@@ -169,8 +165,7 @@ class Dataset(Base):
                 df_in = pd.read_csv(dataset_path_in, encoding='utf-8')
                 df_in = df_in.loc[:, ['frame_num', 'input_path', 'transcript']]
                 df = pd.read_csv(dataset_path, encoding='utf-8')
-                df = df_in.loc[:, [
-                    'frame_num', 'input_path', 'transcript']]
+                df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
         else:
             dataset_path_in = join(
                 data_save_path, 'dataset', tool, data_size, data_type, label_type_in + '.csv')
@@ -189,21 +184,22 @@ class Dataset(Base):
             utt_num_orig = len(df)
 
             # For Switchboard
-            if corpus == 'swbd' and 'train' in data_type:
+            if corpus == 'swbd' and data_size == 'swbd':
                 df_in = df_in[df_in.apply(lambda x: not(len(x['transcript'].split(' '))
-                                                        <= 3 and x['frame_num'] >= 1000), axis=1)]
+                                                        <= 24 and x['frame_num'] >= 1000), axis=1)]
                 df = df[df.apply(lambda x: not(len(x['transcript'].split(' '))
                                                <= 24 and x['frame_num'] >= 1000), axis=1)]
 
             # Remove by threshold
-            df_in = df_in[df_in.apply(
-                lambda x: min_frame_num <= x['frame_num'] <= max_frame_num, axis=1)]
-            df = df[df.apply(
-                lambda x: min_frame_num <= x['frame_num'] <= max_frame_num, axis=1)]
-            print('Removed utterance num (threshold, input): %d' %
-                  (utt_num_orig_in - len(df_in)))
-            print('Removed utterance num (threshold, output): %d' %
-                  (utt_num_orig - len(df)))
+            if corpus != 'swbd' or (corpus == 'swbd' and data_size == 'swbd'):
+                df_in = df_in[df_in.apply(
+                    lambda x: min_frame_num <= x['frame_num'] <= max_frame_num, axis=1)]
+                df = df[df.apply(
+                    lambda x: min_frame_num <= x['frame_num'] <= max_frame_num, axis=1)]
+                print('Removed utterance num (threshold, input): %d' %
+                      (utt_num_orig_in - len(df_in)))
+                print('Removed utterance num (threshold, output): %d' %
+                      (utt_num_orig - len(df)))
 
             # Remove for CTC loss calculatioon
             if subsampling_factor > 1:
@@ -249,10 +245,6 @@ class Dataset(Base):
                 ys (list): target labels of size `[B, L]`
                 input_names (list): file names of input data of size `[B]`
         """
-        # Load dataset in mini-batch
-        transcripts_in = np.array(self.df_in['transcript'][data_indices])
-        transcripts_out = np.array(self.df['transcript'][data_indices])
-
         if self.is_test:
             xs = [self.df_in['transcript'][data_indices[b]]
                   for b in range(len(data_indices))]
@@ -260,10 +252,10 @@ class Dataset(Base):
                   for b in range(len(data_indices))]
             # NOTE: transcript is not tokenized
         else:
-            xs = [list(map(int, transcripts_in[b].split(' ')))
-                  for b in range(len(data_indices))]
-            ys = [list(map(int, transcripts_out[b].split(' ')))
-                  for b in range(len(data_indices))]
+            xs = [list(map(int, self.df_in['transcript'][i].split(' ')))
+                  for i in data_indices]
+            ys = [list(map(int, self.df['transcript'][i].split(' ')))
+                  for i in data_indices]
 
         # TODO: fix later
         try:

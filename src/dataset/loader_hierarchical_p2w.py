@@ -11,7 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 from os.path import basename, isfile, join
-import numpy as np
 import pandas as pd
 import codecs
 import logging
@@ -27,7 +26,7 @@ from src.utils.directory import mkdir_join
 
 class Dataset(Base):
 
-    def __init__(self, corpus, data_save_path,
+    def __init__(self, corpus, data_save_path, model_type,
                  data_size, data_type, label_type_in, label_type, label_type_sub,
                  batch_size, max_epoch=None,
                  max_frame_num=2000, min_frame_num=40,
@@ -38,7 +37,9 @@ class Dataset(Base):
                  use_ctc_sub=False, subsampling_factor_sub=1):
         """A class for loading dataset.
         Args:
+            corpus (string): the name of corpus
             data_save_path (string): path to saved data
+            model_type (string):
             data_size (string):
             data_type (string):
             label_type_in (string):
@@ -65,6 +66,7 @@ class Dataset(Base):
             subsampling_factor_sub (int):
         """
         self.corpus = corpus
+        self.model_type = model_type
         self.data_type = data_type
         self.data_size = data_size
         self.label_type_in = label_type_in
@@ -92,31 +94,24 @@ class Dataset(Base):
             if data_type == 'train':
                 data_type += '_' + data_size
 
+        self.vocab_file_path_in = join(
+            data_save_path, 'vocab', data_size, label_type_in + '.txt')
         if vocab and data_size != '' and data_size != vocab:
-            self.vocab_file_path_in = join(
-                data_save_path, 'vocab', vocab, label_type_in + '.txt')
             self.vocab_file_path = join(
                 data_save_path, 'vocab', vocab, label_type + '.txt')
             self.vocab_file_path_sub = join(
                 data_save_path, 'vocab', vocab, label_type_sub + '.txt')
             vocab_file_path_org = join(
-                data_save_path, 'vocab', data_size, label_type_in + '.txt')
+                data_save_path, 'vocab', data_size, label_type + '.txt')
         else:
-            self.vocab_file_path_in = join(
-                data_save_path, 'vocab', data_size, label_type_in + '.txt')
             self.vocab_file_path = join(
                 data_save_path, 'vocab', data_size, label_type + '.txt')
             self.vocab_file_path_sub = join(
                 data_save_path, 'vocab', data_size, label_type_sub + '.txt')
 
-        if 'phone' in label_type_in:
-            self.idx2phone = Idx2phone(self.vocab_file_path_in)
-            self.phone2idx = Phone2idx(self.vocab_file_path_in)
-        elif 'character' in label_type_in:
-            self.idx2char = Idx2char(self.vocab_file_path_in)
-            self.char2idx = Char2idx(self.vocab_file_path_in)
-        else:
-            raise ValueError(label_type_in)
+        self.idx2phone = Idx2phone(self.vocab_file_path_in)
+        self.phone2idx = Phone2idx(self.vocab_file_path_in)
+        assert 'phone' in label_type_in
 
         # main task
         if label_type == 'word':
@@ -145,7 +140,7 @@ class Dataset(Base):
         # Load dataset file
         if vocab and data_size != '' and data_size != vocab and not self.is_test:
             dataset_path_in = mkdir_join(
-                data_save_path, 'dataset', tool, data_size + '_' + vocab, data_type, label_type_in + '.csv')
+                data_save_path, 'dataset', tool, data_size, data_type, label_type_in + '.csv')
             dataset_path = mkdir_join(
                 data_save_path, 'dataset', tool, data_size + '_' + vocab, data_type, label_type + '.csv')
             dataset_path_sub = mkdir_join(
@@ -193,8 +188,7 @@ class Dataset(Base):
                 df_in = pd.read_csv(dataset_path_in, encoding='utf-8')
                 df_in = df_in.loc[:, ['frame_num', 'input_path', 'transcript']]
                 df = pd.read_csv(dataset_path, encoding='utf-8')
-                df = df_in.loc[:, [
-                    'frame_num', 'input_path', 'transcript']]
+                df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
 
             if not isfile(dataset_path_sub):
                 raise NotImplementedError
@@ -301,11 +295,6 @@ class Dataset(Base):
                 ys_sub (list): target labels in the sub task of size `[B, L_sub]`
                 input_names (list): file names of input data of size `[B]`
         """
-        # Load dataset in mini-batch
-        transcripts_in = np.array(self.df_in['transcript'][data_indices])
-        transcripts_out = np.array(self.df['transcript'][data_indices])
-        transcripts_out_sub = np.array(self.df_sub['transcript'][data_indices])
-
         if self.is_test:
             xs = [self.df_in['transcript'][data_indices[b]]
                   for b in range(len(data_indices))]
@@ -315,12 +304,12 @@ class Dataset(Base):
                       for b in range(len(data_indices))]
             # NOTE: transcript is not tokenized
         else:
-            xs = [list(map(int, transcripts_in[b].split(' ')))
-                  for b in range(len(data_indices))]
-            ys = [list(map(int, transcripts_out[b].split(' ')))
-                  for b in range(len(data_indices))]
-            ys_sub = [list(map(int, transcripts_out_sub[b].split(' ')))
-                      for b in range(len(data_indices))]
+            xs = [list(map(int, self.df_in['transcript'][i].split(' ')))
+                  for i in data_indices]
+            ys = [list(map(int, self.df['transcript'][i].split(' ')))
+                  for i in data_indices]
+            ys_sub = [list(map(int, self.df_sub['transcript'][i].split(' ')))
+                      for i in data_indices]
 
         # TODO: fix later
         try:
