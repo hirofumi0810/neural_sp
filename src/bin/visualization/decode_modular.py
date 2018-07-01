@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Generate texts by the ASR model on the modular training."""
+"""Generate texts by the A2P + P2W model on the modular training."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -27,22 +27,30 @@ parser.add_argument('--data_type', type=str,
                     help='the type of data (ex. train, dev etc.)')
 parser.add_argument('--data_save_path', type=str,
                     help='path to saved data')
-parser.add_argument('--model_path_a2p', type=str,
-                    help='path to the model to evaluate (A2P)')
-parser.add_argument('--model_path_p2w', type=str,
-                    help='path to the model to evaluate (P2W)')
-parser.add_argument('--epoch', type=int, default=-1,
-                    help='the epoch to restore')
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
+
+parser.add_argument('--model_path_a2p', type=str,
+                    help='path to the model to evaluate (A2P)')
+parser.add_argument('--epoch_a2p', type=int, default=-1,
+                    help='the epoch to restore (A2P)')
 parser.add_argument('--beam_width_a2p', type=int, default=1,
                     help='the size of beam (A2P)')
+parser.add_argument('--length_penalty_a2p', type=float, default=0,
+                    help='length penalty (A2P)')
+parser.add_argument('--coverage_penalty_a2p', type=float, default=0,
+                    help='coverage penalty (A2P)')
+
+parser.add_argument('--model_path_p2w', type=str,
+                    help='path to the model to evaluate (P2W)')
+parser.add_argument('--epoch_p2w', type=int, default=-1,
+                    help='the epoch to restore (P2W)')
 parser.add_argument('--beam_width_p2w', type=int, default=1,
                     help='the size of beam (P2W)')
-parser.add_argument('--length_penalty', type=float, default=0,
-                    help='length penalty')
-parser.add_argument('--coverage_penalty', type=float, default=0,
-                    help='coverage penalty')
+parser.add_argument('--length_penalty_p2w', type=float, default=0,
+                    help='length penalty (P2w)')
+parser.add_argument('--coverage_penalty_p2w', type=float, default=0,
+                    help='coverage penalty (P2w)')
 parser.add_argument('--rnnlm_weight', type=float, default=0,
                     help='the weight of RNNLM score')
 parser.add_argument('--rnnlm_path', default=None, type=str, nargs='?',
@@ -120,7 +128,7 @@ else:
 
 def main():
 
-    # Load a ASR config file
+    # Load a A2P + P2W config file
     config_a2p = load_config(
         join(args.model_path_a2p, 'config.yml'), is_eval=True)
     config_p2w = load_config(
@@ -130,7 +138,7 @@ def main():
     dataset_a2p = Dataset_a2p(
         corpus=args.corpus,
         data_save_path=args.data_save_path,
-        model_type=config['model_type'],
+        model_type=config_a2p['model_type'],
         input_freq=config_a2p['input_freq'],
         use_delta=config_a2p['use_delta'],
         use_double_delta=config_a2p['use_double_delta'],
@@ -144,7 +152,7 @@ def main():
     dataset_p2w = Dataset_p2w(
         corpus=args.corpus,
         data_save_path=args.data_save_path,
-        model_type=config['model_type'],
+        model_type=config_p2w['model_type'],
         data_type=args.data_type,
         data_size=config_p2w['data_size'],
         label_type_in=config_p2w['label_type_in'],
@@ -163,7 +171,7 @@ def main():
     if args.corpus == 'swbd':
         dataset_p2w.glm_path = join(args.data_save_path, 'eval2000', 'glm')
 
-    # Load the ASR model
+    # Load the A2P + P2W model
     model_a2p = load(model_type=config_a2p['model_type'],
                      config=config_a2p,
                      backend=config_a2p['backend'])
@@ -172,8 +180,10 @@ def main():
                      backend=config_p2w['backend'])
 
     # Restore the saved parameters
-    model_a2p.load_checkpoint(save_path=args.model_path_a2p, epoch=args.epoch)
-    model_p2w.load_checkpoint(save_path=args.model_path_p2w, epoch=args.epoch)
+    model_a2p.load_checkpoint(
+        save_path=args.model_path_a2p, epoch=args.epoch_a2p)
+    model_p2w.load_checkpoint(
+        save_path=args.model_path_p2w, epoch=args.epoch_p2w)
 
     # For shallow fusion
     if args.rnnlm_path is not None and args.rnnlm_weight > 0:
@@ -219,14 +229,15 @@ def main():
             beam_width=args.beam_width_a2p,
             max_decode_len=MAX_DECODE_LEN_PHONE,
             min_decode_len=MIN_DECODE_LEN_PHONE,
-            length_penalty=args.length_penalty,
             min_decode_len_ratio=MIN_DECODE_LEN_RATIO_PHONE,
-            coverage_penalty=args.coverage_penalty,
-            rnnlm_weight=args.rnnlm_weight)
+            length_penalty=args.length_penalty_a2p,
+            coverage_penalty=args.coverage_penalty_a2p)
 
         if len(best_hyps_a2p[0]) // 2 ** sum(config_a2p['subsample_list']) < 1:
             print('skip')
             continue
+
+        ys = [batch_p2w['ys'][i] for i in perm_idx]
 
         # Decode (P2W)
         best_hyps_p2w, _, perm_idx = model_p2w.decode(
@@ -234,9 +245,9 @@ def main():
             beam_width=args.beam_width_p2w,
             max_decode_len=max_decode_len_p2w,
             min_decode_len=min_decode_len_p2w,
-            length_penalty=args.length_penalty,
             min_decode_len_ratio=min_decode_len_ratio_p2w,
-            coverage_penalty=args.coverage_penalty,
+            length_penalty=args.length_penalty_p2w,
+            coverage_penalty=args.coverage_penalty_p2w,
             rnnlm_weight=args.rnnlm_weight)
 
         ys = [batch_p2w['ys'][i] for i in perm_idx]
