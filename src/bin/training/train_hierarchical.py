@@ -25,6 +25,7 @@ from src.models.load_model import load
 from src.models.pytorch_v3.data_parallel import CustomDataParallel
 from src.dataset.loader_hierarchical import Dataset as Dataset_asr
 from src.dataset.loader_hierarchical_p2w import Dataset as Dataset_p2w
+from src.metrics.phone import eval_phone
 from src.metrics.character import eval_char
 from src.metrics.word import eval_word
 from src.bin.training.utils.learning_rate_controller import Controller
@@ -97,6 +98,7 @@ def main():
         train_set = Dataset_asr(
             corpus=args.corpus,
             data_save_path=args.data_save_path,
+            model_type=config['model_type'],
             input_freq=config['input_freq'],
             use_delta=config['use_delta'],
             use_double_delta=config['use_double_delta'],
@@ -118,6 +120,7 @@ def main():
         dev_set = Dataset_asr(
             corpus=args.corpus,
             data_save_path=args.data_save_path,
+            model_type=config['model_type'],
             input_freq=config['input_freq'],
             use_delta=config['use_delta'],
             use_double_delta=config['use_double_delta'],
@@ -137,6 +140,7 @@ def main():
             eval_sets += [Dataset_asr(
                 corpus=args.corpus,
                 data_save_path=args.data_save_path,
+                model_type=config['model_type'],
                 input_freq=config['input_freq'],
                 use_delta=config['use_delta'],
                 use_double_delta=config['use_double_delta'],
@@ -149,6 +153,7 @@ def main():
         train_set = Dataset_p2w(
             corpus=args.corpus,
             data_save_path=args.data_save_path,
+            model_type=config['model_type'],
             data_type=args.train_set,
             data_size=config['data_size'],
             label_type_in=config['label_type_in'],
@@ -169,6 +174,7 @@ def main():
         dev_set = Dataset_p2w(
             corpus=args.corpus,
             data_save_path=args.data_save_path,
+            model_type=config['model_type'],
             data_type=args.dev_set,
             data_size=config['data_size'],
             label_type_in=config['label_type_in'],
@@ -187,6 +193,7 @@ def main():
             eval_sets += [Dataset_p2w(
                 corpus=args.corpus,
                 data_save_path=args.data_save_path,
+                model_type=config['model_type'],
                 data_type=data_type,
                 data_size=config['data_size'],
                 label_type_in=config['label_type_in'],
@@ -309,7 +316,7 @@ def main():
         best_value=metric_dev_best)
 
     # Set reporter
-    reporter = Reporter(model.save_path, max_loss=500)
+    reporter = Reporter(model.module.save_path, max_loss=500)
 
     # Set the updater
     updater = Updater(config['clip_grad_norm'], config['backend'])
@@ -424,6 +431,8 @@ def main():
                             max_decode_len_sub=MAX_DECODE_LEN_PHONE)
                         logger.info('  WER / CER (%s): %.3f / %.3f %%' %
                                     (dev_set.data_type, wer_dev, metric_dev))
+                    else:
+                        raise ValueError(config['label_type'])
                 else:
                     if 'character' in config['label_type_sub']:
                         wer_dev_sub, metric_dev, _ = eval_char(
@@ -434,7 +443,7 @@ def main():
                             max_decode_len=MAX_DECODE_LEN_CHAR)
                         logger.info('  WER / CER (%s, sub): %.3f / %.3f %%' %
                                     (dev_set.data_type, wer_dev_sub, metric_dev))
-                    else 'phone' in config['label_type_sub']:
+                    elif 'phone' in config['label_type_sub']:
                         metric_dev, _ = eval_phone(
                             model=[model.module],
                             dataset=dev_set,
@@ -443,6 +452,8 @@ def main():
                             max_decode_len=MAX_DECODE_LEN_PHONE)
                         logger.info('  PER (%s): %.3f %%' %
                                     (dev_set.data_type, metric_dev))
+                    else:
+                        raise ValueError(config['label_type_sub'])
 
                 if metric_dev < metric_dev_best:
                     metric_dev_best = metric_dev
@@ -492,7 +503,7 @@ def main():
                                     max_decode_len=MAX_DECODE_LEN_CHAR)
                                 logger.info('  WER / CER (%s, sub): %.3f / %.3f %%' %
                                             (eval_set.data_type, wer_test_sub, cer_test_sub))
-                            else 'phone' in config['label_type_sub']:
+                            elif 'phone' in config['label_type_sub']:
                                 per_test, _ = eval_phone(
                                     models=[model.module],
                                     dataset=eval_set,
@@ -518,12 +529,12 @@ def main():
                 if not_improved_epoch == config['not_improved_patient_epoch']:
                     break
 
-                if epoch == config['convert_to_sgd_epoch']:
-                    # For nested attention
-                    if 'fix_second_decoder' in config.keys() and config['fix_second_decoder'] and model.module.model_type == 'nested_attention':
-                        logger.info('========== Fix second decoder ==========')
-                        model.module.fix_second_decoder()
+                # For nested attention
+                if model.module.model_type == 'nested_attention' and epoch == config['fix_second_decoder']:
+                    logger.info('========== Fix second decoder ==========')
+                    model.module.fix_second_decoder()
 
+                if epoch == config['convert_to_sgd_epoch']:
                     # Convert to fine-tuning stage
                     model.module.set_optimizer(
                         'sgd',

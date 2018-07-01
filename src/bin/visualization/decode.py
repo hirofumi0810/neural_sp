@@ -124,6 +124,7 @@ def main():
         dataset = Dataset_asr(
             corpus=args.corpus,
             data_save_path=args.data_save_path,
+            model_type=config['model_type'],
             input_freq=config['input_freq'],
             use_delta=config['use_delta'],
             use_double_delta=config['use_double_delta'],
@@ -137,6 +138,7 @@ def main():
         dataset = Dataset_p2w(
             corpus=args.corpus,
             data_save_path=args.data_save_path,
+            model_type=config['model_type'],
             data_type=args.data_type,
             data_size=config['data_size'],
             label_type_in=config['label_type_in'],

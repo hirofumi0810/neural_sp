@@ -130,6 +130,7 @@ def main():
     dataset_a2p = Dataset_a2p(
         corpus=args.corpus,
         data_save_path=args.data_save_path,
+        model_type=config['model_type'],
         input_freq=config_a2p['input_freq'],
         use_delta=config_a2p['use_delta'],
         use_double_delta=config_a2p['use_double_delta'],
@@ -143,6 +144,7 @@ def main():
     dataset_p2w = Dataset_p2w(
         corpus=args.corpus,
         data_save_path=args.data_save_path,
+        model_type=config['model_type'],
         data_type=args.data_type,
         data_size=config_p2w['data_size'],
         label_type_in=config_p2w['label_type_in'],
@@ -150,9 +152,9 @@ def main():
         batch_size=args.eval_batch_size,
         sort_utt=False, reverse=False, tool=config_p2w['tool'],
         vocab=config_p2w['vocab'],
-        use_ctc=config['model_type'] == 'ctc' or (
-            config['model_type'] == 'attention' and config['ctc_loss_weight'] > 0),
-        subsampling_factor=2 ** sum(config['subsample_list']))
+        use_ctc=config_p2w['model_type'] == 'ctc' or (
+            config_p2w['model_type'] == 'attention' and config_p2w['ctc_loss_weight'] > 0),
+        subsampling_factor=2 ** sum(config_p2w['subsample_list']))
     config_p2w['num_classes_input'] = dataset_p2w.num_classes_in
     config_p2w['num_classes'] = dataset_p2w.num_classes
     config_p2w['num_classes_sub'] = dataset_p2w.num_classes
@@ -199,19 +201,6 @@ def main():
     if not args.stdout:
         sys.stdout = open(join(args.model_path_p2w, 'decode.txt'), 'w')
 
-    if 'phone' in dataset_a2p.label_type:
-        map_fn_a2p = dataset_a2p.idx2phone
-        max_decode_len_a2p = MAX_DECODE_LEN_PHONE
-        min_decode_len_a2p = MIN_DECODE_LEN_PHONE
-        min_decode_len_ratio_a2p = MIN_DECODE_LEN_RATIO_PHONE
-    elif 'character' in dataset_a2p.label_type:
-        map_fn_a2p = dataset_a2p.idx2char
-        max_decode_len_a2p = MAX_DECODE_LEN_CHAR
-        min_decode_len_a2p = MIN_DECODE_LEN_CHAR
-        min_decode_len_ratio_a2p = MIN_DECODE_LEN_RATIO_CHAR
-    else:
-        raise ValueError(dataset_a2p.label_type)
-
     if dataset_p2w.label_type == 'word':
         map_fn_p2w = dataset_p2w.idx2word
         max_decode_len_p2w = MAX_DECODE_LEN_WORD
@@ -228,14 +217,15 @@ def main():
         best_hyps_a2p, _, perm_idx = model_a2p.decode(
             batch_a2p['xs'],
             beam_width=args.beam_width_a2p,
-            max_decode_len=max_decode_len_a2p,
-            min_decode_len=min_decode_len_a2p,
+            max_decode_len=MAX_DECODE_LEN_PHONE,
+            min_decode_len=MIN_DECODE_LEN_PHONE,
             length_penalty=args.length_penalty,
-            min_decode_len_ratio=min_decode_len_ratio_a2p,
+            min_decode_len_ratio=MIN_DECODE_LEN_RATIO_PHONE,
             coverage_penalty=args.coverage_penalty,
             rnnlm_weight=args.rnnlm_weight)
 
-        if len(best_hyps_a2p[0]) < 1:
+        if len(best_hyps_a2p[0]) // 2 ** sum(config_a2p['subsample_list']) < 1:
+            print('skip')
             continue
 
         # Decode (P2W)
@@ -254,48 +244,37 @@ def main():
         for b in range(len(batch_p2w['xs'])):
             # Reference
             if dataset_p2w.is_test:
-                str_ref = ys[b]
+                str_ref_p2w = ys[b]
                 # NOTE: transcript is seperated by space('_')
             else:
-                str_ref = map_fn_p2w(ys[b])
+                str_ref_p2w = map_fn_p2w(ys[b])
 
             # Hypothesis
-            str_hyp = map_fn_p2w(best_hyps_p2w[b])
+            str_hyp_a2p = dataset_a2p.idx2phone(best_hyps_a2p[b])
+            str_hyp_p2w = map_fn_p2w(best_hyps_p2w[b])
 
             print('\n----- wav: %s -----' % batch_p2w['input_names'][b])
 
             if dataset_p2w.corpus == 'swbd':
                 glm = GLM(dataset_p2w.glm_path)
-                str_ref = normalize_swbd(str_ref, glm)
-                str_hyp = normalize_swbd(str_hyp, glm)
+                str_ref_p2w = normalize_swbd(str_ref_p2w, glm)
+                str_hyp_p2w = normalize_swbd(str_hyp_p2w, glm)
             else:
-                str_hyp = normalize(str_hyp)
+                str_hyp_p2w = normalize(str_hyp_p2w)
 
             # A2P
-            # if dataset_a2p.label_type == 'character':
-            #     cer = wer_align(ref=list(str_ref.replace('_', '')),
-            #                     hyp=list(str_hyp.replace('_', '')),
-            #                     normalize=True,
-            #                     japanese=True if args.corpus == 'csj' else False)[0]
-            #     print('\nCER: %.3f %%' % cer)
-            # elif 'phone' in dataset_a2p.label_type:
-            #     per = wer_align(ref=str_ref.split('_'),
-            #                     hyp=str_hyp.split('_'),
-            #                     normalize=True)[0]
-            #     print('\nPER: %.3f %%' % per)
-            # else:
-            #     raise ValueError(dataset_a2p.label_type)
+            print(str_hyp_a2p)
 
             # P2W
             if dataset_p2w.label_type in ['word', 'character_wb'] or (args.corpus != 'csj' and dataset_p2w.label_type == 'character'):
-                wer = wer_align(ref=str_ref.split('_'),
-                                hyp=str_hyp.split('_'),
+                wer = wer_align(ref=str_ref_p2w.split('_'),
+                                hyp=str_hyp_p2w.split('_'),
                                 normalize=True,
                                 japanese=True if args.corpus == 'csj' else False)[0]
                 print('\nWER: %.3f %%' % wer)
             elif dataset_p2w.label_type == 'character':
-                cer = wer_align(ref=list(str_ref.replace('_', '')),
-                                hyp=list(str_hyp.replace('_', '')),
+                cer = wer_align(ref=list(str_ref_p2w.replace('_', '')),
+                                hyp=list(str_hyp_p2w.replace('_', '')),
                                 normalize=True,
                                 japanese=True if args.corpus == 'csj' else False)[0]
                 print('\nCER: %.3f %%' % cer)

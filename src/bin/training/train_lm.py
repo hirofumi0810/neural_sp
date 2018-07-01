@@ -72,6 +72,7 @@ def main():
     train_set = Dataset(
         corpus=args.corpus,
         data_save_path=args.data_save_path,
+        model_type=config['model_type'],
         data_type=args.train_set,
         data_size=config['data_size'],
         label_type=config['label_type'],
@@ -82,17 +83,21 @@ def main():
     dev_data = Dataset(
         corpus=args.corpus,
         data_save_path=args.data_save_path,
+        model_type=config['model_type'],
         data_type=args.dev_set,
         data_size=config['data_size'],
         label_type=config['label_type'],
         batch_size=config['batch_size'],
         shuffle=True, tool=config['tool'],
         vocab=config['vocab'])
-    test_sets = []
+    eval_sets = []
     for data_type in args.eval_sets:
-        test_sets += [Dataset(
+        if args.corpus == 'swbd' and 'character' in config['label_type']:
+            continue
+        eval_sets += [Dataset(
             corpus=args.corpus,
             data_save_path=args.data_save_path,
+            model_type=config['model_type'],
             data_type=data_type,
             data_size=config['data_size'],
             label_type=config['label_type'],
@@ -294,14 +299,14 @@ def main():
                     if args.corpus != 'swbd' or config['label_type'] == 'word':
                         # test
                         ppl_test_mean = 0.
-                        for test_set in test_sets:
+                        for test_set in eval_sets:
                             ppl_test = eval_ppl(models=[model],
                                                 dataset=test_set)
                             logger.info(' PPL (%s): %.3f' %
                                         (test_set.data_type, ppl_test))
                             ppl_test_mean += ppl_test
                         logger.info(' PPL (mean): %.3f' %
-                                    (ppl_test_mean / len(test_sets)))
+                                    (ppl_test_mean / len(eval_sets)))
                 else:
                     # Update learning rate
                     model.optimizer, learning_rate = lr_controller.decay_lr(

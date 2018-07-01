@@ -15,10 +15,10 @@ from distutils.util import strtobool
 
 sys.path.append(abspath('../../../'))
 from src.models.load_model import load
-from src.dataset.loader import Dataset as Dataset_asr
+from src.dataset.loader_hierarchical import Dataset as Dataset_asr
 from src.dataset.loader_hierarchical_p2w import Dataset as Dataset_p2w
 from src.utils.directory import mkdir_join, mkdir
-from src.bin.visualization.utils.visualization.attention import plot_hierarchical_attention_weights
+from src.bin.visualization.utils.attention import plot_hierarchical_attention_weights
 from src.utils.config import load_config
 from src.utils.io.labels.word import Word2char
 
@@ -133,6 +133,7 @@ def main():
         dataset = Dataset_asr(
             corpus=args.corpus,
             data_save_path=args.data_save_path,
+            model_type=config['model_type'],
             input_freq=config['input_freq'],
             use_delta=config['use_delta'],
             use_double_delta=config['use_double_delta'],
@@ -147,6 +148,7 @@ def main():
         dataset = Dataset_p2w(
             corpus=args.corpus,
             data_save_path=args.data_save_path,
+            model_type=config['model_type'],
             data_type=args.data_type,
             data_size=config['data_size'],
             label_type_in=config['label_type_in'],

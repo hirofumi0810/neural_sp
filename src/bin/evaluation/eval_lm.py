@@ -48,6 +48,7 @@ def main():
         eval_set = Dataset(
             corpus=args.corpus,
             data_save_path=args.data_save_path,
+            model_type=config['model_type'],
             data_size=config['data_size'] if 'data_size' in config.keys(
             ) else '',
             data_type=data_type,
