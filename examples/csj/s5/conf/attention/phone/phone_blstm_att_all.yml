@@ -4,7 +4,7 @@ param:
   backend: pytorch
 
   # corpus
-  data_size: aps_other
+  data_size: all
   label_type: phone_wb
 
   # topology
@@ -26,11 +26,17 @@ param:
   # initialization
   pretrained_model_path: False
 
+  # regularization
+  scheduled_sampling_max_step: 100000
+
+  # annealing
+  print_step: 400
+
   # MTL
   backward_loss_weight: 0
   ctc_loss_weight: 0
 
-  # RNNLM fusion (not used)
+  # RNNLM fusion
   rnnlm_fusion_type: False
   rnnlm_path: False
   rnnlm_weight: 0

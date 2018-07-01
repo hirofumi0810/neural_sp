@@ -1,0 +1,26 @@
+parent: ./conf/modular/p2w_blstm_ctc_aps_other.yml
+param:
+  # framework
+  backend: pytorch
+
+  # corpus
+  data_size: all
+  vocab: False
+  # vocab: aps_other
+
+  # topology
+  encoder_num_layers: 3
+  subsample_list:
+    - False
+    - False
+    - False
+  fc_list: [320]
+
+  # optimization
+  batch_size: 60
+
+  # initialization
+  pretrained_model_path: False
+
+  # annealing
+  print_step: 400

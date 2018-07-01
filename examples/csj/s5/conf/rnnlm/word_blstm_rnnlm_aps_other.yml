@@ -10,26 +10,26 @@ param:
 
   # features
   tool: htk
-  dynamic_batching: False
+  dynamic_batching: True
 
   # topology
   model_type: rnnlm
   rnn_type: lstm
-  bidirectional: False
+  bidirectional: True
   num_units: 512
   num_proj: 0
   num_layers: 3
   embedding_dim: 128
   tie_weights: False
-  residual_connection: True
+  residual_connection: False
   backward: False
 
   # optimization
-  batch_size: 128
+  batch_size: 32
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 70
-  convert_to_sgd_epoch: 10
+  num_epoch: 5
+  convert_to_sgd_epoch: 1
 
   # initialization
   parameter_init_distribution: uniform
@@ -51,10 +51,10 @@ param:
 
   # annealing
   decay_type: per_epoch
-  decay_start_epoch: 10
-  decay_rate: 0.95
+  decay_start_epoch: 1
+  decay_rate: 0.5
   decay_patient_epoch: 0
-  sort_stop_epoch: 70
+  sort_stop_epoch: 10
   not_improved_patient_epoch: 10
-  eval_start_epoch: 5
-  print_step: 100
+  eval_start_epoch: 1
+  print_step: 400

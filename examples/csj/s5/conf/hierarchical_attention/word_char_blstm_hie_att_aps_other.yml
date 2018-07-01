@@ -9,6 +9,7 @@ param:
   label_type_sub: character_wb
 
   # features
+  input_type: speech
   feature: fbank
   tool: htk
   input_freq: 80
@@ -80,7 +81,8 @@ param:
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
   pretrained_model_path: False
-  # pretrained_model_path: /n/sd8/inaguma/result/csj/pytorch/ctc/character_wb/aps_other/blstm320H5L_drop4_fc_320_adam_lr1e-3_dropen0.2_input80
+  # pretrained_model_path: /n/sd8/inaguma/result/csj/pytorch/ctc/character_wb/aps_other/blstm320H5L_drop12_fc_320_adam_lr1e-3_dropen0.2_input80
+  # pretrained_model_path: /n/sd8/inaguma/result/csj/pytorch/ctc/phone_wb/aps_other/blstm320H5L_drop12_fc_320_adam_lr1e-3_dropen0.2_input80
 
   # regularization
   clip_grad_norm: 5.0

@@ -37,9 +37,10 @@ param:
   encoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 2
+  encoder_num_layers: 3
   subsample_list:
-    - True
+    - False
+    - False
     - False
   subsample_type: drop
   bridge_layer: False

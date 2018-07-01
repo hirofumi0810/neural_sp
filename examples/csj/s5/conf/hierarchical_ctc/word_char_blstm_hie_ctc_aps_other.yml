@@ -9,6 +9,7 @@ param:
   label_type_sub: character_wb
 
   # features
+  input_type: speech
   feature: fbank
   tool: htk
   input_freq: 80

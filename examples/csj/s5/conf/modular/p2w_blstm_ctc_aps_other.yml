@@ -11,7 +11,6 @@ param:
 
   # features
   input_type: text
-  feature: fbank
   tool: htk
   input_freq: 64
   use_delta: False
@@ -38,9 +37,10 @@ param:
   encoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 2
+  encoder_num_layers: 3
   subsample_list:
-    - True
+    - False
+    - False
     - False
   subsample_type: drop
   fc_list: [320]

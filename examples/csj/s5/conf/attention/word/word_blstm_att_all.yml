@@ -22,6 +22,8 @@ param:
 
   # initialization
   pretrained_model_path: False
+  # pretrained_model_path: /n/sd8/inaguma/result/csj/pytorch/ctc/character_wb/all/blstm320H5L_drop12_fc_320_adam_lr1e-3_dropen0.2_input80
+  # pretrained_model_path: /n/sd8/inaguma/result/csj/pytorch/ctc/phone_wb/all/blstm320H5L_drop12_fc_320_adam_lr1e-3_dropen0.2_input80
 
   # regularization
   scheduled_sampling_max_step: 100000
