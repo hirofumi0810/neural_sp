@@ -478,9 +478,11 @@ class CTC(ModelBase):
         if beam_width == 1:
             best_hyps = self._decode_greedy_np(var2np(logits), x_lens)
         else:
+            log_probs = F.log_softmax(logits, dim=-1)
+            if not self.use_cuda:
+                log_probs = var2np(log_probs)
             best_hyps = self._decode_beam_np(
-                var2np(F.log_softmax(logits, dim=-1)),
-                x_lens, beam_width=beam_width)
+                log_probs, x_lens, beam_width=beam_width)
 
         # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
         best_hyps -= 1

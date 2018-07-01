@@ -8,6 +8,7 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
+import torch
 
 LOG_0 = -float("inf")
 LOG_1 = 0
@@ -20,26 +21,27 @@ class BeamSearchDecoder(object):
         space_index (int, optional): the index of the space label
     """
 
-    def __init__(self, blank_index, space_index=-1):
-        self._blank = blank_index
-        self._space = space_index
+    def __init__(self, blank_index):
+        self.blank = blank_index
 
     def __call__(self, log_probs, x_lens, beam_width=1,
-                 alpha=0., beta=0.):
+                 alpha=0., beta=0., space_index=-1):
         """Performs inference for the given output probabilities.
         Args:
-            log_probs (np.ndarray): The output log-scale probabilities
+            log_probs (torch.autograd.Variable): The output log-scale probabilities
                 (e.g. post-softmax) for each time step.
                 A tensor of size `[B, T, num_classes]`
-            x_lens (np.ndarray): A tensor of size `[B]`
+            x_lens (list): A tensor of size `[B]`
             beam_width (int): the size of beam
             alpha (float): language model weight
             beta (float): insertion bonus
+            space_index (int, optional): the index of the space label
         Returns:
             best_hyps (np.ndarray): Best path hypothesis.
                 A tensor of size `[B, labels_max_seq_len]`
         """
-        batch_size, _, num_classes = log_probs.shape
+        assert isinstance(log_probs, torch.autograd.Variable)
+        batch_size, _, num_classes = log_probs.size()
         best_hyps = []
 
         for b in range(batch_size):
@@ -61,12 +63,16 @@ class BeamSearchDecoder(object):
                     # probabilities for the prefix given that it ends in a
                     # blank and does not end in a blank at this time step.
 
-                    for c in range(num_classes):
-                        p_t = log_probs[b, t, c]
+                    # Pick up the top-k scores
+                    log_probs_topk, indices_topk = torch.topk(
+                        log_probs[:, t, :], k=beam_width, dim=-1, largest=True, sorted=True)
+
+                    for c in indices_topk.data[b]:
+                        p_t = log_probs.data[b, t, c]
 
                         # If we propose a blank the prefix doesn't change.
                         # Only the probability of ending in blank gets updated.
-                        if c == self._blank:
+                        if c == self.blank:
                             new_prefix = prefix
                             new_p_b = np.logaddexp(p_b + p_t, p_nb + p_t)
                             new_p_nb = p_nb
