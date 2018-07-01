@@ -19,4 +19,5 @@ param:
 
   # initialization
   pretrained_model_path: False
-  # pretrained_model_path: /n/sd8/inaguma/result/swbd/pytorch/ctc/character/blstm320H4L_drop4_adam_lr1e-3_dropen0.2_input80
+  # pretrained_model_path: /n/sd8/inaguma/result/swbd/pytorch/ctc/phone_wb/swbd/blstm320H5L_drop12_fc_320_adam_lr1e-3_dropen0.2_input80
+  # pretrained_model_path: /n/sd8/inaguma/result/swbd/pytorch/ctc/character/swbd/blstm320H5L_drop12_fc_320_adam_lr1e-3_dropen0.2_input80

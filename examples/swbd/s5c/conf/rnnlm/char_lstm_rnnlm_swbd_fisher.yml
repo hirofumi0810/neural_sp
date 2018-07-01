@@ -4,7 +4,9 @@ param:
   backend: pytorch
 
   # corpus
-  vocab: fisher
+  data_size: swbd_fisher
+  vocab: False
+  # vocab: swbd
   label_type: character
 
   # topology
@@ -13,7 +15,7 @@ param:
   bidirectional: False
   num_units: 512
   num_proj: 0
-  num_layers: 2
+  num_layers: 3
   embedding_dim: 32
   tie_weights: False
   residual_connection: True

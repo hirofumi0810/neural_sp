@@ -4,6 +4,7 @@ param:
 
   # corpus
   corpus: switchboard
+  data_size: swbd
   vocab: False
   label_type: character
 
@@ -17,7 +18,7 @@ param:
   bidirectional: False
   num_units: 512
   num_proj: 0
-  num_layers: 2
+  num_layers: 3
   embedding_dim: 32
   tie_weights: False
   residual_connection: True
