@@ -121,7 +121,8 @@ if [ ! -e $outd/.done_mv_eval_dup ]; then
 
     # Evaluation data
     for list in $eval1 $eval2 $eval3 ; do
-        find . -type d -name $list | xargs -i mv {} $outd/eval
+        # find . -type d -name $list | xargs -i mv {} $outd/eval
+        find $outd -type d -name $list | xargs -i mv {} $outd/eval
     done
     wait
 

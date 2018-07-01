@@ -81,7 +81,7 @@ awk '{
       for(i=4;i<=NF;i++) printf(" %s", $i); printf "\n"
 }' $CSJ/*/*/*-trans.text | sort > $dir/transcripts1.txt # This data is for training language models
 # Except evaluation set (30 speakers)
-# NOTE: do not convert to lowercase for lexicon
+# NOTE: do not convert to lowercase here to make compatible with lexicon
 
 # test if trans. file is sorted
 export LC_ALL=C;

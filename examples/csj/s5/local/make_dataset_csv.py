@@ -276,8 +276,9 @@ def read_text(text_path, vocab_save_path, data_type,
             line = line.strip()
             utt_idx, trans_w_pos = line.split('  ')
             trans_w_pos = trans_w_pos.replace('<sp>', SHORT_PAUSE)
+            # NOTE: do not convert trans_w_pos to lowercase here
             trans = SPACE.join([w.split('+')[0]
-                                for w in trans_w_pos.split(' ')])
+                                for w in trans_w_pos.split(' ')]).lower()
             trans_pos = SPACE.join([w.split('+')[1].split('/')[0] if '+' in w else SHORT_PAUSE
                                     for w in trans_w_pos.split(' ')])
             # NOTE: word and POS sequence are the same length
@@ -301,10 +302,10 @@ def read_text(text_path, vocab_save_path, data_type,
                 trans_left_list.append(w_left)
                 trans_right_list.append(w_right)
                 trans_both_list.append(w_both)
-            trans_left = SPACE.join(trans_left_list)
-            trans_right = SPACE.join(trans_right_list)
-            trans_both = SPACE.join(trans_both_list)
-            trans_remove = SPACE.join(trans_remove_list)
+            trans_left = SPACE.join(trans_left_list).lower()
+            trans_right = SPACE.join(trans_right_list).lower()
+            trans_both = SPACE.join(trans_both_list).lower()
+            trans_remove = SPACE.join(trans_remove_list).lower()
 
             for w in trans.split(SPACE):
                 # Count word frequency
@@ -406,9 +407,9 @@ def read_text(text_path, vocab_save_path, data_type,
                 "word": trans,
                 "char": trans.replace(SPACE, ''),
                 "char_wb": trans,
-                "char_wb_left": trans,
-                "char_wb_right": trans,
-                "char_wb_both": trans,
+                "char_wb_left": trans_left,
+                "char_wb_right": trans_right,
+                "char_wb_both": trans_both,
                 "char_wb_remove": trans_remove,
                 "phone": trans_phone.replace('_' + WORD_BOUNDARY + '_', '_'),
                 "phone_wb": trans_phone,
