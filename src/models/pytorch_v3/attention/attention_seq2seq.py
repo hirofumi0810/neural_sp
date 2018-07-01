@@ -961,7 +961,8 @@ class AttentionSeq2seq(ModelBase):
 
     def decode(self, xs, beam_width, max_decode_len, min_decode_len=0,
                min_decode_len_ratio=0, length_penalty=0, coverage_penalty=0,
-               rnnlm_weight=0, task_index=0, resolving_unk=False):
+               rnnlm_weight=0, task_index=0, resolving_unk=False,
+               exclude_eos=True):
         """Decoding in the inference stage.
         Args:
             xs (list): A list of length `[B]`, which contains arrays of size `[T, input_size]`
@@ -974,6 +975,7 @@ class AttentionSeq2seq(ModelBase):
             rnnlm_weight (float): the weight of RNNLM score
             task_index (int): not used (to make compatible)
             resolving_unk (bool): not used (to make compatible)
+            exclude_eos (bool): if True, exclude <EOS> from best_hyps
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
             aw (list): A list of length `[B]`, which contains arrays of size `[L, T]`
@@ -997,16 +999,16 @@ class AttentionSeq2seq(ModelBase):
 
         if beam_width == 1:
             best_hyps, aw = self._decode_infer_greedy(
-                enc_out, x_lens, max_decode_len, task=0, dir=dir)
+                enc_out, x_lens, max_decode_len, 0, dir, exclude_eos)
         else:
             best_hyps, aw = self._decode_infer_beam(
                 enc_out, x_lens, beam_width, max_decode_len, min_decode_len,
                 min_decode_len_ratio, length_penalty, coverage_penalty,
-                rnnlm_weight, task=0, dir=dir)
+                rnnlm_weight, 0, dir, exclude_eos)
 
         return best_hyps, aw, perm_idx
 
-    def _decode_infer_greedy(self, enc_out, x_lens, max_decode_len, task, dir):
+    def _decode_infer_greedy(self, enc_out, x_lens, max_decode_len, task, dir, exclude_eos):
         """Greedy decoding in the inference stage.
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
@@ -1015,6 +1017,7 @@ class AttentionSeq2seq(ModelBase):
             max_decode_len (int): the maximum sequence length of tokens
             task (int): the index of a task
             dir (str): fwd or bwd
+            exclude_eos (bool):
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
             aw (list): A list of length `[B]`, which contains arrays of size `[L, T]`
@@ -1043,7 +1046,7 @@ class AttentionSeq2seq(ModelBase):
 
         _best_hyps, _aw = [], []
         y_lens = np.zeros((batch_size,), dtype=np.int32)
-        eos_flag = [False] * batch_size
+        eos_flags = [False] * batch_size
         for t in range(max_decode_len + 1):
             # Update RNNLM states
             if self.rnnlm_fusion_type:
@@ -1131,14 +1134,14 @@ class AttentionSeq2seq(ModelBase):
 
             # Count lengths of hypotheses
             for b in range(batch_size):
-                if not eos_flag[b]:
+                if not eos_flags[b]:
                     if y.data.cpu().numpy()[b] == eos:
-                        eos_flag[b] = True
+                        eos_flags[b] = True
                     y_lens[b] += 1
                     # NOTE: include <EOS>
 
             # Break if <EOS> is outputed in all mini-batch
-            if sum(eos_flag) == batch_size:
+            if sum(eos_flags) == batch_size:
                 break
 
         # Concatenate in L dimension
@@ -1153,23 +1156,27 @@ class AttentionSeq2seq(ModelBase):
             _aw = _aw[:, :, :, 0]
             # TODO: fix for MHA
 
-        # Truncate by <EOS>
-        best_hyps, aw = [], []
-        for b in range(batch_size):
-            if dir == 'bwd':
-                # Reverse the order
-                best_hyps += [_best_hyps[b, :y_lens[b]][::-1]]
-                aw += [_aw[b, :y_lens[b]][::-1]]
-            else:
-                best_hyps += [_best_hyps[b, :y_lens[b]]]
-                aw += [_aw[b, :y_lens[b]]]
+        # Truncate by the first <EOS>
+        if dir == 'bwd':
+            # Reverse the order
+            best_hyps = [_best_hyps[b, :y_lens[b]][::-1]
+                         for b in range(batch_size)]
+            aw = [_aw[b, :y_lens[b]][::-1] for b in range(batch_size)]
+        else:
+            best_hyps = [_best_hyps[b, :y_lens[b]] for b in range(batch_size)]
+            aw = [_aw[b, :y_lens[b]] for b in range(batch_size)]
+
+        # Exclude <EOS>
+        if exclude_eos:
+            best_hyps = [best_hyps[b][:-1] if eos_flags[b]
+                         else best_hyps[b] for b in range(batch_size)]
 
         return best_hyps, aw
 
     def _decode_infer_beam(self, enc_out, x_lens, beam_width,
                            max_decode_len, min_decode_len, min_decode_len_ratio,
                            length_penalty, coverage_penalty, rnnlm_weight,
-                           task, dir):
+                           task, dir, exclude_eos):
         """Beam search decoding in the inference stage.
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
@@ -1184,6 +1191,7 @@ class AttentionSeq2seq(ModelBase):
             rnnlm_weight (float): the weight of RNNLM score
             task (int): the index of a task
             dir (str): fwd or bwd
+            exclude_eos (bool):
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
             aw (list): A list of length `[B]`, which contains arrays of size `[L, T]`
@@ -1191,6 +1199,8 @@ class AttentionSeq2seq(ModelBase):
         if dir == 'bwd':
             assert getattr(self, 'bwd_weight_' + str(task)) > 0
         taskdir = '_' + str(task) + '_' + dir
+
+        batch_size = enc_out.size(0)
 
         if (rnnlm_weight > 0 or self.rnnlm_fusion_type) and getattr(self, 'rnnlm' + taskdir) is not None:
             assert not getattr(self, 'rnnlm' + taskdir).training
@@ -1200,8 +1210,9 @@ class AttentionSeq2seq(ModelBase):
         eos = getattr(self, 'eos_' + str(task))
 
         best_hyps, aw = [], []
-        y_lens = np.zeros((enc_out.size(0),), dtype=np.int32)
-        for b in range(enc_out.size(0)):
+        y_lens = np.zeros((batch_size,), dtype=np.int32)
+        eos_flags = [False] * batch_size
+        for b in range(batch_size):
             # Initialization per utterance
             dec_out, hx_list, cx_list = self._init_dec_state(
                 enc_out[b:b + 1], x_lens[b], task, dir)
@@ -1401,6 +1412,8 @@ class AttentionSeq2seq(ModelBase):
             best_hyps += [np.array(complete[0]['hyp'][1:])]
             aw += [complete[0]['aw_steps'][1:]]
             y_lens[b] = len(complete[0]['hyp'][1:])
+            if complete[0]['hyp'][-1] == eos:
+                eos_flags[b] = True
 
         # Concatenate in L dimension
         for b in range(len(aw)):
@@ -1411,9 +1424,13 @@ class AttentionSeq2seq(ModelBase):
 
         # Reverse the order
         if dir == 'bwd':
-            for b in range(enc_out.size(0)):
-                best_hyps[b] = best_hyps[b][::-1]
-                aw[b] = aw[b][::-1]
+            best_hyps = [best_hyps[b][::-1] for b in range(batch_size)]
+            aw = [aw[b][::-1] for b in range(batch_size)]
+
+        # Exclude <EOS>
+        if exclude_eos:
+            best_hyps = [best_hyps[b][:-1] if eos_flags[b]
+                         else best_hyps[b] for b in range(batch_size)]
 
         return best_hyps, aw
 

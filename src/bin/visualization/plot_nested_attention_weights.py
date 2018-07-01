@@ -99,12 +99,12 @@ elif args.corpus == 'swbd':
     MAX_DECODE_LEN_CHAR = 300
     MIN_DECODE_LEN_CHAR = 1
     MAX_DECODE_LEN_RATIO_CHAR = 1
-    MIN_DECODE_LEN_RATIO_CHAR = 0.2
+    MIN_DECODE_LEN_RATIO_CHAR = 0.1
 
     MAX_DECODE_LEN_PHONE = 300
     MIN_DECODE_LEN_PHONE = 1
     MAX_DECODE_LEN_RATIO_PHONE = 1
-    MIN_DECODE_LEN_RATIO_PHONE = 0
+    MIN_DECODE_LEN_RATIO_PHONE = 0.05
 elif args.corpus == 'librispeech':
     MAX_DECODE_LEN_WORD = 200
     MIN_DECODE_LEN_WORD = 1
@@ -254,7 +254,8 @@ def main():
             coverage_penalty_sub=args.coverage_penalty_sub,
             rnnlm_weight_sub=args.rnnlm_weight_sub,
             teacher_forcing=args.a2c_oracle,
-            ys_sub=ys_sub)
+            ys_sub=ys_sub,
+            exclude_eos=False)
 
         ys = [batch['ys'][i] for i in perm_idx]
 

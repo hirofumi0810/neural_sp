@@ -442,7 +442,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Sort by lenghts in the descending order
         if is_eval and self.encoder_type != 'cnn' or self.input_type == 'text':
             perm_idx = sorted(list(range(0, len(xs), 1)),
-                              key=lambda i: xs[i].shape[0], reverse=True)
+                              key=lambda i: len(xs[i]), reverse=True)
             xs = [xs[i] for i in perm_idx]
             ys = [ys[i] for i in perm_idx]
             ys_sub = [ys_sub[i] for i in perm_idx]
@@ -502,7 +502,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                length_penalty=0, coverage_penalty=0, rnnlm_weight=0,
                task_index=0, joint_decoding=False, space_index=-1, oov_index=-1,
                word2char=None, score_sub_weight=0, entropy_threshold=1,
-               idx2word=None, idx2char=None, rnnlm_weight_sub=0):
+               idx2word=None, idx2char=None, rnnlm_weight_sub=0, exclude_eos=True):
         """Decoding in the inference stage.
         Args:
             xs (list): A list of length `[B]`, which contains arrays of size `[T, input_size]`
@@ -523,6 +523,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             idx2word: for debug
             idx2char: for debug
             rnnlm_weight_sub (float): the weight of RNNLM score of the sub task
+            exclude_eos (bool): if True, exclude <EOS> from best_hyps
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B]`
             aw (np.ndarray): A tensor of size `[B, L, T]`
@@ -532,8 +533,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         if task_index > 0 and self.ctc_loss_weight_sub > self.sub_loss_weight:
             # Decode by CTC decoder
-            best_hyps, perm_idx = self.decode_ctc(
-                xs, beam_width, task_index)
+            best_hyps, perm_idx = self.decode_ctc(xs, beam_width, task_index)
 
             return best_hyps, None, perm_idx
             # NOTE: None corresponds to aw in attention-based models
@@ -541,7 +541,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             # Sort by lenghts in the descending order
             if self.encoder_type != 'cnn' or self.input_type == 'text':
                 perm_idx = sorted(list(range(0, len(xs), 1)),
-                                  key=lambda i: xs[i].shape[0], reverse=True)
+                                  key=lambda i: len(xs[i]), reverse=True)
                 xs = [xs[i] for i in perm_idx]
                 # NOTE: must be descending order for pack_padded_sequence
             else:
@@ -568,18 +568,18 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     beam_width, max_decode_len, min_decode_len, min_decode_len_ratio,
                     length_penalty, coverage_penalty, rnnlm_weight, rnnlm_weight_sub,
                     space_index, oov_index, word2char, score_sub_weight, entropy_threshold,
-                    idx2word, idx2char)
+                    idx2word, idx2char, exclude_eos)
 
                 return best_hyps, aw, best_hyps_sub, aw_sub, perm_idx
             else:
                 if beam_width == 1:
                     best_hyps, aw = self._decode_infer_greedy(
-                        enc_out, x_lens, max_decode_len, task_index, dir)
+                        enc_out, x_lens, max_decode_len, task_index, dir, exclude_eos)
                 else:
                     best_hyps, aw = self._decode_infer_beam(
                         enc_out, x_lens, beam_width, max_decode_len, min_decode_len,
                         min_decode_len_ratio, length_penalty, coverage_penalty,
-                        rnnlm_weight, task_index, dir)
+                        rnnlm_weight, task_index, dir, exclude_eos)
 
             return best_hyps, aw, perm_idx
 
@@ -587,7 +587,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                             beam_width, max_decode_len, min_decode_len, min_decode_len_ratio,
                             length_penalty, coverage_penalty, rnnlm_weight, rnnlm_weight_sub,
                             space_index, oov_index, word2char, score_sub_weight, entropy_threshold,
-                            idx2word, idx2char):
+                            idx2word, idx2char, exclude_eos):
         """Joint decoding (one-pass).
         Args:
             enc_out (torch.FloatTensor): A tensor of size
@@ -611,6 +611,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             entropy_threshold (flaot):
             idx2word (): for debug
             idx2char (): for debug
+            exclude_eos (bool): if True, exclude <EOS> from best_hyps
         Returns:
             best_hyps (np.ndarray): A tensor of size `[B, L]`
             aw (np.ndarray): A tensor of size `[B, L, T]`
@@ -629,6 +630,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         best_hyps, aw = [], []
         best_hyps_sub, aw_sub = [], []
+        eos_flags = [False] * batch_size
+        eos_flags_sub = [False] * batch_size
         for b in range(batch_size):
             # Initialization for the word model per utterance
             dec_out, hx_list, cx_list = self._init_dec_state(
@@ -1035,6 +1038,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             aw += [complete[0]['aw_steps'][1:]]
             best_hyps_sub += [np.array(complete[0]['hyp_sub'][1:])]
             aw_sub += [complete[0]['aw_steps_sub'][1:]]
+            if complete[0]['hyp'][-1] == self.eos_0:
+                eos_flags[b] = True
+            if complete[0]['hyp_sub'][-1] == self.eos_1:
+                eos_flags_sub[b] = True
 
             if debug:
                 print(complete[0]['score'])
@@ -1051,5 +1058,12 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             if self.num_heads_0 > 1:
                 aw[b] = aw[b][:, :, 0]
                 # TODO: fix for MHA
+
+        # Exclude <EOS>
+        if exclude_eos:
+            best_hyps = [best_hyps[b][:-1] if eos_flags[b]
+                         else best_hyps[b] for b in range(batch_size)]
+            best_hyps_sub = [best_hyps_sub[b][:-1] if eos_flags_sub[b]
+                             else best_hyps_sub[b] for b in range(batch_size)]
 
         return best_hyps, aw, best_hyps_sub, aw_sub

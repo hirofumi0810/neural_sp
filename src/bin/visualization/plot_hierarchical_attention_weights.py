@@ -89,12 +89,12 @@ elif args.corpus == 'swbd':
     MAX_DECODE_LEN_CHAR = 300
     MIN_DECODE_LEN_CHAR = 1
     MAX_DECODE_LEN_RATIO_CHAR = 1
-    MIN_DECODE_LEN_RATIO_CHAR = 0.2
+    MIN_DECODE_LEN_RATIO_CHAR = 0.1
 
     MAX_DECODE_LEN_PHONE = 300
     MIN_DECODE_LEN_PHONE = 1
     MAX_DECODE_LEN_RATIO_PHONE = 1
-    MIN_DECODE_LEN_RATIO_PHONE = 0
+    MIN_DECODE_LEN_RATIO_PHONE = 0.05
 elif args.corpus == 'librispeech':
     MAX_DECODE_LEN_WORD = 200
     MIN_DECODE_LEN_WORD = 1
@@ -267,7 +267,8 @@ def main():
                 word2char=word2char,
                 idx2word=dataset.idx2word,
                 idx2char=dataset.idx2char,
-                score_sub_weight=args.score_sub_weight)
+                score_sub_weight=args.score_sub_weight,
+                exclude_eos=False)
         else:
             best_hyps, aw, perm_idx = model.decode(
                 batch['xs'],
@@ -277,7 +278,8 @@ def main():
                 min_decode_len_ratio=MIN_DECODE_LEN_RATIO_WORD,
                 length_penalty=args.length_penalty,
                 coverage_penalty=args.coverage_penalty,
-                rnnlm_weight=args.rnnlm_weight)
+                rnnlm_weight=args.rnnlm_weight,
+                exclude_eos=False)
             best_hyps_sub, aw_sub, _ = model.decode(
                 batch['xs'],
                 beam_width=args.beam_width_sub,
@@ -287,7 +289,8 @@ def main():
                 length_penalty=args.length_penalty_sub,
                 coverage_penalty=args.coverage_penalty_sub,
                 rnnlm_weight=args.rnnlm_weight_sub,
-                task_index=1)
+                task_index=1,
+                exclude_eos=False)
 
         ys = [batch['ys'][i] for i in perm_idx]
 

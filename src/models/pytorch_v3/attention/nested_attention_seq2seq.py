@@ -873,7 +873,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                length_penalty=0, coverage_penalty=0, rnnlm_weight=0,
                beam_width_sub=1, max_decode_len_sub=None, min_decode_len_sub=0, min_decode_len_ratio_sub=0,
                length_penalty_sub=0, coverage_penalty_sub=0, rnnlm_weight_sub=0,
-               task_index=0, teacher_forcing=False, ys_sub=None):
+               task_index=0, teacher_forcing=False, ys_sub=None, exclude_eos=True):
         """Decoding in the inference stage.
         Args:
             xs (np.ndarray): A tensor of size `[B, T, input_size]`
@@ -894,6 +894,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             task_index (int): the index of a task
             teacher_forcing (bool):
             ys_sub (list):
+            exclude_eos (bool): if True, exclude <EOS> from best_hyps
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
             aw (list): A list of length `[B]`, which contains arrays of size `[L, T]`
@@ -943,7 +944,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     max_decode_len=max_decode_len,
                     max_decode_len_sub=max_decode_len_sub,
                     teacher_forcing=teacher_forcing,
-                    ys_sub=ys_in_sub)
+                    ys_sub=ys_in_sub,
+                    reverse_backward=False,
+                    exclude_eos=exclude_eos)
             else:
                 best_hyps, aw, best_hyps_sub, aw_sub, aw_dec = self._decode_infer_joint_beam(
                     enc_out, x_lens, enc_out_sub, x_lens_sub,
@@ -962,7 +965,9 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     coverage_penalty_sub=coverage_penalty_sub,
                     rnnlm_weight_sub=rnnlm_weight_sub,
                     teacher_forcing=teacher_forcing,
-                    ys_sub=ys_in_sub)
+                    ys_sub=ys_in_sub,
+                    reverse_backward=False,
+                    exclude_eos=exclude_eos)
 
         elif task_index == 1:
             _, _, enc_out, x_lens = self._encode(xs, is_multi_task=True)
@@ -971,12 +976,12 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
             if beam_width == 1:
                 best_hyps, aw = self._decode_infer_greedy(
-                    enc_out, x_lens, max_decode_len, task=1, dir=dir_sub)
+                    enc_out, x_lens, max_decode_len, 1, dir_sub, exclude_eos)
             else:
                 best_hyps, aw = self._decode_infer_beam(
                     enc_out, x_lens, beam_width, max_decode_len, min_decode_len,
                     min_decode_len_ratio, length_penalty, coverage_penalty,
-                    rnnlm_weight, task=1, dir=dir_sub)
+                    rnnlm_weight, 1, dir_sub, exclude_eos)
         else:
             raise ValueError
 
@@ -987,8 +992,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
     def _decode_infer_joint_greedy(self, enc_out, x_lens, enc_out_sub, x_lens_sub,
                                    max_decode_len, max_decode_len_sub,
-                                   teacher_forcing=False, ys_sub=None,
-                                   reverse_backward=True):
+                                   teacher_forcing, ys_sub, reverse_backward, exclude_eos):
         """Greedy decoding in the inference stage.
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
@@ -1002,6 +1006,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             teacher_forcing (bool):
             ys_sub (torch.autograd.Variable):
             reverse_backward (bool):
+            exclude_eos (bool): if True, exclude <EOS> from best_hyps
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
             aw_enc (list): A list of length `[B]`, which contains arrays of size `[L, T]`
@@ -1029,7 +1034,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         _best_hyps_sub, _aw_sub = [], []
         logits_sub = []
         y_lens_sub = np.zeros((batch_size,), dtype=np.int32)
-        eos_flag_sub = [False] * batch_size
+        eos_flags_sub = [False] * batch_size
         for t_sub in range(max_decode_len_sub + 1):
             if teacher_forcing:
                 y_sub = ys_sub[:, t_sub: t_sub + 1]
@@ -1059,14 +1064,14 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             _best_hyps_sub += [y_sub]
 
             for b in range(batch_size):
-                if not eos_flag_sub[b]:
+                if not eos_flags_sub[b]:
                     y_lens_sub[b] += 1
                     # NOTE: include <EOS>
                     if y_sub.data.cpu().numpy()[b] == self.eos_1:
-                        eos_flag_sub[b] = True
+                        eos_flags_sub[b] = True
 
             # Break if <EOS> is outputed in all mini-batch
-            if sum(eos_flag_sub) == batch_size:
+            if sum(eos_flags_sub) == batch_size:
                 break
 
             if teacher_forcing and t_sub == ys_sub.size(1) - 1:
@@ -1097,7 +1102,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         _best_hyps, _aw_enc, _aw_dec = [], [], []
         y_lens = np.zeros((batch_size,), dtype=np.int32)
-        eos_flag = [False] * batch_size
+        eos_flags = [False] * batch_size
         for t in range(max_decode_len + 1):
             y = self.embed_0(y)
 
@@ -1163,14 +1168,14 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
             # Count lengths of hypotheses
             for b in range(batch_size):
-                if not eos_flag[b]:
+                if not eos_flags[b]:
                     if y.data.cpu().numpy()[b] == self.eos_0:
-                        eos_flag[b] = True
+                        eos_flags[b] = True
                     y_lens[b] += 1
                     # NOTE: include <EOS>
 
             # Break if <EOS> is outputed in all mini-batch
-            if sum(eos_flag) == batch_size:
+            if sum(eos_flags) == batch_size:
                 break
 
         # Concatenate in L dimension
@@ -1193,23 +1198,20 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         if self.num_heads_dec > 1:
             _aw_dec = _aw_dec[:, :, :, 0]
 
-        # Truncate by <EOS>
-        best_hyps, aw_enc, aw_dec = [], [], []
-        best_hyps_sub, aw_sub = [], []
-        for b in range(batch_size):
-            # main task
-            best_hyps += [_best_hyps[b, :y_lens[b]]]
-            aw_enc += [_aw_enc[b, :y_lens[b]]]
-            aw_dec += [_aw_dec[b, :y_lens[b]]]
-
-            # sub task
-            if self.backward_1 and reverse_backward:
-                # Reverse the order
-                best_hyps_sub += [_best_hyps_sub[b, :y_lens_sub[b]][::-1]]
-                aw_sub += [_aw_sub[b, :y_lens_sub[b]][::-1]]
-            else:
-                best_hyps_sub += [_best_hyps_sub[b, :y_lens_sub[b]]]
-                aw_sub += [_aw_sub[b, :y_lens_sub[b]]]
+        # Truncate by the first <EOS>
+        best_hyps = [_best_hyps[b, :y_lens[b]] for b in range(batch_size)]
+        aw_enc = [_aw_enc[b, :y_lens[b]] for b in range(batch_size)]
+        aw_dec = [_aw_dec[b, : y_lens[b]] for b in range(batch_size)]
+        if self.backward_1 and reverse_backward:
+            # Reverse the order
+            best_hyps_sub = [_best_hyps_sub[b, : y_lens_sub[b]][:: -1]
+                             for b in range(batch_size)]
+            aw_sub = [_aw_sub[b, : y_lens_sub[b]][:: -1]
+                      for b in range(batch_size)]
+        else:
+            best_hyps_sub = [_best_hyps_sub[b, : y_lens_sub[b]]
+                             for b in range(batch_size)]
+            aw_sub = [_aw_sub[b, : y_lens_sub[b]] for b in range(batch_size)]
 
         return best_hyps, aw_enc, best_hyps_sub, aw_sub, aw_dec
 
@@ -1218,7 +1220,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                                  length_penalty, coverage_penalty, rnnlm_weight,
                                  beam_width_sub, max_decode_len_sub, min_decode_len_sub, min_decode_len_ratio_sub,
                                  length_penalty_sub, coverage_penalty_sub, rnnlm_weight_sub,
-                                 teacher_forcing=False, ys_sub=None, reverse_backward=True):
+                                 teacher_forcing, ys_sub, reverse_backward, exclude_eos):
         """Beam search decoding in the inference stage.
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
@@ -1244,6 +1246,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             teacher_forcing (bool):
             ys_sub (list):
             reverse_backward (bool):
+            exclude_eos (bool): if True, exclude <EOS> from best_hyps
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
             aw_enc (list): A list of length `[B]`, which contains arrays of size `[L, T]`
@@ -1251,7 +1254,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             aw_sub (list): A list of length `[B]`, which contains arrays of size `[L_sub, T_sub]`
             aw_dec (list): A list of length `[B]`, which contains arrays of size `[L, L_sub]`
         """
-        batch_size, max_time = enc_out.size()[:2]
+        batch_size, max_time = enc_out.size()[: 2]
         dir_sub = 'bwd' if self.backward_1 else 'fwd'
         if teacher_forcing:
             beam_width_sub = 1
@@ -1261,6 +1264,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         ##################################################
         best_hyps, aw_enc, aw_dec = [], [], []
         best_hyps_sub, aw_sub = [], []
+        eos_flags = [False] * batch_size
+        eos_flags_sub = [False] * batch_size
         for b in range(batch_size):
             # Initialization per utterance
             dec_out_sub, hx_list_sub, cx_list_sub = self._init_dec_state(
@@ -1282,7 +1287,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                 new_beam_sub = []
                 for i_beam in range(len(beam_sub)):
                     if teacher_forcing:
-                        y_sub = ys_sub[:, t_sub:t_sub + 1]
+                        y_sub = ys_sub[:, t_sub: t_sub + 1]
                     else:
                         y_sub = Variable(enc_out.data.new(
                             1, 1).fill_(beam_sub[i_beam]['hyp'][-1]).long(), volatile=True)
@@ -1299,8 +1304,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
                     # Score
                     context_vec_sub, aw_step_sub = getattr(self, 'attend_1_' + dir_sub)(
-                        enc_out_sub[b:b + 1, :x_lens_sub[b]],
-                        x_lens_sub[b:b + 1],
+                        enc_out_sub[b: b + 1, : x_lens_sub[b]],
+                        x_lens_sub[b: b + 1],
                         dec_out_sub, beam_sub[i_beam]['aw_steps'][-1])
 
                     # Generate
@@ -1391,17 +1396,17 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
                 # Remove complete hypotheses
                 not_complete_sub = []
-                for cand in new_beam_sub[:beam_width_sub]:
+                for cand in new_beam_sub[: beam_width_sub]:
                     if cand['hyp'][-1] == self.eos_1:
                         complete_sub += [cand]
                     else:
                         not_complete_sub += [cand]
 
                 if len(complete_sub) >= beam_width_sub:
-                    complete_sub = complete_sub[:beam_width_sub]
+                    complete_sub = complete_sub[: beam_width_sub]
                     break
 
-                beam_sub = not_complete_sub[:beam_width_sub]
+                beam_sub = not_complete_sub[: beam_width_sub]
 
             if len(complete_sub) == 0:
                 complete_sub = beam_sub
@@ -1414,12 +1419,14 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
             complete_sub = sorted(
                 complete_sub, key=lambda x: x['score'], reverse=True)
+            best_hyps_sub += [np.array(complete_sub[0]['hyp'][1:])]
             dec_outs_sub = torch.cat(complete_sub[0]
                                      ['dec_outs'][1:], dim=1)
             aw_sub += [complete_sub[0]['aw_steps'][1:]]
             logits_sub = torch.cat(complete_sub[0]['logits'], dim=1)
-            best_hyps_sub += [np.array(complete_sub[0]['hyp'][1:])]
             y_len_sub = len(complete_sub[0]['hyp'][1:])
+            if complete_sub[0]['hyp'][-1] == self.eos_1:
+                eos_flags_sub[b] = True
 
             ##################################################
             # Next, decode by the first decoder
@@ -1463,7 +1470,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
                     # Score for the encoder
                     context_vec_enc, aw_step_enc = self.attend_0_fwd(
-                        enc_out[b:b + 1, :x_lens[b]], x_lens[b:b + 1],
+                        enc_out[b: b + 1, : x_lens[b]], x_lens[b: b + 1],
                         dec_out, beam[i_beam]['aw_steps_enc'][-1])
 
                     # Score for the second decoder states
@@ -1477,7 +1484,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                             for h in range(self.num_heads_dec):
                                 # Compute context vector
                                 context_vec_dec_head = torch.sum(
-                                    logits_sub * aw_step_dec[:, :, h:h + 1], dim=1, keepdim=True)
+                                    logits_sub * aw_step_dec[:, :, h: h + 1], dim=1, keepdim=True)
                                 context_vec_dec += [context_vec_dec_head]
 
                             # Concatenate all convtext vectors and attention distributions
@@ -1586,17 +1593,17 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
                 # Remove complete hypotheses
                 not_complete = []
-                for cand in new_beam[:beam_width]:
+                for cand in new_beam[: beam_width]:
                     if cand['hyp'][-1] == self.eos_0:
                         complete += [cand]
                     else:
                         not_complete += [cand]
 
                 if len(complete) >= beam_width:
-                    complete = complete[:beam_width]
+                    complete = complete[: beam_width]
                     break
 
-                beam = not_complete[:beam_width]
+                beam = not_complete[: beam_width]
 
             if len(complete) == 0:
                 complete = beam
@@ -1609,9 +1616,11 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
             complete = sorted(
                 complete, key=lambda x: x['score'], reverse=True)
+            best_hyps += [np.array(complete[0]['hyp'][1:])]
             aw_enc += [complete[0]['aw_steps_enc'][1:]]
             aw_dec += [complete[0]['aw_steps_dec'][1:]]
-            best_hyps += [np.array(complete[0]['hyp'][1:])]
+            if complete[0]['hyp'][-1] == self.eos_0:
+                eos_flags[b] = True
 
         # Concatenate in L dimension
         for b in range(len(aw_enc)):
@@ -1631,8 +1640,15 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         # Reverse the order
         if self.backward_1 and reverse_backward:
-            for b in range(batch_size):
-                best_hyps_sub[b] = best_hyps_sub[b][::-1]
-                aw_sub[b] = aw_sub[b][::-1]
+            best_hyps_sub = [best_hyps_sub[b][:: -1]
+                             for b in range(batch_size)]
+            aw_sub = [aw_sub[b][:: -1] for b in range(batch_size)]
+
+        # Exclude <EOS>
+        if exclude_eos:
+            best_hyps = [best_hyps[b][:-1] if eos_flags[b]
+                         else best_hyps[b] for b in range(batch_size)]
+            best_hyps_sub = [best_hyps_sub[b][:-1] if eos_flags_sub[b]
+                             else best_hyps_sub[b] for b in range(batch_size)]
 
         return best_hyps, aw_enc, best_hyps_sub, aw_sub, aw_dec

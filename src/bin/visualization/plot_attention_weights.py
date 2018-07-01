@@ -70,12 +70,12 @@ elif args.corpus == 'swbd':
     MAX_DECODE_LEN_CHAR = 300
     MIN_DECODE_LEN_CHAR = 1
     MAX_DECODE_LEN_RATIO_CHAR = 1
-    MIN_DECODE_LEN_RATIO_CHAR = 0.2
+    MIN_DECODE_LEN_RATIO_CHAR = 0.1
 
     MAX_DECODE_LEN_PHONE = 300
     MIN_DECODE_LEN_PHONE = 1
     MAX_DECODE_LEN_RATIO_PHONE = 1
-    MIN_DECODE_LEN_RATIO_PHONE = 0
+    MIN_DECODE_LEN_RATIO_PHONE = 0.05
 elif args.corpus == 'librispeech':
     MAX_DECODE_LEN_WORD = 200
     MIN_DECODE_LEN_WORD = 1
@@ -229,7 +229,8 @@ def main():
             min_decode_len_ratio=min_decode_len_ratio,
             length_penalty=args.length_penalty,
             coverage_penalty=args.coverage_penalty,
-            rnnlm_weight=args.rnnlm_weight)
+            rnnlm_weight=args.rnnlm_weight,
+            exclude_eos=False)
 
         ys = [batch['ys'][i] for i in perm_idx]
 
@@ -260,8 +261,11 @@ def main():
             else:
                 str_ref = map_fn(ys[b])
 
-            with open(join(save_path, speaker, batch['input_names'][b] + '.txt'), 'w') as f:
-                f.write(str_ref)
+            try:
+                with open(join(save_path, speaker, batch['input_names'][b] + '.txt'), 'w') as f:
+                    f.write(str_ref)
+            except:
+                pass
 
         if is_new_epoch:
             break
