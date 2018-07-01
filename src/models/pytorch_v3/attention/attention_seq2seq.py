@@ -1369,8 +1369,8 @@ class AttentionSeq2seq(ModelBase):
                         new_beam.append(
                             {'hyp': beam[i_beam]['hyp'] + [indices_topk.data[0, k]],
                              'score': score,
-                             'hx_list': hx_list,
-                             'cx_list': cx_list,
+                             'hx_list': copy.deepcopy(hx_list),
+                             'cx_list': copy.deepcopy(cx_list),
                              'dec_out': dec_out,
                              'context_vec': context_vec,
                              'aw_steps': beam[i_beam]['aw_steps'] + [aw_step],

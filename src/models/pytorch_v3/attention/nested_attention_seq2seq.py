@@ -23,8 +23,6 @@ from src.models.pytorch_v3.criterion import cross_entropy_label_smoothing
 from src.models.pytorch_v3.ctc.decoders.greedy_decoder import GreedyDecoder
 from src.models.pytorch_v3.ctc.decoders.beam_search_decoder import BeamSearchDecoder
 from src.models.pytorch_v3.utils import np2var, var2np, pad_list
-from src.utils.io.inputs.frame_stacking import stack_frame
-from src.utils.io.inputs.splicing import do_splice
 
 
 class NestedAttentionSeq2seq(AttentionSeq2seq):
@@ -161,6 +159,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
         self.encoder_num_units_sub = encoder_num_units
         if encoder_bidirectional:
             self.encoder_num_units_sub *= 2
+        self.encoder_num_layers_sub = encoder_num_layers_sub
 
         # Setting for the decoder in the sub task
         self.decoder_num_units_1 = decoder_num_units_sub
@@ -199,7 +198,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
 
         # Setting for the RNNLM fusion
         self.rnnlm_fusion_type = False
-        self.rnnlm_1 = None
+        self.rnnlm_1_fwd = None
         self.rnnlm_weight = 0
 
         # Setting for decoder attention
@@ -738,7 +737,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     is_sample = True
                 else:
                     is_sample = self.ss_prob > 0 and t > 0 and self._step > 0 and random.random(
-                    ) < self._ss_prob
+                    ) < self._ss_prob * 2
+                    # double sampling prob.
                 if is_sample:
                     y_sub = self.embed_1(
                         torch.max(logits_sub[-1], dim=2)[1]).detach()
@@ -935,7 +935,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
             else:
                 ys_in_sub = None
 
-            if beam_width == 1 and beam_width_sub == 1:
+            # if beam_width == 1 and beam_width_sub == 1:
+            if False:
                 best_hyps, aw, best_hyps_sub, aw_sub, aw_dec = self._decode_infer_joint_greedy(
                     enc_out, x_lens, enc_out_sub, x_lens_sub,
                     max_decode_len=max_decode_len,
@@ -961,8 +962,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                     ys_sub=ys_in_sub)
 
         elif task_index == 1:
-            _, _, enc_out, x_lens = self._encode(
-                xs, x_lens, is_multi_task=True)
+            _, _, enc_out, x_lens = self._encode(xs, is_multi_task=True)
 
             dir_sub = 'bwd'if self.backward_1 else 'fwd'
 
@@ -1290,7 +1290,7 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                         # Recurrency
                         dec_in_sub = torch.cat(
                             [y_sub, beam_sub[i_beam]['context_vec']], dim=-1)
-                        dec_out_sub, hx_list_sub, cx_list = getattr(
+                        dec_out_sub, hx_list_sub, cx_list_sub = getattr(
                             self, 'decoder_1_' + dir_sub)(dec_in_sub, beam_sub[i_beam]['hx_list'], beam_sub[i_beam]['cx_list'])
 
                     # Score
@@ -1353,11 +1353,11 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                             cov_sum_sub = 0
 
                         # Add RNNLM score
-                        if rnnlm_weight_sub > 0 and self.rnnlm_1 is not None:
+                        if rnnlm_weight_sub > 0 and self.rnnlm_1_fwd is not None:
                             y_sub_rnnlm = Variable(enc_out.data.new(
                                 1, 1).fill_(beam_sub[i_beam]['hyp'][-1]).long(), volatile=True)
-                            y_sub_rnnlm = self.rnnlm_1.embed(y_sub_rnnlm)
-                            rnnlm_logits_step_sub, rnnlm_out_sub, rnnlm_state_sub = self.rnnlm_1.predict(
+                            y_sub_rnnlm = self.rnnlm_1_fwd.embed(y_sub_rnnlm)
+                            rnnlm_logits_step_sub, rnnlm_out_sub, rnnlm_state_sub = self.rnnlm_1_fwd.predict(
                                 y_sub_rnnlm, h=beam_sub[i_beam]['rnnlm_state'])
                             rnnlm_log_probs_sub = F.log_softmax(
                                 rnnlm_logits_step_sub.squeeze(1), dim=1)
@@ -1371,8 +1371,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                             {'hyp': beam_sub[i_beam]['hyp'] + [indices_sub_topk[0, k].data[0]],
                              'score': score_sub,
                              'dec_outs': beam_sub[i_beam]['dec_outs'] + [dec_out_sub],
-                             'hx_list': hx_list_sub,
-                             'cx_list': cx_list_sub,
+                             'hx_list': copy.deepcopy(hx_list_sub),
+                             'cx_list': copy.deepcopy(cx_list_sub),
                              'context_vec': context_vec_sub,
                              'aw_steps': beam_sub[i_beam]['aw_steps'] + [aw_step_sub],
                              'rnnlm_state': rnnlm_state_sub,
@@ -1550,11 +1550,11 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                             cov_sum = 0
 
                         # Add RNNLM score
-                        if rnnlm_weight > 0 and self.rnnlm_0 is not None:
+                        if rnnlm_weight > 0 and self.rnnlm_0_fwd is not None:
                             y_rnnlm = Variable(enc_out.data.new(
                                 1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
-                            y_rnnlm = self.rnnlm_0.embed(y_rnnlm)
-                            rnnlm_logits_step, rnnlm_out, rnnlm_state = self.rnnlm_0.predict(
+                            y_rnnlm = self.rnnlm_0_fwd.embed(y_rnnlm)
+                            rnnlm_logits_step, rnnlm_out, rnnlm_state = self.rnnlm_0_fwd.predict(
                                 y_rnnlm, h=beam[i_beam]['rnnlm_state'])
                             rnnlm_log_probs = F.log_softmax(
                                 rnnlm_logits_step.squeeze(1), dim=1)
@@ -1568,8 +1568,8 @@ class NestedAttentionSeq2seq(AttentionSeq2seq):
                             {'hyp': beam[i_beam]['hyp'] + [indices_topk[0, k].data[0]],
                              'score': score,
                              'dec_out': dec_out,
-                             'hx_list': hx_list,
-                             'cx_list': cx_list,
+                             'hx_list': copy.deepcopy(hx_list),
+                             'cx_list': copy.deepcopy(cx_list),
                              'context_vec_enc': context_vec_enc,
                              'context_vec_dec': context_vec_dec,
                              'aw_steps_enc': beam[i_beam]['aw_steps_enc'] + [aw_step_enc],
