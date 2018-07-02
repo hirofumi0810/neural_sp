@@ -8,27 +8,27 @@ from __future__ import print_function
 import re
 
 
-def normalize(text, remove_tokens=[]):
+def normalize(trans, remove_tokens=[]):
 
     if len(remove_tokens) > 0:
         for token in remove_tokens:
-            text = text.replace(token, '')
+            trans = trans.replace(token, '')
 
     # Remove consecutive spaces
-    text = re.sub(r'[_]+', '_', text)
+    trans = re.sub(r'[_]+', '_', trans)
 
-    text = text.replace('_>', '').replace('>', '')
+    trans = trans.replace('_>', '').replace('>', '')
 
     # Remove first and last space
-    if len(text) > 0:
-        if text[0] == '_':
-            text = text[1:]
+    if len(trans) > 0:
+        if trans[0] == '_':
+            trans = trans[1:]
 
-    if len(text) > 0:
-        if text[-1] == '_':
-            text = text[: -1]
+    if len(trans) > 0:
+        if trans[-1] == '_':
+            trans = trans[: -1]
 
-    return text
+    return trans
 
 
 def normalize_swbd(trans, glm):
@@ -38,28 +38,41 @@ def normalize_swbd(trans, glm):
     Returns:
         trans (string):
     """
-    LAUGHTER = 'L'
-    NOISE = 'N'
-    VOCALIZED_NOISE = 'V'
-
-    # Remove consecutive spaces
-    trans = re.sub(r'[_]+', '_', trans)
-
-    # Fix abbreviation, hesitation
-    trans = glm(trans)
-    # TODO: 省略は元に戻すのではなく，逆に全てを省略形にする方が良い？？
-
     # Replace OOV temporaly
-    trans = trans.replace('OOV', '@')
+    trans = trans.replace('OOV', '#')
 
     # Remove noisy labels
-    trans = normalize(trans, remove_tokens=[
-                      NOISE, LAUGHTER, VOCALIZED_NOISE, '>'])
-    trans = trans.replace('-', '')
+    trans = normalize(trans, remove_tokens=['N', 'L', 'V', '>'])
+    # LAUGHTER = 'L'
+    # NOISE = 'N'
+    # VOCALIZED_NOISE = 'V'
+
+    if len(trans) == 0:
+        return ''
+
+    # Fix abbreviation, map all hesitations into a single class (%hesitation)
+    trans = glm(trans)
+
+    # Remove partial words ending in '-'
+    # and split hyphen-divided words
+    words = []
+    for w in trans.split('_'):
+        if w[-1] == '-':
+            # Remove the last hyphen
+            words += [w[:-1]]
+        elif w[0] == '-':
+            # Remove the fist hyphen
+            words += [w[1:]]
+        else:
+            # Divide by hyphen
+            words += w.split('-')
+    trans = '_'.join(words)
+
+    # TODO: Map acronyms
     trans = trans.replace('.', '')
 
     # Replace back OOV
-    trans = trans.replace('@', 'OOV')
+    trans = trans.replace('#', 'OOV')
 
     return trans
 
@@ -75,29 +88,35 @@ class GLM(object):
         self.map_dict = {}
         with open(glm_path, 'r')as f:
             for line in f:
-                line = line.strip()
+                line = line.strip().lower()
                 if len(line) == 0 or line[0] in [';', '*', '\'']:
                     continue
-                before, after = line.split('=>')
-                before = re.sub(r'[\[\]\s]+', '', before).lower()
-                after = after.split('/')[0]
-                # NOTE: use the first word from candidates
-                after = after.split(';')[0]
-                after = re.sub(r'[\[\]{}]+', '', after).lower()
 
-                # Remove consecutive spaces
-                after = re.sub(r'[\s]+', ' ', after)
+                line = line.split(' ;;')[0]
+                line = line.replace(' / [ ] __ [ ]', '')
+                line = re.sub(r'[_\[\]]+', '', line)
+                line = re.sub(r'[\s]+', ' ', line)
 
-                # Remove the first and last space
-                if after[0] == ' ':
-                    after = after[1:]
-                if after[-1] == ' ':
-                    after = after[:-1]
+                # Remove the last space
+                if line[-1] == ' ':
+                    line = line[:-1]
 
-                self.map_dict[before] = after
-
-                # For debug
-                # print(before + ' => ' + after)
+                if '{' in line:
+                    # right to left
+                    line = re.sub(r'[{}]+', '', line)
+                    before, after = line.split(' => ')
+                    for cand in after.split(' / '):
+                        if before == cand:
+                            continue
+                        else:
+                            self.map_dict[before] = cand
+                            break
+                        # print(cand + ' => ' + after)
+                else:
+                    # left to right
+                    before, after = line.split(' => ')
+                    self.map_dict[before] = after
+                    # print(before + ' => ' + after)
 
     def __call__(self, trans):
         """
@@ -107,17 +126,26 @@ class GLM(object):
             trans (string):
         """
         # Fix abbreviation, hesitation based on GLM
-        word_list = trans.split(self.space)
-        word_list_mapped = []
-        for w in word_list:
-            if w in self.map_dict.keys():
-                word_fixed = self.map_dict[w]
-                word_list_mapped.extend(word_fixed.split(' '))
-
-                # For debug
+        mapped_words = []
+        words = trans.split(self.space)
+        i = 0
+        while True:
+            if words[i] in self.map_dict.keys():
+                word_fixed = self.map_dict[words[i]]
+                mapped_words.extend(word_fixed.split(' '))
                 # print('fixed: %s => %s' % (w, word_fixed))
+                i += 1
+            elif ' '.join(words[i:i + 2]) in self.map_dict.keys():
+                word_fixed = self.map_dict[' '.join(words[i:i + 2])]
+                mapped_words.extend(word_fixed.split(' '))
+                # print('fixed: %s => %s' % (w, word_fixed))
+                i += 2
             else:
-                word_list_mapped.append(w)
-        trans = self.space.join(word_list_mapped)
+                mapped_words.append(words[i])
+                i += 1
 
+            if i == len(words):
+                break
+
+        trans = self.space.join(mapped_words)
         return trans
