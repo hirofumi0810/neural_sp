@@ -8,16 +8,12 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-from collections import defaultdict
 import torch
+import torch.nn.functional as F
+from torch.autograd import Variable
 
 LOG_0 = -float("inf")
 LOG_1 = 0
-
-
-def _make_new_beam():
-    def fn(): return (LOG_0, LOG_0)
-    return defaultdict(fn)
 
 
 class BeamSearchDecoder(object):
@@ -30,7 +26,8 @@ class BeamSearchDecoder(object):
         self.blank = blank_index
 
     def __call__(self, log_probs, x_lens, beam_width=1,
-                 alpha=0., beta=0., space_index=-1):
+                 rnnlm=None, rnnlm_weight=0.,
+                 length_penalty=0., space_index=-1):
         """Performs inference for the given output probabilities.
         Args:
             log_probs (torch.autograd.Variable): The output log-scale probabilities
@@ -38,9 +35,11 @@ class BeamSearchDecoder(object):
                 A tensor of size `[B, T, num_classes]`
             x_lens (list): A tensor of size `[B]`
             beam_width (int): the size of beam
-            alpha (float): language model weight
-            beta (float): insertion bonus
+            rnnlm ():
+            rnnlm_weight (float): language model weight
+            length_penalty (float): insertion bonus
             space_index (int, optional): the index of the space label
+                This is used for character-level CTC.
         Returns:
             best_hyps (list): Best path hypothesis.
                 A tensor of size `[B, labels_max_seq_len]`
@@ -56,11 +55,14 @@ class BeamSearchDecoder(object):
             # Initialize the beam with the empty sequence, a probability of
             # 1 for ending in blank and zero for ending in non-blank
             # (in log space).
-            beam = [(tuple(), (LOG_1, LOG_0))]
+            beam = [{'hyp': [],
+                     'p_blank': LOG_1,
+                     'p_nonblank': LOG_1,
+                     'rnnlm_score': LOG_1,
+                     'rnnlm_state': None}]
 
             for t in range(x_lens[b]):
-                # A default dictionary to store the next step candidates.
-                next_beam = _make_new_beam()
+                new_beam = []
 
                 # Pick up the top-k scores
                 log_probs_topk, indices_topk = torch.topk(
@@ -69,59 +71,85 @@ class BeamSearchDecoder(object):
                 for c in indices_topk.data[b]:
                     p_t = log_probs.data[b, t, c]
 
-                    # The variables p_b and p_nb are respectively the
+                    # The variables p_blank and p_nonblank are respectively the
                     # probabilities for the prefix given that it ends in a
                     # blank and does not end in a blank at this time step.
-                    for prefix, (p_b, p_nb) in beam:
+                    for i_beam in range(len(beam)):
+                        prefix = beam[i_beam]['hyp']
+                        p_blank = beam[i_beam]['p_blank']
+                        p_nonblank = beam[i_beam]['p_nonblank']
+                        rnnlm_score = beam[i_beam]['rnnlm_score']
+                        rnnlm_state = beam[i_beam]['rnnlm_state']
 
                         # If we propose a blank the prefix doesn't change.
                         # Only the probability of ending in blank gets updated.
                         if c == self.blank:
-                            new_p_b, new_p_nb = next_beam[prefix]
-                            new_p_b = np.logaddexp(
-                                new_p_b, np.logaddexp(p_b + p_t, p_nb + p_t))
-                            # new_p_b = np.logaddexp(p_b + p_t, p_nb + p_t)
-                            next_beam[prefix] = (new_p_b, new_p_nb)
+                            new_p_blank = np.logaddexp(
+                                p_blank + p_t, p_nonblank + p_t)
+                            new_beam.append({'hyp': beam[i_beam]['hyp'],
+                                             'p_blank': new_p_blank,
+                                             'p_nonblank': LOG_0,
+                                             'rnnlm_score': rnnlm_score,
+                                             'rnnlm_state': rnnlm_state})
                             continue
 
                         # Extend the prefix by the new character c and it to the
                         # beam. Only the probability of not ending in blank gets
                         # updated.
-                        prefix_end = prefix[-1] if prefix else None
-                        new_prefix = prefix + (c,)
-                        new_p_b, new_p_nb = next_beam[new_prefix]
+                        prefix_end = prefix[-1] if len(prefix) > 0 else None
+                        new_p_blank = LOG_0
+                        new_p_nonblank = LOG_0
                         if c != prefix_end:
-                            new_p_nb = np.logaddexp(
-                                new_p_nb, np.logaddexp(p_b + p_t, p_nb + p_t))
-                            # new_p_nb = np.logaddexp(p_b + p_t, p_nb + p_t)
+                            new_p_nonblank = np.logaddexp(
+                                p_blank + p_t, p_nonblank + p_t)
                         else:
                             # We don't include the previous probability of not ending
-                            # in blank (p_nb) if c is repeated at the end. The CTC
+                            # in blank (p_nonblank) if c is repeated at the end. The CTC
                             # algorithm merges characters not separated by a
                             # blank.
-                            new_p_nb = np.logaddexp(new_p_nb, p_b + p_t)
-                            # new_p_nb = p_b + p_t
+                            new_p_nonblank = p_blank + p_t
 
-                        next_beam[new_prefix] = (new_p_b, new_p_nb)
+                        # Update RNNLM states
+                        if rnnlm_weight > 0 and rnnlm is not None:
+                            y_rnnlm = Variable(log_probs.data.new(
+                                1, 1).fill_(c).long(), volatile=True)
+                            y_rnnlm = rnnlm.embed(y_rnnlm)
+                            logits_step_rnnlm, rnnlm_out, rnnlm_state = rnnlm.predict(
+                                y_rnnlm, h=rnnlm_state)
 
-                        # TODO: add LM score here
+                        # # Add RNNLM score
+                        if rnnlm_weight > 0 and rnnlm is not None:
+                            rnnlm_log_probs = F.log_softmax(
+                                logits_step_rnnlm.squeeze(1), dim=1)
+                            assert log_probs[:, t, :].size(
+                            ) == rnnlm_log_probs.size()
+                            rnnlm_score = rnnlm_log_probs.data[0, c]
+
+                        new_beam.append({'hyp': beam[i_beam]['hyp'] + [c],
+                                         'p_blank': new_p_blank,
+                                         'p_nonblank': new_p_nonblank,
+                                         'rnnlm_score': rnnlm_score,
+                                         'rnnlm_state': rnnlm_state})
 
                         # If c is repeated at the end we also update the unchanged
                         # prefix. This is the merging case.
                         if c == prefix_end:
-                            new_p_b, new_p_nb = next_beam[prefix]
-                            new_p_nb = np.logaddexp(new_p_nb, p_nb + p_t)
-                            # new_p_nb = p_nb + p_t
-                            next_beam[prefix] = (new_p_b, new_p_nb)
+                            new_p_nonblank = p_nonblank + p_t
+                            new_beam.append({'hyp': beam[i_beam]['hyp'],
+                                             'p_blank': new_p_blank,
+                                             'p_nonblank': new_p_nonblank,
+                                             'rnnlm_score': rnnlm_score,
+                                             'rnnlm_state': rnnlm_state})
 
                 # Sort and trim the beam before moving on to the
                 # next time-step.
-                beam = sorted(next_beam.items(),
-                              key=lambda x: np.logaddexp(*x[1]),
+                beam = sorted(new_beam,
+                              key=lambda x: np.logaddexp(
+                                  x['p_blank'], x['p_nonblank']) + x['rnnlm_score'] * rnnlm_weight,
                               reverse=True)
                 beam = beam[:beam_width]
 
-            best_hyp = beam[0][0]
-            best_hyps.append(np.array(list(best_hyp)))
+            best_hyp = beam[0]['hyp']
+            best_hyps.append(np.array(best_hyp))
 
         return np.array(best_hyps)

@@ -181,6 +181,9 @@ class CTC(ModelBase):
         self.weight_noise_std = float(weight_noise_std)
         self.ls_prob = label_smoothing_prob
 
+        # Setting for the RNNLM fusion
+        self.rnnlm_0_fwd = None
+
         # Setting for text input
         self.num_classes_input = num_classes_input + 1
 
@@ -472,17 +475,23 @@ class CTC(ModelBase):
         else:
             logits, x_lens = self._encode(xs)
 
-        if rnnlm_weight > 0:
-            pass
-
         if beam_width == 1:
             best_hyps = self._decode_greedy_np(var2np(logits), x_lens)
         else:
             log_probs = F.log_softmax(logits, dim=-1)
             if not self.use_cuda:
                 log_probs = var2np(log_probs)
+
+            # Setting for RNNLM
+            if rnnlm_weight > 0 and getattr(self, 'rnnlm_' + str(task_index) + '_fwd') is not None:
+                rnnlm = getattr(self, 'rnnlm_' + str(task_index) + '_fwd')
+            else:
+                rnnlm = None
+
             best_hyps = self._decode_beam_np(
-                log_probs, x_lens, beam_width=beam_width)
+                log_probs, x_lens, beam_width=beam_width,
+                rnnlm=rnnlm, rnnlm_weight=rnnlm_weight,
+                length_penalty=0)
 
         # NOTE: index 0 is reserved for the blank class in warpctc_pytorch
         best_hyps -= 1

@@ -16,8 +16,6 @@ from src.models.pytorch_v3.encoders.load_encoder import load
 from src.models.pytorch_v3.ctc.ctc import my_warpctc
 from src.models.pytorch_v3.criterion import cross_entropy_label_smoothing
 from src.models.pytorch_v3.utils import np2var
-from src.utils.io.inputs.frame_stacking import stack_frame
-from src.utils.io.inputs.splicing import do_splice
 
 
 class HierarchicalCTC(CTC):
@@ -153,6 +151,9 @@ class HierarchicalCTC(CTC):
         # Setting for MTL
         self.main_loss_weight = main_loss_weight
         self.sub_loss_weight = sub_loss_weight
+
+        # Setting for the RNNLM fusion
+        self.rnnlm_1_fwd = None
 
         # Load the encoder
         # NOTE: overide encoder
