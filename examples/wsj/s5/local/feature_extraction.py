@@ -59,12 +59,16 @@ CONFIG = {
 def main():
 
     print('=> Processing input data...')
-    for data_size in ['train_si84', 'train_si284']:
-        for data_type in [data_size, 'test_dev93', 'test_eval92']:
+    for data_size in ['si84', 'si284']:
+        for data_type in ['train_' + data_size, 'test_dev93', 'test_eval92']:
 
             print('===> %s' % data_type)
-            feature_save_path = mkdir_join(
-                args.data_save_path, 'feature', args.tool, data_size, data_type)
+            if 'train' in data_type:
+                feature_save_path = mkdir_join(
+                    args.data_save_path, 'feature', args.tool, data_size, 'train')
+            else:
+                feature_save_path = mkdir_join(
+                    args.data_save_path, 'feature', args.tool, data_size, data_type)
 
             utt_indices = []
             with open(join(args.data_save_path, data_type, 'text'), 'r') as f:
@@ -99,13 +103,13 @@ def main():
             else:
                 # Load statistics over train dataset
                 global_mean_male = np.load(
-                    join(args.data_save_path, 'feature', args.tool, data_size, data_size, 'global_mean_male.npy'))
+                    join(args.data_save_path, 'feature', args.tool, data_size, 'train/global_mean_male.npy'))
                 global_std_male = np.load(
-                    join(args.data_save_path, 'feature', args.tool, data_size, data_size, 'global_std_male.npy'))
+                    join(args.data_save_path, 'feature', args.tool, data_size, 'train/global_std_male.npy'))
                 global_mean_female = np.load(
-                    join(args.data_save_path, 'feature', args.tool, data_size, data_size, 'global_mean_female.npy'))
+                    join(args.data_save_path, 'feature', args.tool, data_size, 'train/global_mean_female.npy'))
                 global_std_female = np.load(
-                    join(args.data_save_path, 'feature', args.tool, data_size, data_size, 'global_std_female.npy'))
+                    join(args.data_save_path, 'feature', args.tool, data_size, 'train/global_std_female.npy'))
 
             read_audio(data_type=data_type,
                        audio_paths=audio_paths,
@@ -330,7 +334,7 @@ def read_audio(data_type, audio_paths, spk2gender, tool, config, normalize,
 
         if normalize == 'no':
             pass
-        elif normalize == 'global' or is_training:
+        elif normalize == 'global' or not is_training:
             # Normalize by mean & stddev over the training set per gender
             if gender == 'm':
                 feat_utt -= global_mean_male

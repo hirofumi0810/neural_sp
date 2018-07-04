@@ -30,9 +30,9 @@ echo ===========================================================================
 echo "                                   WSJ                                     "
 echo ============================================================================
 
-stage=3
-# run_background=true
-run_background=false
+stage=0
+run_background=true
+# run_background=false
 
 ### Set path to original data
 wsj0="/n/rd21/corpora_1/WSJ/wsj0"
@@ -276,7 +276,7 @@ if [ ${stage} -le 3 ]; then
         nohup ${PYTHON} ../../../src/bin/training/train_hierarchical.py \
             --corpus ${corpus} \
             --ngpus ${ngpus} \
-            --train_set train_si284 \
+            --train_set train \
             --dev_set test_dev93 \
             --eval_sets test_eval92 \
           --saved_model_path $config_path \
@@ -286,7 +286,7 @@ if [ ${stage} -le 3 ]; then
         nohup ${PYTHON} ../../../src/bin/training/train_hierarchical.py \
             --corpus ${corpus} \
             --ngpus ${ngpus} \
-            --train_set train_si284 \
+            --train_set train \
             --dev_set test_dev93 \
             --eval_sets test_eval92 \
           --saved_model_path $config_path \
@@ -298,7 +298,7 @@ if [ ${stage} -le 3 ]; then
         nohup ${PYTHON} ../../../src/bin/training/train_hierarchical.py \
             --corpus ${corpus} \
             --ngpus ${ngpus} \
-            --train_set train_si284 \
+            --train_set train \
             --dev_set test_dev93 \
             --eval_sets test_eval92 \
           --config_path $config_path \
@@ -309,7 +309,7 @@ if [ ${stage} -le 3 ]; then
         ${PYTHON} ../../../src/bin/training/train_hierarchical.py \
             --corpus ${corpus} \
             --ngpus ${ngpus} \
-            --train_set train_si284 \
+            --train_set train \
             --dev_set test_dev93 \
             --eval_sets test_eval92 \
           --config_path $config_path \
@@ -324,7 +324,7 @@ if [ ${stage} -le 3 ]; then
         nohup ${PYTHON} ../../../src/bin/training/train.py \
             --corpus ${corpus} \
             --ngpus ${ngpus} \
-            --train_set train_si284 \
+            --train_set train \
             --dev_set test_dev93 \
             --eval_sets test_eval92 \
           --saved_model_path $config_path \
@@ -334,7 +334,7 @@ if [ ${stage} -le 3 ]; then
         ${PYTHON} ../../../src/bin/training/train.py \
             --corpus ${corpus} \
             --ngpus ${ngpus} \
-            --train_set train_si284 \
+            --train_set train \
             --dev_set test_dev93 \
             --eval_sets test_eval92 \
           --saved_model_path $config_path \
@@ -346,7 +346,7 @@ if [ ${stage} -le 3 ]; then
         nohup ${PYTHON} ../../../src/bin/training/train.py \
             --corpus ${corpus} \
             --ngpus ${ngpus} \
-            --train_set train_si284 \
+            --train_set train \
             --dev_set test_dev93 \
             --eval_sets test_eval92 \
           --config_path $config_path \
@@ -357,7 +357,7 @@ if [ ${stage} -le 3 ]; then
         ${PYTHON} ../../../src/bin/training/train.py \
             --corpus ${corpus} \
             --ngpus ${ngpus} \
-            --train_set train_si284 \
+            --train_set train \
             --dev_set test_dev93 \
             --eval_sets test_eval92 \
           --config_path $config_path \

@@ -18,6 +18,7 @@ import re
 from distutils.util import strtobool
 
 sys.path.append('../../../')
+from src.utils.io.labels.phone import Phone2idx
 from src.utils.io.labels.character import Char2idx
 from src.utils.io.labels.word import Word2idx
 from src.utils.directory import mkdir_join
@@ -37,18 +38,19 @@ DOUBLE_LETTERS = ['aa', 'bb', 'cc', 'dd', 'ee', 'ff', 'gg', 'hh', 'ii', 'jj',
 SPACE = '_'
 NOISE = '@'
 OOV = 'OOV'
+WORD_BOUNDARY = 'wb'
 
 
 def main():
 
-    for data_size in ['train_si84', 'train_si284']:
+    for data_size in ['si84', 'si284']:
         print('=' * 70)
         print(' ' * 30 + data_size)
         print('=' * 70)
 
-        data_types = [data_size, 'test_dev93', 'test_eval92']
-        if args.has_extended_text:
-            data_types = ['train_lm'] + data_types
+        data_types = ['train_' + data_size, 'test_dev93', 'test_eval92']
+        # if args.has_extended_text:
+        #     data_types += ['train_lm']
         for data_type in data_types:
             print('=' * 50)
             print(' ' * 20 + data_type)
@@ -58,11 +60,11 @@ def main():
             print('=> Processing transcripts...')
             if data_type == 'train_lm':
                 trans_dict = read_text(
-                    join(args.data_save_path, 'train_si284', 'text'),
+                    join(args.data_save_path, 'si284', 'text'),
                     vocab_save_path=mkdir_join(
                         args.data_save_path, 'vocab', data_size),
-                    data_type='train_si284',
-                    lexicon_path=None)
+                    data_type='si284',
+                    lexicon_path=join(args.data_save_path, 'local', 'dict_nosp', 'lexicon.txt'))
                 trans_dict_extend = read_text(
                     join(args.data_save_path, 'local/dict_nosp_larger/cleaned'),
                     vocab_save_path=mkdir_join(
@@ -77,25 +79,36 @@ def main():
                     vocab_save_path=mkdir_join(
                         args.data_save_path, 'vocab', data_size),
                     data_type=data_type,
-                    lexicon_path=None)
+                    lexicon_path=join(args.data_save_path, 'local', 'dict_nosp', 'lexicon.txt'))
 
             # Make dataset file (.csv)
             print('=> Saving dataset files...')
-            csv_save_path = mkdir_join(
-                args.data_save_path, 'dataset', args.tool, data_size, data_type)
+            if 'train_si' in data_type:
+                csv_save_path = mkdir_join(
+                    args.data_save_path, 'dataset', args.tool, data_size, 'train')
+            else:
+                csv_save_path = mkdir_join(
+                    args.data_save_path, 'dataset', args.tool, data_size, data_type)
 
             df_columns = ['frame_num', 'input_path', 'transcript']
             df_word = pd.DataFrame([], columns=df_columns)
             df_char = pd.DataFrame([], columns=df_columns)
             df_char_capital = pd.DataFrame([], columns=df_columns)
+            df_phone = pd.DataFrame([], columns=df_columns)
+            df_phone_wb = pd.DataFrame([], columns=df_columns)
 
             if data_type != 'train_lm':
-                with open(join(args.data_save_path, 'feature', args.tool, data_size, data_type, 'frame_num.pickle'), 'rb') as f:
-                    frame_num_dict = pickle.load(f)
+                if 'train_si' in data_type:
+                    with open(join(args.data_save_path, 'feature', args.tool, data_size, 'train', 'frame_num.pickle'), 'rb') as f:
+                        frame_num_dict = pickle.load(f)
+                else:
+                    with open(join(args.data_save_path, 'feature', args.tool, data_size, data_type, 'frame_num.pickle'), 'rb') as f:
+                        frame_num_dict = pickle.load(f)
 
             utt_count = 0
             df_word_list = []
             df_char_list, df_char_capital_list = [], []
+            df_phone_list, df_phone_wb_list = [], []
             for utt_idx, trans in tqdm(trans_dict.items()):
                 if data_type == 'train_lm':
                     df_word = add_element(
@@ -104,11 +117,20 @@ def main():
                         df_char, [len(trans['char'].split('_')), '', trans['char']])
                     df_char_capital = add_element(
                         df_char_capital, [len(trans['char_capital'].split('_')), '', trans['char_capital']])
+                    df_phone = add_element(
+                        df_phone, [len(trans['phone'].split('_')), '', trans['phone']])
+                    df_phone_wb = add_element(
+                        df_phone_wb, [len(trans['phone_wb'].split('_')), '', trans['phone_wb']])
                 else:
                     speaker = utt_idx[:3]
-                    feat_utt_save_path = join(
-                        args.data_save_path, 'feature', args.tool, data_size, data_type,
-                        speaker, utt_idx + '.npy')
+                    if 'train_si' in data_type:
+                        feat_utt_save_path = join(
+                            args.data_save_path, 'feature', args.tool, data_size, 'train',
+                            speaker, utt_idx + '.npy')
+                    else:
+                        feat_utt_save_path = join(
+                            args.data_save_path, 'feature', args.tool, data_size, data_type,
+                            speaker, utt_idx + '.npy')
                     frame_num = frame_num_dict[utt_idx]
 
                     if not isfile(feat_utt_save_path):
@@ -121,6 +143,10 @@ def main():
                         df_char, [frame_num, feat_utt_save_path, trans['char']])
                     df_char_capital = add_element(
                         df_char_capital, [frame_num, feat_utt_save_path, trans['char_capital']])
+                    df_phone = add_element(
+                        df_phone, [frame_num, feat_utt_save_path, trans['phone']])
+                    df_phone_wb = add_element(
+                        df_phone_wb, [frame_num, feat_utt_save_path, trans['phone_wb']])
                 utt_count += 1
 
                 # Reset
@@ -128,22 +154,29 @@ def main():
                     df_word_list.append(df_word)
                     df_char_list.append(df_char)
                     df_char_capital_list.append(df_char_capital)
+                    df_phone_list.append(df_phone)
+                    df_phone_wb_list.append(df_phone_wb)
 
                     df_word = pd.DataFrame([], columns=df_columns)
                     df_char = pd.DataFrame([], columns=df_columns)
                     df_char_capital = pd.DataFrame([], columns=df_columns)
-
+                    df_phone = pd.DataFrame([], columns=df_columns)
+                    df_phone_wb = pd.DataFrame([], columns=df_columns)
                     utt_count = 0
 
             # Last dataframe
             df_word_list.append(df_word)
             df_char_list.append(df_char)
             df_char_capital_list.append(df_char_capital)
+            df_phone_list.append(df_phone)
+            df_phone_wb_list.append(df_phone_wb)
 
             # Concatenate all dataframes
             df_word = df_word_list[0]
             df_char = df_char_list[0]
             df_char_capital = df_char_capital_list[0]
+            df_phone = df_phone_list[0]
+            df_phone_wb = df_phone_wb_list[0]
 
             for i in df_word_list[1:]:
                 df_word = pd.concat([df_word, i], axis=0)
@@ -151,6 +184,10 @@ def main():
                 df_char = pd.concat([df_char, i], axis=0)
             for i in df_char_capital_list[1:]:
                 df_char_capital = pd.concat([df_char_capital, i], axis=0)
+            for i in df_phone_list[1:]:
+                df_phone = pd.concat([df_phone, i], axis=0)
+            for i in df_phone_wb_list[1:]:
+                df_phone_wb = pd.concat([df_phone_wb, i], axis=0)
 
             df_word.to_csv(
                 join(csv_save_path, 'word.csv'), encoding='utf-8')
@@ -158,6 +195,10 @@ def main():
                 join(csv_save_path, 'character.csv'), encoding='utf-8')
             df_char_capital.to_csv(
                 join(csv_save_path, 'character_capital_divide.csv'), encoding='utf-8')
+            df_phone.to_csv(
+                join(csv_save_path, 'phone.csv'), encoding='utf-8')
+            df_phone_wb.to_csv(
+                join(csv_save_path, 'phone_wb.csv'), encoding='utf-8')
 
 
 def add_element(df, elem_list):
@@ -166,7 +207,7 @@ def add_element(df, elem_list):
     return df
 
 
-def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
+def read_text(text_path, vocab_save_path, data_type, lexicon_path):
     """Read transcripts (.sdb) & save files (.npy).
     Args:
         text_path (string): path to a text file of kaldi
@@ -178,13 +219,30 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
             key (string) => speaker
             value (dict) => the dictionary of utterance information of each speaker
                 key (string) => utterance index
-                value (dict) => list of [word_indices, char_indices, char_capital_indices]
+                value (dict)
+                    key => label type
+                    value => indices
     """
+    # Read the lexicon file
+    word2phone = {}
+    phone_set = set([])
+    if lexicon_path is not None:
+        with open(lexicon_path, 'r') as f:
+            for line in f:
+                word = line.strip().lower().split(' ')[0]
+                phones = line.strip().lower().split(' ')[1:]
+                if '' in phones:
+                    phones.remove('')
+                phone_set |= set(phones)
+                word2phone[word] = ' '.join(phones)
+
     # Make vocabulary files
     word_vocab_path = mkdir_join(vocab_save_path, 'word.txt')
     char_vocab_path = mkdir_join(vocab_save_path, 'character.txt')
     char_capital_vocab_path = mkdir_join(
         vocab_save_path, 'character_capital_divide.txt')
+    phone_vocab_path = mkdir_join(vocab_save_path, 'phone.txt')
+    phone_wb_vocab_path = mkdir_join(vocab_save_path, 'phone_wb.txt')
 
     trans_dict = {}
     char_set = set([])
@@ -197,6 +255,7 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
             if data_type == 'train_lm':
                 utt_idx = i
                 trans = line.lower()
+
                 trans = re.sub(r'[*\\$^]+', '', trans)
 
                 # Replace digits
@@ -229,6 +288,19 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
             else:
                 utt_idx = line.split(' ')[0]
                 trans = ' '.join(line.split(' ')[1:]).lower()
+
+                # Phoneme
+                trans_phone = ''
+                if 'eval' not in data_type:
+                    words = trans.split(' ')
+                    for i, w in enumerate(words):
+                        if w in word2phone.keys():
+                            trans_phone += word2phone[w].replace(' ', SPACE)
+                        else:
+                            trans_phone += word2phone['<unk>']
+                        if i != len(words) - 1:
+                            trans_phone += SPACE + WORD_BOUNDARY + SPACE
+
                 trans = trans.replace('<noise>', NOISE)
                 trans = trans.replace('.period', 'period')
                 trans = trans.replace('\'single-quote', 'single-quote')
@@ -278,7 +350,7 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
                             char_capital_set.add(w[i])
                     trans_capital += w
 
-            trans_dict[utt_idx] = [trans, trans_capital]
+            trans_dict[utt_idx] = [trans, trans_capital, trans_phone]
 
     # Save vocabulary files
     if 'train_si' in data_type:
@@ -301,6 +373,15 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
             for c in char_capital_list:
                 f.write('%s\n' % c)
 
+        # phone-level
+        with open(phone_vocab_path, 'w') as f:
+            phone_list = sorted(list(phone_set))
+            for p in phone_list:
+                f.write('%s\n' % p)
+        with open(phone_wb_vocab_path, 'w') as f:
+            for p in phone_list + [WORD_BOUNDARY]:
+                f.write('%s\n' % p)
+
     # Compute OOV rate
     with codecs.open(mkdir_join(vocab_save_path, 'oov', data_type + '.txt'), 'w', 'utf-8') as f:
         # word-level (threshold == 3)
@@ -313,26 +394,38 @@ def read_text(text_path, vocab_save_path, data_type, lexicon_path=None):
     word2idx = Word2idx(word_vocab_path)
     char2idx = Char2idx(char_vocab_path)
     char2idx_capital = Char2idx(char_capital_vocab_path, capital_divide=True)
+    phone2idx = Phone2idx(phone_vocab_path)
+    phone2idx_wb = Phone2idx(phone_wb_vocab_path)
 
-    for utt_idx, [trans, trans_capital] in tqdm(trans_dict.items()):
+    for utt_idx, [trans, trans_capital, trans_phone] in tqdm(trans_dict.items()):
         if data_type == 'test_eval92':
-            trans_dict[utt_idx] = {"word": trans,
-                                   "char": trans,
-                                   "char_capital": trans}
+            trans_dict[utt_idx] = {
+                "word": trans,
+                "char": trans,
+                "char_capital": trans,
+                "phone": trans_phone.replace('_' + WORD_BOUNDARY + '_', '_'),
+                "phone_wb": trans_phone, }
             # NOTE: save as it is
         else:
             word_indices = word2idx(trans)
             char_indices = char2idx(trans)
             char_capital_indices = char2idx_capital(trans)
+            phone_indices = phone2idx(
+                trans_phone.replace('_' + WORD_BOUNDARY + '_', '_'))
+            phone_wb_indices = phone2idx_wb(trans_phone)
 
             word_indices = ' '.join(list(map(str, word_indices)))
             char_indices = ' '.join(list(map(str, char_indices)))
             char_capital_indices = ' '.join(
                 list(map(str, char_capital_indices)))
+            phone_indices = ' '.join(list(map(str, phone_indices)))
+            phone_wb_indices = ' '.join(list(map(str, phone_wb_indices)))
 
             trans_dict[utt_idx] = {"word": word_indices,
                                    "char": char_indices,
-                                   "char_capital": char_capital_indices}
+                                   "char_capital": char_capital_indices,
+                                   "phone": phone_indices,
+                                   "phone_wb": phone_wb_indices, }
 
     return trans_dict
 
