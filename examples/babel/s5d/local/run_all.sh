@@ -5,10 +5,9 @@ for x in 101-cantonese 102-assamese 103-bengali 104-pashto 105-turkish 106-tagal
     lang=`echo $x | cut -f 2 -d"-"`
     echo $langid
     echo $lang
-    ./setup_experiment.sh asr1_${lang}
-    pushd ../asr1_${lang}
+    ./setup_experiment.sh s5d_${lang}
+    pushd ../s5d_${lang}
     ./run.sh --langs $langid --recog $langid --ngpu 1 &
     sleep 20m # to avoid too many disk access happend at the same time
     popd
 done
-

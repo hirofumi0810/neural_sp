@@ -13,8 +13,8 @@ cd ..
 mkdir ${expname}
 cd ${expname}
 
-cp ../asr1/{cmd,path,run}.sh .
-cp -P ../asr1/steps .
-cp -P ../asr1/utils .
-ln -s ../asr1/local .
-ln -s ../asr1/conf .
+cp ../s5d/{cmd,path,run}.sh .
+cp -P ../s5d/steps .
+cp -P ../s5d/utils .
+ln -s ../s5d/local .
+ln -s ../s5d/conf .

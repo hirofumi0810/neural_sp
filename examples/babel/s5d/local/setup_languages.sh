@@ -7,8 +7,9 @@
 . ./cmd.sh
 . ./conf/lang.conf
 
-langs="101 102 103 104 105 106 202 203 204 205 206 207 301 302 303 304 305 306 401 402 403"
-recog="107 201 307 404"
+# langs="101 103 104 105 107 201 204 205 207 404"  # 10 langs
+langs="101 102 103 104 105 106 107 201 202 203 204 205 206 207 404"  # 15 langs
+recog="102 106 202 203 206"
 FLP=true
 
 . ./utils/parse_options.sh
@@ -31,8 +32,8 @@ echo "Languagues: ${all_langs}"
 
 # Basic directory prep
 for l in ${all_langs}; do
-  [ -d data/${l} ] || mkdir -p data/${l}
-  cd data/${l}
+  [ -d ${data}/${l} ] || mkdir -p ${data}/${l}
+  cd ${data}/${l}
 
   ln -sf ${cwd}/local .
   for f in ${cwd}/{utils,steps,conf}; do
@@ -43,37 +44,39 @@ for l in ${all_langs}; do
   cp ${cwd}/cmd.sh .
   cp ${cwd}/path.sh .
   sed -i 's/\.\.\/\.\.\/\.\./\.\.\/\.\.\/\.\.\/\.\.\/\.\./g' path.sh
-  
+
   cd ${cwd}
 done
 
 # Prepare language specific data
 for l in ${all_langs}; do
-  (
-    cd data/${l}
-    ./local/prepare_data.sh --FLP ${FLP} ${l}
-    cd ${cwd}
-  ) &
+  cd ${data}/${l}
+  ./local/prepare_data.sh --FLP ${FLP} ${l}
+  cd ${cwd}
 done
-wait
 
 # Combine all language specific training directories and generate a single
 # lang directory by combining all language specific dictionaries
 train_dirs=""
 dev_dirs=""
 eval_dirs=""
+num_langs=0
 for l in ${langs}; do
-  train_dirs="data/${l}/data/train_${l} ${train_dirs}"
+  num_langs=`expr $num_langs + 1`
+  train_dirs="${data}/train_${l} ${train_dirs}"
+  dev_dirs="${data}/dev_${l} ${dev_dirs}"
 done
 
 for l in ${recog}; do
-  dev_dirs="data/${l}/data/dev_${l} ${dev_dirs}"
+  eval_dirs="${data}/eval_${l} ${eval_dirs}"
 done
 
-./utils/combine_data.sh data/train ${train_dirs}
-./utils/combine_data.sh data/dev ${dev_dirs}
-
-for l in ${recog}; do
-  ln -s ${cwd}/data/${l}/data/eval_${l} ${cwd}/data/eval_${l}
+train_set="train"
+dev_set="dev"
+for l in ${langs}; do
+  train_set="${train_set}_${l}"
+  dev_set="${dev_set}_${l}"
 done
 
+./utils/combine_data.sh ${data}/${train_set} ${train_dirs}
+./utils/combine_data.sh ${data}/${dev_set} ${dev_dirs}

@@ -1,0 +1,1 @@
+../../../wsj/s5/local/make_htk_config.py
