@@ -109,6 +109,7 @@ class AttentionSeq2seq(ModelBase):
         decoder_residual (bool):
         decoder_dense_residual (bool):
         decoding_order (string): bahdanau or luong or conditional
+        generate_feature (string): s or sc or scy
         bottleneck_dim (int): the dimension of the pre-softmax layer
         backward_loss_weight (int): A weight parameter for the loss of the backward decdoer,
             where the model predicts each token in the reverse order
@@ -179,7 +180,8 @@ class AttentionSeq2seq(ModelBase):
                  decoder_residual=False,
                  decoder_dense_residual=False,
                  decoding_order='bahdanau',
-                 bottleneck_dim=None,
+                 generate_feature='sc',
+                 bottleneck_dim=0,
                  backward_loss_weight=0,
                  num_heads=1,
                  rnnlm_fusion_type=None,
@@ -210,13 +212,15 @@ class AttentionSeq2seq(ModelBase):
         self.decoder_num_units_0 = decoder_num_units
         self.decoder_num_layers_0 = decoder_num_layers
         self.embedding_dim = embedding_dim
-        self.bottleneck_dim = decoder_num_units if bottleneck_dim is None else bottleneck_dim
+        # self.bottleneck_dim = 0 if rnnlm_fusion_type else bottleneck_dim
+        self.bottleneck_dim = bottleneck_dim
         self.num_classes = num_classes + 1  # Add <EOS> class
         self.sos_0 = num_classes
         self.eos_0 = num_classes
         self.pad_index = -1024
         # NOTE: <SOS> and <EOS> have the same index
         self.decoding_order = decoding_order
+        self.generate_feature = generate_feature
         assert 0 <= backward_loss_weight <= 1
         self.fwd_weight_0 = 1 - backward_loss_weight
         self.bwd_weight_0 = backward_loss_weight
@@ -292,18 +296,29 @@ class AttentionSeq2seq(ModelBase):
                 residual_connection=rnnlm_config['residual_connection'],
                 backward=rnnlm_config['backward'])
 
-            self.W_rnnlm_logits_0_fwd = LinearND(
-                self.rnnlm_0_fwd.num_classes, decoder_num_units,
-                dropout=dropout_decoder)
-            self.W_rnnlm_gate_0_fwd = LinearND(
-                decoder_num_units * 2, self.bottleneck_dim,
-                dropout=dropout_decoder)
+            if rnnlm_fusion_type == 'cold_fusion':
+                self.W_rnnlm_logits_0_fwd = LinearND(
+                    self.rnnlm_0_fwd.num_classes, rnnlm_config['num_units'],
+                    dropout=dropout_decoder)
+            if rnnlm_fusion_type in ['cold_fusion', 'cold_fusion_simple']:
+                self.W_rnnlm_gate_0_fwd = LinearND(
+                    decoder_num_units + rnnlm_config['num_units'],
+                    rnnlm_config['num_units'],
+                    dropout=dropout_decoder)
+                if self.bottleneck_dim == 0:
+                    self.W_rnnlm_0_fwd = LinearND(
+                        rnnlm_config['num_units'], self.num_classes,
+                        dropout=dropout_decoder)
+                else:
+                    self.W_rnnlm_0_fwd = LinearND(
+                        rnnlm_config['num_units'], self.bottleneck_dim,
+                        dropout=dropout_decoder)
 
             # Fix RNNLM parameters
             if rnnlm_weight == 0:
                 for param in self.rnnlm_0_fwd.parameters():
                     param.requires_grad = False
-        # TODO: backward RNNLM
+        # TODO: cold fusion for backward RNNLM
 
         # Encoder
         if encoder_type in ['lstm', 'gru', 'rnn']:
@@ -440,14 +455,30 @@ class AttentionSeq2seq(ModelBase):
                     kernel_size=attention_conv_width))
 
             # Output layer
-            setattr(self, 'W_d_0_' + dir, LinearND(
-                decoder_num_units, self.bottleneck_dim,
-                dropout=dropout_decoder))
-            setattr(self, 'W_c_0_' + dir, LinearND(
-                self.encoder_num_units, self.bottleneck_dim,
-                dropout=dropout_decoder))
-            setattr(self, 'fc_0_' + dir,
-                    LinearND(self.bottleneck_dim, self.num_classes))
+            if self.bottleneck_dim > 0:
+                setattr(self, 'W_d_0_' + dir, LinearND(
+                    decoder_num_units, self.bottleneck_dim,
+                    dropout=dropout_decoder))
+                if 'c' in generate_feature:
+                    setattr(self, 'W_c_0_' + dir, LinearND(
+                        self.encoder_num_units, self.bottleneck_dim,
+                        dropout=dropout_decoder))
+                if 'y' in generate_feature:
+                    setattr(self, 'W_y_0_' + dir, LinearND(
+                        embedding_dim, self.bottleneck_dim,
+                        dropout=dropout_decoder))
+                setattr(self, 'fc_0_' + dir,
+                        LinearND(self.bottleneck_dim, self.num_classes))
+            else:
+                setattr(self, 'W_d_0_' + dir, LinearND(
+                    decoder_num_units, self.num_classes))
+                if 'c' in generate_feature:
+                    setattr(self, 'W_c_0_' + dir, LinearND(
+                        self.encoder_num_units, self.num_classes))
+                if 'y' in generate_feature:
+                    setattr(self, 'W_y_0_' + dir, LinearND(
+                        self.encoder_num_units, self.num_classes))
+                # NOTE: turn off dropout
 
         # Embedding
         self.embed_0 = Embedding(num_classes=self.num_classes,
@@ -499,6 +530,11 @@ class AttentionSeq2seq(ModelBase):
         # Initialize bias in forget gate with 1
         if init_forget_gate_bias_with_one:
             self.init_forget_gate_bias_with_one()
+
+        # Initialize bias in gating with -1
+        if rnnlm_fusion_type in ['cold_fusion', 'cold_fusion_simple']:
+            self.init_weights(-1, distribution='constant',
+                              keys=['W_rnnlm_gate_0_fwd.fc.bias'])
 
     def forward(self, xs, ys, is_eval=False):
         """Forward computation.
@@ -782,6 +818,11 @@ class AttentionSeq2seq(ModelBase):
                 batch_size, 1, enc_out.size(-1)).fill_(0.))
         rnnlm_state = None
 
+        # Set RNNLM to the evalu mode in cold fusion
+        if self.rnnlm_fusion_type:
+            if getattr(self, 'rnnlm_weight_' + str(task)) == 0:
+                getattr(self, 'rnnlm' + taskdir).eval()
+
         # Pre-computation of embedding
         ys_emb = getattr(self, 'embed_' + str(task))(ys)
         if self.rnnlm_fusion_type:
@@ -813,12 +854,11 @@ class AttentionSeq2seq(ModelBase):
             if self.decoding_order == 'bahdanau':
                 if t > 0:
                     # Recurrency
-                    if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
-                        y = torch.cat([y, y_rnnlm], dim=-1)
-                    if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
-                        context_vec = torch.cat(
-                            [context_vec, rnnlm_out], dim=-1)
                     dec_in = torch.cat([y, context_vec], dim=-1)
+                    if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
+                        dec_in = torch.cat([dec_in, y_rnnlm], dim=-1)
+                    if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
+                        dec_in = torch.cat([dec_in, rnnlm_out], dim=-1)
                     dec_out, hx_list, cx_list = getattr(self, 'decoder' + taskdir)(
                         dec_in, hx_list, cx_list)
 
@@ -828,12 +868,11 @@ class AttentionSeq2seq(ModelBase):
 
             elif self.decoding_order == 'luong':
                 # Recurrency
-                if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
-                    y = torch.cat([y, y_rnnlm], dim=-1)
-                if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
-                    context_vec = torch.cat(
-                        [context_vec, rnnlm_out], dim=-1)
                 dec_in = torch.cat([y, context_vec], dim=-1)
+                if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
+                    dec_in = torch.cat([dec_in, y_rnnlm], dim=-1)
+                if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
+                    dec_in = torch.cat([dec_in, rnnlm_out], dim=-1)
                 dec_out, hx_list, cx_list = getattr(self, 'decoder' + taskdir)(
                     dec_in, hx_list, cx_list)
 
@@ -843,43 +882,61 @@ class AttentionSeq2seq(ModelBase):
 
             elif self.decoding_order == 'conditional':
                 # Recurrency of the first decoder
+                dec_in_first = y
                 if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
-                    y = torch.cat([y, y_rnnlm], dim=-1)
+                    dec_in_first = torch.cat([dec_in_first, y_rnnlm], dim=-1)
                 _dec_out, _hx_list, _cx_list = getattr(self, 'decoder_first' + taskdir)(
-                    y, hx_list, cx_list)
+                    dec_in_first, hx_list, cx_list)
 
                 # Score
                 context_vec, aw_step = getattr(self, 'attend' + taskdir)(
                     enc_out, x_lens, _dec_out, aw_step)
 
                 # Recurrency of the second decoder
+                dec_in_second = context_vec
                 if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
-                    context_vec = torch.cat(
-                        [context_vec, rnnlm_out], dim=-1)
+                    dec_in_second = torch.cat(
+                        [dec_in_second, rnnlm_out], dim=-1)
                 dec_out, hx_list, cx_list = getattr(self, 'decoder_second' + taskdir)(
-                    context_vec, _hx_list, _cx_list)
+                    dec_in_second, _hx_list, _cx_list)
 
             else:
                 raise ValueError(self.decoding_order)
 
             # Generate
-            logits_step = getattr(self, 'W_d' + taskdir)(dec_out) + \
-                getattr(self, 'W_c' + taskdir)(context_vec)
+            logits_step = getattr(self, 'W_d' + taskdir)(dec_out)
+            if 'c' in self.generate_feature:
+                logits_step += getattr(self, 'W_c' + taskdir)(context_vec)
+            if 'y' in self.generate_feature:
+                logits_step += getattr(self, 'W_y' + taskdir)(y)
 
             # RNNLM fusion
-            if self.rnnlm_fusion_type == 'cold_fusion':
-                logits_step_rnnlm = getattr(self, 'W_rnnlm_logits' + taskdir)(
-                    logits_step_rnnlm)
+            if self.rnnlm_fusion_type == 'cold_fusion_simple':
+                # Fine-grained gating
                 gate = F.sigmoid(getattr(self, 'W_rnnlm_gate' + taskdir)(
-                    torch.cat([dec_out, logits_step_rnnlm], dim=-1)))
-                logits_step += gate * logits_step_rnnlm
-                non_linear = F.relu
-            else:
-                non_linear = F.tanh
-            logits_step = getattr(self, 'fc' + taskdir)(
-                non_linear(logits_step))
-            if self.rnnlm_fusion_type == 'logits_fusion':
+                    torch.cat([dec_out, rnnlm_out], dim=-1)))
+                logits_step += getattr(self, 'W_rnnlm' + taskdir)(
+                    torch.mul(gate, rnnlm_out))
+            elif self.rnnlm_fusion_type == 'cold_fusion':
+                # Prob injection
+                rnnlm_feat = getattr(self, 'W_rnnlm_logits' + taskdir)(
+                    logits_step_rnnlm)
+                # Fine-grained gating
+                gate = F.sigmoid(getattr(self, 'W_rnnlm_gate' + taskdir)(
+                    torch.cat([dec_out, rnnlm_feat], dim=-1)))
+                logits_step += getattr(self, 'W_rnnlm' + taskdir)(
+                    torch.mul(gate, rnnlm_out))
+                if self.bottleneck_dim == 0:
+                    logits_step = F.relu(logits_step)
+            elif self.rnnlm_fusion_type == 'logits_fusion':
                 logits_step += logits_step_rnnlm
+
+            if self.bottleneck_dim > 0:
+                if self.rnnlm_fusion_type == 'cold_fusion':
+                    logits_step = F.relu(logits_step)
+                else:
+                    logits_step = F.tanh(logits_step)
+                logits_step = getattr(self, 'fc' + taskdir)(logits_step)
 
             logits += [logits_step]
             if self.coverage_weight > 0:
@@ -960,7 +1017,7 @@ class AttentionSeq2seq(ModelBase):
         return dec_out, hx_list, cx_list
 
     def decode(self, xs, beam_width, max_decode_len, min_decode_len=0,
-               min_decode_len_ratio=0, length_penalty=0, coverage_penalty=0,
+               min_decode_len_ratio=0, length_penalty=0, coverage_penalty=0, coverage_threshold=0,
                rnnlm_weight=0, task_index=0, resolving_unk=False,
                exclude_eos=True):
         """Decoding in the inference stage.
@@ -972,6 +1029,7 @@ class AttentionSeq2seq(ModelBase):
             min_decode_len_ratio (float):
             length_penalty (float): length penalty
             coverage_penalty (float): coverage penalty
+            coverage_threshold (float): threshold for coverage penalty
             rnnlm_weight (float): the weight of RNNLM score
             task_index (int): not used (to make compatible)
             resolving_unk (bool): not used (to make compatible)
@@ -1003,7 +1061,7 @@ class AttentionSeq2seq(ModelBase):
         else:
             best_hyps, aw = self._decode_infer_beam(
                 enc_out, x_lens, beam_width, max_decode_len, min_decode_len,
-                min_decode_len_ratio, length_penalty, coverage_penalty,
+                min_decode_len_ratio, length_penalty, coverage_penalty, coverage_threshold,
                 rnnlm_weight, 0, dir, exclude_eos)
 
         return best_hyps, aw, perm_idx
@@ -1059,12 +1117,11 @@ class AttentionSeq2seq(ModelBase):
             if self.decoding_order == 'bahdanau':
                 if t > 0:
                     # Recurrency
-                    if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
-                        y = torch.cat([y, y_rnnlm], dim=-1)
-                    if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
-                        context_vec = torch.cat(
-                            [context_vec, rnnlm_out], dim=-1)
                     dec_in = torch.cat([y, context_vec], dim=-1)
+                    if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
+                        dec_in = torch.cat([dec_in, y_rnnlm], dim=-1)
+                    if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
+                        dec_in = torch.cat([dec_in, rnnlm_out], dim=-1)
                     dec_out, hx_list, cx_list = getattr(self, 'decoder' + taskdir)(
                         dec_in, hx_list, cx_list)
 
@@ -1074,12 +1131,11 @@ class AttentionSeq2seq(ModelBase):
 
             elif self.decoding_order == 'luong':
                 # Recurrency
-                if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
-                    y = torch.cat([y, y_rnnlm], dim=-1)
-                if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
-                    context_vec = torch.cat(
-                        [context_vec, rnnlm_out], dim=-1)
                 dec_in = torch.cat([y, context_vec], dim=-1)
+                if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
+                    dec_in = torch.cat([dec_in, y_rnnlm], dim=-1)
+                if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
+                    dec_in = torch.cat([dec_in, rnnlm_out], dim=-1)
                 dec_out, hx_list, cx_list = getattr(self, 'decoder' + taskdir)(
                     dec_in, hx_list, cx_list)
 
@@ -1089,43 +1145,61 @@ class AttentionSeq2seq(ModelBase):
 
             elif self.decoding_order == 'conditional':
                 # Recurrency of the first decoder
+                dec_in_first = y
                 if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
-                    y = torch.cat([y, y_rnnlm], dim=-1)
+                    dec_in_first = torch.cat([dec_in_first, y_rnnlm], dim=-1)
                 _dec_out, _hx_list, _cx_list = getattr(self, 'decoder_first' + taskdir)(
-                    y, hx_list, cx_list)
+                    dec_in_first, hx_list, cx_list)
 
                 # Score
                 context_vec, aw_step = getattr(self, 'attend' + taskdir)(
                     enc_out, x_lens, _dec_out, aw_step)
 
                 # Recurrency of the second decoder
+                dec_in_second = context_vec
                 if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
-                    context_vec = torch.cat(
-                        [context_vec, rnnlm_out], dim=-1)
+                    dec_in_second = torch.cat(
+                        [dec_in_second, rnnlm_out], dim=-1)
                 dec_out, hx_list, cx_list = getattr(self, 'decoder_second' + taskdir)(
-                    context_vec, _hx_list, _cx_list)
+                    dec_in_second, _hx_list, _cx_list)
 
             else:
                 raise ValueError(self.decoding_order)
 
             # Generate
-            logits_step = getattr(self, 'W_d' + taskdir)(dec_out) + \
-                getattr(self, 'W_c' + taskdir)(context_vec)
+            logits_step = getattr(self, 'W_d' + taskdir)(dec_out)
+            if 'c' in self.generate_feature:
+                logits_step += getattr(self, 'W_c' + taskdir)(context_vec)
+            if 'y' in self.generate_feature:
+                logits_step += getattr(self, 'W_y' + taskdir)(y)
 
             # RNNLM fusion
-            if self.rnnlm_fusion_type == 'cold_fusion':
+            if self.rnnlm_fusion_type == 'cold_fusion_simple':
+                # Fine-grained gating
+                gate = F.sigmoid(getattr(self, 'W_rnnlm_gate' + taskdir)(
+                    torch.cat([dec_out, rnnlm_out], dim=-1)))
+                logits_step += getattr(self, 'W_rnnlm' + taskdir)(
+                    torch.mul(gate, rnnlm_out))
+            elif self.rnnlm_fusion_type == 'cold_fusion':
+                # Prob injection
                 rnnlm_feat = getattr(self, 'W_rnnlm_logits' + taskdir)(
                     logits_step_rnnlm)
+                # Fine-grained gating
                 gate = F.sigmoid(getattr(self, 'W_rnnlm_gate' + taskdir)(
                     torch.cat([dec_out, rnnlm_feat], dim=-1)))
-                logits_step += gate * rnnlm_feat
-                non_linear = F.relu
-            else:
-                non_linear = F.tanh
-            logits_step = getattr(self, 'fc' + taskdir)(
-                non_linear(logits_step))
-            if self.rnnlm_fusion_type == 'logits_fusion':
+                logits_step += getattr(self, 'W_rnnlm' + taskdir)(
+                    torch.mul(gate, rnnlm_out))
+                if self.bottleneck_dim == 0:
+                    logits_step = F.relu(logits_step)
+            elif self.rnnlm_fusion_type == 'logits_fusion':
                 logits_step += logits_step_rnnlm
+
+            if self.bottleneck_dim > 0:
+                if self.rnnlm_fusion_type == 'cold_fusion':
+                    logits_step = F.relu(logits_step)
+                else:
+                    logits_step = F.tanh(logits_step)
+                logits_step = getattr(self, 'fc' + taskdir)(logits_step)
 
             # Pick up 1-best
             y = torch.max(logits_step.squeeze(1), dim=1)[1].unsqueeze(1)
@@ -1175,7 +1249,7 @@ class AttentionSeq2seq(ModelBase):
 
     def _decode_infer_beam(self, enc_out, x_lens, beam_width,
                            max_decode_len, min_decode_len, min_decode_len_ratio,
-                           length_penalty, coverage_penalty, rnnlm_weight,
+                           length_penalty, coverage_penalty, coverage_threshold, rnnlm_weight,
                            task, dir, exclude_eos):
         """Beam search decoding in the inference stage.
         Args:
@@ -1188,6 +1262,7 @@ class AttentionSeq2seq(ModelBase):
             min_decode_len_ratio (float):
             length_penalty (float): length penalty
             coverage_penalty (float): coverage penalty
+            coverage_threshold (float): threshold for coverage penalty
             rnnlm_weight (float): the weight of RNNLM score
             task (int): the index of a task
             dir (str): fwd or bwd
@@ -1251,13 +1326,13 @@ class AttentionSeq2seq(ModelBase):
                             dec_out = beam[i_beam]['dec_out']
                         else:
                             # Recurrency
-                            if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
-                                y = torch.cat([y, y_rnnlm], dim=-1)
-                            if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
-                                beam[i_beam]['context_vec'] = torch.cat(
-                                    [beam[i_beam]['context_vec'], rnnlm_out], dim=-1)
                             dec_in = torch.cat(
                                 [y, beam[i_beam]['context_vec']], dim=-1)
+                            if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
+                                dec_in = torch.cat([dec_in, y_rnnlm], dim=-1)
+                            if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
+                                dec_in = torch.cat([dec_in, rnnlm_out], dim=-1)
+
                             dec_out, hx_list, cx_list = getattr(self, 'decoder' + taskdir)(
                                 dec_in, beam[i_beam]['hx_list'], beam[i_beam]['cx_list'])
 
@@ -1268,13 +1343,13 @@ class AttentionSeq2seq(ModelBase):
 
                     elif self.decoding_order == 'luong':
                         # Recurrency
-                        if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
-                            y = torch.cat([y, y_rnnlm], dim=-1)
-                        if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
-                            beam[i_beam]['context_vec'] = torch.cat(
-                                [beam[i_beam]['context_vec'], rnnlm_out], dim=-1)
                         dec_in = torch.cat(
                             [y, beam[i_beam]['context_vec']], dim=-1)
+                        if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
+                            dec_in = torch.cat([dec_in, y_rnnlm], dim=-1)
+                        if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
+                            dec_in = torch.cat([dec_in, rnnlm_out], dim=-1)
+
                         dec_out, hx_list, cx_list = getattr(self, 'decoder' + taskdir)(
                             dec_in, beam[i_beam]['hx_list'], beam[i_beam]['cx_list'])
 
@@ -1285,10 +1360,12 @@ class AttentionSeq2seq(ModelBase):
 
                     elif self.decoding_order == 'conditional':
                         # Recurrency of the first decoder
+                        dec_in_first = y
                         if self.rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
-                            y = torch.cat([y, y_rnnlm], dim=-1)
+                            dec_in_first = torch.cat(
+                                [dec_in_first, y_rnnlm], dim=-1)
                         _dec_out, _hx_list, _cx_list = getattr(self, 'decoder_first' + taskdir)(
-                            y, beam[i_beam]['hx_list'], beam[i_beam]['cx_list'])
+                            dec_in_first, beam[i_beam]['hx_list'], beam[i_beam]['cx_list'])
 
                         # Score
                         context_vec, aw_step = getattr(self, 'attend' + taskdir)(
@@ -1296,33 +1373,52 @@ class AttentionSeq2seq(ModelBase):
                             _dec_out, beam[i_beam]['aw_steps'][-1])
 
                         # Recurrency of the second decoder
+                        dec_in_second = context_vec
                         if self.rnnlm_fusion_type in ['state_fusion', 'state_embedding_fusion']:
-                            context_vec = torch.cat(
-                                [context_vec, rnnlm_out], dim=-1)
+                            dec_in_second = torch.cat(
+                                [dec_in_second, rnnlm_out], dim=-1)
                         dec_out, hx_list, cx_list = getattr(self, 'decoder_second' + taskdir)(
-                            context_vec, _hx_list, _cx_list)
+                            dec_in_second, _hx_list, _cx_list)
 
                     else:
                         raise ValueError(self.decoding_order)
 
                     # Generate
-                    logits_step = getattr(self, 'W_d' + taskdir)(dec_out) +\
-                        getattr(self, 'W_c' + taskdir)(context_vec)
+                    logits_step = getattr(self, 'W_d' + taskdir)(dec_out)
+                    if 'c' in self.generate_feature:
+                        logits_step += getattr(self,
+                                               'W_c' + taskdir)(context_vec)
+                    if 'y' in self.generate_feature:
+                        logits_step += getattr(self, 'W_y' + taskdir)(y)
 
                     # RNNLM fusion
-                    if self.rnnlm_fusion_type == 'cold_fusion':
+                    if self.rnnlm_fusion_type == 'cold_fusion_simple':
+                        # Fine-grained gating
+                        gate = F.sigmoid(getattr(self, 'W_rnnlm_gate' + taskdir)(
+                            torch.cat([dec_out, rnnlm_out], dim=-1)))
+                        logits_step += getattr(self, 'W_rnnlm' + taskdir)(
+                            torch.mul(gate, rnnlm_out))
+                    elif self.rnnlm_fusion_type == 'cold_fusion':
+                        # Prob injection
                         rnnlm_feat = getattr(self, 'W_rnnlm_logits' + taskdir)(
                             logits_step_rnnlm)
+                        # Fine-grained gating
                         gate = F.sigmoid(getattr(self, 'W_rnnlm_gate' + taskdir)(
                             torch.cat([dec_out, rnnlm_feat], dim=-1)))
-                        logits_step += gate * rnnlm_feat
-                        non_linear = F.relu
-                    else:
-                        non_linear = F.tanh
-                    logits_step = getattr(self, 'fc' + taskdir)(
-                        non_linear(logits_step))
-                    if self.rnnlm_fusion_type == 'logits_fusion':
+                        logits_step += getattr(self, 'W_rnnlm' + taskdir)(
+                            torch.mul(gate, rnnlm_out))
+                        if self.bottleneck_dim == 0:
+                            logits_step = F.relu(logits_step)
+                    elif self.rnnlm_fusion_type == 'logits_fusion':
                         logits_step += logits_step_rnnlm
+
+                    if self.bottleneck_dim > 0:
+                        if self.rnnlm_fusion_type == 'cold_fusion':
+                            logits_step = F.relu(logits_step)
+                        else:
+                            logits_step = F.tanh(logits_step)
+                        logits_step = getattr(self, 'fc' + taskdir)(
+                            logits_step)
 
                     # Path through the softmax layer & convert to log-scale
                     log_probs = F.log_softmax(logits_step.squeeze(1), dim=1)
@@ -1350,8 +1446,6 @@ class AttentionSeq2seq(ModelBase):
                             score -= beam[i_beam]['previous_coverage'] * \
                                 coverage_penalty
 
-                            cov_threshold = 0.5
-                            # TODO: make this parameter
                             aw_steps = torch.stack(
                                 beam[i_beam]['aw_steps'][1:] + [aw_step], dim=1)
 
@@ -1361,8 +1455,11 @@ class AttentionSeq2seq(ModelBase):
                                 # TODO: fix for MHA
                             else:
                                 cov_sum = aw_steps.data[0].cpu().numpy()
-                            cov_sum = np.sum(cov_sum[np.where(
-                                cov_sum > cov_threshold)[0]])
+                            if coverage_threshold == 0:
+                                cov_sum = np.sum(cov_sum)
+                            else:
+                                cov_sum = np.sum(cov_sum[np.where(
+                                    cov_sum > coverage_threshold)[0]])
                             score += cov_sum * coverage_penalty
                         else:
                             cov_sum = 0
