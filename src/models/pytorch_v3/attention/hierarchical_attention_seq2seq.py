@@ -9,7 +9,6 @@ from __future__ import print_function
 
 import numpy as np
 import copy
-import math
 from scipy.stats import entropy
 
 import torch
@@ -90,8 +89,9 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  decoder_residual=False,
                  decoder_dense_residual=False,
                  decoding_order='bahdanau',
-                 bottleneck_dim=256,
-                 bottleneck_dim_sub=256,  # ***
+                 generate_feature='sc',
+                 bottleneck_dim=0,
+                 bottleneck_dim_sub=0,  # ***
                  backward_sub=False,  # ***
                  num_heads=1,
                  num_heads_sub=1,  # ***
@@ -151,6 +151,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             decoder_residual=decoder_residual,
             decoder_dense_residual=decoder_dense_residual,
             decoding_order=decoding_order,
+            generate_feature=generate_feature,
             bottleneck_dim=bottleneck_dim,
             backward_loss_weight=0,
             num_heads=num_heads,
@@ -169,6 +170,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Setting for the decoder in the sub task
         self.decoder_num_units_1 = decoder_num_units_sub
         self.decoder_num_layers_1 = decoder_num_layers_sub
+        self.bottleneck_dim_sub = 0 if rnnlm_fusion_type else bottleneck_dim_sub
         self.num_classes_sub = num_classes_sub + 1  # Add <EOS> class
         self.sos_1 = num_classes_sub
         self.eos_1 = num_classes_sub
@@ -364,14 +366,30 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     kernel_size=attention_conv_width))
 
             # Output layer (sub)
-            setattr(self, 'W_d_1_' + dir_sub, LinearND(
-                decoder_num_units_sub, bottleneck_dim_sub,
-                dropout=dropout_decoder))
-            setattr(self, 'W_c_1_' + dir_sub, LinearND(
-                self.encoder_num_units_sub, bottleneck_dim_sub,
-                dropout=dropout_decoder))
-            setattr(self, 'fc_1_' + dir_sub, LinearND(
-                bottleneck_dim_sub, self.num_classes_sub))
+            if self.bottleneck_dim_sub > 0:
+                setattr(self, 'W_d_1_' + dir_sub, LinearND(
+                    decoder_num_units_sub, self.bottleneck_dim_sub,
+                    dropout=dropout_decoder))
+                if 'c' in generate_feature:
+                    setattr(self, 'W_c_1_' + dir_sub, LinearND(
+                        self.encoder_num_units_sub, self.bottleneck_dim_sub,
+                        dropout=dropout_decoder))
+                if 'y' in generate_feature:
+                    setattr(self, 'W_y_1_' + dir, LinearND(
+                        embedding_dim_sub, self.bottleneck_dim_sub,
+                        dropout=dropout_decoder))
+                setattr(self, 'fc_1_' + dir_sub, LinearND(
+                    self.bottleneck_dim_sub, self.num_classes_sub))
+            else:
+                setattr(self, 'W_d_1_' + dir_sub, LinearND(
+                    decoder_num_units_sub, self.num_classes_sub))
+                if 'c' in generate_feature:
+                    setattr(self, 'W_c_1_' + dir_sub, LinearND(
+                        self.encoder_num_units_sub, self.num_classes_sub))
+                if 'y' in generate_feature:
+                    setattr(self, 'W_y_1_' + dir, LinearND(
+                        self.encoder_num_units_sub, self.num_classes_sub))
+                # NOTE: turn off dropout
 
             # Embedding (sub)
             self.embed_1 = Embedding(num_classes=self.num_classes_sub,
@@ -499,7 +517,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         return loss, loss_main, loss_sub.data[0], acc_main, acc_sub
 
     def decode(self, xs, beam_width, max_decode_len, min_decode_len=0, min_decode_len_ratio=0,
-               length_penalty=0, coverage_penalty=0, rnnlm_weight=0,
+               length_penalty=0, coverage_penalty=0, coverage_threshold=0, rnnlm_weight=0,
                task_index=0, joint_decoding=False, space_index=-1, oov_index=-1,
                word2char=None, score_sub_weight=0, entropy_threshold=1,
                idx2word=None, idx2char=None, rnnlm_weight_sub=0, exclude_eos=True):
@@ -512,6 +530,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             min_decode_len_ratio (float):
             length_penalty (float): length penalty
             coverage_penalty (float): coverage penalty
+            coverage_threshold (float): threshold for coverage penalty
             rnnlm_weight (float): the weight of RNNLM score
             task_index (int): the index of a task
             joint_decoding (bool): None or onepass or rescoring
@@ -566,7 +585,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     enc_out, x_lens,
                     enc_out_sub, x_lens_sub,
                     beam_width, max_decode_len, min_decode_len, min_decode_len_ratio,
-                    length_penalty, coverage_penalty, rnnlm_weight, rnnlm_weight_sub,
+                    length_penalty, coverage_penalty, coverage_threshold, rnnlm_weight, rnnlm_weight_sub,
                     space_index, oov_index, word2char, score_sub_weight, entropy_threshold,
                     idx2word, idx2char, exclude_eos)
 
@@ -578,14 +597,15 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 else:
                     best_hyps, aw = self._decode_infer_beam(
                         enc_out, x_lens, beam_width, max_decode_len, min_decode_len,
-                        min_decode_len_ratio, length_penalty, coverage_penalty,
+                        min_decode_len_ratio, length_penalty, coverage_penalty, coverage_threshold,
                         rnnlm_weight, task_index, dir, exclude_eos)
 
             return best_hyps, aw, perm_idx
 
     def _decode_infer_joint(self, enc_out, x_lens, enc_out_sub, x_lens_sub,
                             beam_width, max_decode_len, min_decode_len, min_decode_len_ratio,
-                            length_penalty, coverage_penalty, rnnlm_weight, rnnlm_weight_sub,
+                            length_penalty, coverage_penalty, coverage_threshold,
+                            rnnlm_weight, rnnlm_weight_sub,
                             space_index, oov_index, word2char, score_sub_weight, entropy_threshold,
                             idx2word, idx2char, exclude_eos):
         """Joint decoding (one-pass).
@@ -602,6 +622,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             min_decode_len_ratio (float):
             length_penalty (float): length penalty
             coverage_penalty (float): coverage penalty
+            coverage_threshold (float): threshold for converage penalty
             rnnlm_weight (float): the weight of RNNLM score of the main task
             rnnlm_weight_sub (float): the weight of RNNLM score of the sub task
             space_index (int):
@@ -620,6 +641,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             aw_dec (np.ndarray): A tensor of size `[B, L, L_sub]`
         """
         debug = False
+        # debug = True
+
+        # entropy_regularizatoin = True
+        entropy_regularizatoin = False
+
+        cancel_prev_score_sub = True
+        # cancel_prev_score_sub = False
 
         batch_size, max_time = enc_out.size()[:2]
 
@@ -701,9 +729,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     # Path through the log-softmax layer
                     log_probs = F.log_softmax(logits_step.squeeze(1), dim=1)
 
-                    ent = entropy(F.softmax(logits_step, dim=-
-                                            1).data.cpu().numpy()[0, 0])
-
                     # Pick up the top-k scores
                     log_probs_topk, indices_topk = log_probs.topk(
                         beam_width, dim=1, largest=True, sorted=True)
@@ -725,8 +750,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                             score -= beam[i_beam]['previous_coverage'] * \
                                 coverage_penalty
 
-                            cov_threshold = 0.5
-                            # TODO: make this parameter
                             aw_steps = torch.stack(
                                 beam[i_beam]['aw_steps'][1:] + [aw_step], dim=1)
 
@@ -736,8 +759,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                 # TODO: fix for MHA
                             else:
                                 cov_sum = aw_steps.data[0].cpu().numpy()
-                            cov_sum = np.sum(cov_sum[np.where(
-                                cov_sum > cov_threshold)[0]])
+                            if coverage_threshold == 0:
+                                cov_sum = np.sum(cov_sum)
+                            else:
+                                cov_sum = np.sum(cov_sum[np.where(
+                                    cov_sum > coverage_threshold)[0]])
                             score += cov_sum * coverage_penalty
                         else:
                             cov_sum = 0
@@ -752,125 +778,197 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                         else:
                             rnnlm_state = None
 
+                        # Substruct character-lelel score up to this step
+                        if cancel_prev_score_sub:
+                            score -= beam[i_beam]['score_sub']
+
                         # NOTE: Resocre by the second decoder's score
                         oov_flag = indices_topk.data[0, k] == oov_index
                         eos_flag = indices_topk.data[0, k] == self.eos_0
-                        score_c2w = beam[i_beam]['score_sub']
-                        score_c2w_until_space = beam[i_beam]['score_sub']
+                        score_c2w = 0  # log_1
+                        score_c2w_until_prev_space = 0  # log_1
                         word_idx = indices_topk.data[0, k]
 
+                        if entropy_regularizatoin:
+                            probs = F.softmax(logits_step, dim=-1)
+                            # if rnnlm_weight > 0 and self.rnnlm_0_fwd is not None:
+                            #     probs += F.softmax(rnnlm_logits_step, dim=1)
+                            ent = entropy(probs.data.cpu().numpy()[0, 0])
+
+                            # print('Entropy: %f' % ent)
+                            # print(idx2word([word_idx]))
+
                         if oov_flag:
-                            # NOTE: Decode until outputting a space
-                            t_sub = 0
-                            dec_outs_sub = [beam[i_beam]['dec_out_sub']]
-                            hx_list_sub_list = [beam[i_beam]['hx_list_sub']]
-                            cx_list_sub_list = [beam[i_beam]['cx_list_sub']]
-                            aw_steps_sub = [beam[i_beam]['aw_steps_sub'][-1]]
-                            charseq = []
-                            # TODO: add max OOV len
-                            rnnlm_state_sub = beam[i_beam]['rnnlm_state_sub']
-                            while True:
+                            # Add previous space score
+                            if t > 0:
                                 # Score
                                 context_vec_sub, aw_step_sub = self.attend_1_fwd(
                                     enc_out_sub[b:b + 1, :x_lens_sub[b]],
                                     x_lens_sub[b:b + 1],
-                                    dec_outs_sub[-1], aw_steps_sub[-1])
+                                    beam[i_beam]['dec_out_sub'],
+                                    beam[i_beam]['aw_steps_sub'][-1])
 
                                 # Generate
                                 logits_step_sub = self.fc_1_fwd(F.tanh(
-                                    self.W_d_1_fwd(dec_outs_sub[-1]) +
+                                    self.W_d_1_fwd(beam[i_beam]['dec_out_sub']) +
                                     self.W_c_1_fwd(context_vec_sub)))
+
+                                # Recurrency
+                                y_sub = Variable(enc_out.data.new(
+                                    1, 1).fill_(space_index).long(), volatile=True)
+                                y_sub = self.embed_1(y_sub)
+                                dec_in_sub = torch.cat(
+                                    [y_sub, context_vec_sub], dim=-1)
+                                dec_out_sub, hx_list_sub, cx_list_sub = self.decoder_1_fwd(
+                                    dec_in_sub, beam[i_beam]['hx_list_sub'], beam[i_beam]['cx_list_sub'])
 
                                 # Path through the log-softmax layer
                                 log_probs_sub = F.log_softmax(
                                     logits_step_sub.squeeze(1), dim=-1)
 
-                                if t_sub == 0 and t > 0:
-                                    # space before the word
-                                    score_c2w += log_probs_sub.data[0,
-                                                                    space_index]
-                                    score_c2w_until_space += log_probs_sub.data[0,
-                                                                                space_index]
-
-                                    # Add RNNLM score in the sub task
-                                    if rnnlm_weight_sub > 0 and self.rnnlm_1_fwd is not None:
-                                        y_rnnlm_sub = Variable(enc_out.data.new(
-                                            1, 1).fill_(beam[i_beam]['hyp_sub'][-1]).long(), volatile=True)
-                                        y_rnnlm_sub = self.rnnlm_1_fwd.embed(
-                                            y_rnnlm_sub)
-                                        rnnlm_logits_step_sub, rnnlm_out_sub, rnnlm_state_sub = self.rnnlm_1_fwd.predict(
-                                            y_rnnlm_sub, h=rnnlm_state_sub)
-                                        rnnlm_log_probs_sub = F.log_softmax(
-                                            rnnlm_logits_step_sub.squeeze(1), dim=1)
-                                        assert log_probs_sub.size() == rnnlm_log_probs_sub.size()
-                                        score_c2w += rnnlm_log_probs_sub.data[0,
-                                                                              space_index] * rnnlm_weight_sub / score_sub_weight
-                                        score_c2w_until_space += rnnlm_log_probs_sub.data[0,
-                                                                                          space_index] * rnnlm_weight_sub / score_sub_weight
-                                    else:
-                                        rnnlm_state_sub = None
-
-                                    charseq += [space_index]
-                                    y_sub = Variable(enc_out.data.new(
-                                        1, 1).fill_(space_index).long(), volatile=True)
+                                # Add RNNLM score in the sub task
+                                if rnnlm_weight_sub > 0 and self.rnnlm_1_fwd is not None:
+                                    y_rnnlm_sub = Variable(enc_out.data.new(
+                                        1, 1).fill_(beam[i_beam]['hyp_sub'][-1]).long(), volatile=True)
+                                    y_rnnlm_sub = self.rnnlm_1_fwd.embed(
+                                        y_rnnlm_sub)
+                                    rnnlm_logits_step_sub, rnnlm_out_sub, rnnlm_state_sub = self.rnnlm_1_fwd.predict(
+                                        y_rnnlm_sub, h=beam[i_beam]['rnnlm_state_sub'])
+                                    rnnlm_log_probs_sub = F.log_softmax(
+                                        rnnlm_logits_step_sub.squeeze(1), dim=1)
+                                    assert log_probs_sub.size() == rnnlm_log_probs_sub.size()
+                                    score_c2w_until_prev_space += rnnlm_log_probs_sub.data[0,
+                                                                                           space_index] * rnnlm_weight_sub
                                 else:
-                                    y_sub = torch.max(log_probs_sub, dim=1)[
-                                        1].data[0]
+                                    rnnlm_state_sub = None
 
-                                    if y_sub == space_index:
-                                        break
-                                    if y_sub == self.eos_1:
-                                        break
-                                    if t_sub > 20:
-                                        break
+                                aw_steps_sub = [
+                                    beam[i_beam]['aw_steps_sub'][-1], aw_step_sub]
+                                charseq_init = [space_index]
+                            else:
+                                dec_out_sub = beam[i_beam]['dec_out_sub']
+                                hx_list_sub = beam[i_beam]['hx_list_sub']
+                                cx_list_sub = beam[i_beam]['cx_list_sub']
+                                context_vec_sub = beam[i_beam]['context_vec_sub']
+                                aw_steps_sub = [
+                                    beam[i_beam]['aw_steps_sub'][-1]]
+                                charseq_init = []
+                                rnnlm_state_sub = beam[i_beam]['rnnlm_state_sub']
 
-                                    # Add RNNLM score in the sub task
-                                    if rnnlm_weight_sub > 0 and self.rnnlm_1_fwd is not None:
-                                        if t == 0:
-                                            y_rnnlm_sub = Variable(enc_out.data.new(
-                                                1, 1).fill_(self.sos_1).long(), volatile=True)
-                                        else:
-                                            y_rnnlm_sub = Variable(enc_out.data.new(
-                                                1, 1).fill_(charseq[t_sub - 1]).long(), volatile=True)
-                                        y_rnnlm_sub = self.rnnlm_1_fwd.embed(
-                                            y_rnnlm_sub)
-                                        rnnlm_logits_step_sub, rnnlm_out_sub, rnnlm_state_sub = self.rnnlm_1_fwd.predict(
-                                            y_rnnlm_sub, h=rnnlm_state_sub)
-                                        rnnlm_log_probs_sub = F.log_softmax(
-                                            rnnlm_logits_step_sub.squeeze(1), dim=1)
-                                        assert log_probs_sub.size() == rnnlm_log_probs_sub.size()
-                                        score_c2w += rnnlm_log_probs_sub.data[0,
-                                                                              y_sub] * rnnlm_weight_sub / score_sub_weight
+                            # TODO: add max OOV len
+                            beam_width_sub = beam_width
+                            # Decode until outputting a space or eos
+                            complete_sub = []
+                            beam_sub = [{'hyp': charseq_init,
+                                         'score': 0,  # log 1
+                                         'dec_out': dec_out_sub,
+                                         'hx_list': hx_list_sub,
+                                         'cx_list': cx_list_sub,
+                                         'context_vec': context_vec_sub,
+                                         'aw_steps': aw_steps_sub,
+                                         'rnnlm_state': rnnlm_state_sub}]
+                            for t_sub in range(20):
+                                new_beam_sub = []
+                                for i_beam_sub in range(len(beam_sub)):
+                                    if t_sub == 0:
+                                        dec_out_sub = beam_sub[i_beam_sub]['dec_out']
                                     else:
-                                        rnnlm_state_sub = None
+                                        y_sub = Variable(enc_out.data.new(
+                                            1, 1).fill_(beam_sub[i_beam_sub]['hyp'][-1]).long(), volatile=True)
+                                        y_sub = self.embed_1(y_sub)
 
-                                    score_c2w += log_probs_sub.data[0, y_sub]
-                                    charseq += [y_sub]
-                                    y_sub = Variable(enc_out.data.new(
-                                        1, 1).fill_(y_sub).long(), volatile=True)
+                                        # Recurrency
+                                        dec_in_sub = torch.cat(
+                                            [y_sub, beam_sub[i_beam_sub]['context_vec']], dim=-1)
+                                        dec_out_sub, hx_list_sub, cx_list_sub = self.decoder_1_fwd(
+                                            dec_in_sub, beam_sub[i_beam_sub]['hx_list'], beam_sub[i_beam_sub]['cx_list'])
 
-                                y_sub = self.embed_1(y_sub)
+                                    # Score
+                                    context_vec_sub, aw_step_sub = self.attend_1_fwd(
+                                        enc_out_sub[b:b + 1, :x_lens_sub[b]],
+                                        x_lens_sub[b:b + 1],
+                                        dec_out_sub,
+                                        beam_sub[i_beam_sub]['aw_steps'][-1])
 
-                                if ent > entropy_threshold and debug:
-                                    print(idx2word([word_idx]))
-                                    print(idx2char(charseq))
+                                    # Generate
+                                    logits_step_sub = self.fc_1_fwd(F.tanh(
+                                        self.W_d_1_fwd(beam_sub[i_beam_sub]['dec_out']) +
+                                        self.W_c_1_fwd(context_vec_sub)))
 
-                                # Recurrency
-                                dec_in_sub = torch.cat(
-                                    [y_sub, context_vec_sub], dim=-1)
-                                dec_out_sub, hx_list_sub, cx_list_sub = self.decoder_1_fwd(
-                                    dec_in_sub, hx_list_sub_list[-1], cx_list_sub_list[-1])
+                                    # Path through the log-softmax layer
+                                    log_probs_sub = F.log_softmax(
+                                        logits_step_sub.squeeze(1), dim=-1)
 
-                                dec_outs_sub += [dec_out_sub]
-                                hx_list_sub_list += [hx_list_sub]
-                                cx_list_sub_list += [cx_list_sub]
-                                aw_steps_sub += [aw_step_sub]
-                                t_sub += 1
+                                    # Pick up the top-k scores
+                                    log_probs_topk_sub, indices_topk_sub = torch.topk(
+                                        log_probs_sub, k=beam_width_sub, dim=1, largest=True, sorted=True)
 
-                            aw_steps_sub = aw_steps_sub[1:]  # remove start aw
-                            dec_out_sub = dec_outs_sub[-1]
-                            hx_list_sub = hx_list_sub_list[-1]
-                            cx_list_sub = cx_list_sub_list[-1]
+                                    for k_sub in range(beam_width_sub):
+                                        if indices_topk_sub.data[0, k_sub] in [self.eos_1, space_index]:
+                                            if t_sub > 0:
+                                                # Remove complete hypotheses
+                                                complete_sub += [beam_sub[i_beam_sub]]
+                                            continue
+
+                                        score_c2w = log_probs_topk_sub.data[0,
+                                                                            k_sub] * score_sub_weight
+
+                                        # Add RNNLM score in the sub task
+                                        if rnnlm_weight_sub > 0 and self.rnnlm_1_fwd is not None:
+                                            if t == 0 and t_sub == 0:
+                                                y_rnnlm_sub = Variable(enc_out.data.new(
+                                                    1, 1).fill_(self.sos_1).long(), volatile=True)
+                                            else:
+                                                y_rnnlm_sub = Variable(enc_out.data.new(
+                                                    1, 1).fill_(beam_sub[i_beam_sub]['hyp'][-1]).long(), volatile=True)
+                                            y_rnnlm_sub = self.rnnlm_1_fwd.embed(
+                                                y_rnnlm_sub)
+                                            logits_step_rnnlm_sub, rnnlm_out_sub, rnnlm_state_sub = self.rnnlm_1_fwd.predict(
+                                                y_rnnlm_sub, h=beam_sub[i_beam_sub]['rnnlm_state'])
+
+                                            rnnlm_log_probs_sub = F.log_softmax(
+                                                logits_step_rnnlm_sub.squeeze(1), dim=1)
+                                            assert log_probs_sub.size() == rnnlm_log_probs_sub.size()
+                                            score_c2w += rnnlm_log_probs_sub.data[0,
+                                                                                  indices_topk_sub.data[0, k_sub]] * rnnlm_weight_sub
+                                        else:
+                                            rnnlm_state_sub = None
+
+                                        new_beam_sub.append(
+                                            {'hyp': beam_sub[i_beam_sub]['hyp'] + [indices_topk_sub.data[0, k_sub]],
+                                             'score': score_c2w,
+                                             'dec_out': dec_out_sub,
+                                             'hx_list': copy.deepcopy(hx_list_sub),
+                                             'cx_list': copy.deepcopy(cx_list_sub),
+                                             'context_vec': context_vec_sub,
+                                             'aw_steps': beam_sub[i_beam_sub]['aw_steps'] + [aw_step_sub],
+                                             'rnnlm_state': rnnlm_state_sub})
+
+                                new_beam_sub = sorted(
+                                    new_beam_sub, key=lambda x: x['score'], reverse=True)
+
+                                if len(complete_sub) >= beam_width_sub:
+                                    complete_sub = complete_sub[: beam_width_sub]
+                                    break
+
+                                beam_sub = new_beam_sub[: beam_width_sub]
+
+                            if len(complete_sub) == 0:
+                                complete_sub = beam_sub
+
+                            complete_sub = sorted(
+                                complete_sub, key=lambda x: x['score'], reverse=True)
+
+                            charseq = complete_sub[0]['hyp']
+                            aw_steps_sub = complete_sub[0]['aw_steps'][1:]
+                            # NOTE; remove start aw
+                            dec_out_sub = complete_sub[0]['dec_out']
+                            hx_list_sub = complete_sub[0]['hx_list']
+                            cx_list_sub = complete_sub[0]['cx_list']
+
+                            if debug:
+                                print('Step: OOV')
+                                print(idx2char(complete_sub[0]['hyp']))
 
                         elif eos_flag:
                             # Score
@@ -901,15 +999,17 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                     rnnlm_logits_step_sub.squeeze(1), dim=1)
                                 assert log_probs_sub.size() == rnnlm_log_probs_sub.size()
                                 score_c2w += rnnlm_log_probs_sub.data[0,
-                                                                      self.eos_1] * rnnlm_weight_sub / score_sub_weight
+                                                                      self.eos_1] * rnnlm_weight_sub
                             else:
                                 rnnlm_state_sub = None
 
+                            score_c2w += log_probs_sub.data[0,
+                                                            self.eos_1] * score_sub_weight
                             charseq = [self.eos_1]
-                            score_c2w += log_probs_sub.data[0, self.eos_1]
                             aw_steps_sub = [aw_step_sub]
 
-                            if ent > entropy_threshold and debug:
+                            if debug:
+                                print('Step: <EOS>')
                                 print(idx2word([word_idx]))
                                 print(idx2char([self.eos_1]))
 
@@ -921,22 +1021,22 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                             if t > 0:
                                 charseq = [space_index] + charseq
 
-                            if ent > entropy_threshold and debug:
+                            if debug:
+                                print('Step: decompose')
                                 print(idx2word([word_idx]))
                                 print(idx2char(charseq))
 
                             dec_out_sub = beam[i_beam]['dec_out_sub']
                             hx_list_sub = beam[i_beam]['hx_list_sub']
                             cx_list_sub = beam[i_beam]['cx_list_sub']
-                            aw_step_sub = beam[i_beam]['aw_steps_sub'][-1]
-                            aw_steps_sub = []
+                            aw_steps_sub = [beam[i_beam]['aw_steps_sub'][-1]]
                             rnnlm_state_sub = beam[i_beam]['rnnlm_state_sub']
                             for t_sub in range(len(charseq)):
                                 # Score
                                 context_vec_sub, aw_step_sub = self.attend_1_fwd(
                                     enc_out_sub[b:b + 1, :x_lens_sub[b]],
                                     x_lens_sub[b:b + 1],
-                                    dec_out_sub, aw_step_sub)
+                                    dec_out_sub, aw_steps_sub[-1])
 
                                 # Generate
                                 logits_step_sub = self.fc_1_fwd(F.tanh(
@@ -946,12 +1046,6 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                 # Path through the log-softmax layer
                                 log_probs_sub = F.log_softmax(
                                     logits_step_sub.squeeze(1), dim=-1)
-
-                                score_c2w += log_probs_sub.data[0,
-                                                                charseq[t_sub]]
-                                if t_sub == 0 and t > 0:
-                                    score_c2w_until_space += log_probs_sub.data[0,
-                                                                                charseq[t_sub]]
 
                                 # Add RNNLM score in the sub task
                                 if rnnlm_weight_sub > 0 and self.rnnlm_1_fwd is not None:
@@ -968,14 +1062,21 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                     rnnlm_log_probs_sub = F.log_softmax(
                                         rnnlm_logits_step_sub.squeeze(1), dim=1)
                                     assert log_probs_sub.size() == rnnlm_log_probs_sub.size()
-                                    score_c2w += rnnlm_log_probs_sub.data[0,
-                                                                          charseq[t_sub]] * rnnlm_weight_sub / score_sub_weight
-                                    if t_sub == 0 and t > 0:
-                                        score_c2w_until_space += rnnlm_log_probs_sub.data[0,
-                                                                                          charseq[t_sub]] * rnnlm_weight_sub / score_sub_weight
+                                    if charseq[t_sub] == space_index:
+                                        score_c2w_until_prev_space += rnnlm_log_probs_sub.data[0,
+                                                                                               space_index] * rnnlm_weight_sub
+                                    else:
+                                        score_c2w += rnnlm_log_probs_sub.data[0,
+                                                                              charseq[t_sub]] * rnnlm_weight_sub
                                 else:
                                     rnnlm_state_sub = None
 
+                                if charseq[t_sub] == space_index:
+                                    score_c2w_until_prev_space += log_probs_sub.data[0,
+                                                                                     space_index] * score_sub_weight
+                                else:
+                                    score_c2w += log_probs_sub.data[0,
+                                                                    charseq[t_sub]] * score_sub_weight
                                 aw_steps_sub += [aw_step_sub]
 
                                 # teacher-forcing
@@ -989,17 +1090,33 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                 dec_out_sub, hx_list_sub, cx_list_sub = self.decoder_1_fwd(
                                     dec_in_sub, hx_list_sub, cx_list_sub)
 
+                            aw_steps_sub = aw_steps_sub[1:]
+
                         # Rescoreing
-                        if ent > entropy_threshold:
-                            score += (score_c2w - score_c2w_until_space +
-                                      math.log(len(charseq)) * 0.1) * score_sub_weight
-                            # NOTE: consider length of characters
+                        if entropy_regularizatoin:
+                            if ent > entropy_threshold:
+                                score_sub = score_c2w - score_c2w_until_prev_space
+                                score_sub /= (len(charseq) -
+                                              charseq.count(space_index)) ** 0.5
+                            else:
+                                score_sub = 0  # log_1
+                        else:
+                            score_sub = score_c2w - score_c2w_until_prev_space
+                            # print(score_sub)
+                            # print((len(charseq) -
+                            #        charseq.count(space_index)) ** 0.5)
+                            score_sub /= (len(charseq) -
+                                          charseq.count(space_index)) ** 0.5
+                            # print(score_sub)
+                            # print('=' * 20)
+
+                        score += score_sub
 
                         new_beam.append(
                             {'hyp': beam[i_beam]['hyp'] + [indices_topk.data[0, k]],
                              'hyp_sub': beam[i_beam]['hyp_sub'] + charseq,
                              'score': score,
-                             'score_sub': score_c2w,
+                             'score_sub': score_sub,
                              'dec_out': dec_out,
                              'hx_list': copy.deepcopy(hx_list),
                              'cx_list': copy.deepcopy(cx_list),
@@ -1032,8 +1149,13 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             if len(complete) == 0:
                 complete = beam
 
-            complete = sorted(
-                complete, key=lambda x: x['score'], reverse=True)
+            # NOTE: substruct character-lelel score at the last step
+            if cancel_prev_score_sub:
+                complete = sorted(
+                    complete, key=lambda x: x['score'] - x['score_sub'], reverse=True)
+            else:
+                complete = sorted(
+                    complete, key=lambda x: x['score'], reverse=True)
             best_hyps += [np.array(complete[0]['hyp'][1:])]
             aw += [complete[0]['aw_steps'][1:]]
             best_hyps_sub += [np.array(complete[0]['hyp_sub'][1:])]
