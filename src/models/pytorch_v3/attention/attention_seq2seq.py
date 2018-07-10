@@ -117,6 +117,7 @@ class AttentionSeq2seq(ModelBase):
         rnnlm_fusion_type (string):
             False:
             cold_fusion:
+            cold_fusion_simple:
             logits_fusion:
             state_fusion:
             embedding_fusion:
@@ -246,6 +247,7 @@ class AttentionSeq2seq(ModelBase):
         self.sigmoid_smoothing = sigmoid_smoothing
         self.coverage_weight = coverage_weight
         self.num_heads_0 = num_heads
+        self.share_attention = False
 
         # Setting for regularization
         self.weight_noise_injection = False
@@ -807,11 +809,15 @@ class AttentionSeq2seq(ModelBase):
         """
         batch_size, max_time = enc_out.size()[:2]
         taskdir = '_' + str(task) + '_' + dir
+        if self.share_attention:
+            taskdir_att = '_0_fwd'
+        else:
+            taskdir_att = '_' + str(task) + '_' + dir
 
         # Initialization
         dec_out, hx_list, cx_list = self._init_dec_state(
             enc_out, x_lens, task, dir)
-        getattr(self, 'attend_' + str(task) + '_' + dir).reset()
+        getattr(self, 'attend' + taskdir_att).reset()
         aw_step = None
         if self.decoding_order == 'luong':
             context_vec = Variable(enc_out.data.new(
@@ -863,7 +869,7 @@ class AttentionSeq2seq(ModelBase):
                         dec_in, hx_list, cx_list)
 
                 # Score
-                context_vec, aw_step = getattr(self, 'attend' + taskdir)(
+                context_vec, aw_step = getattr(self, 'attend' + taskdir_att)(
                     enc_out, x_lens, dec_out, aw_step)
 
             elif self.decoding_order == 'luong':
@@ -877,7 +883,7 @@ class AttentionSeq2seq(ModelBase):
                     dec_in, hx_list, cx_list)
 
                 # Score
-                context_vec, aw_step = getattr(self, 'attend' + taskdir)(
+                context_vec, aw_step = getattr(self, 'attend' + taskdir_att)(
                     enc_out, x_lens, dec_out, aw_step)
 
             elif self.decoding_order == 'conditional':
@@ -889,7 +895,7 @@ class AttentionSeq2seq(ModelBase):
                     dec_in_first, hx_list, cx_list)
 
                 # Score
-                context_vec, aw_step = getattr(self, 'attend' + taskdir)(
+                context_vec, aw_step = getattr(self, 'attend' + taskdir_att)(
                     enc_out, x_lens, _dec_out, aw_step)
 
                 # Recurrency of the second decoder
@@ -1085,11 +1091,15 @@ class AttentionSeq2seq(ModelBase):
 
         batch_size, max_time = enc_out.size()[:2]
         taskdir = '_' + str(task) + '_' + dir
+        if self.share_attention:
+            taskdir_att = '_0_fwd'
+        else:
+            taskdir_att = '_' + str(task) + '_' + dir
 
         # Initialization
         dec_out, hx_list, cx_list = self._init_dec_state(
             enc_out, x_lens, task, dir)
-        getattr(self, 'attend_' + str(task) + '_' + dir).reset()
+        getattr(self, 'attend' + taskdir_att).reset()
         aw_step = None
         if self.decoding_order == 'luong':
             context_vec = Variable(enc_out.data.new(
@@ -1126,7 +1136,7 @@ class AttentionSeq2seq(ModelBase):
                         dec_in, hx_list, cx_list)
 
                 # Score
-                context_vec, aw_step = getattr(self, 'attend' + taskdir)(
+                context_vec, aw_step = getattr(self, 'attend' + taskdir_att)(
                     enc_out, x_lens, dec_out, aw_step)
 
             elif self.decoding_order == 'luong':
@@ -1140,7 +1150,7 @@ class AttentionSeq2seq(ModelBase):
                     dec_in, hx_list, cx_list)
 
                 # Score
-                context_vec, aw_step = getattr(self, 'attend' + taskdir)(
+                context_vec, aw_step = getattr(self, 'attend' + taskdir_att)(
                     enc_out, x_lens, dec_out, aw_step)
 
             elif self.decoding_order == 'conditional':
@@ -1152,7 +1162,7 @@ class AttentionSeq2seq(ModelBase):
                     dec_in_first, hx_list, cx_list)
 
                 # Score
-                context_vec, aw_step = getattr(self, 'attend' + taskdir)(
+                context_vec, aw_step = getattr(self, 'attend' + taskdir_att)(
                     enc_out, x_lens, _dec_out, aw_step)
 
                 # Recurrency of the second decoder
@@ -1274,6 +1284,10 @@ class AttentionSeq2seq(ModelBase):
         if dir == 'bwd':
             assert getattr(self, 'bwd_weight_' + str(task)) > 0
         taskdir = '_' + str(task) + '_' + dir
+        if self.share_attention:
+            taskdir_att = '_0_fwd'
+        else:
+            taskdir_att = '_' + str(task) + '_' + dir
 
         batch_size = enc_out.size(0)
 
@@ -1293,7 +1307,7 @@ class AttentionSeq2seq(ModelBase):
                 enc_out[b:b + 1], x_lens[b], task, dir)
             context_vec = Variable(enc_out.data.new(
                 1, 1, enc_out.size(-1)).fill_(0.), volatile=True)
-            getattr(self, 'attend_' + str(task) + '_' + dir).reset()
+            getattr(self, 'attend' + taskdir_att).reset()
 
             complete = []
             beam = [{'hyp': [sos],
@@ -1337,7 +1351,7 @@ class AttentionSeq2seq(ModelBase):
                                 dec_in, beam[i_beam]['hx_list'], beam[i_beam]['cx_list'])
 
                         # Score
-                        context_vec, aw_step = getattr(self, 'attend' + taskdir)(
+                        context_vec, aw_step = getattr(self, 'attend' + taskdir_att)(
                             enc_out[b:b + 1, :x_lens[b]], x_lens[b:b + 1],
                             dec_out, beam[i_beam]['aw_steps'][-1])
 
@@ -1354,7 +1368,7 @@ class AttentionSeq2seq(ModelBase):
                             dec_in, beam[i_beam]['hx_list'], beam[i_beam]['cx_list'])
 
                         # Score
-                        context_vec, aw_step = getattr(self, 'attend' + taskdir)(
+                        context_vec, aw_step = getattr(self, 'attend' + taskdir_att)(
                             enc_out[b:b + 1, :x_lens[b]], x_lens[b:b + 1],
                             dec_out, beam[i_beam]['aw_steps'][-1])
 
@@ -1368,7 +1382,7 @@ class AttentionSeq2seq(ModelBase):
                             dec_in_first, beam[i_beam]['hx_list'], beam[i_beam]['cx_list'])
 
                         # Score
-                        context_vec, aw_step = getattr(self, 'attend' + taskdir)(
+                        context_vec, aw_step = getattr(self, 'attend' + taskdir_att)(
                             enc_out[b:b + 1, :x_lens[b]], x_lens[b:b + 1],
                             _dec_out, beam[i_beam]['aw_steps'][-1])
 

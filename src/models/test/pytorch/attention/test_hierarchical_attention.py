@@ -35,11 +35,15 @@ class TestHierarchicalAttention(unittest.TestCase):
     def test(self):
         print("Hierarchical Attention Working check.")
 
+        # Sharing attention
+        self.check(encoder_type='lstm', bidirectional=True,
+                   decoder_type='lstm', share_attention=True)
+
         # Multi-head attention
         self.check(encoder_type='lstm', bidirectional=True,
                    decoder_type='lstm', num_heads=2)
 
-        # CNN-CTC
+        # CNN encoder
         self.check(encoder_type='cnn', decoder_type='lstm', batch_norm=True)
 
         # Forward word decoder + backward char decoder
@@ -82,7 +86,7 @@ class TestHierarchicalAttention(unittest.TestCase):
               ctc_loss_weight_sub=0, conv=False, batch_norm=False,
               residual=False, dense_residual=False,
               decoding_order='bahdanau', beam_width=1,
-              num_heads=1, backward_sub=False):
+              num_heads=1, backward_sub=False, share_attention=True):
 
         print('==================================================')
         print('  encoder_type: %s' % encoder_type)
@@ -99,6 +103,7 @@ class TestHierarchicalAttention(unittest.TestCase):
         print('  beam_width: %d' % beam_width)
         print('  backward_sub: %s' % str(backward_sub))
         print('  num_heads: %s' % str(num_heads))
+        print('  share_attention: %s' % str(share_attention))
         print('==================================================')
 
         if conv or encoder_type == 'cnn':
@@ -187,7 +192,8 @@ class TestHierarchicalAttention(unittest.TestCase):
             bottleneck_dim_sub=256,
             backward_sub=backward_sub,
             num_heads=num_heads,
-            num_heads_sub=num_heads)
+            num_heads_sub=num_heads,
+            share_attention=share_attention)
 
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):

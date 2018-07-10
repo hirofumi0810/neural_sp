@@ -229,6 +229,8 @@ def load(model_type, config, backend):
             config['rnnlm_config'] = None
         if 'rnnlm_weight' not in config.keys():
             config['rnnlm_weight'] = 0
+        if'generate_feature' not in config.keys():
+            config['generate_feature'] = 'sc'
 
         if 'input_type' not in config.keys():
             config['input_type'] = 'speech'
@@ -286,6 +288,7 @@ def load(model_type, config, backend):
             decoder_residual=config['decoder_residual'],
             decoder_dense_residual=config['decoder_dense_residual'],
             decoding_order=config['decoding_order'],
+            generate_feature=config['generate_feature'],
             bottleneck_dim=config['bottleneck_dim'],
             backward_loss_weight=config['backward_loss_weight'],
             num_heads=config['num_heads'],
@@ -351,6 +354,7 @@ def load(model_type, config, backend):
             model.name += '_decdense'
         model.name += '_input' + str(model.input_size)
         model.name += '_' + config['decoding_order']
+        model.name += '_' + config['generate_feature']
         if isdir(config['pretrained_model_path']):
             model.name += '_pretrain'
         if float(config['backward_loss_weight']) > 0:
@@ -381,6 +385,8 @@ def load(model_type, config, backend):
             config['rnnlm_weight'] = 0
         if 'rnnlm_weight_sub' not in config.keys():
             config['rnnlm_weight_sub'] = 0
+        if 'share_attention' not in config.keys():
+            config['share_attention'] = False
 
         if 'input_type' not in config.keys():
             config['input_type'] = 'speech'
@@ -455,7 +461,8 @@ def load(model_type, config, backend):
             rnnlm_config_sub=config['rnnlm_config_sub'],
             rnnlm_weight=config['rnnlm_weight'],
             rnnlm_weight_sub=config['rnnlm_weight_sub'],
-            num_classes_input=config['num_classes_input'] if config['input_type'] == 'text' else 0)
+            num_classes_input=config['num_classes_input'] if config['input_type'] == 'text' else 0,
+            share_attention=config['share_attention'])
 
         model.name = model_name
         if config['encoder_type'] not in ['cnn', 'resnet']:
@@ -530,6 +537,8 @@ def load(model_type, config, backend):
                 str(config['rnnlm_weight']) + str(config['rnnlm_weight_sub'])
         if config['input_type'] == 'text':
             model.name += '_p2w'
+        if bool(config['share_attention']):
+            model.name += '_shareatt'
 
     elif config['model_type'] == 'nested_attention':
         if backend == 'pytorch':

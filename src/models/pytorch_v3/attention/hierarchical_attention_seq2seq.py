@@ -100,7 +100,8 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  rnnlm_config_sub=None,  # ***
                  rnnlm_weight=0,
                  rnnlm_weight_sub=0,  # ***
-                 num_classes_input=0):
+                 num_classes_input=0,
+                 share_attention=False):
 
         super(HierarchicalAttentionSeq2seq, self).__init__(
             input_type=input_type,
@@ -195,6 +196,10 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         # Setting for the attention in the sub task
         self.num_heads_1 = num_heads_sub
+        self.share_attention = share_attention
+        if share_attention:
+            assert decoder_num_units == decoder_num_units_sub
+            assert num_heads == num_heads_sub
 
         # Setting for MTL
         self.main_loss_weight = main_loss_weight
