@@ -71,12 +71,12 @@ elif args.corpus == 'swbd':
     MAX_DECODE_LEN_CHAR = 300
     MIN_DECODE_LEN_CHAR = 1
     MAX_DECODE_LEN_RATIO_CHAR = 1
-    MIN_DECODE_LEN_RATIO_CHAR = 0.2
+    MIN_DECODE_LEN_RATIO_CHAR = 0.1
 
     MAX_DECODE_LEN_PHONE = 300
     MIN_DECODE_LEN_PHONE = 1
     MAX_DECODE_LEN_RATIO_PHONE = 1
-    MIN_DECODE_LEN_RATIO_PHONE = 0
+    MIN_DECODE_LEN_RATIO_PHONE = 0.05
 elif args.corpus == 'librispeech':
     MAX_DECODE_LEN_WORD = 200
     MIN_DECODE_LEN_WORD = 1
@@ -97,6 +97,11 @@ elif args.corpus == 'wsj':
     MIN_DECODE_LEN_CHAR = 10
     MAX_DECODE_LEN_RATIO_CHAR = 1
     MIN_DECODE_LEN_RATIO_CHAR = 0.2
+
+    MAX_DECODE_LEN_PHONE = 200
+    MIN_DECODE_LEN_PHONE = 1
+    MAX_DECODE_LEN_RATIO_PHONE = 1
+    MIN_DECODE_LEN_RATIO_PHONE = 0
     # NOTE:
     # dev93 (char): 10-199
     # test_eval92 (char): 16-195
@@ -163,7 +168,6 @@ def main():
         config['rnnlm_config'] = load_config(
             join(args.model_path, 'config_rnnlm.yml'))
         assert config['label_type'] == config['rnnlm_config']['label_type']
-        assert args.rnnlm_weight > 0
         config['rnnlm_config']['num_classes'] = dataset.num_classes
     else:
         config['rnnlm_config'] = None
@@ -219,6 +223,9 @@ def main():
     else:
         raise ValueError(dataset.label_type)
 
+    if dataset.corpus == 'swbd' and 'eval2000' in dataset.data_type:
+        glm = GLM(dataset.glm_path)
+
     for batch, is_new_epoch in dataset:
         # Decode
         if model.model_type == 'nested_attention':
@@ -257,12 +264,12 @@ def main():
 
             print('\n----- wav: %s -----' % batch['input_names'][b])
 
-            if dataset.corpus == 'swbd':
-                glm = GLM(dataset.glm_path)
+            if dataset.corpus == 'swbd' and 'eval2000' in dataset.data_type:
                 str_ref = normalize_swbd(str_ref, glm)
                 str_hyp = normalize_swbd(str_hyp, glm)
             else:
-                str_hyp = normalize(str_hyp)
+                str_ref = normalize(str_ref, remove_tokens=['@'])
+                str_hyp = normalize(str_hyp, remove_tokens=['@'])
 
             if dataset.label_type in ['word', 'character_wb'] or (args.corpus != 'csj' and dataset.label_type == 'character'):
                 wer = wer_align(ref=str_ref.split('_'),

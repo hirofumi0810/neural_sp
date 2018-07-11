@@ -21,6 +21,8 @@ from src.utils.directory import mkdir_join, mkdir
 from src.bin.visualization.utils.attention import plot_hierarchical_attention_weights
 from src.utils.config import load_config
 from src.utils.io.labels.word import Word2char
+from src.utils.evaluation.edit_distance import wer_align
+from src.utils.evaluation.normalization import normalize
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--corpus', type=str,
@@ -115,6 +117,11 @@ elif args.corpus == 'wsj':
     MIN_DECODE_LEN_CHAR = 10
     MAX_DECODE_LEN_RATIO_CHAR = 1
     MIN_DECODE_LEN_RATIO_CHAR = 0.2
+
+    MAX_DECODE_LEN_PHONE = 200
+    MIN_DECODE_LEN_PHONE = 1
+    MAX_DECODE_LEN_RATIO_PHONE = 1
+    MIN_DECODE_LEN_RATIO_PHONE = 0
     # NOTE:
     # dev93 (char): 10-199
     # test_eval92 (char): 16-195
@@ -182,7 +189,6 @@ def main():
         config['rnnlm_config'] = load_config(
             join(args.model_path, 'config_rnnlm.yml'))
         assert config['label_type'] == config['rnnlm_config']['label_type']
-        assert args.rnnlm_weight > 0
         config['rnnlm_config']['num_classes'] = dataset.num_classes
     else:
         config['rnnlm_config'] = None
@@ -192,7 +198,6 @@ def main():
         config['rnnlm_config_sub'] = load_config(
             join(args.model_path, 'config_rnnlm_sub.yml'))
         assert config['label_type_sub'] == config['rnnlm_config_sub']['label_type']
-        assert args.rnnlm_weight_sub > 0
         config['rnnlm_config_sub']['num_classes'] = dataset.num_classes_sub
     else:
         config['rnnlm_config_sub'] = None
@@ -252,7 +257,7 @@ def main():
     for batch, is_new_epoch in dataset:
         # Decode
         if model.model_type == 'hierarchical_attention' and args.joint_decoding:
-            best_hyps, aw, best_hyps_sub, aw_sub, _ = model.decode(
+            best_hyps, aw, best_hyps_sub, aw_sub, perm_idx = model.decode(
                 batch['xs'],
                 beam_width=args.beam_width,
                 max_decode_len=MAX_DECODE_LEN_WORD,
@@ -268,6 +273,18 @@ def main():
                 idx2word=dataset.idx2word,
                 idx2char=dataset.idx2char,
                 score_sub_weight=args.score_sub_weight,
+                exclude_eos=False)
+
+            best_hyps_sub, aw_sub, _ = model.decode(
+                batch['xs'],
+                beam_width=args.beam_width_sub,
+                max_decode_len=MAX_DECODE_LEN_CHAR,
+                min_decode_len=MIN_DECODE_LEN_CHAR,
+                min_decode_len_ratio=MIN_DECODE_LEN_RATIO_CHAR,
+                length_penalty=args.length_penalty_sub,
+                coverage_penalty=args.coverage_penalty_sub,
+                rnnlm_weight=args.rnnlm_weight_sub,
+                task_index=1,
                 exclude_eos=False)
         else:
             best_hyps, aw, perm_idx = model.decode(
@@ -326,8 +343,31 @@ def main():
             else:
                 str_ref = dataset.idx2word(ys[b])
 
-            with open(join(save_path, speaker, batch['input_names'][b] + '.txt'), 'w') as f:
-                f.write(str_ref)
+            # Hypothesis
+            str_hyp = dataset.idx2word(best_hyps[b])
+            str_hyp_sub = dataset.idx2char(best_hyps_sub[b])
+            str_hyp = normalize(str_hyp, remove_tokens=['>'])
+            str_hyp_sub = normalize(str_hyp_sub, remove_tokens=['>'])
+
+            sys.stdout = open(
+                join(save_path, speaker, batch['input_names'][b] + '.txt'), 'w')
+            wer = wer_align(ref=str_ref.split('_'),
+                            hyp=str_hyp.split('_'),
+                            normalize=True,
+                            japanese=True if dataset.corpus == 'csj' else False)[0]
+            print('\nWER (main)  : %.3f %%' % wer)
+            if dataset.corpus != 'csj' or dataset.label_type_sub == 'character_wb':
+                wer_sub = wer_align(ref=str_ref.split('_'),
+                                    hyp=str_hyp_sub.split('_'),
+                                    normalize=True,
+                                    japanese=True if dataset.corpus == 'csj' else False)[0]
+                print('\nWER (sub)   : %.3f %%' % wer_sub)
+            else:
+                cer = wer_align(ref=list(str_ref.replace('_', '')),
+                                hyp=list(str_hyp_sub.replace('_', '')),
+                                normalize=True,
+                                japanese=True if dataset.corpus == 'csj' else False)[0]
+                print('\nCER (sub)   : %.3f %%' % cer)
 
         if is_new_epoch:
             break

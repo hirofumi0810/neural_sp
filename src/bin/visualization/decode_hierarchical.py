@@ -92,12 +92,12 @@ elif args.corpus == 'swbd':
     MAX_DECODE_LEN_CHAR = 300
     MIN_DECODE_LEN_CHAR = 1
     MAX_DECODE_LEN_RATIO_CHAR = 1
-    MIN_DECODE_LEN_RATIO_CHAR = 0.2
+    MIN_DECODE_LEN_RATIO_CHAR = 0.1
 
     MAX_DECODE_LEN_PHONE = 300
     MIN_DECODE_LEN_PHONE = 1
     MAX_DECODE_LEN_RATIO_PHONE = 1
-    MIN_DECODE_LEN_RATIO_PHONE = 0
+    MIN_DECODE_LEN_RATIO_PHONE = 0.05
 elif args.corpus == 'librispeech':
     MAX_DECODE_LEN_WORD = 200
     MIN_DECODE_LEN_WORD = 1
@@ -118,6 +118,11 @@ elif args.corpus == 'wsj':
     MIN_DECODE_LEN_CHAR = 10
     MAX_DECODE_LEN_RATIO_CHAR = 1
     MIN_DECODE_LEN_RATIO_CHAR = 0.2
+
+    MAX_DECODE_LEN_PHONE = 200
+    MIN_DECODE_LEN_PHONE = 1
+    MAX_DECODE_LEN_RATIO_PHONE = 1
+    MIN_DECODE_LEN_RATIO_PHONE = 0
     # NOTE:
     # dev93 (char): 10-199
     # test_eval92 (char): 16-195
@@ -188,7 +193,6 @@ def main():
         config['rnnlm_config'] = load_config(
             join(args.model_path, 'config_rnnlm.yml'))
         assert config['label_type'] == config['rnnlm_config']['label_type']
-        assert args.rnnlm_weight > 0
         config['rnnlm_config']['num_classes'] = dataset.num_classes
     else:
         config['rnnlm_config'] = None
@@ -198,7 +202,6 @@ def main():
         config['rnnlm_config_sub'] = load_config(
             join(args.model_path, 'config_rnnlm_sub.yml'))
         assert config['label_type_sub'] == config['rnnlm_config_sub']['label_type']
-        assert args.rnnlm_weight_sub > 0
         config['rnnlm_config_sub']['num_classes'] = dataset.num_classes_sub
     else:
         config['rnnlm_config_sub'] = None
@@ -250,6 +253,9 @@ def main():
 
     word2char = Word2char(dataset.vocab_file_path,
                           dataset.vocab_file_path_sub)
+
+    if dataset.corpus == 'swbd' and 'eval2000' in dataset.data_type:
+        glm = GLM(dataset.glm_path)
 
     for batch, is_new_epoch in dataset:
         # Decode
@@ -352,20 +358,23 @@ def main():
                     diff_time_resolution=2 ** sum(model.subsample_list) // 2 ** sum(model.subsample_list[:model.encoder_num_layers_sub - 1]))
             if model.model_type == 'hierarchical_attention' and args.joint_decoding:
                 if 'OOV' in str_hyp_joint and args.resolving_unk:
+                    # str_hyp_no_unk_joint = resolve_unk(
+                    #     str_hyp_joint, best_hyps_sub_joint[b], aw_joint[b], aw_sub_joint[b], dataset.idx2char,
+                    #     diff_time_resolution=2 ** sum(model.subsample_list) // 2 ** sum(model.subsample_list[:model.encoder_num_layers_sub - 1]))
                     str_hyp_no_unk_joint = resolve_unk(
-                        str_hyp_joint, best_hyps_sub_joint[b], aw_joint[b], aw_sub_joint[b], dataset.idx2char,
+                        str_hyp_joint, best_hyps_sub[b], aw_joint[b], aw_sub[b], dataset.idx2char,
                         diff_time_resolution=2 ** sum(model.subsample_list) // 2 ** sum(model.subsample_list[:model.encoder_num_layers_sub - 1]))
 
             print('\n----- wav: %s -----' % batch['input_names'][b])
 
-            if dataset.corpus == 'swbd':
-                glm = GLM(dataset.glm_path)
+            if dataset.corpus == 'swbd' and 'eval2000' in dataset.data_type:
                 str_ref = normalize_swbd(str_ref, glm)
                 str_hyp = normalize_swbd(str_hyp, glm)
                 str_hyp_sub = normalize_swbd(str_hyp_sub, glm)
             else:
-                str_hyp = normalize(str_hyp, remove_tokens=['>'])
-                str_hyp_sub = normalize(str_hyp_sub, remove_tokens=['>'])
+                str_ref = normalize(str_ref, remove_tokens=['@'])
+                str_hyp = normalize(str_hyp, remove_tokens=['@'])
+                str_hyp_sub = normalize(str_hyp_sub, remove_tokens=['@'])
 
             # Resolving UNK
             if 'OOV' in str_hyp and args.resolving_unk:
@@ -373,7 +382,7 @@ def main():
                     str_hyp_no_unk = normalize_swbd(str_hyp_no_unk, glm)
                 else:
                     str_hyp_no_unk = normalize(
-                        str_hyp_no_unk, remove_tokens=['>'])
+                        str_hyp_no_unk, remove_tokens=['@'])
 
             wer = wer_align(ref=str_ref.split('_'),
                             hyp=str_hyp.split('_'),
@@ -408,9 +417,9 @@ def main():
                         str_hyp_joint_sub, glm)
                 else:
                     str_hyp_joint = normalize(
-                        str_hyp_joint, remove_tokens=['>'])
+                        str_hyp_joint, remove_tokens=['@'])
                     str_hyp_joint_sub = normalize(
-                        str_hyp_joint_sub, remove_tokens=['>'])
+                        str_hyp_joint_sub, remove_tokens=['@'])
 
                 if 'OOV' in str_hyp_joint and args.resolving_unk:
                     if dataset.corpus == 'swbd':
@@ -418,7 +427,7 @@ def main():
                             str_hyp_no_unk_joint, glm)
                     else:
                         str_hyp_no_unk_joint = normalize(
-                            str_hyp_no_unk_joint, remove_tokens=['>'])
+                            str_hyp_no_unk_joint, remove_tokens=['@'])
 
                 wer_joint = wer_align(ref=str_ref.split('_'),
                                       hyp=str_hyp_joint.split('_'),

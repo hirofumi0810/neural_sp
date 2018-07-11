@@ -71,12 +71,12 @@ elif args.corpus == 'swbd':
     MAX_DECODE_LEN_CHAR = 300
     MIN_DECODE_LEN_CHAR = 1
     MAX_DECODE_LEN_RATIO_CHAR = 1
-    MIN_DECODE_LEN_RATIO_CHAR = 0.2
+    MIN_DECODE_LEN_RATIO_CHAR = 0.1
 
     MAX_DECODE_LEN_PHONE = 300
     MIN_DECODE_LEN_PHONE = 1
     MAX_DECODE_LEN_RATIO_PHONE = 1
-    MIN_DECODE_LEN_RATIO_PHONE = 0
+    MIN_DECODE_LEN_RATIO_PHONE = 0.05
 elif args.corpus == 'librispeech':
     MAX_DECODE_LEN_WORD = 200
     MIN_DECODE_LEN_WORD = 1
@@ -97,6 +97,11 @@ elif args.corpus == 'wsj':
     MIN_DECODE_LEN_CHAR = 10
     MAX_DECODE_LEN_RATIO_CHAR = 1
     MIN_DECODE_LEN_RATIO_CHAR = 0.2
+
+    MAX_DECODE_LEN_PHONE = 200
+    MIN_DECODE_LEN_PHONE = 1
+    MAX_DECODE_LEN_RATIO_PHONE = 1
+    MIN_DECODE_LEN_RATIO_PHONE = 0
     # NOTE:
     # dev93 (char): 10-199
     # test_eval92 (char): 16-195
@@ -168,7 +173,6 @@ def main():
                     join(args.model_path, 'config_rnnlm.yml'))
 
                 assert config['label_type'] == config['rnnlm_config']['label_type']
-                assert args.rnnlm_weight > 0
                 config['rnnlm_config']['num_classes'] = eval_set.num_classes
                 logger.info('RNNLM path: %s' % config['rnnlm_path'])
                 logger.info('RNNLM weight: %.3f' % args.rnnlm_weight)
@@ -210,6 +214,9 @@ def main():
             model.set_cuda(deterministic=False, benchmark=True)
 
             logger.info('beam width: %d' % args.beam_width)
+            logger.info('length penalty: %.3f' % args.length_penalty)
+            logger.info('coverage penalty: %.3f' % args.coverage_penalty)
+
             logger.info('epoch: %d' % (epoch - 1))
 
         if config['label_type'] == 'word':

@@ -19,6 +19,8 @@ from src.dataset.loader_p2w import Dataset as Dataset_p2w
 from src.utils.directory import mkdir_join, mkdir
 from src.bin.visualization.utils.attention import plot_attention_weights
 from src.utils.config import load_config
+from src.utils.evaluation.edit_distance import wer_align
+from src.utils.evaluation.normalization import normalize
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--corpus', type=str,
@@ -96,6 +98,11 @@ elif args.corpus == 'wsj':
     MIN_DECODE_LEN_CHAR = 10
     MAX_DECODE_LEN_RATIO_CHAR = 1
     MIN_DECODE_LEN_RATIO_CHAR = 0.2
+
+    MAX_DECODE_LEN_PHONE = 200
+    MIN_DECODE_LEN_PHONE = 1
+    MAX_DECODE_LEN_RATIO_PHONE = 1
+    MIN_DECODE_LEN_RATIO_PHONE = 0
     # NOTE:
     # dev93 (char): 10-199
     # test_eval92 (char): 16-195
@@ -159,7 +166,6 @@ def main():
         config['rnnlm_config'] = load_config(
             join(args.model_path, 'config_rnnlm.yml'))
         assert config['label_type'] == config['rnnlm_config']['label_type']
-        assert args.rnnlm_weight > 0
         config['rnnlm_config']['num_classes'] = dataset.num_classes
     else:
         config['rnnlm_config'] = None
@@ -261,11 +267,31 @@ def main():
             else:
                 str_ref = map_fn(ys[b])
 
-            try:
-                with open(join(save_path, speaker, batch['input_names'][b] + '.txt'), 'w') as f:
-                    f.write(str_ref)
-            except:
-                pass
+            # Hypothesis
+            str_hyp = map_fn(best_hyps[b])
+            str_hyp = normalize(str_hyp, remove_tokens=['>'])
+
+            sys.stdout = open(
+                join(save_path, speaker, batch['input_names'][b] + '.txt'), 'w')
+            if dataset.label_type in ['word', 'character_wb'] or (args.corpus != 'csj' and dataset.label_type == 'character'):
+                wer = wer_align(ref=str_ref.split('_'),
+                                hyp=str_hyp.split('_'),
+                                normalize=True,
+                                japanese=True if args.corpus == 'csj' else False)[0]
+                print('\nWER: %.3f %%' % wer)
+            elif dataset.label_type == 'character':
+                cer = wer_align(ref=list(str_ref.replace('_', '')),
+                                hyp=list(str_hyp.replace('_', '')),
+                                normalize=True,
+                                japanese=True if args.corpus == 'csj' else False)[0]
+                print('\nCER: %.3f %%' % cer)
+            elif 'phone' in dataset.label_type:
+                per = wer_align(ref=str_ref.split('_'),
+                                hyp=str_hyp.split('_'),
+                                normalize=True)[0]
+                print('\nPER: %.3f %%' % per)
+            else:
+                raise ValueError(dataset.label_type)
 
         if is_new_epoch:
             break

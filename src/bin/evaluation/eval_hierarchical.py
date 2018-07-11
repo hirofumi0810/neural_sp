@@ -91,12 +91,12 @@ elif args.corpus == 'swbd':
     MAX_DECODE_LEN_CHAR = 300
     MIN_DECODE_LEN_CHAR = 1
     MAX_DECODE_LEN_RATIO_CHAR = 1
-    MIN_DECODE_LEN_RATIO_CHAR = 0.2
+    MIN_DECODE_LEN_RATIO_CHAR = 0.1
 
     MAX_DECODE_LEN_PHONE = 300
     MIN_DECODE_LEN_PHONE = 1
     MAX_DECODE_LEN_RATIO_PHONE = 1
-    MIN_DECODE_LEN_RATIO_PHONE = 0
+    MIN_DECODE_LEN_RATIO_PHONE = 0.05
 elif args.corpus == 'librispeech':
     MAX_DECODE_LEN_WORD = 200
     MIN_DECODE_LEN_WORD = 1
@@ -117,6 +117,11 @@ elif args.corpus == 'wsj':
     MIN_DECODE_LEN_CHAR = 10
     MAX_DECODE_LEN_RATIO_CHAR = 1
     MIN_DECODE_LEN_RATIO_CHAR = 0.2
+
+    MAX_DECODE_LEN_PHONE = 200
+    MIN_DECODE_LEN_PHONE = 1
+    MAX_DECODE_LEN_RATIO_PHONE = 1
+    MIN_DECODE_LEN_RATIO_PHONE = 0
     # NOTE:
     # dev93 (char): 10-199
     # test_eval92 (char): 16-195
@@ -191,7 +196,6 @@ def main():
                 config['rnnlm_config'] = load_config(
                     join(args.model_path, 'config_rnnlm.yml'))
                 assert config['label_type'] == config['rnnlm_config']['label_type']
-                assert args.rnnlm_weight > 0
                 config['rnnlm_config']['num_classes'] = eval_set.num_classes
                 logger.info('RNNLM path (main): %s' % config['rnnlm_path'])
                 logger.info('RNNLM weight (main): %.3f' % args.rnnlm_weight)
@@ -203,7 +207,6 @@ def main():
                 config['rnnlm_config_sub'] = load_config(
                     join(args.model_path, 'config_rnnlm_sub.yml'))
                 assert config['label_type_sub'] == config['rnnlm_config_sub']['label_type']
-                assert args.rnnlm_weight_sub > 0
                 config['rnnlm_config_sub']['num_classes'] = eval_set.num_classes_sub
                 logger.info('RNNLM path (sub): %s' % config['rnnlm_path_sub'])
                 logger.info('RNNLM weight (sub): %.3f' % args.rnnlm_weight_sub)
@@ -259,41 +262,47 @@ def main():
             model.set_cuda(deterministic=False, benchmark=True)
 
             logger.info('beam width (main): %d' % args.beam_width)
+            logger.info('length penaly (main): %.3f' % args.length_penalty)
+            logger.info('coverage penaly (main): %.3f' % args.coverage_penalty)
             logger.info('beam width (sub) : %d' % args.beam_width_sub)
+            logger.info('length penaly (sub): %.3f' % args.length_penalty_sub)
+            logger.info('coverage penaly (sub): %.3f' %
+                        args.coverage_penalty_sub)
             logger.info('epoch: %d' % (epoch - 1))
             logger.info('a2c oracle: %s' % str(args.a2c_oracle))
             logger.info('resolving_unk: %s' % str(args.resolving_unk))
             logger.info('joint_decoding: %s' % str(args.joint_decoding))
-            logger.info('score_sub_weight : %f' % args.score_sub_weight)
+            logger.info('score_sub_weight : %.3f' % args.score_sub_weight)
 
-        wer, df = eval_word(
-            models=[model],
-            dataset=eval_set,
-            eval_batch_size=args.eval_batch_size,
-            beam_width=args.beam_width,
-            max_decode_len=MAX_DECODE_LEN_WORD,
-            min_decode_len=MIN_DECODE_LEN_WORD,
-            min_decode_len_ratio=MIN_DECODE_LEN_RATIO_WORD,
-            length_penalty=args.length_penalty,
-            coverage_penalty=args.coverage_penalty,
-            rnnlm_weight=args.rnnlm_weight,
-            beam_width_sub=args.beam_width_sub,
-            max_decode_len_sub=MAX_DECODE_LEN_CHAR,
-            min_decode_len_sub=MIN_DECODE_LEN_CHAR,
-            min_decode_len_ratio_sub=MIN_DECODE_LEN_RATIO_CHAR,
-            length_penalty_sub=args.length_penalty_sub,
-            coverage_penalty_sub=args.coverage_penalty_sub,
-            rnnlm_weight_sub=args.rnnlm_weight_sub,
-            resolving_unk=args.resolving_unk,
-            a2c_oracle=args.a2c_oracle,
-            joint_decoding=args.joint_decoding,
-            score_sub_weight=args.score_sub_weight,
-            progressbar=True)
-        wer_mean += wer
-        logger.info('  WER (%s, main): %.3f %%' % (data_type, wer))
-        logger.info(df)
+        if not args.score_sub_task:
+            wer, df = eval_word(
+                models=[model],
+                dataset=eval_set,
+                eval_batch_size=args.eval_batch_size,
+                beam_width=args.beam_width,
+                max_decode_len=MAX_DECODE_LEN_WORD,
+                min_decode_len=MIN_DECODE_LEN_WORD,
+                min_decode_len_ratio=MIN_DECODE_LEN_RATIO_WORD,
+                length_penalty=args.length_penalty,
+                coverage_penalty=args.coverage_penalty,
+                rnnlm_weight=args.rnnlm_weight,
+                beam_width_sub=args.beam_width_sub,
+                max_decode_len_sub=MAX_DECODE_LEN_CHAR,
+                min_decode_len_sub=MIN_DECODE_LEN_CHAR,
+                min_decode_len_ratio_sub=MIN_DECODE_LEN_RATIO_CHAR,
+                length_penalty_sub=args.length_penalty_sub,
+                coverage_penalty_sub=args.coverage_penalty_sub,
+                rnnlm_weight_sub=args.rnnlm_weight_sub,
+                resolving_unk=args.resolving_unk,
+                a2c_oracle=args.a2c_oracle,
+                joint_decoding=args.joint_decoding,
+                score_sub_weight=args.score_sub_weight,
+                progressbar=True)
+            wer_mean += wer
+            logger.info('  WER (%s, main): %.3f %%' % (data_type, wer))
+            logger.info(df)
 
-        if args.score_sub_task:
+        else:
             wer, cer, df = eval_char(
                 models=[model],
                 dataset=eval_set,
@@ -312,11 +321,13 @@ def main():
                         (data_type, wer, cer))
             logger.info(df)
 
-    logger.info('  WER (mean, main): %.3f %%' %
-                (wer_mean / len(args.eval_sets)))
-    logger.info('  WER / CER (mean, sub): %.3f / %.3f %%\n' %
-                (wer_sub_mean / len(args.eval_sets),
-                 cer_sub_mean / len(args.eval_sets)))
+    if not args.score_sub_task:
+        logger.info('  WER (mean, main): %.3f %%' %
+                    (wer_mean / len(args.eval_sets)))
+    else:
+        logger.info('  WER / CER (mean, sub): %.3f / %.3f %%\n' %
+                    (wer_sub_mean / len(args.eval_sets),
+                     cer_sub_mean / len(args.eval_sets)))
 
 
 if __name__ == '__main__':
