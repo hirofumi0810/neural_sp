@@ -229,11 +229,15 @@ def load(model_type, config, backend):
             config['rnnlm_config'] = None
         if 'rnnlm_weight' not in config.keys():
             config['rnnlm_weight'] = 0
-        if'generate_feature' not in config.keys():
+        if 'generate_feature' not in config.keys():
             config['generate_feature'] = 'sc'
+        if 'finetune_gate' not in config.keys():
+            config['finetune_gate'] = False
 
         if 'input_type' not in config.keys():
             config['input_type'] = 'speech'
+        if 'finetune_gate':
+            assert isdir(config['pretrained_model_path'])
 
         model = AttentionSeq2seq(
             input_type=config['input_type'],
@@ -295,6 +299,7 @@ def load(model_type, config, backend):
             rnnlm_fusion_type=config['rnnlm_fusion_type'],
             rnnlm_config=config['rnnlm_config'],
             rnnlm_weight=config['rnnlm_weight'],
+            finetune_gate=config['finetune_gate'],
             num_classes_input=config['num_classes_input'] if config['input_type'] == 'text' else 0)
 
         model.name = model_name
@@ -365,6 +370,8 @@ def load(model_type, config, backend):
             model.name += '_' + config['rnnlm_fusion_type']
         if float(config['rnnlm_weight']) > 0:
             model.name += '_lmjoint' + str(config['rnnlm_weight'])
+        if bool(config['finetune_gate']):
+            model.name += '_finetunegate'
         if config['input_type'] == 'text':
             model.name += '_p2w'
 
@@ -387,6 +394,8 @@ def load(model_type, config, backend):
             config['rnnlm_weight_sub'] = 0
         if 'share_attention' not in config.keys():
             config['share_attention'] = False
+        if 'finetune_gate' not in config.keys():
+            config['finetune_gate'] = False
 
         if 'input_type' not in config.keys():
             config['input_type'] = 'speech'
@@ -461,6 +470,7 @@ def load(model_type, config, backend):
             rnnlm_config_sub=config['rnnlm_config_sub'],
             rnnlm_weight=config['rnnlm_weight'],
             rnnlm_weight_sub=config['rnnlm_weight_sub'],
+            finetune_gate=config['finetune_gate'],
             num_classes_input=config['num_classes_input'] if config['input_type'] == 'text' else 0,
             share_attention=config['share_attention'])
 
@@ -532,9 +542,15 @@ def load(model_type, config, backend):
             model.name += '_head' + str(config['num_heads'])
         if config['rnnlm_fusion_type']:
             model.name += '_' + config['rnnlm_fusion_type']
+            if config['rnnlm_config']:
+                model.name += '_main'
+            if config['rnnlm_config_sub']:
+                model.name += '_sub'
         if float(config['rnnlm_weight']) > 0 or float(config['rnnlm_weight_sub']) > 0:
             model.name += '_lmjoint' + \
                 str(config['rnnlm_weight']) + str(config['rnnlm_weight_sub'])
+        if bool(config['finetune_gate']):
+            model.name += '_finetunegate'
         if config['input_type'] == 'text':
             model.name += '_p2w'
         if bool(config['share_attention']):

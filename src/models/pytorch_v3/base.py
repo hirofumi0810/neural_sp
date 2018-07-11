@@ -162,6 +162,10 @@ class ModelBase(nn.Module):
         """
         optimizer = optimizer.lower()
         parameters = [p for p in self.parameters() if p.requires_grad]
+        names = [n for n, p in self.named_parameters() if p.requires_grad]
+        logger.info("===== Update parameters =====")
+        for n in names:
+            logger.info("%s" % n)
 
         if optimizer not in OPTIMIZER_CLS_NAMES:
             raise ValueError(
@@ -292,58 +296,58 @@ class ModelBase(nn.Module):
                       for x in glob(join(save_path, 'model.*'))]
 
             if len(epochs) == 0:
-                raise ValueError
+                raise ValueError('There is no checkpoint')
 
             epoch = sorted(epochs, key=lambda x: x[0])[-1][0]
 
-        model_path = join(save_path, 'model.epoch-' + str(epoch))
+        checkpoint_path = join(save_path, 'model.epoch-' + str(epoch))
 
-        if isfile(model_path):
+        try:
             checkpoint = torch.load(
-                model_path, map_location=lambda storage, loc: storage)
+                checkpoint_path, map_location=lambda storage, loc: storage)
+        except:
+            raise ValueError("No checkpoint found at %s" % checkpoint_path)
 
-            # Restore parameters
-            if load_pretrained_model:
-                logger.info(
-                    "=> Loading pre-trained checkpoint (epoch:%d): %s" % (epoch, model_path))
+        # Restore parameters
+        if load_pretrained_model:
+            logger.info(
+                "=> Loading pre-trained checkpoint (epoch:%d): %s" % (epoch, checkpoint_path))
 
-                pretrained_dict = checkpoint['state_dict']
-                model_dict = self.state_dict()
+            pretrained_dict = checkpoint['state_dict']
+            model_dict = self.state_dict()
 
-                # 1. filter out unnecessary keys and params which do not match size
-                pretrained_dict = {
-                    k: v for k, v in pretrained_dict.items() if k in model_dict.keys() and v.size() == model_dict[k].size()}
-                # 2. overwrite entries in the existing state dict
-                model_dict.update(pretrained_dict)
-                # 3. load the new state dict
-                self.load_state_dict(model_dict)
+            # 1. filter out unnecessary keys and params which do not match size
+            pretrained_dict = {
+                k: v for k, v in pretrained_dict.items() if k in model_dict.keys() and v.size() == model_dict[k].size()}
+            # 2. overwrite entries in the existing state dict
+            model_dict.update(pretrained_dict)
+            # 3. load the new state dict
+            self.load_state_dict(model_dict)
 
-                for k in pretrained_dict.keys():
-                    logger.info(k)
-                logger.info('=> Finished loading.')
-            else:
-                self.load_state_dict(checkpoint['state_dict'])
-
-            # Restore optimizer
-            if restart:
-                logger.info("=> Loading checkpoint (epoch:%d): %s" %
-                            (epoch, model_path))
-
-                if hasattr(self, 'optimizer'):
-                    self.optimizer.load_state_dict(checkpoint['optimizer'])
-
-                    for state in self.optimizer.state.values():
-                        for k, v in state.items():
-                            if torch.is_tensor(v):
-                                state[k] = v.cuda(self.device_id)
-                    # NOTE: from https://github.com/pytorch/pytorch/issues/2830
-                else:
-                    raise ValueError('Set optimizer.')
-            else:
-                print("=> Loading checkpoint (epoch:%d): %s" %
-                      (epoch, model_path))
+            for k in pretrained_dict.keys():
+                logger.info(k)
+            logger.info('=> Finished loading.')
         else:
-            raise ValueError("No checkpoint found at %s" % model_path)
+            self.load_state_dict(checkpoint['state_dict'])
+
+        # Restore optimizer
+        if restart:
+            logger.info("=> Loading checkpoint (epoch:%d): %s" %
+                        (epoch, checkpoint_path))
+
+            if hasattr(self, 'optimizer'):
+                self.optimizer.load_state_dict(checkpoint['optimizer'])
+
+                for state in self.optimizer.state.values():
+                    for k, v in state.items():
+                        if torch.is_tensor(v):
+                            state[k] = v.cuda(self.device_id)
+                # NOTE: from https://github.com/pytorch/pytorch/issues/2830
+            else:
+                raise ValueError('Set optimizer.')
+        else:
+            print("=> Loading checkpoint (epoch:%d): %s" %
+                  (epoch, checkpoint_path))
 
         return (checkpoint['epoch'] + 1, checkpoint['step'] + 1,
                 checkpoint['lr'], checkpoint['metric_dev_best'])

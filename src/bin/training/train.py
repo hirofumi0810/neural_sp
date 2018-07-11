@@ -70,6 +70,7 @@ elif args.corpus == 'librispeech':
 elif args.corpus == 'wsj':
     MAX_DECODE_LEN_WORD = 32
     MAX_DECODE_LEN_CHAR = 199
+    MAX_DECODE_LEN_PHONE = 200
 elif args.corpus == 'timit':
     MAX_DECODE_LEN_PHONE = 71
 else:
@@ -158,6 +159,8 @@ def main():
             data_type=args.train_set,
             data_size=config['data_size'],
             label_type_in=config['label_type_in'],
+            label_type_in_finetune=config['label_type_in_finetune'] if 'label_type_in_finetune' in config.keys(
+            ) else None,
             label_type=config['label_type'],
             batch_size=config['batch_size'] * args.ngpus,
             max_epoch=config['num_epoch'],
@@ -223,13 +226,18 @@ def main():
                  backend=config['backend'])
 
     if args.model_save_path is not None:
+        # Load pre-trained RNNLM
         if config['rnnlm_fusion_type'] and config['rnnlm_path']:
-            # Load pre-trained RNNLM
             rnnlm = load(model_type=config['rnnlm_config']['model_type'],
                          config=config['rnnlm_config'],
                          backend=config['rnnlm_config']['backend'])
             rnnlm.load_checkpoint(save_path=config['rnnlm_path'], epoch=-1)
             rnnlm.flatten_parameters()
+
+            # Fix RNNLM parameters
+            if config['rnnlm_weight'] == 0:
+                for param in rnnlm.parameters():
+                    param.requires_grad = False
 
             # Set pre-trained parameters
             if config['rnnlm_config']['backward']:
@@ -302,6 +310,17 @@ def main():
         # Restore the last saved model
         epoch, step, learning_rate, metric_dev_best = model.load_checkpoint(
             save_path=args.saved_model_path, epoch=-1, restart=True)
+
+        if epoch >= config['convert_to_sgd_epoch']:
+            model.set_optimizer(
+                optimizer='sgd',
+                learning_rate_init=float(
+                    config['learning_rate']),  # on-the-fly
+                weight_decay=float(config['weight_decay']),
+                clip_grad_norm=config['clip_grad_norm'],
+                lr_schedule=False,
+                factor=config['decay_rate'],
+                patience_epoch=config['decay_patient_epoch'])
 
         if config['rnnlm_fusion_type'] and config['rnnlm_path']:
             if config['rnnlm_config']['backward']:

@@ -68,6 +68,7 @@ elif args.corpus == 'swbd':
 elif args.corpus == 'wsj':
     MAX_DECODE_LEN_WORD = 32
     MAX_DECODE_LEN_CHAR = 199
+    MAX_DECODE_LEN_PHONE = 200
 else:
     raise ValueError(args.corpus)
 
@@ -206,7 +207,31 @@ def main():
     config['num_classes'] = train_set.num_classes
     config['num_classes_sub'] = train_set.num_classes_sub
 
-    # TODO: add mult-level cold fusion
+    # Load a RNNLM config file for cold fusion in the main task
+    if config['rnnlm_fusion_type'] and config['rnnlm_path']:
+        if args.model_save_path is not None:
+            config['rnnlm_config'] = load_config(
+                os.path.join(config['rnnlm_path'], 'config.yml'), is_eval=True)
+        elif args.saved_model_path is not None:
+            config = load_config(os.path.join(
+                args.saved_model_path, 'config_rnnlm.yml'))
+        assert config['label_type'] == config['rnnlm_config']['label_type']
+        config['rnnlm_config']['num_classes'] = train_set.num_classes
+    else:
+        config['rnnlm_config'] = None
+
+    # Load a RNNLM config file for cold fusion in the sub task
+    if config['rnnlm_fusion_type'] and config['rnnlm_path_sub']:
+        if args.model_save_path is not None:
+            config['rnnlm_config_sub'] = load_config(
+                os.path.join(config['rnnlm_path_sub'], 'config.yml'), is_eval=True)
+        elif args.saved_model_path is not None:
+            config = load_config(os.path.join(
+                args.saved_model_path, 'config_rnnlm_sub.yml'))
+        assert config['label_type_sub'] == config['rnnlm_config_sub']['label_type']
+        config['rnnlm_config_sub']['num_classes'] = train_set.num_classes_sub
+    else:
+        config['rnnlm_config_sub'] = None
 
     # Model setting
     model = load(model_type=config['model_type'],
@@ -214,6 +239,45 @@ def main():
                  backend=config['backend'])
 
     if args.model_save_path is not None:
+        # Load pre-trained RNNLM in the main task
+        if config['rnnlm_fusion_type'] and config['rnnlm_path']:
+            rnnlm = load(model_type=config['rnnlm_config']['model_type'],
+                         config=config['rnnlm_config'],
+                         backend=config['rnnlm_config']['backend'])
+            rnnlm.load_checkpoint(save_path=config['rnnlm_path'], epoch=-1)
+            rnnlm.flatten_parameters()
+
+            # Fix RNNLM parameters
+            if config['rnnlm_weight'] == 0:
+                for param in rnnlm.parameters():
+                    param.requires_grad = False
+
+            # Set pre-trained parameters
+            if config['rnnlm_config']['backward']:
+                model.rnnlm_0_bwd = rnnlm
+            else:
+                model.rnnlm_0_fwd = rnnlm
+
+        # Load pre-trained RNNLM in the sub task
+        if config['rnnlm_fusion_type'] and config['rnnlm_path_sub']:
+            rnnlm_sub = load(model_type=config['rnnlm_config_sub']['model_type'],
+                             config=config['rnnlm_config_sub'],
+                             backend=config['rnnlm_config_sub']['backend'])
+            rnnlm_sub.load_checkpoint(
+                save_path=config['rnnlm_path_sub'], epoch=-1)
+            rnnlm_sub.flatten_parameters()
+
+            # Fix RNNLM parameters
+            if config['rnnlm_weight_sub'] == 0:
+                for param in rnnlm_sub.parameters():
+                    param.requires_grad = False
+
+            # Set pre-trained parameters
+            if config['rnnlm_config_sub']['backward']:
+                model.rnnlm_1_bwd = rnnlm_sub
+            else:
+                model.rnnlm_1_fwd = rnnlm_sub
+
         # Set save path
         save_path = mkdir_join(
             args.model_save_path, config['backend'],
@@ -245,7 +309,7 @@ def main():
         logger.info("Total %.2f M parameters" %
                     (model.total_parameters / 1000000))
 
-        # Define optimizer
+        # Set optimizer
         model.set_optimizer(
             optimizer=config['optimizer'],
             learning_rate_init=float(config['learning_rate']),
@@ -268,10 +332,11 @@ def main():
         logger = set_logger(os.path.join(
             model.save_path, 'train.log'), key='training')
 
-        # Define optimizer
+        # Set optimizer
         model.set_optimizer(
             optimizer=config['optimizer'],
-            learning_rate_init=float(config['learning_rate']),  # on-the-fly
+            learning_rate_init=float(
+                config['learning_rate']),  # on-the-fly
             weight_decay=float(config['weight_decay']),
             clip_grad_norm=config['clip_grad_norm'],
             lr_schedule=False,
@@ -281,6 +346,17 @@ def main():
         # Restore the last saved model
         epoch, step, learning_rate, metric_dev_best = model.load_checkpoint(
             save_path=args.saved_model_path, epoch=-1, restart=True)
+
+        if epoch >= config['convert_to_sgd_epoch']:
+            model.set_optimizer(
+                optimizer='sgd',
+                learning_rate_init=float(
+                    config['learning_rate']),  # on-the-fly
+                weight_decay=float(config['weight_decay']),
+                clip_grad_norm=config['clip_grad_norm'],
+                lr_schedule=False,
+                factor=config['decay_rate'],
+                patience_epoch=config['decay_patient_epoch'])
 
     else:
         raise ValueError("Set model_save_path or saved_model_path.")
@@ -324,6 +400,11 @@ def main():
     # Setting for tensorboard
     if config['backend'] == 'pytorch':
         tf_writer = SummaryWriter(model.module.save_path)
+
+    # For nested attention
+    if model.module.model_type == 'nested_attention' and epoch >= config['fix_second_decoder_epoch']:
+        logger.info('========== Fix second decoder ==========')
+        model.module.fix_second_decoder()
 
     start_time_train = time.time()
     start_time_epoch = time.time()
@@ -427,8 +508,8 @@ def main():
                             dataset=dev_set,
                             eval_batch_size=1,
                             beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_CHAR,
-                            max_decode_len_sub=MAX_DECODE_LEN_PHONE)
+                            max_decode_len=MAX_DECODE_LEN_CHAR)
+                        # max_decode_len_sub=MAX_DECODE_LEN_PHONE)
                         logger.info('  WER / CER (%s): %.3f / %.3f %%' %
                                     (dev_set.data_type, wer_dev, metric_dev))
                     else:
@@ -491,6 +572,7 @@ def main():
                                     eval_batch_size=1,
                                     beam_width=1,
                                     max_decode_len=MAX_DECODE_LEN_CHAR)
+                                # max_decode_len_sub=MAX_DECODE_LEN_PHONE)
                                 logger.info('  WER / CER (%s): %.3f / %.3f %%' %
                                             (eval_set.data_type, wer_test, cer_test))
                         else:
@@ -529,11 +611,6 @@ def main():
                 if not_improved_epoch == config['not_improved_patient_epoch']:
                     break
 
-                # For nested attention
-                if model.module.model_type == 'nested_attention' and epoch == config['fix_second_decoder']:
-                    logger.info('========== Fix second decoder ==========')
-                    model.module.fix_second_decoder()
-
                 if epoch == config['convert_to_sgd_epoch']:
                     # Convert to fine-tuning stage
                     model.module.set_optimizer(
@@ -549,6 +626,11 @@ def main():
                     # Inject Gaussian noise to all parameters
                     if float(config['weight_noise_std']) > 0:
                         model.module.weight_noise_injection = True
+
+                # For nested attention
+                if model.module.model_type == 'nested_attention' and epoch >= config['fix_second_decoder_epoch']:
+                    logger.info('========== Fix second decoder ==========')
+                    model.module.fix_second_decoder()
 
             pbar_epoch = tqdm(total=len(train_set))
 

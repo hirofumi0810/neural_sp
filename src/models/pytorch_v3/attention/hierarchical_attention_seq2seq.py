@@ -100,6 +100,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                  rnnlm_config_sub=None,  # ***
                  rnnlm_weight=0,
                  rnnlm_weight_sub=0,  # ***
+                 finetune_gate=False,
                  num_classes_input=0,
                  share_attention=False):
 
@@ -159,6 +160,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             rnnlm_fusion_type=rnnlm_fusion_type,
             rnnlm_config=rnnlm_config,
             rnnlm_weight=rnnlm_weight,
+            finetune_gate=False,  # not yet turn on here
             num_classes_input=num_classes_input)
         self.model_type = 'hierarchical_attention'
 
@@ -171,7 +173,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Setting for the decoder in the sub task
         self.decoder_num_units_1 = decoder_num_units_sub
         self.decoder_num_layers_1 = decoder_num_layers_sub
-        self.bottleneck_dim_sub = 0 if rnnlm_fusion_type else bottleneck_dim_sub
+        self.bottleneck_dim_1 = bottleneck_dim_sub
         self.num_classes_sub = num_classes_sub + 1  # Add <EOS> class
         self.sos_1 = num_classes_sub
         self.eos_1 = num_classes_sub
@@ -209,13 +211,16 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             self.bwd_weight_1 = sub_loss_weight
 
         # Setting for the RNNLM fusion
+        if rnnlm_fusion_type and rnnlm_config_sub is not None:
+            self.rnnlm_fusion_type_1 = rnnlm_fusion_type
+        else:
+            self.rnnlm_fusion_type_1 = False
         self.rnnlm_1_fwd = None
         self.rnnlm_1_bwd = None
         self.rnnlm_weight_1 = rnnlm_weight_sub
 
         # RNNLM fusion
-        if rnnlm_fusion_type:
-            assert rnnlm_config_sub is not None
+        if self.rnnlm_fusion_type_1:
             self.rnnlm_1_fwd = RNNLM(
                 embedding_dim=rnnlm_config_sub['embedding_dim'],
                 rnn_type=rnnlm_config_sub['rnn_type'],
@@ -232,18 +237,25 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 init_forget_gate_bias_with_one=rnnlm_config_sub['init_forget_gate_bias_with_one'],
                 tie_weights=rnnlm_config_sub['tie_weights'])
 
-            self.W_rnnlm_logits_1_fwd = LinearND(
-                self.rnnlm_1_fwd.num_classes, decoder_num_units,
-                dropout=dropout_decoder)
-            self.W_rnnlm_gate_1_fwd = LinearND(
-                decoder_num_units * 2, self.bottleneck_dim,
-                dropout=dropout_decoder)
+            if self.rnnlm_fusion_type_1 == 'cold_fusion':
+                self.W_rnnlm_logits_1_fwd = LinearND(
+                    self.rnnlm_1_fwd.num_classes, self.rnnlm_1_fwd.num_units,
+                    dropout=dropout_decoder)
+            if self.rnnlm_fusion_type_1 in ['cold_fusion', 'cold_fusion_simple']:
+                self.W_rnnlm_gate_1_fwd = LinearND(
+                    decoder_num_units_sub + self.rnnlm_1_fwd.num_units,
+                    self.rnnlm_1_fwd.num_units,
+                    dropout=dropout_decoder)
+                if self.bottleneck_dim_1 == 0:
+                    self.W_rnnlm_1_fwd = LinearND(
+                        self.rnnlm_1_fwd.num_units, self.num_classes_sub,
+                        dropout=dropout_decoder)
+                else:
+                    self.W_rnnlm_1_fwd = LinearND(
+                        self.rnnlm_1_fwd.num_units, self.bottleneck_dim_1,
+                        dropout=dropout_decoder)
 
-            # Fix RNNLM parameters
-            if rnnlm_weight_sub == 0:
-                for param in self.rnnlm_1_fwd.parameters():
-                    param.requires_grad = False
-        # TODO: backward RNNLM
+            # TODO: cold fusion for backward RNNLM
 
         # Encoder
         # NOTE: overide encoder
@@ -317,7 +329,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
             # Decoder (sub)
             decoder_input_size_sub = embedding_dim_sub
-            if rnnlm_fusion_type in ['embedding_fusion', 'state_embedding_fusion']:
+            if self.rnnlm_fusion_type_1 in ['embedding_fusion', 'state_embedding_fusion']:
                 decoder_input_size_sub += self.rnnlm_1_fwd.embedding_dim
             if decoding_order == 'conditional':
                 setattr(self, 'decoder_first_1_' + dir_sub, RNNDecoder(
@@ -348,43 +360,44 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                     dense_residual=decoder_dense_residual))
 
             # Attention layer (sub)
-            if num_heads_sub > 1:
-                setattr(self, 'attend_1_' + dir_sub, MultiheadAttentionMechanism(
-                    encoder_num_units=self.encoder_num_units_sub,
-                    decoder_num_units=decoder_num_units_sub,
-                    attention_type=attention_type,
-                    attention_dim=attention_dim,
-                    sharpening_factor=sharpening_factor,
-                    sigmoid_smoothing=sigmoid_smoothing,
-                    out_channels=attention_conv_num_channels,
-                    kernel_size=attention_conv_width,
-                    num_heads=num_heads_sub))
-            else:
-                setattr(self, 'attend_1_' + dir_sub, AttentionMechanism(
-                    encoder_num_units=self.encoder_num_units_sub,
-                    decoder_num_units=decoder_num_units_sub,
-                    attention_type=attention_type,
-                    attention_dim=attention_dim,
-                    sharpening_factor=sharpening_factor,
-                    sigmoid_smoothing=sigmoid_smoothing,
-                    out_channels=attention_conv_num_channels,
-                    kernel_size=attention_conv_width))
+            if not share_attention:
+                if num_heads_sub > 1:
+                    setattr(self, 'attend_1_' + dir_sub, MultiheadAttentionMechanism(
+                        encoder_num_units=self.encoder_num_units_sub,
+                        decoder_num_units=decoder_num_units_sub,
+                        attention_type=attention_type,
+                        attention_dim=attention_dim,
+                        sharpening_factor=sharpening_factor,
+                        sigmoid_smoothing=sigmoid_smoothing,
+                        out_channels=attention_conv_num_channels,
+                        kernel_size=attention_conv_width,
+                        num_heads=num_heads_sub))
+                else:
+                    setattr(self, 'attend_1_' + dir_sub, AttentionMechanism(
+                        encoder_num_units=self.encoder_num_units_sub,
+                        decoder_num_units=decoder_num_units_sub,
+                        attention_type=attention_type,
+                        attention_dim=attention_dim,
+                        sharpening_factor=sharpening_factor,
+                        sigmoid_smoothing=sigmoid_smoothing,
+                        out_channels=attention_conv_num_channels,
+                        kernel_size=attention_conv_width))
 
             # Output layer (sub)
-            if self.bottleneck_dim_sub > 0:
+            if self.bottleneck_dim_1 > 0:
                 setattr(self, 'W_d_1_' + dir_sub, LinearND(
-                    decoder_num_units_sub, self.bottleneck_dim_sub,
+                    decoder_num_units_sub, self.bottleneck_dim_1,
                     dropout=dropout_decoder))
                 if 'c' in generate_feature:
                     setattr(self, 'W_c_1_' + dir_sub, LinearND(
-                        self.encoder_num_units_sub, self.bottleneck_dim_sub,
+                        self.encoder_num_units_sub, self.bottleneck_dim_1,
                         dropout=dropout_decoder))
                 if 'y' in generate_feature:
                     setattr(self, 'W_y_1_' + dir, LinearND(
-                        embedding_dim_sub, self.bottleneck_dim_sub,
+                        embedding_dim_sub, self.bottleneck_dim_1,
                         dropout=dropout_decoder))
                 setattr(self, 'fc_1_' + dir_sub, LinearND(
-                    self.bottleneck_dim_sub, self.num_classes_sub))
+                    self.bottleneck_dim_1, self.num_classes_sub))
             else:
                 setattr(self, 'W_d_1_' + dir_sub, LinearND(
                     decoder_num_units_sub, self.num_classes_sub))
@@ -412,6 +425,32 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
             self._decode_ctc_beam_np = BeamSearchDecoder(blank_index=0)
             # NOTE: index 0 is reserved for the blank class
 
+        # Fix all parameters except for gate
+        if self.rnnlm_fusion_type_1 and finetune_gate:
+            assert self.rnnlm_fusion_type_1 in [
+                'cold_fusion', 'cold_fusion_simple']
+            fix_params = ['W_rnnlm_gate_0_fwd', 'W_rnnlm_0_fwd', 'W_rnnlm_logits_0_fwd',
+                          'W_d_0_fwd', 'W_c_0_fwd', 'W_y_0_fwd', 'fc_0_fwd']
+            fix_params += ['W_rnnlm_gate_1_fwd', 'W_rnnlm_1_fwd', 'W_rnnlm_logits_1_fwd',
+                           'W_d_1_fwd', 'W_c_1_fwd', 'W_y_1_fwd', 'fc_1_fwd']
+
+            for name, param in self.named_parameters():
+                if name.split('.')[0] not in fix_params:
+                    param.requires_grad = False
+
+        elif self.rnnlm_fusion_type_0 and finetune_gate:
+            assert self.rnnlm_fusion_type_0 in [
+                'cold_fusion', 'cold_fusion_simple']
+            fix_params = ['W_rnnlm_gate_0_fwd', 'W_rnnlm_0_fwd', 'W_rnnlm_logits_0_fwd',
+                          'W_d_0_fwd', 'W_c_0_fwd', 'W_y_0_fwd', 'fc_0_fwd']
+
+            for name, param in self.named_parameters():
+                if name.split('.')[0] not in fix_params:
+                    print(name)
+                    param.requires_grad = False
+        # NOTE: this is the case where only cold fusion in the main task
+        #       is turned on
+
         # Initialize weight matricess
         self.init_weights(parameter_init,
                           distribution=parameter_init_distribution,
@@ -437,6 +476,11 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
         # Initialize bias in forget gate with 1
         if init_forget_gate_bias_with_one:
             self.init_forget_gate_bias_with_one()
+
+        # Initialize bias in gating with -1
+        if self.rnnlm_fusion_type_1 in ['cold_fusion', 'cold_fusion_simple']:
+            self.init_weights(-1, distribution='constant',
+                              keys=['W_rnnlm_gate_1_fwd.fc.bias'])
 
     def forward(self, xs, ys, ys_sub, is_eval=False):
         """Forward computation.
@@ -656,10 +700,15 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
 
         batch_size, max_time = enc_out.size()[:2]
 
-        if (rnnlm_weight > 0 or self.rnnlm_fusion_type) and self.rnnlm_0_fwd is not None:
+        if rnnlm_weight > 0 or self.rnnlm_fusion_type_0:
+            assert self.rnnlm_0_fwd is not None
             assert not self.rnnlm_0_fwd.training
-        if (rnnlm_weight_sub > 0 and self.rnnlm_fusion_type)and self.rnnlm_1_fwd is not None:
+        if rnnlm_weight_sub > 0 and self.rnnlm_fusion_type_1:
+            assert self.rnnlm_1_fwd is not None
             assert not self.rnnlm_1_fwd.training
+
+        if self.rnnlm_fusion_type_0 or self.rnnlm_fusion_type_1:
+            raise NotImplementedError
 
         best_hyps, aw = [], []
         best_hyps_sub, aw_sub = [], []
@@ -701,7 +750,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                 new_beam = []
                 for i_beam in range(len(beam)):
                     # Update RNNLM states
-                    if (rnnlm_weight > 0 or self.rnnlm_fusion_type) and self.rnnlm_0_fwd is not None:
+                    if rnnlm_weight > 0 or self.rnnlm_fusion_type_0:
                         y_rnnlm = Variable(enc_out.data.new(
                             1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
                         y_rnnlm = self.rnnlm_0_fwd.embed(y_rnnlm)
@@ -774,7 +823,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                             cov_sum = 0
 
                         # Add RNNLM score
-                        if rnnlm_weight > 0 and self.rnnlm_0_fwd is not None:
+                        if rnnlm_weight > 0:
                             rnnlm_log_probs = F.log_softmax(
                                 rnnlm_logits_step.squeeze(1), dim=1)
                             assert log_probs.size() == rnnlm_log_probs.size()
@@ -832,7 +881,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                     logits_step_sub.squeeze(1), dim=-1)
 
                                 # Add RNNLM score in the sub task
-                                if rnnlm_weight_sub > 0 and self.rnnlm_1_fwd is not None:
+                                if rnnlm_weight_sub > 0:
                                     y_rnnlm_sub = Variable(enc_out.data.new(
                                         1, 1).fill_(beam[i_beam]['hyp_sub'][-1]).long(), volatile=True)
                                     y_rnnlm_sub = self.rnnlm_1_fwd.embed(
@@ -919,7 +968,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                                                             k_sub] * score_sub_weight
 
                                         # Add RNNLM score in the sub task
-                                        if rnnlm_weight_sub > 0 and self.rnnlm_1_fwd is not None:
+                                        if rnnlm_weight_sub > 0:
                                             if t == 0 and t_sub == 0:
                                                 y_rnnlm_sub = Variable(enc_out.data.new(
                                                     1, 1).fill_(self.sos_1).long(), volatile=True)
@@ -993,7 +1042,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                 logits_step_sub.squeeze(1), dim=-1)
 
                             # Add RNNLM score in the sub task
-                            if rnnlm_weight_sub > 0 and self.rnnlm_1_fwd is not None:
+                            if rnnlm_weight_sub > 0:
                                 y_rnnlm_sub = Variable(enc_out.data.new(
                                     1, 1).fill_(beam[i_beam]['hyp_sub'][-1]).long(), volatile=True)
                                 y_rnnlm_sub = self.rnnlm_1_fwd.embed(
@@ -1053,7 +1102,7 @@ class HierarchicalAttentionSeq2seq(AttentionSeq2seq):
                                     logits_step_sub.squeeze(1), dim=-1)
 
                                 # Add RNNLM score in the sub task
-                                if rnnlm_weight_sub > 0 and self.rnnlm_1_fwd is not None:
+                                if rnnlm_weight_sub > 0:
                                     if t_sub == 0:
                                         y_rnnlm_sub = Variable(enc_out.data.new(
                                             1, 1).fill_(beam[i_beam]['hyp_sub'][-1]).long(), volatile=True)

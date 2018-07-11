@@ -52,7 +52,6 @@ def save_config(config_path, save_path):
     Returns:
         save_path (string):
     """
-
     shutil.copyfile(config_path, join(save_path, 'config.yml'))
 
     with open(config_path, "r") as f:
@@ -73,3 +72,14 @@ def save_config(config_path, save_path):
                 if 'rnnlm_path' in config_parent['param'].keys() and config_parent['param']['rnnlm_path']:
                     shutil.copyfile(join(config_parent['param']['rnnlm_path'], 'config.yml'), join(
                         save_path, 'config_rnnlm.yml'))
+
+        # Save pre-trained RNNLM config in the sub task
+        if 'rnnlm_path_sub' in config['param'].keys() and config['param']['rnnlm_path_sub']:
+            shutil.copyfile(join(config['param']['rnnlm_path_sub'], 'config.yml'), join(
+                save_path, 'config_rnnlm_sub.yml'))
+        elif 'parent' in config.keys():
+            with open(config['parent'], "r") as f_:
+                config_parent = yaml.load(f_)
+                if 'rnnlm_path_sub' in config_parent['param'].keys() and config_parent['param']['rnnlm_path_sub']:
+                    shutil.copyfile(join(config_parent['param']['rnnlm_path_sub'], 'config.yml'), join(
+                        save_path, 'config_rnnlm_sub.yml'))
