@@ -18,7 +18,7 @@ param:
   bidirectional: False
   num_units: 512
   num_proj: 0
-  num_layers: 3
+  num_layers: 2
   embedding_dim: 32
   tie_weights: False
   residual_connection: True
@@ -30,6 +30,7 @@ param:
   learning_rate: 1e-3
   num_epoch: 70
   convert_to_sgd_epoch: 10
+  bptt: 35
 
   # initialization
   parameter_init_distribution: uniform
@@ -56,5 +57,5 @@ param:
   decay_patient_epoch: 0
   sort_stop_epoch: 70
   not_improved_patient_epoch: 10
-  eval_start_epoch: 5
+  eval_start_epoch: 1
   print_step: 100

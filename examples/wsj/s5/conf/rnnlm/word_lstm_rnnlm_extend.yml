@@ -3,10 +3,10 @@ param:
   backend: pytorch
 
   # corpus
-  corpus: csj
-  data_size: aps_other
+  corpus: wsj
+  data_size: si284
   vocab: False
-  label_type: character_wb
+  label_type: word
 
   # features
   tool: htk
@@ -19,7 +19,7 @@ param:
   num_units: 512
   num_proj: 0
   num_layers: 2
-  embedding_dim: 64
+  embedding_dim: 128
   tie_weights: False
   residual_connection: True
   backward: False
@@ -28,7 +28,7 @@ param:
   batch_size: 128
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 70
+  num_epoch: 20
   convert_to_sgd_epoch: 10
   bptt: 35
 
@@ -53,9 +53,9 @@ param:
   # annealing
   decay_type: per_epoch
   decay_start_epoch: 10
-  decay_rate: 0.95
+  decay_rate: 0.9
   decay_patient_epoch: 0
-  sort_stop_epoch: 70
+  sort_stop_epoch: 30
   not_improved_patient_epoch: 10
   eval_start_epoch: 1
-  print_step: 100
+  print_step: 1000
