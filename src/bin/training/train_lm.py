@@ -77,7 +77,7 @@ def main():
         data_size=config['data_size'],
         label_type=config['label_type'],
         batch_size=config['batch_size'], max_epoch=config['num_epoch'],
-        sort_utt=True, sort_stop_epoch=config['sort_stop_epoch'],
+        shuffle=True, sort_stop_epoch=config['sort_stop_epoch'],
         tool=config['tool'], dynamic_batching=config['dynamic_batching'],
         vocab=config['vocab'])
     dev_data = Dataset(
@@ -220,15 +220,17 @@ def main():
     while True:
         # Compute loss in the training set (including parameter update)
         batch_train, is_new_epoch = train_set.next()
-        model, loss_train, acc_train = updater(model, batch_train)
+        model, loss_train, acc_train = updater(
+            model, batch_train, bptt=config['bptt'])
         loss_train_mean += loss_train
         acc_train_mean += acc_train
-        pbar_epoch.update(len(batch_train['ys']))
+        pbar_epoch.update(len(batch_train['input_names']))
 
         if (step + 1) % config['print_step'] == 0:
             # Compute loss in the dev set
             batch_dev = dev_data.next()[0]
-            model, loss_dev, acc_dev = updater(model, batch_dev, is_eval=True)
+            model, loss_dev, acc_dev = updater(
+                model, batch_dev, bptt=config['bptt'], is_eval=True)
 
             loss_train_mean /= config['print_step']
             acc_train_mean /= config['print_step']
@@ -248,12 +250,11 @@ def main():
                             name + '/grad', param.grad.data.cpu().numpy(), step + 1)
 
             duration_step = time.time() - start_time_step
-            logger.info("...Step:%d(epoch:%.2f) loss:%.2f(%.2f)/acc:%.2f(%.2f)/ppl:%.2f(%.2f)/lr:%.5f/batch:%d/y_lens:%d (%.2f min)" %
+            logger.info("...Step:%d(epoch:%.2f) loss:%.2f(%.2f)/acc:%.2f(%.2f)/ppl:%.2f(%.2f)/lr:%.5f/batch:%d (%.2f min)" %
                         (step + 1, train_set.epoch_detail,
                          loss_train_mean, loss_dev, acc_train_mean, acc_dev,
                          math.exp(loss_train_mean), math.exp(loss_dev),
                          learning_rate, train_set.current_batch_size,
-                         max(len(y) for y in batch_train['ys']),
                          duration_step / 60))
             start_time_step = time.time()
             loss_train_mean, acc_train_mean = 0., 0.
@@ -276,7 +277,8 @@ def main():
                 start_time_eval = time.time()
                 # dev
                 ppl_dev = eval_ppl(models=[model],
-                                   dataset=dev_data)
+                                   dataset=dev_data,
+                                   bptt=config['bptt'])
                 logger.info(' PPL (%s): %.3f' % (dev_data.data_type, ppl_dev))
 
                 if ppl_dev < metric_dev_best:
@@ -301,7 +303,8 @@ def main():
                         ppl_test_mean = 0.
                         for test_set in eval_sets:
                             ppl_test = eval_ppl(models=[model],
-                                                dataset=test_set)
+                                                dataset=test_set,
+                                                bptt=config['bptt'])
                             logger.info(' PPL (%s): %.3f' %
                                         (test_set.data_type, ppl_test))
                             ppl_test_mean += ppl_test

@@ -9,9 +9,10 @@ from __future__ import print_function
 
 import math
 from tqdm import tqdm
+import numpy as np
 
 
-def eval_ppl(models, dataset, progressbar=False):
+def eval_ppl(models, dataset, bptt, progressbar=False):
     """Evaluate a RNNLM by perprexity.
     Args:
         models (list): the models to evaluate
@@ -36,21 +37,19 @@ def eval_ppl(models, dataset, progressbar=False):
     while True:
         batch, is_new_epoch = dataset.next(batch_size=1)
 
-        if dataset.is_test:
-            ys = []
-            for b in range(len(batch['ys'])):
-                if dataset.label_type == 'word':
-                    indices = dataset.word2idx(batch['ys'][b])
-                elif 'character' in dataset.label_type:
-                    indices = dataset.char2idx(batch['ys'][b])
-                else:
-                    raise ValueError(dataset.label_type)
-                ys += [indices]
-                # NOTE: transcript is seperated by space('_')
-        else:
-            ys = batch['ys']
+        ys = np.array(batch['ys'])
+        batch_size = len(batch['input_names'])
 
-        loss += model(ys, is_eval=True)[0].data[0]
+        # Truncate
+        ys = ys.reshape((batch_size, -1))
+        # ys: `[B, T]`
+
+        num_step = ys.shape[1] // bptt
+        offset = 0
+        for i in range(num_step):
+            ys_bptt = ys[:, offset: offset + bptt]
+            offset += bptt
+            loss += model(ys_bptt, is_eval=True)[0].data[0]
         num_utt += 1
 
         if progressbar:

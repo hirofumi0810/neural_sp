@@ -170,8 +170,12 @@ class Base(object):
         if self.sort_utt or not self.shuffle:
             if self.sort_utt:
                 # Change batch size dynamically
-                min_frame_num_batch = self.df[self.offset:self.offset +
-                                              1]['frame_num'].values[0]
+                if hasattr(self, 'df_in'):
+                    min_frame_num_batch = self.df_in[self.offset:self.offset +
+                                                     1]['frame_num'].values[0]
+                else:
+                    min_frame_num_batch = self.df[self.offset:self.offset +
+                                                  1]['frame_num'].values[0]
                 _batch_size = self.select_batch_size(
                     batch_size, min_frame_num_batch)
                 # NOTE: depends on each corpus
@@ -215,6 +219,8 @@ class Base(object):
 
                 # Shuffle selected mini-batch
                 random.shuffle(data_indices)
+
+            self.offset += len(data_indices)
 
         return data_indices, is_new_epoch
 

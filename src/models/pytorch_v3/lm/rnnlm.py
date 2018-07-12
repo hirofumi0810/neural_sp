@@ -370,8 +370,8 @@ class RNNLM(ModelBase):
             res_outputs_prev = None
             for i_l in range(self.num_layers):
                 # Path through RNN
-                y, state = getattr(self, self.rnn_type +
-                                   '_l' + str(i_l))(y, hx=h)
+                y, h = getattr(self, self.rnn_type +
+                               '_l' + str(i_l))(y, hx=h)
 
                 # Dropout for hidden-hidden or hidden-output connection
                 y_tmp = getattr(self, 'dropout_l' + str(i_l))(y)
@@ -388,7 +388,7 @@ class RNNLM(ModelBase):
 
         logits_step = self.output(y)
 
-        return logits_step, h, state
+        return logits_step, y, h
 
     def _init_hidden(self, batch_size, use_cuda, volatile):
         """Initialize hidden states.

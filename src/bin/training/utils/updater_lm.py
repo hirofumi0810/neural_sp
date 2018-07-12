@@ -7,6 +7,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import math
+import numpy as np
 import logging
 logger = logging.getLogger('training')
 
@@ -35,51 +37,70 @@ class Updater(object):
         self.clip_grad_norm = clip_grad_norm
         self.backend = backend
 
-    def __call__(self, model, batch, is_eval=False):
+    def __call__(self, model, batch, bptt, is_eval=False):
         """
         Args:
             model (torch.nn.Module or chainer.Chain):
             batch (tuple):
+            bptt (int):
             is_eval (bool):
         Returns:
             model (torch.nn.Module or chainer.Chain):
             loss_val (float):
         """
         try:
-            # Step for parameter update
-            if self.backend == 'pytorch':
-                if is_eval:
-                    loss, acc = model(batch['ys'], is_eval=True)
-                else:
-                    model.optimizer.zero_grad()
-                    if model.device_id >= 0:
-                        torch.cuda.empty_cache()
-                    loss, acc = model(batch['ys'])
-                    loss.backward()
-                    loss.detach()  # Trancate the graph
-                    # TODO: add BPTT
-                    if self.clip_grad_norm > 0:
-                        # torch.nn.utils.clip_grad_norm_(
-                        #     model.parameters(), self.clip_grad_norm)
-                        torch.nn.utils.clip_grad_norm(
-                            model.parameters(), self.clip_grad_norm)
-                    model.optimizer.step()
-                    # TODO: Add scheduler
-                # loss_val = loss.item()
-                loss_val = loss.data[0]
+            ys = np.array(batch['ys'])
+            batch_size = len(batch['input_names'])
 
-            elif self.backend == 'chainer':
-                if is_eval:
-                    model.optimizer.target.cleargrads()
-                    loss, acc = model(batch['ys'])
-                    loss.backward()
-                    loss.unchain_backward()
-                    model.optimizer.update()
-                else:
-                    loss, acc = model(batch['ys'], is_eval=True)
-                loss_val = loss.data
+            # Truncate
+            ys = ys[:len(ys) // batch_size * batch_size]
+            ys = ys.reshape((batch_size, -1))
+            # ys: `[B, T]`
 
-            del loss
+            num_step = ys.shape[1] // bptt
+            offset = 0
+            loss_val, acc = 0, 0
+            for i in range(num_step):
+                ys_bptt = ys[:, offset: offset + bptt]
+                offset += bptt
+
+                # Step for parameter update
+                if self.backend == 'pytorch':
+                    if is_eval:
+                        loss_bptt, acc_bptt = model(ys_bptt, is_eval=True)
+                    else:
+                        model.optimizer.zero_grad()
+                        if model.device_id >= 0:
+                            torch.cuda.empty_cache()
+                        loss_bptt, acc_bptt = model(ys_bptt)
+                        loss_bptt.backward()
+                        loss_bptt.detach()  # Trancate the graph
+                        if self.clip_grad_norm > 0:
+                            # torch.nn.utils.clip_grad_norm_(
+                            #     model.parameters(), self.clip_grad_norm)
+                            torch.nn.utils.clip_grad_norm(
+                                model.parameters(), self.clip_grad_norm)
+                        model.optimizer.step()
+                        # TODO: Add scheduler
+
+                    # loss_val += loss_bptt.item()
+                    loss_val += loss_bptt.data[0]
+
+                elif self.backend == 'chainer':
+                    if is_eval:
+                        loss_bptt, acc_bptt = model(ys_bptt, is_eval=True)
+                    else:
+                        model.optimizer.target.cleargrads()
+                        loss_bptt, acc_bptt = model(ys_bptt)
+                        loss_bptt.backward()
+                        loss_bptt.unchain_backward()
+                        model.optimizer.update()
+                    loss_val += loss_bptt.data
+
+                acc += acc_bptt
+                del loss_bptt
+
+            acc /= num_step
 
         except RuntimeError as e:
             logger.warning('!!!Skip mini-batch!!! (max_label_num: %d, batch: %d)' %

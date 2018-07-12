@@ -138,7 +138,7 @@ class Dataset(Base):
 
                 # Update the transcript
                 for i in tqdm(df['transcript'].index):
-                    df['transcript'][i] = ' '.join(
+                    df.loc[i, 'transcript'] = ' '.join(
                         list(map(lambda x: str(org2new[int(x)]), df['transcript'][i].split(' '))))
 
                 # Save as a new file
@@ -170,16 +170,24 @@ class Dataset(Base):
             data_indices (np.ndarray):
         Returns:
             batch (dict):
-                ys (list): target labels in the main task of size `[B, L]`
+                ys (list): target labels of size `[B * L]`
                 input_names (list): file names of input data of size `[B]`
         """
-        if self.is_test:
-            ys = [self.df['transcript'][data_indices[b]]
-                  for b in range(len(data_indices))]
-            # NOTE: transcript is not tokenized
-        else:
-            ys = [list(map(int, self.df['transcript'][i].split(' ')))
-                  for i in data_indices]
+        # NOTE: sample utteraces and concatenate all tokens in mini-batch
+
+        ys = []
+        for i in data_indices:
+            if self.is_test:
+                if self.label_type == 'word':
+                    indices = self.word2idx(self.df['transcript'][i])
+                elif 'character' in self.label_type:
+                    indices = self.char2idx(self.df['transcript'][i])
+                else:
+                    raise ValueError(self.label_type)
+                ys += indices
+                # NOTE: transcript is seperated by space('_')
+            else:
+                ys += list(map(int, self.df['transcript'][i].split(' ')))
 
         # TODO: fix later
         try:

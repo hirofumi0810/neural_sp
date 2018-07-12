@@ -81,6 +81,7 @@ def main():
 
         ppl = eval_ppl(models=[model],
                        dataset=eval_set,
+                       bptt=config['bptt'],
                        progressbar=True)
         ppl_mean += ppl
         logger.info('  PPL (%s): %.3f' % (data_type, ppl))

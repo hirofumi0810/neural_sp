@@ -236,7 +236,7 @@ def load(model_type, config, backend):
 
         if 'input_type' not in config.keys():
             config['input_type'] = 'speech'
-        if 'finetune_gate':
+        if config['finetune_gate']:
             assert isdir(config['pretrained_model_path'])
 
         model = AttentionSeq2seq(
@@ -759,6 +759,7 @@ def load(model_type, config, backend):
         model.name += 'emb' + str(config['embedding_dim'])
         model.name += '_' + config['optimizer']
         model.name += '_lr' + str(config['learning_rate'])
+        model.name += '_bptt' + str(config['bptt'])
         model.name += '_drop'
         # if config['dropout_input'] != 0:
         #     model.name += 'in' + str(config['dropout_input'])
