@@ -5,7 +5,8 @@ param:
 
   # corpus
   data_size: aps_other
-  label_type: phone_wb
+  vocab: False
+  label_type: phone
 
   # topology
   encoder_num_layers: 5
@@ -15,7 +16,7 @@ param:
     - False
     - False
     - False
-  fc_list: [320]
+  fc_list: []
 
   # initialization
   pretrained_model_path: False

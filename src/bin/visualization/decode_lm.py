@@ -43,11 +43,11 @@ def main():
         data_save_path=args.data_save_path,
         model_type=config['model_type'],
         data_size=config['data_size'] if 'data_size' in config.keys() else '',
+        vocab=config['vocab'],
         data_type=args.data_type,
         label_type=config['label_type'],
         batch_size=args.eval_batch_size,
-        sort_utt=False, reverse=False, tool=config['tool'],
-        vocab=config['vocab'])
+        sort_utt=False, reverse=False, tool=config['tool'])
     config['num_classes'] = dataset.num_classes
 
     # Load model
@@ -57,11 +57,6 @@ def main():
 
     # Restore the saved parameters
     model.load_checkpoint(save_path=args.model_path, epoch=args.epoch)
-
-    # NOTE: after load the rnn config are not a continuous chunk of memory
-    # this makes them a continuous chunk, and will speed up forward pass
-    model.flatten_parameters()
-    # https://github.com/pytorch/examples/blob/master/word_language_model/main.py
 
     # GPU setting
     model.set_cuda(deterministic=False, benchmark=True)

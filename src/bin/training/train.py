@@ -108,7 +108,9 @@ def main():
             use_delta=config['use_delta'],
             use_double_delta=config['use_double_delta'],
             data_type=args.train_set,
-            data_size=config['data_size'],
+            data_size=config['data_size'] if 'data_size' in config.keys(
+            ) else '',
+            vocab=config['vocab'],
             label_type=config['label_type'],
             batch_size=config['batch_size'] * args.ngpus,
             max_epoch=config['num_epoch'],
@@ -129,7 +131,9 @@ def main():
             use_delta=config['use_delta'],
             use_double_delta=config['use_double_delta'],
             data_type=args.dev_set,
-            data_size=config['data_size'],
+            data_size=config['data_size'] if 'data_size' in config.keys(
+            ) else '',
+            vocab=config['vocab'],
             label_type=config['label_type'],
             batch_size=config['batch_size'] * args.ngpus,
             shuffle=True, tool=config['tool'],
@@ -148,7 +152,9 @@ def main():
                 use_delta=config['use_delta'],
                 use_double_delta=config['use_double_delta'],
                 data_type=data_type,
-                data_size=config['data_size'],
+                data_size=config['data_size'] if 'data_size' in config.keys(
+                ) else '',
+                vocab=config['vocab'],
                 label_type=config['label_type'],
                 batch_size=1, tool=config['tool'])]
     else:
@@ -157,7 +163,9 @@ def main():
             data_save_path=args.data_save_path,
             model_type=config['model_type'],
             data_type=args.train_set,
-            data_size=config['data_size'],
+            data_size=config['data_size'] if 'data_size' in config.keys(
+            ) else '',
+            vocab=config['vocab'],
             label_type_in=config['label_type_in'],
             label_type_in_finetune=config['label_type_in_finetune'] if 'label_type_in_finetune' in config.keys(
             ) else None,
@@ -172,22 +180,22 @@ def main():
             tool=config['tool'], dynamic_batching=config['dynamic_batching'],
             use_ctc=config['model_type'] == 'ctc' or (
                 config['model_type'] == 'attention' and config['ctc_loss_weight'] > 0),
-            subsampling_factor=2 ** sum(config['subsample_list']),
-            vocab=config['vocab'])
+            subsampling_factor=2 ** sum(config['subsample_list']))
         dev_set = Dataset_p2w(
             corpus=args.corpus,
             data_save_path=args.data_save_path,
             model_type=config['model_type'],
             data_type=args.dev_set,
-            data_size=config['data_size'],
+            data_size=config['data_size'] if 'data_size' in config.keys(
+            ) else '',
+            vocab=config['vocab'],
             label_type_in=config['label_type_in'],
             label_type=config['label_type'],
             batch_size=config['batch_size'] * args.ngpus,
             shuffle=True, tool=config['tool'],
             use_ctc=config['model_type'] == 'ctc' or (
                 config['model_type'] == 'attention' and config['ctc_loss_weight'] > 0),
-            subsampling_factor=2 ** sum(config['subsample_list']),
-            vocab=config['vocab'])
+            subsampling_factor=2 ** sum(config['subsample_list']))
         eval_sets = []
         for data_type in args.eval_sets:
             if 'phone' in config['label_type_in']:
@@ -197,11 +205,12 @@ def main():
                 data_save_path=args.data_save_path,
                 model_type=config['model_type'],
                 data_type=data_type,
-                data_size=config['data_size'],
+                data_size=config['data_size'] if 'data_size' in config.keys(
+                ) else '',
+                vocab=config['vocab'],
                 label_type_in=config['label_type_in'],
                 label_type=config['label_type'],
-                batch_size=1, tool=config['tool'],
-                vocab=config['vocab'])]
+                batch_size=1, tool=config['tool'])]
         config['num_classes_input'] = train_set.num_classes_in
 
     config['num_classes'] = train_set.num_classes
@@ -401,12 +410,12 @@ def main():
                 tf_writer.add_scalar('train/loss', loss_train_mean, step + 1)
                 tf_writer.add_scalar('dev/loss', loss_dev, step + 1)
                 for name, param in model.module.named_parameters():
-                    if param.grad is not None:
-                        name = name.replace('.', '/')
-                        tf_writer.add_histogram(
-                            name, param.data.cpu().numpy(), step + 1)
-                        tf_writer.add_histogram(
-                            name + '/grad', param.grad.data.cpu().numpy(), step + 1)
+                    name = name.replace('.', '/')
+                    # if param.grad is not None:
+                    #     tf_writer.add_histogram(
+                    #         name, param.data.cpu().numpy(), step + 1)
+                    #     tf_writer.add_histogram(
+                    #         name + '/grad', param.grad.data.cpu().numpy(), step + 1)
 
             duration_step = time.time() - start_time_step
             logger.info("...Step:%d(epoch:%.2f) loss:%.2f(%.2f)/acc:%.2f(%.2f)/lr:%.5f/batch:%d/x_lens:%d (%.2f min)" %
@@ -436,7 +445,7 @@ def main():
             else:
                 start_time_eval = time.time()
                 # dev
-                if config['label_type'] == 'word':
+                if 'word' in config['label_type']:
                     metric_dev, _ = eval_word(
                         models=[model.module],
                         dataset=dev_set,
@@ -485,7 +494,7 @@ def main():
 
                     # test
                     for eval_set in eval_sets:
-                        if config['label_type'] == 'word':
+                        if 'word' in config['label_type']:
                             wer_test, _ = eval_word(
                                 models=[model.module],
                                 dataset=eval_set,

@@ -4,7 +4,9 @@ param:
   backend: pytorch
 
   # corpus
-  label_type: character_wb
+  data_size: aps_other
+  vocab: False
+  label_type: character
 
   # topology
   conv_channels: [64, 64, 128, 128]

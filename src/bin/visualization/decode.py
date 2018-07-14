@@ -135,6 +135,7 @@ def main():
             use_double_delta=config['use_double_delta'],
             data_size=config['data_size'] if 'data_size' in config.keys(
             ) else '',
+            vocab=config['vocab'],
             data_type=args.data_type,
             label_type=config['label_type'],
             batch_size=args.eval_batch_size,
@@ -145,12 +146,13 @@ def main():
             data_save_path=args.data_save_path,
             model_type=config['model_type'],
             data_type=args.data_type,
-            data_size=config['data_size'],
+            data_size=config['data_size'] if 'data_size' in config.keys(
+            ) else '',
+            vocab=config['vocab'],
             label_type_in=config['label_type_in'],
             label_type=config['label_type'],
             batch_size=args.eval_batch_size,
             sort_utt=False, reverse=False, tool=config['tool'],
-            vocab=config['vocab'],
             use_ctc=config['model_type'] == 'ctc' or (
                 config['model_type'] == 'attention' and config['ctc_loss_weight'] > 0),
             subsampling_factor=2 ** sum(config['subsample_list']))
@@ -193,7 +195,6 @@ def main():
                      config=config_rnnlm,
                      backend=config_rnnlm['backend'])
         rnnlm.load_checkpoint(save_path=args.rnnlm_path, epoch=-1)
-        rnnlm.flatten_parameters()
         if config_rnnlm['backward']:
             model.rnnlm_0_bwd = rnnlm
         else:
@@ -205,7 +206,7 @@ def main():
     if not args.stdout:
         sys.stdout = open(join(args.model_path, 'decode.txt'), 'w')
 
-    if dataset.label_type == 'word':
+    if 'word' in dataset.label_type:
         map_fn = dataset.idx2word
         max_decode_len = MAX_DECODE_LEN_WORD
         min_decode_len = MIN_DECODE_LEN_WORD
@@ -271,13 +272,13 @@ def main():
                 str_ref = normalize(str_ref, remove_tokens=['@'])
                 str_hyp = normalize(str_hyp, remove_tokens=['@'])
 
-            if dataset.label_type in ['word', 'character_wb'] or (args.corpus != 'csj' and dataset.label_type == 'character'):
+            if 'word' in dataset.label_type or ('character' in dataset.label_type and 'nowb' not in dataset.label_type):
                 wer = wer_align(ref=str_ref.split('_'),
                                 hyp=str_hyp.split('_'),
                                 normalize=True,
                                 japanese=True if args.corpus == 'csj' else False)[0]
                 print('\nWER: %.3f %%' % wer)
-            elif dataset.label_type == 'character':
+            elif 'character' in dataset.label_type:
                 cer = wer_align(ref=list(str_ref.replace('_', '')),
                                 hyp=list(str_hyp.replace('_', '')),
                                 normalize=True,

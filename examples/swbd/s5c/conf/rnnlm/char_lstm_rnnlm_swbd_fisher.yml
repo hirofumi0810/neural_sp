@@ -21,19 +21,19 @@ param:
   backward: False
 
   # optimization
-  batch_size: 128
+  batch_size: 256
   optimizer: adam
   learning_rate: 1e-3
   num_epoch: 30
   convert_to_sgd_epoch: 25
-  bptt: 35
+  bptt: 100
 
   # annealing
   decay_type: per_epoch
   decay_start_epoch: 10
   decay_rate: 0.9
   decay_patient_epoch: 0
-  sort_stop_epoch: 30
+  sort_stop_epoch: 100
   not_improved_patient_epoch: 10
   eval_start_epoch: 1
   print_step: 1000

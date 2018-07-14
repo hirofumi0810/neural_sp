@@ -5,6 +5,8 @@ param:
 
   # corpus
   data_size: all
+  vocab: False
+  label_type: word10k
 
   # topology
   conv_channels: [64, 64, 128, 128]
@@ -33,8 +35,6 @@ param:
     - False
     - True
     - False
-  decoding_order: bahdanau
-  num_heads: 1
 
   # optimization
   batch_size: 30

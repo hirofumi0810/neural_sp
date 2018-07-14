@@ -9,15 +9,16 @@ param:
   # vocab: aps_other
 
   # topology
-  encoder_num_layers: 3
+  encoder_num_layers: 4
   subsample_list:
+    - False
     - False
     - False
     - False
   fc_list: [320]
 
   # optimization
-  batch_size: 60
+  batch_size: 50
 
   # initialization
   pretrained_model_path: False

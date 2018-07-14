@@ -30,6 +30,7 @@ parser.add_argument('--data_save_path', type=str,
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
 
+# A2P
 parser.add_argument('--model_path_a2p', type=str,
                     help='path to the model to evaluate (A2P)')
 parser.add_argument('--epoch_a2p', type=int, default=-1,
@@ -41,6 +42,7 @@ parser.add_argument('--length_penalty_a2p', type=float, default=0,
 parser.add_argument('--coverage_penalty_a2p', type=float, default=0,
                     help='coverage penalty (A2P)')
 
+# P2W
 parser.add_argument('--model_path_p2w', type=str,
                     help='path to the model to evaluate (P2W)')
 parser.add_argument('--epoch_p2w', type=int, default=-1,
@@ -82,12 +84,12 @@ elif args.corpus == 'swbd':
     MAX_DECODE_LEN_CHAR = 300
     MIN_DECODE_LEN_CHAR = 1
     MAX_DECODE_LEN_RATIO_CHAR = 1
-    MIN_DECODE_LEN_RATIO_CHAR = 0.2
+    MIN_DECODE_LEN_RATIO_CHAR = 0.1
 
     MAX_DECODE_LEN_PHONE = 300
     MIN_DECODE_LEN_PHONE = 1
     MAX_DECODE_LEN_RATIO_PHONE = 1
-    MIN_DECODE_LEN_RATIO_PHONE = 0
+    MIN_DECODE_LEN_RATIO_PHONE = 0.05
 elif args.corpus == 'librispeech':
     MAX_DECODE_LEN_WORD = 200
     MIN_DECODE_LEN_WORD = 1
@@ -108,6 +110,11 @@ elif args.corpus == 'wsj':
     MIN_DECODE_LEN_CHAR = 10
     MAX_DECODE_LEN_RATIO_CHAR = 1
     MIN_DECODE_LEN_RATIO_CHAR = 0.2
+
+    MAX_DECODE_LEN_PHONE = 200
+    MIN_DECODE_LEN_PHONE = 1
+    MAX_DECODE_LEN_RATIO_PHONE = 1
+    MIN_DECODE_LEN_RATIO_PHONE = 0
     # NOTE:
     # dev93 (char): 10-199
     # test_eval92 (char): 16-195
@@ -148,6 +155,7 @@ def main():
             use_double_delta=config_a2p['use_double_delta'],
             data_size=config_a2p['data_size'] if 'data_size' in config_a2p.keys(
             ) else '',
+            vocab=config_a2p['vocab'],
             data_type=data_type,
             label_type=config_a2p['label_type'],
             batch_size=args.eval_batch_size,
@@ -158,12 +166,13 @@ def main():
             data_save_path=args.data_save_path,
             model_type=config_p2w['model_type'],
             data_type=data_type,
-            data_size=config_p2w['data_size'],
+            data_size=config_p2w['data_size'] if 'data_size' in config_p2w.keys(
+            ) else '',
+            vocab=config_p2w['vocab'],
             label_type_in=config_p2w['label_type_in'],
             label_type=config_p2w['label_type'],
             batch_size=args.eval_batch_size,
             sort_utt=False, reverse=False, tool=config_p2w['tool'],
-            vocab=config_p2w['vocab'],
             use_ctc=config_p2w['model_type'] == 'ctc' or (
                 config_p2w['model_type'] == 'attention' and config_p2w['ctc_loss_weight'] > 0),
             subsampling_factor=2 ** sum(config_p2w['subsample_list']))
@@ -216,9 +225,15 @@ def main():
 
             logger.info('model path (A2P): %s' % args.model_path_a2p)
             logger.info('beam width (A2P): %d' % args.beam_width_a2p)
+            logger.info('length penalty (A2P): %.3f' % args.length_penalty_a2p)
+            logger.info('coverage penalty (A2P): %.3f' %
+                        args.coverage_penalty_a2p)
             logger.info('epoch (A2P): %d' % (epoch_a2p - 1))
             logger.info('model path (P2W): %s' % args.model_path_p2w)
             logger.info('beam width (P2w): %d' % args.beam_width_p2w)
+            logger.info('length penalty (P2W): %.3f' % args.length_penalty_p2w)
+            logger.info('coverage penalty (P2W): %.3f' %
+                        args.coverage_penalty_p2w)
             logger.info('epoch (P2W): %d' % (epoch_p2w - 1))
 
         if config_p2w['label_type'] == 'word':

@@ -140,6 +140,7 @@ def main():
                 use_double_delta=config['use_double_delta'],
                 data_size=config['data_size'] if 'data_size' in config.keys(
                 ) else '',
+                vocab=config['vocab'],
                 data_type=data_type,
                 label_type=config['label_type'],
                 batch_size=args.eval_batch_size,
@@ -150,12 +151,13 @@ def main():
                 data_save_path=args.data_save_path,
                 model_type=config['model_type'],
                 data_type=data_type,
-                data_size=config['data_size'],
+                data_size=config['data_size'] if 'data_size' in config.keys(
+                ) else '',
+                vocab=config['vocab'],
                 label_type_in=config['label_type_in'],
                 label_type=config['label_type'],
                 batch_size=args.eval_batch_size,
                 sort_utt=False, reverse=False, tool=config['tool'],
-                vocab=config['vocab'],
                 use_ctc=config['model_type'] == 'ctc' or (
                     config['model_type'] == 'attention' and config['ctc_loss_weight'] > 0),
                 subsampling_factor=2 ** sum(config['subsample_list']))

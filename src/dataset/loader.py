@@ -27,7 +27,7 @@ class Dataset(Base):
 
     def __init__(self, corpus, data_save_path, model_type,
                  input_freq, use_delta, use_double_delta,
-                 data_size, data_type, label_type,
+                 data_size, vocab, data_type, label_type,
                  batch_size, max_epoch=None,
                  max_frame_num=2000, min_frame_num=40,
                  shuffle=False, sort_utt=False, reverse=False,
@@ -43,6 +43,7 @@ class Dataset(Base):
             use_delta (bool): if True, use the delta feature
             use_double_delta (bool): if True, use the acceleration feature
             data_size (string):
+            vocab (bool or string):
             data_type (string):
             label_type (string):
             batch_size (int): the size of mini-batch
@@ -92,10 +93,14 @@ class Dataset(Base):
             if data_type == 'train':
                 data_type += '_' + data_size
 
-        self.vocab_file_path = join(
-            data_save_path, 'vocab', data_size, label_type + '.txt')
+        if vocab and data_size != '' and data_size != vocab:
+            self.vocab_file_path = join(
+                data_save_path, 'vocab', vocab, label_type + '.txt')
+        else:
+            self.vocab_file_path = join(
+                data_save_path, 'vocab', data_size, label_type + '.txt')
 
-        if label_type == 'word':
+        if 'word' in label_type:
             self.idx2word = Idx2word(self.vocab_file_path)
             self.word2idx = Word2idx(self.vocab_file_path)
         elif 'character' in label_type:
@@ -114,9 +119,9 @@ class Dataset(Base):
         super(Dataset, self).__init__(vocab_file_path=self.vocab_file_path)
 
         # Load dataset file
-        dataset_path = join(
+        self.dataset_path = join(
             data_save_path, 'dataset', tool, data_size, data_type, label_type + '.csv')
-        df = pd.read_csv(dataset_path, encoding='utf-8')
+        df = pd.read_csv(self.dataset_path, encoding='utf-8')
         df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
 
         # Remove inappropriate utteraces
@@ -217,8 +222,17 @@ class Dataset(Base):
             ys = [self.df['transcript'][i] for i in data_indices]
             # NOTE: transcript is not tokenized
         else:
-            ys = [list(map(int, self.df['transcript'][i].split(' ')))
-                  for i in data_indices]
+            if 'word' in self.label_type:
+                ys = [self.word2idx(self.df['transcript'][i])
+                      for i in data_indices]
+            elif 'character' in self.label_type:
+                ys = [self.char2idx(self.df['transcript'][i])
+                      for i in data_indices]
+            elif 'phone' in self.label_type:
+                ys = [self.phone2idx(self.df['transcript'][i])
+                      for i in data_indices]
+            else:
+                raise ValueError(self.label_type)
 
         input_names = list(
             map(lambda path: basename(path).split('.')[0],

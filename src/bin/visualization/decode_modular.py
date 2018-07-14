@@ -30,6 +30,7 @@ parser.add_argument('--data_save_path', type=str,
 parser.add_argument('--eval_batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
 
+# A2P
 parser.add_argument('--model_path_a2p', type=str,
                     help='path to the model to evaluate (A2P)')
 parser.add_argument('--epoch_a2p', type=int, default=-1,
@@ -41,6 +42,7 @@ parser.add_argument('--length_penalty_a2p', type=float, default=0,
 parser.add_argument('--coverage_penalty_a2p', type=float, default=0,
                     help='coverage penalty (A2P)')
 
+# P2W
 parser.add_argument('--model_path_p2w', type=str,
                     help='path to the model to evaluate (P2W)')
 parser.add_argument('--epoch_p2w', type=int, default=-1,
@@ -55,6 +57,7 @@ parser.add_argument('--rnnlm_weight', type=float, default=0,
                     help='the weight of RNNLM score')
 parser.add_argument('--rnnlm_path', default=None, type=str, nargs='?',
                     help='path to the RMMLM')
+
 parser.add_argument('--stdout', type=strtobool, default=False)
 args = parser.parse_args()
 
@@ -83,12 +86,12 @@ elif args.corpus == 'swbd':
     MAX_DECODE_LEN_CHAR = 300
     MIN_DECODE_LEN_CHAR = 1
     MAX_DECODE_LEN_RATIO_CHAR = 1
-    MIN_DECODE_LEN_RATIO_CHAR = 0.2
+    MIN_DECODE_LEN_RATIO_CHAR = 0.1
 
     MAX_DECODE_LEN_PHONE = 300
     MIN_DECODE_LEN_PHONE = 1
     MAX_DECODE_LEN_RATIO_PHONE = 1
-    MIN_DECODE_LEN_RATIO_PHONE = 0
+    MIN_DECODE_LEN_RATIO_PHONE = 0.05
 elif args.corpus == 'librispeech':
     MAX_DECODE_LEN_WORD = 200
     MIN_DECODE_LEN_WORD = 1
@@ -109,6 +112,11 @@ elif args.corpus == 'wsj':
     MIN_DECODE_LEN_CHAR = 10
     MAX_DECODE_LEN_RATIO_CHAR = 1
     MIN_DECODE_LEN_RATIO_CHAR = 0.2
+
+    MAX_DECODE_LEN_PHONE = 200
+    MIN_DECODE_LEN_PHONE = 1
+    MAX_DECODE_LEN_RATIO_PHONE = 1
+    MIN_DECODE_LEN_RATIO_PHONE = 0
     # NOTE:
     # dev93 (char): 10-199
     # test_eval92 (char): 16-195
@@ -144,6 +152,7 @@ def main():
         use_double_delta=config_a2p['use_double_delta'],
         data_size=config_a2p['data_size'] if 'data_size' in config_a2p.keys(
         ) else '',
+        vocab=config_a2p['vocab'],
         data_type=args.data_type,
         label_type=config_a2p['label_type'],
         batch_size=args.eval_batch_size,
@@ -154,12 +163,13 @@ def main():
         data_save_path=args.data_save_path,
         model_type=config_p2w['model_type'],
         data_type=args.data_type,
-        data_size=config_p2w['data_size'],
+        data_size=config_p2w['data_size'] if 'data_size' in config_p2w.keys(
+        ) else '',
+        vocab=config_p2w['vocab'],
         label_type_in=config_p2w['label_type_in'],
         label_type=config_p2w['label_type'],
         batch_size=args.eval_batch_size,
         sort_utt=False, reverse=False, tool=config_p2w['tool'],
-        vocab=config_p2w['vocab'],
         use_ctc=config_p2w['model_type'] == 'ctc' or (
             config_p2w['model_type'] == 'attention' and config_p2w['ctc_loss_weight'] > 0),
         subsampling_factor=2 ** sum(config_p2w['subsample_list']))
@@ -198,7 +208,6 @@ def main():
                      config=config_rnnlm,
                      backend=config_rnnlm['backend'])
         rnnlm.load_checkpoint(save_path=args.rnnlm_path, epoch=-1)
-        rnnlm.flatten_parameters()
         if config_rnnlm['backward']:
             model_p2w.rnnlm_0_bwd = rnnlm
         else:
@@ -211,7 +220,7 @@ def main():
     if not args.stdout:
         sys.stdout = open(join(args.model_path_p2w, 'decode.txt'), 'w')
 
-    if dataset_p2w.label_type == 'word':
+    if 'word' in dataset_p2w.label_type:
         map_fn_p2w = dataset_p2w.idx2word
         max_decode_len_p2w = MAX_DECODE_LEN_WORD
         min_decode_len_p2w = MIN_DECODE_LEN_WORD
@@ -221,6 +230,9 @@ def main():
         max_decode_len_p2w = MAX_DECODE_LEN_CHAR
         min_decode_len_p2w = MIN_DECODE_LEN_CHAR
         min_decode_len_ratio_p2w = MIN_DECODE_LEN_RATIO_CHAR
+
+    if dataset_p2w.corpus == 'swbd' and 'eval2000' in dataset_p2w.data_type:
+        glm = GLM(dataset_p2w.glm_path)
 
     for (batch_a2p, is_new_epoch), (batch_p2w, _) in zip(dataset_a2p, dataset_p2w):
         # Decode (A2P)
@@ -232,10 +244,6 @@ def main():
             min_decode_len_ratio=MIN_DECODE_LEN_RATIO_PHONE,
             length_penalty=args.length_penalty_a2p,
             coverage_penalty=args.coverage_penalty_a2p)
-
-        if len(best_hyps_a2p[0]) // 2 ** sum(config_a2p['subsample_list']) < 1:
-            print('skip')
-            continue
 
         ys = [batch_p2w['ys'][i] for i in perm_idx]
 
@@ -266,24 +274,24 @@ def main():
 
             print('\n----- wav: %s -----' % batch_p2w['input_names'][b])
 
-            if dataset_p2w.corpus == 'swbd':
-                glm = GLM(dataset_p2w.glm_path)
+            if dataset_p2w.corpus == 'swbd' and 'eval2000' in dataset_p2w.data_type:
                 str_ref_p2w = normalize_swbd(str_ref_p2w, glm)
                 str_hyp_p2w = normalize_swbd(str_hyp_p2w, glm)
             else:
-                str_hyp_p2w = normalize(str_hyp_p2w)
+                str_ref_p2w = normalize(str_ref_p2w, remove_tokens='@')
+                str_hyp_p2w = normalize(str_hyp_p2w, remove_tokens='@')
 
             # A2P
             print(str_hyp_a2p)
 
             # P2W
-            if dataset_p2w.label_type in ['word', 'character_wb'] or (args.corpus != 'csj' and dataset_p2w.label_type == 'character'):
+            if 'word' in dataset_p2w.label_type or ('character' in dataset_p2w.label_type and 'nowb' not in dataset_p2w.label_type):
                 wer = wer_align(ref=str_ref_p2w.split('_'),
                                 hyp=str_hyp_p2w.split('_'),
                                 normalize=True,
                                 japanese=True if args.corpus == 'csj' else False)[0]
                 print('\nWER: %.3f %%' % wer)
-            elif dataset_p2w.label_type == 'character':
+            elif 'character' in dataset_p2w.label_type:
                 cer = wer_align(ref=list(str_ref_p2w.replace('_', '')),
                                 hyp=list(str_hyp_p2w.replace('_', '')),
                                 normalize=True,

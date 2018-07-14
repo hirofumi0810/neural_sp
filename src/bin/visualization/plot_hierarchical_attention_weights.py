@@ -155,6 +155,7 @@ def main():
             use_double_delta=config['use_double_delta'],
             data_size=config['data_size'] if 'data_size' in config.keys(
             ) else '',
+            vocab=config['vocab'],
             data_type=args.data_type,
             label_type=config['label_type'],
             label_type_sub=config['label_type_sub'],
@@ -166,13 +167,14 @@ def main():
             data_save_path=args.data_save_path,
             model_type=config['model_type'],
             data_type=args.data_type,
-            data_size=config['data_size'],
+            data_size=config['data_size'] if 'data_size' in config.keys(
+            ) else '',
+            vocab=config['vocab'],
             label_type_in=config['label_type_in'],
             label_type=config['label_type'],
             label_type_sub=config['label_type_sub'],
             batch_size=args.eval_batch_size,
             sort_utt=False, reverse=False, tool=config['tool'],
-            vocab=config['vocab'],
             use_ctc=config['model_type'] == 'hierarchical_ctc',
             subsampling_factor=2 ** sum(config['subsample_list']),
             use_ctc_sub=config['model_type'] == 'hierarchical_ctc' or (
@@ -223,7 +225,6 @@ def main():
                      config=config_rnnlm,
                      backend=config_rnnlm['backend'])
         rnnlm.load_checkpoint(save_path=args.rnnlm_path, epoch=-1)
-        rnnlm.flatten_parameters()
         model.rnnlm_0_fwd = rnnlm
 
     if not (config['rnnlm_fusion_type'] and config['rnnlm_path_sub']) and args.rnnlm_path_sub is not None and args.rnnlm_weight_sub > 0:
@@ -238,7 +239,6 @@ def main():
                          config=config_rnnlm_sub,
                          backend=config_rnnlm_sub['backend'])
         rnnlm_sub.load_checkpoint(save_path=args.rnnlm_path_sub, epoch=-1)
-        rnnlm_sub.flatten_parameters()
         model.rnnlm_1_fwd = rnnlm_sub
 
     # GPU setting
@@ -356,7 +356,7 @@ def main():
                             normalize=True,
                             japanese=True if dataset.corpus == 'csj' else False)[0]
             print('\nWER (main)  : %.3f %%' % wer)
-            if dataset.corpus != 'csj' or dataset.label_type_sub == 'character_wb':
+            if 'character' in dataset.label_type_sub and 'nowb' not in dataset.label_type_sub:
                 wer_sub = wer_align(ref=str_ref.split('_'),
                                     hyp=str_hyp_sub.split('_'),
                                     normalize=True,

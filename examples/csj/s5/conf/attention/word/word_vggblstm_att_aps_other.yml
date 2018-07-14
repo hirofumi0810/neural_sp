@@ -3,6 +3,11 @@ param:
   # framework
   backend: pytorch
 
+  # corpus
+  data_size: aps_other
+  vocab: False
+  label_type: word10k
+
   # topology
   conv_channels: [64, 64, 128, 128]
   conv_kernel_sizes:
@@ -30,8 +35,6 @@ param:
     - False
     - True
     - False
-  decoding_order: bahdanau
-  num_heads: 1
 
   # optimization
   batch_size: 30
@@ -53,3 +56,4 @@ param:
   rnnlm_fusion_type: False
   rnnlm_path: False
   rnnlm_weight: 0
+  finetune_gate: False

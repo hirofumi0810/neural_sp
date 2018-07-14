@@ -51,11 +51,11 @@ def main():
             model_type=config['model_type'],
             data_size=config['data_size'] if 'data_size' in config.keys(
             ) else '',
+            vocab=config['vocab'],
             data_type=data_type,
             label_type=config['label_type'],
             batch_size=args.eval_batch_size,
-            shuffle=False, tool=config['tool'],
-            vocab=config['vocab'])
+            shuffle=False, tool=config['tool'])
 
         if i == 0:
             config['num_classes'] = eval_set.num_classes
@@ -64,11 +64,6 @@ def main():
             model = load(model_type=config['model_type'],
                          config=config,
                          backend=config['backend'])
-
-            # NOTE: after load the rnn config are not a continuous chunk of memory
-            # this makes them a continuous chunk, and will speed up forward pass
-            model.flatten_parameters()
-            # https://github.com/pytorch/examples/blob/master/word_language_model/main.py
 
             # Restore the saved parameters
             epoch, _, _, _ = model.load_checkpoint(

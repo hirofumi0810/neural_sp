@@ -5,9 +5,13 @@ param:
 
   # corpus
   data_size: all
-  # vocab: False
   vocab: aps_other
-  label_type: word
+  # label_type: word1k
+  # label_type: word5k
+  label_type: word10k
+  # label_type: word15k
+  # label_type: word20k
+  # label_type: word25k
 
   # topology
   model_type: rnnlm
@@ -16,18 +20,18 @@ param:
   num_units: 512
   num_proj: 0
   num_layers: 2
-  embedding_dim: 128
-  tie_weights: False
+  embedding_dim: 512
+  tie_weights: True
   residual_connection: True
   backward: False
 
   # optimization
-  batch_size: 128
+  batch_size: 256
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 70
-  convert_to_sgd_epoch: 10
-  bptt: 35
+  num_epoch: 50
+  convert_to_sgd_epoch: 40
+  bptt: 100
 
   # annealing
   print_step: 200

@@ -5,6 +5,10 @@ param:
 
   # corpus
   data_size: all
+  vocab: False
+  # vocab: aps_other
+  label_type: word10k
+  label_type_sub: character
 
   # topology
   encoder_num_layers: 5
@@ -15,15 +19,13 @@ param:
     - False
     - True
     - False
-  decoding_order: bahdanau
-  num_heads: 1
 
   # optimization
   batch_size: 40
 
   # initialization
   pretrained_model_path: False
-  # pretrained_model_path: /n/sd8/inaguma/result/csj/pytorch/ctc/character_wb/all/blstm320H5L_drop4_fc_320_adam_lr1e-3_dropen0.2_input80
+  # pretrained_model_path: /n/sd8/inaguma/result/csj/pytorch/ctc/character/all/blstm320H5L_drop12_fc_320_adam_lr1e-3_dropen0.2_input80
 
   # regularization
   scheduled_sampling_max_step: 100000

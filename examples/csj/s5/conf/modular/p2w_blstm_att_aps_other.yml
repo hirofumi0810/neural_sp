@@ -6,13 +6,13 @@ param:
   corpus: csj
   data_size: aps_other
   vocab: False
-  label_type_in: phone_wb
-  label_type: word
+  label_type_in: phone
+  label_type: word10k
 
   # features
   input_type: text
   tool: htk
-  input_freq: 64
+  input_freq: 32
   use_delta: False
   use_double_delta: False
   input_channel: 1
@@ -37,8 +37,9 @@ param:
   encoder_dense_residual: False
   encoder_num_units: 320
   encoder_num_proj: 0
-  encoder_num_layers: 3
+  encoder_num_layers: 4
   subsample_list:
+    - False
     - False
     - False
     - False
@@ -55,6 +56,7 @@ param:
   attention_conv_num_channels: 10
   attention_conv_width: 201
   decoding_order: bahdanau
+  generate_feature: sc
   bottleneck_dim: 320
   num_heads: 1
 

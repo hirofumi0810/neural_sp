@@ -5,7 +5,13 @@ param:
   # corpus
   corpus: csj
   data_size: aps_other
-  label_type: word
+  vocab: False
+  # label_type: word1k
+  # label_type: word5k
+  label_type: word10k
+  # label_type: word15k
+  # label_type: word20k
+  # label_type: word25k
 
   # features
   input_type: speech
@@ -56,6 +62,7 @@ param:
   attention_conv_num_channels: 10
   attention_conv_width: 201
   decoding_order: bahdanau
+  generate_feature: sc
   bottleneck_dim: 320
   num_heads: 1
 
@@ -72,8 +79,7 @@ param:
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
   pretrained_model_path: False
-  # pretrained_model_path: /n/sd8/inaguma/result/csj/pytorch/ctc/character_wb/aps_other/blstm320H5L_drop12_fc_320_adam_lr1e-3_dropen0.2_input80
-  # pretrained_model_path: /n/sd8/inaguma/result/csj/pytorch/ctc/phone_wb/aps_other/blstm320H5L_drop12_fc_320_adam_lr1e-3_dropen0.2_input80
+  # pretrained_model_path: /n/sd8/inaguma/result/csj/pytorch/ctc/character/aps_other/blstm320H5L_drop12_fc_320_adam_lr1e-3_dropen0.2_input80
 
   # regularization
   clip_grad_norm: 5.0
@@ -110,11 +116,6 @@ param:
 
   # RNNLM fusion
   rnnlm_fusion_type: False
-  # rnnlm_fusion_type: cold_fusion
-  # rnnlm_fusion_type: logits_fusion
-  # rnnlm_fusion_type: state_fusion
-  # rnnlm_fusion_type: state_embedding_fusion
-  # rnnlm_fusion_type: embedding_fusion
   rnnlm_path: False
-  # rnnlm_path: /n/sd8/inaguma/result/csj/pytorch/rnnlm/word/all/lstm512H2Lemb128_adam_lr1e-3_drophidden0.2out0.2emb0.2_aps_other
   rnnlm_weight: 0
+  finetune_gate: False

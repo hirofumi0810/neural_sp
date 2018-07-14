@@ -5,7 +5,8 @@ param:
 
   # corpus
   data_size: all
-  label_type: phone_wb
+  vocab: False
+  label_type: phone
 
   # topology
   encoder_num_layers: 5
@@ -16,9 +17,7 @@ param:
     - False
     - False
   decoder_num_layers: 1
-  embedding_dim: 64
-  decoding_order: bahdanau
-  num_heads: 1
+  embedding_dim: 32
 
   # optimization
   batch_size: 40
@@ -40,3 +39,4 @@ param:
   rnnlm_fusion_type: False
   rnnlm_path: False
   rnnlm_weight: 0
+  finetune_gate: False

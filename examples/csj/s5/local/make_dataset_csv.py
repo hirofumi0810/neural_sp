@@ -53,7 +53,7 @@ def main():
         print('=> Processing transcripts...')
         trans_dict = read_text(
             text_path=join(args.data_save_path, data_type, 'text'),
-            vocab_save_path=mkdir_join(
+            vocab_path=mkdir_join(
                 args.data_save_path, 'vocab', args.data_size),
             data_type=data_type,
             kana2phone_path='./local/csj_make_trans/kana2phone',
@@ -65,143 +65,138 @@ def main():
             args.data_save_path, 'dataset', args.tool, args.data_size, data_type.split('_')[0])
 
         df_columns = ['frame_num', 'input_path', 'transcript']
-        df_word = pd.DataFrame([], columns=df_columns)
         df_char = pd.DataFrame([], columns=df_columns)
-        df_char_wb = pd.DataFrame([], columns=df_columns)
-        df_char_wb_left = pd.DataFrame([], columns=df_columns)
-        df_char_wb_right = pd.DataFrame([], columns=df_columns)
-        df_char_wb_both = pd.DataFrame([], columns=df_columns)
-        df_char_wb_remove = pd.DataFrame([], columns=df_columns)
+        df_char_nowb = pd.DataFrame([], columns=df_columns)
+        df_char_left = pd.DataFrame([], columns=df_columns)
+        df_char_right = pd.DataFrame([], columns=df_columns)
+        df_char_both = pd.DataFrame([], columns=df_columns)
+        df_char_remove = pd.DataFrame([], columns=df_columns)
         df_phone = pd.DataFrame([], columns=df_columns)
-        df_phone_wb = pd.DataFrame([], columns=df_columns)
+        df_phone_nowb = pd.DataFrame([], columns=df_columns)
         df_pos = pd.DataFrame([], columns=df_columns)
 
         with open(join(args.data_save_path, 'feature', args.tool, args.data_size, data_type.split('_')[0], 'frame_num.pickle'), 'rb') as f:
             frame_num_dict = pickle.load(f)
 
         utt_count = 0
-        df_word_list = []
-        df_char_list, df_char_wb_list = [], []
-        df_char_wb_left_list, df_char_wb_right_list = [], []
-        df_char_wb_both_list, df_char_wb_remove_list = [], []
-        df_phone_list, df_phone_wb_list = [], []
+        df_char_list, df_char_nowb_list = [], []
+        df_char_left_list, df_char_right_list = [], []
+        df_char_both_list, df_char_remove_list = [], []
+        df_phone_list, df_phone_nowb_list = [], []
         df_pos_list = []
         for utt_idx, trans in tqdm(trans_dict.items()):
             speaker = utt_idx.split('_')[0]
             feat_utt_save_path = join(
                 args.data_save_path, 'feature', args.tool, args.data_size, data_type.split('_')[0], speaker, utt_idx + '.npy')
-            frame_num = frame_num_dict[utt_idx]
+            x_len = frame_num_dict[utt_idx]
 
             if not isfile(feat_utt_save_path):
                 raise ValueError('There is no file: %s' % feat_utt_save_path)
 
-            df_word = add_element(
-                df_word, [frame_num, feat_utt_save_path, trans['word']])
             df_char = add_element(
-                df_char, [frame_num, feat_utt_save_path, trans['char']])
-            df_char_wb = add_element(
-                df_char_wb, [frame_num, feat_utt_save_path, trans['char_wb']])
-            df_char_wb_left = add_element(
-                df_char_wb_left, [frame_num, feat_utt_save_path, trans['char_wb_left']])
-            df_char_wb_right = add_element(
-                df_char_wb_right, [frame_num, feat_utt_save_path, trans['char_wb_right']])
-            df_char_wb_both = add_element(
-                df_char_wb_both, [frame_num, feat_utt_save_path, trans['char_wb_both']])
-            df_char_wb_remove = add_element(
-                df_char_wb_remove, [frame_num, feat_utt_save_path, trans['char_wb_remove']])
+                df_char, [x_len, feat_utt_save_path, trans['char']])
+            df_char_nowb = add_element(
+                df_char_nowb, [x_len, feat_utt_save_path, trans['char_nowb']])
+            df_char_left = add_element(
+                df_char_left, [x_len, feat_utt_save_path, trans['char_left']])
+            df_char_right = add_element(
+                df_char_right, [x_len, feat_utt_save_path, trans['char_right']])
+            df_char_both = add_element(
+                df_char_both, [x_len, feat_utt_save_path, trans['char_both']])
+            df_char_remove = add_element(
+                df_char_remove, [x_len, feat_utt_save_path, trans['char_remove']])
             df_phone = add_element(
-                df_phone, [frame_num, feat_utt_save_path, trans['phone']])
-            df_phone_wb = add_element(
-                df_phone_wb, [frame_num, feat_utt_save_path, trans['phone_wb']])
+                df_phone, [x_len, feat_utt_save_path, trans['phone']])
+            df_phone_nowb = add_element(
+                df_phone_nowb, [x_len, feat_utt_save_path, trans['phone_nowb']])
             df_pos = add_element(
-                df_pos, [frame_num, feat_utt_save_path,  trans['pos']])
+                df_pos, [x_len, feat_utt_save_path,  trans['pos']])
             utt_count += 1
 
             # Reset
             if utt_count == 10000:
-                df_word_list.append(df_word)
                 df_char_list.append(df_char)
-                df_char_wb_list.append(df_char_wb)
-                df_char_wb_left_list.append(df_char_wb_left)
-                df_char_wb_right_list.append(df_char_wb_right)
-                df_char_wb_both_list.append(df_char_wb_both)
-                df_char_wb_remove_list.append(df_char_wb_remove)
+                df_char_nowb_list.append(df_char_nowb)
+                df_char_left_list.append(df_char_left)
+                df_char_right_list.append(df_char_right)
+                df_char_both_list.append(df_char_both)
+                df_char_remove_list.append(df_char_remove)
                 df_phone_list.append(df_phone)
-                df_phone_wb_list.append(df_phone_wb)
+                df_phone_nowb_list.append(df_phone_nowb)
                 df_pos_list.append(df_pos)
 
-                df_word = pd.DataFrame([], columns=df_columns)
                 df_char = pd.DataFrame([], columns=df_columns)
-                df_char_wb = pd.DataFrame([], columns=df_columns)
-                df_char_wb_left = pd.DataFrame([], columns=df_columns)
-                df_char_wb_right = pd.DataFrame([], columns=df_columns)
-                df_char_wb_both = pd.DataFrame([], columns=df_columns)
-                df_char_wb_remove = pd.DataFrame([], columns=df_columns)
+                df_char_nowb = pd.DataFrame([], columns=df_columns)
+                df_char_left = pd.DataFrame([], columns=df_columns)
+                df_char_right = pd.DataFrame([], columns=df_columns)
+                df_char_both = pd.DataFrame([], columns=df_columns)
+                df_char_remove = pd.DataFrame([], columns=df_columns)
                 df_phone = pd.DataFrame([], columns=df_columns)
-                df_phone_wb = pd.DataFrame([], columns=df_columns)
+                df_phone_nowb = pd.DataFrame([], columns=df_columns)
                 df_pos = pd.DataFrame([], columns=df_columns)
                 utt_count = 0
 
         # Last dataframe
-        df_word_list.append(df_word)
         df_char_list.append(df_char)
-        df_char_wb_list.append(df_char_wb)
-        df_char_wb_left_list.append(df_char_wb_left)
-        df_char_wb_right_list.append(df_char_wb_right)
-        df_char_wb_both_list.append(df_char_wb_both)
-        df_char_wb_remove_list.append(df_char_wb_remove)
+        df_char_nowb_list.append(df_char_nowb)
+        df_char_left_list.append(df_char_left)
+        df_char_right_list.append(df_char_right)
+        df_char_both_list.append(df_char_both)
+        df_char_remove_list.append(df_char_remove)
         df_phone_list.append(df_phone)
-        df_phone_wb_list.append(df_phone_wb)
+        df_phone_nowb_list.append(df_phone_nowb)
         df_pos_list.append(df_pos)
 
         # Concatenate all dataframes
-        df_word = df_word_list[0]
         df_char = df_char_list[0]
-        df_char_wb = df_char_wb_list[0]
-        df_char_wb_left = df_char_wb_left_list[0]
-        df_char_wb_right = df_char_wb_right_list[0]
-        df_char_wb_both = df_char_wb_both_list[0]
-        df_char_wb_remove = df_char_wb_remove_list[0]
+        df_char_nowb = df_char_nowb_list[0]
+        df_char_left = df_char_left_list[0]
+        df_char_right = df_char_right_list[0]
+        df_char_both = df_char_both_list[0]
+        df_char_remove = df_char_remove_list[0]
         df_phone = df_phone_list[0]
-        df_phone_wb = df_phone_wb_list[0]
+        df_phone_nowb = df_phone_nowb_list[0]
         df_pos = df_pos_list[0]
 
-        for i in df_word_list[1:]:
-            df_word = pd.concat([df_word, i], axis=0)
         for i in df_char_list[1:]:
             df_char = pd.concat([df_char, i], axis=0)
-        for i in df_char_wb_list[1:]:
-            df_char_wb = pd.concat([df_char_wb, i], axis=0)
-        for i in df_char_wb_left_list[1:]:
-            df_char_wb_left = pd.concat([df_char_wb_left, i], axis=0)
-        for i in df_char_wb_right_list[1:]:
-            df_char_wb_right = pd.concat([df_char_wb_right, i], axis=0)
-        for i in df_char_wb_both_list[1:]:
-            df_char_wb_both = pd.concat([df_char_wb_both, i], axis=0)
-        for i in df_char_wb_remove_list[1:]:
-            df_char_wb_remove = pd.concat([df_char_wb_remove, i], axis=0)
+        for i in df_char_nowb_list[1:]:
+            df_char_nowb = pd.concat([df_char_nowb, i], axis=0)
+        for i in df_char_left_list[1:]:
+            df_char_left = pd.concat([df_char_left, i], axis=0)
+        for i in df_char_right_list[1:]:
+            df_char_right = pd.concat([df_char_right, i], axis=0)
+        for i in df_char_both_list[1:]:
+            df_char_both = pd.concat([df_char_both, i], axis=0)
+        for i in df_char_remove_list[1:]:
+            df_char_remove = pd.concat([df_char_remove, i], axis=0)
         for i in df_phone_list[1:]:
             df_phone = pd.concat([df_phone, i], axis=0)
-        for i in df_phone_wb_list[1:]:
-            df_phone_wb = pd.concat([df_phone_wb, i], axis=0)
+        for i in df_phone_nowb_list[1:]:
+            df_phone_nowb = pd.concat([df_phone_nowb, i], axis=0)
         for i in df_pos_list[1:]:
             df_pos = pd.concat([df_pos, i], axis=0)
 
-        df_word.to_csv(join(csv_save_path, 'word.csv'), encoding='utf-8')
+        df_char.to_csv(join(csv_save_path, 'word1k.csv'), encoding='utf-8')
+        df_char.to_csv(join(csv_save_path, 'word5k.csv'), encoding='utf-8')
+        df_char.to_csv(join(csv_save_path, 'word10k.csv'), encoding='utf-8')
+        df_char.to_csv(join(csv_save_path, 'word15k.csv'), encoding='utf-8')
+        df_char.to_csv(join(csv_save_path, 'word20k.csv'), encoding='utf-8')
+        df_char.to_csv(join(csv_save_path, 'word25k.csv'), encoding='utf-8')
         df_char.to_csv(join(csv_save_path, 'character.csv'), encoding='utf-8')
-        df_char_wb.to_csv(
-            join(csv_save_path, 'character_wb.csv'), encoding='utf-8')
-        df_char_wb_left.to_csv(
-            join(csv_save_path, 'character_wb_left.csv'), encoding='utf-8')
-        df_char_wb_right.to_csv(
-            join(csv_save_path, 'character_wb_right.csv'), encoding='utf-8')
-        df_char_wb_both.to_csv(
-            join(csv_save_path, 'character_wb_both.csv'), encoding='utf-8')
-        df_char_wb_remove.to_csv(
-            join(csv_save_path, 'character_wb_remove.csv'), encoding='utf-8')
+        df_char_nowb.to_csv(
+            join(csv_save_path, 'character_nowb.csv'), encoding='utf-8')
+        df_char_left.to_csv(
+            join(csv_save_path, 'character_left.csv'), encoding='utf-8')
+        df_char_right.to_csv(
+            join(csv_save_path, 'character_right.csv'), encoding='utf-8')
+        df_char_both.to_csv(
+            join(csv_save_path, 'character_both.csv'), encoding='utf-8')
+        df_char_remove.to_csv(
+            join(csv_save_path, 'character_remove.csv'), encoding='utf-8')
         df_phone.to_csv(join(csv_save_path, 'phone.csv'), encoding='utf-8')
-        df_phone_wb.to_csv(
-            join(csv_save_path, 'phone_wb.csv'), encoding='utf-8')
+        df_phone_nowb.to_csv(
+            join(csv_save_path, 'phone_nowb.csv'), encoding='utf-8')
         df_pos.to_csv(join(csv_save_path, 'pos.csv'), encoding='utf-8')
 
 
@@ -211,12 +206,11 @@ def add_element(df, elem_list):
     return df
 
 
-def read_text(text_path, vocab_save_path, data_type,
-              kana2phone_path, lexicon_path):
+def read_text(text_path, vocab_path, data_type, kana2phone_path, lexicon_path):
     """Read transcripts (.sdb) & save files (.npy).
     Args:
         text_path (string): path to a text file of kaldi
-        vocab_save_path (string): path to save vocabulary files
+        vocab_path (string): path to save vocabulary files
         data_type (string): train or dev or eval1 or eval2 or eval3
         kana2phone_path (string):
         lexicon_path (string):
@@ -250,20 +244,21 @@ def read_text(text_path, vocab_save_path, data_type,
             kana_set.add(kana)
 
     # Make vocabulary files
-    word_vocab_path = mkdir_join(vocab_save_path, 'word.txt')
-    char_vocab_path = mkdir_join(vocab_save_path, 'character.txt')
-    char_wb_vocab_path = mkdir_join(vocab_save_path, 'character_wb.txt')
-    char_wb_left_vocab_path = mkdir_join(
-        vocab_save_path, 'character_wb_left.txt')
-    char_wb_right_vocab_path = mkdir_join(
-        vocab_save_path, 'character_wb_right.txt')
-    char_wb_both_vocab_path = mkdir_join(
-        vocab_save_path, 'character_wb_both.txt')
-    char_wb_remove_vocab_path = mkdir_join(
-        vocab_save_path, 'character_wb_remove.txt')
-    phone_vocab_path = mkdir_join(vocab_save_path, 'phone' + '.txt')
-    phone_wb_vocab_path = mkdir_join(vocab_save_path, 'phone_wb' + '.txt')
-    pos_vocab_path = mkdir_join(vocab_save_path, 'pos' + '.txt')
+    word1k_vocab_path = mkdir_join(vocab_path, 'word1k.txt')
+    word5k_vocab_path = mkdir_join(vocab_path, 'word5k.txt')
+    word10k_vocab_path = mkdir_join(vocab_path, 'word10k.txt')
+    word15k_vocab_path = mkdir_join(vocab_path, 'word15k.txt')
+    word20k_vocab_path = mkdir_join(vocab_path, 'word20k.txt')
+    word25k_vocab_path = mkdir_join(vocab_path, 'word25k.txt')
+    char_vocab_path = mkdir_join(vocab_path, 'character.txt')
+    char_nowb_vocab_path = mkdir_join(vocab_path, 'character_nowb.txt')
+    char_left_vocab_path = mkdir_join(vocab_path, 'character_left.txt')
+    char_right_vocab_path = mkdir_join(vocab_path, 'character_right.txt')
+    char_both_vocab_path = mkdir_join(vocab_path, 'character_both.txt')
+    char_remove_vocab_path = mkdir_join(vocab_path, 'character_remove.txt')
+    phone_vocab_path = mkdir_join(vocab_path, 'phone.txt')
+    phone_nowb_vocab_path = mkdir_join(vocab_path, 'phone_nowb.txt')
+    pos_vocab_path = mkdir_join(vocab_path, 'pos.txt')
 
     trans_dict = {}
     char_set = set([])
@@ -331,49 +326,85 @@ def read_text(text_path, vocab_save_path, data_type,
             for pos in trans_pos.split(SPACE):
                 pos_set.add(pos)
 
-            trans_dict[utt_idx] = [trans, trans_left, trans_right, trans_both, trans_remove,
-                                   trans_phone, trans_pos]
+            trans_dict[utt_idx] = {
+                "word": trans,
+                "char_nowb": trans.replace(SPACE, ''),
+                "char": trans,
+                "char_left": trans_left,
+                "char_right": trans_right,
+                "char_both": trans_both,
+                "char_remove": trans_remove,
+                "phone_nowb": trans_phone.replace('_' + WORD_BOUNDARY + '_', '_'),
+                "phone": trans_phone,
+                "pos": trans_pos,
+            }
 
     # Save vocabulary files
     if 'train' in data_type:
-        # word-level (threshold == 5)
-        with codecs.open(word_vocab_path, 'w', 'utf-8') as f:
-            word_list = sorted([w for w, freq in list(word_dict.items())
-                                if freq >= 5]) + [OOV]
+        # word-level
+        with codecs.open(word1k_vocab_path, 'w', 'utf-8') as f:
+            word_list = sorted(sorted(list(word_dict.keys()), key=lambda x: word_dict[x], reverse=True)[
+                :998]) + [OOV]
+            for w in word_list:
+                f.write('%s\n' % w)
+        with codecs.open(word5k_vocab_path, 'w', 'utf-8') as f:
+            word_list = sorted(sorted(list(word_dict.keys()), key=lambda x: word_dict[x], reverse=True)[
+                :4998]) + [OOV]
+            for w in word_list:
+                f.write('%s\n' % w)
+        with codecs.open(word10k_vocab_path, 'w', 'utf-8') as f:
+            word_list = sorted(sorted(list(word_dict.keys()), key=lambda x: word_dict[x], reverse=True)[
+                :9998]) + [OOV]
+            for w in word_list:
+                f.write('%s\n' % w)
+        with codecs.open(word15k_vocab_path, 'w', 'utf-8') as f:
+            word_list = sorted(sorted(list(word_dict.keys()), key=lambda x: word_dict[x], reverse=True)[
+                :14998]) + [OOV]
+            for w in word_list:
+                f.write('%s\n' % w)
+        with codecs.open(word20k_vocab_path, 'w', 'utf-8') as f:
+            word_list = sorted(sorted(list(word_dict.keys()), key=lambda x: word_dict[x], reverse=True)[
+                :19998]) + [OOV]
+            for w in word_list:
+                f.write('%s\n' % w)
+        with codecs.open(word25k_vocab_path, 'w', 'utf-8') as f:
+            word_list = sorted(sorted(list(word_dict.keys()), key=lambda x: word_dict[x], reverse=True)[
+                :24998]) + [OOV]
             for w in word_list:
                 f.write('%s\n' % w)
 
-        # character-level (char, char_wb)
+        # character-level (char, char_nowb)
         char_list = sorted(list(char_set))
-        with codecs.open(char_vocab_path, 'w', 'utf-8') as f:
+        with codecs.open(char_nowb_vocab_path, 'w', 'utf-8') as f:
             for c in char_list + [OOV]:
                 f.write('%s\n' % c)
-        with codecs.open(char_wb_vocab_path, 'w', 'utf-8') as f:
+        with codecs.open(char_vocab_path, 'w', 'utf-8') as f:
             for c in char_list + [SPACE, OOV]:
                 f.write('%s\n' % c)
 
-        # character-level (char_wb + left, right, both, remove)
-        with codecs.open(char_wb_left_vocab_path, 'w', 'utf-8') as f:
+        # character-level (char + left, right, both, remove)
+        with codecs.open(char_left_vocab_path, 'w', 'utf-8') as f:
             for c in char_list + [SPACE, OOV, SOF, SOD]:
                 f.write('%s\n' % c)
-        with codecs.open(char_wb_right_vocab_path, 'w', 'utf-8') as f:
+        with codecs.open(char_right_vocab_path, 'w', 'utf-8') as f:
             for c in char_list + [SPACE, OOV, SOF, SOD]:
                 f.write('%s\n' % c)
-        with codecs.open(char_wb_both_vocab_path, 'w', 'utf-8') as f:
+        with codecs.open(char_both_vocab_path, 'w', 'utf-8') as f:
             for c in char_list + [SPACE, OOV, SOF, SOD, EOF, EOD]:
                 f.write('%s\n' % c)
-        with codecs.open(char_wb_remove_vocab_path, 'w', 'utf-8') as f:
+        with codecs.open(char_remove_vocab_path, 'w', 'utf-8') as f:
             char_list_remove = sorted(list(char_set_remove))
             for c in char_list_remove + [SPACE, OOV]:
                 f.write('%s\n' % c)
 
         # phone-level (phone, phone_wb)
-        with codecs.open(phone_vocab_path, 'w', 'utf-8') as f, codecs.open(phone_wb_vocab_path, 'w', 'utf-8') as f_wb:
-            phone_list = sorted(list(phone_set))
-            for phone in phone_list:
-                f.write('%s\n' % phone)
-            for phone in phone_list + [WORD_BOUNDARY]:
-                f_wb.write('%s\n' % phone)
+        phone_list = sorted(list(phone_set))
+        with codecs.open(phone_nowb_vocab_path, 'w', 'utf-8') as f:
+            for p in phone_list:
+                f.write('%s\n' % p)
+        with codecs.open(phone_vocab_path, 'w', 'utf-8') as f:
+            for p in phone_list + [WORD_BOUNDARY]:
+                f.write('%s\n' % p)
 
         # pos-level
         with codecs.open(pos_vocab_path, 'w', 'utf-8') as f:
@@ -382,85 +413,66 @@ def read_text(text_path, vocab_save_path, data_type,
                 f.write('%s\n' % pos)
 
     # Compute OOV rate
-    with codecs.open(mkdir_join(vocab_save_path, 'oov', data_type + '.txt'), 'w', 'utf-8') as f:
-        # word-level (threshold == 5)
-        oov_rate = compute_oov_rate(word_dict, word_vocab_path)
-        f.write('Word (freq5):\n')
+    with codecs.open(mkdir_join(vocab_path, 'oov', data_type + '.txt'), 'w', 'utf-8') as f:
+        oov_rate = compute_oov_rate(word_dict, word1k_vocab_path)
+        f.write('Word (1k):\n')
         f.write('  OOV rate: %f %%\n' % oov_rate)
 
-    # Convert to index
-    print('=====> Convert to index...')
-    word2idx = Word2idx(word_vocab_path)
-    char2idx = Char2idx(char_vocab_path)
-    char2idx_wb = Char2idx(char_wb_vocab_path)
-    char2idx_wb_left = Char2idx(char_wb_left_vocab_path)
-    char2idx_wb_right = Char2idx(char_wb_right_vocab_path)
-    char2idx_wb_both = Char2idx(char_wb_both_vocab_path)
-    char2idx_wb_remove = Char2idx(char_wb_remove_vocab_path)
-    phone2idx = Phone2idx(phone_vocab_path)
-    phone2idx_wb = Phone2idx(phone_wb_vocab_path)
-    pos2idx = Word2idx(pos_vocab_path)
+        oov_rate = compute_oov_rate(word_dict, word5k_vocab_path)
+        f.write('Word (5k):\n')
+        f.write('  OOV rate: %f %%\n' % oov_rate)
 
-    for utt_idx, [trans, trans_left, trans_right, trans_both, trans_remove, trans_phone, trans_pos] in tqdm(trans_dict.items()):
-        if 'eval' in data_type:
-            trans_dict[utt_idx] = {
-                "word": trans,
-                "char": trans.replace(SPACE, ''),
-                "char_wb": trans,
-                "char_wb_left": trans_left,
-                "char_wb_right": trans_right,
-                "char_wb_both": trans_both,
-                "char_wb_remove": trans_remove,
-                "phone": trans_phone.replace('_' + WORD_BOUNDARY + '_', '_'),
-                "phone_wb": trans_phone,
-                "pos": trans_pos,
-            }
-            # NOTE: save as it is
-        else:
-            word_indices = word2idx(trans)
-            char_indices = char2idx(trans.replace(SPACE, ''))
-            char_wb_indices = char2idx_wb(trans)
-            char_wb_left_indices = char2idx_wb_left(trans_left)
-            char_wb_right_indices = char2idx_wb_right(trans_right)
-            char_wb_both_indices = char2idx_wb_both(trans_both)
-            char_wb_remove_indices = char2idx_wb_remove(trans_remove)
-            if 'eval' not in data_type:
-                phone_indices = phone2idx(
-                    trans_phone.replace('_' + WORD_BOUNDARY + '_', '_'))
-                phone_wb_indices = phone2idx_wb(trans_phone)
-            pos_indices = pos2idx(trans_pos)
+        oov_rate = compute_oov_rate(word_dict, word10k_vocab_path)
+        f.write('Word (10k):\n')
+        f.write('  OOV rate: %f %%\n' % oov_rate)
 
-            word_indices = ' '.join(list(map(str, word_indices)))
-            char_indices = ' '.join(list(map(str, char_indices)))
-            char_wb_indices = ' '.join(list(map(str, char_wb_indices)))
-            char_wb_left_indices = ' '.join(
-                list(map(str, char_wb_left_indices)))
-            char_wb_right_indices = ' '.join(
-                list(map(str, char_wb_right_indices)))
-            char_wb_both_indices = ' '.join(
-                list(map(str, char_wb_both_indices)))
-            char_wb_remove_indices = ' '.join(
-                list(map(str, char_wb_remove_indices)))
-            if 'eval' not in data_type:
-                phone_indices = ' '.join(list(map(str, phone_indices)))
-                phone_wb_indices = ' '.join(list(map(str, phone_wb_indices)))
-            else:
-                phone_indices = None
-                phone_wb_indices = None
-            pos_indices = ' '.join(list(map(str, pos_indices)))
+        oov_rate = compute_oov_rate(word_dict, word15k_vocab_path)
+        f.write('Word (15k):\n')
+        f.write('  OOV rate: %f %%\n' % oov_rate)
 
-            trans_dict[utt_idx] = {
-                "word": word_indices,
-                "char": char_indices,
-                "char_wb": char_wb_indices,
-                "char_wb_left": char_wb_left_indices,
-                "char_wb_right": char_wb_right_indices,
-                "char_wb_both": char_wb_both_indices,
-                "char_wb_remove": char_wb_remove_indices,
-                "phone": phone_indices,
-                "phone_wb": phone_wb_indices,
-                "pos": pos_indices,
-            }
+        oov_rate = compute_oov_rate(word_dict, word20k_vocab_path)
+        f.write('Word (20k):\n')
+        f.write('  OOV rate: %f %%\n' % oov_rate)
+
+        oov_rate = compute_oov_rate(word_dict, word25k_vocab_path)
+        f.write('Word (25k):\n')
+        f.write('  OOV rate: %f %%\n' % oov_rate)
+
+    # test for vocabulary
+    # if 'eval' not in data_type:
+    #     print('=====> Convert to index...')
+    #     word1k2idx = Word2idx(word1k_vocab_path)
+    #     word5k2idx = Word2idx(word5k_vocab_path)
+    #     word10k2idx = Word2idx(word10k_vocab_path)
+    #     word15k2idx = Word2idx(word15k_vocab_path)
+    #     word20k2idx = Word2idx(word20k_vocab_path)
+    #     word25k2idx = Word2idx(word25k_vocab_path)
+    #     char2idx_nowb = Char2idx(char_nowb_vocab_path)
+    #     char2idx = Char2idx(char_vocab_path)
+    #     char2idx_left = Char2idx(char_left_vocab_path)
+    #     char2idx_right = Char2idx(char_right_vocab_path)
+    #     char2idx_both = Char2idx(char_both_vocab_path)
+    #     char2idx_remove = Char2idx(char_remove_vocab_path)
+    #     phone2idx_nowb = Phone2idx(phone_nowb_vocab_path)
+    #     phone2idx = Phone2idx(phone_vocab_path)
+    #     pos2idx = Word2idx(pos_vocab_path)
+    #
+    #     for utt_idx in tqdm(trans_dict.keys()):
+    #         word1k2idx(trans_dict[utt_idx]['word'])
+    #         word5k2idx(trans_dict[utt_idx]['word'])
+    #         word10k2idx(trans_dict[utt_idx]['word'])
+    #         word15k2idx(trans_dict[utt_idx]['word'])
+    #         word20k2idx(trans_dict[utt_idx]['word'])
+    #         word25k2idx(trans_dict[utt_idx]['word'])
+    #         char2idx_nowb(trans_dict[utt_idx]['char_nowb'])
+    #         char2idx(trans_dict[utt_idx]['char'])
+    #         char2idx_left(trans_dict[utt_idx]['char_left'])
+    #         char2idx_right(trans_dict[utt_idx]['char_right'])
+    #         char2idx_both(trans_dict[utt_idx]['char_both'])
+    #         char2idx_remove(trans_dict[utt_idx]['char_remove'])
+    #         phone2idx_nowb(trans_dict[utt_idx]['phone_nowb'])
+    #         phone2idx(trans_dict[utt_idx]['phone'])
+    #         pos2idx(trans_dict[utt_idx]['pos'])
 
     return trans_dict
 
@@ -470,14 +482,14 @@ def compute_oov_rate(word_dict, vocab_path):
     with codecs.open(vocab_path, 'r', 'utf-8') as f:
         vocab_set = set([])
         for line in f:
-            word = line.strip()
-            vocab_set.add(word)
+            w = line.strip()
+            vocab_set.add(w)
 
     oov_count = 0
     word_num = 0
-    for word, freq in word_dict.items():
+    for w, freq in word_dict.items():
         word_num += freq
-        if word not in vocab_set:
+        if w not in vocab_set:
             oov_count += freq
 
     oov_rate = oov_count * 100 / word_num

@@ -26,17 +26,18 @@ from src.utils.directory import mkdir_join
 class Dataset(Base):
 
     def __init__(self, corpus, data_save_path, model_type,
-                 data_size, data_type, label_type,
+                 data_size, vocab, data_type, label_type,
                  batch_size, max_epoch=None,
                  shuffle=False, sort_utt=False, reverse=False,
                  sort_stop_epoch=None, tool='htk',
-                 num_enque=None, dynamic_batching=False, vocab=False):
+                 num_enque=None, dynamic_batching=False):
         """A class for loading dataset.
         Args:
             corpus (string): the name of corpus
             data_save_path (string): path to saved data
             model_type (string):
             data_size (string):
+            vocab (bool or string):
             data_type (string):
             label_type (string):
             batch_size (int): the size of mini-batch
@@ -51,7 +52,6 @@ class Dataset(Base):
             num_enque (int): the number of elements to enqueue
             dynamic_batching (bool): if True, batch size will be chainged
                 dynamically in training
-            vocab (bool or string):
         """
         self.corpus = corpus
         self.model_type = model_type
@@ -83,8 +83,6 @@ class Dataset(Base):
         if vocab and data_size != '' and data_size != vocab:
             self.vocab_file_path = join(
                 data_save_path, 'vocab', vocab, label_type + '.txt')
-            vocab_file_path_org = join(
-                data_save_path, 'vocab', data_size, label_type + '.txt')
         else:
             self.vocab_file_path = join(
                 data_save_path, 'vocab', data_size, label_type + '.txt')
@@ -99,58 +97,13 @@ class Dataset(Base):
             raise ValueError(label_type)
 
         super(Dataset, self).__init__(vocab_file_path=self.vocab_file_path)
+        self.eos = self.num_classes
 
         # Load dataset file
-        if vocab and data_size != '' and data_size != vocab and not self.is_test:
-            dataset_path = mkdir_join(
-                data_save_path, 'dataset', tool, data_size + '_' + vocab, data_type, label_type + '.csv')
-
-            # Change token indices
-            if not isfile(dataset_path):
-                dataset_path_org = join(
-                    data_save_path, 'dataset', tool, data_size, data_type, label_type + '.csv')
-                df = pd.read_csv(dataset_path_org, encoding='utf-8')
-                df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
-
-                # Change vocabulary
-                org2new = {}
-                str2idx_org = {}
-                str2idx_new = {}
-                # new vocab
-                with codecs.open(self.vocab_file_path, 'r', 'utf-8') as f:
-                    vocab_count = 0
-                    for line in f:
-                        if line.strip() != '':
-                            str2idx_new[line.strip()] = vocab_count
-                            vocab_count += 1
-                # original vocab
-                with codecs.open(vocab_file_path_org, 'r', 'utf-8') as f:
-                    vocab_count = 0
-                    for line in f:
-                        if line.strip() != '':
-                            str2idx_org[line.strip()] = vocab_count
-                            vocab_count += 1
-                for k, v in str2idx_org.items():
-                    if k in str2idx_new.keys():
-                        org2new[v] = str2idx_new[k]
-                    else:
-                        org2new[v] = str2idx_new['OOV']
-
-                # Update the transcript
-                for i in tqdm(df['transcript'].index):
-                    df.loc[i, 'transcript'] = ' '.join(
-                        list(map(lambda x: str(org2new[int(x)]), df['transcript'][i].split(' '))))
-
-                # Save as a new file
-                df.to_csv(dataset_path, encoding='utf-8')
-            else:
-                df = pd.read_csv(dataset_path, encoding='utf-8')
-                df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
-        else:
-            dataset_path = join(
-                data_save_path, 'dataset', tool, data_size, data_type, label_type + '.csv')
-            df = pd.read_csv(dataset_path, encoding='utf-8')
-            df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
+        dataset_path = join(
+            data_save_path, 'dataset', tool, data_size, data_type, label_type + '.csv')
+        df = pd.read_csv(dataset_path, encoding='utf-8')
+        df = df.loc[:, ['frame_num', 'input_path', 'transcript']]
 
         # Sort paths to input & label
         if sort_utt:
@@ -184,10 +137,13 @@ class Dataset(Base):
                     indices = self.char2idx(self.df['transcript'][i])
                 else:
                     raise ValueError(self.label_type)
-                ys += indices
+                ys += [self.eos] + indices
                 # NOTE: transcript is seperated by space('_')
+                # NOTE: add <EOS> between sequences
             else:
-                ys += list(map(int, self.df['transcript'][i].split(' ')))
+                ys += [self.eos] + \
+                    list(map(int, self.df['transcript'][i].split(' ')))
+        ys += [self.eos]
 
         # TODO: fix later
         try:
@@ -195,6 +151,6 @@ class Dataset(Base):
                 map(lambda path: basename(path).split('.')[0],
                     self.df['input_path'][data_indices]))
         except:
-            input_names = self.df.index.values.tolist()
+            input_names = self.df.index[data_indices].values.tolist()
 
         return {'ys': ys, 'input_names': input_names}

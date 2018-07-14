@@ -3,6 +3,11 @@ param:
   # framework
   backend: pytorch
 
+  # corpus
+  data_size: aps_other
+  label_type: word10k
+  label_type_sub: character
+
   # topology
   conv_channels: [64, 64, 128, 128]
   conv_kernel_sizes:
@@ -31,15 +36,12 @@ param:
     - False
     - True
     - False
-  decoding_order: bahdanau
-  num_heads: 1
 
   # optimization
   batch_size: 25
 
   # initialization
   pretrained_model_path: False
-  # pretrained_model_path: /n/sd8/inaguma/result/csj/pytorch/ctc/character_wb/aps_other/conv_64_64_128_128_blstm320H4L_fc_320_bn_adam_lr1e-3_dropen0.2_input80
 
   # regularization
   scheduled_sampling_max_step: 100000

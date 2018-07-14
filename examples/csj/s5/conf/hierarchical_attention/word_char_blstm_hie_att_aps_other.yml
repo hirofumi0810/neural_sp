@@ -5,8 +5,14 @@ param:
   # corpus
   corpus: csj
   data_size: aps_other
-  label_type: word
-  label_type_sub: character_wb
+  vocab: False
+  # label_type: word1k
+  # label_type: word5k
+  label_type: word10k
+  # label_type: word15k
+  # label_type: word20k
+  # label_type: word25k
+  label_type_sub: character
 
   # features
   input_type: speech
@@ -61,12 +67,15 @@ param:
   attention_conv_num_channels: 10
   attention_conv_width: 201
   decoding_order: bahdanau
+  generate_feature: sc
   bottleneck_dim: 320
   bottleneck_dim_sub: 320
   backward_sub: False
   # backward_sub: True
   num_heads: 1
   num_heads_sub: 1
+  share_attention: False
+  # share_attention: True
 
   # optimization
   batch_size: 40
@@ -81,8 +90,7 @@ param:
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
   pretrained_model_path: False
-  # pretrained_model_path: /n/sd8/inaguma/result/csj/pytorch/ctc/character_wb/aps_other/blstm320H5L_drop12_fc_320_adam_lr1e-3_dropen0.2_input80
-  # pretrained_model_path: /n/sd8/inaguma/result/csj/pytorch/ctc/phone_wb/aps_other/blstm320H5L_drop12_fc_320_adam_lr1e-3_dropen0.2_input80
+  # pretrained_model_path: /n/sd8/inaguma/result/csj/pytorch/ctc/character/aps_other/blstm320H5L_drop12_fc_320_adam_lr1e-3_dropen0.2_input80
 
   # regularization
   clip_grad_norm: 5.0
@@ -124,3 +132,4 @@ param:
   rnnlm_path_sub: False
   rnnlm_weight: 0
   rnnlm_weight_sub: 0
+  finetune_gate: False

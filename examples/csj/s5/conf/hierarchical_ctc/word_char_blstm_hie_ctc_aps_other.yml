@@ -5,8 +5,9 @@ param:
   # corpus
   corpus: csj
   data_size: aps_other
-  label_type: word
-  label_type_sub: character_wb
+  vocab: False
+  label_type: word10k
+  label_type_sub: character
 
   # features
   input_type: speech
@@ -62,6 +63,7 @@ param:
   recurrent_weight_orthogonal: False
   init_forget_gate_bias_with_one: True
   pretrained_model_path: False
+  # pretrained_model_path: /n/sd8/inaguma/result/csj/pytorch/ctc/character/aps_other/blstm320H5L_drop12_fc_320_adam_lr1e-3_dropen0.2_input80
 
   # regularization
   clip_grad_norm: 5.0

@@ -32,6 +32,8 @@ from src.dataset.loader_hierarchical import Dataset
 from src.utils.directory import mkdir_join, mkdir
 from src.bin.visualization.utils.attention import plot_hierarchical_attention_weights, plot_nested_attention_weights
 from src.utils.config import load_config
+from src.utils.evaluation.edit_distance import wer_align
+from src.utils.evaluation.normalization import normalize
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--corpus', type=str,
@@ -125,6 +127,11 @@ elif args.corpus == 'wsj':
     MIN_DECODE_LEN_CHAR = 10
     MAX_DECODE_LEN_RATIO_CHAR = 1
     MIN_DECODE_LEN_RATIO_CHAR = 0.2
+
+    MAX_DECODE_LEN_PHONE = 200
+    MIN_DECODE_LEN_PHONE = 1
+    MAX_DECODE_LEN_RATIO_PHONE = 1
+    MIN_DECODE_LEN_RATIO_PHONE = 0
     # NOTE:
     # dev93 (char): 10-199
     # test_eval92 (char): 16-195
@@ -158,6 +165,7 @@ def main():
             use_double_delta=config['use_double_delta'],
             data_size=config['data_size'] if 'data_size' in config.keys(
             ) else '',
+            vocab=config['vocab'],
             data_type=args.data_type,
             label_type=config['label_type'],
             label_type_sub=config['label_type_sub'],
@@ -191,7 +199,6 @@ def main():
                      config=config_rnnlm,
                      backend=config_rnnlm['backend'])
         rnnlm.load_checkpoint(save_path=args.rnnlm_path, epoch=-1)
-        rnnlm.flatten_parameters()
         model.rnnlm_0_fwd = rnnlm
 
     if not (config['rnnlm_fusion_type'] and config['rnnlm_path_sub']) and args.rnnlm_path_sub is not None and args.rnnlm_weight_sub > 0:
@@ -206,7 +213,6 @@ def main():
                          config=config_rnnlm_sub,
                          backend=config_rnnlm_sub['backend'])
         rnnlm_sub.load_checkpoint(save_path=args.rnnlm_path_sub, epoch=-1)
-        rnnlm_sub.flatten_parameters()
         model.rnnlm_1_fwd = rnnlm_sub
 
     # GPU setting
@@ -306,8 +312,31 @@ def main():
             else:
                 str_ref = dataset.idx2word(ys[b])
 
-            with open(join(save_path, speaker, batch['input_names'][b] + '.txt'), 'w') as f:
-                f.write(str_ref)
+            # Hypothesis
+            str_hyp = dataset.idx2word(best_hyps[b])
+            str_hyp_sub = dataset.idx2char(best_hyps_sub[b])
+            str_hyp = normalize(str_hyp, remove_tokens=['>'])
+            str_hyp_sub = normalize(str_hyp_sub, remove_tokens=['>'])
+
+            sys.stdout = open(
+                join(save_path, speaker, batch['input_names'][b] + '.txt'), 'w')
+            wer = wer_align(ref=str_ref.split('_'),
+                            hyp=str_hyp.split('_'),
+                            normalize=True,
+                            japanese=True if dataset.corpus == 'csj' else False)[0]
+            print('\nWER (main)  : %.3f %%' % wer)
+            if 'character' in dataset.label_type_sub and 'nowb' not in dataset.label_type_sub:
+                wer_sub = wer_align(ref=str_ref.split('_'),
+                                    hyp=str_hyp_sub.split('_'),
+                                    normalize=True,
+                                    japanese=True if dataset.corpus == 'csj' else False)[0]
+                print('\nWER (sub)   : %.3f %%' % wer_sub)
+            else:
+                cer = wer_align(ref=list(str_ref.replace('_', '')),
+                                hyp=list(str_hyp_sub.replace('_', '')),
+                                normalize=True,
+                                japanese=True if dataset.corpus == 'csj' else False)[0]
+                print('\nCER (sub)   : %.3f %%' % cer)
 
         if is_new_epoch:
             break

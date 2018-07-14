@@ -5,7 +5,8 @@ param:
 
   # corpus
   data_size: all
-  label_type: character_wb
+  vocab: False
+  label_type: character
 
   # topology
   encoder_num_layers: 5
