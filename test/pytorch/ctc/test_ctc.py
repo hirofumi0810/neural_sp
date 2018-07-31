@@ -7,17 +7,16 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import argparse
 import sys
 import time
 import unittest
-import argparse
 
 import torch
 torch.manual_seed(1623)
 torch.cuda.manual_seed_all(1623)
 
 sys.path.append('../../../../../')
-# from models.pytorch.ctc.ctc import CTC
 from src.models.pytorch_v3.ctc.ctc import CTC
 from src.models.pytorch_v3.data_parallel import CustomDataParallel
 from src.models.test.data import generate_data, idx2char, idx2word
@@ -38,11 +37,11 @@ class TestCTC(unittest.TestCase):
 
         self.check(encoder_type='lstm', bidirectional=True, subsample=True)
 
-        # TODO: CNN-CTC
+        # TODO(hirofumi): CNN-CTC
         self.check(encoder_type='cnn', batch_norm=True, activation='relu')
         self.check(encoder_type='cnn', batch_norm=True, activation='prelu')
         self.check(encoder_type='cnn', batch_norm=True, activation='hard_tanh')
-        # self.check(encoder_type='cnn', batch_norm=True, activation='maxout') # TODO
+        # self.check(encoder_type='cnn', batch_norm=True, activation='maxout') # TODO(hirofumi)
 
         # Beam search
         self.check(encoder_type='lstm', bidirectional=True, beam_width=2)
@@ -53,7 +52,7 @@ class TestCTC(unittest.TestCase):
         self.check(encoder_type='lstm', bidirectional=True,
                    conv=True, batch_norm=True)
 
-        # TODO: Label smoothing
+        # TODO(hirofumi): Label smoothing
         # self.check(encoder_type='lstm', bidirectional=True,
         #            label_smoothing=True)
 
