@@ -7,18 +7,22 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import copy
 import random
 import numpy as np
-import copy
 import torch
-import torch.nn.functional as F
 from torch.autograd import Variable
+import torch.nn.functional as F
 
+
+from src.models.pytorch_v3.attention.decoder import Decoder
 from src.models.pytorch_v3.base import ModelBase
-from src.models.pytorch_v3.linear import LinearND, Embedding
+from src.models.pytorch_v3.linear import Embedding
+from src.models.pytorch_v3.linear import LinearND
+
 from src.models.pytorch_v3.encoders.load_encoder import load
-from src.models.pytorch_v3.attention.rnn_decoder import RNNDecoder
-from src.models.pytorch_v3.attention.attention_layer import AttentionMechanism, MultiheadAttentionMechanism
+from src.models.pytorch_v3.attention.attention_layer import AttentionMechanism
+from src.models.pytorch_v3.attention.attention_layer import MultiheadAttentionMechanism
 from src.models.pytorch_v3.criterion import cross_entropy_label_smoothing
 from src.models.pytorch_v3.ctc.decoders.greedy_decoder import GreedyDecoder
 from src.models.pytorch_v3.ctc.decoders.beam_search_decoder import BeamSearchDecoder
@@ -30,91 +34,72 @@ from src.utils.io.inputs.splicing import do_splice
 
 class AttentionSeq2seq(ModelBase):
     """Attention-based sequence-to-sequence model.
+
     Args:
-        input_type (string): speech or text
-            speech means ASR, and text means NMT or P2W and so on...
-        input_size (int): the dimension of input features (freq * channel)
-        encoder_type (string): the type of the encoder. Set lstm or gru or rnn.
-        encoder_bidirectional (bool): if True, create a bidirectional encoder
-        encoder_num_units (int): the number of units in each layer of the encoder
-        encoder_num_proj (int): the number of nodes in the projection layer of the encoder
-        encoder_num_layers (int): the number of layers of the encoder
-        attention_type (string): the type of attention
-        attention_dim: (int) the dimension of the attention layer
-        decoder_type (string): lstm or gru
-        decoder_num_units (int): the number of units in each layer of the decoder
-        decoder_num_layers (int): the number of layers of the decoder
-        embedding_dim (int): the dimension of the embedding in target spaces.
-            0 means that decoder inputs are represented by one-hot vectors.
-        dropout_input (float): the probability to drop nodes in input-hidden connection
-        dropout_encoder (float): the probability to drop nodes in hidden-hidden
-            connection of the encoder
-        dropout_decoder (float): the probability to drop nodes of the decoder
-        dropout_embedding (float): the probability to drop nodes of the embedding layer
-        num_classes (int): the number of nodes in softmax layer
-            (excluding <SOS> and <EOS> classes)
-        parameter_init_distribution (string): uniform or normal or orthogonal
-            or constant distribution
-        parameter_init (float): Range of uniform distribution to initialize
-            weight parameters
-        recurrent_weight_orthogonal (bool): if True, recurrent weights are
-            orthogonalized
-        init_forget_gate_bias_with_one (bool): if True, initialize the forget
-            gate bias with 1
+        enc_in_type (string): speech or text
+            speech means ASR or speech translation, and text means NMT or P2W and so on...
+        enc_in_size (int): the dimension of input features (freq * channel)
+        n_stack (int): the number of frames to stack
+        n_skip (int): the number of frames to skip
+        n_splice (int): frames to splice. Default is 1 frame.
+        conv_in_channel (int): the number of channels of input features
+        conv_n_channels (int): the number of channles of conv outputs.
+        conv_width (int): the size of kernel. This must be the odd number.
+        conv_channels (list): the number of channles in the convolution
+        conv_kernel_sizes (list): the size of kernels in the convolution
+        conv_strides (list): strides in the convolution
+        conv_poolings (list): the size of poolings in the convolution
+        batch_norm (bool):
+        enc_type (string): the type of the encoder. Set lstm or gru or rnn.
+        enc_bidirectional (bool): if True, create a bidirectional encoder
+        enc_n_units (int): the number of units in each layer of the encoder
+        enc_n_projs (int): the number of nodes in the projection layer of the encoder
+        enc_n_layers (int): the number of layers of the encoder
+        enc_residual (bool):
         subsample_list (list): subsample in the corresponding layers (True)
-            ex.) [False, True, True, False] means that subsample is conducted
-                in the 2nd and 3rd layers.
+            ex.) [False, True, True, False] means that subsample is conducted in the 2nd and 3rd layers.
         subsample_type (string): drop or concat
-        bridge_layer (bool): if True, add the bridge layer between the encoder
-            and decoder
-        init_dec_state (bool): how to initialize decoder state
-            zero => initialize with zero state
-            mean => initialize with the mean of encoder outputs in all time steps
-            final => initialize with tha final encoder state
-            first => initialize with tha first encoder state
+
+        att_type (string): the type of attention
+        att_dim: (int) the dimension of the attention layer
+        att_n_heads (int): the number of heads in the multi-head attention
+        dec_type (string): lstm or gru
+        dec_n_units (int): the number of units in each layer of the decoder
+        dec_n_layers (int): the number of layers of the decoder
+        dec_residual (bool):
+        emb_dim (int): the dimension of the embedding in target spaces.
+            0 means that decoder inputs are represented by one-hot vectors.
+                bottle_dim (int): the dimension of the pre-softmax layer
+        n_classes (int): the number of nodes in softmax layer (excluding <SOS> and <EOS> classes)
+                param_init_dist (string): uniform or normal or orthogonal or constant distribution
+        param_init (float): Range of uniform distribution to initialize weight parameters
+        recurrent_weight_orthogonal (bool): if True, recurrent weights are orthogonalized
+        init_forget_gate_bias_with_one (bool): if True, initialize the forget gate bias with 1
+
+        dropout_in (float): the probability to drop nodes in input-hidden connection
+        dropout_enc (float): the probability to drop nodes in hidden-hidden connection of the encoder
+        dropout_dec (float): the probability to drop nodes of the decoder
+        dropout_emb (float): the probability to drop nodes of the embedding layer
+
+        bridge_layer (bool): if True, add the bridge layer between the encoder and decoder
         sharpening_factor (float): a sharpening factor in the softmax layer
             for computing attention weights
-        logits_temperature (float): a parameter for smoothing the softmax layer
-            in outputing probabilities
+        logits_temp (float): a parameter for smoothing the softmax layer in outputing probabilities
         sigmoid_smoothing (bool): if True, replace softmax function in
             computing attention weights with sigmoid function for smoothing
         coverage_weight (float): the weight parameter for coverage computation
         ctc_loss_weight (float): A weight parameter for auxiliary CTC loss
-        attention_conv_num_channels (int): the number of channles of conv outputs.
-            This is used for location-based attention.
-        attention_conv_width (int): the size of kernel.
-            This must be the odd number.
-        num_stack (int): the number of frames to stack
-        num_skip (int): the number of frames to skip
-        splice (int): frames to splice. Default is 1 frame.
-        input_channel (int): the number of channels of input features
-        conv_channels (list): the number of channles in the convolution of the
-            location-based attention
-        conv_kernel_sizes (list): the size of kernels in the convolution of the
-            location-based attention
-        conv_strides (list): strides in the convolution of the location-based
-            attention
-        poolings (list): the size of poolings in the convolution of the
-            location-based attention
-        activation (string): The activation function of CNN layers.
-            Choose from relu or prelu or hard_tanh or maxout
-        batch_norm (bool):
+
         scheduled_sampling_prob (float):
         scheduled_sampling_max_step (float):
-        label_smoothing_prob (float):
-        label_smoothing_type (string): uniform or unigram
+        lsm_prob (float):
+        lsm_type (string): uniform or unigram
         weight_noise_std (flaot):
-        encoder_residual (bool):
-        encoder_dense_residual (bool):
-        decoder_residual (bool):
-        decoder_dense_residual (bool):
-        decoding_order (string): bahdanau or luong or conditional
-        generate_feature (string): s or sc or scy
-        bottleneck_dim (int): the dimension of the pre-softmax layer
+
+        generate_feat (string): s or sc or scy
         backward_loss_weight (int): A weight parameter for the loss of the backward decdoer,
             where the model predicts each token in the reverse order
-        num_heads (int): the number of heads in the multi-head attention
-        rnnlm_fusion_type (string):
+        rnnlm_fusion (string):
             False:
             cold_fusion:
             cold_fusion_simple:
@@ -124,129 +109,111 @@ class AttentionSeq2seq(ModelBase):
             state_embedding_fusion:
         rnnlm_config (dict): configuration of the pre-trained RNNLM
         rnnlm_weight (float): the weight for XE loss of RNNLM
-        num_classes_input (int):
+        rnnlm_init (bool):
+        finetune_gate (bool):
+        n_classes_input (int):
+
     """
 
     def __init__(self,
-                 input_type,
-                 input_size,
-                 encoder_type,
-                 encoder_bidirectional,
-                 encoder_num_units,
-                 encoder_num_proj,
-                 encoder_num_layers,
-                 attention_type,
-                 attention_dim,
-                 decoder_type,
-                 decoder_num_units,
-                 decoder_num_layers,
-                 embedding_dim,
-                 dropout_input,
-                 dropout_encoder,
-                 dropout_decoder,
-                 dropout_embedding,
-                 num_classes,
-                 parameter_init_distribution='uniform',
-                 parameter_init=0.1,
+                 enc_in_type,
+                 enc_in_size,
+                 n_stack,
+                 n_skip,
+                 n_splice,
+                 conv_in_channel,
+                 conv_channels,
+                 conv_kernel_sizes,
+                 conv_strides,
+                 conv_poolings,
+                 batch_norm,
+
+                 enc_type,
+                 enc_bidirectional,
+                 enc_n_units,
+                 enc_n_projs,
+                 enc_n_layers,
+                 att_type,
+                 att_dim,
+                 dec_type,
+                 dec_n_units,
+                 dec_n_layers,
+                 emb_dim,
+                 dropout_in,
+                 dropout_enc,
+                 dropout_dec,
+                 dropout_emb,
+                 n_classes,
+                 param_init_dist='uniform',
+                 param_init=0.1,
                  recurrent_weight_orthogonal=False,
                  init_forget_gate_bias_with_one=True,
                  subsample_list=[],
                  subsample_type='drop',
                  bridge_layer=False,
-                 init_dec_state='zero',
                  sharpening_factor=1,
-                 logits_temperature=1,
+                 logits_temp=1,
                  sigmoid_smoothing=False,
                  coverage_weight=0,
                  ctc_loss_weight=0,
-                 attention_conv_num_channels=10,
-                 attention_conv_width=201,
-                 num_stack=1,
-                 num_skip=1,
-                 splice=1,
-                 input_channel=1,
-                 conv_channels=[],
-                 conv_kernel_sizes=[],
-                 conv_strides=[],
-                 poolings=[],
-                 activation='relu',
-                 batch_norm=False,
+                 att_conv_n_channels=10,
+                 att_conv_width=201,
+
+
+
                  scheduled_sampling_prob=0,
                  scheduled_sampling_max_step=0,
-                 label_smoothing_prob=0,
-                 label_smoothing_type='unigram',
+                 lsm_prob=0,
+                 lsm_type='unigram',
                  weight_noise_std=0,
-                 encoder_residual=False,
-                 encoder_dense_residual=False,
-                 decoder_residual=False,
-                 decoder_dense_residual=False,
-                 decoding_order='bahdanau',
-                 generate_feature='sc',
-                 bottleneck_dim=0,
+                 enc_residual=False,
+                 dec_residual=False,
+                 dec_order='bahdanau',
+                 generate_feat='sc',
+                 bottle_dim=0,
                  backward_loss_weight=0,
-                 num_heads=1,
-                 rnnlm_fusion_type=None,
+                 att_n_heads=1,
+                 rnnlm_fusion=None,
                  rnnlm_config=None,
                  rnnlm_weight=0,
+                 rnnlm_init=False,
                  finetune_gate=False,
-                 num_classes_input=0):
+                 n_classes_input=0):
 
         super(ModelBase, self).__init__()
         self.model_type = 'attention'
 
         # Setting for the encoder
-        self.input_type = input_type
-        assert input_type in ['speech', 'text']
-        self.input_size = input_size
-        self.num_stack = num_stack
-        self.num_skip = num_skip
-        self.splice = splice
-        self.encoder_type = encoder_type
-        self.encoder_num_units = encoder_num_units
-        if encoder_bidirectional:
-            self.encoder_num_units *= 2
-        self.encoder_num_proj = encoder_num_proj
-        self.encoder_num_layers = encoder_num_layers
+        self.enc_in_type = enc_in_type
+        assert enc_in_type in ['speech', 'text']
+        self.input_size = enc_in_size
+        self.n_stack = n_stack
+        self.n_skip = n_skip
+        self.n_splice = n_splice
+        self.enc_type = enc_type
+        self.enc_n_units = enc_n_units
+        if enc_bidirectional:
+            self.enc_n_units *= 2
+        self.enc_n_projs = enc_n_projs
+        self.enc_n_layers = enc_n_layers
         self.subsample_list = subsample_list
 
         # Setting for the decoder
-        self.decoder_type = decoder_type
-        self.decoder_num_units_0 = decoder_num_units
-        self.decoder_num_layers_0 = decoder_num_layers
-        self.embedding_dim = embedding_dim
-        self.bottleneck_dim_0 = bottleneck_dim
-        self.num_classes = num_classes + 1  # Add <EOS> class
-        self.sos_0 = num_classes
-        self.eos_0 = num_classes
+        self.n_classes = n_classes + 1  # Add <EOS> class
+        self.sos_0 = n_classes
+        self.eos_0 = n_classes
         self.pad_index = -1024
         # NOTE: <SOS> and <EOS> have the same index
-        self.decoding_order = decoding_order
-        self.generate_feature = generate_feature
         assert 0 <= backward_loss_weight <= 1
         self.fwd_weight_0 = 1 - backward_loss_weight
         self.bwd_weight_0 = backward_loss_weight
 
-        # Setting for the decoder initialization
-        if init_dec_state not in ['zero', 'mean', 'final', 'first']:
-            raise ValueError(
-                'init_dec_state must be "zero" or "mean" or "final" or "first".')
-        self.init_dec_state_0_fwd = init_dec_state
-        self.init_dec_state_0_bwd = init_dec_state
-        if backward_loss_weight > 0:
-            if init_dec_state == 'first':
-                self.init_dec_state_0_bwd = 'final'
-            elif init_dec_state == 'final':
-                self.init_dec_state_0_bwd = 'first'
-        if encoder_type != decoder_type:
-            self.init_dec_state_0_fwd = 'zero'
-            self.init_dec_state_0_bwd = 'zero'
-
         # Setting for the attention
         self.sharpening_factor = sharpening_factor
-        self.logits_temp = logits_temperature
+        self.logits_temp = logits_temp
         self.sigmoid_smoothing = sigmoid_smoothing
         self.coverage_weight = coverage_weight
-        self.num_heads_0 = num_heads
+        self.n_heads_0 = att_n_heads
         self.share_attention = False
 
         # Setting for regularization
@@ -257,9 +224,9 @@ class AttentionSeq2seq(ModelBase):
         self.ss_prob = scheduled_sampling_prob
         self._ss_prob = scheduled_sampling_prob
         self.ss_max_step = scheduled_sampling_max_step
-        self._step = 0
-        self.ls_prob = label_smoothing_prob
-        self.ls_type = label_smoothing_type
+        self.n_step = 0
+        self.lsm_prob = lsm_prob
+        self.ls_type = lsm_type
 
         # Setting for MTL
         self.ctc_loss_weight = ctc_loss_weight
@@ -268,76 +235,80 @@ class AttentionSeq2seq(ModelBase):
             self.warp_ctc = my_warpctc
 
         # Setting for the RNNLM fusion
-        if rnnlm_fusion_type and rnnlm_config is not None:
-            self.rnnlm_fusion_type_0 = rnnlm_fusion_type
+        if rnnlm_fusion and rnnlm_config is not None:
+            self.rnnlm_fusion_type_0 = rnnlm_fusion
         else:
             self.rnnlm_fusion_type_0 = False
         self.rnnlm_0_fwd = None
         self.rnnlm_0_bwd = None
         self.rnnlm_weight_0 = rnnlm_weight
+        if rnnlm_init and rnnlm_config is not None:
+            self.rnnlm_init_0 = rnnlm_init
+        else:
+            self.rnnlm_init_0 = False
 
         # Setting for text input
-        self.num_classes_input = num_classes_input + 1
+        self.n_classes_input = n_classes_input + 1
 
         # RNNLM fusion
-        if self.rnnlm_fusion_type_0:
+        if self.rnnlm_fusion_type_0 or self.rnnlm_init_0:
             self.rnnlm_0_fwd = RNNLM(
-                embedding_dim=rnnlm_config['embedding_dim'],
+                emb_dim=rnnlm_config['emb_dim'],
                 rnn_type=rnnlm_config['rnn_type'],
                 bidirectional=rnnlm_config['bidirectional'],
-                num_units=rnnlm_config['num_units'],
-                num_layers=rnnlm_config['num_layers'],
-                dropout_embedding=rnnlm_config['dropout_embedding'],
+                n_units=rnnlm_config['n_units'],
+                n_layers=rnnlm_config['n_layers'],
+                dropout_emb=rnnlm_config['dropout_emb'],
                 dropout_hidden=rnnlm_config['dropout_hidden'],
-                dropout_output=rnnlm_config['dropout_output'],
-                num_classes=rnnlm_config['num_classes'],
-                parameter_init_distribution=rnnlm_config['parameter_init_distribution'],
-                parameter_init=rnnlm_config['parameter_init'],
+                dropout_out=rnnlm_config['dropout_out'],
+                n_classes=rnnlm_config['n_classes'],
+                param_init_dist=rnnlm_config['param_init_dist'],
+                param_init=rnnlm_config['param_init'],
                 recurrent_weight_orthogonal=rnnlm_config['recurrent_weight_orthogonal'],
                 init_forget_gate_bias_with_one=rnnlm_config['init_forget_gate_bias_with_one'],
-                label_smoothing_prob=rnnlm_config['label_smoothing_prob'],
+                lsm_prob=rnnlm_config['lsm_prob'],
                 tie_weights=rnnlm_config['tie_weights'],
                 residual_connection=rnnlm_config['residual_connection'],
                 backward=rnnlm_config['backward'])
 
             if self.rnnlm_fusion_type_0 == 'cold_fusion':
                 self.W_rnnlm_logits_0_fwd = LinearND(
-                    self.rnnlm_0_fwd.num_classes, self.rnnlm_0_fwd.num_units,
-                    dropout=dropout_decoder)
+                    self.rnnlm_0_fwd.n_classes, self.rnnlm_0_fwd.n_units,
+                    dropout=dropout_dec)
             if self.rnnlm_fusion_type_0 in ['cold_fusion', 'cold_fusion_simple']:
                 self.W_rnnlm_gate_0_fwd = LinearND(
-                    decoder_num_units + self.rnnlm_0_fwd.num_units,
-                    self.rnnlm_0_fwd.num_units,
-                    dropout=dropout_decoder)
+                    dec_n_units + self.rnnlm_0_fwd.n_units,
+                    self.rnnlm_0_fwd.n_units,
+                    dropout=dropout_dec)
                 if self.bottleneck_dim_0 == 0:
                     self.W_rnnlm_0_fwd = LinearND(
-                        self.rnnlm_0_fwd.num_units, self.num_classes,
-                        dropout=dropout_decoder)
+                        self.rnnlm_0_fwd.n_units, self.n_classes,
+                        dropout=dropout_dec)
                 else:
                     self.W_rnnlm_0_fwd = LinearND(
-                        self.rnnlm_0_fwd.num_units, self.bottleneck_dim_0,
-                        dropout=dropout_decoder)
+                        self.rnnlm_0_fwd.n_units, self.bottleneck_dim_0,
+                        dropout=dropout_dec)
 
-            # TODO: cold fusion for backward RNNLM
+            # TODO(hirofumi): cold fusion for backward RNNLM
 
         # Encoder
-        if encoder_type in ['lstm', 'gru', 'rnn']:
-            self.encoder = load(encoder_type=encoder_type)(
-                input_size=input_size,
-                rnn_type=encoder_type,
-                bidirectional=encoder_bidirectional,
-                num_units=encoder_num_units,
-                num_proj=encoder_num_proj,
-                num_layers=encoder_num_layers,
-                dropout_input=dropout_input,
-                dropout_hidden=dropout_encoder,
+        if enc_type in ['lstm', 'gru', 'rnn']:
+            self.encoder = load(enc_type=enc_type)(
+                input_size=enc_in_size,
+                rnn_type=enc_type,
+                bidirectional=enc_bidirectional,
+                n_units=enc_n_units,
+                n_proj=enc_n_projs,
+                n_layers=enc_n_layers,
+                dropout_in=dropout_in,
+                dropout_hidden=dropout_enc,
                 subsample_list=subsample_list,
                 subsample_type=subsample_type,
                 batch_first=True,
                 merge_bidirectional=False,
                 pack_sequence=True,
-                num_stack=num_stack,
-                splice=splice,
+                n_stack=n_stack,
+                n_splice=n_splice,
                 input_channel=input_channel,
                 conv_channels=conv_channels,
                 conv_kernel_sizes=conv_kernel_sizes,
@@ -345,37 +316,32 @@ class AttentionSeq2seq(ModelBase):
                 poolings=poolings,
                 activation=activation,
                 batch_norm=batch_norm,
-                residual=encoder_residual,
-                dense_residual=encoder_dense_residual,
+                residual=enc_residual,
                 nin=0)
-        elif encoder_type == 'cnn':
-            assert num_stack == 1 and splice == 1
-            self.encoder = load(encoder_type='cnn')(
-                input_size=input_size,
+        elif enc_type == 'cnn':
+            assert n_stack == 1 and n_splice == 1
+            self.encoder = load(enc_type='cnn')(
+                input_size=enc_in_size,
                 input_channel=input_channel,
                 conv_channels=conv_channels,
                 conv_kernel_sizes=conv_kernel_sizes,
                 conv_strides=conv_strides,
                 poolings=poolings,
-                dropout_input=dropout_input,
-                dropout_hidden=dropout_encoder,
+                dropout_in=dropout_in,
+                dropout_hidden=dropout_enc,
                 activation=activation,
                 batch_norm=batch_norm)
-            self.init_dec_state_0 = 'zero'
         else:
             raise NotImplementedError
 
         # Bridge layer between the encoder and decoder
-        if encoder_type == 'cnn':
-            self.bridge_0 = LinearND(
-                self.encoder.output_size, decoder_num_units,
-                dropout=dropout_encoder)
-            self.encoder_num_units = decoder_num_units
+        if enc_type == 'cnn':
+            self.bridge_0 = LinearND(self.encoder.output_size, dec_n_units)
+            self.enc_n_units = dec_n_units
             self.is_bridge = True
         elif bridge_layer:
-            self.bridge_0 = LinearND(self.encoder_num_units, decoder_num_units,
-                                     dropout=dropout_encoder)
-            self.encoder_num_units = decoder_num_units
+            self.bridge_0 = LinearND(self.enc_n_units, dec_n_units)
+            self.enc_n_units = dec_n_units
             self.is_bridge = True
         else:
             self.is_bridge = False
@@ -386,124 +352,64 @@ class AttentionSeq2seq(ModelBase):
         if self.bwd_weight_0 > 0:
             directions.append('bwd')
         for dir in directions:
-            # Initialization of the decoder
-            if getattr(self, 'init_dec_state_0_' + dir) != 'zero':
-                setattr(self, 'W_dec_init_0_' + dir, LinearND(
-                    self.encoder_num_units, decoder_num_units))
+            # Attention layer
+            if att_n_heads > 1:
+                att = MultiheadAttentionMechanism(
+                    enc_n_units=self.enc_n_units,
+                    dec_n_units=dec_n_units,
+                    att_type=att_type,
+                    att_dim=att_dim,
+                    sharpening_factor=sharpening_factor,
+                    sigmoid_smoothing=sigmoid_smoothing,
+                    out_channels=att_conv_n_channels,
+                    kernel_size=att_conv_width,
+                    n_heads=att_n_heads)
+            else:
+                att = AttentionMechanism(
+                    enc_n_units=self.enc_n_units,
+                    dec_n_units=dec_n_units,
+                    att_type=att_type,
+                    att_dim=att_dim,
+                    sharpening_factor=sharpening_factor,
+                    sigmoid_smoothing=sigmoid_smoothing,
+                    out_channels=att_conv_n_channels,
+                    kernel_size=att_conv_width)
 
             # Decoder
-            if decoding_order == 'conditional':
-                decoder_input_size_first = embedding_dim
-                decoder_input_size_second = self.encoder_num_units
-                if self.rnnlm_fusion_type_0 in ['embedding_fusion', 'state_embedding_fusion']:
-                    decoder_input_size_first += self.rnnlm_0_fwd.embedding_dim
-                if self.rnnlm_fusion_type_0 in ['state_fusion', 'state_embedding_fusion']:
-                    decoder_input_size_second += self.rnnlm_0_fwd.num_units
-                setattr(self, 'decoder_first_0_' + dir, RNNDecoder(
-                    input_size=decoder_input_size_first,
-                    rnn_type=decoder_type,
-                    num_units=decoder_num_units,
-                    num_layers=1,
-                    dropout=dropout_decoder,
-                    residual=False,
-                    dense_residual=False))
-                setattr(self, 'decoder_second_0_' + dir, RNNDecoder(
-                    input_size=decoder_input_size_second,
-                    rnn_type=decoder_type,
-                    num_units=decoder_num_units,
-                    num_layers=1,
-                    dropout=dropout_decoder,
-                    residual=False,
-                    dense_residual=False))
-                # NOTE; the conditional decoder only supports the 1 layer
-            else:
-                decoder_input_size = embedding_dim + self.encoder_num_units
-                if self.rnnlm_fusion_type_0 in ['embedding_fusion', 'state_embedding_fusion']:
-                    decoder_input_size += self.rnnlm_0_fwd.embedding_dim
-                if self.rnnlm_fusion_type_0 in ['state_fusion', 'state_embedding_fusion']:
-                    decoder_input_size += self.rnnlm_0_fwd.num_units
-                setattr(self, 'decoder_0_' + dir, RNNDecoder(
-                    input_size=decoder_input_size,
-                    rnn_type=decoder_type,
-                    num_units=decoder_num_units,
-                    num_layers=decoder_num_layers,
-                    dropout=dropout_decoder,
-                    residual=decoder_residual,
-                    dense_residual=decoder_dense_residual))
-
-            # Attention layer
-            if num_heads > 1:
-                setattr(self, 'attend_0_' + dir, MultiheadAttentionMechanism(
-                    encoder_num_units=self.encoder_num_units,
-                    decoder_num_units=decoder_num_units,
-                    attention_type=attention_type,
-                    attention_dim=attention_dim,
-                    sharpening_factor=sharpening_factor,
-                    sigmoid_smoothing=sigmoid_smoothing,
-                    out_channels=attention_conv_num_channels,
-                    kernel_size=attention_conv_width,
-                    num_heads=num_heads))
-            else:
-                setattr(self, 'attend_0_' + dir, AttentionMechanism(
-                    encoder_num_units=self.encoder_num_units,
-                    decoder_num_units=decoder_num_units,
-                    attention_type=attention_type,
-                    attention_dim=attention_dim,
-                    sharpening_factor=sharpening_factor,
-                    sigmoid_smoothing=sigmoid_smoothing,
-                    out_channels=attention_conv_num_channels,
-                    kernel_size=attention_conv_width))
-
-            # Output layer
-            if self.bottleneck_dim_0 > 0:
-                setattr(self, 'W_d_0_' + dir, LinearND(
-                    decoder_num_units, self.bottleneck_dim_0,
-                    dropout=dropout_decoder))
-                if 'c' in generate_feature:
-                    setattr(self, 'W_c_0_' + dir, LinearND(
-                        self.encoder_num_units, self.bottleneck_dim_0,
-                        dropout=dropout_decoder))
-                if 'y' in generate_feature:
-                    setattr(self, 'W_y_0_' + dir, LinearND(
-                        embedding_dim, self.bottleneck_dim_0,
-                        dropout=dropout_decoder))
-                setattr(self, 'fc_0_' + dir,
-                        LinearND(self.bottleneck_dim_0, self.num_classes))
-            else:
-                setattr(self, 'W_d_0_' + dir, LinearND(
-                    decoder_num_units, self.num_classes))
-                if 'c' in generate_feature:
-                    setattr(self, 'W_c_0_' + dir, LinearND(
-                        self.encoder_num_units, self.num_classes))
-                if 'y' in generate_feature:
-                    setattr(self, 'W_y_0_' + dir, LinearND(
-                        self.encoder_num_units, self.num_classes))
-                # NOTE: turn off dropout
-
-        # Embedding
-        self.embed_0 = Embedding(num_classes=self.num_classes,
-                                 embedding_dim=embedding_dim,
-                                 dropout=dropout_embedding,
-                                 ignore_index=self.eos_0)
-        if input_type == 'text':
-            self.embed_in = Embedding(num_classes=self.num_classes_input,
-                                      embedding_dim=input_size,
-                                      dropout=dropout_embedding,
-                                      ignore_index=self.num_classes_input - 1)
+            dec_input_size = emb_dim + self.enc_n_units
+            if self.rnnlm_fusion_type_0 in ['embedding_fusion', 'state_embedding_fusion']:
+                dec_input_size += self.rnnlm_0_fwd.emb_dim
+            if self.rnnlm_fusion_type_0 in ['state_fusion', 'state_embedding_fusion']:
+                dec_input_size += self.rnnlm_0_fwd.n_units
+            setattr(self, 'decoder_0_' + dir, Decoder(
+                attention_layer=att,
+                sos=self.sos_0,
+                eos=self.eos_0,
+                emb_dim=emb_dim,
+                dec_in_size=dec_input_size,
+                rnn_type=dec_type,
+                n_units=dec_n_units,
+                n_layers=dec_n_layers,
+                bottle_dim=bottle_dim,
+                dropout=dropout_dec,
+                dec_order=dec_order,
+                generate_feat=generate_feat,
+                residual=dec_residual,
+                coverage_weight=coverage_weight,
+                rnnlm_fusion=rnnlm_fusion,
+            ))
 
         # CTC
         if ctc_loss_weight > 0:
             if self.is_bridge:
-                self.fc_ctc_0 = LinearND(
-                    decoder_num_units, num_classes + 1)
+                self.fc_ctc_0 = LinearND(dec_n_units, n_classes + 1)
             else:
-                self.fc_ctc_0 = LinearND(
-                    self.encoder_num_units, num_classes + 1)
+                self.fc_ctc_0 = LinearND(self.enc_n_units, n_classes + 1)
 
             # Set CTC decoders
             self._decode_ctc_greedy_np = GreedyDecoder(blank_index=0)
             self._decode_ctc_beam_np = BeamSearchDecoder(blank_index=0)
-            # TODO: set space index
+            # TODO(hirofumi): set space index
 
         # Fix all parameters except for gate
         if self.rnnlm_fusion_type_0 and finetune_gate:
@@ -517,8 +423,8 @@ class AttentionSeq2seq(ModelBase):
                     param.requires_grad = False
 
         # Initialize weight matrices
-        self.init_weights(parameter_init,
-                          distribution=parameter_init_distribution,
+        self.init_weights(param_init,
+                          distribution=param_init_dist,
                           ignore_keys=['bias'])
 
         # Initialize all biases with 0
@@ -527,15 +433,15 @@ class AttentionSeq2seq(ModelBase):
         # Recurrent weights are orthogonalized
         if recurrent_weight_orthogonal:
             # encoder
-            if encoder_type != 'cnn':
-                self.init_weights(parameter_init,
+            if enc_type != 'cnn':
+                self.init_weights(param_init,
                                   distribution='orthogonal',
-                                  keys=[encoder_type, 'weight'],
+                                  keys=[enc_type, 'weight'],
                                   ignore_keys=['bias'])
             # decoder
-            self.init_weights(parameter_init,
+            self.init_weights(param_init,
                               distribution='orthogonal',
-                              keys=[decoder_type, 'weight'],
+                              keys=[dec_type, 'weight'],
                               ignore_keys=['bias'])
 
         # Initialize bias in forget gate with 1
@@ -549,6 +455,7 @@ class AttentionSeq2seq(ModelBase):
 
     def forward(self, xs, ys, is_eval=False):
         """Forward computation.
+
         Args:
             xs (list): A list of length `[B]`, which contains arrays of size `[T, input_size]`
             ys (list): A list of length `[B]`, which contains arrays of size `[L]`
@@ -557,6 +464,7 @@ class AttentionSeq2seq(ModelBase):
         Returns:
             loss (torch.autograd.Variable(float)): A tensor of size `[1]`
             acc (float): Token-level accuracy in teacher-forcing
+
         """
         if is_eval:
             self.eval()
@@ -568,7 +476,7 @@ class AttentionSeq2seq(ModelBase):
                 self.inject_weight_noise(mean=0, std=self.weight_noise_std)
 
         # Sort by lenghts in the descending order
-        if is_eval and self.encoder_type != 'cnn' or self.input_type == 'text':
+        if is_eval and self.enc_type != 'cnn' or self.enc_in_type == 'text':
             perm_idx = sorted(list(range(0, len(xs), 1)),
                               key=lambda i: len(xs[i]), reverse=True)
             xs = [xs[i] for i in perm_idx]
@@ -611,18 +519,16 @@ class AttentionSeq2seq(ModelBase):
 
         if not is_eval:
             # Update the probability of scheduled sampling
-            self._step += 1
-            if self.ss_prob > 0:
-                self._ss_prob = min(
-                    self.ss_prob, self.ss_prob / self.ss_max_step * self._step)
+            self.n_step += 1
 
         return loss, acc
 
     def compute_xe_loss(self, enc_out, ys, x_lens, task, dir):
         """Compute XE loss.
+
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
-                `[B, T, encoder_num_units]`
+                `[B, T, enc_n_units]`
             ys (list): A list of length `[B]`, which contains Variables of size `[L]`
             x_lens (list): A list of length `[B]`
             task (int): the index of a task
@@ -630,6 +536,7 @@ class AttentionSeq2seq(ModelBase):
         Returns:
             loss (torch.autograd.Variable, float): A tensor of size `[1]`
             acc (float): Token-level accuracy in teacher-forcing
+
         """
         sos = Variable(enc_out.data.new(1,).fill_(
             getattr(self, 'sos_' + str(task))).long())
@@ -657,13 +564,13 @@ class AttentionSeq2seq(ModelBase):
             logits /= self.logits_temp
 
         # Compute XE sequence loss
-        if self.ls_prob > 0:
+        if self.lsm_prob > 0:
             # Label smoothing
             y_lens = [y.size(0) + 1 for y in ys]   # Add <EOS>
             loss = cross_entropy_label_smoothing(
                 logits, ys=ys_out, y_lens=y_lens,
-                label_smoothing_prob=self.ls_prob,
-                label_smoothing_type=self.ls_type, size_average=True)
+                lsm_prob=self.lsm_prob,
+                lsm_type=self.ls_type, size_average=True)
         else:
             loss = F.cross_entropy(
                 input=logits.view((-1, logits.size(2))),
@@ -696,15 +603,17 @@ class AttentionSeq2seq(ModelBase):
 
     def compute_ctc_loss(self, enc_out, ys, x_lens, task=0):
         """Compute CTC loss.
+
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
-                `[B, T, encoder_num_units]`
+                `[B, T, enc_n_units]`
             ys (torch.autograd.Variable, long): A tensor of size `[B, L]`,
                 which does not include <SOS> nor <EOS>
             x_lens (list): A list of length `[B]`
             task (int): the index of a task
         Returns:
             loss (torch.autograd.Variable, float): A tensor of size `[1]`
+
         """
         # Wrap by Variable
         x_lens = np2var(np.fromiter(x_lens, dtype=np.int32), -1).int()
@@ -733,43 +642,45 @@ class AttentionSeq2seq(ModelBase):
 
     def _encode(self, xs, is_multi_task=False):
         """Encode acoustic features.
+
         Args:
             xs (list): A list of length `[B]`, which contains Variables of size `[T, input_size]`
             is_multi_task (bool): Set True in the case of MTL
         Returns:
             xs (torch.autograd.Variable, float): A tensor of size
-                `[B, T, encoder_num_units]`
+                `[B, T, enc_n_units]`
             x_lens (list): A tensor of size `[B]`
             OPTION:
                 xs_sub (torch.autograd.Variable, float): A tensor of size
-                    `[B, T, encoder_num_units]`
+                    `[B, T, enc_n_units]`
                 x_lens_sub (list): A tensor of size `[B]`
+
         """
-        if self.input_type == 'speech':
+        if self.enc_in_type == 'speech':
             # Frame stacking
-            if self.num_stack > 1:
-                xs = [stack_frame(x, self.num_stack, self.num_skip)
+            if self.n_stack > 1:
+                xs = [stack_frame(x, self.n_stack, self.n_skip)
                       for x in xs]
 
             # Splicing
-            if self.splice > 1:
-                xs = [do_splice(x, self.splice, self.num_stack) for x in xs]
+            if self.n_splice > 1:
+                xs = [do_splice(x, self.n_splice, self.n_stack) for x in xs]
 
             # Wrap by Variable
             x_lens = [len(x) for x in xs]
             xs = [np2var(x, self.device_id).float() for x in xs]
             xs = pad_list(xs)
 
-        elif self.input_type == 'text':
+        elif self.enc_in_type == 'text':
             # Wrap by Variable
             x_lens = [len(x) for x in xs]
             xs = [np2var(np.fromiter(x, dtype=np.int64), self.device_id).long()
                   for x in xs]
-            xs = pad_list(xs, self.num_classes_input - 1)
+            xs = pad_list(xs, self.n_classes_input - 1)
             xs = self.embed_in(xs)
 
         if is_multi_task:
-            if self.encoder_type == 'cnn':
+            if self.enc_type == 'cnn':
                 xs, x_lens = self.encoder(xs, x_lens)
                 xs_sub = xs.clone()
                 x_lens_sub = copy.deepcopy(x_lens)
@@ -777,7 +688,7 @@ class AttentionSeq2seq(ModelBase):
                 xs, x_lens, xs_sub, x_lens_sub = self.encoder(
                     xs, x_lens, volatile=not self.training)
         else:
-            if self.encoder_type == 'cnn':
+            if self.enc_type == 'cnn':
                 xs, x_lens = self.encoder(xs, x_lens)
             else:
                 xs, x_lens = self.encoder(
@@ -798,243 +709,12 @@ class AttentionSeq2seq(ModelBase):
         batch_size, max_time_out, max_time_in = aw.size()
         raise NotImplementedError
 
-    def _decode_train(self, enc_out, x_lens, ys, task, dir):
-        """Decoding in the training stage.
-        Args:
-            enc_out (torch.autograd.Variable, float): A tensor of size
-                `[B, T, encoder_num_units]`
-            x_lens (list): A list of length `[B]`
-            ys (torch.autograd.Variable, long): A tensor of size `[B, L]`,
-                which should be padded with <EOS>.
-            task (int): the index of a task
-            dir (str): fwd or bwd
-        Returns:
-            logits (torch.autograd.Variable, float): A tensor of size
-                `[B, L, num_classes]`
-            aw (torch.autograd.Variable, float): A tensor of size
-                `[B, L, T, num_heads]`
-            logits_rnnlm (torch.autograd.Variable, float): A tensor of size
-                `[B, L, num_classes]`
-        """
-        batch_size, max_time = enc_out.size()[:2]
-        taskdir = '_' + str(task) + '_' + dir
-        if self.share_attention:
-            taskdir_att = '_0_fwd'
-        else:
-            taskdir_att = '_' + str(task) + '_' + dir
-
-        # Initialization
-        dec_out, hx_list, cx_list = self._init_dec_state(
-            enc_out, x_lens, task, dir)
-        getattr(self, 'attend' + taskdir_att).reset()
-        aw_step = None
-        if self.decoding_order == 'luong':
-            context_vec = Variable(enc_out.data.new(
-                batch_size, 1, enc_out.size(-1)).fill_(0.))
-        rnnlm_state = None
-
-        # Set RNNLM to the evaluation mode in cold fusion
-        if getattr(self, 'rnnlm_fusion_type_' + str(task)) and getattr(self, 'rnnlm_weight_' + str(task)) == 0:
-            getattr(self, 'rnnlm' + taskdir).eval()
-
-        # Pre-computation of embedding
-        ys_emb = getattr(self, 'embed_' + str(task))(ys)
-        if getattr(self, 'rnnlm_fusion_type_' + str(task)):
-            ys_rnnlm_emb = [getattr(self, 'rnnlm' + taskdir).embed(ys[:, t:t + 1])
-                            for t in range(ys.size(1))]
-            ys_rnnlm_emb = torch.cat(ys_rnnlm_emb, dim=1)
-
-        logits, aw, logits_rnnlm = [], [], []
-        for t in range(ys.size(1)):
-            # Sample for scheduled sampling
-            is_sample = self.ss_prob > 0 and t > 0 and self._step > 0 and random.random() < self._ss_prob
-            if is_sample:
-                y = getattr(self, 'embed_' + str(task))(
-                    torch.max(logits[-1], dim=2)[1]).detach()
-            else:
-                y = ys_emb[:, t:t + 1]
-
-            # Update RNNLM states
-            if getattr(self, 'rnnlm_fusion_type_' + str(task)):
-                if is_sample:
-                    y_rnnlm = getattr(self, 'rnnlm' + taskdir).embed(
-                        torch.max(logits[-1], dim=2)[1]).detach()
-                else:
-                    y_rnnlm = ys_rnnlm_emb[:, t:t + 1]
-                logits_step_rnnlm, rnnlm_out, rnnlm_state = getattr(self, 'rnnlm' + taskdir).predict(
-                    y_rnnlm, h=rnnlm_state)
-                logits_rnnlm += [logits_step_rnnlm]
-
-            if self.decoding_order == 'bahdanau':
-                if t > 0:
-                    # Recurrency
-                    dec_in = torch.cat([y, context_vec], dim=-1)
-                    if getattr(self, 'rnnlm_fusion_type_' + str(task)) in ['embedding_fusion', 'state_embedding_fusion']:
-                        dec_in = torch.cat([dec_in, y_rnnlm], dim=-1)
-                    if getattr(self, 'rnnlm_fusion_type_' + str(task)) in ['state_fusion', 'state_embedding_fusion']:
-                        dec_in = torch.cat([dec_in, rnnlm_out], dim=-1)
-                    dec_out, hx_list, cx_list = getattr(self, 'decoder' + taskdir)(
-                        dec_in, hx_list, cx_list)
-
-                # Score
-                context_vec, aw_step = getattr(self, 'attend' + taskdir_att)(
-                    enc_out, x_lens, dec_out, aw_step)
-
-            elif self.decoding_order == 'luong':
-                # Recurrency
-                dec_in = torch.cat([y, context_vec], dim=-1)
-                if getattr(self, 'rnnlm_fusion_type_' + str(task)) in ['embedding_fusion', 'state_embedding_fusion']:
-                    dec_in = torch.cat([dec_in, y_rnnlm], dim=-1)
-                if getattr(self, 'rnnlm_fusion_type_' + str(task)) in ['state_fusion', 'state_embedding_fusion']:
-                    dec_in = torch.cat([dec_in, rnnlm_out], dim=-1)
-                dec_out, hx_list, cx_list = getattr(self, 'decoder' + taskdir)(
-                    dec_in, hx_list, cx_list)
-
-                # Score
-                context_vec, aw_step = getattr(self, 'attend' + taskdir_att)(
-                    enc_out, x_lens, dec_out, aw_step)
-
-            elif self.decoding_order == 'conditional':
-                # Recurrency of the first decoder
-                dec_in_first = y
-                if getattr(self, 'rnnlm_fusion_type_' + str(task)) in ['embedding_fusion', 'state_embedding_fusion']:
-                    dec_in_first = torch.cat([dec_in_first, y_rnnlm], dim=-1)
-                _dec_out, _hx_list, _cx_list = getattr(self, 'decoder_first' + taskdir)(
-                    dec_in_first, hx_list, cx_list)
-
-                # Score
-                context_vec, aw_step = getattr(self, 'attend' + taskdir_att)(
-                    enc_out, x_lens, _dec_out, aw_step)
-
-                # Recurrency of the second decoder
-                dec_in_second = context_vec
-                if getattr(self, 'rnnlm_fusion_type_' + str(task)) in ['state_fusion', 'state_embedding_fusion']:
-                    dec_in_second = torch.cat(
-                        [dec_in_second, rnnlm_out], dim=-1)
-                dec_out, hx_list, cx_list = getattr(self, 'decoder_second' + taskdir)(
-                    dec_in_second, _hx_list, _cx_list)
-
-            else:
-                raise ValueError(self.decoding_order)
-
-            # Generate
-            logits_step = getattr(self, 'W_d' + taskdir)(dec_out)
-            if 'c' in self.generate_feature:
-                logits_step += getattr(self, 'W_c' + taskdir)(context_vec)
-            if 'y' in self.generate_feature:
-                logits_step += getattr(self, 'W_y' + taskdir)(y)
-
-            # RNNLM fusion
-            if getattr(self, 'rnnlm_fusion_type_' + str(task)) == 'cold_fusion_simple':
-                # Fine-grained gating
-                gate = F.sigmoid(getattr(self, 'W_rnnlm_gate' + taskdir)(
-                    torch.cat([dec_out, rnnlm_out], dim=-1)))
-                logits_step += getattr(self, 'W_rnnlm' + taskdir)(
-                    torch.mul(gate, rnnlm_out))
-            elif getattr(self, 'rnnlm_fusion_type_' + str(task)) == 'cold_fusion':
-                # Prob injection
-                rnnlm_feat = getattr(self, 'W_rnnlm_logits' + taskdir)(
-                    logits_step_rnnlm)
-                # Fine-grained gating
-                gate = F.sigmoid(getattr(self, 'W_rnnlm_gate' + taskdir)(
-                    torch.cat([dec_out, rnnlm_feat], dim=-1)))
-                logits_step += getattr(self, 'W_rnnlm' + taskdir)(
-                    torch.mul(gate, rnnlm_out))
-                if getattr(self, 'bottleneck_dim_' + str(task)) == 0:
-                    logits_step = F.relu(logits_step)
-            elif getattr(self, 'rnnlm_fusion_type_' + str(task)) == 'logits_fusion':
-                logits_step += logits_step_rnnlm
-
-            if getattr(self, 'bottleneck_dim_' + str(task)) > 0:
-                if getattr(self, 'rnnlm_fusion_type_' + str(task)) == 'cold_fusion':
-                    logits_step = F.relu(logits_step)
-                else:
-                    logits_step = F.tanh(logits_step)
-                logits_step = getattr(self, 'fc' + taskdir)(logits_step)
-
-            logits += [logits_step]
-            if self.coverage_weight > 0:
-                aw += [aw_step]
-
-        logits = torch.cat(logits, dim=1)
-        if self.coverage_weight > 0:
-            aw = torch.stack(aw, dim=1)
-        if getattr(self, 'rnnlm_fusion_type_' + str(task)):
-            logits_rnnlm = torch.cat(logits_rnnlm, dim=1)
-
-        return logits, aw, logits_rnnlm
-
-    def _init_dec_state(self, enc_out, x_lens, task, dir):
-        """Initialize decoder state.
-        Args:
-            enc_out (torch.autograd.Variable, float): A tensor of size
-                `[B, T, encoder_num_units]`
-            x_lens (list): A list of length `[B]`
-            task (int): the index of a task
-            dir (str): fwd or bwd
-        Returns:
-            dec_out (torch.autograd.Variable, float): A tensor of size
-                `[B, 1, decoder_num_units]`
-            hx_list (list of torch.autograd.Variable(float)):
-            cx_list (list of torch.autograd.Variable(float)):
-        """
-        taskdir = '_' + str(task) + '_' + dir
-
-        zero_state = Variable(enc_out.data.new(
-            enc_out.size(0), getattr(self, 'decoder_num_units_' + str(task))).fill_(0.),
-            volatile=not self.training)
-
-        dec_out = Variable(enc_out.data.new(
-            enc_out.size(0), 1, getattr(self, 'decoder_num_units_' + str(task))).fill_(0.),
-            volatile=not self.training)
-
-        if getattr(self, 'init_dec_state' + taskdir) == 'zero':
-            if self.decoder_type == 'lstm':
-                hx_list = [zero_state] * \
-                    getattr(self, 'decoder_num_layers_' + str(task))
-                cx_list = [zero_state] * \
-                    getattr(self, 'decoder_num_layers_' + str(task))
-            else:
-                hx_list = [zero_state] * \
-                    getattr(self, 'decoder_num_layers_' + str(task))
-                cx_list = None
-        else:
-            # TODO: consider x_lens
-
-            if getattr(self, 'init_dec_state' + taskdir) == 'mean':
-                # Initialize with mean of all encoder outputs
-                h_0 = enc_out.mean(dim=1, keepdim=False)
-            elif getattr(self, 'init_dec_state' + taskdir) == 'final':
-                # Initialize with the final encoder output
-                h_0 = enc_out[:, -1, :]
-            elif getattr(self, 'init_dec_state' + taskdir) == 'first':
-                # Initialize with the first encoder output
-                h_0 = enc_out[:, 0, :]
-            # NOTE: h_0: `[B, encoder_num_units]`
-
-            # Path through the linear layer
-            h_0 = F.tanh(getattr(self, 'W_dec_init_' +
-                                 str(task) + '_' + dir)(h_0))
-
-            hx_list = [h_0] * \
-                getattr(self, 'decoder_num_layers_' + str(task))
-            # NOTE: all layers are initialized with the same values
-
-            if self.decoder_type == 'lstm':
-                cx_list = [zero_state] * \
-                    getattr(self, 'decoder_num_layers_' + str(task))
-            else:
-                cx_list = None
-
-            dec_out = h_0.unsqueeze(1)
-
-        return dec_out, hx_list, cx_list
-
     def decode(self, xs, beam_width, max_decode_len, min_decode_len=0,
                min_decode_len_ratio=0, length_penalty=0, coverage_penalty=0, coverage_threshold=0,
                rnnlm_weight=0, task_index=0, resolving_unk=False,
                exclude_eos=True):
         """Decoding in the inference stage.
+
         Args:
             xs (list): A list of length `[B]`, which contains arrays of size `[T, input_size]`
             beam_width (int): the size of beam
@@ -1052,11 +732,12 @@ class AttentionSeq2seq(ModelBase):
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
             aw (list): A list of length `[B]`, which contains arrays of size `[L, T]`
             perm_idx (list): A list of length `[B]`
+
         """
         self.eval()
 
         # Sort by lenghts in the descending order
-        if self.encoder_type != 'cnn' or self.input_type == 'text':
+        if self.enc_type != 'cnn' or self.enc_in_type == 'text':
             perm_idx = sorted(list(range(0, len(xs), 1)),
                               key=lambda i: len(xs[i]), reverse=True)
             xs = [xs[i] for i in perm_idx]
@@ -1073,489 +754,16 @@ class AttentionSeq2seq(ModelBase):
             best_hyps, aw = self._decode_infer_greedy(
                 enc_out, x_lens, max_decode_len, 0, dir, exclude_eos)
         else:
-            best_hyps, aw = self._decode_infer_beam(
+            best_hyps, aw = self.beam_search(
                 enc_out, x_lens, beam_width, max_decode_len, min_decode_len,
                 min_decode_len_ratio, length_penalty, coverage_penalty, coverage_threshold,
                 rnnlm_weight, 0, dir, exclude_eos)
 
         return best_hyps, aw, perm_idx
 
-    def _decode_infer_greedy(self, enc_out, x_lens, max_decode_len, task, dir, exclude_eos):
-        """Greedy decoding in the inference stage.
-        Args:
-            enc_out (torch.autograd.Variable, float): A tensor of size
-                `[B, T, encoder_num_units]`
-            x_lens (list): A list of length `[B]`
-            max_decode_len (int): the maximum sequence length of tokens
-            task (int): the index of a task
-            dir (str): fwd or bwd
-            exclude_eos (bool):
-        Returns:
-            best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
-            aw (list): A list of length `[B]`, which contains arrays of size `[L, T]`
-        """
-        if dir == 'bwd':
-            assert getattr(self, 'bwd_weight_' + str(task)) > 0
-
-        batch_size, max_time = enc_out.size()[:2]
-        taskdir = '_' + str(task) + '_' + dir
-        if self.share_attention:
-            taskdir_att = '_0_fwd'
-        else:
-            taskdir_att = '_' + str(task) + '_' + dir
-
-        # Initialization
-        dec_out, hx_list, cx_list = self._init_dec_state(
-            enc_out, x_lens, task, dir)
-        getattr(self, 'attend' + taskdir_att).reset()
-        aw_step = None
-        if self.decoding_order == 'luong':
-            context_vec = Variable(enc_out.data.new(
-                batch_size, 1, enc_out.size(-1)).fill_(0.), volatile=True)
-        rnnlm_state = None
-
-        # Start from <SOS>
-        sos = getattr(self, 'sos_' + str(task))
-        eos = getattr(self, 'eos_' + str(task))
-        y = Variable(enc_out.data.new(
-            batch_size, 1).fill_(sos).long(), volatile=True)
-
-        _best_hyps, _aw = [], []
-        y_lens = np.zeros((batch_size,), dtype=np.int32)
-        eos_flags = [False] * batch_size
-        for t in range(max_decode_len + 1):
-            # Update RNNLM states
-            if getattr(self, 'rnnlm_fusion_type_' + str(task)):
-                y_rnnlm = getattr(self, 'rnnlm' + taskdir).embed(y)
-                logits_step_rnnlm, rnnlm_out, rnnlm_state = getattr(self, 'rnnlm' + taskdir).predict(
-                    y_rnnlm, h=rnnlm_state)
-
-            y = getattr(self, 'embed_' + str(task))(y)
-
-            if self.decoding_order == 'bahdanau':
-                if t > 0:
-                    # Recurrency
-                    dec_in = torch.cat([y, context_vec], dim=-1)
-                    if getattr(self, 'rnnlm_fusion_type_' + str(task)) in ['embedding_fusion', 'state_embedding_fusion']:
-                        dec_in = torch.cat([dec_in, y_rnnlm], dim=-1)
-                    if getattr(self, 'rnnlm_fusion_type_' + str(task)) in ['state_fusion', 'state_embedding_fusion']:
-                        dec_in = torch.cat([dec_in, rnnlm_out], dim=-1)
-                    dec_out, hx_list, cx_list = getattr(self, 'decoder' + taskdir)(
-                        dec_in, hx_list, cx_list)
-
-                # Score
-                context_vec, aw_step = getattr(self, 'attend' + taskdir_att)(
-                    enc_out, x_lens, dec_out, aw_step)
-
-            elif self.decoding_order == 'luong':
-                # Recurrency
-                dec_in = torch.cat([y, context_vec], dim=-1)
-                if getattr(self, 'rnnlm_fusion_type_' + str(task)) in ['embedding_fusion', 'state_embedding_fusion']:
-                    dec_in = torch.cat([dec_in, y_rnnlm], dim=-1)
-                if getattr(self, 'rnnlm_fusion_type_' + str(task)) in ['state_fusion', 'state_embedding_fusion']:
-                    dec_in = torch.cat([dec_in, rnnlm_out], dim=-1)
-                dec_out, hx_list, cx_list = getattr(self, 'decoder' + taskdir)(
-                    dec_in, hx_list, cx_list)
-
-                # Score
-                context_vec, aw_step = getattr(self, 'attend' + taskdir_att)(
-                    enc_out, x_lens, dec_out, aw_step)
-
-            elif self.decoding_order == 'conditional':
-                # Recurrency of the first decoder
-                dec_in_first = y
-                if getattr(self, 'rnnlm_fusion_type_' + str(task)) in ['embedding_fusion', 'state_embedding_fusion']:
-                    dec_in_first = torch.cat([dec_in_first, y_rnnlm], dim=-1)
-                _dec_out, _hx_list, _cx_list = getattr(self, 'decoder_first' + taskdir)(
-                    dec_in_first, hx_list, cx_list)
-
-                # Score
-                context_vec, aw_step = getattr(self, 'attend' + taskdir_att)(
-                    enc_out, x_lens, _dec_out, aw_step)
-
-                # Recurrency of the second decoder
-                dec_in_second = context_vec
-                if getattr(self, 'rnnlm_fusion_type_' + str(task)) in ['state_fusion', 'state_embedding_fusion']:
-                    dec_in_second = torch.cat(
-                        [dec_in_second, rnnlm_out], dim=-1)
-                dec_out, hx_list, cx_list = getattr(self, 'decoder_second' + taskdir)(
-                    dec_in_second, _hx_list, _cx_list)
-
-            else:
-                raise ValueError(self.decoding_order)
-
-            # Generate
-            logits_step = getattr(self, 'W_d' + taskdir)(dec_out)
-            if 'c' in self.generate_feature:
-                logits_step += getattr(self, 'W_c' + taskdir)(context_vec)
-            if 'y' in self.generate_feature:
-                logits_step += getattr(self, 'W_y' + taskdir)(y)
-
-            # RNNLM fusion
-            if getattr(self, 'rnnlm_fusion_type_' + str(task)) == 'cold_fusion_simple':
-                # Fine-grained gating
-                gate = F.sigmoid(getattr(self, 'W_rnnlm_gate' + taskdir)(
-                    torch.cat([dec_out, rnnlm_out], dim=-1)))
-                logits_step += getattr(self, 'W_rnnlm' + taskdir)(
-                    torch.mul(gate, rnnlm_out))
-            elif getattr(self, 'rnnlm_fusion_type_' + str(task)) == 'cold_fusion':
-                # Prob injection
-                rnnlm_feat = getattr(self, 'W_rnnlm_logits' + taskdir)(
-                    logits_step_rnnlm)
-                # Fine-grained gating
-                gate = F.sigmoid(getattr(self, 'W_rnnlm_gate' + taskdir)(
-                    torch.cat([dec_out, rnnlm_feat], dim=-1)))
-                logits_step += getattr(self, 'W_rnnlm' + taskdir)(
-                    torch.mul(gate, rnnlm_out))
-                if getattr(self, 'bottleneck_dim_' + str(task)) == 0:
-                    logits_step = F.relu(logits_step)
-            elif getattr(self, 'rnnlm_fusion_type_' + str(task)) == 'logits_fusion':
-                logits_step += logits_step_rnnlm
-
-            if getattr(self, 'bottleneck_dim_' + str(task)) > 0:
-                if getattr(self, 'rnnlm_fusion_type_' + str(task)) == 'cold_fusion':
-                    logits_step = F.relu(logits_step)
-                else:
-                    logits_step = F.tanh(logits_step)
-                logits_step = getattr(self, 'fc' + taskdir)(logits_step)
-
-            # Pick up 1-best
-            y = torch.max(logits_step.squeeze(1), dim=1)[1].unsqueeze(1)
-            _best_hyps += [y]
-            _aw += [aw_step]
-
-            # Count lengths of hypotheses
-            for b in range(batch_size):
-                if not eos_flags[b]:
-                    if y.data.cpu().numpy()[b] == eos:
-                        eos_flags[b] = True
-                    y_lens[b] += 1
-                    # NOTE: include <EOS>
-
-            # Break if <EOS> is outputed in all mini-batch
-            if sum(eos_flags) == batch_size:
-                break
-
-        # Concatenate in L dimension
-        _best_hyps = torch.cat(_best_hyps, dim=1)
-        _aw = torch.stack(_aw, dim=1)
-
-        # Convert to numpy
-        _best_hyps = var2np(_best_hyps)
-        _aw = var2np(_aw)
-
-        if getattr(self, 'num_heads_' + str(task)) > 1:
-            _aw = _aw[:, :, :, 0]
-            # TODO: fix for MHA
-
-        # Truncate by the first <EOS>
-        if dir == 'bwd':
-            # Reverse the order
-            best_hyps = [_best_hyps[b, :y_lens[b]][::-1]
-                         for b in range(batch_size)]
-            aw = [_aw[b, :y_lens[b]][::-1] for b in range(batch_size)]
-        else:
-            best_hyps = [_best_hyps[b, :y_lens[b]] for b in range(batch_size)]
-            aw = [_aw[b, :y_lens[b]] for b in range(batch_size)]
-
-        # Exclude <EOS>
-        if exclude_eos:
-            best_hyps = [best_hyps[b][:-1] if eos_flags[b]
-                         else best_hyps[b] for b in range(batch_size)]
-
-        return best_hyps, aw
-
-    def _decode_infer_beam(self, enc_out, x_lens, beam_width,
-                           max_decode_len, min_decode_len, min_decode_len_ratio,
-                           length_penalty, coverage_penalty, coverage_threshold, rnnlm_weight,
-                           task, dir, exclude_eos):
-        """Beam search decoding in the inference stage.
-        Args:
-            enc_out (torch.autograd.Variable, float): A tensor of size
-                `[B, T, encoder_num_units]`
-            x_lens (list): A list of length `[B]`
-            beam_width (int): the size of beam
-            max_decode_len (int): the maximum sequence length of tokens
-            min_decode_len (int): the minimum sequence length of tokens
-            min_decode_len_ratio (float):
-            length_penalty (float): length penalty
-            coverage_penalty (float): coverage penalty
-            coverage_threshold (float): threshold for coverage penalty
-            rnnlm_weight (float): the weight of RNNLM score
-            task (int): the index of a task
-            dir (str): fwd or bwd
-            exclude_eos (bool):
-        Returns:
-            best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
-            aw (list): A list of length `[B]`, which contains arrays of size `[L, T]`
-        """
-        if dir == 'bwd':
-            assert getattr(self, 'bwd_weight_' + str(task)) > 0
-        taskdir = '_' + str(task) + '_' + dir
-        if self.share_attention:
-            taskdir_att = '_0_fwd'
-        else:
-            taskdir_att = '_' + str(task) + '_' + dir
-
-        batch_size = enc_out.size(0)
-
-        if rnnlm_weight > 0 or getattr(self, 'rnnlm_fusion_type_' + str(task)):
-            assert getattr(self, 'rnnlm' + taskdir) is not None
-            assert not getattr(self, 'rnnlm' + taskdir).training
-
-        # Start from <SOS>
-        sos = getattr(self, 'sos_' + str(task))
-        eos = getattr(self, 'eos_' + str(task))
-
-        best_hyps, aw = [], []
-        y_lens = np.zeros((batch_size,), dtype=np.int32)
-        eos_flags = [False] * batch_size
-        for b in range(batch_size):
-            # Initialization per utterance
-            dec_out, hx_list, cx_list = self._init_dec_state(
-                enc_out[b:b + 1], x_lens[b], task, dir)
-            context_vec = Variable(enc_out.data.new(
-                1, 1, enc_out.size(-1)).fill_(0.), volatile=True)
-            getattr(self, 'attend' + taskdir_att).reset()
-
-            complete = []
-            beam = [{'hyp': [sos],
-                     'score': 0,  # log 1
-                     'dec_out': dec_out,
-                     'hx_list': hx_list,
-                     'cx_list': cx_list,
-                     'context_vec': context_vec,
-                     'aw_steps': [None],
-                     'rnnlm_state': None,
-                     'previous_coverage': 0}]
-            for t in range(max_decode_len + 1):
-                new_beam = []
-                for i_beam in range(len(beam)):
-                    # Update RNNLM states
-                    if rnnlm_weight > 0 or getattr(self, 'rnnlm_fusion_type_' + str(task)):
-                        y_rnnlm = Variable(enc_out.data.new(
-                            1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
-                        y_rnnlm = getattr(self, 'rnnlm' + taskdir).embed(
-                            y_rnnlm)
-                        logits_step_rnnlm, rnnlm_out, rnnlm_state = getattr(self, 'rnnlm' + taskdir).predict(
-                            y_rnnlm, h=beam[i_beam]['rnnlm_state'])
-
-                    y = Variable(enc_out.data.new(
-                        1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
-                    y = getattr(self, 'embed_' + str(task))(y)
-
-                    if self.decoding_order == 'bahdanau':
-                        if t == 0:
-                            dec_out = beam[i_beam]['dec_out']
-                        else:
-                            # Recurrency
-                            dec_in = torch.cat(
-                                [y, beam[i_beam]['context_vec']], dim=-1)
-                            if getattr(self, 'rnnlm_fusion_type_' + str(task)) in ['embedding_fusion', 'state_embedding_fusion']:
-                                dec_in = torch.cat([dec_in, y_rnnlm], dim=-1)
-                            if getattr(self, 'rnnlm_fusion_type_' + str(task)) in ['state_fusion', 'state_embedding_fusion']:
-                                dec_in = torch.cat([dec_in, rnnlm_out], dim=-1)
-
-                            dec_out, hx_list, cx_list = getattr(self, 'decoder' + taskdir)(
-                                dec_in, beam[i_beam]['hx_list'], beam[i_beam]['cx_list'])
-
-                        # Score
-                        context_vec, aw_step = getattr(self, 'attend' + taskdir_att)(
-                            enc_out[b:b + 1, :x_lens[b]], x_lens[b:b + 1],
-                            dec_out, beam[i_beam]['aw_steps'][-1])
-
-                    elif self.decoding_order == 'luong':
-                        # Recurrency
-                        dec_in = torch.cat(
-                            [y, beam[i_beam]['context_vec']], dim=-1)
-                        if getattr(self, 'rnnlm_fusion_type_' + str(task)) in ['embedding_fusion', 'state_embedding_fusion']:
-                            dec_in = torch.cat([dec_in, y_rnnlm], dim=-1)
-                        if getattr(self, 'rnnlm_fusion_type_' + str(task)) in ['state_fusion', 'state_embedding_fusion']:
-                            dec_in = torch.cat([dec_in, rnnlm_out], dim=-1)
-
-                        dec_out, hx_list, cx_list = getattr(self, 'decoder' + taskdir)(
-                            dec_in, beam[i_beam]['hx_list'], beam[i_beam]['cx_list'])
-
-                        # Score
-                        context_vec, aw_step = getattr(self, 'attend' + taskdir_att)(
-                            enc_out[b:b + 1, :x_lens[b]], x_lens[b:b + 1],
-                            dec_out, beam[i_beam]['aw_steps'][-1])
-
-                    elif self.decoding_order == 'conditional':
-                        # Recurrency of the first decoder
-                        dec_in_first = y
-                        if getattr(self, 'rnnlm_fusion_type_' + str(task)) in ['embedding_fusion', 'state_embedding_fusion']:
-                            dec_in_first = torch.cat(
-                                [dec_in_first, y_rnnlm], dim=-1)
-                        _dec_out, _hx_list, _cx_list = getattr(self, 'decoder_first' + taskdir)(
-                            dec_in_first, beam[i_beam]['hx_list'], beam[i_beam]['cx_list'])
-
-                        # Score
-                        context_vec, aw_step = getattr(self, 'attend' + taskdir_att)(
-                            enc_out[b:b + 1, :x_lens[b]], x_lens[b:b + 1],
-                            _dec_out, beam[i_beam]['aw_steps'][-1])
-
-                        # Recurrency of the second decoder
-                        dec_in_second = context_vec
-                        if getattr(self, 'rnnlm_fusion_type_' + str(task)) in ['state_fusion', 'state_embedding_fusion']:
-                            dec_in_second = torch.cat(
-                                [dec_in_second, rnnlm_out], dim=-1)
-                        dec_out, hx_list, cx_list = getattr(self, 'decoder_second' + taskdir)(
-                            dec_in_second, _hx_list, _cx_list)
-
-                    else:
-                        raise ValueError(self.decoding_order)
-
-                    # Generate
-                    logits_step = getattr(self, 'W_d' + taskdir)(dec_out)
-                    if 'c' in self.generate_feature:
-                        logits_step += getattr(self,
-                                               'W_c' + taskdir)(context_vec)
-                    if 'y' in self.generate_feature:
-                        logits_step += getattr(self, 'W_y' + taskdir)(y)
-
-                    # RNNLM fusion
-                    if getattr(self, 'rnnlm_fusion_type_' + str(task)) == 'cold_fusion_simple':
-                        # Fine-grained gating
-                        gate = F.sigmoid(getattr(self, 'W_rnnlm_gate' + taskdir)(
-                            torch.cat([dec_out, rnnlm_out], dim=-1)))
-                        logits_step += getattr(self, 'W_rnnlm' + taskdir)(
-                            torch.mul(gate, rnnlm_out))
-                    elif getattr(self, 'rnnlm_fusion_type_' + str(task)) == 'cold_fusion':
-                        # Prob injection
-                        rnnlm_feat = getattr(self, 'W_rnnlm_logits' + taskdir)(
-                            logits_step_rnnlm)
-                        # Fine-grained gating
-                        gate = F.sigmoid(getattr(self, 'W_rnnlm_gate' + taskdir)(
-                            torch.cat([dec_out, rnnlm_feat], dim=-1)))
-                        logits_step += getattr(self, 'W_rnnlm' + taskdir)(
-                            torch.mul(gate, rnnlm_out))
-                        if getattr(self, 'bottleneck_dim_' + str(task)) == 0:
-                            logits_step = F.relu(logits_step)
-                    elif getattr(self, 'rnnlm_fusion_type_' + str(task)) == 'logits_fusion':
-                        logits_step += logits_step_rnnlm
-
-                    if getattr(self, 'bottleneck_dim_' + str(task)) > 0:
-                        if getattr(self, 'rnnlm_fusion_type_' + str(task)) == 'cold_fusion':
-                            logits_step = F.relu(logits_step)
-                        else:
-                            logits_step = F.tanh(logits_step)
-                        logits_step = getattr(self, 'fc' + taskdir)(
-                            logits_step)
-
-                    # Path through the softmax layer & convert to log-scale
-                    log_probs = F.log_softmax(logits_step.squeeze(1), dim=1)
-                    # log_probs = logits_step.squeeze(1)
-                    # NOTE: `[1 (B), 1, num_classes]` -> `[1 (B), num_classes]`
-
-                    # Pick up the top-k scores
-                    log_probs_topk, indices_topk = torch.topk(
-                        log_probs, k=beam_width, dim=1, largest=True, sorted=True)
-
-                    for k in range(beam_width):
-                        # Exclude short hypotheses
-                        if indices_topk[0, k].data[0] == eos and len(beam[i_beam]['hyp']) < min_decode_len:
-                            continue
-                        if indices_topk[0, k].data[0] == eos and len(beam[i_beam]['hyp']) < x_lens[b] * min_decode_len_ratio:
-                            continue
-
-                        # Add length penalty
-                        score = beam[i_beam]['score'] + \
-                            log_probs_topk.data[0, k] + length_penalty
-
-                        # Add coverage penalty
-                        if coverage_penalty > 0:
-                            # Recompute converage penalty in each step
-                            score -= beam[i_beam]['previous_coverage'] * \
-                                coverage_penalty
-
-                            aw_steps = torch.stack(
-                                beam[i_beam]['aw_steps'][1:] + [aw_step], dim=1)
-
-                            if getattr(self, 'num_heads_' + str(task)) > 1:
-                                cov_sum = aw_steps.data[0,
-                                                        :, :, 0].cpu().numpy()
-                                # TODO: fix for MHA
-                            else:
-                                cov_sum = aw_steps.data[0].cpu().numpy()
-                            if coverage_threshold == 0:
-                                cov_sum = np.sum(cov_sum)
-                            else:
-                                cov_sum = np.sum(cov_sum[np.where(
-                                    cov_sum > coverage_threshold)[0]])
-                            score += cov_sum * coverage_penalty
-                        else:
-                            cov_sum = 0
-
-                        # Add RNNLM score
-                        if rnnlm_weight > 0:
-                            rnnlm_log_probs = F.log_softmax(
-                                logits_step_rnnlm.squeeze(1), dim=1)
-                            assert log_probs.size() == rnnlm_log_probs.size()
-                            score += rnnlm_log_probs.data[0,
-                                                          indices_topk.data[0, k]] * rnnlm_weight
-                        else:
-                            rnnlm_state = None
-
-                        new_beam.append(
-                            {'hyp': beam[i_beam]['hyp'] + [indices_topk.data[0, k]],
-                             'score': score,
-                             'hx_list': copy.deepcopy(hx_list),
-                             'cx_list': copy.deepcopy(cx_list),
-                             'dec_out': dec_out,
-                             'context_vec': context_vec,
-                             'aw_steps': beam[i_beam]['aw_steps'] + [aw_step],
-                             'rnnlm_state': rnnlm_state,
-                             'previous_coverage': cov_sum})
-
-                new_beam = sorted(
-                    new_beam, key=lambda x: x['score'], reverse=True)
-
-                # Remove complete hypotheses
-                not_complete = []
-                for cand in new_beam[:beam_width]:
-                    if cand['hyp'][-1] == eos:
-                        complete += [cand]
-                    else:
-                        not_complete += [cand]
-
-                if len(complete) >= beam_width:
-                    complete = complete[:beam_width]
-                    break
-
-                beam = not_complete[:beam_width]
-
-            if len(complete) == 0:
-                complete = beam
-
-            complete = sorted(complete, key=lambda x: x['score'], reverse=True)
-            best_hyps += [np.array(complete[0]['hyp'][1:])]
-            aw += [complete[0]['aw_steps'][1:]]
-            y_lens[b] = len(complete[0]['hyp'][1:])
-            if complete[0]['hyp'][-1] == eos:
-                eos_flags[b] = True
-
-        # Concatenate in L dimension
-        for b in range(len(aw)):
-            aw[b] = var2np(torch.stack(aw[b], dim=1).squeeze(0))
-            if getattr(self, 'num_heads_' + str(task)) > 1:
-                aw[b] = aw[b][:, :, 0]
-                # TODO: fix for MHA
-
-        # Reverse the order
-        if dir == 'bwd':
-            best_hyps = [best_hyps[b][::-1] for b in range(batch_size)]
-            aw = [aw[b][::-1] for b in range(batch_size)]
-
-        # Exclude <EOS>
-        if exclude_eos:
-            best_hyps = [best_hyps[b][:-1] if eos_flags[b]
-                         else best_hyps[b] for b in range(batch_size)]
-
-        return best_hyps, aw
-
     def decode_ctc(self, xs, beam_width=1, task_index=0):
         """Decoding by the CTC layer in the inference stage.
+
             This is only used for Joint CTC-Attention model.
         Args:
             xs (list): A list of length `[B]`, which contains arrays of size `[T, input_size]`
@@ -1564,11 +772,12 @@ class AttentionSeq2seq(ModelBase):
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
             perm_idx (list): A list of length `[B]`
+
         """
         self.eval()
 
         # Sort by lenghts in the descending order
-        if self.encoder_type != 'cnn' or self.input_type == 'text':
+        if self.enc_type != 'cnn' or self.enc_in_type == 'text':
             perm_idx = sorted(list(range(0, len(xs), 1)),
                               key=lambda i: len(xs[i]), reverse=True)
             xs = [xs[i] for i in perm_idx]
