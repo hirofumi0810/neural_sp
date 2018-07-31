@@ -22,59 +22,59 @@ class TestAttentionLayer(unittest.TestCase):
     def test(self):
         print("Attention layer Working check.")
 
-        self.check(attention_type='content')
-        self.check(attention_type='location')
-        self.check(attention_type='dot_product')
-        # self.check(attention_type='rnn_attention')
-        # self.check(attention_type='coverage')
+        self.check(att_type='content')
+        self.check(att_type='location')
+        self.check(att_type='dot_product')
+        # self.check(att_type='rnn_attention')
+        # self.check(att_type='coverage')
 
         # multi-head attention
-        self.check(attention_type='content', num_heads=4)
-        self.check(attention_type='location', num_heads=4)
-        self.check(attention_type='dot_product', num_heads=4)
-        # self.check(attention_type='rnn_attention', num_heads=4)
-        # self.check(attention_type='coverage', num_heads=4)
+        self.check(att_type='content', n_heads=4)
+        self.check(att_type='location', n_heads=4)
+        self.check(att_type='dot_product', n_heads=4)
+        # self.check(att_type='rnn_attention', n_heads=4)
+        # self.check(att_type='coverage', n_heads=4)
 
     @measure_time
-    def check(self, attention_type, num_heads=1):
+    def check(self, att_type, n_heads=1):
 
         print('==================================================')
-        print('  attention_type: %s' % attention_type)
-        print('  num_heads: %d' % num_heads)
+        print('  att_type: %s' % att_type)
+        print('  n_heads: %d' % n_heads)
         print('==================================================')
 
         batch_size = 4
         max_time = 200
-        decoder_num_units = 256
-        encoder_num_units = decoder_num_units
+        dec_n_units = 256
+        enc_n_units = dec_n_units
 
-        if num_heads == 1:
+        if n_heads == 1:
             attend = AttentionMechanism(
-                encoder_num_units=decoder_num_units,
-                decoder_num_units=decoder_num_units,
-                attention_type=attention_type,
-                attention_dim=128,
+                enc_n_units=dec_n_units,
+                dec_n_units=dec_n_units,
+                att_type=att_type,
+                att_dim=128,
                 sharpening_factor=2,
                 sigmoid_smoothing=False,
                 out_channels=10,
                 kernel_size=101)
         else:
             attend = MultiheadAttentionMechanism(
-                encoder_num_units=decoder_num_units,
-                decoder_num_units=decoder_num_units,
-                attention_type=attention_type,
-                attention_dim=128,
+                enc_n_units=dec_n_units,
+                dec_n_units=dec_n_units,
+                att_type=att_type,
+                att_dim=128,
                 sharpening_factor=2,
                 sigmoid_smoothing=False,
                 out_channels=10,
                 kernel_size=101,
-                num_heads=num_heads)
+                n_heads=n_heads)
 
         # NOTE: not work for 0.4
-        enc_out = torch.randn((batch_size, max_time, encoder_num_units))
+        enc_out = torch.randn((batch_size, max_time, enc_n_units))
 
         x_lens = torch.ones(batch_size) * max_time
-        dec_state_step = torch.randn((batch_size, 1, decoder_num_units))
+        dec_state_step = torch.randn((batch_size, 1, dec_n_units))
         aw_step = None
 
         context_vec, aw_step = attend(enc_out,
@@ -82,9 +82,9 @@ class TestAttentionLayer(unittest.TestCase):
                                       dec_state_step,
                                       aw_step)
 
-        assert context_vec.size() == (batch_size, 1, encoder_num_units)
-        if num_heads > 1:
-            assert aw_step.size() == (batch_size, max_time, num_heads)
+        assert context_vec.size() == (batch_size, 1, enc_n_units)
+        if n_heads > 1:
+            assert aw_step.size() == (batch_size, max_time, n_heads)
         else:
             assert aw_step.size() == (batch_size, max_time)
 
