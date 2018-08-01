@@ -71,11 +71,13 @@ class ModelBase(nn.Module):
     def init_weights(self, parameter_init, distribution,
                      keys=[None], ignore_keys=[None]):
         """Initialize parameters.
+
         Args:
             parameter_init (float):
             distribution (string): uniform or normal or orthogonal or constant
             keys (list):
             ignore_keys (list):
+
         """
         for name, param in self.named_parameters():
             if keys != [None] and len(list(filter(lambda k: k in name, keys))) == 0:
@@ -85,8 +87,7 @@ class ModelBase(nn.Module):
                 continue
 
             if distribution == 'uniform':
-                nn.init.uniform(
-                    param.data, a=-parameter_init, b=parameter_init)
+                nn.init.uniform(param.data, a=-parameter_init, b=parameter_init)
             elif distribution == 'normal':
                 assert parameter_init > 0
                 torch.nn.init.normal(param.data, mean=0, std=parameter_init)
@@ -126,9 +127,11 @@ class ModelBase(nn.Module):
 
     def set_cuda(self, deterministic=False, benchmark=True):
         """Set model to the GPU version.
+
         Args:
             deterministic (bool):
             benchmark (bool):
+
         """
         if self.use_cuda:
             if benchmark:
@@ -148,6 +151,7 @@ class ModelBase(nn.Module):
                       weight_decay=0, clip_grad_norm=5,
                       lr_schedule=True, factor=0.1, patience_epoch=5):
         """Set optimizer.
+
         Args:
             optimizer (string): sgd or adam or adadelta or adagrad or rmsprop
             learning_rate_init (float): An initial learning rate
@@ -159,6 +163,7 @@ class ModelBase(nn.Module):
             patience_epoch (int):
         Returns:
             scheduler ():
+
         """
         optimizer = optimizer.lower()
         parameters = [p for p in self.parameters() if p.requires_grad]
@@ -207,18 +212,17 @@ class ModelBase(nn.Module):
 
         if lr_schedule:
             # scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            scheduler = ReduceLROnPlateau(
-                self.optimizer,
-                mode='min',
-                factor=factor,
-                patience=patience_epoch,
-                verbose=False,
-                threshold=0.0001,
-                threshold_mode='rel',
-                cooldown=0,
-                min_lr=0,
-                eps=1e-08)
-            # TODO: fix bug
+            scheduler = ReduceLROnPlateau(self.optimizer,
+                                          mode='min',
+                                          factor=factor,
+                                          patience=patience_epoch,
+                                          verbose=False,
+                                          threshold=0.0001,
+                                          threshold_mode='rel',
+                                          cooldown=0,
+                                          min_lr=0,
+                                          eps=1e-08)
+            # TODO(hirofumi): fix bug
         else:
             scheduler = None
 
@@ -244,6 +248,7 @@ class ModelBase(nn.Module):
     def save_checkpoint(self, save_path, epoch, step, lr, metric_dev_best,
                         remove_old_checkpoints=False):
         """Save checkpoint.
+
         Args:
             save_path (string): path to save a model (directory)
             epoch (int): the currnet epoch
@@ -254,6 +259,7 @@ class ModelBase(nn.Module):
                 other than the best one will be deleted
         Returns:
             model (string): path to the saved model (file)
+
         """
         model_path = join(save_path, 'model.epoch-' + str(epoch))
 
@@ -278,6 +284,7 @@ class ModelBase(nn.Module):
     def load_checkpoint(self, save_path, epoch=-1, restart=False,
                         load_pretrained_model=False):
         """Load checkpoint.
+
         Args:
             save_path (string): path to the saved models
             epoch (int): if -1 means the last saved model
@@ -289,6 +296,7 @@ class ModelBase(nn.Module):
             step (int): the current step
             lr (float):
             metric_dev_best (float)
+
         """
         if int(epoch) == -1:
             # Restore the last saved model
@@ -303,22 +311,20 @@ class ModelBase(nn.Module):
         checkpoint_path = join(save_path, 'model.epoch-' + str(epoch))
 
         try:
-            checkpoint = torch.load(
-                checkpoint_path, map_location=lambda storage, loc: storage)
+            checkpoint = torch.load(checkpoint_path, map_location=lambda storage, loc: storage)
         except:
             raise ValueError("No checkpoint found at %s" % checkpoint_path)
 
         # Restore parameters
         if load_pretrained_model:
-            logger.info(
-                "=> Loading pre-trained checkpoint (epoch:%d): %s" % (epoch, checkpoint_path))
+            logger.info("=> Loading pre-trained checkpoint (epoch:%d): %s" % (epoch, checkpoint_path))
 
             pretrained_dict = checkpoint['state_dict']
             model_dict = self.state_dict()
 
             # 1. filter out unnecessary keys and params which do not match size
-            pretrained_dict = {
-                k: v for k, v in pretrained_dict.items() if k in model_dict.keys() and v.size() == model_dict[k].size()}
+            pretrained_dict = {k: v for k, v in pretrained_dict.items()
+                               if k in model_dict.keys() and v.size() == model_dict[k].size()}
             # 2. overwrite entries in the existing state dict
             model_dict.update(pretrained_dict)
             # 3. load the new state dict

@@ -7,9 +7,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from src.models.pytorch_v3.encoders.rnn import RNNEncoder
 from src.models.pytorch_v3.encoders.cnn import CNNEncoder
-
+from src.models.pytorch_v3.encoders.rnn import RNNEncoder
 # from models.pytorch_v3.encoders.resnet import ResNetEncoder
 
 ENCODERS = {
@@ -21,15 +20,17 @@ ENCODERS = {
 }
 
 
-def load(encoder_type):
+def load(enc_type):
     """Load an encoder.
+
     Args:
-        encoder_type (string): name of the encoder in the key of ENCODERS
+        enc_type (string): name of the encoder in the key of ENCODERS
     Returns:
         model (nn.Module): An encoder class
+
     """
-    if encoder_type not in ENCODERS:
+    if enc_type not in ENCODERS:
         raise TypeError(
-            "encoder_type should be one of [%s], you provided %s." %
-            (", ".join(ENCODERS), encoder_type))
-    return ENCODERS[encoder_type]
+            "enc_type should be one of [%s], you provided %s." %
+            (", ".join(ENCODERS), enc_type))
+    return ENCODERS[enc_type]

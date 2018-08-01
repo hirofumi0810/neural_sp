@@ -15,20 +15,20 @@ import torch
 from torch.autograd import Variable
 import torch.nn.functional as F
 
-from src.models.pytorch_v3.attention.decoder import Decoder
-from src.models.pytorch_v3.base import ModelBase
-from src.models.pytorch_v3.linear import LinearND
-
-
-from src.models.pytorch_v3.encoders.load_encoder import load
 from src.models.pytorch_v3.attention.attention_layer import AttentionMechanism
 from src.models.pytorch_v3.attention.attention_layer import MultiheadAttentionMechanism
-from src.models.pytorch_v3.criterion import cross_entropy_label_smoothing
-from src.models.pytorch_v3.ctc.decoders.greedy_decoder import GreedyDecoder
+from src.models.pytorch_v3.attention.decoder import Decoder
+from src.models.pytorch_v3.base import ModelBase
 from src.models.pytorch_v3.ctc.decoders.beam_search_decoder import BeamSearchDecoder
+from src.models.pytorch_v3.ctc.decoders.greedy_decoder import GreedyDecoder
+from src.models.pytorch_v3.encoders.load_encoder import load
 from src.models.pytorch_v3.linear import Embedding
+from src.models.pytorch_v3.linear import LinearND
 from src.models.pytorch_v3.lm.rnnlm import RNNLM
-from src.models.pytorch_v3.utils import np2var, var2np, pad_list
+from src.models.pytorch_v3.utils import np2var
+from src.models.pytorch_v3.utils import pad_list
+from src.models.pytorch_v3.utils import var2np
+
 from src.utils.io.inputs.frame_stacking import stack_frame
 from src.utils.io.inputs.splicing import do_splice
 
@@ -51,7 +51,7 @@ class AttentionSeq2seq(ModelBase):
         conv_strides (list): strides in the convolution
         conv_poolings (list): the size of poolings in the convolution
         conv_batch_norm (bool):
-        enc_type (string): the type of the encoder. Set lstm or gru or rnn.
+        enc_type (string): the type of the encoder. Set lstm or gru.
         enc_bidirectional (bool): if True, create a bidirectional encoder
         enc_n_units (int): the number of units in each layer of the encoder
         enc_n_projs (int): the number of nodes in the projection layer of the encoder
@@ -83,9 +83,10 @@ class AttentionSeq2seq(ModelBase):
         n_classes (int): the number of nodes in softmax layer (excluding <SOS> and <EOS> classes)
                 param_init_dist (string): uniform or normal or orthogonal or constant distribution
         logits_temp (float): a parameter for smoothing the softmax layer in outputing probabilities
+
         param_init (float): Range of uniform distribution to initialize weight parameters
         param_init_dist (string):
-        recurrent_weight_orthogonal (bool): if True, recurrent weights are orthogonalized
+        rec_weight_orthogonal (bool): if True, recurrent weights are orthogonalized
         init_forget_gate_bias_with_one (bool): if True, initialize the forget gate bias with 1
         dropout_in (float): the probability to drop nodes in input-hidden connection
         dropout_enc (float): the probability to drop nodes in hidden-hidden connection of the encoder
@@ -95,10 +96,11 @@ class AttentionSeq2seq(ModelBase):
         lsm_prob (float):
         lsm_type (string): uniform or unigram
         weight_noise_std (flaot):
-        coverage_weight (float): the weight parameter for coverage computation
+        cov_weight (float): the weight parameter for coverage computation
         ctc_loss_weight (float): A weight parameter for auxiliary CTC loss
-        backward_loss_weight (int): A weight parameter for the loss of the backward decdoer,
+        bwd_loss_weight (int): A weight parameter for the loss of the backward decdoer,
             where the model predicts each token in the reverse order
+
         lm_fusion (string):
             False:
             cold_fusion_prob:
@@ -151,7 +153,7 @@ class AttentionSeq2seq(ModelBase):
                  logits_temp,
                  param_init,
                  param_init_dist,
-                 recurrent_weight_orthogonal,
+                 rec_weight_orthogonal,
                  init_forget_gate_bias_with_one,
                  dropout_in,
                  dropout_enc,
@@ -161,15 +163,15 @@ class AttentionSeq2seq(ModelBase):
                  lsm_prob,
                  lsm_type,
                  weight_noise_std,
-                 coverage_weight,
+                 cov_weight,
                  ctc_loss_weight,
-                 backward_loss_weight,
-                 lm_fusion,
-                 lm_config,
-                 lm_loss_weight,
-                 lm_init,
-                 finetune_gate,
-                 n_classes_in):
+                 bwd_loss_weight,
+                 lm_fusion='',
+                 lm_config=None,
+                 lm_loss_weight=0,
+                 lm_init=False,
+                 finetune_gate=False,
+                 n_classes_in=-1):
 
         super(ModelBase, self).__init__()
         self.model_type = 'attention'
@@ -184,13 +186,8 @@ class AttentionSeq2seq(ModelBase):
         self.enc_n_units = enc_n_units
         if enc_bidirectional:
             self.enc_n_units *= 2
-        if enc_n_projs:
-            self.enc_n_units = enc_n_projs
 
         # Setting for the attention
-        self.sharpening_factor = sharpening_factor
-        self.sigmoid_smoothing = sigmoid_smoothing
-        self.coverage_weight = coverage_weight
         self.att_n_heads_0 = att_n_heads
         self.share_att = False
 
@@ -198,74 +195,39 @@ class AttentionSeq2seq(ModelBase):
         self.n_classes = n_classes + 1  # Add <EOS> class
         self.sos_0 = n_classes
         self.eos_0 = n_classes
-        self.pad_index = -1024
         # NOTE: <SOS> and <EOS> have the same index
-        assert 0 <= backward_loss_weight <= 1
-        self.fwd_weight_0 = 1 - backward_loss_weight
-        self.bwd_weight_0 = backward_loss_weight
-
-        self.logits_temp = logits_temp
 
         # Setting for regularization
-        self.weight_noise_injection = False
         self.weight_noise_std = float(weight_noise_std)
-        self.ss_prob = ss_prob
-        self.lsm_prob = lsm_prob
-        self.ls_type = lsm_type
+        self.weight_noise_injection = False
 
         # Setting for MTL
-        self.ctc_loss_weight = ctc_loss_weight
+        self.ctc_loss_weight_0 = ctc_loss_weight
         if ctc_loss_weight > 0:
-            from src.models.pytorch_v3.ctc.ctc import my_warpctc
-            self.warp_ctc = my_warpctc
+            from src.models.pytorch_v3.ctc.ctc import warpctc
+            self.warp_ctc = warpctc
+
+        assert 0 <= bwd_loss_weight <= 1
+        self.fwd_weight_0 = 1 - bwd_loss_weight
+        self.bwd_weight_0 = bwd_loss_weight
 
         # Setting for the RNNLM fusion
-        if lm_fusion and lm_config is not None:
-            self.lm_fusion_type_0 = lm_fusion
-        else:
-            self.lm_fusion_type_0 = False
-        self.rnnlm_0_fwd = None
-        self.rnnlm_0_bwd = None
-        self.rnnlm_weight_0 = lm_loss_weight
-        if lm_init and lm_config is not None:
-            self.rnnlm_init_0 = lm_init
-        else:
-            self.rnnlm_init_0 = False
+        self.lm_fusion = lm_fusion
+        self.lm_init_0 = lm_init
+        if lm_fusion or lm_init:
+            assert lm_config is not None
 
         # Setting for text input
         self.n_classes_in = n_classes_in + 1
 
-        # RNNLM fusion
-        if self.lm_fusion_type_0 or self.rnnlm_init_0:
-            self.rnnlm_0_fwd = RNNLM(
-                emb_dim=lm_config['emb_dim'],
-                rnn_type=lm_config['rnn_type'],
-                bidirectional=lm_config['bidirectional'],
-                n_units=lm_config['n_units'],
-                n_layers=lm_config['n_layers'],
-                dropout_emb=lm_config['dropout_emb'],
-                dropout_hidden=lm_config['dropout_hidden'],
-                dropout_out=lm_config['dropout_out'],
-                n_classes=lm_config['n_classes'],
-                param_init_dist=lm_config['param_init_dist'],
-                param_init=lm_config['param_init'],
-                recurrent_weight_orthogonal=lm_config['recurrent_weight_orthogonal'],
-                init_forget_gate_bias_with_one=lm_config['init_forget_gate_bias_with_one'],
-                lsm_prob=lm_config['lsm_prob'],
-                tie_weights=lm_config['tie_weights'],
-                residual_connection=lm_config['residual_connection'],
-                backward=lm_config['backward'])
-
-            # TODO(hirofumi): cold fusion for backward RNNLM
-
         # Encoder
-        if enc_type in ['lstm', 'gru', 'rnn']:
+        if enc_type in ['lstm', 'gru']:
             self.enc = load(enc_type=enc_type)(
                 input_size=enc_in_size,
                 rnn_type=enc_type,
                 bidirectional=enc_bidirectional,
                 n_units=enc_n_units,
-                n_proj=enc_n_projs,
+                n_projs=enc_n_projs,
                 n_layers=enc_n_layers,
                 dropout_in=dropout_in,
                 dropout_hidden=dropout_enc,
@@ -281,18 +243,18 @@ class AttentionSeq2seq(ModelBase):
                 conv_kernel_sizes=conv_kernel_sizes,
                 conv_strides=conv_strides,
                 conv_poolings=conv_poolings,
-                batch_norm=conv_batch_norm,
+                conv_batch_norm=conv_batch_norm,
                 residual=enc_residual,
                 nin=0)
         elif enc_type == 'cnn':
             assert n_stack == 1 and n_splice == 1
             self.enc = load(enc_type='cnn')(
                 input_size=enc_in_size,
-                conv_in_channel=conv_in_channel,
-                conv_channels=conv_channels,
-                conv_kernel_sizes=conv_kernel_sizes,
-                conv_strides=conv_strides,
-                conv_poolings=conv_poolings,
+                in_channel=conv_in_channel,
+                channels=conv_channels,
+                kernel_sizes=conv_kernel_sizes,
+                strides=conv_strides,
+                poolings=conv_poolings,
                 dropout_in=dropout_in,
                 dropout_hidden=dropout_enc,
                 batch_norm=conv_batch_norm)
@@ -340,6 +302,30 @@ class AttentionSeq2seq(ModelBase):
                     out_channels=att_conv_n_channels,
                     kernel_size=att_conv_width)
 
+            # RNNLM fusion
+            if (lm_fusion or self.lm_init_0)and dir == 'fwd':
+                rnnlm = RNNLM(
+                    emb_dim=lm_config['emb_dim'],
+                    rnn_type=lm_config['rnn_type'],
+                    bidirectional=lm_config['bidirectional'],  # False
+                    n_units=lm_config['n_units'],
+                    n_layers=lm_config['n_layers'],
+                    dropout_emb=lm_config['dropout_emb'],
+                    dropout_hidden=lm_config['dropout_hidden'],
+                    dropout_out=lm_config['dropout_out'],
+                    n_classes=lm_config['n_classes'],
+                    param_init_dist=lm_config['param_init_dist'],
+                    param_init=lm_config['param_init'],
+                    rec_weight_orthogonal=lm_config['rec_weight_orthogonal'],
+                    init_forget_gate_bias_with_one=lm_config['init_forget_gate_bias_with_one'],
+                    lsm_prob=lm_config['lsm_prob'],
+                    tie_weights=lm_config['tie_weights'],
+                    residual=lm_config['residual'],
+                    backward=lm_config['backward'])
+                # TODO(hirofumi): cold fusion for backward RNNLM
+            else:
+                rnnlm = None
+
             # Decoder
             setattr(self, 'dec_0_' + dir, Decoder(
                 score_fn=att,
@@ -349,16 +335,22 @@ class AttentionSeq2seq(ModelBase):
                 rnn_type=dec_type,
                 n_units=dec_n_units,
                 n_layers=dec_n_layers,
+                residual=dec_residual,
                 emb_dim=emb_dim,
                 bottle_dim=bottle_dim,
                 generate_feat=generate_feat,
                 n_classes=self.n_classes,
+                logits_temp=logits_temp,
                 dropout_dec=dropout_dec,
                 dropout_emb=dropout_emb,
-                residual=dec_residual,
-                cov_weight=coverage_weight,
+                ss_prob=ss_prob,
+                lsm_prob=lsm_prob,
+                lsm_type=lsm_type,
+                cov_weight=cov_weight,
+                backward=(dir == 'bwd'),
                 lm_fusion=lm_fusion,
-            ))
+                lm_loss_weight=lm_loss_weight,
+                rnnlm=rnnlm))
 
         if enc_in_type == 'text':
             self.embed_in = Embedding(num_classes=n_classes_in,
@@ -379,8 +371,8 @@ class AttentionSeq2seq(ModelBase):
             # TODO(hirofumi): set space index
 
         # Fix all parameters except for gate
-        if self.lm_fusion_type_0 and finetune_gate:
-            assert self.lm_fusion_type_0 in ['cold_fusion_prob', 'cold_fusion_hidden']
+        if lm_fusion and finetune_gate:
+            assert lm_fusion in ['cold_fusion_prob', 'cold_fusion_hidden']
             fix_params = ['fc_dec', 'fc_cv', 'fc_bottle',
                           'fc_cf_lm_logits', 'fc_cf_gate', 'fc_cf_gated_lm']
 
@@ -396,7 +388,7 @@ class AttentionSeq2seq(ModelBase):
         self.init_weights(0, distribution='constant', keys=['bias'])
 
         # Recurrent weights are orthogonalized
-        if recurrent_weight_orthogonal:
+        if rec_weight_orthogonal:
             # encoder
             if enc_type != 'cnn':
                 self.init_weights(param_init, distribution='orthogonal',
@@ -410,7 +402,7 @@ class AttentionSeq2seq(ModelBase):
             self.init_forget_gate_bias_with_one()
 
         # Initialize bias in gating with -1
-        if self.lm_fusion_type_0 in ['cold_fusion_prob', 'cold_fusion_hidden']:
+        if lm_fusion in ['cold_fusion_prob', 'cold_fusion_hidden']:
             self.init_weights(-1, distribution='constant', keys=['fc_cf_gate.fc.bias'])
 
     def forward(self, xs, ys, is_eval=False):
@@ -444,21 +436,13 @@ class AttentionSeq2seq(ModelBase):
             # NOTE: must be descending order for pack_padded_sequence
             # NOTE: assumed that xs is already sorted in the training stage
 
-        if self.fwd_weight_0 > 0 or self.ctc_loss_weight > 0:
-            ys_fwd = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()
-                      for y in ys]
-        if self.bwd_weight_0 > 0:
-            ys_bwd = [np2var(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long()
-                      for y in ys]
-            # NOTE: reverse the order
-
         # Encode input features
         xs, x_lens = self._encode(xs)
 
         # Compute XE loss for the forward decoder
         if self.fwd_weight_0 > 0:
-            loss, acc = self.compute_xe_loss(
-                xs, ys_fwd, x_lens, task=0, dir='fwd')
+            ys_fwd = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()for y in ys]
+            loss, acc = self.dec_0_fwd(xs, x_lens, ys_fwd)
             loss *= self.fwd_weight_0
             acc *= self.fwd_weight_0
         else:
@@ -467,102 +451,29 @@ class AttentionSeq2seq(ModelBase):
 
         # Compute XE loss for the backward decoder
         if self.bwd_weight_0 > 0:
-            loss_bwd, acc_bwd = self.compute_xe_loss(
-                xs, ys_bwd, x_lens, task=0, dir='bwd')
+            # Reverse the order
+            ys_bwd = [np2var(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long()for y in ys]
+            loss_bwd, acc_bwd = self.dec_0_bwd(xs, x_lens, ys_bwd)
             loss += loss_bwd * self.bwd_weight_0
             acc += acc_bwd * self.bwd_weight_0
 
         # Auxiliary CTC loss
-        if self.ctc_loss_weight > 0:
-            loss += self.compute_ctc_loss(
-                xs, ys_fwd, x_lens) * self.ctc_loss_weight
+        if self.ctc_loss_weight_0 > 0:
+            if self.fwd_weight_0 == 0:
+                ys_fwd = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
+            loss += self.compute_ctc_loss(xs, x_lens, ys_fwd, task=0) * self.ctc_loss_weight_0
 
         return loss, acc
 
-    def compute_xe_loss(self, enc_out, ys, x_lens):
-        """Compute XE loss.
-
-        Args:
-            enc_out (torch.autograd.Variable, float): A tensor of size
-                `[B, T, enc_n_units]`
-            ys (list): A list of length `[B]`, which contains Variables of size `[L]`
-            x_lens (list): A list of length `[B]`
-            task (int): the index of a task
-            dir (str): fwd or bwd
-        Returns:
-            loss (torch.autograd.Variable, float): A tensor of size `[1]`
-            acc (float): Token-level accuracy in teacher-forcing
-
-        """
-        sos = Variable(enc_out.data.new(1,).fill_(getattr(self, 'sos_' + str(task))).long())
-        eos = Variable(enc_out.data.new(1,).fill_(getattr(self, 'eos_' + str(task))).long())
-
-        # Append <SOS> and <EOS>
-        ys_in = [torch.cat([sos, y], dim=0) for y in ys]
-        ys_out = [torch.cat([y, eos], dim=0) for y in ys]
-
-        # Convert list to Variable
-        ys_in = pad_list(ys_in, getattr(self, 'eos_' + str(task)))
-        ys_out = pad_list(ys_out, self.pad_index)
-
-        # NOTE: change RNNLM to the evaluation mode in case of cold fusion
-        if getattr(self, 'rnnlm_fusion_type_' + str(task)) and getattr(self, 'rnnlm_' + str(task) + '_' + dir) == 0:
-            getattr(self, 'rnnlm_' + str(task) + '_' + dir).eval()
-
-        # Teacher-forcing
-        logits, aw, logits_rnnlm = self._decode_train(enc_out, x_lens, ys_i)
-
-        # Output smoothing
-        if self.logits_temp != 1:
-            logits /= self.logits_temp
-
-        # Compute XE sequence loss
-        if self.lsm_prob > 0:
-            # Label smoothing
-            y_lens = [y.size(0) + 1 for y in ys]   # Add <EOS>
-            loss = cross_entropy_label_smoothing(
-                logits, ys=ys_out, y_lens=y_lens,
-                lsm_prob=self.lsm_prob,
-                lsm_type=self.ls_type, size_average=True)
-        else:
-            loss = F.cross_entropy(
-                input=logits.view((-1, logits.size(2))),
-                target=ys_out.view(-1),  # long
-                ignore_index=self.pad_index, size_average=False) / len(enc_out)
-
-        # Compute XE loss for RNNLM
-        if getattr(self, 'rnnlm_fusion_type_' + str(task)) and getattr(self, 'rnnlm_weight_' + str(task)) > 0:
-            if dir == 'fwd':
-                loss_rnnlm = F.cross_entropy(
-                    input=logits_rnnlm.view((-1, logits_rnnlm.size(2))),
-                    target=ys_out.contiguous().view(-1),
-                    ignore_index=self.pad_index, size_average=True)
-                loss += loss_rnnlm * getattr(self, 'rnnlm_weight_' + str(task))
-
-        # Add coverage term
-        if self.coverage_weight > 0:
-            raise NotImplementedError
-
-        # Compute token-level accuracy in teacher-forcing
-        pad_pred = logits.data.view(ys_out.size(
-            0), ys_out.size(1), logits.size(-1)).max(2)[1]
-        mask = ys_out.data != self.pad_index
-        numerator = torch.sum(pad_pred.masked_select(
-            mask) == ys_out.data.masked_select(mask))
-        denominator = torch.sum(mask)
-        acc = float(numerator) / float(denominator)
-
-        return loss, acc
-
-    def compute_ctc_loss(self, enc_out, ys, x_lens, task=0):
+    def compute_ctc_loss(self, enc_out, x_lens, ys, task):
         """Compute CTC loss.
 
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T, enc_n_units]`
+            x_lens (list): A list of length `[B]`
             ys (torch.autograd.Variable, long): A tensor of size `[B, L]`,
                 which does not include <SOS> nor <EOS>
-            x_lens (list): A list of length `[B]`
             task (int): the index of a task
         Returns:
             loss (torch.autograd.Variable, float): A tensor of size `[1]`
@@ -574,18 +485,18 @@ class AttentionSeq2seq(ModelBase):
         # NOTE: do not copy to GPUs
 
         # Concatenate all elements in ys for warpctc_pytorch
-        ys_ctc = torch.cat(ys, dim=0).cpu().int() + 1
+        ys_ctc = torch.cat(ys, dim=0).int() + 1
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
         # Path through the fully-connected layer
         logits = getattr(self, 'fc_ctc_' + str(task))(enc_out)
 
         # Compute CTC loss
-        loss = self.warp_ctc(logits.transpose(0, 1),  # time-major
-                             ys_ctc,  # int
+        loss = self.warp_ctc(logits.transpose(0, 1).cpu(),  # time-major
+                             ys_ctc.cpu(),  # int
                              x_lens,  # int
-                             y_lens,  # int
-                             size_average=False) / len(enc_out)
+                             y_lens)  # int
+        # NOTE: ctc loss has already been normalized by batch_size
 
         if self.device_id >= 0:
             loss = loss.cuda(self.device_id)
@@ -611,8 +522,7 @@ class AttentionSeq2seq(ModelBase):
         if self.enc_in_type == 'speech':
             # Frame stacking
             if self.n_stack > 1:
-                xs = [stack_frame(x, self.n_stack, self.n_skip)
-                      for x in xs]
+                xs = [stack_frame(x, self.n_stack, self.n_skip)for x in xs]
 
             # Splicing
             if self.n_splice > 1:
@@ -626,8 +536,7 @@ class AttentionSeq2seq(ModelBase):
         elif self.enc_in_type == 'text':
             # Wrap by Variable
             x_lens = [len(x) for x in xs]
-            xs = [np2var(np.fromiter(x, dtype=np.int64), self.device_id).long()
-                  for x in xs]
+            xs = [np2var(np.fromiter(x, dtype=np.int64), self.device_id).long() for x in xs]
             xs = pad_list(xs, self.n_classes_in - 1)
             xs = self.embed_in(xs)
 
@@ -637,14 +546,12 @@ class AttentionSeq2seq(ModelBase):
                 xs_sub = xs.clone()
                 x_lens_sub = copy.deepcopy(x_lens)
             else:
-                xs, x_lens, xs_sub, x_lens_sub = self.enc(
-                    xs, x_lens, volatile=not self.training)
+                xs, x_lens, xs_sub, x_lens_sub = self.enc(xs, x_lens, volatile=not self.training)
         else:
             if self.enc_type == 'cnn':
                 xs, x_lens = self.enc(xs, x_lens)
             else:
-                xs, x_lens = self.enc(
-                    xs, x_lens, volatile=not self.training)
+                xs, x_lens = self.enc(xs, x_lens, volatile=not self.training)
 
         # Bridge between the encoder and decoder in the main task
         if self.is_bridge:
@@ -657,21 +564,20 @@ class AttentionSeq2seq(ModelBase):
         else:
             return xs, x_lens
 
-    def decode(self, xs, beam_width,
-               min_len_ratio=0, length_penalty=0, coverage_penalty=0, coverage_threshold=0,
-               lm_loss_weight=0, task_index=0, resolving_unk=False,
-               exclude_eos=True):
+    def decode(self, xs, beam_width, min_len_ratio=0, max_len_ratio=1,
+               length_penalty=0, coverage_penalty=0, coverage_threshold=0,
+               lm_weight=0, task_index=0, resolving_unk=False, exclude_eos=True):
         """Decoding in the inference stage.
 
         Args:
             xs (list): A list of length `[B]`, which contains arrays of size `[T, input_size]`
             beam_width (int): the size of beam
             min_len_ratio (float):
-            min_len_ratio (float):
+            max_len_ratio (float):
             length_penalty (float): length penalty
             coverage_penalty (float): coverage penalty
             coverage_threshold (float): threshold for coverage penalty
-            lm_loss_weight (float): the weight of RNNLM score
+            lm_weight (float): the weight of RNNLM score
             task_index (int): not used (to make compatible)
             resolving_unk (bool): not used (to make compatible)
             exclude_eos (bool): if True, exclude <EOS> from best_hyps
@@ -698,13 +604,13 @@ class AttentionSeq2seq(ModelBase):
         dir = 'fwd' if self.fwd_weight_0 >= self.bwd_weight_0 else 'bwd'
 
         if beam_width == 1:
-            best_hyps, aw = self._decode_infer_greedy(
-                enc_out, x_lens, max_decode_len, 0, dir, exclude_eos)
+            best_hyps, aw = getattr(self, 'dec_0_' + dir).greedy(
+                enc_out, x_lens, max_len_ratio, exclude_eos)
         else:
-            best_hyps, aw = self.beam_search(
-                enc_out, x_lens, beam_width, max_decode_len, min_decode_len,
-                min_len_ratio, length_penalty, coverage_penalty, coverage_threshold,
-                lm_loss_weight, 0, dir, exclude_eos)
+            best_hyps, aw = getattr(self, 'dec_0_' + dir).beam_search(
+                enc_out, x_lens, beam_width, min_len_ratio, max_len_ratio,
+                length_penalty, coverage_penalty, coverage_threshold,
+                lm_weight, exclude_eos)
 
         return best_hyps, aw, perm_idx
 
@@ -749,9 +655,8 @@ class AttentionSeq2seq(ModelBase):
         if beam_width == 1:
             best_hyps = self._decode_ctc_greedy(var2np(logits_ctc), x_lens)
         else:
-            best_hyps = self._decode_ctc_beam(
-                var2np(F.log_softmax(logits_ctc, dim=-1)),
-                x_lens, beam_width=beam_width)
+            best_hyps = self._decode_ctc_beam(var2np(F.log_softmax(logits_ctc, dim=-1)),
+                                              x_lens, beam_width=beam_width)
 
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
         best_hyps -= 1

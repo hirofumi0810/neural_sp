@@ -7,6 +7,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import six
+
 import torch
 from torch.autograd import Variable
 import torch.nn as nn
@@ -52,6 +54,7 @@ class AttentionMechanism(nn.Module):
         self.att_dim = att_dim
         self.sharpening_factor = sharpening_factor
         self.sigmoid_smoothing = sigmoid_smoothing
+        self.n_heads = 1
         self.enc_out_a = None
 
         if self.att_type == 'content':
@@ -116,12 +119,12 @@ class AttentionMechanism(nn.Module):
                 `[B, T]`
 
         """
-        batch_size, max_time = enc_out.size()[:2]
+        batch, enc_time = enc_out.size()[:2]
 
         if aw_step is None:
             volatile = enc_out.volatile
             aw_step = Variable(enc_out.data.new(
-                batch_size, max_time).fill_(0.), volatile=volatile)
+                batch, enc_time).fill_(0.), volatile=volatile)
 
         # Pre-computation of encoder-side features for computing scores
         if self.enc_out_a is None:
@@ -129,13 +132,14 @@ class AttentionMechanism(nn.Module):
 
         if self.att_type in ['content', 'location', 'coverage']:
             dec_out = dec_out.expand_as(torch.zeros(
-                (batch_size, max_time, dec_out.size(2))))
+                (batch, enc_time, dec_out.size(2))))
 
         if self.att_type == 'content':
             ##############################################################
             # energy = <v, tanh(W([h_dec; h_enc] + b))>
             ##############################################################
-            energy = self.v(F.tanh(self.enc_out_a + self.w_dec(dec_out))).squeeze(2)
+            energy = self.v(F.tanh(
+                self.enc_out_a + self.w_dec(dec_out))).squeeze(2)
 
         elif self.att_type == 'location':
             ##############################################################
@@ -145,14 +149,14 @@ class AttentionMechanism(nn.Module):
             # For 1D conv
             # conv_feat = self.conv(aw_step[:, :].contiguous().unsqueeze(dim=1))
             # For 2D conv
-            conv_feat = self.conv(aw_step.view(batch_size, 1, 1, max_time)).squeeze(2)
+            conv_feat = self.conv(aw_step.view(batch, 1, 1, enc_time)).squeeze(2)
             # -> `[B, out_channels, T]`
 
             conv_feat = conv_feat.transpose(1, 2).contiguous()
             # -> `[B, T, out_channels]`
 
-            energy = self.v(F.tanh(self.enc_out_a + self.w_dec(dec_out) +
-                                   self.w_conv(conv_feat))).squeeze(2)
+            energy = self.v(F.tanh(
+                self.enc_out_a + self.w_dec(dec_out) + self.w_conv(conv_feat))).squeeze(2)
 
         elif self.att_type == 'dot_product':
             ##############################################################
@@ -174,17 +178,16 @@ class AttentionMechanism(nn.Module):
             else:
                 self.aw_cumsum += aw_step
 
-            energy = self.v(F.tanh(self.enc_out_a[:, :, :] +
-                                   self.w_dec(dec_out) +
-                                   self.w_cov(self.aw_cumsum))).squeeze(2)
+            energy = self.v(F.tanh(
+                self.enc_out_a[:, :, :] + self.w_dec(dec_out) + self.w_cov(self.aw_cumsum))).squeeze(2)
 
         else:
             raise NotImplementedError
 
         # Mask attention distribution
-        energy_mask = Variable(enc_out.data.new(batch_size, max_time).fill_(1))
-        for b in range(batch_size):
-            if x_lens[b] < max_time:
+        energy_mask = Variable(enc_out.data.new(batch, enc_time).fill_(1))
+        for b in six.moves.range(batch):
+            if x_lens[b] < enc_time:
                 energy_mask.data[b, x_lens[b]:] = 0
 
         energy *= energy_mask
@@ -196,7 +199,7 @@ class AttentionMechanism(nn.Module):
         # Compute attention weights
         if self.sigmoid_smoothing:
             aw_step = F.sigmoid(energy)
-            # for b in range(batch_size):
+            # for b in six.moves.range(batch):
             #     aw_step.data[b] /= aw_step.data[b].sum()
         else:
             aw_step = F.softmax(energy, dim=-1)
@@ -249,7 +252,7 @@ class MultiheadAttentionMechanism(nn.Module):
 
         self.w_mha = LinearND(enc_n_units * n_heads, enc_n_units)
 
-        for h in range(n_heads):
+        for h in six.moves.range(n_heads):
             if self.att_type == 'content':
                 setattr(self, 'w_enc_head' + str(h), LinearND(enc_n_units, att_dim, bias=True))
                 setattr(self, 'w_dec_head' + str(h), LinearND(dec_n_units, att_dim, bias=False))
@@ -315,25 +318,25 @@ class MultiheadAttentionMechanism(nn.Module):
                 `[B, T, n_heads]`
 
         """
-        batch_size, max_time = enc_out.size()[:2]
+        batch, enc_time = enc_out.size()[:2]
 
         if aw_step is None:
             volatile = enc_out.volatile
             aw_step = Variable(enc_out.data.new(
-                batch_size, max_time, self.n_heads).fill_(0.), volatile=volatile)
+                batch, enc_time, self.n_heads).fill_(0.), volatile=volatile)
 
         # Pre-computation of encoder-side features for computing scores
         if self.enc_out_a is None:
             self.enc_out_a = []
-            for h in range(self.n_heads):
+            for h in six.moves.range(self.n_heads):
                 self.enc_out_a += [getattr(self, 'w_enc_head' + str(h))(enc_out)]
             self.enc_out_a = torch.stack(self.enc_out_a, dim=-1)
 
         if self.att_type in ['content', 'location', 'coverage']:
-            dec_out = dec_out.expand_as(torch.zeros((batch_size, max_time, dec_out.size(2))))
+            dec_out = dec_out.expand_as(torch.zeros((batch, enc_time, dec_out.size(2))))
 
         energy = []
-        for h in range(self.n_heads):
+        for h in six.moves.range(self.n_heads):
             if self.att_type == 'content':
                 ##############################################################
                 # energy = <v, tanh(W([h_dec; h_enc] + b))>
@@ -352,7 +355,7 @@ class MultiheadAttentionMechanism(nn.Module):
                 #     aw_step[:, :, h].contiguous().unsqueeze(dim=1))
                 # For 2D conv
                 conv_feat = getattr(self, 'conv_head' + str(h))(
-                    aw_step[:, :, h].contiguous().view(batch_size, 1, 1, max_time)).squeeze(2)
+                    aw_step[:, :, h].contiguous().view(batch, 1, 1, enc_time)).squeeze(2)
                 # -> `[B, out_channels, T]`
 
                 conv_feat = conv_feat.transpose(1, 2).contiguous()
@@ -395,13 +398,13 @@ class MultiheadAttentionMechanism(nn.Module):
             energy.append(energy_head)
 
         # Mask attention distribution
-        energy_mask = Variable(enc_out.data.new(batch_size, max_time).fill_(1))
-        for b in range(batch_size):
-            if x_lens[b] < max_time:
+        energy_mask = Variable(enc_out.data.new(batch, enc_time).fill_(1))
+        for b in six.moves.range(batch):
+            if x_lens[b] < enc_time:
                 energy_mask.data[b, x_lens[b]:] = 0
 
         context_vec, aw_step = [], []
-        for h in range(self.n_heads):
+        for h in six.moves.range(self.n_heads):
             energy[h] *= energy_mask
             # NOTE: energy[h]: `[B, T]`
 
@@ -411,7 +414,7 @@ class MultiheadAttentionMechanism(nn.Module):
             # Compute attention weights
             if self.sigmoid_smoothing:
                 aw_step_head = F.sigmoid(energy[h])
-                # for b in range(batch_size):
+                # for b in six.moves.range(batch):
                 #     aw_step_head.data[b] /= aw_step_head.data[b].sum()
             else:
                 aw_step_head = F.softmax(energy[h], dim=-1)

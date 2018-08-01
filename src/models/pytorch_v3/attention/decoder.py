@@ -8,6 +8,7 @@ from __future__ import division
 from __future__ import print_function
 
 import copy
+import math
 import numpy as np
 import random
 import six
@@ -18,8 +19,10 @@ import torch.nn.functional as F
 
 from src.models.pytorch_v3.attention.attention_layer import AttentionMechanism
 from src.models.pytorch_v3.attention.attention_layer import MultiheadAttentionMechanism
+from src.models.pytorch_v3.criterion import cross_entropy_lsm
 from src.models.pytorch_v3.linear import Embedding
 from src.models.pytorch_v3.linear import LinearND
+from src.models.pytorch_v3.utils import pad_list
 from src.models.pytorch_v3.utils import var2np
 
 
@@ -28,11 +31,9 @@ class Decoder(torch.nn.Module):
 
     Args:
         score_fn ():
-        dec_in_size (int): the dimension of decoder inputs
         sos
         eos
         enc_n_units ():
-        dec_in_size ():
         rnn_type (string): lstm or gru
         n_units (int): the number of units in each layer
         n_layers (int): the number of layers
@@ -40,7 +41,6 @@ class Decoder(torch.nn.Module):
         bottle_dim ():
         generate_feat ():
         n_classes ():
-        dropout (float):
         dropout_dec (float): the probability to drop nodes in the decoder
         dropout_emb (float):
         residual ():
@@ -59,16 +59,21 @@ class Decoder(torch.nn.Module):
                  rnn_type,
                  n_units,
                  n_layers,
+                 residual,
                  emb_dim,
                  bottle_dim,
                  generate_feat,
                  n_classes,
+                 logits_temp,
                  dropout_dec,
                  dropout_emb,
-                 residual,
+                 ss_prob,
+                 lsm_prob,
+                 lsm_type,
                  cov_weight,
                  backward,
                  lm_fusion,
+                 lm_loss_weight,
                  rnnlm):
 
         super(Decoder, self).__init__()
@@ -80,24 +85,31 @@ class Decoder(torch.nn.Module):
         self.rnn_type = rnn_type
         self.n_units = n_units
         self.n_layers = n_layers
+        self.residual = residual
         self.bottle_dim = bottle_dim
         self.generate_feat = generate_feat
+        self.logits_temp = logits_temp
         self.dropout_dec = dropout_dec
         self.dropout_emb = dropout_emb
-        self.residual = residual
+        self.ss_prob = ss_prob
+        self.lsm_prob = lsm_prob
+        self.lsm_type = lsm_type
         self.cov_weight = cov_weight
         self.backward = backward
         self.lm_fusion = lm_fusion
+        self.lm_loss_weight = lm_loss_weight
         self.rnnlm = rnnlm
+
+        self.pad_index = -1024
 
         # Decoder
         for i_l in six.moves.range(n_layers):
             dec_in_size = enc_n_units + emb_dim if i_l == 0 else n_units
             if rnn_type == 'lstm':
-                rnn_i = torch.nn.LSTMCell(dec_in_size=dec_in_size,
+                rnn_i = torch.nn.LSTMCell(input_size=dec_in_size,
                                           hidden_size=n_units, bias=True)
             elif rnn_type == 'gru':
-                rnn_i = torch.nn.GRUCell(dec_in_size=dec_in_size,
+                rnn_i = torch.nn.GRUCell(input_size=dec_in_size,
                                          hidden_size=n_units, bias=True)
             else:
                 raise ValueError('rnn_type must be "lstm" or "gru".')
@@ -161,14 +173,13 @@ class Decoder(torch.nn.Module):
         return dec_out, (hx_list, cx_list)
 
     def forward(self, enc_out, x_lens, ys):
-        """Decoding in the training stage.
+        """Decoding in the training stage.　Compute XE loss.
 
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T, enc_n_units]`
             x_lens (list): A list of length `[B]`
-            ys (torch.autograd.Variable, long): A tensor of size `[B, L]`,
-                which should be padded with <EOS>.
+            ys (list): A list of length `[B]`, which contains Variables of size `[L]`
         Returns:
             logits (torch.autograd.Variable, float): A tensor of size
                 `[B, L, n_classes]`
@@ -178,6 +189,21 @@ class Decoder(torch.nn.Module):
                 `[B, L, n_classes]`
 
         """
+        sos = Variable(enc_out.data.new(1,).fill_(self.sos).long())
+        eos = Variable(enc_out.data.new(1,).fill_(self.eos).long())
+
+        # Append <SOS> and <EOS>
+        ys_in = [torch.cat([sos, y], dim=0) for y in ys]
+        ys_out = [torch.cat([y, eos], dim=0) for y in ys]
+
+        # Convert list to Variable
+        ys_in_pad = pad_list(ys_in, self.eos)  # pad with <EOS>
+        ys_out_pad = pad_list(ys_out, self.pad_index)
+
+        # Set RNNLM to the evaluation mode in cold fusion
+        # if self.lm_fusion and self.lm_weight == 0:
+        #     self.rnnlm.eval()
+
         batch, enc_time, enc_n_units = enc_out.size()
 
         # Initialization
@@ -186,19 +212,14 @@ class Decoder(torch.nn.Module):
         aw_t = None
         lm_state = None
 
-        # Set RNNLM to the evaluation mode in cold fusion
-        # if self.lm_fusion and self.lm_weight == 0:
-        #     self.rnnlm.eval()
-        # TODO(hirofumi): move this
-
         # Pre-computation of embedding
-        ys_emb = self.emb(ys)
+        ys_emb = self.emb(ys_in_pad)
         if self.lm_fusion:
-            ys_lm_emb = [self.rnnlm.emb(ys[:, t:t + 1]) for t in six.moves.range(ys.size(1))]
+            ys_lm_emb = [self.rnnlm.emb(ys_in_pad[:, t:t + 1]) for t in six.moves.range(ys_in_pad.size(1))]
             ys_lm_emb = torch.cat(ys_lm_emb, dim=1)
 
         logits, aw, logits_lm = [], [], []
-        for t in six.moves.range(ys.size(1)):
+        for t in six.moves.range(ys_in_pad.size(1)):
             # Sample for scheduled sampling
             is_sample = self.ss_prob > 0 and t > 0 and random.random() < self.ss_prob
             if is_sample:
@@ -246,7 +267,7 @@ class Decoder(torch.nn.Module):
             if self.cov_weight > 0:
                 aw += [aw_t]
 
-            if t == ys.size(1) - 1:
+            if t == ys_in_pad.size(1) - 1:
                 break
 
             # Recurrency
@@ -259,7 +280,47 @@ class Decoder(torch.nn.Module):
         if self.lm_fusion:
             logits_lm = torch.cat(logits_lm, dim=1)
 
-        return logits, aw, logits_lm
+        # Output smoothing
+        if self.logits_temp != 1:
+            logits /= self.logits_temp
+
+        # Compute XE sequence loss
+        if self.lsm_prob > 0:
+            # Label smoothing
+            y_lens = [y.size(0) for y in ys_out]
+            loss = cross_entropy_lsm(
+                logits, ys=ys_out_pad, y_lens=y_lens,
+                lsm_prob=self.lsm_prob, lsm_type=self.lsm_type,
+                size_average=True)
+        else:
+            loss = F.cross_entropy(
+                input=logits.view((-1, logits.size(2))),
+                target=ys_out_pad.view(-1),  # long
+                ignore_index=self.pad_index, size_average=False) / len(enc_out)
+
+        # Compute XE loss for RNNLM
+        if self.lm_fusion and self.lm_loss_weight > 0:
+            if not self.backward:
+                loss_lm = F.cross_entropy(
+                    input=logits_lm.view((-1, logits_lm.size(2))),
+                    target=ys_out_pad.contiguous().view(-1),
+                    ignore_index=self.pad_index, size_average=True)
+                loss += loss_lm * self.lm_loss_weight
+
+        # Add coverage term
+        if self.cov_weight > 0:
+            raise NotImplementedError
+
+        # Compute token-level accuracy in teacher-forcing
+        pad_pred = logits.data.view(ys_out_pad.size(
+            0), ys_out_pad.size(1), logits.size(-1)).max(2)[1]
+        mask = ys_out_pad.data != self.pad_index
+        numerator = torch.sum(pad_pred.masked_select(
+            mask) == ys_out_pad.data.masked_select(mask))
+        denominator = torch.sum(mask)
+        acc = float(numerator) / float(denominator)
+
+        return loss, acc
 
     def recurrency(self, dec_in, dec_state):
         """Recurrency function.
@@ -329,18 +390,13 @@ class Decoder(torch.nn.Module):
         aw_t = None
         lm_state = None
 
-        # Set RNNLM to the evaluation mode in cold fusion
-        # if self.lm_fusion and self.lm_weight == 0:
-        #     self.rnnlm.eval()
-        # TODO(hirofumi): move this
-
         # Start from <SOS>
         y = Variable(enc_out.data.new(batch, 1).fill_(self.sos).long(), volatile=True)
 
         _best_hyps, _aw = [], []
         y_lens = np.zeros((batch,), dtype=np.int32)
         eos_flags = [False] * batch
-        for t in six.moves.range(enc_time * max_len_ratio + 1):
+        for t in six.moves.range(math.floor(enc_time * max_len_ratio) + 1):
             # Update RNNLM states
             if self.lm_fusion:
                 y_lm = self.rnnlm.emb(y)
@@ -394,7 +450,7 @@ class Decoder(torch.nn.Module):
 
             # Recurrency
             dec_in = torch.cat([y_emb, cv], dim=-1)
-            dec_out, dec_state = self.reccurency(dec_in, dec_state)
+            dec_out, dec_state = self.recurrency(dec_in, dec_state)
 
         # Concatenate in L dimension
         _best_hyps = torch.cat(_best_hyps, dim=1)
@@ -404,7 +460,7 @@ class Decoder(torch.nn.Module):
         _best_hyps = var2np(_best_hyps)
         _aw = var2np(_aw)
 
-        if self.n_heads > 1:
+        if self.score.n_heads > 1:
             _aw = _aw[:, :, :, 0]
             # TODO(hirofumi): fix for MHA
 
@@ -479,7 +535,7 @@ class Decoder(torch.nn.Module):
                      'aw_t_list': [None],
                      'lm_state': None,
                      'prev_cov': 0}]
-            for t in six.moves.range(x_lens[b] * max_len_ratio + 1):
+            for t in six.moves.range(math.floor(x_lens[b] * max_len_ratio) + 1):
                 new_beam = []
                 for i_beam in six.moves.range(len(beam)):
                     # Update RNNLM states
@@ -499,7 +555,7 @@ class Decoder(torch.nn.Module):
                     else:
                         # Recurrency
                         dec_in = torch.cat([y_emb, beam[i_beam]['cv']], dim=-1)
-                        dec_out, dec_state = self.reccurency(dec_in, beam[i_beam]['dec_state'])
+                        dec_out, dec_state = self.recurrency(dec_in, beam[i_beam]['dec_state'])
 
                     # Score
                     cv, aw_t = self.score(enc_out[b:b + 1, :x_lens[b]],
@@ -555,7 +611,7 @@ class Decoder(torch.nn.Module):
 
                             aw_stack = torch.stack(beam[i_beam]['aw_t_list'][1:] + [aw_t], dim=1)
 
-                            if self.n_heads > 1:
+                            if self.score.n_heads > 1:
                                 cov_sum = aw_stack.data[0, :, :, 0].cpu().numpy()
                                 # TODO(hirofumi): fix for MHA
                             else:
@@ -615,7 +671,7 @@ class Decoder(torch.nn.Module):
         # Concatenate in L dimension
         for b in six.moves.range(len(aw)):
             aw[b] = var2np(torch.stack(aw[b], dim=1).squeeze(0))
-            if self.n_heads > 1:
+            if self.score.n_heads > 1:
                 aw[b] = aw[b][:, :, 0]
                 # TODO(hirofumi): fix for MHA
 

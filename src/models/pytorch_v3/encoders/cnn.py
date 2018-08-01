@@ -7,78 +7,82 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import math
 from collections import OrderedDict
-import torch.nn as nn
+import math
 
-from src.models.pytorch_v3.encoders.cnn_utils import ConvOutSize, Maxout
+import torch
+
+from src.models.pytorch_v3.encoders.cnn_utils import ConvOutSize
+from src.models.pytorch_v3.encoders.cnn_utils import Maxout
 
 
-class CNNEncoder(nn.Module):
+class CNNEncoder(torch.nn.Module):
     """CNN encoder.
+
     Args:
         input_size (int): the dimension of input features (freq * channel)
-        input_channel (int): the number of channels of input features
-        conv_channels (list): the number of channles in CNN layers
-        conv_kernel_sizes (list): the size of kernels in CNN layers
-        conv_strides (list): strides in CNN layers
+        in_channel (int): the number of channels of input features
+        channels (list): the number of channles in CNN layers
+        kernel_sizes (list): the size of kernels in CNN layers
+        strides (list): strides in CNN layers
         poolings (list): the size of poolings in CNN layers
-        dropout_input (float): the probability to drop nodes in input-hidden connection
+        dropout_in (float): the probability to drop nodes in input-hidden connection
         dropout_hidden (float): the probability to drop nodes in hidden-hidden connection
         activation (string): relu or prelu or hard_tanh or maxout
         batch_norm (bool): if True, apply batch normalization
+
     """
 
     def __init__(self,
                  input_size,
-                 input_channel,
-                 conv_channels,
-                 conv_kernel_sizes,
-                 conv_strides,
+                 in_channel,
+                 channels,
+                 kernel_sizes,
+                 strides,
                  poolings,
-                 dropout_input,
+                 dropout_in,
                  dropout_hidden,
                  activation='relu',
                  batch_norm=False):
 
         super(CNNEncoder, self).__init__()
 
-        self.input_channel = input_channel
-        assert input_size % input_channel == 0
-        self.input_freq = input_size // input_channel
+        self.in_channel = in_channel
+        assert input_size % in_channel == 0
+        self.input_freq = input_size // in_channel
 
-        assert len(conv_channels) > 0
-        assert len(conv_channels) == len(conv_kernel_sizes)
-        assert len(conv_kernel_sizes) == len(conv_strides)
-        assert len(conv_strides) == len(poolings)
+        assert len(channels) > 0
+        assert len(channels) == len(kernel_sizes)
+        assert len(kernel_sizes) == len(strides)
+        assert len(strides) == len(poolings)
 
         # Dropout for input-hidden connection
-        self.dropout_input = nn.Dropout(p=dropout_input)
+        self.drop_in = torch.nn.Dropout(p=dropout_in)
 
         layers = OrderedDict()
-        in_c = self.input_channel
+        in_ch = self.in_channel
         in_freq = self.input_freq
         first_max_pool = True
-        for l in range(len(conv_channels)):
+        for l in range(len(channels)):
 
             # Conv
-            conv = nn.Conv2d(in_channels=in_c,
-                             out_channels=conv_channels[l],
-                             kernel_size=tuple(conv_kernel_sizes[l]),
-                             stride=tuple(conv_strides[l]),
-                             padding=tuple(conv_strides[l]),
-                             bias=not batch_norm)
+            conv = torch.nn.Conv2d(in_channels=in_ch,
+                                   out_channels=channels[l],
+                                   kernel_size=tuple(kernel_sizes[l]),
+                                   stride=tuple(strides[l]),
+                                   padding=tuple(strides[l]),
+                                   bias=not batch_norm)
             layers['conv_' + str(l)] = conv
             in_freq = math.floor(
                 (in_freq + 2 * conv.padding[0] - conv.kernel_size[0]) / conv.stride[0] + 1)
 
             # Activation
             if activation == 'relu':
-                act = nn.ReLU()
+                act = torch.nn.ReLU()
             elif activation == 'prelu':
-                act = nn.PReLU(num_parameters=1, init=0.2)
+                act = torch.nn.PReLU(num_parameters=1, init=0.2)
             elif activation == 'hard_tanh':
-                act = nn.Hardtanh(min_val=0, max_val=20, inplace=True)
+                act = torch.nn.Hardtanh(min_val=0, max_val=20, inplace=True)
             elif activation == 'maxout':
                 act = Maxout(1, 1, 2)
             else:
@@ -87,11 +91,11 @@ class CNNEncoder(nn.Module):
 
             # Max Pooling
             if len(poolings[l]) > 0:
-                pool = nn.MaxPool2d(kernel_size=tuple(poolings[l]),
-                                    stride=tuple(poolings[l]),
-                                    # padding=(1, 1),
-                                    padding=(0, 0),  # default
-                                    ceil_mode=not first_max_pool)
+                pool = torch.nn.MaxPool2d(kernel_size=tuple(poolings[l]),
+                                          stride=tuple(poolings[l]),
+                                          # padding=(1, 1),
+                                          padding=(0, 0),  # default
+                                          ceil_mode=not first_max_pool)
                 layers['pool_' + str(l)] = pool
                 # NOTE: If ceil_mode is False, remove last feature when the
                 # dimension of features are odd.
@@ -108,21 +112,21 @@ class CNNEncoder(nn.Module):
 
             # Batch Normalization
             if batch_norm:
-                layers['bn_' + str(l)] = nn.BatchNorm2d(conv_channels[l])
+                layers['bn_' + str(l)] = torch.nn.BatchNorm2d(channels[l])
 
             # Dropout for hidden-hidden connection
-            layers['drop_' + str(l)] = nn.Dropout(p=dropout_hidden)
-            # TODO: compare BN before ReLU and after ReLU
+            layers['drop_' + str(l)] = torch.nn.Dropout(p=dropout_hidden)
+            # TODO(hirofumi): compare BN before ReLU and after ReLU
 
-            # TODO: try this
-            # layers.append(nn.Dropout2d(p=dropout_hidden))
+            # TODO(hirofumi): try this
+            # layers.append(torch.nn.Dropout2d(p=dropout_hidden))
 
-            in_c = conv_channels[l]
+            in_ch = channels[l]
 
-        self.layers = nn.Sequential(layers)
+        self.layers = torch.nn.Sequential(layers)
 
         self.get_conv_out_size = ConvOutSize(self.layers)
-        self.output_size = conv_channels[-1] * in_freq
+        self.output_size = channels[-1] * in_freq
 
     def forward(self, xs, x_lens):
         """Forward computation.
@@ -135,17 +139,17 @@ class CNNEncoder(nn.Module):
                 `[B, T', feature_dim]`
             x_lens (list): A list of length `[B]`
         """
-        batch_size, max_time, input_size = xs.size()
-        # assert input_size == self.input_freq * self.input_channel
+        batch, max_time, input_size = xs.size()
+        # assert input_size == self.input_freq * self.in_channel
 
         # Dropout for inputs-hidden connection
-        xs = self.dropout_input(xs)
+        xs = self.drop_in(xs)
 
         # Reshape to 4D tensor
         xs = xs.transpose(1, 2).contiguous()
-        if self.input_channel > 1:
-            xs = xs.view(batch_size, self.input_channel,
-                         input_size // self.input_channel, max_time)
+        if self.in_channel > 1:
+            xs = xs.view(batch, self.in_channel,
+                         input_size // self.in_channel, max_time)
             # NOTE: xs: `[B, in_ch (3), freq // in_ch, max_time]`
         else:
             xs = xs.unsqueeze(1)
@@ -157,7 +161,7 @@ class CNNEncoder(nn.Module):
         # Collapse feature dimension
         output_channels, freq, time = xs.size()[1:]
         xs = xs.transpose(1, 3).contiguous()
-        xs = xs.view(batch_size, time, freq * output_channels)
+        xs = xs.view(batch, time, freq * output_channels)
 
         # Update x_lens
         x_lens = [self.get_conv_out_size(x_len, 1) for x_len in x_lens]

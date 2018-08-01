@@ -7,112 +7,103 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import numpy as np
 import copy
+import numpy as np
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from torch.nn.utils.rnn import pack_padded_sequence
+from torch.nn.utils.rnn import pad_packed_sequence
 
-from src.models.pytorch_v3.linear import LinearND
 from src.models.pytorch_v3.encoders.cnn import CNNEncoder
+from src.models.pytorch_v3.linear import LinearND
 
 
-class RNNEncoder(nn.Module):
+class RNNEncoder(torch.nn.Module):
     """RNN encoder.
+
     Args:
         input_size (int): the dimension of input features
         rnn_type (string): lstm or gru or rnn
         bidirectional (bool): if True, use the bidirectional encoder
-        num_units (int): the number of units in each layer
-        num_proj (int): the number of nodes in the projection layer
-        num_layers (int): the number of layers
-        dropout_input (float): the probability to drop nodes in input-hidden connection
+        n_units (int): the number of units in each layer
+        n_projs (int): the number of nodes in the projection layer
+        n_layers (int): the number of layers
+        dropout_in (float): the probability to drop nodes in input-hidden connection
         dropout_hidden (float): the probability to drop nodes in hidden-hidden connection
         subsample_list (list): subsample in the corresponding layers (True)
             ex.) [False, True, True, False] means that downsample is conducted
                 in the 2nd and 3rd layers.
         subsample_type (string): drop or concat
-        use_cuda (bool): if True, use GPUs
-        batch_first (bool): if True, batch-major computation will be
-            performed
+        batch_first (bool): if True, batch-major computation will be performed
         merge_bidirectional (bool): if True, sum bidirectional outputs
         pack_sequence (bool):
-        num_stack (int): the number of frames to stack
-        splice (int): frames to splice. Default is 1 frame.
-        input_channel (int): the number of channels of input features
+        n_stack (int): the number of frames to stack
+        n_splice (int): frames to splice. Default is 1 frame.
+        conv_in_channel (int): the number of channels of input features
         conv_channels (list): the number of channles in CNN layers
         conv_kernel_sizes (list): the size of kernels in CNN layers
         conv_strides (list): strides in CNN layers
-        poolings (list): the size of poolings in CNN layers
-        activation (string): The activation function of CNN layers.
-            Choose from relu or prelu or hard_tanh or maxout
-        batch_norm (bool): if True, apply batch normalization
+        conv_poolings (list): the size of poolings in CNN layers
+        conv_batch_norm (bool): if True, apply batch normalization
         residual (bool): if True, apply residual connection between each layer
-        dense_residual (bool):
-        num_layers_sub (int): the number of layers in the sub task
+        n_layers_sub (int): the number of layers in the sub task
         nin (int): if larger than 0, insert 1*1 conv (filter size: nin)
             and ReLU activation between each LSTM layer
+
     """
 
     def __init__(self,
                  input_size,
                  rnn_type,
                  bidirectional,
-                 num_units,
-                 num_proj,
-                 num_layers,
-                 dropout_input,
+                 n_units,
+                 n_projs,
+                 n_layers,
+                 dropout_in,
                  dropout_hidden,
-                 subsample_list=[],
-                 subsample_type='drop',
-                 use_cuda=False,
-                 batch_first=False,
-                 merge_bidirectional=False,
-                 pack_sequence=True,
-                 num_stack=1,
-                 splice=1,
-                 input_channel=1,
-                 conv_channels=[],
-                 conv_kernel_sizes=[],
-                 conv_strides=[],
-                 poolings=[],
-                 activation='relu',
-                 batch_norm=False,
-                 residual=False,
-                 dense_residual=False,
-                 num_layers_sub=0,
+                 subsample_list,
+                 subsample_type,
+                 batch_first,
+                 merge_bidirectional,
+                 pack_sequence,
+                 n_stack,
+                 n_splice,
+                 conv_in_channel,
+                 conv_channels,
+                 conv_kernel_sizes,
+                 conv_strides,
+                 conv_poolings,
+                 conv_batch_norm,
+                 residual,
+                 n_layers_sub=0,
                  nin=0):
 
         super(RNNEncoder, self).__init__()
 
-        if len(subsample_list) > 0 and len(subsample_list) != num_layers:
-            raise ValueError(
-                'subsample_list must be the same size as num_layers.')
+        if len(subsample_list) > 0 and len(subsample_list) != n_layers:
+            raise ValueError('subsample_list must be the same size as n_layers.')
         if subsample_type not in ['drop', 'concat']:
             raise TypeError('subsample_type must be "drop" or "concat".')
-        if num_layers_sub < 0 or (num_layers_sub > 1 and num_layers < num_layers_sub):
-            raise ValueError(
-                'Set num_layers_sub between 1 to num_layers.')
+        if n_layers_sub < 0 or (n_layers_sub > 1 and n_layers < n_layers_sub):
+            raise ValueError('Set n_layers_sub between 1 to n_layers.')
 
         self.rnn_type = rnn_type
-        self.num_units = num_units
+        self.n_units = n_units
         self.bidirectional = bidirectional
-        self.num_directions = 2 if bidirectional else 1
-        self.num_proj = num_proj if num_proj is not None else 0
-        self.num_layers = num_layers
-        self.use_cuda = use_cuda
+        self.n_directions = 2 if bidirectional else 1
+        self.n_projs = n_projs if n_projs is not None else 0
+        self.n_layers = n_layers
         self.batch_first = batch_first
         self.merge_bidirectional = merge_bidirectional
         self.pack_sequence = pack_sequence
 
         # Setting for hierarchical encoder
-        self.num_layers_sub = num_layers_sub
+        self.n_layers_sub = n_layers_sub
 
         # Setting for subsampling
         if len(subsample_list) == 0:
-            self.subsample_list = [False] * num_layers
+            self.subsample_list = [False] * n_layers
         else:
             self.subsample_list = subsample_list
         self.subsample_type = subsample_type
@@ -122,167 +113,143 @@ class RNNEncoder(nn.Module):
         #         arXiv preprint arXiv:1508.01211 (2015).
 
         # Setting for residual connection
-        assert not (residual and dense_residual)
         self.residual = residual
-        self.dense_residual = dense_residual
         subsample_last_layer = 0
         for l_reverse, is_subsample in enumerate(subsample_list[::-1]):
             if is_subsample:
-                subsample_last_layer = num_layers - l_reverse
+                subsample_last_layer = n_layers - l_reverse
                 break
         self.residual_start_layer = subsample_last_layer + 1
         # NOTE: residual connection starts from the last subsampling layer
 
         # Setting for the NiN
-        self.batch_norm = batch_norm
+        self.conv_batch_norm = conv_batch_norm
         self.nin = nin
 
         # Dropout for input-hidden connection
-        self.dropout_input = nn.Dropout(p=dropout_input)
+        self.dropout_in = torch.nn.Dropout(p=dropout_in)
 
         # Setting for CNNs before RNNs
         if len(conv_channels) > 0 and len(conv_channels) == len(conv_kernel_sizes) and len(conv_kernel_sizes) == len(conv_strides):
-            assert num_stack == 1 and splice == 1
+            assert n_stack == 1 and n_splice == 1
             self.conv = CNNEncoder(input_size,
-                                   input_channel=input_channel,
-                                   conv_channels=conv_channels,
-                                   conv_kernel_sizes=conv_kernel_sizes,
-                                   conv_strides=conv_strides,
-                                   poolings=poolings,
-                                   dropout_input=0,
+                                   in_channel=conv_in_channel,
+                                   channels=conv_channels,
+                                   kernel_sizes=conv_kernel_sizes,
+                                   strides=conv_strides,
+                                   poolings=conv_poolings,
+                                   dropout_in=0,
                                    dropout_hidden=dropout_hidden,
-                                   activation=activation,
-                                   batch_norm=batch_norm)
+                                   activation='relu',
+                                   batch_norm=conv_batch_norm)
             input_size = self.conv.output_size
         else:
-            input_size = input_size * splice * num_stack
+            input_size = input_size * n_splice * n_stack
             self.conv = None
 
         # Fast implementation without processes between each layer
-        if sum(self.subsample_list) == 0 and self.num_proj == 0 and not residual and not dense_residual and num_layers_sub == 0 and (not batch_norm) and nin == 0:
+        if sum(self.subsample_list) == 0 and self.n_projs == 0 and not residual and n_layers_sub == 0 and (not conv_batch_norm) and nin == 0:
             self.fast_impl = True
 
             if rnn_type == 'lstm':
-                rnn = nn.LSTM(input_size,
-                              hidden_size=num_units,
-                              num_layers=num_layers,
-                              bias=True,
-                              batch_first=batch_first,
-                              dropout=dropout_hidden,
-                              bidirectional=bidirectional)
+                rnn = torch.nn.LSTM(input_size,
+                                    hidden_size=n_units,
+                                    num_layers=n_layers,
+                                    bias=True,
+                                    batch_first=batch_first,
+                                    dropout=dropout_hidden,
+                                    bidirectional=bidirectional)
             elif rnn_type == 'gru':
-                rnn = nn.GRU(input_size,
-                             hidden_size=num_units,
-                             num_layers=num_layers,
-                             bias=True,
-                             batch_first=batch_first,
-                             dropout=dropout_hidden,
-                             bidirectional=bidirectional)
-            elif rnn_type == 'rnn':
-                rnn = nn.RNN(input_size,
-                             hidden_size=num_units,
-                             num_layers=num_layers,
-                             bias=True,
-                             batch_first=batch_first,
-                             dropout=dropout_hidden,
-                             bidirectional=bidirectional)
+                rnn = torch.nn.GRU(input_size,
+                                   hidden_size=n_units,
+                                   num_layers=n_layers,
+                                   bias=True,
+                                   batch_first=batch_first,
+                                   dropout=dropout_hidden,
+                                   bidirectional=bidirectional)
             else:
-                raise ValueError(
-                    'rnn_type must be "lstm" or "gru" or "rnn".')
+                raise ValueError('rnn_type must be "lstm" or "gru".')
 
             setattr(self, rnn_type, rnn)
             # NOTE: pytorch introduces a dropout layer on the outputs of
             # each RNN layer EXCEPT the last layer
 
             # Dropout for hidden-output connection
-            self.dropout_last = nn.Dropout(p=dropout_hidden)
+            self.dropout_last = torch.nn.Dropout(p=dropout_hidden)
 
         else:
             self.fast_impl = False
 
-            for l in range(num_layers):
-                if l == 0:
-                    encoder_input_size = input_size
+            for i_l in range(n_layers):
+                if i_l == 0:
+                    enc_in_size = input_size
                 elif nin > 0:
-                    encoder_input_size = nin
-                elif self.num_proj > 0:
-                    encoder_input_size = num_proj
-                    if subsample_type == 'concat' and l > 0 and self.subsample_list[l - 1]:
-                        encoder_input_size *= 2
+                    enc_in_size = nin
+                elif self.n_projs > 0:
+                    enc_in_size = n_projs
+                    if subsample_type == 'concat' and i_l > 0 and self.subsample_list[i_l - 1]:
+                        enc_in_size *= 2
                 else:
-                    encoder_input_size = num_units * self.num_directions
-                    if subsample_type == 'concat' and l > 0 and self.subsample_list[l - 1]:
-                        encoder_input_size *= 2
+                    enc_in_size = n_units * self.n_directions
+                    if subsample_type == 'concat' and i_l > 0 and self.subsample_list[i_l - 1]:
+                        enc_in_size *= 2
 
                 if rnn_type == 'lstm':
-                    rnn_i = nn.LSTM(encoder_input_size,
-                                    hidden_size=num_units,
-                                    num_layers=1,
-                                    bias=True,
-                                    batch_first=batch_first,
-                                    dropout=0,
-                                    bidirectional=bidirectional)
+                    rnn_i = torch.nn.LSTM(enc_in_size,
+                                          hidden_size=n_units,
+                                          num_layers=1,
+                                          bias=True,
+                                          batch_first=batch_first,
+                                          dropout=0,
+                                          bidirectional=bidirectional)
 
                 elif rnn_type == 'gru':
-                    rnn_i = nn.GRU(encoder_input_size,
-                                   hidden_size=num_units,
-                                   num_layers=1,
-                                   bias=True,
-                                   batch_first=batch_first,
-                                   dropout=0,
-                                   bidirectional=bidirectional)
-                elif rnn_type == 'rnn':
-                    rnn_i = nn.RNN(encoder_input_size,
-                                   hidden_size=num_units,
-                                   num_layers=1,
-                                   bias=True,
-                                   batch_first=batch_first,
-                                   dropout=0,
-                                   bidirectional=bidirectional)
+                    rnn_i = torch.nn.GRU(enc_in_size,
+                                         hidden_size=n_units,
+                                         num_layers=1,
+                                         bias=True,
+                                         batch_first=batch_first,
+                                         dropout=0,
+                                         bidirectional=bidirectional)
                 else:
-                    raise ValueError(
-                        'rnn_type must be "lstm" or "gru" or "rnn".')
+                    raise ValueError('rnn_type must be "lstm" or "gru".')
 
-                setattr(self, rnn_type + '_l' + str(l), rnn_i)
-                encoder_output_size = num_units * self.num_directions
+                setattr(self, rnn_type + '_l' + str(i_l), rnn_i)
+                enc_out_size = n_units * self.n_directions
+                # TODO(hirofumi): check this
 
                 # Dropout for hidden-hidden or hidden-output connection
-                setattr(self, 'dropout_l' + str(l),
-                        nn.Dropout(p=dropout_hidden))
+                setattr(self, 'drop_l' + str(i_l), torch.nn.Dropout(p=dropout_hidden))
 
-                if l != self.num_layers - 1 and self.num_proj > 0:
-                    proj_i = LinearND(num_units * self.num_directions, num_proj,
-                                      dropout=dropout_hidden)
-                    setattr(self, 'proj_l' + str(l), proj_i)
-                    encoder_output_size = num_proj
+                if i_l != self.n_layers - 1 and self.n_projs > 0:
+                    proj_i = LinearND(n_units * self.n_directions, n_projs)
+                    setattr(self, 'proj_l' + str(i_l), proj_i)
+                    enc_out_size = n_projs
 
                 # Network in network (1*1 conv)
                 if nin > 0:
-                    setattr(self, 'nin_l' + str(l),
-                            nn.Conv1d(in_channels=encoder_output_size,
-                                      out_channels=nin,
-                                      kernel_size=1,
-                                      stride=1,
-                                      padding=1,
-                                      bias=not batch_norm))
+                    setattr(self, 'nin_l' + str(i_l),
+                            torch.nn.Conv1d(in_channels=enc_out_size,
+                                            out_channels=nin,
+                                            kernel_size=1,
+                                            stride=1,
+                                            padding=1,
+                                            bias=not conv_batch_norm))
 
                     # Batch normalization
-                    if batch_norm:
+                    if conv_batch_norm:
                         if nin:
-                            setattr(self, 'bn_0_l' + str(l),
-                                    nn.BatchNorm1d(encoder_output_size))
-                            setattr(self, 'bn_l' + str(l),
-                                    nn.BatchNorm1d(nin))
-                        elif subsample_type == 'concat' and self.subsample_list[l]:
-                            setattr(self, 'bn_l' + str(l),
-                                    nn.BatchNorm1d(encoder_output_size * 2))
+                            setattr(self, 'bn_0_l' + str(i_l), torch.nn.BatchNorm1d(enc_out_size))
+                            setattr(self, 'bn_l' + str(i_l), torch.nn.BatchNorm1d(nin))
+                        elif subsample_type == 'concat' and self.subsample_list[i_l]:
+                            setattr(self, 'bn_l' + str(i_l), torch.nn.BatchNorm1d(enc_out_size * 2))
                         else:
-                            setattr(self, 'bn_l' + str(l),
-                                    nn.BatchNorm1d(encoder_output_size))
+                            setattr(self, 'bn_l' + str(i_l), torch.nn.BatchNorm1d(enc_out_size))
                     # NOTE* BN in RNN models is applied only after NiN
 
     def forward(self, xs, x_lens, volatile=False):
         """Forward computation.
+
         Args:
             xs (torch.autograd.Variable, float): A tensor of size
                 `[B, T, input_size]`
@@ -292,20 +259,21 @@ class RNNEncoder(nn.Module):
         Returns:
             xs (torch.autograd.Variable, float):
                 if batch_first is True, a tensor of size
-                    `[B, T // sum(subsample_list), num_units (* num_directions)]`
+                    `[B, T // sum(subsample_list), n_units (* n_directions)]`
                 else
-                    `[T // sum(subsample_list), B, num_units (* num_directions)]`
+                    `[T // sum(subsample_list), B, n_units (* n_directions)]`
             x_lens (list): A tensor of size `[B]`
             OPTION:
                 xs_sub (torch.autograd.Variable, float):
                     if batch_first is True, a tensor of size
-                        `[B, T // sum(subsample_list), num_units (* num_directions)]`
+                        `[B, T // sum(subsample_list), n_units (* n_directions)]`
                     else
-                        `[T // sum(subsample_list), B, num_units (* num_directions)]`
+                        `[T // sum(subsample_list), B, n_units (* n_directions)]`
                 x_lens_sub (list): A tensor of size `[B]`
+
         """
         # Dropout for inputs-hidden connection
-        xs = self.dropout_input(xs)
+        xs = self.dropout_in(xs)
 
         # Path through CNN layers before RNN layers
         if self.conv is not None:
@@ -321,13 +289,12 @@ class RNNEncoder(nn.Module):
 
             # Pack encoder inputs
             if self.pack_sequence:
-                xs = pack_padded_sequence(
-                    xs, x_lens, batch_first=self.batch_first)
+                xs = pack_padded_sequence(xs, x_lens, batch_first=self.batch_first)
 
             # Path through RNN
             getattr(self, self.rnn_type).flatten_parameters()
             xs, _ = getattr(self, self.rnn_type)(xs, hx=None)
-            # getattr(self, self.rnn_type).flatten_parameters()
+            getattr(self, self.rnn_type).flatten_parameters()
 
             # Unpack encoder outputs
             if self.pack_sequence:
@@ -339,41 +306,38 @@ class RNNEncoder(nn.Module):
             xs = self.dropout_last(xs)
         else:
             res_outputs = []
-            for l in range(self.num_layers):
+            for i_l in range(self.n_layers):
                 if xs.is_cuda:
                     torch.cuda.empty_cache()
 
-                # Pack l-th encoder xs
+                # Pack i_l-th encoder xs
                 if self.pack_sequence:
-                    xs = pack_padded_sequence(
-                        xs, x_lens, batch_first=self.batch_first)
+                    xs = pack_padded_sequence(xs, x_lens, batch_first=self.batch_first)
 
                 # Path through RNN
-                getattr(self, self.rnn_type + '_l' +
-                        str(l)).flatten_parameters()
-                xs, _ = getattr(self, self.rnn_type +
-                                '_l' + str(l))(xs, hx=None)
-                # getattr(self, self.rnn_type + '_l' +
-                #         str(l)).flatten_parameters()
+                getattr(self, self.rnn_type + '_l' + str(i_l)).flatten_parameters()
+                xs, _ = getattr(self, self.rnn_type + '_l' + str(i_l))(xs, hx=None)
+                if i_l == self.n_layers - 1:
+                    getattr(self, self.rnn_type + '_l' + str(i_l)).flatten_parameters()
 
-                # Unpack l-th encoder outputs
+                # Unpack i_l-th encoder outputs
                 if self.pack_sequence:
                     xs, unpacked_seq_len = pad_packed_sequence(
                         xs, batch_first=self.batch_first, padding_value=0)
                     # assert x_lens == unpacked_seq_len
 
                 # Dropout for hidden-hidden or hidden-output connection
-                xs = getattr(self, 'dropout_l' + str(l))(xs)
+                xs = getattr(self, 'drop_l' + str(i_l))(xs)
 
                 # Pick up outputs in the sub task before the projection layer
-                if self.num_layers_sub >= 1 and l == self.num_layers_sub - 1:
+                if self.n_layers_sub >= 1 and i_l == self.n_layers_sub - 1:
                     xs_sub = xs.clone()
                     x_lens_sub = copy.deepcopy(x_lens)
 
                 # NOTE: Exclude the last layer
-                if l != self.num_layers - 1:
+                if i_l != self.n_layers - 1:
                     # Subsampling
-                    if self.subsample_list[l]:
+                    if self.subsample_list[i_l]:
                         if self.subsample_type == 'drop':
                             if self.batch_first:
                                 xs = xs[:, 1::2, :]
@@ -397,53 +361,49 @@ class RNNEncoder(nn.Module):
                         if self.batch_first:
                             x_lens = [x.size(0) for x in xs]
                         else:
-                            x_lens = [xs[:, i].size(0)
-                                      for i in range(xs.size(1))]
+                            x_lens = [xs[:, i].size(0) for i in range(xs.size(1))]
 
                     # Projection layer (affine transformation)
-                    if self.num_proj > 0:
-                        xs = F.tanh(getattr(self, 'proj_l' + str(l))(xs))
+                    if self.n_projs > 0:
+                        xs = F.tanh(getattr(self, 'proj_l' + str(i_l))(xs))
 
                     # NiN
                     if self.nin > 0:
                         raise NotImplementedError
 
                         # Batch normalization befor NiN
-                        if self.batch_norm:
+                        if self.conv_batch_norm:
                             size = list(xs.size())
                             xs = to2d(xs, size)
-                            xs = getattr(self, 'bn_0_l' + str(l))(xs)
+                            xs = getattr(self, 'bn_0_l' + str(i_l))(xs)
                             xs = F.relu(xs)
                             xs = to3d(xs, size)
                             # NOTE: mean and var are computed along all timesteps in the mini-batch
 
-                        xs = getattr(self, 'nin_l' + str(l))(xs)
+                        xs = getattr(self, 'nin_l' + str(i_l))(xs)
 
                     # Residual connection
-                    if (not self.subsample_list[l]) and (self.residual or self.dense_residual):
-                        if l >= self.residual_start_layer - 1:
+                    if (not self.subsample_list[i_l]) and self.residual:
+                        if i_l >= self.residual_start_layer - 1:
                             for xs_lower in res_outputs:
                                 xs = xs + xs_lower
                             if self.residual:
                                 res_outputs = [xs]
-                            elif self.dense_residual:
-                                res_outputs.append(xs)
                     # NOTE: Exclude residual connection from the raw inputs
 
         # Sum bidirectional outputs
         if self.bidirectional and self.merge_bidirectional:
-            xs = xs[:, :, :self.num_units] + xs[:, :, self.num_units:]
+            xs = xs[:, :, :self.n_units] + xs[:, :, self.n_units:]
 
         if not self.batch_first:
             # Convert to the time-major
             xs = xs.transpose(0, 1).contiguous()
 
         # For the sub task
-        if self.num_layers_sub >= 1:
+        if self.n_layers_sub >= 1:
             # Sum bidirectional outputs
             if self.bidirectional and self.merge_bidirectional:
-                xs_sub = xs_sub[:, :, :self.num_units] + \
-                    xs_sub[:, :, self.num_units:]
+                xs_sub = xs_sub[:, :, :self.n_units] + xs_sub[:, :, self.n_units:]
             if not self.batch_first:
                 # Convert to the time-major
                 xs_sub = xs_sub.transpose(0, 1).contiguous()
@@ -453,8 +413,7 @@ class RNNEncoder(nn.Module):
 
 
 def to2d(xs, size):
-    return xs.contiguous().view(
-        (int(np.prod(size[:-1])), int(size[-1])))
+    return xs.contiguous().view((int(np.prod(size[:-1])), int(size[-1])))
 
 
 def to3d(xs, size):
