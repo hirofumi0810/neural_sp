@@ -15,10 +15,12 @@ EOS = '>'
 
 def _read_text(trans_path):
     """Read char-level transcripts.
+
     Args:
         trans_path (string): path to a transcript text file
     Returns:
         trans (string): a text of transcript
+
     """
     # Read ground truth labels
     with open(trans_path, 'r') as f:
@@ -29,10 +31,12 @@ def _read_text(trans_path):
 
 def _read_phone(trans_path):
     """Read phoneme-level transcripts.
+
     Args:
         trans_path (string): path to a transcript text file
     Returns:
         transcript (string): a text of transcript
+
     """
     # Read ground truth labels
     trans = ''
@@ -45,6 +49,7 @@ def _read_phone(trans_path):
 
 def generate_data(label_type='char', batch_size=1):
     """Generate dataset for unit test.
+
     Args:
         label_type (string, optional): char or word or phone or word_char or word_phone
         batch_size (int): the size of mini-batch
@@ -52,6 +57,7 @@ def generate_data(label_type='char', batch_size=1):
         xs (list): A list of length `[B]`, which contains arrays of size `[T, input_size]`
         ys (list): A list of length `[B]`
         ys_sub (list): A list of length `[B]`
+
     """
     # Make input data
     _xs, _ = wav2feature(
@@ -94,6 +100,7 @@ def generate_data(label_type='char', batch_size=1):
 
 def generate_data_p2w(label_type_in='phone', label_type_out='word', batch_size=1):
     """Generate dataset for unit test.
+
     Args:
         label_type_in (string, optional): phone or char
         label_type_out (string, optional): char or word
@@ -102,6 +109,7 @@ def generate_data_p2w(label_type_in='phone', label_type_out='word', batch_size=1
         xs (list): A list of length `[B]`, which contains arrays of size `[T, input_size]`
         ys (list): A list of length `[B]`
         ys_sub (list): A list of length `[B]`
+
     """
     # Make input data
     _xs, _ = wav2feature(
@@ -137,10 +145,12 @@ def generate_data_p2w(label_type_in='phone', label_type_out='word', batch_size=1
 
 def char2idx(trans):
     """Convert from character to index.
+
     Args:
         trans (string): a sequence of string
     Returns:
         index_list (list): indices of characters
+
     """
     chars = list(trans)
 
@@ -161,11 +171,13 @@ def char2idx(trans):
 
 def idx2char(indices):
     """Convert from index to character.
+
     Args:
         indices (Variable): Variable of indices
         blank_index (int, optional): the index of the blank class
     Returns:
         trans (string): a sequence of string
+
     """
     if isinstance(indices, np.ndarray):
         indices = indices.tolist()
@@ -188,10 +200,12 @@ def idx2char(indices):
 
 def word2idx(trans, vocab_path='../../word.txt'):
     """Convert from word to index.
+
     Args:
         trans (string): a sequence of space-separated string
     Returns:
         index_list (list): indices of words
+
     """
     words = trans.split(SPACE)
 
@@ -218,11 +232,13 @@ def word2idx(trans, vocab_path='../../word.txt'):
 
 def idx2word(indices, vocab_path='../../word.txt'):
     """Convert from index to word.
+
     Args:
         indices (Variable): Variable of indices
         blank_index (int, optional): the index of the blank class
     Returns:
         trans (string): a sequence of string
+
     """
     if isinstance(indices, np.ndarray):
         indices = indices.tolist()

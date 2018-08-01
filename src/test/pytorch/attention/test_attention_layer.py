@@ -12,7 +12,7 @@ import unittest
 
 import torch
 
-sys.path.append('../../../../../')
+sys.path.append('../../../')
 from src.models.pytorch_v3.attention.attention_layer import AttentionMechanism, MultiheadAttentionMechanism
 from src.utils.measure_time_func import measure_time
 

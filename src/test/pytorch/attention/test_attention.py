@@ -26,13 +26,13 @@ blue = '#4682B4'
 orange = '#D2691E'
 green = '#006400'
 
-sys.path.append('../../../../../')
+sys.path.append('../../../')
 from src.models.pytorch_v3.attention.attention_seq2seq import AttentionSeq2seq
 from src.models.pytorch_v3.data_parallel import CustomDataParallel
-from src.models.test.data import generate_data, idx2char, idx2word
 from src.utils.measure_time_func import measure_time
 from src.utils.evaluation.edit_distance import compute_wer
 from src.bin.training.utils.learning_rate_controller import Controller
+from test.data import generate_data, idx2char, idx2word
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--ngpus', type=int, default=0,
@@ -46,30 +46,23 @@ class TestAttention(unittest.TestCase):
         print("Attention Working check.")
 
         # Multi-head attention
-        self.check(attention_type='content', num_heads=2)
-        self.check(attention_type='location', num_heads=2)
-        self.check(attention_type='location', num_heads=2, beam_width=2)
-        self.check(attention_type='dot_product', num_heads=2)
+        self.check(att_type='content', n_heads=2)
+        self.check(att_type='location', n_heads=2)
+        self.check(att_type='location', n_heads=2, beam_width=2)
+        self.check(att_type='dot_product', n_heads=2)
 
         # CNN encoder
-        self.check(encoder_type='cnn', batch_norm=True)
-
-        # Decoding order
-        self.check(decoding_order='bahdanau')
-        self.check(decoding_order='luong')
-        self.check(decoding_order='conditional')
+        self.check(enc_type='cnn', batch_norm=True)
 
         # Beam search
-        self.check(beam_width=2, decoding_order='bahdanau')
-        self.check(beam_width=2, decoding_order='luong')
-        self.check(beam_width=2, decoding_order='conditional')
+        self.check(beam_width=2)
 
         # Backward decoder
-        self.check(backward_loss_weight=1)
-        self.check(backward_loss_weight=0.8)
-        self.check(backward_loss_weight=0.5)
-        self.check(backward_loss_weight=0.2)
-        self.check(backward_loss_weight=0.8, beam_width=2)
+        self.check(bwd_loss_weight=1)
+        self.check(bwd_loss_weight=0.8)
+        self.check(bwd_loss_weight=0.5)
+        self.check(bwd_loss_weight=0.2)
+        self.check(bwd_loss_weight=0.8, beam_width=2)
 
         # CLDNN encoder
         self.check(conv=True)
@@ -78,160 +71,146 @@ class TestAttention(unittest.TestCase):
         # Joint CTC-Attention
         self.check(ctc_loss_weight=0.2)
 
-        # Initialize decoder state
-        self.check(init_dec_state='first')
-        self.check(init_dec_state='final')
-        self.check(init_dec_state='mean')
-        self.check(init_dec_state='zero')
-
         # Pyramidal encoder
         self.check(subsample='drop')
         self.check(subsample='concat')
 
         # Projection layer
-        self.check(projection=True)
+        self.check(enc_proj=True)
 
         # Residual connection
         self.check(residual=True)
-        self.check(dense_residual=True)
 
         # word-level attention
         self.check(label_type='word')
         # self.check(label_type='phone')
 
-        # unidirectional & bidirectional
-        self.check(bidirectional=True)
-        self.check(bidirectional=False)
-        self.check(encoder_type='gru', decoder_type='gru')
-        self.check(encoder_type='gru', bidirectional=False,
-                   decoder_type='gru')
+        # unidirectional & enc_bidirectional
+        self.check(enc_bidirectional=True)
+        self.check(enc_bidirectional=False)
+        self.check(enc_type='gru', dec_type='gru')
+        self.check(enc_type='gru', enc_bidirectional=False,
+                   dec_type='gru')
 
         # Attention type
-        self.check(attention_type='content')
-        self.check(attention_type='location')
-        self.check(attention_type='dot_product')
+        self.check(att_type='content')
+        self.check(att_type='location')
+        self.check(att_type='dot_product')
 
     @measure_time
-    def check(self, encoder_type='lstm', decoder_type='lstm', bidirectional=True,
-              attention_type='location', label_type='char',
-              subsample=False, projection=False, init_dec_state='first',
-              ctc_loss_weight=0, conv=False, batch_norm=False,
-              residual=False, dense_residual=False,
-              decoding_order='bahdanau', beam_width=1,
-              backward_loss_weight=0, num_heads=1):
+    def check(self, enc_type='lstm', dec_type='lstm', enc_bidirectional=True,
+              att_type='location', label_type='char',
+              subsample=False, enc_proj=False, init_dec_state='first',
+              ctc_loss_weight=0, conv=False, batch_norm=False, residual=False,
+              beam_width=1, bwd_loss_weight=0, n_heads=1):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
-        print('  encoder_type: %s' % encoder_type)
-        print('  bidirectional: %s' % str(bidirectional))
-        print('  projection: %d' % projection)
-        print('  decoder_type: %s' % decoder_type)
+        print('  enc_type: %s' % enc_type)
+        print('  enc_bidirectional: %s' % str(enc_bidirectional))
+        print('  enc_proj: %d' % enc_proj)
+        print('  dec_type: %s' % dec_type)
         print('  init_dec_state: %s' % init_dec_state)
-        print('  attention_type: %s' % attention_type)
+        print('  att_type: %s' % att_type)
         print('  subsample: %s' % str(subsample))
         print('  ctc_loss_weight: %.2f' % ctc_loss_weight)
         print('  conv: %s' % str(conv))
         print('  batch_norm: %s' % str(batch_norm))
         print('  residual: %s' % str(residual))
-        print('  dense_residual: %s' % str(dense_residual))
-        print('  decoding_order: %s' % decoding_order)
         print('  beam_width: %d' % beam_width)
-        print('  backward_loss_weight: %.2f' % backward_loss_weight)
-        print('  num_heads: %d' % num_heads)
+        print('  bwd_loss_weight: %.2f' % bwd_loss_weight)
+        print('  n_heads: %d' % n_heads)
         print('==================================================')
 
-        if conv or encoder_type == 'cnn':
+        if conv or enc_type == 'cnn':
             # pattern 1
             # conv_channels = [32, 32]
             # conv_kernel_sizes = [[41, 11], [21, 11]]
             # conv_strides = [[2, 2], [2, 1]]
-            # poolings = [[], []]
+            # conv_poolings = [[], []]
 
             # pattern 2 (VGG like)
             conv_channels = [64, 64]
             conv_kernel_sizes = [[3, 3], [3, 3]]
             conv_strides = [[1, 1], [1, 1]]
-            poolings = [[2, 2], [2, 2]]
+            conv_poolings = [[2, 2], [2, 2]]
         else:
             conv_channels = []
             conv_kernel_sizes = []
             conv_strides = []
-            poolings = []
+            conv_poolings = []
 
         # Load batch data
         xs, ys = generate_data(label_type=label_type,
                                batch_size=2 * args.ngpus)
 
         if label_type == 'char':
-            num_classes = 27
+            n_classes = 27
             map_fn = idx2char
         elif label_type == 'word':
-            num_classes = 11
+            n_classes = 11
             map_fn = idx2word
 
         # Load model
-        num_stack = 1 if subsample or conv or encoder_type == 'cnn' else 3
+        n_stack = 1 if subsample or conv or enc_type == 'cnn' else 3
         model = AttentionSeq2seq(
-            input_type='speech',
-            input_size=xs[0].shape[-1],
-            encoder_type=encoder_type,
-            encoder_bidirectional=bidirectional,
-            encoder_num_units=256,
-            encoder_num_proj=256 if projection else 0,
-            encoder_num_layers=1 if not subsample else 2,
-            attention_type=attention_type,
-            attention_dim=128,
-            decoder_type=decoder_type,
-            decoder_num_units=256,
-            decoder_num_layers=1,
-            embedding_dim=32,
-            dropout_input=0.1,
-            dropout_encoder=0.1,
-            dropout_decoder=0.1,
-            dropout_embedding=0.1,
-            num_classes=num_classes,
-            parameter_init_distribution='uniform',
-            parameter_init=0.1,
-            recurrent_weight_orthogonal=False,
-            init_forget_gate_bias_with_one=True,
-            subsample_list=[] if not subsample else [True, False],
-            subsample_type='concat' if not subsample else subsample,
-            bridge_layer=True,
-            init_dec_state=init_dec_state,
-            sharpening_factor=1,
-            logits_temperature=1,
-            sigmoid_smoothing=False,
-            coverage_weight=0,
-            ctc_loss_weight=ctc_loss_weight,
-            attention_conv_num_channels=10,
-            attention_conv_width=201,
-            num_stack=num_stack,
-            num_skip=num_stack,
-            splice=1,
-            input_channel=3,
+            enc_in_type='speech',
+            enc_in_size=xs[0].shape[-1],
+            n_stack=n_stack,
+            n_skip=n_stack,
+            n_splice=1,
+            conv_in_channel=3,
             conv_channels=conv_channels,
             conv_kernel_sizes=conv_kernel_sizes,
             conv_strides=conv_strides,
-            poolings=poolings,
-            activation='relu',
-            batch_norm=batch_norm,
-            scheduled_sampling_prob=0.1,
-            scheduled_sampling_max_step=200,
-            label_smoothing_prob=0.1,
+            conv_poolings=conv_poolings,
+            conv_batch_norm=batch_norm,
+            enc_type=enc_type,
+            enc_bidirectional=enc_bidirectional,
+            enc_n_units=256,
+            enc_n_projs=256 if enc_proj else 0,
+            enc_n_layers=1 if not subsample else 2,
+            enc_residual=residual,
+            subsample_list=[] if not subsample else [True, False],
+            subsample_type='concat' if not subsample else subsample,
+            att_type=att_type,
+            att_dim=128,
+            att_conv_n_channels=10,
+            att_conv_width=201,
+            att_n_heads=n_heads,
+            sharpening_factor=1,
+            sigmoid_smoothing=False,
+            bridge_layer=True,
+            dec_type=dec_type,
+            dec_n_units=256,
+            dec_n_layers=1,
+            dec_residual=residual,
+            emb_dim=32,
+            bottle_dim=256,
+            generate_feat='sc',
+            n_classes=n_classes,
+            logits_temp=1,
+            param_init_dist='uniform',
+            param_init=0.1,
+            rec_weight_orthogonal=False,
+            init_forget_gate_bias_with_one=True,
+            dropout_in=0.1,
+            dropout_enc=0.1,
+            dropout_dec=0.1,
+            dropout_emb=0.1,
+            ss_prob=0.1,
+            lsm_prob=0.1,
+            lsm_type='uniform',
             weight_noise_std=1e-9,
-            encoder_residual=residual,
-            encoder_dense_residual=dense_residual,
-            decoder_residual=residual,
-            decoder_dense_residual=dense_residual,
-            decoding_order=decoding_order,
-            bottleneck_dim=256,
-            backward_loss_weight=backward_loss_weight,
-            num_heads=num_heads)
+            cov_weight=0,
+            ctc_loss_weight=ctc_loss_weight,
+            bwd_loss_weight=bwd_loss_weight,
+        )
 
         # Count total parameters
-        for name in sorted(list(model.num_params_dict.keys())):
-            num_params = model.num_params_dict[name]
-            print("%s %d" % (name, num_params))
+        for name in sorted(list(model.n_params_dict.keys())):
+            n_params = model.n_params_dict[name]
+            print("%s %d" % (name, n_params))
         print("Total %.2f M parameters" % (model.total_parameters / 1000000))
 
         # Define optimizer
