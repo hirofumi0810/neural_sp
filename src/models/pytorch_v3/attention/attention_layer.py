@@ -25,7 +25,8 @@ class AttentionMechanism(nn.Module):
     Args:
         enc_n_units (int): the number of units in each layer of the encoder
         dec_n_units (int): the number of units in each layer of the decoder
-        att_type (string): the type of attention
+        att_type (str): the type of attention
+            content, location, dot_product
         att_dim: (int) the dimension of the attention layer
         sharpening_factor (float): a sharpening factor in the softmax
             layer for computing attention weights
@@ -43,10 +44,10 @@ class AttentionMechanism(nn.Module):
                  dec_n_units,
                  att_type,
                  att_dim,
-                 sharpening_factor=1,
-                 sigmoid_smoothing=False,
-                 out_channels=10,
-                 kernel_size=201):
+                 sharpening_factor,
+                 sigmoid_smoothing,
+                 out_channels,
+                 kernel_size):
 
         super(AttentionMechanism, self).__init__()
 
@@ -216,7 +217,7 @@ class MultiheadAttentionMechanism(nn.Module):
     Args:
         enc_n_units (int): the number of units in each layer of the encoder
         dec_n_units (int): the number of units in each layer of the decoder
-        att_type (string): the type of attention
+        att_type (str): the type of attention
         att_dim: (int) the dimension of the attention layer
         sharpening_factor (float): a sharpening factor in the softmax
             layer for computing attention weights
