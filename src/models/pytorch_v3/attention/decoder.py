@@ -38,7 +38,6 @@ class Decoder(torch.nn.Module):
         n_units (int): the number of units in each layer
         n_layers (int): the number of layers
         emb_dim ():
-        bottle_dim ():
         generate_feat ():
         n_classes ():
         dropout_dec (float): the probability to drop nodes in the decoder
@@ -64,7 +63,6 @@ class Decoder(torch.nn.Module):
                  n_layers,
                  residual,
                  emb_dim,
-                 bottle_dim,
                  generate_feat,
                  n_classes,
                  logits_temp,
@@ -91,7 +89,6 @@ class Decoder(torch.nn.Module):
         self.n_units = n_units
         self.n_layers = n_layers
         self.residual = residual
-        self.bottle_dim = bottle_dim
         self.generate_feat = generate_feat
         self.logits_temp = logits_temp
         self.dropout_dec = dropout_dec
@@ -238,7 +235,7 @@ class Decoder(torch.nn.Module):
 
         # Initialization
         dec_out, dec_state = self._init_dec_state(enc_out, self.n_layers)
-        internal_lm_out, internal_lm_state = self._init_dec_state(enc_out, 1)
+        _dec_out, _dec_state = self._init_dec_state(enc_out, 1)
         self.score.reset()
         aw_t = None
         lm_state = None
@@ -253,6 +250,25 @@ class Decoder(torch.nn.Module):
         for t in six.moves.range(ys_in_pad.size(1)):
             is_sample = self.ss_prob > 0 and t > 0 and random.random() < self.ss_prob
 
+            # Score
+            cv, aw_t = self.score(enc_out, x_lens, dec_out, aw_t)
+
+            # Sample for scheduled sampling
+            if is_sample:
+                y_emb = self.emb(torch.max(logits[-1], dim=2)[1]).detach()
+            else:
+                y_emb = ys_emb[:, t:t + 1]
+
+            # Recurrency
+            dec_out, dec_state, _dec_out, _dec_state = self.recurrency(
+                y_emb, cv, dec_state, _dec_state)
+            if self.lm_weight > 0:
+                if self.share_softmax:
+                    logits_lm_t = self.output(_dec_out)
+                else:
+                    logits_lm_t = self.rnnlm_output(_dec_out)
+                logits_lm.append(logits_lm_t)
+
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf is not None:
                 if is_sample:
@@ -263,39 +279,19 @@ class Decoder(torch.nn.Module):
             else:
                 logits_t_lm, lm_out = None, None
 
-            # Score
-            cv, aw_t = self.score(enc_out, x_lens, dec_out, aw_t)
-
             # Generate
             logits_t = self.generate(cv, dec_out, logits_t_lm, lm_out)
 
             # residual connection
             if self.rnnlm_init is not None and self.internal_lm:
-                logits_t += internal_lm_out
+                logits_t += _dec_out
 
+            if self.generate_feat == 'sc' and (self.share_softmax or self.rnnlm_init is not None):
+                logits_t = self.fc_bottle(logits_t)
             logits_t = self.output(logits_t)
             if self.rnnlm_cf is not None:
                 logits_t = F.relu(logits_t)
             logits += [logits_t]
-
-            if t == ys_in_pad.size(1) - 1:
-                break
-
-            # Sample for scheduled sampling
-            if is_sample:
-                y_emb = self.emb(torch.max(logits[-1], dim=2)[1]).detach()
-            else:
-                y_emb = ys_emb[:, t:t + 1]
-
-            # Recurrency
-            dec_out, dec_state, internal_lm_out, internal_lm_state = self.recurrency(
-                y_emb, cv, dec_state, internal_lm_state)
-            if self.lm_weight > 0:
-                if self.share_softmax:
-                    logits_lm_t = self.output(internal_lm_out)
-                else:
-                    logits_lm_t = self.rnnlm_lo(internal_lm_out)
-                logits_lm.append(logits_lm_t)
 
         logits = torch.cat(logits, dim=1)
 
@@ -337,7 +333,7 @@ class Decoder(torch.nn.Module):
 
         return loss, acc
 
-    def recurrency(self, y_emb, cv, dec_state, internal_lm_state):
+    def recurrency(self, y_emb, cv, dec_state, _dec_state):
         """Recurrency function.
 
         Args:
@@ -348,7 +344,7 @@ class Decoder(torch.nn.Module):
             dec_state (tuple): A tuple of (hx_list, cx_list)
                 hx_list (list of torch.autograd.Variable(float)):
                 cx_list (list of torch.autograd.Variable(float)):
-            internal_lm_state (tuple): A tuple of (hx_list, cx_list)
+            _dec_state (tuple): A tuple of (hx_list, cx_list)
                 hx_list (list of torch.autograd.Variable(float)):
                 cx_list (list of torch.autograd.Variable(float)):
         Returns:
@@ -357,23 +353,23 @@ class Decoder(torch.nn.Module):
             dec_state (tuple): A tuple of (hx_list, cx_list)
                 hx_list (list of torch.autograd.Variable(float)):
                 cx_list (list of torch.autograd.Variable(float)):
-            hx_lm (torch.autograd.Variable, float): A tensor of size
+            _dec_out (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, n_units]`
-            internal_lm_state (tuple): A tuple of (hx_list, cx_list)
+            _dec_state (tuple): A tuple of (hx_list, cx_list)
                 hx_list (list of torch.autograd.Variable(float)):
                 cx_list (list of torch.autograd.Variable(float)):
 
         """
         hx_list, cx_list = dec_state
-        hx_lm, cx_lm = internal_lm_state
+        hx_lm, cx_lm = _dec_state
         y_emb = y_emb.squeeze(1)
         cv = cv.squeeze(1)
 
         if self.internal_lm:
             if self.rnn_type == 'lstm':
-                hx_lm, cx_lm = self.lstm_lm(y_emb, (hx_lm, cx_lm))
-                hx_lm = self.dropout_lm(hx_lm)
-                _h_lm = torch.cat([cv, hx_lm], dim=-1)
+                hx_lm[0], cx_lm[0] = self.lstm_lm(y_emb, (hx_lm[0], cx_lm[0]))
+                hx_lm[0] = self.dropout_lm(hx_lm[0])
+                _h_lm = torch.cat([cv, hx_lm[0]], dim=-1)
                 hx_list[0], cx_list[0] = self.lstm_l0(_h_lm, (hx_list[0], cx_list[0]))
             elif self.rnn_type == 'gru':
                 hx_lm = self.gru_lm(y_emb, hx_lm)
@@ -401,7 +397,8 @@ class Decoder(torch.nn.Module):
                 hx_list[i_l] += hx_list[i_l - 1]
 
         dec_out = hx_list[-1].unsqueeze(1)
-        return dec_out, (hx_list, cx_list), hx_lm, (hx_lm, cx_lm)
+        _dec_out = hx_lm[0].unsqueeze(1)
+        return dec_out, (hx_list, cx_list), _dec_out, (hx_lm, cx_lm)
 
     def generate(self, cv, dec_out, logits_t_lm, lm_out):
         """Generate function.
@@ -459,7 +456,7 @@ class Decoder(torch.nn.Module):
 
         # Initialization
         dec_out, dec_state = self._init_dec_state(enc_out, self.n_layers)
-        internal_lm_out, internal_lm_state = self._init_dec_state(enc_out, 1)
+        _dec_out, _dec_state = self._init_dec_state(enc_out, 1)
         self.score.reset()
         aw_t = None
         lm_state = None
@@ -471,6 +468,14 @@ class Decoder(torch.nn.Module):
         y_lens = np.zeros((batch,), dtype=np.int32)
         eos_flags = [False] * batch
         for t in six.moves.range(math.floor(enc_time * max_len_ratio) + 1):
+            # Score
+            cv, aw_t = self.score(enc_out, x_lens, dec_out, aw_t)
+
+            # Recurrency
+            y_emb = self.emb(y)
+            dec_out, dec_state, _dec_out, _dec_state = self.recurrency(
+                y_emb, cv, dec_state, _dec_state)
+
             if self.rnnlm_cf is not None:
                 # Update RNNLM states for cold fusion
                 y_lm = self.rnnlm_cf.emb(y)
@@ -478,16 +483,15 @@ class Decoder(torch.nn.Module):
             else:
                 logits_t_lm, lm_out = None, None
 
-            # Score
-            cv, aw_t = self.score(enc_out, x_lens, dec_out, aw_t)
-
             # Generate
             logits_t = self.generate(cv, dec_out, logits_t_lm, lm_out)
 
             # residual connection
             if self.rnnlm_init is not None and self.internal_lm:
-                logits_t += internal_lm_out
+                logits_t += _dec_out
 
+            if self.generate_feat == 'sc' and (self.share_softmax or self.rnnlm_init is not None):
+                logits_t = self.fc_bottle(logits_t)
             logits_t = self.output(logits_t)
             if self.rnnlm_cf is not None:
                 logits_t = F.relu(logits_t)
@@ -508,11 +512,6 @@ class Decoder(torch.nn.Module):
             # Break if <EOS> is outputed in all mini-batch
             if sum(eos_flags) == batch:
                 break
-
-            # Recurrency
-            y_emb = self.emb(y)
-            dec_out, dec_state, internal_lm_out, internal_lm_state = self.recurrency(
-                y_emb, cv, dec_state, internal_lm_state)
 
         # Concatenate in L dimension
         _best_hyps = torch.cat(_best_hyps, dim=1)
@@ -568,15 +567,14 @@ class Decoder(torch.nn.Module):
         """
         batch_size = enc_out.size(0)
 
-        # For shallow fusion
-        if lm_weight > 0 and not self.cf_type:
-            assert self.rnnlm is not None
-            assert not self.rnnlm.training
-
         # For cold fusion
-        if self.rnnlm_cf is not None:
-            assert self.rnnlm is not None
-            assert not self.rnnlm.training
+        if lm_weight > 0 and not self.cf_type:
+            assert self.rnnlm_cf is not None
+            assert not self.rnnlm_cf.training
+
+        # For shallow fusion
+        if rnnlm is not None:
+            assert not rnnlm.training
 
         best_hyps, aw = [], []
         y_lens = np.zeros((batch_size,), dtype=np.int32)
@@ -584,7 +582,7 @@ class Decoder(torch.nn.Module):
         for b in six.moves.range(batch_size):
             # Initialization per utterance
             dec_out, dec_state = self._init_dec_state(enc_out[b:b + 1], self.n_layers)
-            internal_lm_out, internal_lm_state = self._init_dec_state(enc_out[b:b + 1], 1)
+            _dec_out, _dec_state = self._init_dec_state(enc_out[b:b + 1], 1)
             cv = Variable(enc_out.data.new(1, 1, enc_out.size(-1)).fill_(0.), volatile=True)
             self.score.reset()
 
@@ -597,11 +595,24 @@ class Decoder(torch.nn.Module):
                      'aw_t_list': [None],
                      'lm_state': None,
                      'prev_cov': 0,
-                     'internal_lm_out': internal_lm_out,
-                     'internal_lm_state': internal_lm_state}]
+                     '_dec_out': _dec_out,
+                     '_dec_state': _dec_state}]
             for t in six.moves.range(math.floor(x_lens[b] * max_len_ratio) + 1):
                 new_beam = []
                 for i_beam in six.moves.range(len(beam)):
+                    # Score
+                    cv, aw_t = self.score(enc_out[b:b + 1, :x_lens[b]],
+                                          x_lens[b:b + 1],
+                                          dec_out,
+                                          beam[i_beam]['aw_t_list'][-1])
+
+                    # Recurrency
+                    y = Variable(enc_out.data.new(
+                        1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
+                    y_emb = self.emb(y)
+                    dec_out, dec_state, _dec_out, _dec_state = self.recurrency(
+                        y_emb, beam[i_beam]['cv'], beam[i_beam]['dec_state'], beam[i_beam]['_dec_state'])
+
                     if self.rnnlm_cf is not None:
                         # Update RNNLM states for cold fusion
                         y_lm = Variable(enc_out.data.new(
@@ -609,32 +620,15 @@ class Decoder(torch.nn.Module):
                         y_lm_emb = self.rnnlm_cf.emb(y_lm)
                         logits_t_lm, lm_out, lm_state = self.rnnlm_cf.predict(
                             y_lm_emb, beam[i_beam]['lm_state'])
-                    elif self.rnnlm is not None:
+                    elif rnnlm is not None:
                         # Update RNNLM states for shallow fusion
                         y_lm = Variable(enc_out.data.new(
                             1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
-                        y_lm_emb = self.rnnlm.emb(y_lm)
-                        logits_t_lm, lm_out, lm_state = self.rnnlm.predict(
+                        y_lm_emb = rnnlm.emb(y_lm)
+                        logits_t_lm, lm_out, lm_state = rnnlm.predict(
                             y_lm_emb, beam[i_beam]['lm_state'])
                     else:
-                        logits_t_lm, lm_out = None, None
-
-                    if t == 0:
-                        dec_out = beam[i_beam]['dec_out']
-                    else:
-                        y = Variable(enc_out.data.new(
-                            1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
-                        y_emb = self.emb(y)
-
-                        # Recurrency
-                        dec_out, dec_state, internal_lm_out, internal_lm_state = self.recurrency(
-                            y_emb, beam[i_beam]['cv'], beam[i_beam]['dec_state'], beam[i_beam]['internal_lm_state'])
-
-                    # Score
-                    cv, aw_t = self.score(enc_out[b:b + 1, :x_lens[b]],
-                                          x_lens[b:b + 1],
-                                          dec_out,
-                                          beam[i_beam]['aw_t_list'][-1])
+                        logits_t_lm, lm_out, lm_state = None, None, None
 
                     # Generate
                     logits_t = self.generate(cv, dec_out, logits_t_lm, lm_out)
@@ -642,10 +636,12 @@ class Decoder(torch.nn.Module):
                     # residual connection
                     if self.rnnlm_init is not None and self.internal_lm:
                         if t == 0:
-                            logits_t += beam[i_beam]['internal_lm_out']
+                            logits_t += beam[i_beam]['_dec_out']
                         else:
-                            logits_t += internal_lm_out
+                            logits_t += _dec_out
 
+                    if self.generate_feat == 'sc' and (self.share_softmax or self.rnnlm_init is not None):
+                        logits_t = self.fc_bottle(logits_t)
                     logits_t = self.output(logits_t)
                     if self.rnnlm_cf is not None:
                         logits_t = F.relu(logits_t)
@@ -692,8 +688,6 @@ class Decoder(torch.nn.Module):
                             lm_log_probs = F.log_softmax(logits_t_lm.squeeze(1), dim=1)
                             assert log_probs.size() == lm_log_probs.size()
                             score += lm_log_probs.data[0, indices_topk.data[0, k]] * lm_weight
-                        elif not self.cf_type:
-                            lm_state = None
 
                         new_beam.append(
                             {'hyp': beam[i_beam]['hyp'] + [indices_topk.data[0, k]],
@@ -703,7 +697,9 @@ class Decoder(torch.nn.Module):
                              'cv': cv,
                              'aw_t_list': beam[i_beam]['aw_t_list'] + [aw_t],
                              'lm_state': copy.deepcopy(lm_state),
-                             'prev_cov': cov_sum})
+                             'prev_cov': cov_sum,
+                             '_dec_out': _dec_out,
+                             '_dec_state': _dec_state})
 
                 new_beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)
 

@@ -73,7 +73,6 @@ class AttentionSeq2seq(ModelBase):
         dec_residual (bool):
         emb_dim (int): the dimension of the embedding in target spaces.
             0 means that decoder inputs are represented by one-hot vectors.
-        bottle_dim (int): the dimension of the pre-softmax layer
         generate_feat (str): s or sc
         n_classes (int): the number of nodes in softmax layer (excluding <SOS> and <EOS> classes)
         logits_temp (float): a parameter for smoothing the softmax layer in outputing probabilities
@@ -135,7 +134,6 @@ class AttentionSeq2seq(ModelBase):
                  dec_n_layers,
                  dec_residual,
                  emb_dim,
-                 bottle_dim,
                  generate_feat,
                  n_classes,
                  logits_temp,
@@ -338,7 +336,6 @@ class AttentionSeq2seq(ModelBase):
                 n_layers=dec_n_layers,
                 residual=dec_residual,
                 emb_dim=emb_dim,
-                bottle_dim=bottle_dim,
                 generate_feat=generate_feat,
                 n_classes=self.n_classes,
                 logits_temp=logits_temp,

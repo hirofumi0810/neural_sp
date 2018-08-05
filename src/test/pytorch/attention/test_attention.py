@@ -48,8 +48,8 @@ class TestAttention(unittest.TestCase):
         # Multi-head attention
         self.check(att_type='content', n_heads=2)
         self.check(att_type='location', n_heads=2)
-        self.check(att_type='location', n_heads=2, beam_width=2)
         self.check(att_type='dot_product', n_heads=2)
+        self.check(att_type='location', n_heads=2, beam_width=2)
 
         # CNN encoder
         self.check(enc_type='cnn', batch_norm=True)
@@ -188,7 +188,6 @@ class TestAttention(unittest.TestCase):
             dec_n_layers=1,
             dec_residual=residual,
             emb_dim=256,
-            bottle_dim=256,
             generate_feat='sc',
             n_classes=n_classes,
             logits_temp=1,
