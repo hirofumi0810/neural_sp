@@ -57,7 +57,7 @@ class CNNEncoder(torch.nn.Module):
         assert len(strides) == len(poolings)
 
         # Dropout for input-hidden connection
-        self.drop_in = torch.nn.Dropout(p=dropout_in)
+        self.dropout_in = torch.nn.Dropout(p=dropout_in)
 
         layers = OrderedDict()
         in_ch = self.in_channel
@@ -115,7 +115,7 @@ class CNNEncoder(torch.nn.Module):
                 layers['bn_' + str(l)] = torch.nn.BatchNorm2d(channels[l])
 
             # Dropout for hidden-hidden connection
-            layers['drop_' + str(l)] = torch.nn.Dropout(p=dropout_hidden)
+            layers['dropout_' + str(l)] = torch.nn.Dropout(p=dropout_hidden)
             # TODO(hirofumi): compare BN before ReLU and after ReLU
 
             # TODO(hirofumi): try this
@@ -143,7 +143,7 @@ class CNNEncoder(torch.nn.Module):
         # assert input_size == self.input_freq * self.in_channel
 
         # Dropout for inputs-hidden connection
-        xs = self.drop_in(xs)
+        xs = self.dropout_in(xs)
 
         # Reshape to 4D tensor
         xs = xs.transpose(1, 2).contiguous()

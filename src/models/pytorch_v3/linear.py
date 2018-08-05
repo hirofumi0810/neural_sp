@@ -58,14 +58,14 @@ class Embedding(nn.Module):
             n_classes (int): the number of nodes in softmax layer
                 (including <SOS> and <EOS> classes)
             emb_dim (int): the dimension of the embedding in target spaces
-            dropout (float, optional): the probability to drop nodes of the embedding
+            dropout (float, optional): the probability to dropout nodes of the embedding
             ignore_index (int, optional):
 
         """
         super(Embedding, self).__init__()
 
-        self.embed = nn.Embedding(n_classes, emb_dim,
-                                  padding_idx=ignore_index)
+        self.emb = nn.Embedding(n_classes, emb_dim,
+                                padding_idx=ignore_index)
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, y):
@@ -78,4 +78,4 @@ class Embedding(nn.Module):
                 `[B, L, emb_dim]`
 
         """
-        return self.dropout(self.embed(y))
+        return self.dropout(self.emb(y))

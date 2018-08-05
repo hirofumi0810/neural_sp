@@ -57,7 +57,7 @@ class AttentionSeq2seq(ModelBase):
         subsample_list (list): subsample in the corresponding layers
             ex.) [False, True, True, False] means that subsample is conducted in the 2nd and 3rd layers.
         subsample_type (str): drop or concat
-        att_type (str): content, dot_product
+        att_type (str): content or location or dot_product
         att_dim: (int) the dimension of the attention layer
         att_conv_n_channels (int):
         att_conv_width (int):
@@ -76,30 +76,28 @@ class AttentionSeq2seq(ModelBase):
         bottle_dim (int): the dimension of the pre-softmax layer
         generate_feat (str): s or sc
         n_classes (int): the number of nodes in softmax layer (excluding <SOS> and <EOS> classes)
-                param_init_dist (str): uniform or normal or orthogonal or constant distribution
         logits_temp (float): a parameter for smoothing the softmax layer in outputing probabilities
         param_init (float): Range of uniform distribution to initialize weight parameters
         param_init_dist (str):
         rec_weight_orthogonal (bool): recurrent weights are orthogonalized
-        drop_in (float): the probability to drop nodes in input-hidden connection
-        drop_enc (float): the probability to drop nodes in hidden-hidden connection in the encoder
-        drop_dec (float): the probability to drop nodes of the decoder
-        drop_emb (float): the probability to drop nodes of the embedding layer
+        dropout_in (float): the probability to drop nodes in input-hidden connection
+        dropout_enc (float): the probability to drop nodes in hidden-hidden connection in the encoder
+        dropout_dec (float): the probability to drop nodes of the decoder
+        dropout_emb (float): the probability to drop nodes of the embedding layer
         ss_prob (float): the probability of scheduled sampling
         lsm_prob (float): the probability of label smoothing
         lsm_type (str): uniform or unigram
-        ctc_weight (float): A weight parameter for auxiliary CTC loss
-        bwd_weight (int): A weight parameter for the loss of the backward decdoer,
-            where the model predicts each token in the reverse order
+        ctc_weight (float): the weight for the auxiliary CTC loss
+        bwd_weight (int): the weight for the auxiliary XE loss of the backward decoder
         lm_config_cf (dict): the configuration of the pre-trained RNNLM for cold fusion
         cf_type (str): the type of cold fusion
             False:
             prob: probability from RNNLM
             hidden: hidden states of RNNLM
-        lm_config_init (dict):  the configuration of the pre-trained RNNLM for RNNLM initialization
-        lm_loss_weight (float): the weight of XE loss for RNNLM objective
-        internal_lm (bool)
-        share_softmax (bool)
+        internal_lm (bool):
+        lm_config_init (dict): the configuration of the pre-trained RNNLM for RNNLM initialization
+        lm_weight (float): the weight for the auxiliary XE loss of RNNLM objective
+        share_softmax (bool):
         n_classes_in (int):
 
     """
@@ -144,10 +142,10 @@ class AttentionSeq2seq(ModelBase):
                  param_init,
                  param_init_dist,
                  rec_weight_orthogonal,
-                 drop_in,
-                 drop_enc,
-                 drop_dec,
-                 drop_emb,
+                 dropout_in,
+                 dropout_enc,
+                 dropout_dec,
+                 dropout_emb,
                  ss_prob,
                  lsm_prob,
                  lsm_type,
@@ -155,9 +153,9 @@ class AttentionSeq2seq(ModelBase):
                  bwd_weight,
                  lm_config_cf=None,
                  cf_type='prob',
-                 lm_config_init=None,
-                 lm_loss_weight=0,
                  internal_lm=False,
+                 lm_config_init=None,
+                 lm_weight=0,
                  share_softmax=False,
                  n_classes_in=-1):
 
@@ -208,8 +206,8 @@ class AttentionSeq2seq(ModelBase):
                 n_units=enc_n_units,
                 n_projs=enc_n_projs,
                 n_layers=enc_n_layers,
-                drop_in=drop_in,
-                drop_hidden=drop_enc,
+                dropout_in=dropout_in,
+                dropout_hidden=dropout_enc,
                 subsample_list=subsample_list,
                 subsample_type=subsample_type,
                 batch_first=True,
@@ -234,8 +232,8 @@ class AttentionSeq2seq(ModelBase):
                 kernel_sizes=conv_kernel_sizes,
                 strides=conv_strides,
                 poolings=conv_poolings,
-                drop_in=drop_in,
-                drop_hidden=drop_enc,
+                dropout_in=dropout_in,
+                dropout_hidden=dropout_enc,
                 batch_norm=conv_batch_norm)
         else:
             raise NotImplementedError
@@ -282,16 +280,16 @@ class AttentionSeq2seq(ModelBase):
                     kernel_size=att_conv_width)
 
             # Cold fusion
-            if cf_type and dir == 'fwd':
+            if lm_config_cf is not None and dir == 'fwd':
                 rnnlm_cf = RNNLM(
                     emb_dim=lm_config_cf['emb_dim'],
                     rnn_type=lm_config_cf['rnn_type'],
                     bidirectional=lm_config_cf['bidirectional'],  # False
                     n_units=lm_config_cf['n_units'],
                     n_layers=lm_config_cf['n_layers'],
-                    drop_emb=lm_config_cf['drop_emb'],
-                    drop_hidden=lm_config_cf['drop_hidden'],
-                    drop_out=lm_config_cf['drop_out'],
+                    dropout_emb=lm_config_cf['dropout_emb'],
+                    dropout_hidden=lm_config_cf['dropout_hidden'],
+                    dropout_out=lm_config_cf['dropout_out'],
                     n_classes=lm_config_cf['n_classes'],
                     param_init_dist=lm_config_cf['param_init_dist'],
                     param_init=lm_config_cf['param_init'],
@@ -300,31 +298,32 @@ class AttentionSeq2seq(ModelBase):
                     lsm_type=lm_config_cf['lsm_type'],
                     tie_weights=lm_config_cf['tie_weights'],
                     residual=lm_config_cf['residual'],
-                    bwd=lm_config_cf['bwd'])
+                    backward=lm_config_cf['backward'])
                 # TODO(hirofumi): cold fusion for backward RNNLM
             else:
                 rnnlm_cf = None
 
             # RNNLM initialization
-            if cf_type and dir == 'fwd':
+            if lm_config_init is not None and dir == 'fwd':
                 rnnlm_init = RNNLM(
-                    emb_dim=lm_config_cf['emb_dim'],
-                    rnn_type=lm_config_cf['rnn_type'],
-                    bidirectional=lm_config_cf['bidirectional'],  # False
-                    n_units=lm_config_cf['n_units'],
-                    n_layers=lm_config_cf['n_layers'],  # 1
-                    drop_emb=lm_config_cf['drop_emb'],
-                    drop_hidden=lm_config_cf['drop_hidden'],
-                    drop_out=lm_config_cf['drop_out'],
-                    n_classes=lm_config_cf['n_classes'],
-                    param_init_dist=lm_config_cf['param_init_dist'],
-                    param_init=lm_config_cf['param_init'],
-                    rec_weight_orthogonal=lm_config_cf['rec_weight_orthogonal'],
-                    lsm_prob=lm_config_cf['lsm_prob'],
-                    tie_weights=lm_config_cf['tie_weights'],
-                    residual=lm_config_cf['residual'],
-                    bwd=lm_config_cf['bwd'])
-                # TODO(hirofumi): cold fusion for backward RNNLM
+                    emb_dim=lm_config_init['emb_dim'],
+                    rnn_type=lm_config_init['rnn_type'],
+                    bidirectional=lm_config_init['bidirectional'],  # False
+                    n_units=lm_config_init['n_units'],
+                    n_layers=lm_config_init['n_layers'],  # 1
+                    dropout_emb=lm_config_init['dropout_emb'],
+                    dropout_hidden=lm_config_init['dropout_hidden'],
+                    dropout_out=lm_config_init['dropout_out'],
+                    n_classes=lm_config_init['n_classes'],
+                    param_init_dist=lm_config_init['param_init_dist'],
+                    param_init=lm_config_init['param_init'],
+                    rec_weight_orthogonal=lm_config_init['rec_weight_orthogonal'],
+                    lsm_prob=lm_config_init['lsm_prob'],
+                    lsm_type=lm_config_init['lsm_type'],
+                    tie_weights=lm_config_init['tie_weights'],
+                    residual=lm_config_init['residual'],
+                    backward=lm_config_init['backward'])
+                # TODO(hirofumi): RNNLM initialization for backward RNNLM
             else:
                 rnnlm_init = None
 
@@ -343,20 +342,23 @@ class AttentionSeq2seq(ModelBase):
                 generate_feat=generate_feat,
                 n_classes=self.n_classes,
                 logits_temp=logits_temp,
-                drop_dec=drop_dec,
-                drop_emb=drop_emb,
+                dropout_dec=dropout_dec,
+                dropout_emb=dropout_emb,
                 ss_prob=ss_prob,
                 lsm_prob=lsm_prob,
                 lsm_type=lsm_type,
                 backward=(dir == 'bwd'),
-                lm_fusion=lm_fusion,
-                lm_loss_weight=lm_loss_weight,
-                rnnlm=rnnlm))
+                rnnlm_cf=rnnlm_cf,
+                cf_type=cf_type,
+                internal_lm=internal_lm,
+                rnnlm_init=rnnlm_init,
+                lm_weight=lm_weight,
+                share_softmax=share_softmax))
 
         if enc_in_type == 'text':
             self.embed_in = Embedding(num_classes=n_classes_in,
                                       embedding_dim=enc_in_type,
-                                      dropout=drop_emb,
+                                      dropout=dropout_emb,
                                       ignore_index=n_classes_in - 1)
 
         # CTC
@@ -367,13 +369,12 @@ class AttentionSeq2seq(ModelBase):
                 self.fc_ctc_0 = LinearND(self.enc_n_units, n_classes + 1)
 
             # Set CTC decoders
-            self._decode_ctc_greedy = GreedyDecoder(blank_index=0)
-            self._decode_ctc_beam = BeamSearchDecoder(blank_index=0)
+            self.decode_ctc_greedy = GreedyDecoder(blank_index=0)
+            self.decode_ctc_beam = BeamSearchDecoder(blank_index=0)
             # TODO(hirofumi): set space index
 
         # Initialize weight matrices
-        self.init_weights(param_init, distribution=param_init_dist,
-                          ignore_keys=['bias'])
+        self.init_weights(param_init, distribution=param_init_dist, ignore_keys=['bias'])
 
         # Initialize all biases with 0
         self.init_weights(0, distribution='constant', keys=['bias'])
@@ -384,6 +385,7 @@ class AttentionSeq2seq(ModelBase):
             if enc_type != 'cnn':
                 self.init_weights(param_init, distribution='orthogonal',
                                   keys=[enc_type, 'weight'], ignore_keys=['bias'])
+            # TODO(hirofumi): in case of CNN + LSTM
             # decoder
             self.init_weights(param_init, distribution='orthogonal',
                               keys=[dec_type, 'weight'], ignore_keys=['bias'])
@@ -392,8 +394,8 @@ class AttentionSeq2seq(ModelBase):
         self.init_forget_gate_bias_with_one()
 
         # Initialize bias in gating with -1
-        if lm_fusion in ['cold_fusion_prob', 'cold_fusion_hidden']:
-            self.init_weights(-1, distribution='constant', keys=['fc_cf_gate.fc.bias'])
+        if lm_config_cf is not None:
+            self.init_weights(-1, distribution='constant', keys=['cf_fc_lm_gate.fc.bias'])
 
     def forward(self, xs, ys, is_eval=False):
         """Forward computation.
@@ -552,7 +554,8 @@ class AttentionSeq2seq(ModelBase):
 
     def decode(self, xs, beam_width, min_len_ratio=0, max_len_ratio=1,
                len_penalty=0, cov_penalty=0, cov_threshold=0,
-               lm_weight=0, task_index=0, resolving_unk=False, exclude_eos=True):
+               rnnlm=None, lm_weight=0, task_index=0,
+               resolving_unk=False, exclude_eos=True):
         """Decoding in the inference stage.
 
         Args:
@@ -596,7 +599,7 @@ class AttentionSeq2seq(ModelBase):
             best_hyps, aw = getattr(self, 'dec_0_' + dir).beam_search(
                 enc_out, x_lens, beam_width, min_len_ratio, max_len_ratio,
                 len_penalty, cov_penalty, cov_threshold,
-                lm_weight, exclude_eos)
+                rnnlm, lm_weight, exclude_eos)
 
         return best_hyps, aw, perm_idx
 
@@ -639,10 +642,10 @@ class AttentionSeq2seq(ModelBase):
         logits_ctc = logits_ctc.view(batch_size, max_time, -1)
 
         if beam_width == 1:
-            best_hyps = self._decode_ctc_greedy(var2np(logits_ctc), x_lens)
+            best_hyps = self.decode_ctc_greedy(var2np(logits_ctc), x_lens)
         else:
-            best_hyps = self._decode_ctc_beam(var2np(F.log_softmax(logits_ctc, dim=-1)),
-                                              x_lens, beam_width=beam_width)
+            best_hyps = self.decode_ctc_beam(var2np(F.log_softmax(logits_ctc, dim=-1)),
+                                             x_lens, beam_width=beam_width)
 
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
         best_hyps -= 1

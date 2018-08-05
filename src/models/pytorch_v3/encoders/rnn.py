@@ -24,7 +24,7 @@ class RNNEncoder(torch.nn.Module):
 
     Args:
         input_size (int): the dimension of input features
-        rnn_type (string): lstm or gru or rnn
+        rnn_type (str): lstm or gru or rnn
         bidirectional (bool): if True, use the bidirectional encoder
         n_units (int): the number of units in each layer
         n_projs (int): the number of nodes in the projection layer
@@ -34,7 +34,7 @@ class RNNEncoder(torch.nn.Module):
         subsample_list (list): subsample in the corresponding layers (True)
             ex.) [False, True, True, False] means that downsample is conducted
                 in the 2nd and 3rd layers.
-        subsample_type (string): drop or concat
+        subsample_type (str): drop or concat
         batch_first (bool): if True, batch-major computation will be performed
         merge_bidirectional (bool): if True, sum bidirectional outputs
         pack_sequence (bool):
@@ -219,7 +219,7 @@ class RNNEncoder(torch.nn.Module):
                 # TODO(hirofumi): check this
 
                 # Dropout for hidden-hidden or hidden-output connection
-                setattr(self, 'drop_l' + str(i_l), torch.nn.Dropout(p=dropout_hidden))
+                setattr(self, 'dropout_l' + str(i_l), torch.nn.Dropout(p=dropout_hidden))
 
                 if i_l != self.n_layers - 1 and self.n_projs > 0:
                     proj_i = LinearND(n_units * self.n_directions, n_projs)
@@ -327,7 +327,7 @@ class RNNEncoder(torch.nn.Module):
                     # assert x_lens == unpacked_seq_len
 
                 # Dropout for hidden-hidden or hidden-output connection
-                xs = getattr(self, 'drop_l' + str(i_l))(xs)
+                xs = getattr(self, 'dropout_l' + str(i_l))(xs)
 
                 # Pick up outputs in the sub task before the projection layer
                 if self.n_layers_sub >= 1 and i_l == self.n_layers_sub - 1:

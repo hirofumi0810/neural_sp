@@ -13,37 +13,37 @@ import time
 import unittest
 
 import torch
-torch.manual_seed(1623)
-torch.cuda.manual_seed_all(1623)
 
-import matplotlib
-matplotlib.use('Agg')
-from matplotlib import pyplot as plt
-plt.style.use('ggplot')
-import seaborn as sns
-sns.set_style("white")
-blue = '#4682B4'
-orange = '#D2691E'
-green = '#006400'
-
-sys.path.append('../../../')
+sys.path.append('../../../../')
+from src.bin.training.utils.learning_rate_controller import Controller
 from src.models.pytorch_v3.attention.attention_seq2seq import AttentionSeq2seq
 from src.models.pytorch_v3.data_parallel import CustomDataParallel
-from src.utils.measure_time_func import measure_time
+from src.test.data import generate_data
+from src.test.data import idx2char
+from src.test.data import idx2word
 from src.utils.evaluation.edit_distance import compute_wer
-from src.bin.training.utils.learning_rate_controller import Controller
-from test.data import generate_data, idx2char, idx2word
+from src.utils.measure_time_func import measure_time
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--ngpus', type=int, default=0,
                     help='the number of GPUs (negative value indicates CPU)')
 args = parser.parse_args()
 
+torch.manual_seed(1623)
+torch.cuda.manual_seed_all(1623)
+
 
 class TestAttention(unittest.TestCase):
 
     def test(self):
         print("Attention Working check.")
+
+        # Internal LM
+        self.check(internal_lm=True)
+
+        # RNNLM objective
+        self.check(internal_lm=True, lm_weight=1)
+        self.check(internal_lm=True, lm_weight=1, share_softmax=True)
 
         # Multi-head attention
         self.check(att_type='content', n_heads=2)
@@ -58,18 +58,18 @@ class TestAttention(unittest.TestCase):
         self.check(beam_width=2)
 
         # Backward decoder
-        self.check(bwd_loss_weight=1)
-        self.check(bwd_loss_weight=0.8)
-        self.check(bwd_loss_weight=0.5)
-        self.check(bwd_loss_weight=0.2)
-        self.check(bwd_loss_weight=0.8, beam_width=2)
+        self.check(bwd_weight=1)
+        self.check(bwd_weight=0.8)
+        self.check(bwd_weight=0.5)
+        self.check(bwd_weight=0.2)
+        self.check(bwd_weight=0.8, beam_width=2)
 
         # CLDNN encoder
         self.check(conv=True)
         self.check(conv=True, batch_norm=True)
 
         # Joint CTC-Attention
-        self.check(ctc_loss_weight=0.2)
+        self.check(ctc_weight=0.2)
 
         # Pyramidal encoder
         self.check(subsample='drop')
@@ -89,8 +89,7 @@ class TestAttention(unittest.TestCase):
         self.check(enc_bidirectional=True)
         self.check(enc_bidirectional=False)
         self.check(enc_type='gru', dec_type='gru')
-        self.check(enc_type='gru', enc_bidirectional=False,
-                   dec_type='gru')
+        self.check(enc_type='gru', enc_bidirectional=False, dec_type='gru')
 
         # Attention type
         self.check(att_type='content')
@@ -100,9 +99,10 @@ class TestAttention(unittest.TestCase):
     @measure_time
     def check(self, enc_type='lstm', dec_type='lstm', enc_bidirectional=True,
               att_type='location', label_type='char',
-              subsample=False, enc_proj=False, init_dec_state='first',
-              ctc_loss_weight=0, conv=False, batch_norm=False, residual=False,
-              beam_width=1, bwd_loss_weight=0, n_heads=1):
+              subsample=False, enc_proj=False, ctc_weight=0,
+              conv=False, batch_norm=False, residual=False,
+              beam_width=1, bwd_weight=0, n_heads=1,
+              internal_lm=False, lm_weight=0, share_softmax=False):
 
         print('==================================================')
         print('  label_type: %s' % label_type)
@@ -110,16 +110,18 @@ class TestAttention(unittest.TestCase):
         print('  enc_bidirectional: %s' % str(enc_bidirectional))
         print('  enc_proj: %d' % enc_proj)
         print('  dec_type: %s' % dec_type)
-        print('  init_dec_state: %s' % init_dec_state)
         print('  att_type: %s' % att_type)
         print('  subsample: %s' % str(subsample))
-        print('  ctc_loss_weight: %.2f' % ctc_loss_weight)
+        print('  ctc_weight: %.2f' % ctc_weight)
         print('  conv: %s' % str(conv))
         print('  batch_norm: %s' % str(batch_norm))
         print('  residual: %s' % str(residual))
         print('  beam_width: %d' % beam_width)
-        print('  bwd_loss_weight: %.2f' % bwd_loss_weight)
+        print('  bwd_weight: %.2f' % bwd_weight)
         print('  n_heads: %d' % n_heads)
+        print('  internal_lm: %s' % str(internal_lm))
+        print('  lm_weight: %.2f' % lm_weight)
+        print('  share_softmax: %s' % str(share_softmax))
         print('==================================================')
 
         if conv or enc_type == 'cnn':
@@ -185,7 +187,7 @@ class TestAttention(unittest.TestCase):
             dec_n_units=256,
             dec_n_layers=1,
             dec_residual=residual,
-            emb_dim=32,
+            emb_dim=256,
             bottle_dim=256,
             generate_feat='sc',
             n_classes=n_classes,
@@ -193,7 +195,6 @@ class TestAttention(unittest.TestCase):
             param_init_dist='uniform',
             param_init=0.1,
             rec_weight_orthogonal=False,
-            init_forget_gate_bias_with_one=True,
             dropout_in=0.1,
             dropout_enc=0.1,
             dropout_dec=0.1,
@@ -201,15 +202,16 @@ class TestAttention(unittest.TestCase):
             ss_prob=0.1,
             lsm_prob=0.1,
             lsm_type='uniform',
-            weight_noise_std=1e-9,
-            cov_weight=0,
-            ctc_loss_weight=ctc_loss_weight,
-            bwd_loss_weight=bwd_loss_weight,
+            ctc_weight=ctc_weight,
+            bwd_weight=bwd_weight,
+            internal_lm=internal_lm,
+            lm_weight=lm_weight,
+            share_softmax=share_softmax,
         )
 
         # Count total parameters
-        for name in sorted(list(model.n_params_dict.keys())):
-            n_params = model.n_params_dict[name]
+        for name in sorted(list(model.num_params_dict.keys())):
+            n_params = model.num_params_dict[name]
             print("%s %d" % (name, n_params))
         print("Total %.2f M parameters" % (model.total_parameters / 1000000))
 
@@ -233,13 +235,13 @@ class TestAttention(unittest.TestCase):
 
         # GPU setting
         if args.ngpus >= 1:
-            model = CustomDataParallel(
-                model, device_ids=list(range(0, args.ngpus, 1)),
-                benchmark=True)
+            model = CustomDataParallel(model,
+                                       device_ids=list(range(0, args.ngpus, 1)),
+                                       benchmark=True)
             model.cuda()
 
         # Train model
-        max_step = 200
+        max_step = 300
         start_time_step = time.time()
         for step in range(max_step):
 
@@ -268,16 +270,13 @@ class TestAttention(unittest.TestCase):
             if (step + 1) % 10 == 0:
                 # Compute loss
                 loss, acc = model(xs, ys, is_eval=True)
-                loss = loss.data[0] if model.module.torch_version < 0.4 else loss.item(
-                )
+                loss = loss.data[0] if model.module.torch_version < 0.4 else loss.item()
 
                 # Decode
-                best_hyps, _, perm_idx = model.module.decode(
-                    xs, beam_width, max_decode_len=60)
+                best_hyps, _, perm_idx = model.module.decode(xs, beam_width, max_len_ratio=0.7)
 
                 str_ref = map_fn(ys[0])
-                str_hyp = map_fn(best_hyps[0]).replace(
-                    '_>', '').replace('>', '')
+                str_hyp = map_fn(best_hyps[0]).replace('_>', '').replace('>', '')
 
                 # Compute accuracy
                 try:
@@ -302,9 +301,8 @@ class TestAttention(unittest.TestCase):
                 print('Hyp: %s' % str_hyp)
 
                 # Decode by the CTC decoder
-                if model.module.ctc_loss_weight >= 0.1:
-                    best_hyps_ctc, perm_idx = model.module.decode_ctc(
-                        xs, beam_width)
+                if ctc_weight >= 0.1:
+                    best_hyps_ctc, perm_idx = model.module.decode_ctc(xs, beam_width)
                     str_pred_ctc = map_fn(best_hyps_ctc[0])
                     print('Hyp (CTC): %s' % str_pred_ctc)
 
