@@ -10,6 +10,7 @@ from __future__ import print_function
 
 class Controller(object):
     """Controll learning rate per epoch.
+
     Args:
         learning_rate_init (float): the initial learning rate
         backend (string): pytorch or chainer
@@ -21,6 +22,7 @@ class Controller(object):
         lower_better (bool): If True, the lower, the better.
             If False, the higher, the better.
         best_value (float): the worst value of evaluation metric
+
     """
 
     def __init__(self, learning_rate_init, backend, decay_type,
@@ -41,6 +43,7 @@ class Controller(object):
 
     def decay_lr(self, optimizer, learning_rate, epoch, value):
         """Decay learning rate per epoch.
+
         Args:
             optimizer:
             learning_rate (float): the current learning rete
@@ -49,6 +52,7 @@ class Controller(object):
         Returns:
             optimizer:
             learning_rate (float): the decayed learning rate
+
         """
         if not self.lower_better:
             value *= -1

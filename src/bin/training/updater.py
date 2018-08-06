@@ -8,27 +8,19 @@ from __future__ import division
 from __future__ import print_function
 
 import logging
-logger = logging.getLogger('training')
-
 import torch
-
-try:
-    import cupy
-except:
-    logger.warning('Install cupy.')
-try:
-    import chainer
-except:
-    logger.warning('Install chainer.')
+logger = logging.getLogger('training')
 
 INF = float("inf")
 
 
 class Updater(object):
     """
+
     Args:
         clip_grad_norm (float):
         backend (string): pytorch or chainer
+
     """
 
     def __init__(self, clip_grad_norm, backend):
@@ -37,6 +29,7 @@ class Updater(object):
 
     def __call__(self, model, batch, is_eval=False):
         """
+
         Args:
             model (torch.nn.Module or chainer.Chain):
             batch (tuple):
@@ -45,6 +38,7 @@ class Updater(object):
             model (torch.nn.Module or chainer.Chain):
             loss_val (float):
             acc (float): Token-level accuracy in teacher-forcing
+
         """
         try:
             # Step for parameter update
@@ -53,8 +47,8 @@ class Updater(object):
                     loss, acc = model(batch['xs'], batch['ys'], is_eval=True)
                 else:
                     model.module.optimizer.zero_grad()
-                    if len(model.device_ids) >= 1:
-                        torch.cuda.empty_cache()
+                    # if len(model.device_ids) >= 1:
+                    #     torch.cuda.empty_cache()
                     loss, acc = model(batch['xs'], batch['ys'])
                     if len(model.device_ids) > 1:
                         loss.backward(torch.ones(len(model.device_ids)))
@@ -69,7 +63,7 @@ class Updater(object):
                             torch.nn.utils.clip_grad_norm_(
                                 model.module.parameters(), self.clip_grad_norm)
                     model.module.optimizer.step()
-                    # TODO: Add scheduler
+                    # TODO(hirofumi): Add scheduler
 
                 if model.module.torch_version < 0.4:
                     loss_val = loss.data[0]
@@ -89,13 +83,13 @@ class Updater(object):
 
             del loss
 
-        except RuntimeError as e:
+        except RuntimeError:
             logger.warning('!!!Skip mini-batch!!! (max_frame_num: %d, batch: %d)' %
                            (max(len(x) for x in batch['xs']), len(batch['xs'])))
             if self.backend == 'pytorch':
                 model.module.optimizer.zero_grad()
-                if len(model.device_ids) >= 1:
-                    torch.cuda.empty_cache()
+                # if len(model.device_ids) >= 1:
+                #     torch.cuda.empty_cache()
             elif self.backend == 'chainer':
                 model.optimizer.target.cleargrads()
             loss_val = 0.

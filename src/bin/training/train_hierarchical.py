@@ -7,15 +7,15 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import torch
-import os
-import sys
-import time
-from setproctitle import setproctitle
 import argparse
-from tensorboardX import SummaryWriter
-from tqdm import tqdm
 import cProfile
+import os
+from setproctitle import setproctitle
+import sys
+from tensorboardX import SummaryWriter
+import time
+import torch
+from tqdm import tqdm
 
 torch.manual_seed(1623)
 torch.cuda.manual_seed_all(1623)
@@ -28,9 +28,9 @@ from src.dataset.loader_hierarchical_p2w import Dataset as Dataset_p2w
 from src.metrics.phone import eval_phone
 from src.metrics.character import eval_char
 from src.metrics.word import eval_word
-from src.bin.training.utils.learning_rate_controller import Controller
-from src.bin.training.utils.reporter_hierarchical import Reporter
-from src.bin.training.utils.updater_hierarchical import Updater
+from src.bin.training.learning_rate_controller import Controller
+from src.bin.training.reporter_hierarchical import Reporter
+from src.bin.training.updater_hierarchical import Updater
 from src.utils.logging import set_logger
 from src.utils.directory import mkdir_join
 from src.utils.config import load_config, save_config
@@ -55,22 +55,6 @@ parser.add_argument('--model_save_path', type=str, default=None,
 parser.add_argument('--saved_model_path', type=str, default=None,
                     help='path to the saved model to retrain')
 args = parser.parse_args()
-
-# corpus depending
-if args.corpus == 'csj':
-    MAX_DECODE_LEN_WORD = 100
-    MAX_DECODE_LEN_CHAR = 200
-    MAX_DECODE_LEN_PHONE = 200
-elif args.corpus == 'swbd':
-    MAX_DECODE_LEN_WORD = 100
-    MAX_DECODE_LEN_CHAR = 300
-    MAX_DECODE_LEN_PHONE = 300
-elif args.corpus == 'wsj':
-    MAX_DECODE_LEN_WORD = 32
-    MAX_DECODE_LEN_CHAR = 199
-    MAX_DECODE_LEN_PHONE = 200
-else:
-    raise ValueError(args.corpus)
 
 
 def main():
@@ -104,22 +88,21 @@ def main():
             use_delta=config['use_delta'],
             use_double_delta=config['use_double_delta'],
             data_type=args.train_set,
-            data_size=config['data_size'] if 'data_size' in config.keys(
-            ) else '',
+            data_size=config['data_size'] if 'data_size' in config.keys() else '',
             vocab=config['vocab'],
             label_type=config['label_type'],
             label_type_sub=config['label_type_sub'],
             batch_size=config['batch_size'] * args.ngpus,
-            max_epoch=config['num_epoch'],
-            max_frame_num=config['max_frame_num'],
-            min_frame_num=config['min_frame_num'],
+            max_epoch=config['n_epochs'],
+            max_n_frames=config['max_n_frames'] if 'max_n_frames' in config.keys() else 10000,
+            min_n_frames=config['min_n_frames'] if 'min_n_frames' in config.keys() else 0,
             sort_utt=True, sort_stop_epoch=config['sort_stop_epoch'],
             tool=config['tool'], dynamic_batching=config['dynamic_batching'],
             use_ctc=config['model_type'] == 'hierarchical_ctc',
             subsampling_factor=2 ** sum(config['subsample_list']),
             use_ctc_sub=config['model_type'] == 'hierarchical_ctc' or (
-                config['model_type'] == 'hierarchical_attention' and config['ctc_loss_weight_sub'] > 0),
-            subsampling_factor_sub=2 ** sum(config['subsample_list'][:config['encoder_num_layers_sub'] - 1]))
+                config['model_type'] == 'hierarchical_attention' and config['ctc_weight_sub'] > 0),
+            subsampling_factor_sub=2 ** sum(config['subsample_list'][:config['enc_n_layers_sub'] - 1]))
         dev_set = Dataset_asr(
             corpus=args.corpus,
             data_save_path=args.data_save_path,
@@ -128,8 +111,7 @@ def main():
             use_delta=config['use_delta'],
             use_double_delta=config['use_double_delta'],
             data_type=args.dev_set,
-            data_size=config['data_size'] if 'data_size' in config.keys(
-            ) else '',
+            data_size=config['data_size'] if 'data_size' in config.keys() else '',
             vocab=config['vocab'],
             label_type=config['label_type'],
             label_type_sub=config['label_type_sub'],
@@ -138,8 +120,8 @@ def main():
             use_ctc=config['model_type'] == 'hierarchical_ctc',
             subsampling_factor=2 ** sum(config['subsample_list']),
             use_ctc_sub=config['model_type'] == 'hierarchical_ctc' or (
-                config['model_type'] == 'hierarchical_attention' and config['ctc_loss_weight_sub'] > 0),
-            subsampling_factor_sub=2 ** sum(config['subsample_list'][:config['encoder_num_layers_sub'] - 1]))
+                config['model_type'] == 'hierarchical_attention' and config['ctc_weight_sub'] > 0),
+            subsampling_factor_sub=2 ** sum(config['subsample_list'][:config['enc_n_layers_sub'] - 1]))
         eval_sets = []
         for data_type in args.eval_sets:
             eval_sets += [Dataset_asr(
@@ -150,8 +132,7 @@ def main():
                 use_delta=config['use_delta'],
                 use_double_delta=config['use_double_delta'],
                 data_type=data_type,
-                data_size=config['data_size'] if 'data_size' in config.keys(
-                ) else '',
+                data_size=config['data_size'] if 'data_size' in config.keys() else '',
                 vocab=config['vocab'],
                 label_type=config['label_type'],
                 label_type_sub=config['label_type_sub'],
@@ -162,30 +143,26 @@ def main():
             data_save_path=args.data_save_path,
             model_type=config['model_type'],
             data_type=args.train_set,
-            data_size=config['data_size'] if 'data_size' in config.keys(
-            ) else '',
+            data_size=config['data_size'] if 'data_size' in config.keys() else '',
             vocab=config['vocab'],
             label_type_in=config['label_type_in'],
             label_type=config['label_type'],
             label_type_sub=config['label_type_sub'],
             batch_size=config['batch_size'] * args.ngpus,
-            max_epoch=config['num_epoch'],
-            max_frame_num=config['max_frame_num'] if 'max_frame_num' in config.keys(
-            ) else 10000,
-            min_frame_num=config['min_frame_num'] if 'min_frame_num' in config.keys(
-            ) else 0,
+            max_epoch=config['n_epochs'],
+            max_n_frames=config['max_n_frames'] if 'max_n_frames' in config.keys() else 10000,
+            min_n_frames=config['min_n_frames'] if 'min_n_frames' in config.keys() else 0,
             sort_utt=True, sort_stop_epoch=config['sort_stop_epoch'],
             tool=config['tool'], dynamic_batching=config['dynamic_batching'],
             use_ctc=config['model_type'] == 'ctc' or (
-                config['model_type'] == 'attention' and config['ctc_loss_weight'] > 0),
+                config['model_type'] == 'attention' and config['ctc_weight'] > 0),
             subsampling_factor=2 ** sum(config['subsample_list']))
         dev_set = Dataset_p2w(
             corpus=args.corpus,
             data_save_path=args.data_save_path,
             model_type=config['model_type'],
             data_type=args.dev_set,
-            data_size=config['data_size'] if 'data_size' in config.keys(
-            ) else '',
+            data_size=config['data_size'] if 'data_size' in config.keys() else '',
             vocab=config['vocab'],
             label_type_in=config['label_type_in'],
             label_type=config['label_type'],
@@ -193,7 +170,7 @@ def main():
             batch_size=config['batch_size'] * args.ngpus,
             shuffle=True, tool=config['tool'],
             use_ctc=config['model_type'] == 'ctc' or (
-                config['model_type'] == 'attention' and config['ctc_loss_weight'] > 0),
+                config['model_type'] == 'attention' and config['ctc_weight'] > 0),
             subsampling_factor=2 ** sum(config['subsample_list']))
         eval_sets = []
         for data_type in args.eval_sets:
@@ -204,8 +181,7 @@ def main():
                 data_save_path=args.data_save_path,
                 model_type=config['model_type'],
                 data_type=data_type,
-                data_size=config['data_size'] if 'data_size' in config.keys(
-                ) else '',
+                data_size=config['data_size'] if 'data_size' in config.keys() else '',
                 vocab=config['vocab'],
                 label_type_in=config['label_type_in'],
                 label_type=config['label_type'],
@@ -213,32 +189,32 @@ def main():
                 batch_size=1, tool=config['tool'])]
         config['num_classes_input'] = train_set.num_classes_in
 
-    config['num_classes'] = train_set.num_classes
-    config['num_classes_sub'] = train_set.num_classes_sub
+    config['n_classes'] = train_set.n_classes
+    config['n_classes_sub'] = train_set.n_classes_sub
 
     # Load a RNNLM config file for cold fusion in the main task
-    if config['rnnlm_fusion_type'] and config['rnnlm_path']:
+    if config['rnnlm_path_cf']:
         if args.model_save_path is not None:
-            config['rnnlm_config'] = load_config(
-                os.path.join(config['rnnlm_path'], 'config.yml'), is_eval=True)
+            config['lm_config_cf'] = load_config(
+                os.path.join(config['rnnlm_path_cf'], 'config.yml'), is_eval=True)
         elif args.saved_model_path is not None:
             config = load_config(os.path.join(
-                args.saved_model_path, 'config_rnnlm.yml'))
-        assert config['label_type'] == config['rnnlm_config']['label_type']
-        config['rnnlm_config']['num_classes'] = train_set.num_classes
+                args.saved_model_path, 'config_rnnlm_cf.yml'))
+        assert config['label_type'] == config['lm_config_cf']['label_type']
+        config['lm_config_cf']['n_classes'] = train_set.n_classes
     else:
-        config['rnnlm_config'] = None
+        config['lm_config_cf'] = None
 
     # Load a RNNLM config file for cold fusion in the sub task
-    if config['rnnlm_fusion_type'] and config['rnnlm_path_sub']:
+    if config['rnnlm_path_sub_cf']:
         if args.model_save_path is not None:
             config['rnnlm_config_sub'] = load_config(
-                os.path.join(config['rnnlm_path_sub'], 'config.yml'), is_eval=True)
+                os.path.join(config['rnnlm_path_sub_cf'], 'config.yml'), is_eval=True)
         elif args.saved_model_path is not None:
             config = load_config(os.path.join(
-                args.saved_model_path, 'config_rnnlm_sub.yml'))
+                args.saved_model_path, 'config_rnnlm_sub_cf.yml'))
         assert config['label_type_sub'] == config['rnnlm_config_sub']['label_type']
-        config['rnnlm_config_sub']['num_classes'] = train_set.num_classes_sub
+        config['rnnlm_config_sub']['n_classes'] = train_set.n_classes_sub
     else:
         config['rnnlm_config_sub'] = None
 
@@ -249,31 +225,30 @@ def main():
 
     if args.model_save_path is not None:
         # Load pre-trained RNNLM in the main task
-        if config['rnnlm_fusion_type'] and config['rnnlm_path']:
-            rnnlm = load(model_type=config['rnnlm_config']['model_type'],
-                         config=config['rnnlm_config'],
-                         backend=config['rnnlm_config']['backend'])
-            rnnlm.load_checkpoint(save_path=config['rnnlm_path'], epoch=-1)
-            rnnlm.flatten_parameters()
+        if config['rnnlm_path_cf']:
+            rnnlm_cf = load(model_type=config['lm_config_cf']['model_type'],
+                            config=config['lm_config_cf'],
+                            backend=config['lm_config_cf']['backend'])
+            rnnlm_cf.load_checkpoint(save_path=config['rnnlm_path_cf'], epoch=-1)
+            rnnlm_cf.flatten_parameters()
 
             # Fix RNNLM parameters
-            if config['rnnlm_weight'] == 0:
-                for param in rnnlm.parameters():
-                    param.requires_grad = False
+            for param in rnnlm_cf.parameters():
+                param.requires_grad = False
 
             # Set pre-trained parameters
-            if config['rnnlm_config']['backward']:
-                model.rnnlm_0_bwd = rnnlm
+            if config['lm_config_cf']['backward']:
+                model.rnnlm_0_bwd = rnnlm_cf
             else:
-                model.rnnlm_0_fwd = rnnlm
+                model.rnnlm_0_fwd = rnnlm_cf
 
         # Load pre-trained RNNLM in the sub task
-        if config['rnnlm_fusion_type'] and config['rnnlm_path_sub']:
+        if config['rnnlm_path_sub_cf']:
             rnnlm_sub = load(model_type=config['rnnlm_config_sub']['model_type'],
                              config=config['rnnlm_config_sub'],
                              backend=config['rnnlm_config_sub']['backend'])
             rnnlm_sub.load_checkpoint(
-                save_path=config['rnnlm_path_sub'], epoch=-1)
+                save_path=config['rnnlm_path_sub_cf'], epoch=-1)
             rnnlm_sub.flatten_parameters()
 
             # Fix RNNLM parameters
@@ -299,8 +274,7 @@ def main():
         save_config(config_path=args.config_path, save_path=model.save_path)
 
         # Setting for logging
-        logger = set_logger(os.path.join(
-            model.save_path, 'train.log'), key='training')
+        logger = set_logger(os.path.join(model.save_path, 'train.log'), key='training')
 
         for k, v in sorted(config.items(), key=lambda x: x[0]):
             logger.info('%s: %s' % (k, str(v)))
@@ -315,8 +289,7 @@ def main():
         for name in sorted(list(model.num_params_dict.keys())):
             num_params = model.num_params_dict[name]
             logger.info("%s %d" % (name, num_params))
-        logger.info("Total %.2f M parameters" %
-                    (model.total_parameters / 1000000))
+        logger.info("Total %.2f M parameters" % (model.total_parameters / 1000000))
 
         # Set optimizer
         model.set_optimizer(
@@ -338,14 +311,12 @@ def main():
         model.save_path = args.saved_model_path
 
         # Setting for logging
-        logger = set_logger(os.path.join(
-            model.save_path, 'train.log'), key='training')
+        logger = set_logger(os.path.join(model.save_path, 'train.log'), key='training')
 
         # Set optimizer
         model.set_optimizer(
             optimizer=config['optimizer'],
-            learning_rate_init=float(
-                config['learning_rate']),  # on-the-fly
+            learning_rate_init=float(config['learning_rate']),  # on-the-fly
             weight_decay=float(config['weight_decay']),
             clip_grad_norm=config['clip_grad_norm'],
             lr_schedule=False,
@@ -359,8 +330,7 @@ def main():
         if epoch >= config['convert_to_sgd_epoch']:
             model.set_optimizer(
                 optimizer='sgd',
-                learning_rate_init=float(
-                    config['learning_rate']),  # on-the-fly
+                learning_rate_init=float(config['learning_rate']),  # on-the-fly
                 weight_decay=float(config['weight_decay']),
                 clip_grad_norm=config['clip_grad_norm'],
                 lr_schedule=False,
@@ -453,10 +423,8 @@ def main():
             # Logging by tensorboard
             if config['backend'] == 'pytorch':
                 tf_writer.add_scalar('train/loss', loss_train_mean, step + 1)
-                tf_writer.add_scalar(
-                    'train/loss_main', loss_main_train_mean, step + 1)
-                tf_writer.add_scalar(
-                    'train/loss_sub', loss_sub_train_mean, step + 1)
+                tf_writer.add_scalar('train/loss_main', loss_main_train_mean, step + 1)
+                tf_writer.add_scalar('train/loss_sub', loss_sub_train_mean, step + 1)
                 tf_writer.add_scalar('dev/loss', loss_dev, step + 1)
                 tf_writer.add_scalar('dev/loss_main', loss_main_dev, step + 1)
                 tf_writer.add_scalar('dev/loss_sub', loss_sub_dev, step + 1)
@@ -485,8 +453,7 @@ def main():
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:
             duration_epoch = time.time() - start_time_epoch
-            logger.info('===== EPOCH:%d (%.2f min) =====' %
-                        (epoch, duration_epoch / 60))
+            logger.info('===== EPOCH:%d (%.2f min) =====' % (epoch, duration_epoch / 60))
 
             # Save fugures of loss and accuracy
             reporter.epoch()
@@ -502,43 +469,17 @@ def main():
                 if model.module.main_loss_weight > 0:
                     if 'word' in config['label_type']:
                         metric_dev, _ = eval_word(
-                            models=[model.module],
-                            dataset=dev_set,
-                            eval_batch_size=1,
-                            beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_WORD,
-                            max_decode_len_sub=MAX_DECODE_LEN_CHAR if 'character' in config['label_type_sub'] else MAX_DECODE_LEN_PHONE)
+                            models=[model.module], dataset=dev_set)
                         logger.info('  WER (%s, main): %.3f %%' %
                                     (dev_set.data_type, metric_dev))
                     elif 'character' in config['label_type']:
                         wer_dev, metric_dev, _ = eval_char(
-                            models=[model.module],
-                            dataset=dev_set,
-                            eval_batch_size=1,
-                            beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_CHAR)
-                        # max_decode_len_sub=MAX_DECODE_LEN_PHONE)
+                            models=[model.module], dataset=dev_set)
                         logger.info('  WER / CER (%s): %.3f / %.3f %%' %
                                     (dev_set.data_type, wer_dev, metric_dev))
-                    else:
-                        raise ValueError(config['label_type'])
-                else:
-                    if 'character' in config['label_type_sub']:
-                        wer_dev_sub, metric_dev, _ = eval_char(
-                            models=[model.module],
-                            dataset=dev_set,
-                            eval_batch_size=1,
-                            beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_CHAR)
-                        logger.info('  WER / CER (%s, sub): %.3f / %.3f %%' %
-                                    (dev_set.data_type, wer_dev_sub, metric_dev))
                     elif 'phone' in config['label_type_sub']:
                         metric_dev, _ = eval_phone(
-                            model=[model.module],
-                            dataset=dev_set,
-                            eval_batch_size=1,
-                            beam_width=1,
-                            max_decode_len=MAX_DECODE_LEN_PHONE)
+                            models=[model.module], dataset=dev_set)
                         logger.info('  PER (%s): %.3f %%' %
                                     (dev_set.data_type, metric_dev))
                     else:
@@ -565,41 +506,23 @@ def main():
                         if model.module.main_loss_weight > 0:
                             if 'word' in config['label_type']:
                                 wer_test, _ = eval_word(
-                                    models=[model.module],
-                                    dataset=eval_set,
-                                    eval_batch_size=1,
-                                    beam_width=1,
-                                    max_decode_len=MAX_DECODE_LEN_WORD,
-                                    max_decode_len_sub=MAX_DECODE_LEN_CHAR)
+                                    models=[model.module], dataset=eval_set)
                                 logger.info('  WER (%s, main): %.3f %%' %
                                             (eval_set.data_type, wer_test))
                             elif 'character' in config['label_type']:
                                 wer_test, cer_test, _ = eval_char(
-                                    models=[model.module],
-                                    dataset=eval_set,
-                                    eval_batch_size=1,
-                                    beam_width=1,
-                                    max_decode_len=MAX_DECODE_LEN_CHAR)
-                                # max_decode_len_sub=MAX_DECODE_LEN_PHONE)
+                                    models=[model.module], dataset=eval_set)
                                 logger.info('  WER / CER (%s): %.3f / %.3f %%' %
                                             (eval_set.data_type, wer_test, cer_test))
                         else:
                             if 'character' in config['label_type_sub']:
                                 wer_test_sub, cer_test_sub, _ = eval_char(
-                                    models=[model.module],
-                                    dataset=eval_set,
-                                    eval_batch_size=1,
-                                    beam_width=1,
-                                    max_decode_len=MAX_DECODE_LEN_CHAR)
+                                    models=[model.module], dataset=eval_set)
                                 logger.info('  WER / CER (%s, sub): %.3f / %.3f %%' %
                                             (eval_set.data_type, wer_test_sub, cer_test_sub))
                             elif 'phone' in config['label_type_sub']:
                                 per_test, _ = eval_phone(
-                                    models=[model.module],
-                                    dataset=eval_set,
-                                    eval_batch_size=1,
-                                    beam_width=1,
-                                    max_decode_len=MAX_DECODE_LEN_PHONE)
+                                    models=[model.module], dataset=eval_set)
                                 logger.info('  PER (%s): %.3f %%' %
                                             (eval_set.data_type, per_test))
                 else:
@@ -631,10 +554,6 @@ def main():
                         patience_epoch=config['decay_patient_epoch'])
                     logger.info('========== Convert to SGD ==========')
 
-                    # Inject Gaussian noise to all parameters
-                    if float(config['weight_noise_std']) > 0:
-                        model.module.weight_noise_injection = True
-
                 # For nested attention
                 if model.module.model_type == 'nested_attention' and epoch >= config['fix_second_decoder_epoch']:
                     logger.info('========== Fix second decoder ==========')
@@ -642,7 +561,7 @@ def main():
 
             pbar_epoch = tqdm(total=len(train_set))
 
-            if epoch == config['num_epoch']:
+            if epoch == config['n_epochs']:
                 break
 
             start_time_step = time.time()

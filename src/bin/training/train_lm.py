@@ -7,16 +7,17 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import torch
-import os
-import sys
-import time
-from setproctitle import setproctitle
 import argparse
-from tensorboardX import SummaryWriter
-from tqdm import tqdm
 import cProfile
 import math
+import os
+from setproctitle import setproctitle
+import sys
+from tensorboardX import SummaryWriter
+import time
+import torch
+from tqdm import tqdm
+
 
 torch.manual_seed(1623)
 torch.cuda.manual_seed_all(1623)
@@ -26,9 +27,9 @@ from src.models.load_model import load
 from src.models.pytorch_v3.data_parallel import CustomDataParallel
 from src.dataset.loader_lm import Dataset
 from src.metrics.lm import eval_ppl
-from src.bin.training.utils.learning_rate_controller import Controller
-from src.bin.training.utils.reporter import Reporter
-from src.bin.training.utils.updater_lm import Updater
+from src.bin.training.learning_rate_controller import Controller
+from src.bin.training.reporter import Reporter
+from src.bin.training.updater_lm import Updater
 from src.utils.logging import set_logger
 from src.utils.directory import mkdir_join
 from src.utils.config import load_config, save_config
@@ -79,8 +80,8 @@ def main():
         vocab=config['vocab'],
         label_type=config['label_type'],
         batch_size=config['batch_size'], max_epoch=config['num_epoch'],
-        shuffle=True, sort_stop_epoch=config['sort_stop_epoch'],
-        tool=config['tool'], dynamic_batching=config['dynamic_batching'])
+        shuffle=True, tool=config['tool'],
+        dynamic_batching=config['dynamic_batching'])
     dev_data = Dataset(
         corpus=args.corpus,
         data_save_path=args.data_save_path,
@@ -104,7 +105,7 @@ def main():
             vocab=config['vocab'],
             label_type=config['label_type'],
             batch_size=config['batch_size'], tool=config['tool'])]
-    config['num_classes'] = train_set.num_classes
+    config['n_classes'] = train_set.n_classes
 
     # Model setting
     model = load(model_type=config['model_type'],
@@ -345,10 +346,6 @@ def main():
                         factor=config['decay_rate'],
                         patience_epoch=config['decay_patient_epoch'])
                     logger.info('========== Convert to SGD ==========')
-
-                    # Inject Gaussian noise to all parameters
-                    if float(config['weight_noise_std']) > 0:
-                        model.module.weight_noise_injection = True
 
             pbar_epoch = tqdm(total=len(train_set))
 
