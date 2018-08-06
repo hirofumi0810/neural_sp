@@ -284,17 +284,18 @@ class RNNEncoder(torch.nn.Module):
             xs = xs.transpose(0, 1).contiguous()
 
         if self.fast_impl:
-            if xs.is_cuda:
-                torch.cuda.empty_cache()
+            # if xs.is_cuda:
+            #     torch.cuda.empty_cache()
 
             # Pack encoder inputs
             if self.pack_sequence:
                 xs = pack_padded_sequence(xs, x_lens, batch_first=self.batch_first)
 
+            # NOTE: this is necessary for multi-GPUs setting
+            getattr(self, self.rnn_type).flatten_parameters()
+
             # Path through RNN
-            getattr(self, self.rnn_type).flatten_parameters()
             xs, _ = getattr(self, self.rnn_type)(xs, hx=None)
-            getattr(self, self.rnn_type).flatten_parameters()
 
             # Unpack encoder outputs
             if self.pack_sequence:
@@ -307,18 +308,18 @@ class RNNEncoder(torch.nn.Module):
         else:
             res_outputs = []
             for i_l in range(self.n_layers):
-                if xs.is_cuda:
-                    torch.cuda.empty_cache()
+                # if xs.is_cuda:
+                #     torch.cuda.empty_cache()
 
                 # Pack i_l-th encoder xs
                 if self.pack_sequence:
                     xs = pack_padded_sequence(xs, x_lens, batch_first=self.batch_first)
 
-                # Path through RNN
+                # NOTE: this is necessary for multi-GPUs setting
                 getattr(self, self.rnn_type + '_l' + str(i_l)).flatten_parameters()
+
+                # Path through RNN
                 xs, _ = getattr(self, self.rnn_type + '_l' + str(i_l))(xs, hx=None)
-                if i_l == self.n_layers - 1:
-                    getattr(self, self.rnn_type + '_l' + str(i_l)).flatten_parameters()
 
                 # Unpack i_l-th encoder outputs
                 if self.pack_sequence:
