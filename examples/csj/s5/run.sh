@@ -27,6 +27,7 @@ if [ $# -gt 2 ]; then
 fi
 
 stage=0
+saved_model=
 
 ### vocabulary
 vocab_size=15000
@@ -78,16 +79,18 @@ if [ $stage -le 0 ] && [ ! -e .done_stage_0_${datasize} ]; then
 
   local/csj_make_trans/csj_autorun.sh ${CSJDATATOP} ${data}/csj-data ${CSJVER} || exit 1;
   local/csj_data_prep.sh ${data}/csj-data ${datasize} || exit 1;
-
-  # Data preparation and formatting for evaluation set.
-  # CSJ has 3 types of evaluation data
   for x in eval1 eval2 eval3; do
     local/csj_eval_data_prep.sh ${data}/csj-data/eval ${x} || exit 1;
   done
 
-  touch .done_stage_0_${datasize} && echo "Finish data preparation (stage: 0)."\n
-fi
+  # Remove <sp> (short pause)
+  for x in ${train_set} ${test_set}; do
+    cat ${data}/${x}/text | sed -e 's/ <sp>//g' | sed -e 's/<sp> //g' > ${data}/${x}/text.tmp
+    mv ${data}/${x}/text.tmp ${data}/${x}/text
+  done
 
+  touch .done_stage_0_${datasize} && echo "Finish data preparation (stage: 0)."
+fi
 
 if [ $stage -le 1 ] && [ ! -e .done_stage_1_${datasize} ]; then
   echo ============================================================================
@@ -128,52 +131,66 @@ if [ $stage -le 1 ] && [ ! -e .done_stage_1_${datasize} ]; then
       ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x}_${datasize} ${dump_dir}
   done
 
-  touch .done_stage_1_${datasize} && echo "Finish feature extranction (stage: 1)."\n
+  touch .done_stage_1_${datasize} && echo "Finish feature extranction (stage: 1)."
 fi
 
-# word-level dictionary
+
 dict=${data}/dict/${train_set}_word_${vocab_size}.txt; mkdir -p ${data}/dict/
 if [ $stage -le 2 ] && [ ! -e .done_stage_2_${datasize} ]; then
   echo ============================================================================
   echo "                      Dataset preparation (stage:2)                        "
   echo ============================================================================
 
-  # make a dictionary
+  # Make a dictionary
   echo "<blank> 0" > ${dict}
   echo "<unk> 1" >> ${dict}
   offset=`cat ${dict} | wc -l`
-  remove_tokens="<sp>"
   echo "Making a dictionary..."
-  text2dict.py ${data}/${train_set}/text --remove_tokens ${remove_tokens} --unit word --vocab_size ${vocab_size} --word_boundary | \
+  text2dict.py ${data}/${train_set}/text --unit word --vocab_size ${vocab_size} --word_boundary | \
     sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict}
   echo "vocab size:" `cat ${dict} | wc -l`
 
-  exit 1
+  # Compute OOV rate
+  echo "" > ${data}/dict/oov_rate/${x}.word.${vocab_size}
+  for x in ${train_set} ${dev_set} ${test_set}; do
+    mkdir -p ${data}/dict/oov_rate/
+    compute_oov_rate.py ${data}/${x}/text ${dict} ${x} >> ${data}/dict/oov_rate/${x}.word.${vocab_size}
+  done
+  cat ${data}/dict/oov_rate/${x}.word.${vocab_size}
 
-  # make csv datset
-  # cs: utt_id, feat_path, xlen, text, tokenid, ylen
+  # Make csv datset
+  # csv: utt_id, feat_path, x_len, x_dim, text, tokenid, y_len, y_dim
   for x in ${train_set} ${dev_set}; do
     echo "Making a csv file for ${x}..."
     dump_dir=${data}/feat/${x}
-    make_dataset_csv.sh --feat ${dump_dir}/feats.scp \
-      ${data}/${x} ${dict} > ${data}/dataset/${x}/dataset.csv
+    make_dataset_csv.sh --feat ${dump_dir}/feats.scp --unit word \
+      ${data}/dataset/${x}/dataset.csv ${data}/${x} ${dict}
   done
   for x in ${test_set}; do
     dump_dir=${data}/feat/${x}_${datasize}
-    make_dataset_csv.sh --feat ${dump_dir}/feats.scp \
-      ${data}/${x} ${dict} > ${data}/dataset/${x}_${datasize}/dataset.csv
+    make_dataset_csv.sh --feat ${dump_dir}/feats.scp --unit word \
+      ${data}/dataset/${x}_${datasize}/dataset.csv ${data}/${x} ${dict}
   done
 
-  touch .done_stage_2_${datasize} && echo "Finish creating dataset (stage: 2)."\n
+  touch .done_stage_2_${datasize} && echo "Finish creating dataset (stage: 2)."
 fi
 
 
 if [ $stage -le 3 ]; then
   echo ============================================================================
-  echo "                      RNNLM Training stage (stage:4)                       "
+  echo "                      RNNLM Training stage (stage:3)                       "
   echo ============================================================================
   echo "Start RNNLM training..."
 
+  CUDA_VISIBLE_DEVICES=${gpu_ids} ../../../src/bin/lm/train.py \
+    --corpus ${corpus} \
+    --ngpus 1 \
+    --train_set ${data}/dataset/${train_set}/dataset.csv \
+    --dev_set ${data}/dataset/${dev_set}/dataset.csv \
+    --eval_sets ${data}/dataset/${test_set}/dataset.csv \
+    --config ${config} \
+    --model ${model} \
+    --saved_model ${saved_model} || exit 1;
 fi
 
 
@@ -185,26 +202,15 @@ if [ $stage -le 4 ]; then
   filename=$(basename ${config} | awk -F. '{print $1}')
   echo "Start ASR training..."
 
-  if [ `echo ${config} | grep 'result'` ]; then
-    CUDA_VISIBLE_DEVICES=${gpu_ids} ${PYTHON} neural_sp/bin/training/train.py \
-      --corpus ${corpus} \
-      --ngpus ${ngpus} \
-      --train_set train \
-      --dev_set dev \
-      --eval_sets eval1 \
-      --saved_model_path ${config} \
-      --data_save_path ${data} || exit 1;
-  else
-    CUDA_VISIBLE_DEVICES=${gpu_ids} ${PYTHON} neural_sp/bin/training/train.py \
-      --corpus ${corpus} \
-      --ngpus ${ngpus} \
-      --train_set train \
-      --dev_set dev \
-      --eval_sets eval1 \
-      --config ${config} \
-      --model_save_path ${model} \
-      --data_save_path ${data} || exit 1;
-  fi
+  CUDA_VISIBLE_DEVICES=${gpu_ids} ../../../neural_sp/bin/asr/train.py \
+    --corpus csj \
+    --ngpus ${ngpus} \
+    --train_set ${data}/dataset/${train_set}/dataset.csv \
+    --dev_set ${data}/dataset/${dev_set}/dataset.csv \
+    --eval_sets ${data}/dataset/${test_set}/dataset.csv \
+    --config ${config} \
+    --model ${model} \
+    --saved_model ${saved_model} || exit 1;
 
-  echo "Finish model training (stage: 4)."\n
+  touch ${model}/.done_training && echo "Finish model training (stage: 4)."
 fi
