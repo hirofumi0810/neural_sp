@@ -25,6 +25,7 @@ if [ $# -ne 1 ] && [ $# -ne 2 ]; then
   echo " mode_number can be aps_other, aps, all_except_dialog, all, "
   echo "(aps_other=default using academic lecture and other data, "
   echo " aps=using academic lecture data, "
+  echo " sps=using simulated lecture data, "
   echo " all_except_dialog=using all data except for dialog data, "
   echo " all=using all data)"
   exit 1;
@@ -33,7 +34,7 @@ fi
 CSJ=$1
 mode=$2
 
-dir=${data}/local/train_$mode
+dir=${data}/local/train_${mode}
 mkdir -p $dir
 
 # Audio data directory check
@@ -43,22 +44,19 @@ if [ ! -d $CSJ ]; then
 fi
 
 # CSJ dictionary file check
-# [ ! -f $dir/lexicon.txt ] && cp $CSJ/lexicon/lexicon.txt $dir || exit 1;
-[ ! -f $dir/lexicon.txt ] && cp $CSJ/lexicon/lexicon.txt $dir
+if [ ! -f $dir/lexicon.txt ]; then
+  cp $CSJ/lexicon/lexicon.txt $dir || exit 1;
+fi
 
 ### Config of using wav data that relates with acoustic model training ###
-if [ $mode = 'all' ]; then
-  cat $CSJ/*/*/*-wav.list 2>/dev/null | sort > $dir/wav.flist # Using All data
-elif [ $mode = 'all_except_dialog' ]; then
-  cat $CSJ/*/{A*,M*,R*,S*}/*-wav.list 2>/dev/null | sort > $dir/wav.flist # Using All data except for "dialog" data
-elif [ $mode = 'aps' ]; then
-  cat $CSJ/*/A*/*-wav.list 2>/dev/null | sort > $dir/wav.flist # Using "Academic lecture" data
-elif [ $mode = 'aps_other' ]; then
-  # cat $CSJ/*/{A*,M*}/*-wav.list 2>/dev/null | sort > $dir/wav.flist # Using "Academic lecture" and "other" data
-  cat $CSJ/*/{A,M}*/*-wav.list 2>/dev/null | sort > $dir/wav.flist # Using "Academic lecture" and "other" data
-else
-  exit 1;
-fi
+case ${mode} in
+  all) cat $CSJ/*/*/*-wav.list 2>/dev/null | sort > $dir/wav.flist ;; # Using All data
+  all_except_dialog) cat $CSJ/*/{A*,M*,R*,S*}/*-wav.list 2>/dev/null | sort > $dir/wav.flist ;; # Using All data except for "dialog" data
+  aps) cat $CSJ/*/A*/*-wav.list 2>/dev/null | sort > $dir/wav.flist ;; # Using "Academic lecture" data
+  sps) cat $CSJ/*/S*/*-wav.list 2>/dev/null | sort > $dir/wav.flist ;; # Using "Simulated lecture" data
+  aps_other) cat $CSJ/*/{A,M}*/*-wav.list 2>/dev/null | sort > $dir/wav.flist ;; # Using "Academic lecture" and "other" data
+  *) exit 1 ;;
+esac
 
 
 n=`cat $dir/wav.flist | wc -l`
@@ -119,11 +117,11 @@ awk '{segment=$1; split(segment,S,"[_]"); spkid=S[1]; print $1 " " spkid}' $dir/
 sort -k 2 $dir/utt2spk | utils/utt2spk_to_spk2utt.pl > $dir/spk2utt || exit 1;
 
 # Copy stuff into its final locations [this has been moved from the format_data script]
-mkdir -p ${data}/train_$mode
+mkdir -p ${data}/train_${mode}
 for f in spk2utt utt2spk wav.scp text segments; do
-  cp ${data}/local/train_$mode/$f ${data}/train_$mode || exit 1;
+  cp ${data}/local/train_${mode}/$f ${data}/train_${mode}/ || exit 1;
 done
 
 echo "CSJ data preparation succeeded."
 
-utils/fix_data_dir.sh ${data}/train_$mode
+utils/fix_data_dir.sh ${data}/train_${mode}
