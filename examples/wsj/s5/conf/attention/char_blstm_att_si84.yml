@@ -1,0 +1,40 @@
+parent: ./conf/attention/char_blstm_att_si284.yml
+param:
+  # framework
+  backend: pytorch
+
+  # corpus
+  data_size: si84
+  label_type: character
+
+  # optimization
+  batch_size: 50
+  optimizer: adam
+  learning_rate: 1e-3
+  num_epoch: 50
+  convert_to_sgd_epoch: 20
+
+  # initialization
+  pretrained_model_path: False
+
+  # regularization
+  scheduled_sampling_max_step: 4000
+
+  # annealing
+  decay_type: per_epoch
+  decay_start_epoch: 10
+  decay_rate: 0.9
+  decay_patient_epoch: 0
+  sort_stop_epoch: 100
+  not_improved_patient_epoch: 5
+  eval_start_epoch: 5
+  print_step: 20
+
+  # MTL
+  backward_loss_weight: 0
+  ctc_loss_weight: 0
+
+  # RNNLM fusion
+  rnnlm_fusion_type: False
+  rnnlm_path: False
+  rnnlm_weight: 0

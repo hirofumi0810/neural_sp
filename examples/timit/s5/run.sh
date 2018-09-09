@@ -1,18 +1,20 @@
 #!/bin/bash
 
-. ./cmd.sh
-. ./path.sh
-set -e
+# Copyright 2018 Kyoto University (Hirofumi Inaguma)
+#  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-if [ $# -lt 2 ]; then
-  echo "Error: set GPU number & config path." 1>&2
-  echo "Usage: ./run.sh path_to_config_file (or path_to_saved_model) gpu_id1 gpu_id2... (arbitrary number)" 1>&2
+echo ============================================================================
+echo "                                  TIMIT                                    "
+echo ============================================================================
+
+if [ $# -lt 1 ]; then
+  echo "Error: set GPU number." 1>&2
+  echo "Usage: ./run.sh gpu_id1 gpu_id2... (arbitrary number)" 1>&2
   exit 1
 fi
 
-ngpus=`expr $# - 1`
-config_path=$1
-gpu_ids=$2
+ngpus=`expr $#`
+gpu_ids=$1
 
 if [ $# -gt 2 ]; then
   rest_ngpus=`expr $ngpus - 1`
@@ -24,202 +26,136 @@ if [ $# -gt 2 ]; then
 fi
 
 
-echo ============================================================================
-echo "                                  TIMIT                                    "
-echo ============================================================================
-
 stage=0
-run_background=true
-# run_background=false
-
-### Set path to original data
-TIMITDATATOP="/n/rd21/corpora_1/TIMIT"
 
 ### Set path to save dataset
-export data="/n/sd8/inaguma/corpus/timit/kaldi"
+export data=/n/sd8/inaguma/corpus/timit
+
+### configuration
+# asr_config=conf/attention/bgru_att_phone61.yml
+asr_config=conf/ctc/blstm_ctc_phone61.yml
 
 ### Set path to save the model
-model="/n/sd8/inaguma/result/timit"
+model_dir=/n/sd8/inaguma/result/timit
 
-### Select one tool to extract features (HTK is the fastest)
-# tool=kaldi
-tool=htk
-# tool=python_speech_features
-# tool=librosa
+### Restart training (path to the saved model directory)
+rnnlm_saved_model=
+asr_saved_model=
 
-### Configuration of feature extranction
-channels=40
-window=0.025
-slide=0.01
-energy=1
-delta=1
-deltadelta=1
-# normalize=global
-normalize=speaker
-# normalize=utterance
+### Set path to original data
+TIMITDATATOP=/n/rd21/corpora_1/TIMIT
+
+. ./cmd.sh
+. ./path.sh
+. utils/parse_options.sh
+
+set -e
+set -u
+set -o pipefail
+
+train_set=train
+dev_set=dev
+test_set=test
 
 
-if [ ${stage} -le 0 ] && [ ! -e ${data}/.stage_0 ]; then
+if [ ${stage} -le 0 ] && [ ! -e .done_stage_0 ]; then
   echo ============================================================================
-  echo "                           Data Preparation                               "
+  echo "                       Data Preparation (stage:0)                          "
   echo ============================================================================
 
-  # Data preparation based on kaldi-asr
+  mkdir -p ${data}
   local/timit_data_prep.sh ${TIMITDATATOP} || exit 1;
   local/timit_format_data.sh || exit 1;
 
-  touch ${data}/.stage_0
-  echo "Finish data preparation (stage: 0)."
+  touch .done_stage_0 && echo "Finish data preparation (stage: 0)."
 fi
 
 
-if [ ${stage} -le 1 ] && [ ! -e ${data}/.stage_1 ]; then
+if [ ${stage} -le 1 ] && [ ! -e .done_stage_1 ]; then
   echo ============================================================================
-  echo "                        Feature extranction                               "
+  echo "                    Feature extranction (stage:1)                          "
   echo ============================================================================
 
-  if [ ${tool} = 'kaldi' ]; then
-    for x in train dev test; do
-      steps/make_fbank.sh --nj 8 --cmd run.pl ${data}/$x ${data}/make_fbank/$x ${data}/fbank || exit 1;
-      steps/compute_cmvn_stats.sh ${data}/$x ${data}/make_fbank/$x ${data}/fbank || exit 1;
-      utils/fix_data_dir.sh ${data}/$x || exit 1;
-    done
+  for x in train dev test; do
+    steps/make_fbank.sh --nj 16 --cmd "$train_cmd" --write_utt2num_frames true \
+      ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
+  done
 
-  elif [ ${tool} = 'htk' ]; then
-    # Make a config file to covert from wav to htk file
-    ${PYTHON} local/make_htk_config.py \
-        --data_save_path ${data} \
-        --config_save_path ./conf/fbank_htk.conf \
-        --audio_file_type nist \
-        --channels ${channels} \
-        --sampling_rate 16000 \
-        --window ${window} \
-        --slide ${slide} \
-        --energy ${energy} \
-        --delta ${delta} \
-        --deltadelta ${deltadelta} || exit 1;
+  # Compute global CMVN
+  compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark || exit 1;
 
-    for data_type in train dev test ; do
-      mkdir -p ${data}/htk/$data_type
-      [ -e ${data}/$data_type/htk.scp ] && rm ${data}/$data_type/htk.scp
-      touch ${data}/$data_type/htk.scp
-      cat ${data}/$data_type/wav.scp | while read line
-      do
-        # Convert from wav to htk files
-        wav_path=`echo $line | awk -F " " '{ print $(NF - 1) }'`
-        speaker=`echo $line | awk -F "/" '{ print $(NF - 1) }'`
-        mkdir -p ${data}/htk/$data_type/$speaker
-        file_name=`basename $wav_path`
-        base=${file_name%.*}
-        # ext=${file_name##*.}
-        htk_path=${data}/htk/$data_type/$speaker/$base".htk"
-        if [ ! -e $htk_path ]; then
-          echo $wav_path $htk_path > ./tmp.scp
-          $HCOPY -T 1 -C ./conf/fbank_htk.conf -S ./tmp.scp || exit 1;
-          rm ./tmp.scp
-        fi
-        echo $htk_path >> ${data}/$data_type/htk.scp
-      done
-    done
+  # Apply global CMVN & dump features
+  for x in ${train_set} ${dev_set} ${test_set}; do
+    dump_dir=${data}/feat/${x}; mkdir -p ${dump_dir}
+    dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta true \
+      ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
+  done
 
-  else
-    if ! which sox >&/dev/null; then
-      echo "This script requires you to first install sox";
-      exit 1;
-    fi
-  fi
-
-  ${PYTHON} local/feature_extraction.py \
-    --data_save_path ${data} \
-    --tool ${tool} \
-    --normalize ${normalize} \
-    --channels ${channels} \
-    --window ${window} \
-    --slide ${slide} \
-    --energy ${energy} \
-    --delta ${delta} \
-    --deltadelta ${deltadelta} || exit 1;
-
-  touch ${data}/.stage_1
-  echo "Finish feature extranction (stage: 1)."
+  touch .done_stage_1 && echo "Finish feature extranction (stage: 1)."
 fi
 
 
-if [ ${stage} -le 2 ] && [ ! -e ${data}/.stage_2 ]; then
+dict=${data}/dict/${train_set}.txt; mkdir -p ${data}/dict/
+if [ ${stage} -le 2 ] && [ ! -e .done_stage_2 ]; then
   echo ============================================================================
-  echo "                            Create dataset                                "
+  echo "                      Dataset preparation (stage:2)                        "
   echo ============================================================================
 
-  ${PYTHON} local/make_dataset_csv.py \
-    --data_save_path ${data} \
-    --phone_map_file_path ./conf/phones.60-48-39.map \
-    --tool ${tool} || exit 1;
+  # Make a dictionary
+  echo "<blank> 0" > ${dict}
+  echo "<unk> 1" >> ${dict}
+  echo "<sos> 2" >> ${dict}
+  echo "<eos> 3" >> ${dict}
+  echo "<pad> 4" >> ${dict}
+  offset=`cat ${dict} | wc -l`
+  echo "Making a dictionary..."
+  text2dict.py ${data}/${train_set}/text --unit phone | \
+    sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict} || exit 1;
+  echo "vocab size:" `cat ${dict} | wc -l`
 
-  touch ${data}/.stage_2
-  echo "Finish creating dataset (stage: 2)."
+  # Make datset csv files
+  mkdir -p ${data}/dataset/
+  for x in ${train_set} ${dev_set}; do
+    echo "Making a csv file for ${x}..."
+    dump_dir=${data}/feat/${x}
+    make_dataset_csv.sh --feat ${dump_dir}/feats.scp --unit phone \
+      ${data}/${x} ${dict} > ${data}/dataset/${x}.csv || exit 1;
+  done
+  for x in ${test_set}; do
+    dump_dir=${data}/feat/${x}
+    make_dataset_csv.sh --is_test true --feat ${dump_dir}/feats.scp --unit phone \
+      ${data}/${x} ${dict} > ${data}/dataset/${x}.csv || exit 1;
+  done
+
+  touch .done_stage_2 && echo "Finish creating dataset (stage: 2)."
 fi
 
 
-if [ ${stage} -le 3 ]; then
+# NOTE: skip RNNLM training (stage:3)
+
+
+if [ ${stage} -le 4 ]; then
   echo ============================================================================
-  echo "                             Training stage                               "
+  echo "                       ASR Training stage (stage:4)                        "
   echo ============================================================================
 
-  filename=$(basename ${config_path} | awk -F. '{print $1}')
-  mkdir -p log
-  mkdir -p ${model}
+  mkdir -p ${model_dir}
+  echo "Start ASR training..."
 
-  echo "Start training..."
+  CUDA_VISIBLE_DEVICES=${gpu_ids} ../../../neural_sp/bin/asr/train.py \
+    --corpus timit \
+    --ngpus ${ngpus} \
+    --train_set ${data}/dataset/${train_set}.csv \
+    --dev_set ${data}/dataset/${dev_set}.csv \
+    --eval_sets ${data}/dataset/${test_set}.csv \
+    --dict ${dict} \
+    --config ${asr_config} \
+    --model ${model_dir} \
+    --label_type phone || exit 1;
+    # --saved_model ${asr_saved_model} || exit 1;
+    # TODO(hirofumi): send a e-mail
 
-  if [ `echo ${config_path} | grep 'result'` ]; then
-    if $run_background; then
-      CUDA_VISIBLE_DEVICES=${gpu_ids} \
-      nohup ${PYTHON} ../../../src/bin/training/train.py \
-        --corpus ${corpus} \
-        --ngpus ${ngpus} \
-        --train_set train \
-        --dev_set dev \
-        --eval_sets test \
-        --saved_model_path ${config_path} \
-        --data_save_path ${data} > log/${filename}".log" &
-    else
-      CUDA_VISIBLE_DEVICES=${gpu_ids} \
-      ${PYTHON} ../../../src/bin/training/train.py \
-        --corpus ${corpus} \
-        --ngpus ${ngpus} \
-        --train_set train \
-        --dev_set dev \
-        --eval_sets test \
-        --saved_model_path ${config_path} \
-        --data_save_path ${data} || exit 1;
-    fi
-  else
-    if $run_background; then
-      CUDA_VISIBLE_DEVICES=${gpu_ids} \
-      nohup ${PYTHON} ../../../src/bin/training/train.py \
-        --corpus ${corpus} \
-        --ngpus ${ngpus} \
-        --train_set train \
-        --dev_set dev \
-        --eval_sets test \
-        --config_path ${config_path} \
-        --model_save_path ${model} \
-        --data_save_path ${data} > log/${filename}".log" &
-    else
-      CUDA_VISIBLE_DEVICES=${gpu_ids} \
-      ${PYTHON} ../../../src/bin/training/train.py \
-        --corpus ${corpus} \
-        --ngpus ${ngpus} \
-        --train_set train \
-        --dev_set dev \
-        --eval_sets test \
-        --config_path ${config_path} \
-        --model_save_path ${model} \
-        --data_save_path ${data} || exit 1;
-    fi
-  fi
-
-  echo "Finish model training (stage: 3)."
+  touch ${model}/.done_training && echo "Finish model training (stage: 4)."
 fi
 
 

@@ -1,20 +1,20 @@
 #!/bin/bash
 
-. ./cmd.sh
-. ./path.sh
-set -e
+# Copyright 2018 Kyoto University (Hirofumi Inaguma)
+#  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-. utils/parse_options.sh  # e.g. this parses the --stage option if supplied.
+echo ============================================================================
+echo "                              Switchboard                                 "
+echo ============================================================================
 
-if [ $# -lt 2 ]; then
-  echo "Error: set GPU number & config path." 1>&2
-  echo "Usage: ./run.sh path_to_config_file (or path_to_saved_model) gpu_id1 gpu_id2... (arbitrary number)" 1>&2
+if [ $# -lt 1 ]; then
+  echo "Error: set GPU number." 1>&2
+  echo "Usage: ./run.sh gpu_id1 gpu_id2... (arbitrary number)" 1>&2
   exit 1
 fi
 
-ngpus=`expr $# - 1`
-config_path=$1
-gpu_ids=$2
+ngpus=`expr $#`
+gpu_ids=$1
 
 if [ $# -gt 2 ]; then
   rest_ngpus=`expr $ngpus - 1`
@@ -26,358 +26,235 @@ if [ $# -gt 2 ]; then
 fi
 
 
-echo ============================================================================
-echo "                              Switchboard                                 "
-echo ============================================================================
-
 stage=0
-run_background=true
-# run_background=false
 
-### Set path to original data
-SWBD_AUDIOPATH="/n/rd21/corpora_7/swb"
-EVAL2000_AUDIOPATH="/n/rd21/corpora_7/hub5_english/LDC2002S09"
-EVAL2000_TRANSPATH="/n/rd21/corpora_7/hub5_english/LDC2002T43"
-RT03_PATH=""
-FISHER_PATH="/n/rd7/fisher_english"
+### path to save dataset
+export data=/n/sd8/inaguma/corpus/swbd
 
-### Set path to save dataset
-export data="/n/sd8/inaguma/corpus/swbd/kaldi"
+### vocabulary
+unit=word
+# unit=bpe
+vocab_size=15000
 
-### Set path to save the model
-model="/n/sd8/inaguma/result/swbd"
+### path to save the model
+model_dir=/n/sd8/inaguma/result/swbd
 
-### Select one tool to extract features (HTK is the fastest)
-# tool=kaldi
-tool=htk
-# tool=python_speech_features
-# tool=librosa
+### path to the model directory to restart training
+rnnlm_saved_model=
+asr_saved_model=
 
-### Configuration of feature extranction
-channles=80
-window=0.025
-slide=0.01
-energy=1
-delta=1
-deltadelta=1
-# normalize=global
-normalize=speaker
-# normalize=utterance
+### path to original data
+SWBD_AUDIOPATH=/n/rd21/corpora_7/swb
+EVAL2000_AUDIOPATH=/n/rd21/corpora_7/hub5_english/LDC2002S09
+EVAL2000_TRANSPATH=/n/rd21/corpora_7/hub5_english/LDC2002T43
+RT03_PATH=
+# FISHER_PATH=/n/rd7/fisher_english
+FISHER_PATH=
+
+### configuration
+rnnlm_config=conf/${unit}_lstm_rnnlm.yml
+asr_config=conf/attention/${unit}_blstm_att.yml
+# asr_config=conf/attention/${unit}_vggblstm_att.yml
+# asr_config=conf/attention/${unit}_vggblstm_att_large.yml
+# asr_config=conf/ctc/${unit}_blstm_ctc.yml
 
 
-if [ ! -e ${KALDI_ROOT}/tools/sph2pipe_v2.5/sph2pipe ]; then
+. ./cmd.sh
+. ./path.sh
+. utils/parse_options.sh
+
+set -e
+set -u
+set -o pipefail
+
+train_set=train
+dev_set=dev
+test_set=eval2000
+
+
+if [ ${stage} -le 0 ] && [ ! -e .done_stage_0 ]; then
   echo ============================================================================
-  echo "                           Install sph2pipe                               "
-  echo ============================================================================
-  cur_dir=`pwd`
-  # Install instructions for sph2pipe_v2.5.tar.gz
-  if ! which wget >&/dev/null; then
-    echo "This script requires you to first install wget";
-    exit 1;
-  fi
-  if ! which automake >&/dev/null; then
-    echo "Warning: automake not installed (IRSTLM installation will not work)"
-    sleep 1
-  fi
-  if ! which libtoolize >&/dev/null && ! which glibtoolize >&/dev/null; then
-    echo "Warning: libtoolize or glibtoolize not installed (IRSTLM installation probably will not work)"
-    sleep 1
-  fi
-
-  if [ ! -e ${KALDI_ROOT}/tools/sph2pipe_v2.5.tar.gz ]; then
-    wget -T 3 -t 3 http://www.openslr.org/resources/3/sph2pipe_v2.5.tar.gz -P ${KALDI_ROOT}/tools
-  else
-    echo "sph2pipe_v2.5.tar.gz is already downloaded."
-  fi
-  tar -xovzf ${KALDI_ROOT}/tools/sph2pipe_v2.5.tar.gz -C ${KALDI_ROOT}/tools
-  rm ${KALDI_ROOT}/tools/sph2pipe_v2.5.tar.gz
-  echo "Enter into ${KALDI_ROOT}/tools/sph2pipe_v2.5 ..."
-  cd ${KALDI_ROOT}/tools/sph2pipe_v2.5
-  gcc -o sph2pipe *.c -lm
-  echo "Get out of ${KALDI_ROOT}/tools/sph2pipe_v2.5 ..."
-  cd ${cur_dir}
-fi
-
-
-if [ ${stage} -le 0 ] && [ ! -e ${data}/.stage_0 ]; then
-  echo ============================================================================
-  echo "                           Data Preparation                               "
+  echo "                       Data Preparation (stage:0)                          "
   echo ============================================================================
 
   local/swbd1_data_download.sh ${SWBD_AUDIOPATH} || exit 1;
-  # local/swbd1_data_download.sh /mnt/matylda2/data/SWITCHBOARD_1R2 # BUT,
-
-  # prepare SWBD dictionary first since we want to find acronyms according to pronunciations
-  # before mapping lexicon and transcripts
   local/swbd1_prepare_dict.sh || exit 1;
-
-  # Prepare Switchboard data. This command can also take a second optional argument
-  # which specifies the directory to Switchboard documentations. Specifically, if
-  # this argument is given, the script will look for the conv.tab file and correct
-  # speaker IDs to the actual speaker personal identification numbers released in
-  # the documentations. The documentations can be found here:
-  # https://catalog.ldc.upenn.edu/docs/LDC97S62/
-  # Note: if you are using this link, make sure you rename conv_tab.csv to conv.tab
-  # after downloading.
-  # Usage: local/swbd1_data_prep.sh /path/to/SWBD [/path/to/SWBD_docs]
   local/swbd1_data_prep.sh ${SWBD_AUDIOPATH} || exit 1;
-
-  # Use the first 4k sentences as dev set.  Note: when we trained the LM, we used
-  # the 1st 10k sentences as dev set, so the 1st 4k won't have been used in the
-  # LM training data.   However, they will be in the lexicon, plus speakers
-  # may overlap, so it's still not quite equivalent to a test set.
-  utils/subset_data_dir.sh --first ${data}/train_swbd 4000 ${data}/dev || exit 1; # 5hr 6min
-  n=$[`cat ${data}/train_swbd/segments | wc -l` - 4000]
-  utils/subset_data_dir.sh --last ${data}/train_swbd $n ${data}/train_swbd_nodev || exit 1;
-
-  # Finally, the full training set:
-  rm -rf ${data}/train_swbd
-  utils/data/remove_dup_utts.sh 300 ${data}/train_swbd_nodev ${data}/train_swbd || exit 1;  # 286hr
-  rm -rf ${data}/train_swbd_nodev
-
-  # Data preparation and formatting for eval2000 (note: the "text" file
-  # is not very much preprocessed; for actual WER reporting we'll use
-  # sclite.
   local/eval2000_data_prep.sh ${EVAL2000_AUDIOPATH} ${EVAL2000_TRANSPATH} || exit 1;
 
-  # prepare the rt03 data.  Note: this isn't 100% necessary for this
-  # recipe, not all parts actually test using rt03.
   # if [ -d ${RT03_PATH} ]; then
-  #   # local/rt03_data_prep.sh /export/corpora/LDC/LDC2007S10
   #   local/rt03_data_prep.sh ${RT03_PATH}
   # fi
 
   # prepare fisher data for language models (optional)
-  if [ -d ${FISHER_PATH} ]; then
-    # prepare fisher data and put it under data/train_fisher
-    local/fisher_data_prep.sh ${FISHER_PATH}
-    local/fisher_swbd_prepare_dict.sh
+  # if [ -d ${FISHER_PATH} ]; then
+  #   # prepare fisher data and put it under data/train_fisher
+  #   local/fisher_data_prep.sh ${FISHER_PATH}
+  #   local/fisher_swbd_prepare_dict.sh
+  #
+  #   # merge two datasets into one
+  #   mkdir -p ${data}/train_swbd_fisher
+  #   for f in spk2utt utt2spk wav.scp text segments; do
+  #     cat ${data}/train_fisher/$f ${data}/train_swbd/$f > ${data}/train_swbd_fisher/$f
+  #   done
+  # fi
 
-    # merge two datasets into one
-    mkdir -p ${data}/train_swbd_fisher
-    for f in spk2utt utt2spk wav.scp text segments; do
-      cat ${data}/train_fisher/$f ${data}/train_swbd/$f > ${data}/train_swbd_fisher/$f
-    done
-  fi
-
-  touch ${data}/.stage_0
-  echo "Finish data preparation (stage: 0)."
+  touch .done_stage_0 && echo "Finish data preparation (stage: 0)."
 fi
 
 
-if [ ${stage} -le 1 ] && [ ! -e ${data}/.stage_1 ]; then
+if [ ${stage} -le 1 ] && [ ! -e .done_stage_1 ]; then
   echo ============================================================================
-  echo "                        Feature extranction                               "
+  echo "                    Feature extranction (stage:1)                          "
   echo ============================================================================
 
-  if [ ${tool} = "kaldi" ]; then
-    for x in train_swbd dev eval2000; do
-      steps/make_fbank.sh --nj 8 --cmd run.pl ${data}/$x exp/make_fbank/$x ${data}/fbank || exit 1;
-      steps/compute_cmvn_stats.sh ${data}/$x exp/make_fbank/$x ${data}/fbank || exit 1;
-      utils/fix_data_dir.sh ${data}/$x || exit 1;
-    done
+  for x in train eval2000; do
+      steps/make_fbank.sh --nj 16 --cmd "$train_cmd" --write_utt2num_frames true \
+        ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
+  done
 
-  else
-    if [ ${tool} = "htk" ]; then
-      # Make a config file to covert from wav to htk file and split per channel
-      ${PYTHON} local/make_htk_config.py \
-          --data_save_path ${data} \
-          --config_save_path ./conf/fbank_htk.conf \
-          --audio_file_type wav \
-          --channels ${channles} \
-          --sampling_rate 8000 \
-          --window ${window} \
-          --slide ${slide} \
-          --energy ${energy} \
-          --delta ${delta} \
-          --deltadelta ${deltadelta} || exit 1;
-    fi
+  # Use the first 4k sentences as dev set.
+  utils/subset_data_dir.sh --first ${data}/${train_set} 4000 ${data}/${dev_set} || exit 1; # 5hr 6min
+  n=$[`cat ${data}/${train_set}/segments | wc -l` - 4000]
+  utils/subset_data_dir.sh --last ${data}/${train_set} ${n} ${data}/${train_set}.tmp || exit 1;
 
-    for data_type in train_swbd dev eval2000; do
-      mkdir -p ${data}/wav/$data_type
-      mkdir -p ${data}/htk/$data_type
-      [ -e ${data}/$data_type/htk.scp ] && rm ${data}/$data_type/htk.scp
-      touch ${data}/$data_type/htk.scp
-      cat ${data}/$data_type/wav.scp | while read line
-      do
-        # Convert from sph (2ch) to wav files (1ch)
-        sph_path=`echo $line | awk -F " " '{ print $(NF - 1) }'`
-        file_name=`basename $sph_path`
-        base=${file_name%.*}
-        # ext=${file_name##*.}
-        wav_path_a=${data}/wav/$data_type/$base"-A.wav"
-        wav_path_b=${data}/wav/$data_type/$base"-B.wav"
-        if [ ! -e $wav_path_a ] || [ ! -e $wav_path_b ]; then
-          echo "Converting "$sph_path
-          ${KALDI_ROOT}/tools/sph2pipe_v2.5/sph2pipe -f wav -p -c 1 $sph_path $wav_path_a || exit 1;
-          ${KALDI_ROOT}/tools/sph2pipe_v2.5/sph2pipe -f wav -p -c 2 $sph_path $wav_path_b || exit 1;
-        fi
+  # Finally, the full training set:
+  utils/data/remove_dup_utts.sh 300 ${data}/${train_set}.tmp ${data}/${train_set} || exit 1;  # 286hr
+  rm -rf ${data}/*.tmp
 
-        if [ ${tool} = "htk" ]; then
-          # Convert from wav to htk files
-          htk_path_a=${data}/htk/$data_type/$base"-A.htk"
-          htk_path_b=${data}/htk/$data_type/$base"-B.htk"
-          if [ ! -e $htk_path_a ] || [ ! -e $htk_path_b ]; then
-            echo $wav_path_a  $htk_path_a > ./tmp.scp
-            echo $wav_path_b  $htk_path_b >> ./tmp.scp
-            $HCOPY -T 1 -C ./conf/fbank_htk.conf -S ./tmp.scp || exit 1;
-            rm ./tmp.scp
-          fi
-          echo $htk_path_a >> ${data}/$data_type/htk.scp
-          echo $htk_path_b >> ${data}/$data_type/htk.scp
-        fi
-      done
-    done
-  fi
+  # Compute global CMVN
+  compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark || exit 1;
 
-  ${PYTHON} local/feature_extraction.py \
-    --data_save_path ${data} \
-    --tool ${tool} \
-    --normalize ${normalize} \
-    --channels ${channles} \
-    --window ${window} \
-    --slide ${slide} \
-    --energy ${energy} \
-    --delta ${delta} \
-    --deltadelta ${deltadelta} || exit 1;
+  # Apply global CMVN & dump features
+  for x in ${train_set} ${dev_set}; do
+    dump_dir=${data}/feat/${x}; mkdir -p ${dump_dir}
+    dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
+      ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
+  done
+  for x in ${test_set}; do
+    dump_dir=${data}/feat/${x}; mkdir -p ${dump_dir}
+    dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
+      ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
+  done
 
-  touch ${data}/.stage_1
-  echo "Finish feature extranction (stage: 1)."
+  touch .done_stage_1 && echo "Finish feature extranction (stage: 1)."
 fi
 
 
-if [ ${stage} -le 2 ] && [ ! -e ${data}/.stage_2 ]; then
+dict=${data}/dict/${train_set}_${unit}_${vocab_size}.txt; mkdir -p ${data}/dict/
+nlsyms=${data}/dict/non_linguistic_symbols.txt
+if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}_${vocab_size} ]; then
   echo ============================================================================
-  echo "                            Create dataset                                "
+  echo "                      Dataset preparation (stage:2)                        "
   echo ============================================================================
 
-  if [ -d ${FISHER_PATH} ]; then
-    has_fisher=true
-  else
-    has_fisher=false
+  echo "make a non-linguistic symbol list"
+  cut -f 2- ${data}/${train_set}/text | tr " " "\n" | sort | uniq | grep "\[" > ${nlsyms}
+  cat ${nlsyms}
+
+  # Make a dictionary
+  echo "<blank> 0" > ${dict}
+  echo "<unk> 1" >> ${dict}
+  echo "<sos> 2" >> ${dict}
+  echo "<eos> 3" >> ${dict}
+  echo "<pad> 4" >> ${dict}
+  offset=`cat ${dict} | wc -l`
+  echo "Making a dictionary..."
+  text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} --nlsyms ${nlsyms} | \
+    sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict} || exit 1;
+  echo "vocab size:" `cat ${dict} | wc -l`
+
+  # Compute OOV rate
+  if [ ${unit} = word ]; then
+    mkdir -p ${data}/dict/word_count ${data}/dict/oov_rate
+    echo "OOV rate:" > ${data}/dict/oov_rate/word_${vocab_size}.txt
+    for x in ${train_set} ${dev_set}; do
+      cut -f 2- -d " " ${data}/${x}/text | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
+        > ${data}/dict/word_count/${x}.txt || exit 1;
+      compute_oov_rate.py ${data}/dict/word_count/${x}.txt ${dict} ${x} \
+        >> ${data}/dict/oov_rate/word_${vocab_size}.txt || exit 1;
+    done
+
+    # 1) convert upper to lower
+    # 2) remove tags (%AH) (%HESITATION) (%UH)
+    # 3) remove <B_ASIDE> <E_ASIDE>
+    # 4) remove "(" or ")"
+    # swichboard
+    grep -v en ${data}/${test_set}/text | cut -f 2- -d " " | awk '{ print tolower($0) }' | \
+      perl -pe 's| \(\%.*\)||g' | perl -pe 's| \<.*\>||g' | sed -e "s/(//g" -e "s/)//g" | sed -e 's/\s\+/ /g' | \
+      tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
+      > ${data}/dict/word_count/${test_set}_sw.txt || exit 1;
+    compute_oov_rate.py ${data}/dict/word_count/${test_set}_sw.txt ${dict} ${test_set}_sw \
+      >> ${data}/dict/oov_rate/word_${vocab_size}.txt || exit 1;
+    # callhome
+    grep -v sw ${data}/${test_set}/text | cut -f 2- -d " " | awk '{ print tolower($0) }' | \
+      perl -pe 's| \(\%.*\)||g' | perl -pe 's| \<.*\>||g' | sed -e "s/(//g" -e "s/)//g" | sed -e 's/\s\+/ /g' | \
+      tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
+      > ${data}/dict/word_count/${test_set}_ch.txt || exit 1;
+    compute_oov_rate.py ${data}/dict/word_count/${test_set}_ch.txt ${dict} ${test_set}_ch \
+      >> ${data}/dict/oov_rate/word_${vocab_size}.txt || exit 1;
+    cat ${data}/dict/oov_rate/word_${vocab_size}.txt
   fi
 
-  ${PYTHON} local/make_dataset_csv.py \
-    --data_save_path ${data} \
-    --tool ${tool} \
-    --has_fisher $has_fisher || exit 1;
+  # Make datset csv files
+  mkdir -p ${data}/dataset/
+  for x in ${train_set} ${dev_set}; do
+    echo "Making a csv file for ${x}..."
+    dump_dir=${data}/feat/${x}
+    make_dataset_csv.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} \
+      ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}_${vocab_size}.csv || exit 1;
+  done
+  for x in ${test_set}; do
+    dump_dir=${data}/feat/${x}
+    make_dataset_csv.sh --is_test true --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} \
+      ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}_${vocab_size}.csv || exit 1;
+  done
 
-  touch ${data}/.stage_2
-  echo "Finish creating dataset (stage: 2)."
+  touch .done_stage_2_${unit}_${vocab_size} && echo "Finish creating dataset (stage: 2)."
 fi
 
 
+mkdir -p ${model_dir}
 if [ ${stage} -le 3 ]; then
   echo ============================================================================
-  echo "                             Training stage                               "
+  echo "                      RNNLM Training stage (stage:3)                       "
   echo ============================================================================
 
-  filename=$(basename ${config_path} | awk -F. '{print $1}')
-  mkdir -p log
-  mkdir -p ${model}
+  echo "Start RNNLM training..."
 
-  echo "Start training..."
-
-  if [ `echo ${config_path} | grep 'hierarchical'` ]; then
-    if [ `echo ${config_path} | grep 'result'` ]; then
-      if $run_background; then
-        CUDA_VISIBLE_DEVICES=${gpu_ids} \
-        nohup ${PYTHON} ../../../src/bin/training/train_hierarchical.py \
-          --corpus ${corpus} \
-          --ngpus ${ngpus} \
-          --train_set train \
-          --dev_set dev \
-          --eval_sets eval2000_swbd eval2000_ch \
-          --saved_model_path ${config_path} \
-          --data_save_path ${data} > log/$filename".log" &
-      else
-        CUDA_VISIBLE_DEVICES=${gpu_ids} \
-        nohup ${PYTHON} ../../../src/bin/training/train_hierarchical.py \
-          --corpus ${corpus} \
-          --ngpus ${ngpus} \
-          --train_set train \
-          --dev_set dev \
-          --eval_sets eval2000_swbd eval2000_ch \
-          --saved_model_path ${config_path} \
-          --data_save_path ${data} || exit 1;
-      fi
-    else
-      if $run_background; then
-        CUDA_VISIBLE_DEVICES=${gpu_ids} \
-        nohup ${PYTHON} ../../../src/bin/training/train_hierarchical.py \
-          --corpus ${corpus} \
-          --ngpus ${ngpus} \
-          --train_set train \
-          --dev_set dev \
-          --eval_sets eval2000_swbd eval2000_ch \
-          --config_path ${config_path} \
-          --model_save_path ${model} \
-          --data_save_path ${data} > log/$filename".log" &
-      else
-        CUDA_VISIBLE_DEVICES=${gpu_ids} \
-        ${PYTHON} ../../../src/bin/training/train_hierarchical.py \
-          --corpus ${corpus} \
-          --ngpus ${ngpus} \
-          --train_set train \
-          --dev_set dev \
-          --eval_sets eval2000_swbd eval2000_ch \
-          --config_path ${config_path} \
-          --model_save_path ${model} \
-          --data_save_path ${data} || exit 1;
-      fi
-    fi
-  else
-    if [ `echo ${config_path} | grep 'result'` ]; then
-      if $run_background; then
-        CUDA_VISIBLE_DEVICES=${gpu_ids} \
-        nohup ${PYTHON} ../../../src/bin/training/train.py \
-          --corpus ${corpus} \
-          --ngpus ${ngpus} \
-          --train_set train \
-          --dev_set dev \
-          --eval_sets eval2000_swbd eval2000_ch \
-          --saved_model_path ${config_path} \
-          --data_save_path ${data} > log/$filename".log" &
-      else
-        CUDA_VISIBLE_DEVICES=${gpu_ids} \
-        ${PYTHON} ../../../src/bin/training/train.py \
-          --corpus ${corpus} \
-          --ngpus ${ngpus} \
-          --train_set train \
-          --dev_set dev \
-          --eval_sets eval2000_swbd eval2000_ch \
-          --saved_model_path ${config_path} \
-          --data_save_path ${data} || exit 1;
-      fi
-    else
-      if $run_background; then
-        CUDA_VISIBLE_DEVICES=${gpu_ids} \
-        nohup ${PYTHON} ../../../src/bin/training/train.py \
-          --corpus ${corpus} \
-          --ngpus ${ngpus} \
-          --train_set train \
-          --dev_set dev \
-          --eval_sets eval2000_swbd eval2000_ch \
-          --config_path ${config_path} \
-          --model_save_path ${model} \
-          --data_save_path ${data} > log/$filename".log" &
-      else
-        CUDA_VISIBLE_DEVICES=${gpu_ids} \
-        ${PYTHON} ../../../src/bin/training/train.py \
-          --corpus ${corpus} \
-          --ngpus ${ngpus} \
-          --train_set train \
-          --dev_set dev \
-          --eval_sets eval2000_swbd eval2000_ch \
-          --config_path ${config_path} \
-          --model_save_path ${model} \
-          --data_save_path ${data}　|| exit 1;
-      fi
-    fi
-  fi
-
-  echo "Finish model training (stage: 3)."
+  # NOTE: support only a single GPU for RNNLM training
+  # CUDA_VISIBLE_DEVICES=${gpu_ids} ../../../src/bin/lm/train.py \
+  #   --corpus librispeech \
+  #   --ngpus 1 \
+  #   --train_set ${data}/dataset/${train_set}.csv \
+  #   --dev_set ${data}/dataset/${dev_set}.csv \
+  #   --eval_sets ${data}/dataset/eval1_${datasize}_${unit}_${vocab_size}.csv \
+  #   --config ${rnn_config} \
+  #   --model ${model_dir} \
+  #   --saved_model ${rnnlm_saved_model} || exit 1;
 fi
 
 
-echo "Done."
+if [ ${stage} -le 4 ]; then
+  echo ============================================================================
+  echo "                       ASR Training stage (stage:4)                        "
+  echo ============================================================================
+
+  echo "Start ASR training..."
+
+  # export CUDA_LAUNCH_BLOCKING=1
+  CUDA_VISIBLE_DEVICES=${gpu_ids} ../../../neural_sp/bin/asr/train.py \
+    --corpus swbd \
+    --ngpus ${ngpus} \
+    --train_set ${data}/dataset/${train_set}_${unit}_${vocab_size}.csv \
+    --dev_set ${data}/dataset/${dev_set}_${unit}_${vocab_size}.csv \
+    --dict ${dict} \
+    --config ${asr_config} \
+    --model ${model_dir} \
+    --label_type ${unit} || exit 1;
+    # --saved_model ${asr_saved_model} || exit 1;
+    # TODO(hirofumi): send a e-mail
+    # NOTE: ${train_set} is excluded in the training stage for swbd
+
+  touch ${model}/.done_training && echo "Finish model training (stage: 4)."
+fi

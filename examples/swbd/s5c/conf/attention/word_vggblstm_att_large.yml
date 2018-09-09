@@ -1,0 +1,77 @@
+parent: ./conf/attention/word_blstm_att.yml
+param:
+  # topology
+  conv_in_channel: 1
+  conv_channels: [64, 64, 128, 128]
+  conv_kernel_sizes:
+    - [3, 3]
+    - [3, 3]
+    - [3, 3]
+    - [3, 3]
+  conv_strides:
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+  conv_poolings:
+    - []
+    - [2, 2]
+    - []
+    - [2, 2]
+  conv_batch_norm: False
+  enc_type: blstm
+  enc_num_units: 1024
+  enc_num_projs: 0
+  enc_num_layers: 3
+  enc_residual: False
+  subsample:
+    - False
+    - True
+    - False
+  subsample_type: drop
+  att_type: location
+  att_dim: 1024
+  att_conv_num_channels: 10
+  att_conv_width: 201
+  att_num_heads: 1
+  att_sharpening_factor: 1
+  att_sigmoid_smoothing: False
+  bridge_layer: False
+  dec_type: lstm
+  dec_num_units: 1024
+  dec_num_layers: 1
+  dec_residual: False
+  emb_dim: 1024
+  ctc_fc_list: [320]
+
+  # optimization
+  batch_size: 20
+  num_epochs: 15
+  convert_to_sgd_epoch: 10
+  print_step: 600
+
+  # initialization
+  pretrained_model_path: False
+
+  # annealing
+  decay_type: per_epoch
+  decay_start_epoch: 1
+  decay_rate: 0.8
+  decay_patient_epoch: 0
+  sort_stop_epoch: 100
+  not_improved_patient_epoch: 0
+  eval_start_epoch: 5
+
+  # MTL
+  ctc_weight: 0.0
+  bwd_weight: 0.0
+
+  # cold fusion
+  cold_fusion_type: hidden
+  rnnlm_cf: False
+
+  # RNNLM initialization & RNNLM objective
+  internal_lm: False
+  rnnlm_init: False
+  rnnlm_weight: 0.0
+  share_softmax: False

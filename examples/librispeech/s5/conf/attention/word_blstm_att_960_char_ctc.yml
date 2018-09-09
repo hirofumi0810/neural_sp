@@ -1,0 +1,43 @@
+parent: ./conf/attention/word_blstm_att_960.yml
+param:
+  # topology
+  enc_type: blstm
+  enc_num_units: 320
+  enc_num_projs: 0
+  enc_num_layers: 5
+  enc_num_layers_sub: 4
+  enc_residual: False
+  subsample:
+    - True
+    - True
+    - False
+    - True
+    - False
+
+  # optimization
+  batch_size: 50
+  optimizer: adam
+  learning_rate: 1e-3
+  num_epochs: 25
+  convert_to_sgd_epoch: 20
+  print_step: 500
+
+  # initialization
+  pretrained_model_path: False
+
+  # MTL
+  ctc_weight: 0.0
+  ctc_weight_sub: 1.0
+  bwd_weight: 0.0
+  bwd_weight_sub: 0.0
+  main_task_weight: 0.8
+
+  # cold fusion
+  cold_fusion_type: hidden
+  rnnlm_cf: False
+
+  # RNNLM initialization & RNNLM objective
+  internal_lm: False
+  rnnlm_init: False
+  rnnlm_weight: 0.0
+  share_softmax: False

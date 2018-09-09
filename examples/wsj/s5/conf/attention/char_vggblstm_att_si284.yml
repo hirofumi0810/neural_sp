@@ -1,0 +1,56 @@
+parent: ./conf/attention/char_blstm_att_si284.yml
+param:
+  # framework
+  backend: pytorch
+
+  # topology
+  conv_channels: [64, 64, 128, 128]
+  conv_kernel_sizes:
+    - [3, 3]
+    - [3, 3]
+    - [3, 3]
+    - [3, 3]
+  conv_strides:
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+    - [1, 1]
+  poolings:
+    - []
+    - [2, 2]
+    - []
+    - [2, 2]
+  activation: relu
+  batch_norm: True
+  encoder_bidirectional: True
+  encoder_num_units: 256
+  encoder_num_proj: 0
+  encoder_num_layers: 4
+  subsample_list:
+    - False
+    - False
+    - False
+    - False
+  decoding_order: bahdanau
+  num_heads: 1
+
+  # optimization
+  batch_size: 20
+
+  # initialization
+  pretrained_model_path: False
+
+  # regularization
+  scheduled_sampling_max_step: 40000
+
+  # annealing
+  print_step: 200
+
+  # MTL
+  backward_loss_weight: 0
+  ctc_loss_weight: 0
+
+  # RNNLM fusion
+  rnnlm_fusion_type: False
+  rnnlm_path: False
+  rnnlm_weight: 0

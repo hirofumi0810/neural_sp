@@ -1,111 +1,88 @@
 param:
-  # framework
-  backend: pytorch
-  # backend: chainer
-
-  # corpus
-  corpus: timit
-  label_type: phone61
+  model_type: seq2seq
 
   # features
-  feature: fbank
-  tool: htk
-  input_freq: 41
-  use_delta: True
-  use_double_delta: True
-  input_channel: 1
-  splice: 1
+  input_type: speech
+  num_splice: 1
   num_stack: 1
   num_skip: 1
-  dynamic_batching: False
+  max_num_frames: 2000
+  min_num_frames: 40
+  dynamic_batching: True
 
   # topology
-  model_type: attention
-  encoder_type: gru
+  conv_in_channel: 1
   conv_channels: []
   conv_kernel_sizes: []
   conv_strides: []
-  poolings: []
-  activation: relu
-  batch_norm: False
-  encoder_bidirectional: True
-  encoder_residual: False
-  encoder_dense_residual: False
-  encoder_num_units: 256
-  encoder_num_proj: 0
-  encoder_num_layers: 5
-  subsample_list:
+  conv_poolings: []
+  conv_batch_norm: False
+  enc_type: bgru
+  enc_num_units: 320
+  enc_num_projs: 0
+  enc_num_layers: 5
+  enc_residual: False
+  subsample:
     - False
     - False
     - False
     - False
     - False
   subsample_type: drop
-  bridge_layer: True
-  attention_type: location
-  attention_dim: 128
-  decoder_type: gru
-  decoder_residual: False
-  decoder_dense_residual: False
-  decoder_num_units: 256
-  decoder_num_layers: 1
-  embedding_dim: 32
-  attention_conv_num_channels: 10
-  attention_conv_width: 201
-  decoding_order: bahdanau
-  bottleneck_dim: 256
-  num_heads: 1
+  att_type: location
+  att_dim: 128
+  att_conv_num_channels: 10
+  att_conv_width: 201
+  att_num_heads: 1
+  att_sharpening_factor: 1
+  att_sigmoid_smoothing: False
+  bridge_layer: False
+  dec_type: gru
+  dec_num_units: 320
+  dec_num_projs: 0
+  dec_num_layers: 1
+  dec_residual: False
+  emb_dim: 320
+  ctc_fc_list: []
 
   # optimization
   batch_size: 32
   optimizer: adam
   learning_rate: 1e-3
-  num_epoch: 100
+  num_epochs: 100
   convert_to_sgd_epoch: 40
+  print_step: 10
+
 
   # initialization
-  parameter_init_distribution: uniform
-  parameter_init: 0.1
-  recurrent_weight_orthogonal: True
-  init_forget_gate_bias_with_one: True
-  pretrained_model_path: False
+  param_init: 0.1
+  param_init_dist: uniform
+  rec_weight_orthogonal: False
+  pretrained_model: False
 
   # regularization
   clip_grad_norm: 5.0
-  clip_activation_encoder: 50
-  clip_activation_decoder: 50
-  dropout_input: 0.2
-  dropout_encoder: 0.5
-  dropout_decoder: 0.2
-  dropout_embedding: 0.2
+  clip_activation_enc: 50.0
+  clip_activation_dec: 50.0
+  dropout_in: 0.2
+  dropout_enc: 0.5
+  dropout_dec: 0.2
+  dropout_emb: 0.2
   weight_decay: 1e-6
-  init_dec_state: zero
-  sharpening_factor: 1.0
-  logits_temperature: 1.0
-  sigmoid_smoothing: False
-  coverage_weight: 0
-  scheduled_sampling_prob: 0.2
-  scheduled_sampling_max_step: 4000
-  label_smoothing_prob: 0.1
-  weight_noise_std: 1e-9
+  logits_temp: 1
+  ss_prob: 0.2
+  lsm_prob: 0.1
+  lsm_type: uniform
 
   # annealing
   decay_type: per_epoch
   decay_start_epoch: 20
   decay_rate: 0.97
-  decay_patient_epoch: 1
+  decay_patient_epoch: 0
   sort_stop_epoch: 100
   not_improved_patient_epoch: 20
-  eval_start_epoch: 10
-  print_step: 10
+  eval_start_epoch: 20
 
   # MTL
-  backward_loss_weight: 0
-  ctc_loss_weight: 0
-
-  # RNNLM fusion (not used)
-  rnnlm_fusion_type: False
-  rnnlm_path: False
-  rnnlm_joint_training: False
-  rnnlm_weight: 0
-  concat_embedding: False
+  ctc_weight: 0.0
+  bwd_weight: 0.0

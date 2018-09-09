@@ -7,14 +7,13 @@ __pycache__
 warp-ctc
 pytorch-ctc
 nohup.out
+.done*
 
 vocab
 log
 examples/*/*/steps
 examples/*/*/utils
 
-
-attention_seq2seq_hierarchical_decoder.py
-run_attention_dec_mtl.sh
-test_attention_dec_mtl.py
-student_ctc.py
+# under implementation
+nested*
+hierarchical*

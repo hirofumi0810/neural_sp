@@ -1,11 +1,7 @@
-parent: ./conf/ctc/blstm_ctc_phone61.yml
+parent: ./conf/attention/bgru_att_phone61.yml
 param:
-  # framework
-  backend: pytorch
-  # backend: chainer
-
   # topology
-  encoder_type: cnn
+  conv_in_channel: 1
   conv_channels: [128, 128, 128, 128, 256, 256, 256, 256, 256, 256]
   conv_kernel_sizes:
     - [3, 5]
@@ -40,19 +36,20 @@ param:
     - []
     - []
     - []
-  # activation: relu
-  activation: prelu
-  batch_norm: True
-  encoder_num_layers: 0
-  subsample_list:
+  conv_batch_norm: True
+  enc_type: cnn
+  enc_bidirectional: True
+  enc_num_units: 0
+  enc_num_projs: 0
+  enc_num_layers: 0
+  enc_residual: False
+  subsample:
     - False
-  fc_list: [1024, 1024, 1024]
+  ctc_fc_list: [1024, 1024, 1024]
 
   # optimization
   batch_size: 10
   optimizer: adam
   learning_rate: 1e-3
   convert_to_sgd_epoch: 50
-
-  # annealing
   print_step: 50
