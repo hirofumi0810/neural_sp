@@ -68,14 +68,16 @@ if [ ${stage} -le 0 ] && [ ! -e .done_stage_0 ]; then
   echo ============================================================================
 
   # download data
-  # for part in train dev2010 tst2010 tst2013 tst2014 tst2015 tst2018; do
-  #     local/download_and_untar.sh ${datadir} ${part}
-  # done
+  for part in train dev2010 tst2010 tst2013 tst2014 tst2015 tst2018; do
+      local/download_and_untar.sh ${datadir} ${part}
+  done
 
   local/data_prep_train.sh ${datadir}
   for part in dev2010 tst2010 tst2013 tst2014 tst2015 tst2018; do
       local/data_prep_eval.sh ${datadir} ${part}
   done
+
+  touch .done_stage_0 && echo "Finish data preparation (stage: 0)."
 fi
 
 
@@ -116,7 +118,7 @@ fi
 
 
 dict=${data}/dict/${train_set}_${unit}.txt; mkdir -p ${data}/dict/
-nlsyms=data/dict/non_linguistic_symbols.txt
+nlsyms=${data}/dict/non_linguistic_symbols.txt
 if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit} ]; then
   echo ============================================================================
   echo "                      Dataset preparation (stage:2)                        "
@@ -159,6 +161,7 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit} ]; then
 fi
 
 
+mkdir -p ${model_dir}
 if [ ${stage} -le 4 ]; then
   echo ============================================================================
   echo "                       ST Training stage (stage:4)                        "
@@ -170,8 +173,8 @@ if [ ${stage} -le 4 ]; then
   CUDA_VISIBLE_DEVICES=${gpu_ids} ../../../neural_sp/bin/asr/train.py \
     --corpus iwslt18 \
     --ngpus ${ngpus} \
-    --train_set ${data}/dataset/${train_set}_${unit}_${vocab_size}.csv \
-    --dev_set ${data}/dataset/${dev_set}_${unit}_${vocab_size}.csv \
+    --train_set ${data}/dataset/${train_set}_${unit}.csv \
+    --dev_set ${data}/dataset/${dev_set}_${unit}.csv \
     --dict ${dict} \
     --config ${st_config} \
     --model ${model_dir} \
