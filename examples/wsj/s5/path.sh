@@ -5,7 +5,7 @@ fi
 [ -f $KALDI_ROOT/tools/env.sh ] && . $KALDI_ROOT/tools/env.sh
 NEURALSP_ROOT=../../..
 
-export PATH=$PWD/utils/:$NEURALSP_ROOT/neural_sp/utils/bin/:$KALDI_ROOT/tools/sctk/bin/:$PATH
+export PATH=$PWD/utils/:$NEURALSP_ROOT/neural_sp/utils/bin/:$KALDI_ROOT/tools/sctk/bin/:~/espnet/tools/sentencepiece/build/src:$PATH
 [ ! -f $KALDI_ROOT/tools/config/common_path.sh ] && echo >&2 "The standard file $KALDI_ROOT/tools/config/common_path.sh is not present -> Exit!" && exit 1
 . $KALDI_ROOT/tools/config/common_path.sh
 export LC_ALL=C
@@ -17,3 +17,5 @@ export PYTHONPATH=$NEURALSP_ROOT/:~/espnet/tools/kaldi-io-for-python/:$PYTHONPAT
 ### CUDA
 export PATH=$PATH:/usr/local/cuda/bin
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64:/usr/local/cuda/extras/CUPTI/lib64
+
+export OMP_NUM_THREADS=1

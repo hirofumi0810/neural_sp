@@ -20,3 +20,5 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64:/usr/local/cuda/ex
 
 export PYTHONDONTWRITEBYTECODE=1
 find $NEURALSP_ROOT -name "*.pyc" -exec rm -f {} \;
+
+export OMP_NUM_THREADS=1
