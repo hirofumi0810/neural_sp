@@ -32,9 +32,13 @@ stage=0
 export data=/n/sd8/inaguma/corpus/swbd
 
 ### vocabulary
-unit=word
-# unit=bpe
-vocab_size=15000
+# unit=word
+# vocab_size=15000
+unit=wordpiece
+vocab_size=1000
+
+# for wordpiece
+wp_model_type=unigram  # or bpe
 
 ### path to save the model
 model_dir=/n/sd8/inaguma/result/swbd
@@ -141,8 +145,14 @@ if [ ${stage} -le 1 ] && [ ! -e .done_stage_1 ]; then
 fi
 
 
-dict=${data}/dict/${train_set}_${unit}_${vocab_size}.txt; mkdir -p ${data}/dict/
+mkdir -p ${data}/dict/
+if [ ${unit} = wordpiece ]; then
+  dict=${data}/dict/${train_set}_${unit}_${wp_model_type}${vocab_size}.txt
+else
+  dict=${data}/dict/${train_set}_${unit}_${vocab_size}.txt
+fi
 nlsyms=${data}/dict/non_linguistic_symbols.txt
+wp_model=${data}/dict/${train_set}_${wp_model_type}${vocab_size}
 if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}_${vocab_size} ]; then
   echo ============================================================================
   echo "                      Dataset preparation (stage:2)                        "
@@ -160,8 +170,17 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}_${vocab_size} ]; then
   echo "<pad> 4" >> ${dict}
   offset=`cat ${dict} | wc -l`
   echo "Making a dictionary..."
-  text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} --nlsyms ${nlsyms} | \
-    sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict} || exit 1;
+  if [ ${unit} = wordpiece ]; then
+    cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
+    spm_train --user_defined_symbols=`cat ${nlsyms} | tr "\n" ","` --input=${data}/dict/input.txt --vocab_size=${vocab_size} \
+      --model_type=${wp_model_type} --model_prefix=${wp_model} --input_sentence_size=100000000
+    spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
+      sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict}
+  else
+    text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} --nlsyms ${nlsyms} \
+      --wp_model_type ${wp_model_type} --wp_model ${wp_model} | \
+      sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict} || exit 1;
+  fi
   echo "vocab size:" `cat ${dict} | wc -l`
 
   # Compute OOV rate
@@ -201,7 +220,7 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}_${vocab_size} ]; then
   for x in ${train_set} ${dev_set}; do
     echo "Making a csv file for ${x}..."
     dump_dir=${data}/feat/${x}
-    make_dataset_csv.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} \
+    make_dataset_csv.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
       ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}_${vocab_size}.csv || exit 1;
   done
   for x in ${test_set}; do

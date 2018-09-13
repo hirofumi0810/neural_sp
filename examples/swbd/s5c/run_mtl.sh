@@ -31,11 +31,17 @@ stage=0
 ### path to save dataset
 export data=/n/sd8/inaguma/corpus/swbd
 
-### vocabulary
+### vocabulary for the main task
 unit=word
-# unit=bpe
 vocab_size=15000
+# unit=wordpiece
+# vocab_size=1000
+
+# vocaburaly for the sub task
 unit_sub=char
+
+# for wordpiece
+wp_model_type=unigram  # or bpe
 
 ### path to save the model
 model_dir=/n/sd8/inaguma/result/swbd
@@ -139,7 +145,12 @@ if [ ${stage} -le 1 ] && [ ! -e .done_stage_1 ]; then
   touch .done_stage_1 && echo "Finish feature extranction (stage: 1)."
 fi
 
-dict=${data}/dict/${train_set}_${unit}_${vocab_size}.txt
+mkdir -p ${data}/dict/
+if [ ${unit} = wordpiece ]; then
+  dict=${data}/dict/${train_set}_${unit}_${wp_model_type}${vocab_size}.txt
+else
+  dict=${data}/dict/${train_set}_${unit}_${vocab_size}.txt
+fi
 dict_sub=${data}/dict/${train_set}_${unit_sub}.txt
 if [ ${stage} -le 2 ]; then
   echo ============================================================================
@@ -147,12 +158,12 @@ if [ ${stage} -le 2 ]; then
   echo ============================================================================
 
   if [ ! -f ${dict} ]; then
-      echo "run run.sh first"
+      echo "There is no file such as "${dict}
       exit 1
   fi
 
   if [ ! -f ${dict_sub} ]; then
-      echo "run run.sh --unit char first"
+      echo "There is no file such as "${dict_sub}
       exit 1
   fi
 

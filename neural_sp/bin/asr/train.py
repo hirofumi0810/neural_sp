@@ -47,10 +47,10 @@ parser.add_argument('--dict', type=str,
 parser.add_argument('--dict_sub', type=str, default=None,
                     help='path to a dictionary file for the sub task')
 parser.add_argument('--label_type', type=str, default='word',
-                    choices=['word', 'bpe', 'char', 'phone'],
+                    choices=['word', 'wordpiece', 'char', 'phone'],
                     help='')
 parser.add_argument('--label_type_sub', type=str, default='char',
-                    choices=['bpe', 'char', 'phone'],
+                    choices=['wordpiece', 'char', 'phone'],
                     help='')
 # features
 parser.add_argument('--input_type', type=str, choices=['speech', 'text'],

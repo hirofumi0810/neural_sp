@@ -12,6 +12,7 @@ is_test=false
 unk="<unk>"
 space="<space>"
 nlsyms=""
+wp_model=""
 
 . utils/parse_options.sh
 
@@ -33,4 +34,5 @@ make_csv.py --feat ${feat} \
             --is_test ${is_test} \
             --unk ${unk} \
             --space ${space} \
-            --nlsyms ${nlsyms}
+            --nlsyms ${nlsyms} \
+            --wp_model ${wp_model}

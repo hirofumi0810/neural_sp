@@ -15,6 +15,7 @@ from distutils.util import strtobool
 import kaldi_io
 import os
 import re
+import sentencepiece as spm
 from tqdm import tqdm
 
 parser = argparse.ArgumentParser()
@@ -26,7 +27,7 @@ parser.add_argument('--dict', type=str,
                     help='dictionary file')
 parser.add_argument('--text', type=str,
                     help='text file')
-parser.add_argument('--unit', type=str, choices=['word', "bpe", 'char', "phone"],
+parser.add_argument('--unit', type=str, choices=['word', "wordpiece", 'char', "phone"],
                     help='token units')
 parser.add_argument('--remove_word_boundary', type=strtobool, default=False,
                     help='')
@@ -37,6 +38,8 @@ parser.add_argument('--space', type=str, default='<space>',
                     help='<space> token')
 parser.add_argument('--nlsyms', type=str, default='', nargs='?',
                     help='path to non-linguistic symbols, e.g., <NOISE> etc.')
+parser.add_argument('--wp_model', type=str, default=False, nargs='?',
+                    help='prefix of the wordpiece model')
 args = parser.parse_args()
 
 
@@ -65,6 +68,10 @@ def main():
         for line in f:
             token, id = unicode(line, 'utf-8').strip().split(' ')
             token2id[token] = str(id)
+
+    if args.unit == 'wordpiece' and not args.is_test:
+        sp = spm.SentencePieceProcessor()
+        sp.Load(args.wp_model + '.model')
 
     print(',utt_id,feat_path,x_len,x_dim,text,token_id,y_len,y_dim')
 
@@ -105,8 +112,8 @@ def main():
                             # Replace with <unk>
                             token_ids.append(token2id[args.unk])
 
-                elif args.unit == 'bpe':
-                    raise NotImplementedError()
+                elif args.unit == 'wordpiece':
+                    token_ids = list(map(str, sp.EncodeAsIds(text)))
 
                 elif args.unit == 'char':
                     for i,  w in enumerate(words):

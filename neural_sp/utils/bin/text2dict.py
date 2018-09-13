@@ -17,20 +17,23 @@ from tqdm import tqdm
 parser = argparse.ArgumentParser()
 parser.add_argument('text', type=str,
                     help='path to text file')
-parser.add_argument('--unit', type=str, choices=['word', "bpe", 'char', "phone"],
+parser.add_argument('--unit', type=str, choices=['word', "wordpiece", 'char', "phone"],
                     help='token units')
 parser.add_argument('--vocab_size', type=int,
-                    help='the size of vocabulary for word and bpe.')
+                    help='the size of vocabulary for word and wordpiece.')
 parser.add_argument('--remove_word_boundary', action='store_false',
-                    help='')
+                    help='remove all whitespaces in the transcriptions')
 parser.add_argument('--nlsyms', type=str, default=False,
                     help='path to non-linguistic symbols, e.g., <NOISE> etc.')
-parser.add_argument('--bpe_model_type', type=str, choices=['unigram', 'bpe'],
+parser.add_argument('--wp_model_type', type=str, default='unigram',
+                    choices=['unigram', 'bpe'],
                     help='')
-parser.add_argument('--bpe_model', type=str,
-                    help='')
+parser.add_argument('--wp_model', type=str, default=False,
+                    help='prefix of the wordpiece model')
 args = parser.parse_args()
 
+
+# TODO(hirofumi): python sentencepiece shows different behaviors from bash command.
 
 def main():
 
@@ -40,58 +43,65 @@ def main():
             for line in f:
                 nlsyms.append(line.strip().encode('utf-8'))
 
-    if args.unit == 'bpe':
+    if args.unit == 'wordpiece':
         # TODO: CSJ
         # words = list(map(lambda x: x.split('+')[0], words[1:]))
 
         spm.SentencePieceTrainer.Train('--input=' + args.text +
+                                       ' --user_defined_symbols=' + ','.join(nlsyms) +
                                        ' --vocab_size=' + str(args.vocab_size) +
-                                       ' --model_type=' + args.bpe_model_type +
-                                       ' --model_prefix=' + args.bpe_model +
+                                       ' --model_type=' + args.wp_model_type +
+                                       ' --model_prefix=' + args.wp_model +
                                        ' --input_sentence_size=100000000')
-    else:
-        word_dict = {}
-        word2phone = {}
-        token_set = set([])
-        with open(args.text, 'r') as f:
-            pbar = tqdm(total=len(open(args.text).readlines()))
-            for line in f:
-                line = unicode(line, 'utf-8').strip()
+        sp = spm.SentencePieceProcessor()
+        sp.Load(args.wp_model + '.model')
 
-                # Remove special tokens
-                for token in nlsyms:
-                    line = line.replace(token, '')
+    word_dict = {}
+    word2phone = {}
+    token_set = set([])
+    with open(args.text, 'r') as f:
+        pbar = tqdm(total=len(open(args.text).readlines()))
+        for line in f:
+            line = unicode(line, 'utf-8').strip()
 
-                words = line.split()
-                if '' in words:
-                    words.remove('')
+            # Remove special tokens
+            for token in nlsyms:
+                line = line.replace(token, '')
 
-                # for CSJ
-                words = list(map(lambda x: x.split('+')[0], words[1:]))
-                text = ' '.join(words)
+            words = line.split()
+            if '' in words:
+                words.remove('')
 
-                if args.unit == 'word':
-                    for w in words:
-                        # Count word frequency
-                        if w not in word_dict.keys():
-                            word_dict[w] = 1
-                        else:
-                            word_dict[w] += 1
-                        token_set.add(w)
+            # for CSJ
+            words = list(map(lambda x: x.split('+')[0], words[1:]))
+            text = ' '.join(words)
 
-                elif args.unit == 'char':
-                    # Remove whitespaces
-                    if args.remove_word_boundary:
-                        text = text.replace(' ', '')
+            if args.unit == 'word':
+                for w in words:
+                    # Count word frequency
+                    if w not in word_dict.keys():
+                        word_dict[w] = 1
+                    else:
+                        word_dict[w] += 1
+                    token_set.add(w)
 
-                    token_set |= set(list(text))
+            elif args.unit == 'wordpiece':
+                token_set |= set(sp.EncodeAsPieces(text))
 
-                elif args.unit == 'phone':
-                    token_set |= set(words)
+            elif args.unit == 'char':
+                # Remove whitespaces
+                if args.remove_word_boundary:
+                    text = text.replace(' ', '')
 
-                else:
-                    raise ValueError(args.unit)
-                pbar.update(1)
+                token_set |= set(list(text))
+
+            elif args.unit == 'phone':
+                raise NotImplementedError()
+                token_set |= set(words)
+
+            else:
+                raise ValueError(args.unit)
+            pbar.update(1)
 
     if args.unit == 'word':
         word_list = sorted(nlsyms) + sorted(list(word_dict.keys()),
@@ -100,8 +110,9 @@ def main():
         for w in word_list:
             print('%s' % w.encode('utf-8'))
 
-    elif args.unit == 'bpe':
-        raise NotImplementedError()
+    elif args.unit == 'wordpiece':
+        for wp in sorted(nlsyms) + sorted(list(token_set)):
+            print('%s' % wp.encode('utf-8'))
 
     elif args.unit == 'char':
         for c in sorted(nlsyms) + sorted(list(token_set)):

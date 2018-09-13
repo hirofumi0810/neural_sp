@@ -40,6 +40,7 @@ class Dataset(Base):
                  short2long=False, sort_stop_epoch=None,
                  num_enques=None, dynamic_batching=False,
                  use_ctc=False, subsample_factor=1,
+                 lm_training=False,
                  csv_path_sub=None, dict_path_sub=None, label_type_sub=None,
                  use_ctc_sub=False, subsample_factor_sub=1):
         """A class for loading dataset.
@@ -49,7 +50,7 @@ class Dataset(Base):
             corpus (str):
             csv_path (str):
             dict_path (str):
-            label_type (str): word or bpe or char or phone
+            label_type (str): word or wordpiece or char or phone
             batch_size (int): the size of mini-batch
             max_epoch (int): the max epoch. None means infinite loop.
             is_test (bool):
@@ -66,6 +67,7 @@ class Dataset(Base):
                 dynamically in training
             use_ctc (bool):
             subsample_factor (int):
+            lm_training (bool):
 
         """
         super(Dataset, self).__init__()
@@ -82,10 +84,11 @@ class Dataset(Base):
         self.sort_stop_epoch = sort_stop_epoch
         self.num_enques = num_enques
         self.dynamic_batching = dynamic_batching
+        self.lm_training = lm_training
         self.num_classes = self.count_vocab_size(dict_path)
 
         # Set index converter
-        if 'word' in label_type:
+        if label_type in ['word', 'wordpiece']:
             self.idx2word = Idx2word(dict_path)
             self.word2idx = Word2idx(dict_path)
         elif label_type == 'char':
@@ -99,13 +102,15 @@ class Dataset(Base):
             self.phone2idx = Phone2idx(dict_path)
         else:
             raise ValueError(label_type)
-        # TODO(hirofumi): bpe
 
         if dict_path_sub is not None:
             self.num_classes_sub = self.count_vocab_size(dict_path_sub)
 
             # Set index converter
-            if label_type_sub == 'char':
+            if label_type == 'wordpiece':
+                self.idx2word = Idx2word(dict_path_sub)
+                self.word2idx = Word2idx(dict_path_sub)
+            elif label_type_sub == 'char':
                 self.idx2char = Idx2char(dict_path_sub)
                 self.char2idx = Char2idx(dict_path_sub)
             elif label_type_sub == 'char_capital_divide':
@@ -116,7 +121,6 @@ class Dataset(Base):
                 self.phone2idx = Phone2idx(dict_path_sub)
             else:
                 raise ValueError(label_type_sub)
-            # TODO(hirofumi): bpe
         else:
             self.num_classes_sub = -1
 
@@ -198,8 +202,11 @@ class Dataset(Base):
 
         """
         # input
-        xs = [kaldi_io.read_mat(self.df['feat_path'][i]) for i in utt_indices]
-        x_lens = [self.df['x_len'][i] for i in utt_indices]
+        if not self.lm_training:
+            xs = [kaldi_io.read_mat(self.df['feat_path'][i]) for i in utt_indices]
+            x_lens = [self.df['x_len'][i] for i in utt_indices]
+        else:
+            xs, x_lens = [], []
 
         # output
         if self.is_test:
@@ -217,8 +224,7 @@ class Dataset(Base):
                 ys_sub = [list(map(int, self.df_sub['token_id'][i].split())) for i in utt_indices]
             y_lens_sub = [self.df_sub['y_len'][i] for i in utt_indices]
         else:
-            ys_sub = None
-            y_lens_sub = None
+            ys_sub, y_lens_sub = [], []
 
         utt_ids = [self.df['utt_id'][i] for i in utt_indices]
 

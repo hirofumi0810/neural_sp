@@ -32,9 +32,12 @@ stage=0
 export data=/n/sd8/inaguma/corpus/iwslt18
 
 ### vocabulary
-unit=word
-# unit=bpe
-vocab_size=15000
+unit=wordpiece
+vocab_size=10000
+# vocab_size=5000
+
+# for wordpiece
+wp_model_type=unigram  # or bpe
 
 ### path to save the model
 model_dir=/n/sd8/inaguma/result/iwslt18
@@ -78,6 +81,8 @@ if [ ${stage} -le 0 ] && [ ! -e .done_stage_0 ]; then
   for part in dev2010 tst2010 tst2013 tst2014 tst2015 tst2018; do
       local/data_prep_eval.sh ${datadir} ${part}
   done
+
+  touch .done_stage_0 && echo "Finish data preparation (stage: 0)."
 fi
 
 
@@ -117,8 +122,9 @@ if [ ${stage} -le 1 ] && [ ! -e .done_stage_1 ]; then
 fi
 
 
-dict=${data}/dict/${train_set}_${unit}_${vocab_size}.txt; mkdir -p ${data}/dict/
-nlsyms=data/dict/non_lang_syms.txt
+dict=${data}/dict/${train_set}_${unit}_${wp_model_type}${vocab_size}.txt; mkdir -p ${data}/dict/
+nlsyms=${data}/dict/non_linguistic_symbols.txt
+wp_model=${data}/dict/${train_set}_${wp_model_type}${vocab_size}
 if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}_${vocab_size} ]; then
   echo ============================================================================
   echo "                      Dataset preparation (stage:2)                        "
@@ -129,7 +135,6 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}_${vocab_size} ]; then
   cat ${nlsyms}
 
   # Make a dictionary
-  # NOTE: share the same dictinary between EN and DE
   echo "<blank> 0" > ${dict}
   echo "<unk> 1" >> ${dict}
   echo "<sos> 2" >> ${dict}
@@ -137,16 +142,20 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}_${vocab_size} ]; then
   echo "<pad> 4" >> ${dict}
   offset=`cat ${dict} | wc -l`
   echo "Making a dictionary..."
-  cat ${data}/train.en/text ${data}/train.de/text > ${data}/dict/input.txt
-  text2dict.py ${data}/dict/input.txt --unit ${unit} --vocab_size ${vocab_size} --nlsyms ${nlsyms} | \
-    sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict} || exit 1;
+  cut -f 2- -d " " ${data}/train.en/text ${data}/train.de/text >  ${data}/dict/input.txt
+  spm_train --user_defined_symbols=`cat ${nlsyms} | tr "\n" ","` --input=${data}/dict/input.txt --vocab_size=${vocab_size} \
+    --model_type=${wp_model_type} --model_prefix=${wp_model} --input_sentence_size=100000000
+  spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
+    sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict}
   echo "vocab size:" `cat ${dict} | wc -l`
+  # NOTE: share the same dictinary between EN and DE
 
   # Compute OOV rate
   if [ ${unit} = word ]; then
     mkdir -p ${data}/dict/word_count ${data}/dict/oov_rate
     echo "OOV rate:" > ${data}/dict/oov_rate/word_${vocab_size}.txt
-    for x in ${train_set} ${dev_set} ${test_set}; do
+    # for x in ${train_set} ${dev_set} ${test_set}; do
+    for x in ${train_set} ${dev_set}; do
       cut -f 2- -d " " ${data}/${x}/text | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
         > ${data}/dict/word_count/${x}.txt || exit 1;
       compute_oov_rate.py ${data}/dict/word_count/${x}.txt ${dict} ${x} \
@@ -160,14 +169,14 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}_${vocab_size} ]; then
   for x in ${train_set} ${dev_set}; do
     echo "Making a csv file for ${x}..."
     dump_dir=${data}/feat/${x}
-    make_dataset_csv.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} \
+    make_dataset_csv.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
       ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}_${vocab_size}.csv || exit 1;
   done
-  for x in ${test_set}; do
-    dump_dir=${data}/feat/${x}
-    make_dataset_csv.sh --is_test true --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} \
-      ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}_${vocab_size}.csv || exit 1;
-  done
+  # for x in ${test_set}; do
+  #   dump_dir=${data}/feat/${x}
+  #   make_dataset_csv.sh --is_test true --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} \
+  #     ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}_${vocab_size}.csv || exit 1;
+  # done
 
   touch .done_stage_2_${unit}_${vocab_size} && echo "Finish creating dataset (stage: 2)."
 fi

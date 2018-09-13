@@ -24,6 +24,7 @@ from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.evaluators.character import eval_char
 from neural_sp.evaluators.phone import eval_phone
 from neural_sp.evaluators.word import eval_word
+from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.models.data_parallel import CustomDataParallel
 from neural_sp.models.seq2seq.seq2seq import Seq2seq
 from neural_sp.models.rnnlm.rnnlm import RNNLM
@@ -186,7 +187,7 @@ def train(args):
 
         # Set save path
         save_path = mkdir_join(args.model, args.model_type,
-                               os.path.basename(args.train_set).split('.')[0], model.name)
+                               '_'.join(os.path.basename(args.train_set).split('.')[:-1]), model.name)
         model.set_save_path(save_path)  # avoid overwriting
 
         # Save the config file as a yaml file
@@ -352,8 +353,12 @@ def train(args):
             else:
                 start_time_eval = time.time()
                 # dev
-                if 'word' in args.label_type:
+                if args.label_type == 'word':
                     metric_dev = eval_word([model.module], dev_set, decode_params)[0]
+                    logger.info('  WER (%s): %.3f %%' % (dev_set.set, metric_dev))
+                elif args.label_type == 'wordpiece':
+                    metric_dev = eval_wordpiece([model.module], dev_set, decode_params,
+                                                args.wp_model)[0]
                     logger.info('  WER (%s): %.3f %%' % (dev_set.set, metric_dev))
                 elif 'char' in args.label_type:
                     metric_dev = eval_char([model.module], dev_set, decode_params)[1][0]
@@ -382,8 +387,11 @@ def train(args):
 
                     # test
                     for eval_set in eval_sets:
-                        if 'word' in args.label_type:
+                        if args.label_type == 'word':
                             wer_test = eval_word([model.module], eval_set, decode_params)[0]
+                            logger.info('  WER (%s): %.3f %%' % (eval_set.set, wer_test))
+                        elif args.label_type == 'wordpiece':
+                            wer_test = eval_wordpiece([model.module], eval_set, decode_params)[0]
                             logger.info('  WER (%s): %.3f %%' % (eval_set.set, wer_test))
                         elif 'char' in args.label_type:
                             cer_test = eval_char([model.module], eval_set, decode_params)[1][0]
