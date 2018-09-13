@@ -11,7 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
-import codecs
 
 parser = argparse.ArgumentParser()
 parser.add_argument('word_count', type=str,
@@ -26,17 +25,17 @@ args = parser.parse_args()
 def main():
 
     token_set = set([])
-    with codecs.open(args.dict, 'r', 'utf-8') as f:
+    with open(args.dict, 'r') as f:
         token_set = set([])
         for line in f:
-            token, id = line.strip().split()
+            token, id = unicode(line, 'utf-8').strip().split()
             token_set.add(token)
 
     oov_count = 0
     num_words = 0
-    with codecs.open(args.word_count, 'r', 'utf-8') as f:
+    with open(args.word_count, 'r') as f:
         for line in f:
-            count, w = line.strip().split(' ')
+            count, w = unicode(line, 'utf-8').strip().split(' ')
 
             # for CSJ
             w = w.split('+')[0]

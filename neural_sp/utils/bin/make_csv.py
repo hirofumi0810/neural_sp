@@ -11,7 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
-import codecs
 from distutils.util import strtobool
 import kaldi_io
 import os
@@ -45,37 +44,37 @@ def main():
 
     nlsyms = []
     if args.nlsyms:
-        with codecs.open(args.nlsyms, 'r', 'utf-8') as f:
+        with open(args.nlsyms, 'r') as f:
             for line in f:
-                nlsyms.append(line.strip().encode('utf-8'))
+                nlsyms.append(unicode(line, 'utf-8').strip())
 
     utt2feat = {}
-    with codecs.open(args.feat, 'r', 'utf-8') as f:
+    with open(args.feat, 'r') as f:
         for line in f:
             utt_id, feat_path = line.strip().split(' ')
             utt2feat[utt_id] = feat_path
 
     utt2frame = {}
-    with codecs.open(args.utt2num_frames, 'r', 'utf-8') as f:
+    with open(args.utt2num_frames, 'r') as f:
         for line in f:
             utt_id, x_len = line.strip().split(' ')
             utt2frame[utt_id] = int(x_len)
 
     token2id = {}
-    with codecs.open(args.dict, 'r', 'utf-8') as f:
+    with open(args.dict, 'r') as f:
         for line in f:
-            token, id = line.strip().split(' ')
+            token, id = unicode(line, 'utf-8').strip().split(' ')
             token2id[token] = str(id)
 
     print(',utt_id,feat_path,x_len,x_dim,text,token_id,y_len,y_dim')
 
     x_dim = None
     utt_count = 0
-    with codecs.open(args.text, 'r', 'utf-8') as f:
+    with open(args.text, 'r') as f:
         pbar = tqdm(total=len(open(args.text).readlines()))
         for line in f:
             # Remove succesive spaces
-            line = re.sub(r'[\s]+', ' ', line.strip().encode('utf-8'))
+            line = re.sub(r'[\s]+', ' ', unicode(line, 'utf-8').strip())
             utt_id = line.split(' ')[0]
             words = line.split(' ')[1:]
             if '' in words:
@@ -134,8 +133,9 @@ def main():
                 x_dim = kaldi_io.read_mat(feat_path).shape[-1]
             y_dim = len(token2id.keys())
 
-            print("%d,%s,%s,%d,%d,%s,%s,%d,%d" %
-                  (utt_count, utt_id, feat_path, x_len, x_dim, text, token_id, y_len, y_dim))
+            print("%d,%s,%s,%d,%d,\"%s\",%s,%d,%d" %
+                  (utt_count, utt_id.encode('utf-8'), feat_path, x_len, x_dim,
+                   text.encode('utf-8'), token_id, y_len, y_dim))
             utt_count += 1
             pbar.update(1)
 

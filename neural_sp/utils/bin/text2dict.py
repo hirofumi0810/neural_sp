@@ -11,7 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
-import codecs
 import sentencepiece as spm
 from tqdm import tqdm
 
@@ -37,7 +36,7 @@ def main():
 
     nlsyms = []
     if args.nlsyms:
-        with codecs.open(args.nlsyms, 'r', 'utf-8') as f:
+        with open(args.nlsyms, 'r') as f:
             for line in f:
                 nlsyms.append(line.strip().encode('utf-8'))
 
@@ -54,10 +53,10 @@ def main():
         word_dict = {}
         word2phone = {}
         token_set = set([])
-        with codecs.open(args.text, 'r', 'utf-8') as f:
+        with open(args.text, 'r') as f:
             pbar = tqdm(total=len(open(args.text).readlines()))
             for line in f:
-                line = line.strip().encode('utf-8')
+                line = unicode(line, 'utf-8').strip()
 
                 # Remove special tokens
                 for token in nlsyms:
@@ -99,18 +98,18 @@ def main():
                                             key=lambda x: word_dict[x],
                                             reverse=True)[:args.vocab_size]
         for w in word_list:
-            print('%s' % w)
+            print('%s' % w.encode('utf-8'))
 
     elif args.unit == 'bpe':
         raise NotImplementedError()
 
     elif args.unit == 'char':
         for c in sorted(nlsyms) + sorted(list(token_set)):
-            print('%s' % c)
+            print('%s' % c.encode('utf-8'))
 
     elif args.unit == 'phone':
-        for c in sorted(list(token_set)):
-            print('%s' % c)
+        for p in sorted(list(token_set)):
+            print('%s' % p.encode('utf-8'))
 
 
 if __name__ == '__main__':
