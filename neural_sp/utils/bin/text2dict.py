@@ -19,16 +19,16 @@ parser.add_argument('text', type=str,
                     help='path to text file')
 parser.add_argument('--unit', type=str, choices=['word', "wordpiece", 'char', "phone"],
                     help='token units')
-parser.add_argument('--vocab_size', type=int,
+parser.add_argument('--vocab_size', type=int, nargs='?',
                     help='the size of vocabulary for word and wordpiece.')
 parser.add_argument('--remove_word_boundary', action='store_false',
                     help='remove all whitespaces in the transcriptions')
 parser.add_argument('--nlsyms', type=str, default=False,
                     help='path to non-linguistic symbols, e.g., <NOISE> etc.')
-parser.add_argument('--wp_model_type', type=str, default='unigram',
+parser.add_argument('--wp_model_type', type=str, default='unigram', nargs='?',
                     choices=['unigram', 'bpe'],
                     help='')
-parser.add_argument('--wp_model', type=str, default=False,
+parser.add_argument('--wp_model', type=str, default=False, nargs='?',
                     help='prefix of the wordpiece model')
 args = parser.parse_args()
 
@@ -41,7 +41,7 @@ def main():
     if args.nlsyms:
         with open(args.nlsyms, 'r') as f:
             for line in f:
-                nlsyms.append(line.strip().encode('utf-8'))
+                nlsyms.append(unicode(line, 'utf-8').strip())
 
     if args.unit == 'wordpiece':
         # TODO: CSJ

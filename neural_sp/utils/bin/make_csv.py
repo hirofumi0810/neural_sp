@@ -120,10 +120,15 @@ def main():
                         if w in nlsyms:
                             token_ids.append(token2id[w])
                         else:
-                            token_ids += list(map(lambda c: token2id[c], list(w)))
+                            for c in list(w):
+                                if c in token2id.keys():
+                                    token_ids.append(c)
+                                else:
+                                    # Replace with <unk>
+                                    token_ids.append(token2id[args.unk])
 
                         # Remove whitespaces
-                        if args.remove_word_boundary:
+                        if not args.remove_word_boundary:
                             if i < len(words) - 1:
                                 token_ids.append(token2id[args.space])
 
@@ -142,7 +147,7 @@ def main():
 
             print("%d,%s,%s,%d,%d,\"%s\",%s,%d,%d" %
                   (utt_count, utt_id.encode('utf-8'), feat_path, x_len, x_dim,
-                   text.encode('utf-8'), token_id, y_len, y_dim))
+                   text.encode('utf-8'), token_id.encode('utf-8'), y_len, y_dim))
             utt_count += 1
             pbar.update(1)
 
