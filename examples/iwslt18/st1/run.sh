@@ -25,16 +25,17 @@ if [ $# -gt 2 ]; then
   done
 fi
 
-
 stage=0
 
 ### path to save dataset
 export data=/n/sd8/inaguma/corpus/iwslt18
 
 ### vocabulary
+# unit=word
+# vocab_size=30000
 unit=wordpiece
-vocab_size=10000
-# vocab_size=5000
+vocab_size=5000
+# unit=char
 
 # for wordpiece
 wp_model_type=unigram  # or bpe
@@ -53,7 +54,6 @@ datadir=/n/sd8/inaguma/corpus/iwslt18/data
 rnnlm_config=conf/${unit}_lstm_rnnlm.yml
 st_config=conf/st/${unit}_blstm_att.yml
 
-
 . ./cmd.sh
 . ./path.sh
 . utils/parse_options.sh
@@ -65,6 +65,13 @@ set -o pipefail
 train_set=train.de
 dev_set=dev.de
 recog_set="dev2010.de tst2010.de tst2013.de tst2014.de tst2015.de"
+
+if [ ${unit} = char ]; then
+  vocab_size=
+fi
+if [ ${unit} != wordpiece ]; then
+  wp_model_type=
+fi
 
 
 if [ ${stage} -le 0 ] && [ ! -e .done_stage_0 ]; then
@@ -122,10 +129,10 @@ if [ ${stage} -le 1 ] && [ ! -e .done_stage_1 ]; then
 fi
 
 
-dict=${data}/dict/${train_set}_${unit}_${wp_model_type}${vocab_size}.txt; mkdir -p ${data}/dict/
+dict=${data}/dict/${train_set}_${unit}${wp_model_type}${vocab_size}.txt; mkdir -p ${data}/dict/
 nlsyms=${data}/dict/non_linguistic_symbols.txt
 wp_model=${data}/dict/${train_set}_${wp_model_type}${vocab_size}
-if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}_${vocab_size} ]; then
+if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}${wp_model_type}${vocab_size} ]; then
   echo ============================================================================
   echo "                      Dataset preparation (stage:2)                        "
   echo ============================================================================
@@ -140,13 +147,20 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}_${vocab_size} ]; then
   echo "<sos> 2" >> ${dict}
   echo "<eos> 3" >> ${dict}
   echo "<pad> 4" >> ${dict}
+  echo "<space> 5" >> ${dict}
   offset=`cat ${dict} | wc -l`
   echo "Making a dictionary..."
-  cut -f 2- -d " " ${data}/train.en/text ${data}/train.de/text >  ${data}/dict/input.txt
-  spm_train --user_defined_symbols=`cat ${nlsyms} | tr "\n" ","` --input=${data}/dict/input.txt --vocab_size=${vocab_size} \
-    --model_type=${wp_model_type} --model_prefix=${wp_model} --input_sentence_size=100000000
-  spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-    sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict}
+  if [ ${unit} = wordpiece ]; then
+    cut -f 2- -d " " ${data}/train.en/text ${data}/train.de/text > ${data}/dict/input.txt
+    spm_train --user_defined_symbols=`cat ${nlsyms} | tr "\n" ","` --input=${data}/dict/input.txt --vocab_size=${vocab_size} \
+      --model_type=${wp_model_type} --model_prefix=${wp_model} --input_sentence_size=100000000
+    spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
+      sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict}
+  else
+    text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} --nlsyms ${nlsyms} \
+      --wp_model_type ${wp_model_type} --wp_model ${wp_model} | \
+      sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict} || exit 1;
+  fi
   echo "vocab size:" `cat ${dict} | wc -l`
   # NOTE: share the same dictinary between EN and DE
 
@@ -170,15 +184,15 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}_${vocab_size} ]; then
     echo "Making a csv file for ${x}..."
     dump_dir=${data}/feat/${x}
     make_dataset_csv.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
-      ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}_${vocab_size}.csv || exit 1;
+      ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_model_type}${vocab_size}.csv || exit 1;
   done
   # for x in ${test_set}; do
   #   dump_dir=${data}/feat/${x}
   #   make_dataset_csv.sh --is_test true --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} \
-  #     ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}_${vocab_size}.csv || exit 1;
+  #     ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_model_type}${vocab_size}.csv || exit 1;
   # done
 
-  touch .done_stage_2_${unit}_${vocab_size} && echo "Finish creating dataset (stage: 2)."
+  touch .done_stage_2_${unit}${wp_model_type}${vocab_size} && echo "Finish creating dataset (stage: 2)."
 fi
 
 
@@ -193,9 +207,10 @@ if [ ${stage} -le 4 ]; then
   CUDA_VISIBLE_DEVICES=${gpu_ids} ../../../neural_sp/bin/asr/train.py \
     --corpus iwslt18 \
     --ngpus ${ngpus} \
-    --train_set ${data}/dataset/${train_set}_${unit}_${vocab_size}.csv \
-    --dev_set ${data}/dataset/${dev_set}_${unit}_${vocab_size}.csv \
+    --train_set ${data}/dataset/${train_set}_${unit}${wp_model_type}${vocab_size}.csv \
+    --dev_set ${data}/dataset/${dev_set}_${unit}${wp_model_type}${vocab_size}.csv \
     --dict ${dict} \
+    --wp_model ${wp_model} \
     --config ${st_config} \
     --model ${model_dir} \
     --label_type ${unit} || exit 1;

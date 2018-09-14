@@ -25,7 +25,6 @@ if [ $# -gt 2 ]; then
   done
 fi
 
-
 stage=0
 
 ### path to save dataset
@@ -63,7 +62,6 @@ rnnlm_config=conf/${unit}_lstm_rnnlm.yml
 asr_config=conf/attention/${unit}_blstm_att_${unit_sub}_ctc.yml
 # asr_config=conf/ctc/${unit}_blstm_ctc_${unit_sub}_ctc.yml
 
-
 . ./cmd.sh
 . ./path.sh
 . utils/parse_options.sh
@@ -75,6 +73,13 @@ set -o pipefail
 train_set=train
 dev_set=dev
 test_set=eval2000
+
+if [ ${unit} = char ]; then
+  vocab_size=
+fi
+if [ ${unit} != wordpiece ]; then
+  wp_model_type=
+fi
 
 
 if [ ${stage} -le 0 ] && [ ! -e .done_stage_0 ]; then
@@ -145,13 +150,11 @@ if [ ${stage} -le 1 ] && [ ! -e .done_stage_1 ]; then
   touch .done_stage_1 && echo "Finish feature extranction (stage: 1)."
 fi
 
-mkdir -p ${data}/dict/
-if [ ${unit} = wordpiece ]; then
-  dict=${data}/dict/${train_set}_${unit}_${wp_model_type}${vocab_size}.txt
-else
-  dict=${data}/dict/${train_set}_${unit}_${vocab_size}.txt
-fi
+
+dict=${data}/dict/${train_set}_${unit}${wp_model_type}${vocab_size}.txt; mkdir -p ${data}/dict/
+nlsyms=${data}/dict/non_linguistic_symbols.txt
 dict_sub=${data}/dict/${train_set}_${unit_sub}.txt
+wp_model=${data}/dict/${train_set}_${wp_model_type}${vocab_size}
 if [ ${stage} -le 2 ]; then
   echo ============================================================================
   echo "                      Dataset preparation (stage:2)                        "
@@ -193,12 +196,13 @@ if [ ${stage} -le 4 ]; then
   CUDA_VISIBLE_DEVICES=${gpu_ids} ../../../neural_sp/bin/asr/train.py \
     --corpus swbd \
     --ngpus ${ngpus} \
-    --train_set ${data}/dataset/${train_set}_${unit}_${vocab_size}.csv \
+    --train_set ${data}/dataset/${train_set}_${unit}${wp_model_type}${vocab_size}.csv \
     --train_set_sub ${data}/dataset/${train_set}_${unit_sub}.csv \
-    --dev_set ${data}/dataset/${dev_set}_${unit}_${vocab_size}.csv \
+    --dev_set ${data}/dataset/${dev_set}_${unit}${wp_model_type}${vocab_size}.csv \
     --dev_set_sub ${data}/dataset/${dev_set}_${unit_sub}.csv \
     --dict ${dict} \
     --dict_sub ${dict_sub} \
+    --wp_model ${wp_model} \
     --config ${asr_config} \
     --model ${model_dir} \
     --label_type ${unit} \

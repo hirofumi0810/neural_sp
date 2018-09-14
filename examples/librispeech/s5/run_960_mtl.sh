@@ -25,7 +25,6 @@ if [ $# -gt 2 ]; then
   done
 fi
 
-
 stage=0
 
 ### path to save dataset
@@ -33,9 +32,13 @@ export data=/n/sd8/inaguma/corpus/librispeech
 
 ### vocabulary
 unit=word
-# unit=bpe
-vocab_size=15000
+vocab_size=30000
+# unit=wordpiece
+# vocab_size=5000
 unit_sub=char
+
+# for wordpiece
+wp_model_type=unigram  # or bpe
 
 ### path to save the model
 model_dir=/n/sd8/inaguma/result/librispeech
@@ -57,7 +60,6 @@ rnnlm_config=conf/${unit}_lstm_rnnlm.yml
 asr_config=conf/attention/${unit}_blstm_att_${datasize}_${unit_sub}_ctc.yml
 # asr_config=conf/ctc/${unit}_blstm_ctc_${datasize}_${unit_sub}_ctc.yml
 
-
 . ./cmd.sh
 . ./path.sh
 . utils/parse_options.sh
@@ -73,6 +75,13 @@ lm_url=www.openslr.org/resources/11
 train_set=train_${datasize}
 dev_set=dev_${datasize}
 test_set="dev_clean dev_other test_clean test_other"
+
+if [ ${unit} = char ]; then
+  vocab_size=
+fi
+if [ ${unit} != wordpiece ]; then
+  wp_model_type=
+fi
 
 
 if [ ${stage} -le 0 ] && [ ! -e .done_stage_0_${datasize} ]; then
@@ -141,8 +150,9 @@ fi
 
 
 
-dict=${data}/dict/${train_set}_${unit}_${vocab_size}.txt
+dict=${data}/dict/${train_set}_${unit}${wp_model_type}${vocab_size}.txt; mkdir -p ${data}/dict/
 dict_sub=${data}/dict/${train_set}_${unit_sub}.txt
+wp_model=${data}/dict/${train_set}_${wp_model_type}${vocab_size}
 if [ ${stage} -le 2 ]; then
   echo ============================================================================
   echo "                      Dataset preparation (stage:2)                        "
@@ -184,12 +194,13 @@ if [ ${stage} -le 4 ]; then
   CUDA_VISIBLE_DEVICES=${gpu_ids} ../../../neural_sp/bin/asr/train.py \
     --corpus librispeech \
     --ngpus ${ngpus} \
-    --train_set ${data}/dataset/${train_set}_${unit}_${vocab_size}.csv \
+    --train_set ${data}/dataset/${train_set}_${unit}${wp_model_type}${vocab_size}.csv \
     --train_set_sub ${data}/dataset/${train_set}_${unit_sub}.csv \
-    --dev_set ${data}/dataset/${dev_set}_${unit}_${vocab_size}.csv \
+    --dev_set ${data}/dataset/${dev_set}_${unit}${wp_model_type}${vocab_size}.csv \
     --dev_set_sub ${data}/dataset/${dev_set}_${unit_sub}.csv \
     --dict ${dict} \
     --dict_sub ${dict_sub} \
+    --wp_model ${wp_model} \
     --config ${asr_config} \
     --model ${model_dir} \
     --label_type ${unit} \
