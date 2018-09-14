@@ -155,22 +155,15 @@ dict=${data}/dict/${train_set}_${unit}${wp_model_type}${vocab_size}.txt; mkdir -
 nlsyms=${data}/dict/non_linguistic_symbols.txt
 dict_sub=${data}/dict/${train_set}_${unit_sub}.txt
 wp_model=${data}/dict/${train_set}_${wp_model_type}${vocab_size}
-if [ ${stage} -le 2 ]; then
-  echo ============================================================================
-  echo "                      Dataset preparation (stage:2)                        "
-  echo ============================================================================
 
-  if [ ! -f ${dict} ]; then
-      echo "There is no file such as "${dict}
-      exit 1
-  fi
+if [ ! -f ${dict} ]; then
+    echo "There is no file such as "${dict}
+    exit 1
+fi
 
-  if [ ! -f ${dict_sub} ]; then
-      echo "There is no file such as "${dict_sub}
-      exit 1
-  fi
-
-  echo "Finish creating dataset (stage: 2)."
+if [ ! -f ${dict_sub} ]; then
+    echo "There is no file such as "${dict_sub}
+    exit 1
 fi
 
 

@@ -93,12 +93,13 @@ if [ ${stage} -le 0 ] && [ ! -e .done_stage_0 ]; then
 fi
 
 
-if [ ${stage} -le 1 ] && [ ! -e .done_stage_1 ]; then
+if [ ${stage} -le 1 ] && [ ! -e .done_stage_1.de ]; then
   echo ============================================================================
   echo "                    Feature extranction (stage:1)                          "
   echo ============================================================================
 
-    for x in train_org dev2010 tst2010 tst2013 tst2014 tst2015 tst2018; do
+    # for x in train_org dev2010 tst2010 tst2013 tst2014 tst2015 tst2018; do
+    for x in train_org; do
         steps/make_fbank.sh --nj 16 --cmd "$train_cmd" --write_utt2num_frames true \
             ${data}/${x}.de ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
     done
@@ -119,20 +120,20 @@ if [ ${stage} -le 1 ] && [ ! -e .done_stage_1 ]; then
       dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
         ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
     done
-    for x in ${test_set}; do
-      dump_dir=${data}/feat/${x}; mkdir -p ${dump_dir}
-      dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
-        ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
-    done
+    # for x in ${test_set}; do
+    #   dump_dir=${data}/feat/${x}; mkdir -p ${dump_dir}
+    #   dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
+    #     ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
+    # done
 
-    touch .done_stage_1 && echo "Finish feature extranction (stage: 1)."
+    touch .done_stage_1.de && echo "Finish feature extranction (stage: 1)."
 fi
 
 
 dict=${data}/dict/${train_set}_${unit}${wp_model_type}${vocab_size}.txt; mkdir -p ${data}/dict/
 nlsyms=${data}/dict/non_linguistic_symbols.txt
 wp_model=${data}/dict/${train_set}_${wp_model_type}${vocab_size}
-if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}${wp_model_type}${vocab_size} ]; then
+if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}${wp_model_type}${vocab_size}.de ]; then
   echo ============================================================================
   echo "                      Dataset preparation (stage:2)                        "
   echo ============================================================================
@@ -147,7 +148,9 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}${wp_model_type}${vocab_siz
   echo "<sos> 2" >> ${dict}
   echo "<eos> 3" >> ${dict}
   echo "<pad> 4" >> ${dict}
-  echo "<space> 5" >> ${dict}
+  if [ ${unit} = char ]; then
+    echo "<space> 5" >> ${dict}
+  fi
   offset=`cat ${dict} | wc -l`
   echo "Making a dictionary..."
   if [ ${unit} = wordpiece ]; then
@@ -192,7 +195,7 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}${wp_model_type}${vocab_siz
   #     ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_model_type}${vocab_size}.csv || exit 1;
   # done
 
-  touch .done_stage_2_${unit}${wp_model_type}${vocab_size} && echo "Finish creating dataset (stage: 2)."
+  touch .done_stage_2_${unit}${wp_model_type}${vocab_size}.de && echo "Finish creating dataset (stage: 2)."
 fi
 
 

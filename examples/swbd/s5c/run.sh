@@ -169,6 +169,9 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}${wp_model_type}${vocab_siz
   echo "<sos> 2" >> ${dict}
   echo "<eos> 3" >> ${dict}
   echo "<pad> 4" >> ${dict}
+  if [ ${unit} = char ]; then
+    echo "<space> 5" >> ${dict}
+  fi
   offset=`cat ${dict} | wc -l`
   echo "Making a dictionary..."
   if [ ${unit} = wordpiece ]; then

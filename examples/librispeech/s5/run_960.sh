@@ -25,7 +25,6 @@ if [ $# -gt 2 ]; then
   done
 fi
 
-
 stage=0
 
 ### path to save dataset
@@ -33,9 +32,13 @@ export data=/n/sd8/inaguma/corpus/librispeech
 
 ### vocabulary
 unit=word
-# unit=bpe
-# vocab_size=15000
 vocab_size=30000
+# unit=wordpiece
+# vocab_size=5000
+# unit=char
+
+# for wordpiece
+wp_model_type=unigram  # or bpe
 
 ### path to save the model
 model_dir=/n/sd8/inaguma/result/librispeech
@@ -58,7 +61,6 @@ rnnlm_config=conf/${unit}_lstm_rnnlm.yml
 asr_config=conf/attention/${unit}_blstm_att_${datasize}.yml
 # asr_config=conf/ctc/${unit}_blstm_ctc_${datasize}.yml
 
-
 . ./cmd.sh
 . ./path.sh
 . utils/parse_options.sh
@@ -74,6 +76,13 @@ lm_url=www.openslr.org/resources/11
 train_set=train_${datasize}
 dev_set=dev_${datasize}
 test_set="dev_clean dev_other test_clean test_other"
+
+if [ ${unit} = char ]; then
+  vocab_size=
+fi
+if [ ${unit} != wordpiece ]; then
+  wp_model_type=
+fi
 
 
 if [ ${stage} -le 0 ] && [ ! -e .done_stage_0_${datasize} ]; then
@@ -141,23 +150,36 @@ if [ ${stage} -le 1 ] && [ ! -e .done_stage_1_${datasize} ]; then
 fi
 
 
-dict=${data}/dict/${train_set}_${unit}_${vocab_size}.txt; mkdir -p ${data}/dict/
-if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${datasize}_${unit}_${vocab_size} ]; then
+dict=${data}/dict/${train_set}_${unit}${wp_model_type}${vocab_size}.txt; mkdir -p ${data}/dict/
+wp_model=${data}/dict/${train_set}_${wp_model_type}${vocab_size}
+if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${datasize}${unit}${wp_model_type}${vocab_size} ]; then
   echo ============================================================================
   echo "                      Dataset preparation (stage:2)                        "
   echo ============================================================================
 
   # Make a dictionary
-  # echo "<blank> 0" > ${dict}
-  # echo "<unk> 1" >> ${dict}
-  # echo "<sos> 2" >> ${dict}
-  # echo "<eos> 3" >> ${dict}
-  # echo "<pad> 4" >> ${dict}
-  # offset=`cat ${dict} | wc -l`
-  # echo "Making a dictionary..."
-  # text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} | \
-  #   sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict} || exit 1;
-  # echo "vocab size:" `cat ${dict} | wc -l`
+  echo "<blank> 0" > ${dict}
+  echo "<unk> 1" >> ${dict}
+  echo "<sos> 2" >> ${dict}
+  echo "<eos> 3" >> ${dict}
+  echo "<pad> 4" >> ${dict}
+  if [ ${unit} = char ]; then
+    echo "<space> 5" >> ${dict}
+  fi
+  offset=`cat ${dict} | wc -l`
+  echo "Making a dictionary..."
+  if [ ${unit} = wordpiece ]; then
+    cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
+    spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_size} \
+      --model_type=${wp_model_type} --model_prefix=${wp_model} --input_sentence_size=100000000
+    spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
+      sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict}
+  else
+    text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} \
+      --wp_model_type ${wp_model_type} --wp_model ${wp_model} | \
+      sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict} || exit 1;
+  fi
+  echo "vocab size:" `cat ${dict} | wc -l`
 
   # Compute OOV rate
   if [ ${unit} = word ]; then
@@ -177,16 +199,16 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${datasize}_${unit}_${vocab_size} 
   for x in ${train_set} ${dev_set}; do
     echo "Making a csv file for ${x}..."
     dump_dir=${data}/feat/${x}
-    make_dataset_csv.sh --feat ${dump_dir}/feats.scp --unit ${unit} \
-      ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}_${vocab_size}.csv || exit 1;
+    make_dataset_csv.sh --feat ${dump_dir}/feats.scp --unit ${unit} --wp_model ${wp_model} \
+      ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_model_type}${vocab_size}.csv || exit 1;
   done
   for x in ${test_set}; do
     dump_dir=${data}/feat/${x}_${datasize}
     make_dataset_csv.sh --is_test true --feat ${dump_dir}/feats.scp --unit ${unit} \
-      ${data}/${x} ${dict} > ${data}/dataset/${x}_${datasize}_${unit}_${vocab_size}.csv || exit 1;
+      ${data}/${x} ${dict} > ${data}/dataset/${x}_${datasize}_${unit}${wp_model_type}${vocab_size}.csv || exit 1;
   done
 
-  touch .done_stage_2_${datasize}_${unit}_${vocab_size} && echo "Finish creating dataset (stage: 2)."
+  touch .done_stage_2_${datasize}${unit}${wp_model_type}${vocab_size} && echo "Finish creating dataset (stage: 2)."
 fi
 
 
@@ -204,7 +226,7 @@ if [ ${stage} -le 3 ]; then
   #   --ngpus 1 \
   #   --train_set ${data}/dataset/${train_set}.csv \
   #   --dev_set ${data}/dataset/${dev_set}.csv \
-  #   --eval_sets ${data}/dataset/eval1_${datasize}_${unit}_${vocab_size}.csv \
+  #   --eval_sets ${data}/dataset/eval1_${datasize}_${unit}${wp_model_type}${vocab_size}.csv \
   #   --config ${rnn_config} \
   #   --model ${model_dir} \
   #   --saved_model ${rnnlm_saved_model} || exit 1;
@@ -222,9 +244,10 @@ if [ ${stage} -le 4 ]; then
   CUDA_VISIBLE_DEVICES=${gpu_ids} ../../../neural_sp/bin/asr/train.py \
     --corpus librispeech \
     --ngpus ${ngpus} \
-    --train_set ${data}/dataset/${train_set}_${unit}_${vocab_size}.csv \
-    --dev_set ${data}/dataset/${dev_set}_${unit}_${vocab_size}.csv \
+    --train_set ${data}/dataset/${train_set}_${unit}${wp_model_type}${vocab_size}.csv \
+    --dev_set ${data}/dataset/${dev_set}_${unit}${wp_model_type}${vocab_size}.csv \
     --dict ${dict} \
+    --wp_model ${wp_model} \
     --config ${asr_config} \
     --model ${model_dir} \
     --label_type ${unit} || exit 1;
