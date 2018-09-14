@@ -32,8 +32,7 @@ class BeamSearchDecoder(object):
         self.blank = blank_index
 
     def __call__(self, log_probs, x_lens, beam_width=1,
-                 rnnlm=None, rnnlm_weight=0.,
-                 length_penalty=0., space_index=-1):
+                 rnnlm=None, rnnlm_weight=0., length_penalty=0., space_index=5):
         """Performs inference for the given output probabilities.
 
         Args:

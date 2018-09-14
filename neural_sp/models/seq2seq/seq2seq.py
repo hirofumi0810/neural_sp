@@ -437,7 +437,7 @@ class Seq2seq(ModelBase):
 
         if self.ctc_weight_0 == 1:
             best_hyps = getattr(self, 'dec_' + dir + '_0').decode_ctc(
-                enc_out, x_lens, decode_params['beam_width'])
+                enc_out, x_lens, decode_params['beam_width'], rnnlm)
             return best_hyps, None, perm_idx
         else:
             if decode_params['beam_width'] == 1:
@@ -445,5 +445,5 @@ class Seq2seq(ModelBase):
                     enc_out, x_lens, decode_params['max_len_ratio'], exclude_eos)
             else:
                 best_hyps, aw = getattr(self, 'dec_' + dir + '_0').beam_search(
-                    enc_out, x_lens, decode_params, exclude_eos)
+                    enc_out, x_lens, decode_params, rnnlm, exclude_eos)
             return best_hyps, aw, perm_idx

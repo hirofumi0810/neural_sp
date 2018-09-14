@@ -12,7 +12,7 @@ from __future__ import print_function
 
 from itertools import groupby
 import numpy as np
-import sys
+import six
 
 
 class GreedyDecoder(object):

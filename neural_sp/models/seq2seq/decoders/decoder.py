@@ -625,9 +625,9 @@ class Decoder(nn.Module):
                 beam_width (int): the size of beam
                 max_len_ratio (int): the maximum sequence length of tokens
                 min_len_ratio (float): the minimum sequence length of tokens
-                len_penalty (float): length penalty
-                cov_penalty (float): coverage penalty
-                cov_threshold (float): threshold for coverage penalty
+                length_penalty (float): length penalty
+                coverage_penalty (float): coverage penalty
+                coverage_threshold (float): threshold for coverage penalty
                 rnnlm_weight (float): the weight of RNNLM score
             rnnlm (torch.nn.Module):
             exclude_eos (bool):
@@ -736,12 +736,12 @@ class Decoder(nn.Module):
                             continue
 
                         # Add length penalty
-                        score = beam[i_beam]['score'] + log_probs_topk.data[0, k] + params['len_penalty']
+                        score = beam[i_beam]['score'] + log_probs_topk.data[0, k] + params['length_penalty']
 
                         # Add coverage penalty
-                        if params['cov_penalty'] > 0:
+                        if params['coverage_penalty'] > 0:
                             # Recompute converage penalty in each step
-                            score -= beam[i_beam]['prev_cov'] * params['cov_penalty']
+                            score -= beam[i_beam]['prev_cov'] * params['coverage_penalty']
 
                             aw_stack = torch.stack(beam[i_beam]['aw_t_list'][1:] + [aw_t], dim=1)
 
@@ -750,11 +750,11 @@ class Decoder(nn.Module):
                                 # TODO(hirofumi): fix for MHA
                             else:
                                 cov_sum = aw_stack.data[0].cpu().numpy()
-                            if params['cov_threshold'] == 0:
+                            if params['coverage_threshold'] == 0:
                                 cov_sum = np.sum(cov_sum)
                             else:
-                                cov_sum = np.sum(cov_sum[np.where(cov_sum > params['cov_threshold'])[0]])
-                            score += cov_sum * params['cov_penalty']
+                                cov_sum = np.sum(cov_sum[np.where(cov_sum > params['coverage_threshold'])[0]])
+                            score += cov_sum * params['coverage_penalty']
                         else:
                             cov_sum = 0
 
@@ -767,7 +767,8 @@ class Decoder(nn.Module):
                         new_beam.append(
                             {'hyp': beam[i_beam]['hyp'] + [indices_topk.data[0, k]],
                              'score': score,
-                             'dec_state': copy.deepcopy(dec_state),
+                             # 'dec_state': copy.deepcopy(dec_state),
+                             'dec_state': dec_state,
                              'dec_out': dec_out,
                              'cv': cv,
                              'aw_t_list': beam[i_beam]['aw_t_list'] + [aw_t],
@@ -821,7 +822,7 @@ class Decoder(nn.Module):
 
         return best_hyps, aw
 
-    def decode_ctc(self, enc_out, x_lens, beam_width=1, task_index=0):
+    def decode_ctc(self, enc_out, x_lens, beam_width=1, rnnlm=None):
         """Decoding by the CTC layer in the inference stage.
 
             This is only used for Joint CTC-Attention model.
@@ -829,7 +830,7 @@ class Decoder(nn.Module):
             enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T, encoder_num_units]`
             beam_width (int): the size of beam
-            task_index (int): the index of a task
+            rnnlm ():
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
             perm_idx (list): A list of length `[B]`
@@ -845,7 +846,8 @@ class Decoder(nn.Module):
             best_hyps = self.decode_ctc_greedy(var2np(logits_ctc), x_lens)
         else:
             best_hyps = self.decode_ctc_beam(var2np(F.log_softmax(logits_ctc, dim=-1)),
-                                             x_lens, beam_width=beam_width)
+                                             x_lens, beam_width, rnnlm)
+            # TODO: decoding paramters
 
         return best_hyps
 
