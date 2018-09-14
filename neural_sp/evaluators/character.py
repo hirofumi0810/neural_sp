@@ -42,8 +42,10 @@ def eval_char(models, dataset, decode_params, progressbar=False):
 
     model = models[0]
 
-    ref_trn_save_path = mkdir_join(model.save_path, 'decode_' + dataset.set + '_ep' + str(dataset.epoch + 1), 'ref.trn')
-    hyp_trn_save_path = mkdir_join(model.save_path, 'decode_' + dataset.set + '_ep' + str(dataset.epoch + 1), 'hyp.trn')
+    ref_trn_save_path = mkdir_join(model.save_path, 'decode_' + dataset.set + '_ep' +
+                                   str(dataset.epoch + 1) + '_beam' + str(decode_params.beam_width), 'ref.trn')
+    hyp_trn_save_path = mkdir_join(model.save_path, 'decode_' + dataset.set + '_ep' +
+                                   str(dataset.epoch + 1) + '_beam' + str(decode_params.beam_width), 'hyp.trn')
 
     wer, cer = 0, 0
     num_sub_w, num_ins_w, num_del_w = 0, 0, 0

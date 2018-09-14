@@ -39,8 +39,10 @@ def eval_phone(models, dataset, decode_params, progressbar=False):
     model = models[0]
     # TODO(hirofumi): ensemble decoding
 
-    ref_trn_save_path = mkdir_join(model.save_path, 'decode_' + dataset.set + '_ep' + str(dataset.epoch + 1), 'ref.trn')
-    hyp_trn_save_path = mkdir_join(model.save_path, 'decode_' + dataset.set + '_ep' + str(dataset.epoch + 1), 'hyp.trn')
+    ref_trn_save_path = mkdir_join(model.save_path, 'decode_' + dataset.set + '_ep' +
+                                   str(dataset.epoch + 1) + '_beam' + str(decode_params.beam_width), 'ref.trn')
+    hyp_trn_save_path = mkdir_join(model.save_path, 'decode_' + dataset.set + '_ep' +
+                                   str(dataset.epoch + 1) + '_beam' + str(decode_params.beam_width), 'hyp.trn')
 
     per = 0
     num_sub, num_ins, num_del = 0, 0, 0
