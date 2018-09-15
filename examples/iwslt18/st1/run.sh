@@ -31,8 +31,6 @@ stage=0
 export data=/n/sd8/inaguma/corpus/iwslt18
 
 ### vocabulary
-# unit=word
-# vocab_size=30000
 unit=wordpiece
 vocab_size=5000
 # unit=char
@@ -44,15 +42,15 @@ wp_model_type=unigram  # or bpe
 model_dir=/n/sd8/inaguma/result/iwslt18
 
 ### path to the model directory to restart training
-rnnlm_saved_model=
-st_saved_model=
+rnnlm_resume_model=
+resume_model=
 
 ### path to download data
 datadir=/n/sd8/inaguma/corpus/iwslt18/data
 
 ### configuration
 rnnlm_config=conf/${unit}_lstm_rnnlm.yml
-st_config=conf/st/${unit}_blstm_att.yml
+config=conf/st/${unit}_blstm_att.yml
 
 . ./cmd.sh
 . ./path.sh
@@ -130,9 +128,9 @@ if [ ${stage} -le 1 ] && [ ! -e .done_stage_1.de ]; then
 fi
 
 
-dict=${data}/dict/${train_set}_${unit}${wp_model_type}${vocab_size}.txt; mkdir -p ${data}/dict/
+dict=${data}/dict/train_${unit}${wp_model_type}${vocab_size}.txt; mkdir -p ${data}/dict/
 nlsyms=${data}/dict/non_linguistic_symbols.txt
-wp_model=${data}/dict/${train_set}_${wp_model_type}${vocab_size}
+wp_model=${data}/dict/train_${wp_model_type}${vocab_size}
 if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}${wp_model_type}${vocab_size}.de ]; then
   echo ============================================================================
   echo "                      Dataset preparation (stage:2)                        "
@@ -153,17 +151,10 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}${wp_model_type}${vocab_siz
   fi
   offset=`cat ${dict} | wc -l`
   echo "Making a dictionary..."
-  if [ ${unit} = wordpiece ]; then
-    cut -f 2- -d " " ${data}/train.en/text ${data}/train.de/text > ${data}/dict/input.txt
-    spm_train --user_defined_symbols=`cat ${nlsyms} | tr "\n" ","` --input=${data}/dict/input.txt --vocab_size=${vocab_size} \
-      --model_type=${wp_model_type} --model_prefix=${wp_model} --input_sentence_size=100000000
-    spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-      sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict}
-  else
-    text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} --nlsyms ${nlsyms} \
-      --wp_model_type ${wp_model_type} --wp_model ${wp_model} | \
-      sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict} || exit 1;
-  fi
+  cut -f 2- -d " " ${data}/train.en/text ${data}/train.de/text > ${data}/dict/input.txt
+  text2dict.py ${data}/dict/input.txt --unit ${unit} --vocab_size ${vocab_size} --nlsyms ${nlsyms} \
+    --wp_model_type ${wp_model_type} --wp_model ${wp_model} | \
+    sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict} || exit 1;
   echo "vocab size:" `cat ${dict} | wc -l`
   # NOTE: share the same dictinary between EN and DE
 
@@ -214,10 +205,10 @@ if [ ${stage} -le 4 ]; then
     --dev_set ${data}/dataset/${dev_set}_${unit}${wp_model_type}${vocab_size}.csv \
     --dict ${dict} \
     --wp_model ${wp_model} \
-    --config ${st_config} \
-    --model ${model_dir} \
+    --config ${config} \
+    --model ${model_dir}/st \
     --label_type ${unit} || exit 1;
-    # --saved_model ${st_saved_model} || exit 1;
+    # --resume_model ${resume_model} || exit 1;
     # TODO(hirofumi): send a e-mail
 
   touch ${model}/.done_training && echo "Finish ST training (stage: 4)."

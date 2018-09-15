@@ -31,8 +31,6 @@ stage=0
 export data=/n/sd8/inaguma/corpus/iwslt18
 
 ### vocabulary
-# unit=word
-# vocab_size=30000
 unit=wordpiece
 vocab_size=5000
 # unit=char
@@ -44,15 +42,15 @@ wp_model_type=unigram  # or bpe
 model_dir=/n/sd8/inaguma/result/iwslt18
 
 ### path to the model directory to restart training
-rnnlm_saved_model=
-st_saved_model=
+rnnlm_resume_model=
+resume_model=
 
 ### path to download data
 datadir=/n/sd8/inaguma/corpus/iwslt18/data
 
 ### configuration
 rnnlm_config=conf/${unit}_lstm_rnnlm.yml
-st_config=conf/st/${unit}_blstm_att.yml
+config=conf/asr/${unit}_blstm_att.yml
 
 . ./cmd.sh
 . ./path.sh
@@ -130,9 +128,9 @@ if [ ${stage} -le 1 ] && [ ! -e .done_stage_1.en ]; then
 fi
 
 
-dict=${data}/dict/${train_set}_${unit}${wp_model_type}${vocab_size}.txt; mkdir -p ${data}/dict/
+dict=${data}/dict/train_${unit}${wp_model_type}${vocab_size}.txt; mkdir -p ${data}/dict/
 nlsyms=${data}/dict/non_linguistic_symbols.txt
-wp_model=${data}/dict/${train_set}_${wp_model_type}${vocab_size}
+wp_model=${data}/dict/train_${wp_model_type}${vocab_size}
 if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}${wp_model_type}${vocab_size}.en ]; then
   echo ============================================================================
   echo "                      Dataset preparation (stage:2)                        "
@@ -172,10 +170,10 @@ fi
 
 if [ ${stage} -le 4 ]; then
   echo ============================================================================
-  echo "                       ST Training stage (stage:4)                        "
+  echo "                       ASR Training stage (stage:4)                        "
   echo ============================================================================
 
-  echo "Start ST training..."
+  echo "Start ASR training..."
 
   # export CUDA_LAUNCH_BLOCKING=1
   CUDA_VISIBLE_DEVICES=${gpu_ids} ../../../neural_sp/bin/asr/train.py \
@@ -185,11 +183,11 @@ if [ ${stage} -le 4 ]; then
     --dev_set ${data}/dataset/${dev_set}_${unit}${wp_model_type}${vocab_size}.csv \
     --dict ${dict} \
     --wp_model ${wp_model} \
-    --config ${st_config} \
-    --model ${model_dir} \
+    --config ${config} \
+    --model ${model_dir}/asr \
     --label_type ${unit} || exit 1;
-    # --saved_model ${st_saved_model} || exit 1;
+    # --resume_model ${resume_model} || exit 1;
     # TODO(hirofumi): send a e-mail
 
-  touch ${model}/.done_training && echo "Finish ST training (stage: 4)."
+  touch ${model}/.done_training && echo "Finish ASR training (stage: 4)."
 fi

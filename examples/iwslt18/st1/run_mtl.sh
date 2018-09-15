@@ -31,8 +31,6 @@ stage=0
 export data=/n/sd8/inaguma/corpus/iwslt18
 
 ### vocabulary
-# unit=word
-# vocab_size=30000
 unit=wordpiece
 vocab_size=5000
 # unit=char
@@ -44,15 +42,17 @@ wp_model_type=unigram  # or bpe
 model_dir=/n/sd8/inaguma/result/iwslt18
 
 ### path to the model directory to restart training
-rnnlm_saved_model=
-st_saved_model=
+rnnlm_resume_model=
+resume_model=
 
 ### path to download data
 datadir=/n/sd8/inaguma/corpus/iwslt18/data
 
 ### configuration
 rnnlm_config=conf/${unit}_lstm_rnnlm.yml
-st_config=conf/st/${unit}_blstm_att_asr.yml
+config=conf/st/${unit}_blstm_att_asr.yml
+# config=conf/st/${unit}_blstm_att_mt.yml
+# config=conf/st/${unit}_blstm_att_asr_mt.yml
 
 . ./cmd.sh
 . ./path.sh
@@ -129,9 +129,9 @@ if [ ${stage} -le 1 ] && [ ! -e .done_stage_1.de ]; then
 fi
 
 
-dict=${data}/dict/${train_set}_${unit}${wp_model_type}${vocab_size}.txt; mkdir -p ${data}/dict/
+dict=${data}/dict/train_${unit}${wp_model_type}${vocab_size}.txt; mkdir -p ${data}/dict/
 nlsyms=${data}/dict/non_linguistic_symbols.txt
-wp_model=${data}/dict/${train_set}_${wp_model_type}${vocab_size}
+wp_model=${data}/dict/train_${wp_model_type}${vocab_size}
 
 if [ ! -f ${dict} ]; then
     echo "There is no file such as "${dict}
@@ -157,10 +157,10 @@ if [ ${stage} -le 4 ]; then
     --dict ${dict} \
     --dict_sub ${dict} \
     --wp_model ${wp_model} \
-    --config ${st_config} \
-    --model ${model_dir} \
+    --config ${config} \
+    --model ${model_dir}/st \
     --label_type ${unit} || exit 1;
-    # --saved_model ${st_saved_model} || exit 1;
+    # --resume_model ${resume_model} || exit 1;
     # TODO(hirofumi): send a e-mail
 
   touch ${model}/.done_training && echo "Finish ST training (stage: 4)."

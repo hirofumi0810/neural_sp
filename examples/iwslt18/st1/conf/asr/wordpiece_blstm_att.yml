@@ -24,7 +24,7 @@ param:
     - True
     - True
     - False
-    - False
+    - True
     - False
   subsample_type: drop
   att_type: content
@@ -44,7 +44,7 @@ param:
   ctc_fc_list: [320]
 
   # optimization
-  batch_size: 40
+  batch_size: 50
   optimizer: adam
   learning_rate: 1e-3
   num_epochs: 25
@@ -82,6 +82,7 @@ param:
 
   # MTL
   ctc_weight: 0.0
+  # ctc_weight: 0.5
   bwd_weight: 0.0
 
   # cold fusion
