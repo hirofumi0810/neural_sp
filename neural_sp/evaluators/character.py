@@ -16,14 +16,14 @@ from neural_sp.evaluators.edit_distance import compute_wer
 from neural_sp.utils.general import mkdir_join
 
 
-def eval_char(models, dataset, decode_params, progressbar=False):
+def eval_char(models, dataset, decode_params, epoch, progressbar=False):
     """Evaluate a character-level model.
 
     Args:
         models (list): the models to evaluate
         dataset: An instance of a `Dataset' class
         decode_params (dict):
-        batch_size (int): the batch size when evaluating the model
+        epoch (int):
         progressbar (bool): if True, visualize the progressbar
     Returns:
         wer (float): Word error rate
@@ -42,9 +42,9 @@ def eval_char(models, dataset, decode_params, progressbar=False):
     model = models[0]
 
     ref_trn_save_path = mkdir_join(model.save_path, 'decode_' + dataset.set + '_ep' +
-                                   str(dataset.epoch + 1) + '_beam' + str(decode_params['beam_width']), 'ref.trn')
+                                   str(epoch + 1) + '_beam' + str(decode_params['beam_width']), 'ref.trn')
     hyp_trn_save_path = mkdir_join(model.save_path, 'decode_' + dataset.set + '_ep' +
-                                   str(dataset.epoch + 1) + '_beam' + str(decode_params['beam_width']), 'hyp.trn')
+                                   str(epoch + 1) + '_beam' + str(decode_params['beam_width']), 'hyp.trn')
 
     wer, cer = 0, 0
     num_sub_w, num_ins_w, num_del_w = 0, 0, 0

@@ -16,14 +16,14 @@ from neural_sp.evaluators.edit_distance import compute_wer
 from neural_sp.utils.general import mkdir_join
 
 
-def eval_phone(models, dataset, decode_params, progressbar=False):
+def eval_phone(models, dataset, decode_params, epoch, progressbar=False):
     """Evaluate a phone-level model.
 
     Args:
         models (list): the models to evaluate
         dataset: An instance of a `Dataset' class
         decode_params (dict):
-        batch_size (int): the batch size when evaluating the model
+        epoch (int):
         progressbar (bool): if True, visualize the progressbar
     Returns:
         per (float): Phone error rate
@@ -39,9 +39,9 @@ def eval_phone(models, dataset, decode_params, progressbar=False):
     # TODO(hirofumi): ensemble decoding
 
     ref_trn_save_path = mkdir_join(model.save_path, 'decode_' + dataset.set + '_ep' +
-                                   str(dataset.epoch + 1) + '_beam' + str(decode_params['beam_width']), 'ref.trn')
+                                   str(epoch + 1) + '_beam' + str(decode_params['beam_width']), 'ref.trn')
     hyp_trn_save_path = mkdir_join(model.save_path, 'decode_' + dataset.set + '_ep' +
-                                   str(dataset.epoch + 1) + '_beam' + str(decode_params['beam_width']), 'hyp.trn')
+                                   str(epoch + 1) + '_beam' + str(decode_params['beam_width']), 'hyp.trn')
 
     per = 0
     num_sub, num_ins, num_del = 0, 0, 0

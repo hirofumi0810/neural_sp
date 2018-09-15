@@ -587,17 +587,20 @@ def main():
                 start_time_eval = time.time()
                 # dev
                 if args.label_type == 'word':
-                    metric_dev = eval_word([model.module], dev_set, decode_params)[0]
+                    metric_dev = eval_word([model.module], dev_set, decode_params,
+                                           epoch=epoch)[0]
                     logger.info('  WER (%s): %.3f %%' % (dev_set.set, metric_dev))
                 elif args.label_type == 'wordpiece':
                     metric_dev = eval_wordpiece([model.module], dev_set, decode_params,
-                                                args.wp_model)[0]
+                                                args.wp_model, epoch=epoch)[0]
                     logger.info('  WER (%s): %.3f %%' % (dev_set.set, metric_dev))
                 elif 'char' in args.label_type:
-                    metric_dev = eval_char([model.module], dev_set, decode_params)[1][0]
+                    metric_dev = eval_char([model.module], dev_set, decode_params,
+                                           epoch=epoch)[1][0]
                     logger.info('  CER (%s): %.3f %%' % (dev_set.set, metric_dev))
                 elif 'phone' in args.label_type:
-                    metric_dev = eval_phone([model.module], dev_set, decode_params)[0]
+                    metric_dev = eval_phone([model.module], dev_set, decode_params,
+                                            epoch=epoch)[0]
                     logger.info('  PER (%s): %.3f %%' % (dev_set.set, metric_dev))
                 else:
                     raise ValueError(args.label_type)
@@ -621,16 +624,20 @@ def main():
                     # test
                     for eval_set in eval_sets:
                         if args.label_type == 'word':
-                            wer_test = eval_word([model.module], eval_set, decode_params)[0]
+                            wer_test = eval_word([model.module], eval_set, decode_params,
+                                                 epoch=epoch)[0]
                             logger.info('  WER (%s): %.3f %%' % (eval_set.set, wer_test))
                         elif args.label_type == 'wordpiece':
-                            wer_test = eval_wordpiece([model.module], eval_set, decode_params)[0]
+                            wer_test = eval_wordpiece([model.module], eval_set, decode_params,
+                                                      epoch=epoch)[0]
                             logger.info('  WER (%s): %.3f %%' % (eval_set.set, wer_test))
                         elif 'char' in args.label_type:
-                            cer_test = eval_char([model.module], eval_set, decode_params)[1][0]
+                            cer_test = eval_char([model.module], eval_set, decode_params,
+                                                 epoch=epoch)[1][0]
                             logger.info('  CER (%s): %.3f / %.3f %%' % (eval_set.set, cer_test))
                         elif 'phone' in args.label_type:
-                            per_test = eval_phone([model.module], eval_set, decode_params)[0]
+                            per_test = eval_phone([model.module], eval_set, decode_params,
+                                                  epoch=epoch)[0]
                             logger.info('  PER (%s): %.3f %%' % (eval_set.set, per_test))
                         else:
                             raise ValueError(args.label_type)
@@ -669,8 +676,6 @@ def main():
             if epoch == args.num_epochs:
                 break
 
-            for eval_set in eval_sets:
-                eval_set.epoch += 1
             start_time_step = time.time()
             start_time_epoch = time.time()
             epoch += 1
