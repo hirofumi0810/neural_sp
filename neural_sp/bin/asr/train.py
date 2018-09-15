@@ -414,8 +414,7 @@ def main():
         # TODO: 最初にRNNLMのモデルをコピー
 
         # Set save path
-        save_path = mkdir_join(args.model, args.model_type,
-                               '_'.join(os.path.basename(args.train_set).split('.')[:-1]), model.name)
+        save_path = mkdir_join(args.model'_'.join(os.path.basename(args.train_set).split('.')[:-1]), model.name)
         model.set_save_path(save_path)  # avoid overwriting
 
         # Save the config file as a yaml file
