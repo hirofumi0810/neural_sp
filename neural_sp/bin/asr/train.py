@@ -14,6 +14,7 @@ import argparse
 import cProfile
 import os
 # from setproctitle import setproctitle
+import shutil
 from tensorboardX import SummaryWriter
 import time
 import torch
@@ -414,16 +415,16 @@ def main():
         # TODO: 最初にRNNLMのモデルをコピー
 
         # Set save path
-        save_path = mkdir_join(args.model'_'.join(os.path.basename(args.train_set).split('.')[:-1]), model.name)
+        save_path = mkdir_join(args.model, '_'.join(os.path.basename(args.train_set).split('.')[:-1]), model.name)
         model.set_save_path(save_path)  # avoid overwriting
 
         # Save the config file as a yaml file
         save_config(vars(args), model.save_path)
 
         # Save the dictionary & wp_model
-        shutil.copy(args.dict, os.path.join(save_path, os.path.basenaem(args.dict)))
+        shutil.copy(args.dict, os.path.join(save_path, os.path.basename(args.dict)))
         if args.label_type == 'wordpiece':
-            shutil.copy(args.wp_model, os.path.join(save_path, os.path.basenaem(args.wp_model)))
+            shutil.copy(args.wp_model, os.path.join(save_path, os.path.basename(args.wp_model)))
 
         # Setting for logging
         logger = set_logger(os.path.join(model.save_path, 'train.log'), key='training')
