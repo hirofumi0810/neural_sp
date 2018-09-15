@@ -4,12 +4,13 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Define evaluation method of phene-level models."""
+"""Evaluate a phene-level model by PER."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import os
 from tqdm import tqdm
 
 from neural_sp.evaluators.edit_distance import compute_wer
@@ -17,7 +18,7 @@ from neural_sp.utils.general import mkdir_join
 
 
 def eval_phone(models, dataset, decode_params, epoch, progressbar=False):
-    """Evaluate a phone-level model.
+    """Evaluate a phone-level model by PER.
 
     Args:
         models (list): the models to evaluate
@@ -30,6 +31,7 @@ def eval_phone(models, dataset, decode_params, epoch, progressbar=False):
         num_sub (int): the number of substitution errors
         num_ins (int): the number of insertion errors
         num_del (int): the number of deletion errors
+        decode_dir (str):
 
     """
     # Reset data counter
@@ -38,10 +40,14 @@ def eval_phone(models, dataset, decode_params, epoch, progressbar=False):
     model = models[0]
     # TODO(hirofumi): ensemble decoding
 
-    ref_trn_save_path = mkdir_join(model.save_path, 'decode_' + dataset.set + '_ep' +
-                                   str(epoch + 1) + '_beam' + str(decode_params['beam_width']), 'ref.trn')
-    hyp_trn_save_path = mkdir_join(model.save_path, 'decode_' + dataset.set + '_ep' +
-                                   str(epoch + 1) + '_beam' + str(decode_params['beam_width']), 'hyp.trn')
+    decode_dir = 'decode_' + dataset.set + '_ep' + str(epoch) + '_beam' + str(decode_params['beam_width'])
+    decode_dir += '_lp' + str(decode_params['length_penalty'])
+    decode_dir += '_cp' + str(decode_params['coverage_penalty'])
+    decode_dir += '_' + str(decode_params['min_len_ratio']) + '_' + str(decode_params['max_len_ratio'])
+    decode_dir += '_rnnlm' + str(decode_params['rnnlm_weight'])
+
+    ref_trn_save_path = mkdir_join(model.save_path, decode_dir, 'ref.trn')
+    hyp_trn_save_path = mkdir_join(model.save_path, decode_dir, 'hyp.trn')
 
     per = 0
     num_sub, num_ins, num_del = 0, 0, 0
@@ -100,4 +106,4 @@ def eval_phone(models, dataset, decode_params, epoch, progressbar=False):
     num_ins /= num_phones
     num_del /= num_phones
 
-    return per, num_sub, num_ins, num_del
+    return per, num_sub, num_ins, num_del, os.path.join(model.save_path, decode_dir)

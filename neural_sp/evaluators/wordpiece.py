@@ -4,12 +4,13 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Define evaluation method of wordpiece-level models."""
+"""Evaluate the wordpiece-level model by WER."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import os
 import sentencepiece as spm
 from tqdm import tqdm
 
@@ -18,7 +19,7 @@ from neural_sp.utils.general import mkdir_join
 
 
 def eval_wordpiece(models, dataset, decode_params, wp_model, epoch, progressbar=False):
-    """Evaluate a wordpiece-level model.
+    """Evaluate the wordpiece-level model by WER.
 
     Args:
         models (list): the models to evaluate
@@ -32,6 +33,7 @@ def eval_wordpiece(models, dataset, decode_params, wp_model, epoch, progressbar=
         num_sub (int): the number of substitution errors
         num_ins (int): the number of insertion errors
         num_del (int): the number of deletion errors
+        decode_dir (str):
 
     """
     # Reset data counter
@@ -40,10 +42,14 @@ def eval_wordpiece(models, dataset, decode_params, wp_model, epoch, progressbar=
     model = models[0]
     # TODO(hirofumi): ensemble decoding
 
-    ref_trn_save_path = mkdir_join(model.save_path, 'decode_' + dataset.set + '_ep' +
-                                   str(epoch + 1) + '_beam' + str(decode_params['beam_width']), 'ref.trn')
-    hyp_trn_save_path = mkdir_join(model.save_path, 'decode_' + dataset.set + '_ep' +
-                                   str(epoch + 1) + '_beam' + str(decode_params['beam_width']), 'hyp.trn')
+    decode_dir = 'decode_' + dataset.set + '_ep' + str(epoch) + '_beam' + str(decode_params['beam_width'])
+    decode_dir += '_lp' + str(decode_params['length_penalty'])
+    decode_dir += '_cp' + str(decode_params['coverage_penalty'])
+    decode_dir += '_' + str(decode_params['min_len_ratio']) + '_' + str(decode_params['max_len_ratio'])
+    decode_dir += '_rnnlm' + str(decode_params['rnnlm_weight'])
+
+    ref_trn_save_path = mkdir_join(model.save_path, decode_dir, 'ref.trn')
+    hyp_trn_save_path = mkdir_join(model.save_path, decode_dir, 'hyp.trn')
 
     sp = spm.SentencePieceProcessor()
     sp.Load(wp_model + '.model')
@@ -107,4 +113,4 @@ def eval_wordpiece(models, dataset, decode_params, wp_model, epoch, progressbar=
     num_ins /= num_words
     num_del /= num_words
 
-    return wer, num_sub, num_ins, num_del
+    return wer, num_sub, num_ins, num_del, os.path.join(model.save_path, decode_dir)

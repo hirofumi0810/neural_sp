@@ -26,6 +26,7 @@ from neural_sp.bin.asr.train_utils import Reporter
 from neural_sp.bin.asr.train_utils import Updater
 from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.evaluators.character import eval_char
+from neural_sp.evaluators.loss import eval_loss
 from neural_sp.evaluators.phone import eval_phone
 from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
@@ -588,11 +589,11 @@ def main():
                 # dev
                 if args.label_type == 'word':
                     metric_dev = eval_word([model.module], dev_set, decode_params,
-                                           epoch=epoch)[0]
+                                           epoch=epoch + 1)[0]
                     logger.info('  WER (%s): %.3f %%' % (dev_set.set, metric_dev))
                 elif args.label_type == 'wordpiece':
                     metric_dev = eval_wordpiece([model.module], dev_set, decode_params,
-                                                args.wp_model, epoch=epoch)[0]
+                                                args.wp_model, epoch=epoch + 1)[0]
                     logger.info('  WER (%s): %.3f %%' % (dev_set.set, metric_dev))
                 elif 'char' in args.label_type:
                     metric_dev = eval_char([model.module], dev_set, decode_params,
@@ -600,7 +601,7 @@ def main():
                     logger.info('  CER (%s): %.3f %%' % (dev_set.set, metric_dev))
                 elif 'phone' in args.label_type:
                     metric_dev = eval_phone([model.module], dev_set, decode_params,
-                                            epoch=epoch)[0]
+                                            epoch=epoch + 1)[0]
                     logger.info('  PER (%s): %.3f %%' % (dev_set.set, metric_dev))
                 else:
                     raise ValueError(args.label_type)
@@ -625,11 +626,11 @@ def main():
                     for eval_set in eval_sets:
                         if args.label_type == 'word':
                             wer_test = eval_word([model.module], eval_set, decode_params,
-                                                 epoch=epoch)[0]
+                                                 epoch=epoch + 1)[0]
                             logger.info('  WER (%s): %.3f %%' % (eval_set.set, wer_test))
                         elif args.label_type == 'wordpiece':
                             wer_test = eval_wordpiece([model.module], eval_set, decode_params,
-                                                      epoch=epoch)[0]
+                                                      epoch=epoch + 1)[0]
                             logger.info('  WER (%s): %.3f %%' % (eval_set.set, wer_test))
                         elif 'char' in args.label_type:
                             cer_test = eval_char([model.module], eval_set, decode_params,
@@ -637,7 +638,7 @@ def main():
                             logger.info('  CER (%s): %.3f / %.3f %%' % (eval_set.set, cer_test))
                         elif 'phone' in args.label_type:
                             per_test = eval_phone([model.module], eval_set, decode_params,
-                                                  epoch=epoch)[0]
+                                                  epoch=epoch + 1)[0]
                             logger.info('  PER (%s): %.3f %%' % (eval_set.set, per_test))
                         else:
                             raise ValueError(args.label_type)
