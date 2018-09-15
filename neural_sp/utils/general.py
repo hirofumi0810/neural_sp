@@ -30,10 +30,16 @@ def mkdir_join(path, *dir_name):
     if not os.path.isdir(path):
         os.mkdir(path)
     for i in six.moves.range(len(dir_name)):
-        if '.' not in dir_name[i]:
+        # dir
+        if i < len(dir_name) - 1:
             path = os.path.join(path, dir_name[i])
             if not os.path.isdir(path):
                 os.mkdir(path)
+        elif '.' not in dir_name[i]:
+            path = os.path.join(path, dir_name[i])
+            if not os.path.isdir(path):
+                os.mkdir(path)
+        # file
         else:
             path = os.path.join(path, dir_name[i])
     return path
