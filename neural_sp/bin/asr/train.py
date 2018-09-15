@@ -420,6 +420,11 @@ def main():
         # Save the config file as a yaml file
         save_config(vars(args), model.save_path)
 
+        # Save the dictionary & wp_model
+        shutil.copy(args.dict, os.path.join(save_path, os.path.basenaem(args.dict)))
+        if args.label_type == 'wordpiece':
+            shutil.copy(args.wp_model, os.path.join(save_path, os.path.basenaem(args.wp_model)))
+
         # Setting for logging
         logger = set_logger(os.path.join(model.save_path, 'train.log'), key='training')
 
