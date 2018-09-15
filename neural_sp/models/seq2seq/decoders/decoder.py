@@ -91,14 +91,14 @@ class Decoder(nn.Module):
                  ss_prob,
                  lsm_prob,
                  lsm_type,
-                 ctc_weight=0,
+                 ctc_weight=0.,
                  ctc_fc_list=[],
                  backward=False,
                  rnnlm_cf=None,
                  cold_fusion_type=False,
                  internal_lm=False,
                  rnnlm_init=None,
-                 rnnlm_weight=0,
+                 rnnlm_weight=0.,
                  share_softmax=False):
 
         super(Decoder, self).__init__()
@@ -303,7 +303,8 @@ class Decoder(nn.Module):
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf is not None:
                 if is_sample:
-                    y_lm_emb = self.rnnlm_cf.emb(torch.max(logits_att[-1], dim=2)[1]).detach()
+                    device_id = logits_att[-1].get_device()
+                    y_lm_emb = self.rnnlm_cf.emb(np.argmax(logits_att[-1].detach(), axis=2).cuda(device_id))
                 else:
                     y_lm_emb = ys_lm_emb[:, t:t + 1]
                 logits_lm_t, lm_out, rnnlm_state = self.rnnlm_cf.predict(y_lm_emb, rnnlm_state)
@@ -329,7 +330,8 @@ class Decoder(nn.Module):
 
             # Sample for scheduled sampling
             if is_sample:
-                y_emb = self.emb(torch.max(logits_att[-1], dim=2)[1]).detach()
+                device_id = logits_att[-1].get_device()
+                y_emb = self.emb(np.argmax(logits_att[-1].detach(), axis=2).cuda(device_id))
             else:
                 y_emb = ys_emb[:, t + 1:t + 2]
 
@@ -565,7 +567,8 @@ class Decoder(nn.Module):
                 logits_t = F.relu(logits_t)
 
             # Pick up 1-best
-            y = torch.max(logits_t.squeeze(1), dim=1)[1].unsqueeze(1)
+            device_id = logits_t.get_device()
+            y = np.argmax(logits_t.squeeze(1).detach(), axis=1).cuda(device_id).unsqueeze(1)
             _best_hyps += [y]
             _aw += [aw_t]
 
