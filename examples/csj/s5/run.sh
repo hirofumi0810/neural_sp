@@ -44,9 +44,8 @@ pitch=0  ## or 1
 model_dir=/n/sd8/inaguma/result/csj
 
 ### path to the model directory to restart training
-rnnlm_saved_model=
-asr_saved_model=
-
+rnnlm_resume_model=
+asr_resume_model=
 
 ### path to original data
 CSJDATATOP=/n/rd25/mimura/corpus/CSJ  ## CSJ database top directory.
@@ -76,7 +75,6 @@ export datasize=all
 rnnlm_config=conf/rnnlm/${unit}_lstm_rnnlm_all.yml
 asr_config=conf/attention/${unit}_blstm_att_${datasize}.yml
 # asr_config=conf/ctc/${unit}_blstm_ctc_${datasize}.yml
-
 
 . ./cmd.sh
 . ./path.sh
@@ -149,8 +147,8 @@ if [ ${stage} -le 1 ] && [ ! -e .done_stage_1_${datasize} ]; then
 fi
 
 
-dict=${data}/dict/${train_set}_${unit}_${vocab_size}.txt; mkdir -p ${data}/dict/
-if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${datasize}_${unit}_${vocab_size} ]; then
+dict=${data}/dict/${train_set}_${unit}${vocab_size}.txt; mkdir -p ${data}/dict/
+if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${datasize}_${unit}${vocab_size} ]; then
   echo ============================================================================
   echo "                      Dataset preparation (stage:2)                        "
   echo ============================================================================
@@ -167,6 +165,9 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${datasize}_${unit}_${vocab_size} 
   echo "<sos> 2" >> ${dict}
   echo "<eos> 3" >> ${dict}
   echo "<pad> 4" >> ${dict}
+  if [ ${unit} = char ]; then
+    echo "<space> 5" >> ${dict}
+  fi
   offset=`cat ${dict} | wc -l`
   echo "Making a dictionary..."
   text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} | \
@@ -192,15 +193,15 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${datasize}_${unit}_${vocab_size} 
     echo "Making a csv file for ${x}..."
     dump_dir=${data}/feat/${x}
     make_dataset_csv.sh --feat ${dump_dir}/feats.scp --unit ${unit} \
-      ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}_${vocab_size}.csv || exit 1;
+      ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${vocab_size}.csv || exit 1;
   done
   for x in ${test_set}; do
     dump_dir=${data}/feat/${x}_${datasize}
     make_dataset_csv.sh --is_test true --feat ${dump_dir}/feats.scp --unit ${unit} \
-      ${data}/${x} ${dict} > ${data}/dataset/${x}_${datasize}_${unit}_${vocab_size}.csv || exit 1;
+      ${data}/${x} ${dict} > ${data}/dataset/${x}_${datasize}_${unit}${vocab_size}.csv || exit 1;
   done
 
-  touch .done_stage_2_${datasize}_${unit}_${vocab_size} && echo "Finish creating dataset (stage: 2)."
+  touch .done_stage_2_${datasize}_${unit}${vocab_size} && echo "Finish creating dataset (stage: 2)."
 fi
 
 
@@ -214,14 +215,13 @@ if [ ${stage} -le 3 ]; then
 
   # NOTE: support only a single GPU for RNNLM training
   # CUDA_VISIBLE_DEVICES=${gpu_ids} ../../../src/bin/lm/train.py \
-  #   --corpus csj \
   #   --ngpus 1 \
   #   --train_set ${data}/dataset/${train_set}.csv \
   #   --dev_set ${data}/dataset/${dev_set}.csv \
   #   --eval_sets ${data}/dataset/eval1_${datasize}.csv \
   #   --config ${rnn_config} \
   #   --model ${model_dir} \
-  #   --saved_model ${rnnlm_saved_model} || exit 1;
+  #   --resume_model ${rnnlm_resume_model} || exit 1;
 fi
 
 
@@ -234,16 +234,15 @@ if [ ${stage} -le 4 ]; then
 
   # export CUDA_LAUNCH_BLOCKING=1
   CUDA_VISIBLE_DEVICES=${gpu_ids} ../../../neural_sp/bin/asr/train.py \
-    --corpus csj \
     --ngpus ${ngpus} \
-    --train_set ${data}/dataset/${train_set}_${unit}_${vocab_size}.csv \
-    --dev_set ${data}/dataset/${dev_set}_${unit}_${vocab_size}.csv \
-    --eval_sets ${data}/dataset/eval1_${datasize}_${unit}_${vocab_size}.csv \
+    --train_set ${data}/dataset/${train_set}_${unit}${vocab_size}.csv \
+    --dev_set ${data}/dataset/${dev_set}_${unit}${vocab_size}.csv \
+    --eval_sets ${data}/dataset/eval1_${datasize}_${unit}${vocab_size}.csv \
     --dict ${dict} \
     --config ${asr_config} \
     --model ${model_dir} \
     --label_type ${unit} || exit 1;
-    # --saved_model ${asr_saved_model} || exit 1;
+    # --resume_model ${asr_resume_model} || exit 1;
     # TODO(hirofumi): send a e-mail
 
   touch ${model}/.done_training && echo "Finish model training (stage: 4)."

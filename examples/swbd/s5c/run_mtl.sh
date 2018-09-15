@@ -46,8 +46,8 @@ wp_model_type=unigram  # or bpe
 model_dir=/n/sd8/inaguma/result/swbd
 
 ### path to the model directory to restart training
-rnnlm_saved_model=
-asr_saved_model=
+rnnlm_resume_model=
+asr_resume_model=
 
 ### path to original data
 SWBD_AUDIOPATH=/n/rd21/corpora_7/swb
@@ -187,7 +187,6 @@ if [ ${stage} -le 4 ]; then
 
   # export CUDA_LAUNCH_BLOCKING=1
   CUDA_VISIBLE_DEVICES=${gpu_ids} ../../../neural_sp/bin/asr/train.py \
-    --corpus swbd \
     --ngpus ${ngpus} \
     --train_set ${data}/dataset/${train_set}_${unit}${wp_model_type}${vocab_size}.csv \
     --train_set_sub ${data}/dataset/${train_set}_${unit_sub}.csv \
@@ -195,12 +194,12 @@ if [ ${stage} -le 4 ]; then
     --dev_set_sub ${data}/dataset/${dev_set}_${unit_sub}.csv \
     --dict ${dict} \
     --dict_sub ${dict_sub} \
-    --wp_model ${wp_model} \
+    --wp_model ${wp_model}.model \
     --config ${asr_config} \
     --model ${model_dir} \
     --label_type ${unit} \
     --label_type_sub ${unit_sub} || exit 1;
-    # --saved_model ${asr_saved_model} || exit 1;
+    # --resume_model ${asr_resume_model} || exit 1;
     # TODO(hirofumi): send a e-mail
     # NOTE: ${test_set} is excluded in the training stage for swbd
 

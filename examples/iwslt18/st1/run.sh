@@ -199,12 +199,11 @@ if [ ${stage} -le 4 ]; then
 
   # export CUDA_LAUNCH_BLOCKING=1
   CUDA_VISIBLE_DEVICES=${gpu_ids} ../../../neural_sp/bin/asr/train.py \
-    --corpus iwslt18 \
     --ngpus ${ngpus} \
     --train_set ${data}/dataset/${train_set}_${unit}${wp_model_type}${vocab_size}.csv \
     --dev_set ${data}/dataset/${dev_set}_${unit}${wp_model_type}${vocab_size}.csv \
     --dict ${dict} \
-    --wp_model ${wp_model} \
+    --wp_model ${wp_model}.model \
     --config ${config} \
     --model ${model_dir}/st \
     --label_type ${unit} || exit 1;

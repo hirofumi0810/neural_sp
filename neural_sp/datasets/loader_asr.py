@@ -33,7 +33,7 @@ logger = logging.getLogger('training')
 
 class Dataset(Base):
 
-    def __init__(self, corpus, csv_path, dict_path,
+    def __init__(self, csv_path, dict_path,
                  label_type, batch_size, max_epoch=None,
                  is_test=False, max_num_frames=2000, min_num_frames=40,
                  shuffle=False, sort_by_input_length=False,
@@ -46,8 +46,6 @@ class Dataset(Base):
         """A class for loading dataset.
 
         Args:
-
-            corpus (str):
             csv_path (str):
             dict_path (str):
             label_type (str): word or wordpiece or char or phone
@@ -72,7 +70,6 @@ class Dataset(Base):
         """
         super(Dataset, self).__init__()
 
-        self.corpus = corpus
         self.set = os.path.basename(csv_path).split('.')[0]
         self.is_test = is_test
         self.label_type = label_type

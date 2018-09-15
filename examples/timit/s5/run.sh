@@ -25,22 +25,20 @@ if [ $# -gt 2 ]; then
   done
 fi
 
-
 stage=0
 
 ### Set path to save dataset
 export data=/n/sd8/inaguma/corpus/timit
 
 ### configuration
-# asr_config=conf/attention/bgru_att_phone61.yml
-asr_config=conf/ctc/blstm_ctc_phone61.yml
+asr_config=conf/attention/bgru_att_phone61.yml
+# asr_config=conf/ctc/blstm_ctc_phone61.yml
 
 ### Set path to save the model
 model_dir=/n/sd8/inaguma/result/timit
 
 ### Restart training (path to the saved model directory)
-rnnlm_saved_model=
-asr_saved_model=
+asr_resume_model=
 
 ### Set path to original data
 TIMITDATATOP=/n/rd21/corpora_1/TIMIT
@@ -130,20 +128,17 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2 ]; then
   touch .done_stage_2 && echo "Finish creating dataset (stage: 2)."
 fi
 
-
 # NOTE: skip RNNLM training (stage:3)
 
-
+mkdir -p ${model_dir}
 if [ ${stage} -le 4 ]; then
   echo ============================================================================
   echo "                       ASR Training stage (stage:4)                        "
   echo ============================================================================
 
-  mkdir -p ${model_dir}
   echo "Start ASR training..."
 
   CUDA_VISIBLE_DEVICES=${gpu_ids} ../../../neural_sp/bin/asr/train.py \
-    --corpus timit \
     --ngpus ${ngpus} \
     --train_set ${data}/dataset/${train_set}.csv \
     --dev_set ${data}/dataset/${dev_set}.csv \
@@ -152,7 +147,7 @@ if [ ${stage} -le 4 ]; then
     --config ${asr_config} \
     --model ${model_dir} \
     --label_type phone || exit 1;
-    # --saved_model ${asr_saved_model} || exit 1;
+    # --resume_model ${asr_resume_model} || exit 1;
     # TODO(hirofumi): send a e-mail
 
   touch ${model}/.done_training && echo "Finish model training (stage: 4)."

@@ -85,8 +85,7 @@ def main():
     wer_mean, cer_mean, per_mean = 0, 0, 0
     for i, set in enumerate(args.eval_sets):
         # Load dataset
-        eval_set = Dataset(corpus=args.corpus,
-                           csv_path=set,
+        eval_set = Dataset(csv_path=set,
                            dict_path=args.dict,
                            label_type=args.label_type,
                            batch_size=args.batch_size,

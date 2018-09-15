@@ -31,10 +31,10 @@ stage=0
 export data=/n/sd8/inaguma/corpus/librispeech
 
 ### vocabulary
-unit=word
-vocab_size=30000
-# unit=wordpiece
-# vocab_size=5000
+# unit=word
+# vocab_size=30000
+unit=wordpiece
+vocab_size=5000
 # unit=char
 
 # for wordpiece
@@ -44,8 +44,8 @@ wp_model_type=unigram  # or bpe
 model_dir=/n/sd8/inaguma/result/librispeech
 
 ### path to the model directory to restart training
-rnnlm_saved_model=
-asr_saved_model=
+rnnlm_resume_model=
+asr_resume_model=
 
 # path to download data
 data_download_path=/n/rd21/corpora_7/librispeech/
@@ -90,9 +90,8 @@ if [ ${stage} -le 0 ] && [ ! -e .done_stage_0_${datasize} ]; then
   echo "                       Data Preparation (stage:0)                          "
   echo ============================================================================
 
-  mkdir -p ${data}
-
   # download data
+  # mkdir -p ${data}
   # for part in dev-clean test-clean dev-other test-other train-clean-100 train-clean-360 train-other-500; do
   #   local/download_and_untar.sh ${data_download_path} ${data_url} ${part} || exit 1;
   # done
@@ -168,17 +167,9 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${datasize}${unit}${wp_model_type}
   fi
   offset=`cat ${dict} | wc -l`
   echo "Making a dictionary..."
-  if [ ${unit} = wordpiece ]; then
-    cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
-    spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_size} \
-      --model_type=${wp_model_type} --model_prefix=${wp_model} --input_sentence_size=100000000
-    spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-      sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict}
-  else
-    text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} \
-      --wp_model_type ${wp_model_type} --wp_model ${wp_model} | \
-      sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict} || exit 1;
-  fi
+  text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} \
+    --wp_model_type ${wp_model_type} --wp_model ${wp_model} | \
+    sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict} || exit 1;
   echo "vocab size:" `cat ${dict} | wc -l`
 
   # Compute OOV rate
@@ -222,14 +213,13 @@ if [ ${stage} -le 3 ]; then
 
   # NOTE: support only a single GPU for RNNLM training
   # CUDA_VISIBLE_DEVICES=${gpu_ids} ../../../src/bin/lm/train.py \
-  #   --corpus librispeech \
   #   --ngpus 1 \
   #   --train_set ${data}/dataset/${train_set}.csv \
   #   --dev_set ${data}/dataset/${dev_set}.csv \
   #   --eval_sets ${data}/dataset/eval1_${datasize}_${unit}${wp_model_type}${vocab_size}.csv \
   #   --config ${rnn_config} \
   #   --model ${model_dir} \
-  #   --saved_model ${rnnlm_saved_model} || exit 1;
+  #   --resume_model ${rnnlm_resume_model} || exit 1;
 fi
 
 
@@ -242,16 +232,15 @@ if [ ${stage} -le 4 ]; then
 
   # export CUDA_LAUNCH_BLOCKING=1
   CUDA_VISIBLE_DEVICES=${gpu_ids} ../../../neural_sp/bin/asr/train.py \
-    --corpus librispeech \
     --ngpus ${ngpus} \
     --train_set ${data}/dataset/${train_set}_${unit}${wp_model_type}${vocab_size}.csv \
     --dev_set ${data}/dataset/${dev_set}_${unit}${wp_model_type}${vocab_size}.csv \
     --dict ${dict} \
-    --wp_model ${wp_model} \
+    --wp_model ${wp_model}.model \
     --config ${asr_config} \
     --model ${model_dir} \
     --label_type ${unit} || exit 1;
-    # --saved_model ${asr_saved_model} || exit 1;
+    # --resume_model ${asr_resume_model} || exit 1;
     # TODO(hirofumi): send a e-mail
 
   touch ${model}/.done_training && echo "Finish model training (stage: 4)."

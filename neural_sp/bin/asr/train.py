@@ -296,8 +296,7 @@ def main():
     subsample_factor *= 2**sum(args.subsample)
 
     # Load dataset
-    train_set = Dataset(corpus=args.corpus,
-                        csv_path=args.train_set,
+    train_set = Dataset(csv_path=args.train_set,
                         dict_path=args.dict,
                         label_type=args.label_type,
                         batch_size=args.batch_size * args.ngpus,
@@ -315,8 +314,7 @@ def main():
                         label_type_sub=args.label_type_sub,
                         use_ctc_sub=args.ctc_weight_sub > 0,
                         subsample_factor_sub=subsample_factor_sub)
-    dev_set = Dataset(corpus=args.corpus,
-                      csv_path=args.dev_set,
+    dev_set = Dataset(csv_path=args.dev_set,
                       dict_path=args.dict,
                       label_type=args.label_type,
                       batch_size=args.batch_size * args.ngpus,
@@ -336,8 +334,7 @@ def main():
         # swbd etc.
         if 'phone' in args.label_type and args.corpus != 'timit':
             continue
-        eval_sets += [Dataset(corpus=args.corpus,
-                              csv_path=set,
+        eval_sets += [Dataset(csv_path=set,
                               dict_path=args.dict,
                               label_type=args.label_type,
                               batch_size=1,

@@ -157,7 +157,6 @@ class Base(object):
                 else:
                     min_num_frames_batch = self.df[self.offset:self.offset + 1]['x_len'].values[0]
                 _batch_size = self.select_batch_size(batch_size, min_num_frames_batch)
-                # NOTE: depends on each corpus
             else:
                 _batch_size = batch_size
 
@@ -205,24 +204,6 @@ class Base(object):
             batch_size = int(batch_size / 2)
         else:
             batch_size = int(batch_size / 4)
-
-        # if self.corpus == 'timit':
-        #     if min_num_frames_batch < 700:
-        #         batch_size = int(batch_size / 2)
-        # elif self.model_type in ['nested_attention', 'hierarchical_attention']:
-        #     if min_num_frames_batch <= 800:
-        #         pass
-        #     elif min_num_frames_batch <= 1400:
-        #         batch_size = int(batch_size / 2)
-        #     else:
-        #         batch_size = int(batch_size / 4)
-        # else:
-        #     if min_num_frames_batch <= 800:
-        #         pass
-        #     elif min_num_frames_batch <= 1600:
-        #         batch_size = int(batch_size / 2)
-        #     else:
-        #         batch_size = int(batch_size / 4)
 
         if batch_size < 1:
             batch_size = 1
