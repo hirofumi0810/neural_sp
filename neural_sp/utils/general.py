@@ -4,7 +4,7 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-""
+"General utility functions."
 
 from __future__ import absolute_import
 from __future__ import division
@@ -13,39 +13,27 @@ from __future__ import print_function
 import functools
 import logging
 import os
+import six
 import time
-from tqdm import tqdm
-
-
-def mkdir(path):
-    """Make a new directory if the directory does not exist.
-
-    Args:
-        path (string): path to a directory
-    Returns:
-        path (string): path to the new directory
-
-    """
-    if path is not None and (not os.path.isdir(path)):
-        os.mkdir(path)
-    return path
 
 
 def mkdir_join(path, *dir_name):
     """Concatenate root path and 1 or more paths, and make a new direcory if the direcory does not exist.
 
     Args:
-        path (string): path to a diretcory
-        dir_name (string): a direcory name
+        path (str): path to a diretcory
+        dir_name (str): a direcory name
     Returns:
         path to the new directory
 
     """
-    if path is None:
-        return path
-    for i in range(len(dir_name)):
+    if not os.path.isdir(path):
+        os.mkdir(path)
+    for i in six.moves.range(len(dir_name)):
         if '.' not in dir_name[i]:
-            path = mkdir(os.path.join(path, dir_name[i]))
+            path = os.path.join(path, dir_name[i])
+            if not os.path.isdir(path):
+                os.mkdir(path)
         else:
             path = os.path.join(path, dir_name[i])
     return path

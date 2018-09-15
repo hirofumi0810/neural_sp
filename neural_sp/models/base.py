@@ -17,9 +17,6 @@ import os
 import torch
 import torch.nn as nn
 
-# from src.models.pytorch_v3.tmp.lr_scheduler import ReduceLROnPlateau
-from neural_sp.utils.general import mkdir
-
 OPTIMIZER_CLS_NAMES = {
     "sgd": torch.optim.SGD,
     "momentum": torch.optim.SGD,
@@ -73,7 +70,7 @@ class ModelBase(nn.Module):
 
         Args:
             param_init (float):
-            dist (string): uniform or normal or orthogonal or constant
+            dist (str): uniform or normal or orthogonal or constant
             keys (list):
             ignore_keys (list):
 
@@ -149,12 +146,12 @@ class ModelBase(nn.Module):
             logger.warning('CPU mode')
 
     def set_optimizer(self, optimizer, learning_rate_init,
-                      weight_decay=0, clip_grad_norm=5,
+                      weight_decay=0.0, clip_grad_norm=5.0,
                       lr_schedule=True, factor=0.1, patience_epoch=5):
         """Set optimizer.
 
         Args:
-            optimizer (string): sgd or adam or adadelta or adagrad or rmsprop
+            optimizer (str): sgd or adam or adadelta or adagrad or rmsprop
             learning_rate_init (float): An initial learning rate
             weight_decay (float): L2 penalty
             clip_grad_norm (float): not used here
@@ -242,14 +239,16 @@ class ModelBase(nn.Module):
                 save_path_tmp = save_path + '_' + str(model_index)
             else:
                 break
-        self.save_path = mkdir(save_path_tmp)
+        if not os.path.isdir(save_path_tmp):
+            os.mkdir(save_path_tmp)
+        self.save_path = save_path_tmp
 
     def save_checkpoint(self, save_path, epoch, step, lr, metric_dev_best,
                         remove_old_checkpoints=False):
         """Save checkpoint.
 
         Args:
-            save_path (string): path to save a model (directory)
+            save_path (str): path to save a model (directory)
             epoch (int): the currnet epoch
             step (int): the current step
             lr (float):
@@ -257,7 +256,7 @@ class ModelBase(nn.Module):
             remove_old_checkpoints (bool): if True, all checkpoints
                 other than the best one will be deleted
         Returns:
-            model (string): path to the saved model (file)
+            model (str): path to the saved model (file)
 
         """
         model_path = os.path.join(save_path, 'model.epoch-' + str(epoch))
@@ -285,7 +284,7 @@ class ModelBase(nn.Module):
         """Load checkpoint.
 
         Args:
-            save_path (string): path to the saved models
+            save_path (str): path to the saved models
             epoch (int): if -1 means the last saved model
             restart (bool): if True, restore the save optimizer
             load_pretrained_model (bool): if True, load all parameters
