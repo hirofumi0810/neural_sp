@@ -10,12 +10,10 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import codecs
 import sentencepiece as spm
 from tqdm import tqdm
 
 from neural_sp.evaluators.edit_distance import compute_wer
-from neural_sp.evaluators.resolving_unk import resolve_unk
 from neural_sp.utils.general import mkdir_join
 
 
@@ -27,7 +25,7 @@ def eval_wordpiece(models, dataset, decode_params, wp_model, progressbar=False):
         dataset: An instance of a `Dataset' class
         decode_params (dict):
         batch_size (int): the batch size when evaluating the model
-
+        wp_model ():
         progressbar (bool): if True, visualize the progressbar
     Returns:
         wer (float): Word error rate
@@ -56,7 +54,7 @@ def eval_wordpiece(models, dataset, decode_params, wp_model, progressbar=False):
     if progressbar:
         pbar = tqdm(total=len(dataset))  # TODO(hirofumi): fix this
 
-    with codecs.open(hyp_trn_save_path, 'w') as f_hyp, codecs.open(ref_trn_save_path, 'w') as f_ref:
+    with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
             batch, is_new_epoch = dataset.next(decode_params['batch_size'])
             best_hyps, aw, perm_idx = model.decode(batch['xs'], decode_params,
@@ -66,7 +64,7 @@ def eval_wordpiece(models, dataset, decode_params, wp_model, progressbar=False):
             for b in range(len(batch['xs'])):
                 # Reference
                 if dataset.is_test:
-                    text_ref = ys[b]  # NOTE: transcript is seperated by space('_')
+                    text_ref = ys[b]
                 else:
                     wp_list_ref = dataset.idx2word(ys[b], return_list=True)
                     text_ref = sp.DecodePieces(wp_list_ref)
@@ -74,9 +72,6 @@ def eval_wordpiece(models, dataset, decode_params, wp_model, progressbar=False):
                 # Hypothesis
                 wp_list_hyp = dataset.idx2word(best_hyps[b], return_list=True)
                 text_hyp = sp.DecodePieces(wp_list_hyp)
-
-                if len(text_ref) == 0:
-                    continue
 
                 # Write to trn
                 speaker = '_'.join(batch['utt_ids'][b].replace('-', '_').split('_')[:-2])

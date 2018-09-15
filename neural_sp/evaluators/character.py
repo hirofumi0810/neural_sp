@@ -10,7 +10,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import codecs
 from tqdm import tqdm
 
 from neural_sp.evaluators.edit_distance import compute_wer
@@ -54,7 +53,7 @@ def eval_char(models, dataset, decode_params, progressbar=False):
     if progressbar:
         pbar = tqdm(total=len(dataset))
 
-    with codecs.open(hyp_trn_save_path, 'w') as f_hyp, codecs.open(ref_trn_save_path, 'w') as f_ref:
+    with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
             batch, is_new_epoch = dataset.next(decode_params['batch_size'])
             best_hyps, aw, perm_idx = model.decode(batch['xs'], decode_params,
@@ -65,15 +64,12 @@ def eval_char(models, dataset, decode_params, progressbar=False):
             for b in range(len(batch['xs'])):
                 # Reference
                 if dataset.is_test:
-                    text_ref = ys[b]  # NOTE: transcript is seperated by space('_')
+                    text_ref = ys[b]
                 else:
                     text_ref = dataset.idx2char(ys[b])
 
                 # Hypothesis
                 text_hyp = dataset.idx2char(best_hyps[b])
-
-                if len(text_ref) == 0:
-                    continue
 
                 # Write to trn
                 speaker = '_'.join(batch['utt_ids'][b].replace('-', '_').split('_')[:-2])
