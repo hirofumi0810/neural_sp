@@ -98,7 +98,8 @@ if [ ${stage} -le 1 ] && [ ! -e .done_stage_1.de ]; then
   echo "                    Feature extranction (stage:1)                          "
   echo ============================================================================
 
-    for x in train_org dev2010 tst2010 tst2013 tst2014 tst2015 tst2018; do
+    # for x in train_org dev2010 tst2010 tst2013 tst2014 tst2015 tst2018; do
+    for x in train_org; do
         steps/make_fbank.sh --nj 16 --cmd "$train_cmd" --write_utt2num_frames true \
             ${data}/${x}.de ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
     done
@@ -119,11 +120,11 @@ if [ ${stage} -le 1 ] && [ ! -e .done_stage_1.de ]; then
       dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
         ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
     done
-    for x in ${test_set}; do
-      dump_dir=${data}/feat/${x}; mkdir -p ${dump_dir}
-      dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
-        ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
-    done
+    # for x in ${test_set}; do
+    #   dump_dir=${data}/feat/${x}; mkdir -p ${dump_dir}
+    #   dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
+    #     ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
+    # done
 
     touch .done_stage_1.de && echo "Finish feature extranction (stage: 1)."
 fi
@@ -158,7 +159,8 @@ if [ ${stage} -le 4 ]; then
     --wp_model ${wp_model}.model \
     --config ${config} \
     --model ${model_dir}/st \
-    --label_type ${unit} || exit 1;
+    --label_type ${unit} \
+    --metric loss || exit 1;
     # --resume_model ${resume_model} || exit 1;
     # TODO(hirofumi): send a e-mail
 

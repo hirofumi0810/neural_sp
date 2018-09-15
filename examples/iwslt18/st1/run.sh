@@ -206,7 +206,8 @@ if [ ${stage} -le 4 ]; then
     --wp_model ${wp_model}.model \
     --config ${config} \
     --model ${model_dir}/st \
-    --label_type ${unit} || exit 1;
+    --label_type ${unit} \
+    --metric loss || exit 1;
     # --resume_model ${resume_model} || exit 1;
     # TODO(hirofumi): send a e-mail
 
