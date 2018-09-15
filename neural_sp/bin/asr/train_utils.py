@@ -53,41 +53,38 @@ class Updater(object):
             acc (float): Token-level accuracy in teacher-forcing
 
         """
-        try:
-            # Step for parameter update
-            if is_eval:
-                loss, loss_acc_fwd, loss_acc_bwd, loss_acc_sub = model(
-                    batch['xs'], batch['ys'], batch['ys_sub'], is_eval=True)
-            else:
-                model.module.optimizer.zero_grad()
-                loss, loss_acc_fwd, loss_acc_bwd, loss_acc_sub = model(
-                    batch['xs'], batch['ys'], batch['ys_sub'])
-                if len(model.device_ids) > 1:
-                    loss.backward(torch.ones(len(model.device_ids)))
-                else:
-                    loss.backward()
-                loss.detach()  # Trancate the graph
-                if self.clip_grad_norm > 0:
-                    torch.nn.utils.clip_grad_norm_(
-                        model.module.parameters(), self.clip_grad_norm)
-                model.module.optimizer.step()
-                # TODO(hirofumi): Add scheduler
-
-            loss_val = loss.item()
-            acc = loss_acc_fwd['acc']
-
-            del loss
-            del loss_acc_fwd
-            del loss_acc_bwd
-            del loss_acc_sub
-            # torch.cuda.empty_cache()
-
-        except RuntimeError:
-            logger.warning('!!!Skip mini-batch!!! (max_x_len: %d, bs: %d)' %
-                           (max(len(x) for x in batch['xs']), len(batch['xs'])))
+        # Step for parameter update
+        if is_eval:
+            loss, loss_acc_fwd, loss_acc_bwd, loss_acc_sub = model(
+                batch['xs'], batch['ys'], batch['ys_sub'], is_eval=True)
+        else:
             model.module.optimizer.zero_grad()
-            loss_val = 0.
-            acc = 0.
+            loss, loss_acc_fwd, loss_acc_bwd, loss_acc_sub = model(
+                batch['xs'], batch['ys'], batch['ys_sub'])
+            if len(model.device_ids) > 1:
+                loss.backward(torch.ones(len(model.device_ids)))
+            else:
+                loss.backward()
+            loss.detach()  # Trancate the graph
+            if self.clip_grad_norm > 0:
+                torch.nn.utils.clip_grad_norm_(
+                    model.module.parameters(), self.clip_grad_norm)
+            model.module.optimizer.step()
+            # TODO(hirofumi): Add scheduler
+
+        loss_val = loss.item()
+        acc = loss_acc_fwd['acc']
+
+        del loss
+        del loss_acc_fwd
+        del loss_acc_bwd
+        del loss_acc_sub
+
+        # logger.warning('!!!Skip mini-batch!!! (max_x_len: %d, bs: %d)' %
+        #                (max(len(x) for x in batch['xs']), len(batch['xs'])))
+        # torch.cuda.empty_cache()
+        # loss_val = 0.
+        # acc = 0.
 
         if loss_val == INF or loss_val == -INF:
             logger.warning("WARNING: received an inf loss.")
