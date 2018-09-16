@@ -48,9 +48,9 @@ parser.add_argument('--model', type=str, default=None,
                     help='directory to save a model')
 parser.add_argument('--resume_model', type=str, default=None,
                     help='path to the model to resume training')
+parser.add_argument('--job_name', type=str, default='',
+                    help='name of job')
 # dataset
-parser.add_argument('--corpus', type=str,
-                    help='the name of corpus')
 parser.add_argument('--train_set', type=str,
                     help='path to a csv file for the training set')
 parser.add_argument('--train_set_sub', type=str, default=None,
@@ -316,7 +316,8 @@ def main():
                         dict_path_sub=args.dict_sub,
                         label_type_sub=args.label_type_sub,
                         use_ctc_sub=args.ctc_weight_sub > 0,
-                        subsample_factor_sub=subsample_factor_sub)
+                        subsample_factor_sub=subsample_factor_sub,
+                        skip_speech=(args.input_type != 'speech'))
     dev_set = Dataset(csv_path=args.dev_set,
                       dict_path=args.dict,
                       label_type=args.label_type,
@@ -331,18 +332,17 @@ def main():
                       dict_path_sub=args.dict_sub,
                       label_type_sub=args.label_type_sub,
                       use_ctc_sub=args.ctc_weight_sub > 0,
-                      subsample_factor_sub=subsample_factor_sub)
+                      subsample_factor_sub=subsample_factor_sub,
+                      skip_speech=(args.input_type != 'speech'))
     eval_sets = []
     for set in args.eval_sets:
-        # swbd etc.
-        if 'phone' in args.label_type and args.corpus != 'timit':
-            continue
         eval_sets += [Dataset(csv_path=set,
                               dict_path=args.dict,
                               label_type=args.label_type,
                               batch_size=1,
                               max_epoch=args.num_epochs,
-                              is_test=True)]
+                              is_test=True,
+                              skip_speech=(args.input_type != 'speech'))]
 
     args.num_classes = train_set.num_classes
     args.input_dim = train_set.input_dim
@@ -423,9 +423,9 @@ def main():
         save_config(vars(args), model.save_path)
 
         # Save the dictionary & wp_model
-        shutil.copy(args.dict, os.path.join(save_path, os.path.basename(args.dict)))
+        shutil.copy(args.dict, os.path.join(save_path, 'dict.txt'))
         if args.label_type == 'wordpiece':
-            shutil.copy(args.wp_model, os.path.join(save_path, os.path.basename(args.wp_model)))
+            shutil.copy(args.wp_model, os.path.join(save_path, 'wp.model'))
 
         # Setting for logging
         logger = set_logger(os.path.join(model.save_path, 'train.log'), key='training')
@@ -507,8 +507,7 @@ def main():
     logger.info('USERNAME: %s' % os.uname()[1])
 
     # Set process name
-    title = args.corpus + '_' + args.label_type
-    # setproctitle(title)
+    # setproctitle(args.job_name)
 
     # Set learning rate controller
     lr_controller = Controller(learning_rate_init=learning_rate,
@@ -541,7 +540,7 @@ def main():
         model, loss_train, acc_train = updater(model, batch_train)
         loss_train_mean += loss_train
         acc_train_mean += acc_train
-        pbar_epoch.update(len(batch_train['xs']))
+        pbar_epoch.update(len(batch_train['utt_ids']))
 
         if (step + 1) % args.print_step == 0:
             # Compute loss in the dev set
@@ -566,7 +565,7 @@ def main():
                         (step + 1, train_set.epoch_detail,
                          loss_train_mean, loss_dev, acc_train_mean, acc_dev,
                          learning_rate, train_set.current_batch_size,
-                         max(len(x) for x in batch_train['xs']),
+                         max(len(x) for x in batch_train['utt_ids']),
                          duration_step / 60))
             start_time_step = time.time()
             loss_train_mean, acc_train_mean = 0, 0

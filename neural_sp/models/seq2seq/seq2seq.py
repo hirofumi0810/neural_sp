@@ -81,7 +81,7 @@ class Seq2seq(ModelBase):
 
         # Encoder
         if args.enc_type in ['blstm', 'lstm', 'bgru', 'gru']:
-            self.enc = RNNEncoder(input_dim=args.input_dim,
+            self.enc = RNNEncoder(input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
                                   rnn_type=args.enc_type,
                                   num_units=args.enc_num_units,
                                   num_projs=args.enc_num_projs,
@@ -105,7 +105,7 @@ class Seq2seq(ModelBase):
                                   num_projs_final=args.dec_num_units if args.bridge_layer else 0)
         elif args.enc_type == 'cnn':
             assert args.num_stack == 1 and args.num_splice == 1
-            self.enc = CNNEncoder(input_dim=args.input_dim,
+            self.enc = CNNEncoder(input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
                                   in_channel=args.conv_in_channel,
                                   channels=args.conv_channels,
                                   kernel_sizes=args.conv_kernel_sizes,
@@ -116,7 +116,7 @@ class Seq2seq(ModelBase):
                                   num_projs_final=args.dec_num_units,
                                   batch_norm=args.conv_batch_norm)
         else:
-            raise NotImplementedError
+            raise NotImplementedError()
 
         # Bridge layer between the encoder and decoder
         if args.enc_type == 'cnn':
@@ -252,11 +252,14 @@ class Seq2seq(ModelBase):
                                      ctc_fc_list=args.ctc_fc_list)  # sub??
 
         if args.input_type == 'text':
-            self.num_classes_in = args.num_classes_in
-            self.embed_in = Embedding(num_classes=args.num_classes_in,
-                                      embedding_dim=args.input_type,
-                                      dropout=args.dropout_emb,
-                                      ignore_index=self.pad)
+            if args.num_classes == args.num_classes_sub:
+                # Share the embedding layer between input and output
+                self.embed_in = decoder.emb
+            else:
+                self.embed_in = Embedding(num_classes=args.num_classes_sub,
+                                          emb_dim=args.emb_dim,
+                                          dropout=args.dropout_emb,
+                                          ignore_index=self.pad)
 
         # Initialize weight matrices
         self.init_weights(args.param_init, dist=args.param_init_dist, ignore_keys=['bias'])
@@ -301,16 +304,24 @@ class Seq2seq(ModelBase):
         else:
             self.train()
 
-        # Sort by lenghts in the descending order
-        # if self.enc_type != 'cnn':
-        perm_idx = sorted(list(six.moves.range(0, len(xs), 1)),
-                          key=lambda i: len(xs[i]), reverse=True)
-        xs = [xs[i] for i in perm_idx]
-        ys = [ys[i] for i in perm_idx]
-        # NOTE: must be descending order for pack_padded_sequence
-
         # Encode input features
-        xs, x_lens, xs_sub, x_lens_sub = self._encode(xs)
+        if self.input_type == 'speech':
+            # Sort by lenghts in the descending order
+            # if self.enc_type != 'cnn':
+            perm_idx = sorted(list(six.moves.range(0, len(xs), 1)),
+                              key=lambda i: len(xs[i]), reverse=True)
+            xs = [xs[i] for i in perm_idx]
+            ys = [ys[i] for i in perm_idx]
+            # NOTE: must be descending order for pack_padded_sequence
+            xs, x_lens, xs_sub, x_lens_sub = self._encode(xs)
+        else:
+            # Sort by lenghts in the descending order
+            perm_idx = sorted(list(six.moves.range(0, len(ys_sub), 1)),
+                              key=lambda i: len(ys_sub[i]), reverse=True)
+            ys = [ys[i] for i in perm_idx]
+            ys_sub = [ys_sub[i] for i in perm_idx]
+            # NOTE: must be descending order for pack_padded_sequence
+            xs, x_lens, xs_sub, x_lens_sub = self._encode(ys_sub)
 
         # Compute XE loss for the forward decoder
         if self.fwd_weight_0 > 0:

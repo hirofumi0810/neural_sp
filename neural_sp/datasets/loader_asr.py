@@ -40,7 +40,7 @@ class Dataset(Base):
                  short2long=False, sort_stop_epoch=None,
                  num_enques=None, dynamic_batching=False,
                  use_ctc=False, subsample_factor=1,
-                 lm_training=False,
+                 skip_speech=False,
                  csv_path_sub=None, dict_path_sub=None, label_type_sub=None,
                  use_ctc_sub=False, subsample_factor_sub=1):
         """A class for loading dataset.
@@ -65,7 +65,7 @@ class Dataset(Base):
                 dynamically in training
             use_ctc (bool):
             subsample_factor (int):
-            lm_training (bool):
+            skip_speech (bool): skip loading speech features
 
         """
         super(Dataset, self).__init__()
@@ -81,7 +81,7 @@ class Dataset(Base):
         self.sort_stop_epoch = sort_stop_epoch
         self.num_enques = num_enques
         self.dynamic_batching = dynamic_batching
-        self.lm_training = lm_training
+        self.skip_speech = skip_speech
         self.num_classes = self.count_vocab_size(dict_path)
 
         # Set index converter
@@ -199,7 +199,7 @@ class Dataset(Base):
 
         """
         # input
-        if not self.lm_training:
+        if not self.skip_speech:
             xs = [kaldi_io.read_mat(self.df['feat_path'][i]) for i in utt_indices]
             x_lens = [self.df['x_len'][i] for i in utt_indices]
         else:
