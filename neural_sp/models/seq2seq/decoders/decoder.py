@@ -60,13 +60,14 @@ class Decoder(nn.Module):
         ss_prob (float): the probability of scheduled sampling
         lsm_prob (float): the probability of label smoothing
         lsm_type (str): uniform or unigram
+        init_with_enc (bool):
         ctc_weight (float):
         backward (bool): decode in the backward order
         rnnlm_cf (torch.nn.Module):
         cold_fusion_type (str): the type of cold fusion
             prob: probability from RNNLM
             hidden: hidden states of RNNLM
-        internal_lm ():
+        internal_lm (bool):
         rnnlm_init (torch.nn.Module):
         rnnlm_weight (float): the weight for the auxiliary XE loss of RNNLM objective
         share_softmax (bool):
@@ -91,6 +92,7 @@ class Decoder(nn.Module):
                  ss_prob,
                  lsm_prob,
                  lsm_type,
+                 init_with_enc=False,
                  ctc_weight=0.,
                  ctc_fc_list=[],
                  backward=False,
@@ -118,6 +120,7 @@ class Decoder(nn.Module):
         self.ss_prob = ss_prob
         self.lsm_prob = lsm_prob
         self.lsm_type = lsm_type
+        self.init_with_enc = init_with_enc
         self.ctc_weight = ctc_weight
         self.ctc_fc_list = ctc_fc_list
         self.backward = backward
@@ -211,12 +214,14 @@ class Decoder(nn.Module):
                              dropout=dropout_emb,
                              ignore_index=pad)
 
-    def _init_dec_state(self, enc_out, num_layers):
+    def _init_dec_state(self, enc_out, enc_lens, num_layers):
         """Initialize decoder state.
 
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T, enc_num_units]`
+            enc_lens (list): A list of length `[B]`
+            num_layers (int):
         Returns:
             dec_out (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, dec_num_units]`
@@ -226,21 +231,37 @@ class Decoder(nn.Module):
 
         """
         batch_size = enc_out.size(0)
-        dec_out = Variable(enc_out.data.new(batch_size, 1, self.num_units).fill_(0.),
-                           volatile=not self.training)
-        zero_state = Variable(enc_out.data.new(batch_size, self.num_units).fill_(0.),
-                              volatile=not self.training)
-        hx_list = [zero_state] * self.num_layers
-        cx_list = [zero_state] * self.num_layers if self.rnn_type == 'lstm' else None
+
+        if self.init_with_enc:
+            if enc_out.size(-1) == self.num_units:
+                # unidirectinal encoder
+                dec_out = torch.cat([enc_out[b:b + 1, enc_lens[b] - 1:enc_lens[b]]
+                                     for b in six.moves.range(len(enc_lens))], dim=0)
+            else:
+                # bidirectional encoder
+                dec_out = torch.cat([(enc_out)[b:b + 1, enc_lens[b] - 1:enc_lens[b], self.num_units:]
+                                     for b in six.moves.range(len(enc_lens))], dim=0)
+                # NOTE: initialize with reverse direction
+            dec_out = torch.tanh(dec_out)
+            hx_list = [dec_out.clone().squeeze(1)] * self.num_layers
+            cx_list = [dec_out.clone().squeeze(1)] * self.num_layers if self.rnn_type == 'lstm' else None
+        else:
+            dec_out = Variable(enc_out.data.new(batch_size, 1, self.num_units).fill_(0.),
+                               volatile=not self.training)
+            zero_state = Variable(enc_out.data.new(batch_size, self.num_units).fill_(0.),
+                                  volatile=not self.training)
+            hx_list = [zero_state] * self.num_layers
+            cx_list = [zero_state] * self.num_layers if self.rnn_type == 'lstm' else None
+
         return dec_out, (hx_list, cx_list)
 
-    def forward(self, enc_out, x_lens, ys):
+    def forward(self, enc_out, enc_lens, ys):
         """Decoding in the training stage.　Compute XE loss.
 
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T, enc_num_units]`
-            x_lens (list): A list of length `[B]`
+            enc_lens (list): A list of length `[B]`
             ys (list): A list of length `[B]`, which contains Variables of size `[L]`
         Returns:
             logits (torch.autograd.Variable, float): A tensor of size
@@ -254,7 +275,7 @@ class Decoder(nn.Module):
         # Compute the auxiliary CTC loss
         if self.ctc_weight > 0:
             logits_ctc = self.output_ctc(enc_out)
-            loss_ctc = self._compute_ctc_loss(logits_ctc, x_lens, ys)
+            loss_ctc = self._compute_ctc_loss(logits_ctc, enc_lens, ys)
             device_id = enc_out.get_device()
             if device_id >= 0:
                 loss_ctc = loss_ctc.cuda(device_id)
@@ -280,8 +301,8 @@ class Decoder(nn.Module):
         ys_out_pad = pad_list(ys_out, -1)
 
         # Initialization
-        dec_out, dec_state = self._init_dec_state(enc_out, self.num_layers)
-        _dec_out, _dec_state = self._init_dec_state(enc_out, 1)  # for internal LM
+        dec_out, dec_state = self._init_dec_state(enc_out, enc_lens, self.num_layers)
+        _dec_out, _dec_state = self._init_dec_state(enc_out, enc_lens, 1)  # for internal LM
         self.score.reset()
         aw_t = None
         rnnlm_state = None
@@ -298,7 +319,7 @@ class Decoder(nn.Module):
             is_sample = t > 0 and self.ss_prob > 0 and random.random() < self.ss_prob
 
             # Score
-            cv, aw_t = self.score(enc_out, x_lens, dec_out, aw_t)
+            cv, aw_t = self.score(enc_out, enc_lens, dec_out, aw_t)
 
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf is not None:
@@ -513,13 +534,13 @@ class Decoder(nn.Module):
             logits_t = torch.cat([dec_out, cv], dim=-1)
         return logits_t
 
-    def greedy(self, enc_out, x_lens, max_len_ratio, exclude_eos=False):
+    def greedy(self, enc_out, enc_lens, max_len_ratio, exclude_eos=False):
         """Greedy decoding in the inference stage.
 
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T, encoder_num_units]`
-            x_lens (list): A list of length `[B]`
+            enc_lens (list): A list of length `[B]`
             max_len_ratio (int): the maximum sequence length of tokens
             exclude_eos (bool):
         Returns:
@@ -530,8 +551,8 @@ class Decoder(nn.Module):
         batch_size, enc_time, enc_num_units = enc_out.size()
 
         # Initialization
-        dec_out, dec_state = self._init_dec_state(enc_out, self.num_layers)
-        _dec_out, _dec_state = self._init_dec_state(enc_out, 1)
+        dec_out, dec_state = self._init_dec_state(enc_out, enc_lens, self.num_layers)
+        _dec_out, _dec_state = self._init_dec_state(enc_out, enc_lens, 1)
         self.score.reset()
         aw_t = None
         rnnlm_state = None
@@ -544,7 +565,7 @@ class Decoder(nn.Module):
         eos_flags = [False] * batch_size
         for t in six.moves.range(int(math.floor(enc_time * max_len_ratio)) + 1):
             # Score
-            cv, aw_t = self.score(enc_out, x_lens, dec_out, aw_t)
+            cv, aw_t = self.score(enc_out, enc_lens, dec_out, aw_t)
 
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf is not None:
@@ -617,13 +638,13 @@ class Decoder(nn.Module):
 
         return best_hyps, aw
 
-    def beam_search(self, enc_out, x_lens, params, rnnlm=None, exclude_eos=False):
+    def beam_search(self, enc_out, enc_lens, params, rnnlm=None, exclude_eos=False):
         """Beam search decoding in the inference stage.
 
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T, enc_num_units]`
-            x_lens (list): A list of length `[B]`
+            enc_lens (list): A list of length `[B]`
             params (dict):
                 beam_width (int): the size of beam
                 max_len_ratio (int): the maximum sequence length of tokens
@@ -655,8 +676,8 @@ class Decoder(nn.Module):
         eos_flags = [False] * batch_size
         for b in six.moves.range(batch_size):
             # Initialization per utterance
-            dec_out, dec_state = self._init_dec_state(enc_out[b:b + 1], self.num_layers)
-            _dec_out, _dec_state = self._init_dec_state(enc_out[b:b + 1], 1)
+            dec_out, dec_state = self._init_dec_state(enc_out[b:b + 1], enc_lens[b:b + 1], self.num_layers)
+            _dec_out, _dec_state = self._init_dec_state(enc_out[b:b + 1], enc_lens[b:b + 1], 1)
             cv = Variable(enc_out.data.new(1, 1, enc_out.size(-1)).fill_(0.), volatile=True)
             self.score.reset()
 
@@ -671,7 +692,7 @@ class Decoder(nn.Module):
                      'prev_cov': 0,
                      '_dec_out': _dec_out,
                      '_dec_state': _dec_state}]
-            for t in six.moves.range(int(math.floor(x_lens[b] * params['max_len_ratio'])) + 1):
+            for t in six.moves.range(int(math.floor(enc_lens[b] * params['max_len_ratio'])) + 1):
                 new_beam = []
                 for i_beam in six.moves.range(len(beam)):
                     if t > 0:
@@ -686,8 +707,8 @@ class Decoder(nn.Module):
                         dec_out = beam[i_beam]['dec_out']
 
                     # Score
-                    cv, aw_t = self.score(enc_out[b:b + 1, :x_lens[b]],
-                                          x_lens[b:b + 1],
+                    cv, aw_t = self.score(enc_out[b:b + 1, :enc_lens[b]],
+                                          enc_lens[b:b + 1],
                                           dec_out,
                                           beam[i_beam]['aw_t_list'][-1])
 
@@ -735,7 +756,7 @@ class Decoder(nn.Module):
 
                     for k in six.moves.range(params['beam_width']):
                         # Exclude short hypotheses
-                        if indices_topk[0, k].data[0] == self.eos and len(beam[i_beam]['hyp']) < x_lens[b] * params['min_len_ratio']:
+                        if indices_topk[0, k].data[0] == self.eos and len(beam[i_beam]['hyp']) < enc_lens[b] * params['min_len_ratio']:
                             continue
 
                         # Add length penalty

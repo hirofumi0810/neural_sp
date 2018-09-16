@@ -37,11 +37,12 @@ param:
   dec_num_projs: 0
   dec_num_layers: 2
   dec_residual: False
+  init_with_enc: True
   emb_dim: 1024
   ctc_fc_list: []
 
   # optimization
-  batch_size: 128
+  batch_size: 80
   optimizer: adam
   learning_rate: 1e-3
   num_epochs: 60

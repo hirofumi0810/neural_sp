@@ -191,6 +191,7 @@ class Seq2seq(ModelBase):
                               ss_prob=args.ss_prob,
                               lsm_prob=args.lsm_prob,
                               lsm_type=args.lsm_type,
+                              init_with_enc=args.init_with_enc,
                               ctc_weight=args.ctc_weight if dir == 'fwd' else 0,
                               ctc_fc_list=args.ctc_fc_list,
                               backward=(dir == 'bwd'),
@@ -248,6 +249,7 @@ class Seq2seq(ModelBase):
                                      ss_prob=args.ss_prob,
                                      lsm_prob=args.lsm_prob,
                                      lsm_type=args.lsm_type,
+                                     init_with_enc=args.init_with_enc,
                                      ctc_weight=args.ctc_weight_sub,
                                      ctc_fc_list=args.ctc_fc_list)  # sub??
 

@@ -150,6 +150,8 @@ parser.add_argument('--dec_num_layers_sub', type=int, default=1,
                     help='')
 parser.add_argument('--dec_residual', type=bool, default=False,
                     help='')
+parser.add_argument('--init_with_enc', type=bool, default=False,
+                    help='')
 parser.add_argument('--emb_dim', type=int, default=320,
                     help='')
 parser.add_argument('--ctc_fc_list', type=list, default=[],
