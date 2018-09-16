@@ -119,8 +119,8 @@ if [ ${stage} -le 1 ] && [ ! -e .done_stage_1 ]; then
   echo ============================================================================
 
   for x in train eval2000; do
-      steps/make_fbank.sh --nj 16 --cmd "$train_cmd" --write_utt2num_frames true \
-        ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
+    steps/make_fbank.sh --nj 16 --cmd "$train_cmd" --write_utt2num_frames true \
+      ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
   done
 
   # Use the first 4k sentences as dev set.
@@ -157,13 +157,13 @@ dict_sub=${data}/dict/${train_set}_${unit_sub}.txt
 wp_model=${data}/dict/${train_set}_${wp_model_type}${vocab_size}
 
 if [ ! -f ${dict} ]; then
-    echo "There is no file such as "${dict}
-    exit 1
+  echo "There is no file such as "${dict}
+  exit 1
 fi
 
 if [ ! -f ${dict_sub} ]; then
-    echo "There is no file such as "${dict_sub}
-    exit 1
+  echo "There is no file such as "${dict_sub}
+  exit 1
 fi
 
 
@@ -196,7 +196,7 @@ if [ ${stage} -le 4 ]; then
     --dict_sub ${dict_sub} \
     --wp_model ${wp_model}.model \
     --config ${asr_config} \
-    --model ${model_dir} \
+    --model ${model_dir}/asr \
     --label_type ${unit} \
     --label_type_sub ${unit_sub} || exit 1;
     # --resume_model ${asr_resume_model} || exit 1;

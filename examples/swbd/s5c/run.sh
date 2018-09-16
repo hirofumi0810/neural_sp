@@ -119,8 +119,8 @@ if [ ${stage} -le 1 ] && [ ! -e .done_stage_1 ]; then
   echo ============================================================================
 
   for x in train eval2000; do
-      steps/make_fbank.sh --nj 16 --cmd "$train_cmd" --write_utt2num_frames true \
-        ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
+    steps/make_fbank.sh --nj 16 --cmd "$train_cmd" --write_utt2num_frames true \
+      ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
   done
 
   # Use the first 4k sentences as dev set.
@@ -137,12 +137,12 @@ if [ ${stage} -le 1 ] && [ ! -e .done_stage_1 ]; then
 
   # Apply global CMVN & dump features
   for x in ${train_set} ${dev_set}; do
-    dump_dir=${data}/feat/${x}; mkdir -p ${dump_dir}
+    dump_dir=${data}/dump/${x}; mkdir -p ${dump_dir}
     dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
       ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
   done
   for x in ${test_set}; do
-    dump_dir=${data}/feat/${x}; mkdir -p ${dump_dir}
+    dump_dir=${data}/dump/${x}; mkdir -p ${dump_dir}
     dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
       ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
   done
@@ -174,17 +174,9 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}${wp_model_type}${vocab_siz
   fi
   offset=`cat ${dict} | wc -l`
   echo "Making a dictionary..."
-  if [ ${unit} = wordpiece ]; then
-    cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
-    spm_train --user_defined_symbols=`cat ${nlsyms} | tr "\n" ","` --input=${data}/dict/input.txt --vocab_size=${vocab_size} \
-      --model_type=${wp_model_type} --model_prefix=${wp_model} --input_sentence_size=100000000
-    spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-      sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict}
-  else
-    text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} --nlsyms ${nlsyms} \
-      --wp_model_type ${wp_model_type} --wp_model ${wp_model} | \
-      sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict} || exit 1;
-  fi
+  text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} --nlsyms ${nlsyms} \
+    --wp_model_type ${wp_model_type} --wp_model ${wp_model} | \
+    sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict} || exit 1;
   echo "vocab size:" `cat ${dict} | wc -l`
 
   # Compute OOV rate
@@ -223,12 +215,12 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}${wp_model_type}${vocab_siz
   mkdir -p ${data}/dataset/
   for x in ${train_set} ${dev_set}; do
     echo "Making a csv file for ${x}..."
-    dump_dir=${data}/feat/${x}
+    dump_dir=${data}/dump/${x}
     make_dataset_csv.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
       ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_model_type}${vocab_size}.csv || exit 1;
   done
   for x in ${test_set}; do
-    dump_dir=${data}/feat/${x}
+    dump_dir=${data}/dump/${x}
     make_dataset_csv.sh --is_test true --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} \
       ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_model_type}${vocab_size}.csv || exit 1;
   done
@@ -272,7 +264,7 @@ if [ ${stage} -le 4 ]; then
     --dict ${dict} \
     --wp_model ${wp_model}.model \
     --config ${asr_config} \
-    --model ${model_dir} \
+    --model ${model_dir}/asr \
     --label_type ${unit} || exit 1;
     # --resume_model ${asr_resume_model} || exit 1;
     # TODO(hirofumi): send a e-mail

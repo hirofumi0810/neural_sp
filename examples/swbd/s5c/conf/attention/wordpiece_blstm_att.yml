@@ -1,6 +1,4 @@
 param:
-  model_type: seq2seq
-
   # features
   input_type: speech
   num_splice: 1
