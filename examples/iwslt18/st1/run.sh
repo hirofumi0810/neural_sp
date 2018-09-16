@@ -84,7 +84,7 @@ if [ ${stage} -le 0 ] && [ ! -e .done_stage_0 ]; then
 
   local/data_prep_train.sh ${datadir}
   for part in dev2010 tst2010 tst2013 tst2014 tst2015 tst2018; do
-      local/data_prep_eval.sh ${datadir} ${part}
+    local/data_prep_eval.sh ${datadir} ${part}
   done
 
   touch .done_stage_0 && echo "Finish data preparation (stage: 0)."
@@ -96,35 +96,35 @@ if [ ${stage} -le 1 ] && [ ! -e .done_stage_1.de ]; then
   echo "                    Feature extranction (stage:1)                          "
   echo ============================================================================
 
-    # for x in train_org dev2010 tst2010 tst2013 tst2014 tst2015 tst2018; do
-    for x in train_org; do
-        steps/make_fbank.sh --nj 16 --cmd "$train_cmd" --write_utt2num_frames true \
-            ${data}/${x}.de ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
-    done
+  # for x in train_org dev2010 tst2010 tst2013 tst2014 tst2015 tst2018; do
+  for x in train_org; do
+    steps/make_fbank.sh --nj 16 --cmd "$train_cmd" --write_utt2num_frames true \
+      ${data}/${x}.de ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
+  done
 
-    # make a dev set
-    for lang in de en; do
-        utils/subset_data_dir.sh --first ${data}/train_org.${lang} 4000 ${data}/dev.${lang}
-        n=$[`cat ${data}/train_org.${lang}/segments | wc -l` - 4000]
-        utils/subset_data_dir.sh --last ${data}/train_org.${lang} ${n} ${data}/train.${lang}
-    done
+  # make a dev set
+  for lang in de en; do
+    utils/subset_data_dir.sh --first ${data}/train_org.${lang} 4000 ${data}/dev.${lang}
+    n=$[`cat ${data}/train_org.${lang}/segments | wc -l` - 4000]
+    utils/subset_data_dir.sh --last ${data}/train_org.${lang} ${n} ${data}/train.${lang}
+  done
 
-    # compute global CMVN
-    compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark
+  # compute global CMVN
+  compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark
 
-    # Apply global CMVN & dump features
-    for x in ${train_set} ${dev_set}; do
-      dump_dir=${data}/feat/${x}; mkdir -p ${dump_dir}
-      dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
-        ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
-    done
-    # for x in ${test_set}; do
-    #   dump_dir=${data}/feat/${x}; mkdir -p ${dump_dir}
-    #   dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
-    #     ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
-    # done
+  # Apply global CMVN & dump features
+  for x in ${train_set} ${dev_set}; do
+    dump_dir=${data}/dump/${x}; mkdir -p ${dump_dir}
+    dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
+      ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
+  done
+  # for x in ${test_set}; do
+  #   dump_dir=${data}/dump/${x}; mkdir -p ${dump_dir}
+  #   dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
+  #     ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
+  # done
 
-    touch .done_stage_1.de && echo "Finish feature extranction (stage: 1)."
+  touch .done_stage_1.de && echo "Finish feature extranction (stage: 1)."
 fi
 
 
@@ -176,12 +176,12 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}${wp_model_type}${vocab_siz
   mkdir -p ${data}/dataset/
   for x in ${train_set} ${dev_set}; do
     echo "Making a csv file for ${x}..."
-    dump_dir=${data}/feat/${x}
+    dump_dir=${data}/dump/${x}
     make_dataset_csv.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
       ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_model_type}${vocab_size}.csv || exit 1;
   done
   # for x in ${test_set}; do
-  #   dump_dir=${data}/feat/${x}
+  #   dump_dir=${data}/dump/${x}
   #   make_dataset_csv.sh --is_test true --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} \
   #     ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_model_type}${vocab_size}.csv || exit 1;
   # done
