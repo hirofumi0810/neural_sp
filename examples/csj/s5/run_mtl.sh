@@ -35,7 +35,7 @@ unit=word
 vocab_size=30000
 # unit=wordpiece
 # vocab_size=5000
-# unit=char
+unit_sub=char
 
 # for wordpiece
 wp_model_type=unigram  # or bpe
@@ -76,8 +76,8 @@ export data_size=all
 
 ### configuration
 rnnlm_config=conf/rnnlm/${unit}_lstm_rnnlm_all.yml
-asr_config=conf/attention/${unit}_blstm_att_${data_size}.yml
-# asr_config=conf/ctc/${unit}_blstm_ctc_${data_size}.yml
+asr_config=conf/attention/${unit}_blstm_att_${data_size}_${unit_sub}_ctc.yml
+# asr_config=conf/ctc/${unit}_blstm_ctc_${data_size}_${unit_sub}_ctc.yml
 
 . ./cmd.sh
 . ./path.sh
@@ -91,9 +91,6 @@ train_set=train_${data_size}
 dev_set=dev_${data_size}
 test_set="eval1 eval2 eval3"
 
-if [ ${unit} = char ]; then
-  vocab_size=
-fi
 if [ ${unit} != wordpiece ]; then
   wp_model_type=
 fi
@@ -158,62 +155,17 @@ fi
 
 
 dict=${data}/dict/${train_set}_${unit}${wp_model_type}${vocab_size}.txt; mkdir -p ${data}/dict/
+dict_sub=${data}/dict/${train_set}_${unit_sub}.txt
 wp_model=${data}/dict/${train_set}_${wp_model_type}${vocab_size}
-if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${data_size}_${unit}${wp_model_type}${vocab_size} ]; then
-  echo ============================================================================
-  echo "                      Dataset preparation (stage:2)                        "
-  echo ============================================================================
 
-  # Remove <sp> and POS tag
-  for x in ${train_set} ${dev_set} ${test_set}; do
-    local/remove_pos.py ${data}/${x}/text > ${data}/${x}/text.tmp
-    mv ${data}/${x}/text.tmp ${data}/${x}/text
-  done
+if [ ! -f ${dict} ]; then
+  echo "There is no file such as "${dict}
+  exit 1
+fi
 
-  # Make a dictionary
-  echo "<blank> 0" > ${dict}
-  echo "<unk> 1" >> ${dict}
-  echo "<sos> 2" >> ${dict}
-  echo "<eos> 3" >> ${dict}
-  echo "<pad> 4" >> ${dict}
-  if [ ${unit} = char ]; then
-    echo "<space> 5" >> ${dict}
-  fi
-  offset=`cat ${dict} | wc -l`
-  echo "Making a dictionary..."
-  text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} \
-    --wp_model_type ${wp_model_type} --wp_model ${wp_model} | \
-    sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict} || exit 1;
-  echo "vocab size:" `cat ${dict} | wc -l`
-
-  # Compute OOV rate
-  if [ ${unit} = word ]; then
-    mkdir -p ${data}/dict/word_count ${data}/dict/oov_rate
-    echo "OOV rate:" > ${data}/dict/oov_rate/word_${vocab_size}.txt
-    for x in ${train_set} ${dev_set} ${test_set}; do
-      cut -f 2- -d " " ${data}/${x}/text | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
-        > ${data}/dict/word_count/${x}.txt || exit 1;
-      compute_oov_rate.py ${data}/dict/word_count/${x}.txt ${dict} ${x} \
-        >> ${data}/dict/oov_rate/word_${vocab_size}.txt || exit 1;
-    done
-    cat ${data}/dict/oov_rate/word_${vocab_size}.txt
-  fi
-
-  # Make datset csv files
-  mkdir -p ${data}/dataset/
-  for x in ${train_set} ${dev_set}; do
-    echo "Making a csv file for ${x}..."
-    dump_dir=${data}/dump/${x}
-    make_dataset_csv.sh --feat ${dump_dir}/feats.scp --unit ${unit} --wp_model ${wp_model} \
-      ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_model_type}${vocab_size}.csv || exit 1;
-  done
-  for x in ${test_set}; do
-    dump_dir=${data}/dump/${x}_${data_size}
-    make_dataset_csv.sh --is_test true --feat ${dump_dir}/feats.scp --unit ${unit} \
-      ${data}/${x} ${dict} > ${data}/dataset/${x}_${data_size}_${unit}${wp_model_type}${vocab_size}.csv || exit 1;
-  done
-
-  touch .done_stage_2_${data_size}_${unit}${wp_model_type}${vocab_size} && echo "Finish creating dataset (stage: 2)."
+if [ ! -f ${dict_sub} ]; then
+  echo "There is no file such as "${dict_sub}
+  exit 1
 fi
 
 
@@ -248,13 +200,17 @@ if [ ${stage} -le 4 ]; then
   CUDA_VISIBLE_DEVICES=${gpu_ids} ../../../neural_sp/bin/asr/train.py \
     --ngpus ${ngpus} \
     --train_set ${data}/dataset/${train_set}_${unit}${wp_model_type}${vocab_size}.csv \
+    --train_set_sub ${data}/dataset/${train_set}_${unit_sub}.csv \
     --dev_set ${data}/dataset/${dev_set}_${unit}${wp_model_type}${vocab_size}.csv \
-    --eval_sets ${data}/dataset/eval1_${data_size}_${unit}${wp_model_type}${vocab_size}.csv \
+    --dev_set_sub ${data}/dataset/${dev_set}_${unit_sub}.csv \
+    --eval_sets ${data}/dataset/eval1_${data_size}_${unit_sub}.csv \
     --dict ${dict} \
+    --dict_sub ${dict_sub} \
     --wp_model ${wp_model}.model \
     --config ${asr_config} \
     --model ${model_dir}/asr \
-    --label_type ${unit} || exit 1;
+    --label_type ${unit} \
+    --label_type_sub ${unit_sub} || exit 1;
     # --resume_model ${asr_resume_model} || exit 1;
     # TODO(hirofumi): send a e-mail
 

@@ -24,7 +24,7 @@ param:
     - True
     - True
     - False
-    - True
+    - False
     - False
   subsample_type: drop
   att_type: location
@@ -92,3 +92,4 @@ param:
   internal_lm: False
   rnnlm_init: False
   rnnlm_weight: 0.0
+  share_softmax: False

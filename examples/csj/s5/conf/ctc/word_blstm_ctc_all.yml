@@ -9,7 +9,6 @@ param:
   dynamic_batching: True
 
   # topology
-  model_type: attention
   conv_in_channel: 1
   conv_channels: []
   conv_kernel_sizes: []
@@ -33,22 +32,24 @@ param:
   att_conv_num_channels: 10
   att_conv_width: 201
   att_num_heads: 1
-  att_sharpening_factor: 1
+  att_sharpening_factor: 1.0
   att_sigmoid_smoothing: False
   bridge_layer: False
   dec_type: lstm
   dec_num_units: 320
+  dec_num_projs: 0
   dec_num_layers: 1
   dec_residual: False
   emb_dim: 320
   ctc_fc_list: [320]
 
   # optimization
-  batch_size: 50
+  batch_size: 60
   optimizer: adam
   learning_rate: 1e-3
   num_epochs: 25
   convert_to_sgd_epoch: 20
+  print_step: 400
 
   # initialization
   param_init: 0.1
@@ -57,15 +58,15 @@ param:
   pretrained_model: False
 
   # regularization
-  clip_grad_norm: 5
-  clip_activation_enc: 50
-  clip_activation_dec: 50
-  dropout_in: 0
+  clip_grad_norm: 5.0
+  clip_activation_enc: 50.0
+  clip_activation_dec: 50.0
+  dropout_in: 0.0
   dropout_enc: 0.2
   dropout_dec: 0.2
   dropout_emb: 0.2
   weight_decay: 1e-6
-  logits_temp: 1
+  logits_temp: 1.0
   ss_prob: 0.2
   lsm_prob: 0.1
   lsm_type: uniform
@@ -78,18 +79,7 @@ param:
   sort_stop_epoch: 100
   not_improved_patient_epoch: 5
   eval_start_epoch: 1
-  print_step: 400
 
   # MTL
-  bwd_weight: 0
-  ctc_weight: 1
-
-  # cold fusion
-  cold_fusion_type: hidden
-  rnnlm_cf: False
-
-  # RNNLM initialization & RNNLM objective
-  internal_lm: False
-  rnnlm_init: False
-  rnnlm_weight: 0
-  share_softmax: False
+  ctc_weight: 1.0
+  bwd_weight: 0.0

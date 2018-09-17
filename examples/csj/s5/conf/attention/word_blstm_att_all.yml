@@ -1,6 +1,4 @@
 param:
-  model_type: seq2seq
-
   # features
   input_type: speech
   num_splice: 1
@@ -34,7 +32,7 @@ param:
   att_conv_num_channels: 10
   att_conv_width: 201
   att_num_heads: 1
-  att_sharpening_factor: 1
+  att_sharpening_factor: 1.0
   att_sigmoid_smoothing: False
   bridge_layer: False
   dec_type: lstm
@@ -46,7 +44,7 @@ param:
   ctc_fc_list: [320]
 
   # optimization
-  batch_size: 50
+  batch_size: 60
   optimizer: adam
   learning_rate: 1e-3
   num_epochs: 25
@@ -63,19 +61,19 @@ param:
   clip_grad_norm: 5.0
   clip_activation_enc: 50.0
   clip_activation_dec: 50.0
-  dropout_in: 0
+  dropout_in: 0.0
   dropout_enc: 0.2
   dropout_dec: 0.2
   dropout_emb: 0.2
   weight_decay: 1e-6
-  logits_temp: 1
+  logits_temp: 1.0
   ss_prob: 0.2
   lsm_prob: 0.1
   lsm_type: uniform
 
   # annealing
   decay_type: per_epoch
-  decay_start_epoch: 10
+  decay_start_epoch: 5
   decay_rate: 0.9
   decay_patient_epoch: 0
   sort_stop_epoch: 100
@@ -94,4 +92,3 @@ param:
   internal_lm: False
   rnnlm_init: False
   rnnlm_weight: 0.0
-  share_softmax: False

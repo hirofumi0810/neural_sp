@@ -24,7 +24,7 @@ param:
     - True
     - True
     - False
-    - True
+    - False
     - False
   subsample_type: drop
   att_type: location
@@ -49,7 +49,7 @@ param:
   learning_rate: 1e-3
   num_epochs: 25
   convert_to_sgd_epoch: 20
-  print_step: 200
+  print_step: 400
 
   # initialization
   param_init: 0.1
@@ -73,7 +73,7 @@ param:
 
   # annealing
   decay_type: per_epoch
-  decay_start_epoch: 10
+  decay_start_epoch: 5
   decay_rate: 0.9
   decay_patient_epoch: 0
   sort_stop_epoch: 100
@@ -92,3 +92,4 @@ param:
   internal_lm: False
   rnnlm_init: False
   rnnlm_weight: 0.0
+  share_softmax: False

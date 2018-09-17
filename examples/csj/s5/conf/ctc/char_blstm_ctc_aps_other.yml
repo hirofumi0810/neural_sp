@@ -24,7 +24,7 @@ param:
     - True
     - True
     - False
-    - True
+    - False
     - False
   subsample_type: drop
   att_type: location
@@ -81,14 +81,5 @@ param:
   eval_start_epoch: 1
 
   # MTL
-  ctc_weight: 0.0
+  ctc_weight: 1.0
   bwd_weight: 0.0
-
-  # cold fusion
-  cold_fusion_type: hidden
-  rnnlm_cf: False
-
-  # RNNLM initialization & RNNLM objective
-  internal_lm: False
-  rnnlm_init: False
-  rnnlm_weight: 0.0
