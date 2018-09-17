@@ -258,12 +258,12 @@ torch.cuda.manual_seed_all(1623)
 decode_params = {
     'batch_size': 1,
     'beam_width': 1,
-    'min_len_ratio': 0,
-    'max_len_ratio': 1,
-    'length_penalty': 0,
-    'coverage_penalty': 0,
-    'coverage_threshold': 0,
-    'rnnlm_weight': 0,
+    'min_len_ratio': 0.0,
+    'max_len_ratio': 1.0,
+    'length_penalty': 0.0,
+    'coverage_penalty': 0.0,
+    'coverage_threshold': 0.0,
+    'rnnlm_weight': 0.0,
     'resolving_unk': False,
 }
 
@@ -563,12 +563,15 @@ def main():
             #         tf_writer.add_histogram(n + '/grad', p.grad.data.cpu().numpy(), step + 1)
 
             duration_step = time.time() - start_time_step
+            if args.input_type == 'speech':
+                x_len = max(len(x) for x in batch_train['xs'])
+            elif args.input_type == 'text':
+                x_len = max(len(x) for x in batch_train['ys_sub'])
             logger.info("...Step:%d(ep:%.2f) loss:%.2f(%.2f)/acc:%.2f(%.2f)/lr:%.5f/bs:%d/x_len:%d (%.2f min)" %
                         (step + 1, train_set.epoch_detail,
                          loss_train_mean, loss_dev, acc_train_mean, acc_dev,
                          learning_rate, train_set.current_batch_size,
-                         max(len(x) for x in batch_train['utt_ids']),
-                         duration_step / 60))
+                         x_len, duration_step / 60))
             start_time_step = time.time()
             loss_train_mean, acc_train_mean = 0, 0
         step += args.ngpus
