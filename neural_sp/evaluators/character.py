@@ -79,8 +79,8 @@ def eval_char(models, dataset, decode_params, epoch, progressbar=False):
 
                 # Write to trn
                 speaker = '_'.join(batch['utt_ids'][b].replace('-', '_').split('_')[:-2])
-                start = batch['utt_ids'][b].replace('-', '_').split('_')[-2]
-                end = batch['utt_ids'][b].replace('-', '_').split('_')[-1]
+                start = batch['utt_ids'][b].replace('-', '_').split('_')[-2].encode('utf-8')
+                end = batch['utt_ids'][b].replace('-', '_').split('_')[-1].encode('utf-8')
                 f_ref.write(text_ref + ' (' + speaker + '-' + start + '-' + end + ')\n')
                 f_hyp.write(text_hyp + ' (' + speaker + '-' + start + '-' + end + ')\n')
 

@@ -37,12 +37,6 @@ parser.add_argument('--corpus', type=str,
                     help='the name of corpus')
 parser.add_argument('--eval_sets', type=str, nargs='+',
                     help='path to csv files for the evaluation sets')
-parser.add_argument('--dict', type=str,
-                    help='path to a dictionary file')
-parser.add_argument('--dict_sub', type=str, default=None,
-                    help='path to a dictionary file for the sub task')
-parser.add_argument('--wp_model', type=str, default=False,
-                    help='path to of the wordpiece model')
 # decoding paramter
 parser.add_argument('--batch_size', type=int, default=1,
                     help='the size of mini-batch in evaluation')
@@ -86,7 +80,7 @@ def main():
     for i, set in enumerate(args.eval_sets):
         # Load dataset
         eval_set = Dataset(csv_path=set,
-                           dict_path=args.dict,
+                           dict_path=os.path.join(args.model, 'dict.txt'),
                            label_type=args.label_type,
                            batch_size=args.batch_size,
                            max_epoch=args.num_epochs,
@@ -159,10 +153,10 @@ def main():
             wer_mean += wer
             logger.info('  WER (%s): %.3f %%' % (eval_set.set, wer))
         elif args.label_type == 'wordpiece':
-            we, _, _, _, decode_dir = eval_wordpiece([model], eval_set, decode_params,
-                                                     args.wp_model,
-                                                     epoch=epoch - 1,
-                                                     progressbar=True)
+            wer, _, _, _, decode_dir = eval_wordpiece([model], eval_set, decode_params,
+                                                      os.path.join(args.model, 'wp.model'),
+                                                      epoch=epoch - 1,
+                                                      progressbar=True)
             wer_mean += wer
             logger.info('  WER (%s): %.3f %%' % (eval_set.set, wer))
 

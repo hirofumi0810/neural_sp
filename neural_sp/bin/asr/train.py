@@ -260,9 +260,9 @@ decode_params = {
     'beam_width': 1,
     'min_len_ratio': 0,
     'max_len_ratio': 1,
-    'len_penalty': 0,
-    'cov_penalty': 0,
-    'cov_threshold': 0,
+    'length_penalty': 0,
+    'coverage_penalty': 0,
+    'coverage_threshold': 0,
     'rnnlm_weight': 0,
     'resolving_unk': False,
 }

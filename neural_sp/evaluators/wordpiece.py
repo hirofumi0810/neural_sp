@@ -52,7 +52,7 @@ def eval_wordpiece(models, dataset, decode_params, wp_model, epoch, progressbar=
     hyp_trn_save_path = mkdir_join(model.save_path, decode_dir, 'hyp.trn')
 
     sp = spm.SentencePieceProcessor()
-    sp.Load(wp_model + '.model')
+    sp.Load(wp_model)
 
     wer = 0
     num_sub, num_ins, num_del, = 0, 0, 0
@@ -81,8 +81,8 @@ def eval_wordpiece(models, dataset, decode_params, wp_model, epoch, progressbar=
 
                 # Write to trn
                 speaker = '_'.join(batch['utt_ids'][b].replace('-', '_').split('_')[:-2])
-                start = batch['utt_ids'][b].replace('-', '_').split('_')[-2]
-                end = batch['utt_ids'][b].replace('-', '_').split('_')[-1]
+                start = batch['utt_ids'][b].replace('-', '_').split('_')[-2].encode('utf-8')
+                end = batch['utt_ids'][b].replace('-', '_').split('_')[-1].encode('utf-8')
                 f_ref.write(text_ref + ' (' + speaker + '-' + start + '-' + end + ')\n')
                 f_hyp.write(text_hyp + ' (' + speaker + '-' + start + '-' + end + ')\n')
 
