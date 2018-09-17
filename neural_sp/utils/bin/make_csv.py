@@ -69,6 +69,12 @@ def main():
             token, id = unicode(line, 'utf-8').strip().split(' ')
             token2id[token] = str(id)
 
+    id2token = {}
+    with open(args.dict, 'r') as f:
+        for line in f:
+            token, id = unicode(line, 'utf-8').strip().split(' ')
+            id2token[str(id)] = token
+
     if args.unit == 'wordpiece' and not args.is_test:
         sp = spm.SentencePieceProcessor()
         sp.Load(args.wp_model + '.model')
@@ -113,7 +119,13 @@ def main():
                             token_ids.append(token2id[args.unk])
 
                 elif args.unit == 'wordpiece':
-                    token_ids = list(map(str, sp.EncodeAsIds(text)))
+                    wps = sp.EncodeAsPieces(text)
+                    for wp in wps:
+                        if wp in token2id.keys():
+                            token_ids.append(token2id[wp])
+                        else:
+                            # Replace with <unk>
+                            token_ids.append(token2id[args.unk])
 
                 elif args.unit == 'char':
                     for i,  w in enumerate(words):
@@ -122,7 +134,7 @@ def main():
                         else:
                             for c in list(w):
                                 if c in token2id.keys():
-                                    token_ids.append(c)
+                                    token_ids.append(token2id[c])
                                 else:
                                     # Replace with <unk>
                                     token_ids.append(token2id[args.unk])
@@ -145,7 +157,7 @@ def main():
                 x_dim = kaldi_io.read_mat(feat_path).shape[-1]
             y_dim = len(token2id.keys())
 
-            print("%d,%s,%s,%d,%d,\"%s\",%s,%d,%d" %
+            print('\"%d\",\"%s\",\"%s\",\"%d\",\"%d\",\"%s\",\"%s\",\"%d\",\"%d\"' %
                   (utt_count, utt_id.encode('utf-8'), feat_path, x_len, x_dim,
                    text.encode('utf-8'), token_id.encode('utf-8'), y_len, y_dim))
             utt_count += 1

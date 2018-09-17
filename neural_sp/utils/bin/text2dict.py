@@ -44,9 +44,6 @@ def main():
                 nlsyms.append(unicode(line, 'utf-8').strip())
 
     if args.unit == 'wordpiece':
-        # TODO: CSJ
-        # words = list(map(lambda x: x.split('+')[0], words[1:]))
-
         spm.SentencePieceTrainer.Train('--input=' + args.text +
                                        ' --user_defined_symbols=' + ','.join(nlsyms) +
                                        ' --vocab_size=' + str(args.vocab_size) +
@@ -68,12 +65,9 @@ def main():
             for token in nlsyms:
                 line = line.replace(token, '')
 
-            words = line.split()
+            words = line.split()[1:]
             if '' in words:
                 words.remove('')
-
-            # for CSJ
-            words = list(map(lambda x: x.split('+')[0], words[1:]))
             text = ' '.join(words)
 
             if args.unit == 'word':
