@@ -17,6 +17,8 @@ import os
 import torch
 import torch.nn as nn
 
+np.random.seed(1)
+
 OPTIMIZER_CLS_NAMES = {
     "sgd": torch.optim.SGD,
     "momentum": torch.optim.SGD,
@@ -28,6 +30,7 @@ OPTIMIZER_CLS_NAMES = {
 }
 
 logger = logging.getLogger('training')
+logger = logging.getLogger('decoding')
 
 
 class ModelBase(nn.Module):
@@ -336,8 +339,7 @@ class ModelBase(nn.Module):
 
         # Restore optimizer
         if restart:
-            logger.info("=> Loading checkpoint (epoch:%d): %s" %
-                        (epoch, checkpoint_path))
+            logger.info("=> Loading checkpoint (epoch:%d): %s" % (epoch, checkpoint_path))
 
             if hasattr(self, 'optimizer'):
                 self.optimizer.load_state_dict(checkpoint['optimizer'])
@@ -350,8 +352,7 @@ class ModelBase(nn.Module):
             else:
                 raise ValueError('Set optimizer.')
         else:
-            print("=> Loading checkpoint (epoch:%d): %s" %
-                  (epoch, checkpoint_path))
+            logger.info("=> Loading checkpoint (epoch:%d): %s" % (epoch, checkpoint_path))
 
-        return (checkpoint['epoch'] + 1, checkpoint['step'] + 1,
+        return (epoch + 1, checkpoint['step'] + 1,
                 checkpoint['lr'], checkpoint['metric_dev_best'])

@@ -251,8 +251,8 @@ parser.add_argument('--share_softmax', type=bool, default=False,
 
 args = parser.parse_args()
 
-torch.manual_seed(1623)
-torch.cuda.manual_seed_all(1623)
+torch.manual_seed(1)
+torch.cuda.manual_seed_all(1)
 
 
 decode_params = {
@@ -415,7 +415,7 @@ def main():
         #         model.dec_0_bwd.rnnlm = rnnlm
         #     else:
         #         model.dec_0_fwd.rnnlm = rnnlm
-        # TODO: 最初にRNNLMのモデルをコピー
+        # TODO(hirofumi): 最初にRNNLMのモデルをコピー
 
         # Set save path
         save_path = mkdir_join(args.model, '_'.join(os.path.basename(args.train_set).split('.')[:-1]), model.name)
@@ -502,7 +502,9 @@ def main():
 
     # GPU setting
     if args.ngpus >= 1:
-        model = CustomDataParallel(model, device_ids=list(range(0, args.ngpus, 1)), benchmark=True)
+        model = CustomDataParallel(model,
+                                   device_ids=list(range(0, args.ngpus, 1)),
+                                   benchmark=False)
         model.cuda()
 
     logger.info('PID: %s' % os.getpid())

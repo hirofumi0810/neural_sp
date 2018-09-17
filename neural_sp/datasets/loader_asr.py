@@ -27,6 +27,7 @@ from neural_sp.datasets.token_converter.phone import Phone2idx
 from neural_sp.datasets.token_converter.word import Idx2word
 from neural_sp.datasets.token_converter.word import Word2idx
 
+np.random.seed(1)
 
 logger = logging.getLogger('training')
 

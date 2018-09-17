@@ -12,12 +12,13 @@ from __future__ import print_function
 
 import codecs
 import logging
-import numpy as np
 import random
 import six
 import time
 from torch.multiprocessing import Process
 from torch.multiprocessing import Queue
+
+random.seed(1)
 
 logger = logging.getLogger('training')
 

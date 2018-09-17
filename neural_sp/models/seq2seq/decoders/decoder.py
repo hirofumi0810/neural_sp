@@ -37,6 +37,8 @@ from neural_sp.models.utils import np2var
 from neural_sp.models.utils import pad_list
 from neural_sp.models.utils import var2np
 
+random.seed(1)
+
 
 class Decoder(nn.Module):
     """RNN decoder.
