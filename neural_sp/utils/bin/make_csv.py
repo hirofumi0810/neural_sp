@@ -54,13 +54,13 @@ def main():
     utt2feat = {}
     with open(args.feat, 'r') as f:
         for line in f:
-            utt_id, feat_path = line.strip().split(' ')
+            utt_id, feat_path = unicode(line, 'utf-8').strip().split(' ')
             utt2feat[utt_id] = feat_path
 
     utt2frame = {}
     with open(args.utt2num_frames, 'r') as f:
         for line in f:
-            utt_id, x_len = line.strip().split(' ')
+            utt_id, x_len = unicode(line, 'utf-8').strip().split(' ')
             utt2frame[utt_id] = int(x_len)
 
     token2id = {}
@@ -92,9 +92,6 @@ def main():
             words = line.split(' ')[1:]
             if '' in words:
                 words.remove('')
-
-            # for CSJ
-            words = list(map(lambda x: x.split('+')[0], words))
 
             text = ' '.join(words)
             feat_path = utt2feat[utt_id]
@@ -158,7 +155,7 @@ def main():
             y_dim = len(token2id.keys())
 
             print('\"%d\",\"%s\",\"%s\",\"%d\",\"%d\",\"%s\",\"%s\",\"%d\",\"%d\"' %
-                  (utt_count, utt_id.encode('utf-8'), feat_path, x_len, x_dim,
+                  (utt_count, utt_id.encode('utf-8'), feat_path.encode('utf-8'), x_len, x_dim,
                    text.encode('utf-8'), token_id.encode('utf-8'), y_len, y_dim))
             utt_count += 1
             pbar.update(1)

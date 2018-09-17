@@ -79,17 +79,16 @@ def eval_char(models, dataset, decode_params, epoch, progressbar=False):
 
                 # Write to trn
                 speaker = '_'.join(batch['utt_ids'][b].replace('-', '_').split('_')[:-2])
-                start = batch['utt_ids'][b].replace('-', '_').split('_')[-2].encode('utf-8')
-                end = batch['utt_ids'][b].replace('-', '_').split('_')[-1].encode('utf-8')
+                start = batch['utt_ids'][b].replace('-', '_').split('_')[-2]
+                end = batch['utt_ids'][b].replace('-', '_').split('_')[-1]
                 f_ref.write(text_ref + ' (' + speaker + '-' + start + '-' + end + ')\n')
                 f_hyp.write(text_hyp + ' (' + speaker + '-' + start + '-' + end + ')\n')
 
                 if ('character' in dataset.label_type and 'nowb' not in dataset.label_type) or (task_index > 0 and dataset.label_type_sub == 'character'):
                     # Compute WER
-                    wer_b, sub_b, ins_b, del_b = compute_wer(
-                        ref=text_ref.split(' '),
-                        hyp=text_hyp.split(' '),
-                        normalize=False)
+                    wer_b, sub_b, ins_b, del_b = compute_wer(ref=text_ref.split(' '),
+                                                             hyp=text_hyp.split(' '),
+                                                             normalize=False)
                     wer += wer_b
                     num_sub_w += sub_b
                     num_ins_w += ins_b
@@ -97,10 +96,9 @@ def eval_char(models, dataset, decode_params, epoch, progressbar=False):
                     num_words += len(text_ref.split(' '))
 
                 # Compute CER
-                cer_b, sub_b, ins_b, del_b = compute_wer(
-                    ref=list(text_ref.replace(' ', '')),
-                    hyp=list(text_hyp.replace(' ', '')),
-                    normalize=False)
+                cer_b, sub_b, ins_b, del_b = compute_wer(ref=list(text_ref.replace(' ', '')),
+                                                         hyp=list(text_hyp.replace(' ', '')),
+                                                         normalize=False)
                 cer += cer_b
                 num_sub_c += sub_b
                 num_ins_c += ins_b
