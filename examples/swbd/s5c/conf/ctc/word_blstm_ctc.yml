@@ -32,7 +32,7 @@ param:
   att_conv_num_channels: 10
   att_conv_width: 201
   att_num_heads: 1
-  att_sharpening_factor: 1
+  att_sharpening_factor: 1.0
   att_sigmoid_smoothing: False
   bridge_layer: False
   dec_type: lstm
@@ -61,12 +61,12 @@ param:
   clip_grad_norm: 5.0
   clip_activation_enc: 50.0
   clip_activation_dec: 50.0
-  dropout_in: 0
+  dropout_in: 0.0
   dropout_enc: 0.2
   dropout_dec: 0.2
   dropout_emb: 0.2
   weight_decay: 1e-6
-  logits_temp: 1
+  logits_temp: 1.0
   ss_prob: 0.2
   lsm_prob: 0.1
   lsm_type: uniform
@@ -82,14 +82,3 @@ param:
 
   # MTL
   ctc_weight: 1.0
-  bwd_weight: 0.0
-
-  # cold fusion
-  cold_fusion_type: hidden
-  rnnlm_cf: False
-
-  # RNNLM initialization & RNNLM objective
-  internal_lm: False
-  rnnlm_init: False
-  rnnlm_weight: 0.0
-  share_softmax: False

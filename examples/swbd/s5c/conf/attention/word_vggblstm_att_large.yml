@@ -34,7 +34,7 @@ param:
   att_conv_num_channels: 10
   att_conv_width: 201
   att_num_heads: 1
-  att_sharpening_factor: 1
+  att_sharpening_factor: 1.0
   att_sigmoid_smoothing: False
   bridge_layer: False
   dec_type: lstm

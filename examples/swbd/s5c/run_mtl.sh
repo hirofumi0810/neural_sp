@@ -74,9 +74,6 @@ train_set=train
 dev_set=dev
 test_set=eval2000
 
-if [ ${unit} = char ]; then
-  vocab_size=
-fi
 if [ ${unit} != wordpiece ]; then
   wp_model_type=
 fi
