@@ -151,10 +151,15 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}${wp_model_type}${vocab_siz
   fi
   offset=`cat ${dict} | wc -l`
   echo "Making a dictionary..."
-  cut -f 2- -d " " ${data}/train.en/text ${data}/train.de/text > ${data}/dict/input.txt
-  text2dict.py ${data}/dict/input.txt --unit ${unit} --vocab_size ${vocab_size} --nlsyms ${nlsyms} \
-    --wp_model_type ${wp_model_type} --wp_model ${wp_model} | \
-    sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict} || exit 1;
+  if [ ${unit} = wordpiece ]; then
+    cut -f 2- -d " " ${data}/train.en/text ${data}/train.de/text > ${data}/dict/input.txt
+    spm_train --user_defined_symbols=`cat ${nlsyms} | tr "\n" ","` --input=${data}/dict/input.txt --vocab_size=${vocab_size} --model_type=${wp_model_type} --model_prefix=${wp_model} --input_sentence_size=100000000
+    spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict}
+  else
+    text2dict.py ${data}/dict/input.txt --unit ${unit} --vocab_size ${vocab_size} --nlsyms ${nlsyms} \
+      --wp_model_type ${wp_model_type} --wp_model ${wp_model} | \
+      sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict} || exit 1;
+  fi
   echo "vocab size:" `cat ${dict} | wc -l`
   # NOTE: share the same dictinary between EN and DE
 
