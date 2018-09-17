@@ -239,7 +239,7 @@ class Decoder(nn.Module):
                                      for b in six.moves.range(len(enc_lens))], dim=0)
             else:
                 # bidirectional encoder
-                dec_out = torch.cat([(enc_out)[b:b + 1, enc_lens[b] - 1:enc_lens[b], self.num_units:]
+                dec_out = torch.cat([(enc_out)[b:b + 1, 0:1, self.num_units:]
                                      for b in six.moves.range(len(enc_lens))], dim=0)
                 # NOTE: initialize with reverse direction
             dec_out = torch.tanh(dec_out)
