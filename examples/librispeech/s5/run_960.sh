@@ -156,8 +156,9 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${data_size}_${unit}${wp_model_typ
   offset=`cat ${dict} | wc -l`
   echo "Making a dictionary..."
   if [ ${unit} = wordpiece ]; then
-    spm_train --input=${data}/${train_set}/text --vocab_size=${vocab_size} --model_type=${wp_model_type} --model_prefix=${wp_model} --input_sentence_size=100000000
-    spm_encode --model=${wp_model}.model --output_format=piece < ${data}/${train_set}/text | tr ' ' '\n' | sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict}
+    cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
+    spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_size} --model_type=${wp_model_type} --model_prefix=${wp_model} --input_sentence_size=100000000
+    spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict}
   else
     text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} \
       --wp_model_type ${wp_model_type} --wp_model ${wp_model} | \
