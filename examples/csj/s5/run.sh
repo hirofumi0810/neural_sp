@@ -111,6 +111,12 @@ if [ ${stage} -le 0 ] && [ ! -e .done_stage_0_${data_size} ]; then
     local/csj_eval_data_prep.sh ${data}/csj-data/eval ${x} || exit 1;
   done
 
+  # Remove <sp> and POS tag
+  for x in ${train_set} ${dev_set} ${test_set}; do
+    local/remove_pos.py ${data}/${x}/text > ${data}/${x}/text.tmp
+    mv ${data}/${x}/text.tmp ${data}/${x}/text
+  done
+
   touch .done_stage_0_${data_size} && echo "Finish data preparation (stage: 0)."
 fi
 
@@ -164,12 +170,6 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${data_size}_${unit}${wp_model_typ
   echo "                      Dataset preparation (stage:2)                        "
   echo ============================================================================
 
-  # Remove <sp> and POS tag
-  for x in ${train_set} ${dev_set} ${test_set}; do
-    local/remove_pos.py ${data}/${x}/text > ${data}/${x}/text.tmp
-    mv ${data}/${x}/text.tmp ${data}/${x}/text
-  done
-
   # Make a dictionary
   echo "<blank> 0" > ${dict}
   echo "<unk> 1" >> ${dict}
@@ -181,9 +181,14 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${data_size}_${unit}${wp_model_typ
   fi
   offset=`cat ${dict} | wc -l`
   echo "Making a dictionary..."
-  text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} \
-    --wp_model_type ${wp_model_type} --wp_model ${wp_model} | \
-    sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict} || exit 1;
+  if [ ${unit} = wordpiece ]; then
+    spm_train --input=${data}/${train_set}/text --vocab_size=${vocab_size} --model_type=${wp_model_type} --model_prefix=${wp_model} --input_sentence_size=100000000
+    spm_encode --model=${wp_model}.model --output_format=piece < ${data}/${train_set}/text | tr ' ' '\n' | sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict}
+  else
+    text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} \
+      --wp_model_type ${wp_model_type} --wp_model ${wp_model} | \
+      sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict} || exit 1;
+  fi
   echo "vocab size:" `cat ${dict} | wc -l`
 
   # Compute OOV rate

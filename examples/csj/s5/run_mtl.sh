@@ -108,6 +108,12 @@ if [ ${stage} -le 0 ] && [ ! -e .done_stage_0_${data_size} ]; then
     local/csj_eval_data_prep.sh ${data}/csj-data/eval ${x} || exit 1;
   done
 
+  # Remove <sp> and POS tag
+  for x in ${train_set} ${dev_set} ${test_set}; do
+    local/remove_pos.py ${data}/${x}/text > ${data}/${x}/text.tmp
+    mv ${data}/${x}/text.tmp ${data}/${x}/text
+  done
+
   touch .done_stage_0_${data_size} && echo "Finish data preparation (stage: 0)."
 fi
 
