@@ -425,6 +425,8 @@ def main():
 
         # Save the dictionary & wp_model
         shutil.copy(args.dict, os.path.join(save_path, 'dict.txt'))
+        if args.dict_ is not None:
+            shutil.copy(args.dict_sub, os.path.join(save_path, 'dict_sub.txt'))
         if args.label_type == 'wordpiece':
             shutil.copy(args.wp_model, os.path.join(save_path, 'wp.model'))
 
