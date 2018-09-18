@@ -7,25 +7,8 @@ echo ===========================================================================
 echo "                                IWSLT18                                   "
 echo ============================================================================
 
-if [ $# -lt 1 ]; then
-  echo "Error: set GPU number." 1>&2
-  echo "Usage: ./run.sh gpu_id1 gpu_id2... (arbitrary number)" 1>&2
-  exit 1
-fi
-
-ngpus=`expr $#`
-gpu_ids=$1
-
-if [ $# -gt 2 ]; then
-  rest_ngpus=`expr $ngpus - 1`
-  for i in `seq 1 $rest_ngpus`
-  do
-    gpu_ids=$gpu_ids","${3}
-    shift
-  done
-fi
-
 stage=0
+gpu=
 
 ### path to save dataset
 export data=/n/sd8/inaguma/corpus/iwslt18
@@ -202,8 +185,7 @@ if [ ${stage} -le 4 ]; then
 
   echo "Start ASR training..."
 
-  # export CUDA_LAUNCH_BLOCKING=1
-  CUDA_VISIBLE_DEVICES=${gpu_ids} ../../../neural_sp/bin/asr/train.py \
+  CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/train.py \
     --ngpus ${ngpus} \
     --train_set ${data}/dataset/${train_set}_${unit}${wp_model_type}${vocab_size}.csv \
     --dev_set ${data}/dataset/${dev_set}_${unit}${wp_model_type}${vocab_size}.csv \
@@ -213,7 +195,6 @@ if [ ${stage} -le 4 ]; then
     --model ${model_dir}/asr \
     --label_type ${unit} || exit 1;
     # --resume_model ${resume_model} || exit 1;
-    # TODO(hirofumi): send a e-mail
 
   touch ${model}/.done_training && echo "Finish ASR training (stage: 4)."
 fi

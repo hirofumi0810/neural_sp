@@ -7,25 +7,8 @@ echo ===========================================================================
 echo "                                IWSLT18                                   "
 echo ============================================================================
 
-if [ $# -lt 1 ]; then
-  echo "Error: set GPU number." 1>&2
-  echo "Usage: ./run.sh gpu_id1 gpu_id2... (arbitrary number)" 1>&2
-  exit 1
-fi
-
-ngpus=`expr $#`
-gpu_ids=$1
-
-if [ $# -gt 2 ]; then
-  rest_ngpus=`expr $ngpus - 1`
-  for i in `seq 1 $rest_ngpus`
-  do
-    gpu_ids=$gpu_ids","${3}
-    shift
-  done
-fi
-
 stage=0
+gpu=
 
 ### path to save dataset
 export data=/n/sd8/inaguma/corpus/iwslt18
@@ -59,6 +42,14 @@ config=conf/mt/${unit}_blstm_att.yml
 set -e
 set -u
 set -o pipefail
+
+if [ -z $gpu ]; then
+  echo "Error: set GPU number." 1>&2
+  echo "Usage: ./run.sh --gpu 0" 1>&2
+  exit 1
+fi
+ngpus=`echo $gpu | tr "," "\n" | wc -l`
+rnnlm_gpu=`echo $gpu | cut -d "," -f 1`
 
 train_set=train.de
 dev_set=dev.de
@@ -145,8 +136,7 @@ if [ ${stage} -le 4 ]; then
 
   echo "Start MT training..."
 
-  # export CUDA_LAUNCH_BLOCKING=1
-  CUDA_VISIBLE_DEVICES=${gpu_ids} ../../../neural_sp/bin/asr/train.py \
+  CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/train.py \
     --ngpus ${ngpus} \
     --train_set ${data}/dataset/${train_set}_${unit}${wp_model_type}${vocab_size}.csv \
     --train_set_sub ${data}/dataset/train.en_${unit}${wp_model_type}${vocab_size}.csv \
@@ -160,7 +150,6 @@ if [ ${stage} -le 4 ]; then
     --label_type ${unit} \
     --metric loss || exit 1;
     # --resume_model ${resume_model} || exit 1;
-    # TODO(hirofumi): send a e-mail
 
   touch ${model}/.done_training && echo "Finish MT training (stage: 4)."
 fi

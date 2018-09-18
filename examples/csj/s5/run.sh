@@ -7,25 +7,8 @@ echo ===========================================================================
 echo "                                   CSJ                                     "
 echo ============================================================================
 
-if [ $# -lt 1 ]; then
-  echo "Error: set GPU number." 1>&2
-  echo "Usage: ./run.sh gpu_id1 gpu_id2... (arbitrary number)" 1>&2
-  exit 1
-fi
-
-ngpus=`expr $#`
-gpu_ids=$1
-
-if [ $# -gt 2 ]; then
-  rest_ngpus=`expr $ngpus - 1`
-  for i in `seq 1 $rest_ngpus`
-  do
-    gpu_ids=$gpu_ids","${3}
-    shift
-  done
-fi
-
 stage=0
+gpu=
 
 ### path to save dataset
 export data=/n/sd8/inaguma/corpus/csj
@@ -48,7 +31,7 @@ model_dir=/n/sd8/inaguma/result/csj
 
 ### path to the model directory to restart training
 rnnlm_resume_model=
-asr_resume_model=
+resume_model=
 
 ### path to original data
 CSJDATATOP=/n/rd25/mimura/corpus/CSJ  ## CSJ database top directory.
@@ -76,8 +59,8 @@ export data_size=all
 
 ### configuration
 rnnlm_config=conf/rnnlm/${unit}_lstm_rnnlm_all.yml
-asr_config=conf/attention/${unit}_blstm_att_${data_size}.yml
-# asr_config=conf/ctc/${unit}_blstm_ctc_${data_size}.yml
+config=conf/attention/${unit}_blstm_att_${data_size}.yml
+# config=conf/ctc/${unit}_blstm_ctc_${data_size}.yml
 
 . ./cmd.sh
 . ./path.sh
@@ -86,6 +69,14 @@ asr_config=conf/attention/${unit}_blstm_att_${data_size}.yml
 set -e
 set -u
 set -o pipefail
+
+if [ -z $gpu ]; then
+  echo "Error: set GPU number." 1>&2
+  echo "Usage: ./run.sh --gpu 0" 1>&2
+  exit 1
+fi
+ngpus=`echo $gpu | tr "," "\n" | wc -l`
+rnnlm_gpu=`echo $gpu | cut -d "," -f 1`
 
 train_set=train_${data_size}
 dev_set=dev_${data_size}
@@ -231,7 +222,7 @@ if [ ${stage} -le 3 ]; then
   echo "Start RNNLM training..."
 
   # NOTE: support only a single GPU for RNNLM training
-  # CUDA_VISIBLE_DEVICES=${gpu_ids} ../../../src/bin/lm/train.py \
+  # CUDA_VISIBLE_DEVICES=${rnnlm_gpu} ../../../src/bin/lm/train.py \
   #   --ngpus 1 \
   #   --train_set ${data}/dataset/${train_set}.csv \
   #   --dev_set ${data}/dataset/${dev_set}.csv \
@@ -249,19 +240,17 @@ if [ ${stage} -le 4 ]; then
 
   echo "Start ASR training..."
 
-  # export CUDA_LAUNCH_BLOCKING=1
-  CUDA_VISIBLE_DEVICES=${gpu_ids} ../../../neural_sp/bin/asr/train.py \
+  CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/train.py \
     --ngpus ${ngpus} \
     --train_set ${data}/dataset/${train_set}_${unit}${wp_model_type}${vocab_size}.csv \
     --dev_set ${data}/dataset/${dev_set}_${unit}${wp_model_type}${vocab_size}.csv \
     --eval_sets ${data}/dataset/eval1_${data_size}_${unit}${wp_model_type}${vocab_size}.csv \
     --dict ${dict} \
     --wp_model ${wp_model}.model \
-    --config ${asr_config} \
+    --config ${config} \
     --model ${model_dir}/asr \
     --label_type ${unit} || exit 1;
-    # --resume_model ${asr_resume_model} || exit 1;
-    # TODO(hirofumi): send a e-mail
+    # --resume_model ${resume_model} || exit 1;
 
   touch ${model}/.done_training && echo "Finish model training (stage: 4)."
 fi

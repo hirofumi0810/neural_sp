@@ -7,38 +7,21 @@ echo ===========================================================================
 echo "                                  TIMIT                                    "
 echo ============================================================================
 
-if [ $# -lt 1 ]; then
-  echo "Error: set GPU number." 1>&2
-  echo "Usage: ./run.sh gpu_id1 gpu_id2... (arbitrary number)" 1>&2
-  exit 1
-fi
-
-ngpus=`expr $#`
-gpu_ids=$1
-
-if [ $# -gt 2 ]; then
-  rest_ngpus=`expr $ngpus - 1`
-  for i in `seq 1 $rest_ngpus`
-  do
-    gpu_ids=$gpu_ids","${3}
-    shift
-  done
-fi
-
 stage=0
+gpu=
 
 ### Set path to save dataset
 export data=/n/sd8/inaguma/corpus/timit
 
 ### configuration
-asr_config=conf/attention/bgru_att_phone61.yml
-# asr_config=conf/ctc/blstm_ctc_phone61.yml
+config=conf/attention/bgru_att_phone61.yml
+# config=conf/ctc/blstm_ctc_phone61.yml
 
 ### Set path to save the model
 model_dir=/n/sd8/inaguma/result/timit
 
 ### Restart training (path to the saved model directory)
-asr_resume_model=
+resume_model=
 
 ### Set path to original data
 TIMITDATATOP=/n/rd21/corpora_1/TIMIT
@@ -50,6 +33,14 @@ TIMITDATATOP=/n/rd21/corpora_1/TIMIT
 set -e
 set -u
 set -o pipefail
+
+if [ -z $gpu ]; then
+  echo "Error: set GPU number." 1>&2
+  echo "Usage: ./run.sh --gpu 0" 1>&2
+  exit 1
+fi
+ngpus=`echo $gpu | tr "," "\n" | wc -l`
+rnnlm_gpu=`echo $gpu | cut -d "," -f 1`
 
 train_set=train
 dev_set=dev
@@ -138,17 +129,16 @@ if [ ${stage} -le 4 ]; then
 
   echo "Start ASR training..."
 
-  CUDA_VISIBLE_DEVICES=${gpu_ids} ../../../neural_sp/bin/asr/train.py \
+  CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/train.py \
     --ngpus ${ngpus} \
     --train_set ${data}/dataset/${train_set}.csv \
     --dev_set ${data}/dataset/${dev_set}.csv \
     --eval_sets ${data}/dataset/${test_set}.csv \
     --dict ${dict} \
-    --config ${asr_config} \
-    --model ${model_dir} \
+    --config ${config} \
+    --model ${model_dir}/asr \
     --label_type phone || exit 1;
-    # --resume_model ${asr_resume_model} || exit 1;
-    # TODO(hirofumi): send a e-mail
+    # --resume_model ${resume_model} || exit 1;
 
   touch ${model}/.done_training && echo "Finish model training (stage: 4)."
 fi
