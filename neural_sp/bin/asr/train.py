@@ -254,7 +254,6 @@ args = parser.parse_args()
 torch.manual_seed(1)
 torch.cuda.manual_seed_all(1)
 
-
 decode_params = {
     'batch_size': 1,
     'beam_width': 1,
@@ -504,8 +503,8 @@ def main():
     if args.ngpus >= 1:
         model = CustomDataParallel(model,
                                    device_ids=list(range(0, args.ngpus, 1)),
-                                   deterministic=True,
-                                   benchmark=False)
+                                   deterministic=False,
+                                   benchmark=True)
         model.cuda()
 
     logger.info('PID: %s' % os.getpid())
