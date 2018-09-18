@@ -598,11 +598,11 @@ def main():
                 if args.metric == 'ler':
                     if args.label_type == 'word':
                         metric_dev = eval_word([model.module], dev_set, decode_params,
-                                               epoch=epoch + 1)[0]
+                                               epoch=epoch)[0]
                         logger.info('  WER (%s): %.3f %%' % (dev_set.set, metric_dev))
                     elif args.label_type == 'wordpiece':
                         metric_dev = eval_wordpiece([model.module], dev_set, decode_params,
-                                                    args.wp_model, epoch=epoch + 1)[0]
+                                                    args.wp_model, epoch=epoch)[0]
                         logger.info('  WER (%s): %.3f %%' % (dev_set.set, metric_dev))
                     elif 'char' in args.label_type:
                         metric_dev = eval_char([model.module], dev_set, decode_params,
@@ -610,7 +610,7 @@ def main():
                         logger.info('  CER (%s): %.3f %%' % (dev_set.set, metric_dev))
                     elif 'phone' in args.label_type:
                         metric_dev = eval_phone([model.module], dev_set, decode_params,
-                                                epoch=epoch + 1)[0]
+                                                epoch=epoch)[0]
                         logger.info('  PER (%s): %.3f %%' % (dev_set.set, metric_dev))
                 elif args.metric == 'loss':
                     metric_dev = eval_loss([model.module], dev_set, decode_params)
@@ -639,11 +639,11 @@ def main():
                         if args.metric == 'ler':
                             if args.label_type == 'word':
                                 wer_test = eval_word([model.module], eval_set, decode_params,
-                                                     epoch=epoch + 1)[0]
+                                                     epoch=epoch)[0]
                                 logger.info('  WER (%s): %.3f %%' % (eval_set.set, wer_test))
                             elif args.label_type == 'wordpiece':
                                 wer_test = eval_wordpiece([model.module], eval_set, decode_params,
-                                                          epoch=epoch + 1)[0]
+                                                          epoch=epoch)[0]
                                 logger.info('  WER (%s): %.3f %%' % (eval_set.set, wer_test))
                             elif 'char' in args.label_type:
                                 cer_test = eval_char([model.module], eval_set, decode_params,
@@ -651,7 +651,7 @@ def main():
                                 logger.info('  CER (%s): %.3f / %.3f %%' % (eval_set.set, cer_test))
                             elif 'phone' in args.label_type:
                                 per_test = eval_phone([model.module], eval_set, decode_params,
-                                                      epoch=epoch + 1)[0]
+                                                      epoch=epoch)[0]
                                 logger.info('  PER (%s): %.3f %%' % (eval_set.set, per_test))
                         elif args.metric == 'loss':
                             loss_test = eval_loss([model.module], eval_set, decode_params)
