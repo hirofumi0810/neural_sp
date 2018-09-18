@@ -24,5 +24,3 @@ sed -e "s/<eos>/ /g" ${decode_dir}/hyp.trn.filt > ${decode_dir}/hyp.trn.filt.cle
 
 sclite -r ${decode_dir}/ref.trn trn -h ${decode_dir}/hyp.trn trn -i rm -o all stdout > ${decode_dir}/result.txt
 grep -e Avg -e SPKR -m 2 ${decode_dir}/result.txt
-
-# $hubscr -p $hubdir -V -l english -h hub5 -g $decode_dir/scoring/glm_39phn -r $decode_dir/score_LMWT/stm_39phn $decode_dir/score_LMWT/ctm_39phn
