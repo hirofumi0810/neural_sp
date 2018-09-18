@@ -1,4 +1,4 @@
-parent: ./conf/attention/word_blstm_att_960.yml
+parent: ./conf/attention/wordpiece_blstm_att.yml
 param:
   # topology
   enc_type: blstm
@@ -20,7 +20,7 @@ param:
   learning_rate: 1e-3
   num_epochs: 25
   convert_to_sgd_epoch: 20
-  print_step: 500
+  print_step: 200
 
   # initialization
   pretrained_model_path: False

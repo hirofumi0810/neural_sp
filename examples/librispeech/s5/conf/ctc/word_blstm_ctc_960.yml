@@ -1,6 +1,4 @@
 param:
-  model_type: seq2seq
-
   # features
   input_type: speech
   num_splice: 1
@@ -80,7 +78,7 @@ param:
   decay_patient_epoch: 0
   sort_stop_epoch: 100
   not_improved_patient_epoch: 1
-  eval_start_epoch: 1
+  eval_start_epoch: 2
 
   # MTL
   ctc_weight: 1.0
@@ -94,4 +92,3 @@ param:
   internal_lm: False
   rnnlm_init: False
   rnnlm_weight: 0.0
-  share_softmax: False

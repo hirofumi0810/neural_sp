@@ -1,7 +1,4 @@
-parent: ./conf/attention/bgru_att_phone61.yml
 param:
-  model_type: seq2seq
-
   # features
   input_type: speech
   num_splice: 1
@@ -35,7 +32,7 @@ param:
   att_conv_num_channels: 10
   att_conv_width: 201
   att_num_heads: 1
-  att_sharpening_factor: 1
+  att_sharpening_factor: 1.0
   att_sigmoid_smoothing: False
   bridge_layer: False
   dec_type: gru
@@ -54,7 +51,6 @@ param:
   convert_to_sgd_epoch: 40
   print_step: 10
 
-
   # initialization
   param_init: 0.1
   param_init_dist: uniform
@@ -70,7 +66,7 @@ param:
   dropout_dec: 0.2
   dropout_emb: 0.2
   weight_decay: 1e-6
-  logits_temp: 1
+  logits_temp: 1.0
   ss_prob: 0.2
   lsm_prob: 0.1
   lsm_type: uniform
@@ -86,4 +82,3 @@ param:
 
   # MTL
   ctc_weight: 1.0
-  bwd_weight: 0.0

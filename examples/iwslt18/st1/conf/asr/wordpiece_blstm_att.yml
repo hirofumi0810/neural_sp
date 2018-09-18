@@ -44,7 +44,7 @@ param:
   ctc_fc_list: [320]
 
   # optimization
-  batch_size: 50
+  batch_size: 40
   optimizer: adam
   learning_rate: 1e-3
   num_epochs: 25
@@ -92,4 +92,3 @@ param:
   internal_lm: False
   rnnlm_init: False
   rnnlm_weight: 0.0
-  share_softmax: False

@@ -96,4 +96,3 @@ param:
   internal_lm: False
   rnnlm_init: False
   rnnlm_weight: 0.0
-  share_softmax: False
