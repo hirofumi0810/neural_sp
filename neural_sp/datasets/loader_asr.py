@@ -209,7 +209,7 @@ class Dataset(Base):
 
         # output
         if self.is_test:
-            ys = [self.df['text'][i] for i in utt_indices]
+            ys = [self.df['text'][i].encode('utf-8') for i in utt_indices]
             # NOTE: ys is a list of text
         else:
             ys = [list(map(int, self.df['token_id'][i].split())) for i in utt_indices]
@@ -217,7 +217,7 @@ class Dataset(Base):
 
         if self.df_sub is not None:
             if self.is_test:
-                ys_sub = [self.df_sub['text'][i] for i in utt_indices]
+                ys_sub = [self.df_sub['text'][i].encode('utf-8') for i in utt_indices]
                 # NOTE: ys_sub is a list of text
             else:
                 ys_sub = [list(map(int, self.df_sub['token_id'][i].split())) for i in utt_indices]
@@ -225,7 +225,7 @@ class Dataset(Base):
         else:
             ys_sub, y_lens_sub = [], []
 
-        utt_ids = [self.df['utt_id'][i] for i in utt_indices]
+        utt_ids = [self.df['utt_id'][i].encode('utf-8') for i in utt_indices]
 
         return {'xs': xs, 'x_lens': x_lens,
                 'ys': ys, 'y_lens': y_lens,
