@@ -504,6 +504,7 @@ def main():
     if args.ngpus >= 1:
         model = CustomDataParallel(model,
                                    device_ids=list(range(0, args.ngpus, 1)),
+                                   deterministic=True,
                                    benchmark=False)
         model.cuda()
 

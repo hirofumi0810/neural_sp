@@ -126,7 +126,7 @@ class ModelBase(nn.Module):
                 noise = noise.cuda(self.device_id)
             param.data += noise
 
-    def set_cuda(self, deterministic=False, benchmark=True):
+    def set_cuda(self, deterministic=True, benchmark=False):
         """Set model to the GPU version.
 
         Args:
