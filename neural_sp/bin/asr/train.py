@@ -425,7 +425,7 @@ def main():
 
         # Save the dictionary & wp_model
         shutil.copy(args.dict, os.path.join(save_path, 'dict.txt'))
-        if args.dict_ is not None:
+        if args.dict_sub is not None:
             shutil.copy(args.dict_sub, os.path.join(save_path, 'dict_sub.txt'))
         if args.label_type == 'wordpiece':
             shutil.copy(args.wp_model, os.path.join(save_path, 'wp.model'))
@@ -536,8 +536,8 @@ def main():
     start_time_train = time.time()
     start_time_epoch = time.time()
     start_time_step = time.time()
-    not_improved_epoch = 0
-    loss_train_mean, acc_train_mean = 0, 0
+    not_improved_epoch = 0.
+    loss_train_mean, acc_train_mean = 0., 0.
     pbar_epoch = tqdm(total=len(train_set))
     pbar_all = tqdm(total=len(train_set) * args.num_epochs)
     while True:
@@ -679,7 +679,7 @@ def main():
                     # Convert to fine-tuning stage
                     model.module.set_optimizer(
                         'sgd',
-                        learning_rate_init=float(args.learning_rate),
+                        learning_rate_init=float(args.learning_rate),  # TODO: ?
                         weight_decay=float(args.weight_decay),
                         clip_grad_norm=args.clip_grad_norm,
                         lr_schedule=False,
