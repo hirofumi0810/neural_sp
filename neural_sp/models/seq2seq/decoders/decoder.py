@@ -137,7 +137,7 @@ class Decoder(nn.Module):
             # Fully-connected layers for CTC
             if len(ctc_fc_list) > 0:
                 fc_layers = OrderedDict()
-                for i in range(len(ctc_fc_list)):
+                for i in six.moves.range(len(ctc_fc_list)):
                     input_dim = enc_num_units if i == 0 else ctc_fc_list[i - 1]
                     fc_layers['fc' + str(i)] = LinearND(input_dim, ctc_fc_list[i],
                                                         dropout=dropout_dec)

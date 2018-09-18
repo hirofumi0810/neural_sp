@@ -105,20 +105,21 @@ class Dataset(Base):
             self.num_classes_sub = self.count_vocab_size(dict_path_sub)
 
             # Set index converter
-            if label_type == 'wordpiece':
-                self.idx2word = Idx2word(dict_path_sub)
-                self.word2idx = Word2idx(dict_path_sub)
-            elif label_type_sub == 'char':
-                self.idx2char = Idx2char(dict_path_sub)
-                self.char2idx = Char2idx(dict_path_sub)
-            elif label_type_sub == 'char_capital_divide':
-                self.idx2char = Idx2char(dict_path_sub, capital_divide=True)
-                self.char2idx = Char2idx(dict_path_sub, capital_divide=True)
-            elif 'phone' in label_type_sub:
-                self.idx2phone = Idx2phone(dict_path_sub)
-                self.phone2idx = Phone2idx(dict_path_sub)
-            else:
-                raise ValueError(label_type_sub)
+            if label_type_sub is not None:
+                if label_type == 'wordpiece':
+                    self.idx2word = Idx2word(dict_path_sub)
+                    self.word2idx = Word2idx(dict_path_sub)
+                elif label_type_sub == 'char':
+                    self.idx2char = Idx2char(dict_path_sub)
+                    self.char2idx = Char2idx(dict_path_sub)
+                elif label_type_sub == 'char_capital_divide':
+                    self.idx2char = Idx2char(dict_path_sub, capital_divide=True)
+                    self.char2idx = Char2idx(dict_path_sub, capital_divide=True)
+                elif 'phone' in label_type_sub:
+                    self.idx2phone = Idx2phone(dict_path_sub)
+                    self.phone2idx = Phone2idx(dict_path_sub)
+                else:
+                    raise ValueError(label_type_sub)
         else:
             self.num_classes_sub = -1
 

@@ -81,6 +81,8 @@ def main():
         # Load dataset
         eval_set = Dataset(csv_path=set,
                            dict_path=os.path.join(args.model, 'dict.txt'),
+                           dict_path_sub=os.path.join(args.model, 'dict_sub.txt') if os.path.isfile(
+                               os.path.join(args.model, 'dict_sub.txt')) else None,
                            label_type=args.label_type,
                            batch_size=args.batch_size,
                            max_epoch=args.num_epochs,
