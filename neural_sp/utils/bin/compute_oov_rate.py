@@ -37,8 +37,9 @@ def main():
         for line in f:
             count, w = unicode(line, 'utf-8').strip().split(' ')
 
-            # for CSJ
-            w = w.split('+')[0]
+            # For swbd
+            if w == '(%hesitation)':
+                continue
 
             num_words += int(count)
             if w not in token_set:
