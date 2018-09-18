@@ -41,7 +41,7 @@ def eval_loss(models, dataset, decode_params, progressbar=False):
         loss, loss_acc_fwd, loss_acc_bwd, loss_acc_sub = model(
             batch['xs'], batch['ys'], batch['ys_sub'], is_eval=True)
 
-        total_loss += loss * len(batch['utt_ids'])
+        total_loss += loss.item() * len(batch['utt_ids'])
 
         if progressbar:
             pbar.update(len(batch['utt_ids']))
