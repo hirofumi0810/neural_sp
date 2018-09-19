@@ -50,32 +50,22 @@ class Base(object):
         return len(self.df)
 
     def __getitem__(self, index):
-        feature = self.load_npy(self.df['input_path'][index])
-        transcript = self.df['transcript'][index]
-        return (feature, transcript)
+        raise NotImplementedError()
 
     def __iter__(self):
         """Returns self."""
         return self
 
     @property
-    def pad_value(self):
-        return -1 if not self.is_test else None
-
-    @property
     def epoch_detail(self):
         # Floating point version of epoch
-        return self.epoch + self.offset / len(self)
-
-    @property
-    def current_batch_size(self):
-        return self._current_batch_size
+        return self.epoch + (self.offset / len(self))
 
     def __next__(self, batch_size=None):
         """Generate each mini-batch.
 
         Args:
-            batch_size (int, optional): the size of mini-batch
+            batch_size (int): the size of mini-batch
         Returns:
             batch (tuple):
             is_new_epoch (bool): If true, 1 epoch is finished
@@ -86,11 +76,10 @@ class Base(object):
 
         if self.num_enques is None:
             if self.max_epoch is not None and self.epoch >= self.max_epoch:
-                raise StopIteration
+                raise StopIteration()
             # NOTE: max_epoch == None means infinite loop
 
             data_indices, is_new_epoch = self.sample_index(batch_size)
-            self._current_batch_size = len(data_indices)
             batch = self.make_batch(data_indices)
             self.iteration += len(data_indices)
         else:
@@ -103,7 +92,7 @@ class Base(object):
                 # Clean up multiprocessing
                 self.preloading_process.terminate()
                 self.preloading_process.join()
-                raise StopIteration
+                raise StopIteration()
             # NOTE: max_epoch == None means infinite loop
 
             # Enqueue mini-batches
@@ -112,7 +101,6 @@ class Base(object):
                 self.is_new_epoch_list = []
                 for _ in six.moves.range(self.num_enques):
                     data_indices, is_new_epoch = self.sample_index(batch_size)
-                    self._current_batch_size = len(data_indices)
                     self.data_indices_list.append(data_indices)
                     self.is_new_epoch_list.append(is_new_epoch)
                 self.preloading_process = Process(self.preloading_loop,
@@ -153,10 +141,7 @@ class Base(object):
         if self.sort_by_input_length or not self.shuffle:
             if self.sort_by_input_length:
                 # Change batch size dynamically
-                if hasattr(self, 'df_in'):
-                    min_num_frames_batch = self.df_in[self.offset:self.offset + 1]['x_len'].values[0]
-                else:
-                    min_num_frames_batch = self.df[self.offset:self.offset + 1]['x_len'].values[0]
+                min_num_frames_batch = self.df[self.offset:self.offset + 1]['x_len'].values[0]
                 _batch_size = self.select_batch_size(batch_size, min_num_frames_batch)
             else:
                 _batch_size = batch_size

@@ -41,7 +41,7 @@ RT03_PATH=
 FISHER_PATH=
 
 ### configuration
-rnnlm_config=conf/${unit}_lstm_rnnlm.yml
+rnnlm_config=conf/rnnlm/${unit}_lstm_rnnlm.yml
 config=conf/attention/${unit}_blstm_att_${unit_sub}_ctc.yml
 # config=conf/ctc/${unit}_blstm_ctc_${unit_sub}_ctc.yml
 
@@ -163,6 +163,19 @@ if [ ${stage} -le 3 ]; then
 
   echo "Start RNNLM training..."
 
+  # NOTE: support only a single GPU for RNNLM training
+  CUDA_VISIBLE_DEVICES=${rnnlm_gpu} ../../../neural_sp/bin/lm/train.py \
+    --ngpus 1 \
+    --train_set ${data}/dataset/${train_set}_${unit}${wp_model_type}${vocab_size}.csv \
+    --dev_set ${data}/dataset/${dev_set}_${unit}${wp_model_type}${vocab_size}.csv \
+    --dict ${dict} \
+    --wp_model ${wp_model}.model \
+    --config ${rnnlm_config} \
+    --model ${model_dir}/rnnlm \
+    --label_type ${unit} || exit 1;
+    # --resume_model ${resume_model} || exit 1;
+
+  echo "Finish RNNLM training (stage: 3)."
 fi
 
 
@@ -188,5 +201,5 @@ if [ ${stage} -le 4 ]; then
     --label_type_sub ${unit_sub} || exit 1;
     # --resume_model ${resume_model} || exit 1;
 
-  touch ${model}/.done_training && echo "Finish model training (stage: 4)."
+  echo "Finish model training (stage: 4)."
 fi

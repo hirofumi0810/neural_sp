@@ -39,7 +39,7 @@ RT03_PATH=
 FISHER_PATH=
 
 ### configuration
-rnnlm_config=conf/${unit}_lstm_rnnlm.yml
+rnnlm_config=conf/rnnlm/${unit}_lstm_rnnlm.yml
 config=conf/attention/${unit}_blstm_att.yml
 # config=conf/attention/${unit}_vggblstm_att.yml
 # config=conf/attention/${unit}_vggblstm_att_large.yml
@@ -237,8 +237,8 @@ if [ ${stage} -le 3 ]; then
   # NOTE: support only a single GPU for RNNLM training
   CUDA_VISIBLE_DEVICES=${rnnlm_gpu} ../../../neural_sp/bin/lm/train.py \
     --ngpus 1 \
-    --train_set ${data}/dataset/${train_set}.csv \
-    --dev_set ${data}/dataset/${dev_set}.csv \
+    --train_set ${data}/dataset/${train_set}_${unit}${wp_model_type}${vocab_size}.csv \
+    --dev_set ${data}/dataset/${dev_set}_${unit}${wp_model_type}${vocab_size}.csv \
     --dict ${dict} \
     --wp_model ${wp_model}.model \
     --config ${rnnlm_config} \
@@ -248,7 +248,7 @@ if [ ${stage} -le 3 ]; then
 
   exit 1
 
-  echo "Finish model training (stage: 3)."
+  echo "Finish RNNLM training (stage: 3)."
 fi
 
 

@@ -43,6 +43,14 @@ set -e
 set -u
 set -o pipefail
 
+if [ -z $gpu ]; then
+  echo "Error: set GPU number." 1>&2
+  echo "Usage: ./run.sh --gpu 0" 1>&2
+  exit 1
+fi
+ngpus=`echo $gpu | tr "," "\n" | wc -l`
+rnnlm_gpu=`echo $gpu | cut -d "," -f 1`
+
 train_set=train.en
 dev_set=dev.en
 recog_set="dev2010.en tst2010.en tst2013.en tst2014.en tst2015.en"
@@ -175,6 +183,30 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}${wp_model_type}${vocab_siz
   # done
 
   touch .done_stage_2_${unit}${wp_model_type}${vocab_size}.en && echo "Finish creating dataset (stage: 2)."
+fi
+
+
+mkdir -p ${model_dir}
+if [ ${stage} -le 3 ]; then
+  echo ============================================================================
+  echo "                      RNNLM Training stage (stage:3)                       "
+  echo ============================================================================
+
+  echo "Start RNNLM training..."
+
+  # NOTE: support only a single GPU for RNNLM training
+  CUDA_VISIBLE_DEVICES=${rnnlm_gpu} ../../../neural_sp/bin/lm/train.py \
+    --ngpus 1 \
+    --train_set ${data}/dataset/${train_set}_${unit}${wp_model_type}${vocab_size}.csv \
+    --dev_set ${data}/dataset/${dev_set}_${unit}${wp_model_type}${vocab_size}.csv \
+    --dict ${dict} \
+    --wp_model ${wp_model}.model \
+    --config ${rnnlm_config} \
+    --model ${model_dir}/rnnlm \
+    --label_type ${unit} || exit 1;
+    # --resume_model ${resume_model} || exit 1;
+
+  echo "Finish RNNLM training (stage: 3)."
 fi
 
 

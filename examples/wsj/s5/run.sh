@@ -197,14 +197,18 @@ if [ ${stage} -le 3 ]; then
   # ${data}/local/dict_nosp_larger/cleaned.gz
 
   # NOTE: support only a single GPU for RNNLM training
-  # CUDA_VISIBLE_DEVICES=${rnnlm_gpu} ../../../src/bin/lm/train.py \
-  #   --ngpus 1 \
-  #   --train_set ${data}/dataset/${train_set}.csv \
-  #   --dev_set ${data}/dataset/${dev_set}.csv \
-  #   --eval_sets ${data}/dataset/eval1_${data_size}.csv \
-  #   --config ${rnn_config} \
-  #   --model ${model_dir} \
-  #   --resume_model ${rnnlm_resume_model} || exit 1;
+  CUDA_VISIBLE_DEVICES=${rnnlm_gpu} ../../../neural_sp/bin/lm/train.py \
+    --ngpus 1 \
+    --train_set ${data}/dataset/${train_set}_${unit}${wp_model_type}${vocab_size}.csv \
+    --dev_set ${data}/dataset/${dev_set}_${data_size}_${unit}${wp_model_type}${vocab_size}.csv \
+    --dict ${dict} \
+    --wp_model ${wp_model}.model \
+    --config ${rnnlm_config} \
+    --model ${model_dir}/rnnlm \
+    --label_type ${unit} || exit 1;
+    # --resume_model ${resume_model} || exit 1;
+
+   echo "Finish RNNLM training (stage: 3)."
 fi
 
 
