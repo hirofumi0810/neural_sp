@@ -146,7 +146,7 @@ def compute_wer(ref, hyp, normalize=False):
     return wer * 100, num_sub * 100, num_ins * 100, num_del * 100
 
 
-def wer_align(ref, hyp, normalize=False, japanese=False):
+def wer_align(ref, hyp, normalize=False, double_byte=False):
     """Compute Word Error Rate.
 
         [Reference]
@@ -155,6 +155,7 @@ def wer_align(ref, hyp, normalize=False, japanese=False):
         ref (list): words in the reference transcript
         hyp (list): words in the predicted transcript
         normalize (bool, optional): if True, divide by the length of ref
+        double_byte (bool):
     Returns:
         wer (float): Word Error Rate between ref and hyp
         num_sub (int): the number of substitution error
@@ -162,10 +163,10 @@ def wer_align(ref, hyp, normalize=False, japanese=False):
         num_del (int): the number of deletion error
 
     """
-    space_char = "　" if japanese else " "
-    s_char = "Ｓ" if japanese else "S"
-    i_char = "Ｉ" if japanese else "I"
-    d_char = "Ｄ" if japanese else "D"
+    space_char = "　" if double_byte else " "
+    s_char = "Ｓ" if double_byte else "S"
+    i_char = "Ｉ" if double_byte else "I"
+    d_char = "Ｄ" if double_byte else "D"
 
     # Build the matrix
     d = np.zeros((len(ref) + 1) * (len(hyp) + 1),
