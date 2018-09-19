@@ -18,8 +18,8 @@ import sys
 
 from neural_sp.bin.asr.plot_utils import plot_attention_weights
 from neural_sp.datasets.loader_asr import Dataset
-from neural_sp.models.seq2seq.seq2seq import Seq2seq
 from neural_sp.models.rnnlm.rnnlm import RNNLM
+from neural_sp.models.seq2seq.seq2seq import Seq2seq
 from neural_sp.utils.config import load_config
 from neural_sp.utils.general import mkdir_join
 from neural_sp.utils.general import set_logger
@@ -106,7 +106,30 @@ def main():
 
             model.save_path = args.model
 
-            # TODO(hirofumi): For shallow fusion
+            # For shallow fusion
+            if args.rnnlm_cf is None and args.rnnlm is not None and args.rnnlm_weight > 0:
+                # Load a RNNLM config file
+                config_rnnlm = load_config(os.path.join(args.rnnlm, 'config.yml'))
+
+                # Merge config with args
+                args_rnnlm = argparse.Namespace()
+                for k, v in config_rnnlm.items():
+                    setattr(args_rnnlm, k, v)
+
+                assert args.label_type == args_rnnlm.label_type
+                args_rnnlm.num_classes = eval_set.num_classes
+
+                # Load the pre-trianed RNNLM
+                rnnlm = RNNLM(args_rnnlm)
+                rnnlm.load_checkpoint(args.rnnlm, epoch=-1)
+                if args_rnnlm.backward:
+                    model.rnnlm_bwd_0 = rnnlm
+                else:
+                    model.rnnlm_fwd_0 = rnnlm
+
+                logger.info('RNNLM path: %s' % args.rnnlm)
+                logger.info('RNNLM weight: %.3f' % args.rnnlm_weight)
+                logger.info('RNNLM backward: %s' % str(config_rnnlm['backward']))
 
             # GPU setting
             model.set_cuda(deterministic=False, benchmark=True)

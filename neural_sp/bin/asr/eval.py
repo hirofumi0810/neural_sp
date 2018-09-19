@@ -21,8 +21,8 @@ from neural_sp.evaluators.character import eval_char
 from neural_sp.evaluators.phone import eval_phone
 from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
-from neural_sp.models.seq2seq.seq2seq import Seq2seq
 from neural_sp.models.rnnlm.rnnlm import RNNLM
+from neural_sp.models.seq2seq.seq2seq import Seq2seq
 from neural_sp.utils.config import load_config
 from neural_sp.utils.general import set_logger
 
@@ -94,17 +94,17 @@ def main():
             args.num_classes_sub = eval_set.num_classes_sub
 
             # For cold fusion
-            # if config['rnnlm_fusion_type'] and config['rnnlm']:
+            # if args.rnnlm_cf:
             #     # Load a RNNLM config file
-            #     config['rnnlm_config'] = load_config(
-            #         join(args.model, 'config_rnnlm.yml'))
+            #     config['rnnlm_config'] = load_config(os.path.join(args.model, 'config_rnnlm.yml'))
             #
-            #     assert config['label_type'] == config['rnnlm_config']['label_type']
-            #     config['rnnlm_config']['num_classes'] = eval_set.num_classes
+            #     assert args.label_type == config['rnnlm_config']['label_type']
+            #     rnnlm_args.num_classes = eval_set.num_classes
             #     logger.info('RNNLM path: %s' % config['rnnlm'])
             #     logger.info('RNNLM weight: %.3f' % args.rnnlm_weight)
             # else:
-            #     config['rnnlm_config'] = None
+            #     pass
+
             args.rnnlm_cf = None
             args.rnnlm_init = None
 
@@ -117,25 +117,29 @@ def main():
             model.save_path = args.model
 
             # For shallow fusion
-            # if not (config['rnnlm_fusion_type'] and config['rnnlm']) and args.rnnlm is not None and args.rnnlm_weight > 0:
-            #     # Load a RNNLM config file
-            #     config_rnnlm = load_config(
-            #         join(args.rnnlm, 'config.yml'), is_eval=True)
-            #     assert config['label_type'] == config_rnnlm['label_type']
-            #     config_rnnlm['num_classes'] = eval_set.num_classes
-            #
-            #     # Load the pre-trianed RNNLM
-            #     rnnlm = load(model_type=config_rnnlm['model_type'],
-            #                  config=config_rnnlm,
-            #                  backend=config_rnnlm['backend'])
-            #     rnnlm.load_checkpoint(save_path=args.rnnlm, epoch=-1)
-            #     if config_rnnlm['backward']:
-            #         model.rnnlm_0_bwd = rnnlm
-            #     else:
-            #         model.rnnlm_0_fwd = rnnlm
-            #
-            #     logger.info('RNNLM path: %s' % args.rnnlm)
-            #     logger.info('RNNLM weight: %.3f' % args.rnnlm_weight)
+            if args.rnnlm_cf is None and args.rnnlm is not None and args.rnnlm_weight > 0:
+                # Load a RNNLM config file
+                config_rnnlm = load_config(os.path.join(args.rnnlm, 'config.yml'))
+
+                # Merge config with args
+                args_rnnlm = argparse.Namespace()
+                for k, v in config_rnnlm.items():
+                    setattr(args_rnnlm, k, v)
+
+                assert args.label_type == args_rnnlm.label_type
+                args_rnnlm.num_classes = eval_set.num_classes
+
+                # Load the pre-trianed RNNLM
+                rnnlm = RNNLM(args_rnnlm)
+                rnnlm.load_checkpoint(args.rnnlm, epoch=-1)
+                if args_rnnlm.backward:
+                    model.rnnlm_bwd_0 = rnnlm
+                else:
+                    model.rnnlm_fwd_0 = rnnlm
+
+                logger.info('RNNLM path: %s' % args.rnnlm)
+                logger.info('RNNLM weight: %.3f' % args.rnnlm_weight)
+                logger.info('RNNLM backward: %s' % str(config_rnnlm['backward']))
 
             # GPU setting
             model.set_cuda(deterministic=False, benchmark=True)

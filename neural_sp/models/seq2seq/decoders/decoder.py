@@ -294,6 +294,10 @@ class Decoder(nn.Module):
                         'acc': 0}
             return loss_acc
 
+        # Reverse the order
+        if self.backward:
+            ys = [y[::-1]for y in ys]
+
         # Append <sos> and <eos>
         sos = Variable(enc_out.data.new(1,).fill_(self.sos).long())
         eos = Variable(enc_out.data.new(1,).fill_(self.eos).long())
@@ -640,7 +644,7 @@ class Decoder(nn.Module):
 
         return best_hyps, aw
 
-    def beam_search(self, enc_out, enc_lens, params, rnnlm=None, exclude_eos=False):
+    def beam_search(self, enc_out, enc_lens, params, rnnlm, exclude_eos=False):
         """Beam search decoding in the inference stage.
 
         Args:
@@ -667,11 +671,11 @@ class Decoder(nn.Module):
         # For cold fusion
         if params['rnnlm_weight'] > 0 and not self.cold_fusion_type:
             assert self.rnnlm_cf is not None
-            assert not self.rnnlm_cf.training
+            self.rnnlm_cf.eval()
 
         # For shallow fusion
         if rnnlm is not None:
-            assert not rnnlm.training
+            rnnlm.eval()
 
         best_hyps, aw = [], []
         y_lens = np.zeros((batch_size,), dtype=np.int32)
@@ -798,7 +802,8 @@ class Decoder(nn.Module):
                              'dec_out': dec_out,
                              'cv': cv,
                              'aw_t_list': beam[i_beam]['aw_t_list'] + [aw_t],
-                             'rnnlm_state': copy.deepcopy(rnnlm_state),
+                             # 'rnnlm_state': copy.deepcopy(rnnlm_state),
+                             'rnnlm_state': rnnlm_state,
                              'prev_cov': cov_sum,
                              '_dec_out': _dec_out,
                              '_dec_state': _dec_state})
@@ -873,7 +878,7 @@ class Decoder(nn.Module):
         else:
             best_hyps = self.decode_ctc_beam(var2np(F.log_softmax(logits_ctc, dim=-1)),
                                              x_lens, beam_width, rnnlm)
-            # TODO: decoding paramters
+            # TODO(hirofumi: decoding paramters
 
         return best_hyps
 

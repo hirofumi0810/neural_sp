@@ -199,7 +199,7 @@ class Seq2seq(ModelBase):
                               cold_fusion_type=args.cold_fusion_type,
                               internal_lm=args.internal_lm,
                               rnnlm_init=args.rnnlm_init,
-                              rnnlm_weight=args.rnnlm_weight,
+                              # rnnlm_weight=args.rnnlm_weight,
                               share_softmax=args.share_softmax)
             setattr(self, 'dec_' + dir + '_0', decoder)
 
@@ -325,10 +325,11 @@ class Seq2seq(ModelBase):
             # NOTE: must be descending order for pack_padded_sequence
             xs, x_lens, xs_sub, x_lens_sub = self._encode(ys_sub)
 
+        ys = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
+
         # Compute XE loss for the forward decoder
         if self.fwd_weight_0 > 0:
-            ys_fwd = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()for y in ys]
-            loss_acc_fwd = self.dec_fwd_0(xs, x_lens, ys_fwd)
+            loss_acc_fwd = self.dec_fwd_0(xs, x_lens, ys)
             loss = loss_acc_fwd['loss'] * self.fwd_weight_0
         else:
             loss_acc_fwd = {}
@@ -336,9 +337,7 @@ class Seq2seq(ModelBase):
 
         # Compute XE loss for the backward decoder
         if self.bwd_weight_0 > 0:
-            # Reverse the order
-            ys_bwd = [np2var(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long()for y in ys]
-            loss_acc_bwd = self.dec_bwd_0(xs, x_lens, ys_bwd)
+            loss_acc_bwd = self.dec_bwd_0(xs, x_lens, ys)
             loss += loss_acc_bwd['loss'] * self.bwd_weight_0
         else:
             loss_acc_bwd = {}
@@ -410,8 +409,7 @@ class Seq2seq(ModelBase):
 
         return xs, x_lens, xs_sub, x_lens_sub
 
-    def decode(self, xs, decode_params, rnnlm=None, exclude_eos=False,
-               resolving_unk=False, task_index=0):
+    def decode(self, xs, decode_params, exclude_eos=False, task_index=0):
         """Decoding in the inference stage.
 
         Args:
@@ -424,9 +422,9 @@ class Seq2seq(ModelBase):
                 cov_penalty (float): coverage penalty
                 cov_threshold (float): threshold for coverage penalty
                 rnnlm_weight (float): the weight of RNNLM score
-            rnnlm (torch.nn.Module):
+                resolving_unk (bool): not used (to make compatible)
+
             exclude_eos (bool): exclude <eos> from best_hyps
-            resolving_unk (bool): not used (to make compatible)
             task_index (int): not used (to make compatible)
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
@@ -450,13 +448,20 @@ class Seq2seq(ModelBase):
 
         if self.ctc_weight_0 == 1:
             best_hyps = getattr(self, 'dec_' + dir + '_0').decode_ctc(
-                enc_out, x_lens, decode_params['beam_width'], rnnlm)
+                enc_out, x_lens, decode_params['beam_width'], decode_params['rnnlm'])
             return best_hyps, None, perm_idx
         else:
             if decode_params['beam_width'] == 1:
                 best_hyps, aw = getattr(self, 'dec_' + dir + '_0').greedy(
                     enc_out, x_lens, decode_params['max_len_ratio'], exclude_eos)
             else:
+                # Set RNNLM
+                if decode_params['rnnlm_weight'] > 0:
+                    assert hasattr(self, 'rnnlm_' + dir + '_0')
+                    rnnlm = getattr(self, 'rnnlm_' + dir + '_0')
+                else:
+                    rnnlm = None
+
                 best_hyps, aw = getattr(self, 'dec_' + dir + '_0').beam_search(
                     enc_out, x_lens, decode_params, rnnlm, exclude_eos)
             return best_hyps, aw, perm_idx
