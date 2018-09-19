@@ -11,7 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 from collections import OrderedDict
-import copy
 import math
 import numpy as np
 import random
@@ -602,7 +601,7 @@ class Decoder(nn.Module):
             # Count lengths of hypotheses
             for b in six.moves.range(batch_size):
                 if not eos_flags[b]:
-                    if y.data.cpu().numpy()[b] == self.eos:
+                    if y[b].item() == self.eos:
                         eos_flags[b] = True
                     y_lens[b] += 1
                     # NOTE: include <eos>
@@ -682,7 +681,7 @@ class Decoder(nn.Module):
         eos_flags = [False] * batch_size
         for b in six.moves.range(batch_size):
             # Initialization per utterance
-            dec_out, dec_state = self._init_dec_state(enc_out[b:b + 1], enc_lens[b:b + 1], self.num_layers)
+            dec_out, (hx_list, cx_list) = self._init_dec_state(enc_out[b:b + 1], enc_lens[b:b + 1], self.num_layers)
             _dec_out, _dec_state = self._init_dec_state(enc_out[b:b + 1], enc_lens[b:b + 1], 1)
             cv = Variable(enc_out.data.new(1, 1, enc_out.size(-1)).fill_(0.), volatile=True)
             self.score.reset()
@@ -691,7 +690,8 @@ class Decoder(nn.Module):
             beam = [{'hyp': [self.sos],
                      'score': 0,  # log 1
                      'dec_out': dec_out,
-                     'dec_state': dec_state,
+                     'hx_list': hx_list,
+                     'cx_list': cx_list,
                      'cv': cv,
                      'aw_t_list': [None],
                      'rnnlm_state': None,
@@ -703,12 +703,12 @@ class Decoder(nn.Module):
                 for i_beam in six.moves.range(len(beam)):
                     if t > 0:
                         # Recurrency
-                        y = Variable(enc_out.data.new(
-                            1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
+                        y = Variable(enc_out.data.new(1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
                         y_emb = self.emb(y)
-                        dec_out, dec_state, _dec_out, _dec_state = self._recurrency(
+                        dec_out, (hx_list, cx_list), _dec_out, _dec_state = self._recurrency(
                             y_emb, beam[i_beam]['cv'],
-                            beam[i_beam]['dec_state'], beam[i_beam]['_dec_state'])
+                            (beam[i_beam]['hx_list'], beam[i_beam]['cx_list']),
+                            beam[i_beam]['_dec_state'])
                     else:
                         dec_out = beam[i_beam]['dec_out']
 
@@ -720,15 +720,13 @@ class Decoder(nn.Module):
 
                     if self.rnnlm_cf is not None:
                         # Update RNNLM states for cold fusion
-                        y_lm = Variable(enc_out.data.new(
-                            1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
+                        y_lm = Variable(enc_out.data.new(1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
                         y_lm_emb = self.rnnlm_cf.emb(y_lm)
                         logits_lm_t, lm_out, rnnlm_state = self.rnnlm_cf.predict(
                             y_lm_emb, beam[i_beam]['rnnlm_state'])
                     elif rnnlm is not None:
                         # Update RNNLM states for shallow fusion
-                        y_lm = Variable(enc_out.data.new(
-                            1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
+                        y_lm = Variable(enc_out.data.new(1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
                         y_lm_emb = rnnlm.emb(y_lm)
                         logits_lm_t, lm_out, rnnlm_state = rnnlm.predict(
                             y_lm_emb, beam[i_beam]['rnnlm_state'])
@@ -762,11 +760,11 @@ class Decoder(nn.Module):
 
                     for k in six.moves.range(params['beam_width']):
                         # Exclude short hypotheses
-                        if indices_topk[0, k].data[0] == self.eos and len(beam[i_beam]['hyp']) < enc_lens[b] * params['min_len_ratio']:
+                        if indices_topk[0, k].item() == self.eos and len(beam[i_beam]['hyp']) < enc_lens[b] * params['min_len_ratio']:
                             continue
 
                         # Add length penalty
-                        score = beam[i_beam]['score'] + log_probs_topk.data[0, k] + params['length_penalty']
+                        score = beam[i_beam]['score'] + log_probs_topk[0, k].item() + params['length_penalty']
 
                         # Add coverage penalty
                         if params['coverage_penalty'] > 0:
@@ -776,10 +774,10 @@ class Decoder(nn.Module):
                             aw_stack = torch.stack(beam[i_beam]['aw_t_list'][1:] + [aw_t], dim=1)
 
                             if self.score.num_heads > 1:
-                                cov_sum = aw_stack.data[0, :, :, 0].cpu().numpy()
+                                cov_sum = aw_stack[0, :, :, 0].detach().cpu().numpy()
                                 # TODO(hirofumi): fix for MHA
                             else:
-                                cov_sum = aw_stack.data[0].cpu().numpy()
+                                cov_sum = aw_stack.detach().cpu().numpy()
                             if params['coverage_threshold'] == 0:
                                 cov_sum = np.sum(cov_sum)
                             else:
@@ -792,21 +790,20 @@ class Decoder(nn.Module):
                         if params['rnnlm_weight'] > 0:
                             lm_log_probs = F.log_softmax(logits_lm_t.squeeze(1), dim=1)
                             assert log_probs.size() == lm_log_probs.size()
-                            score += lm_log_probs.data[0, indices_topk.data[0, k]] * params['rnnlm_weight']
+                            score += lm_log_probs[0, indices_topk[0, k].item()].item() * params['rnnlm_weight']
 
                         new_beam.append(
-                            {'hyp': beam[i_beam]['hyp'] + [indices_topk.data[0, k]],
+                            {'hyp': beam[i_beam]['hyp'] + [indices_topk[0, k].item()],
                              'score': score,
-                             # 'dec_state': copy.deepcopy(dec_state),
-                             'dec_state': dec_state,
+                             'hx_list': hx_list[:],
+                             'cx_list': cx_list[:],
                              'dec_out': dec_out,
                              'cv': cv,
                              'aw_t_list': beam[i_beam]['aw_t_list'] + [aw_t],
-                             # 'rnnlm_state': copy.deepcopy(rnnlm_state),
-                             'rnnlm_state': rnnlm_state,
+                             'rnnlm_state': rnnlm_state[:] if rnnlm_state is not None else None,
                              'prev_cov': cov_sum,
                              '_dec_out': _dec_out,
-                             '_dec_state': _dec_state})
+                             '_dec_state': _dec_state[:]})  # TODO
 
                 new_beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)
 
