@@ -30,6 +30,7 @@ from neural_sp.datasets.token_converter.word import Word2idx
 np.random.seed(1)
 
 logger = logging.getLogger('training')
+logger = logging.getLogger('decoding')
 
 
 class Dataset(Base):
@@ -134,36 +135,36 @@ class Dataset(Base):
 
         # Remove inappropriate utteraces
         if not self.is_test:
-            print('Original utterance num: %d' % len(df))
+            logger.info('Original utterance num: %d' % len(df))
             num_utt_org = len(df)
 
             # Remove by threshold
             df = df[df.apply(lambda x: min_num_frames <= x['x_len'] <= max_num_frames, axis=1)]
-            print('Removed %d utterances (threshold)' % (num_utt_org - len(df)))
+            logger.info('Removed %d utterances (threshold)' % (num_utt_org - len(df)))
 
             # Rempve for CTC loss calculatioon
             if use_ctc and subsample_factor > 1:
-                print('Checking utterances for CTC...')
-                print('Original utterance num: %d' % len(df))
+                logger.info('Checking utterances for CTC...')
+                logger.info('Original utterance num: %d' % len(df))
                 num_utt_org = len(df)
                 df = df[df.apply(lambda x: x['y_len'] <= x['x_len'] // subsample_factor, axis=1)]
-                print('Removed %d utterances (for CTC)' % (num_utt_org - len(df)))
+                logger.info('Removed %d utterances (for CTC)' % (num_utt_org - len(df)))
 
             if df_sub is not None:
-                print('Original utterance num (sub): %d' % len(df_sub))
+                logger.info('Original utterance num (sub): %d' % len(df_sub))
                 num_utt_org = len(df_sub)
 
                 # Remove by threshold
                 df_sub = df_sub[df_sub.apply(lambda x: min_num_frames <= x['x_len'] <= max_num_frames, axis=1)]
-                print('Removed %d utterances (threshold, sub)' % (num_utt_org - len(df_sub)))
+                logger.info('Removed %d utterances (threshold, sub)' % (num_utt_org - len(df_sub)))
 
                 # Rempve for CTC loss calculatioon
                 if use_ctc_sub and subsample_factor_sub > 1:
-                    print('Checking utterances for CTC...')
-                    print('Original utterance num (sub): %d' % len(df_sub))
+                    logger.info('Checking utterances for CTC...')
+                    logger.info('Original utterance num (sub): %d' % len(df_sub))
                     num_utt_org = len(df_sub)
                     df_sub = df_sub[df_sub.apply(lambda x: x['y_len'] <= x['x_len'] // subsample_factor_sub, axis=1)]
-                    print('Removed %d utterances (for CTC, sub)' % (num_utt_org - len(df_sub)))
+                    logger.info('Removed %d utterances (for CTC, sub)' % (num_utt_org - len(df_sub)))
 
                 # Make up the number
                 if len(df) != len(df_sub):

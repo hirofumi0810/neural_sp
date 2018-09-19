@@ -28,6 +28,7 @@ random.seed(1)
 np.random.seed(1)
 
 logger = logging.getLogger('training')
+logger = logging.getLogger('decoding')
 
 
 class Dataset(Base):
