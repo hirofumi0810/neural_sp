@@ -37,12 +37,15 @@ class ConvOutSize(object):
         """
         for m in self.conv._modules.values():
             if type(m) in [nn.Conv2d, nn.MaxPool2d]:
-                if type(m) == nn.MaxPool2d and not m.ceil_mode:
-                    # first max pool layer
-                    size = int(math.floor(
-                        (size + 2 * m.padding[dim] - m.kernel_size[dim]) / m.stride[dim] + 1))
+                if type(m) == nn.MaxPool2d:
+                    if m.ceil_mode:
+                        size = int(math.ceil(
+                            (size + 2 * m.padding[dim] - m.kernel_size[dim]) / m.stride[dim] + 1))
+                    else:
+                        size = int(math.floor(
+                            (size + 2 * m.padding[dim] - m.kernel_size[dim]) / m.stride[dim] + 1))
                 else:
-                    size = int(math.ceil(
+                    size = int(math.floor(
                         (size + 2 * m.padding[dim] - m.kernel_size[dim]) / m.stride[dim] + 1))
                 # assert size >= 1
         return size

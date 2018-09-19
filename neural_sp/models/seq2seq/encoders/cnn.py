@@ -78,8 +78,8 @@ class CNNEncoder(nn.Module):
                              padding=tuple(strides[l]),
                              bias=not batch_norm)
             layers['conv' + str(channels[l]) + '_l' + str(l)] = conv
-            in_freq = math.floor(
-                (in_freq + 2 * conv.padding[0] - conv.kernel_size[0]) / conv.stride[0] + 1)
+            in_freq = int(math.floor(
+                (in_freq + 2 * conv.padding[0] - conv.kernel_size[0]) / conv.stride[0] + 1))
 
             # Activation
             if activation == 'relu':
@@ -129,16 +129,17 @@ class CNNEncoder(nn.Module):
 
             in_ch = channels[l]
 
+        self.layers = nn.Sequential(layers)
+
         # Projection layer to match the dimension with the decoder
         if num_projs_final > 0:
-            layers['proj'] = LinearND(channels[-1] * in_freq, num_projs_final)
+            self.proj = LinearND(in_ch * in_freq, num_projs_final)
 
-        self.layers = nn.Sequential(layers)
         self.get_conv_out_size = ConvOutSize(self.layers)
         if num_projs_final > 0:
             self.output_dim = num_projs_final
         else:
-            self.output_dim = channels[-1] * in_freq
+            self.output_dim = int(in_ch * in_freq)
 
     def forward(self, xs, x_lens):
         """Forward computation.
@@ -173,9 +174,13 @@ class CNNEncoder(nn.Module):
         # NOTE: xs: `[B, out_ch, new_freq, new_time]`
 
         # Collapse feature dimension
-        output_channels, freq, time = xs.size()[1:]
+        out_ch, freq, time = xs.size()[1:]
         xs = xs.transpose(1, 3).contiguous()
-        xs = xs.view(batch_size, time, freq * output_channels)
+        xs = xs.view(batch_size, time, freq * out_ch)
+        # NOTE: xs: `[B, new_time, out_ch * new_freq]`
+
+        # Projection
+        xs = self.proj(xs)
 
         # Update x_lens
         x_lens = [self.get_conv_out_size(x_len, 1) for x_len in x_lens]

@@ -136,12 +136,12 @@ class RNNEncoder(nn.Module):
                                    poolings=conv_poolings,
                                    dropout_in=0,
                                    dropout_hidden=dropout_hidden,
-                                   num_projs_final=0,
+                                   num_projs_final=256,  # TODO(hirofumi): make this parameter
                                    activation='relu',
                                    batch_norm=conv_batch_norm)
             input_dim = self.conv.output_dim
         else:
-            input_dim = input_dim * num_splice * num_stack
+            input_dim *= num_splice * num_stack
             self.conv = None
 
         self.fast_impl = False
