@@ -325,11 +325,10 @@ class Seq2seq(ModelBase):
             # NOTE: must be descending order for pack_padded_sequence
             xs, x_lens, xs_sub, x_lens_sub = self._encode(ys_sub)
 
-        ys = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
-
         # Compute XE loss for the forward decoder
         if self.fwd_weight_0 > 0:
-            loss_acc_fwd = self.dec_fwd_0(xs, x_lens, ys)
+            ys_fwd = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
+            loss_acc_fwd = self.dec_fwd_0(xs, x_lens, ys_fwd)
             loss = loss_acc_fwd['loss'] * self.fwd_weight_0
         else:
             loss_acc_fwd = {}
@@ -337,7 +336,8 @@ class Seq2seq(ModelBase):
 
         # Compute XE loss for the backward decoder
         if self.bwd_weight_0 > 0:
-            loss_acc_bwd = self.dec_bwd_0(xs, x_lens, ys)
+            ys_bwd = [np2var(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long() for y in ys]
+            loss_acc_bwd = self.dec_bwd_0(xs, x_lens, ys_bwd)
             loss += loss_acc_bwd['loss'] * self.bwd_weight_0
         else:
             loss_acc_bwd = {}

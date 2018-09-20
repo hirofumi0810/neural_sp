@@ -293,15 +293,15 @@ class Decoder(nn.Module):
                         'acc': 0}
             return loss_acc
 
-        # Reverse the order
-        if self.backward:
-            ys = [y[::-1]for y in ys]
-
         # Append <sos> and <eos>
         sos = Variable(enc_out.data.new(1,).fill_(self.sos).long())
         eos = Variable(enc_out.data.new(1,).fill_(self.eos).long())
-        ys_in = [torch.cat([sos, y], dim=0) for y in ys]
-        ys_out = [torch.cat([y, eos], dim=0) for y in ys]
+        if self.backward:
+            ys_in = [torch.cat([eos, y], dim=0) for y in ys]
+            ys_out = [torch.cat([y, sos], dim=0) for y in ys]
+        else:
+            ys_in = [torch.cat([sos, y], dim=0) for y in ys]
+            ys_out = [torch.cat([y, eos], dim=0) for y in ys]
         ys_in_pad = pad_list(ys_in, self.pad)
         ys_out_pad = pad_list(ys_out, -1)
 
@@ -562,8 +562,13 @@ class Decoder(nn.Module):
         aw_t = None
         rnnlm_state = None
 
-        # Start from <sos>
-        y = Variable(enc_out.data.new(batch_size, 1).fill_(self.sos).long(), volatile=True)
+        if self.backward:
+            sos, eos = self.eos, self.sos
+        else:
+            sos, eos = self.sos, self.eos
+
+        # Start from <sos> (<eos> in case of the backward decoder)
+        y = Variable(enc_out.data.new(batch_size, 1).fill_(sos).long(), volatile=True)
 
         _best_hyps, _aw = [], []
         y_lens = np.zeros((batch_size,), dtype=np.int32)
@@ -601,7 +606,7 @@ class Decoder(nn.Module):
             # Count lengths of hypotheses
             for b in six.moves.range(batch_size):
                 if not eos_flags[b]:
-                    if y[b].item() == self.eos:
+                    if y[b].item() == eos:
                         eos_flags[b] = True
                     y_lens[b] += 1
                     # NOTE: include <eos>
@@ -627,7 +632,7 @@ class Decoder(nn.Module):
             _aw = _aw[:, :, :, 0]
             # TODO(hirofumi): fix for MHA
 
-        # Truncate by the first <eos>
+        # Truncate by the first <eos> (<sos> in case of the backward decoder)
         if self.backward:
             # Reverse the order
             best_hyps = [_best_hyps[b, :y_lens[b]][::-1] for b in six.moves.range(batch_size)]
@@ -636,10 +641,14 @@ class Decoder(nn.Module):
             best_hyps = [_best_hyps[b, :y_lens[b]] for b in six.moves.range(batch_size)]
             aw = [_aw[b, :y_lens[b]] for b in six.moves.range(batch_size)]
 
-        # Exclude <eos>
+        # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:
-            best_hyps = [best_hyps[b][:-1] if eos_flags[b]
-                         else best_hyps[b] for b in six.moves.range(batch_size)]
+            if self.backward:
+                best_hyps = [best_hyps[b][1:] if eos_flags[b]
+                             else best_hyps[b] for b in six.moves.range(batch_size)]
+            else:
+                best_hyps = [best_hyps[b][:-1] if eos_flags[b]
+                             else best_hyps[b] for b in six.moves.range(batch_size)]
 
         return best_hyps, aw
 
@@ -676,6 +685,11 @@ class Decoder(nn.Module):
         if rnnlm is not None:
             rnnlm.eval()
 
+        if self.backward:
+            sos, eos = self.eos, self.sos
+        else:
+            sos, eos = self.sos, self.eos
+
         best_hyps, aw = [], []
         y_lens = np.zeros((batch_size,), dtype=np.int32)
         eos_flags = [False] * batch_size
@@ -687,7 +701,7 @@ class Decoder(nn.Module):
             self.score.reset()
 
             complete = []
-            beam = [{'hyp': [self.sos],
+            beam = [{'hyp': [sos],
                      'score': 0,  # log 1
                      'dec_out': dec_out,
                      'hx_list': hx_list,
@@ -760,7 +774,7 @@ class Decoder(nn.Module):
 
                     for k in six.moves.range(params['beam_width']):
                         # Exclude short hypotheses
-                        if indices_topk[0, k].item() == self.eos and len(beam[i_beam]['hyp']) < enc_lens[b] * params['min_len_ratio']:
+                        if indices_topk[0, k].item() == eos and len(beam[i_beam]['hyp']) < enc_lens[b] * params['min_len_ratio']:
                             continue
 
                         # Add length penalty
@@ -810,7 +824,7 @@ class Decoder(nn.Module):
                 # Remove complete hypotheses
                 not_complete = []
                 for cand in new_beam[:params['beam_width']]:
-                    if cand['hyp'][-1] == self.eos:
+                    if cand['hyp'][-1] == eos:
                         complete += [cand]
                     else:
                         not_complete += [cand]
@@ -828,7 +842,7 @@ class Decoder(nn.Module):
             best_hyps += [np.array(complete[0]['hyp'][1:])]
             aw += [complete[0]['aw_t_list'][1:]]
             y_lens[b] = len(complete[0]['hyp'][1:])
-            if complete[0]['hyp'][-1] == self.eos:
+            if complete[0]['hyp'][-1] == eos:
                 eos_flags[b] = True
 
         # Concatenate in L dimension
@@ -843,10 +857,14 @@ class Decoder(nn.Module):
             best_hyps = [best_hyps[b][::-1] for b in six.moves.range(batch_size)]
             aw = [aw[b][::-1] for b in six.moves.range(batch_size)]
 
-        # Exclude <eos>
+        # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:
-            best_hyps = [best_hyps[b][:-1] if eos_flags[b]
-                         else best_hyps[b] for b in six.moves.range(batch_size)]
+            if self.backward:
+                best_hyps = [best_hyps[b][1:] if eos_flags[b]
+                             else best_hyps[b] for b in six.moves.range(batch_size)]
+            else:
+                best_hyps = [best_hyps[b][:-1] if eos_flags[b]
+                             else best_hyps[b] for b in six.moves.range(batch_size)]
 
         return best_hyps, aw
 

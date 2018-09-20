@@ -73,7 +73,10 @@ class Updater(object):
             # TODO(hirofumi): Add scheduler
 
         loss_val = loss.item()
-        acc = loss_acc_fwd['acc']
+        if model.module.bwd_weight_0 < 0.5:
+            acc = loss_acc_fwd['acc']
+        else:
+            acc = loss_acc_bwd['acc']
 
         del loss
         del loss_acc_fwd
