@@ -48,6 +48,7 @@ class Seq2seq(ModelBase):
         self.enc_num_units = args.enc_num_units
         if args.enc_type in ['blstm', 'bgru']:
             self.enc_num_units *= 2
+        self.bridge_layer = args.bridge_layer
 
         # for attention layer
         self.att_num_heads_0 = args.att_num_heads
@@ -58,11 +59,10 @@ class Seq2seq(ModelBase):
         self.num_classes = args.num_classes
         self.num_classes_sub = args.num_classes_sub
         self.blank = 0
-        self.unk = 1
         self.sos = 2
-        self.eos = 3
-        self.pad = 4
-        # NOTE: these are reserved in advance
+        self.eos = 2
+        self.pad = 3
+        # NOTE: reserved in advance
 
         # for CTC
         self.ctc_weight_0 = args.ctc_weight
@@ -73,8 +73,8 @@ class Seq2seq(ModelBase):
         assert 0 <= args.bwd_weight_sub <= 1
         self.fwd_weight_0 = 1 - args.bwd_weight
         self.bwd_weight_0 = args.bwd_weight
-        self.fwd_weight_1 = 1 - args.bwd_weight
-        self.bwd_weight_1 = args.bwd_weight
+        self.fwd_weight_1 = 1 - args.bwd_weight_sub
+        self.bwd_weight_1 = args.bwd_weight_sub
 
         # for the sub task
         self.main_task_weight = args.main_task_weight
@@ -101,8 +101,7 @@ class Seq2seq(ModelBase):
                                   conv_poolings=args.conv_poolings,
                                   conv_batch_norm=args.conv_batch_norm,
                                   residual=args.enc_residual,
-                                  nin=0,
-                                  num_projs_final=args.dec_num_units if args.bridge_layer else 0)
+                                  nin=0)
         elif args.enc_type == 'cnn':
             assert args.num_stack == 1 and args.num_splice == 1
             self.enc = CNNEncoder(input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
@@ -113,19 +112,17 @@ class Seq2seq(ModelBase):
                                   poolings=args.conv_poolings,
                                   dropout_in=args.dropout_in,
                                   dropout_hidden=args.dropout_enc,
-                                  num_projs_final=args.dec_num_units,
                                   batch_norm=args.conv_batch_norm)
         else:
-            raise NotImplementedError()
+            raise NotImplementedError(args.enc_type)
 
         # Bridge layer between the encoder and decoder
         if args.enc_type == 'cnn':
+            self.bridge_0 = LinearND(self.encoder.output_dim, args.dec_num_units)
             self.enc_num_units = args.dec_num_units
         elif args.bridge_layer:
             self.bridge_0 = LinearND(self.enc_num_units, args.dec_num_units)
             self.enc_num_units = args.dec_num_units
-        else:
-            self.bridge_0 = lambda x: x
 
         directions = []
         if self.fwd_weight_0 > 0:
@@ -158,18 +155,11 @@ class Seq2seq(ModelBase):
                         conv_kernel_size=args.att_conv_width)
 
                 # Cold fusion
-                # if args.rnnlm_cf is not None and dir == 'fwd':
-                #     raise NotImplementedError()
-                #     # TODO(hirofumi): cold fusion for backward RNNLM
-                # else:
-                #     args.rnnlm_cf = None
-                #
-                # # RNNLM initialization
-                # if args.rnnlm_config_init is not None and dir == 'fwd':
-                #     raise NotImplementedError()
-                #     # TODO(hirofumi): RNNLM initialization for backward RNNLM
-                # else:
-                #     args.rnnlm_init = None
+                if args.rnnlm_cold_fusion and dir == 'fwd':
+                    raise NotImplementedError()
+                    # TODO(hirofumi): cold fusion for backward RNNLM
+                else:
+                    args.rnnlm_cold_fusion = False
             else:
                 attention = None
 
@@ -186,21 +176,20 @@ class Seq2seq(ModelBase):
                               emb_dim=args.emb_dim,
                               num_classes=self.num_classes,
                               logits_temp=args.logits_temp,
-                              dropout_dec=args.dropout_dec,
+                              dropout_hidden=args.dropout_dec,
                               dropout_emb=args.dropout_emb,
                               ss_prob=args.ss_prob,
                               lsm_prob=args.lsm_prob,
-                              lsm_type=args.lsm_type,
                               init_with_enc=args.init_with_enc,
                               ctc_weight=args.ctc_weight if dir == 'fwd' else 0,
                               ctc_fc_list=args.ctc_fc_list,
                               backward=(dir == 'bwd'),
-                              rnnlm_cf=args.rnnlm_cf,
-                              cold_fusion_type=args.cold_fusion_type,
+                              rnnlm_cold_fusion=args.rnnlm_cold_fusion,
+                              cold_fusion=args.cold_fusion,
                               internal_lm=args.internal_lm,
                               rnnlm_init=args.rnnlm_init,
-                              # rnnlm_weight=args.rnnlm_weight,
-                              share_softmax=args.share_softmax)
+                              rnnlm_task_weight=args.rnnlm_task_weight,
+                              share_lm_softmax=args.share_lm_softmax)
             setattr(self, 'dec_' + dir + '_0', decoder)
 
         # NOTE: fwd only for the sub task
@@ -244,11 +233,10 @@ class Seq2seq(ModelBase):
                                      emb_dim=args.emb_dim,
                                      num_classes=self.num_classes_sub,
                                      logits_temp=args.logits_temp,
-                                     dropout_dec=args.dropout_dec,
+                                     dropout_hidden=args.dropout_dec,
                                      dropout_emb=args.dropout_emb,
                                      ss_prob=args.ss_prob,
                                      lsm_prob=args.lsm_prob,
-                                     lsm_type=args.lsm_type,
                                      init_with_enc=args.init_with_enc,
                                      ctc_weight=args.ctc_weight_sub,
                                      ctc_fc_list=args.ctc_fc_list)  # sub??
@@ -256,7 +244,7 @@ class Seq2seq(ModelBase):
         if args.input_type == 'text':
             if args.num_classes == args.num_classes_sub:
                 # Share the embedding layer between input and output
-                self.embed_in = decoder.emb
+                self.embed_in = decoder.embed
             else:
                 self.embed_in = Embedding(num_classes=args.num_classes_sub,
                                           emb_dim=args.emb_dim,
@@ -284,8 +272,8 @@ class Seq2seq(ModelBase):
         self.init_forget_gate_bias_with_one()
 
         # Initialize bias in gating with -1
-        if args.rnnlm_cf is not None:
-            self.init_weights(-1, dist='constant', keys=['cf_fc_lm_gate.fc.bias'])
+        if args.rnnlm_cold_fusion:
+            self.init_weights(-1, dist='constant', keys=['cf_linear_lm_gate.fc.bias'])
 
     def forward(self, xs, ys, ys_sub=None, is_eval=False):
         """Forward computation.
@@ -401,11 +389,13 @@ class Seq2seq(ModelBase):
             xs_sub = None
             x_lens_sub = None
 
-        # Bridge between the encoder and decoder in the main task
-        xs = self.bridge_0(xs)
-        # if self.main_task_weight < 1:
-        #     xs_sub = self.bridge_1(xs_sub)
-        # TODO:
+        # Bridge between the encoder and decoder
+        if self.enc_type == 'cnn' or self.bridge_layer:
+            xs = self.bridge_0(xs)
+
+            # if self.main_task_weight < 1:
+            #     xs_sub = self.bridge_1(xs_sub)
+            # TODO:
 
         return xs, x_lens, xs_sub, x_lens_sub
 

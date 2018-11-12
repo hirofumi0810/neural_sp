@@ -19,7 +19,6 @@ import torch
 from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.modules.loss import _assert_no_grad
 try:
     import warpctc_pytorch
 except:
@@ -53,25 +52,23 @@ class Decoder(nn.Module):
         num_layers (int): the number of RNN layers
         residual (bool):
         emb_dim (int): the dimension of the embedding in target spaces.
-            0 means that decoder inputs are represented by one-hot vectors.
-        num_classes (int): the number of nodes in softmax layer (excluding <sos> and <eos> classes)
+        num_classes (int): the number of nodes in softmax layer
         logits_temp (float): a parameter for smoothing the softmax layer in outputing probabilities
-        dropout_dec (float): the probability to drop nodes in the RNN layer
+        dropout_hidden (float): the probability to drop nodes in the RNN layer
         dropout_emb (float): the probability to drop nodes of the embedding layer
         ss_prob (float): the probability of scheduled sampling
         lsm_prob (float): the probability of label smoothing
-        lsm_type (str): uniform or unigram
         init_with_enc (bool):
         ctc_weight (float):
         backward (bool): decode in the backward order
-        rnnlm_cf (torch.nn.Module):
-        cold_fusion_type (str): the type of cold fusion
+        rnnlm_cold_fusion (torch.nn.Module):
+        cold_fusion (str): the type of cold fusion
             prob: probability from RNNLM
             hidden: hidden states of RNNLM
         internal_lm (bool):
-        rnnlm_init (torch.nn.Module):
-        rnnlm_weight (float): the weight for the auxiliary XE loss of RNNLM objective
-        share_softmax (bool):
+        rnnlm_init ():
+        rnnlm_task_weight (float):
+        share_lm_softmax (bool):
 
     """
 
@@ -88,21 +85,20 @@ class Decoder(nn.Module):
                  emb_dim,
                  num_classes,
                  logits_temp,
-                 dropout_dec,
+                 dropout_hidden,
                  dropout_emb,
                  ss_prob,
                  lsm_prob,
-                 lsm_type,
                  init_with_enc=False,
                  ctc_weight=0.,
                  ctc_fc_list=[],
                  backward=False,
-                 rnnlm_cf=None,
-                 cold_fusion_type=False,
+                 rnnlm_cold_fusion=False,
+                 cold_fusion='hidden',
                  internal_lm=False,
-                 rnnlm_init=None,
-                 rnnlm_weight=0.,
-                 share_softmax=False):
+                 rnnlm_init=False,
+                 rnnlm_task_weight=0.,
+                 share_lm_softmax=False):
 
         super(Decoder, self).__init__()
 
@@ -116,21 +112,20 @@ class Decoder(nn.Module):
         self.num_layers = num_layers
         self.residual = residual
         self.logits_temp = logits_temp
-        self.dropout_dec = dropout_dec
+        self.dropout_hidden = dropout_hidden
         self.dropout_emb = dropout_emb
         self.ss_prob = ss_prob
         self.lsm_prob = lsm_prob
-        self.lsm_type = lsm_type
         self.init_with_enc = init_with_enc
         self.ctc_weight = ctc_weight
         self.ctc_fc_list = ctc_fc_list
         self.backward = backward
-        self.rnnlm_cf = rnnlm_cf
-        self.cold_fusion_type = cold_fusion_type
+        self.rnnlm_cf = rnnlm_cold_fusion
+        self.cold_fusion = cold_fusion
         self.internal_lm = internal_lm
         self.rnnlm_init = rnnlm_init
-        self.rnnlm_weight = rnnlm_weight
-        self.share_softmax = share_softmax
+        self.rnnlm_task_weight = rnnlm_task_weight
+        self.share_lm_softmax = share_lm_softmax
 
         if ctc_weight > 0:
             # Fully-connected layers for CTC
@@ -139,28 +134,28 @@ class Decoder(nn.Module):
                 for i in six.moves.range(len(ctc_fc_list)):
                     input_dim = enc_num_units if i == 0 else ctc_fc_list[i - 1]
                     fc_layers['fc' + str(i)] = LinearND(input_dim, ctc_fc_list[i],
-                                                        dropout=dropout_dec)
+                                                        dropout=dropout_hidden)
                 fc_layers['output'] = LinearND(ctc_fc_list[-1], num_classes)
                 self.output_ctc = nn.Sequential(fc_layers)
             else:
                 self.output_ctc = LinearND(enc_num_units, num_classes)
             self.decode_ctc_greedy = GreedyDecoder(blank_index=0)
             self.decode_ctc_beam = BeamSearchDecoder(blank_index=0)
-
-        if ctc_weight == 1:
+        # CTC only
+        elif ctc_weight == 1:
             return None
 
         # for decoder initialization with pre-trained RNNLM
-        if rnnlm_init is not None:
+        if rnnlm_init:
             assert internal_lm
             assert rnnlm_init.predictor.num_classes == num_classes
             assert rnnlm_init.predictor.num_units == num_units
-            assert rnnlm_init.predictor.num_layers == 1  # on-the-fly
+            assert rnnlm_init.predictor.num_layers == 1  # TODO(hirofumi): on-the-fly
 
         # for MTL with RNNLM objective
-        if rnnlm_weight > 0:
+        if rnnlm_task_weight > 0:
             assert internal_lm
-            if not share_softmax:
+            if not share_lm_softmax:
                 self.output_rnnlm = LinearND(num_units, num_classes)
 
         # Attention
@@ -170,17 +165,18 @@ class Decoder(nn.Module):
         if internal_lm:
             if rnn_type == 'lstm':
                 self.lstm_internal_lm = nn.LSTMCell(emb_dim, num_units)
-                self.lstm_l0 = nn.LSTMCell(enc_num_units + num_units, num_units)
+                self.dropout_internal_lm = nn.Dropout(p=dropout_hidden)
+                self.lstm_l0 = nn.LSTMCell(num_units + enc_num_units, num_units)
             elif rnn_type == 'gru':
                 self.gru_internal_lm = nn.GRUCell(emb_dim, num_units)
-                self.gru_l0 = nn.GRUCell(enc_num_units + num_units, num_units)
-            self.dropout_internal_lm = nn.Dropout(p=dropout_dec)
+                self.dropout_internal_lm = nn.Dropout(p=dropout_hidden)
+                self.gru_l0 = nn.GRUCell(num_units + enc_num_units, num_units)
         else:
             if rnn_type == 'lstm':
                 self.lstm_l0 = nn.LSTMCell(emb_dim + enc_num_units, num_units)
             elif rnn_type == 'gru':
                 self.gru_l0 = nn.GRUCell(emb_dim + enc_num_units, num_units)
-        self.dropout_l0 = nn.Dropout(p=dropout_dec)
+        self.dropout_l0 = nn.Dropout(p=dropout_hidden)
 
         for i_l in six.moves.range(1, num_layers):
             if rnn_type == 'lstm':
@@ -188,39 +184,203 @@ class Decoder(nn.Module):
             elif rnn_type == 'gru':
                 rnn_i = nn.GRUCell(num_units, num_units)
             setattr(self, rnn_type + '_l' + str(i_l), rnn_i)
-            setattr(self, 'dropout_l' + str(i_l), nn.Dropout(p=dropout_dec))
+            setattr(self, 'dropout_l' + str(i_l), nn.Dropout(p=dropout_hidden))
 
         # cold fusion
-        if rnnlm_cf is not None:
-            assert cold_fusion_type in ['hidden', 'prob']
-            self.cf_fc_dec_feat = LinearND(num_units + enc_num_units, num_units)
-            if cold_fusion_type == 'hidden':
-                self.cf_fc_lm_feat = LinearND(rnnlm_cf.num_units, num_units)
-            elif cold_fusion_type == 'prob':
-                # probability projection
-                self.cf_fc_lm_feat = LinearND(rnnlm_cf.num_classes, num_units)
-            self.cf_fc_lm_gate = LinearND(num_units * 2, num_units)
-            self.output_bottle = LinearND(num_units * 2, num_units)
-            self.output = LinearND(num_units, num_classes)
+        if rnnlm_cold_fusion:
+            self.cf_linear_dec_feat = LinearND(num_units + enc_num_units, num_units)
+            if cold_fusion == 'hidden':
+                self.cf_linear_lm_feat = LinearND(rnnlm_cold_fusion.num_units, num_units)
+            elif cold_fusion == 'prob':
+                self.cf_linear_lm_feat = LinearND(rnnlm_cold_fusion.num_classes, num_units)
+            else:
+                raise ValueError(cold_fusion)
+            self.cf_linear_lm_gate = LinearND(num_units * 2, num_units)
+            self.output_bn = LinearND(num_units * 2, num_units)
 
             # fix RNNLM parameters
-            for name, param in self.rnnlm_cf.named_parameters():
-                param.requires_grad = False
+            for p in self.rnnlm_cf.parameters():
+                p.requires_grad = False
         else:
-            self.output = LinearND(num_units + enc_num_units, num_classes)
+            self.output_bn = LinearND(num_units + enc_num_units, num_units)
+
+        self.output = LinearND(num_units, num_classes)
 
         # Embedding
-        self.emb = Embedding(num_classes=num_classes,
-                             emb_dim=emb_dim,
-                             dropout=dropout_emb,
-                             ignore_index=pad)
+        self.embed = Embedding(num_classes=num_classes,
+                               emb_dim=emb_dim,
+                               dropout=dropout_emb,
+                               ignore_index=pad)
+
+    def forward(self, enc_out, enc_lens, ys):
+        """Compute XE loss.
+
+        Args:
+            enc_out (torch.autograd.Variable, float): A tensor of size
+                `[B, T, dec_num_units]`
+            enc_lens (list): A list of length `[B]`
+            ys (list): A list of length `[B]`, which contains Variables of size `[L]`
+        Returns:
+            logits (torch.autograd.Variable, float): A tensor of size
+                `[B, L, num_classes]`
+            aw (torch.autograd.Variable, float): A tensor of size
+                `[B, L, T, num_heads]`
+            logits_lm (torch.autograd.Variable, float): A tensor of size
+                `[B, L, num_classes]`
+
+        """
+        device_id = enc_out.get_device()
+
+        # Compute the auxiliary CTC loss
+        if self.ctc_weight > 0:
+            enc_lens_ctc = np2var(np.fromiter(enc_lens, dtype=np.int32), -1).int()
+            y_lens = np2var(np.fromiter([y.size(0) for y in ys], dtype=np.int32), -1).int()
+            # NOTE: do not copy to GPUs here
+
+            # Concatenate all elements in ys for warpctc_pytorch
+            ys_ctc = torch.cat(ys, dim=0).int()
+
+            # Compute CTC loss
+            loss_ctc = warpctc(self.output_ctc(enc_out).transpose(0, 1).cpu(),  # time-major
+                               ys_ctc.cpu(), enc_lens_ctc, y_lens)
+            # NOTE: ctc loss has already been normalized by batch_size
+            # NOTE: index 0 is reserved for blank in warpctc_pytorch
+
+            if device_id >= 0:
+                loss_ctc = loss_ctc.cuda(device_id)
+            loss = loss_ctc * self.ctc_weight
+        else:
+            loss_ctc = 0.
+            loss = 0.
+
+        if self.ctc_weight == 1:
+            loss_acc = {'loss': loss,
+                        'loss_att': 0,
+                        'loss_ctc': loss_ctc,
+                        'loss_lm': 0,
+                        'acc': 0}
+            return loss_acc
+
+        # Append <sos> and <eos>
+        sos = Variable(enc_out.new(1,).fill_(self.sos).long())
+        eos = Variable(enc_out.new(1,).fill_(self.eos).long())
+        if self.backward:
+            ys_in = [torch.cat([eos, y], dim=0) for y in ys]
+            ys_out = [torch.cat([y, sos], dim=0) for y in ys]
+        else:
+            ys_in = [torch.cat([sos, y], dim=0) for y in ys]
+            ys_out = [torch.cat([y, eos], dim=0) for y in ys]
+        ys_in_pad = pad_list(ys_in, self.pad)
+        ys_out_pad = pad_list(ys_out, -1)
+
+        # Initialization
+        dec_out, dec_state = self._init_dec_state(enc_out, enc_lens, self.num_layers)
+        _dec_out, _dec_state = self._init_dec_state(enc_out, enc_lens, 1)  # for internal LM
+        self.score.reset()
+        att_weight_step = None
+        rnnlm_state = None
+
+        # Pre-computation of embedding
+        ys_emb = self.embed(ys_in_pad)
+        if self.rnnlm_cf:
+            ys_lm_emb = self.rnnlm_cf.embed(ys_in_pad)
+            # ys_lm_emb = [self.rnnlm_cf.embed(ys_in_pad[:, t:t + 1])
+            #              for t in six.moves.range(ys_in_pad.size(1))]
+            # ys_lm_emb = torch.cat(ys_lm_emb, dim=1)
+
+        logits_att, logits_lm = [], []
+        for t in six.moves.range(ys_in_pad.size(1)):
+            is_sample = t > 0 and self.ss_prob > 0 and random.random() < self.ss_prob
+
+            # Score
+            context_vec, att_weight_step = self.score(enc_out, enc_lens, dec_out, att_weight_step)
+
+            # Update RNNLM states for cold fusion
+            if self.rnnlm_cf:
+                if is_sample:
+                    y_lm_emb = self.rnnlm_cf.embed(np.argmax(logits_att[-1].detach(), axis=2).cuda(device_id))
+                else:
+                    y_lm_emb = ys_lm_emb[:, t:t + 1]
+                logits_lm_t, lm_out, rnnlm_state = self.rnnlm_cf.predict(y_lm_emb, rnnlm_state)
+            else:
+                logits_lm_t, lm_out = None, None
+
+            # Generate
+            logits_att_t = self.generate(context_vec, dec_out, logits_lm_t, lm_out)
+
+            # Residual connection
+            if self.rnnlm_init and self.internal_lm:
+                logits_att_t += _dec_out
+
+            logits_att_t = self.output(logits_att_t)
+            logits_att.append(logits_att_t)
+
+            if t == ys_in_pad.size(1) - 1:
+                break
+
+            # Sample for scheduled sampling
+            if is_sample:
+                y_emb = self.embed(np.argmax(logits_att[-1].detach(), axis=2).cuda(device_id))
+            else:
+                y_emb = ys_emb[:, t + 1:t + 2]
+
+            # Recurrency
+            dec_out, dec_state, _dec_out, _dec_state = self.recurrency(
+                y_emb, context_vec, dec_state, _dec_state)
+            if self.rnnlm_task_weight > 0:
+                if self.share_lm_softmax:
+                    logits_lm_t = self.output(_dec_out)
+                else:
+                    logits_lm_t = self.output_rnnlm(_dec_out)
+                logits_lm.append(logits_lm_t)
+
+        logits_att = torch.cat(logits_att, dim=1) / self.logits_temp
+
+        # Compute XE sequence loss
+        if self.lsm_prob > 0:
+            # Label smoothing
+            y_lens = [y.size(0) for y in ys_out]
+            loss_att = cross_entropy_lsm(
+                logits_att, ys=ys_out_pad, y_lens=y_lens,
+                lsm_prob=self.lsm_prob, size_average=True)
+        else:
+            loss_att = F.cross_entropy(
+                input=logits_att.view((-1, logits_att.size(2))),
+                target=ys_out_pad.view(-1),  # long
+                ignore_index=-1, size_average=False) / len(enc_out)
+        loss += loss_att * (1 - self.ctc_weight)
+
+        # Compute XE loss for RNNLM objective
+        if self.rnnlm_task_weight > 0:
+            logits_lm = torch.cat(logits_lm, dim=1)
+            loss_lm = F.cross_entropy(
+                input=logits_lm.view((-1, logits_lm.size(2))),
+                target=ys_out_pad[:, 1:].contiguous().view(-1),
+                ignore_index=-1, size_average=True)
+            loss += loss_lm * self.rnnlm_task_weight
+        else:
+            loss_lm = 0.
+
+        # Compute token-level accuracy in teacher-forcing
+        pad_pred = logits_att.view(ys_out_pad.size(0), ys_out_pad.size(1), logits_att.size(-1)).argmax(2)
+        mask = ys_out_pad != -1
+        numerator = torch.sum(pad_pred.masked_select(mask) == ys_out_pad.masked_select(mask))
+        denominator = torch.sum(mask)
+        acc = float(numerator) / float(denominator)
+
+        loss_acc = {'loss': loss,
+                    'loss_att': loss_att,
+                    'loss_ctc': loss_ctc,
+                    'loss_lm': loss_lm,
+                    'acc': acc}
+        return loss_acc
 
     def _init_dec_state(self, enc_out, enc_lens, num_layers):
         """Initialize decoder state.
 
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
-                `[B, T, enc_num_units]`
+                `[B, T, dec_num_units]`
             enc_lens (list): A list of length `[B]`
             num_layers (int):
         Returns:
@@ -239,215 +399,32 @@ class Decoder(nn.Module):
                 dec_out = torch.cat([enc_out[b:b + 1, enc_lens[b] - 1:enc_lens[b]]
                                      for b in six.moves.range(len(enc_lens))], dim=0)
             else:
+                raise NotImplementedError()
+                # TODO(hirofumi): add bridge layer
                 # bidirectional encoder
-                dec_out = torch.cat([(enc_out)[b:b + 1, 0:1, self.num_units:]
+                dec_out = torch.cat([enc_out[b:b + 1, 0:1, self.num_units:]
                                      for b in six.moves.range(len(enc_lens))], dim=0)
                 # NOTE: initialize with reverse direction
             dec_out = torch.tanh(dec_out)
             hx_list = [dec_out.clone().squeeze(1)] * self.num_layers
             cx_list = [dec_out.clone().squeeze(1)] * self.num_layers if self.rnn_type == 'lstm' else None
         else:
-            dec_out = Variable(enc_out.data.new(batch_size, 1, self.num_units).fill_(0.),
+            dec_out = Variable(enc_out.new(batch_size, 1, self.num_units).fill_(0.),
                                volatile=not self.training)
-            zero_state = Variable(enc_out.data.new(batch_size, self.num_units).fill_(0.),
+            zero_state = Variable(enc_out.new(batch_size, self.num_units).fill_(0.),
                                   volatile=not self.training)
             hx_list = [zero_state] * self.num_layers
             cx_list = [zero_state] * self.num_layers if self.rnn_type == 'lstm' else None
 
         return dec_out, (hx_list, cx_list)
 
-    def forward(self, enc_out, enc_lens, ys):
-        """Decoding in the training stage.　Compute XE loss.
-
-        Args:
-            enc_out (torch.autograd.Variable, float): A tensor of size
-                `[B, T, enc_num_units]`
-            enc_lens (list): A list of length `[B]`
-            ys (list): A list of length `[B]`, which contains Variables of size `[L]`
-        Returns:
-            logits (torch.autograd.Variable, float): A tensor of size
-                `[B, L, num_classes]`
-            aw (torch.autograd.Variable, float): A tensor of size
-                `[B, L, T, num_heads]`
-            logits_lm (torch.autograd.Variable, float): A tensor of size
-                `[B, L, num_classes]`
-
-        """
-        # Compute the auxiliary CTC loss
-        if self.ctc_weight > 0:
-            logits_ctc = self.output_ctc(enc_out)
-            loss_ctc = self._compute_ctc_loss(logits_ctc, enc_lens, ys)
-            device_id = enc_out.get_device()
-            if device_id >= 0:
-                loss_ctc = loss_ctc.cuda(device_id)
-            loss = loss_ctc * self.ctc_weight
-        else:
-            loss_ctc = 0
-            loss = 0.
-
-        if self.ctc_weight == 1:
-            loss_acc = {'loss': loss,
-                        'loss_att': 0,
-                        'loss_ctc': loss_ctc,
-                        'loss_lm': 0,
-                        'acc': 0}
-            return loss_acc
-
-        # Append <sos> and <eos>
-        sos = Variable(enc_out.data.new(1,).fill_(self.sos).long())
-        eos = Variable(enc_out.data.new(1,).fill_(self.eos).long())
-        if self.backward:
-            ys_in = [torch.cat([eos, y], dim=0) for y in ys]
-            ys_out = [torch.cat([y, sos], dim=0) for y in ys]
-        else:
-            ys_in = [torch.cat([sos, y], dim=0) for y in ys]
-            ys_out = [torch.cat([y, eos], dim=0) for y in ys]
-        ys_in_pad = pad_list(ys_in, self.pad)
-        ys_out_pad = pad_list(ys_out, -1)
-
-        # Initialization
-        dec_out, dec_state = self._init_dec_state(enc_out, enc_lens, self.num_layers)
-        _dec_out, _dec_state = self._init_dec_state(enc_out, enc_lens, 1)  # for internal LM
-        self.score.reset()
-        aw_t = None
-        rnnlm_state = None
-
-        # Pre-computation of embedding
-        ys_emb = self.emb(ys_in_pad)
-        if self.rnnlm_cf is not None:
-            ys_lm_emb = [self.rnnlm_cf.emb(ys_in_pad[:, t:t + 1])
-                         for t in six.moves.range(ys_in_pad.size(1))]
-            ys_lm_emb = torch.cat(ys_lm_emb, dim=1)
-
-        logits_att, logits_lm = [], []
-        for t in six.moves.range(ys_in_pad.size(1)):
-            is_sample = t > 0 and self.ss_prob > 0 and random.random() < self.ss_prob
-
-            # Score
-            cv, aw_t = self.score(enc_out, enc_lens, dec_out, aw_t)
-
-            # Update RNNLM states for cold fusion
-            if self.rnnlm_cf is not None:
-                if is_sample:
-                    device_id = logits_att[-1].get_device()
-                    y_lm_emb = self.rnnlm_cf.emb(np.argmax(logits_att[-1].detach(), axis=2).cuda(device_id))
-                else:
-                    y_lm_emb = ys_lm_emb[:, t:t + 1]
-                logits_lm_t, lm_out, rnnlm_state = self.rnnlm_cf.predict(y_lm_emb, rnnlm_state)
-            else:
-                logits_lm_t, lm_out = None, None
-
-            # Generate
-            logits_att_t = self._generate(cv, dec_out, logits_lm_t, lm_out)
-
-            # Residual connection
-            if self.rnnlm_init is not None and self.internal_lm:
-                logits_att_t += _dec_out
-
-            if self.share_softmax or self.rnnlm_init is not None:
-                logits_att_t = self.output_bottle(logits_att_t)
-            logits_att_t = self.output(logits_att_t)
-            if self.rnnlm_cf is not None:
-                logits_att_t = F.relu(logits_att_t)
-            logits_att.append(logits_att_t)
-
-            if t == ys_in_pad.size(1) - 1:
-                break
-
-            # Sample for scheduled sampling
-            if is_sample:
-                device_id = logits_att[-1].get_device()
-                y_emb = self.emb(np.argmax(logits_att[-1].detach(), axis=2).cuda(device_id))
-            else:
-                y_emb = ys_emb[:, t + 1:t + 2]
-
-            # Recurrency
-            dec_out, dec_state, _dec_out, _dec_state = self._recurrency(
-                y_emb, cv, dec_state, _dec_state)
-            if self.rnnlm_weight > 0:
-                if self.share_softmax:
-                    logits_lm_t = self.output(_dec_out)
-                else:
-                    logits_lm_t = self.output_rnnlm(_dec_out)
-                logits_lm.append(logits_lm_t)
-
-        logits_att = torch.cat(logits_att, dim=1) / self.logits_temp
-
-        # Compute XE sequence loss
-        if self.lsm_prob > 0:
-            # Label smoothing
-            y_lens = [y.size(0) for y in ys_out]
-            loss_att = cross_entropy_lsm(
-                logits_att, ys=ys_out_pad, y_lens=y_lens,
-                lsm_prob=self.lsm_prob, lsm_type=self.lsm_type,
-                size_average=True)
-        else:
-            loss_att = F.cross_entropy(
-                input=logits_att.view((-1, logits_att.size(2))),
-                target=ys_out_pad.view(-1),  # long
-                ignore_index=-1, size_average=False) / len(enc_out)
-        loss += loss_att * (1 - self.ctc_weight)
-
-        # Compute XE loss for RNNLM objective
-        if self.rnnlm_weight > 0:
-            logits_lm = torch.cat(logits_lm, dim=1)
-            loss_lm = F.cross_entropy(
-                input=logits_lm.view((-1, logits_lm.size(2))),
-                target=ys_out_pad[:, 1:].contiguous().view(-1),
-                ignore_index=-1, size_average=True)
-            loss += loss_lm * self.rnnlm_weight
-        else:
-            loss_lm = 0
-
-        # Compute token-level accuracy in teacher-forcing
-        pad_pred = logits_att.data.view(ys_out_pad.size(0), ys_out_pad.size(1), logits_att.size(-1)).max(2)[1]
-        mask = ys_out_pad.data != -1
-        numerator = torch.sum(pad_pred.masked_select(mask) == ys_out_pad.data.masked_select(mask))
-        denominator = torch.sum(mask)
-        acc = float(numerator) / float(denominator)
-
-        loss_acc = {'loss': loss,
-                    'loss_att': loss_att,
-                    'loss_ctc': loss_ctc,
-                    'loss_lm': loss_lm,
-                    'acc': acc}
-        return loss_acc
-
-    def _compute_ctc_loss(self, logits, x_lens, ys):
-        """Compute CTC loss.
-
-        Args:
-            logits (torch.autograd.Variable, float): A tensor of size
-                `[B, T, enc_num_units]`
-            x_lens (list): A list of length `[B]`
-            ys (torch.autograd.Variable, long): A tensor of size `[B, L]`,
-                which does not include <sos> nor <eos>
-        Returns:
-            loss (torch.autograd.Variable, float): A tensor of size `[1]`
-
-        """
-        x_lens = np2var(np.fromiter(x_lens, dtype=np.int32), -1).int()
-        y_lens = np2var(np.fromiter([y.size(0) for y in ys], dtype=np.int32), -1).int()
-        # NOTE: do not copy to GPUs here
-
-        # Concatenate all elements in ys for warpctc_pytorch
-        ys_ctc = torch.cat(ys, dim=0).int()
-
-        # Compute CTC loss
-        loss = warpctc(logits.transpose(0, 1).cpu(),  # time-major
-                       ys_ctc.cpu(), x_lens, y_lens)
-        # NOTE: ctc loss has already been normalized by batch_size
-        # NOTE: index 0 is reserved for blank in warpctc_pytorch
-
-        return loss
-
-    def _recurrency(self, y_emb, cv, dec_state, _dec_state):
+    def recurrency(self, y_emb, context_vec, dec_state, _dec_state):
         """Recurrency function.
 
         Args:
             y_emb (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, emb_dim]`
-            cv (torch.autograd.Variable, float): A tensor of size
+            context_vec (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, enc_num_units]`
             dec_state (tuple): A tuple of (hx_list, cx_list)
                 hx_list (list of torch.autograd.Variable(float)):
@@ -471,24 +448,24 @@ class Decoder(nn.Module):
         hx_list, cx_list = dec_state
         hx_lm, cx_lm = _dec_state
         y_emb = y_emb.squeeze(1)
-        cv = cv.squeeze(1)
+        context_vec = context_vec.squeeze(1)
 
         if self.internal_lm:
             if self.rnn_type == 'lstm':
                 hx_lm[0], cx_lm[0] = self.lstm_internal_lm(y_emb, (hx_lm[0], cx_lm[0]))
                 hx_lm[0] = self.dropout_internal_lm(hx_lm[0])
-                _h_lm = torch.cat([cv, hx_lm[0]], dim=-1)
+                _h_lm = torch.cat([hx_lm[0], context_vec], dim=-1)
                 hx_list[0], cx_list[0] = self.lstm_l0(_h_lm, (hx_list[0], cx_list[0]))
             elif self.rnn_type == 'gru':
                 hx_lm = self.gru_internal_lm(y_emb, hx_lm)
                 hx_lm = self.dropout_internal_lm(hx_lm)
-                _h_lm = torch.cat([cv, hx_lm], dim=-1)
+                _h_lm = torch.cat([hx_lm, context_vec], dim=-1)
                 hx_list[0] = self.gru_l0(_h_lm, hx_list[0])
         else:
             if self.rnn_type == 'lstm':
-                hx_list[0], cx_list[0] = self.lstm_l0(torch.cat([y_emb, cv], dim=-1), (hx_list[0], cx_list[0]))
+                hx_list[0], cx_list[0] = self.lstm_l0(torch.cat([y_emb, context_vec], dim=-1), (hx_list[0], cx_list[0]))
             elif self.rnn_type == 'gru':
-                hx_list[0] = self.gru_l0(torch.cat([y_emb, cv], dim=-1), hx_list[0])
+                hx_list[0] = self.gru_l0(torch.cat([y_emb, context_vec], dim=-1), hx_list[0])
         hx_list[0] = self.dropout_l0(hx_list[0])
 
         for i_l in six.moves.range(1, self.num_layers):
@@ -508,11 +485,11 @@ class Decoder(nn.Module):
         _dec_out = hx_lm[0].unsqueeze(1)
         return dec_out, (hx_list, cx_list), _dec_out, (hx_lm, cx_lm)
 
-    def _generate(self, cv, dec_out, logits_lm_t, lm_out):
+    def generate(self, context_vec, dec_out, logits_lm_t, lm_out):
         """Generate function.
 
         Args:
-            cv (torch.autograd.Variable, float): A tensor of size
+            context_vec (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, enc_num_units]`
             dec_out (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, dec_num_units]`
@@ -525,18 +502,18 @@ class Decoder(nn.Module):
                 `[B, 1, num_classes]`
 
         """
-        if self.rnnlm_cf is not None:
+        if self.rnnlm_cf:
             # cold fusion
-            if self.cold_fusion_type == 'prob':
-                lm_feat = self.cf_fc_lm_feat(logits_lm_t)
-            else:
-                lm_feat = self.cf_fc_lm_feat(lm_out)
-            dec_feat = self.cf_fc_dec_feat(torch.cat([dec_out, cv], dim=-1))
-            gate = F.sigmoid(self.cf_fc_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
+            if self.cold_fusion == 'hidden':
+                lm_feat = self.cf_linear_lm_feat(lm_out)
+            elif self.cold_fusion == 'prob':
+                lm_feat = self.cf_linear_lm_feat(logits_lm_t)
+            dec_feat = self.cf_linear_dec_feat(torch.cat([dec_out, context_vec], dim=-1))
+            gate = F.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
             gated_lm_feat = gate * lm_feat
-            logits_t = self.output_bottle(torch.cat([dec_feat, gated_lm_feat], dim=-1))
+            logits_t = self.output_bn(torch.cat([dec_feat, gated_lm_feat], dim=-1))
         else:
-            logits_t = torch.cat([dec_out, cv], dim=-1)
+            logits_t = self.output_bn(torch.cat([dec_out, context_vec], dim=-1))
         return logits_t
 
     def greedy(self, enc_out, enc_lens, max_len_ratio, exclude_eos=False):
@@ -559,7 +536,7 @@ class Decoder(nn.Module):
         dec_out, dec_state = self._init_dec_state(enc_out, enc_lens, self.num_layers)
         _dec_out, _dec_state = self._init_dec_state(enc_out, enc_lens, 1)
         self.score.reset()
-        aw_t = None
+        att_weight_step = None
         rnnlm_state = None
 
         if self.backward:
@@ -568,40 +545,40 @@ class Decoder(nn.Module):
             sos, eos = self.sos, self.eos
 
         # Start from <sos> (<eos> in case of the backward decoder)
-        y = Variable(enc_out.data.new(batch_size, 1).fill_(sos).long(), volatile=True)
+        y = Variable(enc_out.new(batch_size, 1).fill_(sos).long(), volatile=True)
 
         _best_hyps, _aw = [], []
         y_lens = np.zeros((batch_size,), dtype=np.int32)
         eos_flags = [False] * batch_size
         for t in six.moves.range(int(math.floor(enc_time * max_len_ratio)) + 1):
             # Score
-            cv, aw_t = self.score(enc_out, enc_lens, dec_out, aw_t)
+            context_vec, att_weight_step = self.score(enc_out, enc_lens, dec_out, att_weight_step)
 
             # Update RNNLM states for cold fusion
-            if self.rnnlm_cf is not None:
-                y_lm = self.rnnlm_cf.emb(y)
+            if self.rnnlm_cf:
+                y_lm = self.rnnlm_cf.embed(y)
                 logits_lm_t, lm_out, rnnlm_state = self.rnnlm_cf.predict(y_lm, rnnlm_state)
             else:
                 logits_lm_t, lm_out = None, None
 
             # Generate
-            logits_t = self._generate(cv, dec_out, logits_lm_t, lm_out)
+            logits_t = self.generate(context_vec, dec_out, logits_lm_t, lm_out)
 
             # residual connection
-            if self.rnnlm_init is not None and self.internal_lm:
+            if self.rnnlm_init and self.internal_lm:
                 logits_t += _dec_out
 
-            if self.share_softmax or self.rnnlm_init is not None:
-                logits_t = self.output_bottle(logits_t)
+            if self.share_lm_softmax or self.rnnlm_init:
+                logits_t = self.output_bn(logits_t)
             logits_t = self.output(logits_t)
-            if self.rnnlm_cf is not None:
+            if self.rnnlm_cf:
                 logits_t = F.relu(logits_t)
 
             # Pick up 1-best
             device_id = logits_t.get_device()
             y = np.argmax(logits_t.squeeze(1).detach(), axis=1).cuda(device_id).unsqueeze(1)
             _best_hyps += [y]
-            _aw += [aw_t]
+            _aw += [att_weight_step]
 
             # Count lengths of hypotheses
             for b in six.moves.range(batch_size):
@@ -616,9 +593,9 @@ class Decoder(nn.Module):
                 break
 
             # Recurrency
-            y_emb = self.emb(y)
-            dec_out, dec_state, _dec_out, _dec_state = self._recurrency(
-                y_emb, cv, dec_state, _dec_state)
+            y_emb = self.embed(y)
+            dec_out, dec_state, _dec_out, _dec_state = self.recurrency(
+                y_emb, context_vec, dec_state, _dec_state)
 
         # Concatenate in L dimension
         _best_hyps = torch.cat(_best_hyps, dim=1)
@@ -657,7 +634,7 @@ class Decoder(nn.Module):
 
         Args:
             enc_out (torch.autograd.Variable, float): A tensor of size
-                `[B, T, enc_num_units]`
+                `[B, T, dec_num_units]`
             enc_lens (list): A list of length `[B]`
             params (dict):
                 beam_width (int): the size of beam
@@ -677,7 +654,7 @@ class Decoder(nn.Module):
         batch_size = enc_out.size(0)
 
         # For cold fusion
-        if params['rnnlm_weight'] > 0 and not self.cold_fusion_type:
+        if params['rnnlm_weight'] > 0 and not self.cold_fusion:
             assert self.rnnlm_cf is not None
             self.rnnlm_cf.eval()
 
@@ -697,7 +674,7 @@ class Decoder(nn.Module):
             # Initialization per utterance
             dec_out, (hx_list, cx_list) = self._init_dec_state(enc_out[b:b + 1], enc_lens[b:b + 1], self.num_layers)
             _dec_out, _dec_state = self._init_dec_state(enc_out[b:b + 1], enc_lens[b:b + 1], 1)
-            cv = Variable(enc_out.data.new(1, 1, enc_out.size(-1)).fill_(0.), volatile=True)
+            context_vec = Variable(enc_out.new(1, 1, enc_out.size(-1)).fill_(0.), volatile=True)
             self.score.reset()
 
             complete = []
@@ -706,7 +683,7 @@ class Decoder(nn.Module):
                      'dec_out': dec_out,
                      'hx_list': hx_list,
                      'cx_list': cx_list,
-                     'cv': cv,
+                     'context_vec': context_vec,
                      'aw_t_list': [None],
                      'rnnlm_state': None,
                      'prev_cov': 0,
@@ -717,50 +694,50 @@ class Decoder(nn.Module):
                 for i_beam in six.moves.range(len(beam)):
                     if t > 0:
                         # Recurrency
-                        y = Variable(enc_out.data.new(1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
-                        y_emb = self.emb(y)
-                        dec_out, (hx_list, cx_list), _dec_out, _dec_state = self._recurrency(
-                            y_emb, beam[i_beam]['cv'],
+                        y = Variable(enc_out.new(1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
+                        y_emb = self.embed(y)
+                        dec_out, (hx_list, cx_list), _dec_out, _dec_state = self.recurrency(
+                            y_emb, beam[i_beam]['context_vec'],
                             (beam[i_beam]['hx_list'], beam[i_beam]['cx_list']),
                             beam[i_beam]['_dec_state'])
                     else:
                         dec_out = beam[i_beam]['dec_out']
 
                     # Score
-                    cv, aw_t = self.score(enc_out[b:b + 1, :enc_lens[b]],
-                                          enc_lens[b:b + 1],
-                                          dec_out,
-                                          beam[i_beam]['aw_t_list'][-1])
+                    context_vec, att_weight_step = self.score(enc_out[b:b + 1, :enc_lens[b]],
+                                                              enc_lens[b:b + 1],
+                                                              dec_out,
+                                                              beam[i_beam]['aw_t_list'][-1])
 
-                    if self.rnnlm_cf is not None:
+                    if self.rnnlm_cf:
                         # Update RNNLM states for cold fusion
-                        y_lm = Variable(enc_out.data.new(1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
-                        y_lm_emb = self.rnnlm_cf.emb(y_lm)
+                        y_lm = Variable(enc_out.new(1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
+                        y_lm_emb = self.rnnlm_cf.embed(y_lm)
                         logits_lm_t, lm_out, rnnlm_state = self.rnnlm_cf.predict(
                             y_lm_emb, beam[i_beam]['rnnlm_state'])
                     elif rnnlm is not None:
                         # Update RNNLM states for shallow fusion
-                        y_lm = Variable(enc_out.data.new(1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
-                        y_lm_emb = rnnlm.emb(y_lm)
+                        y_lm = Variable(enc_out.new(1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
+                        y_lm_emb = rnnlm.embed(y_lm)
                         logits_lm_t, lm_out, rnnlm_state = rnnlm.predict(
                             y_lm_emb, beam[i_beam]['rnnlm_state'])
                     else:
                         logits_lm_t, lm_out, rnnlm_state = None, None, None
 
                     # Generate
-                    logits_t = self._generate(cv, dec_out, logits_lm_t, lm_out)
+                    logits_t = self.generate(context_vec, dec_out, logits_lm_t, lm_out)
 
                     # residual connection
-                    if self.rnnlm_init is not None and self.internal_lm:
+                    if self.rnnlm_init and self.internal_lm:
                         if t == 0:
                             logits_t += beam[i_beam]['_dec_out']
                         else:
                             logits_t += _dec_out
 
-                    if self.share_softmax or self.rnnlm_init is not None:
-                        logits_t = self.output_bottle(logits_t)
+                    if self.share_lm_softmax or self.rnnlm_init:
+                        logits_t = self.output_bn(logits_t)
                     logits_t = self.output(logits_t)
-                    if self.rnnlm_cf is not None:
+                    if self.rnnlm_cf:
                         logits_t = F.relu(logits_t)
 
                     # Path through the softmax layer & convert to log-scale
@@ -785,13 +762,13 @@ class Decoder(nn.Module):
                             # Recompute converage penalty in each step
                             score -= beam[i_beam]['prev_cov'] * params['coverage_penalty']
 
-                            aw_stack = torch.stack(beam[i_beam]['aw_t_list'][1:] + [aw_t], dim=1)
+                            att_weight_stack = torch.stack(beam[i_beam]['aw_t_list'][1:] + [att_weight_step], dim=1)
 
                             if self.score.num_heads > 1:
-                                cov_sum = aw_stack[0, :, :, 0].detach().cpu().numpy()
+                                cov_sum = att_weight_stack[0, :, :, 0].detach().cpu().numpy()
                                 # TODO(hirofumi): fix for MHA
                             else:
-                                cov_sum = aw_stack.detach().cpu().numpy()
+                                cov_sum = att_weight_stack.detach().cpu().numpy()
                             if params['coverage_threshold'] == 0:
                                 cov_sum = np.sum(cov_sum)
                             else:
@@ -812,9 +789,9 @@ class Decoder(nn.Module):
                              'hx_list': hx_list[:],
                              'cx_list': cx_list[:],
                              'dec_out': dec_out,
-                             'cv': cv,
-                             'aw_t_list': beam[i_beam]['aw_t_list'] + [aw_t],
-                             'rnnlm_state': rnnlm_state[:] if rnnlm_state is not None else None,
+                             'context_vec': context_vec,
+                             'aw_t_list': beam[i_beam]['aw_t_list'] + [att_weight_step],
+                             'rnnlm_state': rnnlm_state[:],
                              'prev_cov': cov_sum,
                              '_dec_out': _dec_out,
                              '_dec_state': _dec_state[:]})  # TODO
@@ -932,7 +909,4 @@ def warpctc(acts, labels, act_lens, label_lens):
 
     """
     assert len(labels.size()) == 1  # labels must be 1 dimensional
-    _assert_no_grad(labels)
-    _assert_no_grad(act_lens)
-    _assert_no_grad(label_lens)
     return _CTC.apply(acts, labels, act_lens, label_lens)

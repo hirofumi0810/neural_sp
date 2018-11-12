@@ -18,7 +18,7 @@ import six
 class GreedyDecoder(object):
 
     def __init__(self, blank_index):
-        self._blank = blank_index
+        self.blank = blank_index
 
     def __call__(self, logits, x_lens):
         """
@@ -47,7 +47,7 @@ class GreedyDecoder(object):
 
             # Step 2. Remove all blank labels
             best_hyp = [x for x in filter(
-                lambda x: x != self._blank, collapsed_indices)]
+                lambda x: x != self.blank, collapsed_indices)]
             best_hyps.append(np.array(best_hyp))
 
         return np.array(best_hyps)

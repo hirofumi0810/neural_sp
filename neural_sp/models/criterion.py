@@ -4,55 +4,20 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""My implementation of some criterion."""
+"""Criterions."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import numpy as np
+import six
 
 from torch.autograd import Variable
 import torch.nn.functional as F
 
 
-def kl_div_lsm(logits, lsm_prob, dist='uniform'):
-    """Compute KL divergence loss for label smoothing.
-
-    Args:
-        logits (torch.autograd.Variable, float):
-            A tensor of size `[B, T_in, num_classes]`
-        lsm_prob (float):
-        dist (string): uniform or unigram or normal
-    Returns:
-        kl_loss (torch.autograd.Variable, float): A tensor of size `[1]`
-
-    """
-    batch, num_tokens, num_classes = logits.size()
-    if dist == 'uniform':
-        dist = Variable(logits.data.new(
-            batch, num_tokens, num_classes).fill_(1 / num_classes))
-        # NOTE: multiply lsm_prob later
-    elif dist == 'unigram':
-        raise NotImplementedError()
-    elif dist == 'normal':
-        raise NotImplementedError()
-    else:
-        raise NotImplementedError()
-
-    if logits.is_cuda:
-        dist = dist.cuda()
-
-    kl_loss_sum = F.kl_div(F.softmax(logits, dim=-1), dist,
-                           size_average=False, reduce=True)
-    # kl_loss_sum = F.kl_div(F.log_softmax(logits, dim=-1), torch.log(dist),
-    #                    size_average=False, reduce=True)
-    # TODO(hirofumi): compute at log-space?
-
-    return kl_loss_sum
-
-
-def cross_entropy_lsm(logits, ys, y_lens, lsm_prob, lsm_type, size_average=False):
+def cross_entropy_lsm(logits, ys, y_lens, lsm_prob, size_average=False):
     """Compute cross entropy loss for label smoothing.
 
     Args:
@@ -62,37 +27,25 @@ def cross_entropy_lsm(logits, ys, y_lens, lsm_prob, lsm_type, size_average=False
             A tensor of size `[B, L]`.
         y_lens (list): A list of length `[B]`
         lsm_prob (float):
-        lsm_type (string): uniform or unigram or normal or rnnlm
         size_average (bool):
     Returns:
         xe_loss_sum (torch.autograd.Variable, float): A tensor of size `[1]`
 
     """
-    batch, num_tokens = ys.size()
+    batch_size, num_tokens = ys.size()
     num_classes = logits.size(-1)
-
-    if lsm_type == 'uniform':
-        fill_val = lsm_prob / num_classes
-    elif lsm_type == 'unigram':
-        raise NotImplementedError()
-    elif lsm_type == 'normal':
-        raise NotImplementedError()
-    elif lsm_type == 'rnnlm':
-        raise NotImplementedError()
-    else:
-        raise NotImplementedError()
+    fill_val = lsm_prob / (num_classes - 1)
 
     # Create one-hot vector
-    ys_ls = Variable(ys.float().data.new(batch, num_tokens, num_classes).fill_(fill_val))
-    for b in range(batch):
-        for t in range(y_lens[b]):
-            ys_ls.data[b, t, ys.data[b, t]] = 1 - lsm_prob
+    ys_lsm = Variable(ys.float().new(batch_size, num_tokens, num_classes).fill_(fill_val))
+    for b in six.moves.range(batch_size):
+        for t in six.moves.range(y_lens[b]):
+            ys_lsm[b, t, ys[b, t]] = 1 - lsm_prob
 
     # Compute XE for label smoothing
     log_probs = F.log_softmax(logits, dim=-1)
-    loss = np.sum([(- ys_ls[b, :y_lens[b]] * log_probs[b, :y_lens[b]]).sum()
-                   for b in range(batch)])
-
+    loss = np.sum([(- ys_lsm[b, :y_lens[b]] * log_probs[b, :y_lens[b]]).sum()
+                   for b in six.moves.range(batch_size)])
     if size_average:
-        loss /= batch
+        loss /= batch_size
     return loss

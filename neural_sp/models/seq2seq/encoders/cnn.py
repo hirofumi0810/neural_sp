@@ -31,7 +31,6 @@ class CNNEncoder(nn.Module):
         poolings (list): the size of poolings in CNN layers
         dropout_in (float): the probability to drop nodes in input-hidden connection
         dropout_hidden (float): the probability to drop nodes in hidden-hidden connection
-        num_projs_final (int):
         activation (str): relu or prelu or hard_tanh or maxout
         batch_norm (bool): if True, apply batch normalization
 
@@ -46,7 +45,6 @@ class CNNEncoder(nn.Module):
                  poolings,
                  dropout_in,
                  dropout_hidden,
-                 num_projs_final,
                  activation='relu',
                  batch_norm=False):
 
@@ -131,15 +129,8 @@ class CNNEncoder(nn.Module):
 
         self.layers = nn.Sequential(layers)
 
-        # Projection layer to match the dimension with the decoder
-        if num_projs_final > 0:
-            self.proj = LinearND(in_ch * in_freq, num_projs_final)
-
         self.get_conv_out_size = ConvOutSize(self.layers)
-        if num_projs_final > 0:
-            self.output_dim = num_projs_final
-        else:
-            self.output_dim = int(in_ch * in_freq)
+        self.output_dim = int(in_ch * in_freq)
 
     def forward(self, xs, x_lens):
         """Forward computation.
@@ -178,9 +169,6 @@ class CNNEncoder(nn.Module):
         xs = xs.transpose(1, 3).contiguous()
         xs = xs.view(batch_size, time, freq * out_ch)
         # NOTE: xs: `[B, new_time, out_ch * new_freq]`
-
-        # Projection
-        xs = self.proj(xs)
 
         # Update x_lens
         x_lens = [self.get_conv_out_size(x_len, 1) for x_len in x_lens]

@@ -68,7 +68,7 @@ class Embedding(nn.Module):
         """
         super(Embedding, self).__init__()
 
-        self.emb = nn.Embedding(num_classes, emb_dim, padding_idx=ignore_index)
+        self.embed = nn.Embedding(num_classes, emb_dim, padding_idx=ignore_index)
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, y):
@@ -81,4 +81,4 @@ class Embedding(nn.Module):
                 `[B, L, emb_dim]`
 
         """
-        return self.dropout(self.emb(y))
+        return self.dropout(self.embed(y))

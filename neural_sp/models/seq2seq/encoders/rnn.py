@@ -52,8 +52,6 @@ class RNNEncoder(nn.Module):
         num_layers_sub (int): the number of layers in the sub task
         nin (int): if larger than 0, insert 1*1 conv (filter size: nin)
             and ReLU activation between each LSTM layer
-        num_projs_final (int): the number of units in the projection layer
-            after the last layer to match the dimensions with the decoder
 
     """
 
@@ -78,8 +76,7 @@ class RNNEncoder(nn.Module):
                  conv_batch_norm,
                  residual,
                  num_layers_sub=0,
-                 nin=0,
-                 num_projs_final=0):
+                 nin=0):
 
         super(RNNEncoder, self).__init__()
 
@@ -136,7 +133,6 @@ class RNNEncoder(nn.Module):
                                    poolings=conv_poolings,
                                    dropout_in=0,
                                    dropout_hidden=dropout_hidden,
-                                   num_projs_final=256,  # TODO(hirofumi): make this parameter
                                    activation='relu',
                                    batch_norm=conv_batch_norm)
             input_dim = self.conv.output_dim
