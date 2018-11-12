@@ -131,86 +131,86 @@ class Decoder(nn.Module):
             # Fully-connected layers for CTC
             if len(ctc_fc_list) > 0:
                 fc_layers = OrderedDict()
+                ctc_fc_list += [num_classes]
                 for i in six.moves.range(len(ctc_fc_list)):
                     input_dim = enc_num_units if i == 0 else ctc_fc_list[i - 1]
-                    fc_layers['fc' + str(i)] = LinearND(input_dim, ctc_fc_list[i],
-                                                        dropout=dropout_hidden)
-                fc_layers['output'] = LinearND(ctc_fc_list[-1], num_classes)
+                    fc_layers['fc' + str(i)] = LinearND(
+                        input_dim, ctc_fc_list[i],
+                        dropout=dropout_hidden if i < len(ctc_fc_list) - 1 else 0)
                 self.output_ctc = nn.Sequential(fc_layers)
             else:
                 self.output_ctc = LinearND(enc_num_units, num_classes)
             self.decode_ctc_greedy = GreedyDecoder(blank_index=0)
             self.decode_ctc_beam = BeamSearchDecoder(blank_index=0)
-        # CTC only
-        elif ctc_weight == 1:
-            return None
+            self.warpctc_loss = warpctc_pytorch.CTCLoss(size_average=True)
 
-        # for decoder initialization with pre-trained RNNLM
-        if rnnlm_init:
-            assert internal_lm
-            assert rnnlm_init.predictor.num_classes == num_classes
-            assert rnnlm_init.predictor.num_units == num_units
-            assert rnnlm_init.predictor.num_layers == 1  # TODO(hirofumi): on-the-fly
+        if ctc_weight < 1:
+            # for decoder initialization with pre-trained RNNLM
+            if rnnlm_init:
+                assert internal_lm
+                assert rnnlm_init.predictor.num_classes == num_classes
+                assert rnnlm_init.predictor.num_units == num_units
+                assert rnnlm_init.predictor.num_layers == 1  # TODO(hirofumi): on-the-fly
 
-        # for MTL with RNNLM objective
-        if rnnlm_task_weight > 0:
-            assert internal_lm
-            if not share_lm_softmax:
-                self.output_rnnlm = LinearND(num_units, num_classes)
+            # for MTL with RNNLM objective
+            if rnnlm_task_weight > 0:
+                assert internal_lm
+                if not share_lm_softmax:
+                    self.output_rnnlm = LinearND(num_units, num_classes)
 
-        # Attention
-        assert isinstance(attention, AttentionMechanism) or isinstance(attention, MultiheadAttentionMechanism)
+            # Attention
+            assert isinstance(attention, AttentionMechanism) or isinstance(attention, MultiheadAttentionMechanism)
 
-        # Decoder
-        if internal_lm:
-            if rnn_type == 'lstm':
-                self.lstm_internal_lm = nn.LSTMCell(emb_dim, num_units)
-                self.dropout_internal_lm = nn.Dropout(p=dropout_hidden)
-                self.lstm_l0 = nn.LSTMCell(num_units + enc_num_units, num_units)
-            elif rnn_type == 'gru':
-                self.gru_internal_lm = nn.GRUCell(emb_dim, num_units)
-                self.dropout_internal_lm = nn.Dropout(p=dropout_hidden)
-                self.gru_l0 = nn.GRUCell(num_units + enc_num_units, num_units)
-        else:
-            if rnn_type == 'lstm':
-                self.lstm_l0 = nn.LSTMCell(emb_dim + enc_num_units, num_units)
-            elif rnn_type == 'gru':
-                self.gru_l0 = nn.GRUCell(emb_dim + enc_num_units, num_units)
-        self.dropout_l0 = nn.Dropout(p=dropout_hidden)
-
-        for i_l in six.moves.range(1, num_layers):
-            if rnn_type == 'lstm':
-                rnn_i = nn.LSTMCell(num_units, num_units)
-            elif rnn_type == 'gru':
-                rnn_i = nn.GRUCell(num_units, num_units)
-            setattr(self, rnn_type + '_l' + str(i_l), rnn_i)
-            setattr(self, 'dropout_l' + str(i_l), nn.Dropout(p=dropout_hidden))
-
-        # cold fusion
-        if rnnlm_cold_fusion:
-            self.cf_linear_dec_feat = LinearND(num_units + enc_num_units, num_units)
-            if cold_fusion == 'hidden':
-                self.cf_linear_lm_feat = LinearND(rnnlm_cold_fusion.num_units, num_units)
-            elif cold_fusion == 'prob':
-                self.cf_linear_lm_feat = LinearND(rnnlm_cold_fusion.num_classes, num_units)
+            # Decoder
+            if internal_lm:
+                if rnn_type == 'lstm':
+                    self.lstm_internal_lm = nn.LSTMCell(emb_dim, num_units)
+                    self.dropout_internal_lm = nn.Dropout(p=dropout_hidden)
+                    self.lstm_l0 = nn.LSTMCell(num_units + enc_num_units, num_units)
+                elif rnn_type == 'gru':
+                    self.gru_internal_lm = nn.GRUCell(emb_dim, num_units)
+                    self.dropout_internal_lm = nn.Dropout(p=dropout_hidden)
+                    self.gru_l0 = nn.GRUCell(num_units + enc_num_units, num_units)
             else:
-                raise ValueError(cold_fusion)
-            self.cf_linear_lm_gate = LinearND(num_units * 2, num_units)
-            self.output_bn = LinearND(num_units * 2, num_units)
+                if rnn_type == 'lstm':
+                    self.lstm_l0 = nn.LSTMCell(emb_dim + enc_num_units, num_units)
+                elif rnn_type == 'gru':
+                    self.gru_l0 = nn.GRUCell(emb_dim + enc_num_units, num_units)
+            self.dropout_l0 = nn.Dropout(p=dropout_hidden)
 
-            # fix RNNLM parameters
-            for p in self.rnnlm_cf.parameters():
-                p.requires_grad = False
-        else:
-            self.output_bn = LinearND(num_units + enc_num_units, num_units)
+            for i_l in six.moves.range(1, num_layers):
+                if rnn_type == 'lstm':
+                    rnn_i = nn.LSTMCell(num_units, num_units)
+                elif rnn_type == 'gru':
+                    rnn_i = nn.GRUCell(num_units, num_units)
+                setattr(self, rnn_type + '_l' + str(i_l), rnn_i)
+                setattr(self, 'dropout_l' + str(i_l), nn.Dropout(p=dropout_hidden))
 
-        self.output = LinearND(num_units, num_classes)
+            # cold fusion
+            if rnnlm_cold_fusion:
+                self.cf_linear_dec_feat = LinearND(num_units + enc_num_units, num_units)
+                if cold_fusion == 'hidden':
+                    self.cf_linear_lm_feat = LinearND(rnnlm_cold_fusion.num_units, num_units)
+                elif cold_fusion == 'prob':
+                    self.cf_linear_lm_feat = LinearND(rnnlm_cold_fusion.num_classes, num_units)
+                else:
+                    raise ValueError(cold_fusion)
+                self.cf_linear_lm_gate = LinearND(num_units * 2, num_units)
+                self.output_bn = LinearND(num_units * 2, num_units)
 
-        # Embedding
-        self.embed = Embedding(num_classes=num_classes,
-                               emb_dim=emb_dim,
-                               dropout=dropout_emb,
-                               ignore_index=pad)
+                # fix RNNLM parameters
+                for p in self.rnnlm_cf.parameters():
+                    p.requires_grad = False
+            else:
+                self.output_bn = LinearND(num_units + enc_num_units, num_units)
+
+            self.output = LinearND(num_units, num_classes)
+
+            # Embedding
+            self.embed = Embedding(num_classes=num_classes,
+                                   emb_dim=emb_dim,
+                                   dropout=dropout_emb,
+                                   ignore_index=pad)
 
     def forward(self, enc_out, enc_lens, ys):
         """Compute XE loss.
@@ -241,8 +241,8 @@ class Decoder(nn.Module):
             ys_ctc = torch.cat(ys, dim=0).int()
 
             # Compute CTC loss
-            loss_ctc = warpctc(self.output_ctc(enc_out).transpose(0, 1).cpu(),  # time-major
-                               ys_ctc.cpu(), enc_lens_ctc, y_lens)
+            loss_ctc = self.warpctc_loss(self.output_ctc(enc_out).transpose(0, 1).cpu(),  # time-major
+                                         ys_ctc.cpu(), enc_lens_ctc, y_lens)
             # NOTE: ctc loss has already been normalized by batch_size
             # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
@@ -873,40 +873,3 @@ class Decoder(nn.Module):
             # TODO(hirofumi: decoding paramters
 
         return best_hyps
-
-
-class _CTC(warpctc_pytorch._CTC):
-    @staticmethod
-    def forward(ctx, acts, labels, act_lens, label_lens):
-        is_cuda = True if acts.is_cuda else False
-        acts = acts.contiguous()
-        loss_func = warpctc_pytorch.gpu_ctc if is_cuda else warpctc_pytorch.cpu_ctc
-        grads = torch.zeros(acts.size()).type_as(acts)
-        minibatch_size = acts.size(1)
-        costs = torch.zeros(minibatch_size).cpu()
-        loss_func(acts,
-                  grads,
-                  labels,
-                  label_lens,
-                  act_lens,
-                  minibatch_size,
-                  costs)
-        # modified only here from original
-        costs = torch.FloatTensor([costs.sum()]) / acts.size(1)
-        ctx.grads = Variable(grads)
-        ctx.grads /= ctx.grads.size(1)
-
-        return costs
-
-
-def warpctc(acts, labels, act_lens, label_lens):
-    """Chainer like CTC Loss
-
-    acts: Tensor of (seqLength x batch x outputDim) containing output from network
-    labels: 1 dimensional Tensor containing all the targets of the batch in one sequence
-    act_lens: Tensor of size (batch) containing size of each output sequence from the network
-    act_lens: Tensor of (batch) containing label length of each example
-
-    """
-    assert len(labels.size()) == 1  # labels must be 1 dimensional
-    return _CTC.apply(acts, labels, act_lens, label_lens)
