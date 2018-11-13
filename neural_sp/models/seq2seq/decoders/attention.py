@@ -85,7 +85,8 @@ class AttentionMechanism(nn.Module):
             self.v = LinearND(att_dim, 1, bias=False)
 
         elif self.att_type == 'dot_product':
-            self.w_enc = LinearND(enc_num_units, dec_num_units, bias=False)
+            self.w_enc = LinearND(enc_num_units, att_dim, bias=False)
+            self.w_dec = LinearND(dec_num_units, att_dim, bias=False)
 
         elif self.att_type == 'luong_dot':
             raise NotImplementedError()
@@ -125,7 +126,7 @@ class AttentionMechanism(nn.Module):
 
         if aw_step is None:
             volatile = enc_out.volatile
-            aw_step = Variable(enc_out.data.new(batch_size, enc_time).fill_(0.), volatile=volatile)
+            aw_step = Variable(enc_out.new(batch_size, enc_time).fill_(0.), volatile=volatile)
 
         # Pre-computation of encoder-side features for computing scores
         if self.enc_out_a is None:
@@ -135,32 +136,18 @@ class AttentionMechanism(nn.Module):
             dec_out = dec_out.expand_as(torch.zeros((batch_size, enc_time, dec_out.size(2))))
 
         if self.att_type == 'content':
-            ##############################################################
-            # energy = <v, tanh(W([h_dec; h_enc] + b))>
-            ##############################################################
             energy = self.v(F.tanh(self.enc_out_a + self.w_dec(dec_out))).squeeze(2)
 
         elif self.att_type == 'location':
-            ##############################################################
-            # f = F * α_{i-1}
-            # energy = <v, tanh(W([h_dec; h_enc] + W_conv(f) + b))>
-            ##############################################################
             # For 1D conv
             # conv_feat = self.conv(aw_step[:, :].contiguous().unsqueeze(dim=1))
             # For 2D conv
-            conv_feat = self.conv(aw_step.view(batch_size, 1, 1, enc_time)).squeeze(2)
-            # -> `[B, conv_out_channels, T]`
-
-            conv_feat = conv_feat.transpose(1, 2).contiguous()
-            # -> `[B, T, conv_out_channels]`
-
+            conv_feat = self.conv(aw_step.view(batch_size, 1, 1, enc_time)).squeeze(2)  # -> `[B, conv_out_channels, T]`
+            conv_feat = conv_feat.transpose(1, 2).contiguous()  # -> `[B, T, conv_out_channels]`
             energy = self.v(F.tanh(self.enc_out_a + self.w_dec(dec_out) + self.w_conv(conv_feat))).squeeze(2)
 
         elif self.att_type == 'dot_product':
-            ##############################################################
-            # energy = <W_enc(h_enc), h_dec>
-            ##############################################################
-            energy = torch.bmm(self.enc_out_a, dec_out.transpose(1, 2)).squeeze(2)
+            energy = torch.bmm(self.enc_out_a, self.w_dec(dec_out).transpose(1, 2)).squeeze(2)
 
         elif self.att_type == 'luong_dot':
             raise NotImplementedError()
@@ -171,27 +158,21 @@ class AttentionMechanism(nn.Module):
         elif self.att_type == 'luong_concat':
             raise NotImplementedError()
 
-        else:
-            raise NotImplementedError()
-
         # Mask attention distribution
-        energy_mask = Variable(enc_out.data.new(batch_size, enc_time).fill_(1))
+        energy_mask = Variable(enc_out.new(batch_size, enc_time).fill_(1.))
         for b in six.moves.range(batch_size):
             if x_lens[b] < enc_time:
-                energy_mask.data[b, x_lens[b]:] = -1024.0
+                energy_mask[b, x_lens[b]:] = -1024.0
         energy *= energy_mask
         # NOTE: energy: `[B, T]`
 
-        # Sharpening
-        energy *= self.sharpening_factor
-
         # Compute attention weights
         if self.sigmoid_smoothing:
-            aw_step = F.sigmoid(energy)
+            aw_step = F.sigmoid(energy * self.sharpening_factor)
             # for b in six.moves.range(batch_size):
-            #     aw_step.data[b] /= aw_step.data[b].sum()
+            #     aw_step[b] /= aw_step[b].sum()
         else:
-            aw_step = F.softmax(energy, dim=-1)
+            aw_step = F.softmax(energy * self.sharpening_factor, dim=-1)
 
         # Compute context vector (weighted sum of encoder outputs)
         context_vec = torch.sum(enc_out * aw_step.unsqueeze(2), dim=1, keepdim=True)

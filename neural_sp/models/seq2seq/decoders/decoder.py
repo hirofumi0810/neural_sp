@@ -28,10 +28,10 @@ except:
 from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.linear import Embedding
 from neural_sp.models.linear import LinearND
-from neural_sp.models.seq2seq.attention.attention import AttentionMechanism
-from neural_sp.models.seq2seq.attention.multihead_attention import MultiheadAttentionMechanism
+from neural_sp.models.seq2seq.decoders.attention import AttentionMechanism
 from neural_sp.models.seq2seq.decoders.ctc_beam_search_decoder import BeamSearchDecoder
 from neural_sp.models.seq2seq.decoders.ctc_greedy_decoder import GreedyDecoder
+from neural_sp.models.seq2seq.decoders.multihead_attention import MultiheadAttentionMechanism
 from neural_sp.models.utils import np2var
 from neural_sp.models.utils import pad_list
 from neural_sp.models.utils import var2np
@@ -634,7 +634,7 @@ class Decoder(nn.Module):
 
         return best_hyps, aw
 
-    def beam_search(self, enc_out, enc_lens, params, rnnlm, exclude_eos=False):
+    def beam_search(self, enc_out, enc_lens, params, rnnlm, n_best=1, exclude_eos=False):
         """Beam search decoding in the inference stage.
 
         Args:
@@ -650,6 +650,7 @@ class Decoder(nn.Module):
                 coverage_threshold (float): threshold for coverage penalty
                 rnnlm_weight (float): the weight of RNNLM score
             rnnlm (torch.nn.Module):
+            n_best (int):
             exclude_eos (bool):
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`

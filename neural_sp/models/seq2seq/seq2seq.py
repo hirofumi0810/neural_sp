@@ -19,9 +19,9 @@ from neural_sp.models.base import ModelBase
 from neural_sp.models.linear import Embedding
 from neural_sp.models.linear import LinearND
 from neural_sp.models.rnnlm.rnnlm import RNNLM
-from neural_sp.models.seq2seq.attention.attention import AttentionMechanism
-from neural_sp.models.seq2seq.attention.multihead_attention import MultiheadAttentionMechanism
+from neural_sp.models.seq2seq.decoders.attention import AttentionMechanism
 from neural_sp.models.seq2seq.decoders.decoder import Decoder
+from neural_sp.models.seq2seq.decoders.multihead_attention import MultiheadAttentionMechanism
 from neural_sp.models.seq2seq.encoders.cnn import CNNEncoder
 from neural_sp.models.seq2seq.encoders.frame_stacking import stack_frame
 from neural_sp.models.seq2seq.encoders.rnn import RNNEncoder
@@ -68,8 +68,7 @@ class Seq2seq(ModelBase):
 
         # for backward decoder
         assert 0 <= args.bwd_weight <= 1
-        assert args.bwd_weight + args.ctc_weight <= 1
-        self.fwd_weight = 1 - args.bwd_weight - args.ctc_weight
+        self.fwd_weight = 1 - args.bwd_weight
         self.bwd_weight = args.bwd_weight
 
         # for the sub task
