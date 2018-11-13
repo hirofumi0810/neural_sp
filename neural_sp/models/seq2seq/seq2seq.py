@@ -51,9 +51,8 @@ class Seq2seq(ModelBase):
         self.bridge_layer = args.bridge_layer
 
         # for attention layer
-        self.att_num_heads_0 = args.att_num_heads
-        self.att_num_heads_1 = args.att_num_heads_sub
-        self.share_attention = False
+        self.att_num_heads = args.att_num_heads
+        self.share_attention = False  # TODO(hirofumi): between fwd and bwd
 
         # for decoder
         self.num_classes = args.num_classes
@@ -65,16 +64,12 @@ class Seq2seq(ModelBase):
         # NOTE: reserved in advance
 
         # for CTC
-        self.ctc_weight_0 = args.ctc_weight
-        self.ctc_weight_1 = args.ctc_weight_sub
+        self.ctc_weight = args.ctc_weight
 
         # for backward decoder
         assert 0 <= args.bwd_weight <= 1
-        assert 0 <= args.bwd_weight_sub <= 1
-        self.fwd_weight_0 = 1 - args.bwd_weight
-        self.bwd_weight_0 = args.bwd_weight
-        self.fwd_weight_1 = 1 - args.bwd_weight_sub
-        self.bwd_weight_1 = args.bwd_weight_sub
+        self.fwd_weight = 1 - args.bwd_weight
+        self.bwd_weight = args.bwd_weight
 
         # for the sub task
         self.main_task_weight = args.main_task_weight
@@ -125,9 +120,9 @@ class Seq2seq(ModelBase):
             self.enc_num_units = args.dec_num_units
 
         directions = []
-        if self.fwd_weight_0 > 0:
+        if self.fwd_weight > 0:
             directions.append('fwd')
-        if self.bwd_weight_0 > 0:
+        if self.bwd_weight > 0:
             directions.append('bwd')
         for dir in directions:
             if args.ctc_weight < 1:
@@ -181,7 +176,8 @@ class Seq2seq(ModelBase):
                               ss_prob=args.ss_prob,
                               lsm_prob=args.lsm_prob,
                               init_with_enc=args.init_with_enc,
-                              ctc_weight=args.ctc_weight if dir == 'fwd' else 0,
+                              ctc_weight=args.ctc_weight if dir == 'fwd' or (
+                                  dir == 'bwd' and self.bwd_weight == 1) else 0,
                               ctc_fc_list=args.ctc_fc_list,
                               backward=(dir == 'bwd'),
                               rnnlm_cold_fusion=args.rnnlm_cold_fusion,
@@ -192,7 +188,7 @@ class Seq2seq(ModelBase):
                               share_lm_softmax=args.share_lm_softmax)
             setattr(self, 'dec_' + dir + '_0', decoder)
 
-        # NOTE: fwd only for the sub task
+        # NOTE: only forward direction for the sub task
         if args.main_task_weight < 1:
             if args.ctc_weight_sub < 1:
                 # Attention layer
@@ -314,19 +310,19 @@ class Seq2seq(ModelBase):
             xs, x_lens, xs_sub, x_lens_sub = self._encode(ys_sub)
 
         # Compute XE loss for the forward decoder
-        if self.fwd_weight_0 > 0:
+        if self.fwd_weight > 0:
             ys_fwd = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
-            loss_acc_fwd = self.dec_fwd_0(xs, x_lens, ys_fwd)
-            loss = loss_acc_fwd['loss'] * self.fwd_weight_0
+            loss_fwd, loss_acc_fwd = self.dec_fwd_0(xs, x_lens, ys_fwd)
+            loss = loss_fwd * self.fwd_weight
         else:
             loss_acc_fwd = {}
-            loss = Variable(xs.data.new(1,).fill_(0.))
+            loss = Variable(xs.new(1,).fill_(0.))
 
         # Compute XE loss for the backward decoder
-        if self.bwd_weight_0 > 0:
+        if self.bwd_weight > 0:
             ys_bwd = [np2var(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long() for y in ys]
-            loss_acc_bwd = self.dec_bwd_0(xs, x_lens, ys_bwd)
-            loss += loss_acc_bwd['loss'] * self.bwd_weight_0
+            loss_bwd, loss_acc_bwd = self.dec_bwd_0(xs, x_lens, ys_bwd)
+            loss += loss_bwd * self.bwd_weight
         else:
             loss_acc_bwd = {}
 
@@ -334,8 +330,8 @@ class Seq2seq(ModelBase):
             ys_sub = [ys_sub[i] for i in perm_idx]
             ys_sub = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()
                       for y in ys_sub]
-            loss_acc_sub = self.dec_fwd_1(xs_sub, x_lens_sub, ys_sub)
-            loss = loss * self.main_task_weight + loss_acc_sub['loss'] * (1 - self.main_task_weight)
+            loss_sub, loss_acc_sub = self.dec_fwd_1(xs_sub, x_lens_sub, ys_sub)
+            loss = loss * self.main_task_weight + loss_sub * (1 - self.main_task_weight)
         else:
             loss_acc_sub = {}
 
@@ -395,7 +391,7 @@ class Seq2seq(ModelBase):
 
             # if self.main_task_weight < 1:
             #     xs_sub = self.bridge_1(xs_sub)
-            # TODO:
+            # TODO(hirofumi):
 
         return xs, x_lens, xs_sub, x_lens_sub
 
@@ -434,9 +430,9 @@ class Seq2seq(ModelBase):
         # Encode input features
         enc_out, x_lens, enc_out_sub, x_lens_sub = self._encode(xs)
 
-        dir = 'fwd' if self.fwd_weight_0 >= self.bwd_weight_0 else 'bwd'
+        dir = 'fwd' if self.fwd_weight >= self.bwd_weight else 'bwd'
 
-        if self.ctc_weight_0 == 1:
+        if self.ctc_weight == 1:
             best_hyps = getattr(self, 'dec_' + dir + '_0').decode_ctc(
                 enc_out, x_lens, decode_params['beam_width'], decode_params['rnnlm'])
             return best_hyps, None, perm_idx

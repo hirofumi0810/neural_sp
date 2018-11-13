@@ -19,7 +19,6 @@ from tensorboardX import SummaryWriter
 import time
 import torch
 from tqdm import tqdm
-import warnings
 
 from neural_sp.bin.asr.train_utils import Controller
 from neural_sp.bin.asr.train_utils import Reporter
@@ -66,10 +65,10 @@ parser.add_argument('--dict', type=str,
 parser.add_argument('--dict_sub', type=str, default=None,
                     help='path to a dictionary file for the sub task')
 parser.add_argument('--label_type', type=str, default='word',
-                    choices=['word', 'wordpiece', 'char', 'phone'],
+                    choices=['word', 'wp', 'char', 'phone'],
                     help='')
 parser.add_argument('--label_type_sub', type=str, default='char',
-                    choices=['wordpiece', 'char', 'phone'],
+                    choices=['wp', 'char', 'phone'],
                     help='')
 parser.add_argument('--wp_model', type=str, default=False, nargs='?',
                     help='path to of the wordpiece model')
@@ -86,9 +85,9 @@ parser.add_argument('--max_num_frames', type=int, default=2000,
                     help='')
 parser.add_argument('--min_num_frames', type=int, default=40,
                     help='')
-parser.add_argument('--dynamic_batching', type=bool, default=False,
+parser.add_argument('--dynamic_batching', type=bool, default=True,
                     help='')
-# topology (encoder)
+# network (encoder)
 parser.add_argument('--conv_in_channel', type=int, default=1,
                     help='')
 parser.add_argument('--conv_channels', type=list, default=[],
@@ -118,7 +117,7 @@ parser.add_argument('--subsample', type=list, default=[False] * 5,
 parser.add_argument('--subsample_type', type=str, default='drop',
                     choices=['drop', 'concat'],
                     help='')
-# topology (decoder)
+# network (decoder)
 parser.add_argument('--att_type', type=str, default='location',
                     help='')
 parser.add_argument('--att_dim', type=int, default=128,
@@ -172,40 +171,6 @@ parser.add_argument('--print_step', type=int, default=100,
 parser.add_argument('--metric', type=str, default='ler',
                     choices=['ler', 'loss', 'acc', 'ppl'],
                     help='')
-# initialization
-parser.add_argument('--param_init', type=float, default=0.1,
-                    help='')
-parser.add_argument('--param_init_dist', type=str, default='uniform',
-                    help='')
-parser.add_argument('--rec_weight_orthogonal', type=bool, default=False,
-                    help='')
-parser.add_argument('--pretrained_model', default=False,
-                    help='')
-# regularization
-parser.add_argument('--clip_grad_norm', type=float, default=5.0,
-                    help='')
-parser.add_argument('--clip_activation_enc', type=float, default=50.0,
-                    help='')
-parser.add_argument('--clip_activation_dec', type=float, default=50.0,
-                    help='')
-parser.add_argument('--dropout_in', type=float, default=0.0,
-                    help='')
-parser.add_argument('--dropout_enc', type=float, default=0.0,
-                    help='')
-parser.add_argument('--dropout_dec', type=float, default=0.0,
-                    help='')
-parser.add_argument('--dropout_emb', type=float, default=0.0,
-                    help='')
-parser.add_argument('--weight_decay', type=float, default=1e-6,
-                    help='')
-parser.add_argument('--logits_temp', type=float, default=1.0,
-                    help='')
-parser.add_argument('--ss_prob', type=float, default=0.0,
-                    help='')
-parser.add_argument('--lsm_prob', type=float, default=0.0,
-                    help='')
-parser.add_argument('--lsm_type', type=str, default='uniform',
-                    help='')
 # annealing
 parser.add_argument('--decay_type', type=str, default='per_epoch',
                     choices=['per_epoch'],
@@ -222,6 +187,38 @@ parser.add_argument('--not_improved_patient_epoch', type=int, default=5,
                     help='')
 parser.add_argument('--eval_start_epoch', type=int, default=1,
                     help='')
+parser.add_argument('--learning_rate_warmup', type=bool, default=False,
+                    help='')
+# initialization
+parser.add_argument('--param_init', type=float, default=0.1,
+                    help='')
+parser.add_argument('--param_init_dist', type=str, default='uniform',
+                    help='')
+parser.add_argument('--rec_weight_orthogonal', type=bool, default=False,
+                    help='')
+parser.add_argument('--pretrained_model', default=False,
+                    help='')
+# regularization
+parser.add_argument('--clip_grad_norm', type=float, default=5.0,
+                    help='')
+parser.add_argument('--dropout_in', type=float, default=0.0,
+                    help='')
+parser.add_argument('--dropout_enc', type=float, default=0.0,
+                    help='')
+parser.add_argument('--dropout_dec', type=float, default=0.0,
+                    help='')
+parser.add_argument('--dropout_emb', type=float, default=0.0,
+                    help='')
+parser.add_argument('--weight_decay', type=float, default=1e-6,
+                    help='')
+parser.add_argument('--logits_temp', type=float, default=1.0,
+                    help='')
+parser.add_argument('--ss_prob', type=float, default=0.0,
+                    help='')
+parser.add_argument('--ss_type', type=str, default='constant',
+                    help='')
+parser.add_argument('--lsm_prob', type=float, default=0.0,
+                    help='')
 # MTL
 parser.add_argument('--ctc_weight', type=float, default=0.0,
                     help='')
@@ -234,19 +231,19 @@ parser.add_argument('--bwd_weight_sub', type=float, default=0.0,
 parser.add_argument('--main_task_weight', type=float, default=1.0,
                     help='')
 # cold fusion
-parser.add_argument('--cold_fusion_type', type=str, default='prob',
+parser.add_argument('--cold_fusion', type=str, default='hidden',
                     choices=['hidden', 'prob'],
                     help='')
-parser.add_argument('--rnnlm_cf', type=str, default=False,
+parser.add_argument('--rnnlm_cold_fusion', type=str, default=False,
                     help='')
-# RNNLM initialization & RNNLM objective
+# RNNLM init. and MTL
 parser.add_argument('--internal_lm', type=bool, default=False,
                     help='')
 parser.add_argument('--rnnlm_init', type=str, default=False,
                     help='')
-parser.add_argument('--rnnlm_weight', type=float, default=0.0,
+parser.add_argument('--rnnlm_task_weight', type=float, default=1.0,
                     help='')
-parser.add_argument('--share_softmax', type=bool, default=False,
+parser.add_argument('--share_lm_softmax', type=bool, default=False,
                     help='')
 
 args = parser.parse_args()
@@ -275,11 +272,6 @@ def main():
     else:
         # Restart from the last checkpoint
         config = load_config(os.path.join(args.resume_model, 'config.yml'))
-
-    # Check differences between args and yaml comfiguraiton
-    for k, v in vars(args).items():
-        if k not in config.keys():
-            warnings.warn("key %s is automatically set to %s" % (k, str(v)))
 
     # Merge config with args
     for k, v in config.items():
@@ -310,7 +302,7 @@ def main():
                         sort_by_input_length=True,
                         short2long=True,
                         sort_stop_epoch=args.sort_stop_epoch,
-                        dynamic_batching=True,
+                        dynamic_batching=args.dynamic_batching,
                         use_ctc=args.ctc_weight > 0,
                         subsample_factor=subsample_factor,
                         csv_path_sub=args.train_set_sub,
@@ -323,7 +315,6 @@ def main():
                       dict_path=args.dict,
                       label_type=args.label_type,
                       batch_size=args.batch_size * args.ngpus,
-                      max_epoch=args.num_epochs,
                       max_num_frames=args.max_num_frames,
                       min_num_frames=args.min_num_frames,
                       shuffle=True,
@@ -341,7 +332,6 @@ def main():
                               dict_path=args.dict,
                               label_type=args.label_type,
                               batch_size=1,
-                              max_epoch=args.num_epochs,
                               is_test=True,
                               skip_speech=(args.input_type != 'speech'))]
 
@@ -350,17 +340,16 @@ def main():
     args.num_classes_sub = train_set.num_classes_sub
 
     # Load a RNNLM config file for cold fusion & RNNLM initialization
-    # if config['rnnlm_cf']:
+    # if config['rnnlm_cold_fusion']:
     #     if args.model is not None:
     #         config['rnnlm_config_cold_fusion'] = load_config(
-    #             os.path.join(config['rnnlm_cf'], 'config.yml'), is_eval=True)
+    #             os.path.join(config['rnnlm_cold_fusion'], 'config.yml'), is_eval=True)
     #     elif args.resume_model is not None:
     #         config = load_config(os.path.join(
     #             args.resume_model, 'config_rnnlm_cf.yml'))
     #     assert args.label_type == config['rnnlm_config_cold_fusion']['label_type']
     #     config['rnnlm_config_cold_fusion']['num_classes'] = train_set.num_classes
-    args.rnnlm_cf = None
-    args.rnnlm_init = None
+    args.rnnlm_cold_fusion = None
 
     # Model setting
     model = Seq2seq(args)
@@ -400,9 +389,9 @@ def main():
 
     if args.resume_model is None:
         # Load pre-trained RNNLM
-        # if config['rnnlm_cf']:
+        # if config['rnnlm_cold_fusion']:
         #     rnnlm = RNNLM(args)
-        #     rnnlm.load_checkpoint(save_path=config['rnnlm_cf'], epoch=-1)
+        #     rnnlm.load_checkpoint(save_path=config['rnnlm_cold_fusion'], epoch=-1)
         #     rnnlm.flatten_parameters()
         #
         #     # Fix RNNLM parameters
@@ -427,7 +416,7 @@ def main():
         shutil.copy(args.dict, os.path.join(save_path, 'dict.txt'))
         if args.dict_sub is not None:
             shutil.copy(args.dict_sub, os.path.join(save_path, 'dict_sub.txt'))
-        if args.label_type == 'wordpiece':
+        if args.label_type == 'wp':
             shutil.copy(args.wp_model, os.path.join(save_path, 'wp.model'))
 
         # Setting for logging
@@ -436,17 +425,18 @@ def main():
         for k, v in sorted(vars(args).items(), key=lambda x: x[0]):
             logger.info('%s: %s' % (k, str(v)))
 
-        # if os.path.isdir(args.pretrained_model):
-        #     # NOTE: Start training from the pre-trained model
-        #     # This is defferent from resuming training
-        #     model.load_checkpoint(args.pretrained_model, epoch=-1,
-        #                           load_pretrained_model=True)
-
         # Count total parameters
         for name in sorted(list(model.num_params_dict.keys())):
             num_params = model.num_params_dict[name]
             logger.info("%s %d" % (name, num_params))
         logger.info("Total %.2f M parameters" % (model.total_parameters / 1000000))
+        logger.info(model)
+
+        # if os.path.isdir(args.pretrained_model):
+        #     # NOTE: Start training from the pre-trained model
+        #     # This is defferent from resuming training
+        #     model.load_checkpoint(args.pretrained_model, epoch=-1,
+        #                           load_pretrained_model=True)
 
         # Set optimizer
         model.set_optimizer(optimizer=args.optimizer,
@@ -493,7 +483,7 @@ def main():
     #             factor=config['decay_rate'],
     #             patience_epoch=config['decay_patient_epoch'])
     #
-    #     if config['rnnlm_cf']:
+    #     if config['rnnlm_cold_fusion']:
     #         if config['rnnlm_config_cold_fusion']['backward']:
     #             model.rnnlm_0_bwd.flatten_parameters()
     #         else:
@@ -537,29 +527,33 @@ def main():
     start_time_epoch = time.time()
     start_time_step = time.time()
     not_improved_epoch = 0.
-    loss_train_mean, acc_train_mean = 0., 0.
+    loss_att_train_mean, loss_ctc_train_mean, acc_train_mean = 0, 0, 0
     pbar_epoch = tqdm(total=len(train_set))
     pbar_all = tqdm(total=len(train_set) * args.num_epochs)
     while True:
         # Compute loss in the training set (including parameter update)
         batch_train, is_new_epoch = train_set.next()
-        model, loss_train, acc_train = updater(model, batch_train)
-        loss_train_mean += loss_train
+        model, loss_att_train, loss_ctc_train, acc_train = updater(model, batch_train)
+        loss_att_train_mean += loss_att_train
+        loss_ctc_train_mean += loss_ctc_train
         acc_train_mean += acc_train
         pbar_epoch.update(len(batch_train['utt_ids']))
 
         if (step + 1) % args.print_step == 0:
             # Compute loss in the dev set
             batch_dev = dev_set.next()[0]
-            model, loss_dev, acc_dev = updater(model, batch_dev, is_eval=True)
+            model, loss_att_dev, loss_ctc_dev, acc_dev = updater(model, batch_dev, is_eval=True)
 
-            loss_train_mean /= args.print_step
+            loss_att_train_mean /= args.print_step
+            loss_ctc_train_mean /= args.print_step
             acc_train_mean /= args.print_step
-            reporter.step(step, loss_train_mean, loss_dev, acc_train_mean, acc_dev)
+            reporter.step(step, loss_att_train_mean, loss_att_dev, acc_train_mean, acc_dev)
 
             # Logging by tensorboard
-            tf_writer.add_scalar('train/loss', loss_train_mean, step + 1)
-            tf_writer.add_scalar('dev/loss', loss_dev, step + 1)
+            tf_writer.add_scalar('train/loss_att', loss_att_train_mean, step + 1)
+            tf_writer.add_scalar('train/loss_ctc', loss_ctc_train_mean, step + 1)
+            tf_writer.add_scalar('dev/loss_att', loss_att_dev, step + 1)
+            tf_writer.add_scalar('dev/loss_ctc', loss_ctc_dev, step + 1)
             # for n, p in model.module.named_parameters():
             #     n = n.replace('.', '/')
             #     if p.grad is not None:
@@ -571,13 +565,15 @@ def main():
                 x_len = max(len(x) for x in batch_train['xs'])
             elif args.input_type == 'text':
                 x_len = max(len(x) for x in batch_train['ys_sub'])
-            logger.info("...Step:%d(ep:%.2f) loss:%.2f(%.2f)/acc:%.2f(%.2f)/lr:%.5f/bs:%d/x_len:%d (%.2f min)" %
+            logger.info("step:%d(ep:%.2f) loss-att:%.2f(%.2f)/loss-ctc:%.2f(%.2f)/acc:%.2f(%.2f)/lr:%.5f/bs:%d/x_len:%d (%.2f min)" %
                         (step + 1, train_set.epoch_detail,
-                         loss_train_mean, loss_dev, acc_train_mean, acc_dev,
-                         learning_rate, train_set.current_batch_size,
+                         loss_att_train_mean, loss_att_dev,
+                         loss_ctc_train_mean, loss_ctc_dev,
+                         acc_train_mean, acc_dev,
+                         learning_rate, len(batch_train['utt_ids']),
                          x_len, duration_step / 60))
             start_time_step = time.time()
-            loss_train_mean, acc_train_mean = 0, 0
+            loss_att_train_mean, loss_ctc_train_mean, acc_train_mean = 0, 0, 0
         step += args.ngpus
 
         # Save checkpoint and evaluate model per epoch
@@ -600,7 +596,7 @@ def main():
                         metric_dev = eval_word([model.module], dev_set, decode_params,
                                                epoch=epoch)[0]
                         logger.info('  WER (%s): %.3f %%' % (dev_set.set, metric_dev))
-                    elif args.label_type == 'wordpiece':
+                    elif args.label_type == 'wp':
                         metric_dev = eval_wordpiece([model.module], dev_set, decode_params,
                                                     args.wp_model, epoch=epoch)[0]
                         logger.info('  WER (%s): %.3f %%' % (dev_set.set, metric_dev))
@@ -641,7 +637,7 @@ def main():
                                 wer_test = eval_word([model.module], eval_set, decode_params,
                                                      epoch=epoch)[0]
                                 logger.info('  WER (%s): %.3f %%' % (eval_set.set, wer_test))
-                            elif args.label_type == 'wordpiece':
+                            elif args.label_type == 'wp':
                                 wer_test = eval_wordpiece([model.module], eval_set, decode_params,
                                                           epoch=epoch)[0]
                                 logger.info('  WER (%s): %.3f %%' % (eval_set.set, wer_test))

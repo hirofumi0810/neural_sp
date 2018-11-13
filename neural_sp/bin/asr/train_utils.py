@@ -50,6 +50,8 @@ class Updater(object):
         Returns:
             model (torch.nn.Module):
             loss_val (float):
+            loss_att_val (float):
+            loss_ctc_val (float):
             acc (float): Token-level accuracy in teacher-forcing
 
         """
@@ -67,15 +69,17 @@ class Updater(object):
                 loss.backward()
             loss.detach()  # Trancate the graph
             if self.clip_grad_norm > 0:
-                torch.nn.utils.clip_grad_norm_(
-                    model.module.parameters(), self.clip_grad_norm)
+                torch.nn.utils.clip_grad_norm_(model.module.parameters(), self.clip_grad_norm)
             model.module.optimizer.step()
             # TODO(hirofumi): Add scheduler
 
-        loss_val = loss.item()
-        if model.module.bwd_weight_0 < 0.5:
+        if model.module.bwd_weight < 0.5:
+            loss_att_val = loss_acc_fwd['loss_att']
+            loss_ctc_val = loss_acc_fwd['loss_ctc']
             acc = loss_acc_fwd['acc']
         else:
+            loss_att_val = loss_acc_bwd['loss_att']
+            loss_ctc_val = loss_acc_bwd['loss_ctc']
             acc = loss_acc_bwd['acc']
 
         del loss
@@ -86,15 +90,15 @@ class Updater(object):
         # logger.warning('!!!Skip mini-batch!!! (max_x_len: %d, bs: %d)' %
         #                (max(len(x) for x in batch['xs']), len(batch['xs'])))
         # torch.cuda.empty_cache()
-        # loss_val = 0.
+        # loss_att_val = 0.
         # acc = 0.
 
-        if loss_val == INF or loss_val == -INF:
+        if loss_att_val == INF or loss_att_val == -INF:
             logger.warning("WARNING: received an inf loss.")
 
         del batch
 
-        return model, loss_val, acc
+        return model, loss_att_val, loss_ctc_val, acc
 
 
 class Reporter(object):
@@ -106,7 +110,7 @@ class Reporter(object):
 
     """
 
-    def __init__(self, save_path, max_loss=500):
+    def __init__(self, save_path, max_loss=300):
         self.save_path = save_path
         self.max_loss = max_loss
 
