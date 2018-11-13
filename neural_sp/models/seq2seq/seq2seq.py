@@ -68,7 +68,8 @@ class Seq2seq(ModelBase):
 
         # for backward decoder
         assert 0 <= args.bwd_weight <= 1
-        self.fwd_weight = 1 - args.bwd_weight
+        assert args.bwd_weight + args.ctc_weight <= 1
+        self.fwd_weight = 1 - args.bwd_weight - args.ctc_weight
         self.bwd_weight = args.bwd_weight
 
         # for the sub task
@@ -119,13 +120,14 @@ class Seq2seq(ModelBase):
             self.bridge_0 = LinearND(self.enc_num_units, args.dec_num_units)
             self.enc_num_units = args.dec_num_units
 
+        # MAIN TASK
         directions = []
         if self.fwd_weight > 0:
             directions.append('fwd')
         if self.bwd_weight > 0:
             directions.append('bwd')
         for dir in directions:
-            if args.ctc_weight < 1:
+            if (dir == 'fwd' and args.ctc_weight < 1) or dir == 'bwd':
                 # Attention layer
                 if args.att_num_heads > 1:
                     attention = MultiheadAttentionMechanism(
@@ -177,7 +179,7 @@ class Seq2seq(ModelBase):
                               lsm_prob=args.lsm_prob,
                               init_with_enc=args.init_with_enc,
                               ctc_weight=args.ctc_weight if dir == 'fwd' or (
-                                  dir == 'bwd' and self.bwd_weight == 1) else 0,
+                                  dir == 'bwd' and self.fwd_weight == 0) else 0,
                               ctc_fc_list=args.ctc_fc_list,
                               backward=(dir == 'bwd'),
                               rnnlm_cold_fusion=args.rnnlm_cold_fusion,
@@ -188,6 +190,7 @@ class Seq2seq(ModelBase):
                               share_lm_softmax=args.share_lm_softmax)
             setattr(self, 'dec_' + dir + '_0', decoder)
 
+        # SUB TASK
         # NOTE: only forward direction for the sub task
         if args.main_task_weight < 1:
             if args.ctc_weight_sub < 1:
