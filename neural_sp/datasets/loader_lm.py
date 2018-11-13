@@ -28,22 +28,18 @@ random.seed(1)
 np.random.seed(1)
 
 logger = logging.getLogger('training')
-logger = logging.getLogger('decoding')
 
 
 class Dataset(Base):
 
-    def __init__(self, csv_path, dict_path,
-                 label_type, batch_size, bptt, eos,
-                 max_epoch=None,
-                 is_test=False,
-                 shuffle=False):
+    def __init__(self, csv_path, dict_path, label_type, batch_size, bptt, eos,
+                 max_epoch=None, is_test=False, shuffle=False):
         """A class for loading dataset.
 
         Args:
             csv_path (str):
             dict_path (str):
-            label_type (str): word or wordpiece or char or phone
+            label_type (str): word or wp or char or phone
             batch_size (int): the size of mini-batch
             bptt (int):
             eos (int):
@@ -60,19 +56,18 @@ class Dataset(Base):
         self.label_type = label_type
         self.batch_size = batch_size
         self.bptt = bptt
+        self.eos = eos
         self.max_epoch = max_epoch
+        self.shuffle = shuffle
         self.num_classes = self.count_vocab_size(dict_path)
 
         # Set index converter
-        if label_type in ['word', 'wordpiece']:
+        if label_type in ['word', 'wp']:
             self.idx2word = Idx2word(dict_path)
             self.word2idx = Word2idx(dict_path)
         elif label_type == 'char':
             self.idx2char = Idx2char(dict_path)
             self.char2idx = Char2idx(dict_path)
-        elif label_type == 'char_capital_divide':
-            self.idx2char = Idx2char(dict_path, capital_divide=True)
-            self.char2idx = Char2idx(dict_path, capital_divide=True)
         else:
             raise ValueError(label_type)
 
@@ -82,18 +77,22 @@ class Dataset(Base):
 
         # Sort csv records
         if shuffle:
-            df = df.reindex(np.random.permutation(df.index))
+            self.df = df.reindex(np.random.permutation(df.index))
         else:
-            df = df.sort_values(by='utt_id', ascending=True)
+            self.df = df.sort_values(by='utt_id', ascending=True)
 
         # Concatenate into a single sentence
-        self.concat_ids = []
-        for i in list(df.index):
-            assert df['token_id'][i] != ''
-            self.concat_ids += list(map(int, df['token_id'][i].split())) + [eos]
+        concat_ids = [eos]
+        for i in list(self.df.index):
+            assert self.df['token_id'][i] != ''
+            concat_ids += list(map(int, self.df['token_id'][i].split())) + [eos]
+
+        # Truncate
+        concat_ids = concat_ids[:len(concat_ids) // batch_size * batch_size]
+        self.concat_ids = np.array(concat_ids).reshape((batch_size, -1))
 
     def __len__(self):
-        return len(self.concat_ids)
+        return len(self.concat_ids.reshape((-1,)))
 
     @property
     def epoch_detail(self):
@@ -119,28 +118,28 @@ class Dataset(Base):
             raise StopIteration()
         # NOTE: max_epoch == None means infinite loop
 
-        ys = self.concat_ids[self.offset:self.offset + batch_size * self.bptt]
-        self.offset += len(ys)
+        ys = self.concat_ids[:, self.offset:self.offset + self.bptt]
+        self.offset += self.bptt
 
         # Last mini-batch
-        if self.offset == len(self.concat_ids):
+        if (self.offset + 1) * self.batch_size >= len(self.concat_ids.reshape((-1,))):
             self.offset = 0
             is_new_epoch = True
             self.epoch += 1
 
-        # TODO(hirofumi): 端っこ
-
-        # Truncate
-        ys = ys[:len(ys) // batch_size * batch_size]
-        ys = np.array(ys)
-        ys = ys.reshape((batch_size, -1))
-
-        # Shuffle
-        indices = random.sample(list(range(batch_size)), batch_size)
-        ys = [ys[i] for i in indices]
+            # TODO(hirofumi): add randomness
+            # if self.shuffle:
+            #     # Shuffle csv records
+            #     self.df = self.df.reindex(np.random.permutation(self.df.index))
+            #
+            #     # Concatenate into a single sentence
+            #     concat_ids = [self.eos]
+            #     for i in list(self.df.index):
+            #         assert self.df['token_id'][i] != ''
+            #         concat_ids += list(map(int, self.df['token_id'][i].split())) + [self.eos]
+            #
+            #     # Truncate
+            #     concat_ids = concat_ids[:len(concat_ids) // batch_size * batch_size]
+            #     self.concat_ids = np.array(concat_ids).reshape((batch_size, -1))
 
         return ys, is_new_epoch
-
-    def _reset(self):
-        """Reset data counter and offset."""
-        self.offset = 0

@@ -30,13 +30,12 @@ class Updater(object):
     def __init__(self, clip_grad_norm):
         self.clip_grad_norm = clip_grad_norm
 
-    def __call__(self, model, ys, bptt, is_eval=False):
+    def __call__(self, model, ys, is_eval=False):
         """
 
         Args:
             model (torch.nn.Module):
             ys (np.ndarray): target labels of size `[B, L]`
-            bptt (int):
             is_eval (bool):
         Returns:
             model (torch.nn.Module):

@@ -21,7 +21,6 @@ from tensorboardX import SummaryWriter
 import time
 import torch
 from tqdm import tqdm
-import warnings
 
 from neural_sp.bin.asr.train_utils import Controller
 from neural_sp.bin.asr.train_utils import Reporter
@@ -29,7 +28,7 @@ from neural_sp.bin.lm.train_utils import Updater
 from neural_sp.datasets.loader_lm import Dataset
 from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.models.data_parallel import CustomDataParallel
-from neural_sp.models.rnnlm.rnnlm import RNNLM
+from neural_sp.models.rnnlm.rnnlm_seq import SeqRNNLM
 from neural_sp.utils.config import load_config
 from neural_sp.utils.config import save_config
 from neural_sp.utils.general import mkdir_join
@@ -57,17 +56,18 @@ parser.add_argument('--eval_sets', type=str, default=[], nargs='+',
 parser.add_argument('--dict', type=str,
                     help='path to a dictionary file')
 parser.add_argument('--label_type', type=str, default='word',
-                    choices=['word', 'wordpiece', 'char'],
+                    choices=['word', 'wp', 'char'],
                     help='')
 parser.add_argument('--wp_model', type=str, default=False, nargs='?',
                     help='path to of the wordpiece model')
-parser.add_argument('--eos', type=int, default=3,
+parser.add_argument('--eos', type=int, default=2,
                     help='index of <eos>')
 # features
 parser.add_argument('--dynamic_batching', type=bool, default=False,
                     help='')
 # topology (encoder)
 parser.add_argument('--rnn_type', type=str, default='lstm',
+                    choices=['blstm', 'bgru'],
                     help='')
 parser.add_argument('--num_units', type=int, default=320,
                     help='')
@@ -84,50 +84,18 @@ parser.add_argument('--residual', type=bool, default=False,
 parser.add_argument('--backward', type=bool, default=False,
                     help='')
 # optimization
-parser.add_argument('--batch_size', type=int, default=50,
+parser.add_argument('--batch_size', type=int, default=256,
                     help='')
 parser.add_argument('--optimizer', type=str, default='adam',
                     help='')
 parser.add_argument('--learning_rate', type=float, default=1e-3,
                     help='')
-parser.add_argument('--num_epochs', type=int, default=25,
+parser.add_argument('--num_epochs', type=int, default=50,
                     help='')
 parser.add_argument('--convert_to_sgd_epoch', type=int, default=20,
                     help='')
 parser.add_argument('--print_step', type=int, default=100,
                     help='')
-# initialization
-parser.add_argument('--param_init', type=float, default=0.1,
-                    help='')
-parser.add_argument('--param_init_dist', type=str, default='uniform',
-                    help='')
-parser.add_argument('--rec_weight_orthogonal', type=bool, default=False,
-                    help='')
-# regularization
-parser.add_argument('--clip_grad_norm', type=float, default=5.0,
-                    help='')
-parser.add_argument('--clip_activation_enc', type=float, default=50.0,
-                    help='')
-parser.add_argument('--clip_activation_dec', type=float, default=50.0,
-                    help='')
-parser.add_argument('--dropout_in', type=float, default=0.0,
-                    help='')
-parser.add_argument('--dropout_hidden', type=float, default=0.0,
-                    help='')
-parser.add_argument('--dropout_out', type=float, default=0.0,
-                    help='')
-parser.add_argument('--dropout_emb', type=float, default=0.0,
-                    help='')
-parser.add_argument('--weight_decay', type=float, default=1e-6,
-                    help='')
-# parser.add_argument('--logits_temp', type=float, default=1.0,
-#                     help='')
-# parser.add_argument('--ss_prob', type=float, default=0.0,
-#                     help='')
-# parser.add_argument('--lsm_prob', type=float, default=0.0,
-#                     help='')
-# parser.add_argument('--lsm_type', type=str, default='uniform',
-#                     help='')
 # annealing
 parser.add_argument('--decay_type', type=str, default='per_epoch',
                     choices=['per_epoch'],
@@ -144,6 +112,26 @@ parser.add_argument('--not_improved_patient_epoch', type=int, default=5,
                     help='')
 parser.add_argument('--eval_start_epoch', type=int, default=1,
                     help='')
+# initialization
+parser.add_argument('--param_init', type=float, default=0.1,
+                    help='')
+parser.add_argument('--param_init_dist', type=str, default='uniform',
+                    help='')
+parser.add_argument('--rec_weight_orthogonal', type=bool, default=False,
+                    help='')
+# regularization
+parser.add_argument('--clip_grad_norm', type=float, default=5.0,
+                    help='')
+parser.add_argument('--dropout_hidden', type=float, default=0.0,
+                    help='')
+parser.add_argument('--dropout_out', type=float, default=0.0,
+                    help='')
+parser.add_argument('--dropout_emb', type=float, default=0.0,
+                    help='')
+parser.add_argument('--weight_decay', type=float, default=1e-6,
+                    help='')
+parser.add_argument('--logits_temp', type=float, default=1.0,
+                    help='')
 args = parser.parse_args()
 
 
@@ -159,11 +147,6 @@ def main():
     else:
         # Restart from the last checkpoint
         config = load_config(os.path.join(args.resume_model, 'config.yml'))
-
-    # Check differences between args and yaml comfiguraiton
-    for k, v in vars(args).items():
-        if k not in config.keys():
-            warnings.warn("key %s is automatically set to %s" % (k, str(v)))
 
     # Merge config with args
     for k, v in config.items():
@@ -198,7 +181,7 @@ def main():
     args.num_classes = train_set.num_classes
 
     # Model setting
-    model = RNNLM(args)
+    model = SeqRNNLM(args)
     model.name = args.rnn_type
     model.name += str(args.num_units) + 'H'
     model.name += str(args.num_projs) + 'P'
@@ -224,7 +207,7 @@ def main():
 
         # Save the dictionary & wp_model
         shutil.copy(args.dict, os.path.join(save_path, 'dict.txt'))
-        if args.label_type == 'wordpiece':
+        if args.label_type == 'wp':
             shutil.copy(args.wp_model, os.path.join(save_path, 'wp.model'))
 
         # Setting for logging
@@ -238,6 +221,7 @@ def main():
             num_params = model.num_params_dict[name]
             logger.info("%s %d" % (name, num_params))
         logger.info("Total %.2f M parameters" % (model.total_parameters / 1000000))
+        logger.info(model)
 
         # Set optimizer
         model.set_optimizer(optimizer=args.optimizer,
@@ -261,8 +245,8 @@ def main():
     if args.ngpus >= 1:
         model = CustomDataParallel(model,
                                    device_ids=list(range(0, args.ngpus, 1)),
-                                   deterministic=True,
-                                   benchmark=False)
+                                   deterministic=False,
+                                   benchmark=True)
         model.cuda()
 
     logger.info('PID: %s' % os.getpid())
@@ -293,13 +277,13 @@ def main():
     start_time_epoch = time.time()
     start_time_step = time.time()
     not_improved_epoch = 0
-    loss_train_mean, acc_train_mean = 0., 0.
+    loss_train_mean, acc_train_mean = 0, 0
     pbar_epoch = tqdm(total=len(train_set))
     pbar_all = tqdm(total=len(train_set) * args.num_epochs)
     while True:
         # Compute loss in the training set (including parameter update)
         ys_train, is_new_epoch = train_set.next()
-        model, loss_train, acc_train = updater(model, ys_train, args.bptt)
+        model, loss_train, acc_train = updater(model, ys_train)
         loss_train_mean += loss_train
         acc_train_mean += acc_train
         pbar_epoch.update(np.sum([len(y) for y in ys_train]))
@@ -307,7 +291,7 @@ def main():
         if (step + 1) % args.print_step == 0:
             # Compute loss in the dev set
             ys_dev = dev_set.next()[0]
-            model, loss_dev, acc_dev = updater(model, ys_dev, args.bptt, is_eval=True)
+            model, loss_dev, acc_dev = updater(model, ys_dev, is_eval=True)
 
             loss_train_mean /= args.print_step
             acc_train_mean /= args.print_step
@@ -329,7 +313,7 @@ def main():
                          math.exp(loss_train_mean), math.exp(loss_dev),
                          learning_rate, len(ys_train), duration_step / 60))
             start_time_step = time.time()
-            loss_train_mean, acc_train_mean = 0., 0.
+            loss_train_mean, acc_train_mean = 0, 0
         step += args.ngpus
 
         # Save checkpoint and evaluate model per epoch
@@ -406,7 +390,7 @@ def main():
             pbar_epoch = tqdm(total=len(train_set))
             pbar_all.update(len(train_set))
 
-            if epoch == args.num_epoch:
+            if epoch == args.num_epochs:
                 break
 
             start_time_step = time.time()

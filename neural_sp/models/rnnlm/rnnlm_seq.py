@@ -4,7 +4,7 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""RNN language model."""
+"""Sequence-level RNN language model."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -23,11 +23,10 @@ from neural_sp.models.linear import Embedding
 from neural_sp.models.linear import LinearND
 from neural_sp.models.utils import np2var
 from neural_sp.models.utils import pad_list
-from neural_sp.models.utils import var2np
 
 
-class RNNLM(ModelBase):
-    """RNN language model."""
+class SeqRNNLM(ModelBase):
+    """Sequence-level RNN language model. This is used for RNNLM training."""
 
     def __init__(self, args):
 
@@ -60,13 +59,17 @@ class RNNLM(ModelBase):
                 enc_in_size = args.num_units
 
             if args.rnn_type == 'lstm':
-                rnn_i = nn.LSTMCell
+                rnn_i = nn.LSTM
             elif args.rnn_type == 'gru':
-                rnn_i = nn.GRUCell
+                rnn_i = nn.GRU
 
-            setattr(self, args.rnn_type + '_l' + str(i_l), rnn_i(input_size=enc_in_size,
+            setattr(self, args.rnn_type + '_l' + str(i_l), rnn_i(enc_in_size,
                                                                  hidden_size=args.num_units,
-                                                                 bias=True))
+                                                                 num_layers=1,
+                                                                 bias=True,
+                                                                 batch_first=True,
+                                                                 dropout=0,
+                                                                 bidirectional=False))
 
             # Dropout for hidden-hidden or hidden-output connection
             setattr(self, 'dropout_l' + str(i_l), nn.Dropout(p=args.dropout_hidden))
@@ -99,14 +102,11 @@ class RNNLM(ModelBase):
         # Initialize bias in forget gate with 1
         self.init_forget_gate_bias_with_one()
 
-    def forward(self, ys, state, is_eval=False):
+    def forward(self, ys, is_eval=False):
         """Forward computation.
 
         Args:
-            ys (np.array): A tensor of of size `[B, 2]`
-            state (list): list of (hx_list, cx_list)
-                hx_list (list of torch.autograd.Variable(float)):
-                cx_list (list of torch.autograd.Variable(float)):
+            ys (np.array): A tensor of of size `[B, T]`
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
@@ -114,8 +114,6 @@ class RNNLM(ModelBase):
             acc (float): Token-level accuracy in teacher-forcing
 
         """
-        raise NotImplementedError()
-
         if is_eval:
             self.eval()
         else:
@@ -125,45 +123,29 @@ class RNNLM(ModelBase):
             raise NotImplementedError()
             # TODO(hirofumi): reverse the order out of the model
         else:
-            ys = np2var(ys, self.device_id, volatile=is_eval).long()
+            ys = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
+            ys = pad_list(ys, self.pad)
 
-            ys_in = ys[:, :-1]  # B*1
-            ys_out = ys[:, 1:]  # B*1
+            ys_in = ys[:, :-1]
+            ys_out = ys[:, 1:]
 
         # Path through embedding
         ys_in = self.embed(ys_in)
 
-        if state is None:
-            hx_list, cx_list = self.initialize_hidden(batch_size=ys.shape[0])
-        else:
-            hx_list, cx_list = state
-
-        # Path through RNN
         res_out_prev = None
         for i_l in six.moves.range(self.num_layers):
-            name = self.rnn_type + '_l' + str(i_l)
-            if self.rnn_type == 'lstm':
-                if i_l == 0:
-                    hx_list[0], cx_list[0] = getattr(self, name)(
-                        ys_in, (hx_list[0], cx_list[0]))
-                else:
-                    hx_list[i_l], cx_list[i_l] = getattr(self, name)(
-                        hx_list[i_l - 1], (hx_list[i_l], cx_list[i_l]))
-            elif self.rnn_type == 'gru':
-                if i_l == 0:
-                    hx_list[0] = getattr(self, name)(ys_in, hx_list[0])
-                else:
-                    hx_list[i_l] = getattr(self, name)(hx_list[i_l - 1], hx_list[i_l])
+            # Path through RNN
+            ys_in, _ = getattr(self, self.rnn_type + '_l' + str(i_l))(ys_in, hx=None)
 
             # Dropout for hidden-hidden or hidden-output connection
-            hx_list[i_l] = getattr(self, 'dropout_l' + str(i_l))(hx_list[i_l])
+            ys_in = getattr(self, 'dropout_l' + str(i_l))(ys_in)
 
             # Residual connection
             if self.residual and res_out_prev is not None:
-                hx_list[i_l] += res_out_prev
-            res_out_prev = hx_list[i_l - 1]
+                ys_in += res_out_prev
+            res_out_prev = ys_in
 
-        logits = self.output(hx_list[-1].unsqueeze(1))
+        logits = self.output(ys_in)
 
         # Compute XE sequence loss
         loss = F.cross_entropy(input=logits.view((-1, logits.size(2))),
@@ -177,7 +159,7 @@ class RNNLM(ModelBase):
         denominator = torch.sum(mask)
         acc = float(numerator) / float(denominator)
 
-        return loss, acc, (hx_list, cx_list)
+        return loss, acc
 
     def predict(self, y, state):
         """
@@ -188,44 +170,28 @@ class RNNLM(ModelBase):
         Returns:
             logits_step ():
             out ():
-            state (): A tuple of (hx_list, cx_list)
-                hx_list (list of torch.autograd.Variable(float)):
-                cx_list (list of torch.autograd.Variable(float)):
+            state ():
 
         """
         if state is None:
-            hx_list, cx_list = self.initialize_hidden(batch_size=1)
-        else:
-            hx_list, cx_list = state
+            state = [None] * self.num_layers
 
         # Path through RNN
         res_out_prev = None
         for i_l in six.moves.range(self.num_layers):
-            name = self.rnn_type + '_l' + str(i_l)
-            if self.rnn_type == 'lstm':
-                if i_l == 0:
-                    hx_list[0], cx_list[0] = getattr(self, name)(
-                        y, (hx_list[0], cx_list[0]))
-                else:
-                    hx_list[i_l], cx_list[i_l] = getattr(self, name)(
-                        hx_list[i_l - 1], (hx_list[i_l], cx_list[i_l]))
-            elif self.rnn_type == 'gru':
-                if i_l == 0:
-                    hx_list[0] = getattr(self, name)(y, hx_list[0])
-                else:
-                    hx_list[i_l] = getattr(self, name)(hx_list[i_l - 1], hx_list[i_l])
+            y, state[i_l] = getattr(self, self.rnn_type + '_l' + str(i_l))(y, hx=state[i_l])
 
             # Dropout for hidden-hidden or hidden-output connection
-            hx_list[i_l] = getattr(self, 'dropout_l' + str(i_l))(hx_list[i_l])
+            y = getattr(self, 'dropout_l' + str(i_l))(y)
 
             # Residual connection
             if self.residual and res_out_prev is not None:
-                hx_list[i_l] += res_out_prev
-            res_out_prev = hx_list[i_l - 1]
+                y += res_out_prev
+            res_out_prev = y
 
-        logits_step = self.output(hx_list[-1].unsqueeze(1))
+        logits_step = self.output(y)
 
-        return logits_step, y, (hx_list, cx_list)
+        return logits_step, y, state
 
     def initialize_hidden(self, batch_size):
         """Initialize hidden states.
@@ -251,40 +217,3 @@ class RNNLM(ModelBase):
             cx_list = None
 
         return hx_list, cx_list
-
-    def repackage_hidden(self, state):
-        """Initialize hidden states.
-
-        Args:
-            state (list):
-                hx_list (list of torch.autograd.Variable(float)):
-                cx_list (list of torch.autograd.Variable(float)):
-        Returns:
-            state (list):
-                hx_list (list of torch.autograd.Variable(float)):
-                cx_list (list of torch.autograd.Variable(float)):
-
-        """
-        hx_list, cx_list = state
-        if self.rnn_type == 'lstm':
-            hx_list = [h.detach() for h in hx_list]
-            cx_list = [c.detach() for c in cx_list]
-        else:
-            hx_list = [h.detach() for h in hx_list]
-        return (hx_list, cx_list)
-
-    def copy_from_seqrnnlm(self, rnnlm):
-        """Copy parameters from sequene-level RNNLM.
-
-        Args:
-            rnnlm ():
-
-        """
-        for i_l in six.moves.range(self.num_layers):
-            name = self.rnn_type + '_l' + str(i_l)
-            getattr(self, name).weight_ih.data = getattr(rnnlm, name).weight_ih_l0.data
-            getattr(self, name).weight_hh.data = getattr(rnnlm, name).weight_hh_l0.data
-            getattr(self, name).bias_ih.data = getattr(rnnlm, name).bias_ih_l0.data
-            getattr(self, name).bias_hh.data = getattr(rnnlm, name).bias_hh_l0.data
-        self.output.fc.weight.data = rnnlm.output.fc.weight.data
-        self.output.fc.bias.data = rnnlm.output.fc.bias.data
