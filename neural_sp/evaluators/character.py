@@ -10,14 +10,18 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import logging
 import os
 from tqdm import tqdm
 
 from neural_sp.evaluators.edit_distance import compute_wer
 from neural_sp.utils.general import mkdir_join
 
+logger = logging.getLogger("decoding").getChild('character')
 
-def eval_char(models, dataset, decode_params, epoch, progressbar=False):
+
+def eval_char(models, dataset, decode_params, epoch,
+              decode_dir=None, progressbar=False):
     """Evaluate the character-level model by WER & CER.
 
     Args:
@@ -25,6 +29,7 @@ def eval_char(models, dataset, decode_params, epoch, progressbar=False):
         dataset: An instance of a `Dataset' class
         decode_params (dict):
         epoch (int):
+        decode_dir (str):
         progressbar (bool): if True, visualize the progressbar
     Returns:
         wer (float): Word error rate
@@ -43,14 +48,18 @@ def eval_char(models, dataset, decode_params, epoch, progressbar=False):
 
     model = models[0]
 
-    decode_dir = 'decode_' + dataset.set + '_ep' + str(epoch) + '_beam' + str(decode_params['beam_width'])
-    decode_dir += '_lp' + str(decode_params['length_penalty'])
-    decode_dir += '_cp' + str(decode_params['coverage_penalty'])
-    decode_dir += '_' + str(decode_params['min_len_ratio']) + '_' + str(decode_params['max_len_ratio'])
-    decode_dir += '_rnnlm' + str(decode_params['rnnlm_weight'])
+    if decode_dir is None:
+        decode_dir = 'decode_' + dataset.set + '_ep' + str(epoch) + '_beam' + str(decode_params['beam_width'])
+        decode_dir += '_lp' + str(decode_params['length_penalty'])
+        decode_dir += '_cp' + str(decode_params['coverage_penalty'])
+        decode_dir += '_' + str(decode_params['min_len_ratio']) + '_' + str(decode_params['max_len_ratio'])
+        decode_dir += '_rnnlm' + str(decode_params['rnnlm_weight'])
 
-    ref_trn_save_path = mkdir_join(model.save_path, decode_dir, 'ref.trn')
-    hyp_trn_save_path = mkdir_join(model.save_path, decode_dir, 'hyp.trn')
+        ref_trn_save_path = mkdir_join(model.save_path, decode_dir, 'ref.trn')
+        hyp_trn_save_path = mkdir_join(model.save_path, decode_dir, 'hyp.trn')
+    else:
+        ref_trn_save_path = mkdir_join(decode_dir, 'ref.trn')
+        hyp_trn_save_path = mkdir_join(decode_dir, 'hyp.trn')
 
     wer, cer = 0, 0
     num_sub_w, num_ins_w, num_del_w = 0, 0, 0
@@ -70,40 +79,45 @@ def eval_char(models, dataset, decode_params, epoch, progressbar=False):
             for b in range(len(batch['xs'])):
                 # Reference
                 if dataset.is_test:
-                    text_ref = ys[b]
+                    ref = ys[b]
                 else:
-                    text_ref = dataset.idx2char(ys[b])
+                    ref = dataset.idx2char(ys[b])
 
                 # Hypothesis
-                text_hyp = dataset.idx2char(best_hyps[b])
+                hyp = dataset.idx2char(best_hyps[b])
 
                 # Write to trn
                 speaker = '_'.join(batch['utt_ids'][b].replace('-', '_').split('_')[:-2])
                 start = batch['utt_ids'][b].replace('-', '_').split('_')[-2]
                 end = batch['utt_ids'][b].replace('-', '_').split('_')[-1]
-                f_ref.write(text_ref + ' (' + speaker + '-' + start + '-' + end + ')\n')
-                f_hyp.write(text_hyp + ' (' + speaker + '-' + start + '-' + end + ')\n')
+                f_ref.write(ref + ' (' + speaker + '-' + start + '-' + end + ')\n')
+                f_hyp.write(hyp + ' (' + speaker + '-' + start + '-' + end + ')\n')
+                logger.info('utt-id: %s' % batch['utt_ids'][b])
+                logger.info('Ref: %s' % ref.lower())
+                logger.info('Hyp: %s' % hyp)
 
                 if ('character' in dataset.label_type and 'nowb' not in dataset.label_type) or (task_index > 0 and dataset.label_type_sub == 'character'):
                     # Compute WER
-                    wer_b, sub_b, ins_b, del_b = compute_wer(ref=text_ref.split(' '),
-                                                             hyp=text_hyp.split(' '),
+                    wer_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
+                                                             hyp=hyp.split(' '),
                                                              normalize=False)
                     wer += wer_b
                     num_sub_w += sub_b
                     num_ins_w += ins_b
                     num_del_w += del_b
-                    num_words += len(text_ref.split(' '))
+                    num_words += len(ref.split(' '))
+                    # logger.info('WER: %d%%' % (wer_b / len(ref.split(' '))))
 
                 # Compute CER
-                cer_b, sub_b, ins_b, del_b = compute_wer(ref=list(text_ref.replace(' ', '')),
-                                                         hyp=list(text_hyp.replace(' ', '')),
+                cer_b, sub_b, ins_b, del_b = compute_wer(ref=list(ref.replace(' ', '')),
+                                                         hyp=list(hyp.replace(' ', '')),
                                                          normalize=False)
                 cer += cer_b
                 num_sub_c += sub_b
                 num_ins_c += ins_b
                 num_del_c += del_b
-                num_chars += len(text_ref)
+                num_chars += len(ref)
+                # logger.info('CER: %d%%' % (cer_b / len(ref)))
 
                 if progressbar:
                     pbar.update(1)

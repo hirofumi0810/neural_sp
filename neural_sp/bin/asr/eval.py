@@ -22,6 +22,7 @@ from neural_sp.evaluators.phone import eval_phone
 from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.models.rnnlm.rnnlm import RNNLM
+from neural_sp.models.rnnlm.rnnlm_seq import SeqRNNLM
 from neural_sp.models.seq2seq.seq2seq import Seq2seq
 from neural_sp.utils.config import load_config
 from neural_sp.utils.general import set_logger
@@ -32,6 +33,8 @@ parser.add_argument('--model', type=str,
                     help='path to the model to evaluate')
 parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
+parser.add_argument('--decode_dir', type=str,
+                    help='the name of corpus')
 # dataset
 parser.add_argument('--corpus', type=str,
                     help='the name of corpus')
@@ -74,7 +77,7 @@ def main():
             setattr(args, k, v)
 
     # Setting for logging
-    logger = set_logger(os.path.join(args.model, 'decode.log'), key='decoding')
+    logger = set_logger(os.path.join(args.decode_dir, 'decode.log'), key='decoding')
 
     wer_mean, cer_mean, per_mean = 0, 0, 0
     for i, set in enumerate(args.eval_sets):
@@ -85,7 +88,6 @@ def main():
                                os.path.join(args.model, 'dict_sub.txt')) else None,
                            label_type=args.label_type,
                            batch_size=args.batch_size,
-                           max_epoch=args.num_epochs,
                            is_test=True)
 
         if i == 0:
@@ -94,7 +96,7 @@ def main():
             args.num_classes_sub = eval_set.num_classes_sub
 
             # For cold fusion
-            # if args.rnnlm_cf:
+            # if args.rnnlm_cold_fusion:
             #     # Load a RNNLM config file
             #     config['rnnlm_config'] = load_config(os.path.join(args.model, 'config_rnnlm.yml'))
             #
@@ -105,7 +107,7 @@ def main():
             # else:
             #     pass
 
-            args.rnnlm_cf = None
+            args.rnnlm_cold_fusion = None
             args.rnnlm_init = None
 
             # Load the ASR model
@@ -117,7 +119,7 @@ def main():
             model.save_path = args.model
 
             # For shallow fusion
-            if args.rnnlm_cf is None and args.rnnlm is not None and args.rnnlm_weight > 0:
+            if (not args.rnnlm_cold_fusion) and args.rnnlm is not None and args.rnnlm_weight > 0:
                 # Load a RNNLM config file
                 config_rnnlm = load_config(os.path.join(args.rnnlm, 'config.yml'))
 
@@ -130,8 +132,13 @@ def main():
                 args_rnnlm.num_classes = eval_set.num_classes
 
                 # Load the pre-trianed RNNLM
+                seq_rnnlm = SeqRNNLM(args_rnnlm)
+                seq_rnnlm.load_checkpoint(args.rnnlm, epoch=-1)
+
+                # Copy parameters
                 rnnlm = RNNLM(args_rnnlm)
-                rnnlm.load_checkpoint(args.rnnlm, epoch=-1)
+                rnnlm.copy_from_seqrnnlm(seq_rnnlm)
+
                 if args_rnnlm.backward:
                     model.rnnlm_bwd_0 = rnnlm
                 else:
@@ -142,7 +149,9 @@ def main():
                 logger.info('RNNLM backward: %s' % str(config_rnnlm['backward']))
 
             # GPU setting
-            model.set_cuda(deterministic=False, benchmark=True)
+            model.cuda()
+            # model.set_cuda(deterministic=False, benchmark=True)
+            # TODO(hirofumi):
 
             logger.info('beam width: %d' % args.beam_width)
             logger.info('length penalty: %.3f' % args.length_penalty)
@@ -157,14 +166,15 @@ def main():
                                                  epoch=epoch - 1,
                                                  progressbar=True)
             wer_mean += wer
-            logger.info('  WER (%s): %.3f %%' % (eval_set.set, wer))
-        elif args.label_type == 'wordpiece':
+            logger.info('WER (%s): %.3f %%' % (eval_set.set, wer))
+        elif args.label_type == 'wp':
             wer, _, _, _, decode_dir = eval_wordpiece([model], eval_set, decode_params,
                                                       os.path.join(args.model, 'wp.model'),
                                                       epoch=epoch - 1,
+                                                      decode_dir=args.decode_dir,
                                                       progressbar=True)
             wer_mean += wer
-            logger.info('  WER (%s): %.3f %%' % (eval_set.set, wer))
+            logger.info('WER (%s): %.3f %%' % (eval_set.set, wer))
 
         elif 'char' in args.label_type:
             (wer, _, _, _), (cer, _, _, _), decode_dir = eval_char([model], eval_set, decode_params,
@@ -172,28 +182,28 @@ def main():
                                                                    progressbar=True)
             wer_mean += wer
             cer_mean += cer
-            logger.info('  WER / CER (%s): %.3f / %.3f %%' % (eval_set.set, wer, cer))
+            logger.info('WER / CER (%s): %.3f / %.3f %%' % (eval_set.set, wer, cer))
 
         elif 'phone' in args.label_type:
             per, _, _, _, decode_dir = eval_phone([model], eval_set, decode_params,
                                                   epoch=epoch - 1,
                                                   progressbar=True)
             per_mean += per
-            logger.info('  PER (%s): %.3f %%' % (eval_set.set, per))
+            logger.info('PER (%s): %.3f %%' % (eval_set.set, per))
         else:
             raise ValueError(args.label_type)
 
         logger.info('Elasped time: %.2f [sec.]:' % (time.time() - start_time))
 
     if args.label_type == 'word':
-        logger.info('  WER (mean): %.3f %%\n' % (wer_mean / len(args.eval_sets)))
-    if args.label_type == 'wordpiece':
-        logger.info('  WER (mean): %.3f %%\n' % (wer_mean / len(args.eval_sets)))
+        logger.info('WER (mean): %.3f %%\n' % (wer_mean / len(args.eval_sets)))
+    if args.label_type == 'wp':
+        logger.info('WER (mean): %.3f %%\n' % (wer_mean / len(args.eval_sets)))
     elif 'char' in args.label_type:
-        logger.info('  WER / CER (mean): %.3f / %.3f %%\n' %
+        logger.info('WER / CER (mean): %.3f / %.3f %%\n' %
                     (wer_mean / len(args.eval_sets), cer_mean / len(args.eval_sets)))
     elif 'phone' in args.label_type:
-        logger.info('  PER (mean): %.3f %%\n' % (per_mean / len(args.eval_sets)))
+        logger.info('PER (mean): %.3f %%\n' % (per_mean / len(args.eval_sets)))
 
     print(decode_dir)
 

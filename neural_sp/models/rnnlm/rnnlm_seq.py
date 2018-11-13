@@ -125,6 +125,7 @@ class SeqRNNLM(ModelBase):
         else:
             ys = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
             ys = pad_list(ys, self.pad)
+            # NOTE: padding is not necessary in fact
 
             ys_in = ys[:, :-1]
             ys_out = ys[:, 1:]

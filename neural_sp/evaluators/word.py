@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import logging
 import os
 from tqdm import tqdm
 
@@ -17,8 +18,11 @@ from neural_sp.evaluators.edit_distance import compute_wer
 from neural_sp.evaluators.resolving_unk import resolve_unk
 from neural_sp.utils.general import mkdir_join
 
+logger = logging.getLogger("decoding").getChild('word')
 
-def eval_word(models, dataset, decode_params, epoch, progressbar=False):
+
+def eval_word(models, dataset, decode_params, epoch,
+              decode_dir=None, progressbar=False):
     """Evaluate the word-level model by WER.
 
     Args:
@@ -26,6 +30,7 @@ def eval_word(models, dataset, decode_params, epoch, progressbar=False):
         dataset: An instance of a `Dataset' class
         decode_params (dict):
         epoch (int):
+        decode_dir (str):
         progressbar (bool): if True, visualize the progressbar
     Returns:
         wer (float): Word error rate
@@ -41,17 +46,21 @@ def eval_word(models, dataset, decode_params, epoch, progressbar=False):
     model = models[0]
     # TODO(hirofumi): ensemble decoding
 
-    decode_dir = 'decode_' + dataset.set + '_ep' + str(epoch) + '_beam' + str(decode_params['beam_width'])
-    decode_dir += '_lp' + str(decode_params['length_penalty'])
-    decode_dir += '_cp' + str(decode_params['coverage_penalty'])
-    decode_dir += '_' + str(decode_params['min_len_ratio']) + '_' + str(decode_params['max_len_ratio'])
-    decode_dir += '_rnnlm' + str(decode_params['rnnlm_weight'])
+    if decode_dir is None:
+        decode_dir = 'decode_' + dataset.set + '_ep' + str(epoch) + '_beam' + str(decode_params['beam_width'])
+        decode_dir += '_lp' + str(decode_params['length_penalty'])
+        decode_dir += '_cp' + str(decode_params['coverage_penalty'])
+        decode_dir += '_' + str(decode_params['min_len_ratio']) + '_' + str(decode_params['max_len_ratio'])
+        decode_dir += '_rnnlm' + str(decode_params['rnnlm_weight'])
 
-    ref_trn_save_path = mkdir_join(model.save_path, decode_dir, 'ref.trn')
-    hyp_trn_save_path = mkdir_join(model.save_path, decode_dir, 'hyp.trn')
+        ref_trn_save_path = mkdir_join(model.save_path, decode_dir, 'ref.trn')
+        hyp_trn_save_path = mkdir_join(model.save_path, decode_dir, 'hyp.trn')
+    else:
+        ref_trn_save_path = mkdir_join(decode_dir, 'ref.trn')
+        hyp_trn_save_path = mkdir_join(decode_dir, 'hyp.trn')
 
     wer = 0
-    num_sub, num_ins, num_del, = 0, 0, 0
+    num_sub, num_ins, num_del = 0, 0, 0
     num_words = 0
     num_oov_total = 0
     if progressbar:
@@ -67,41 +76,45 @@ def eval_word(models, dataset, decode_params, epoch, progressbar=False):
             for b in range(len(batch['xs'])):
                 # Reference
                 if dataset.is_test:
-                    text_ref = ys[b]
+                    ref = ys[b]
                 else:
-                    text_ref = dataset.idx2word(ys[b])
+                    ref = dataset.idx2word(ys[b])
 
                 # Hypothesis
-                text_hyp = dataset.idx2word(best_hyps[b])
-                num_oov_total += text_hyp.count('<unk>')
+                hyp = dataset.idx2word(best_hyps[b])
+                num_oov_total += hyp.count('<unk>')
 
                 # Resolving UNK
-                if decode_params['resolving_unk'] and '<unk>' in text_hyp:
+                if decode_params['resolving_unk'] and '<unk>' in hyp:
                     best_hyps_sub, aw_sub, _ = model.decode(
                         batch['xs'][b:b + 1], batch['xs'], decode_params, exclude_eos=True)
                     # task_index=1
 
-                    text_hyp = resolve_unk(
-                        text_hyp, best_hyps_sub[0], aw[b], aw_sub[0], dataset.idx2char,
-                        diff_time_resolution=2 ** sum(model.subsample_list) // 2 ** sum(model.subsample_list[:model.encoder_num_layers_sub - 1]))
-                    text_hyp = text_hyp.replace('*', '')
+                    hyp = resolve_unk(
+                        hyp, best_hyps_sub[0], aw[b], aw_sub[0], dataset.idx2char,
+                        diff_time_resolution=2 ** sum(model.subsample) // 2 ** sum(model.subsample[:model.enc_num_layers_sub - 1]))
+                    hyp = hyp.replace('*', '')
 
                 # Write to trn
                 speaker = '_'.join(batch['utt_ids'][b].replace('-', '_').split('_')[:-2])
                 start = batch['utt_ids'][b].replace('-', '_').split('_')[-2]
                 end = batch['utt_ids'][b].replace('-', '_').split('_')[-1]
-                f_ref.write(text_ref + ' (' + speaker + '-' + start + '-' + end + ')\n')
-                f_hyp.write(text_hyp + ' (' + speaker + '-' + start + '-' + end + ')\n')
+                f_ref.write(ref + ' (' + speaker + '-' + start + '-' + end + ')\n')
+                f_hyp.write(hyp + ' (' + speaker + '-' + start + '-' + end + ')\n')
+                logger.info('utt-id: %s' % batch['utt_ids'][b])
+                logger.info('Ref: %s' % ref.lower())
+                logger.info('Hyp: %s' % hyp)
 
                 # Compute WER
-                wer_b, sub_b, ins_b, del_b = compute_wer(ref=text_ref.split(' '),
-                                                         hyp=text_hyp.split(' '),
+                wer_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
+                                                         hyp=hyp.split(' '),
                                                          normalize=False)
                 wer += wer_b
                 num_sub += sub_b
                 num_ins += ins_b
                 num_del += del_b
-                num_words += len(text_ref.split(' '))
+                num_words += len(ref.split(' '))
+                # logger.info('WER: %d%%' % (wer_b / len(ref.split(' '))))
 
                 if progressbar:
                     pbar.update(1)

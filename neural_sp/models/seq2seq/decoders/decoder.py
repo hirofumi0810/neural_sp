@@ -11,6 +11,7 @@ from __future__ import division
 from __future__ import print_function
 
 from collections import OrderedDict
+import logging
 import math
 import numpy as np
 import random
@@ -36,6 +37,8 @@ from neural_sp.models.utils import pad_list
 from neural_sp.models.utils import var2np
 
 random.seed(1)
+
+logger = logging.getLogger("decoding").getChild("decoder")
 
 
 class Decoder(nn.Module):
@@ -301,12 +304,12 @@ class Decoder(nn.Module):
                     y_lm_emb = self.rnnlm_cf.embed(np.argmax(logits_att[-1].detach(), axis=2).cuda(device_id))
                 else:
                     y_lm_emb = ys_lm_emb[:, t:t + 1]
-                logits_lm_t, lm_out, rnnlm_state = self.rnnlm_cf.predict(y_lm_emb, rnnlm_state)
+                logits_rnnlm_step, rnnlm_out, rnnlm_state = self.rnnlm_cf.predict(y_lm_emb, rnnlm_state)
             else:
-                logits_lm_t, lm_out = None, None
+                logits_rnnlm_step, rnnlm_out = None, None
 
             # Generate
-            logits_att_t = self.generate(context_vec, dec_out, logits_lm_t, lm_out)
+            logits_att_t = self.generate(context_vec, dec_out, logits_rnnlm_step, rnnlm_out)
 
             # Residual connection
             if self.rnnlm_init and self.internal_lm:
@@ -329,10 +332,10 @@ class Decoder(nn.Module):
                 y_emb, context_vec, dec_state, _dec_state)
             if self.rnnlm_task_weight > 0:
                 if self.share_lm_softmax:
-                    logits_lm_t = self.output(_dec_out)
+                    logits_rnnlm_step = self.output(_dec_out)
                 else:
-                    logits_lm_t = self.output_rnnlm(_dec_out)
-                logits_lm.append(logits_lm_t)
+                    logits_rnnlm_step = self.output_rnnlm(_dec_out)
+                logits_lm.append(logits_rnnlm_step)
 
         logits_att = torch.cat(logits_att, dim=1) / self.logits_temp
 
@@ -485,7 +488,7 @@ class Decoder(nn.Module):
         _dec_out = hx_lm[0].unsqueeze(1)
         return dec_out, (hx_list, cx_list), _dec_out, (hx_lm, cx_lm)
 
-    def generate(self, context_vec, dec_out, logits_lm_t, lm_out):
+    def generate(self, context_vec, dec_out, logits_rnnlm_step, rnnlm_out):
         """Generate function.
 
         Args:
@@ -493,9 +496,9 @@ class Decoder(nn.Module):
                 `[B, 1, enc_num_units]`
             dec_out (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, dec_num_units]`
-            logits_lm_t (torch.autograd.Variable, float): A tensor of size
+            logits_rnnlm_step (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, num_classes]`
-            lm_out (torch.autograd.Variable, float): A tensor of size
+            rnnlm_out (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, lm_num_units]`
         Returns:
             logits_t (torch.autograd.Variable, float): A tensor of size
@@ -505,15 +508,19 @@ class Decoder(nn.Module):
         if self.rnnlm_cf:
             # cold fusion
             if self.cold_fusion == 'hidden':
-                lm_feat = self.cf_linear_lm_feat(lm_out)
+                lm_feat = self.cf_linear_lm_feat(rnnlm_out)
             elif self.cold_fusion == 'prob':
-                lm_feat = self.cf_linear_lm_feat(logits_lm_t)
+                lm_feat = self.cf_linear_lm_feat(logits_rnnlm_step)
             dec_feat = self.cf_linear_dec_feat(torch.cat([dec_out, context_vec], dim=-1))
             gate = F.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
             gated_lm_feat = gate * lm_feat
             logits_t = self.output_bn(torch.cat([dec_feat, gated_lm_feat], dim=-1))
         else:
             logits_t = self.output_bn(torch.cat([dec_out, context_vec], dim=-1))
+
+        # TODO(hirofumi): add non-linearity
+        # logits_t = F.tanh(logits_t)
+
         return logits_t
 
     def greedy(self, enc_out, enc_lens, max_len_ratio, exclude_eos=False):
@@ -557,12 +564,12 @@ class Decoder(nn.Module):
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf:
                 y_lm = self.rnnlm_cf.embed(y)
-                logits_lm_t, lm_out, rnnlm_state = self.rnnlm_cf.predict(y_lm, rnnlm_state)
+                logits_rnnlm_step, rnnlm_out, rnnlm_state = self.rnnlm_cf.predict(y_lm, rnnlm_state)
             else:
-                logits_lm_t, lm_out = None, None
+                logits_rnnlm_step, rnnlm_out = None, None
 
             # Generate
-            logits_t = self.generate(context_vec, dec_out, logits_lm_t, lm_out)
+            logits_t = self.generate(context_vec, dec_out, logits_rnnlm_step, rnnlm_out)
 
             # residual connection
             if self.rnnlm_init and self.internal_lm:
@@ -571,8 +578,6 @@ class Decoder(nn.Module):
             if self.share_lm_softmax or self.rnnlm_init:
                 logits_t = self.output_bn(logits_t)
             logits_t = self.output(logits_t)
-            if self.rnnlm_cf:
-                logits_t = F.relu(logits_t)
 
             # Pick up 1-best
             device_id = logits_t.get_device()
@@ -655,7 +660,7 @@ class Decoder(nn.Module):
 
         # For cold fusion
         if params['rnnlm_weight'] > 0 and not self.cold_fusion:
-            assert self.rnnlm_cf is not None
+            assert self.rnnlm_cf
             self.rnnlm_cf.eval()
 
         # For shallow fusion
@@ -684,8 +689,9 @@ class Decoder(nn.Module):
                      'hx_list': hx_list,
                      'cx_list': cx_list,
                      'context_vec': context_vec,
-                     'aw_t_list': [None],
-                     'rnnlm_state': None,
+                     'att_weight_steps': [None],
+                     'rnnlm_hx_list': None,
+                     'rnnlm_cx_list': None,
                      'prev_cov': 0,
                      '_dec_out': _dec_out,
                      '_dec_state': _dec_state}]
@@ -707,25 +713,25 @@ class Decoder(nn.Module):
                     context_vec, att_weight_step = self.score(enc_out[b:b + 1, :enc_lens[b]],
                                                               enc_lens[b:b + 1],
                                                               dec_out,
-                                                              beam[i_beam]['aw_t_list'][-1])
+                                                              beam[i_beam]['att_weight_steps'][-1])
 
                     if self.rnnlm_cf:
                         # Update RNNLM states for cold fusion
                         y_lm = Variable(enc_out.new(1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
-                        y_lm_emb = self.rnnlm_cf.embed(y_lm)
-                        logits_lm_t, lm_out, rnnlm_state = self.rnnlm_cf.predict(
-                            y_lm_emb, beam[i_beam]['rnnlm_state'])
+                        y_lm_emb = self.rnnlm_cf.embed(y_lm).squeeze(1)
+                        logits_rnnlm_step, rnnlm_out, rnnlm_state = self.rnnlm_cf.predict(
+                            y_lm_emb, (beam[i_beam]['rnnlm_hx_list'], beam[i_beam]['rnnlm_cx_list']))
                     elif rnnlm is not None:
                         # Update RNNLM states for shallow fusion
                         y_lm = Variable(enc_out.new(1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
-                        y_lm_emb = rnnlm.embed(y_lm)
-                        logits_lm_t, lm_out, rnnlm_state = rnnlm.predict(
-                            y_lm_emb, beam[i_beam]['rnnlm_state'])
+                        y_lm_emb = rnnlm.embed(y_lm).squeeze(1)
+                        logits_rnnlm_step, rnnlm_out, rnnlm_state = rnnlm.predict(
+                            y_lm_emb, (beam[i_beam]['rnnlm_hx_list'], beam[i_beam]['rnnlm_cx_list']))
                     else:
-                        logits_lm_t, lm_out, rnnlm_state = None, None, None
+                        logits_rnnlm_step, rnnlm_out, rnnlm_state = None, None, None
 
                     # Generate
-                    logits_t = self.generate(context_vec, dec_out, logits_lm_t, lm_out)
+                    logits_t = self.generate(context_vec, dec_out, logits_rnnlm_step, rnnlm_out)
 
                     # residual connection
                     if self.rnnlm_init and self.internal_lm:
@@ -737,8 +743,6 @@ class Decoder(nn.Module):
                     if self.share_lm_softmax or self.rnnlm_init:
                         logits_t = self.output_bn(logits_t)
                     logits_t = self.output(logits_t)
-                    if self.rnnlm_cf:
-                        logits_t = F.relu(logits_t)
 
                     # Path through the softmax layer & convert to log-scale
                     log_probs = F.log_softmax(logits_t.squeeze(1), dim=1)
@@ -762,7 +766,8 @@ class Decoder(nn.Module):
                             # Recompute converage penalty in each step
                             score -= beam[i_beam]['prev_cov'] * params['coverage_penalty']
 
-                            att_weight_stack = torch.stack(beam[i_beam]['aw_t_list'][1:] + [att_weight_step], dim=1)
+                            att_weight_stack = torch.stack(
+                                beam[i_beam]['att_weight_steps'][1:] + [att_weight_step], dim=1)
 
                             if self.score.num_heads > 1:
                                 cov_sum = att_weight_stack[0, :, :, 0].detach().cpu().numpy()
@@ -779,7 +784,7 @@ class Decoder(nn.Module):
 
                         # Add RNNLM score
                         if params['rnnlm_weight'] > 0:
-                            lm_log_probs = F.log_softmax(logits_lm_t.squeeze(1), dim=1)
+                            lm_log_probs = F.log_softmax(logits_rnnlm_step.squeeze(1), dim=1)
                             assert log_probs.size() == lm_log_probs.size()
                             score += lm_log_probs[0, indices_topk[0, k].item()].item() * params['rnnlm_weight']
 
@@ -790,11 +795,12 @@ class Decoder(nn.Module):
                              'cx_list': cx_list[:],
                              'dec_out': dec_out,
                              'context_vec': context_vec,
-                             'aw_t_list': beam[i_beam]['aw_t_list'] + [att_weight_step],
-                             'rnnlm_state': rnnlm_state[:],
+                             'att_weight_steps': beam[i_beam]['att_weight_steps'] + [att_weight_step],
+                             'rnnlm_hx_list': rnnlm_state[0][:] if rnnlm_state is not None else None,
+                             'rnnlm_cx_list': rnnlm_state[1][:] if rnnlm_state is not None else None,
                              'prev_cov': cov_sum,
                              '_dec_out': _dec_out,
-                             '_dec_state': _dec_state[:]})  # TODO
+                             '_dec_state': _dec_state[:]})
 
                 new_beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)
 
@@ -817,10 +823,13 @@ class Decoder(nn.Module):
 
             complete = sorted(complete, key=lambda x: x['score'], reverse=True)
             best_hyps += [np.array(complete[0]['hyp'][1:])]
-            aw += [complete[0]['aw_t_list'][1:]]
+            aw += [complete[0]['att_weight_steps'][1:]]
             y_lens[b] = len(complete[0]['hyp'][1:])
             if complete[0]['hyp'][-1] == eos:
                 eos_flags[b] = True
+
+        logger.info('log prob (hyp): %.3f' % complete[0]['score'])
+        logger.info('log prob (ref): ')
 
         # Concatenate in L dimension
         for b in six.moves.range(len(aw)):

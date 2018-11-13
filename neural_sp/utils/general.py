@@ -67,13 +67,15 @@ def set_logger(save_path, key):
     """
     logger = logging.getLogger(key)
     sh = logging.StreamHandler()
-    sh.setLevel(logging.WARNING)
     fh = logging.FileHandler(save_path)
-    fh.setLevel(logging.DEBUG)
+
     logger.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('%(asctime)s line:%(lineno)d %(levelname)s:  %(message)s')
+    sh.setLevel(logging.WARNING)
+    fh.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s %(name)s line:%(lineno)d %(levelname)s: %(message)s')
     sh.setFormatter(formatter)
     fh.setFormatter(formatter)
     logger.addHandler(sh)
     logger.addHandler(fh)
+
     return logger

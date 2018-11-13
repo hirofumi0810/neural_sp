@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import logging
 import os
 import sentencepiece as spm
 from tqdm import tqdm
@@ -17,8 +18,11 @@ from tqdm import tqdm
 from neural_sp.evaluators.edit_distance import compute_wer
 from neural_sp.utils.general import mkdir_join
 
+logger = logging.getLogger("decoding").getChild('wordpiece')
 
-def eval_wordpiece(models, dataset, decode_params, wp_model, epoch, progressbar=False):
+
+def eval_wordpiece(models, dataset, decode_params, wp_model, epoch,
+                   decode_dir=None, progressbar=False):
     """Evaluate the wordpiece-level model by WER.
 
     Args:
@@ -27,6 +31,7 @@ def eval_wordpiece(models, dataset, decode_params, wp_model, epoch, progressbar=
         decode_params (dict):
         wp_model ():
         epoch (int):
+        decode_dir (str):
         progressbar (bool): if True, visualize the progressbar
     Returns:
         wer (float): Word error rate
@@ -42,23 +47,27 @@ def eval_wordpiece(models, dataset, decode_params, wp_model, epoch, progressbar=
     model = models[0]
     # TODO(hirofumi): ensemble decoding
 
-    decode_dir = 'decode_' + dataset.set + '_ep' + str(epoch) + '_beam' + str(decode_params['beam_width'])
-    decode_dir += '_lp' + str(decode_params['length_penalty'])
-    decode_dir += '_cp' + str(decode_params['coverage_penalty'])
-    decode_dir += '_' + str(decode_params['min_len_ratio']) + '_' + str(decode_params['max_len_ratio'])
-    decode_dir += '_rnnlm' + str(decode_params['rnnlm_weight'])
+    if decode_dir is None:
+        decode_dir = 'decode_' + dataset.set + '_ep' + str(epoch) + '_beam' + str(decode_params['beam_width'])
+        decode_dir += '_lp' + str(decode_params['length_penalty'])
+        decode_dir += '_cp' + str(decode_params['coverage_penalty'])
+        decode_dir += '_' + str(decode_params['min_len_ratio']) + '_' + str(decode_params['max_len_ratio'])
+        decode_dir += '_rnnlm' + str(decode_params['rnnlm_weight'])
 
-    ref_trn_save_path = mkdir_join(model.save_path, decode_dir, 'ref.trn')
-    hyp_trn_save_path = mkdir_join(model.save_path, decode_dir, 'hyp.trn')
+        ref_trn_save_path = mkdir_join(model.save_path, decode_dir, 'ref.trn')
+        hyp_trn_save_path = mkdir_join(model.save_path, decode_dir, 'hyp.trn')
+    else:
+        ref_trn_save_path = mkdir_join(decode_dir, 'ref.trn')
+        hyp_trn_save_path = mkdir_join(decode_dir, 'hyp.trn')
 
     sp = spm.SentencePieceProcessor()
     sp.Load(wp_model)
 
     wer = 0
-    num_sub, num_ins, num_del, = 0, 0, 0
+    num_sub, num_ins, num_del = 0, 0, 0
     num_words = 0
     if progressbar:
-        pbar = tqdm(total=len(dataset))  # TODO(hirofumi): fix this
+        pbar = tqdm(total=len(dataset))
 
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
@@ -70,31 +79,35 @@ def eval_wordpiece(models, dataset, decode_params, wp_model, epoch, progressbar=
             for b in range(len(batch['xs'])):
                 # Reference
                 if dataset.is_test:
-                    text_ref = ys[b]
+                    ref = ys[b]
                 else:
                     wp_list_ref = dataset.idx2word(ys[b], return_list=True)
-                    text_ref = sp.DecodePieces(wp_list_ref)
+                    ref = sp.DecodePieces(wp_list_ref)
 
                 # Hypothesis
                 wp_list_hyp = dataset.idx2word(best_hyps[b], return_list=True)
-                text_hyp = sp.DecodePieces(wp_list_hyp)
+                hyp = sp.DecodePieces(wp_list_hyp)
 
                 # Write to trn
                 speaker = '_'.join(batch['utt_ids'][b].replace('-', '_').split('_')[:-2])
                 start = batch['utt_ids'][b].replace('-', '_').split('_')[-2]
                 end = batch['utt_ids'][b].replace('-', '_').split('_')[-1]
-                f_ref.write(text_ref + ' (' + speaker + '-' + start + '-' + end + ')\n')
-                f_hyp.write(text_hyp + ' (' + speaker + '-' + start + '-' + end + ')\n')
+                f_ref.write(ref + ' (' + speaker + '-' + start + '-' + end + ')\n')
+                f_hyp.write(hyp + ' (' + speaker + '-' + start + '-' + end + ')\n')
+                logger.info('utt-id: %s' % batch['utt_ids'][b])
+                logger.info('Ref: %s' % ref.lower())
+                logger.info('Hyp: %s' % hyp)
 
                 # Compute WER
-                wer_b, sub_b, ins_b, del_b = compute_wer(ref=text_ref.split(' '),
-                                                         hyp=text_hyp.split(' '),
+                wer_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
+                                                         hyp=hyp.split(' '),
                                                          normalize=False)
                 wer += wer_b
                 num_sub += sub_b
                 num_ins += ins_b
                 num_del += del_b
-                num_words += len(text_ref.split(' '))
+                num_words += len(ref.split(' '))
+                # logger.info('WER: %d%%' % (float(wer_b) / len(ref.split(' '))))
 
                 if progressbar:
                     pbar.update(1)

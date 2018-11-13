@@ -114,8 +114,6 @@ class RNNLM(ModelBase):
             acc (float): Token-level accuracy in teacher-forcing
 
         """
-        raise NotImplementedError()
-
         if is_eval:
             self.eval()
         else:
@@ -125,7 +123,8 @@ class RNNLM(ModelBase):
             raise NotImplementedError()
             # TODO(hirofumi): reverse the order out of the model
         else:
-            ys = np2var(ys, self.device_id, volatile=is_eval).long()
+            ys = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
+            ys = pad_list(ys, self.pad)
 
             ys_in = ys[:, :-1]  # B*1
             ys_out = ys[:, 1:]  # B*1
@@ -161,7 +160,7 @@ class RNNLM(ModelBase):
             # Residual connection
             if self.residual and res_out_prev is not None:
                 hx_list[i_l] += res_out_prev
-            res_out_prev = hx_list[i_l - 1]
+            res_out_prev = hx_list[i_l]
 
         logits = self.output(hx_list[-1].unsqueeze(1))
 
@@ -193,7 +192,7 @@ class RNNLM(ModelBase):
                 cx_list (list of torch.autograd.Variable(float)):
 
         """
-        if state is None:
+        if state[0] is None:
             hx_list, cx_list = self.initialize_hidden(batch_size=1)
         else:
             hx_list, cx_list = state
@@ -221,7 +220,7 @@ class RNNLM(ModelBase):
             # Residual connection
             if self.residual and res_out_prev is not None:
                 hx_list[i_l] += res_out_prev
-            res_out_prev = hx_list[i_l - 1]
+            res_out_prev = hx_list[i_l]
 
         logits_step = self.output(hx_list[-1].unsqueeze(1))
 
