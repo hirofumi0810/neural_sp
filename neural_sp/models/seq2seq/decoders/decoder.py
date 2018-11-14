@@ -102,7 +102,8 @@ class Decoder(nn.Module):
                  internal_lm=False,
                  rnnlm_init=False,
                  rnnlm_task_weight=0.,
-                 share_lm_softmax=False):
+                 share_lm_softmax=False,
+                 global_weight=1):
 
         super(Decoder, self).__init__()
 
@@ -130,6 +131,7 @@ class Decoder(nn.Module):
         self.rnnlm_init = rnnlm_init
         self.rnnlm_task_weight = rnnlm_task_weight
         self.share_lm_softmax = share_lm_softmax
+        self.global_weight = global_weight
 
         if ctc_weight > 0:
             # Fully-connected layers for CTC
@@ -355,7 +357,8 @@ class Decoder(nn.Module):
                 input=logits_att.view((-1, logits_att.size(2))),
                 target=ys_out_pad.view(-1),  # long
                 ignore_index=-1, size_average=False) / len(enc_out)
-        loss += loss_att * (1 - self.ctc_weight)
+        # loss += loss_att * (1 - self.ctc_weight)
+        loss += loss_att * (self.global_weight - self.ctc_weight)
 
         # Compute XE loss for RNNLM objective
         if self.rnnlm_task_weight > 0:

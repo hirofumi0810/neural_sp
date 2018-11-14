@@ -186,7 +186,8 @@ class Seq2seq(ModelBase):
                           internal_lm=args.internal_lm,
                           rnnlm_init=args.rnnlm_init,
                           rnnlm_task_weight=args.rnnlm_task_weight,
-                          share_lm_softmax=args.share_lm_softmax)
+                          share_lm_softmax=args.share_lm_softmax,
+                          global_weight=self.fwd_weight * args.main_task_weight if dir == 'fwd' else self.bwd_weight)
             setattr(self, 'dec_' + dir, dec)
 
         # SUB TASK
@@ -237,7 +238,8 @@ class Seq2seq(ModelBase):
                                         lsm_prob=args.lsm_prob,
                                         init_with_enc=args.init_with_enc,
                                         ctc_weight=args.ctc_weight_sub,
-                                        ctc_fc_list=args.ctc_fc_list)  # sub??
+                                        ctc_fc_list=args.ctc_fc_list,  # sub??
+                                        global_weight=1 - args.main_task_weight)
 
         if args.input_type == 'text':
             if args.num_classes == args.num_classes_sub:
@@ -313,7 +315,7 @@ class Seq2seq(ModelBase):
         # Compute XE loss for the forward decoder
         if self.fwd_weight > 0:
             loss_fwd, loss_acc_fwd = self.dec_fwd(xs, x_lens, ys)
-            loss = loss_fwd * self.fwd_weight
+            loss = loss_fwd
         else:
             loss_acc_fwd = {}
             loss = Variable(xs.new(1,).fill_(0.))
@@ -321,14 +323,14 @@ class Seq2seq(ModelBase):
         # Compute XE loss for the backward decoder
         if self.bwd_weight > 0:
             loss_bwd, loss_acc_bwd = self.dec_bwd(xs, x_lens, ys)
-            loss += loss_bwd * self.bwd_weight
+            loss += loss_bwd
         else:
             loss_acc_bwd = {}
 
         if self.main_task_weight < 1:
             ys_sub = [ys_sub[i] for i in perm_idx]
             loss_sub, loss_acc_sub = self.dec_fwd_sub1(xs_sub, x_lens_sub, ys_sub)
-            loss = loss * self.main_task_weight + loss_sub * (1 - self.main_task_weight)
+            loss += loss_sub
         else:
             loss_acc_sub = {}
 
