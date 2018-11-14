@@ -223,7 +223,7 @@ class Decoder(nn.Module):
             enc_out (torch.autograd.Variable, float): A tensor of size
                 `[B, T, dec_num_units]`
             enc_lens (list): A list of length `[B]`
-            ys (list): A list of length `[B]`, which contains Variables of size `[L]`
+            ys (list): A list of length `[B]`, which contains a list of size `[L]`
         Returns:
             logits (torch.autograd.Variable, float): A tensor of size
                 `[B, L, num_classes]`
@@ -238,6 +238,7 @@ class Decoder(nn.Module):
         # Compute the auxiliary CTC loss
         if self.ctc_weight > 0:
             enc_lens_ctc = np2var(np.fromiter(enc_lens, dtype=np.int32), -1).int()
+            ys = [np2var(np.fromiter(y, dtype=np.int64), device_id).long() for y in ys]   # always fwd
             y_lens = np2var(np.fromiter([y.size(0) for y in ys], dtype=np.int32), -1).int()
             # NOTE: do not copy to GPUs here
 
@@ -269,9 +270,11 @@ class Decoder(nn.Module):
         sos = Variable(enc_out.new(1,).fill_(self.sos).long())
         eos = Variable(enc_out.new(1,).fill_(self.eos).long())
         if self.backward:
+            ys = [np2var(np.fromiter(y, dtype=np.int64), device_id).long() for y in ys]   # always fwd
             ys_in = [torch.cat([eos, y], dim=0) for y in ys]
             ys_out = [torch.cat([y, sos], dim=0) for y in ys]
         else:
+            ys = [np2var(np.fromiter(y[::-1], dtype=np.int64), device_id).long() for y in ys]   # always fwd
             ys_in = [torch.cat([sos, y], dim=0) for y in ys]
             ys_out = [torch.cat([y, eos], dim=0) for y in ys]
         ys_in_pad = pad_list(ys_in, self.pad)
@@ -632,8 +635,8 @@ class Decoder(nn.Module):
 
         return nbest_hyps, aws
 
-    def beam_search(self, enc_out, enc_lens, params, rnnlm, exclude_eos=False,
-                    nbest=1, idx2token=None, refs=None):
+    def beam_search(self, enc_out, enc_lens, params, rnnlm, nbest=1,
+                    exclude_eos=False, idx2token=None, refs=None):
         """Beam search decoding in the inference stage.
 
         Args:
@@ -649,8 +652,8 @@ class Decoder(nn.Module):
                 coverage_threshold (float): threshold for coverage penalty
                 rnnlm_weight (float): the weight of RNNLM score
             rnnlm (torch.nn.Module):
-            exclude_eos (bool):
             nbest (int):
+            exclude_eos (bool):
             idx2token (): converter from index to token
         Returns:
             nbest_hyps (list): A list of length `[B]`, which contains list of n hypotheses
@@ -685,6 +688,7 @@ class Decoder(nn.Module):
             complete = []
             beam = [{'hyp': [sos],
                      'score': 0,  # log 1
+                     'score_raw': 0,  # log 1
                      'dec_out': dec_out,
                      'hx_list': hx_list,
                      'cx_list': cx_list,
@@ -759,7 +763,8 @@ class Decoder(nn.Module):
                             continue
 
                         # Add length penalty
-                        score = beam[i_beam]['score'] + log_probs_topk[0, k].item() + params['length_penalty']
+                        score_raw = beam[i_beam]['score_raw'] + log_probs_topk[0, k].item()
+                        score = score_raw + params['length_penalty']
 
                         # Add coverage penalty
                         if params['coverage_penalty'] > 0:
@@ -788,6 +793,10 @@ class Decoder(nn.Module):
                         new_beam.append(
                             {'hyp': beam[i_beam]['hyp'] + [indices_topk[0, k].item()],
                              'score': score,
+                             'score_raw': score_raw,
+                             'score_lm': 0,  # TODO(hirofumi):
+                             'score_lp': 0,  # TODO(hirofumi):
+                             'score_cp': 0,  # TODO(hirofumi):
                              'hx_list': hx_list[:],
                              'cx_list': cx_list[:],
                              'dec_out': dec_out,
@@ -818,6 +827,8 @@ class Decoder(nn.Module):
             # Sort by score
             if len(complete) == 0:
                 complete = beam
+            elif len(complete) < nbest and nbest > 1:
+                complete.extend(beam[:nbest - len(complete)])
             complete = sorted(complete, key=lambda x: x['score'], reverse=True)
 
             # N-best list
@@ -828,10 +839,10 @@ class Decoder(nn.Module):
             else:
                 nbest_hyps += [[np.array(complete[n]['hyp'][1:]) for n in range(nbest)]]
                 aws += [[complete[n]['aws'][1:] for n in range(nbest)]]
-            scores += [[complete[n]['score'] for n in range(nbest)]]
+            scores += [[complete[n]['score_raw'] for n in range(nbest)]]
 
             # Check <eos>
-            eos_flag = [True if complete[b]['hyp'][-1] == eos else False for n in range(nbest)]
+            eos_flag = [True if complete[n]['hyp'][-1] == eos else False for n in range(nbest)]
             eos_flags.append(eos_flag)
 
             if idx2token is not None:
@@ -842,6 +853,7 @@ class Decoder(nn.Module):
             if refs is not None:
                 logger.info('log prob (ref): ')
             for n in range(nbest):
+                logger.info('log prob (hyp, raw): %.3f' % complete[n]['score_raw'])
                 logger.info('log prob (hyp): %.3f' % complete[n]['score'])
 
         # Concatenate in L dimension

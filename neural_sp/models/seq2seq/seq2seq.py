@@ -295,7 +295,6 @@ class Seq2seq(ModelBase):
         # Encode input features
         if self.input_type == 'speech':
             # Sort by lenghts in the descending order
-            # if self.enc_type != 'cnn':
             perm_idx = sorted(list(six.moves.range(0, len(xs), 1)),
                               key=lambda i: len(xs[i]), reverse=True)
             xs = [xs[i] for i in perm_idx]
@@ -313,8 +312,7 @@ class Seq2seq(ModelBase):
 
         # Compute XE loss for the forward decoder
         if self.fwd_weight > 0:
-            ys_fwd = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
-            loss_fwd, loss_acc_fwd = self.dec_fwd(xs, x_lens, ys_fwd)
+            loss_fwd, loss_acc_fwd = self.dec_fwd(xs, x_lens, ys)
             loss = loss_fwd * self.fwd_weight
         else:
             loss_acc_fwd = {}
@@ -322,16 +320,13 @@ class Seq2seq(ModelBase):
 
         # Compute XE loss for the backward decoder
         if self.bwd_weight > 0:
-            ys_bwd = [np2var(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long() for y in ys]
-            loss_bwd, loss_acc_bwd = self.dec_bwd(xs, x_lens, ys_bwd)
+            loss_bwd, loss_acc_bwd = self.dec_bwd(xs, x_lens, ys)
             loss += loss_bwd * self.bwd_weight
         else:
             loss_acc_bwd = {}
 
         if self.main_task_weight < 1:
             ys_sub = [ys_sub[i] for i in perm_idx]
-            ys_sub = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()
-                      for y in ys_sub]
             loss_sub, loss_acc_sub = self.dec_fwd_sub1(xs_sub, x_lens_sub, ys_sub)
             loss = loss * self.main_task_weight + loss_sub * (1 - self.main_task_weight)
         else:
@@ -426,7 +421,6 @@ class Seq2seq(ModelBase):
         self.eval()
 
         # Sort by lenghts in the descending order
-        # if self.enc_type != 'cnn':
         perm_idx = sorted(list(six.moves.range(0, len(xs), 1)),
                           key=lambda i: len(xs[i]), reverse=True)
         xs = [xs[i] for i in perm_idx]
