@@ -1,11 +1,9 @@
-parent: ./conf/attention/word_blstm_att_aps_other.yml
+parent: ./conf/attention/word_blstm_att.yml
 param:
   # topology
   conv_in_channel: 1
-  conv_channels: [64, 64, 128, 128, 256, 256]
+  conv_channels: [64, 64, 128, 128]
   conv_kernel_sizes:
-    - [3, 3]
-    - [3, 3]
     - [3, 3]
     - [3, 3]
     - [3, 3]
@@ -15,11 +13,7 @@ param:
     - [1, 1]
     - [1, 1]
     - [1, 1]
-    - [1, 1]
-    - [1, 1]
   conv_poolings:
-    - []
-    - [2, 2]
     - []
     - [2, 2]
     - []
@@ -49,10 +43,11 @@ param:
   bwd_weight: 0.0
 
   # cold fusion
-  cold_fusion_type: hidden
-  rnnlm_cf: False
+  cold_fusion: hidden
+  rnnlm_cold_fusion: False
 
   # RNNLM initialization & RNNLM objective
   internal_lm: False
   rnnlm_init: False
-  rnnlm_weight: 0.0
+  rnnlm_task_weight: 0.0
+  share_lm_softmax: False

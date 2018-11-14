@@ -1,4 +1,4 @@
-parent: ./conf/attention/wordpiece_blstm_att.yml
+parent: ./conf/attention/word_blstm_att.yml
 param:
   # topology
   conv_in_channel: 1
@@ -28,7 +28,7 @@ param:
     - False
     - False
     - False
-    - True
+    - False
     - False
 
   # optimization
@@ -43,10 +43,11 @@ param:
   bwd_weight: 0.0
 
   # cold fusion
-  cold_fusion_type: hidden
-  rnnlm_cf: False
+  cold_fusion: hidden
+  rnnlm_cold_fusion: False
 
   # RNNLM initialization & RNNLM objective
   internal_lm: False
   rnnlm_init: False
-  rnnlm_weight: 0.0
+  rnnlm_task_weight: 0.0
+  share_lm_softmax: False

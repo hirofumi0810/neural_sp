@@ -1,4 +1,4 @@
-parent: ./conf/attention/word_blstm_att.yml
+parent: ./conf/ctc/char_blstm_ctc.yml
 param:
   # topology
   conv_in_channel: 1
@@ -28,26 +28,9 @@ param:
     - False
     - False
     - False
-    - True
+    - False
     - False
 
   # optimization
   batch_size: 25
   print_step: 400
-
-  # initialization
-  pretrained_model_path: False
-
-  # MTL
-  ctc_weight: 0.0
-  bwd_weight: 0.0
-
-  # cold fusion
-  cold_fusion: hidden
-  rnnlm_cold_fusion: False
-
-  # RNNLM initialization & RNNLM objective
-  internal_lm: False
-  rnnlm_init: False
-  rnnlm_task_weight: 0.0
-  share_lm_softmax: False
