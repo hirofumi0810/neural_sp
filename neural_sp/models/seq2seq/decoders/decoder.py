@@ -277,10 +277,10 @@ class Decoder(nn.Module):
         ys_out_pad = pad_list(ys_out, -1)
 
         # Initialization
-        dec_out, dec_state = self._init_dec_state(enc_out, enc_lens, self.num_layers)
-        _dec_out, _dec_state = self._init_dec_state(enc_out, enc_lens, 1)  # for internal LM
+        dec_out, dec_state = self.init_dec_state(enc_out, enc_lens, self.num_layers)
+        _dec_out, _dec_state = self.init_dec_state(enc_out, enc_lens, 1)  # for internal LM
         self.score.reset()
-        att_weight_step = None
+        aw = None
         rnnlm_state = None
 
         # Pre-computation of embedding
@@ -296,7 +296,7 @@ class Decoder(nn.Module):
             is_sample = t > 0 and self.ss_prob > 0 and random.random() < self.ss_prob
 
             # Score
-            context_vec, att_weight_step = self.score(enc_out, enc_lens, dec_out, att_weight_step)
+            context_vec, aw = self.score(enc_out, enc_lens, dec_out, aw)
 
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf:
@@ -304,12 +304,12 @@ class Decoder(nn.Module):
                     y_lm_emb = self.rnnlm_cf.embed(np.argmax(logits_att[-1].detach(), axis=2).cuda(device_id))
                 else:
                     y_lm_emb = ys_lm_emb[:, t:t + 1]
-                logits_rnnlm_step, rnnlm_out, rnnlm_state = self.rnnlm_cf.predict(y_lm_emb, rnnlm_state)
+                logits_rnnlm_t, rnnlm_out, rnnlm_state = self.rnnlm_cf.predict(y_lm_emb, rnnlm_state)
             else:
-                logits_rnnlm_step, rnnlm_out = None, None
+                logits_rnnlm_t, rnnlm_out = None, None
 
             # Generate
-            logits_att_t = self.generate(context_vec, dec_out, logits_rnnlm_step, rnnlm_out)
+            logits_att_t = self.generate(context_vec, dec_out, logits_rnnlm_t, rnnlm_out)
 
             # Residual connection
             if self.rnnlm_init and self.internal_lm:
@@ -332,10 +332,10 @@ class Decoder(nn.Module):
                 y_emb, context_vec, dec_state, _dec_state)
             if self.rnnlm_task_weight > 0:
                 if self.share_lm_softmax:
-                    logits_rnnlm_step = self.output(_dec_out)
+                    logits_rnnlm_t = self.output(_dec_out)
                 else:
-                    logits_rnnlm_step = self.output_rnnlm(_dec_out)
-                logits_lm.append(logits_rnnlm_step)
+                    logits_rnnlm_t = self.output_rnnlm(_dec_out)
+                logits_lm.append(logits_rnnlm_t)
 
         logits_att = torch.cat(logits_att, dim=1) / self.logits_temp
 
@@ -378,7 +378,7 @@ class Decoder(nn.Module):
                     'acc': acc}
         return loss, loss_acc
 
-    def _init_dec_state(self, enc_out, enc_lens, num_layers):
+    def init_dec_state(self, enc_out, enc_lens, num_layers):
         """Initialize decoder state.
 
         Args:
@@ -488,7 +488,7 @@ class Decoder(nn.Module):
         _dec_out = hx_lm[0].unsqueeze(1)
         return dec_out, (hx_list, cx_list), _dec_out, (hx_lm, cx_lm)
 
-    def generate(self, context_vec, dec_out, logits_rnnlm_step, rnnlm_out):
+    def generate(self, context_vec, dec_out, logits_rnnlm_t, rnnlm_out):
         """Generate function.
 
         Args:
@@ -496,7 +496,7 @@ class Decoder(nn.Module):
                 `[B, 1, enc_num_units]`
             dec_out (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, dec_num_units]`
-            logits_rnnlm_step (torch.autograd.Variable, float): A tensor of size
+            logits_rnnlm_t (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, num_classes]`
             rnnlm_out (torch.autograd.Variable, float): A tensor of size
                 `[B, 1, lm_num_units]`
@@ -510,18 +510,14 @@ class Decoder(nn.Module):
             if self.cold_fusion == 'hidden':
                 lm_feat = self.cf_linear_lm_feat(rnnlm_out)
             elif self.cold_fusion == 'prob':
-                lm_feat = self.cf_linear_lm_feat(logits_rnnlm_step)
+                lm_feat = self.cf_linear_lm_feat(logits_rnnlm_t)
             dec_feat = self.cf_linear_dec_feat(torch.cat([dec_out, context_vec], dim=-1))
             gate = F.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
             gated_lm_feat = gate * lm_feat
             logits_t = self.output_bn(torch.cat([dec_feat, gated_lm_feat], dim=-1))
         else:
             logits_t = self.output_bn(torch.cat([dec_out, context_vec], dim=-1))
-
-        # TODO(hirofumi): add non-linearity
-        # logits_t = F.tanh(logits_t)
-
-        return logits_t
+        return F.tanh(logits_t)
 
     def greedy(self, enc_out, enc_lens, max_len_ratio, exclude_eos=False):
         """Greedy decoding in the inference stage.
@@ -540,10 +536,10 @@ class Decoder(nn.Module):
         batch_size, enc_time, enc_num_units = enc_out.size()
 
         # Initialization
-        dec_out, dec_state = self._init_dec_state(enc_out, enc_lens, self.num_layers)
-        _dec_out, _dec_state = self._init_dec_state(enc_out, enc_lens, 1)
+        dec_out, dec_state = self.init_dec_state(enc_out, enc_lens, self.num_layers)
+        _dec_out, _dec_state = self.init_dec_state(enc_out, enc_lens, 1)
         self.score.reset()
-        att_weight_step = None
+        aw = None
         rnnlm_state = None
 
         if self.backward:
@@ -554,22 +550,22 @@ class Decoder(nn.Module):
         # Start from <sos> (<eos> in case of the backward decoder)
         y = Variable(enc_out.new(batch_size, 1).fill_(sos).long(), volatile=True)
 
-        _best_hyps, _aw = [], []
+        _best_hyps, _aws = [], []
         y_lens = np.zeros((batch_size,), dtype=np.int32)
         eos_flags = [False] * batch_size
         for t in six.moves.range(int(math.floor(enc_time * max_len_ratio)) + 1):
             # Score
-            context_vec, att_weight_step = self.score(enc_out, enc_lens, dec_out, att_weight_step)
+            context_vec, aw = self.score(enc_out, enc_lens, dec_out, aw)
 
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf:
                 y_lm = self.rnnlm_cf.embed(y)
-                logits_rnnlm_step, rnnlm_out, rnnlm_state = self.rnnlm_cf.predict(y_lm, rnnlm_state)
+                logits_rnnlm_t, rnnlm_out, rnnlm_state = self.rnnlm_cf.predict(y_lm, rnnlm_state)
             else:
-                logits_rnnlm_step, rnnlm_out = None, None
+                logits_rnnlm_t, rnnlm_out = None, None
 
             # Generate
-            logits_t = self.generate(context_vec, dec_out, logits_rnnlm_step, rnnlm_out)
+            logits_t = self.generate(context_vec, dec_out, logits_rnnlm_t, rnnlm_out)
 
             # residual connection
             if self.rnnlm_init and self.internal_lm:
@@ -583,7 +579,7 @@ class Decoder(nn.Module):
             device_id = logits_t.get_device()
             y = np.argmax(logits_t.squeeze(1).detach(), axis=1).cuda(device_id).unsqueeze(1)
             _best_hyps += [y]
-            _aw += [att_weight_step]
+            _aws += [aw]
 
             # Count lengths of hypotheses
             for b in six.moves.range(batch_size):
@@ -604,24 +600,24 @@ class Decoder(nn.Module):
 
         # Concatenate in L dimension
         _best_hyps = torch.cat(_best_hyps, dim=1)
-        _aw = torch.stack(_aw, dim=1)
+        _aws = torch.stack(_aws, dim=1)
 
         # Convert to numpy
         _best_hyps = var2np(_best_hyps)
-        _aw = var2np(_aw)
+        _aws = var2np(_aws)
 
         if self.score.num_heads > 1:
-            _aw = _aw[:, :, :, 0]
+            _aws = _aws[:, :, :, 0]
             # TODO(hirofumi): fix for MHA
 
         # Truncate by the first <eos> (<sos> in case of the backward decoder)
         if self.backward:
             # Reverse the order
             best_hyps = [_best_hyps[b, :y_lens[b]][::-1] for b in six.moves.range(batch_size)]
-            aw = [_aw[b, :y_lens[b]][::-1] for b in six.moves.range(batch_size)]
+            aws = [_aws[b, :y_lens[b]][::-1] for b in six.moves.range(batch_size)]
         else:
             best_hyps = [_best_hyps[b, :y_lens[b]] for b in six.moves.range(batch_size)]
-            aw = [_aw[b, :y_lens[b]] for b in six.moves.range(batch_size)]
+            aws = [_aws[b, :y_lens[b]] for b in six.moves.range(batch_size)]
 
         # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:
@@ -632,9 +628,10 @@ class Decoder(nn.Module):
                 best_hyps = [best_hyps[b][:-1] if eos_flags[b]
                              else best_hyps[b] for b in six.moves.range(batch_size)]
 
-        return best_hyps, aw
+        return best_hyps, aws
 
-    def beam_search(self, enc_out, enc_lens, params, rnnlm, n_best=1, exclude_eos=False):
+    def beam_search(self, enc_out, enc_lens, params, rnnlm, n_best=1,
+                    dict=None, exclude_eos=False):
         """Beam search decoding in the inference stage.
 
         Args:
@@ -651,6 +648,7 @@ class Decoder(nn.Module):
                 rnnlm_weight (float): the weight of RNNLM score
             rnnlm (torch.nn.Module):
             n_best (int):
+            dict (dict): converter from index to token
             exclude_eos (bool):
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
@@ -673,13 +671,13 @@ class Decoder(nn.Module):
         else:
             sos, eos = self.sos, self.eos
 
-        best_hyps, aw = [], []
+        best_hyps, aws = [], []
         y_lens = np.zeros((batch_size,), dtype=np.int32)
         eos_flags = [False] * batch_size
         for b in six.moves.range(batch_size):
             # Initialization per utterance
-            dec_out, (hx_list, cx_list) = self._init_dec_state(enc_out[b:b + 1], enc_lens[b:b + 1], self.num_layers)
-            _dec_out, _dec_state = self._init_dec_state(enc_out[b:b + 1], enc_lens[b:b + 1], 1)
+            dec_out, (hx_list, cx_list) = self.init_dec_state(enc_out[b:b + 1], enc_lens[b:b + 1], self.num_layers)
+            _dec_out, _dec_state = self.init_dec_state(enc_out[b:b + 1], enc_lens[b:b + 1], 1)
             context_vec = Variable(enc_out.new(1, 1, enc_out.size(-1)).fill_(0.), volatile=True)
             self.score.reset()
 
@@ -690,7 +688,7 @@ class Decoder(nn.Module):
                      'hx_list': hx_list,
                      'cx_list': cx_list,
                      'context_vec': context_vec,
-                     'att_weight_steps': [None],
+                     'aws': [None],
                      'rnnlm_hx_list': None,
                      'rnnlm_cx_list': None,
                      'prev_cov': 0,
@@ -711,28 +709,28 @@ class Decoder(nn.Module):
                         dec_out = beam[i_beam]['dec_out']
 
                     # Score
-                    context_vec, att_weight_step = self.score(enc_out[b:b + 1, :enc_lens[b]],
-                                                              enc_lens[b:b + 1],
-                                                              dec_out,
-                                                              beam[i_beam]['att_weight_steps'][-1])
+                    context_vec, aw = self.score(enc_out[b:b + 1, :enc_lens[b]],
+                                                 enc_lens[b:b + 1],
+                                                 dec_out,
+                                                 beam[i_beam]['aws'][-1])
 
                     if self.rnnlm_cf:
                         # Update RNNLM states for cold fusion
                         y_lm = Variable(enc_out.new(1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
                         y_lm_emb = self.rnnlm_cf.embed(y_lm).squeeze(1)
-                        logits_rnnlm_step, rnnlm_out, rnnlm_state = self.rnnlm_cf.predict(
+                        logits_rnnlm_t, rnnlm_out, rnnlm_state = self.rnnlm_cf.predict(
                             y_lm_emb, (beam[i_beam]['rnnlm_hx_list'], beam[i_beam]['rnnlm_cx_list']))
                     elif rnnlm is not None:
                         # Update RNNLM states for shallow fusion
                         y_lm = Variable(enc_out.new(1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
                         y_lm_emb = rnnlm.embed(y_lm).squeeze(1)
-                        logits_rnnlm_step, rnnlm_out, rnnlm_state = rnnlm.predict(
+                        logits_rnnlm_t, rnnlm_out, rnnlm_state = rnnlm.predict(
                             y_lm_emb, (beam[i_beam]['rnnlm_hx_list'], beam[i_beam]['rnnlm_cx_list']))
                     else:
-                        logits_rnnlm_step, rnnlm_out, rnnlm_state = None, None, None
+                        logits_rnnlm_t, rnnlm_out, rnnlm_state = None, None, None
 
                     # Generate
-                    logits_t = self.generate(context_vec, dec_out, logits_rnnlm_step, rnnlm_out)
+                    logits_t = self.generate(context_vec, dec_out, logits_rnnlm_t, rnnlm_out)
 
                     # residual connection
                     if self.rnnlm_init and self.internal_lm:
@@ -746,8 +744,8 @@ class Decoder(nn.Module):
                     logits_t = self.output(logits_t)
 
                     # Path through the softmax layer & convert to log-scale
-                    log_probs = F.log_softmax(logits_t.squeeze(1), dim=1)
-                    # log_probs = logits_t.squeeze(1)
+                    log_probs = F.log_softmax(logits_t.squeeze(1), dim=1)  # log-prob-level
+                    # log_probs = logits_t.squeeze(1)  # logits-level
                     # NOTE: `[1 (B), 1, num_classes]` -> `[1 (B), num_classes]`
 
                     # Pick up the top-k scores
@@ -766,15 +764,12 @@ class Decoder(nn.Module):
                         if params['coverage_penalty'] > 0:
                             # Recompute converage penalty in each step
                             score -= beam[i_beam]['prev_cov'] * params['coverage_penalty']
-
-                            att_weight_stack = torch.stack(
-                                beam[i_beam]['att_weight_steps'][1:] + [att_weight_step], dim=1)
-
+                            aw_stack = torch.stack(beam[i_beam]['aws'][1:] + [aw], dim=1)
                             if self.score.num_heads > 1:
-                                cov_sum = att_weight_stack[0, :, :, 0].detach().cpu().numpy()
+                                cov_sum = aw_stack[0, :, :, 0].detach().cpu().numpy()
                                 # TODO(hirofumi): fix for MHA
                             else:
-                                cov_sum = att_weight_stack.detach().cpu().numpy()
+                                cov_sum = aw_stack.detach().cpu().numpy()
                             if params['coverage_threshold'] == 0:
                                 cov_sum = np.sum(cov_sum)
                             else:
@@ -785,7 +780,7 @@ class Decoder(nn.Module):
 
                         # Add RNNLM score
                         if params['rnnlm_weight'] > 0:
-                            lm_log_probs = F.log_softmax(logits_rnnlm_step.squeeze(1), dim=1)
+                            lm_log_probs = F.log_softmax(logits_rnnlm_t.squeeze(1), dim=1)
                             assert log_probs.size() == lm_log_probs.size()
                             score += lm_log_probs[0, indices_topk[0, k].item()].item() * params['rnnlm_weight']
 
@@ -796,7 +791,7 @@ class Decoder(nn.Module):
                              'cx_list': cx_list[:],
                              'dec_out': dec_out,
                              'context_vec': context_vec,
-                             'att_weight_steps': beam[i_beam]['att_weight_steps'] + [att_weight_step],
+                             'aws': beam[i_beam]['aws'] + [aw],
                              'rnnlm_hx_list': rnnlm_state[0][:] if rnnlm_state is not None else None,
                              'rnnlm_cx_list': rnnlm_state[1][:] if rnnlm_state is not None else None,
                              'prev_cov': cov_sum,
@@ -824,25 +819,28 @@ class Decoder(nn.Module):
 
             complete = sorted(complete, key=lambda x: x['score'], reverse=True)
             best_hyps += [np.array(complete[0]['hyp'][1:])]
-            aw += [complete[0]['att_weight_steps'][1:]]
+            aws += [complete[0]['aws'][1:]]
             y_lens[b] = len(complete[0]['hyp'][1:])
             if complete[0]['hyp'][-1] == eos:
                 eos_flags[b] = True
 
-        logger.info('log prob (hyp): %.3f' % complete[0]['score'])
-        logger.info('log prob (ref): ')
+            if dict is not None:
+                # logger.info('Ref: %s' % ref.lower())
+                logger.info('Hyp: %s' % ' '.join(list(map(dict, complete[0]['hyp'][1:]))))
+            logger.info('log prob (hyp): %.3f' % complete[0]['score'])
+            logger.info('log prob (ref): ')
 
         # Concatenate in L dimension
-        for b in six.moves.range(len(aw)):
-            aw[b] = var2np(torch.stack(aw[b], dim=1).squeeze(0))
+        for b in six.moves.range(len(aws)):
+            aws[b] = var2np(torch.stack(aws[b], dim=1).squeeze(0))
             if self.score.num_heads > 1:
-                aw[b] = aw[b][:, :, 0]
+                aws[b] = aws[b][:, :, 0]
                 # TODO(hirofumi): fix for MHA
 
         # Reverse the order
         if self.backward:
             best_hyps = [best_hyps[b][::-1] for b in six.moves.range(batch_size)]
-            aw = [aw[b][::-1] for b in six.moves.range(batch_size)]
+            aws = [aws[b][::-1] for b in six.moves.range(batch_size)]
 
         # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:
@@ -853,7 +851,7 @@ class Decoder(nn.Module):
                 best_hyps = [best_hyps[b][:-1] if eos_flags[b]
                              else best_hyps[b] for b in six.moves.range(batch_size)]
 
-        return best_hyps, aw
+        return best_hyps, aws
 
     def decode_ctc(self, enc_out, x_lens, beam_width=1, rnnlm=None):
         """Decoding by the CTC layer in the inference stage.
@@ -870,10 +868,10 @@ class Decoder(nn.Module):
 
         """
         # Path through the softmax layer
-        batch_size, max_time = enc_out.size()[:2]
-        enc_out = enc_out.view(batch_size * max_time, -1).contiguous()
+        batch_size, enc_time = enc_out.size()[:2]
+        enc_out = enc_out.view(batch_size * enc_time, -1).contiguous()
         logits_ctc = self.output_ctc(enc_out)
-        logits_ctc = logits_ctc.view(batch_size, max_time, -1)
+        logits_ctc = logits_ctc.view(batch_size, enc_time, -1)
 
         if beam_width == 1:
             best_hyps = self.decode_ctc_greedy(var2np(logits_ctc), x_lens)
