@@ -397,7 +397,7 @@ class Seq2seq(ModelBase):
 
         return xs, x_lens, xs_sub, x_lens_sub
 
-    def decode(self, xs, decode_params, exclude_eos=False, task_index=0,
+    def decode(self, xs, decode_params, nbest=1, exclude_eos=False, task_index=0,
                idx2token=None, refs=None):
         """Decoding in the inference stage.
 
@@ -412,13 +412,14 @@ class Seq2seq(ModelBase):
                 cov_threshold (float): threshold for coverage penalty
                 rnnlm_weight (float): the weight of RNNLM score
                 resolving_unk (bool): not used (to make compatible)
+            nbest (int):
             exclude_eos (bool): exclude <eos> from best_hyps
             task_index (int): not used (to make compatible)
             idx2token (): converter from index to token
             refs (list): gold transcriptions to compute log likelihood
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
-            aw (list): A list of length `[B]`, which contains arrays of size `[L, T]`
+            aws (list): A list of length `[B]`, which contains arrays of size `[L, T]`
             perm_idx (list): A list of length `[B]`
 
         """
@@ -442,7 +443,7 @@ class Seq2seq(ModelBase):
             return best_hyps, None, perm_idx
         else:
             if decode_params['beam_width'] == 1:
-                best_hyps, aw = getattr(self, 'dec_' + dir + '_0').greedy(
+                best_hyps, aws = getattr(self, 'dec_' + dir + '_0').greedy(
                     enc_out, x_lens, decode_params['max_len_ratio'], exclude_eos)
             else:
                 # Set RNNLM
@@ -452,6 +453,14 @@ class Seq2seq(ModelBase):
                 else:
                     rnnlm = None
 
-                best_hyps, aw = getattr(self, 'dec_' + dir + '_0').beam_search(
-                    enc_out, x_lens, decode_params, rnnlm, 1, exclude_eos, idx2token, refs)
-            return best_hyps, aw, perm_idx
+                nbest_hyps, aws, scores = getattr(self, 'dec_' + dir + '_0').beam_search(
+                    enc_out, x_lens, decode_params, rnnlm, nbest, exclude_eos, idx2token, refs)
+
+                if nbest == 1:
+                    best_hyps = [hyp[0] for hyp in nbest_hyps]
+                    aws = [aw[0] for aw in aws]
+                else:
+                    return nbest_hyps, aws, scores, perm_idx
+                # NOTE: nbest >= 2 is used for MWER training only
+
+            return best_hyps, aws, perm_idx

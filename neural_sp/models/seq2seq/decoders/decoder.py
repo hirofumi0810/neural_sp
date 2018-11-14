@@ -38,6 +38,7 @@ from neural_sp.models.utils import var2np
 
 random.seed(1)
 
+# logger = logging.getLogger("mwer").getChild("decoder")
 logger = logging.getLogger("decoding").getChild("decoder")
 
 
@@ -517,7 +518,8 @@ class Decoder(nn.Module):
             logits_t = self.output_bn(torch.cat([dec_feat, gated_lm_feat], dim=-1))
         else:
             logits_t = self.output_bn(torch.cat([dec_out, context_vec], dim=-1))
-        return F.tanh(logits_t)
+        # return torch.tanh(logits_t)
+        return logits_t
 
     def greedy(self, enc_out, enc_lens, max_len_ratio, exclude_eos=False):
         """Greedy decoding in the inference stage.
@@ -529,7 +531,7 @@ class Decoder(nn.Module):
             max_len_ratio (int): the maximum sequence length of tokens
             exclude_eos (bool):
         Returns:
-            best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
+            nbest_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
             aw (list): A list of length `[B]`, which contains arrays of size `[L, T]`
 
         """
@@ -613,25 +615,25 @@ class Decoder(nn.Module):
         # Truncate by the first <eos> (<sos> in case of the backward decoder)
         if self.backward:
             # Reverse the order
-            best_hyps = [_best_hyps[b, :y_lens[b]][::-1] for b in six.moves.range(batch_size)]
+            nbest_hyps = [_best_hyps[b, :y_lens[b]][::-1] for b in six.moves.range(batch_size)]
             aws = [_aws[b, :y_lens[b]][::-1] for b in six.moves.range(batch_size)]
         else:
-            best_hyps = [_best_hyps[b, :y_lens[b]] for b in six.moves.range(batch_size)]
+            nbest_hyps = [_best_hyps[b, :y_lens[b]] for b in six.moves.range(batch_size)]
             aws = [_aws[b, :y_lens[b]] for b in six.moves.range(batch_size)]
 
         # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:
             if self.backward:
-                best_hyps = [best_hyps[b][1:] if eos_flags[b]
-                             else best_hyps[b] for b in six.moves.range(batch_size)]
+                nbest_hyps = [nbest_hyps[b][1:] if eos_flags[b]
+                              else nbest_hyps[b] for b in six.moves.range(batch_size)]
             else:
-                best_hyps = [best_hyps[b][:-1] if eos_flags[b]
-                             else best_hyps[b] for b in six.moves.range(batch_size)]
+                nbest_hyps = [nbest_hyps[b][:-1] if eos_flags[b]
+                              else nbest_hyps[b] for b in six.moves.range(batch_size)]
 
-        return best_hyps, aws
+        return nbest_hyps, aws
 
     def beam_search(self, enc_out, enc_lens, params, rnnlm, exclude_eos=False,
-                    n_best=1, idx2token=None, refs=None):
+                    nbest=1, idx2token=None, refs=None):
         """Beam search decoding in the inference stage.
 
         Args:
@@ -648,11 +650,11 @@ class Decoder(nn.Module):
                 rnnlm_weight (float): the weight of RNNLM score
             rnnlm (torch.nn.Module):
             exclude_eos (bool):
-            n_best (int):
+            nbest (int):
             idx2token (): converter from index to token
         Returns:
-            best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
-            aw (list): A list of length `[B]`, which contains arrays of size `[L, T]`
+            nbest_hyps (list): A list of length `[B]`, which contains list of n hypotheses
+            aws (list): A list of length `[B]`, which contains arrays of size `[L, T]`
 
         """
         batch_size = enc_out.size(0)
@@ -671,8 +673,8 @@ class Decoder(nn.Module):
         else:
             sos, eos = self.sos, self.eos
 
-        best_hyps, aws = [], []
-        eos_flags = [False] * batch_size
+        nbest_hyps, aws, scores = [], [], []
+        eos_flags = []
         for b in six.moves.range(batch_size):
             # Initialization per utterance
             dec_out, (hx_list, cx_list) = self.init_dec_state(enc_out[b:b + 1], enc_lens[b:b + 1], self.num_layers)
@@ -813,47 +815,53 @@ class Decoder(nn.Module):
 
                 beam = not_complete[:params['beam_width']]
 
+            # Sort by score
             if len(complete) == 0:
                 complete = beam
             complete = sorted(complete, key=lambda x: x['score'], reverse=True)
 
+            # N-best list
             if self.backward:
                 # Reverse the order
-                best_hyps += [np.array(complete[0]['hyp'][1:][::-1])]
-                aws += [complete[0]['aws'][1:][::-1]]
+                nbest_hyps += [[np.array(complete[n]['hyp'][1:][::-1]) for n in range(nbest)]]
+                aws += [[complete[n]['aws'][1:][::-1] for n in range(nbest)]]
             else:
-                best_hyps += [np.array(complete[0]['hyp'][1:])]
-                aws += [complete[0]['aws'][1:]]
+                nbest_hyps += [[np.array(complete[n]['hyp'][1:]) for n in range(nbest)]]
+                aws += [[complete[n]['aws'][1:] for n in range(nbest)]]
+            scores += [[complete[n]['score'] for n in range(nbest)]]
 
             # Check <eos>
-            if complete[0]['hyp'][-1] == eos:
-                eos_flags[b] = True
+            eos_flag = [True if complete[b]['hyp'][-1] == eos else False for n in range(nbest)]
+            eos_flags.append(eos_flag)
 
             if idx2token is not None:
                 if refs is not None:
                     logger.info('Ref: %s' % refs[b].lower())
-                logger.info('Hyp: %s' % idx2token(best_hyps[-1]))
-            logger.info('log prob (hyp): %.3f' % complete[0]['score'])
+                for n in range(nbest):
+                    logger.info('Hyp: %s' % idx2token(nbest_hyps[-1][n]))
             if refs is not None:
                 logger.info('log prob (ref): ')
+            for n in range(nbest):
+                logger.info('log prob (hyp): %.3f' % complete[n]['score'])
 
         # Concatenate in L dimension
         for b in six.moves.range(len(aws)):
-            aws[b] = var2np(torch.stack(aws[b], dim=1).squeeze(0))
-            if self.score.num_heads > 1:
-                aws[b] = aws[b][:, :, 0]
-                # TODO(hirofumi): fix for MHA
+            for n in range(nbest):
+                aws[b][n] = var2np(torch.stack(aws[b][n], dim=1).squeeze(0))
+                if self.score.num_heads > 1:
+                    aws[b][n] = aws[b][n][:, :, 0]
+                    # TODO(hirofumi): fix for MHA
 
         # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:
             if self.backward:
-                best_hyps = [best_hyps[b][1:] if eos_flags[b]
-                             else best_hyps[b] for b in six.moves.range(batch_size)]
+                nbest_hyps = [[nbest_hyps[b][n][1:] if eos_flags[b][n]
+                               else nbest_hyps[b][n] for n in range(nbest)] for b in range(batch_size)]
             else:
-                best_hyps = [best_hyps[b][:-1] if eos_flags[b]
-                             else best_hyps[b] for b in six.moves.range(batch_size)]
+                nbest_hyps = [[nbest_hyps[b][n][:-1] if eos_flags[b][n]
+                               else nbest_hyps[b][n] for n in range(nbest)] for b in range(batch_size)]
 
-        return best_hyps, aws
+        return nbest_hyps, aws, scores
 
     def decode_ctc(self, enc_out, x_lens, beam_width=1, rnnlm=None):
         """Decoding by the CTC layer in the inference stage.
@@ -870,7 +878,7 @@ class Decoder(nn.Module):
 
         """
         # Path through the softmax layer
-        batch_size, enc_time = enc_out.size()[:2]
+        batch_size, enc_time = enc_out.size()[: 2]
         enc_out = enc_out.view(batch_size * enc_time, -1).contiguous()
         logits_ctc = self.output_ctc(enc_out)
         logits_ctc = logits_ctc.view(batch_size, enc_time, -1)
