@@ -11,10 +11,19 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
+import six
 
 
 def resolve_unk(str_hyp, best_hyps_sub, aw, aw_sub, idx2char, diff_time_resolution=1):
     """
+    Args:
+        str_hyp:
+        best_hyps_sub:
+        aw:
+        aw_sub:
+        idx2char:
+        diff_time_resolution:
+
     """
     oov_info = []
     # [[idx_oov_0, t_sub_0], ...]
@@ -33,9 +42,9 @@ def resolve_unk(str_hyp, best_hyps_sub, aw, aw_sub, idx2char, diff_time_resoluti
             oov_info.append([idx_oov, -1])
 
     # Point to characters
-    for i in range(len(oov_info)):
+    for i in six.moves.range(len(oov_info)):
         max_attention_overlap = 0
-        for t_sub in range(len(aw_sub)):
+        for t_sub in six.moves.range(len(aw_sub)):
             # print(np.sum(aw[oov_info[i][0]] * aw_sub[t_sub]))
             if np.sum(aw[oov_info[i][0]] * aw_sub[t_sub]) > max_attention_overlap:
                 # Check if the correcsponding character is space

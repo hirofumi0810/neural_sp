@@ -12,6 +12,7 @@ from __future__ import print_function
 
 import logging
 import os
+import six
 from tqdm import tqdm
 
 from neural_sp.evaluators.edit_distance import compute_wer
@@ -73,7 +74,7 @@ def eval_word(models, dataset, decode_params, epoch,
                                                    exclude_eos=True)
             ys = [batch['ys'][i] for i in perm_idx]
 
-            for b in range(len(batch['xs'])):
+            for b in six.moves.range(len(batch['xs'])):
                 # Reference
                 if dataset.is_test:
                     ref = ys[b]

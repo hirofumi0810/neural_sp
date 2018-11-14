@@ -4,7 +4,7 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Define evaluation method of RNNLMs."""
+"""Evaluate a RNNLM by perplexity."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -12,6 +12,7 @@ from __future__ import print_function
 
 import math
 import numpy as np
+import six
 from tqdm import tqdm
 
 
@@ -42,7 +43,7 @@ def eval_ppl(models, dataset, bptt, progressbar=False):
         ys, is_new_epoch = dataset.next()
         batch_size = len(ys)
 
-        for t in range(len(ys[0]) - 1):
+        for t in six.moves.range(len(ys[0]) - 1):
             total_loss += model(ys[:][t:t + 2], is_eval=True)[0].item() * batch_size
             num_tokens += batch_size
 
@@ -59,4 +60,5 @@ def eval_ppl(models, dataset, bptt, progressbar=False):
     dataset.reset()
 
     ppl = math.exp(total_loss / num_tokens)
+
     return ppl
