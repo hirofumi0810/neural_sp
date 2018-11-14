@@ -113,10 +113,10 @@ class Seq2seq(ModelBase):
 
         # Bridge layer between the encoder and decoder
         if args.enc_type == 'cnn':
-            self.bridge_0 = LinearND(self.encoder.output_dim, args.dec_num_units)
+            self.bridge = LinearND(self.encoder.output_dim, args.dec_num_units)
             self.enc_num_units = args.dec_num_units
         elif args.bridge_layer:
-            self.bridge_0 = LinearND(self.enc_num_units, args.dec_num_units)
+            self.bridge = LinearND(self.enc_num_units, args.dec_num_units)
             self.enc_num_units = args.dec_num_units
 
         # MAIN TASK
@@ -129,7 +129,7 @@ class Seq2seq(ModelBase):
             if (dir == 'fwd' and args.ctc_weight < 1) or dir == 'bwd':
                 # Attention layer
                 if args.att_num_heads > 1:
-                    attention = MultiheadAttentionMechanism(
+                    att = MultiheadAttentionMechanism(
                         enc_num_units=self.enc_num_units,
                         dec_num_units=args.dec_num_units,
                         att_type=args.att_type,
@@ -140,7 +140,7 @@ class Seq2seq(ModelBase):
                         conv_kernel_size=args.att_conv_width,
                         num_heads=args.att_num_heads)
                 else:
-                    attention = AttentionMechanism(
+                    att = AttentionMechanism(
                         enc_num_units=self.enc_num_units,
                         dec_num_units=args.dec_num_units,
                         att_type=args.att_type,
@@ -157,37 +157,37 @@ class Seq2seq(ModelBase):
                 else:
                     args.rnnlm_cold_fusion = False
             else:
-                attention = None
+                att = None
 
             # Decoder
-            decoder = Decoder(attention=attention,
-                              sos=self.sos,
-                              eos=self.eos,
-                              pad=self.pad,
-                              enc_num_units=self.enc_num_units,
-                              rnn_type=args.dec_type,
-                              num_units=args.dec_num_units,
-                              num_layers=args.dec_num_layers,
-                              residual=args.dec_residual,
-                              emb_dim=args.emb_dim,
-                              num_classes=self.num_classes,
-                              logits_temp=args.logits_temp,
-                              dropout_hidden=args.dropout_dec,
-                              dropout_emb=args.dropout_emb,
-                              ss_prob=args.ss_prob,
-                              lsm_prob=args.lsm_prob,
-                              init_with_enc=args.init_with_enc,
-                              ctc_weight=args.ctc_weight if dir == 'fwd' or (
-                                  dir == 'bwd' and self.fwd_weight == 0) else 0,
-                              ctc_fc_list=args.ctc_fc_list,
-                              backward=(dir == 'bwd'),
-                              rnnlm_cold_fusion=args.rnnlm_cold_fusion,
-                              cold_fusion=args.cold_fusion,
-                              internal_lm=args.internal_lm,
-                              rnnlm_init=args.rnnlm_init,
-                              rnnlm_task_weight=args.rnnlm_task_weight,
-                              share_lm_softmax=args.share_lm_softmax)
-            setattr(self, 'dec_' + dir + '_0', decoder)
+            dec = Decoder(attention=att,
+                          sos=self.sos,
+                          eos=self.eos,
+                          pad=self.pad,
+                          enc_num_units=self.enc_num_units,
+                          rnn_type=args.dec_type,
+                          num_units=args.dec_num_units,
+                          num_layers=args.dec_num_layers,
+                          residual=args.dec_residual,
+                          emb_dim=args.emb_dim,
+                          num_classes=self.num_classes,
+                          logits_temp=args.logits_temp,
+                          dropout_hidden=args.dropout_dec,
+                          dropout_emb=args.dropout_emb,
+                          ss_prob=args.ss_prob,
+                          lsm_prob=args.lsm_prob,
+                          init_with_enc=args.init_with_enc,
+                          ctc_weight=args.ctc_weight if dir == 'fwd' or (
+                              dir == 'bwd' and self.fwd_weight == 0) else 0,
+                          ctc_fc_list=args.ctc_fc_list,
+                          backward=(dir == 'bwd'),
+                          rnnlm_cold_fusion=args.rnnlm_cold_fusion,
+                          cold_fusion=args.cold_fusion,
+                          internal_lm=args.internal_lm,
+                          rnnlm_init=args.rnnlm_init,
+                          rnnlm_task_weight=args.rnnlm_task_weight,
+                          share_lm_softmax=args.share_lm_softmax)
+            setattr(self, 'dec_' + dir, dec)
 
         # SUB TASK
         # NOTE: only forward direction for the sub task
@@ -195,7 +195,7 @@ class Seq2seq(ModelBase):
             if args.ctc_weight_sub < 1:
                 # Attention layer
                 if args.att_num_heads_sub > 1:
-                    attention_sub = MultiheadAttentionMechanism(
+                    att_sub = MultiheadAttentionMechanism(
                         enc_num_units=self.enc_num_units,
                         dec_num_units=args.dec_num_units,
                         att_type=args.att_type,
@@ -206,7 +206,7 @@ class Seq2seq(ModelBase):
                         conv_kernel_size=args.att_conv_width,
                         num_heads=args.att_num_heads_sub)
                 else:
-                    attention_sub = AttentionMechanism(
+                    att_sub = AttentionMechanism(
                         enc_num_units=self.enc_num_units,
                         dec_num_units=args.dec_num_units,
                         att_type=args.att_type,
@@ -216,33 +216,33 @@ class Seq2seq(ModelBase):
                         conv_out_channels=args.att_conv_num_channels,
                         conv_kernel_size=args.att_conv_width)
             else:
-                attention_sub = None
+                att_sub = None
 
             # Decoder
-            self.dec_fwd_1 = Decoder(attention=attention_sub,
-                                     sos=self.sos,
-                                     eos=self.eos,
-                                     pad=self.pad,
-                                     enc_num_units=self.enc_num_units,
-                                     rnn_type=args.dec_type,
-                                     num_units=args.dec_num_units,
-                                     num_layers=args.dec_num_layers,
-                                     residual=args.dec_residual,
-                                     emb_dim=args.emb_dim,
-                                     num_classes=self.num_classes_sub,
-                                     logits_temp=args.logits_temp,
-                                     dropout_hidden=args.dropout_dec,
-                                     dropout_emb=args.dropout_emb,
-                                     ss_prob=args.ss_prob,
-                                     lsm_prob=args.lsm_prob,
-                                     init_with_enc=args.init_with_enc,
-                                     ctc_weight=args.ctc_weight_sub,
-                                     ctc_fc_list=args.ctc_fc_list)  # sub??
+            self.dec_fwd_sub1 = Decoder(attention=att_sub,
+                                        sos=self.sos,
+                                        eos=self.eos,
+                                        pad=self.pad,
+                                        enc_num_units=self.enc_num_units,
+                                        rnn_type=args.dec_type,
+                                        num_units=args.dec_num_units,
+                                        num_layers=args.dec_num_layers,
+                                        residual=args.dec_residual,
+                                        emb_dim=args.emb_dim,
+                                        num_classes=self.num_classes_sub,
+                                        logits_temp=args.logits_temp,
+                                        dropout_hidden=args.dropout_dec,
+                                        dropout_emb=args.dropout_emb,
+                                        ss_prob=args.ss_prob,
+                                        lsm_prob=args.lsm_prob,
+                                        init_with_enc=args.init_with_enc,
+                                        ctc_weight=args.ctc_weight_sub,
+                                        ctc_fc_list=args.ctc_fc_list)  # sub??
 
         if args.input_type == 'text':
             if args.num_classes == args.num_classes_sub:
                 # Share the embedding layer between input and output
-                self.embed_in = decoder.embed
+                self.embed_in = dec.embed
             else:
                 self.embed_in = Embedding(num_classes=args.num_classes_sub,
                                           emb_dim=args.emb_dim,
@@ -314,7 +314,7 @@ class Seq2seq(ModelBase):
         # Compute XE loss for the forward decoder
         if self.fwd_weight > 0:
             ys_fwd = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
-            loss_fwd, loss_acc_fwd = self.dec_fwd_0(xs, x_lens, ys_fwd)
+            loss_fwd, loss_acc_fwd = self.dec_fwd(xs, x_lens, ys_fwd)
             loss = loss_fwd * self.fwd_weight
         else:
             loss_acc_fwd = {}
@@ -323,7 +323,7 @@ class Seq2seq(ModelBase):
         # Compute XE loss for the backward decoder
         if self.bwd_weight > 0:
             ys_bwd = [np2var(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long() for y in ys]
-            loss_bwd, loss_acc_bwd = self.dec_bwd_0(xs, x_lens, ys_bwd)
+            loss_bwd, loss_acc_bwd = self.dec_bwd(xs, x_lens, ys_bwd)
             loss += loss_bwd * self.bwd_weight
         else:
             loss_acc_bwd = {}
@@ -332,7 +332,7 @@ class Seq2seq(ModelBase):
             ys_sub = [ys_sub[i] for i in perm_idx]
             ys_sub = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long()
                       for y in ys_sub]
-            loss_sub, loss_acc_sub = self.dec_fwd_1(xs_sub, x_lens_sub, ys_sub)
+            loss_sub, loss_acc_sub = self.dec_fwd_sub1(xs_sub, x_lens_sub, ys_sub)
             loss = loss * self.main_task_weight + loss_sub * (1 - self.main_task_weight)
         else:
             loss_acc_sub = {}
@@ -389,15 +389,15 @@ class Seq2seq(ModelBase):
 
         # Bridge between the encoder and decoder
         if self.enc_type == 'cnn' or self.bridge_layer:
-            xs = self.bridge_0(xs)
+            xs = self.bridge(xs)
 
             # if self.main_task_weight < 1:
-            #     xs_sub = self.bridge_1(xs_sub)
+            #     xs_sub = self.bridge_sub(xs_sub)
             # TODO(hirofumi):
 
         return xs, x_lens, xs_sub, x_lens_sub
 
-    def decode(self, xs, decode_params, nbest=1, exclude_eos=False, task_index=0,
+    def decode(self, xs, decode_params, nbest=1, exclude_eos=False, task='',
                idx2token=None, refs=None):
         """Decoding in the inference stage.
 
@@ -414,7 +414,7 @@ class Seq2seq(ModelBase):
                 resolving_unk (bool): not used (to make compatible)
             nbest (int):
             exclude_eos (bool): exclude <eos> from best_hyps
-            task_index (int): not used (to make compatible)
+            task (str): sub1
             idx2token (): converter from index to token
             refs (list): gold transcriptions to compute log likelihood
         Returns:
@@ -438,23 +438,24 @@ class Seq2seq(ModelBase):
         dir = 'fwd' if self.fwd_weight >= self.bwd_weight else 'bwd'
 
         if self.ctc_weight == 1:
-            best_hyps = getattr(self, 'dec_' + dir + '_0').decode_ctc(
+            best_hyps = getattr(self, 'dec_' + dir).decode_ctc(
                 enc_out, x_lens, decode_params['beam_width'], decode_params['rnnlm'])
             return best_hyps, None, perm_idx
         else:
             if decode_params['beam_width'] == 1:
-                best_hyps, aws = getattr(self, 'dec_' + dir + '_0').greedy(
+                best_hyps, aws = getattr(self, 'dec_' + dir).greedy(
                     enc_out, x_lens, decode_params['max_len_ratio'], exclude_eos)
             else:
                 # Set RNNLM
                 if decode_params['rnnlm_weight'] > 0:
-                    assert hasattr(self, 'rnnlm_' + dir + '_0')
-                    rnnlm = getattr(self, 'rnnlm_' + dir + '_0')
+                    assert hasattr(self, 'rnnlm_' + dir)
+                    rnnlm = getattr(self, 'rnnlm_' + dir)
                 else:
                     rnnlm = None
 
-                nbest_hyps, aws, scores = getattr(self, 'dec_' + dir + '_0').beam_search(
-                    enc_out, x_lens, decode_params, rnnlm, nbest, exclude_eos, idx2token, refs)
+                nbest_hyps, aws, scores = getattr(self, 'dec_' + dir).beam_search(
+                    enc_out, x_lens, decode_params, rnnlm,
+                    nbest, exclude_eos, idx2token, refs)
 
                 if nbest == 1:
                     best_hyps = [hyp[0] for hyp in nbest_hyps]
