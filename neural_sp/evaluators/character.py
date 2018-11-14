@@ -11,7 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 import logging
-import os
 import six
 from tqdm import tqdm
 
@@ -41,7 +40,6 @@ def eval_char(models, dataset, decode_params, epoch,
         num_sub (int): the number of substitution errors
         num_ins (int): the number of insertion errors
         num_del (int): the number of deletion errors
-        decode_dir (str):
 
     """
     # Reset data counter
@@ -72,19 +70,13 @@ def eval_char(models, dataset, decode_params, epoch,
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
             batch, is_new_epoch = dataset.next(decode_params['batch_size'])
-            best_hyps, aw, perm_idx = model.decode(batch['xs'], decode_params,
-                                                   exclude_eos=True)
+            best_hyps, _, perm_idx = model.decode(batch['xs'], decode_params,
+                                                  exclude_eos=True)
             # task_index = 0
             ys = [batch['ys'][i] for i in perm_idx]
 
             for b in six.moves.range(len(batch['xs'])):
-                # Reference
-                if dataset.is_test:
-                    ref = ys[b]
-                else:
-                    ref = dataset.idx2char(ys[b])
-
-                # Hypothesis
+                ref = ys[b]
                 hyp = dataset.idx2char(best_hyps[b])
 
                 # Write to trn
@@ -96,6 +88,7 @@ def eval_char(models, dataset, decode_params, epoch,
                 logger.info('utt-id: %s' % batch['utt_ids'][b])
                 logger.info('Ref: %s' % ref.lower())
                 logger.info('Hyp: %s' % hyp)
+                logger.info('-' * 50)
 
                 if ('character' in dataset.label_type and 'nowb' not in dataset.label_type) or (task_index > 0 and dataset.label_type_sub == 'character'):
                     # Compute WER
@@ -145,4 +138,4 @@ def eval_char(models, dataset, decode_params, epoch,
     num_ins_c /= num_chars
     num_del_c /= num_chars
 
-    return (wer, num_sub_w, num_ins_w, num_del_w), (cer, num_sub_c, num_ins_c, num_del_c), os.path.join(model.save_path, decode_dir)
+    return (wer, num_sub_w, num_ins_w, num_del_w), (cer, num_sub_c, num_ins_c, num_del_c)

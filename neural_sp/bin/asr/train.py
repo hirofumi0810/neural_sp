@@ -294,6 +294,7 @@ def main():
     train_set = Dataset(csv_path=args.train_set,
                         dict_path=args.dict,
                         label_type=args.label_type,
+                        wp_model=args.wp_model,
                         batch_size=args.batch_size * args.ngpus,
                         max_epoch=args.num_epochs,
                         max_num_frames=args.max_num_frames,
@@ -313,6 +314,7 @@ def main():
     dev_set = Dataset(csv_path=args.dev_set,
                       dict_path=args.dict,
                       label_type=args.label_type,
+                      wp_model=args.wp_model,
                       batch_size=args.batch_size * args.ngpus,
                       max_num_frames=args.max_num_frames,
                       min_num_frames=args.min_num_frames,
@@ -330,6 +332,7 @@ def main():
         eval_sets += [Dataset(csv_path=set,
                               dict_path=args.dict,
                               label_type=args.label_type,
+                              wp_model=args.wp_model,
                               batch_size=1,
                               is_test=True,
                               skip_speech=(args.input_type != 'speech'))]
@@ -597,7 +600,7 @@ def main():
                         logger.info('  WER (%s): %.3f %%' % (dev_set.set, metric_dev))
                     elif args.label_type == 'wp':
                         metric_dev = eval_wordpiece([model.module], dev_set, decode_params,
-                                                    args.wp_model, epoch=epoch)[0]
+                                                    epoch=epoch)[0]
                         logger.info('  WER (%s): %.3f %%' % (dev_set.set, metric_dev))
                     elif 'char' in args.label_type:
                         metric_dev = eval_char([model.module], dev_set, decode_params,

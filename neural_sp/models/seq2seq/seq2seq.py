@@ -397,7 +397,8 @@ class Seq2seq(ModelBase):
 
         return xs, x_lens, xs_sub, x_lens_sub
 
-    def decode(self, xs, decode_params, exclude_eos=False, task_index=0):
+    def decode(self, xs, decode_params, exclude_eos=False, task_index=0,
+               idx2token=None, refs=None):
         """Decoding in the inference stage.
 
         Args:
@@ -411,9 +412,10 @@ class Seq2seq(ModelBase):
                 cov_threshold (float): threshold for coverage penalty
                 rnnlm_weight (float): the weight of RNNLM score
                 resolving_unk (bool): not used (to make compatible)
-
             exclude_eos (bool): exclude <eos> from best_hyps
             task_index (int): not used (to make compatible)
+            idx2token (): converter from index to token
+            refs (list): gold transcriptions to compute log likelihood
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
             aw (list): A list of length `[B]`, which contains arrays of size `[L, T]`
@@ -451,5 +453,5 @@ class Seq2seq(ModelBase):
                     rnnlm = None
 
                 best_hyps, aw = getattr(self, 'dec_' + dir + '_0').beam_search(
-                    enc_out, x_lens, decode_params, rnnlm, exclude_eos)
+                    enc_out, x_lens, decode_params, rnnlm, 1, exclude_eos, idx2token, refs)
             return best_hyps, aw, perm_idx

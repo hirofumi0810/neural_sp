@@ -11,7 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 import logging
-import os
 import six
 from tqdm import tqdm
 
@@ -37,7 +36,6 @@ def eval_phone(models, dataset, decode_params, epoch,
         num_sub (int): the number of substitution errors
         num_ins (int): the number of insertion errors
         num_del (int): the number of deletion errors
-        decode_dir (str):
 
     """
     # Reset data counter
@@ -73,13 +71,7 @@ def eval_phone(models, dataset, decode_params, epoch,
             ys = [batch['ys'][i] for i in perm_idx]
 
             for b in six.moves.range(len(batch['xs'])):
-                # Reference
-                if dataset.is_test:
-                    ref = ys[b]
-                else:
-                    ref = dataset.idx2phone(ys[b])
-
-                # Hypothesis
+                ref = ys[b]
                 hyp = dataset.idx2phone(best_hyps[b])
 
                 # Write to trn
@@ -91,6 +83,7 @@ def eval_phone(models, dataset, decode_params, epoch,
                 logger.info('utt-id: %s' % batch['utt_ids'][b])
                 logger.info('Ref: %s' % ref.lower())
                 logger.info('Hyp: %s' % hyp)
+                logger.info('-' * 50)
 
                 # Compute PER
                 per_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
@@ -120,4 +113,4 @@ def eval_phone(models, dataset, decode_params, epoch,
     num_ins /= num_phones
     num_del /= num_phones
 
-    return per, num_sub, num_ins, num_del, os.path.join(model.save_path, decode_dir)
+    return per, num_sub, num_ins, num_del

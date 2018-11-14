@@ -630,8 +630,8 @@ class Decoder(nn.Module):
 
         return best_hyps, aws
 
-    def beam_search(self, enc_out, enc_lens, params, rnnlm, n_best=1,
-                    dict=None, exclude_eos=False):
+    def beam_search(self, enc_out, enc_lens, params, rnnlm, exclude_eos=False,
+                    n_best=1, idx2token=None, refs=None):
         """Beam search decoding in the inference stage.
 
         Args:
@@ -647,9 +647,9 @@ class Decoder(nn.Module):
                 coverage_threshold (float): threshold for coverage penalty
                 rnnlm_weight (float): the weight of RNNLM score
             rnnlm (torch.nn.Module):
-            n_best (int):
-            dict (dict): converter from index to token
             exclude_eos (bool):
+            n_best (int):
+            idx2token (): converter from index to token
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
             aw (list): A list of length `[B]`, which contains arrays of size `[L, T]`
@@ -672,7 +672,6 @@ class Decoder(nn.Module):
             sos, eos = self.sos, self.eos
 
         best_hyps, aws = [], []
-        y_lens = np.zeros((batch_size,), dtype=np.int32)
         eos_flags = [False] * batch_size
         for b in six.moves.range(batch_size):
             # Initialization per utterance
@@ -816,19 +815,27 @@ class Decoder(nn.Module):
 
             if len(complete) == 0:
                 complete = beam
-
             complete = sorted(complete, key=lambda x: x['score'], reverse=True)
-            best_hyps += [np.array(complete[0]['hyp'][1:])]
-            aws += [complete[0]['aws'][1:]]
-            y_lens[b] = len(complete[0]['hyp'][1:])
+
+            if self.backward:
+                # Reverse the order
+                best_hyps += [np.array(complete[0]['hyp'][1:][::-1])]
+                aws += [complete[0]['aws'][1:][::-1]]
+            else:
+                best_hyps += [np.array(complete[0]['hyp'][1:])]
+                aws += [complete[0]['aws'][1:]]
+
+            # Check <eos>
             if complete[0]['hyp'][-1] == eos:
                 eos_flags[b] = True
 
-            if dict is not None:
-                # logger.info('Ref: %s' % ref.lower())
-                logger.info('Hyp: %s' % ' '.join(list(map(dict, complete[0]['hyp'][1:]))))
+            if idx2token is not None:
+                if refs is not None:
+                    logger.info('Ref: %s' % refs[b].lower())
+                logger.info('Hyp: %s' % idx2token(best_hyps[-1]))
             logger.info('log prob (hyp): %.3f' % complete[0]['score'])
-            logger.info('log prob (ref): ')
+            if refs is not None:
+                logger.info('log prob (ref): ')
 
         # Concatenate in L dimension
         for b in six.moves.range(len(aws)):
@@ -836,11 +843,6 @@ class Decoder(nn.Module):
             if self.score.num_heads > 1:
                 aws[b] = aws[b][:, :, 0]
                 # TODO(hirofumi): fix for MHA
-
-        # Reverse the order
-        if self.backward:
-            best_hyps = [best_hyps[b][::-1] for b in six.moves.range(batch_size)]
-            aws = [aws[b][::-1] for b in six.moves.range(batch_size)]
 
         # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:

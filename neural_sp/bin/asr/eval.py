@@ -34,7 +34,7 @@ parser.add_argument('--model', type=str,
 parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
 parser.add_argument('--decode_dir', type=str,
-                    help='the name of corpus')
+                    help='directory to save decoding results')
 # dataset
 parser.add_argument('--corpus', type=str,
                     help='the name of corpus')
@@ -86,6 +86,7 @@ def main():
                            dict_path=os.path.join(args.model, 'dict.txt'),
                            dict_path_sub=os.path.join(args.model, 'dict_sub.txt') if os.path.isfile(
                                os.path.join(args.model, 'dict_sub.txt')) else None,
+                           wp_model=os.path.join(args.model, 'wp.model'),
                            label_type=args.label_type,
                            batch_size=args.batch_size,
                            is_test=True)
@@ -112,8 +113,6 @@ def main():
 
             # Load the ASR model
             model = Seq2seq(args)
-
-            # Restore the saved parameters
             epoch, _, _, _ = model.load_checkpoint(args.model, epoch=args.epoch)
 
             model.save_path = args.model
@@ -150,8 +149,6 @@ def main():
 
             # GPU setting
             model.cuda()
-            # model.set_cuda(deterministic=False, benchmark=True)
-            # TODO(hirofumi):
 
             logger.info('beam width: %d' % args.beam_width)
             logger.info('length penalty: %.3f' % args.length_penalty)
@@ -162,32 +159,31 @@ def main():
         start_time = time.time()
 
         if args.label_type == 'word':
-            wer, _, _, _, decode_dir = eval_word([model], eval_set, decode_params,
-                                                 epoch=epoch - 1,
-                                                 progressbar=True)
+            wer, _, _, _ = eval_word([model], eval_set, decode_params,
+                                     epoch=epoch - 1,
+                                     progressbar=True)
             wer_mean += wer
             logger.info('WER (%s): %.3f %%' % (eval_set.set, wer))
         elif args.label_type == 'wp':
-            wer, _, _, _, decode_dir = eval_wordpiece([model], eval_set, decode_params,
-                                                      os.path.join(args.model, 'wp.model'),
-                                                      epoch=epoch - 1,
-                                                      decode_dir=args.decode_dir,
-                                                      progressbar=True)
+            wer, _, _, _ = eval_wordpiece([model], eval_set, decode_params,
+                                          epoch=epoch - 1,
+                                          decode_dir=args.decode_dir,
+                                          progressbar=True)
             wer_mean += wer
             logger.info('WER (%s): %.3f %%' % (eval_set.set, wer))
 
         elif 'char' in args.label_type:
-            (wer, _, _, _), (cer, _, _, _), decode_dir = eval_char([model], eval_set, decode_params,
-                                                                   epoch=epoch - 1,
-                                                                   progressbar=True)
+            (wer, _, _, _), (cer, _, _, _) = eval_char([model], eval_set, decode_params,
+                                                       epoch=epoch - 1,
+                                                       progressbar=True)
             wer_mean += wer
             cer_mean += cer
             logger.info('WER / CER (%s): %.3f / %.3f %%' % (eval_set.set, wer, cer))
 
         elif 'phone' in args.label_type:
-            per, _, _, _, decode_dir = eval_phone([model], eval_set, decode_params,
-                                                  epoch=epoch - 1,
-                                                  progressbar=True)
+            per, _, _, _ = eval_phone([model], eval_set, decode_params,
+                                      epoch=epoch - 1,
+                                      progressbar=True)
             per_mean += per
             logger.info('PER (%s): %.3f %%' % (eval_set.set, per))
         else:
@@ -204,8 +200,6 @@ def main():
                     (wer_mean / len(args.eval_sets), cer_mean / len(args.eval_sets)))
     elif 'phone' in args.label_type:
         logger.info('PER (mean): %.3f %%\n' % (per_mean / len(args.eval_sets)))
-
-    print(decode_dir)
 
 
 if __name__ == '__main__':

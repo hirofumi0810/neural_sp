@@ -26,6 +26,8 @@ from neural_sp.datasets.token_converter.phone import Idx2phone
 from neural_sp.datasets.token_converter.phone import Phone2idx
 from neural_sp.datasets.token_converter.word import Idx2word
 from neural_sp.datasets.token_converter.word import Word2idx
+from neural_sp.datasets.token_converter.wordpiece import Idx2wp
+from neural_sp.datasets.token_converter.wordpiece import Wp2idx
 
 np.random.seed(1)
 
@@ -42,7 +44,7 @@ class Dataset(Base):
                  short2long=False, sort_stop_epoch=None,
                  num_enques=None, dynamic_batching=False,
                  use_ctc=False, subsample_factor=1,
-                 skip_speech=False,
+                 skip_speech=False, wp_model=None,
                  csv_path_sub=None, dict_path_sub=None, label_type_sub=None,
                  use_ctc_sub=False, subsample_factor_sub=1):
         """A class for loading dataset.
@@ -50,7 +52,7 @@ class Dataset(Base):
         Args:
             csv_path (str):
             dict_path (str):
-            label_type (str): word or wordpiece or char or phone
+            label_type (str): word or wp or char or phone
             batch_size (int): the size of mini-batch
             max_epoch (int): the max epoch. None means infinite loop.
             is_test (bool):
@@ -68,6 +70,7 @@ class Dataset(Base):
             use_ctc (bool):
             subsample_factor (int):
             skip_speech (bool): skip loading speech features
+            wp_model ():
 
         """
         super(Dataset, self).__init__()
@@ -87,15 +90,15 @@ class Dataset(Base):
         self.num_classes = self.count_vocab_size(dict_path)
 
         # Set index converter
-        if label_type in ['word', 'wordpiece']:
+        if label_type == 'word':
             self.idx2word = Idx2word(dict_path)
             self.word2idx = Word2idx(dict_path)
+        elif label_type == 'wp':
+            self.idx2wp = Idx2wp(dict_path, wp_model)
+            self.wp2idx = Wp2idx(dict_path, wp_model)
         elif label_type == 'char':
             self.idx2char = Idx2char(dict_path)
             self.char2idx = Char2idx(dict_path)
-        elif label_type == 'char_capital_divide':
-            self.idx2char = Idx2char(dict_path, capital_divide=True)
-            self.char2idx = Char2idx(dict_path, capital_divide=True)
         elif 'phone' in label_type:
             self.idx2phone = Idx2phone(dict_path)
             self.phone2idx = Phone2idx(dict_path)
@@ -107,15 +110,12 @@ class Dataset(Base):
 
             # Set index converter
             if label_type_sub is not None:
-                if label_type == 'wordpiece':
+                if label_type == 'wp':
                     self.idx2word = Idx2word(dict_path_sub)
                     self.word2idx = Word2idx(dict_path_sub)
                 elif label_type_sub == 'char':
                     self.idx2char = Idx2char(dict_path_sub)
                     self.char2idx = Char2idx(dict_path_sub)
-                elif label_type_sub == 'char_capital_divide':
-                    self.idx2char = Idx2char(dict_path_sub, capital_divide=True)
-                    self.char2idx = Char2idx(dict_path_sub, capital_divide=True)
                 elif 'phone' in label_type_sub:
                     self.idx2phone = Idx2phone(dict_path_sub)
                     self.phone2idx = Phone2idx(dict_path_sub)

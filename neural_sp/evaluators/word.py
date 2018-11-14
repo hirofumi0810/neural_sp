@@ -11,7 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 import logging
-import os
 import six
 from tqdm import tqdm
 
@@ -38,7 +37,6 @@ def eval_word(models, dataset, decode_params, epoch,
         num_sub (int): the number of substitution errors
         num_ins (int): the number of insertion errors
         num_del (int): the number of deletion errors
-        decode_dir (str):
 
     """
     # Reset data counter
@@ -70,19 +68,14 @@ def eval_word(models, dataset, decode_params, epoch,
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
             batch, is_new_epoch = dataset.next(decode_params['batch_size'])
-            best_hyps, aw, perm_idx = model.decode(batch['xs'], decode_params,
-                                                   exclude_eos=True)
+            best_hyps, aws, perm_idx = model.decode(batch['xs'], decode_params,
+                                                    exclude_eos=True)
             ys = [batch['ys'][i] for i in perm_idx]
 
             for b in six.moves.range(len(batch['xs'])):
-                # Reference
-                if dataset.is_test:
-                    ref = ys[b]
-                else:
-                    ref = dataset.idx2word(ys[b])
-
-                # Hypothesis
+                ref = ys[b]
                 hyp = dataset.idx2word(best_hyps[b])
+
                 num_oov_total += hyp.count('<unk>')
 
                 # Resolving UNK
@@ -92,7 +85,7 @@ def eval_word(models, dataset, decode_params, epoch,
                     # task_index=1
 
                     hyp = resolve_unk(
-                        hyp, best_hyps_sub[0], aw[b], aw_sub[0], dataset.idx2char,
+                        hyp, best_hyps_sub[0], aws[b], aw_sub[0], dataset.idx2char,
                         diff_time_resolution=2 ** sum(model.subsample) // 2 ** sum(model.subsample[:model.enc_num_layers_sub - 1]))
                     hyp = hyp.replace('*', '')
 
@@ -105,6 +98,7 @@ def eval_word(models, dataset, decode_params, epoch,
                 logger.info('utt-id: %s' % batch['utt_ids'][b])
                 logger.info('Ref: %s' % ref.lower())
                 logger.info('Hyp: %s' % hyp)
+                logger.info('-' * 50)
 
                 # Compute WER
                 wer_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
@@ -134,4 +128,4 @@ def eval_word(models, dataset, decode_params, epoch,
     num_ins /= num_words
     num_del /= num_words
 
-    return wer, num_sub, num_ins, num_del, os.path.join(model.save_path, decode_dir)
+    return wer, num_sub, num_ins, num_del

@@ -11,8 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 import logging
-import os
-import sentencepiece as spm
 import six
 from tqdm import tqdm
 
@@ -22,7 +20,7 @@ from neural_sp.utils.general import mkdir_join
 logger = logging.getLogger("decoding").getChild('wordpiece')
 
 
-def eval_wordpiece(models, dataset, decode_params, wp_model, epoch,
+def eval_wordpiece(models, dataset, decode_params, epoch,
                    decode_dir=None, progressbar=False):
     """Evaluate the wordpiece-level model by WER.
 
@@ -30,7 +28,6 @@ def eval_wordpiece(models, dataset, decode_params, wp_model, epoch,
         models (list): the models to evaluate
         dataset: An instance of a `Dataset' class
         decode_params (dict):
-        wp_model ():
         epoch (int):
         decode_dir (str):
         progressbar (bool): if True, visualize the progressbar
@@ -39,7 +36,6 @@ def eval_wordpiece(models, dataset, decode_params, wp_model, epoch,
         num_sub (int): the number of substitution errors
         num_ins (int): the number of insertion errors
         num_del (int): the number of deletion errors
-        decode_dir (str):
 
     """
     # Reset data counter
@@ -61,9 +57,6 @@ def eval_wordpiece(models, dataset, decode_params, wp_model, epoch,
         ref_trn_save_path = mkdir_join(decode_dir, 'ref.trn')
         hyp_trn_save_path = mkdir_join(decode_dir, 'hyp.trn')
 
-    sp = spm.SentencePieceProcessor()
-    sp.Load(wp_model)
-
     wer = 0
     num_sub, num_ins, num_del = 0, 0, 0
     num_words = 0
@@ -73,23 +66,15 @@ def eval_wordpiece(models, dataset, decode_params, wp_model, epoch,
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
             batch, is_new_epoch = dataset.next(decode_params['batch_size'])
-            best_hyps, aw, perm_idx = model.decode(batch['xs'], decode_params,
-                                                   exclude_eos=True,
-                                                   idx2token=dataset.idx2word,
-                                                   refs=batch['ys'])
+            best_hyps, _, perm_idx = model.decode(batch['xs'], decode_params,
+                                                  exclude_eos=True,
+                                                  idx2token=dataset.idx2wp,
+                                                  refs=batch['ys'])
             ys = [batch['ys'][i] for i in perm_idx]
 
             for b in six.moves.range(len(batch['xs'])):
-                # Reference
-                if dataset.is_test:
-                    ref = ys[b]
-                else:
-                    wp_list_ref = dataset.idx2word(ys[b], return_list=True)
-                    ref = sp.DecodePieces(wp_list_ref)
-
-                # Hypothesis
-                wp_list_hyp = dataset.idx2word(best_hyps[b], return_list=True)
-                hyp = sp.DecodePieces(wp_list_hyp)
+                ref = ys[b]
+                hyp = dataset.idx2wp(best_hyps[b])
 
                 # Write to trn
                 speaker = '_'.join(batch['utt_ids'][b].replace('-', '_').split('_')[:-2])
@@ -100,6 +85,7 @@ def eval_wordpiece(models, dataset, decode_params, wp_model, epoch,
                 logger.info('utt-id: %s' % batch['utt_ids'][b])
                 logger.info('Ref: %s' % ref.lower())
                 logger.info('Hyp: %s' % hyp)
+                logger.info('-' * 50)
 
                 # Compute WER
                 wer_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
@@ -129,4 +115,4 @@ def eval_wordpiece(models, dataset, decode_params, wp_model, epoch,
     num_ins /= num_words
     num_del /= num_words
 
-    return wer, num_sub, num_ins, num_del, os.path.join(model.save_path, decode_dir)
+    return wer, num_sub, num_ins, num_del
