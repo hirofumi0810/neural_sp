@@ -206,9 +206,9 @@ def main():
         save_config(vars(args), model.save_path)
 
         # Save the dictionary & wp_model
-        shutil.copy(args.dict, os.path.join(save_path, 'dict.txt'))
+        shutil.copy(args.dict, os.path.join(model.save_path, 'dict.txt'))
         if args.label_type == 'wp':
-            shutil.copy(args.wp_model, os.path.join(save_path, 'wp.model'))
+            shutil.copy(args.wp_model, os.path.join(model.save_path, 'wp.model'))
 
         # Setting for logging
         logger = set_logger(os.path.join(model.save_path, 'train.log'), key='training')
@@ -334,17 +334,17 @@ def main():
                 ppl_dev = eval_ppl([model.module], dev_set, args.bptt)
                 logger.info(' PPL (%s): %.3f' % (dev_set.set, ppl_dev))
 
+                # Update learning rate
+                model.module.optimizer, learning_rate = lr_controller.decay_lr(
+                    optimizer=model.module.optimizer,
+                    learning_rate=learning_rate,
+                    epoch=epoch,
+                    value=ppl_dev)
+
                 if ppl_dev < metric_dev_best:
                     metric_dev_best = ppl_dev
                     not_improved_epoch = 0
                     logger.info('||||| Best Score |||||')
-
-                    # Update learning rate
-                    model.module.optimizer, learning_rate = lr_controller.decay_lr(
-                        optimizer=model.module.optimizer,
-                        learning_rate=learning_rate,
-                        epoch=epoch,
-                        value=ppl_dev)
 
                     # Save the model
                     model.module.save_checkpoint(model.module.save_path, epoch, step,
@@ -359,13 +359,6 @@ def main():
                     if len(eval_sets) > 0:
                         logger.info(' PPL (mean): %.3f' % (ppl_test_mean / len(eval_sets)))
                 else:
-                    # Update learning rate
-                    model.module.optimizer, learning_rate = lr_controller.decay_lr(
-                        optimizer=model.module.optimizer,
-                        learning_rate=learning_rate,
-                        epoch=epoch,
-                        value=ppl_dev)
-
                     not_improved_epoch += 1
 
                 duration_eval = time.time() - start_time_eval

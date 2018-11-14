@@ -87,7 +87,7 @@ parser.add_argument('--min_num_frames', type=int, default=40,
                     help='')
 parser.add_argument('--dynamic_batching', type=bool, default=True,
                     help='')
-# network (encoder)
+# network(encoder)
 parser.add_argument('--conv_in_channel', type=int, default=1,
                     help='')
 parser.add_argument('--conv_channels', type=list, default=[],
@@ -187,7 +187,7 @@ parser.add_argument('--not_improved_patient_epoch', type=int, default=5,
                     help='')
 parser.add_argument('--eval_start_epoch', type=int, default=1,
                     help='')
-parser.add_argument('--learning_rate_warmup', type=bool, default=False,
+parser.add_argument('--learning_rate_warmup', type=int, default=0,
                     help='')
 # initialization
 parser.add_argument('--param_init', type=float, default=0.1,
@@ -245,7 +245,6 @@ parser.add_argument('--rnnlm_task_weight', type=float, default=1.0,
                     help='')
 parser.add_argument('--share_lm_softmax', type=bool, default=False,
                     help='')
-
 args = parser.parse_args()
 
 torch.manual_seed(1)
@@ -413,11 +412,11 @@ def main():
         save_config(vars(args), model.save_path)
 
         # Save the dictionary & wp_model
-        shutil.copy(args.dict, os.path.join(save_path, 'dict.txt'))
+        shutil.copy(args.dict, os.path.join(model.save_path, 'dict.txt'))
         if args.dict_sub is not None:
-            shutil.copy(args.dict_sub, os.path.join(save_path, 'dict_sub.txt'))
+            shutil.copy(args.dict_sub, os.path.join(model.save_path, 'dict_sub.txt'))
         if args.label_type == 'wp':
-            shutil.copy(args.wp_model, os.path.join(save_path, 'wp.model'))
+            shutil.copy(args.wp_model, os.path.join(model.save_path, 'wp.model'))
 
         # Setting for logging
         logger = set_logger(os.path.join(model.save_path, 'train.log'), key='training')
@@ -614,17 +613,17 @@ def main():
                 else:
                     raise NotImplementedError()
 
+                # Update learning rate
+                model.module.optimizer, learning_rate = lr_controller.decay_lr(
+                    optimizer=model.module.optimizer,
+                    learning_rate=learning_rate,
+                    epoch=epoch,
+                    value=metric_dev)
+
                 if metric_dev < metric_dev_best:
                     metric_dev_best = metric_dev
                     not_improved_epoch = 0
                     logger.info('||||| Best Score |||||')
-
-                    # Update learning rate
-                    model.module.optimizer, learning_rate = lr_controller.decay_lr(
-                        optimizer=model.module.optimizer,
-                        learning_rate=learning_rate,
-                        epoch=epoch,
-                        value=metric_dev)
 
                     # Save the model
                     model.module.save_checkpoint(model.module.save_path, epoch, step,
@@ -655,13 +654,6 @@ def main():
                         else:
                             raise NotImplementedError()
                 else:
-                    # Update learning rate
-                    model.module.optimizer, learning_rate = lr_controller.decay_lr(
-                        optimizer=model.module.optimizer,
-                        learning_rate=learning_rate,
-                        epoch=epoch,
-                        value=metric_dev)
-
                     not_improved_epoch += 1
 
                 duration_eval = time.time() - start_time_eval
