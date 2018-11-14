@@ -240,12 +240,12 @@ class Decoder(nn.Module):
         # Compute the auxiliary CTC loss
         if self.ctc_weight > 0:
             enc_lens_ctc = np2var(np.fromiter(enc_lens, dtype=np.int32), -1).int()
-            ys = [np2var(np.fromiter(y, dtype=np.int64), device_id).long() for y in ys]   # always fwd
-            y_lens = np2var(np.fromiter([y.size(0) for y in ys], dtype=np.int32), -1).int()
+            ys_ctc = [np2var(np.fromiter(y, dtype=np.int64), device_id).long() for y in ys]   # always fwd
+            y_lens = np2var(np.fromiter([y.size(0) for y in ys_ctc], dtype=np.int32), -1).int()
             # NOTE: do not copy to GPUs here
 
             # Concatenate all elements in ys for warpctc_pytorch
-            ys_ctc = torch.cat(ys, dim=0).int()
+            ys_ctc = torch.cat(ys_ctc, dim=0).int()
 
             # Compute CTC loss
             loss_ctc = self.warpctc_loss(self.output_ctc(enc_out).transpose(0, 1).cpu(),  # time-major
@@ -272,11 +272,11 @@ class Decoder(nn.Module):
         sos = Variable(enc_out.new(1,).fill_(self.sos).long())
         eos = Variable(enc_out.new(1,).fill_(self.eos).long())
         if self.backward:
-            ys = [np2var(np.fromiter(y, dtype=np.int64), device_id).long() for y in ys]   # always fwd
+            ys = [np2var(np.fromiter(y[::-1], dtype=np.int64), device_id).long() for y in ys]
             ys_in = [torch.cat([eos, y], dim=0) for y in ys]
             ys_out = [torch.cat([y, sos], dim=0) for y in ys]
         else:
-            ys = [np2var(np.fromiter(y[::-1], dtype=np.int64), device_id).long() for y in ys]   # always fwd
+            ys = [np2var(np.fromiter(y, dtype=np.int64), device_id).long() for y in ys]
             ys_in = [torch.cat([sos, y], dim=0) for y in ys]
             ys_out = [torch.cat([y, eos], dim=0) for y in ys]
         ys_in_pad = pad_list(ys_in, self.pad)
@@ -524,8 +524,7 @@ class Decoder(nn.Module):
             logits_t = self.output_bn(torch.cat([dec_feat, gated_lm_feat], dim=-1))
         else:
             logits_t = self.output_bn(torch.cat([dec_out, context_vec], dim=-1))
-        # return torch.tanh(logits_t)
-        return logits_t
+        return torch.tanh(logits_t)
 
     def greedy(self, enc_out, enc_lens, max_len_ratio, exclude_eos=False):
         """Greedy decoding in the inference stage.
