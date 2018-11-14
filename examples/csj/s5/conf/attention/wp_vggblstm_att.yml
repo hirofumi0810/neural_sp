@@ -39,7 +39,7 @@ param:
   pretrained_model_path: False
 
   # MTL
-  ctc_weight: 0.0
+  ctc_weight: 0.2
   bwd_weight: 0.0
 
   # cold fusion

@@ -43,6 +43,7 @@ param:
   dec_residual: False
   emb_dim: 320
   ctc_fc_list: [320]
+  ctc_fc_list_sub: []
 
   # optimization
   batch_size: 50
