@@ -32,8 +32,6 @@ parser.add_argument('--epoch', type=int, default=-1,
 parser.add_argument('--plot_dir', type=str,
                     help='directory to save figures')
 # dataset
-parser.add_argument('--corpus', type=str,
-                    help='the name of corpus')
 parser.add_argument('--eval_sets', type=str, nargs='+',
                     help='path to csv files for the evaluation sets')
 # decoding paramter
