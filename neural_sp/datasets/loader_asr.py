@@ -214,6 +214,7 @@ class Dataset(Base):
         else:
             ys = [list(map(int, self.df['token_id'][i].split())) for i in utt_indices]
         y_lens = [self.df['y_len'][i] for i in utt_indices]
+        text = [self.df['text'][i].encode('utf-8') for i in utt_indices]
 
         if self.df_sub is not None:
             if self.is_test:
@@ -230,4 +231,4 @@ class Dataset(Base):
         return {'xs': xs, 'x_lens': x_lens,
                 'ys': ys, 'y_lens': y_lens,
                 'ys_sub': ys_sub, 'y_lens_sub': y_lens_sub,
-                'utt_ids':  utt_ids}
+                'utt_ids':  utt_ids, ' text': text}

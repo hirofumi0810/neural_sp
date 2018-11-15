@@ -68,7 +68,7 @@ def eval_phone(models, dataset, decode_params, epoch,
             batch, is_new_epoch = dataset.next(decode_params['batch_size'])
             best_hyps, _, perm_idx = model.decode(batch['xs'], decode_params,
                                                   exclude_eos=True)
-            ys = [batch['ys'][i] for i in perm_idx]
+            ys = [batch['text'][i] for i in perm_idx]
 
             for b in six.moves.range(len(batch['xs'])):
                 ref = ys[b]

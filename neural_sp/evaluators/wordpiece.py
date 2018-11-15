@@ -70,7 +70,7 @@ def eval_wordpiece(models, dataset, decode_params, epoch,
                                                   exclude_eos=True,
                                                   idx2token=dataset.idx2wp,
                                                   refs=batch['ys'])
-            ys = [batch['ys'][i] for i in perm_idx]
+            ys = [batch['text'][i] for i in perm_idx]
 
             for b in six.moves.range(len(batch['xs'])):
                 ref = ys[b]

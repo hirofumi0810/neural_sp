@@ -72,8 +72,7 @@ def eval_char(models, dataset, decode_params, epoch,
             batch, is_new_epoch = dataset.next(decode_params['batch_size'])
             best_hyps, _, perm_idx = model.decode(batch['xs'], decode_params,
                                                   exclude_eos=True)
-            # task_index = 0
-            ys = [batch['ys'][i] for i in perm_idx]
+            ys = [batch['text'][i] for i in perm_idx]
 
             for b in six.moves.range(len(batch['xs'])):
                 ref = ys[b]

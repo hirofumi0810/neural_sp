@@ -70,7 +70,7 @@ def eval_word(models, dataset, decode_params, epoch,
             batch, is_new_epoch = dataset.next(decode_params['batch_size'])
             best_hyps, aws, perm_idx = model.decode(batch['xs'], decode_params,
                                                     exclude_eos=True)
-            ys = [batch['ys'][i] for i in perm_idx]
+            ys = [batch['text'][i] for i in perm_idx]
 
             for b in six.moves.range(len(batch['xs'])):
                 ref = ys[b]
@@ -81,7 +81,7 @@ def eval_word(models, dataset, decode_params, epoch,
                 # Resolving UNK
                 if decode_params['resolving_unk'] and '<unk>' in hyp:
                     best_hyps_sub, aw_sub, _ = model.decode(
-                        batch['xs'][b:b + 1], batch['xs'], decode_params, exclude_eos=True)
+                        batch['xs'][b:b + 1], decode_params, exclude_eos=True)
                     # task_index=1
 
                     hyp = resolve_unk(
