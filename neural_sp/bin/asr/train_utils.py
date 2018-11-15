@@ -115,7 +115,7 @@ class Reporter(object):
                     continue
 
                 plt.plot(self.steps, self.obs_train[category][name], blue,
-                         label=name + " (train)", linestyles=linestyles[i])
+                         label=name + " (train)", linestyle=linestyles[i])
                 plt.plot(self.steps, self.obs_dev[category][name], orange,
                          label=name + " (dev)", linestyle=linestyles[i])
                 upper = max(upper, max(self.obs_train[category][name]))
