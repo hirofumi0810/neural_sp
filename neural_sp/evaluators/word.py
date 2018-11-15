@@ -34,9 +34,9 @@ def eval_word(models, dataset, decode_params, epoch,
         progressbar (bool): if True, visualize the progressbar
     Returns:
         wer (float): Word error rate
-        num_sub (int): the number of substitution errors
-        num_ins (int): the number of insertion errors
-        num_del (int): the number of deletion errors
+        nsub (int): the number of substitution errors
+        nins (int): the number of insertion errors
+        ndel (int): the number of deletion errors
 
     """
     # Reset data counter
@@ -59,9 +59,9 @@ def eval_word(models, dataset, decode_params, epoch,
         hyp_trn_save_path = mkdir_join(decode_dir, 'hyp.trn')
 
     wer = 0
-    num_sub, num_ins, num_del = 0, 0, 0
-    num_words = 0
-    num_oov_total = 0
+    nsub, nins, ndel = 0, 0, 0
+    nword = 0
+    noov_total = 0
     if progressbar:
         pbar = tqdm(total=len(dataset))  # TODO(hirofumi): fix this
 
@@ -76,7 +76,7 @@ def eval_word(models, dataset, decode_params, epoch,
                 ref = ys[b]
                 hyp = dataset.idx2word(best_hyps[b])
 
-                num_oov_total += hyp.count('<unk>')
+                noov_total += hyp.count('<unk>')
 
                 # Resolving UNK
                 if decode_params['resolving_unk'] and '<unk>' in hyp:
@@ -86,7 +86,7 @@ def eval_word(models, dataset, decode_params, epoch,
 
                     hyp = resolve_unk(
                         hyp, best_hyps_sub[0], aws[b], aw_sub[0], dataset.idx2char,
-                        diff_time_resolution=2 ** sum(model.subsample) // 2 ** sum(model.subsample[:model.enc_num_layers_sub - 1]))
+                        diff_time_resolution=2 ** sum(model.subsample) // 2 ** sum(model.subsample[:model.enc_nlayers_sub - 1]))
                     hyp = hyp.replace('*', '')
 
                 # Write to trn
@@ -105,10 +105,10 @@ def eval_word(models, dataset, decode_params, epoch,
                                                          hyp=hyp.split(' '),
                                                          normalize=False)
                 wer += wer_b
-                num_sub += sub_b
-                num_ins += ins_b
-                num_del += del_b
-                num_words += len(ref.split(' '))
+                nsub += sub_b
+                nins += ins_b
+                ndel += del_b
+                nword += len(ref.split(' '))
                 # logger.info('WER: %d%%' % (wer_b / len(ref.split(' '))))
 
                 if progressbar:
@@ -123,9 +123,9 @@ def eval_word(models, dataset, decode_params, epoch,
     # Reset data counters
     dataset.reset()
 
-    wer /= num_words
-    num_sub /= num_words
-    num_ins /= num_words
-    num_del /= num_words
+    wer /= nword
+    nsub /= nword
+    nins /= nword
+    ndel /= nword
 
-    return wer, num_sub, num_ins, num_del
+    return wer, nsub, nins, ndel

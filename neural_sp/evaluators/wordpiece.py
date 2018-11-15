@@ -33,9 +33,9 @@ def eval_wordpiece(models, dataset, decode_params, epoch,
         progressbar (bool): if True, visualize the progressbar
     Returns:
         wer (float): Word error rate
-        num_sub (int): the number of substitution errors
-        num_ins (int): the number of insertion errors
-        num_del (int): the number of deletion errors
+        nsub (int): the number of substitution errors
+        nins (int): the number of insertion errors
+        ndel (int): the number of deletion errors
 
     """
     # Reset data counter
@@ -58,8 +58,8 @@ def eval_wordpiece(models, dataset, decode_params, epoch,
         hyp_trn_save_path = mkdir_join(decode_dir, 'hyp.trn')
 
     wer = 0
-    num_sub, num_ins, num_del = 0, 0, 0
-    num_words = 0
+    nsub, nins, ndel = 0, 0, 0
+    nword = 0
     if progressbar:
         pbar = tqdm(total=len(dataset))
 
@@ -92,10 +92,10 @@ def eval_wordpiece(models, dataset, decode_params, epoch,
                                                          hyp=hyp.split(' '),
                                                          normalize=False)
                 wer += wer_b
-                num_sub += sub_b
-                num_ins += ins_b
-                num_del += del_b
-                num_words += len(ref.split(' '))
+                nsub += sub_b
+                nins += ins_b
+                ndel += del_b
+                nword += len(ref.split(' '))
                 # logger.info('WER: %d%%' % (float(wer_b) / len(ref.split(' '))))
 
                 if progressbar:
@@ -110,9 +110,9 @@ def eval_wordpiece(models, dataset, decode_params, epoch,
     # Reset data counters
     dataset.reset()
 
-    wer /= num_words
-    num_sub /= num_words
-    num_ins /= num_words
-    num_del /= num_words
+    wer /= nword
+    nsub /= nword
+    nins /= nword
+    ndel /= nword
 
-    return wer, num_sub, num_ins, num_del
+    return wer, nsub, nins, ndel

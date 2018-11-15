@@ -157,37 +157,42 @@ def main():
         start_time = time.time()
 
         if args.label_type == 'word':
-            wer, _, _, _ = eval_word([model], eval_set, decode_params,
-                                     epoch=epoch - 1,
-                                     progressbar=True)
+            wer, nsub, nins, ndel = eval_word([model], eval_set, decode_params,
+                                              epoch=epoch - 1,
+                                              progressbar=True)
             wer_mean += wer
             logger.info('WER (%s): %.3f %%' % (eval_set.set, wer))
+            logger.info('SUB / INS / DEL : %.3f / %.3f/ %.3f' % (nsub, nins, ndel))
+
         elif args.label_type == 'wp':
-            wer, _, _, _ = eval_wordpiece([model], eval_set, decode_params,
-                                          epoch=epoch - 1,
-                                          decode_dir=args.decode_dir,
-                                          progressbar=True)
+            wer, nsub, nins, ndel = eval_wordpiece([model], eval_set, decode_params,
+                                                   epoch=epoch - 1,
+                                                   decode_dir=args.decode_dir,
+                                                   progressbar=True)
             wer_mean += wer
             logger.info('WER (%s): %.3f %%' % (eval_set.set, wer))
+            logger.info('SUB / INS / DEL : %.3f / %.3f/ %.3f' % (nsub, nins, ndel))
 
         elif 'char' in args.label_type:
-            (wer, _, _, _), (cer, _, _, _) = eval_char([model], eval_set, decode_params,
-                                                       epoch=epoch - 1,
-                                                       progressbar=True)
+            (wer, nsub, nins, ndel), (cer, _, _, _) = eval_char([model], eval_set, decode_params,
+                                                                epoch=epoch - 1,
+                                                                progressbar=True)
             wer_mean += wer
             cer_mean += cer
             logger.info('WER / CER (%s): %.3f / %.3f %%' % (eval_set.set, wer, cer))
+            logger.info('SUB / INS / DEL : %.3f / %.3f/ %.3f' % (nsub, nins, ndel))
 
         elif 'phone' in args.label_type:
-            per, _, _, _ = eval_phone([model], eval_set, decode_params,
-                                      epoch=epoch - 1,
-                                      progressbar=True)
+            per, nsub, nins, ndel = eval_phone([model], eval_set, decode_params,
+                                               epoch=epoch - 1,
+                                               progressbar=True)
             per_mean += per
             logger.info('PER (%s): %.3f %%' % (eval_set.set, per))
+            logger.info('SUB / INS / DEL : %.3f / %.3f/ %.3f' % (nsub, nins, ndel))
         else:
             raise ValueError(args.label_type)
 
-        logger.info('Elasped time: %.2f [sec.]:' % (time.time() - start_time))
+        logger.info('Elasped time: %.2f [sec]:' % (time.time() - start_time))
 
     if args.label_type == 'word':
         logger.info('WER (mean): %.3f %%\n' % (wer_mean / len(args.eval_sets)))

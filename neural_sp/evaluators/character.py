@@ -33,13 +33,13 @@ def eval_char(models, dataset, decode_params, epoch,
         progressbar (bool): if True, visualize the progressbar
     Returns:
         wer (float): Word error rate
-        num_sub (int): the number of substitution errors
-        num_ins (int): the number of insertion errors
-        num_del (int): the number of deletion errors
+        nsub_w (int): the number of substitution errors for WER
+        nins_w (int): the number of insertion errors for WER
+        ndel_w (int): the number of deletion errors for WER
         cer (float): Character error rate
-        num_sub (int): the number of substitution errors
-        num_ins (int): the number of insertion errors
-        num_del (int): the number of deletion errors
+        nsub_w (int): the number of substitution errors for CER
+        nins_c (int): the number of insertion errors for CER
+        ndel_c (int): the number of deletion errors for CER
 
     """
     # Reset data counter
@@ -61,9 +61,9 @@ def eval_char(models, dataset, decode_params, epoch,
         hyp_trn_save_path = mkdir_join(decode_dir, 'hyp.trn')
 
     wer, cer = 0, 0
-    num_sub_w, num_ins_w, num_del_w = 0, 0, 0
-    num_sub_c, num_ins_c, num_del_c = 0, 0, 0
-    num_words, num_chars = 0, 0
+    nsub_w, nins_w, ndel_w = 0, 0, 0
+    nsub_c, nins_c, ndel_c = 0, 0, 0
+    nword, nchar = 0, 0
     if progressbar:
         pbar = tqdm(total=len(dataset))
 
@@ -96,10 +96,10 @@ def eval_char(models, dataset, decode_params, epoch,
                                                              hyp=hyp.split(' '),
                                                              normalize=False)
                     wer += wer_b
-                    num_sub_w += sub_b
-                    num_ins_w += ins_b
-                    num_del_w += del_b
-                    num_words += len(ref.split(' '))
+                    nsub_w += sub_b
+                    nins_w += ins_b
+                    ndel_w += del_b
+                    nword += len(ref.split(' '))
                     # logger.info('WER: %d%%' % (wer_b / len(ref.split(' '))))
 
                 # Compute CER
@@ -107,10 +107,10 @@ def eval_char(models, dataset, decode_params, epoch,
                                                          hyp=list(hyp.replace(' ', '')),
                                                          normalize=False)
                 cer += cer_b
-                num_sub_c += sub_b
-                num_ins_c += ins_b
-                num_del_c += del_b
-                num_chars += len(ref)
+                nsub_c += sub_b
+                nins_c += ins_b
+                ndel_c += del_b
+                nchar += len(ref)
                 # logger.info('CER: %d%%' % (cer_b / len(ref)))
 
                 if progressbar:
@@ -126,16 +126,16 @@ def eval_char(models, dataset, decode_params, epoch,
     dataset.reset()
 
     if ('character' in dataset.label_type and 'nowb' not in dataset.label_type) or (task_index > 0 and dataset.label_type_sub == 'character'):
-        wer /= num_words
-        num_sub_w /= num_words
-        num_ins_w /= num_words
-        num_del_w /= num_words
+        wer /= nword
+        nsub_w /= nword
+        nins_w /= nword
+        ndel_w /= nword
     else:
-        wer = num_sub_w = num_ins_w = num_del_w = 0
+        wer = nsub_w = nins_w = ndel_w = 0
 
-    cer /= num_chars
-    num_sub_c /= num_chars
-    num_ins_c /= num_chars
-    num_del_c /= num_chars
+    cer /= nchar
+    nsub_c /= nchar
+    nins_c /= nchar
+    ndel_c /= nchar
 
-    return (wer, num_sub_w, num_ins_w, num_del_w), (cer, num_sub_c, num_ins_c, num_del_c)
+    return (wer, nsub_w, nins_w, ndel_w), (cer, nsub_c, nins_c, ndel_c)
