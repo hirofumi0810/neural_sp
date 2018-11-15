@@ -449,7 +449,7 @@ def main():
                             factor=args.decay_rate,
                             patience_epoch=args.decay_patient_epoch)
 
-        epoch, step = 1, 0
+        epoch, step = 1, 1
         learning_rate = float(args.learning_rate)
         metric_dev_best = 10000
 
@@ -541,7 +541,7 @@ def main():
 
         pbar_epoch.update(len(batch_train['utt_ids']))
 
-        if (step + 1) % args.print_step == 0:
+        if step % args.print_step == 0:
             # Compute loss in the dev set
             batch_dev = dev_set.next()[0]
             _, reporter = model(batch_dev['xs'], batch_dev['ys'], batch_dev['ys_sub'], reporter, is_eval=True)
@@ -552,23 +552,24 @@ def main():
             elif args.input_type == 'text':
                 x_len = max(len(x) for x in batch_train['ys_sub'])
             logger.info("step:%d(ep:%.2f) lr:%.5f/bs:%d/x_len:%d (%.2f min)" %
-                        (step + 1, train_set.epoch_detail,
+                        (step, train_set.epoch_detail,
                          learning_rate, len(batch_train['utt_ids']),
                          x_len, duration_step / 60))
             start_time_step = time.time()
         step += args.ngpus
+
+        # Save fugures of loss and accuracy
+        if step % (args.print_step * 10) == 0:
+            reporter.snapshot()
 
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:
             duration_epoch = time.time() - start_time_epoch
             logger.info('========== EPOCH:%d (%.2f min) ==========' % (epoch, duration_epoch / 60))
 
-            # Save fugures of loss and accuracy
-            reporter.snapshot()
-
             if epoch < args.eval_start_epoch:
                 # Save the model
-                model.module.save_checkpoint(model.module.save_path, epoch, step,
+                model.module.save_checkpoint(model.module.save_path, epoch, step - 1,
                                              learning_rate, metric_dev_best)
             else:
                 start_time_eval = time.time()
@@ -609,7 +610,7 @@ def main():
                     logger.info('||||| Best Score |||||')
 
                     # Save the model
-                    model.module.save_checkpoint(model.module.save_path, epoch, step,
+                    model.module.save_checkpoint(model.module.save_path, epoch, step - 1,
                                                  learning_rate, metric_dev_best)
 
                     # test
