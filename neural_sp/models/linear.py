@@ -32,7 +32,8 @@ class LinearND(nn.Module):
         super(LinearND, self).__init__()
 
         self.fc = nn.Linear(in_size, out_size, bias=bias)
-        self.dropout = nn.Dropout(p=dropout)
+        if dropout > 0:
+            self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, xs):
         """Forward computation.
@@ -48,7 +49,8 @@ class LinearND(nn.Module):
         size = list(xs.size())
         xs = xs.contiguous().view((int(np.prod(size[:-1])), int(size[-1])))
         xs = self.fc(xs)
-        xs = self.dropout(xs)
+        if hasattr(self, 'dropout'):
+            xs = self.dropout(xs)
         size[-1] = xs.size()[-1]
         return xs.view(size)
 
@@ -69,7 +71,8 @@ class Embedding(nn.Module):
         super(Embedding, self).__init__()
 
         self.embed = nn.Embedding(num_classes, emb_dim, padding_idx=ignore_index)
-        self.dropout = nn.Dropout(p=dropout)
+        if dropout > 0:
+            self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, y):
         """Forward computation.
@@ -81,4 +84,7 @@ class Embedding(nn.Module):
                 `[B, L, emb_dim]`
 
         """
-        return self.dropout(self.embed(y))
+        y = self.embed(y)
+        if hasattr(self, 'dropout'):
+            y = self.dropout(y)
+        return y
