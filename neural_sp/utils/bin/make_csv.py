@@ -27,9 +27,9 @@ parser.add_argument('--dict', type=str,
                     help='dictionary file')
 parser.add_argument('--text', type=str,
                     help='text file')
-parser.add_argument('--unit', type=str, choices=['word', "wordpiece", 'char', "phone"],
+parser.add_argument('--unit', type=str, choices=['word', "wp", 'char', "phone"],
                     help='token units')
-parser.add_argument('--remove_word_boundary', type=strtobool, default=False,
+parser.add_argument('--remove_space', type=strtobool, default=False,
                     help='')
 parser.add_argument('--is_test', type=strtobool, default=False)
 parser.add_argument('--unk', type=str, default='<unk>',
@@ -54,7 +54,8 @@ def main():
     utt2feat = {}
     with open(args.feat, 'r') as f:
         for line in f:
-            utt_id, feat_path = unicode(line, 'utf-8').strip().split(' ')
+            # utt_id, feat_path = unicode(line, 'utf-8').strip().split(' ')
+            utt_id, feat_path = line.strip().split(' ')
             utt2feat[utt_id] = feat_path
 
     utt2frame = {}
@@ -75,7 +76,7 @@ def main():
             token, id = unicode(line, 'utf-8').strip().split(' ')
             id2token[str(id)] = token
 
-    if args.unit == 'wordpiece' and not args.is_test:
+    if args.unit == 'wp' and not args.is_test:
         sp = spm.SentencePieceProcessor()
         sp.Load(args.wp_model + '.model')
 
@@ -115,7 +116,7 @@ def main():
                             # Replace with <unk>
                             token_ids.append(token2id[args.unk])
 
-                elif args.unit == 'wordpiece':
+                elif args.unit == 'wp':
                     wps = sp.EncodeAsPieces(text)
                     for wp in wps:
                         if wp in token2id.keys():
@@ -137,7 +138,7 @@ def main():
                                     token_ids.append(token2id[args.unk])
 
                         # Remove whitespaces
-                        if not args.remove_word_boundary:
+                        if not args.remove_space:
                             if i < len(words) - 1:
                                 token_ids.append(token2id[args.space])
 
@@ -155,7 +156,7 @@ def main():
             y_dim = len(token2id.keys())
 
             print('\"%d\",\"%s\",\"%s\",\"%d\",\"%d\",\"%s\",\"%s\",\"%d\",\"%d\"' %
-                  (utt_count, utt_id.encode('utf-8'), feat_path.encode('utf-8'), x_len, x_dim,
+                  (utt_count, utt_id.encode('utf-8'), feat_path, x_len, x_dim,
                    text.encode('utf-8'), token_id.encode('utf-8'), y_len, y_dim))
             utt_count += 1
             pbar.update(1)

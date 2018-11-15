@@ -7,7 +7,7 @@
 
 feat="" # feat.scp
 unit=""
-remove_word_boundary=false
+remove_space=false
 is_test=false
 unk="<unk>"
 space="<space>"
@@ -30,7 +30,7 @@ make_csv.py --feat ${feat} \
             --text ${data}/text \
             --dict ${dict} \
             --unit ${unit} \
-            --remove_word_boundary ${remove_word_boundary} \
+            --remove_space ${remove_space} \
             --is_test ${is_test} \
             --unk ${unk} \
             --space ${space} \

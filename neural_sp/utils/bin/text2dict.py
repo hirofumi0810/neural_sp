@@ -17,7 +17,7 @@ from tqdm import tqdm
 parser = argparse.ArgumentParser()
 parser.add_argument('text', type=str,
                     help='path to text file')
-parser.add_argument('--unit', type=str, choices=['word', "wordpiece", 'char', "phone"],
+parser.add_argument('--unit', type=str, choices=['word', "wp", 'char', "phone"],
                     help='token units')
 parser.add_argument('--vocab_size', type=int, nargs='?',
                     help='the size of vocabulary for word and wordpiece.')
@@ -43,7 +43,7 @@ def main():
             for line in f:
                 nlsyms.append(unicode(line, 'utf-8').strip())
 
-    if args.unit == 'wordpiece':
+    if args.unit == 'wp':
         spm.SentencePieceTrainer.Train('--input=' + args.text +
                                        ' --user_defined_symbols=' + ','.join(nlsyms) +
                                        ' --vocab_size=' + str(args.vocab_size) +
@@ -79,7 +79,7 @@ def main():
                         word_dict[w] += 1
                     token_set.add(w)
 
-            elif args.unit == 'wordpiece':
+            elif args.unit == 'wp':
                 token_set |= set(sp.EncodeAsPieces(text))
 
             elif args.unit == 'char':
@@ -90,7 +90,6 @@ def main():
                 token_set |= set(list(text))
 
             elif args.unit == 'phone':
-                raise NotImplementedError()
                 token_set |= set(words)
 
             else:
@@ -104,7 +103,7 @@ def main():
         for w in word_list:
             print('%s' % w.encode('utf-8'))
 
-    elif args.unit == 'wordpiece':
+    elif args.unit == 'wp':
         for wp in sorted(nlsyms) + sorted(list(token_set)):
             print('%s' % wp.encode('utf-8'))
 
