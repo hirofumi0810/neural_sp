@@ -11,14 +11,13 @@ from __future__ import division
 from __future__ import print_function
 
 import logging
-import torch
-
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 import numpy as np
 import os
 import seaborn as sns
+from tensorboardX import SummaryWriter
 
 plt.style.use('ggplot')
 blue = '#4682B4'
@@ -27,78 +26,6 @@ orange = '#D2691E'
 INF = float("inf")
 
 logger = logging.getLogger('training')
-
-
-class Updater(object):
-    """.
-
-    Args:
-        clip_grad_norm (float):
-
-    """
-
-    def __init__(self, clip_grad_norm):
-        self.clip_grad_norm = clip_grad_norm
-
-    def __call__(self, model, batch, is_eval=False):
-        """.
-
-        Args:
-            model (torch.nn.Module):
-            batch (tuple):
-            is_eval (bool):
-        Returns:
-            model (torch.nn.Module):
-            loss_val (float):
-            loss_att_val (float):
-            loss_ctc_val (float):
-            acc (float): Token-level accuracy in teacher-forcing
-
-        """
-        # Step for parameter update
-        if is_eval:
-            loss, loss_acc_fwd, loss_acc_bwd, loss_acc_sub = model(
-                batch['xs'], batch['ys'], batch['ys_sub'], is_eval=True)
-        else:
-            model.module.optimizer.zero_grad()
-            loss, loss_acc_fwd, loss_acc_bwd, loss_acc_sub = model(
-                batch['xs'], batch['ys'], batch['ys_sub'])
-            if len(model.device_ids) > 1:
-                loss.backward(torch.ones(len(model.device_ids)))
-            else:
-                loss.backward()
-            loss.detach()  # Trancate the graph
-            if self.clip_grad_norm > 0:
-                torch.nn.utils.clip_grad_norm_(model.module.parameters(), self.clip_grad_norm)
-            model.module.optimizer.step()
-            # TODO(hirofumi): Add scheduler
-
-        if model.module.bwd_weight < 0.5:
-            loss_att_val = loss_acc_fwd['loss_att']
-            loss_ctc_val = loss_acc_fwd['loss_ctc']
-            acc = loss_acc_fwd['acc']
-        else:
-            loss_att_val = loss_acc_bwd['loss_att']
-            loss_ctc_val = loss_acc_bwd['loss_ctc']
-            acc = loss_acc_bwd['acc']
-
-        del loss
-        del loss_acc_fwd
-        del loss_acc_bwd
-        del loss_acc_sub
-
-        # logger.warning('!!!Skip mini-batch!!! (max_x_len: %d, bs: %d)' %
-        #                (max(len(x) for x in batch['xs']), len(batch['xs'])))
-        # torch.cuda.empty_cache()
-        # loss_att_val = 0.
-        # acc = 0.
-
-        if loss_att_val == INF or loss_att_val == -INF:
-            logger.warning("WARNING: received an inf loss.")
-
-        del batch
-
-        return model, loss_att_val, loss_ctc_val, acc
 
 
 class Reporter(object):
@@ -110,62 +37,111 @@ class Reporter(object):
 
     """
 
-    def __init__(self, save_path, max_loss=300):
+    def __init__(self, save_path, tensorboard=True):
         self.save_path = save_path
-        self.max_loss = max_loss
+        self.tensorboard = tensorboard
 
+        if tensorboard:
+            self.tf_writer = SummaryWriter(save_path)
+
+        self._step = 0
+        self.obs_train = {'loss': {}, 'acc': {}}
+        self.obs_train_local = {'loss': {}, 'acc': {}}
+        self.obs_dev = {'loss': {}, 'acc': {}}
         self.steps = []
-        self.losses_train = []
-        self.losses_sub_train = []
-        self.losses_dev = []
-        self.losses_sub_dev = []
-        self.accs_train = []
-        self.accs_sub_train = []
-        self.accs_dev = []
-        self.accs_sub_dev = []
 
-    def step(self, step, loss_train, loss_dev, acc_train, acc_dev):
-        self.steps.append(step)
-        self.losses_train.append(loss_train)
-        self.losses_dev.append(loss_dev)
-        self.accs_train.append(acc_train)
-        self.accs_dev.append(acc_dev)
+    def step(self, observation, is_eval):
+        """Restore values per step.
+            Args:
+                observation (dict):
+                is_eval (bool):
 
-    def epoch(self):
-        # Plot loss
-        plt.clf()
-        plt.plot(self.steps, self.losses_train, blue, label="Train")
-        plt.plot(self.steps, self.losses_dev, orange, label="Dev")
-        plt.xlabel('step', fontsize=12)
-        plt.ylabel('loss', fontsize=12)
-        plt.ylim([0, self.max_loss])
-        plt.legend(loc="upper right", fontsize=12)
-        if os.path.isfile(os.path.join(self.save_path, "loss.png")):
-            os.remove(os.path.join(self.save_path, "loss.png"))
-        plt.savefig(os.path.join(self.save_path, "loss.png"), dvi=500)
+        """
+        for k, v in observation.items():
+            category, name = k.split('.')
 
-        # Save loss as csv file
-        if os.path.isfile(os.path.join(self.save_path, "loss.csv")):
-            os.remove(os.path.join(self.save_path, "loss.csv"))
-        loss_graph = np.column_stack((self.steps, self.losses_train, self.losses_dev))
-        np.savetxt(os.path.join(self.save_path, "loss.csv"), loss_graph, delimiter=",")
+            if v == INF or v == -INF:
+                logger.warning("WARNING: received an inf loss for %s." % k)
 
-        # Plot accuracy
-        plt.clf()
-        plt.plot(self.steps, self.accs_train, blue, label="Train")
-        plt.plot(self.steps, self.accs_dev, orange, label="Dev")
-        plt.xlabel('step', fontsize=12)
-        plt.ylabel('accuracy', fontsize=12)
-        plt.legend(loc="upper right", fontsize=12)
-        if os.path.isfile(os.path.join(self.save_path, 'accuracy.png')):
-            os.remove(os.path.join(self.save_path, 'accuracy.png'))
-        plt.savefig(os.path.join(self.save_path, 'accuracy.png'), dvi=500)
+            if not is_eval:
+                if name not in self.obs_train_local[category].keys():
+                    self.obs_train_local[category][name] = []
+                self.obs_train_local[category][name].append(v)
+            else:
+                # avarage for training
+                if name not in self.obs_train[category].keys():
+                    self.obs_train[category][name] = []
+                self.obs_train[category][name].append(
+                    np.mean(self.obs_train_local[category][name]))
+                if v != 0:
+                    logger.info('%s (train): %.3f' % (k, np.mean(self.obs_train_local[category][name])))
 
-        # Save accuracy as csv file
-        acc_graph = np.column_stack((self.steps, self.accs_train, self.accs_dev))
-        if os.path.isfile(os.path.join(self.save_path, "accuracy.csv")):
-            os.remove(os.path.join(self.save_path, "accuracy.csv"))
-        np.savetxt(os.path.join(self.save_path, "accuracy.csv"), acc_graph, delimiter=",")
+                if name not in self.obs_dev[category].keys():
+                    self.obs_dev[category][name] = []
+                self.obs_dev[category][name].append(v)
+                if v != 0:
+                    logger.info('%s (dev): %.3f' % (k, v))
+
+                # Logging by tensorboard
+                if self.tensorboard:
+                    if not is_eval:
+                        self.tf_writer.add_scalar('train/' + category + '/' + name, v, self._step)
+                    else:
+                        self.tf_writer.add_scalar('dev/' + category + '/' + name, v, self._step)
+                # for n, p in model.module.named_parameters():
+                #     n = n.replace('.', '/')
+                #     if p.grad is not None:
+                #         tf_writer.add_histogram(n, p.data.cpu().numpy(), self._step + 1)
+                #         tf_writer.add_histogram(n + '/grad', p.grad.data.cpu().numpy(), self._step + 1)
+
+        self._step += 1
+        if is_eval:
+            self.steps.append(self._step)
+
+            # reset
+            self.obs_train_local = {'loss': {}, 'acc': {}}
+
+    def snapshot(self):
+
+        linestyles = ['solid', 'dashed', 'dotted', 'dashdotted']
+
+        for category in self.obs_train.keys():
+            plt.clf()
+            upper = 0
+            i = 0
+            for name, v in self.obs_train[category].items():
+                # skip non-observed values
+                if np.mean(self.obs_train[category][name]) == 0:
+                    continue
+
+                plt.plot(self.steps, self.obs_train[category][name], blue,
+                         label=name + " (train)", linestyles=linestyles[i])
+                plt.plot(self.steps, self.obs_dev[category][name], orange,
+                         label=name + " (dev)", linestyle=linestyles[i])
+                upper = max(upper, max(self.obs_train[category][name]))
+                upper = max(upper, max(self.obs_dev[category][name]))
+                i += 1
+            upper = min(upper, 300)
+
+            plt.xlabel('step', fontsize=12)
+            plt.ylabel(category, fontsize=12)
+            plt.ylim([0, upper])
+            plt.legend(loc="upper right", fontsize=12)
+            if os.path.isfile(os.path.join(self.save_path, category + ".png")):
+                os.remove(os.path.join(self.save_path, category + ".png"))
+            plt.savefig(os.path.join(self.save_path, category + ".png"), dvi=500)
+
+            # Save as csv file
+            for name, v in self.obs_train[category].items():
+                # skip non-observed values
+                if np.mean(self.obs_train[category][name]) == 0:
+                    continue
+
+                if os.path.isfile(os.path.join(self.save_path, category + '-' + name + ".csv")):
+                    os.remove(os.path.join(self.save_path, category + '-' + name + ".csv"))
+                loss_graph = np.column_stack(
+                    (self.steps, self.obs_train[category][name], self.obs_dev[category][name]))
+                np.savetxt(os.path.join(self.save_path, name + ".csv"), loss_graph, delimiter=",")
 
 
 class Controller(object):

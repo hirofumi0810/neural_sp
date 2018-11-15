@@ -11,6 +11,7 @@ from __future__ import division
 from __future__ import print_function
 
 import copy
+import logging
 import numpy as np
 import six
 from torch.autograd import Variable
@@ -28,6 +29,9 @@ from neural_sp.models.seq2seq.encoders.rnn import RNNEncoder
 from neural_sp.models.seq2seq.encoders.splicing import do_splice
 from neural_sp.models.utils import np2var
 from neural_sp.models.utils import pad_list
+
+
+logger = logging.getLogger("training")
 
 
 class Seq2seq(ModelBase):
@@ -238,7 +242,7 @@ class Seq2seq(ModelBase):
                                         lsm_prob=args.lsm_prob,
                                         init_with_enc=args.init_with_enc,
                                         ctc_weight=args.ctc_weight_sub,
-                                        ctc_fc_list=args.ctc_fc_list,  # sub??
+                                        ctc_fc_list=args.ctc_fc_list_sub,
                                         global_weight=1 - args.main_task_weight)
 
         if args.input_type == 'text':
@@ -275,7 +279,7 @@ class Seq2seq(ModelBase):
         if args.rnnlm_cold_fusion:
             self.init_weights(-1, dist='constant', keys=['cf_linear_lm_gate.fc.bias'])
 
-    def forward(self, xs, ys, ys_sub=None, is_eval=False):
+    def forward(self, xs, ys, ys_sub, reporter, is_eval=False):
         """Forward computation.
 
         Args:
@@ -312,31 +316,41 @@ class Seq2seq(ModelBase):
             # NOTE: must be descending order for pack_padded_sequence
             xs, x_lens, xs_sub, x_lens_sub = self._encode(ys_sub)
 
+        report = {}
+
         # Compute XE loss for the forward decoder
         if self.fwd_weight > 0:
-            loss_fwd, loss_acc_fwd = self.dec_fwd(xs, x_lens, ys)
+            loss_fwd, report_fwd = self.dec_fwd(xs, x_lens, ys)
             loss = loss_fwd
+            report['loss.att'] = report_fwd['loss_att']
+            report['loss.ctc'] = report_fwd['loss_ctc']
+            report['loss.lm'] = report_fwd['loss_lm']
+            report['acc.main'] = report_fwd['acc']
         else:
-            loss_acc_fwd = {}
             loss = Variable(xs.new(1,).fill_(0.))
 
         # Compute XE loss for the backward decoder
         if self.bwd_weight > 0:
-            loss_bwd, loss_acc_bwd = self.dec_bwd(xs, x_lens, ys)
+            loss_bwd, report_bwd = self.dec_bwd(xs, x_lens, ys)
             loss += loss_bwd
-        else:
-            loss_acc_bwd = {}
+            report['loss.att-bwd'] = report_bwd['loss_att']
+            if self.fwd_weight == 0:
+                report['loss.ctc'] = report_bwd['loss_ctc']
+            report['acc.bwd'] = report_bwd['acc']
 
         if self.main_task_weight < 1:
             ys_sub = [ys_sub[i] for i in perm_idx]
-            loss_sub, loss_acc_sub = self.dec_fwd_sub1(xs_sub, x_lens_sub, ys_sub)
+            loss_sub, report_sub = self.dec_fwd_sub1(xs_sub, x_lens_sub, ys_sub)
             loss += loss_sub
-        else:
-            loss_acc_sub = {}
+            report['loss.att-sub'] = report_sub['loss_att']
+            report['loss.ctc-sub'] = report_sub['loss_ctc']
+            report['acc.sub'] = report_sub['acc']
 
         # TODO(hirofumi): report here
+        if reporter is not None:
+            reporter.step(observation=report, is_eval=is_eval)
 
-        return loss, loss_acc_fwd, loss_acc_bwd, loss_acc_sub
+        return loss, reporter
 
     def _encode(self, xs):
         """Encode acoustic features.
@@ -434,8 +448,15 @@ class Seq2seq(ModelBase):
         dir = 'fwd' if self.fwd_weight >= self.bwd_weight else 'bwd'
 
         if self.ctc_weight == 1:
+            # Set RNNLM
+            if decode_params['rnnlm_weight'] > 0:
+                assert hasattr(self, 'rnnlm_' + dir)
+                rnnlm = getattr(self, 'rnnlm_' + dir)
+            else:
+                rnnlm = None
+
             best_hyps = getattr(self, 'dec_' + dir).decode_ctc(
-                enc_out, x_lens, decode_params['beam_width'], decode_params['rnnlm'])
+                enc_out, x_lens, decode_params['beam_width'], rnnlm)
             return best_hyps, None, perm_idx
         else:
             if decode_params['beam_width'] == 1:

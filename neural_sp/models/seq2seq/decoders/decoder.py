@@ -259,12 +259,12 @@ class Decoder(nn.Module):
             loss = Variable(enc_out.new(1,).fill_(0.))
 
         if self.ctc_weight == 1:
-            loss_acc = {'loss': loss.item(),
-                        'loss_att': 0,
-                        'loss_ctc': loss_ctc.item(),
-                        'loss_lm': 0,
-                        'acc': 0}
-            return loss, loss_acc
+            report = {'loss': loss.item(),
+                      'loss_att': 0,
+                      'loss_ctc': loss_ctc.item(),
+                      'loss_lm': 0,
+                      'acc': 0}
+            return loss, report
 
         # Append <sos> and <eos>
         sos = Variable(enc_out.new(1,).fill_(self.sos).long())
@@ -376,12 +376,12 @@ class Decoder(nn.Module):
         denominator = torch.sum(mask)
         acc = float(numerator) / float(denominator)
 
-        loss_acc = {'loss': loss.item(),
-                    'loss_att': loss_att.item(),
-                    'loss_ctc': loss_ctc.item(),
-                    'loss_lm': loss_lm.item(),
-                    'acc': acc}
-        return loss, loss_acc
+        report = {'loss': loss.item(),
+                  'loss_att': loss_att.item(),
+                  'loss_ctc': loss_ctc.item(),
+                  'loss_lm': loss_lm.item(),
+                  'acc': acc}
+        return loss, report
 
     def init_dec_state(self, enc_out, enc_lens, num_layers):
         """Initialize decoder state.

@@ -15,14 +15,12 @@ import cProfile
 import os
 # from setproctitle import setproctitle
 import shutil
-from tensorboardX import SummaryWriter
 import time
 import torch
 from tqdm import tqdm
 
 from neural_sp.bin.asr.train_utils import Controller
 from neural_sp.bin.asr.train_utils import Reporter
-from neural_sp.bin.asr.train_utils import Updater
 from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.evaluators.character import eval_char
 from neural_sp.evaluators.loss import eval_loss
@@ -155,6 +153,8 @@ parser.add_argument('--emb_dim', type=int, default=320,
                     help='')
 parser.add_argument('--ctc_fc_list', type=list, default=[],
                     help='')
+parser.add_argument('--ctc_fc_list_sub', type=list, default=[],
+                    help='')
 # optimization
 parser.add_argument('--batch_size', type=int, default=50,
                     help='')
@@ -241,7 +241,7 @@ parser.add_argument('--internal_lm', type=bool, default=False,
                     help='')
 parser.add_argument('--rnnlm_init', type=str, default=False,
                     help='')
-parser.add_argument('--rnnlm_task_weight', type=float, default=1.0,
+parser.add_argument('--rnnlm_task_weight', type=float, default=0.0,
                     help='')
 parser.add_argument('--share_lm_softmax', type=bool, default=False,
                     help='')
@@ -338,8 +338,8 @@ def main():
                               skip_speech=(args.input_type != 'speech'))]
 
     args.num_classes = train_set.num_classes
-    args.input_dim = train_set.input_dim
     args.num_classes_sub = train_set.num_classes_sub
+    args.input_dim = train_set.input_dim
 
     # Load a RNNLM config file for cold fusion & RNNLM initialization
     # if config['rnnlm_cold_fusion']:
@@ -517,74 +517,54 @@ def main():
                                best_value=metric_dev_best)
 
     # Set reporter
-    reporter = Reporter(model.module.save_path, max_loss=300)
-
-    # Set the updater
-    updater = Updater(args.clip_grad_norm)
-
-    # Setting for tensorboard
-    tf_writer = SummaryWriter(model.module.save_path)
+    reporter = Reporter(model.module.save_path, tensorboard=True)
 
     start_time_train = time.time()
     start_time_epoch = time.time()
     start_time_step = time.time()
     not_improved_epoch = 0.
-    loss_att_train_mean, loss_ctc_train_mean, acc_train_mean = 0, 0, 0
     pbar_epoch = tqdm(total=len(train_set))
-    pbar_all = tqdm(total=len(train_set) * args.num_epochs)
     while True:
         # Compute loss in the training set (including parameter update)
         batch_train, is_new_epoch = train_set.next()
-        model, loss_att_train, loss_ctc_train, acc_train = updater(model, batch_train)
-        loss_att_train_mean += loss_att_train
-        loss_ctc_train_mean += loss_ctc_train
-        acc_train_mean += acc_train
+        model.module.optimizer.zero_grad()
+        loss, reporter = model(batch_train['xs'], batch_train['ys'], batch_train['ys_sub'], reporter)
+        if len(model.device_ids) > 1:
+            loss.backward(torch.ones(len(model.device_ids)))
+        else:
+            loss.backward()
+        loss.detach()  # Trancate the graph
+        if args.clip_grad_norm > 0:
+            torch.nn.utils.clip_grad_norm_(model.module.parameters(), args.clip_grad_norm)
+        model.module.optimizer.step()
+        del loss
+
         pbar_epoch.update(len(batch_train['utt_ids']))
 
         if (step + 1) % args.print_step == 0:
             # Compute loss in the dev set
             batch_dev = dev_set.next()[0]
-            model, loss_att_dev, loss_ctc_dev, acc_dev = updater(model, batch_dev, is_eval=True)
-
-            loss_att_train_mean /= args.print_step
-            loss_ctc_train_mean /= args.print_step
-            acc_train_mean /= args.print_step
-            reporter.step(step, loss_att_train_mean, loss_att_dev, acc_train_mean, acc_dev)
-
-            # Logging by tensorboard
-            tf_writer.add_scalar('train/loss_att', loss_att_train_mean, step + 1)
-            tf_writer.add_scalar('train/loss_ctc', loss_ctc_train_mean, step + 1)
-            tf_writer.add_scalar('dev/loss_att', loss_att_dev, step + 1)
-            tf_writer.add_scalar('dev/loss_ctc', loss_ctc_dev, step + 1)
-            # for n, p in model.module.named_parameters():
-            #     n = n.replace('.', '/')
-            #     if p.grad is not None:
-            #         tf_writer.add_histogram(n, p.data.cpu().numpy(), step + 1)
-            #         tf_writer.add_histogram(n + '/grad', p.grad.data.cpu().numpy(), step + 1)
+            _, reporter = model(batch_dev['xs'], batch_dev['ys'], batch_dev['ys_sub'], reporter, is_eval=True)
 
             duration_step = time.time() - start_time_step
             if args.input_type == 'speech':
                 x_len = max(len(x) for x in batch_train['xs'])
             elif args.input_type == 'text':
                 x_len = max(len(x) for x in batch_train['ys_sub'])
-            logger.info("step:%d(ep:%.2f) loss-att:%.2f(%.2f)/loss-ctc:%.2f(%.2f)/acc:%.2f(%.2f)/lr:%.5f/bs:%d/x_len:%d (%.2f min)" %
+            logger.info("step:%d(ep:%.2f) lr:%.5f/bs:%d/x_len:%d (%.2f min)" %
                         (step + 1, train_set.epoch_detail,
-                         loss_att_train_mean, loss_att_dev,
-                         loss_ctc_train_mean, loss_ctc_dev,
-                         acc_train_mean, acc_dev,
                          learning_rate, len(batch_train['utt_ids']),
                          x_len, duration_step / 60))
             start_time_step = time.time()
-            loss_att_train_mean, loss_ctc_train_mean, acc_train_mean = 0, 0, 0
         step += args.ngpus
 
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:
             duration_epoch = time.time() - start_time_epoch
-            logger.info('===== EPOCH:%d (%.2f min) =====' % (epoch, duration_epoch / 60))
+            logger.info('========== EPOCH:%d (%.2f min) ==========' % (epoch, duration_epoch / 60))
 
             # Save fugures of loss and accuracy
-            reporter.epoch()
+            reporter.snapshot()
 
             if epoch < args.eval_start_epoch:
                 # Save the model
@@ -679,7 +659,6 @@ def main():
                     logger.info('========== Convert to SGD ==========')
 
             pbar_epoch = tqdm(total=len(train_set))
-            pbar_all.update(len(train_set))
 
             if epoch == args.num_epochs:
                 break
@@ -691,9 +670,9 @@ def main():
     duration_train = time.time() - start_time_train
     logger.info('Total time: %.2f hour' % (duration_train / 3600))
 
-    tf_writer.close()
+    if reporter.tensorboard:
+        reporter.tf_writer.close()
     pbar_epoch.close()
-    pbar_all.close()
 
     return model.module.save_path
 
