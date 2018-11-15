@@ -231,4 +231,4 @@ class Dataset(Base):
         return {'xs': xs, 'x_lens': x_lens,
                 'ys': ys, 'y_lens': y_lens,
                 'ys_sub': ys_sub, 'y_lens_sub': y_lens_sub,
-                'utt_ids':  utt_ids, ' text': text}
+                'utt_ids':  utt_ids, 'text': text}
