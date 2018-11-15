@@ -31,7 +31,7 @@ from neural_sp.datasets.token_converter.wordpiece import Wp2idx
 
 np.random.seed(1)
 
-logger = logging.getLogger('training').getChild("loader_asr")
+logger = logging.getLogger('training')
 
 
 class Dataset(Base):

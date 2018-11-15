@@ -29,7 +29,7 @@ from neural_sp.datasets.token_converter.wordpiece import Wp2idx
 random.seed(1)
 np.random.seed(1)
 
-logger = logging.getLogger('training').getChild("loader_lm")
+logger = logging.getLogger('training')
 
 
 class Dataset(Base):
