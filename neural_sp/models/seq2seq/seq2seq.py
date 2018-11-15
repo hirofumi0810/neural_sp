@@ -27,8 +27,8 @@ from neural_sp.models.seq2seq.encoders.cnn import CNNEncoder
 from neural_sp.models.seq2seq.encoders.frame_stacking import stack_frame
 from neural_sp.models.seq2seq.encoders.rnn import RNNEncoder
 from neural_sp.models.seq2seq.encoders.splicing import do_splice
-from neural_sp.models.utils import np2var
-from neural_sp.models.utils import pad_list
+from neural_sp.models.torch_utils import np2var
+from neural_sp.models.torch_utils import pad_list
 
 
 logger = logging.getLogger("training")

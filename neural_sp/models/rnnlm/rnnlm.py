@@ -21,9 +21,9 @@ import torch.nn.functional as F
 from neural_sp.models.base import ModelBase
 from neural_sp.models.linear import Embedding
 from neural_sp.models.linear import LinearND
-from neural_sp.models.utils import np2var
-from neural_sp.models.utils import pad_list
-from neural_sp.models.utils import var2np
+from neural_sp.models.torch_utils import np2var
+from neural_sp.models.torch_utils import pad_list
+from neural_sp.models.torch_utils import var2np
 
 
 class RNNLM(ModelBase):

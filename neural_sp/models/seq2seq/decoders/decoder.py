@@ -32,14 +32,13 @@ from neural_sp.models.seq2seq.decoders.attention import AttentionMechanism
 from neural_sp.models.seq2seq.decoders.ctc_beam_search_decoder import BeamSearchDecoder
 from neural_sp.models.seq2seq.decoders.ctc_greedy_decoder import GreedyDecoder
 from neural_sp.models.seq2seq.decoders.multihead_attention import MultiheadAttentionMechanism
-from neural_sp.models.utils import np2var
-from neural_sp.models.utils import pad_list
-from neural_sp.models.utils import var2np
+from neural_sp.models.torch_utils import np2var
+from neural_sp.models.torch_utils import pad_list
+from neural_sp.models.torch_utils import var2np
 
 random.seed(1)
 
-# logger = logging.getLogger("mwer").getChild("decoder")
-logger = logging.getLogger("decoding").getChild("decoder")
+logger = logging.getLogger("decoding")
 
 
 class Decoder(nn.Module):

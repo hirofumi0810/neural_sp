@@ -78,9 +78,8 @@ def pad_list(xs, pad_value=float("nan")):
     # assert isinstance(xs[0], Variable)
     batch = len(xs)
     max_time = max(x.size(0) for x in xs)
-    xs_pad = Variable(
-        xs[0].data.new(batch, max_time, * xs[0].size()[1:]).zero_() + pad_value,
-        volatile=xs[0].volatile)
+    xs_pad = Variable(xs[0].new(batch, max_time, * xs[0].size()[1:]).zero_() + pad_value,
+                      volatile=xs[0].volatile)
     for b in range(batch):
         xs_pad[b, :xs[b].size(0)] = xs[b]
     return xs_pad
