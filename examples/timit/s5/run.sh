@@ -10,22 +10,23 @@ echo ===========================================================================
 stage=0
 gpu=
 
-### Set path to save dataset
+### path to save preproecssed data
 export data=/n/sd8/inaguma/corpus/timit
 
-### configuration
-config=conf/attention/bgru_att_phone61.yml
-# config=conf/ctc/blstm_ctc_phone61.yml
+### vocabulary
+unit=phone
 
-### Set path to save the model
-model_dir=/n/sd8/inaguma/result/timit
+### path to save the model
+model=/n/sd8/inaguma/result/timit
 
-### Restart training (path to the saved model directory)
+### path to the model directory to restart training
 resume_model=
 
-### Set path to original data
+### path to original data
 TIMITDATATOP=/n/rd21/corpora_1/TIMIT
 
+### path to the config file
+config=
 . ./cmd.sh
 . ./path.sh
 . utils/parse_options.sh
@@ -34,17 +35,21 @@ set -e
 set -u
 set -o pipefail
 
-if [ -z $gpu ]; then
+if [ -z ${config} ]; then
+  config=conf/attention/${unit}_bgru_att.yml
+fi
+
+if [ -z ${gpu} ]; then
   echo "Error: set GPU number." 1>&2
   echo "Usage: ./run.sh --gpu 0" 1>&2
   exit 1
 fi
-ngpus=`echo $gpu | tr "," "\n" | wc -l`
-rnnlm_gpu=`echo $gpu | cut -d "," -f 1`
+ngpus=`echo ${gpu} | tr "," "\n" | wc -l`
+rnnlm_gpu=`echo ${gpu} | cut -d "," -f 1`
 
 train_set=train
 dev_set=dev
-test_set=test
+test_set="test"
 
 
 if [ ${stage} -le 0 ] && [ ! -e .done_stage_0 ]; then
@@ -75,7 +80,7 @@ if [ ${stage} -le 1 ] && [ ! -e .done_stage_1 ]; then
 
   # Apply global CMVN & dump features
   for x in ${train_set} ${dev_set} ${test_set}; do
-    dump_dir=${data}/feat/${x}; mkdir -p ${dump_dir}
+    dump_dir=${data}/dump/${x}
     dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta true \
       ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
   done
@@ -84,44 +89,45 @@ if [ ${stage} -le 1 ] && [ ! -e .done_stage_1 ]; then
 fi
 
 
-dict=${data}/dict/${train_set}.txt; mkdir -p ${data}/dict/
-if [ ${stage} -le 2 ] && [ ! -e .done_stage_2 ]; then
+dict=${data}/dict/${train_set}.txt; mkdir -p ${data}/dict
+if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit} ]; then
   echo ============================================================================
   echo "                      Dataset preparation (stage:2)                        "
   echo ============================================================================
 
   # Make a dictionary
-  echo "<blank> 0" > ${dict}
-  echo "<unk> 1" >> ${dict}
-  echo "<sos> 2" >> ${dict}
-  echo "<eos> 3" >> ${dict}
-  echo "<pad> 4" >> ${dict}
+  echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
+  echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
+  echo "<pad> 3" >> ${dict}
+  if [ ${unit} = char ]; then
+    echo "<space> 4" >> ${dict}
+  fi
   offset=`cat ${dict} | wc -l`
   echo "Making a dictionary..."
-  text2dict.py ${data}/${train_set}/text --unit phone | \
+  text2dict.py ${data}/${train_set}/text --unit ${unit} | \
     sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict} || exit 1;
   echo "vocab size:" `cat ${dict} | wc -l`
 
   # Make datset csv files
-  mkdir -p ${data}/dataset/
+  mkdir -p ${data}/dataset_csv
   for x in ${train_set} ${dev_set}; do
     echo "Making a csv file for ${x}..."
-    dump_dir=${data}/feat/${x}
+    dump_dir=${data}/dump/${x}
     make_dataset_csv.sh --feat ${dump_dir}/feats.scp --unit phone \
-      ${data}/${x} ${dict} > ${data}/dataset/${x}.csv || exit 1;
+      ${data}/${x} ${dict} > ${data}/dataset_csv/${x}_${unit}.csv || exit 1;
   done
   for x in ${test_set}; do
-    dump_dir=${data}/feat/${x}
+    dump_dir=${data}/dump/${x}
     make_dataset_csv.sh --is_test true --feat ${dump_dir}/feats.scp --unit phone \
-      ${data}/${x} ${dict} > ${data}/dataset/${x}.csv || exit 1;
+      ${data}/${x} ${dict} > ${data}/dataset_csv/${x}_${unit}.csv || exit 1;
   done
 
-  touch .done_stage_2 && echo "Finish creating dataset (stage: 2)."
+  touch .done_stage_2_${unit} && echo "Finish creating dataset (stage: 2)."
 fi
 
 # NOTE: skip RNNLM training (stage:3)
 
-mkdir -p ${model_dir}
+mkdir -p ${model}
 if [ ${stage} -le 4 ]; then
   echo ============================================================================
   echo "                       ASR Training stage (stage:4)                        "
@@ -131,17 +137,14 @@ if [ ${stage} -le 4 ]; then
 
   CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/train.py \
     --ngpus ${ngpus} \
-    --train_set ${data}/dataset/${train_set}.csv \
-    --dev_set ${data}/dataset/${dev_set}.csv \
-    --eval_sets ${data}/dataset/${test_set}.csv \
+    --train_set ${data}/dataset_csv/${train_set}_${unit}.csv \
+    --dev_set ${data}/dataset_csv/${dev_set}_${unit}.csv \
+    --eval_sets ${data}/dataset_csv/${test_set}_${unit}.csv \
     --dict ${dict} \
     --config ${config} \
-    --model ${model_dir}/asr \
-    --label_type phone || exit 1;
+    --model ${model}/asr \
+    --label_type ${unit} || exit 1;
     # --resume_model ${resume_model} || exit 1;
 
   touch ${model}/.done_training && echo "Finish model training (stage: 4)."
 fi
-
-
-echo "Done."

@@ -59,8 +59,6 @@ param:
 
   # regularization
   clip_grad_norm: 5.0
-  clip_activation_enc: 50.0
-  clip_activation_dec: 50.0
   dropout_in: 0.2
   dropout_enc: 0.5
   dropout_dec: 0.2
@@ -68,8 +66,8 @@ param:
   weight_decay: 1e-6
   logits_temp: 1.0
   ss_prob: 0.2
+  ss_type: constant
   lsm_prob: 0.1
-  lsm_type: uniform
 
   # annealing
   decay_type: per_epoch
