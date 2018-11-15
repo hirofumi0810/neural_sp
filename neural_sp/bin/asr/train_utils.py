@@ -45,9 +45,9 @@ class Reporter(object):
             self.tf_writer = SummaryWriter(save_path)
 
         self._step = 0
-        self.obs_train = {'loss': {}, 'acc': {}}
-        self.obs_train_local = {'loss': {}, 'acc': {}}
-        self.obs_dev = {'loss': {}, 'acc': {}}
+        self.obs_train = {'loss': {}, 'acc': {}, 'ppl': {}}
+        self.obs_train_local = {'loss': {}, 'acc': {}, 'ppl': {}}
+        self.obs_dev = {'loss': {}, 'acc': {}, 'ppl': {}}
         self.steps = []
 
     def step(self, observation, is_eval):
@@ -99,7 +99,7 @@ class Reporter(object):
             self.steps.append(self._step)
 
             # reset
-            self.obs_train_local = {'loss': {}, 'acc': {}}
+            self.obs_train_local = {'loss': {}, 'acc': {}, 'ppl': {}}
 
     def snapshot(self):
 
@@ -121,7 +121,7 @@ class Reporter(object):
                 upper = max(upper, max(self.obs_train[category][name]))
                 upper = max(upper, max(self.obs_dev[category][name]))
                 i += 1
-            upper = min(upper, 300)
+            upper = min(upper + 10, 300)
 
             plt.xlabel('step', fontsize=12)
             plt.ylabel(category, fontsize=12)
@@ -141,7 +141,7 @@ class Reporter(object):
                     os.remove(os.path.join(self.save_path, category + '-' + name + ".csv"))
                 loss_graph = np.column_stack(
                     (self.steps, self.obs_train[category][name], self.obs_dev[category][name]))
-                np.savetxt(os.path.join(self.save_path, name + ".csv"), loss_graph, delimiter=",")
+                np.savetxt(os.path.join(self.save_path, category + '-' + name + ".csv"), loss_graph, delimiter=",")
 
 
 class Controller(object):

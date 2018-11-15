@@ -537,6 +537,7 @@ def main():
         if args.clip_grad_norm > 0:
             torch.nn.utils.clip_grad_norm_(model.module.parameters(), args.clip_grad_norm)
         model.module.optimizer.step()
+        loss_train = loss.item()
         del loss
 
         pbar_epoch.update(len(batch_train['utt_ids']))
@@ -544,15 +545,18 @@ def main():
         if step % args.print_step == 0:
             # Compute loss in the dev set
             batch_dev = dev_set.next()[0]
-            _, reporter = model(batch_dev['xs'], batch_dev['ys'], batch_dev['ys_sub'], reporter, is_eval=True)
+            loss, reporter = model(batch_dev['xs'], batch_dev['ys'], batch_dev['ys_sub'], reporter, is_eval=True)
+            loss_dev = loss.item()
+            del loss
 
             duration_step = time.time() - start_time_step
             if args.input_type == 'speech':
                 x_len = max(len(x) for x in batch_train['xs'])
             elif args.input_type == 'text':
                 x_len = max(len(x) for x in batch_train['ys_sub'])
-            logger.info("step:%d(ep:%.2f) lr:%.5f/bs:%d/x_len:%d (%.2f min)" %
+            logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.5f/bs:%d/x_len:%d (%.2f min)" %
                         (step, train_set.epoch_detail,
+                         loss_train, loss_dev,
                          learning_rate, len(batch_train['utt_ids']),
                          x_len, duration_step / 60))
             start_time_step = time.time()
