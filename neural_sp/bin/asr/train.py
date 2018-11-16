@@ -228,11 +228,14 @@ parser.add_argument('--ctc_weight', type=float, default=0.0,
                     help='')
 parser.add_argument('--ctc_weight_sub', type=float, default=0.0,
                     help='')
+parser.add_argument('--main_task_weight', type=float, default=1.0,
+                    help='')
+# foroward-backward
 parser.add_argument('--bwd_weight', type=float, default=0.0,
                     help='')
 parser.add_argument('--bwd_weight_sub', type=float, default=0.0,
                     help='')
-parser.add_argument('--main_task_weight', type=float, default=1.0,
+parser.add_argument('--share_fwd_bwd_attention', type=bool, default=False,
                     help='')
 # cold fusion
 parser.add_argument('--cold_fusion', type=str, default='hidden',
@@ -394,6 +397,8 @@ def main():
             model.name += '_ctcsub' + str(args.ctc_weight_sub * (1 - args.main_task_weight))
         else:
             model.name += '_attsub' + str(1 - args.main_task_weight)
+    if args.share_fwd_bwd_attention:
+        model.name += '_sharefwdbwdattn'
 
     if args.resume_model is None:
         # Load pre-trained RNNLM

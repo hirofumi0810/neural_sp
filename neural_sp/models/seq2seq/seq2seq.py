@@ -56,7 +56,6 @@ class Seq2seq(ModelBase):
 
         # for attention layer
         self.att_num_heads = args.att_num_heads
-        self.share_attention = False  # TODO(hirofumi): between fwd and bwd
 
         # for decoder
         self.num_classes = args.num_classes
@@ -118,10 +117,14 @@ class Seq2seq(ModelBase):
 
         # Bridge layer between the encoder and decoder
         if args.enc_type == 'cnn':
-            self.bridge = LinearND(self.encoder.output_dim, args.dec_num_units)
+            logger.info('insert a bridge layer')
+            self.bridge = LinearND(self.encoder.output_dim, args.dec_num_units,
+                                   dropout=args.dropout_enc)
             self.enc_num_units = args.dec_num_units
         elif args.bridge_layer:
-            self.bridge = LinearND(self.enc_num_units, args.dec_num_units)
+            logger.info('insert a bridge layer')
+            self.bridge = LinearND(self.enc_num_units, args.dec_num_units,
+                                   dropout=args.dropout_enc)
             self.enc_num_units = args.dec_num_units
 
         # MAIN TASK
@@ -133,36 +136,43 @@ class Seq2seq(ModelBase):
         for dir in directions:
             if (dir == 'fwd' and args.ctc_weight < 1) or dir == 'bwd':
                 # Attention layer
-                if args.att_num_heads > 1:
-                    att = MultiheadAttentionMechanism(
-                        enc_num_units=self.enc_num_units,
-                        dec_num_units=args.dec_num_units,
-                        att_type=args.att_type,
-                        att_dim=args.att_dim,
-                        sharpening_factor=args.att_sharpening_factor,
-                        sigmoid_smoothing=args.att_sigmoid_smoothing,
-                        conv_out_channels=args.att_conv_num_channels,
-                        conv_kernel_size=args.att_conv_width,
-                        num_heads=args.att_num_heads)
+                if dir == 'bwd' and self.fwd_weight > 0 and args.share_fwd_bwd_attention:
+                    logger.info('share fwd-bwd attention')
+                    att = self.dec_fwd.score
                 else:
-                    att = AttentionMechanism(
-                        enc_num_units=self.enc_num_units,
-                        dec_num_units=args.dec_num_units,
-                        att_type=args.att_type,
-                        att_dim=args.att_dim,
-                        sharpening_factor=args.att_sharpening_factor,
-                        sigmoid_smoothing=args.att_sigmoid_smoothing,
-                        conv_out_channels=args.att_conv_num_channels,
-                        conv_kernel_size=args.att_conv_width)
-
-                # Cold fusion
-                if args.rnnlm_cold_fusion and dir == 'fwd':
-                    raise NotImplementedError()
-                    # TODO(hirofumi): cold fusion for backward RNNLM
-                else:
-                    args.rnnlm_cold_fusion = False
+                    if args.att_num_heads > 1:
+                        logger.info('multi-head attention')
+                        att = MultiheadAttentionMechanism(
+                            enc_num_units=self.enc_num_units,
+                            dec_num_units=args.dec_num_units,
+                            att_type=args.att_type,
+                            att_dim=args.att_dim,
+                            sharpening_factor=args.att_sharpening_factor,
+                            sigmoid_smoothing=args.att_sigmoid_smoothing,
+                            conv_out_channels=args.att_conv_num_channels,
+                            conv_kernel_size=args.att_conv_width,
+                            num_heads=args.att_num_heads)
+                    else:
+                        logger.info('single-head attention')
+                        att = AttentionMechanism(
+                            enc_num_units=self.enc_num_units,
+                            dec_num_units=args.dec_num_units,
+                            att_type=args.att_type,
+                            att_dim=args.att_dim,
+                            sharpening_factor=args.att_sharpening_factor,
+                            sigmoid_smoothing=args.att_sigmoid_smoothing,
+                            conv_out_channels=args.att_conv_num_channels,
+                            conv_kernel_size=args.att_conv_width)
             else:
                 att = None
+
+            # Cold fusion
+            if args.rnnlm_cold_fusion and dir == 'fwd':
+                logger.inof('cold fusion')
+                raise NotImplementedError()
+                # TODO(hirofumi): cold fusion for backward RNNLM
+            else:
+                args.rnnlm_cold_fusion = False
 
             # Decoder
             dec = Decoder(attention=att,
@@ -203,6 +213,7 @@ class Seq2seq(ModelBase):
             if args.ctc_weight_sub < 1:
                 # Attention layer
                 if args.att_num_heads_sub > 1:
+                    logger.info('multi-head attention (sub)')
                     att_sub = MultiheadAttentionMechanism(
                         enc_num_units=self.enc_num_units,
                         dec_num_units=args.dec_num_units,
@@ -214,6 +225,7 @@ class Seq2seq(ModelBase):
                         conv_kernel_size=args.att_conv_width,
                         num_heads=args.att_num_heads_sub)
                 else:
+                    logger.info('single-head attention (sub)')
                     att_sub = AttentionMechanism(
                         enc_num_units=self.enc_num_units,
                         dec_num_units=args.dec_num_units,
