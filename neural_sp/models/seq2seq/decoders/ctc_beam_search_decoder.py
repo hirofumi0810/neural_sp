@@ -14,7 +14,8 @@ import numpy as np
 import six
 import torch
 import torch.nn.functional as F
-from torch.autograd import Variable
+
+from neural_sp.models.torch_utils import var2np
 
 LOG_0 = -float("inf")
 LOG_1 = 0
@@ -71,8 +72,8 @@ class BeamSearchDecoder(object):
                 log_probs_topk, indices_topk = torch.topk(
                     log_probs[:, t, :], k=beam_width, dim=-1, largest=True, sorted=True)
 
-                for c in indices_topk.data[b]:
-                    p_t = log_probs.data[b, t, c]
+                for c in var2np(indices_topk)[b]:
+                    p_t = log_probs[b, t, c].item()
 
                     # The variables p_blank and p_nonblank are respectively the
                     # probabilities for the prefix given that it ends in a
@@ -114,8 +115,7 @@ class BeamSearchDecoder(object):
 
                         # Update RNNLM states
                         if rnnlm_weight > 0 and rnnlm is not None:
-                            y_rnnlm = Variable(log_probs.data.new(
-                                1, 1).fill_(c).long(), volatile=True)
+                            y_rnnlm = Variable(log_probs.new(1, 1).fill_(c).long(), volatile=True)
                             y_rnnlm = rnnlm.embed(y_rnnlm)
                             logits_step_rnnlm, rnnlm_out, rnnlm_state = rnnlm.predict(
                                 y_rnnlm, h=rnnlm_state)

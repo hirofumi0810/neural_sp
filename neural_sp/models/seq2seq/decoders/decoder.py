@@ -881,7 +881,7 @@ class Decoder(nn.Module):
         if beam_width == 1:
             best_hyps = self.decode_ctc_greedy(var2np(logits_ctc), x_lens)
         else:
-            best_hyps = self.decode_ctc_beam(var2np(F.log_softmax(logits_ctc, dim=-1)),
+            best_hyps = self.decode_ctc_beam(F.log_softmax(logits_ctc, dim=-1),
                                              x_lens, beam_width, rnnlm)
             # TODO(hirofumi: decoding paramters
 
