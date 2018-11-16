@@ -114,18 +114,13 @@ class MultiheadAttentionMechanism(nn.Module):
         """Forward computation.
 
         Args:
-            enc_out (torch.autograd.Variable, float): A tensor of size
-                `[B, T, enc_num_units]`
+            enc_out (torch.autograd.Variable, float): `[B, T, enc_units]`
             x_lens (list): A list of length `[B]`
-            dec_out (torch.autograd.Variable, float): A tensor of size
-                `[B, 1, dec_num_units]`
-            aw_step (torch.autograd.Variable, float): A tensor of size
-                `[B, T, num_heads]`
+            dec_out (torch.autograd.Variable, float): `[B, 1, dec_units]`
+            aw_step (torch.autograd.Variable, float): `[B, T, num_heads]`
         Returns:
-            context_vec (torch.autograd.Variable, float): A tensor of size
-                `[B, 1, enc_num_units]`
-            aw_step (torch.autograd.Variable, float): A tensor of size
-                `[B, T, num_heads]`
+            context_vec (torch.autograd.Variable, float): `[B, 1, enc_units]`
+            aw_step (torch.autograd.Variable, float): `[B, T, num_heads]`
 
         """
         batch_size, enc_time = enc_out.size()[:2]

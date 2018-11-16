@@ -72,7 +72,7 @@ def pad_list(xs, pad_value=float("nan")):
             `[T, input_size]`
         pad_value (flaot):
     Returns:
-        xs_pad (torch.autograd.Variable): A tensor of size `[B, T, input_size]`
+        xs_pad (torch.autograd.Variable): `[B, T, input_size]`
 
     """
     # assert isinstance(xs[0], Variable)

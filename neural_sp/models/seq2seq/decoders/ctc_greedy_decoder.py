@@ -24,11 +24,10 @@ class GreedyDecoder(object):
         """
 
         Args:
-            logits (np.ndarray): A tensor of size `[B, T, num_classes]`
-            x_lens (np.ndarray): A tensor of size `[B]`
+            logits (np.ndarray): `[B, T, num_classes]`
+            x_lens (np.ndarray): `[B]`
         Returns:
-            best_hyps (np.ndarray): Best path hypothesis.
-                A tensor of size `[B, labels_max_seq_len]`
+            best_hyps (np.ndarray): Best path hypothesis. `[B, labels_max_seq_len]`
 
         """
         batch_size = logits.shape[0]

@@ -29,7 +29,7 @@ def cross_entropy_lsm(logits, ys, y_lens, lsm_prob, size_average=False):
         lsm_prob (float):
         size_average (bool):
     Returns:
-        xe_loss_sum (torch.autograd.Variable, float): A tensor of size `[1]`
+        xe_loss_sum (torch.autograd.Variable, float): `[1]`
 
     """
     batch_size, num_tokens = ys.size()

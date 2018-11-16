@@ -14,7 +14,6 @@ from collections import OrderedDict
 import math
 import torch.nn as nn
 
-from neural_sp.models.linear import LinearND
 from neural_sp.models.seq2seq.encoders.cnn_utils import ConvOutSize
 from neural_sp.models.seq2seq.encoders.cnn_utils import Maxout
 
@@ -90,7 +89,7 @@ class CNNEncoder(nn.Module):
                 raise NotImplementedError()
                 act = Maxout(1, 1, 2)
             else:
-                raise NotImplementedError()
+                raise NotImplementedError(activation)
             layers[activation + '_' + str(l)] = act
 
             # Max Pooling
@@ -136,12 +135,10 @@ class CNNEncoder(nn.Module):
         """Forward computation.
 
         Args:
-            xs (torch.autograd.Variable, float): A tensor of size
-                `[B, T, input_dim (+Δ, ΔΔ)]`
+            xs (torch.autograd.Variable, float): `[B, T, input_dim (+Δ, ΔΔ)]`
             x_lens (list): A list of length `[B]`
         Returns:
-            xs (torch.autograd.Variable, float): A tensor of size
-                `[B, T', feature_dim]`
+            xs (torch.autograd.Variable, float): `[B, T', feature_dim]`
             x_lens (list): A list of length `[B]`
 
         """
@@ -151,22 +148,16 @@ class CNNEncoder(nn.Module):
         # Dropout for inputs-hidden connection
         xs = self.dropout_in(xs)
 
-        # Reshape to 4D tensor
+        # Reshape to 4D tensor `[B, in_ch, max_time, freq // in_ch]`
+        xs = xs.view(batch_size, max_time, self.in_channel, input_dim // self.in_channel)
         xs = xs.transpose(1, 2).contiguous()
-        if self.in_channel > 1:
-            xs = xs.view(batch_size, self.in_channel,
-                         input_dim // self.in_channel, max_time)
-            # NOTE: xs: `[B, in_ch (3), freq // in_ch, max_time]`
-        else:
-            xs = xs.unsqueeze(1)
-            # NOTE: xs: `[B, in_ch (1), freq, max_time]`
 
         xs = self.layers(xs)
-        # NOTE: xs: `[B, out_ch, new_freq, new_time]`
+        # NOTE: xs: `[B, out_ch, new_time, new_freq]`
 
         # Collapse feature dimension
-        out_ch, freq, time = xs.size()[1:]
-        xs = xs.transpose(1, 3).contiguous()
+        out_ch, time, freq = xs.size()[1:]
+        xs = xs.transpose(1, 2).contiguous()
         xs = xs.view(batch_size, time, freq * out_ch)
         # NOTE: xs: `[B, new_time, out_ch * new_freq]`
 

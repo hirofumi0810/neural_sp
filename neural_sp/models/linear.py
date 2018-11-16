@@ -39,11 +39,9 @@ class LinearND(nn.Module):
         """Forward computation.
 
         Args:
-            xs (torch.autograd.Variable, float): A tensor of size
-                `[B, T, input_dim]`
+            xs (torch.autograd.Variable, float): `[B, T, input_dim]`
         Returns:
-            xs (torch.autograd.Variable, float): A tensor of size
-                `[B, T, size[-1]]`
+            xs (torch.autograd.Variable, float): `[B, T, size[-1]]`
 
         """
         size = list(xs.size())
@@ -78,10 +76,9 @@ class Embedding(nn.Module):
         """Forward computation.
 
         Args:
-            y (torch.autograd.Variable, long): A tensor of size `[B, L]`
+            y (torch.autograd.Variable, long): `[B, L]`
         Returns:
-            y (torch.autograd.Variable, float): A tensor of size
-                `[B, L, emb_dim]`
+            y (torch.autograd.Variable, float): `[B, L, emb_dim]`
 
         """
         y = self.embed(y)

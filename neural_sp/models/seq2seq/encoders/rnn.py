@@ -241,23 +241,22 @@ class RNNEncoder(nn.Module):
         """Forward computation.
 
         Args:
-            xs (torch.autograd.Variable, float): A tensor of size
-                `[B, T, input_dim]`
-            x_lens (list): A tensor of size `[B]`
+            xs (torch.autograd.Variable, float): `[B, T, input_dim]`
+            x_lens (list): `[B]`
         Returns:
             xs (torch.autograd.Variable, float):
-                if batch_first is True, a tensor of size
+                if batch_first is True
                     `[B, T // sum(subsample), num_units (* num_directions)]`
                 else
                     `[T // sum(subsample), B, num_units (* num_directions)]`
-            x_lens (list): A tensor of size `[B]`
+            x_lens (list): `[B]`
             OPTION:
                 xs_sub (torch.autograd.Variable, float):
-                    if batch_first is True, a tensor of size
+                    if batch_first is True
                         `[B, T // sum(subsample), num_units (* num_directions)]`
                     else
                         `[T // sum(subsample), B, num_units (* num_directions)]`
-                x_lens_sub (list): A tensor of size `[B]`
+                x_lens_sub (list): `[B]`
 
         """
         # Dropout for inputs-hidden connection

@@ -184,6 +184,7 @@ class Seq2seq(ModelBase):
                           ctc_weight=args.ctc_weight if dir == 'fwd' or (
                               dir == 'bwd' and self.fwd_weight == 0) else 0,
                           ctc_fc_list=args.ctc_fc_list,
+                          input_feeding=args.input_feeding,
                           backward=(dir == 'bwd'),
                           rnnlm_cold_fusion=args.rnnlm_cold_fusion,
                           cold_fusion=args.cold_fusion,
@@ -286,10 +287,11 @@ class Seq2seq(ModelBase):
             xs (list): A list of length `[B]`, which contains arrays of size `[T, input_dim]`
             ys (list): A list of length `[B]`, which contains arrays of size `[L]`
             ys_sub (list): A list of lenght `[B]`, which contains arrays of size `[L_sub]`
+            reporter ():
             is_eval (bool): the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (torch.autograd.Variable(float)): A tensor of size `[1]`
+            loss (torch.autograd.Variable(float)): `[1]`
             acc (float): Token-level accuracy in teacher-forcing
 
         """
@@ -346,7 +348,7 @@ class Seq2seq(ModelBase):
             report['loss.ctc-sub'] = report_sub['loss_ctc']
             report['acc.sub'] = report_sub['acc']
 
-        # TODO(hirofumi): report here
+        # Report here
         if reporter is not None:
             reporter.step(observation=report, is_eval=is_eval)
 
@@ -358,13 +360,11 @@ class Seq2seq(ModelBase):
         Args:
             xs (list): A list of length `[B]`, which contains Variables of size `[T, input_dim]`
         Returns:
-            xs (torch.autograd.Variable, float): A tensor of size
-                `[B, T, enc_num_units]`
-            x_lens (list): A tensor of size `[B]`
+            xs (torch.autograd.Variable, float): `[B, T, enc_units]`
+            x_lens (list): `[B]`
             OPTION:
-                xs_sub (torch.autograd.Variable, float): A tensor of size
-                    `[B, T, enc_num_units]`
-                x_lens_sub (list): A tensor of size `[B]`
+                xs_sub (torch.autograd.Variable, float): `[B, T, enc_units]`
+                x_lens_sub (list): `[B]`
 
         """
         if self.input_type == 'speech':

@@ -37,20 +37,16 @@ class BeamSearchDecoder(object):
 
         Args:
             log_probs (torch.autograd.Variable): The output log-scale probabilities
-                (e.g. post-softmax) for each time step.
-                A tensor of size `[B, T, num_classes]`
-            x_lens (list): A tensor of size `[B]`
+                (e.g. post-softmax) for each time step. `[B, T, num_classes]`
+            x_lens (list): A list of length `[B]`
             beam_width (int): the size of beam
             rnnlm ():
             rnnlm_weight (float): language model weight
             length_penalty (float): insertion bonus
-            space_index (int, optional): the index of the space label
-                This is used for character-level CTC.
+            space_index (int, optional): the index of the space label This is used for character-level CTC.
         Returns:
-            best_hyps (list): Best path hypothesis.
-                A tensor of size `[B, labels_max_seq_len]`
-            best_hyps_lens (list): Lengths of best path hypothesis.
-                A tensor of size `[B]`
+            best_hyps (list): Best path hypothesis. `[B, labels_max_seq_len]`
+            best_hyps_lens (list): Lengths of best path hypothesis. `[B]`
 
         """
         assert isinstance(log_probs, torch.autograd.Variable)
