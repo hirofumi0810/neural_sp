@@ -151,6 +151,8 @@ parser.add_argument('--init_with_enc', type=bool, default=False,
                     help='')
 parser.add_argument('--emb_dim', type=int, default=320,
                     help='')
+parser.add_argument('--input_feeding', type=bool, default=False,
+                    help='')
 parser.add_argument('--ctc_fc_list', type=list, default=[],
                     help='')
 parser.add_argument('--ctc_fc_list_sub', type=list, default=[],
@@ -219,6 +221,8 @@ parser.add_argument('--ss_type', type=str, default='constant',
                     help='')
 parser.add_argument('--lsm_prob', type=float, default=0.0,
                     help='')
+parser.add_argument('--layer_norm', default=False,
+                    help='Layer notmalization')
 # MTL
 parser.add_argument('--ctc_weight', type=float, default=0.0,
                     help='')
@@ -378,6 +382,8 @@ def main():
     model.name += '_bs' + str(args.batch_size)
     model.name += '_ss' + str(args.ss_prob)
     model.name += '_ls' + str(args.lsm_prob)
+    if args.layer_norm:
+        model.name += '_layernorm'
     if args.ctc_weight > 0:
         model.name += '_ctc' + str(args.ctc_weight)
     if args.bwd_weight > 0:
@@ -582,22 +588,22 @@ def main():
                     if args.label_type == 'word':
                         metric_dev = eval_word([model.module], dev_set, decode_params,
                                                epoch=epoch)[0]
-                        logger.info('  WER (%s): %.3f %%' % (dev_set.set, metric_dev))
+                        logger.info('WER (%s): %.3f %%' % (dev_set.set, metric_dev))
                     elif args.label_type == 'wp':
                         metric_dev = eval_wordpiece([model.module], dev_set, decode_params,
                                                     epoch=epoch)[0]
-                        logger.info('  WER (%s): %.3f %%' % (dev_set.set, metric_dev))
+                        logger.info('WER (%s): %.3f %%' % (dev_set.set, metric_dev))
                     elif 'char' in args.label_type:
                         metric_dev = eval_char([model.module], dev_set, decode_params,
                                                epoch=epoch)[1][0]
-                        logger.info('  CER (%s): %.3f %%' % (dev_set.set, metric_dev))
+                        logger.info('CER (%s): %.3f %%' % (dev_set.set, metric_dev))
                     elif 'phone' in args.label_type:
                         metric_dev = eval_phone([model.module], dev_set, decode_params,
                                                 epoch=epoch)[0]
-                        logger.info('  PER (%s): %.3f %%' % (dev_set.set, metric_dev))
+                        logger.info('PER (%s): %.3f %%' % (dev_set.set, metric_dev))
                 elif args.metric == 'loss':
                     metric_dev = eval_loss([model.module], dev_set, decode_params)
-                    logger.info('  Loss (%s): %.3f %%' % (dev_set.set, metric_dev))
+                    logger.info('Loss (%s): %.3f %%' % (dev_set.set, metric_dev))
                 else:
                     raise NotImplementedError()
 
@@ -623,22 +629,22 @@ def main():
                             if args.label_type == 'word':
                                 wer_test = eval_word([model.module], eval_set, decode_params,
                                                      epoch=epoch)[0]
-                                logger.info('  WER (%s): %.3f %%' % (eval_set.set, wer_test))
+                                logger.info('WER (%s): %.3f %%' % (eval_set.set, wer_test))
                             elif args.label_type == 'wp':
                                 wer_test = eval_wordpiece([model.module], eval_set, decode_params,
                                                           epoch=epoch)[0]
-                                logger.info('  WER (%s): %.3f %%' % (eval_set.set, wer_test))
+                                logger.info('WER (%s): %.3f %%' % (eval_set.set, wer_test))
                             elif 'char' in args.label_type:
                                 cer_test = eval_char([model.module], eval_set, decode_params,
                                                      epoch=epoch)[1][0]
-                                logger.info('  CER (%s): %.3f / %.3f %%' % (eval_set.set, cer_test))
+                                logger.info('CER (%s): %.3f / %.3f %%' % (eval_set.set, cer_test))
                             elif 'phone' in args.label_type:
                                 per_test = eval_phone([model.module], eval_set, decode_params,
                                                       epoch=epoch)[0]
-                                logger.info('  PER (%s): %.3f %%' % (eval_set.set, per_test))
+                                logger.info('PER (%s): %.3f %%' % (eval_set.set, per_test))
                         elif args.metric == 'loss':
                             loss_test = eval_loss([model.module], eval_set, decode_params)
-                            logger.info('  Loss (%s): %.3f %%' % (eval_set.set, loss_test))
+                            logger.info('Loss (%s): %.3f %%' % (eval_set.set, loss_test))
                         else:
                             raise NotImplementedError()
                 else:

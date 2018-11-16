@@ -100,7 +100,8 @@ class Seq2seq(ModelBase):
                                   conv_poolings=args.conv_poolings,
                                   conv_batch_norm=args.conv_batch_norm,
                                   residual=args.enc_residual,
-                                  nin=0)
+                                  nin=0,
+                                  layer_norm=args.layer_norm)
         elif args.enc_type == 'cnn':
             assert args.num_stack == 1 and args.num_splice == 1
             self.enc = CNNEncoder(input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
@@ -180,6 +181,7 @@ class Seq2seq(ModelBase):
                           dropout_emb=args.dropout_emb,
                           ss_prob=args.ss_prob,
                           lsm_prob=args.lsm_prob,
+                          layer_norm=args.layer_norm,
                           init_with_enc=args.init_with_enc,
                           ctc_weight=args.ctc_weight if dir == 'fwd' or (
                               dir == 'bwd' and self.fwd_weight == 0) else 0,
@@ -241,6 +243,7 @@ class Seq2seq(ModelBase):
                                         dropout_emb=args.dropout_emb,
                                         ss_prob=args.ss_prob,
                                         lsm_prob=args.lsm_prob,
+                                        layer_norm=args.layer_norm,
                                         init_with_enc=args.init_with_enc,
                                         ctc_weight=args.ctc_weight_sub,
                                         ctc_fc_list=args.ctc_fc_list_sub,

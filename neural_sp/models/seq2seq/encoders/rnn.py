@@ -52,6 +52,7 @@ class RNNEncoder(nn.Module):
         num_layers_sub (int): the number of layers in the sub task
         nin (int): if larger than 0, insert 1*1 conv (filter size: nin)
             and ReLU activation between each LSTM layer
+        layer_norm (bool): layer normalization
 
     """
 
@@ -76,7 +77,8 @@ class RNNEncoder(nn.Module):
                  conv_batch_norm,
                  residual,
                  num_layers_sub=0,
-                 nin=0):
+                 nin=0,
+                 layer_norm=False):
 
         super(RNNEncoder, self).__init__()
 
@@ -94,6 +96,7 @@ class RNNEncoder(nn.Module):
         self.num_projs = num_projs if num_projs is not None else 0
         self.num_layers = num_layers
         self.batch_first = batch_first
+        self.layer_norm = layer_norm
 
         # Setting for hierarchical encoder
         self.num_layers_sub = num_layers_sub

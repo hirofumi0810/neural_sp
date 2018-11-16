@@ -61,6 +61,7 @@ class Decoder(nn.Module):
         dropout_emb (float): the probability to drop nodes of the embedding layer
         ss_prob (float): the probability of scheduled sampling
         lsm_prob (float): the probability of label smoothing
+        layer_norm (bool): layer normalization
         init_with_enc (bool):
         ctc_weight (float):
         ctc_fc_list (list):
@@ -94,6 +95,7 @@ class Decoder(nn.Module):
                  dropout_emb,
                  ss_prob,
                  lsm_prob,
+                 layer_norm,
                  init_with_enc=False,
                  ctc_weight=0.,
                  ctc_fc_list=[],
@@ -123,6 +125,7 @@ class Decoder(nn.Module):
         self.dropout_emb = dropout_emb
         self.ss_prob = ss_prob
         self.lsm_prob = lsm_prob
+        self.layer_norm = layer_norm
         self.init_with_enc = init_with_enc
         self.ctc_weight = ctc_weight
         self.ctc_fc_list = ctc_fc_list
