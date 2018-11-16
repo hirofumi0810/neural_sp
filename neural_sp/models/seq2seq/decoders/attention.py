@@ -38,6 +38,7 @@ class AttentionMechanism(nn.Module):
             This is used for location-based attention.
         conv_kernel_size (int): the size of kernel.
             This must be the odd number.
+        dropout (float):
 
     """
 
@@ -49,7 +50,8 @@ class AttentionMechanism(nn.Module):
                  sharpening_factor=1,
                  sigmoid_smoothing=False,
                  conv_out_channels=10,
-                 conv_kernel_size=201):
+                 conv_kernel_size=201,
+                 dropout=0):
 
         super(AttentionMechanism, self).__init__()
 
@@ -59,6 +61,13 @@ class AttentionMechanism(nn.Module):
         self.sigmoid_smoothing = sigmoid_smoothing
         self.num_heads = 1
         self.enc_out_a = None
+        self.mask = None
+
+        # attention dropout applied AFTER the softmax layer
+        if dropout > 0:
+            self.dropout = nn.Dropout(p=dropout)
+        else:
+            self.dropout = None
 
         if self.att_type == 'content':
             self.w_enc = LinearND(enc_num_units, att_dim)
@@ -103,6 +112,7 @@ class AttentionMechanism(nn.Module):
 
     def reset(self):
         self.enc_out_a = None
+        self.mask = None
 
     def forward(self, enc_out, x_lens, dec_out, aw_step):
         """Forward computation.
@@ -142,7 +152,7 @@ class AttentionMechanism(nn.Module):
             energy = self.v(F.tanh(self.enc_out_a + self.w_dec(dec_out) + self.w_conv(conv_feat))).squeeze(2)
 
         elif self.att_type == 'dot_product':
-            energy = torch.bmm(self.enc_out_a, self.w_dec(dec_out).transpose(1, 2)).squeeze(2)
+            energy = torch.matmul(self.enc_out_a, self.w_dec(dec_out).transpose(-2, -1)).squeeze(2)
 
         elif self.att_type == 'luong_dot':
             raise NotImplementedError()
@@ -154,12 +164,12 @@ class AttentionMechanism(nn.Module):
             raise NotImplementedError()
 
         # Mask attention distribution
-        energy_mask = Variable(enc_out.new(batch_size, enc_time).fill_(1.))
-        for b in six.moves.range(batch_size):
-            if x_lens[b] < enc_time:
-                energy_mask[b, x_lens[b]:] = -1024.0
-        energy *= energy_mask
-        # NOTE: energy: `[B, T]`
+        if self.mask is None:
+            self.mask = Variable(enc_out.new(batch_size, enc_time).fill_(1.))
+            for b in six.moves.range(batch_size):
+                if x_lens[b] < enc_time:
+                    self.mask[b, x_lens[b]:] = 0
+        energy = energy.masked_fill_(self.mask == 0, -float('inf'))  # `[B, T]`
 
         # Compute attention weights
         if self.sigmoid_smoothing:
@@ -167,9 +177,13 @@ class AttentionMechanism(nn.Module):
             # for b in six.moves.range(batch_size):
             #     aw_step[b] /= aw_step[b].sum()
         else:
-            aw_step = F.softmax(energy * self.sharpening_factor, dim=-1)
+            aw_step = F.softmax(energy * self.sharpening_factor, dim=-1)  # `[B, T]`
+        # attention dropout
+        if self.dropout is not None:
+            aw_step = self.dropout(aw_step)
 
         # Compute context vector (weighted sum of encoder outputs)
-        context_vec = torch.sum(enc_out * aw_step.unsqueeze(2), dim=1, keepdim=True)
+        # context_vec = torch.sum(enc_out * aw_step.unsqueeze(2), dim=1, keepdim=True)
+        context_vec = torch.matmul(aw_step.unsqueeze(1), enc_out)
 
         return context_vec, aw_step

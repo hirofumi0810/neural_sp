@@ -162,7 +162,8 @@ class Seq2seq(ModelBase):
                             sharpening_factor=args.att_sharpening_factor,
                             sigmoid_smoothing=args.att_sigmoid_smoothing,
                             conv_out_channels=args.att_conv_num_channels,
-                            conv_kernel_size=args.att_conv_width)
+                            conv_kernel_size=args.att_conv_width,
+                            dropout=args.dropout_att)
             else:
                 att = None
 
@@ -234,7 +235,8 @@ class Seq2seq(ModelBase):
                         sharpening_factor=args.att_sharpening_factor,
                         sigmoid_smoothing=args.att_sigmoid_smoothing,
                         conv_out_channels=args.att_conv_num_channels,
-                        conv_kernel_size=args.att_conv_width)
+                        conv_kernel_size=args.att_conv_width,
+                        dropout=args.dropout_att)
             else:
                 att_sub = None
 
