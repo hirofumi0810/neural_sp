@@ -16,7 +16,7 @@ param:
   conv_poolings: []
   conv_batch_norm: False
   enc_type: bgru
-  enc_num_units: 320
+  enc_num_units: 256
   enc_num_projs: 0
   enc_num_layers: 5
   enc_residual: False
@@ -36,11 +36,11 @@ param:
   att_sigmoid_smoothing: False
   bridge_layer: False
   dec_type: gru
-  dec_num_units: 320
+  dec_num_units: 256
   dec_num_projs: 0
   dec_num_layers: 1
   dec_residual: False
-  emb_dim: 320
+  emb_dim: 256
   ctc_fc_list: []
 
   # optimization
@@ -65,9 +65,9 @@ param:
   dropout_emb: 0.2
   weight_decay: 1e-6
   logits_temp: 1.0
-  ss_prob: 0.2
+  ss_prob: 0.05
   ss_type: constant
-  lsm_prob: 0.1
+  lsm_prob: 0.0
 
   # annealing
   decay_type: per_epoch

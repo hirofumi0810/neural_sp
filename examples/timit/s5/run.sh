@@ -13,9 +13,6 @@ gpu=
 ### path to save preproecssed data
 export data=/n/sd8/inaguma/corpus/timit
 
-### vocabulary
-unit=phone
-
 ### path to save the model
 model=/n/sd8/inaguma/result/timit
 
@@ -36,7 +33,7 @@ set -u
 set -o pipefail
 
 if [ -z ${config} ]; then
-  config=conf/attention/${unit}_bgru_att.yml
+  config=conf/attention/phone_bgru_att.yml
 fi
 
 if [ -z ${gpu} ]; then
@@ -90,7 +87,7 @@ fi
 
 
 dict=${data}/dict/${train_set}.txt; mkdir -p ${data}/dict
-if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit} ]; then
+if [ ${stage} -le 2 ] && [ ! -e .done_stage_2 ]; then
   echo ============================================================================
   echo "                      Dataset preparation (stage:2)                        "
   echo ============================================================================
@@ -99,12 +96,9 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit} ]; then
   echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
   echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
   echo "<pad> 3" >> ${dict}
-  if [ ${unit} = char ]; then
-    echo "<space> 4" >> ${dict}
-  fi
   offset=`cat ${dict} | wc -l`
   echo "Making a dictionary..."
-  text2dict.py ${data}/${train_set}/text --unit ${unit} | \
+  text2dict.py ${data}/${train_set}/text --unit phone | \
     sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict} || exit 1;
   echo "vocab size:" `cat ${dict} | wc -l`
 
@@ -114,15 +108,15 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit} ]; then
     echo "Making a csv file for ${x}..."
     dump_dir=${data}/dump/${x}
     make_dataset_csv.sh --feat ${dump_dir}/feats.scp --unit phone \
-      ${data}/${x} ${dict} > ${data}/dataset_csv/${x}_${unit}.csv || exit 1;
+      ${data}/${x} ${dict} > ${data}/dataset_csv/${x}.csv || exit 1;
   done
   for x in ${test_set}; do
     dump_dir=${data}/dump/${x}
     make_dataset_csv.sh --is_test true --feat ${dump_dir}/feats.scp --unit phone \
-      ${data}/${x} ${dict} > ${data}/dataset_csv/${x}_${unit}.csv || exit 1;
+      ${data}/${x} ${dict} > ${data}/dataset_csv/${x}.csv || exit 1;
   done
 
-  touch .done_stage_2_${unit} && echo "Finish creating dataset (stage: 2)."
+  touch .done_stage_2 && echo "Finish creating dataset (stage: 2)."
 fi
 
 # NOTE: skip RNNLM training (stage:3)
@@ -137,14 +131,14 @@ if [ ${stage} -le 4 ]; then
 
   CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/train.py \
     --ngpus ${ngpus} \
-    --train_set ${data}/dataset_csv/${train_set}_${unit}.csv \
-    --dev_set ${data}/dataset_csv/${dev_set}_${unit}.csv \
-    --eval_sets ${data}/dataset_csv/${test_set}_${unit}.csv \
+    --train_set ${data}/dataset_csv/${train_set}.csv \
+    --dev_set ${data}/dataset_csv/${dev_set}.csv \
+    --eval_sets ${data}/dataset_csv/${test_set}.csv \
     --dict ${dict} \
     --config ${config} \
     --model ${model}/asr \
-    --label_type ${unit} || exit 1;
+    --label_type phone || exit 1;
     # --resume_model ${resume_model} || exit 1;
 
-  touch ${model}/.done_training && echo "Finish model training (stage: 4)."
+  echo "Finish model training (stage: 4)."
 fi

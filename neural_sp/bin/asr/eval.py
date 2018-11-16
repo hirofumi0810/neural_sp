@@ -159,6 +159,7 @@ def main():
         if args.label_type == 'word':
             wer, nsub, nins, ndel = eval_word([model], eval_set, decode_params,
                                               epoch=epoch - 1,
+                                              decode_dir=args.decode_dir,
                                               progressbar=True)
             wer_mean += wer
             logger.info('WER (%s): %.3f %%' % (eval_set.set, wer))
@@ -176,6 +177,7 @@ def main():
         elif 'char' in args.label_type:
             (wer, nsub, nins, ndel), (cer, _, _, _) = eval_char([model], eval_set, decode_params,
                                                                 epoch=epoch - 1,
+                                                                decode_dir=args.decode_dir,
                                                                 progressbar=True)
             wer_mean += wer
             cer_mean += cer
@@ -185,6 +187,7 @@ def main():
         elif 'phone' in args.label_type:
             per, nsub, nins, ndel = eval_phone([model], eval_set, decode_params,
                                                epoch=epoch - 1,
+                                               decode_dir=args.decode_dir,
                                                progressbar=True)
             per_mean += per
             logger.info('PER (%s): %.3f %%' % (eval_set.set, per))

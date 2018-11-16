@@ -38,7 +38,7 @@ for eval_set in dev test; do
   mkdir -p ${decode_dir}
 
   CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/eval.py \
-    --eval_sets ${data}/dataset_csv/${eval_set}_phone.csv \
+    --eval_sets ${data}/dataset_csv/${eval_set}.csv \
     --model ${model} \
     --epoch ${epoch} \
     --batch_size ${batch_size} \
