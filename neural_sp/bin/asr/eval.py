@@ -137,9 +137,9 @@ def main():
                 rnnlm.copy_from_seqrnnlm(seq_rnnlm)
 
                 if args_rnnlm.backward:
-                    model.rnnlm_bwd_0 = rnnlm
+                    model.rnnlm_bwd = rnnlm
                 else:
-                    model.rnnlm_fwd_0 = rnnlm
+                    model.rnnlm_fwd = rnnlm
 
                 logger.info('RNNLM path: %s' % args.rnnlm)
                 logger.info('RNNLM weight: %.3f' % args.rnnlm_weight)
