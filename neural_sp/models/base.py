@@ -47,16 +47,16 @@ class ModelBase(nn.Module):
     def num_params_dict(self):
         if not hasattr(self, '_num_params_dict'):
             self._num_params_dict = {}
-            for name, param in self.named_parameters():
-                self._num_params_dict[name] = param.view(-1).size(0)
+            for n, p in self.named_parameters():
+                self._num_params_dict[n] = p.view(-1).size(0)
         return self._num_params_dict
 
     @property
     def total_parameters(self):
         if not hasattr(self, '_num_params'):
             self._num_params = 0
-            for name, param in self.named_parameters():
-                self._num_params += param.view(-1).size(0)
+            for n, p in self.named_parameters():
+                self._num_params += p.view(-1).size(0)
         return self._num_params
 
     @property
@@ -67,8 +67,7 @@ class ModelBase(nn.Module):
     def device_id(self):
         return torch.cuda.device_of(next(self.parameters()).data).idx
 
-    def init_weights(self, param_init, dist,
-                     keys=[None], ignore_keys=[None]):
+    def init_weights(self, param_init, dist, keys=[None], ignore_keys=[None]):
         """Initialize parameters.
 
         Args:
@@ -78,23 +77,23 @@ class ModelBase(nn.Module):
             ignore_keys (list):
 
         """
-        for name, param in self.named_parameters():
-            if keys != [None] and len(list(filter(lambda k: k in name, keys))) == 0:
+        for n, p in self.named_parameters():
+            if keys != [None] and len(list(filter(lambda k: k in n, keys))) == 0:
                 continue
 
-            if ignore_keys != [None] and len(list(filter(lambda k: k in name, ignore_keys))) > 0:
+            if ignore_keys != [None] and len(list(filter(lambda k: k in n, ignore_keys))) > 0:
                 continue
 
             if dist == 'uniform':
-                nn.init.uniform_(param.data, a=-param_init, b=param_init)
+                nn.init.uniform_(p.data, a=-param_init, b=param_init)
             elif dist == 'normal':
                 assert param_init > 0
-                torch.nn.init.normal(param.data, mean=0, std=param_init)
+                torch.nn.init.normal(p.data, mean=0, std=param_init)
             elif dist == 'orthogonal':
-                if param.dim() >= 2:
-                    torch.nn.init.orthogonal(param.data, gain=1)
+                if p.dim() >= 2:
+                    torch.nn.init.orthogonal(p.data, gain=1)
             elif dist == 'constant':
-                torch.nn.init.constant_(param.data, val=param_init)
+                torch.nn.init.constant_(p.data, val=param_init)
             else:
                 raise NotImplementedError
 
@@ -104,27 +103,27 @@ class ModelBase(nn.Module):
             https://discuss.pytorch.org/t/set-forget-gate-bias-of-lstm/1745
 
         """
-        for name, param in self.named_parameters():
-            if 'lstm' in name and 'bias' in name:
-                n = param.size(0)
+        for n, p in self.named_parameters():
+            if 'lstm' in n and 'bias' in n:
+                n = p.size(0)
                 start, end = n // 4, n // 2
-                param.data[start:end].fill_(1.)
+                p.data[start:end].fill_(1.)
 
     def inject_weight_noise(self, mean, std):
         # m = torch.distributions.Normal(
         #     torch.Tensor([mean]), torch.Tensor([std]))
-        # for name, param in self.named_parameters():
+        # for n, p in self.named_parameters():
         #     noise = m.sample()
         #     if self.use_cuda:
         #         noise = noise.cuda(self.device_id)
-        #     param.data += noise
+        #     p.data += noise
 
-        for name, param in self.named_parameters():
-            noise = np.random.normal(loc=mean, scale=std, size=param.size())
+        for n, p in self.named_parameters():
+            noise = np.random.normal(loc=mean, scale=std, size=p.size())
             noise = torch.FloatTensor(noise)
             if self.use_cuda:
                 noise = noise.cuda(self.device_id)
-            param.data += noise
+            p.data += noise
 
     def set_cuda(self, deterministic=True, benchmark=False):
         """Set model to the GPU version.
@@ -175,7 +174,7 @@ class ModelBase(nn.Module):
 
         if optimizer not in OPTIMIZER_CLS_NAMES:
             raise ValueError(
-                "Optimizer name should be one of [%s], you provided %s." %
+                "Optimizer n should be one of [%s], you provided %s." %
                 (", ".join(OPTIMIZER_CLS_NAMES), optimizer))
 
         if optimizer == 'sgd':

@@ -10,7 +10,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import six
 import torch
 from torch.autograd import Variable
 import torch.nn as nn
@@ -137,6 +136,13 @@ class AttentionMechanism(nn.Module):
         if self.enc_out_a is None:
             self.enc_out_a = self.w_enc(enc_out)
 
+        # Mask attention distribution
+        if self.mask is None:
+            self.mask = Variable(enc_out.new(batch_size, enc_time).fill_(1.))
+            for b in range(batch_size):
+                if x_lens[b] < enc_time:
+                    self.mask[b, x_lens[b]:] = 0
+
         if self.att_type in ['content', 'location']:
             dec_out = dec_out.expand_as(torch.zeros((batch_size, enc_time, dec_out.size(2))))
 
@@ -145,10 +151,10 @@ class AttentionMechanism(nn.Module):
 
         elif self.att_type == 'location':
             # For 1D conv
-            # conv_feat = self.conv(aw_step[:, :].contiguous().unsqueeze(dim=1))
+            # conv_feat = self.conv(aw_step[:, :].contiguous().unsqueeze(1))
             # For 2D conv
-            conv_feat = self.conv(aw_step.view(batch_size, 1, 1, enc_time)).squeeze(2)  # -> `[B, conv_out_channels, T]`
-            conv_feat = conv_feat.transpose(1, 2).contiguous()  # -> `[B, T, conv_out_channels]`
+            conv_feat = self.conv(aw_step.view(batch_size, 1, 1, enc_time)).squeeze(2)  # `[B, conv_out_channels, T]`
+            conv_feat = conv_feat.transpose(1, 2).contiguous()  # `[B, T, conv_out_channels]`
             energy = self.v(F.tanh(self.enc_out_a + self.w_dec(dec_out) + self.w_conv(conv_feat))).squeeze(2)
 
         elif self.att_type == 'dot_product':
@@ -163,18 +169,11 @@ class AttentionMechanism(nn.Module):
         elif self.att_type == 'luong_concat':
             raise NotImplementedError()
 
-        # Mask attention distribution
-        if self.mask is None:
-            self.mask = Variable(enc_out.new(batch_size, enc_time).fill_(1.))
-            for b in six.moves.range(batch_size):
-                if x_lens[b] < enc_time:
-                    self.mask[b, x_lens[b]:] = 0
-        energy = energy.masked_fill_(self.mask == 0, -float('inf'))  # `[B, T]`
-
         # Compute attention weights
+        energy = energy.masked_fill_(self.mask == 0, -float('inf'))  # `[B, T]`
         if self.sigmoid_smoothing:
             aw_step = F.sigmoid(energy * self.sharpening_factor)
-            # for b in six.moves.range(batch_size):
+            # for b in range(batch_size):
             #     aw_step[b] /= aw_step[b].sum()
         else:
             aw_step = F.softmax(energy * self.sharpening_factor, dim=-1)  # `[B, T]`

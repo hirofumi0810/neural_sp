@@ -15,7 +15,6 @@ import logging
 import math
 import numpy as np
 import random
-import six
 import torch
 from torch.autograd import Variable
 import torch.nn as nn
@@ -59,8 +58,8 @@ class Decoder(nn.Module):
         logits_temp (float): a parameter for smoothing the softmax layer in outputing probabilities
         dropout_hidden (float): the probability to drop nodes in the RNN layer
         dropout_emb (float): the probability to drop nodes of the embedding layer
-        ss_prob (float): the probability of scheduled sampling
-        lsm_prob (float): the probability of label smoothing
+        ss_prob (float): scheduled sampling probability
+        lsm_prob (float): label smoothing probability
         layer_norm (bool): layer normalization
         init_with_enc (bool):
         ctc_weight (float):
@@ -142,7 +141,7 @@ class Decoder(nn.Module):
             # Fully-connected layers for CTC
             if len(ctc_fc_list) > 0:
                 fc_layers = OrderedDict()
-                for i in six.moves.range(len(ctc_fc_list)):
+                for i in range(len(ctc_fc_list)):
                     input_dim = enc_num_units if i == 0 else ctc_fc_list[i - 1]
                     fc_layers['fc' + str(i)] = LinearND(input_dim, ctc_fc_list[i], dropout=dropout_hidden)
                 fc_layers['fc' + str(len(ctc_fc_list))] = LinearND(ctc_fc_list[-1], vocab, dropout=0)
@@ -187,7 +186,7 @@ class Decoder(nn.Module):
                     self.gru_l0 = nn.GRUCell(emb_dim + enc_num_units, num_units)
             self.dropout_l0 = nn.Dropout(p=dropout_hidden)
 
-            for i_l in six.moves.range(1, num_layers):
+            for i_l in range(1, num_layers):
                 if rnn_type == 'lstm':
                     rnn_i = nn.LSTMCell(num_units, num_units)
                 elif rnn_type == 'gru':
@@ -293,11 +292,11 @@ class Decoder(nn.Module):
         if self.rnnlm_cf:
             ys_lm_emb = self.rnnlm_cf.embed(ys_in_pad)
             # ys_lm_emb = [self.rnnlm_cf.embed(ys_in_pad[:, t:t + 1])
-            #              for t in six.moves.range(ys_in_pad.size(1))]
+            #              for t in range(ys_in_pad.size(1))]
             # ys_lm_emb = torch.cat(ys_lm_emb, dim=1)
 
         logits_att, logits_lm = [], []
-        for t in six.moves.range(ys_in_pad.size(1)):
+        for t in range(ys_in_pad.size(1)):
             is_sample = t > 0 and self.ss_prob > 0 and random.random() < self.ss_prob
 
             # Score
@@ -348,24 +347,21 @@ class Decoder(nn.Module):
         if self.lsm_prob > 0:
             # Label smoothing
             y_lens = [y.size(0) for y in ys_out]
-            loss_att = cross_entropy_lsm(
-                logits_att, ys=ys_out_pad, y_lens=y_lens,
-                lsm_prob=self.lsm_prob, size_average=True)
+            loss_att = cross_entropy_lsm(logits_att, ys=ys_out_pad, y_lens=y_lens,
+                                         lsm_prob=self.lsm_prob, size_average=True)
         else:
-            loss_att = F.cross_entropy(
-                input=logits_att.view((-1, logits_att.size(2))),
-                target=ys_out_pad.view(-1),  # long
-                ignore_index=-1, size_average=False) / len(enc_out)
+            loss_att = F.cross_entropy(input=logits_att.view((-1, logits_att.size(2))),
+                                       target=ys_out_pad.view(-1),  # long
+                                       ignore_index=-1, size_average=False) / len(enc_out)
         # loss += loss_att * (1 - self.ctc_weight)
         loss += loss_att * (self.global_weight - self.ctc_weight)
 
         # Compute XE loss for RNNLM objective
         if self.rnnlm_task_weight > 0:
             logits_lm = torch.cat(logits_lm, dim=1)
-            loss_lm = F.cross_entropy(
-                input=logits_lm.view((-1, logits_lm.size(2))),
-                target=ys_out_pad[:, 1:].contiguous().view(-1),
-                ignore_index=-1, size_average=True)
+            loss_lm = F.cross_entropy(input=logits_lm.view((-1, logits_lm.size(2))),
+                                      target=ys_out_pad[:, 1:].contiguous().view(-1),
+                                      ignore_index=-1, size_average=True)
             loss += loss_lm * self.rnnlm_task_weight
         else:
             loss_lm = Variable(enc_out.new(1,).fill_(0.))
@@ -404,13 +400,13 @@ class Decoder(nn.Module):
             if enc_out.size(-1) == self.num_units:
                 # unidirectinal encoder
                 dec_out = torch.cat([enc_out[b:b + 1, enc_lens[b] - 1:enc_lens[b]]
-                                     for b in six.moves.range(len(enc_lens))], dim=0)
+                                     for b in range(len(enc_lens))], dim=0)
             else:
                 raise NotImplementedError()
                 # TODO(hirofumi): add bridge layer
                 # bidirectional encoder
                 dec_out = torch.cat([enc_out[b:b + 1, 0:1, self.num_units:]
-                                     for b in six.moves.range(len(enc_lens))], dim=0)
+                                     for b in range(len(enc_lens))], dim=0)
                 # NOTE: initialize with reverse direction
             dec_out = torch.tanh(dec_out)
             hx_list = [dec_out.clone().squeeze(1)] * self.num_layers
@@ -471,7 +467,7 @@ class Decoder(nn.Module):
                 hx_list[0] = self.gru_l0(torch.cat([y_emb, context_vec], dim=-1), hx_list[0])
         hx_list[0] = self.dropout_l0(hx_list[0])
 
-        for i_l in six.moves.range(1, self.num_layers):
+        for i_l in range(1, self.num_layers):
             if self.rnn_type == 'lstm':
                 hx_list[i_l], cx_list[i_l] = getattr(self, 'lstm_l' + str(i_l))(
                     hx_list[i_l - 1], (hx_list[i_l], cx_list[i_l]))
@@ -523,7 +519,7 @@ class Decoder(nn.Module):
             max_len_ratio (int): the maximum sequence length of tokens
             exclude_eos (bool):
         Returns:
-            nbest_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
+            best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
             aw (list): A list of length `[B]`, which contains arrays of size `[L, T]`
 
         """
@@ -547,7 +543,7 @@ class Decoder(nn.Module):
         _best_hyps, _aws = [], []
         y_lens = np.zeros((batch_size,), dtype=np.int32)
         eos_flags = [False] * batch_size
-        for t in six.moves.range(int(math.floor(enc_time * max_len_ratio)) + 1):
+        for t in range(int(math.floor(enc_time * max_len_ratio)) + 1):
             # Score
             context_vec, aw = self.score(enc_out, enc_lens, dec_out, aw)
 
@@ -576,7 +572,7 @@ class Decoder(nn.Module):
             _aws += [aw]
 
             # Count lengths of hypotheses
-            for b in six.moves.range(batch_size):
+            for b in range(batch_size):
                 if not eos_flags[b]:
                     if y[b].item() == eos:
                         eos_flags[b] = True
@@ -607,22 +603,22 @@ class Decoder(nn.Module):
         # Truncate by the first <eos> (<sos> in case of the backward decoder)
         if self.backward:
             # Reverse the order
-            nbest_hyps = [_best_hyps[b, :y_lens[b]][::-1] for b in six.moves.range(batch_size)]
-            aws = [_aws[b, :y_lens[b]][::-1] for b in six.moves.range(batch_size)]
+            best_hyps = [_best_hyps[b, :y_lens[b]][::-1] for b in range(batch_size)]
+            aws = [_aws[b, :y_lens[b]][::-1] for b in range(batch_size)]
         else:
-            nbest_hyps = [_best_hyps[b, :y_lens[b]] for b in six.moves.range(batch_size)]
-            aws = [_aws[b, :y_lens[b]] for b in six.moves.range(batch_size)]
+            best_hyps = [_best_hyps[b, :y_lens[b]] for b in range(batch_size)]
+            aws = [_aws[b, :y_lens[b]] for b in range(batch_size)]
 
         # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:
             if self.backward:
-                nbest_hyps = [nbest_hyps[b][1:] if eos_flags[b]
-                              else nbest_hyps[b] for b in six.moves.range(batch_size)]
+                best_hyps = [best_hyps[b][1:] if eos_flags[b]
+                             else best_hyps[b] for b in range(batch_size)]
             else:
-                nbest_hyps = [nbest_hyps[b][:-1] if eos_flags[b]
-                              else nbest_hyps[b] for b in six.moves.range(batch_size)]
+                best_hyps = [best_hyps[b][:-1] if eos_flags[b]
+                             else best_hyps[b] for b in range(batch_size)]
 
-        return nbest_hyps, aws
+        return best_hyps, aws
 
     def beam_search(self, enc_out, enc_lens, params, rnnlm, nbest=1,
                     exclude_eos=False, idx2token=None, refs=None):
@@ -666,7 +662,7 @@ class Decoder(nn.Module):
 
         nbest_hyps, aws, scores = [], [], []
         eos_flags = []
-        for b in six.moves.range(batch_size):
+        for b in range(batch_size):
             # Initialization per utterance
             dec_out, (hx_list, cx_list) = self.init_dec_state(enc_out[b:b + 1], enc_lens[b:b + 1], self.num_layers)
             _dec_out, _dec_state = self.init_dec_state(enc_out[b:b + 1], enc_lens[b:b + 1], 1)
@@ -687,9 +683,9 @@ class Decoder(nn.Module):
                      'prev_cov': 0,
                      '_dec_out': _dec_out,
                      '_dec_state': _dec_state}]
-            for t in six.moves.range(int(math.floor(enc_lens[b] * params['max_len_ratio'])) + 1):
+            for t in range(int(math.floor(enc_lens[b] * params['max_len_ratio'])) + 1):
                 new_beam = []
-                for i_beam in six.moves.range(len(beam)):
+                for i_beam in range(len(beam)):
                     if t > 0:
                         # Recurrency
                         y = Variable(enc_out.new(1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
@@ -745,7 +741,7 @@ class Decoder(nn.Module):
                     log_probs_topk, indices_topk = torch.topk(
                         log_probs, k=params['beam_width'], dim=1, largest=True, sorted=True)
 
-                    for k in six.moves.range(params['beam_width']):
+                    for k in range(params['beam_width']):
                         # Exclude short hypotheses
                         if indices_topk[0, k].item() == eos and len(beam[i_beam]['hyp']) < enc_lens[b] * params['min_len_ratio']:
                             continue
@@ -845,7 +841,7 @@ class Decoder(nn.Module):
                 logger.info('log prob (hyp): %.3f' % complete[n]['score'])
 
         # Concatenate in L dimension
-        for b in six.moves.range(len(aws)):
+        for b in range(len(aws)):
             for n in range(nbest):
                 aws[b][n] = var2np(torch.stack(aws[b][n], dim=1).squeeze(0))
                 if self.score.num_heads > 1:

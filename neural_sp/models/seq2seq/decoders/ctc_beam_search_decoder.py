@@ -11,7 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-import six
 import torch
 import torch.nn.functional as F
 
@@ -54,7 +53,7 @@ class BeamSearchDecoder(object):
         batch_size, _, vocab = log_probs.size()
         best_hyps = []
 
-        for b in six.moves.range(batch_size):
+        for b in range(batch_size):
             # Elements in the beam are (prefix, (p_blank, p_no_blank))
             # Initialize the beam with the empty sequence, a probability of
             # 1 for ending in blank and zero for ending in non-blank
@@ -65,7 +64,7 @@ class BeamSearchDecoder(object):
                      'rnnlm_score': LOG_1,
                      'rnnlm_state': None}]
 
-            for t in six.moves.range(x_lens[b]):
+            for t in range(x_lens[b]):
                 new_beam = []
 
                 # Pick up the top-k scores
@@ -78,7 +77,7 @@ class BeamSearchDecoder(object):
                     # The variables p_blank and p_nonblank are respectively the
                     # probabilities for the prefix given that it ends in a
                     # blank and does not end in a blank at this time step.
-                    for i_beam in six.moves.range(len(beam)):
+                    for i_beam in range(len(beam)):
                         prefix = beam[i_beam]['hyp']
                         p_blank = beam[i_beam]['p_blank']
                         p_nonblank = beam[i_beam]['p_nonblank']

@@ -4,7 +4,7 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""General sequence-to-sequence model (including CTC)."""
+"""Attention-based RNN sequence-to-sequence model (including CTC)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -35,7 +35,7 @@ logger = logging.getLogger("training")
 
 
 class Seq2seq(ModelBase):
-    """Attention-based sequence-to-sequence model (including CTC)."""
+    """Attention-based RNN sequence-to-sequence model (including CTC)."""
 
     def __init__(self, args):
 
@@ -138,11 +138,11 @@ class Seq2seq(ModelBase):
                 # Attention layer
                 if dir == 'bwd' and self.fwd_weight > 0 and args.share_fwd_bwd_attention:
                     logger.info('share fwd-bwd attention')
-                    att = self.dec_fwd.score
+                    attn = self.dec_fwd.score
                 else:
                     if args.att_num_heads > 1:
                         logger.info('multi-head attention')
-                        att = MultiheadAttentionMechanism(
+                        attn = MultiheadAttentionMechanism(
                             enc_num_units=self.enc_num_units,
                             dec_num_units=args.dec_num_units,
                             att_type=args.att_type,
@@ -154,7 +154,7 @@ class Seq2seq(ModelBase):
                             num_heads=args.att_num_heads)
                     else:
                         logger.info('single-head attention')
-                        att = AttentionMechanism(
+                        attn = AttentionMechanism(
                             enc_num_units=self.enc_num_units,
                             dec_num_units=args.dec_num_units,
                             att_type=args.att_type,
@@ -165,7 +165,7 @@ class Seq2seq(ModelBase):
                             conv_kernel_size=args.att_conv_width,
                             dropout=args.dropout_att)
             else:
-                att = None
+                attn = None
 
             # Cold fusion
             if args.rnnlm_cold_fusion and dir == 'fwd':
@@ -176,7 +176,7 @@ class Seq2seq(ModelBase):
                 args.rnnlm_cold_fusion = False
 
             # Decoder
-            dec = Decoder(attention=att,
+            dec = Decoder(attention=attn,
                           sos=self.sos,
                           eos=self.eos,
                           pad=self.pad,
@@ -276,6 +276,9 @@ class Seq2seq(ModelBase):
         # Initialize weight matrices
         self.init_weights(args.param_init, dist=args.param_init_dist, ignore_keys=['bias'])
 
+        # Initialize CNN layers like chainer
+        self.init_weights(args.param_init, dist='lecun', keys=['conv'], ignore_keys=['score'])
+
         # Initialize all biases with 0
         self.init_weights(0, dist='constant', keys=['bias'])
 
@@ -325,7 +328,7 @@ class Seq2seq(ModelBase):
             xs = [xs[i] for i in perm_idx]
             ys = [ys[i] for i in perm_idx]
             # NOTE: must be descending order for pack_padded_sequence
-            xs, x_lens, xs_sub, x_lens_sub = self._encode(xs)
+            xs, x_lens, xs_sub, x_lens_sub = self.encode(xs)
         else:
             # Sort by lenghts in the descending order
             perm_idx = sorted(list(six.moves.range(0, len(ys_sub), 1)),
@@ -333,7 +336,7 @@ class Seq2seq(ModelBase):
             ys = [ys[i] for i in perm_idx]
             ys_sub = [ys_sub[i] for i in perm_idx]
             # NOTE: must be descending order for pack_padded_sequence
-            xs, x_lens, xs_sub, x_lens_sub = self._encode(ys_sub)
+            xs, x_lens, xs_sub, x_lens_sub = self.encode(ys_sub)
 
         report = {}
 
@@ -371,8 +374,8 @@ class Seq2seq(ModelBase):
 
         return loss, reporter
 
-    def _encode(self, xs):
-        """Encode acoustic features.
+    def encode(self, xs):
+        """Encode acoustic or text features.
 
         Args:
             xs (list): A list of length `[B]`, which contains Variables of size `[T, input_dim]`
@@ -460,7 +463,7 @@ class Seq2seq(ModelBase):
         # NOTE: must be descending order for pack_padded_sequence
 
         # Encode input features
-        enc_out, x_lens, enc_out_sub, x_lens_sub = self._encode(xs)
+        enc_out, x_lens, enc_out_sub, x_lens_sub = self.encode(xs)
 
         dir = 'fwd' if self.fwd_weight >= self.bwd_weight else 'bwd'
 

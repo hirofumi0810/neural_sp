@@ -12,7 +12,6 @@ from __future__ import print_function
 
 from itertools import groupby
 import numpy as np
-import six
 
 
 class GreedyDecoder(object):
@@ -34,10 +33,10 @@ class GreedyDecoder(object):
         best_hyps = []
 
         # Pickup argmax class
-        for b in six.moves.range(batch_size):
+        for b in range(batch_size):
             indices = []
             time = x_lens[b]
-            for t in six.moves.range(time):
+            for t in range(time):
                 argmax = np.argmax(logits[b, t], axis=0)
                 indices.append(argmax)
 

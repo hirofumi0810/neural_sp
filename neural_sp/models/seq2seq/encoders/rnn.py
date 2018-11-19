@@ -12,7 +12,6 @@ from __future__ import print_function
 
 import copy
 import numpy as np
-import six
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -174,7 +173,7 @@ class RNNEncoder(nn.Module):
             self.dropout_top = nn.Dropout(p=dropout_hidden)
 
         else:
-            for i_l in six.moves.range(num_layers):
+            for i_l in range(num_layers):
                 if i_l == 0:
                     enc_in_dim = input_dim
                 elif nin > 0:
@@ -189,27 +188,20 @@ class RNNEncoder(nn.Module):
                         enc_in_dim *= 2
 
                 if 'lstm' in rnn_type:
-                    rnn_i = nn.LSTM(enc_in_dim,
-                                    hidden_size=num_units,
-                                    num_layers=1,
-                                    bias=True,
-                                    batch_first=batch_first,
-                                    dropout=0,
-                                    bidirectional=self.bidirectional)
+                    rnn_i = nn.LSTM
                 elif 'gru' in rnn_type:
-                    rnn_i = nn.GRU(enc_in_dim,
-                                   hidden_size=num_units,
-                                   num_layers=1,
-                                   bias=True,
-                                   batch_first=batch_first,
-                                   dropout=0,
-                                   bidirectional=self.bidirectional)
+                    rnn_i = nn.GRU
                 else:
                     raise ValueError('rnn_type must be "lstm" or "gru".')
 
-                setattr(self, rnn_type + '_l' + str(i_l), rnn_i)
+                setattr(self, rnn_type + '_l' + str(i_l), rnn_i(enc_in_dim,
+                                                                hidden_size=num_units,
+                                                                num_layers=1,
+                                                                bias=True,
+                                                                batch_first=batch_first,
+                                                                dropout=0,
+                                                                bidirectional=self.bidirectional))
                 enc_out_dim = num_units * self.num_directions
-                # TODO(hirofumi): check this
 
                 # Dropout for hidden-hidden or hidden-output connection
                 setattr(self, 'dropout_l' + str(i_l), nn.Dropout(p=dropout_hidden))
@@ -239,6 +231,24 @@ class RNNEncoder(nn.Module):
                         else:
                             setattr(self, 'bn_l' + str(i_l), nn.BatchNorm1d(enc_out_dim))
                     # NOTE* BN in RNN models is applied only after NiN
+
+                # Prepare additional layer for the sub task
+                if self.num_layers_sub >= 1 and i_l == self.num_layers_sub - 1:
+                    if 'lstm' in rnn_type:
+                        rnn_i_sub = nn.LSTM
+                    elif 'gru' in rnn_type:
+                        rnn_i_sub = nn.GRU
+
+                    setattr(self, rnn_type + '_l' + str(i_l) + '_sub', rnn_i_sub(enc_in_dim,
+                                                                                 hidden_size=num_units,
+                                                                                 num_layers=1,
+                                                                                 bias=True,
+                                                                                 batch_first=batch_first,
+                                                                                 dropout=0,
+                                                                                 bidirectional=self.bidirectional))
+
+                    # Dropout for hidden-hidden or hidden-output connection
+                    setattr(self, 'dropout_l' + str(i_l) + '_sub', nn.Dropout(p=dropout_hidden))
 
     def forward(self, xs, x_lens):
         """Forward computation.
@@ -288,7 +298,7 @@ class RNNEncoder(nn.Module):
             xs = self.dropout_top(xs)
         else:
             res_outputs = []
-            for i_l in six.moves.range(self.num_layers):
+            for i_l in range(self.num_layers):
                 getattr(self, self.rnn_type + '_l' + str(i_l)).flatten_parameters()
                 # NOTE: this is necessary for multi-GPUs setting
 
@@ -304,7 +314,20 @@ class RNNEncoder(nn.Module):
 
                 # Pick up outputs in the sub task before the projection layer
                 if self.num_layers_sub >= 1 and i_l == self.num_layers_sub - 1:
-                    xs_sub = xs.clone()
+                    getattr(self, self.rnn_type + '_l' + str(i_l) + '_sub').flatten_parameters()
+                    # NOTE: this is necessary for multi-GPUs setting
+
+                    # Path through RNN
+                    xs_sub = pack_padded_sequence(xs, x_lens, batch_first=self.batch_first)
+                    xs_sub, _ = getattr(self, self.rnn_type + '_l' + str(i_l) + '_sub')(xs_sub, hx=None)
+                    xs_sub, unpacked_seq_len = pad_packed_sequence(
+                        xs_sub, batch_first=self.batch_first, padding_value=0)
+                    # assert x_lens == unpacked_seq_len
+
+                    # Dropout for hidden-hidden or hidden-output connection
+                    xs_sub = getattr(self, 'dropout_l' + str(i_l) + '_sub')(xs_sub)
+
+                    # xs_sub = xs.clone()
                     x_lens_sub = copy.deepcopy(x_lens)
 
                 # NOTE: Exclude the last layer
@@ -322,11 +345,11 @@ class RNNEncoder(nn.Module):
                         elif self.subsample_type == 'concat':
                             if self.batch_first:
                                 xs = [torch.cat([xs[:, t - 1:t, :], xs[:, t:t + 1, :]], dim=2)
-                                      for t in six.moves.range(xs.size(1)) if (t + 1) % 2 == 0]
+                                      for t in range(xs.size(1)) if (t + 1) % 2 == 0]
                                 xs = torch.cat(xs, dim=1)
                             else:
                                 xs = [torch.cat([xs[t - 1:t, :, :], xs[t:t + 1, :, :]], dim=2)
-                                      for t in six.moves.range(xs.size(0)) if (t + 1) % 2 == 0]
+                                      for t in range(xs.size(0)) if (t + 1) % 2 == 0]
                                 xs = torch.cat(xs, dim=0)
                             # NOTE: Exclude the last frame if the length of xs is odd
 
@@ -334,7 +357,7 @@ class RNNEncoder(nn.Module):
                         if self.batch_first:
                             x_lens = [x.size(0) for x in xs]
                         else:
-                            x_lens = [xs[:, i].size(0) for i in six.moves.range(xs.size(1))]
+                            x_lens = [xs[:, i].size(0) for i in range(xs.size(1))]
 
                     # Projection layer (affine transformation)
                     if self.num_projs > 0:
