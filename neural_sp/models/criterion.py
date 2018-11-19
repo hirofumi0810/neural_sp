@@ -21,10 +21,8 @@ def cross_entropy_lsm(logits, ys, y_lens, lsm_prob, size_average=False):
     """Compute cross entropy loss for label smoothing.
 
     Args:
-        logits (torch.autograd.Variable, float):
-            A tensor of size `[B, T, num_classes]`
-        ys (torch.autograd.Variable, long): Indices of labels.
-            A tensor of size `[B, L]`.
+        logits (torch.autograd.Variable, float): `[B, T, vocab]`
+        ys (torch.autograd.Variable, long): Indices of labels. `[B, L]`.
         y_lens (list): A list of length `[B]`
         lsm_prob (float):
         size_average (bool):
@@ -33,11 +31,11 @@ def cross_entropy_lsm(logits, ys, y_lens, lsm_prob, size_average=False):
 
     """
     batch_size, num_tokens = ys.size()
-    num_classes = logits.size(-1)
-    fill_val = lsm_prob / (num_classes - 1)
+    vocab = logits.size(-1)
+    fill_val = lsm_prob / (vocab - 1)
 
     # Create one-hot vector
-    ys_lsm = Variable(ys.float().new(batch_size, num_tokens, num_classes).fill_(fill_val))
+    ys_lsm = Variable(ys.float().new(batch_size, num_tokens, vocab).fill_(fill_val))
     for b in six.moves.range(batch_size):
         for t in six.moves.range(y_lens[b]):
             ys_lsm[b, t, ys[b, t]] = 1 - lsm_prob

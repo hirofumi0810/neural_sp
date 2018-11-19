@@ -62,7 +62,7 @@ class Dataset(Base):
         self.eos = eos
         self.max_epoch = max_epoch
         self.shuffle = shuffle
-        self.num_classes = self.count_vocab_size(dict_path)
+        self.vocab = self.count_vocab_size(dict_path)
 
         # Set index converter
         if label_type == 'word':

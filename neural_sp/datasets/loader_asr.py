@@ -86,7 +86,7 @@ class Dataset(Base):
         self.num_enques = num_enques
         self.dynamic_batching = dynamic_batching
         self.skip_speech = skip_speech
-        self.num_classes = self.count_vocab_size(dict_path)
+        self.vocab = self.count_vocab_size(dict_path)
 
         # Set index converter
         if label_type == 'word':
@@ -105,7 +105,7 @@ class Dataset(Base):
             raise ValueError(label_type)
 
         if dict_path_sub is not None:
-            self.num_classes_sub = self.count_vocab_size(dict_path_sub)
+            self.vocab_sub = self.count_vocab_size(dict_path_sub)
 
             # Set index converter
             if label_type_sub is not None:
@@ -121,7 +121,7 @@ class Dataset(Base):
                 else:
                     raise ValueError(label_type_sub)
         else:
-            self.num_classes_sub = -1
+            self.vocab_sub = -1
 
         # Load dataset csv file
         df = pd.read_csv(csv_path, encoding='utf-8')

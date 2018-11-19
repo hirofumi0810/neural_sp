@@ -55,7 +55,7 @@ class Decoder(nn.Module):
         num_layers (int): the number of RNN layers
         residual (bool):
         emb_dim (int): the dimension of the embedding in target spaces.
-        num_classes (int): the number of nodes in softmax layer
+        vocab (int): the number of nodes in softmax layer
         logits_temp (float): a parameter for smoothing the softmax layer in outputing probabilities
         dropout_hidden (float): the probability to drop nodes in the RNN layer
         dropout_emb (float): the probability to drop nodes of the embedding layer
@@ -89,7 +89,7 @@ class Decoder(nn.Module):
                  num_layers,
                  residual,
                  emb_dim,
-                 num_classes,
+                 vocab,
                  logits_temp,
                  dropout_hidden,
                  dropout_emb,
@@ -145,10 +145,10 @@ class Decoder(nn.Module):
                 for i in six.moves.range(len(ctc_fc_list)):
                     input_dim = enc_num_units if i == 0 else ctc_fc_list[i - 1]
                     fc_layers['fc' + str(i)] = LinearND(input_dim, ctc_fc_list[i], dropout=dropout_hidden)
-                fc_layers['fc' + str(len(ctc_fc_list))] = LinearND(ctc_fc_list[-1], num_classes, dropout=0)
+                fc_layers['fc' + str(len(ctc_fc_list))] = LinearND(ctc_fc_list[-1], vocab, dropout=0)
                 self.output_ctc = nn.Sequential(fc_layers)
             else:
-                self.output_ctc = LinearND(enc_num_units, num_classes)
+                self.output_ctc = LinearND(enc_num_units, vocab)
             self.decode_ctc_greedy = GreedyDecoder(blank_index=0)
             self.decode_ctc_beam = BeamSearchDecoder(blank_index=0)
             self.warpctc_loss = warpctc_pytorch.CTCLoss(size_average=True)
@@ -157,7 +157,7 @@ class Decoder(nn.Module):
             # for decoder initialization with pre-trained RNNLM
             if rnnlm_init:
                 assert internal_lm
-                assert rnnlm_init.predictor.num_classes == num_classes
+                assert rnnlm_init.predictor.vocab == vocab
                 assert rnnlm_init.predictor.num_units == num_units
                 assert rnnlm_init.predictor.num_layers == 1  # TODO(hirofumi): on-the-fly
 
@@ -165,7 +165,7 @@ class Decoder(nn.Module):
             if rnnlm_task_weight > 0:
                 assert internal_lm
                 if not share_lm_softmax:
-                    self.output_rnnlm = LinearND(num_units, num_classes)
+                    self.output_rnnlm = LinearND(num_units, vocab)
 
             # Attention
             assert isinstance(attention, AttentionMechanism) or isinstance(attention, MultiheadAttentionMechanism)
@@ -201,7 +201,7 @@ class Decoder(nn.Module):
                 if cold_fusion == 'hidden':
                     self.cf_linear_lm_feat = LinearND(rnnlm_cold_fusion.num_units, num_units)
                 elif cold_fusion == 'prob':
-                    self.cf_linear_lm_feat = LinearND(rnnlm_cold_fusion.num_classes, num_units)
+                    self.cf_linear_lm_feat = LinearND(rnnlm_cold_fusion.vocab, num_units)
                 else:
                     raise ValueError(cold_fusion)
                 self.cf_linear_lm_gate = LinearND(num_units * 2, num_units)
@@ -213,10 +213,10 @@ class Decoder(nn.Module):
             else:
                 self.output_bn = LinearND(num_units + enc_num_units, num_units)
 
-            self.output = LinearND(num_units, num_classes)
+            self.output = LinearND(num_units, vocab)
 
             # Embedding
-            self.embed = Embedding(num_classes=num_classes,
+            self.embed = Embedding(vocab=vocab,
                                    emb_dim=emb_dim,
                                    dropout=dropout_emb,
                                    ignore_index=pad)
@@ -229,9 +229,9 @@ class Decoder(nn.Module):
             enc_lens (list): A list of length `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
         Returns:
-            logits (torch.autograd.Variable, float): `[B, L, num_classes]`
+            logits (torch.autograd.Variable, float): `[B, L, vocab]`
             aw (torch.autograd.Variable, float): `[B, L, T, num_heads]`
-            logits_lm (torch.autograd.Variable, float): `[B, L, num_classes]`
+            logits_lm (torch.autograd.Variable, float): `[B, L, vocab]`
 
         """
         device_id = enc_out.get_device()
@@ -494,10 +494,10 @@ class Decoder(nn.Module):
         Args:
             context_vec (torch.autograd.Variable, float): `[B, 1, enc_num_units]`
             dec_out (torch.autograd.Variable, float): `[B, 1, dec_units]`
-            logits_rnnlm_t (torch.autograd.Variable, float): `[B, 1, num_classes]`
+            logits_rnnlm_t (torch.autograd.Variable, float): `[B, 1, vocab]`
             rnnlm_out (torch.autograd.Variable, float): `[B, 1, lm_num_units]`
         Returns:
-            logits_t (torch.autograd.Variable, float): `[B, 1, num_classes]`
+            logits_t (torch.autograd.Variable, float): `[B, 1, vocab]`
 
         """
         if self.rnnlm_cf:
@@ -739,7 +739,7 @@ class Decoder(nn.Module):
                     # Path through the softmax layer & convert to log-scale
                     log_probs = F.log_softmax(logits_t.squeeze(1), dim=1)  # log-prob-level
                     # log_probs = logits_t.squeeze(1)  # logits-level
-                    # NOTE: `[1 (B), 1, num_classes]` -> `[1 (B), num_classes]`
+                    # NOTE: `[1 (B), 1, vocab]` -> `[1 (B), vocab]`
 
                     # Pick up the top-k scores
                     log_probs_topk, indices_topk = torch.topk(

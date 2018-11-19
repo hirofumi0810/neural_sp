@@ -346,8 +346,8 @@ def main():
                               is_test=True,
                               skip_speech=(args.input_type != 'speech'))]
 
-    args.num_classes = train_set.num_classes
-    args.num_classes_sub = train_set.num_classes_sub
+    args.vocab = train_set.vocab
+    args.vocab_sub = train_set.vocab_sub
     args.input_dim = train_set.input_dim
 
     # Load a RNNLM config file for cold fusion & RNNLM initialization
@@ -359,7 +359,7 @@ def main():
     #         config = load_config(os.path.join(
     #             args.resume_model, 'config_rnnlm_cf.yml'))
     #     assert args.label_type == config['rnnlm_config_cold_fusion']['label_type']
-    #     config['rnnlm_config_cold_fusion']['num_classes'] = train_set.num_classes
+    #     config['rnnlm_config_cold_fusion']['vocab'] = train_set.vocab
     args.rnnlm_cold_fusion = None
 
     # Model setting

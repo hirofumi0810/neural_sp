@@ -90,9 +90,9 @@ def main():
                            is_test=True)
 
         if i == 0:
-            args.num_classes = eval_set.num_classes
+            args.vocab = eval_set.vocab
+            args.vocab_sub = eval_set.vocab_sub
             args.input_dim = eval_set.input_dim
-            args.num_classes_sub = eval_set.num_classes_sub
 
             # For cold fusion
             # if args.rnnlm_cold_fusion:
@@ -100,7 +100,7 @@ def main():
             #     config['rnnlm_config'] = load_config(os.path.join(args.model, 'config_rnnlm.yml'))
             #
             #     assert args.label_type == config['rnnlm_config']['label_type']
-            #     rnnlm_args.num_classes = eval_set.num_classes
+            #     rnnlm_args.vocab = eval_set.vocab
             #     logger.info('RNNLM path: %s' % config['rnnlm'])
             #     logger.info('RNNLM weight: %.3f' % args.rnnlm_weight)
             # else:
@@ -126,7 +126,7 @@ def main():
                     setattr(args_rnnlm, k, v)
 
                 assert args.label_type == args_rnnlm.label_type
-                args_rnnlm.num_classes = eval_set.num_classes
+                args_rnnlm.vocab = eval_set.vocab
 
                 # Load the pre-trianed RNNLM
                 seq_rnnlm = SeqRNNLM(args_rnnlm)

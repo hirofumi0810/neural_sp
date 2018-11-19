@@ -24,7 +24,7 @@ class GreedyDecoder(object):
         """
 
         Args:
-            logits (np.ndarray): `[B, T, num_classes]`
+            logits (np.ndarray): `[B, T, vocab]`
             x_lens (np.ndarray): `[B]`
         Returns:
             best_hyps (np.ndarray): Best path hypothesis. `[B, labels_max_seq_len]`

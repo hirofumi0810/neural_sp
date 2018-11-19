@@ -38,7 +38,7 @@ class BeamSearchDecoder(object):
 
         Args:
             log_probs (torch.autograd.Variable): The output log-scale probabilities
-                (e.g. post-softmax) for each time step. `[B, T, num_classes]`
+                (e.g. post-softmax) for each time step. `[B, T, vocab]`
             x_lens (list): A list of length `[B]`
             beam_width (int): the size of beam
             rnnlm ():
@@ -51,7 +51,7 @@ class BeamSearchDecoder(object):
 
         """
         assert isinstance(log_probs, torch.autograd.Variable)
-        batch_size, _, num_classes = log_probs.size()
+        batch_size, _, vocab = log_probs.size()
         best_hyps = []
 
         for b in six.moves.range(batch_size):

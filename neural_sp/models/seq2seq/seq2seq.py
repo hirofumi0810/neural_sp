@@ -58,8 +58,8 @@ class Seq2seq(ModelBase):
         self.att_num_heads = args.att_num_heads
 
         # for decoder
-        self.num_classes = args.num_classes
-        self.num_classes_sub = args.num_classes_sub
+        self.vocab = args.vocab
+        self.vocab_sub = args.vocab_sub
         self.blank = 0
         self.sos = 2
         self.eos = 2
@@ -186,7 +186,7 @@ class Seq2seq(ModelBase):
                           num_layers=args.dec_num_layers,
                           residual=args.dec_residual,
                           emb_dim=args.emb_dim,
-                          num_classes=self.num_classes,
+                          vocab=self.vocab,
                           logits_temp=args.logits_temp,
                           dropout_hidden=args.dropout_dec,
                           dropout_emb=args.dropout_emb,
@@ -251,7 +251,7 @@ class Seq2seq(ModelBase):
                                         num_layers=args.dec_num_layers,
                                         residual=args.dec_residual,
                                         emb_dim=args.emb_dim,
-                                        num_classes=self.num_classes_sub,
+                                        vocab=self.vocab_sub,
                                         logits_temp=args.logits_temp,
                                         dropout_hidden=args.dropout_dec,
                                         dropout_emb=args.dropout_emb,
@@ -264,11 +264,11 @@ class Seq2seq(ModelBase):
                                         global_weight=1 - args.main_task_weight)
 
         if args.input_type == 'text':
-            if args.num_classes == args.num_classes_sub:
+            if args.vocab == args.vocab_sub:
                 # Share the embedding layer between input and output
                 self.embed_in = dec.embed
             else:
-                self.embed_in = Embedding(num_classes=args.num_classes_sub,
+                self.embed_in = Embedding(vocab=args.vocab_sub,
                                           emb_dim=args.emb_dim,
                                           dropout=args.dropout_emb,
                                           ignore_index=self.pad)
