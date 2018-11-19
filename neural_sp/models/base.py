@@ -12,6 +12,7 @@ from __future__ import print_function
 
 from glob import glob
 import logging
+import math
 import numpy as np
 import os
 import torch
@@ -94,8 +95,22 @@ class ModelBase(nn.Module):
                     torch.nn.init.orthogonal(p.data, gain=1)
             elif dist == 'constant':
                 torch.nn.init.constant_(p.data, val=param_init)
+            elif dist == 'lecun':
+                if p.data.dim() == 1:
+                    p.data.zero_()  # bias
+                elif p.data.dim() == 2:
+                    n = p.data.size(1)  # linear weight
+                    p.data.normal_(0, 1. / math.sqrt(n))
+                elif p.data.dim() == 4:
+                    # conv weight
+                    n = p.data.size(1)
+                    for k in p.data.size()[2:]:
+                        n *= k
+                    p.data.normal_(0, 1. / math.sqrt(n))
+                else:
+                    raise NotImplementedError(p.data.dim())
             else:
-                raise NotImplementedError
+                raise NotImplementedError(dist)
 
     def init_forget_gate_bias_with_one(self):
         """Initialize bias in forget gate with 1. See detail in
