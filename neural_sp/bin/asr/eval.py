@@ -30,7 +30,9 @@ from neural_sp.utils.general import set_logger
 parser = argparse.ArgumentParser()
 # general
 parser.add_argument('--model', type=str,
-                    help='path to the model to evaluate')
+                    help='path to the model')
+parser.add_argument('--model_rev', type=str, default=None, nargs='?',
+                    help='path to the model in the reverse direction')
 parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
 parser.add_argument('--decode_dir', type=str,
@@ -57,8 +59,12 @@ parser.add_argument('--rnnlm_weight', type=float, default=0.0,
                     help='the weight of RNNLM score')
 parser.add_argument('--rnnlm', type=str, default=None, nargs='?',
                     help='path to the RMMLM')
+parser.add_argument('--rnnlm_rev', type=str, default=None, nargs='?',
+                    help='path to the RMMLM in the reverse direction')
 parser.add_argument('--resolving_unk', type=strtobool, default=False,
-                    help='')
+                    help='Resolving UNK for the word-based model.')
+parser.add_argument('--fwd_bwd_attention', type=strtobool, default=False,
+                    help='Forward-backward attention decoding.')
 args = parser.parse_args()
 
 

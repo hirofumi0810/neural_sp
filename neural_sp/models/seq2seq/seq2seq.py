@@ -136,34 +136,30 @@ class Seq2seq(ModelBase):
         for dir in directions:
             if (dir == 'fwd' and args.ctc_weight < 1) or dir == 'bwd':
                 # Attention layer
-                if dir == 'bwd' and self.fwd_weight > 0 and args.share_fwd_bwd_attention:
-                    logger.info('share fwd-bwd attention')
-                    attn = self.dec_fwd.score
+                if args.att_num_heads > 1:
+                    logger.info('multi-head attention')
+                    attn = MultiheadAttentionMechanism(
+                        enc_num_units=self.enc_num_units,
+                        dec_num_units=args.dec_num_units,
+                        att_type=args.att_type,
+                        att_dim=args.att_dim,
+                        sharpening_factor=args.att_sharpening_factor,
+                        sigmoid_smoothing=args.att_sigmoid_smoothing,
+                        conv_out_channels=args.att_conv_num_channels,
+                        conv_kernel_size=args.att_conv_width,
+                        num_heads=args.att_num_heads)
                 else:
-                    if args.att_num_heads > 1:
-                        logger.info('multi-head attention')
-                        attn = MultiheadAttentionMechanism(
-                            enc_num_units=self.enc_num_units,
-                            dec_num_units=args.dec_num_units,
-                            att_type=args.att_type,
-                            att_dim=args.att_dim,
-                            sharpening_factor=args.att_sharpening_factor,
-                            sigmoid_smoothing=args.att_sigmoid_smoothing,
-                            conv_out_channels=args.att_conv_num_channels,
-                            conv_kernel_size=args.att_conv_width,
-                            num_heads=args.att_num_heads)
-                    else:
-                        logger.info('single-head attention')
-                        attn = AttentionMechanism(
-                            enc_num_units=self.enc_num_units,
-                            dec_num_units=args.dec_num_units,
-                            att_type=args.att_type,
-                            att_dim=args.att_dim,
-                            sharpening_factor=args.att_sharpening_factor,
-                            sigmoid_smoothing=args.att_sigmoid_smoothing,
-                            conv_out_channels=args.att_conv_num_channels,
-                            conv_kernel_size=args.att_conv_width,
-                            dropout=args.dropout_att)
+                    logger.info('single-head attention')
+                    attn = AttentionMechanism(
+                        enc_num_units=self.enc_num_units,
+                        dec_num_units=args.dec_num_units,
+                        att_type=args.att_type,
+                        att_dim=args.att_dim,
+                        sharpening_factor=args.att_sharpening_factor,
+                        sigmoid_smoothing=args.att_sigmoid_smoothing,
+                        conv_out_channels=args.att_conv_num_channels,
+                        conv_kernel_size=args.att_conv_width,
+                        dropout=args.dropout_att)
             else:
                 attn = None
 
@@ -443,6 +439,7 @@ class Seq2seq(ModelBase):
                 cov_threshold (float): threshold for coverage penalty
                 rnnlm_weight (float): the weight of RNNLM score
                 resolving_unk (bool): not used (to make compatible)
+                fwd_bwd_attention (bool):
             nbest (int):
             exclude_eos (bool): exclude <eos> from best_hyps
             task (str): sub1
@@ -479,26 +476,126 @@ class Seq2seq(ModelBase):
                 enc_out, x_lens, decode_params['beam_width'], rnnlm)
             return best_hyps, None, perm_idx
         else:
-            if decode_params['beam_width'] == 1:
+            if decode_params['beam_width'] == 1 and not decode_params['fwd_bwd_attention']:
                 best_hyps, aws = getattr(self, 'dec_' + dir).greedy(
                     enc_out, x_lens, decode_params['max_len_ratio'], exclude_eos)
             else:
-                # Set RNNLM
-                if decode_params['rnnlm_weight'] > 0:
-                    assert hasattr(self, 'rnnlm_' + dir)
-                    rnnlm = getattr(self, 'rnnlm_' + dir)
-                else:
-                    rnnlm = None
+                if decode_params['fwd_bwd_attention']:
+                    rnnlm_fwd = None
+                    nbest_hyps_fwd, aws_fwd, scores_fwd = self.dec_fwd.beam_search(
+                        enc_out, x_lens, decode_params, rnnlm_fwd,
+                        decode_params['beam_width'], False, idx2token, refs)
 
-                nbest_hyps, aws, scores = getattr(self, 'dec_' + dir).beam_search(
-                    enc_out, x_lens, decode_params, rnnlm,
-                    nbest, exclude_eos, idx2token, refs)
-
-                if nbest == 1:
-                    best_hyps = [hyp[0] for hyp in nbest_hyps]
-                    aws = [aw[0] for aw in aws]
+                    rnnlm_bwd = None
+                    nbest_hyps_bwd, aws_bwd, scores_bwd = self.dec_bwd.beam_search(
+                        enc_out, x_lens, decode_params, rnnlm_bwd,
+                        decode_params['beam_width'], False, idx2token, refs)
+                    best_hyps = fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
+                                                  nbest_hyps_bwd, aws_bwd, scores_bwd,
+                                                  idx2token, refs)
+                    aws = None
                 else:
-                    return nbest_hyps, aws, scores, perm_idx
-                # NOTE: nbest >= 2 is used for MWER training only
+                    # Set RNNLM
+                    if decode_params['rnnlm_weight'] > 0:
+                        assert hasattr(self, 'rnnlm_' + dir)
+                        rnnlm = getattr(self, 'rnnlm_' + dir)
+                    else:
+                        rnnlm = None
+                    nbest_hyps, aws, scores = getattr(self, 'dec_' + dir).beam_search(
+                        enc_out, x_lens, decode_params, rnnlm,
+                        nbest, exclude_eos, idx2token, refs)
+
+                    if nbest == 1:
+                        best_hyps = [hyp[0] for hyp in nbest_hyps]
+                        aws = [aw[0] for aw in aws]
+                    else:
+                        return nbest_hyps, aws, scores, perm_idx
+                    # NOTE: nbest >= 2 is used for MWER training only
 
             return best_hyps, aws, perm_idx
+
+
+def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
+                      nbest_hyps_bwd, aws_bwd, scores_bwd,
+                      idx2token=None, refs=None):
+    """Forward-backward joint decoding.
+    Args:
+        nbest_hyps_fwd (list): A list of length `[B]`, which contains list of n hypotheses
+        aws_fwd (list): A list of length `[B]`, which contains arrays of size `[L, T]`
+        scores_fwd (list):
+        nbest_hyps_bwd (list):
+        aws_bwd (list):
+        scores_bwd (list):
+        idx2token (): converter from index to token
+        refs ():
+    Returns:
+
+    """
+    logger = logging.getLogger("decoding")
+    batch_size = len(nbest_hyps_fwd)
+    nbest = len(nbest_hyps_fwd[0])
+    eos = 2
+
+    best_hyps = []
+    for b in range(batch_size):
+        merged = []
+        for n in range(nbest):
+            # forward
+            if len(nbest_hyps_fwd[b][n]) > 1:
+                if nbest_hyps_fwd[b][n][-1] == eos:
+                    merged.append({'hyp': nbest_hyps_fwd[b][n][:-1],
+                                   'score': scores_fwd[b][n][-2]})
+                   # NOTE: remove eos probability
+                else:
+                    merged.append({'hyp': nbest_hyps_fwd[b][n],
+                                   'score': scores_fwd[b][n][-1]})
+            else:
+                # <eos> only
+                logger.info(nbest_hyps_fwd[b][n])
+
+            # backward
+            if len(nbest_hyps_bwd[b][n]) > 1:
+                if nbest_hyps_bwd[b][n][0] == eos:
+                    merged.append({'hyp': nbest_hyps_bwd[b][n][1:],
+                                   'score': scores_bwd[b][n][1]})
+                   # NOTE: remove eos probability
+                else:
+                    merged.append({'hyp': nbest_hyps_bwd[b][n],
+                                   'score': scores_bwd[b][n][0]})
+            else:
+                # <eos> only
+                logger.info(nbest_hyps_bwd[b][n])
+
+        for n_f in range(nbest):
+            for n_b in range(nbest):
+                for i_f in range(len(aws_fwd[b][n_f]) - 1):
+                    for i_b in range(len(aws_bwd[b][n_b]) - 1):
+                        t_prev = aws_bwd[b][n_b][i_b + 1].argmax(-1).item()
+                        t_curr = aws_fwd[b][n_f][i_f].argmax(-1).item()
+                        t_next = aws_bwd[b][n_b][i_b - 1].argmax(-1).item()
+
+                        # the same token at the same time
+                        if t_curr >= t_prev and t_curr <= t_next and nbest_hyps_fwd[b][n_f][i_f] == nbest_hyps_bwd[b][n_b][i_b]:
+                            new_hyp = nbest_hyps_fwd[b][n_f][:i_f + 1].tolist() + \
+                                nbest_hyps_bwd[b][n_b][i_b + 1:].tolist()
+                            score_curr_fwd = scores_fwd[b][n_f][i_f] - scores_fwd[b][n_f][i_f - 1]
+                            score_curr_bwd = scores_bwd[b][n_b][i_b] - scores_bwd[b][n_b][i_b + 1]
+                            score_curr = max(score_curr_fwd, score_curr_bwd)
+                            new_score = scores_fwd[b][n_f][i_f - 1] + scores_bwd[b][n_b][i_b + 1] + score_curr
+                            merged.append({'hyp': new_hyp, 'score': new_score})
+
+                            logger.info('time matching')
+                            if idx2token is not None:
+                                if refs is not None:
+                                    logger.info('Ref: %s' % refs[b].lower())
+                                logger.info('hyp (fwd): %s' % idx2token(nbest_hyps_fwd[b][n_f]))
+                                logger.info('hyp (bwd): %s' % idx2token(nbest_hyps_bwd[b][n_b]))
+                                logger.info('hyp (fwd-bwd): %s' % idx2token(new_hyp))
+                            logger.info('log prob (fwd): %.3f' % scores_fwd[b][n_f][-1])
+                            logger.info('log prob (bwd): %.3f' % scores_bwd[b][n_b][0])
+                            logger.info('log prob (fwd-bwd): %.3f' % new_score)
+
+        merged = sorted(merged, key=lambda x: x['score'], reverse=True)
+        best_hyps.append(merged[0]['hyp'])
+
+    return best_hyps

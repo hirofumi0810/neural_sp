@@ -639,9 +639,11 @@ class Decoder(nn.Module):
             nbest (int):
             exclude_eos (bool):
             idx2token (): converter from index to token
+            refs ():
         Returns:
             nbest_hyps (list): A list of length `[B]`, which contains list of n hypotheses
             aws (list): A list of length `[B]`, which contains arrays of size `[L, T]`
+            scores (list):
 
         """
         batch_size = enc_out.size(0)
@@ -671,8 +673,9 @@ class Decoder(nn.Module):
 
             complete = []
             beam = [{'hyp': [sos],
-                     'score': 0,  # log 1
-                     'score_raw': 0,  # log 1
+                     'score': 0,
+                     'scores': [0],
+                     'score_raw': 0,
                      'dec_out': dec_out,
                      'hx_list': hx_list,
                      'cx_list': cx_list,
@@ -777,6 +780,7 @@ class Decoder(nn.Module):
                         new_beam.append(
                             {'hyp': beam[i_beam]['hyp'] + [indices_topk[0, k].item()],
                              'score': score,
+                             'scores': beam[i_beam]['scores'] + [score],
                              'score_raw': score_raw,
                              'score_lm': 0,  # TODO(hirofumi):
                              'score_lp': 0,  # TODO(hirofumi):
@@ -820,10 +824,12 @@ class Decoder(nn.Module):
                 # Reverse the order
                 nbest_hyps += [[np.array(complete[n]['hyp'][1:][::-1]) for n in range(nbest)]]
                 aws += [[complete[n]['aws'][1:][::-1] for n in range(nbest)]]
+                scores += [[complete[n]['scores'][1:][::-1] for n in range(nbest)]]
             else:
                 nbest_hyps += [[np.array(complete[n]['hyp'][1:]) for n in range(nbest)]]
                 aws += [[complete[n]['aws'][1:] for n in range(nbest)]]
-            scores += [[complete[n]['score_raw'] for n in range(nbest)]]
+                scores += [[complete[n]['scores'][1:] for n in range(nbest)]]
+            # scores += [[complete[n]['score_raw'] for n in range(nbest)]]
 
             # Check <eos>
             eos_flag = [True if complete[n]['hyp'][-1] == eos else False for n in range(nbest)]
@@ -833,12 +839,12 @@ class Decoder(nn.Module):
                 if refs is not None:
                     logger.info('Ref: %s' % refs[b].lower())
                 for n in range(nbest):
-                    logger.info('Hyp: %s' % idx2token(nbest_hyps[-1][n]))
+                    logger.info('Hyp: %s' % idx2token(nbest_hyps[0][n]))
             if refs is not None:
                 logger.info('log prob (ref): ')
             for n in range(nbest):
-                logger.info('log prob (hyp, raw): %.3f' % complete[n]['score_raw'])
                 logger.info('log prob (hyp): %.3f' % complete[n]['score'])
+                logger.info('log prob (hyp, raw): %.3f' % complete[n]['score_raw'])
 
         # Concatenate in L dimension
         for b in range(len(aws)):

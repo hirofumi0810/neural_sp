@@ -6,7 +6,7 @@
 . ./path.sh
 
 if [ $# -ne 3 ]; then
-  echo "Usage: local/score_sclite.sh <data-dir> <decode-dir>"
+  echo "Usage: local/score_sclite.sh <data-dir> <decode-dir> <set>"
   exit 1;
 fi
 
@@ -75,3 +75,6 @@ case "$set" in
     $hubscr -p $hubdir -V -l english -h hub5 -g $data/$set/glm -r $dir/stm.fsh $dir/hyp.ctm.fsh || exit 1;
   ;;
 esac
+
+grep -e Avg -e SPKR -m 2 $dir/hyp.ctm.swbd.filt.sys
+grep -e Avg -e SPKR -m 2 $dir/hyp.ctm.callhm.filt.sys
