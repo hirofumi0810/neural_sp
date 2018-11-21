@@ -172,12 +172,12 @@ class Decoder(nn.Module):
             # Decoder
             if internal_lm:
                 if rnn_type == 'lstm':
-                    self.lstm_internal_lm = nn.LSTMCell(emb_dim, num_units)
-                    self.dropout_internal_lm = nn.Dropout(p=dropout_hidden)
+                    self.lstm_inlm = nn.LSTMCell(emb_dim, num_units)
+                    self.dropout_inlm = nn.Dropout(p=dropout_hidden)
                     self.lstm_l0 = nn.LSTMCell(num_units + enc_num_units, num_units)
                 elif rnn_type == 'gru':
-                    self.gru_internal_lm = nn.GRUCell(emb_dim, num_units)
-                    self.dropout_internal_lm = nn.Dropout(p=dropout_hidden)
+                    self.gru_inlm = nn.GRUCell(emb_dim, num_units)
+                    self.dropout_inlm = nn.Dropout(p=dropout_hidden)
                     self.gru_l0 = nn.GRUCell(num_units + enc_num_units, num_units)
             else:
                 if rnn_type == 'lstm':
@@ -224,13 +224,13 @@ class Decoder(nn.Module):
         """Compute XE loss.
 
         Args:
-            enc_out (torch.autograd.Variable, float): `[B, T, dec_units]`
+            enc_out (FloatTensor): `[B, T, dec_units]`
             enc_lens (list): A list of length `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
         Returns:
-            logits (torch.autograd.Variable, float): `[B, L, vocab]`
-            aw (torch.autograd.Variable, float): `[B, L, T, num_heads]`
-            logits_lm (torch.autograd.Variable, float): `[B, L, vocab]`
+            logits (FloatTensor): `[B, L, vocab]`
+            aw (FloatTensor): `[B, L, T, num_heads]`
+            logits_lm (FloatTensor): `[B, L, vocab]`
 
         """
         device_id = enc_out.get_device()
@@ -384,11 +384,11 @@ class Decoder(nn.Module):
         """Initialize decoder state.
 
         Args:
-            enc_out (torch.autograd.Variable, float): `[B, T, dec_units]`
+            enc_out (FloatTensor): `[B, T, dec_units]`
             enc_lens (list): A list of length `[B]`
             num_layers (int):
         Returns:
-            dec_out (torch.autograd.Variable, float): `[B, 1, dec_units]`
+            dec_out (FloatTensor): `[B, 1, dec_units]`
             dec_state (tuple): A tuple of (hx_list, cx_list)
                 hx_list (list of torch.autograd.Variable(float)):
                 cx_list (list of torch.autograd.Variable(float)):
@@ -425,8 +425,8 @@ class Decoder(nn.Module):
         """Recurrency function.
 
         Args:
-            y_emb (torch.autograd.Variable, float): `[B, 1, emb_dim]`
-            context_vec (torch.autograd.Variable, float): `[B, 1, enc_num_units]`
+            y_emb (FloatTensor): `[B, 1, emb_dim]`
+            context_vec (FloatTensor): `[B, 1, enc_num_units]`
             dec_state (tuple): A tuple of (hx_list, cx_list)
                 hx_list (list of torch.autograd.Variable(float)):
                 cx_list (list of torch.autograd.Variable(float)):
@@ -434,11 +434,11 @@ class Decoder(nn.Module):
                 hx_list (list of torch.autograd.Variable(float)):
                 cx_list (list of torch.autograd.Variable(float)):
         Returns:
-            dec_out (torch.autograd.Variable, float): `[B, 1, num_units]`
+            dec_out (FloatTensor): `[B, 1, num_units]`
             dec_state (tuple): A tuple of (hx_list, cx_list)
                 hx_list (list of torch.autograd.Variable(float)):
                 cx_list (list of torch.autograd.Variable(float)):
-            _dec_out (torch.autograd.Variable, float): `[B, 1, num_units]`
+            _dec_out (FloatTensor): `[B, 1, num_units]`
             _dec_state (tuple): A tuple of (hx_list, cx_list)
                 hx_list (list of torch.autograd.Variable(float)):
                 cx_list (list of torch.autograd.Variable(float)):
@@ -451,12 +451,12 @@ class Decoder(nn.Module):
 
         if self.internal_lm:
             if self.rnn_type == 'lstm':
-                hx_lm[0], cx_lm[0] = self.lstm_internal_lm(y_emb, (hx_lm[0], cx_lm[0]))
-                _h_lm = torch.cat([self.dropout_internal_lm(hx_lm[0]), context_vec], dim=-1)
+                hx_lm[0], cx_lm[0] = self.lstm_inlm(y_emb, (hx_lm[0], cx_lm[0]))
+                _h_lm = torch.cat([self.dropout_inlm(hx_lm[0]), context_vec], dim=-1)
                 hx_list[0], cx_list[0] = self.lstm_l0(_h_lm, (hx_list[0], cx_list[0]))
             elif self.rnn_type == 'gru':
-                hx_lm = self.gru_internal_lm(y_emb, hx_lm)
-                _h_lm = torch.cat([self.dropout_internal_lm(hx_lm), context_vec], dim=-1)
+                hx_lm = self.gru_inlm(y_emb, hx_lm)
+                _h_lm = torch.cat([self.dropout_inlm(hx_lm), context_vec], dim=-1)
                 hx_list[0] = self.gru_l0(_h_lm, hx_list[0])
         else:
             if self.rnn_type == 'lstm':
@@ -477,19 +477,19 @@ class Decoder(nn.Module):
                 hx_list[i_l] += getattr(self, 'dropout_l' + str(i_l - 1))(hx_list[i_l - 1])
 
         dec_out = getattr(self, 'dropout_l' + str(self.num_layers - 1))(hx_list[-1]).unsqueeze(1)
-        _dec_out = self.dropout_internal_lm(hx_lm[0]).unsqueeze(1)
+        _dec_out = self.dropout_inlm(hx_lm[0]).unsqueeze(1)
         return dec_out, (hx_list, cx_list), _dec_out, (hx_lm, cx_lm)
 
     def generate(self, context_vec, dec_out, logits_rnnlm_t, rnnlm_out):
         """Generate function.
 
         Args:
-            context_vec (torch.autograd.Variable, float): `[B, 1, enc_num_units]`
-            dec_out (torch.autograd.Variable, float): `[B, 1, dec_units]`
-            logits_rnnlm_t (torch.autograd.Variable, float): `[B, 1, vocab]`
-            rnnlm_out (torch.autograd.Variable, float): `[B, 1, lm_num_units]`
+            context_vec (FloatTensor): `[B, 1, enc_num_units]`
+            dec_out (FloatTensor): `[B, 1, dec_units]`
+            logits_rnnlm_t (FloatTensor): `[B, 1, vocab]`
+            rnnlm_out (FloatTensor): `[B, 1, lm_num_units]`
         Returns:
-            logits_t (torch.autograd.Variable, float): `[B, 1, vocab]`
+            logits_t (FloatTensor): `[B, 1, vocab]`
 
         """
         if self.rnnlm_cf:
@@ -510,7 +510,7 @@ class Decoder(nn.Module):
         """Greedy decoding in the inference stage.
 
         Args:
-            enc_out (torch.autograd.Variable, float): `[B, T, enc_units]`
+            enc_out (FloatTensor): `[B, T, enc_units]`
             enc_lens (list): A list of length `[B]`
             max_len_ratio (int): the maximum sequence length of tokens
             exclude_eos (bool):
@@ -621,7 +621,7 @@ class Decoder(nn.Module):
         """Beam search decoding in the inference stage.
 
         Args:
-            enc_out (torch.autograd.Variable, float): `[B, T, dec_units]`
+            enc_out (FloatTensor): `[B, T, dec_units]`
             enc_lens (list): A list of length `[B]`
             params (dict):
                 beam_width (int): the size of beam
@@ -865,7 +865,7 @@ class Decoder(nn.Module):
         """Decoding by the CTC layer in the inference stage.
             This is only used for Joint CTC-Attention model.
         Args:
-            enc_out (torch.autograd.Variable, float): `[B, T, enc_units]`
+            enc_out (FloatTensor): `[B, T, enc_units]`
             beam_width (int): the size of beam
             rnnlm ():
         Returns:
