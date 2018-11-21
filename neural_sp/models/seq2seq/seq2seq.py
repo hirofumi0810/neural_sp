@@ -14,6 +14,7 @@ import copy
 import logging
 import numpy as np
 import six
+import torch
 from torch.autograd import Variable
 
 from neural_sp.models.base import ModelBase
@@ -313,9 +314,19 @@ class Seq2seq(ModelBase):
         """
         if is_eval:
             self.eval()
+            with torch.no_grad():
+                loss, report = self._forward(xs, ys, ys_sub)
         else:
             self.train()
+            loss, report = self._forward(xs, ys, ys_sub)
 
+        # Report here
+        if reporter is not None:
+            reporter.step(observation=report, is_eval=is_eval)
+
+        return loss, reporter
+
+    def _forward(self, xs, ys, ys_sub):
         # Encode input features
         if self.input_type == 'speech':
             # Sort by lenghts in the descending order
@@ -364,11 +375,7 @@ class Seq2seq(ModelBase):
             report['loss.ctc-sub'] = report_sub['loss_ctc']
             report['acc.sub'] = report_sub['acc']
 
-        # Report here
-        if reporter is not None:
-            reporter.step(observation=report, is_eval=is_eval)
-
-        return loss, reporter
+        return loss, report
 
     def encode(self, xs):
         """Encode acoustic or text features.
@@ -452,67 +459,67 @@ class Seq2seq(ModelBase):
 
         """
         self.eval()
+        with torch.no_grad():
+            # Sort by lenghts in the descending order
+            perm_idx = sorted(list(six.moves.range(0, len(xs), 1)),
+                              key=lambda i: len(xs[i]), reverse=True)
+            xs = [xs[i] for i in perm_idx]
+            # NOTE: must be descending order for pack_padded_sequence
 
-        # Sort by lenghts in the descending order
-        perm_idx = sorted(list(six.moves.range(0, len(xs), 1)),
-                          key=lambda i: len(xs[i]), reverse=True)
-        xs = [xs[i] for i in perm_idx]
-        # NOTE: must be descending order for pack_padded_sequence
+            # Encode input features
+            enc_out, x_lens, enc_out_sub, x_lens_sub = self.encode(xs)
 
-        # Encode input features
-        enc_out, x_lens, enc_out_sub, x_lens_sub = self.encode(xs)
+            dir = 'fwd' if self.fwd_weight >= self.bwd_weight else 'bwd'
 
-        dir = 'fwd' if self.fwd_weight >= self.bwd_weight else 'bwd'
-
-        if self.ctc_weight == 1:
-            # Set RNNLM
-            if decode_params['rnnlm_weight'] > 0:
-                assert hasattr(self, 'rnnlm_' + dir)
-                rnnlm = getattr(self, 'rnnlm_' + dir)
-            else:
-                rnnlm = None
-
-            best_hyps = getattr(self, 'dec_' + dir).decode_ctc(
-                enc_out, x_lens, decode_params['beam_width'], rnnlm)
-            return best_hyps, None, perm_idx
-        else:
-            if decode_params['beam_width'] == 1 and not decode_params['fwd_bwd_attention']:
-                best_hyps, aws = getattr(self, 'dec_' + dir).greedy(
-                    enc_out, x_lens, decode_params['max_len_ratio'], exclude_eos)
-            else:
-                if decode_params['fwd_bwd_attention']:
-                    rnnlm_fwd = None
-                    nbest_hyps_fwd, aws_fwd, scores_fwd = self.dec_fwd.beam_search(
-                        enc_out, x_lens, decode_params, rnnlm_fwd,
-                        decode_params['beam_width'], False, idx2token, refs)
-
-                    rnnlm_bwd = None
-                    nbest_hyps_bwd, aws_bwd, scores_bwd = self.dec_bwd.beam_search(
-                        enc_out, x_lens, decode_params, rnnlm_bwd,
-                        decode_params['beam_width'], False, idx2token, refs)
-                    best_hyps = fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
-                                                  nbest_hyps_bwd, aws_bwd, scores_bwd,
-                                                  idx2token, refs)
-                    aws = None
+            if self.ctc_weight == 1:
+                # Set RNNLM
+                if decode_params['rnnlm_weight'] > 0:
+                    assert hasattr(self, 'rnnlm_' + dir)
+                    rnnlm = getattr(self, 'rnnlm_' + dir)
                 else:
-                    # Set RNNLM
-                    if decode_params['rnnlm_weight'] > 0:
-                        assert hasattr(self, 'rnnlm_' + dir)
-                        rnnlm = getattr(self, 'rnnlm_' + dir)
-                    else:
-                        rnnlm = None
-                    nbest_hyps, aws, scores = getattr(self, 'dec_' + dir).beam_search(
-                        enc_out, x_lens, decode_params, rnnlm,
-                        nbest, exclude_eos, idx2token, refs)
+                    rnnlm = None
 
-                    if nbest == 1:
-                        best_hyps = [hyp[0] for hyp in nbest_hyps]
-                        aws = [aw[0] for aw in aws]
-                    else:
-                        return nbest_hyps, aws, scores, perm_idx
-                    # NOTE: nbest >= 2 is used for MWER training only
+                best_hyps = getattr(self, 'dec_' + dir).decode_ctc(
+                    enc_out, x_lens, decode_params['beam_width'], rnnlm)
+                return best_hyps, None, perm_idx
+            else:
+                if decode_params['beam_width'] == 1 and not decode_params['fwd_bwd_attention']:
+                    best_hyps, aws = getattr(self, 'dec_' + dir).greedy(
+                        enc_out, x_lens, decode_params['max_len_ratio'], exclude_eos)
+                else:
+                    if decode_params['fwd_bwd_attention']:
+                        rnnlm_fwd = None
+                        nbest_hyps_fwd, aws_fwd, scores_fwd = self.dec_fwd.beam_search(
+                            enc_out, x_lens, decode_params, rnnlm_fwd,
+                            decode_params['beam_width'], False, idx2token, refs)
 
-            return best_hyps, aws, perm_idx
+                        rnnlm_bwd = None
+                        nbest_hyps_bwd, aws_bwd, scores_bwd = self.dec_bwd.beam_search(
+                            enc_out, x_lens, decode_params, rnnlm_bwd,
+                            decode_params['beam_width'], False, idx2token, refs)
+                        best_hyps = fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
+                                                      nbest_hyps_bwd, aws_bwd, scores_bwd,
+                                                      idx2token, refs)
+                        aws = None
+                    else:
+                        # Set RNNLM
+                        if decode_params['rnnlm_weight'] > 0:
+                            assert hasattr(self, 'rnnlm_' + dir)
+                            rnnlm = getattr(self, 'rnnlm_' + dir)
+                        else:
+                            rnnlm = None
+                        nbest_hyps, aws, scores = getattr(self, 'dec_' + dir).beam_search(
+                            enc_out, x_lens, decode_params, rnnlm,
+                            nbest, exclude_eos, idx2token, refs)
+
+                        if nbest == 1:
+                            best_hyps = [hyp[0] for hyp in nbest_hyps]
+                            aws = [aw[0] for aw in aws]
+                        else:
+                            return nbest_hyps, aws, scores, perm_idx
+                        # NOTE: nbest >= 2 is used for MWER training only
+
+                return best_hyps, aws, perm_idx
 
 
 def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
