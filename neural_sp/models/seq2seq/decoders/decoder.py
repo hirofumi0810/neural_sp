@@ -412,10 +412,8 @@ class Decoder(nn.Module):
             hx_list = [dec_out.clone().squeeze(1)] * self.num_layers
             cx_list = [dec_out.clone().squeeze(1)] * self.num_layers if self.rnn_type == 'lstm' else None
         else:
-            dec_out = Variable(enc_out.new(batch_size, 1, self.num_units).fill_(0.),
-                               volatile=not self.training)
-            zero_state = Variable(enc_out.new(batch_size, self.num_units).fill_(0.),
-                                  volatile=not self.training)
+            dec_out = Variable(enc_out.new(batch_size, 1, self.num_units).fill_(0.))
+            zero_state = Variable(enc_out.new(batch_size, self.num_units).fill_(0.))
             hx_list = [zero_state] * self.num_layers
             cx_list = [zero_state] * self.num_layers if self.rnn_type == 'lstm' else None
 
@@ -458,11 +456,13 @@ class Decoder(nn.Module):
                 hx_lm = self.gru_inlm(y_emb, hx_lm)
                 _h_lm = torch.cat([self.dropout_inlm(hx_lm), context_vec], dim=-1)
                 hx_list[0] = self.gru_l0(_h_lm, hx_list[0])
+            _dec_out = self.dropout_inlm(hx_lm[0]).unsqueeze(1)
         else:
             if self.rnn_type == 'lstm':
                 hx_list[0], cx_list[0] = self.lstm_l0(torch.cat([y_emb, context_vec], dim=-1), (hx_list[0], cx_list[0]))
             elif self.rnn_type == 'gru':
                 hx_list[0] = self.gru_l0(torch.cat([y_emb, context_vec], dim=-1), hx_list[0])
+            _dec_out = None
 
         for i_l in range(1, self.num_layers):
             if self.rnn_type == 'lstm':
@@ -477,7 +477,6 @@ class Decoder(nn.Module):
                 hx_list[i_l] += getattr(self, 'dropout_l' + str(i_l - 1))(hx_list[i_l - 1])
 
         dec_out = getattr(self, 'dropout_l' + str(self.num_layers - 1))(hx_list[-1]).unsqueeze(1)
-        _dec_out = self.dropout_inlm(hx_lm[0]).unsqueeze(1)
         return dec_out, (hx_list, cx_list), _dec_out, (hx_lm, cx_lm)
 
     def generate(self, context_vec, dec_out, logits_rnnlm_t, rnnlm_out):
@@ -534,7 +533,7 @@ class Decoder(nn.Module):
             sos, eos = self.sos, self.eos
 
         # Start from <sos> (<eos> in case of the backward decoder)
-        y = Variable(enc_out.new(batch_size, 1).fill_(sos).long(), volatile=True)
+        y = Variable(enc_out.new(batch_size, 1).fill_(sos).long())
 
         _best_hyps, _aws = [], []
         y_lens = np.zeros((batch_size,), dtype=np.int32)
@@ -664,7 +663,7 @@ class Decoder(nn.Module):
             # Initialization per utterance
             dec_out, (hx_list, cx_list) = self.init_dec_state(enc_out[b:b + 1], enc_lens[b:b + 1], self.num_layers)
             _dec_out, _dec_state = self.init_dec_state(enc_out[b:b + 1], enc_lens[b:b + 1], 1)
-            context_vec = Variable(enc_out.new(1, 1, enc_out.size(-1)).fill_(0.), volatile=True)
+            context_vec = Variable(enc_out.new(1, 1, enc_out.size(-1)).fill_(0.))
             self.score.reset()
 
             complete = []
@@ -687,7 +686,7 @@ class Decoder(nn.Module):
                 for i_beam in range(len(beam)):
                     if t > 0:
                         # Recurrency
-                        y = Variable(enc_out.new(1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
+                        y = Variable(enc_out.new(1, 1).fill_(beam[i_beam]['hyp'][-1]).long())
                         y_emb = self.embed(y)
                         dec_out, (hx_list, cx_list), _dec_out, _dec_state = self.recurrency(
                             y_emb, beam[i_beam]['context_vec'],
@@ -704,13 +703,13 @@ class Decoder(nn.Module):
 
                     if self.rnnlm_cf:
                         # Update RNNLM states for cold fusion
-                        y_lm = Variable(enc_out.new(1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
+                        y_lm = Variable(enc_out.new(1, 1).fill_(beam[i_beam]['hyp'][-1]).long())
                         y_lm_emb = self.rnnlm_cf.embed(y_lm).squeeze(1)
                         logits_rnnlm_t, rnnlm_out, rnnlm_state = self.rnnlm_cf.predict(
                             y_lm_emb, (beam[i_beam]['rnnlm_hx_list'], beam[i_beam]['rnnlm_cx_list']))
                     elif rnnlm is not None:
                         # Update RNNLM states for shallow fusion
-                        y_lm = Variable(enc_out.new(1, 1).fill_(beam[i_beam]['hyp'][-1]).long(), volatile=True)
+                        y_lm = Variable(enc_out.new(1, 1).fill_(beam[i_beam]['hyp'][-1]).long())
                         y_lm_emb = rnnlm.embed(y_lm).squeeze(1)
                         logits_rnnlm_t, rnnlm_out, rnnlm_state = rnnlm.predict(
                             y_lm_emb, (beam[i_beam]['rnnlm_hx_list'], beam[i_beam]['rnnlm_cx_list']))

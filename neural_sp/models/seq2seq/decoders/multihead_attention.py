@@ -133,8 +133,7 @@ class MultiheadAttentionMechanism(nn.Module):
         batch_size, enc_time = enc_out.size()[:2]
 
         if aw_step is None:
-            volatile = enc_out.volatile
-            aw_step = Variable(enc_out.data.new(batch_size, enc_time, self.num_heads).fill_(0.), volatile=volatile)
+            aw_step = Variable(enc_out.data.new(batch_size, enc_time, self.num_heads).fill_(0.))
 
         # Pre-computation of encoder-side features for computing scores
         if self.enc_out_a is None:

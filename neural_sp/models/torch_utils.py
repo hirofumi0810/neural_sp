@@ -26,14 +26,13 @@ def tensor2np(x):
     return x.cpu().numpy()
 
 
-def np2var(array, device_id=-1, async=False, volatile=False):
+def np2var(array, device_id=-1, async=False):
     """Convert form np.ndarray to Variable.
 
     Args:
         array (np.ndarray): A tensor of any sizes
         async= (bool):
         device_id (int): ht index of the device
-        volatile (bool):
     Returns:
         var (torch.autograd.Variable):
 
@@ -45,8 +44,6 @@ def np2var(array, device_id=-1, async=False, volatile=False):
     else:
         var = Variable(torch.from_numpy(array),
                        requires_grad=False)
-    if volatile:
-        var.volatile = True
     if device_id < 0:
         return var
     return var.cuda(device_id, async=async)
@@ -78,8 +75,7 @@ def pad_list(xs, pad_value=float("nan")):
     # assert isinstance(xs[0], Variable)
     batch = len(xs)
     max_time = max(x.size(0) for x in xs)
-    xs_pad = Variable(xs[0].new(batch, max_time, * xs[0].size()[1:]).zero_() + pad_value,
-                      volatile=xs[0].volatile)
+    xs_pad = Variable(xs[0].new(batch, max_time, * xs[0].size()[1:]).zero_() + pad_value)
     for b in range(batch):
         xs_pad[b, :xs[b].size(0)] = xs[b]
     return xs_pad
