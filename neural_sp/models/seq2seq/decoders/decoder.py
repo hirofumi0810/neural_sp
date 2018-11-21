@@ -452,36 +452,32 @@ class Decoder(nn.Module):
         if self.internal_lm:
             if self.rnn_type == 'lstm':
                 hx_lm[0], cx_lm[0] = self.lstm_internal_lm(y_emb, (hx_lm[0], cx_lm[0]))
-                hx_lm[0] = self.dropout_internal_lm(hx_lm[0])
-                _h_lm = torch.cat([hx_lm[0], context_vec], dim=-1)
+                _h_lm = torch.cat([self.dropout_internal_lm(hx_lm[0]), context_vec], dim=-1)
                 hx_list[0], cx_list[0] = self.lstm_l0(_h_lm, (hx_list[0], cx_list[0]))
             elif self.rnn_type == 'gru':
                 hx_lm = self.gru_internal_lm(y_emb, hx_lm)
-                hx_lm = self.dropout_internal_lm(hx_lm)
-                _h_lm = torch.cat([hx_lm, context_vec], dim=-1)
+                _h_lm = torch.cat([self.dropout_internal_lm(hx_lm), context_vec], dim=-1)
                 hx_list[0] = self.gru_l0(_h_lm, hx_list[0])
         else:
             if self.rnn_type == 'lstm':
                 hx_list[0], cx_list[0] = self.lstm_l0(torch.cat([y_emb, context_vec], dim=-1), (hx_list[0], cx_list[0]))
             elif self.rnn_type == 'gru':
                 hx_list[0] = self.gru_l0(torch.cat([y_emb, context_vec], dim=-1), hx_list[0])
-        hx_list[0] = self.dropout_l0(hx_list[0])
 
         for i_l in range(1, self.num_layers):
             if self.rnn_type == 'lstm':
                 hx_list[i_l], cx_list[i_l] = getattr(self, 'lstm_l' + str(i_l))(
-                    hx_list[i_l - 1], (hx_list[i_l], cx_list[i_l]))
+                    getattr(self, 'dropout_l' + str(i_l - 1))(hx_list[i_l - 1]), (hx_list[i_l], cx_list[i_l]))
             elif self.rnn_type == 'gru':
                 hx_list[i_l] = getattr(self, 'gru_l' + str(i_l))(
                     hx_list[i_l - 1], hx_list[i_l])
-            hx_list[i_l] = getattr(self, 'dropout_l' + str(i_l))(hx_list[i_l])
 
             # Residual connection
             if self.residual:
-                hx_list[i_l] += hx_list[i_l - 1]
+                hx_list[i_l] += getattr(self, 'dropout_l' + str(i_l - 1))(hx_list[i_l - 1])
 
-        dec_out = hx_list[-1].unsqueeze(1)
-        _dec_out = hx_lm[0].unsqueeze(1)
+        dec_out = getattr(self, 'dropout_l' + str(self.num_layers - 1))(hx_list[-1]).unsqueeze(1)
+        _dec_out = self.dropout_internal_lm(hx_lm[0]).unsqueeze(1)
         return dec_out, (hx_list, cx_list), _dec_out, (hx_lm, cx_lm)
 
     def generate(self, context_vec, dec_out, logits_rnnlm_t, rnnlm_out):
