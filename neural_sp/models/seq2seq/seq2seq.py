@@ -27,7 +27,7 @@ from neural_sp.models.seq2seq.decoders.multihead_attention import MultiheadAtten
 from neural_sp.models.seq2seq.encoders.cnn import CNNEncoder
 from neural_sp.models.seq2seq.encoders.frame_stacking import stack_frame
 from neural_sp.models.seq2seq.encoders.rnn import RNNEncoder
-from neural_sp.models.seq2seq.encoders.splicing import do_splice
+from neural_sp.models.seq2seq.encoders.splicing import splice
 from neural_sp.models.torch_utils import np2var
 from neural_sp.models.torch_utils import pad_list
 
@@ -44,19 +44,18 @@ class Seq2seq(ModelBase):
 
         # for encoder
         self.input_type = args.input_type
-        assert args.input_type in ['speech', 'text']
         self.input_dim = args.input_dim
-        self.num_stack = args.num_stack
-        self.num_skip = args.num_skip
-        self.num_splice = args.num_splice
+        self.nstacks = args.nstacks
+        self.nskips = args.nskips
+        self.nsplices = args.nsplices
         self.enc_type = args.enc_type
-        self.enc_num_units = args.enc_num_units
+        self.enc_nunits = args.enc_nunits
         if args.enc_type in ['blstm', 'bgru']:
-            self.enc_num_units *= 2
+            self.enc_nunits *= 2
         self.bridge_layer = args.bridge_layer
 
         # for attention layer
-        self.att_num_heads = args.att_num_heads
+        self.attn_nheads = args.attn_nheads
 
         # for decoder
         self.vocab = args.vocab
@@ -82,17 +81,17 @@ class Seq2seq(ModelBase):
         if args.enc_type in ['blstm', 'lstm', 'bgru', 'gru']:
             self.enc = RNNEncoder(input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
                                   rnn_type=args.enc_type,
-                                  num_units=args.enc_num_units,
-                                  num_projs=args.enc_num_projs,
-                                  num_layers=args.enc_num_layers,
-                                  num_layers_sub=args.enc_num_layers_sub,
+                                  nunits=args.enc_nunits,
+                                  nprojs=args.enc_nprojs,
+                                  nlayers=args.enc_nlayers,
+                                  nlayers_sub=args.enc_nlayers_sub,
                                   dropout_in=args.dropout_in,
                                   dropout_hidden=args.dropout_enc,
-                                  subsample=args.subsample,
+                                  subsample=[s == '1' for s in args.subsample.split('_')],
                                   subsample_type=args.subsample_type,
                                   batch_first=True,
-                                  num_stack=args.num_stack,
-                                  num_splice=args.num_splice,
+                                  nstacks=args.nstacks,
+                                  nsplices=args.nsplices,
                                   conv_in_channel=args.conv_in_channel,
                                   conv_channels=args.conv_channels,
                                   conv_kernel_sizes=args.conv_kernel_sizes,
@@ -103,7 +102,7 @@ class Seq2seq(ModelBase):
                                   nin=0,
                                   layer_norm=args.layer_norm)
         elif args.enc_type == 'cnn':
-            assert args.num_stack == 1 and args.num_splice == 1
+            assert args.nstacks == 1 and args.nsplices == 1
             self.enc = CNNEncoder(input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
                                   in_channel=args.conv_in_channel,
                                   channels=args.conv_channels,
@@ -119,14 +118,14 @@ class Seq2seq(ModelBase):
         # Bridge layer between the encoder and decoder
         if args.enc_type == 'cnn':
             logger.info('insert a bridge layer')
-            self.bridge = LinearND(self.encoder.output_dim, args.dec_num_units,
+            self.bridge = LinearND(self.encoder.output_dim, args.dec_nunits,
                                    dropout=args.dropout_enc)
-            self.enc_num_units = args.dec_num_units
+            self.enc_nunits = args.dec_nunits
         elif args.bridge_layer:
             logger.info('insert a bridge layer')
-            self.bridge = LinearND(self.enc_num_units, args.dec_num_units,
+            self.bridge = LinearND(self.enc_nunits, args.dec_nunits,
                                    dropout=args.dropout_enc)
-            self.enc_num_units = args.dec_num_units
+            self.enc_nunits = args.dec_nunits
 
         # MAIN TASK
         directions = []
@@ -137,29 +136,29 @@ class Seq2seq(ModelBase):
         for dir in directions:
             if (dir == 'fwd' and args.ctc_weight < 1) or dir == 'bwd':
                 # Attention layer
-                if args.att_num_heads > 1:
+                if args.attn_nheads > 1:
                     logger.info('multi-head attention')
                     attn = MultiheadAttentionMechanism(
-                        enc_num_units=self.enc_num_units,
-                        dec_num_units=args.dec_num_units,
-                        att_type=args.att_type,
-                        att_dim=args.att_dim,
-                        sharpening_factor=args.att_sharpening_factor,
-                        sigmoid_smoothing=args.att_sigmoid_smoothing,
-                        conv_out_channels=args.att_conv_num_channels,
-                        conv_kernel_size=args.att_conv_width,
-                        num_heads=args.att_num_heads)
+                        enc_nunits=self.enc_nunits,
+                        dec_nunits=args.dec_nunits,
+                        attn_type=args.attn_type,
+                        attn_dim=args.attn_dim,
+                        sharpening_factor=args.attn_sharpening,
+                        sigmoid_smoothing=args.attn_sigmoid,
+                        conv_out_channels=args.attn_conv_nchannels,
+                        conv_kernel_size=args.attn_conv_width,
+                        nheads=args.attn_nheads)
                 else:
                     logger.info('single-head attention')
                     attn = AttentionMechanism(
-                        enc_num_units=self.enc_num_units,
-                        dec_num_units=args.dec_num_units,
-                        att_type=args.att_type,
-                        att_dim=args.att_dim,
-                        sharpening_factor=args.att_sharpening_factor,
-                        sigmoid_smoothing=args.att_sigmoid_smoothing,
-                        conv_out_channels=args.att_conv_num_channels,
-                        conv_kernel_size=args.att_conv_width,
+                        enc_nunits=self.enc_nunits,
+                        dec_nunits=args.dec_nunits,
+                        attn_type=args.attn_type,
+                        attn_dim=args.attn_dim,
+                        sharpening_factor=args.attn_sharpening,
+                        sigmoid_smoothing=args.attn_sigmoid,
+                        conv_out_channels=args.attn_conv_nchannels,
+                        conv_kernel_size=args.attn_conv_width,
                         dropout=args.dropout_att)
             else:
                 attn = None
@@ -177,10 +176,10 @@ class Seq2seq(ModelBase):
                           sos=self.sos,
                           eos=self.eos,
                           pad=self.pad,
-                          enc_num_units=self.enc_num_units,
+                          enc_nunits=self.enc_nunits,
                           rnn_type=args.dec_type,
-                          num_units=args.dec_num_units,
-                          num_layers=args.dec_num_layers,
+                          nunits=args.dec_nunits,
+                          nlayers=args.dec_nlayers,
                           residual=args.dec_residual,
                           emb_dim=args.emb_dim,
                           vocab=self.vocab,
@@ -193,7 +192,7 @@ class Seq2seq(ModelBase):
                           init_with_enc=args.init_with_enc,
                           ctc_weight=args.ctc_weight if dir == 'fwd' or (
                               dir == 'bwd' and self.fwd_weight == 0) else 0,
-                          ctc_fc_list=args.ctc_fc_list,
+                          ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split('_')],
                           input_feeding=args.input_feeding,
                           backward=(dir == 'bwd'),
                           rnnlm_cold_fusion=args.rnnlm_cold_fusion,
@@ -210,42 +209,42 @@ class Seq2seq(ModelBase):
         if args.main_task_weight < 1:
             if args.ctc_weight_sub < 1:
                 # Attention layer
-                if args.att_num_heads_sub > 1:
+                if args.attn_nheads_sub > 1:
                     logger.info('multi-head attention (sub)')
-                    att_sub = MultiheadAttentionMechanism(
-                        enc_num_units=self.enc_num_units,
-                        dec_num_units=args.dec_num_units,
-                        att_type=args.att_type,
-                        att_dim=args.att_dim,
-                        sharpening_factor=args.att_sharpening_factor,
-                        sigmoid_smoothing=args.att_sigmoid_smoothing,
-                        conv_out_channels=args.att_conv_num_channels,
-                        conv_kernel_size=args.att_conv_width,
-                        num_heads=args.att_num_heads_sub)
+                    attn_sub = MultiheadAttentionMechanism(
+                        enc_nunits=self.enc_nunits,
+                        dec_nunits=args.dec_nunits,
+                        attn_type=args.attn_type,
+                        attn_dim=args.attn_dim,
+                        sharpening_factor=args.attn_sharpening,
+                        sigmoid_smoothing=args.attn_sigmoid,
+                        conv_out_channels=args.attn_conv_nchannels,
+                        conv_kernel_size=args.attn_conv_width,
+                        nheads=args.attn_nheads_sub)
                 else:
                     logger.info('single-head attention (sub)')
-                    att_sub = AttentionMechanism(
-                        enc_num_units=self.enc_num_units,
-                        dec_num_units=args.dec_num_units,
-                        att_type=args.att_type,
-                        att_dim=args.att_dim,
-                        sharpening_factor=args.att_sharpening_factor,
-                        sigmoid_smoothing=args.att_sigmoid_smoothing,
-                        conv_out_channels=args.att_conv_num_channels,
-                        conv_kernel_size=args.att_conv_width,
+                    attn_sub = AttentionMechanism(
+                        enc_nunits=self.enc_nunits,
+                        dec_nunits=args.dec_nunits,
+                        attn_type=args.attn_type,
+                        attn_dim=args.attn_dim,
+                        sharpening_factor=args.attn_sharpening,
+                        sigmoid_smoothing=args.attn_sigmoid,
+                        conv_out_channels=args.attn_conv_nchannels,
+                        conv_kernel_size=args.attn_conv_width,
                         dropout=args.dropout_att)
             else:
-                att_sub = None
+                attn_sub = None
 
             # Decoder
-            self.dec_fwd_sub1 = Decoder(attention=att_sub,
+            self.dec_fwd_sub1 = Decoder(attention=attn_sub,
                                         sos=self.sos,
                                         eos=self.eos,
                                         pad=self.pad,
-                                        enc_num_units=self.enc_num_units,
+                                        enc_nunits=self.enc_nunits,
                                         rnn_type=args.dec_type,
-                                        num_units=args.dec_num_units,
-                                        num_layers=args.dec_num_layers,
+                                        nunits=args.dec_nunits,
+                                        nlayers=args.dec_nlayers,
                                         residual=args.dec_residual,
                                         emb_dim=args.emb_dim,
                                         vocab=self.vocab_sub,
@@ -257,7 +256,7 @@ class Seq2seq(ModelBase):
                                         layer_norm=args.layer_norm,
                                         init_with_enc=args.init_with_enc,
                                         ctc_weight=args.ctc_weight_sub,
-                                        ctc_fc_list=args.ctc_fc_list_sub,
+                                        ctc_fc_list=[int(fc) for fc in args.ctc_fc_list_sub.split('_')],
                                         global_weight=1 - args.main_task_weight)
 
         if args.input_type == 'text':
@@ -392,12 +391,12 @@ class Seq2seq(ModelBase):
         """
         if self.input_type == 'speech':
             # Frame stacking
-            if self.num_stack > 1:
-                xs = [stack_frame(x, self.num_stack, self.num_skip)for x in xs]
+            if self.nstacks > 1:
+                xs = [stack_frame(x, self.nstacks, self.nskips)for x in xs]
 
             # Splicing
-            if self.num_splice > 1:
-                xs = [do_splice(x, self.num_splice, self.num_stack) for x in xs]
+            if self.nsplices > 1:
+                xs = [splice(x, self.nsplices, self.nstacks) for x in xs]
 
             x_lens = [len(x) for x in xs]
             xs = [np2var(x, self.device_id).float() for x in xs]

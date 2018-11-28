@@ -37,15 +37,15 @@ logger = logging.getLogger('training')
 class Dataset(Base):
 
     def __init__(self, csv_path, dict_path,
-                 label_type, batch_size, max_epoch=None,
-                 is_test=False, max_num_frames=2000, min_num_frames=40,
+                 label_type, batch_size, nepochs=None,
+                 is_test=False, max_nframes=2000, min_nframes=40,
                  shuffle=False, sort_by_input_length=False,
                  short2long=False, sort_stop_epoch=None,
-                 num_enques=None, dynamic_batching=False,
-                 use_ctc=False, subsample_factor=1,
+                 nenques=None, dynamic_batching=False,
+                 ctc=False, subsample_factor=1,
                  skip_speech=False, wp_model=None,
                  csv_path_sub=None, dict_path_sub=None, label_type_sub=None,
-                 use_ctc_sub=False, subsample_factor_sub=1):
+                 ctc_sub=False, subsample_factor_sub=1):
         """A class for loading dataset.
 
         Args:
@@ -53,20 +53,20 @@ class Dataset(Base):
             dict_path (str):
             label_type (str): word or wp or char or phone
             batch_size (int): the size of mini-batch
-            max_epoch (int): the max epoch. None means infinite loop.
+            nepochs (int): the max epoch. None means infinite loop.
             is_test (bool):
-            max_num_frames (int): Exclude utteraces longer than this value
-            min_num_frames (int): Exclude utteraces shorter than this value
+            max_nframes (int): Exclude utteraces longer than this value
+            min_nframes (int): Exclude utteraces shorter than this value
             shuffle (bool): if True, shuffle utterances.
                 This is disabled when sort_by_input_length is True.
             sort_by_input_length (bool): if True, sort all utterances in the ascending order
             short2long (bool): if True, sort utteraces in the descending order
             sort_stop_epoch (int): After sort_stop_epoch, training will revert
                 back to a random order
-            num_enques (int): the number of elements to enqueue
+            nenques (int): the number of elements to enqueue
             dynamic_batching (bool): if True, batch size will be chainged
                 dynamically in training
-            use_ctc (bool):
+            ctc (bool):
             subsample_factor (int):
             skip_speech (bool): skip loading speech features
             wp_model ():
@@ -79,11 +79,11 @@ class Dataset(Base):
         self.label_type = label_type
         self.label_type_sub = label_type_sub
         self.batch_size = batch_size
-        self.max_epoch = max_epoch
+        self.max_epoch = nepochs
         self.shuffle = shuffle
         self.sort_by_input_length = sort_by_input_length
         self.sort_stop_epoch = sort_stop_epoch
-        self.num_enques = num_enques
+        self.nenques = nenques
         self.dynamic_batching = dynamic_batching
         self.skip_speech = skip_speech
         self.vocab = self.count_vocab_size(dict_path)
@@ -138,11 +138,11 @@ class Dataset(Base):
             num_utt_org = len(df)
 
             # Remove by threshold
-            df = df[df.apply(lambda x: min_num_frames <= x['x_len'] <= max_num_frames, axis=1)]
+            df = df[df.apply(lambda x: min_nframes <= x['x_len'] <= max_nframes, axis=1)]
             logger.info('Removed %d utterances (threshold)' % (num_utt_org - len(df)))
 
             # Rempve for CTC loss calculatioon
-            if use_ctc and subsample_factor > 1:
+            if ctc and subsample_factor > 1:
                 logger.info('Checking utterances for CTC...')
                 logger.info('Original utterance num: %d' % len(df))
                 num_utt_org = len(df)
@@ -154,11 +154,11 @@ class Dataset(Base):
                 num_utt_org = len(df_sub)
 
                 # Remove by threshold
-                df_sub = df_sub[df_sub.apply(lambda x: min_num_frames <= x['x_len'] <= max_num_frames, axis=1)]
+                df_sub = df_sub[df_sub.apply(lambda x: min_nframes <= x['x_len'] <= max_nframes, axis=1)]
                 logger.info('Removed %d utterances (threshold, sub)' % (num_utt_org - len(df_sub)))
 
                 # Rempve for CTC loss calculatioon
-                if use_ctc_sub and subsample_factor_sub > 1:
+                if ctc_sub and subsample_factor_sub > 1:
                     logger.info('Checking utterances for CTC...')
                     logger.info('Original utterance num (sub): %d' % len(df_sub))
                     num_utt_org = len(df_sub)
@@ -231,4 +231,5 @@ class Dataset(Base):
         return {'xs': xs, 'x_lens': x_lens,
                 'ys': ys, 'y_lens': y_lens,
                 'ys_sub': ys_sub, 'y_lens_sub': y_lens_sub,
-                'utt_ids':  utt_ids, 'text': text}
+                'utt_ids':  utt_ids, 'text': text,
+                'feat_path': [self.df['feat_path'][i] for i in utt_indices]}

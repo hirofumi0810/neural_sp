@@ -48,10 +48,10 @@ class Decoder(nn.Module):
         sos (int): index for <sos>
         eos (int): index for <eos>
         pad (int): index for <pad>
-        enc_num_units (int):
+        enc_nunits (int):
         rnn_type (str): lstm or gru
-        num_units (int): the number of units in each RNN layer
-        num_layers (int): the number of RNN layers
+        nunits (int): the number of units in each RNN layer
+        nlayers (int): the number of RNN layers
         residual (bool):
         emb_dim (int): the dimension of the embedding in target spaces.
         vocab (int): the number of nodes in softmax layer
@@ -82,10 +82,10 @@ class Decoder(nn.Module):
                  sos,
                  eos,
                  pad,
-                 enc_num_units,
+                 enc_nunits,
                  rnn_type,
-                 num_units,
-                 num_layers,
+                 nunits,
+                 nlayers,
                  residual,
                  emb_dim,
                  vocab,
@@ -116,8 +116,8 @@ class Decoder(nn.Module):
         self.pad = pad
         self.rnn_type = rnn_type
         assert rnn_type in ['lstm', 'gru']
-        self.num_units = num_units
-        self.num_layers = num_layers
+        self.nunits = nunits
+        self.nlayers = nlayers
         self.residual = residual
         self.logits_temp = logits_temp
         self.dropout_hidden = dropout_hidden
@@ -142,12 +142,12 @@ class Decoder(nn.Module):
             if len(ctc_fc_list) > 0:
                 fc_layers = OrderedDict()
                 for i in range(len(ctc_fc_list)):
-                    input_dim = enc_num_units if i == 0 else ctc_fc_list[i - 1]
+                    input_dim = enc_nunits if i == 0 else ctc_fc_list[i - 1]
                     fc_layers['fc' + str(i)] = LinearND(input_dim, ctc_fc_list[i], dropout=dropout_hidden)
                 fc_layers['fc' + str(len(ctc_fc_list))] = LinearND(ctc_fc_list[-1], vocab, dropout=0)
                 self.output_ctc = nn.Sequential(fc_layers)
             else:
-                self.output_ctc = LinearND(enc_num_units, vocab)
+                self.output_ctc = LinearND(enc_nunits, vocab)
             self.decode_ctc_greedy = GreedyDecoder(blank_index=0)
             self.decode_ctc_beam = BeamSearchDecoder(blank_index=0)
             self.warpctc_loss = warpctc_pytorch.CTCLoss(size_average=True)
@@ -157,14 +157,14 @@ class Decoder(nn.Module):
             if rnnlm_init:
                 assert internal_lm
                 assert rnnlm_init.predictor.vocab == vocab
-                assert rnnlm_init.predictor.num_units == num_units
-                assert rnnlm_init.predictor.num_layers == 1  # TODO(hirofumi): on-the-fly
+                assert rnnlm_init.predictor.nunits == nunits
+                assert rnnlm_init.predictor.nlayers == 1  # TODO(hirofumi): on-the-fly
 
             # for MTL with RNNLM objective
             if rnnlm_task_weight > 0:
                 assert internal_lm
                 if not share_lm_softmax:
-                    self.output_rnnlm = LinearND(num_units, vocab)
+                    self.output_rnnlm = LinearND(nunits, vocab)
 
             # Attention
             assert isinstance(attention, AttentionMechanism) or isinstance(attention, MultiheadAttentionMechanism)
@@ -172,47 +172,47 @@ class Decoder(nn.Module):
             # Decoder
             if internal_lm:
                 if rnn_type == 'lstm':
-                    self.lstm_inlm = nn.LSTMCell(emb_dim, num_units)
+                    self.lstm_inlm = nn.LSTMCell(emb_dim, nunits)
                     self.dropout_inlm = nn.Dropout(p=dropout_hidden)
-                    self.lstm_l0 = nn.LSTMCell(num_units + enc_num_units, num_units)
+                    self.lstm_l0 = nn.LSTMCell(nunits + enc_nunits, nunits)
                 elif rnn_type == 'gru':
-                    self.gru_inlm = nn.GRUCell(emb_dim, num_units)
+                    self.gru_inlm = nn.GRUCell(emb_dim, nunits)
                     self.dropout_inlm = nn.Dropout(p=dropout_hidden)
-                    self.gru_l0 = nn.GRUCell(num_units + enc_num_units, num_units)
+                    self.gru_l0 = nn.GRUCell(nunits + enc_nunits, nunits)
             else:
                 if rnn_type == 'lstm':
-                    self.lstm_l0 = nn.LSTMCell(emb_dim + enc_num_units, num_units)
+                    self.lstm_l0 = nn.LSTMCell(emb_dim + enc_nunits, nunits)
                 elif rnn_type == 'gru':
-                    self.gru_l0 = nn.GRUCell(emb_dim + enc_num_units, num_units)
+                    self.gru_l0 = nn.GRUCell(emb_dim + enc_nunits, nunits)
             self.dropout_l0 = nn.Dropout(p=dropout_hidden)
 
-            for i_l in range(1, num_layers):
+            for i_l in range(1, nlayers):
                 if rnn_type == 'lstm':
-                    rnn_i = nn.LSTMCell(num_units, num_units)
+                    rnn_i = nn.LSTMCell(nunits, nunits)
                 elif rnn_type == 'gru':
-                    rnn_i = nn.GRUCell(num_units, num_units)
+                    rnn_i = nn.GRUCell(nunits, nunits)
                 setattr(self, rnn_type + '_l' + str(i_l), rnn_i)
                 setattr(self, 'dropout_l' + str(i_l), nn.Dropout(p=dropout_hidden))
 
             # cold fusion
             if rnnlm_cold_fusion:
-                self.cf_linear_dec_feat = LinearND(num_units + enc_num_units, num_units)
+                self.cf_linear_dec_feat = LinearND(nunits + enc_nunits, nunits)
                 if cold_fusion == 'hidden':
-                    self.cf_linear_lm_feat = LinearND(rnnlm_cold_fusion.num_units, num_units)
+                    self.cf_linear_lm_feat = LinearND(rnnlm_cold_fusion.nunits, nunits)
                 elif cold_fusion == 'prob':
-                    self.cf_linear_lm_feat = LinearND(rnnlm_cold_fusion.vocab, num_units)
+                    self.cf_linear_lm_feat = LinearND(rnnlm_cold_fusion.vocab, nunits)
                 else:
                     raise ValueError(cold_fusion)
-                self.cf_linear_lm_gate = LinearND(num_units * 2, num_units)
-                self.output_bn = LinearND(num_units * 2, num_units)
+                self.cf_linear_lm_gate = LinearND(nunits * 2, nunits)
+                self.output_bn = LinearND(nunits * 2, nunits)
 
                 # fix RNNLM parameters
                 for p in self.rnnlm_cf.parameters():
                     p.requires_grad = False
             else:
-                self.output_bn = LinearND(num_units + enc_num_units, num_units)
+                self.output_bn = LinearND(nunits + enc_nunits, nunits)
 
-            self.output = LinearND(num_units, vocab)
+            self.output = LinearND(nunits, vocab)
 
             # Embedding
             self.embed = Embedding(vocab=vocab,
@@ -229,7 +229,7 @@ class Decoder(nn.Module):
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
         Returns:
             logits (FloatTensor): `[B, L, vocab]`
-            aw (FloatTensor): `[B, L, T, num_heads]`
+            aw (FloatTensor): `[B, L, T, nheads]`
             logits_lm (FloatTensor): `[B, L, vocab]`
 
         """
@@ -248,7 +248,7 @@ class Decoder(nn.Module):
             # Compute CTC loss
             loss_ctc = self.warpctc_loss(self.output_ctc(enc_out).transpose(0, 1).cpu(),  # time-major
                                          ys_ctc.cpu(), enc_lens_ctc, y_lens)
-            # NOTE: ctc loss has already been normalized by batch_size
+            # NOTE: ctc loss has already been normalized by bs
             # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
             if device_id >= 0:
@@ -281,7 +281,7 @@ class Decoder(nn.Module):
         ys_out_pad = pad_list(ys_out, -1)
 
         # Initialization
-        dec_out, dec_state = self.init_dec_state(enc_out, enc_lens, self.num_layers)
+        dec_out, dec_state = self.init_dec_state(enc_out, enc_lens, self.nlayers)
         _dec_out, _dec_state = self.init_dec_state(enc_out, enc_lens, 1)  # for internal LM
         self.score.reset()
         aw = None
@@ -327,7 +327,8 @@ class Decoder(nn.Module):
 
             # Sample for scheduled sampling
             if is_sample:
-                y_emb = self.embed(np.argmax(logits_att[-1].detach(), axis=2).cuda(device_id))
+                # y_emb = self.embed(np.argmax(logits_att[-1].detach(), axis=-1).cuda(device_id))
+                y_emb = self.embed(torch.argmax(logits_att[-1].detach(), dim=-1))
             else:
                 y_emb = ys_emb[:, t + 1:t + 2]
 
@@ -380,13 +381,13 @@ class Decoder(nn.Module):
                   'acc': acc}
         return loss, report
 
-    def init_dec_state(self, enc_out, enc_lens, num_layers):
+    def init_dec_state(self, enc_out, enc_lens, nlayers):
         """Initialize decoder state.
 
         Args:
             enc_out (FloatTensor): `[B, T, dec_units]`
             enc_lens (list): A list of length `[B]`
-            num_layers (int):
+            nlayers (int):
         Returns:
             dec_out (FloatTensor): `[B, 1, dec_units]`
             dec_state (tuple): A tuple of (hx_list, cx_list)
@@ -394,10 +395,10 @@ class Decoder(nn.Module):
                 cx_list (list of torch.autograd.Variable(float)):
 
         """
-        batch_size = enc_out.size(0)
+        bs = enc_out.size(0)
 
         if self.init_with_enc:
-            if enc_out.size(-1) == self.num_units:
+            if enc_out.size(-1) == self.nunits:
                 # unidirectinal encoder
                 dec_out = torch.cat([enc_out[b:b + 1, enc_lens[b] - 1:enc_lens[b]]
                                      for b in range(len(enc_lens))], dim=0)
@@ -405,17 +406,17 @@ class Decoder(nn.Module):
                 raise NotImplementedError()
                 # TODO(hirofumi): add bridge layer
                 # bidirectional encoder
-                dec_out = torch.cat([enc_out[b:b + 1, 0:1, self.num_units:]
+                dec_out = torch.cat([enc_out[b:b + 1, 0:1, self.nunits:]
                                      for b in range(len(enc_lens))], dim=0)
                 # NOTE: initialize with reverse direction
             dec_out = torch.tanh(dec_out)
-            hx_list = [dec_out.clone().squeeze(1)] * self.num_layers
-            cx_list = [dec_out.clone().squeeze(1)] * self.num_layers if self.rnn_type == 'lstm' else None
+            hx_list = [dec_out.clone().squeeze(1)] * self.nlayers
+            cx_list = [dec_out.clone().squeeze(1)] * self.nlayers if self.rnn_type == 'lstm' else None
         else:
-            dec_out = Variable(enc_out.new(batch_size, 1, self.num_units).fill_(0.))
-            zero_state = Variable(enc_out.new(batch_size, self.num_units).fill_(0.))
-            hx_list = [zero_state] * self.num_layers
-            cx_list = [zero_state] * self.num_layers if self.rnn_type == 'lstm' else None
+            dec_out = Variable(enc_out.new(bs, 1, self.nunits).fill_(0.))
+            zero_state = Variable(enc_out.new(bs, self.nunits).fill_(0.))
+            hx_list = [zero_state] * self.nlayers
+            cx_list = [zero_state] * self.nlayers if self.rnn_type == 'lstm' else None
 
         return dec_out, (hx_list, cx_list)
 
@@ -424,7 +425,7 @@ class Decoder(nn.Module):
 
         Args:
             y_emb (FloatTensor): `[B, 1, emb_dim]`
-            context_vec (FloatTensor): `[B, 1, enc_num_units]`
+            context_vec (FloatTensor): `[B, 1, enc_nunits]`
             dec_state (tuple): A tuple of (hx_list, cx_list)
                 hx_list (list of torch.autograd.Variable(float)):
                 cx_list (list of torch.autograd.Variable(float)):
@@ -432,11 +433,11 @@ class Decoder(nn.Module):
                 hx_list (list of torch.autograd.Variable(float)):
                 cx_list (list of torch.autograd.Variable(float)):
         Returns:
-            dec_out (FloatTensor): `[B, 1, num_units]`
+            dec_out (FloatTensor): `[B, 1, nunits]`
             dec_state (tuple): A tuple of (hx_list, cx_list)
                 hx_list (list of torch.autograd.Variable(float)):
                 cx_list (list of torch.autograd.Variable(float)):
-            _dec_out (FloatTensor): `[B, 1, num_units]`
+            _dec_out (FloatTensor): `[B, 1, nunits]`
             _dec_state (tuple): A tuple of (hx_list, cx_list)
                 hx_list (list of torch.autograd.Variable(float)):
                 cx_list (list of torch.autograd.Variable(float)):
@@ -464,7 +465,7 @@ class Decoder(nn.Module):
                 hx_list[0] = self.gru_l0(torch.cat([y_emb, context_vec], dim=-1), hx_list[0])
             _dec_out = None
 
-        for i_l in range(1, self.num_layers):
+        for i_l in range(1, self.nlayers):
             if self.rnn_type == 'lstm':
                 hx_list[i_l], cx_list[i_l] = getattr(self, 'lstm_l' + str(i_l))(
                     getattr(self, 'dropout_l' + str(i_l - 1))(hx_list[i_l - 1]), (hx_list[i_l], cx_list[i_l]))
@@ -476,17 +477,17 @@ class Decoder(nn.Module):
             if self.residual:
                 hx_list[i_l] += getattr(self, 'dropout_l' + str(i_l - 1))(hx_list[i_l - 1])
 
-        dec_out = getattr(self, 'dropout_l' + str(self.num_layers - 1))(hx_list[-1]).unsqueeze(1)
+        dec_out = getattr(self, 'dropout_l' + str(self.nlayers - 1))(hx_list[-1]).unsqueeze(1)
         return dec_out, (hx_list, cx_list), _dec_out, (hx_lm, cx_lm)
 
     def generate(self, context_vec, dec_out, logits_rnnlm_t, rnnlm_out):
         """Generate function.
 
         Args:
-            context_vec (FloatTensor): `[B, 1, enc_num_units]`
+            context_vec (FloatTensor): `[B, 1, enc_nunits]`
             dec_out (FloatTensor): `[B, 1, dec_units]`
             logits_rnnlm_t (FloatTensor): `[B, 1, vocab]`
-            rnnlm_out (FloatTensor): `[B, 1, lm_num_units]`
+            rnnlm_out (FloatTensor): `[B, 1, lm_nunits]`
         Returns:
             logits_t (FloatTensor): `[B, 1, vocab]`
 
@@ -518,10 +519,10 @@ class Decoder(nn.Module):
             aw (list): A list of length `[B]`, which contains arrays of size `[L, T]`
 
         """
-        batch_size, enc_time, enc_num_units = enc_out.size()
+        bs, enc_time, enc_nunits = enc_out.size()
 
         # Initialization
-        dec_out, dec_state = self.init_dec_state(enc_out, enc_lens, self.num_layers)
+        dec_out, dec_state = self.init_dec_state(enc_out, enc_lens, self.nlayers)
         _dec_out, _dec_state = self.init_dec_state(enc_out, enc_lens, 1)
         self.score.reset()
         aw = None
@@ -533,11 +534,11 @@ class Decoder(nn.Module):
             sos, eos = self.sos, self.eos
 
         # Start from <sos> (<eos> in case of the backward decoder)
-        y = Variable(enc_out.new(batch_size, 1).fill_(sos).long())
+        y = Variable(enc_out.new(bs, 1).fill_(sos).long())
 
         _best_hyps, _aws = [], []
-        y_lens = np.zeros((batch_size,), dtype=np.int32)
-        eos_flags = [False] * batch_size
+        y_lens = np.zeros((bs,), dtype=np.int32)
+        eos_flags = [False] * bs
         for t in range(int(math.floor(enc_time * max_len_ratio)) + 1):
             # Score
             context_vec, aw = self.score(enc_out, enc_lens, dec_out, aw)
@@ -567,15 +568,15 @@ class Decoder(nn.Module):
             _aws += [aw]
 
             # Count lengths of hypotheses
-            for b in range(batch_size):
+            for b in range(bs):
                 if not eos_flags[b]:
                     if y[b].item() == eos:
                         eos_flags[b] = True
                     y_lens[b] += 1
                     # NOTE: include <eos>
 
-            # Break if <eos> is outputed in all mini-batch_size
-            if sum(eos_flags) == batch_size:
+            # Break if <eos> is outputed in all mini-bs
+            if sum(eos_flags) == bs:
                 break
 
             # Recurrency
@@ -591,27 +592,27 @@ class Decoder(nn.Module):
         _best_hyps = var2np(_best_hyps)
         _aws = var2np(_aws)
 
-        if self.score.num_heads > 1:
+        if self.score.nheads > 1:
             _aws = _aws[:, :, :, 0]
             # TODO(hirofumi): fix for MHA
 
         # Truncate by the first <eos> (<sos> in case of the backward decoder)
         if self.backward:
             # Reverse the order
-            best_hyps = [_best_hyps[b, :y_lens[b]][::-1] for b in range(batch_size)]
-            aws = [_aws[b, :y_lens[b]][::-1] for b in range(batch_size)]
+            best_hyps = [_best_hyps[b, :y_lens[b]][::-1] for b in range(bs)]
+            aws = [_aws[b, :y_lens[b]][::-1] for b in range(bs)]
         else:
-            best_hyps = [_best_hyps[b, :y_lens[b]] for b in range(batch_size)]
-            aws = [_aws[b, :y_lens[b]] for b in range(batch_size)]
+            best_hyps = [_best_hyps[b, :y_lens[b]] for b in range(bs)]
+            aws = [_aws[b, :y_lens[b]] for b in range(bs)]
 
         # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:
             if self.backward:
                 best_hyps = [best_hyps[b][1:] if eos_flags[b]
-                             else best_hyps[b] for b in range(batch_size)]
+                             else best_hyps[b] for b in range(bs)]
             else:
                 best_hyps = [best_hyps[b][:-1] if eos_flags[b]
-                             else best_hyps[b] for b in range(batch_size)]
+                             else best_hyps[b] for b in range(bs)]
 
         return best_hyps, aws
 
@@ -641,7 +642,7 @@ class Decoder(nn.Module):
             scores (list):
 
         """
-        batch_size = enc_out.size(0)
+        bs = enc_out.size(0)
 
         # For cold fusion
         if params['rnnlm_weight'] > 0 and not self.cold_fusion:
@@ -659,9 +660,9 @@ class Decoder(nn.Module):
 
         nbest_hyps, aws, scores = [], [], []
         eos_flags = []
-        for b in range(batch_size):
+        for b in range(bs):
             # Initialization per utterance
-            dec_out, (hx_list, cx_list) = self.init_dec_state(enc_out[b:b + 1], enc_lens[b:b + 1], self.num_layers)
+            dec_out, (hx_list, cx_list) = self.init_dec_state(enc_out[b:b + 1], enc_lens[b:b + 1], self.nlayers)
             _dec_out, _dec_state = self.init_dec_state(enc_out[b:b + 1], enc_lens[b:b + 1], 1)
             context_vec = Variable(enc_out.new(1, 1, enc_out.size(-1)).fill_(0.))
             self.score.reset()
@@ -753,7 +754,7 @@ class Decoder(nn.Module):
                             # Recompute converage penalty in each step
                             score -= beam[i_beam]['prev_cov'] * params['coverage_penalty']
                             aw_stack = torch.stack(beam[i_beam]['aws'][1:] + [aw], dim=1)
-                            if self.score.num_heads > 1:
+                            if self.score.nheads > 1:
                                 cov_sum = aw_stack[0, :, :, 0].detach().cpu().numpy()
                                 # TODO(hirofumi): fix for MHA
                             else:
@@ -845,7 +846,7 @@ class Decoder(nn.Module):
         for b in range(len(aws)):
             for n in range(nbest):
                 aws[b][n] = var2np(torch.stack(aws[b][n], dim=1).squeeze(0))
-                if self.score.num_heads > 1:
+                if self.score.nheads > 1:
                     aws[b][n] = aws[b][n][:, :, 0]
                     # TODO(hirofumi): fix for MHA
 
@@ -853,10 +854,10 @@ class Decoder(nn.Module):
         if exclude_eos:
             if self.backward:
                 nbest_hyps = [[nbest_hyps[b][n][1:] if eos_flags[b][n]
-                               else nbest_hyps[b][n] for n in range(nbest)] for b in range(batch_size)]
+                               else nbest_hyps[b][n] for n in range(nbest)] for b in range(bs)]
             else:
                 nbest_hyps = [[nbest_hyps[b][n][:-1] if eos_flags[b][n]
-                               else nbest_hyps[b][n] for n in range(nbest)] for b in range(batch_size)]
+                               else nbest_hyps[b][n] for n in range(nbest)] for b in range(bs)]
 
         return nbest_hyps, aws, scores
 
@@ -873,10 +874,10 @@ class Decoder(nn.Module):
 
         """
         # Path through the softmax layer
-        batch_size, enc_time = enc_out.size()[: 2]
-        enc_out = enc_out.view(batch_size * enc_time, -1).contiguous()
+        bs, enc_time = enc_out.size()[: 2]
+        enc_out = enc_out.view(bs * enc_time, -1).contiguous()
         logits_ctc = self.output_ctc(enc_out)
-        logits_ctc = logits_ctc.view(batch_size, enc_time, -1)
+        logits_ctc = logits_ctc.view(bs, enc_time, -1)
 
         if beam_width == 1:
             best_hyps = self.decode_ctc_greedy(var2np(logits_ctc), x_lens)

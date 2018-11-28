@@ -35,7 +35,7 @@ logger = logging.getLogger('training')
 class Dataset(Base):
 
     def __init__(self, csv_path, dict_path, label_type, batch_size, bptt, eos,
-                 max_epoch=None, is_test=False, shuffle=False, wp_model=None):
+                 nepochs=None, is_test=False, shuffle=False, wp_model=None):
         """A class for loading dataset.
 
         Args:
@@ -45,7 +45,7 @@ class Dataset(Base):
             batch_size (int): the size of mini-batch
             bptt (int):
             eos (int):
-            max_epoch (int): the max epoch. None means infinite loop.
+            nepochs (int): the max epoch. None means infinite loop.
             is_test (bool):
             shuffle (bool): if True, shuffle utterances.
                 This is disabled when sort_by_input_length is True.
@@ -60,7 +60,7 @@ class Dataset(Base):
         self.batch_size = batch_size
         self.bptt = bptt
         self.eos = eos
-        self.max_epoch = max_epoch
+        self.max_epoch = nepochs
         self.shuffle = shuffle
         self.vocab = self.count_vocab_size(dict_path)
 

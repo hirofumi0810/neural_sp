@@ -20,6 +20,8 @@ from torch.nn.utils.rnn import pad_packed_sequence
 
 from neural_sp.models.linear import LinearND
 from neural_sp.models.seq2seq.encoders.cnn import CNNEncoder
+from neural_sp.models.seq2seq.encoders.cnn import VGG2LBlock
+from neural_sp.models.seq2seq.encoders.cnn import get_vgg2l_odim
 
 
 class RNNEncoder(nn.Module):
@@ -28,27 +30,27 @@ class RNNEncoder(nn.Module):
     Args:
         input_dim (int): the dimension of input features  (freq * channel)
         rnn_type (str): blstm or lstm or bgru or gru
-        num_units (int): the number of units in each RNN layer
-        num_projs (int): the number of units in each projection layer after RNN layer
-        num_layers (int): the number of RNN layers
+        nunits (int): the number of units in each layer
+        nprojs (int): the number of units in each projection layer
+        nlayers (int): the number of layers
         dropout_in (float): the probability to drop nodes in input-hidden connection
         dropout_hidden (float): the probability to drop nodes in hidden-hidden connection
         subsample (list): subsample in the corresponding RNN layers
             ex.) [False, True, True, False] means that subsample is conducted
                 in the 2nd and 3rd layers.
-        subsample_type (str): drop or concat
+        subsample_type (str): drop or concat or max_pool
         batch_first (bool): if True, batch-major computation will be performed
-        num_stack (int): the number of frames to stack
-        num_skip (int): the number of frames to skip
-        num_splice (int): frames to splice. Default is 1 frame.
+        nstacks (int): the number of frames to stack
+        nskips (int): the number of frames to skip
+        nsplices (int): frames to splice. Default is 1 frame.
         conv_in_channel (int): the number of channels of input features
         conv_channels (int): the number of channles in the CNN layers
         conv_kernel_sizes (list): the size of kernels in the CNN layers
         conv_strides (list): the number of strides in the CNN layers
         conv_poolings (list): the size of poolings in the CNN layers
         conv_batch_norm (bool): apply batch normalization only in the CNN layers
-        residual (bool): add residual connections between RNN layers
-        num_layers_sub (int): the number of layers in the sub task
+        residual (bool): add residual connections between the consecutive layers
+        nlayers_sub (int): the number of layers in the sub task
         nin (int): if larger than 0, insert 1*1 conv (filter size: nin)
             and ReLU activation between each LSTM layer
         layer_norm (bool): layer normalization
@@ -58,16 +60,16 @@ class RNNEncoder(nn.Module):
     def __init__(self,
                  input_dim,
                  rnn_type,
-                 num_units,
-                 num_projs,
-                 num_layers,
+                 nunits,
+                 nprojs,
+                 nlayers,
                  dropout_in,
                  dropout_hidden,
                  subsample,
                  subsample_type,
                  batch_first,
-                 num_stack,
-                 num_splice,
+                 nstacks,
+                 nsplices,
                  conv_in_channel,
                  conv_channels,
                  conv_kernel_sizes,
@@ -75,34 +77,34 @@ class RNNEncoder(nn.Module):
                  conv_poolings,
                  conv_batch_norm,
                  residual,
-                 num_layers_sub=0,
+                 nlayers_sub=0,
                  nin=0,
                  layer_norm=False):
 
         super(RNNEncoder, self).__init__()
 
-        if len(subsample) > 0 and len(subsample) != num_layers:
-            raise ValueError('subsample must be the same size as num_layers.')
+        if len(subsample) > 0 and len(subsample) != nlayers:
+            raise ValueError('subsample must be the same size as nlayers.')
         if subsample_type not in ['drop', 'concat']:
             raise TypeError('subsample_type must be "drop" or "concat".')
-        if num_layers_sub < 0 or (num_layers_sub > 1 and num_layers < num_layers_sub):
-            raise ValueError('Set num_layers_sub between 1 to num_layers.')
+        if nlayers_sub < 0 or (nlayers_sub > 1 and nlayers < nlayers_sub):
+            raise ValueError('Set nlayers_sub between 1 to nlayers.')
 
         self.rnn_type = rnn_type
         self.bidirectional = True if rnn_type in ['blstm', 'bgru'] else False
-        self.num_units = num_units
-        self.num_directions = 2 if self.bidirectional else 1
-        self.num_projs = num_projs if num_projs is not None else 0
-        self.num_layers = num_layers
+        self.nunits = nunits
+        self.ndirs = 2 if self.bidirectional else 1
+        self.nprojs = nprojs if nprojs is not None else 0
+        self.nlayers = nlayers
         self.batch_first = batch_first
         self.layer_norm = layer_norm
 
         # Setting for hierarchical encoder
-        self.num_layers_sub = num_layers_sub
+        self.nlayers_sub = nlayers_sub
 
         # Setting for subsampling
         if len(subsample) == 0:
-            self.subsample = [False] * num_layers
+            self.subsample = [False] * nlayers
         else:
             self.subsample = subsample
         self.subsample_type = subsample_type
@@ -112,7 +114,7 @@ class RNNEncoder(nn.Module):
         subsample_last_layer = 0
         for l_reverse, is_subsample in enumerate(subsample[::-1]):
             if is_subsample:
-                subsample_last_layer = num_layers - l_reverse
+                subsample_last_layer = nlayers - l_reverse
                 break
         self.residual_start_layer = subsample_last_layer + 1
         # NOTE: residual connection starts from the last subsampling layer
@@ -126,7 +128,7 @@ class RNNEncoder(nn.Module):
 
         # Setting for CNNs before RNNs
         if len(conv_channels) > 0 and len(conv_channels) == len(conv_kernel_sizes) and len(conv_kernel_sizes) == len(conv_strides):
-            assert num_stack == 1 and num_splice == 1
+            assert nstacks == 1 and nsplices == 1
             self.conv = CNNEncoder(input_dim,
                                    in_channel=conv_in_channel,
                                    channels=conv_channels,
@@ -138,52 +140,48 @@ class RNNEncoder(nn.Module):
                                    activation='relu',
                                    batch_norm=conv_batch_norm)
             input_dim = self.conv.output_dim
+
+            # espnet
+            # self.conv = VGG2LBlock(in_channel=conv_in_channel)
+            # input_dim = get_vgg2l_odim(input_dim, in_channel=conv_in_channel)
         else:
-            input_dim *= num_splice * num_stack
+            input_dim *= nsplices * nstacks
             self.conv = None
 
-        self.fast_impl = False
+        self._fast_impl = False
         # Fast implementation without processes between each layer
-        if sum(self.subsample) == 0 and self.num_projs == 0 and not residual and num_layers_sub == 0 and (not conv_batch_norm) and nin == 0:
-            self.fast_impl = True
+        if sum(self.subsample) == 0 and self.nprojs == 0 and not residual and nlayers_sub == 0 and (not conv_batch_norm) and nin == 0:
+            self._fast_impl = True
             if 'lstm' in rnn_type:
-                rnn = nn.LSTM(input_dim,
-                              hidden_size=num_units,
-                              num_layers=num_layers,
-                              bias=True,
-                              batch_first=batch_first,
-                              dropout=dropout_hidden,
-                              bidirectional=self.bidirectional)
+                rnn = nn.LSTM
             elif 'gru' in rnn_type:
-                rnn = nn.GRU(input_dim,
-                             hidden_size=num_units,
-                             num_layers=num_layers,
-                             bias=True,
-                             batch_first=batch_first,
-                             dropout=dropout_hidden,
-                             bidirectional=self.bidirectional)
+                rnn = nn.GRU
             else:
                 raise ValueError('rnn_type must be "(b)lstm" or "(b)gru".')
 
-            setattr(self, rnn_type, rnn)
+            self.rnn = rnn(input_dim, nunits, nlayers,
+                           bias=True,
+                           batch_first=batch_first,
+                           dropout=dropout_hidden,
+                           bidirectional=self.bidirectional)
             # NOTE: pytorch introduces a dropout layer on the outputs of
             # each RNN layer EXCEPT the last layer
 
-            # Dropout for hidden-output connection
+            # Dropout for the outputs of the top layer
             self.dropout_top = nn.Dropout(p=dropout_hidden)
 
         else:
-            for i_l in range(num_layers):
+            for i_l in range(nlayers):
                 if i_l == 0:
                     enc_in_dim = input_dim
                 elif nin > 0:
                     enc_in_dim = nin
-                elif self.num_projs > 0:
-                    enc_in_dim = num_projs
+                elif self.nprojs > 0:
+                    enc_in_dim = nprojs
                     if subsample_type == 'concat' and i_l > 0 and self.subsample[i_l - 1]:
                         enc_in_dim *= 2
                 else:
-                    enc_in_dim = num_units * self.num_directions
+                    enc_in_dim = nunits * self.ndirs
                     if subsample_type == 'concat' and i_l > 0 and self.subsample[i_l - 1]:
                         enc_in_dim *= 2
 
@@ -194,22 +192,20 @@ class RNNEncoder(nn.Module):
                 else:
                     raise ValueError('rnn_type must be "lstm" or "gru".')
 
-                setattr(self, rnn_type + '_l' + str(i_l), rnn_i(enc_in_dim,
-                                                                hidden_size=num_units,
-                                                                num_layers=1,
+                setattr(self, rnn_type + '_l' + str(i_l), rnn_i(enc_in_dim, nunits, 1,
                                                                 bias=True,
                                                                 batch_first=batch_first,
                                                                 dropout=0,
                                                                 bidirectional=self.bidirectional))
-                enc_out_dim = num_units * self.num_directions
+                enc_out_dim = nunits * self.ndirs
 
                 # Dropout for hidden-hidden or hidden-output connection
                 setattr(self, 'dropout_l' + str(i_l), nn.Dropout(p=dropout_hidden))
 
-                if i_l != self.num_layers - 1 and self.num_projs > 0:
-                    proj_i = LinearND(num_units * self.num_directions, num_projs)
+                if i_l != self.nlayers - 1 and self.nprojs > 0:
+                    proj_i = LinearND(nunits * self.ndirs, nprojs)
                     setattr(self, 'proj_l' + str(i_l), proj_i)
-                    enc_out_dim = num_projs
+                    enc_out_dim = nprojs
 
                 # Network in network (1*1 conv)
                 if nin > 0:
@@ -232,43 +228,25 @@ class RNNEncoder(nn.Module):
                             setattr(self, 'bn_l' + str(i_l), nn.BatchNorm1d(enc_out_dim))
                     # NOTE* BN in RNN models is applied only after NiN
 
-                # Prepare additional layer for the sub task
-                if self.num_layers_sub >= 1 and i_l == self.num_layers_sub - 1:
-                    if 'lstm' in rnn_type:
-                        rnn_i_sub = nn.LSTM
-                    elif 'gru' in rnn_type:
-                        rnn_i_sub = nn.GRU
-
-                    setattr(self, rnn_type + '_l' + str(i_l) + '_sub', rnn_i_sub(enc_in_dim,
-                                                                                 hidden_size=num_units,
-                                                                                 num_layers=1,
-                                                                                 bias=True,
-                                                                                 batch_first=batch_first,
-                                                                                 dropout=0,
-                                                                                 bidirectional=self.bidirectional))
-
-                    # Dropout for hidden-hidden or hidden-output connection
-                    setattr(self, 'dropout_l' + str(i_l) + '_sub', nn.Dropout(p=dropout_hidden))
-
     def forward(self, xs, x_lens):
         """Forward computation.
 
         Args:
-            xs (torch.autograd.Variable, float): `[B, T, input_dim]`
+            xs (FloatTensor): `[B, T, input_dim]`
             x_lens (list): `[B]`
         Returns:
-            xs (torch.autograd.Variable, float):
+            xs (FloatTensor):
                 if batch_first is True
-                    `[B, T // sum(subsample), num_units (* num_directions)]`
+                    `[B, T // sum(subsample), nunits (* ndirs)]`
                 else
-                    `[T // sum(subsample), B, num_units (* num_directions)]`
+                    `[T // sum(subsample), B, nunits (* ndirs)]`
             x_lens (list): `[B]`
             OPTION:
-                xs_sub (torch.autograd.Variable, float):
+                xs_sub (FloatTensor):
                     if batch_first is True
-                        `[B, T // sum(subsample), num_units (* num_directions)]`
+                        `[B, T // sum(subsample), nunits (* ndirs)]`
                     else
-                        `[T // sum(subsample), B, num_units (* num_directions)]`
+                        `[T // sum(subsample), B, nunits (* ndirs)]`
                 x_lens_sub (list): `[B]`
 
         """
@@ -283,7 +261,7 @@ class RNNEncoder(nn.Module):
             # Convert to the time-major
             xs = xs.transpose(0, 1).contiguous()
 
-        if self.fast_impl:
+        if self._fast_impl:
             getattr(self, self.rnn_type).flatten_parameters()
             # NOTE: this is necessary for multi-GPUs setting
 
@@ -294,11 +272,11 @@ class RNNEncoder(nn.Module):
                 xs, batch_first=self.batch_first, padding_value=0)
             # assert x_lens == unpacked_seq_len
 
-            # Dropout for hidden-output connection
+            # Dropout for the outputs of the top layer
             xs = self.dropout_top(xs)
         else:
             res_outputs = []
-            for i_l in range(self.num_layers):
+            for i_l in range(self.nlayers):
                 getattr(self, self.rnn_type + '_l' + str(i_l)).flatten_parameters()
                 # NOTE: this is necessary for multi-GPUs setting
 
@@ -313,25 +291,25 @@ class RNNEncoder(nn.Module):
                 xs = getattr(self, 'dropout_l' + str(i_l))(xs)
 
                 # Pick up outputs in the sub task before the projection layer
-                if self.num_layers_sub >= 1 and i_l == self.num_layers_sub - 1:
-                    getattr(self, self.rnn_type + '_l' + str(i_l) + '_sub').flatten_parameters()
-                    # NOTE: this is necessary for multi-GPUs setting
+                if self.nlayers_sub >= 1 and i_l == self.nlayers_sub - 1:
+                    # getattr(self, self.rnn_type + '_l' + str(i_l) + '_sub').flatten_parameters()
+                    # # NOTE: this is necessary for multi-GPUs setting
+                    #
+                    # # Path through RNN
+                    # xs_sub = pack_padded_sequence(xs, x_lens, batch_first=self.batch_first)
+                    # xs_sub, _ = getattr(self, self.rnn_type + '_l' + str(i_l) + '_sub')(xs_sub, hx=None)
+                    # xs_sub, unpacked_seq_len = pad_packed_sequence(
+                    #     xs_sub, batch_first=self.batch_first, padding_value=0)
+                    # # assert x_lens == unpacked_seq_len
+                    #
+                    # # Dropout for hidden-hidden or hidden-output connection
+                    # xs_sub = getattr(self, 'dropout_l' + str(i_l) + '_sub')(xs_sub)
 
-                    # Path through RNN
-                    xs_sub = pack_padded_sequence(xs, x_lens, batch_first=self.batch_first)
-                    xs_sub, _ = getattr(self, self.rnn_type + '_l' + str(i_l) + '_sub')(xs_sub, hx=None)
-                    xs_sub, unpacked_seq_len = pad_packed_sequence(
-                        xs_sub, batch_first=self.batch_first, padding_value=0)
-                    # assert x_lens == unpacked_seq_len
-
-                    # Dropout for hidden-hidden or hidden-output connection
-                    xs_sub = getattr(self, 'dropout_l' + str(i_l) + '_sub')(xs_sub)
-
-                    # xs_sub = xs.clone()
+                    xs_sub = xs.clone()
                     x_lens_sub = copy.deepcopy(x_lens)
 
                 # NOTE: Exclude the last layer
-                if i_l != self.num_layers - 1:
+                if i_l != self.nlayers - 1:
                     # Subsampling
                     if self.subsample[i_l]:
                         if self.subsample_type == 'drop':
@@ -360,7 +338,7 @@ class RNNEncoder(nn.Module):
                             x_lens = [xs[:, i].size(0) for i in range(xs.size(1))]
 
                     # Projection layer (affine transformation)
-                    if self.num_projs > 0:
+                    if self.nprojs > 0:
                         xs = F.tanh(getattr(self, 'proj_l' + str(i_l))(xs))
 
                     # NiN
@@ -392,7 +370,7 @@ class RNNEncoder(nn.Module):
             xs = xs.transpose(0, 1).contiguous()
 
         # For the sub task
-        if self.num_layers_sub >= 1:
+        if self.nlayers_sub >= 1:
             if not self.batch_first:
                 # Convert to the time-major
                 xs_sub = xs_sub.transpose(0, 1).contiguous()
