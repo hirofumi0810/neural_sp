@@ -39,7 +39,6 @@ class RNNEncoder(nn.Module):
             ex.) [False, True, True, False] means that subsample is conducted
                 in the 2nd and 3rd layers.
         subsample_type (str): drop or concat or max_pool
-        batch_first (bool): if True, batch-major computation will be performed
         nstacks (int): the number of frames to stack
         nskips (int): the number of frames to skip
         nsplices (int): frames to splice. Default is 1 frame.
@@ -67,7 +66,6 @@ class RNNEncoder(nn.Module):
                  dropout_hidden,
                  subsample,
                  subsample_type,
-                 batch_first,
                  nstacks,
                  nsplices,
                  conv_in_channel,
@@ -96,7 +94,6 @@ class RNNEncoder(nn.Module):
         self.ndirs = 2 if self.bidirectional else 1
         self.nprojs = nprojs if nprojs is not None else 0
         self.nlayers = nlayers
-        self.batch_first = batch_first
         self.layer_norm = layer_norm
 
         # Setting for hierarchical encoder
@@ -161,16 +158,17 @@ class RNNEncoder(nn.Module):
 
             self.rnn = rnn(input_dim, nunits, nlayers,
                            bias=True,
-                           batch_first=batch_first,
+                           batch_first=True,
                            dropout=dropout_hidden,
                            bidirectional=self.bidirectional)
-            # NOTE: pytorch introduces a dropout layer on the outputs of
-            # each RNN layer EXCEPT the last layer
+            # NOTE: pytorch introduces a dropout layer on the outputs of each layer EXCEPT the last layer
 
             # Dropout for the outputs of the top layer
             self.dropout_top = nn.Dropout(p=dropout_hidden)
 
         else:
+            self.rnn = torch.nn.ModuleList()
+            self.proj = torch.nn.ModuleList()
             for i_l in range(nlayers):
                 if i_l == 0:
                     enc_in_dim = input_dim
@@ -192,19 +190,18 @@ class RNNEncoder(nn.Module):
                 else:
                     raise ValueError('rnn_type must be "lstm" or "gru".')
 
-                setattr(self, rnn_type + '_l' + str(i_l), rnn_i(enc_in_dim, nunits, 1,
-                                                                bias=True,
-                                                                batch_first=batch_first,
-                                                                dropout=0,
-                                                                bidirectional=self.bidirectional))
+                self.rnn += [rnn_i(enc_in_dim, nunits, 1,
+                                   bias=True,
+                                   batch_first=True,
+                                   dropout=0,
+                                   bidirectional=self.bidirectional)]
                 enc_out_dim = nunits * self.ndirs
 
                 # Dropout for hidden-hidden or hidden-output connection
                 setattr(self, 'dropout_l' + str(i_l), nn.Dropout(p=dropout_hidden))
 
                 if i_l != self.nlayers - 1 and self.nprojs > 0:
-                    proj_i = LinearND(nunits * self.ndirs, nprojs)
-                    setattr(self, 'proj_l' + str(i_l), proj_i)
+                    self.proj += [LinearND(nunits * self.ndirs, nprojs)]
                     enc_out_dim = nprojs
 
                 # Network in network (1*1 conv)
@@ -236,17 +233,11 @@ class RNNEncoder(nn.Module):
             x_lens (list): `[B]`
         Returns:
             xs (FloatTensor):
-                if batch_first is True
-                    `[B, T // sum(subsample), nunits (* ndirs)]`
-                else
-                    `[T // sum(subsample), B, nunits (* ndirs)]`
+                `[B, T // sum(subsample), nunits (* ndirs)]`
             x_lens (list): `[B]`
             OPTION:
                 xs_sub (FloatTensor):
-                    if batch_first is True
-                        `[B, T // sum(subsample), nunits (* ndirs)]`
-                    else
-                        `[T // sum(subsample), B, nunits (* ndirs)]`
+                    `[B, T // sum(subsample), nunits (* ndirs)]`
                 x_lens_sub (list): `[B]`
 
         """
@@ -257,19 +248,14 @@ class RNNEncoder(nn.Module):
         if self.conv is not None:
             xs, x_lens = self.conv(xs, x_lens)
 
-        if not self.batch_first:
-            # Convert to the time-major
-            xs = xs.transpose(0, 1).contiguous()
-
         if self._fast_impl:
             getattr(self, self.rnn_type).flatten_parameters()
             # NOTE: this is necessary for multi-GPUs setting
 
             # Path through RNN
-            xs = pack_padded_sequence(xs, x_lens, batch_first=self.batch_first)
+            xs = pack_padded_sequence(xs, x_lens, batch_first=True)
             xs, _ = getattr(self, self.rnn_type)(xs, hx=None)
-            xs, unpacked_seq_len = pad_packed_sequence(
-                xs, batch_first=self.batch_first, padding_value=0)
+            xs, unpacked_seq_len = pad_packed_sequence(xs, batch_first=True, padding_value=0)
             # assert x_lens == unpacked_seq_len
 
             # Dropout for the outputs of the top layer
@@ -277,14 +263,13 @@ class RNNEncoder(nn.Module):
         else:
             res_outputs = []
             for i_l in range(self.nlayers):
-                getattr(self, self.rnn_type + '_l' + str(i_l)).flatten_parameters()
+                self.rnn[i_l].flatten_parameters()
                 # NOTE: this is necessary for multi-GPUs setting
 
                 # Path through RNN
-                xs = pack_padded_sequence(xs, x_lens, batch_first=self.batch_first)
-                xs, _ = getattr(self, self.rnn_type + '_l' + str(i_l))(xs, hx=None)
-                xs, unpacked_seq_len = pad_packed_sequence(
-                    xs, batch_first=self.batch_first, padding_value=0)
+                xs = pack_padded_sequence(xs, x_lens, batch_first=True)
+                xs, _ = self.rnn[i_l](xs, hx=None)
+                xs, unpacked_seq_len = pad_packed_sequence(xs, batch_first=True, padding_value=0)
                 # assert x_lens == unpacked_seq_len
 
                 # Dropout for hidden-hidden or hidden-output connection
@@ -292,19 +277,6 @@ class RNNEncoder(nn.Module):
 
                 # Pick up outputs in the sub task before the projection layer
                 if self.nlayers_sub >= 1 and i_l == self.nlayers_sub - 1:
-                    # getattr(self, self.rnn_type + '_l' + str(i_l) + '_sub').flatten_parameters()
-                    # # NOTE: this is necessary for multi-GPUs setting
-                    #
-                    # # Path through RNN
-                    # xs_sub = pack_padded_sequence(xs, x_lens, batch_first=self.batch_first)
-                    # xs_sub, _ = getattr(self, self.rnn_type + '_l' + str(i_l) + '_sub')(xs_sub, hx=None)
-                    # xs_sub, unpacked_seq_len = pad_packed_sequence(
-                    #     xs_sub, batch_first=self.batch_first, padding_value=0)
-                    # # assert x_lens == unpacked_seq_len
-                    #
-                    # # Dropout for hidden-hidden or hidden-output connection
-                    # xs_sub = getattr(self, 'dropout_l' + str(i_l) + '_sub')(xs_sub)
-
                     xs_sub = xs.clone()
                     x_lens_sub = copy.deepcopy(x_lens)
 
@@ -313,33 +285,22 @@ class RNNEncoder(nn.Module):
                     # Subsampling
                     if self.subsample[i_l]:
                         if self.subsample_type == 'drop':
-                            if self.batch_first:
-                                xs = xs[:, 1::2, :]
-                            else:
-                                xs = xs[1::2, :, :]
+                            xs = xs[:, 1::2, :]
                             # NOTE: Pick up features at EVEN time step
 
                         # Concatenate the successive frames
                         elif self.subsample_type == 'concat':
-                            if self.batch_first:
-                                xs = [torch.cat([xs[:, t - 1:t, :], xs[:, t:t + 1, :]], dim=2)
-                                      for t in range(xs.size(1)) if (t + 1) % 2 == 0]
-                                xs = torch.cat(xs, dim=1)
-                            else:
-                                xs = [torch.cat([xs[t - 1:t, :, :], xs[t:t + 1, :, :]], dim=2)
-                                      for t in range(xs.size(0)) if (t + 1) % 2 == 0]
-                                xs = torch.cat(xs, dim=0)
+                            xs = [torch.cat([xs[:, t - 1:t, :], xs[:, t:t + 1, :]], dim=2)
+                                  for t in range(xs.size(1)) if (t + 1) % 2 == 0]
+                            xs = torch.cat(xs, dim=1)
                             # NOTE: Exclude the last frame if the length of xs is odd
 
                         # Update x_lens
-                        if self.batch_first:
-                            x_lens = [x.size(0) for x in xs]
-                        else:
-                            x_lens = [xs[:, i].size(0) for i in range(xs.size(1))]
+                        x_lens = [x.size(0) for x in xs]
 
                     # Projection layer (affine transformation)
                     if self.nprojs > 0:
-                        xs = F.tanh(getattr(self, 'proj_l' + str(i_l))(xs))
+                        xs = F.tanh(self.proj[i_l](xs))
 
                     # NiN
                     if self.nin > 0:
@@ -365,22 +326,15 @@ class RNNEncoder(nn.Module):
                                 res_outputs = [xs]
                     # NOTE: Exclude residual connection from the raw inputs
 
-        if not self.batch_first:
-            # Convert to the time-major
-            xs = xs.transpose(0, 1).contiguous()
-
         # For the sub task
         if self.nlayers_sub >= 1:
-            if not self.batch_first:
-                # Convert to the time-major
-                xs_sub = xs_sub.transpose(0, 1).contiguous()
             return xs, x_lens, xs_sub, x_lens_sub
         else:
             return xs, x_lens
 
 
 def to2d(xs, size):
-    return xs.contiguous().view((int(np.prod(size[:-1])), int(size[-1])))
+    return xs.contiguous().view((int(np.prod(size[: -1])), int(size[-1])))
 
 
 def to3d(xs, size):

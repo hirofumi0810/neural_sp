@@ -89,7 +89,6 @@ class Seq2seq(ModelBase):
                                   dropout_hidden=args.dropout_enc,
                                   subsample=[s == '1' for s in args.subsample.split('_')],
                                   subsample_type=args.subsample_type,
-                                  batch_first=True,
                                   nstacks=args.nstacks,
                                   nsplices=args.nsplices,
                                   conv_in_channel=args.conv_in_channel,
