@@ -13,17 +13,72 @@ gpu=
 ### path to save preproecssed data
 export data=/n/sd8/inaguma/corpus/timit
 
+#########################
+# ASR configuration
+#########################
+### topology
+enc_type=bgru
+enc_nunits=256
+enc_nprojs=0
+enc_nlayers=5
+enc_residual=
+subsample="1_1_1_1_1"
+subsample_type=concat
+attn_type=location
+attn_dim=256
+attn_nheads=1
+dec_type=gru
+dec_nunits=256
+dec_nprojs=0
+dec_nlayers=1
+dec_residual=
+emb_dim=256
+ctc_fc_list=""
+
+### optimization
+batch_size=32
+optimizer=adam
+learning_rate=1e-3
+nepochs=100
+convert_to_sgd_epoch=40
+print_step=10
+decay_start_epoch=20
+decay_rate=0.97
+decay_patient_epoch=0
+not_improved_patient_epoch=20
+eval_start_epoch=20
+warmup_start_learning_rate=1e-4
+warmup_step=0
+warmup_epoch=0
+
+### initialization
+param_init=0.1
+param_init_dist=uniform
+pretrained_model=
+
+### regularization
+dropout_in=0.2
+dropout_enc=0.5
+dropout_dec=0.2
+dropout_emb=0.2
+dropout_att=0.0
+weight_decay=1e-6
+ss_prob=0.0
+ss_type=constant
+lsm_prob=0.0
+
+### MTL
+ctc_weight=0.0
+
 ### path to save the model
 model=/n/sd8/inaguma/result/timit
 
 ### path to the model directory to restart training
-resume_model=
+resume=
 
 ### path to original data
 TIMITDATATOP=/n/rd21/corpora_1/TIMIT
 
-### path to the config file
-config=
 . ./cmd.sh
 . ./path.sh
 . utils/parse_options.sh
@@ -31,10 +86,6 @@ config=
 set -e
 set -u
 set -o pipefail
-
-if [ -z ${config} ]; then
-  config=conf/attention/phone_bgru_att.yml
-fi
 
 if [ -z ${gpu} ]; then
   echo "Error: set GPU number." 1>&2
@@ -61,7 +112,6 @@ if [ ${stage} -le 0 ] && [ ! -e .done_stage_0 ]; then
   touch .done_stage_0 && echo "Finish data preparation (stage: 0)."
 fi
 
-
 if [ ${stage} -le 1 ] && [ ! -e .done_stage_1 ]; then
   echo ============================================================================
   echo "                    Feature extranction (stage:1)                          "
@@ -84,7 +134,6 @@ if [ ${stage} -le 1 ] && [ ! -e .done_stage_1 ]; then
 
   touch .done_stage_1 && echo "Finish feature extranction (stage: 1)."
 fi
-
 
 dict=${data}/dict/${train_set}.txt; mkdir -p ${data}/dict
 if [ ${stage} -le 2 ] && [ ! -e .done_stage_2 ]; then
@@ -135,10 +184,53 @@ if [ ${stage} -le 4 ]; then
     --dev_set ${data}/dataset_csv/${dev_set}.csv \
     --eval_sets ${data}/dataset_csv/${test_set}.csv \
     --dict ${dict} \
-    --config ${config} \
     --model ${model}/asr \
-    --label_type phone || exit 1;
-    # --resume_model ${resume_model} || exit 1;
+    --label_type phone \
+    --enc_type ${enc_type} \
+    --enc_nunits ${enc_nunits} \
+    --enc_nprojs ${enc_nprojs} \
+    --enc_nlayers ${enc_nlayers} \
+    --enc_residual ${enc_residual} \
+    --subsample ${subsample} \
+    --subsample_type ${subsample_type} \
+    --attn_type ${attn_type} \
+    --attn_dim ${attn_dim} \
+    --attn_nheads ${attn_nheads} \
+    --dec_type ${dec_type} \
+    --dec_nunits ${dec_nunits} \
+    --dec_nprojs ${dec_nprojs} \
+    --dec_nlayers ${dec_nlayers} \
+    --dec_residual ${dec_residual} \
+    --emb_dim ${emb_dim} \
+    --ctc_fc_list ${ctc_fc_list} \
+    --batch_size ${batch_size} \
+    --optimizer ${optimizer} \
+    --learning_rate ${learning_rate} \
+    --nepochs ${nepochs} \
+    --convert_to_sgd_epoch ${convert_to_sgd_epoch} \
+    --print_step ${print_step} \
+    --decay_start_epoch ${decay_start_epoch} \
+    --decay_rate ${decay_rate} \
+    --decay_patient_epoch ${decay_patient_epoch} \
+    --not_improved_patient_epoch ${not_improved_patient_epoch} \
+    --eval_start_epoch ${eval_start_epoch} \
+    --warmup_start_learning_rate ${warmup_start_learning_rate} \
+    --warmup_step ${warmup_step} \
+    --warmup_epoch ${warmup_epoch} \
+    --param_init ${param_init} \
+    --param_init_dist ${param_init_dist} \
+    --pretrained_model ${pretrained_model} \
+    --dropout_in ${dropout_in} \
+    --dropout_enc ${dropout_enc} \
+    --dropout_dec ${dropout_dec} \
+    --dropout_emb ${dropout_emb} \
+    --dropout_att ${dropout_att} \
+    --weight_decay ${weight_decay} \
+    --ss_prob ${ss_prob} \
+    --ss_type ${ss_type} \
+    --lsm_prob ${lsm_prob} \
+    --ctc_weight ${ctc_weight} || exit 1;
+    # --resume ${resume} || exit 1;
 
   echo "Finish model training (stage: 4)."
 fi
