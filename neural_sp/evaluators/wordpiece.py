@@ -83,7 +83,8 @@ def eval_wordpiece(models, dataset, decode_params, epoch,
                 f_ref.write(ref + ' (' + speaker + '-' + start + '-' + end + ')\n')
                 f_hyp.write(hyp + ' (' + speaker + '-' + start + '-' + end + ')\n')
                 logger.info('utt-id: %s' % batch['utt_ids'][b])
-                logger.info('Ref: %s' % ref.lower())
+                # logger.info('Ref: %s' % ref.lower())
+                logger.info('Ref: %s' % ref)
                 logger.info('Hyp: %s' % hyp)
                 logger.info('-' * 50)
 
