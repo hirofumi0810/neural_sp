@@ -47,7 +47,7 @@ class MultiheadAttentionMechanism(nn.Module):
                  sharpening_factor=1,
                  sigmoid_smoothing=False,
                  conv_out_channels=10,
-                 conv_kernel_size=201,
+                 conv_kernel_size=100,
                  dropout=0,
                  nheads=4):
 
@@ -73,21 +73,20 @@ class MultiheadAttentionMechanism(nn.Module):
             self.v = LinearND(attn_dim * nheads, 1, bias=False)
 
         elif self.attn_type == 'location':
-            assert conv_kernel_size % 2 == 1
             self.w_enc = LinearND(enc_nunits, attn_dim * nheads)
             self.w_dec = LinearND(dec_nunits, attn_dim * nheads, bias=False)
             self.w_conv = LinearND(conv_out_channels, attn_dim * nheads, bias=False)
             # self.convs = nn.ModuleList([nn.Conv1d(in_channels=1,
             #                                       out_channels=conv_out_channels,
-            #                                       kernel_size=conv_kernel_size,
+            #                                       kernel_size=conv_kernel_size * 2 + 1,
             #                                       stride=1,
-            #                                       padding=conv_kernel_size // 2,
+            #                                       padding=conv_kernel_size,
             #                                       bias=False) for _ in range(nheads)])
             self.convs = nn.ModuleList([nn.Conv2d(in_channels=1,
                                                   out_channels=conv_out_channels,
-                                                  kernel_size=(1, conv_kernel_size),
+                                                  kernel_size=(1, conv_kernel_size * 2 + 1),
                                                   stride=1,
-                                                  padding=(0, conv_kernel_size // 2),
+                                                  padding=(0, conv_kernel_size),
                                                   bias=False) for _ in range(nheads)])
             self.v = LinearND(attn_dim * nheads, 1, bias=False)
 
