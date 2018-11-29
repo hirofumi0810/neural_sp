@@ -34,10 +34,9 @@ class RNNEncoder(nn.Module):
         nprojs (int): the number of units in each projection layer
         nlayers (int): the number of layers
         dropout_in (float): the probability to drop nodes in input-hidden connection
-        dropout_hidden (float): the probability to drop nodes in hidden-hidden connection
+        dropout (float): the probability to drop nodes in hidden-hidden connection
         subsample (list): subsample in the corresponding RNN layers
-            ex.) [False, True, True, False] means that subsample is conducted
-                in the 2nd and 3rd layers.
+            ex.) [False, True, True, False] means that subsample is conducted in the 2nd and 3rd layers.
         subsample_type (str): drop or concat or max_pool
         nstacks (int): the number of frames to stack
         nskips (int): the number of frames to skip
@@ -63,7 +62,7 @@ class RNNEncoder(nn.Module):
                  nprojs,
                  nlayers,
                  dropout_in,
-                 dropout_hidden,
+                 dropout,
                  subsample,
                  subsample_type,
                  nstacks,
@@ -83,8 +82,6 @@ class RNNEncoder(nn.Module):
 
         if len(subsample) > 0 and len(subsample) != nlayers:
             raise ValueError('subsample must be the same size as nlayers.')
-        if subsample_type not in ['drop', 'concat']:
-            raise TypeError('subsample_type must be "drop" or "concat".')
         if nlayers_sub < 0 or (nlayers_sub > 1 and nlayers < nlayers_sub):
             raise ValueError('Set nlayers_sub between 1 to nlayers.')
 
@@ -92,7 +89,7 @@ class RNNEncoder(nn.Module):
         self.bidirectional = True if rnn_type in ['blstm', 'bgru'] else False
         self.nunits = nunits
         self.ndirs = 2 if self.bidirectional else 1
-        self.nprojs = nprojs if nprojs is not None else 0
+        self.nprojs = nprojs
         self.nlayers = nlayers
         self.layer_norm = layer_norm
 
@@ -101,19 +98,19 @@ class RNNEncoder(nn.Module):
 
         # Setting for subsampling
         if len(subsample) == 0:
-            self.subsample = [False] * nlayers
+            self.subsample = [1] * nlayers
         else:
             self.subsample = subsample
         self.subsample_type = subsample_type
 
         # Setting for residual connection
         self.residual = residual
-        subsample_last_layer = 0
+        subsample_last = 0
         for l_reverse, is_subsample in enumerate(subsample[::-1]):
             if is_subsample:
-                subsample_last_layer = nlayers - l_reverse
+                subsample_last = nlayers - l_reverse
                 break
-        self.residual_start_layer = subsample_last_layer + 1
+        self.residual_start_layer = subsample_last + 1
         # NOTE: residual connection starts from the last subsampling layer
 
         # Setting for the NiN
@@ -133,7 +130,7 @@ class RNNEncoder(nn.Module):
                                    strides=conv_strides,
                                    poolings=conv_poolings,
                                    dropout_in=0,
-                                   dropout_hidden=dropout_hidden,
+                                   dropout=dropout,
                                    activation='relu',
                                    batch_norm=conv_batch_norm)
             input_dim = self.conv.output_dim
@@ -147,7 +144,7 @@ class RNNEncoder(nn.Module):
 
         self._fast_impl = False
         # Fast implementation without processes between each layer
-        if sum(self.subsample) == 0 and self.nprojs == 0 and not residual and nlayers_sub == 0 and (not conv_batch_norm) and nin == 0:
+        if np.prod(self.subsample) == 1 and self.nprojs == 0 and not residual and nlayers_sub == 0 and (not conv_batch_norm) and nin == 0:
             self._fast_impl = True
             if 'lstm' in rnn_type:
                 rnn = nn.LSTM
@@ -159,29 +156,41 @@ class RNNEncoder(nn.Module):
             self.rnn = rnn(input_dim, nunits, nlayers,
                            bias=True,
                            batch_first=True,
-                           dropout=dropout_hidden,
+                           dropout=dropout,
                            bidirectional=self.bidirectional)
             # NOTE: pytorch introduces a dropout layer on the outputs of each layer EXCEPT the last layer
-
-            # Dropout for the outputs of the top layer
-            self.dropout_top = nn.Dropout(p=dropout_hidden)
-
+            self.dropout_top = nn.Dropout(p=dropout)
         else:
             self.rnn = torch.nn.ModuleList()
-            self.proj = torch.nn.ModuleList()
-            for i_l in range(nlayers):
-                if i_l == 0:
+            self.dropout = torch.nn.ModuleList()
+            if self.nprojs > 0:
+                self.proj = torch.nn.ModuleList()
+            if subsample_type == 'max_pool' and np.prod(self.subsample) > 1:
+                self.max_pool = torch.nn.ModuleList()
+                for l in range(nlayers):
+                    if self.subsample[l] > 1:
+                        self.max_pool += [nn.MaxPool2d((1, 1),
+                                                       stride=(self.subsample[l], 1),
+                                                       ceil_mode=True)]
+                    else:
+                        self.max_pool += [None]
+            if subsample_type == 'concat' and np.prod(self.subsample) > 1:
+                self.concat = torch.nn.ModuleList()
+                for l in range(nlayers):
+                    if self.subsample[l] > 1:
+                        self.concat += [LinearND(nunits * self.ndirs * self.subsample[l], nunits * self.ndirs)]
+                    else:
+                        self.concat += [None]
+
+            for l in range(nlayers):
+                if l == 0:
                     enc_in_dim = input_dim
                 elif nin > 0:
                     enc_in_dim = nin
                 elif self.nprojs > 0:
-                    enc_in_dim = nprojs
-                    if subsample_type == 'concat' and i_l > 0 and self.subsample[i_l - 1]:
-                        enc_in_dim *= 2
+                    enc_in_dim = self.nprojs
                 else:
                     enc_in_dim = nunits * self.ndirs
-                    if subsample_type == 'concat' and i_l > 0 and self.subsample[i_l - 1]:
-                        enc_in_dim *= 2
 
                 if 'lstm' in rnn_type:
                     rnn_i = nn.LSTM
@@ -195,18 +204,16 @@ class RNNEncoder(nn.Module):
                                    batch_first=True,
                                    dropout=0,
                                    bidirectional=self.bidirectional)]
+                self.dropout += [nn.Dropout(p=dropout)]
                 enc_out_dim = nunits * self.ndirs
 
-                # Dropout for hidden-hidden or hidden-output connection
-                setattr(self, 'dropout_l' + str(i_l), nn.Dropout(p=dropout_hidden))
-
-                if i_l != self.nlayers - 1 and self.nprojs > 0:
-                    self.proj += [LinearND(nunits * self.ndirs, nprojs)]
-                    enc_out_dim = nprojs
+                if l != self.nlayers - 1 and self.nprojs > 0:
+                    self.proj += [LinearND(nunits * self.ndirs, self.nprojs)]
+                    enc_out_dim = self.nprojs
 
                 # Network in network (1*1 conv)
                 if nin > 0:
-                    setattr(self, 'nin_l' + str(i_l),
+                    setattr(self, 'nin_l' + str(l),
                             nn.Conv1d(in_channels=enc_out_dim,
                                       out_channels=nin,
                                       kernel_size=1,
@@ -217,12 +224,10 @@ class RNNEncoder(nn.Module):
                     # Batch normalization
                     if conv_batch_norm:
                         if nin:
-                            setattr(self, 'bn_0_l' + str(i_l), nn.BatchNorm1d(enc_out_dim))
-                            setattr(self, 'bn_l' + str(i_l), nn.BatchNorm1d(nin))
-                        elif subsample_type == 'concat' and self.subsample[i_l]:
-                            setattr(self, 'bn_l' + str(i_l), nn.BatchNorm1d(enc_out_dim * 2))
+                            setattr(self, 'bn_0_l' + str(l), nn.BatchNorm1d(enc_out_dim))
+                            setattr(self, 'bn_l' + str(l), nn.BatchNorm1d(nin))
                         else:
-                            setattr(self, 'bn_l' + str(i_l), nn.BatchNorm1d(enc_out_dim))
+                            setattr(self, 'bn_l' + str(l), nn.BatchNorm1d(enc_out_dim))
                     # NOTE* BN in RNN models is applied only after NiN
 
     def forward(self, xs, x_lens):
@@ -232,12 +237,10 @@ class RNNEncoder(nn.Module):
             xs (FloatTensor): `[B, T, input_dim]`
             x_lens (list): `[B]`
         Returns:
-            xs (FloatTensor):
-                `[B, T // sum(subsample), nunits (* ndirs)]`
+            xs (FloatTensor): `[B, T // prod(subsample), nunits (* ndirs)]`
             x_lens (list): `[B]`
             OPTION:
-                xs_sub (FloatTensor):
-                    `[B, T // sum(subsample), nunits (* ndirs)]`
+                xs_sub (FloatTensor): `[B, T // prod(subsample), nunits (* ndirs)]`
                 x_lens_sub (list): `[B]`
 
         """
@@ -249,58 +252,58 @@ class RNNEncoder(nn.Module):
             xs, x_lens = self.conv(xs, x_lens)
 
         if self._fast_impl:
-            getattr(self, self.rnn_type).flatten_parameters()
+            self.rnn.flatten_parameters()
             # NOTE: this is necessary for multi-GPUs setting
 
             # Path through RNN
             xs = pack_padded_sequence(xs, x_lens, batch_first=True)
-            xs, _ = getattr(self, self.rnn_type)(xs, hx=None)
-            xs, unpacked_seq_len = pad_packed_sequence(xs, batch_first=True, padding_value=0)
-            # assert x_lens == unpacked_seq_len
-
-            # Dropout for the outputs of the top layer
+            xs, _ = self.rnn(xs, hx=None)
+            xs = pad_packed_sequence(xs, batch_first=True)[0]
             xs = self.dropout_top(xs)
         else:
             res_outputs = []
-            for i_l in range(self.nlayers):
-                self.rnn[i_l].flatten_parameters()
+            for l in range(self.nlayers):
+                self.rnn[l].flatten_parameters()
                 # NOTE: this is necessary for multi-GPUs setting
 
                 # Path through RNN
                 xs = pack_padded_sequence(xs, x_lens, batch_first=True)
-                xs, _ = self.rnn[i_l](xs, hx=None)
-                xs, unpacked_seq_len = pad_packed_sequence(xs, batch_first=True, padding_value=0)
-                # assert x_lens == unpacked_seq_len
-
-                # Dropout for hidden-hidden or hidden-output connection
-                xs = getattr(self, 'dropout_l' + str(i_l))(xs)
+                xs, _ = self.rnn[l](xs, hx=None)
+                xs = pad_packed_sequence(xs, batch_first=True)[0]
+                xs = self.dropout[l](xs)
 
                 # Pick up outputs in the sub task before the projection layer
-                if self.nlayers_sub >= 1 and i_l == self.nlayers_sub - 1:
+                if self.nlayers_sub >= 1 and l == self.nlayers_sub - 1:
                     xs_sub = xs.clone()
                     x_lens_sub = copy.deepcopy(x_lens)
 
                 # NOTE: Exclude the last layer
-                if i_l != self.nlayers - 1:
+                if l != self.nlayers - 1:
                     # Subsampling
-                    if self.subsample[i_l]:
+                    if self.subsample[l] > 1:
                         if self.subsample_type == 'drop':
-                            xs = xs[:, 1::2, :]
+                            xs = xs[:, 1::self.subsample[l], :]
                             # NOTE: Pick up features at EVEN time step
-
-                        # Concatenate the successive frames
                         elif self.subsample_type == 'concat':
-                            xs = [torch.cat([xs[:, t - 1:t, :], xs[:, t:t + 1, :]], dim=2)
-                                  for t in range(xs.size(1)) if (t + 1) % 2 == 0]
-                            xs = torch.cat(xs, dim=1)
+                            # Concatenate the successive frames
+                            xs = xs.transpose(0, 1).contiguous()
+                            xs = [torch.cat([xs[t - r:t - r + 1] for r in range(self.subsample[l] - 1, -1, -1)], dim=-1)
+                                  for t in range(xs.size(0)) if (t + 1) % self.subsample[l] == 0]
                             # NOTE: Exclude the last frame if the length of xs is odd
+                            xs = torch.cat(xs, dim=0).transpose(0, 1)
+                            xs = torch.tanh(self.concat[l](xs))
+                        elif self.subsample_type == 'max_pool':
+                            xs = xs.transpose(0, 1).contiguous()
+                            xs = [torch.max(xs[t - self.subsample[l] + 1:t + 1], dim=0)[0].unsqueeze(0)
+                                  for t in range(xs.size(0)) if (t + 1) % self.subsample[l] == 0]
+                            xs = torch.cat(xs, dim=0).transpose(0, 1)
 
                         # Update x_lens
                         x_lens = [x.size(0) for x in xs]
 
-                    # Projection layer (affine transformation)
+                    # Projection layer
                     if self.nprojs > 0:
-                        xs = F.tanh(self.proj[i_l](xs))
+                        xs = torch.tanh(self.proj[l](xs))
 
                     # NiN
                     if self.nin > 0:
@@ -310,16 +313,16 @@ class RNNEncoder(nn.Module):
                         if self.conv_batch_norm:
                             size = list(xs.size())
                             xs = to2d(xs, size)
-                            xs = getattr(self, 'bn_0_l' + str(i_l))(xs)
+                            xs = getattr(self, 'bn_0_l' + str(l))(xs)
                             xs = F.relu(xs)
                             xs = to3d(xs, size)
                             # NOTE: mean and var are computed along all timesteps in the mini-batch
 
-                        xs = getattr(self, 'nin_l' + str(i_l))(xs)
+                        xs = getattr(self, 'nin_l' + str(l))(xs)
 
                     # Residual connection
-                    if (not self.subsample[i_l]) and self.residual:
-                        if i_l >= self.residual_start_layer - 1:
+                    if (not self.subsample[l]) and self.residual:
+                        if l >= self.residual_start_layer - 1:
                             for xs_lower in res_outputs:
                                 xs = xs + xs_lower
                             if self.residual:
