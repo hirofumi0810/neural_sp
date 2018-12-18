@@ -41,7 +41,7 @@ class Dataset(Base):
                  is_test=False, max_nframes=2000, min_nframes=40,
                  shuffle=False, sort_by_input_length=False,
                  short2long=False, sort_stop_epoch=None,
-                 nenques=None, dynamic_batching=False,
+                 nques=None, dynamic_batching=False,
                  ctc=False, subsample_factor=1,
                  skip_speech=False, wp_model=None,
                  csv_path_sub=None, dict_path_sub=None, label_type_sub=None,
@@ -63,7 +63,7 @@ class Dataset(Base):
             short2long (bool): if True, sort utteraces in the descending order
             sort_stop_epoch (int): After sort_stop_epoch, training will revert
                 back to a random order
-            nenques (int): the number of elements to enqueue
+            nques (int): the number of elements to enqueue
             dynamic_batching (bool): if True, batch size will be chainged
                 dynamically in training
             ctc (bool):
@@ -83,7 +83,7 @@ class Dataset(Base):
         self.shuffle = shuffle
         self.sort_by_input_length = sort_by_input_length
         self.sort_stop_epoch = sort_stop_epoch
-        self.nenques = nenques
+        self.nques = nques
         self.dynamic_batching = dynamic_batching
         self.skip_speech = skip_speech
         self.vocab = self.count_vocab_size(dict_path)
@@ -124,10 +124,10 @@ class Dataset(Base):
             self.vocab_sub = -1
 
         # Load dataset csv file
-        df = pd.read_csv(csv_path, encoding='utf-8')
+        df = pd.read_csv(csv_path, encoding='utf-8', delimiter=',')
         df = df.loc[:, ['utt_id', 'feat_path', 'x_len', 'x_dim', 'text', 'token_id', 'y_len', 'y_dim']]
         if csv_path_sub is not None:
-            df_sub = pd.read_csv(csv_path_sub, encoding='utf-8')
+            df_sub = pd.read_csv(csv_path_sub, encoding='utf-8', delimiter=',')
             df_sub = df_sub.loc[:, ['utt_id', 'feat_path', 'x_len', 'x_dim', 'text', 'token_id', 'y_len', 'y_dim']]
         else:
             df_sub = None
