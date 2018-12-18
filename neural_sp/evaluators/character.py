@@ -21,7 +21,7 @@ logger = logging.getLogger("decoding").getChild('character')
 
 
 def eval_char(models, dataset, decode_params, epoch,
-              decode_dir=None, progressbar=False):
+              decode_dir=None, progressbar=False, task_idx=0):
     """Evaluate the character-level model by WER & CER.
 
     Args:
@@ -31,6 +31,10 @@ def eval_char(models, dataset, decode_params, epoch,
         epoch (int):
         decode_dir (str):
         progressbar (bool): if True, visualize the progressbar
+        task_idx (int): the index of the target task in interest
+            0: main task
+            1: sub task
+            2: sub sub task
     Returns:
         wer (float): Word error rate
         nsub_w (int): the number of substitution errors for WER
@@ -90,7 +94,7 @@ def eval_char(models, dataset, decode_params, epoch,
                 logger.info('Hyp: %s' % hyp)
                 logger.info('-' * 50)
 
-                if ('character' in dataset.label_type and 'nowb' not in dataset.label_type) or (task_index > 0 and dataset.label_type_sub == 'character'):
+                if ('character' in dataset.label_type and 'nowb' not in dataset.label_type) or (task_idx > 0 and dataset.label_type_sub == 'character'):
                     # Compute WER
                     wer_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
                                                              hyp=hyp.split(' '),
@@ -125,7 +129,7 @@ def eval_char(models, dataset, decode_params, epoch,
     # Reset data counters
     dataset.reset()
 
-    if ('character' in dataset.label_type and 'nowb' not in dataset.label_type) or (task_index > 0 and dataset.label_type_sub == 'character'):
+    if ('character' in dataset.label_type and 'nowb' not in dataset.label_type) or (task_idx > 0 and dataset.label_type_sub == 'character'):
         wer /= nword
         nsub_w /= nword
         nins_w /= nword
