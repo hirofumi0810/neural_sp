@@ -37,26 +37,26 @@ logger = logging.getLogger('training')
 class Dataset(Base):
 
     def __init__(self, csv_path, dict_path,
-                 label_type, batch_size, nepochs=None,
-                 is_test=False, max_nframes=2000, min_nframes=40,
+                 unit, batch_size, nepochs=None,
+                 is_test=False,  min_nframes=40, max_nframes=2000,
                  shuffle=False, sort_by_input_length=False,
                  short2long=False, sort_stop_epoch=None,
                  nques=None, dynamic_batching=False,
                  ctc=False, subsample_factor=1,
                  skip_speech=False, wp_model=None,
-                 csv_path_sub=None, dict_path_sub=None, label_type_sub=None,
+                 csv_path_sub=None, dict_path_sub=None, unit_sub=None,
                  ctc_sub=False, subsample_factor_sub=1):
         """A class for loading dataset.
 
         Args:
             csv_path (str):
             dict_path (str):
-            label_type (str): word or wp or char or phone
+            unit (str): word or wp or char or phone
             batch_size (int): the size of mini-batch
             nepochs (int): the max epoch. None means infinite loop.
             is_test (bool):
-            max_nframes (int): Exclude utteraces longer than this value
             min_nframes (int): Exclude utteraces shorter than this value
+            max_nframes (int): Exclude utteraces longer than this value
             shuffle (bool): if True, shuffle utterances.
                 This is disabled when sort_by_input_length is True.
             sort_by_input_length (bool): if True, sort all utterances in the ascending order
@@ -76,8 +76,8 @@ class Dataset(Base):
 
         self.set = os.path.basename(csv_path).split('.')[0]
         self.is_test = is_test
-        self.label_type = label_type
-        self.label_type_sub = label_type_sub
+        self.unit = unit
+        self.unit_sub = unit_sub
         self.batch_size = batch_size
         self.max_epoch = nepochs
         self.shuffle = shuffle
@@ -89,37 +89,37 @@ class Dataset(Base):
         self.vocab = self.count_vocab_size(dict_path)
 
         # Set index converter
-        if label_type == 'word':
+        if unit == 'word':
             self.idx2word = Idx2word(dict_path)
             self.word2idx = Word2idx(dict_path)
-        elif label_type == 'wp':
+        elif unit == 'wp':
             self.idx2wp = Idx2wp(dict_path, wp_model)
             self.wp2idx = Wp2idx(dict_path, wp_model)
-        elif label_type == 'char':
+        elif unit == 'char':
             self.idx2char = Idx2char(dict_path)
             self.char2idx = Char2idx(dict_path)
-        elif 'phone' in label_type:
+        elif 'phone' in unit:
             self.idx2phone = Idx2phone(dict_path)
             self.phone2idx = Phone2idx(dict_path)
         else:
-            raise ValueError(label_type)
+            raise ValueError(unit)
 
         if dict_path_sub is not None:
             self.vocab_sub = self.count_vocab_size(dict_path_sub)
 
             # Set index converter
-            if label_type_sub is not None:
-                if label_type == 'wp':
+            if unit_sub is not None:
+                if unit == 'wp':
                     self.idx2word = Idx2word(dict_path_sub)
                     self.word2idx = Word2idx(dict_path_sub)
-                elif label_type_sub == 'char':
+                elif unit_sub == 'char':
                     self.idx2char = Idx2char(dict_path_sub)
                     self.char2idx = Char2idx(dict_path_sub)
-                elif 'phone' in label_type_sub:
+                elif 'phone' in unit_sub:
                     self.idx2phone = Idx2phone(dict_path_sub)
                     self.phone2idx = Phone2idx(dict_path_sub)
                 else:
-                    raise ValueError(label_type_sub)
+                    raise ValueError(unit_sub)
         else:
             self.vocab_sub = -1
 
