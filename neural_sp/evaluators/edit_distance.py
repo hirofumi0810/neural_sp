@@ -69,9 +69,9 @@ def compute_wer(ref, hyp, normalize=False):
         normalize (bool, optional): if True, divide by the length of ref
     Returns:
         wer (float): Word Error Rate between ref and hyp
-        num_sub (int): the number of substitution
-        num_ins (int): the number of insertion
-        num_del (int): the number of deletion
+        nsub (int): the number of substitution
+        nins (int): the number of insertion
+        ndel (int): the number of deletion
 
     """
     # Initialisation
@@ -133,18 +133,18 @@ def compute_wer(ref, hyp, normalize=False):
             else:
                 raise ValueError
 
-    num_sub = error_list.count("S")
-    num_ins = error_list.count("I")
-    num_del = error_list.count("D")
+    nsub = error_list.count("S")
+    nins = error_list.count("I")
+    ndel = error_list.count("D")
     corr = error_list.count("C")
 
-    assert wer == (num_sub + num_ins + num_del)
-    assert corr == (len(ref) - num_sub - num_del)
+    assert wer == (nsub + nins + ndel)
+    assert corr == (len(ref) - nsub - ndel)
 
     if normalize:
         wer /= len(ref)
 
-    return wer * 100, num_sub * 100, num_ins * 100, num_del * 100
+    return wer * 100, nsub * 100, nins * 100, ndel * 100
 
 
 def wer_align(ref, hyp, normalize=False, double_byte=False):
@@ -159,9 +159,9 @@ def wer_align(ref, hyp, normalize=False, double_byte=False):
         double_byte (bool):
     Returns:
         wer (float): Word Error Rate between ref and hyp
-        num_sub (int): the number of substitution error
-        num_ins (int): the number of insertion error
-        num_del (int): the number of deletion error
+        nsub (int): the number of substitution error
+        nins (int): the number of insertion error
+        ndel (int): the number of deletion error
 
     """
     space_char = "　" if double_byte else " "
@@ -183,10 +183,10 @@ def wer_align(ref, hyp, normalize=False, double_byte=False):
             if ref[i - 1] == hyp[j - 1]:
                 d[i][j] = d[i - 1][j - 1]
             else:
-                num_sub = d[i - 1][j - 1] + 1
-                num_ins = d[i][j - 1] + 1
-                num_del = d[i - 1][j] + 1
-                d[i][j] = min(num_sub, num_ins, num_del)
+                nsub = d[i - 1][j - 1] + 1
+                nins = d[i][j - 1] + 1
+                ndel = d[i - 1][j] + 1
+                d[i][j] = min(nsub, nins, ndel)
     wer = float(d[len(ref)][len(hyp)])
 
     # Find out the manipulation steps
@@ -332,15 +332,15 @@ def wer_align(ref, hyp, normalize=False, double_byte=False):
             index = i - count
             print(space_char * (len(ref[index])), end=' ')
 
-    num_sub = error_list.count("S")
-    num_ins = error_list.count("I")
-    num_del = error_list.count("D")
+    nsub = error_list.count("S")
+    nins = error_list.count("I")
+    ndel = error_list.count("D")
     corr = error_list.count("C")
 
-    assert wer == (num_sub + num_ins + num_del)
-    assert corr == (len(ref) - num_sub - num_del)
+    assert wer == (nsub + nins + ndel)
+    assert corr == (len(ref) - nsub - ndel)
 
     if normalize:
         wer /= len(ref)
 
-    return wer * 100, num_sub * 100, num_ins * 100, num_del * 100
+    return wer * 100, nsub * 100, nins * 100, ndel * 100

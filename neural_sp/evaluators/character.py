@@ -94,7 +94,7 @@ def eval_char(models, dataset, decode_params, epoch,
                 logger.info('Hyp: %s' % hyp)
                 logger.info('-' * 50)
 
-                if ('character' in dataset.unit and 'nowb' not in dataset.unit) or (task_idx > 0 and dataset.unit_sub == 'character'):
+                if ('char' in dataset.unit and 'nowb' not in dataset.unit) or (task_idx > 0 and dataset.unit_sub == 'char'):
                     # Compute WER
                     wer_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
                                                              hyp=hyp.split(' '),
@@ -107,8 +107,8 @@ def eval_char(models, dataset, decode_params, epoch,
                     # logger.info('WER: %d%%' % (wer_b / len(ref.split(' '))))
 
                 # Compute CER
-                cer_b, sub_b, ins_b, del_b = compute_wer(ref=list(ref.replace(' ', '')),
-                                                         hyp=list(hyp.replace(' ', '')),
+                cer_b, sub_b, ins_b, del_b = compute_wer(ref=list(ref),
+                                                         hyp=list(hyp),
                                                          normalize=False)
                 cer += cer_b
                 nsub_c += sub_b
@@ -129,7 +129,7 @@ def eval_char(models, dataset, decode_params, epoch,
     # Reset data counters
     dataset.reset()
 
-    if ('character' in dataset.unit and 'nowb' not in dataset.unit) or (task_idx > 0 and dataset.unit_sub == 'character'):
+    if ('char' in dataset.unit and 'nowb' not in dataset.unit) or (task_idx > 0 and dataset.unit_sub == 'char'):
         wer /= nword
         nsub_w /= nword
         nins_w /= nword

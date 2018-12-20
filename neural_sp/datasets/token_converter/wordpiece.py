@@ -15,15 +15,15 @@ import sentencepiece as spm
 
 
 class Wp2idx(object):
-    """Convert word-piece string into tokenid.
+    """Class for converting word-piece sequence into indices.
 
     Args:
-        dict_path (str): path to the dictionary file
+        dict_path (str): path to a dictionary file
 
     """
 
     def __init__(self, dict_path, wp_model):
-        # Load the dictionary file
+        # Load a dictionary file
         self.wp2idx = {}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
@@ -34,35 +34,35 @@ class Wp2idx(object):
         self.sp.Load(wp_model)
 
     def __call__(self, text):
-        """Convert word-piece string into tokenid.
+        """Convert word-piece sequence into indices.
 
         Args:
-            text (str):
+            text (str): word-piece sequence
         Returns:
-            tokenids (list): word-piece tokenids
+            token_ids (list): word-piece indices
 
         """
         wp_list = self.sp.EncodeAsPieces(text)
-        tokenids = []
+        token_ids = []
         for wp in wp_list:
             if wp in self.wp2idx.keys():
-                tokenids.append(self.wp2idx[wp])
+                token_ids.append(self.wp2idx[wp])
             else:
                 # Replace with <unk>
-                tokenids.append(self.wp2idx['<unk>'])
-        return tokenids
+                token_ids.append(self.wp2idx['<unk>'])
+        return token_ids
 
 
 class Idx2wp(object):
-    """Convert tokenid into word-piece string.
+    """Class for converting indices into word-piece sequence.
 
     Args:
-        dict_path (str): path to the dictionary file
+        dict_path (str): path to a dictionary file
 
     """
 
     def __init__(self, dict_path, wp_model):
-        # Load the dictionary file
+        # Load a dictionary file
         self.idx2wp = {}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
@@ -72,20 +72,19 @@ class Idx2wp(object):
         self.sp = spm.SentencePieceProcessor()
         self.sp.Load(wp_model)
 
-    def __call__(self, tokenids, return_list=False):
-        """Convert tokenid into word-piece string.
+    def __call__(self, token_ids, return_list=False):
+        """Convert indices into word-piece sequence.
 
         Args:
-            tokenids (np.ndarray or list): list of word-piece tokenids
+            token_ids (np.ndarray or list): word-piece indices
             return_list (bool): if True, return list of words
         Returns:
-            text (str):
+            text (str): word-piece sequence
                 or
             wp_list (list): list of words
 
         """
-        # Convert word-piece tokenids into the corresponding strings
-        wp_list = list(map(lambda wp: self.idx2wp[wp], tokenids))
+        wp_list = list(map(lambda wp: self.idx2wp[wp], token_ids))
         if return_list:
             return wp_list
         return self.sp.DecodePieces(wp_list)

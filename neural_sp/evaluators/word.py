@@ -61,7 +61,7 @@ def eval_word(models, dataset, decode_params, epoch,
     wer = 0
     nsub, nins, ndel = 0, 0, 0
     nword = 0
-    noov_total = 0
+    noovs_total = 0
     if progressbar:
         pbar = tqdm(total=len(dataset))  # TODO(hirofumi): fix this
 
@@ -76,7 +76,7 @@ def eval_word(models, dataset, decode_params, epoch,
                 ref = ys[b]
                 hyp = dataset.idx2word(best_hyps[b])
 
-                noov_total += hyp.count('<unk>')
+                noovs_total += hyp.count('<unk>')
 
                 # Resolving UNK
                 if decode_params['resolving_unk'] and '<unk>' in hyp:
