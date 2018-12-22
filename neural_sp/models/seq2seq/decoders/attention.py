@@ -65,12 +65,12 @@ class AttentionMechanism(nn.Module):
         else:
             self.dropout = None
 
-        if self.attn_type == 'add':
+        if attn_type == 'add':
             self.w_enc = LinearND(enc_nunits, attn_dim)
             self.w_dec = LinearND(dec_nunits, attn_dim, bias=False)
             self.v = LinearND(attn_dim, 1, bias=False)
 
-        elif self.attn_type == 'location':
+        elif attn_type == 'location':
             self.w_enc = LinearND(enc_nunits, attn_dim)
             self.w_dec = LinearND(dec_nunits, attn_dim, bias=False)
             self.w_conv = LinearND(conv_out_channels, attn_dim, bias=False)
@@ -88,18 +88,21 @@ class AttentionMechanism(nn.Module):
                                   bias=False)
             self.v = LinearND(attn_dim, 1, bias=False)
 
-        elif self.attn_type == 'dot':
+        elif attn_type == 'dot':
             self.w_enc = LinearND(enc_nunits, attn_dim, bias=False)
             self.w_dec = LinearND(dec_nunits, attn_dim, bias=False)
 
-        elif self.attn_type == 'luong_dot':
+        elif attn_type == 'luong_dot':
             raise NotImplementedError()
 
-        elif self.attn_type == 'luong_general':
+        elif attn_type == 'luong_general':
             raise NotImplementedError()
 
-        elif self.attn_type == 'luong_concat':
+        elif attn_type == 'luong_concat':
             raise NotImplementedError()
+
+        else:
+            raise ValueError(attn_type)
 
     def reset(self):
         self.enc_out_a = None

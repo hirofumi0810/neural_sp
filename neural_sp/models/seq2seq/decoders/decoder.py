@@ -56,7 +56,7 @@ class Decoder(nn.Module):
         emb_dim (int): the dimension of the embedding in target spaces.
         vocab (int): the number of nodes in softmax layer
         logits_temp (float): a parameter for smoothing the softmax layer in outputing probabilities
-        dropout_hidden (float): the probability to drop nodes in the RNN layer
+        dropout (float): the probability to drop nodes in the RNN layer
         dropout_emb (float): the probability to drop nodes of the embedding layer
         ss_prob (float): scheduled sampling probability
         lsm_prob (float): label smoothing probability
@@ -90,7 +90,7 @@ class Decoder(nn.Module):
                  emb_dim,
                  vocab,
                  logits_temp,
-                 dropout_hidden,
+                 dropout,
                  dropout_emb,
                  ss_prob,
                  lsm_prob,
@@ -116,11 +116,12 @@ class Decoder(nn.Module):
         self.pad = pad
         self.rnn_type = rnn_type
         assert rnn_type in ['lstm', 'gru']
+        self.enc_nunits = enc_nunits
         self.nunits = nunits
         self.nlayers = nlayers
         self.residual = residual
         self.logits_temp = logits_temp
-        self.dropout_hidden = dropout_hidden
+        self.dropout = dropout
         self.dropout_emb = dropout_emb
         self.ss_prob = ss_prob
         self.lsm_prob = lsm_prob
@@ -143,7 +144,7 @@ class Decoder(nn.Module):
                 fc_layers = OrderedDict()
                 for i in range(len(ctc_fc_list)):
                     input_dim = enc_nunits if i == 0 else ctc_fc_list[i - 1]
-                    fc_layers['fc' + str(i)] = LinearND(input_dim, ctc_fc_list[i], dropout=dropout_hidden)
+                    fc_layers['fc' + str(i)] = LinearND(input_dim, ctc_fc_list[i], dropout=dropout)
                 fc_layers['fc' + str(len(ctc_fc_list))] = LinearND(ctc_fc_list[-1], vocab, dropout=0)
                 self.output_ctc = nn.Sequential(fc_layers)
             else:
@@ -178,15 +179,15 @@ class Decoder(nn.Module):
                 rnn_cell = nn.GRUCell
             if internal_lm:
                 self.rnn_inlm = rnn_cell(emb_dim, nunits)
-                self.dropout_inlm = nn.Dropout(p=dropout_hidden)
+                self.dropout_inlm = nn.Dropout(p=dropout)
                 self.rnn += [rnn_cell(nunits + enc_nunits, nunits)]
             else:
                 self.rnn += [rnn_cell(emb_dim + enc_nunits, nunits)]
-            self.dropout += [nn.Dropout(p=dropout_hidden)]
+            self.dropout += [nn.Dropout(p=dropout)]
 
             for l in range(1, nlayers):
                 self.rnn += [rnn_cell(nunits, nunits)]
-                self.dropout += [nn.Dropout(p=dropout_hidden)]
+                self.dropout += [nn.Dropout(p=dropout)]
 
             # cold fusion
             if rnnlm_cold_fusion:
@@ -228,6 +229,7 @@ class Decoder(nn.Module):
 
         """
         device_id = enc_out.get_device()
+        bs, _, enc_nunits = enc_out.size()
 
         # Compute the auxiliary CTC loss
         if self.ctc_weight > 0:
@@ -277,6 +279,7 @@ class Decoder(nn.Module):
         # Initialization
         dec_out, dec_state = self.init_dec_state(enc_out, enc_lens, self.nlayers)
         _dec_out, _dec_state = self.init_dec_state(enc_out, enc_lens, 1)  # for internal LM
+        context = Variable(enc_out.new(bs, 1, enc_nunits).fill_(0.))
         self.score.reset()
         aw = None
         rnnlm_state = None
@@ -291,10 +294,16 @@ class Decoder(nn.Module):
 
         logits_att, logits_lm = [], []
         for t in range(ys_in_pad.size(1)):
+            # Sample for scheduled sampling
             is_sample = t > 0 and self.ss_prob > 0 and random.random() < self.ss_prob
+            if is_sample:
+                y_emb = self.embed(torch.argmax(logits_att[-1].detach(), dim=-1))
+            else:
+                y_emb = ys_emb[:, t:t + 1]
 
-            # Score
-            context, aw = self.score(enc_out, enc_lens, dec_out, aw)
+            # Recurrency
+            dec_out, dec_state, _dec_out, _dec_state = self.recurrency(
+                y_emb, context, dec_state, _dec_state)
 
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf:
@@ -306,6 +315,9 @@ class Decoder(nn.Module):
             else:
                 logits_rnnlm_t, rnnlm_out = None, None
 
+            # Score
+            context, aw = self.score(enc_out, enc_lens, dec_out, aw)
+
             # Generate
             logits_att_t = self.generate(context, dec_out, logits_rnnlm_t, rnnlm_out)
 
@@ -316,19 +328,6 @@ class Decoder(nn.Module):
             logits_att_t = self.output(logits_att_t)
             logits_att.append(logits_att_t)
 
-            if t == ys_in_pad.size(1) - 1:
-                break
-
-            # Sample for scheduled sampling
-            if is_sample:
-                # y_emb = self.embed(np.argmax(logits_att[-1].detach(), axis=-1).cuda(device_id))
-                y_emb = self.embed(torch.argmax(logits_att[-1].detach(), dim=-1))
-            else:
-                y_emb = ys_emb[:, t + 1:t + 2]
-
-            # Recurrency
-            dec_out, dec_state, _dec_out, _dec_state = self.recurrency(
-                y_emb, context, dec_state, _dec_state)
             if self.rnnlm_task_weight > 0:
                 if self.share_lm_softmax:
                     logits_rnnlm_t = self.output(_dec_out)
@@ -517,6 +516,7 @@ class Decoder(nn.Module):
         # Initialization
         dec_out, dec_state = self.init_dec_state(enc_out, enc_lens, self.nlayers)
         _dec_out, _dec_state = self.init_dec_state(enc_out, enc_lens, 1)
+        context = Variable(enc_out.new(bs, 1, enc_nunits).fill_(0.))
         self.score.reset()
         aw = None
         rnnlm_state = None
@@ -533,8 +533,10 @@ class Decoder(nn.Module):
         y_lens = np.zeros((bs,), dtype=np.int32)
         eos_flags = [False] * bs
         for t in range(int(math.floor(enc_time * max_len_ratio)) + 1):
-            # Score
-            context, aw = self.score(enc_out, enc_lens, dec_out, aw)
+            # Recurrency
+            y_emb = self.embed(y)
+            dec_out, dec_state, _dec_out, _dec_state = self.recurrency(
+                y_emb, context, dec_state, _dec_state)
 
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf:
@@ -543,10 +545,13 @@ class Decoder(nn.Module):
             else:
                 logits_rnnlm_t, rnnlm_out = None, None
 
+            # Score
+            context, aw = self.score(enc_out, enc_lens, dec_out, aw)
+
             # Generate
             logits_t = self.generate(context, dec_out, logits_rnnlm_t, rnnlm_out)
 
-            # residual connection
+            # Residual connection
             if self.rnnlm_init and self.internal_lm:
                 logits_t += _dec_out
 
@@ -571,11 +576,6 @@ class Decoder(nn.Module):
             # Break if <eos> is outputed in all mini-bs
             if sum(eos_flags) == bs:
                 break
-
-            # Recurrency
-            y_emb = self.embed(y)
-            dec_out, dec_state, _dec_out, _dec_state = self.recurrency(
-                y_emb, context, dec_state, _dec_state)
 
         # Concatenate in L dimension
         _best_hyps = torch.cat(_best_hyps, dim=1)
@@ -635,7 +635,7 @@ class Decoder(nn.Module):
             scores (list):
 
         """
-        bs = enc_out.size(0)
+        bs, _, enc_nunits = enc_out.size()
 
         # For cold fusion
         if params['rnnlm_weight'] > 0 and not self.cold_fusion:
@@ -657,7 +657,7 @@ class Decoder(nn.Module):
             # Initialization per utterance
             dec_out, (hx_list, cx_list) = self.init_dec_state(enc_out[b:b + 1], enc_lens[b:b + 1], self.nlayers)
             _dec_out, _dec_state = self.init_dec_state(enc_out[b:b + 1], enc_lens[b:b + 1], 1)
-            context = Variable(enc_out.new(1, 1, enc_out.size(-1)).fill_(0.))
+            context = Variable(enc_out.new(1, 1, enc_nunits).fill_(0.))
             self.score.reset()
 
             complete = []
@@ -678,16 +678,13 @@ class Decoder(nn.Module):
             for t in range(int(math.floor(enc_lens[b] * params['max_len_ratio'])) + 1):
                 new_beam = []
                 for i_beam in range(len(beam)):
-                    if t > 0:
-                        # Recurrency
-                        y = Variable(enc_out.new(1, 1).fill_(beam[i_beam]['hyp'][-1]).long())
-                        y_emb = self.embed(y)
-                        dec_out, (hx_list, cx_list), _dec_out, _dec_state = self.recurrency(
-                            y_emb, beam[i_beam]['context'],
-                            (beam[i_beam]['hx_list'], beam[i_beam]['cx_list']),
-                            beam[i_beam]['_dec_state'])
-                    else:
-                        dec_out = beam[i_beam]['dec_out']
+                    # Recurrency
+                    y = Variable(enc_out.new(1, 1).fill_(beam[i_beam]['hyp'][-1]).long())
+                    y_emb = self.embed(y)
+                    dec_out, (hx_list, cx_list), _dec_out, _dec_state = self.recurrency(
+                        y_emb, beam[i_beam]['context'],
+                        (beam[i_beam]['hx_list'], beam[i_beam]['cx_list']),
+                        beam[i_beam]['_dec_state'])
 
                     # Score
                     context, aw = self.score(enc_out[b:b + 1, :enc_lens[b]],
@@ -713,12 +710,9 @@ class Decoder(nn.Module):
                     # Generate
                     logits_t = self.generate(context, dec_out, logits_rnnlm_t, rnnlm_out)
 
-                    # residual connection
+                    # Residual connection
                     if self.rnnlm_init and self.internal_lm:
-                        if t == 0:
-                            logits_t += beam[i_beam]['_dec_out']
-                        else:
-                            logits_t += _dec_out
+                        logits_t += _dec_out
 
                     if self.share_lm_softmax or self.rnnlm_init:
                         logits_t = self.output_bn(logits_t)
@@ -856,6 +850,7 @@ class Decoder(nn.Module):
 
     def decode_ctc(self, enc_out, x_lens, beam_width=1, rnnlm=None):
         """Decoding by the CTC layer in the inference stage.
+
             This is only used for Joint CTC-Attention model.
         Args:
             enc_out (FloatTensor): `[B, T, enc_units]`
@@ -877,6 +872,6 @@ class Decoder(nn.Module):
         else:
             best_hyps = self.decode_ctc_beam(F.log_softmax(logits_ctc, dim=-1),
                                              x_lens, beam_width, rnnlm)
-            # TODO(hirofumi: decoding paramters
+            # TODO(hirofumi): decoding paramters
 
         return best_hyps

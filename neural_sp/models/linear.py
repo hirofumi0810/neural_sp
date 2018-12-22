@@ -39,13 +39,14 @@ class LinearND(nn.Module):
         """Forward computation.
 
         Args:
-            xs (torch.autograd.Variable, float): `[B, T, input_dim]`
+            xs (FloatTensor): `[B, T, input_dim]`
         Returns:
-            xs (torch.autograd.Variable, float): `[B, T, size[-1]]`
+            xs (FloatTensor): `[B, T, size[-1]]`
 
         """
         size = list(xs.size())
         xs = xs.contiguous().view((int(np.prod(size[:-1])), int(size[-1])))
+        # print(self.fc.weight.data.sum())
         xs = self.fc(xs)
         if hasattr(self, 'dropout'):
             xs = self.dropout(xs)
@@ -76,9 +77,9 @@ class Embedding(nn.Module):
         """Forward computation.
 
         Args:
-            y (torch.autograd.Variable, long): `[B, L]`
+            y (LongTensor): `[B, L]`
         Returns:
-            y (torch.autograd.Variable, float): `[B, L, emb_dim]`
+            y (FloatTensor): `[B, L, emb_dim]`
 
         """
         y = self.embed(y)

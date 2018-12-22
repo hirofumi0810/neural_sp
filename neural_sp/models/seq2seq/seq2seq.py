@@ -61,7 +61,8 @@ class Seq2seq(ModelBase):
         self.vocab = args.vocab
         self.vocab_sub = args.vocab_sub
         self.blank = 0
-        self.sos = 2
+        self.unk = 1
+        self.sos = 2  # NOTE: same as <eos>
         self.eos = 2
         self.pad = 3
         # NOTE: reserved in advance
@@ -77,47 +78,65 @@ class Seq2seq(ModelBase):
         # for the sub task
         self.main_task_weight = args.main_task_weight
 
+        # Setting for the CNN encoder
+        if args.conv_poolings:
+            conv_channels = [int(c) for c in args.conv_channels.split('_')] if len(args.conv_channels) > 0 else []
+            conv_kernel_sizes = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
+                                 for c in args.conv_kernel_sizes.split('_')] if len(args.conv_kernel_sizes) > 0 else []
+            conv_strides = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
+                            for c in args.conv_strides.split('_')] if len(args.conv_strides) > 0 else []
+            conv_poolings = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
+                             for c in args.conv_poolings.split('_')] if len(args.conv_poolings) > 0 else []
+        else:
+            conv_channels = []
+            conv_kernel_sizes = []
+            conv_strides = []
+            conv_poolings = []
+
         # Encoder
         if args.enc_type in ['blstm', 'lstm', 'bgru', 'gru']:
-            self.enc = RNNEncoder(input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
-                                  rnn_type=args.enc_type,
-                                  nunits=args.enc_nunits,
-                                  nprojs=args.enc_nprojs,
-                                  nlayers=args.enc_nlayers,
-                                  nlayers_sub=args.enc_nlayers_sub,
-                                  dropout_in=args.dropout_in,
-                                  dropout_hidden=args.dropout_enc,
-                                  subsample=[s == '1' for s in args.subsample.split('_')],
-                                  subsample_type=args.subsample_type,
-                                  nstacks=args.nstacks,
-                                  nsplices=args.nsplices,
-                                  conv_in_channel=args.conv_in_channel,
-                                  conv_channels=args.conv_channels,
-                                  conv_kernel_sizes=args.conv_kernel_sizes,
-                                  conv_strides=args.conv_strides,
-                                  conv_poolings=args.conv_poolings,
-                                  conv_batch_norm=args.conv_batch_norm,
-                                  residual=args.enc_residual,
-                                  nin=0,
-                                  layer_norm=args.layer_norm)
+            self.enc = RNNEncoder(
+                input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
+                rnn_type=args.enc_type,
+                nunits=args.enc_nunits,
+                nprojs=args.enc_nprojs,
+                nlayers=args.enc_nlayers,
+                nlayers_sub=args.enc_nlayers_sub,
+                dropout_in=args.dropout_in,
+                dropout=args.dropout_enc,
+                subsample=[int(s) for s in args.subsample.split('_')],
+                subsample_type=args.subsample_type,
+                nstacks=args.nstacks,
+                nsplices=args.nsplices,
+                conv_in_channel=args.conv_in_channel,
+                conv_channels=conv_channels,
+                conv_kernel_sizes=conv_kernel_sizes,
+                conv_strides=conv_strides,
+                conv_poolings=conv_poolings,
+                conv_batch_norm=args.conv_batch_norm,
+                residual=args.enc_residual,
+                nin=0,
+                layer_norm=args.layer_norm)
+
         elif args.enc_type == 'cnn':
             assert args.nstacks == 1 and args.nsplices == 1
-            self.enc = CNNEncoder(input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
-                                  in_channel=args.conv_in_channel,
-                                  channels=args.conv_channels,
-                                  kernel_sizes=args.conv_kernel_sizes,
-                                  strides=args.conv_strides,
-                                  poolings=args.conv_poolings,
-                                  dropout_in=args.dropout_in,
-                                  dropout_hidden=args.dropout_enc,
-                                  batch_norm=args.conv_batch_norm)
+            self.enc = CNNEncoder(
+                input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
+                in_channel=args.conv_in_channel,
+                channels=args.conv_channels,
+                kernel_sizes=args.conv_kernel_sizes,
+                strides=args.conv_strides,
+                poolings=args.conv_poolings,
+                dropout_in=args.dropout_in,
+                dropout=args.dropout_enc,
+                batch_norm=args.conv_batch_norm)
         else:
             raise NotImplementedError(args.enc_type)
 
         # Bridge layer between the encoder and decoder
         if args.enc_type == 'cnn':
             logger.info('insert a bridge layer')
-            self.bridge = LinearND(self.encoder.output_dim, args.dec_nunits,
+            self.bridge = LinearND(self.enc.output_dim, args.dec_nunits,
                                    dropout=args.dropout_enc)
             self.enc_nunits = args.dec_nunits
         elif args.bridge_layer:
@@ -171,36 +190,36 @@ class Seq2seq(ModelBase):
                 args.rnnlm_cold_fusion = False
 
             # Decoder
-            dec = Decoder(attention=attn,
-                          sos=self.sos,
-                          eos=self.eos,
-                          pad=self.pad,
-                          enc_nunits=self.enc_nunits,
-                          rnn_type=args.dec_type,
-                          nunits=args.dec_nunits,
-                          nlayers=args.dec_nlayers,
-                          residual=args.dec_residual,
-                          emb_dim=args.emb_dim,
-                          vocab=self.vocab,
-                          logits_temp=args.logits_temp,
-                          dropout_hidden=args.dropout_dec,
-                          dropout_emb=args.dropout_emb,
-                          ss_prob=args.ss_prob,
-                          lsm_prob=args.lsm_prob,
-                          layer_norm=args.layer_norm,
-                          init_with_enc=args.init_with_enc,
-                          ctc_weight=args.ctc_weight if dir == 'fwd' or (
-                              dir == 'bwd' and self.fwd_weight == 0) else 0,
-                          ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split('_')],
-                          input_feeding=args.input_feeding,
-                          backward=(dir == 'bwd'),
-                          rnnlm_cold_fusion=args.rnnlm_cold_fusion,
-                          cold_fusion=args.cold_fusion,
-                          internal_lm=args.internal_lm,
-                          rnnlm_init=args.rnnlm_init,
-                          rnnlm_task_weight=args.rnnlm_task_weight,
-                          share_lm_softmax=args.share_lm_softmax,
-                          global_weight=self.fwd_weight * args.main_task_weight if dir == 'fwd' else self.bwd_weight)
+            dec = Decoder(
+                attention=attn,
+                sos=self.sos,
+                eos=self.eos,
+                pad=self.pad,
+                enc_nunits=self.enc_nunits,
+                rnn_type=args.dec_type,
+                nunits=args.dec_nunits,
+                nlayers=args.dec_nlayers,
+                residual=args.dec_residual,
+                emb_dim=args.emb_dim,
+                vocab=self.vocab,
+                logits_temp=args.logits_temp,
+                dropout=args.dropout_dec,
+                dropout_emb=args.dropout_emb,
+                ss_prob=args.ss_prob,
+                lsm_prob=args.lsm_prob,
+                layer_norm=args.layer_norm,
+                init_with_enc=args.init_with_enc,
+                ctc_weight=args.ctc_weight if dir == 'fwd' or (dir == 'bwd' and self.fwd_weight == 0) else 0,
+                ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split('_')] if len(args.ctc_fc_list) > 0 else [],
+                input_feeding=args.input_feeding,
+                backward=(dir == 'bwd'),
+                rnnlm_cold_fusion=args.rnnlm_cold_fusion,
+                cold_fusion=args.cold_fusion,
+                internal_lm=args.internal_lm,
+                rnnlm_init=args.rnnlm_init,
+                rnnlm_task_weight=args.rnnlm_task_weight,
+                share_lm_softmax=args.share_lm_softmax,
+                global_weight=self.fwd_weight * args.main_task_weight if dir == 'fwd' else self.bwd_weight)
             setattr(self, 'dec_' + dir, dec)
 
         # SUB TASK
@@ -236,27 +255,29 @@ class Seq2seq(ModelBase):
                 attn_sub = None
 
             # Decoder
-            self.dec_fwd_sub1 = Decoder(attention=attn_sub,
-                                        sos=self.sos,
-                                        eos=self.eos,
-                                        pad=self.pad,
-                                        enc_nunits=self.enc_nunits,
-                                        rnn_type=args.dec_type,
-                                        nunits=args.dec_nunits,
-                                        nlayers=args.dec_nlayers,
-                                        residual=args.dec_residual,
-                                        emb_dim=args.emb_dim,
-                                        vocab=self.vocab_sub,
-                                        logits_temp=args.logits_temp,
-                                        dropout_hidden=args.dropout_dec,
-                                        dropout_emb=args.dropout_emb,
-                                        ss_prob=args.ss_prob,
-                                        lsm_prob=args.lsm_prob,
-                                        layer_norm=args.layer_norm,
-                                        init_with_enc=args.init_with_enc,
-                                        ctc_weight=args.ctc_weight_sub,
-                                        ctc_fc_list=[int(fc) for fc in args.ctc_fc_list_sub.split('_')],
-                                        global_weight=1 - args.main_task_weight)
+            self.dec_fwd_sub1 = Decoder(
+                attention=attn_sub,
+                sos=self.sos,
+                eos=self.eos,
+                pad=self.pad,
+                enc_nunits=self.enc_nunits,
+                rnn_type=args.dec_type,
+                nunits=args.dec_nunits,
+                nlayers=args.dec_nlayers,
+                residual=args.dec_residual,
+                emb_dim=args.emb_dim,
+                vocab=self.vocab_sub,
+                logits_temp=args.logits_temp,
+                dropout=args.dropout_dec,
+                dropout_emb=args.dropout_emb,
+                ss_prob=args.ss_prob,
+                lsm_prob=args.lsm_prob,
+                layer_norm=args.layer_norm,
+                init_with_enc=args.init_with_enc,
+                ctc_weight=args.ctc_weight_sub,
+                ctc_fc_list=[int(fc) for fc in args.ctc_fc_list_sub.split('_')
+                             ] if len(args.ctc_fc_list_sub) > 0 else [],
+                global_weight=1 - args.main_task_weight)
 
         if args.input_type == 'text':
             if args.vocab == args.vocab_sub:
@@ -295,7 +316,7 @@ class Seq2seq(ModelBase):
         if args.rnnlm_cold_fusion:
             self.init_weights(-1, dist='constant', keys=['cf_linear_lm_gate.fc.bias'])
 
-    def forward(self, xs, ys, ys_sub, reporter, is_eval=False):
+    def forward(self, xs, ys, ys_sub=None, reporter=None, is_eval=False):
         """Forward computation.
 
         Args:
@@ -429,8 +450,8 @@ class Seq2seq(ModelBase):
 
         return xs, x_lens, xs_sub, x_lens_sub
 
-    def decode(self, xs, decode_params, nbest=1, exclude_eos=False, task='',
-               idx2token=None, refs=None):
+    def decode(self, xs, decode_params, nbest=1, exclude_eos=False,
+               idx2token=None, refs=None, ctc=False):
         """Decoding in the inference stage.
 
         Args:
@@ -447,7 +468,6 @@ class Seq2seq(ModelBase):
                 fwd_bwd_attention (bool):
             nbest (int):
             exclude_eos (bool): exclude <eos> from best_hyps
-            task (str): sub1
             idx2token (): converter from index to token
             refs (list): gold transcriptions to compute log likelihood
         Returns:
@@ -469,7 +489,7 @@ class Seq2seq(ModelBase):
 
             dir = 'fwd' if self.fwd_weight >= self.bwd_weight else 'bwd'
 
-            if self.ctc_weight == 1:
+            if self.ctc_weight == 1 or (self.ctc_weight > 0 and ctc):
                 # Set RNNLM
                 if decode_params['rnnlm_weight'] > 0:
                     assert hasattr(self, 'rnnlm_' + dir)
