@@ -16,6 +16,7 @@ from distutils.util import strtobool
 import os
 import time
 
+from neural_sp.bin.asr.train_utils import load_config
 from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.evaluators.character import eval_char
 from neural_sp.evaluators.phone import eval_phone
@@ -24,14 +25,13 @@ from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.models.rnnlm.rnnlm import RNNLM
 from neural_sp.models.rnnlm.rnnlm_seq import SeqRNNLM
 from neural_sp.models.seq2seq.seq2seq import Seq2seq
-from neural_sp.utils.config import load_config
 from neural_sp.utils.general import set_logger
 
 parser = argparse.ArgumentParser()
 # general
 parser.add_argument('--model', type=str,
                     help='path to the model')
-parser.add_argument('--model_rev', type=str, default=None, nargs='?',
+parser.add_argument('--model_bwd', type=str, default=None, nargs='?',
                     help='path to the model in the reverse direction')
 parser.add_argument('--epoch', type=int, default=-1,
                     help='the epoch to restore')
@@ -59,7 +59,7 @@ parser.add_argument('--rnnlm_weight', type=float, default=0.0,
                     help='the weight of RNNLM score')
 parser.add_argument('--rnnlm', type=str, default=None, nargs='?',
                     help='path to the RMMLM')
-parser.add_argument('--rnnlm_rev', type=str, default=None, nargs='?',
+parser.add_argument('--rnnlm_bwd', type=str, default=None, nargs='?',
                     help='path to the RMMLM in the reverse direction')
 parser.add_argument('--resolving_unk', type=strtobool, default=False,
                     help='Resolving UNK for the word-based model.')
@@ -81,6 +81,7 @@ def main():
             setattr(args, k, v)
 
     # Setting for logging
+    os.remove(os.path.join(args.decode_dir, 'decode.log'))
     logger = set_logger(os.path.join(args.decode_dir, 'decode.log'), key='decoding')
 
     wer_mean, cer_mean, per_mean = 0, 0, 0
@@ -91,7 +92,7 @@ def main():
                            dict_path_sub=os.path.join(args.model, 'dict_sub.txt') if os.path.isfile(
                                os.path.join(args.model, 'dict_sub.txt')) else None,
                            wp_model=os.path.join(args.model, 'wp.model'),
-                           label_type=args.label_type,
+                           unit=args.unit,
                            batch_size=args.batch_size,
                            is_test=True)
 
@@ -105,7 +106,7 @@ def main():
             #     # Load a RNNLM config file
             #     config['rnnlm_config'] = load_config(os.path.join(args.model, 'config_rnnlm.yml'))
             #
-            #     assert args.label_type == config['rnnlm_config']['label_type']
+            #     assert args.unit == config['rnnlm_config']['unit']
             #     rnnlm_args.vocab = eval_set.vocab
             #     logger.info('RNNLM path: %s' % config['rnnlm'])
             #     logger.info('RNNLM weight: %.3f' % args.rnnlm_weight)
@@ -131,7 +132,7 @@ def main():
                 for k, v in config_rnnlm.items():
                     setattr(args_rnnlm, k, v)
 
-                assert args.label_type == args_rnnlm.label_type
+                assert args.unit == args_rnnlm.unit
                 args_rnnlm.vocab = eval_set.vocab
 
                 # Load the pre-trianed RNNLM
@@ -162,25 +163,26 @@ def main():
 
         start_time = time.time()
 
-        if args.label_type == 'word':
-            wer, nsub, nins, ndel = eval_word([model], eval_set, decode_params,
-                                              epoch=epoch - 1,
-                                              decode_dir=args.decode_dir,
-                                              progressbar=True)
+        if args.unit == 'word':
+            wer, nsub, nins, ndel, noov_total = eval_word([model], eval_set, decode_params,
+                                                          epoch=epoch - 1,
+                                                          decode_dir=args.decode_dir,
+                                                          progressbar=True)
             wer_mean += wer
             logger.info('WER (%s): %.3f %%' % (eval_set.set, wer))
-            logger.info('SUB / INS / DEL : %.3f / %.3f/ %.3f' % (nsub, nins, ndel))
+            logger.info('SUB: %.3f / INS: %.3f / DEL: %.3f' % (nsub, nins, ndel))
+            logger.info('OOV (total): %d' % (noov_total))
 
-        elif args.label_type == 'wp':
+        elif args.unit == 'wp':
             wer, nsub, nins, ndel = eval_wordpiece([model], eval_set, decode_params,
                                                    epoch=epoch - 1,
                                                    decode_dir=args.decode_dir,
                                                    progressbar=True)
             wer_mean += wer
             logger.info('WER (%s): %.3f %%' % (eval_set.set, wer))
-            logger.info('SUB / INS / DEL : %.3f / %.3f/ %.3f' % (nsub, nins, ndel))
+            logger.info('SUB: %.3f / INS: %.3f / DEL: %.3f' % (nsub, nins, ndel))
 
-        elif 'char' in args.label_type:
+        elif 'char' in args.unit:
             (wer, nsub, nins, ndel), (cer, _, _, _) = eval_char([model], eval_set, decode_params,
                                                                 epoch=epoch - 1,
                                                                 decode_dir=args.decode_dir,
@@ -188,29 +190,30 @@ def main():
             wer_mean += wer
             cer_mean += cer
             logger.info('WER / CER (%s): %.3f / %.3f %%' % (eval_set.set, wer, cer))
-            logger.info('SUB / INS / DEL : %.3f / %.3f/ %.3f' % (nsub, nins, ndel))
+            logger.info('SUB: %.3f / INS: %.3f / DEL: %.3f' % (nsub, nins, ndel))
 
-        elif 'phone' in args.label_type:
+        elif 'phone' in args.unit:
             per, nsub, nins, ndel = eval_phone([model], eval_set, decode_params,
                                                epoch=epoch - 1,
                                                decode_dir=args.decode_dir,
                                                progressbar=True)
             per_mean += per
             logger.info('PER (%s): %.3f %%' % (eval_set.set, per))
-            logger.info('SUB / INS / DEL : %.3f / %.3f/ %.3f' % (nsub, nins, ndel))
+            logger.info('SUB: %.3f / INS: %.3f / DEL: %.3f' % (nsub, nins, ndel))
+
         else:
-            raise ValueError(args.label_type)
+            raise ValueError(args.unit)
 
         logger.info('Elasped time: %.2f [sec]:' % (time.time() - start_time))
 
-    if args.label_type == 'word':
+    if args.unit == 'word':
         logger.info('WER (mean): %.3f %%\n' % (wer_mean / len(args.eval_sets)))
-    if args.label_type == 'wp':
+    if args.unit == 'wp':
         logger.info('WER (mean): %.3f %%\n' % (wer_mean / len(args.eval_sets)))
-    elif 'char' in args.label_type:
+    elif 'char' in args.unit:
         logger.info('WER / CER (mean): %.3f / %.3f %%\n' %
                     (wer_mean / len(args.eval_sets), cer_mean / len(args.eval_sets)))
-    elif 'phone' in args.label_type:
+    elif 'phone' in args.unit:
         logger.info('PER (mean): %.3f %%\n' % (per_mean / len(args.eval_sets)))
 
 

@@ -37,6 +37,7 @@ def eval_word(models, dataset, decode_params, epoch,
         nsub (int): the number of substitution errors
         nins (int): the number of insertion errors
         ndel (int): the number of deletion errors
+        noov_total (int):
 
     """
     # Reset data counter
@@ -61,7 +62,7 @@ def eval_word(models, dataset, decode_params, epoch,
     wer = 0
     nsub, nins, ndel = 0, 0, 0
     nword = 0
-    noovs_total = 0
+    noov_total = 0
     if progressbar:
         pbar = tqdm(total=len(dataset))  # TODO(hirofumi): fix this
 
@@ -76,7 +77,7 @@ def eval_word(models, dataset, decode_params, epoch,
                 ref = ys[b]
                 hyp = dataset.idx2word(best_hyps[b])
 
-                noovs_total += hyp.count('<unk>')
+                noov_total += hyp.count('<unk>')
 
                 # Resolving UNK
                 if decode_params['resolving_unk'] and '<unk>' in hyp:
@@ -129,4 +130,4 @@ def eval_word(models, dataset, decode_params, epoch,
     nins /= nword
     ndel /= nword
 
-    return wer, nsub, nins, ndel
+    return wer, nsub, nins, ndel, noov_total

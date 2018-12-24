@@ -80,7 +80,7 @@ def main():
                            dict_path_sub=os.path.join(args.model, 'dict_sub.txt') if os.path.isfile(
                                os.path.join(args.model, 'dict_sub.txt')) else None,
                            wp_model=os.path.join(args.model, 'wp.model'),
-                           label_type=args.label_type,
+                           unit=args.unit,
                            batch_size=args.batch_size,
                            max_num_frames=args.max_num_frames,
                            min_num_frames=args.min_num_frames,
@@ -111,7 +111,7 @@ def main():
                 for k, v in config_rnnlm.items():
                     setattr(args_rnnlm, k, v)
 
-                assert args.label_type == args_rnnlm.label_type
+                assert args.unit == args_rnnlm.unit
                 args_rnnlm.vocab = eval_set.vocab
 
                 # Load the pre-trianed RNNLM
@@ -154,16 +154,16 @@ def main():
                 aws = [aw[::-1] for aw in aws]
 
             for b in range(len(batch['xs'])):
-                if args.label_type == 'word':
+                if args.unit == 'word':
                     token_list = eval_set.idx2word(best_hyps[b], return_list=True)
-                if args.label_type == 'wp':
+                if args.unit == 'wp':
                     token_list = eval_set.idx2wp(best_hyps[b], return_list=True)
-                elif args.label_type == 'char':
+                elif args.unit == 'char':
                     token_list = eval_set.idx2char(best_hyps[b], return_list=True)
-                elif args.label_type == 'phone':
+                elif args.unit == 'phone':
                     token_list = eval_set.idx2phone(best_hyps[b], return_list=True)
                 else:
-                    raise NotImplementedError(args.label_type)
+                    raise NotImplementedError(args.unit)
                 token_list = [unicode(t, 'utf-8') for t in token_list]
                 speaker = '_'.join(batch['utt_ids'][b].replace('-', '_').split('_')[:-2])
 
