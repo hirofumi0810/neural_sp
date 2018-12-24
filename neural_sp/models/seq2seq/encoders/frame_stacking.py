@@ -4,7 +4,7 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-""
+"""Frame stacking."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -13,7 +13,7 @@ from __future__ import print_function
 import numpy as np
 
 
-def stack_frame(feat, num_stack, num_skip, dtype=np.float32):
+def stack_frame(feat, nstacks, nskips, dtype=np.float32):
     """Stack & skip some frames. This implementation is based on
 
        https://arxiv.org/abs/1507.06947.
@@ -22,26 +22,25 @@ def stack_frame(feat, num_stack, num_skip, dtype=np.float32):
            arXiv preprint arXiv:1507.06947 (2015).
 
     Args:
-        feat (list): A tensor of size `[T, input_dim]`
-        num_stack (int): the number of frames to stack
-        num_skip (int): the number of frames to skip
-        dtype (, optional):
+        feat (list): `[T, input_dim]`
+        nstacks (int): the number of frames to stack
+        nskips (int): the number of frames to skip
+        dtype ():
     Returns:
-        stacked_feat (np.ndarray): A tensor of size
-            `[floor(T / num_skip), input_dim * num_stack]`
+        stacked_feat (np.ndarray): `[floor(T / nskips), input_dim * nstacks]`
 
     """
-    if num_stack == 1 and num_stack == 1:
+    if nstacks == 1 and nstacks == 1:
         return feat
 
-    if num_stack < num_skip:
-        raise ValueError('num_skip must be less than num_stack.')
+    if nstacks < nskips:
+        raise ValueError('nskips must be less than nstacks.')
 
     frame_num, input_dim = feat.shape
-    frame_num_new = (frame_num + 1) // num_skip
+    frame_num_new = (frame_num + 1) // nskips
 
-    stacked_feat = np.zeros((frame_num_new, input_dim * num_stack), dtype=dtype)
-    stack_count = 0  # counter
+    stacked_feat = np.zeros((frame_num_new, input_dim * nstacks), dtype=dtype)
+    stack_count = 0
     stack = []
     for t, frame_t in enumerate(feat):
 
@@ -52,30 +51,30 @@ def stack_frame(feat, num_stack, num_skip, dtype=np.float32):
 
             while stack_count != int(frame_num_new):
                 # Concatenate stacked frames
-                for i_stack in range(len(stack)):
+                for i in range(len(stack)):
                     stacked_feat[stack_count][input_dim *
-                                              i_stack:input_dim * (i_stack + 1)] = stack[i_stack]
+                                              i:input_dim * (i + 1)] = stack[i]
                 stack_count += 1
 
                 # Delete some frames to skip
-                for _ in range(num_skip):
+                for _ in range(nskips):
                     if len(stack) != 0:
                         stack.pop(0)
 
         # first & middle frames
-        elif len(stack) < num_stack:
+        elif len(stack) < nstacks:
             # Stack some frames until stack is filled
             stack.append(frame_t)
 
-            if len(stack) == num_stack:
-                # Concatenate stacked frames
-                for i_stack in range(num_stack):
+            if len(stack) == nstacks:
+                    # Concatenate stacked frames
+                for i in range(nstacks):
                     stacked_feat[stack_count][input_dim *
-                                              i_stack:input_dim * (i_stack + 1)] = stack[i_stack]
+                                              i:input_dim * (i + 1)] = stack[i]
                 stack_count += 1
 
                 # Delete some frames to skip
-                for _ in range(num_skip):
+                for _ in range(nskips):
                     stack.pop(0)
 
     return stacked_feat

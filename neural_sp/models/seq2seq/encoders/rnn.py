@@ -20,15 +20,13 @@ from torch.nn.utils.rnn import pad_packed_sequence
 
 from neural_sp.models.linear import LinearND
 from neural_sp.models.seq2seq.encoders.cnn import CNNEncoder
-from neural_sp.models.seq2seq.encoders.cnn import VGG2LBlock
-from neural_sp.models.seq2seq.encoders.cnn import get_vgg2l_odim
 
 
 class RNNEncoder(nn.Module):
     """RNN encoder.
 
     Args:
-        input_dim (int): the dimension of input features  (freq * channel)
+        input_dim (int): the dimension of input features (freq * channel)
         rnn_type (str): blstm or lstm or bgru or gru
         nunits (int): the number of units in each layer
         nprojs (int): the number of units in each projection layer
@@ -84,6 +82,8 @@ class RNNEncoder(nn.Module):
             raise ValueError('subsample must be the same size as nlayers.')
         if nlayers_sub < 0 or (nlayers_sub > 1 and nlayers < nlayers_sub):
             raise ValueError('Set nlayers_sub between 1 to nlayers.')
+        if rnn_type == 'cnn':
+            assert nstacks == 1 and nsplices == 1
 
         self.rnn_type = rnn_type
         self.bidirectional = True if rnn_type in ['blstm', 'bgru'] else False
@@ -129,106 +129,102 @@ class RNNEncoder(nn.Module):
                                    kernel_sizes=conv_kernel_sizes,
                                    strides=conv_strides,
                                    poolings=conv_poolings,
-                                   dropout_in=0,
                                    dropout=dropout,
                                    activation='relu',
                                    batch_norm=conv_batch_norm)
             input_dim = self.conv.output_dim
-
-            # espnet
-            # self.conv = VGG2LBlock(in_channel=conv_in_channel)
-            # input_dim = get_vgg2l_odim(input_dim, in_channel=conv_in_channel)
         else:
             input_dim *= nsplices * nstacks
             self.conv = None
 
-        self._fast_impl = False
-        # Fast implementation without processes between each layer
-        if np.prod(self.subsample) == 1 and self.nprojs == 0 and not residual and nlayers_sub == 0 and (not conv_batch_norm) and nin == 0:
-            self._fast_impl = True
-            if 'lstm' in rnn_type:
-                rnn = nn.LSTM
-            elif 'gru' in rnn_type:
-                rnn = nn.GRU
-            else:
-                raise ValueError('rnn_type must be "(b)lstm" or "(b)gru".')
-
-            self.rnn = rnn(input_dim, nunits, nlayers,
-                           bias=True,
-                           batch_first=True,
-                           dropout=dropout,
-                           bidirectional=self.bidirectional)
-            # NOTE: pytorch introduces a dropout layer on the outputs of each layer EXCEPT the last layer
-            self.dropout_top = nn.Dropout(p=dropout)
-        else:
-            self.rnn = torch.nn.ModuleList()
-            self.dropout = torch.nn.ModuleList()
-            if self.nprojs > 0:
-                self.proj = torch.nn.ModuleList()
-            if subsample_type == 'max_pool' and np.prod(self.subsample) > 1:
-                self.max_pool = torch.nn.ModuleList()
-                for l in range(nlayers):
-                    if self.subsample[l] > 1:
-                        self.max_pool += [nn.MaxPool2d((1, 1),
-                                                       stride=(self.subsample[l], 1),
-                                                       ceil_mode=True)]
-                    else:
-                        self.max_pool += [None]
-            if subsample_type == 'concat' and np.prod(self.subsample) > 1:
-                self.concat = torch.nn.ModuleList()
-                for l in range(nlayers):
-                    if self.subsample[l] > 1:
-                        self.concat += [LinearND(nunits * self.ndirs * self.subsample[l], nunits * self.ndirs)]
-                    else:
-                        self.concat += [None]
-
-            for l in range(nlayers):
-                if l == 0:
-                    enc_in_dim = input_dim
-                elif nin > 0:
-                    enc_in_dim = nin
-                elif self.nprojs > 0:
-                    enc_in_dim = self.nprojs
-                else:
-                    enc_in_dim = nunits * self.ndirs
-
+        if rnn_type != 'cnn':
+            self.fast_impl = False
+            # Fast implementation without processes between each layer
+            if np.prod(self.subsample) == 1 and self.nprojs == 0 and not residual and nlayers_sub == 0 and (not conv_batch_norm) and nin == 0:
+                self.fast_impl = True
                 if 'lstm' in rnn_type:
-                    rnn_i = nn.LSTM
+                    rnn = nn.LSTM
                 elif 'gru' in rnn_type:
-                    rnn_i = nn.GRU
+                    rnn = nn.GRU
                 else:
-                    raise ValueError('rnn_type must be "lstm" or "gru".')
+                    raise ValueError('rnn_type must be "(b)lstm" or "(b)gru".')
 
-                self.rnn += [rnn_i(enc_in_dim, nunits, 1,
-                                   bias=True,
-                                   batch_first=True,
-                                   dropout=0,
-                                   bidirectional=self.bidirectional)]
-                self.dropout += [nn.Dropout(p=dropout)]
-                enc_out_dim = nunits * self.ndirs
-
-                if l != self.nlayers - 1 and self.nprojs > 0:
-                    self.proj += [LinearND(nunits * self.ndirs, self.nprojs)]
-                    enc_out_dim = self.nprojs
-
-                # Network in network (1*1 conv)
-                if nin > 0:
-                    setattr(self, 'nin_l' + str(l),
-                            nn.Conv1d(in_channels=enc_out_dim,
-                                      out_channels=nin,
-                                      kernel_size=1,
-                                      stride=1,
-                                      padding=1,
-                                      bias=not conv_batch_norm))
-
-                    # Batch normalization
-                    if conv_batch_norm:
-                        if nin:
-                            setattr(self, 'bn_0_l' + str(l), nn.BatchNorm1d(enc_out_dim))
-                            setattr(self, 'bn_l' + str(l), nn.BatchNorm1d(nin))
+                self.rnn = rnn(input_dim, nunits, nlayers,
+                               bias=True,
+                               batch_first=True,
+                               dropout=dropout,
+                               bidirectional=self.bidirectional)
+                # NOTE: pytorch introduces a dropout layer on the outputs of each layer EXCEPT the last layer
+                self.dropout_top = nn.Dropout(p=dropout)
+            else:
+                self.rnn = torch.nn.ModuleList()
+                self.dropout = torch.nn.ModuleList()
+                if self.nprojs > 0:
+                    self.proj = torch.nn.ModuleList()
+                if subsample_type == 'max_pool' and np.prod(self.subsample) > 1:
+                    self.max_pool = torch.nn.ModuleList()
+                    for l in range(nlayers):
+                        if self.subsample[l] > 1:
+                            self.max_pool += [nn.MaxPool2d((1, 1),
+                                                           stride=(self.subsample[l], 1),
+                                                           ceil_mode=True)]
                         else:
-                            setattr(self, 'bn_l' + str(l), nn.BatchNorm1d(enc_out_dim))
-                    # NOTE* BN in RNN models is applied only after NiN
+                            self.max_pool += [None]
+                if subsample_type == 'concat' and np.prod(self.subsample) > 1:
+                    self.concat = torch.nn.ModuleList()
+                    for l in range(nlayers):
+                        if self.subsample[l] > 1:
+                            self.concat += [LinearND(nunits * self.ndirs * self.subsample[l], nunits * self.ndirs)]
+                        else:
+                            self.concat += [None]
+
+                for l in range(nlayers):
+                    if l == 0:
+                        enc_in_dim = input_dim
+                    elif nin > 0:
+                        enc_in_dim = nin
+                    elif self.nprojs > 0:
+                        enc_in_dim = self.nprojs
+                    else:
+                        enc_in_dim = nunits * self.ndirs
+
+                    if 'lstm' in rnn_type:
+                        rnn_i = nn.LSTM
+                    elif 'gru' in rnn_type:
+                        rnn_i = nn.GRU
+                    else:
+                        raise ValueError('rnn_type must be "lstm" or "gru".')
+
+                    self.rnn += [rnn_i(enc_in_dim, nunits, 1,
+                                       bias=True,
+                                       batch_first=True,
+                                       dropout=0,
+                                       bidirectional=self.bidirectional)]
+                    self.dropout += [nn.Dropout(p=dropout)]
+                    enc_out_dim = nunits * self.ndirs
+
+                    if l != self.nlayers - 1 and self.nprojs > 0:
+                        self.proj += [LinearND(nunits * self.ndirs, self.nprojs)]
+                        enc_out_dim = self.nprojs
+
+                    # Network in network (1*1 conv)
+                    if nin > 0:
+                        setattr(self, 'nin_l' + str(l),
+                                nn.Conv1d(in_channels=enc_out_dim,
+                                          out_channels=nin,
+                                          kernel_size=1,
+                                          stride=1,
+                                          padding=1,
+                                          bias=not conv_batch_norm))
+
+                        # Batch normalization
+                        if conv_batch_norm:
+                            if nin:
+                                setattr(self, 'bn_0_l' + str(l), nn.BatchNorm1d(enc_out_dim))
+                                setattr(self, 'bn_l' + str(l), nn.BatchNorm1d(nin))
+                            else:
+                                setattr(self, 'bn_l' + str(l), nn.BatchNorm1d(enc_out_dim))
+                        # NOTE* BN in RNN models is applied only after NiN
 
     def forward(self, xs, x_lens):
         """Forward computation.
@@ -250,8 +246,10 @@ class RNNEncoder(nn.Module):
         # Path through CNN layers before RNN layers
         if self.conv is not None:
             xs, x_lens = self.conv(xs, x_lens)
+            if self.rnn_type == 'cnn':
+                return xs, x_lens
 
-        if self._fast_impl:
+        if self.fast_impl:
             self.rnn.flatten_parameters()
             # NOTE: this is necessary for multi-GPUs setting
 
@@ -329,8 +327,8 @@ class RNNEncoder(nn.Module):
                                 res_outputs = [xs]
                     # NOTE: Exclude residual connection from the raw inputs
 
-        # For the sub task
         if self.nlayers_sub >= 1:
+            # For the sub task
             return xs, x_lens, xs_sub, x_lens_sub
         else:
             return xs, x_lens
