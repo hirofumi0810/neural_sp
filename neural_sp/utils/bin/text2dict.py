@@ -17,7 +17,7 @@ from tqdm import tqdm
 parser = argparse.ArgumentParser()
 parser.add_argument('text', type=str,
                     help='path to text file')
-parser.add_argument('--unit', type=str, choices=['word', "wp", 'char', "phone"],
+parser.add_argument('--unit', type=str, choices=['word', "wp", 'char', "phone", "word_char"],
                     help='token units')
 parser.add_argument('--vocab_size', type=int, nargs='?',
                     help='the size of vocabulary for word and wordpiece.')
@@ -25,7 +25,7 @@ parser.add_argument('--remove_word_boundary', action='store_false',
                     help='remove all whitespaces in the transcriptions')
 parser.add_argument('--nlsyms', type=str, default=False,
                     help='path to non-linguistic symbols, e.g., <NOISE> etc.')
-parser.add_argument('--wp_model_type', type=str, default='unigram', nargs='?',
+parser.add_argument('--wp_type', type=str, default='unigram', nargs='?',
                     choices=['unigram', 'bpe'],
                     help='')
 parser.add_argument('--wp_model', type=str, default=False, nargs='?',
@@ -47,7 +47,7 @@ def main():
         spm.SentencePieceTrainer.Train('--input=' + args.text +
                                        ' --user_defined_symbols=' + ','.join(nlsyms) +
                                        ' --vocab_size=' + str(args.vocab_size) +
-                                       ' --model_type=' + args.wp_model_type +
+                                       ' --model_type=' + args.wp_type +
                                        ' --model_prefix=' + args.wp_model +
                                        ' --input_sentence_size=100000000')
         sp = spm.SentencePieceProcessor()
@@ -70,19 +70,18 @@ def main():
                 words.remove('')
             text = ' '.join(words)
 
-            if args.unit == 'word':
+            if args.unit in ['word', 'word_char']:
                 for w in words:
                     # Count word frequency
                     if w not in word_dict.keys():
                         word_dict[w] = 1
                     else:
                         word_dict[w] += 1
-                    token_set.add(w)
 
             elif args.unit == 'wp':
                 token_set |= set(sp.EncodeAsPieces(text))
 
-            elif args.unit == 'char':
+            elif args.unit in ['char', 'word_char']:
                 # Remove whitespaces
                 if args.remove_word_boundary:
                     text = text.replace(' ', '')
@@ -97,23 +96,28 @@ def main():
             pbar.update(1)
 
     if args.unit == 'word':
-        word_list = sorted(nlsyms) + sorted(list(word_dict.keys()),
-                                            key=lambda x: word_dict[x],
-                                            reverse=True)[:args.vocab_size]
-        for w in word_list:
-            print('%s' % w.encode('utf-8'))
+        token_list = sorted(nlsyms) + sorted(list(word_dict.keys()),
+                                             key=lambda x: word_dict[x],
+                                             reverse=True)[:args.vocab_size]
+
+    elif args.unit == 'word_char':
+        word_char_list = sorted(list(word_dict.keys()),
+                                key=lambda x: word_dict[x],
+                                reverse=True)[:args.vocab_size]
+        word_char_list += sorted(list(token_set))
+        token_list = sorted(nlsyms) + sorted(list(set(word_char_list)))
 
     elif args.unit == 'wp':
-        for wp in sorted(nlsyms) + sorted(list(token_set)):
-            print('%s' % wp.encode('utf-8'))
+        token_list = sorted(nlsyms) + sorted(list(token_set))
 
     elif args.unit == 'char':
-        for c in sorted(nlsyms) + sorted(list(token_set)):
-            print('%s' % c.encode('utf-8'))
+        token_list = sorted(nlsyms) + sorted(list(token_set))
 
     elif args.unit == 'phone':
-        for p in sorted(list(token_set)):
-            print('%s' % p.encode('utf-8'))
+        token_list = sorted(list(token_set))
+
+    for t in token_list:
+        print('%s' % t.encode('utf-8'))
 
 
 if __name__ == '__main__':

@@ -4,7 +4,7 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Compute OOV rate."""
+"""Compute OOV (out-of-vocabylary) rate."""
 
 from __future__ import absolute_import
 from __future__ import division

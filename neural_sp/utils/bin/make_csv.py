@@ -4,7 +4,7 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-""
+"""Make a dataset csv file."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -27,7 +27,7 @@ parser.add_argument('--dict', type=str,
                     help='dictionary file')
 parser.add_argument('--text', type=str,
                     help='text file')
-parser.add_argument('--unit', type=str, choices=['word', "wp", 'char', "phone"],
+parser.add_argument('--unit', type=str, choices=['word', "wp", 'char', "phone", "word_char"],
                     help='token units')
 parser.add_argument('--remove_space', type=strtobool, default=False,
                     help='')
@@ -108,13 +108,20 @@ def main():
                 # NOTE; skip test sets for OOV issues
             else:
                 token_ids = []
-                if args.unit == 'word':
+                if args.unit in ['word', 'word_char']:
                     for w in words:
                         if w in token2id.keys():
                             token_ids.append(token2id[w])
                         else:
                             # Replace with <unk>
-                            token_ids.append(token2id[args.unk])
+                            if args.unit == 'word_char':
+                                for c in list(w):
+                                    if c in token2id.keys():
+                                        token_ids.append(token2id[c])
+                                    else:
+                                        token_ids.append(token2id[args.unk])
+                            else:
+                                token_ids.append(token2id[args.unk])
 
                 elif args.unit == 'wp':
                     wps = sp.EncodeAsPieces(text)
