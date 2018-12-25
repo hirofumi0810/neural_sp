@@ -214,7 +214,7 @@ class Seq2seq(ModelBase):
 
         # 1st sub task (only for fwd)
         if self.sub1_weight > 0 or (args.mtl_per_batch and args.dict_sub1):
-            if self.ctc_weight_sub1 < 1:
+            if self.ctc_weight_sub1 < args.sub1_weight:
                 # Attention layer
                 if args.attn_nheads_sub1 > 1:
                     attn_sub1 = MultiheadAttentionMechanism(
@@ -273,7 +273,7 @@ class Seq2seq(ModelBase):
 
         # 2nd sub task (only for fwd)
         if self.sub2_weight > 1 or (args.mtl_per_batch and args.dict_sub2):
-            if self.ctc_weight_sub2 < 1:
+            if self.ctc_weight_sub2 < args.sub2_weight:
                 # Attention layer
                 if args.attn_nheads_sub2 > 1:
                     attn_sub2 = MultiheadAttentionMechanism(
@@ -432,7 +432,7 @@ class Seq2seq(ModelBase):
             # TODO(hirofumi): mtl_per_batch
 
         # for the 1st sub task
-        if (self.sub1_weight > 1 and not self.mtl_per_batch) or (self.mtl_per_batch and task == 'ys_sub1'):
+        if (self.sub1_weight > 0 and not self.mtl_per_batch) or (self.mtl_per_batch and task == 'ys_sub1'):
             if self.mtl_per_batch:
                 loss_sub1, obs_sub1 = self.dec_fwd_sub1(
                     enc_out['ys_sub1']['xs'], enc_out['ys_sub1']['x_lens'], ys)
@@ -447,7 +447,7 @@ class Seq2seq(ModelBase):
             observation['acc.sub1'] = obs_sub1['acc']
 
         # for the 2nd sub task
-        if (self.sub2_weight > 1 and not self.mtl_per_batch) or (self.mtl_per_batch and task == 'ys_sub2'):
+        if (self.sub2_weight > 0 and not self.mtl_per_batch) or (self.mtl_per_batch and task == 'ys_sub2'):
             if self.mtl_per_batch:
                 loss_sub2, obs_sub2 = self.dec_fwd_sub2(
                     enc_out['ys_sub2']['xs'], enc_out['ys_sub2']['x_lens'], ys)
