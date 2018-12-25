@@ -71,11 +71,18 @@ def eval_char(models, dataset, decode_params, epoch,
     if progressbar:
         pbar = tqdm(total=len(dataset))
 
+    if task_idx == 0:
+        task = 'ys'
+    elif task_idx == 1:
+        task = 'ys_sub'
+    elif task_idx == 2:
+        task = 'ys_sub_sub'
+
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
             batch, is_new_epoch = dataset.next(decode_params['batch_size'])
             best_hyps, _, perm_idx = model.decode(batch['xs'], decode_params,
-                                                  exclude_eos=True)
+                                                  exclude_eos=True, task=task)
             ys = [batch['text'][i] for i in perm_idx]
 
             for b in six.moves.range(len(batch['xs'])):

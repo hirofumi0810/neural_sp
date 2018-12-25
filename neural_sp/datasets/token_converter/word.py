@@ -18,10 +18,13 @@ class Word2idx(object):
 
     Args:
         dict_path (str): path to a dictionary file
+        word_char_mix (bool):
 
     """
 
-    def __init__(self, dict_path):
+    def __init__(self, dict_path, word_char_mix=False):
+        self.word_char_mix = word_char_mix
+
         # Load a dictionary file
         self.word2idx = {}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
@@ -45,7 +48,14 @@ class Word2idx(object):
                 token_ids.append(self.word2idx[w])
             else:
                 # Replace with <unk>
-                token_ids.append(self.word2idx['<unk>'])
+                if self.word_char_mix:
+                    for c in list(w):
+                        if c in self.word2idx.keys():
+                            token_ids.append(self.word2idx[c])
+                        else:
+                            token_ids.append(self.word2idx['<unk>'])
+                else:
+                    token_ids.append(self.word2idx['<unk>'])
         return token_ids
 
 

@@ -51,7 +51,7 @@ class Dataset(Base):
         Args:
             csv_path (str):
             dict_path (str):
-            unit (str): word or wp or char or phone
+            unit (str): word or wp or char or phone or word_char
             batch_size (int): the size of mini-batch
             nepochs (int): the max epoch. None means infinite loop.
             is_test (bool):
@@ -89,13 +89,13 @@ class Dataset(Base):
         self.vocab = self.count_vocab_size(dict_path)
 
         # Set index converter
-        if unit == 'word':
+        if unit in ['word', 'word_char']:
             self.idx2word = Idx2word(dict_path)
-            self.word2idx = Word2idx(dict_path)
-        elif unit == 'wp':
+            self.word2idx = Word2idx(dict_path, word_char_mix=(unit == 'word_char'))
+        elif unit == 'wp' or unit_sub == 'wp':
             self.idx2wp = Idx2wp(dict_path, wp_model)
             self.wp2idx = Wp2idx(dict_path, wp_model)
-        elif unit == 'char':
+        elif unit == 'char' or unit_sub == 'char':
             self.idx2char = Idx2char(dict_path)
             self.char2idx = Char2idx(dict_path)
         elif 'phone' in unit:

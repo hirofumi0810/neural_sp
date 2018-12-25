@@ -432,7 +432,7 @@ class Seq2seq(ModelBase):
         return enc_out, perm_idx
 
     def decode(self, xs, decode_params, nbest=1, exclude_eos=False,
-               idx2token=None, refs=None, ctc=False):
+               idx2token=None, refs=None, ctc=False, task='ys'):
         """Decoding in the inference stage.
 
         Args:
@@ -451,6 +451,8 @@ class Seq2seq(ModelBase):
             exclude_eos (bool): exclude <eos> from best_hyps
             idx2token (): converter from index to token
             refs (list): gold transcriptions to compute log likelihood
+            ctc (bool):
+            task (str):
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
             aws (list): A list of length `[B]`, which contains arrays of size `[L, T]`
@@ -459,8 +461,10 @@ class Seq2seq(ModelBase):
         """
         self.eval()
         with torch.no_grad():
-            enc_out, perm_idx = self.encode(xs, task='all')
+            enc_out, perm_idx = self.encode(xs, task=task)
             dir = 'fwd' if self.fwd_weight >= self.bwd_weight else 'bwd'
+            if task == 'ys_sub':
+                dir += '_sub1'
 
             if self.ctc_weight == 1 or (self.ctc_weight > 0 and ctc):
                 # Set RNNLM
@@ -471,7 +475,7 @@ class Seq2seq(ModelBase):
                     rnnlm = None
 
                 best_hyps = getattr(self, 'dec_' + dir).decode_ctc(
-                    enc_out['ys']['xs'], enc_out['ys']['x_lens'],
+                    enc_out[task]['xs'], enc_out[task]['x_lens'],
                     decode_params['beam_width'], rnnlm)
                 return best_hyps, None, perm_idx
             else:

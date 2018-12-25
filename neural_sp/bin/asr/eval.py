@@ -17,6 +17,7 @@ import os
 import time
 
 from neural_sp.bin.asr.train_utils import load_config
+from neural_sp.bin.asr.train_utils import set_logger
 from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.evaluators.character import eval_char
 from neural_sp.evaluators.phone import eval_phone
@@ -25,7 +26,6 @@ from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.models.rnnlm.rnnlm import RNNLM
 from neural_sp.models.rnnlm.rnnlm_seq import SeqRNNLM
 from neural_sp.models.seq2seq.seq2seq import Seq2seq
-from neural_sp.utils.general import set_logger
 
 parser = argparse.ArgumentParser()
 # general
@@ -65,6 +65,10 @@ parser.add_argument('--resolving_unk', type=strtobool, default=False,
                     help='Resolving UNK for the word-based model.')
 parser.add_argument('--fwd_bwd_attention', type=strtobool, default=False,
                     help='Forward-backward attention decoding.')
+# MTL
+parser.add_argument('--recog_unit', type=str, default=False, nargs='?',
+                    choices=['word', 'wp', 'char', 'word_char'],
+                    help='')
 args = parser.parse_args()
 
 
@@ -81,7 +85,8 @@ def main():
             setattr(args, k, v)
 
     # Setting for logging
-    os.remove(os.path.join(args.decode_dir, 'decode.log'))
+    if os.path.isfile(os.path.join(args.decode_dir, 'decode.log')):
+        os.remove(os.path.join(args.decode_dir, 'decode.log'))
     logger = set_logger(os.path.join(args.decode_dir, 'decode.log'), key='decoding')
 
     wer_mean, cer_mean, per_mean = 0, 0, 0
@@ -93,6 +98,7 @@ def main():
                                os.path.join(args.model, 'dict_sub.txt')) else None,
                            wp_model=os.path.join(args.model, 'wp.model'),
                            unit=args.unit,
+                           unit_sub=args.unit_sub,
                            batch_size=args.batch_size,
                            is_test=True)
 
@@ -163,40 +169,45 @@ def main():
 
         start_time = time.time()
 
-        if args.unit == 'word':
-            wer, nsub, nins, ndel, noov_total = eval_word([model], eval_set, decode_params,
-                                                          epoch=epoch - 1,
-                                                          decode_dir=args.decode_dir,
-                                                          progressbar=True)
+        if args.unit == 'word' and not args.recog_unit:
+            wer, nsub, nins, ndel, noov_total = eval_word(
+                [model], eval_set, decode_params,
+                epoch=epoch - 1,
+                decode_dir=args.decode_dir,
+                progressbar=True)
             wer_mean += wer
             logger.info('WER (%s): %.3f %%' % (eval_set.set, wer))
             logger.info('SUB: %.3f / INS: %.3f / DEL: %.3f' % (nsub, nins, ndel))
             logger.info('OOV (total): %d' % (noov_total))
 
-        elif args.unit == 'wp':
-            wer, nsub, nins, ndel = eval_wordpiece([model], eval_set, decode_params,
-                                                   epoch=epoch - 1,
-                                                   decode_dir=args.decode_dir,
-                                                   progressbar=True)
+        elif (args.unit == 'wp' and not args.recog_unit) or args.recog_unit == 'wp':
+            wer, nsub, nins, ndel = eval_wordpiece(
+                [model], eval_set, decode_params,
+                epoch=epoch - 1,
+                decode_dir=args.decode_dir,
+                progressbar=True)
             wer_mean += wer
             logger.info('WER (%s): %.3f %%' % (eval_set.set, wer))
             logger.info('SUB: %.3f / INS: %.3f / DEL: %.3f' % (nsub, nins, ndel))
 
-        elif 'char' in args.unit:
-            (wer, nsub, nins, ndel), (cer, _, _, _) = eval_char([model], eval_set, decode_params,
-                                                                epoch=epoch - 1,
-                                                                decode_dir=args.decode_dir,
-                                                                progressbar=True)
+        elif ('char' in args.unit and not args.recog_unit) or 'char' in args.recog_unit:
+            (wer, nsub, nins, ndel), (cer, _, _, _) = eval_char(
+                [model], eval_set, decode_params,
+                epoch=epoch - 1,
+                decode_dir=args.decode_dir,
+                progressbar=True,
+                task_idx=1 if 'char' in args.recog_unit else 0)
             wer_mean += wer
             cer_mean += cer
             logger.info('WER / CER (%s): %.3f / %.3f %%' % (eval_set.set, wer, cer))
             logger.info('SUB: %.3f / INS: %.3f / DEL: %.3f' % (nsub, nins, ndel))
 
         elif 'phone' in args.unit:
-            per, nsub, nins, ndel = eval_phone([model], eval_set, decode_params,
-                                               epoch=epoch - 1,
-                                               decode_dir=args.decode_dir,
-                                               progressbar=True)
+            per, nsub, nins, ndel = eval_phone(
+                [model], eval_set, decode_params,
+                epoch=epoch - 1,
+                decode_dir=args.decode_dir,
+                progressbar=True)
             per_mean += per
             logger.info('PER (%s): %.3f %%' % (eval_set.set, per))
             logger.info('SUB: %.3f / INS: %.3f / DEL: %.3f' % (nsub, nins, ndel))

@@ -4,7 +4,7 @@
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
 model=
-model_rev=
+model_bwd=
 gpu=
 
 ### path to save preproecssed data
@@ -19,10 +19,11 @@ length_penalty=0.0
 coverage_penalty=0.6
 coverage_threshold=0.0
 rnnlm=
-rnnlm_rev=
+rnnlm_bwd=
 rnnlm_weight=0.0
 resolving_unk=0
 fwd_bwd_attention=0
+recog_unit=
 
 . ./cmd.sh
 . ./path.sh
@@ -39,14 +40,17 @@ if [ -z ${gpu} ]; then
 fi
 gpu=`echo ${gpu} | cut -d "," -f 1`
 
-for eval_set in eval1 eval2 eval3; do
-  decode_dir=${model}/decode_${eval_set}_ep${epoch}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}_rnnlm${rnnlm_weight}
+for set in eval1 eval2 eval3; do
+  decode_dir=${model}/decode_${set}_ep${epoch}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}_rnnlm${rnnlm_weight}
+  if [ ! -z ${recog_unit} ]; then
+      decode_dir=${decode_dir}_${recog_unit}
+  fi
   mkdir -p ${decode_dir}
 
   CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/eval.py \
-    --eval_sets ${data}/dataset_csv/${eval_set}_aps_other_word12500.csv \
+    --eval_sets ${data}/dataset/${set}_aps_other_word12500.csv \
     --model ${model} \
-    --model_rev ${model_rev} \
+    --model_bwd ${model_bwd} \
     --epoch ${epoch} \
     --batch_size ${batch_size} \
     --beam_width ${beam_width} \
@@ -56,12 +60,14 @@ for eval_set in eval1 eval2 eval3; do
     --coverage_penalty ${coverage_penalty} \
     --coverage_threshold ${coverage_threshold} \
     --rnnlm ${rnnlm} \
-    --rnnlm_rev ${rnnlm_rev} \
+    --rnnlm_bwd ${rnnlm_bwd} \
     --rnnlm_weight ${rnnlm_weight} \
     --resolving_unk ${resolving_unk} \
     --fwd_bwd_attention ${fwd_bwd_attention} \
+    --recog_unit ${recog_unit} \
     --decode_dir ${decode_dir} || exit 1;
 
+  echo ${set}
   sclite -r ${decode_dir}/ref.trn trn -h ${decode_dir}/hyp.trn trn -i rm -o all stdout > ${decode_dir}/result.txt
   grep -e Avg -e SPKR -m 2 ${decode_dir}/result.txt > ${decode_dir}/RESULTS
   cat ${decode_dir}/RESULTS
