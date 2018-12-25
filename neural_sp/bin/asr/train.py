@@ -24,6 +24,7 @@ from neural_sp.bin.asr.train_utils import Controller
 from neural_sp.bin.asr.train_utils import Reporter
 from neural_sp.bin.asr.train_utils import load_config
 from neural_sp.bin.asr.train_utils import save_config
+from neural_sp.bin.asr.train_utils import set_logger
 from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.evaluators.character import eval_char
 from neural_sp.evaluators.loss import eval_loss
@@ -35,7 +36,6 @@ from neural_sp.models.seq2seq.seq2seq import Seq2seq
 from neural_sp.models.seq2seq.transformer import Transformer
 from neural_sp.models.rnnlm.rnnlm import RNNLM
 from neural_sp.utils.general import mkdir_join
-from neural_sp.utils.general import set_logger
 
 parser = argparse.ArgumentParser()
 # general
@@ -63,7 +63,7 @@ parser.add_argument('--dict', type=str,
 parser.add_argument('--dict_sub', type=str, default=None,
                     help='path to a dictionary file for the sub task')
 parser.add_argument('--unit', type=str, default='word',
-                    choices=['word', 'wp', 'char', 'phone'],
+                    choices=['word', 'wp', 'char', 'phone', 'word_char'],
                     help='')
 parser.add_argument('--unit_sub', type=str, default='char',
                     choices=['wp', 'char', 'phone'],
@@ -87,15 +87,15 @@ parser.add_argument('--min_nframes', type=int, default=40,
 parser.add_argument('--dynamic_batching', type=bool, default=True,
                     help='')
 # topology (encoder)
-parser.add_argument('--conv_in_channel', type=int, default=1,
+parser.add_argument('--conv_in_channel', type=int, default=1, nargs='?',
                     help='')
-parser.add_argument('--conv_channels', type=str, default="",
+parser.add_argument('--conv_channels', type=str, default="", nargs='?',
                     help='Delimited list input.')
-parser.add_argument('--conv_kernel_sizes', type=str, default="",
+parser.add_argument('--conv_kernel_sizes', type=str, default="", nargs='?',
                     help='Delimited list input.')
-parser.add_argument('--conv_strides', type=str, default="",
+parser.add_argument('--conv_strides', type=str, default="", nargs='?',
                     help='Delimited list input.')
-parser.add_argument('--conv_poolings', type=str, default="",
+parser.add_argument('--conv_poolings', type=str, default="", nargs='?',
                     help='Delimited list input.')
 parser.add_argument('--conv_batch_norm', type=bool, default=False, nargs='?',
                     help='')
@@ -242,6 +242,8 @@ parser.add_argument('--ctc_weight_sub', type=float, default=0.0,
                     help='')
 parser.add_argument('--main_task_weight', type=float, default=1.0,
                     help='')
+parser.add_argument('--mtl_per_batch', type=bool, default=False, nargs='?',
+                    help='If True, change mini-batch per task')
 # foroward-backward
 parser.add_argument('--bwd_weight', type=float, default=0.0,
                     help='')
@@ -310,10 +312,11 @@ def main():
     subsample_factor = 1
     subsample_factor_sub = 1
     subsample = [int(s) for s in args.subsample.split('_')]
-    for p in args.conv_poolings.split('_'):
-        p = int(p.split(',')[0].replace('(', ''))
-        if p > 1:
-            subsample_factor *= p
+    if args.conv_poolings:
+        for p in args.conv_poolings.split('_'):
+            p = int(p.split(',')[0].replace('(', ''))
+            if p > 1:
+                subsample_factor *= p
     if args.train_set_sub is not None:
         subsample_factor_sub = subsample_factor * np.prod(subsample[:args.enc_nlayers_sub - 1])
     subsample_factor *= np.prod(subsample)
@@ -384,63 +387,65 @@ def main():
     # Model setting
     if args.transformer:
         model = Transformer(args)
-        model.name = 'transformer'
+        dir_name = 'transformer'
         if len(args.conv_channels) > 0:
-            tmp = model.name
-            model.name = 'conv' + str(len(args.conv_channels.split('_'))) + 'L'
+            tmp = dir_name
+            dir_name = 'conv' + str(len(args.conv_channels.split('_'))) + 'L'
             if args.conv_batch_norm:
-                model.name += 'bn'
-            model.name += tmp
-        model.name += str(args.d_model) + 'H'
-        model.name += str(args.enc_nlayers) + 'L'
-        model.name += str(args.dec_nlayers) + 'L'
-        model.name += '_head' + str(args.attn_nheads)
-        model.name += '_' + args.optimizer
-        model.name += '_lr' + str(args.learning_rate)
-        model.name += '_bs' + str(args.batch_size)
-        model.name += '_ls' + str(args.lsm_prob)
-        model.name += '_' + str(args.pre_process) + 't' + str(args.post_process)
+                dir_name += 'bn'
+            dir_name += tmp
+        dir_name += str(args.d_model) + 'H'
+        dir_name += str(args.enc_nlayers) + 'L'
+        dir_name += str(args.dec_nlayers) + 'L'
+        dir_name += '_head' + str(args.attn_nheads)
+        dir_name += '_' + args.optimizer
+        dir_name += '_lr' + str(args.learning_rate)
+        dir_name += '_bs' + str(args.batch_size)
+        dir_name += '_ls' + str(args.lsm_prob)
+        dir_name += '_' + str(args.pre_process) + 't' + str(args.post_process)
         if args.nstacks > 1:
-            model.name += '_stack' + str(args.nstacks)
+            dir_name += '_stack' + str(args.nstacks)
         if args.bwd_weight > 0:
-            model.name += '_bwd' + str(args.bwd_weight)
+            dir_name += '_bwd' + str(args.bwd_weight)
     else:
         model = Seq2seq(args)
-        model.name = args.enc_type
-        if len(args.conv_channels.split('_')) > 0:
-            tmp = model.name
-            model.name = 'conv' + str(len(args.conv_channels.split('_'))) + 'L'
+        dir_name = args.enc_type
+        if args.conv_channels and len(args.conv_channels.split('_')) > 0:
+            tmp = dir_name
+            dir_name = 'conv' + str(len(args.conv_channels.split('_'))) + 'L'
             if args.conv_batch_norm:
-                model.name += 'bn'
-            model.name += tmp
-        model.name += str(args.enc_nunits) + 'H'
-        model.name += str(args.enc_nprojs) + 'P'
-        model.name += str(args.enc_nlayers) + 'L'
-        model.name += '_' + args.subsample_type + str(subsample_factor)
-        model.name += '_' + args.dec_type
-        model.name += str(args.dec_nunits) + 'H'
-        # model.name += str(args.dec_nprojs) + 'P'
-        model.name += str(args.dec_nlayers) + 'L'
-        model.name += '_' + args.attn_type
+                dir_name += 'bn'
+            dir_name += tmp
+        dir_name += str(args.enc_nunits) + 'H'
+        dir_name += str(args.enc_nprojs) + 'P'
+        dir_name += str(args.enc_nlayers) + 'L'
+        dir_name += '_' + args.subsample_type + str(subsample_factor)
+        dir_name += '_' + args.dec_type
+        dir_name += str(args.dec_nunits) + 'H'
+        # dir_name += str(args.dec_nprojs) + 'P'
+        dir_name += str(args.dec_nlayers) + 'L'
+        dir_name += '_' + args.attn_type
         if args.attn_nheads > 1:
-            model.name += '_head' + str(args.attn_nheads)
-        model.name += '_' + args.optimizer
-        model.name += '_lr' + str(args.learning_rate)
-        model.name += '_bs' + str(args.batch_size)
-        model.name += '_ss' + str(args.ss_prob)
-        model.name += '_ls' + str(args.lsm_prob)
+            dir_name += '_head' + str(args.attn_nheads)
+        dir_name += '_' + args.optimizer
+        dir_name += '_lr' + str(args.learning_rate)
+        dir_name += '_bs' + str(args.batch_size)
+        dir_name += '_ss' + str(args.ss_prob)
+        dir_name += '_ls' + str(args.lsm_prob)
         if args.layer_norm:
-            model.name += '_layernorm'
+            dir_name += '_layernorm'
         if args.ctc_weight > 0:
-            model.name += '_ctc' + str(args.ctc_weight)
+            dir_name += '_ctc' + str(args.ctc_weight)
         if args.bwd_weight > 0:
-            model.name += '_bwd' + str(args.bwd_weight)
+            dir_name += '_bwd' + str(args.bwd_weight)
         if args.main_task_weight < 1:
-            model.name += '_main' + str(args.main_task_weight)
+            dir_name += '_main' + str(args.main_task_weight)
             if args.ctc_weight_sub > 0:
-                model.name += '_ctcsub' + str(args.ctc_weight_sub * (1 - args.main_task_weight))
+                dir_name += '_ctcsub' + str(args.ctc_weight_sub * (1 - args.main_task_weight))
             else:
-                model.name += '_attsub' + str(1 - args.main_task_weight)
+                dir_name += '_attsub' + str(1 - args.main_task_weight)
+        if args.mtl_per_batch:
+            dir_name += '_mtlpertask'
 
     if args.resume is None:
         # Load pre-trained RNNLM
@@ -461,7 +466,7 @@ def main():
         # TODO(hirofumi): 最初にRNNLMのモデルをコピー
 
         # Set save path
-        save_path = mkdir_join(args.model, '_'.join(os.path.basename(args.train_set).split('.')[:-1]), model.name)
+        save_path = mkdir_join(args.model, '_'.join(os.path.basename(args.train_set).split('.')[:-1]), dir_name)
         model.set_save_path(save_path)  # avoid overwriting
 
         # Save the config file as a yaml file
@@ -583,18 +588,38 @@ def main():
     while True:
         # Compute loss in the training set
         batch_train, is_new_epoch = train_set.next()
-        model.module.optimizer.zero_grad()
-        loss, reporter = model(batch_train['xs'], batch_train['ys'], batch_train['ys_sub'], reporter)
-        if len(model.device_ids) > 1:
-            loss.backward(torch.ones(len(model.device_ids)))
+        if args.mtl_per_batch:
+            # Change tasks depending on task
+            # NOTE: from easier to harder tasks
+            for task in ['ys_sub', 'ys']:
+                model.module.optimizer.zero_grad()
+                loss, reporter = model(batch_train['xs'], batch_train[task],
+                                       reporter=reporter, task=task)
+                if len(model.device_ids) > 1:
+                    loss.backward(torch.ones(len(model.device_ids)))
+                else:
+                    loss.backward()
+                loss.detach()  # Trancate the graph
+                if args.clip_grad_norm > 0:
+                    torch.nn.utils.clip_grad_norm_(model.module.parameters(), args.clip_grad_norm)
+                model.module.optimizer.step()
+                loss_train = loss.item()
+                del loss
         else:
-            loss.backward()
-        loss.detach()  # Trancate the graph
-        if args.clip_grad_norm > 0:
-            torch.nn.utils.clip_grad_norm_(model.module.parameters(), args.clip_grad_norm)
-        model.module.optimizer.step()
-        loss_train = loss.item()
-        del loss
+            model.module.optimizer.zero_grad()
+            loss, reporter = model(batch_train['xs'], batch_train['ys'], batch_train['ys_sub'],
+                                   reporter=reporter)
+            if len(model.device_ids) > 1:
+                loss.backward(torch.ones(len(model.device_ids)))
+            else:
+                loss.backward()
+            loss.detach()  # Trancate the graph
+            if args.clip_grad_norm > 0:
+                torch.nn.utils.clip_grad_norm_(model.module.parameters(), args.clip_grad_norm)
+            model.module.optimizer.step()
+            loss_train = loss.item()
+            del loss
+        reporter.step(is_eval=False)
 
         # Update learning rate
         if args.decay_type == 'warmup':
@@ -606,15 +631,24 @@ def main():
         if step % args.print_step == 0:
             # Compute loss in the dev set
             batch_dev = dev_set.next()[0]
-            loss, reporter = model(batch_dev['xs'], batch_dev['ys'], batch_dev['ys_sub'], reporter, is_eval=True)
-            loss_dev = loss.item()
-            del loss
+            if args.mtl_per_batch:
+                # Change tasks depending on task
+                for task in ['ys_sub', 'ys']:
+                    loss, reporter = model(batch_dev['xs'], batch_dev[task],
+                                           reporter=reporter, task=task, is_eval=True)
+                    loss_dev = loss.item()
+                    del loss
+            else:
+                loss, reporter = model(batch_dev['xs'], batch_dev['ys'], batch_dev['ys_sub'],
+                                       reporter=reporter, is_eval=True)
+                loss_dev = loss.item()
+                del loss
+            reporter.step(is_eval=True)
 
             duration_step = time.time() - start_time_step
             if args.input_type == 'speech':
                 x_len = max(len(x) for x in batch_train['xs'])
             elif args.input_type == 'text':
-                # x_len = max(len(x) for x in batch_train['ys_sub'])
                 x_len = max(len(x) for x in batch_train['ys'])
             logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.5f/bs:%d/x_len:%d (%.2f min)" %
                         (step, train_set.epoch_detail,
@@ -642,7 +676,7 @@ def main():
                 start_time_eval = time.time()
                 # dev
                 if args.metric == 'edit_distance':
-                    if args.unit == 'word':
+                    if args.unit in ['word', 'word_char']:
                         metric_dev = eval_word([model.module], dev_set, decode_params,
                                                epoch=epoch)[0]
                         logger.info('WER (%s): %.3f %%' % (dev_set.set, metric_dev))
@@ -687,7 +721,7 @@ def main():
                     # test
                     for eval_set in eval_sets:
                         if args.metric == 'edit_distance':
-                            if args.unit == 'word':
+                            if args.unit in ['word', 'word_char']:
                                 wer_test = eval_word([model.module], eval_set, decode_params,
                                                      epoch=epoch)[0]
                                 logger.info('WER (%s): %.3f %%' % (eval_set.set, wer_test))
