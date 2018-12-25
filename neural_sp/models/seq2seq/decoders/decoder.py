@@ -106,7 +106,8 @@ class Decoder(nn.Module):
                  rnnlm_init=False,
                  rnnlm_task_weight=0.,
                  share_lm_softmax=False,
-                 global_weight=1):
+                 global_weight=1,
+                 mtl_per_batch=False):
 
         super(Decoder, self).__init__()
 
@@ -137,6 +138,7 @@ class Decoder(nn.Module):
         self.rnnlm_task_weight = rnnlm_task_weight
         self.share_lm_softmax = share_lm_softmax
         self.global_weight = global_weight
+        self.mtl_per_batch = mtl_per_batch
 
         if ctc_weight > 0:
             # Fully-connected layers for CTC
@@ -234,7 +236,7 @@ class Decoder(nn.Module):
         # Compute the auxiliary CTC loss
         if self.ctc_weight > 0:
             enc_lens_ctc = np2var(np.fromiter(enc_lens, dtype=np.int32), -1).int()
-            ys_ctc = [np2var(np.fromiter(y, dtype=np.int64), device_id).long() for y in ys]   # always fwd
+            ys_ctc = [np2var(np.fromiter(y, dtype=np.int64), device_id).long() for y in ys]  # always fwd
             y_lens = np2var(np.fromiter([y.size(0) for y in ys_ctc], dtype=np.int32), -1).int()
             # NOTE: do not copy to GPUs here
 
@@ -249,18 +251,21 @@ class Decoder(nn.Module):
 
             if device_id >= 0:
                 loss_ctc = loss_ctc.cuda(device_id)
-            loss = loss_ctc * self.ctc_weight
+            if self.mtl_per_batch:
+                loss = loss_ctc
+            else:
+                loss = loss_ctc * self.ctc_weight
         else:
             loss_ctc = Variable(enc_out.new(1,).fill_(0.))
             loss = Variable(enc_out.new(1,).fill_(0.))
 
         if self.ctc_weight == 1:
-            report = {'loss': loss.item(),
-                      'loss_att': 0,
-                      'loss_ctc': loss_ctc.item(),
-                      'loss_lm': 0,
-                      'acc': 0}
-            return loss, report
+            obserbation = {'loss': loss.item(),
+                           'loss_att': 0,
+                           'loss_ctc': loss_ctc.item(),
+                           'loss_lm': 0,
+                           'acc': 0}
+            return loss, obserbation
 
         # Append <sos> and <eos>
         sos = Variable(enc_out.new(1,).fill_(self.sos).long())
@@ -347,8 +352,10 @@ class Decoder(nn.Module):
             loss_att = F.cross_entropy(input=logits_att.view((-1, logits_att.size(2))),
                                        target=ys_out_pad.view(-1),  # long
                                        ignore_index=-1, size_average=False) / len(enc_out)
-        # loss += loss_att * (1 - self.ctc_weight)
-        loss += loss_att * (self.global_weight - self.ctc_weight)
+        if self.mtl_per_batch:
+            loss += loss_att
+        else:
+            loss += loss_att * (self.global_weight - self.ctc_weight)
 
         # Compute XE loss for RNNLM objective
         if self.rnnlm_task_weight > 0:
@@ -356,7 +363,10 @@ class Decoder(nn.Module):
             loss_lm = F.cross_entropy(input=logits_lm.view((-1, logits_lm.size(2))),
                                       target=ys_out_pad[:, 1:].contiguous().view(-1),
                                       ignore_index=-1, size_average=True)
-            loss += loss_lm * self.rnnlm_task_weight
+            if self.mtl_per_batch:
+                loss += loss_lm
+            else:
+                loss += loss_lm * self.rnnlm_task_weight
         else:
             loss_lm = Variable(enc_out.new(1,).fill_(0.))
 
@@ -367,12 +377,12 @@ class Decoder(nn.Module):
         denominator = torch.sum(mask)
         acc = float(numerator) * 100 / float(denominator)
 
-        report = {'loss': loss.item(),
-                  'loss_att': loss_att.item(),
-                  'loss_ctc': loss_ctc.item(),
-                  'loss_lm': loss_lm.item(),
-                  'acc': acc}
-        return loss, report
+        obserbation = {'loss': loss.item(),
+                       'loss_att': loss_att.item(),
+                       'loss_ctc': loss_ctc.item(),
+                       'loss_lm': loss_lm.item(),
+                       'acc': acc}
+        return loss, obserbation
 
     def init_dec_state(self, enc_out, enc_lens, nlayers):
         """Initialize decoder state.

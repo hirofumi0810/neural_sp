@@ -24,13 +24,11 @@ from neural_sp.models.rnnlm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.decoders.attention import AttentionMechanism
 from neural_sp.models.seq2seq.decoders.decoder import Decoder
 from neural_sp.models.seq2seq.decoders.multihead_attention import MultiheadAttentionMechanism
-from neural_sp.models.seq2seq.encoders.cnn import CNNEncoder
 from neural_sp.models.seq2seq.encoders.frame_stacking import stack_frame
 from neural_sp.models.seq2seq.encoders.rnn import RNNEncoder
 from neural_sp.models.seq2seq.encoders.splicing import splice
 from neural_sp.models.torch_utils import np2var
 from neural_sp.models.torch_utils import pad_list
-
 
 logger = logging.getLogger("training")
 
@@ -62,7 +60,7 @@ class Seq2seq(ModelBase):
         self.vocab_sub = args.vocab_sub
         self.blank = 0
         self.unk = 1
-        self.sos = 2  # NOTE: same as <eos>
+        self.sos = 2  # NOTE: the same index as <eos>
         self.eos = 2
         self.pad = 3
         # NOTE: reserved in advance
@@ -77,6 +75,7 @@ class Seq2seq(ModelBase):
 
         # for the sub task
         self.main_task_weight = args.main_task_weight
+        self.mtl_per_batch = args.mtl_per_batch
 
         # Setting for the CNN encoder
         if args.conv_poolings:
@@ -94,49 +93,33 @@ class Seq2seq(ModelBase):
             conv_poolings = []
 
         # Encoder
-        if args.enc_type in ['blstm', 'lstm', 'bgru', 'gru']:
-            self.enc = RNNEncoder(
-                input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
-                rnn_type=args.enc_type,
-                nunits=args.enc_nunits,
-                nprojs=args.enc_nprojs,
-                nlayers=args.enc_nlayers,
-                nlayers_sub=args.enc_nlayers_sub,
-                dropout_in=args.dropout_in,
-                dropout=args.dropout_enc,
-                subsample=[int(s) for s in args.subsample.split('_')],
-                subsample_type=args.subsample_type,
-                nstacks=args.nstacks,
-                nsplices=args.nsplices,
-                conv_in_channel=args.conv_in_channel,
-                conv_channels=conv_channels,
-                conv_kernel_sizes=conv_kernel_sizes,
-                conv_strides=conv_strides,
-                conv_poolings=conv_poolings,
-                conv_batch_norm=args.conv_batch_norm,
-                residual=args.enc_residual,
-                nin=0,
-                layer_norm=args.layer_norm)
-
-        elif args.enc_type == 'cnn':
-            assert args.nstacks == 1 and args.nsplices == 1
-            self.enc = CNNEncoder(
-                input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
-                in_channel=args.conv_in_channel,
-                channels=args.conv_channels,
-                kernel_sizes=args.conv_kernel_sizes,
-                strides=args.conv_strides,
-                poolings=args.conv_poolings,
-                dropout_in=args.dropout_in,
-                dropout=args.dropout_enc,
-                batch_norm=args.conv_batch_norm)
-        else:
-            raise NotImplementedError(args.enc_type)
+        self.enc = RNNEncoder(
+            input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
+            rnn_type=args.enc_type,
+            nunits=args.enc_nunits,
+            nprojs=args.enc_nprojs,
+            nlayers=args.enc_nlayers,
+            nlayers_sub=args.enc_nlayers_sub,
+            dropout_in=args.dropout_in,
+            dropout=args.dropout_enc,
+            subsample=[int(s) for s in args.subsample.split('_')],
+            subsample_type=args.subsample_type,
+            nstacks=args.nstacks,
+            nsplices=args.nsplices,
+            conv_in_channel=args.conv_in_channel,
+            conv_channels=conv_channels,
+            conv_kernel_sizes=conv_kernel_sizes,
+            conv_strides=conv_strides,
+            conv_poolings=conv_poolings,
+            conv_batch_norm=args.conv_batch_norm,
+            residual=args.enc_residual,
+            nin=0,
+            layer_norm=args.layer_norm)
 
         # Bridge layer between the encoder and decoder
         if args.enc_type == 'cnn':
             logger.info('insert a bridge layer')
-            self.bridge = LinearND(self.enc.output_dim, args.dec_nunits,
+            self.bridge = LinearND(self.enc.conv.output_dim, args.dec_nunits,
                                    dropout=args.dropout_enc)
             self.enc_nunits = args.dec_nunits
         elif args.bridge_layer:
@@ -219,7 +202,8 @@ class Seq2seq(ModelBase):
                 rnnlm_init=args.rnnlm_init,
                 rnnlm_task_weight=args.rnnlm_task_weight,
                 share_lm_softmax=args.share_lm_softmax,
-                global_weight=self.fwd_weight * args.main_task_weight if dir == 'fwd' else self.bwd_weight)
+                global_weight=self.fwd_weight * args.main_task_weight if dir == 'fwd' else self.bwd_weight,
+                mtl_per_batch=args.mtl_per_batch)
             setattr(self, 'dec_' + dir, dec)
 
         # SUB TASK
@@ -277,7 +261,8 @@ class Seq2seq(ModelBase):
                 ctc_weight=args.ctc_weight_sub,
                 ctc_fc_list=[int(fc) for fc in args.ctc_fc_list_sub.split('_')
                              ] if len(args.ctc_fc_list_sub) > 0 else [],
-                global_weight=1 - args.main_task_weight)
+                global_weight=1 - args.main_task_weight,
+                mtl_per_batch=args.mtl_per_batch)
 
         if args.input_type == 'text':
             if args.vocab == args.vocab_sub:
@@ -316,7 +301,7 @@ class Seq2seq(ModelBase):
         if args.rnnlm_cold_fusion:
             self.init_weights(-1, dist='constant', keys=['cf_linear_lm_gate.fc.bias'])
 
-    def forward(self, xs, ys, ys_sub=None, reporter=None, is_eval=False):
+    def forward(self, xs, ys, ys_sub=None, reporter=None, task='ys', is_eval=False):
         """Forward computation.
 
         Args:
@@ -324,91 +309,94 @@ class Seq2seq(ModelBase):
             ys (list): A list of length `[B]`, which contains arrays of size `[L]`
             ys_sub (list): A list of lenght `[B]`, which contains arrays of size `[L_sub]`
             reporter ():
+            task (str):
             is_eval (bool): the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (torch.autograd.Variable(float)): `[1]`
+            loss (FloatTensor): `[1]`
             acc (float): Token-level accuracy in teacher-forcing
 
         """
         if is_eval:
             self.eval()
             with torch.no_grad():
-                loss, report = self._forward(xs, ys, ys_sub)
+                loss, observation = self._forward(xs, ys, ys_sub, task)
         else:
             self.train()
-            loss, report = self._forward(xs, ys, ys_sub)
+            loss, observation = self._forward(xs, ys, ys_sub, task)
 
         # Report here
         if reporter is not None:
-            reporter.step(observation=report, is_eval=is_eval)
+            reporter.add(observation, is_eval)
 
         return loss, reporter
 
-    def _forward(self, xs, ys, ys_sub):
+    def _forward(self, xs, ys, ys_sub, task):
         # Encode input features
         if self.input_type == 'speech':
-            # Sort by lenghts in the descending order
-            perm_idx = sorted(list(six.moves.range(0, len(xs), 1)),
-                              key=lambda i: len(xs[i]), reverse=True)
-            xs = [xs[i] for i in perm_idx]
-            ys = [ys[i] for i in perm_idx]
-            # NOTE: must be descending order for pack_padded_sequence
-            xs, x_lens, xs_sub, x_lens_sub = self.encode(xs)
+            if self.mtl_per_batch:
+                enc_out, perm_idx = self.encode(xs, task=task)
+            else:
+                enc_out, perm_idx = self.encode(xs, task='all')
         else:
-            # Sort by lenghts in the descending order
-            perm_idx = sorted(list(six.moves.range(0, len(ys_sub), 1)),
-                              key=lambda i: len(ys_sub[i]), reverse=True)
-            ys = [ys[i] for i in perm_idx]
-            ys_sub = [ys_sub[i] for i in perm_idx]
-            # NOTE: must be descending order for pack_padded_sequence
-            xs, x_lens, xs_sub, x_lens_sub = self.encode(ys_sub)
+            enc_out, perm_idx = self.encode(ys_sub)
+        ys = [ys[i] for i in perm_idx]
 
-        report = {}
+        observation = {}
+        loss = Variable(enc_out[task]['xs'].new(1,).fill_(0.))
 
         # Compute XE loss for the forward decoder
-        if self.fwd_weight > 0:
-            loss_fwd, report_fwd = self.dec_fwd(xs, x_lens, ys)
-            loss = loss_fwd
-            report['loss.att'] = report_fwd['loss_att']
-            report['loss.ctc'] = report_fwd['loss_ctc']
-            report['loss.lm'] = report_fwd['loss_lm']
-            report['acc.main'] = report_fwd['acc']
-        else:
-            loss = Variable(xs.new(1,).fill_(0.))
+        if self.fwd_weight > 0 and task == 'ys':
+            loss_fwd, obs_fwd = self.dec_fwd(enc_out['ys']['xs'], enc_out['ys']['x_lens'], ys)
+            loss += loss_fwd
+            observation['loss.att'] = obs_fwd['loss_att']
+            observation['loss.ctc'] = obs_fwd['loss_ctc']
+            observation['loss.lm'] = obs_fwd['loss_lm']
+            observation['acc.main'] = obs_fwd['acc']
 
         # Compute XE loss for the backward decoder
         if self.bwd_weight > 0:
-            loss_bwd, report_bwd = self.dec_bwd(xs, x_lens, ys)
+            loss_bwd, obs_bwd = self.dec_bwd(enc_out['ys']['xs'], enc_out['ys']['x_lens'], ys)
             loss += loss_bwd
-            report['loss.att-bwd'] = report_bwd['loss_att']
-            if self.fwd_weight == 0:
-                report['loss.ctc'] = report_bwd['loss_ctc']
-            report['acc.bwd'] = report_bwd['acc']
+            observation['loss.att-bwd'] = obs_bwd['loss_att']
+            observation['loss.ctc-bwd'] = obs_bwd['loss_ctc']
+            observation['loss.lm-bwd'] = obs_bwd['loss_lm']
+            observation['acc.bwd'] = obs_bwd['acc']
+            # TODO(hirofumi): mtl_per_batch
 
-        if self.main_task_weight < 1:
-            ys_sub = [ys_sub[i] for i in perm_idx]
-            loss_sub, report_sub = self.dec_fwd_sub1(xs_sub, x_lens_sub, ys_sub)
+        if self.main_task_weight < 1 and ((self.mtl_per_batch and task == 'ys_sub') or not self.mtl_per_batch):
+            if self.mtl_per_batch:
+                loss_sub, obs_sub = self.dec_fwd_sub1(
+                    enc_out['ys_sub']['xs'], enc_out['ys_sub']['x_lens'], ys)
+            else:
+                ys_sub = [ys_sub[i] for i in perm_idx]
+                loss_sub, obs_sub = self.dec_fwd_sub1(
+                    enc_out['ys_sub']['xs'], enc_out['ys_sub']['x_lens'], ys_sub)
             loss += loss_sub
-            report['loss.att-sub'] = report_sub['loss_att']
-            report['loss.ctc-sub'] = report_sub['loss_ctc']
-            report['acc.sub'] = report_sub['acc']
+            observation['loss.att-sub'] = obs_sub['loss_att']
+            observation['loss.ctc-sub'] = obs_sub['loss_ctc']
+            observation['loss.lm-sub'] = obs_sub['loss_lm']
+            observation['acc.sub'] = obs_sub['acc']
 
-        return loss, report
+        return loss, observation
 
-    def encode(self, xs):
+    def encode(self, xs, task='all'):
         """Encode acoustic or text features.
 
         Args:
             xs (list): A list of length `[B]`, which contains Variables of size `[T, input_dim]`
+            task (str):
         Returns:
-            xs (torch.autograd.Variable, float): `[B, T, enc_units]`
-            x_lens (list): `[B]`
-            OPTION:
-                xs_sub (torch.autograd.Variable, float): `[B, T, enc_units]`
-                x_lens_sub (list): `[B]`
+            enc_out (dict):
+            perm_idx ():
 
         """
+        # Sort by lenghts in the descending order
+        perm_idx = sorted(list(six.moves.range(0, len(xs), 1)),
+                          key=lambda i: len(xs[i]), reverse=True)
+        xs = [xs[i] for i in perm_idx]
+        # NOTE: must be descending order for pack_padded_sequence
+
         if self.input_type == 'speech':
             # Frame stacking
             if self.nstacks > 1:
@@ -428,27 +416,20 @@ class Seq2seq(ModelBase):
             xs = pad_list(xs, self.pad)
             xs = self.embed_in(xs)
 
+        enc_out = self.enc(xs, x_lens, task)
+
         if self.main_task_weight < 1:
             if self.enc_type == 'cnn':
-                xs, x_lens = self.enc(xs, x_lens)
-                xs_sub = xs.clone()
-                x_lens_sub = copy.deepcopy(x_lens)
-            else:
-                xs, x_lens, xs_sub, x_lens_sub = self.enc(xs, x_lens)
-        else:
-            xs, x_lens = self.enc(xs, x_lens)
-            xs_sub = None
-            x_lens_sub = None
+                enc_out['ys_sub']['xs'] = xs.clone()
+                enc_out['ys_sub']['x_lens'] = copy.deepcopy(x_lens)
 
         # Bridge between the encoder and decoder
         if self.enc_type == 'cnn' or self.bridge_layer:
-            xs = self.bridge(xs)
+            enc_out['ys']['xs'] = self.bridge(enc_out['ys']['xs'])
+            if self.main_task_weight < 1 and (self.enc_type == 'cnn' or self.bridge_layer):
+                enc_out['ys_sub']['xs'] = self.bridge_sub(enc_out['ys_sub']['xs'])
 
-            # if self.main_task_weight < 1:
-            #     xs_sub = self.bridge_sub(xs_sub)
-            # TODO(hirofumi):
-
-        return xs, x_lens, xs_sub, x_lens_sub
+        return enc_out, perm_idx
 
     def decode(self, xs, decode_params, nbest=1, exclude_eos=False,
                idx2token=None, refs=None, ctc=False):
@@ -478,15 +459,7 @@ class Seq2seq(ModelBase):
         """
         self.eval()
         with torch.no_grad():
-            # Sort by lenghts in the descending order
-            perm_idx = sorted(list(six.moves.range(0, len(xs), 1)),
-                              key=lambda i: len(xs[i]), reverse=True)
-            xs = [xs[i] for i in perm_idx]
-            # NOTE: must be descending order for pack_padded_sequence
-
-            # Encode input features
-            enc_out, x_lens, enc_out_sub, x_lens_sub = self.encode(xs)
-
+            enc_out, perm_idx = self.encode(xs, task='all')
             dir = 'fwd' if self.fwd_weight >= self.bwd_weight else 'bwd'
 
             if self.ctc_weight == 1 or (self.ctc_weight > 0 and ctc):
@@ -498,22 +471,26 @@ class Seq2seq(ModelBase):
                     rnnlm = None
 
                 best_hyps = getattr(self, 'dec_' + dir).decode_ctc(
-                    enc_out, x_lens, decode_params['beam_width'], rnnlm)
+                    enc_out['ys']['xs'], enc_out['ys']['x_lens'],
+                    decode_params['beam_width'], rnnlm)
                 return best_hyps, None, perm_idx
             else:
                 if decode_params['beam_width'] == 1 and not decode_params['fwd_bwd_attention']:
                     best_hyps, aws = getattr(self, 'dec_' + dir).greedy(
-                        enc_out, x_lens, decode_params['max_len_ratio'], exclude_eos)
+                        enc_out['ys']['xs'], enc_out['ys']['x_lens'],
+                        decode_params['max_len_ratio'], exclude_eos)
                 else:
                     if decode_params['fwd_bwd_attention']:
                         rnnlm_fwd = None
                         nbest_hyps_fwd, aws_fwd, scores_fwd = self.dec_fwd.beam_search(
-                            enc_out, x_lens, decode_params, rnnlm_fwd,
+                            enc_out['ys']['xs'], enc_out['ys']['x_lens'],
+                            decode_params, rnnlm_fwd,
                             decode_params['beam_width'], False, idx2token, refs)
 
                         rnnlm_bwd = None
                         nbest_hyps_bwd, aws_bwd, scores_bwd = self.dec_bwd.beam_search(
-                            enc_out, x_lens, decode_params, rnnlm_bwd,
+                            enc_out['ys']['xs'], enc_out['ys']['x_lens'],
+                            decode_params, rnnlm_bwd,
                             decode_params['beam_width'], False, idx2token, refs)
                         best_hyps = fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
                                                       nbest_hyps_bwd, aws_bwd, scores_bwd,
@@ -527,7 +504,8 @@ class Seq2seq(ModelBase):
                         else:
                             rnnlm = None
                         nbest_hyps, aws, scores = getattr(self, 'dec_' + dir).beam_search(
-                            enc_out, x_lens, decode_params, rnnlm,
+                            enc_out['ys']['xs'], enc_out['ys']['x_lens'],
+                            decode_params, rnnlm,
                             nbest, exclude_eos, idx2token, refs)
 
                         if nbest == 1:
