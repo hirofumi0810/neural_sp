@@ -71,10 +71,10 @@ parser.add_argument('--dict_sub2', type=str, default=None,
 parser.add_argument('--unit', type=str, default='word',
                     choices=['word', 'wp', 'char', 'phone', 'word_char'],
                     help='')
-parser.add_argument('--unit_sub1', type=str, default='char',
+parser.add_argument('--unit_sub1', type=str, default=False,
                     choices=['wp', 'char', 'phone'],
                     help='')
-parser.add_argument('--unit_sub2', type=str, default='char',
+parser.add_argument('--unit_sub2', type=str, default=False,
                     choices=['wp', 'char', 'phone'],
                     help='')
 parser.add_argument('--wp_model', type=str, default=False, nargs='?',
@@ -307,6 +307,7 @@ parser.add_argument('--post_process', type=str, default='dal',
 # parser.add_argument('--share_embedding', type=bool, default=True,
 #                     help='')
 args = parser.parse_args()
+args_pre = parser.parse_args()
 
 torch.manual_seed(1)
 torch.cuda.manual_seed_all(1)
@@ -481,13 +482,14 @@ def main():
             dir_name += '_ctc' + str(args.ctc_weight)
         if args.bwd_weight > 0:
             dir_name += '_bwd' + str(args.bwd_weight)
+        # MTL
         if args.mtl_per_batch:
             dir_name += '_mtlperbatch'
             if args.train_set_sub1 is not None:
                 dir_name += '_' + args.unit_sub1
                 if args.ctc_weight_sub1 == 0:
                     dir_name += 'att'
-                elif args.ctc_weight_sub1 == 1:
+                elif args.ctc_weight_sub1 == args.sub1_weight:
                     dir_name += 'ctc'
                 else:
                     dir_name += 'attctc'
@@ -495,18 +497,34 @@ def main():
                 dir_name += '_' + args.unit_sub2
                 if args.ctc_weight_sub2 == 0:
                     dir_name += 'att'
-                elif args.ctc_weight_sub2 == 1:
+                elif args.ctc_weight_sub2 == args.sub2_weight:
                     dir_name += 'ctc'
                 else:
                     dir_name += 'attctc'
-        elif args.main_task_weight < 1:
-            dir_name += '_main' + str(args.main_task_weight)
-            if args.ctc_weight_sub1 > 0:
-                dir_name += '_ctcsub' + str(args.ctc_weight_sub1 * (1 - args.main_task_weight))
-            else:
-                dir_name += '_attsub' + str(1 - args.main_task_weight)
+        else:
+            if args.sub1_weight > 0:
+                dir_name += '_main' + str(args.sub1_weight)
+                if args.ctc_weight_sub1 == args.sub1_weight:
+                    dir_name += '_ctcsub1' + str(args.ctc_weight_sub1)
+                elif args.ctc_weight_sub1 == 0:
+                    dir_name += '_attsub1' + str(args.sub1_weight)
+                else:
+                    dir_name += '_ctcsub1' + str(args.ctc_weight_sub1) + 'attsub1' + str(args.sub1_weight - args.ctc_weight_sub1)
+                if args.sub2_weight > 0:
+                    dir_name += '_main' + str(args.sub2_weight)
+                    if args.ctc_weight_sub2 == args.sub2_weight:
+                        dir_name += '_ctcsub2' + str(args.ctc_weight_sub2)
+                    elif args.ctc_weight_sub2 == 0:
+                        dir_name += '_attsub2' + str(args.sub2_weight)
+                    else:
+                        dir_name += '_ctcsub2' + str(args.ctc_weight_sub2) + 'attsub2' + str(args.sub2_weight - args.ctc_weight_sub2)
         if args.task_specific_layer:
             dir_name += '_tsl'
+        # Pre-training
+        if args.pretrained_model and os.path.isdir(args.pretrained_model):
+            # Load a config file
+            config_pre = load_config(os.path.join(args.pretrained_model, 'config.yml'))
+            dir_name += '_' +config_pre['unit']+'pt'
 
     if args.resume is None:
         # Load pre-trained RNNLM
@@ -555,11 +573,22 @@ def main():
         logger.info("Total %.2f M parameters" % (model.total_parameters / 1000000))
         logger.info(model)
 
-        # if os.path.isdir(args.pretrained_model):
-        #     # NOTE: Start training from the pre-trained model
-        #     # This is defferent from resuming training
-        #     model.load_checkpoint(args.pretrained_model, epoch=-1,
-        #                           load_pretrained_model=True)
+        # Initialize with pre-trained model's parameters
+        if args.pretrained_model and os.path.isdir(args.pretrained_model):
+            # Merge config with args
+            for k, v in config_pre.items():
+                setattr(args_pre, k, v)
+
+            # Load the ASR model
+            model_pre = Seq2seq(args_pre)
+            model_pre.load_checkpoint(args.pretrained_model, epoch=-1)
+
+            # Overwrite parameters
+            param_dict =dict(model_pre.named_parameters())
+            for n, p in model.named_parameters():
+                if n in param_dict.keys() and p.size() == param_dict[n].size():
+                    p.data = param_dict[n].data
+                    logger.info('Overwrite %s' % n)
 
         # Set optimizer
         model.set_optimizer(optimizer=args.optimizer,
@@ -677,7 +706,7 @@ def main():
         else:
             model.module.optimizer.zero_grad()
             loss, reporter = model(batch_train['xs'], batch_train['ys'], batch_train['ys_sub1'],
-                                   reporter=reporter)
+                                       reporter=reporter)
             if len(model.device_ids) > 1:
                 loss.backward(torch.ones(len(model.device_ids)))
             else:
