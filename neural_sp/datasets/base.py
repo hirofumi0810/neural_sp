@@ -39,7 +39,7 @@ class Base(object):
         self.queue_size = 0
 
     def count_vocab_size(self, dict_path):
-        vocab_count = 0
+        vocab_count = 1  # for <blank>
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
                 if line.strip() != '':
