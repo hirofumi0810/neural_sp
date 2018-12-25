@@ -57,7 +57,7 @@ class Seq2seq(ModelBase):
 
         # for decoder
         self.vocab = args.vocab
-        self.vocab_sub = args.vocab_sub
+        self.vocab_sub1 = args.vocab_sub1
         self.blank = 0
         self.unk = 1
         self.sos = 2  # NOTE: the same index as <eos>
@@ -73,7 +73,7 @@ class Seq2seq(ModelBase):
         self.fwd_weight = 1 - args.bwd_weight
         self.bwd_weight = args.bwd_weight
 
-        # for the sub task
+        # for the sub1 task
         self.main_task_weight = args.main_task_weight
         self.mtl_per_batch = args.mtl_per_batch
 
@@ -99,7 +99,7 @@ class Seq2seq(ModelBase):
             nunits=args.enc_nunits,
             nprojs=args.enc_nprojs,
             nlayers=args.enc_nlayers,
-            nlayers_sub=args.enc_nlayers_sub,
+            nlayers_sub1=args.enc_nlayers_sub1,
             dropout_in=args.dropout_in,
             dropout=args.dropout_enc,
             subsample=[int(s) for s in args.subsample.split('_')],
@@ -114,7 +114,8 @@ class Seq2seq(ModelBase):
             conv_batch_norm=args.conv_batch_norm,
             residual=args.enc_residual,
             nin=0,
-            layer_norm=args.layer_norm)
+            layer_norm=args.layer_norm,
+            task_specific_layer=args.task_specific_layer)
 
         # Bridge layer between the encoder and decoder
         if args.enc_type == 'cnn':
@@ -207,13 +208,13 @@ class Seq2seq(ModelBase):
             setattr(self, 'dec_' + dir, dec)
 
         # SUB TASK
-        # NOTE: only forward direction for the sub task
+        # NOTE: only forward direction for the sub1 task
         if args.main_task_weight < 1:
-            if args.ctc_weight_sub < 1:
+            if args.ctc_weight_sub1 < 1:
                 # Attention layer
-                if args.attn_nheads_sub > 1:
-                    logger.info('multi-head attention (sub)')
-                    attn_sub = MultiheadAttentionMechanism(
+                if args.attn_nheads_sub1 > 1:
+                    logger.info('multi-head attention (sub1)')
+                    attn_sub1 = MultiheadAttentionMechanism(
                         enc_nunits=self.enc_nunits,
                         dec_nunits=args.dec_nunits,
                         attn_type=args.attn_type,
@@ -222,10 +223,10 @@ class Seq2seq(ModelBase):
                         sigmoid_smoothing=args.attn_sigmoid,
                         conv_out_channels=args.attn_conv_nchannels,
                         conv_kernel_size=args.attn_conv_width,
-                        nheads=args.attn_nheads_sub)
+                        nheads=args.attn_nheads_sub1)
                 else:
-                    logger.info('single-head attention (sub)')
-                    attn_sub = AttentionMechanism(
+                    logger.info('single-head attention (sub1)')
+                    attn_sub1 = AttentionMechanism(
                         enc_nunits=self.enc_nunits,
                         dec_nunits=args.dec_nunits,
                         attn_type=args.attn_type,
@@ -236,11 +237,11 @@ class Seq2seq(ModelBase):
                         conv_kernel_size=args.attn_conv_width,
                         dropout=args.dropout_att)
             else:
-                attn_sub = None
+                attn_sub1 = None
 
             # Decoder
             self.dec_fwd_sub1 = Decoder(
-                attention=attn_sub,
+                attention=attn_sub1,
                 sos=self.sos,
                 eos=self.eos,
                 pad=self.pad,
@@ -250,7 +251,7 @@ class Seq2seq(ModelBase):
                 nlayers=args.dec_nlayers,
                 residual=args.dec_residual,
                 emb_dim=args.emb_dim,
-                vocab=self.vocab_sub,
+                vocab=self.vocab_sub1,
                 logits_temp=args.logits_temp,
                 dropout=args.dropout_dec,
                 dropout_emb=args.dropout_emb,
@@ -258,18 +259,18 @@ class Seq2seq(ModelBase):
                 lsm_prob=args.lsm_prob,
                 layer_norm=args.layer_norm,
                 init_with_enc=args.init_with_enc,
-                ctc_weight=args.ctc_weight_sub,
-                ctc_fc_list=[int(fc) for fc in args.ctc_fc_list_sub.split('_')
-                             ] if len(args.ctc_fc_list_sub) > 0 else [],
+                ctc_weight=args.ctc_weight_sub1,
+                ctc_fc_list=[int(fc) for fc in args.ctc_fc_list_sub1.split('_')
+                             ] if len(args.ctc_fc_list_sub1) > 0 else [],
                 global_weight=1 - args.main_task_weight,
                 mtl_per_batch=args.mtl_per_batch)
 
         if args.input_type == 'text':
-            if args.vocab == args.vocab_sub:
+            if args.vocab == args.vocab_sub1:
                 # Share the embedding layer between input and output
                 self.embed_in = dec.embed
             else:
-                self.embed_in = Embedding(vocab=args.vocab_sub,
+                self.embed_in = Embedding(vocab=args.vocab_sub1,
                                           emb_dim=args.emb_dim,
                                           dropout=args.dropout_emb,
                                           ignore_index=self.pad)
@@ -301,15 +302,15 @@ class Seq2seq(ModelBase):
         if args.rnnlm_cold_fusion:
             self.init_weights(-1, dist='constant', keys=['cf_linear_lm_gate.fc.bias'])
 
-    def forward(self, xs, ys, ys_sub=None, reporter=None, task='ys', is_eval=False):
+    def forward(self, xs, ys, ys_sub1=None, reporter=None, task='ys', is_eval=False):
         """Forward computation.
 
         Args:
             xs (list): A list of length `[B]`, which contains arrays of size `[T, input_dim]`
             ys (list): A list of length `[B]`, which contains arrays of size `[L]`
-            ys_sub (list): A list of lenght `[B]`, which contains arrays of size `[L_sub]`
+            ys_sub1 (list): A list of lenght `[B]`, which contains arrays of size `[L_sub]`
             reporter ():
-            task (str):
+            task (str): ys or ys_sub1 or ys_sub2
             is_eval (bool): the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
@@ -320,10 +321,10 @@ class Seq2seq(ModelBase):
         if is_eval:
             self.eval()
             with torch.no_grad():
-                loss, observation = self._forward(xs, ys, ys_sub, task)
+                loss, observation = self._forward(xs, ys, ys_sub1, task)
         else:
             self.train()
-            loss, observation = self._forward(xs, ys, ys_sub, task)
+            loss, observation = self._forward(xs, ys, ys_sub1, task)
 
         # Report here
         if reporter is not None:
@@ -331,7 +332,7 @@ class Seq2seq(ModelBase):
 
         return loss, reporter
 
-    def _forward(self, xs, ys, ys_sub, task):
+    def _forward(self, xs, ys, ys_sub1, task):
         # Encode input features
         if self.input_type == 'speech':
             if self.mtl_per_batch:
@@ -339,7 +340,7 @@ class Seq2seq(ModelBase):
             else:
                 enc_out, perm_idx = self.encode(xs, task='all')
         else:
-            enc_out, perm_idx = self.encode(ys_sub)
+            enc_out, perm_idx = self.encode(ys_sub1)
         ys = [ys[i] for i in perm_idx]
 
         observation = {}
@@ -364,19 +365,19 @@ class Seq2seq(ModelBase):
             observation['acc.bwd'] = obs_bwd['acc']
             # TODO(hirofumi): mtl_per_batch
 
-        if self.main_task_weight < 1 and ((self.mtl_per_batch and task == 'ys_sub') or not self.mtl_per_batch):
+        if self.main_task_weight < 1 and ((self.mtl_per_batch and task == 'ys_sub1') or not self.mtl_per_batch):
             if self.mtl_per_batch:
-                loss_sub, obs_sub = self.dec_fwd_sub1(
-                    enc_out['ys_sub']['xs'], enc_out['ys_sub']['x_lens'], ys)
+                loss_sub1, obs_sub = self.dec_fwd_sub1(
+                    enc_out['ys_sub1']['xs'], enc_out['ys_sub1']['x_lens'], ys)
             else:
-                ys_sub = [ys_sub[i] for i in perm_idx]
-                loss_sub, obs_sub = self.dec_fwd_sub1(
-                    enc_out['ys_sub']['xs'], enc_out['ys_sub']['x_lens'], ys_sub)
-            loss += loss_sub
-            observation['loss.att-sub'] = obs_sub['loss_att']
-            observation['loss.ctc-sub'] = obs_sub['loss_ctc']
-            observation['loss.lm-sub'] = obs_sub['loss_lm']
-            observation['acc.sub'] = obs_sub['acc']
+                ys_sub1 = [ys_sub1[i] for i in perm_idx]
+                loss_sub1, obs_sub = self.dec_fwd_sub1(
+                    enc_out['ys_sub1']['xs'], enc_out['ys_sub1']['x_lens'], ys_sub1)
+            loss += loss_sub1
+            observation['loss.att-sub1'] = obs_sub['loss_att']
+            observation['loss.ctc-sub1'] = obs_sub['loss_ctc']
+            observation['loss.lm-sub1'] = obs_sub['loss_lm']
+            observation['acc.sub1'] = obs_sub['acc']
 
         return loss, observation
 
@@ -420,14 +421,14 @@ class Seq2seq(ModelBase):
 
         if self.main_task_weight < 1:
             if self.enc_type == 'cnn':
-                enc_out['ys_sub']['xs'] = xs.clone()
-                enc_out['ys_sub']['x_lens'] = copy.deepcopy(x_lens)
+                enc_out['ys_sub1']['xs'] = xs.clone()
+                enc_out['ys_sub1']['x_lens'] = copy.deepcopy(x_lens)
 
         # Bridge between the encoder and decoder
         if self.enc_type == 'cnn' or self.bridge_layer:
             enc_out['ys']['xs'] = self.bridge(enc_out['ys']['xs'])
             if self.main_task_weight < 1 and (self.enc_type == 'cnn' or self.bridge_layer):
-                enc_out['ys_sub']['xs'] = self.bridge_sub(enc_out['ys_sub']['xs'])
+                enc_out['ys_sub1']['xs'] = self.bridge_sub(enc_out['ys_sub1']['xs'])
 
         return enc_out, perm_idx
 
@@ -452,7 +453,7 @@ class Seq2seq(ModelBase):
             idx2token (): converter from index to token
             refs (list): gold transcriptions to compute log likelihood
             ctc (bool):
-            task (str):
+            task (str): ys or ys_sub1 or ys_sub2
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
             aws (list): A list of length `[B]`, which contains arrays of size `[L, T]`
@@ -463,7 +464,7 @@ class Seq2seq(ModelBase):
         with torch.no_grad():
             enc_out, perm_idx = self.encode(xs, task=task)
             dir = 'fwd' if self.fwd_weight >= self.bwd_weight else 'bwd'
-            if task == 'ys_sub':
+            if task == 'ys_sub1':
                 dir += '_sub1'
 
             if self.ctc_weight == 1 or (self.ctc_weight > 0 and ctc):

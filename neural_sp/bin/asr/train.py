@@ -50,22 +50,22 @@ parser.add_argument('--job_name', type=str, default='',
 # dataset
 parser.add_argument('--train_set', type=str,
                     help='path to a csv file for the training set')
-parser.add_argument('--train_set_sub', type=str, default=None,
+parser.add_argument('--train_set_sub1', type=str, default=None,
                     help='path to a csv file for the training set for th sub tsk')
 parser.add_argument('--dev_set', type=str,
                     help='path to a csv file for the development set')
-parser.add_argument('--dev_set_sub', type=str, default=None,
+parser.add_argument('--dev_set_sub1', type=str, default=None,
                     help='path to a csv file for the development set for the sub task')
 parser.add_argument('--eval_sets', type=str, default=[], nargs='+',
                     help='path to csv files for the evaluation sets')
 parser.add_argument('--dict', type=str,
                     help='path to a dictionary file')
-parser.add_argument('--dict_sub', type=str, default=None,
+parser.add_argument('--dict_sub1', type=str, default=None,
                     help='path to a dictionary file for the sub task')
 parser.add_argument('--unit', type=str, default='word',
                     choices=['word', 'wp', 'char', 'phone', 'word_char'],
                     help='')
-parser.add_argument('--unit_sub', type=str, default='char',
+parser.add_argument('--unit_sub1', type=str, default='char',
                     choices=['wp', 'char', 'phone'],
                     help='')
 parser.add_argument('--wp_model', type=str, default=False, nargs='?',
@@ -108,7 +108,7 @@ parser.add_argument('--enc_nprojs', type=int, default=0,
                     help='The number of units in each projection layer after the RNN layer.')
 parser.add_argument('--enc_nlayers', type=int, default=5,
                     help='The number of encoder RNN layers')
-parser.add_argument('--enc_nlayers_sub', type=int, default=0,
+parser.add_argument('--enc_nlayers_sub1', type=int, default=0,
                     help='')
 parser.add_argument('--enc_residual', type=bool, default=False, nargs='?',
                     help='')
@@ -130,7 +130,7 @@ parser.add_argument('--attn_conv_width', type=int, default=100,
                     help='')
 parser.add_argument('--attn_nheads', type=int, default=1,
                     help='')
-parser.add_argument('--attn_nheads_sub', type=int, default=1,
+parser.add_argument('--attn_nheads_sub1', type=int, default=1,
                     help='')
 parser.add_argument('--attn_sharpening', type=float, default=1.0,
                     help='')
@@ -147,7 +147,7 @@ parser.add_argument('--dec_nprojs', type=int, default=0,
                     help='')
 parser.add_argument('--dec_nlayers', type=int, default=1,
                     help='')
-parser.add_argument('--dec_nlayers_sub', type=int, default=1,
+parser.add_argument('--dec_nlayers_sub1', type=int, default=1,
                     help='')
 parser.add_argument('--dec_residual', type=bool, default=False, nargs='?',
                     help='')
@@ -159,7 +159,7 @@ parser.add_argument('--input_feeding', type=bool, default=False,
                     help='')
 parser.add_argument('--ctc_fc_list', type=str, default="", nargs='?',
                     help='')
-parser.add_argument('--ctc_fc_list_sub', type=str, default="", nargs='?',
+parser.add_argument('--ctc_fc_list_sub1', type=str, default="", nargs='?',
                     help='')
 # optimization
 parser.add_argument('--batch_size', type=int, default=50,
@@ -238,16 +238,18 @@ parser.add_argument('--layer_norm', default=False,
 # MTL
 parser.add_argument('--ctc_weight', type=float, default=0.0,
                     help='')
-parser.add_argument('--ctc_weight_sub', type=float, default=0.0,
+parser.add_argument('--ctc_weight_sub1', type=float, default=0.0,
                     help='')
 parser.add_argument('--main_task_weight', type=float, default=1.0,
                     help='')
 parser.add_argument('--mtl_per_batch', type=bool, default=False, nargs='?',
                     help='If True, change mini-batch per task')
+parser.add_argument('--task_specific_layer', type=bool, default=False, nargs='?',
+                    help='If True, insert a task-specific encoder layer per task')
 # foroward-backward
 parser.add_argument('--bwd_weight', type=float, default=0.0,
                     help='')
-parser.add_argument('--bwd_weight_sub', type=float, default=0.0,
+parser.add_argument('--bwd_weight_sub1', type=float, default=0.0,
                     help='')
 # cold fusion
 parser.add_argument('--cold_fusion', type=str, default='hidden',
@@ -310,15 +312,15 @@ def main():
         args.print_step //= args.ngpus
 
     subsample_factor = 1
-    subsample_factor_sub = 1
+    subsample_factor_sub1 = 1
     subsample = [int(s) for s in args.subsample.split('_')]
     if args.conv_poolings:
         for p in args.conv_poolings.split('_'):
             p = int(p.split(',')[0].replace('(', ''))
             if p > 1:
                 subsample_factor *= p
-    if args.train_set_sub is not None:
-        subsample_factor_sub = subsample_factor * np.prod(subsample[:args.enc_nlayers_sub - 1])
+    if args.train_set_sub1 is not None:
+        subsample_factor_sub1 = subsample_factor * np.prod(subsample[:args.enc_nlayers_sub1 - 1])
     subsample_factor *= np.prod(subsample)
 
     # Load dataset
@@ -336,11 +338,11 @@ def main():
                         dynamic_batching=args.dynamic_batching,
                         ctc=args.ctc_weight > 0,
                         subsample_factor=subsample_factor,
-                        csv_path_sub=args.train_set_sub,
-                        dict_path_sub=args.dict_sub,
-                        unit_sub=args.unit_sub,
-                        ctc_sub=args.ctc_weight_sub > 0,
-                        subsample_factor_sub=subsample_factor_sub,
+                        csv_path_sub1=args.train_set_sub1,
+                        dict_path_sub1=args.dict_sub1,
+                        unit_sub1=args.unit_sub1,
+                        ctc_sub1=args.ctc_weight_sub1 > 0,
+                        subsample_factor_sub1=subsample_factor_sub1,
                         skip_speech=(args.input_type != 'speech'))
     dev_set = Dataset(csv_path=args.dev_set,
                       dict_path=args.dict,
@@ -352,11 +354,11 @@ def main():
                       shuffle=True,
                       ctc=args.ctc_weight > 0,
                       subsample_factor=subsample_factor,
-                      csv_path_sub=args.dev_set_sub,
-                      dict_path_sub=args.dict_sub,
-                      unit_sub=args.unit_sub,
-                      ctc_sub=args.ctc_weight_sub > 0,
-                      subsample_factor_sub=subsample_factor_sub,
+                      csv_path_sub1=args.dev_set_sub1,
+                      dict_path_sub1=args.dict_sub1,
+                      unit_sub1=args.unit_sub1,
+                      ctc_sub1=args.ctc_weight_sub1 > 0,
+                      subsample_factor_sub1=subsample_factor_sub1,
                       skip_speech=(args.input_type != 'speech'))
     eval_sets = []
     for set in args.eval_sets:
@@ -369,7 +371,7 @@ def main():
                               skip_speech=(args.input_type != 'speech'))]
 
     args.vocab = train_set.vocab
-    args.vocab_sub = train_set.vocab_sub
+    args.vocab_sub1 = train_set.vocab_sub1
     args.input_dim = train_set.input_dim
 
     # Load a RNNLM config file for cold fusion & RNNLM initialization
@@ -438,14 +440,16 @@ def main():
             dir_name += '_ctc' + str(args.ctc_weight)
         if args.bwd_weight > 0:
             dir_name += '_bwd' + str(args.bwd_weight)
-        if args.main_task_weight < 1:
+        if args.mtl_per_batch:
+            dir_name += '_mtlperbatch'
+        elif args.main_task_weight < 1:
             dir_name += '_main' + str(args.main_task_weight)
-            if args.ctc_weight_sub > 0:
-                dir_name += '_ctcsub' + str(args.ctc_weight_sub * (1 - args.main_task_weight))
+            if args.ctc_weight_sub1 > 0:
+                dir_name += '_ctcsub' + str(args.ctc_weight_sub1 * (1 - args.main_task_weight))
             else:
                 dir_name += '_attsub' + str(1 - args.main_task_weight)
-        if args.mtl_per_batch:
-            dir_name += '_mtlpertask'
+        if args.task_specific_layer:
+            dir_name += '_tsl'
 
     if args.resume is None:
         # Load pre-trained RNNLM
@@ -474,8 +478,8 @@ def main():
 
         # Save the dictionary & wp_model
         shutil.copy(args.dict, os.path.join(model.save_path, 'dict.txt'))
-        if args.dict_sub is not None:
-            shutil.copy(args.dict_sub, os.path.join(model.save_path, 'dict_sub.txt'))
+        if args.dict_sub1 is not None:
+            shutil.copy(args.dict_sub1, os.path.join(model.save_path, 'dict_sub1.txt'))
         if args.unit == 'wp':
             shutil.copy(args.wp_model, os.path.join(model.save_path, 'wp.model'))
 
@@ -591,7 +595,7 @@ def main():
         if args.mtl_per_batch:
             # Change tasks depending on task
             # NOTE: from easier to harder tasks
-            for task in ['ys_sub', 'ys']:
+            for task in ['ys_sub1', 'ys']:
                 model.module.optimizer.zero_grad()
                 loss, reporter = model(batch_train['xs'], batch_train[task],
                                        reporter=reporter, task=task)
@@ -607,7 +611,7 @@ def main():
                 del loss
         else:
             model.module.optimizer.zero_grad()
-            loss, reporter = model(batch_train['xs'], batch_train['ys'], batch_train['ys_sub'],
+            loss, reporter = model(batch_train['xs'], batch_train['ys'], batch_train['ys_sub1'],
                                    reporter=reporter)
             if len(model.device_ids) > 1:
                 loss.backward(torch.ones(len(model.device_ids)))
@@ -633,13 +637,13 @@ def main():
             batch_dev = dev_set.next()[0]
             if args.mtl_per_batch:
                 # Change tasks depending on task
-                for task in ['ys_sub', 'ys']:
+                for task in ['ys_sub1', 'ys']:
                     loss, reporter = model(batch_dev['xs'], batch_dev[task],
                                            reporter=reporter, task=task, is_eval=True)
                     loss_dev = loss.item()
                     del loss
             else:
-                loss, reporter = model(batch_dev['xs'], batch_dev['ys'], batch_dev['ys_sub'],
+                loss, reporter = model(batch_dev['xs'], batch_dev['ys'], batch_dev['ys_sub1'],
                                        reporter=reporter, is_eval=True)
                 loss_dev = loss.item()
                 del loss

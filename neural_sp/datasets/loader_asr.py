@@ -44,8 +44,8 @@ class Dataset(Base):
                  nques=None, dynamic_batching=False,
                  ctc=False, subsample_factor=1,
                  skip_speech=False, wp_model=None,
-                 csv_path_sub=None, dict_path_sub=None, unit_sub=None,
-                 ctc_sub=False, subsample_factor_sub=1):
+                 csv_path_sub1=None, dict_path_sub1=None, unit_sub1=None,
+                 ctc_sub1=False, subsample_factor_sub1=1):
         """A class for loading dataset.
 
         Args:
@@ -77,7 +77,7 @@ class Dataset(Base):
         self.set = os.path.basename(csv_path).split('.')[0]
         self.is_test = is_test
         self.unit = unit
-        self.unit_sub = unit_sub
+        self.unit_sub1 = unit_sub1
         self.batch_size = batch_size
         self.max_epoch = nepochs
         self.shuffle = shuffle
@@ -92,10 +92,10 @@ class Dataset(Base):
         if unit in ['word', 'word_char']:
             self.idx2word = Idx2word(dict_path)
             self.word2idx = Word2idx(dict_path, word_char_mix=(unit == 'word_char'))
-        elif unit == 'wp' or unit_sub == 'wp':
+        elif unit == 'wp' or unit_sub1 == 'wp':
             self.idx2wp = Idx2wp(dict_path, wp_model)
             self.wp2idx = Wp2idx(dict_path, wp_model)
-        elif unit == 'char' or unit_sub == 'char':
+        elif unit == 'char' or unit_sub1 == 'char':
             self.idx2char = Idx2char(dict_path)
             self.char2idx = Char2idx(dict_path)
         elif 'phone' in unit:
@@ -104,33 +104,33 @@ class Dataset(Base):
         else:
             raise ValueError(unit)
 
-        if dict_path_sub is not None:
-            self.vocab_sub = self.count_vocab_size(dict_path_sub)
+        if dict_path_sub1 is not None:
+            self.vocab_sub1 = self.count_vocab_size(dict_path_sub1)
 
             # Set index converter
-            if unit_sub is not None:
+            if unit_sub1 is not None:
                 if unit == 'wp':
-                    self.idx2word = Idx2word(dict_path_sub)
-                    self.word2idx = Word2idx(dict_path_sub)
-                elif unit_sub == 'char':
-                    self.idx2char = Idx2char(dict_path_sub)
-                    self.char2idx = Char2idx(dict_path_sub)
-                elif 'phone' in unit_sub:
-                    self.idx2phone = Idx2phone(dict_path_sub)
-                    self.phone2idx = Phone2idx(dict_path_sub)
+                    self.idx2word = Idx2word(dict_path_sub1)
+                    self.word2idx = Word2idx(dict_path_sub1)
+                elif unit_sub1 == 'char':
+                    self.idx2char = Idx2char(dict_path_sub1)
+                    self.char2idx = Char2idx(dict_path_sub1)
+                elif 'phone' in unit_sub1:
+                    self.idx2phone = Idx2phone(dict_path_sub1)
+                    self.phone2idx = Phone2idx(dict_path_sub1)
                 else:
-                    raise ValueError(unit_sub)
+                    raise ValueError(unit_sub1)
         else:
-            self.vocab_sub = -1
+            self.vocab_sub1 = -1
 
         # Load dataset csv file
         df = pd.read_csv(csv_path, encoding='utf-8', delimiter=',')
         df = df.loc[:, ['utt_id', 'feat_path', 'x_len', 'x_dim', 'text', 'token_id', 'y_len', 'y_dim']]
-        if csv_path_sub is not None:
-            df_sub = pd.read_csv(csv_path_sub, encoding='utf-8', delimiter=',')
-            df_sub = df_sub.loc[:, ['utt_id', 'feat_path', 'x_len', 'x_dim', 'text', 'token_id', 'y_len', 'y_dim']]
+        if csv_path_sub1 is not None:
+            df_sub1 = pd.read_csv(csv_path_sub1, encoding='utf-8', delimiter=',')
+            df_sub1 = df_sub1.loc[:, ['utt_id', 'feat_path', 'x_len', 'x_dim', 'text', 'token_id', 'y_len', 'y_dim']]
         else:
-            df_sub = None
+            df_sub1 = None
 
         # Remove inappropriate utteraces
         if not self.is_test:
@@ -149,26 +149,27 @@ class Dataset(Base):
                 df = df[df.apply(lambda x: x['y_len'] <= x['x_len'] // subsample_factor, axis=1)]
                 logger.info('Removed %d utterances (for CTC)' % (num_utt_org - len(df)))
 
-            if df_sub is not None:
-                logger.info('Original utterance num (sub): %d' % len(df_sub))
-                num_utt_org = len(df_sub)
+            if df_sub1 is not None:
+                logger.info('Original utterance num (sub): %d' % len(df_sub1))
+                num_utt_org = len(df_sub1)
 
                 # Remove by threshold
-                df_sub = df_sub[df_sub.apply(lambda x: min_nframes <= x['x_len'] <= max_nframes, axis=1)]
-                logger.info('Removed %d utterances (threshold, sub)' % (num_utt_org - len(df_sub)))
+                df_sub1 = df_sub1[df_sub1.apply(lambda x: min_nframes <= x['x_len'] <= max_nframes, axis=1)]
+                logger.info('Removed %d utterances (threshold, sub)' % (num_utt_org - len(df_sub1)))
 
                 # Rempve for CTC loss calculatioon
-                if ctc_sub and subsample_factor_sub > 1:
+                if ctc_sub1 and subsample_factor_sub1 > 1:
                     logger.info('Checking utterances for CTC...')
-                    logger.info('Original utterance num (sub): %d' % len(df_sub))
-                    num_utt_org = len(df_sub)
-                    df_sub = df_sub[df_sub.apply(lambda x: x['y_len'] <= x['x_len'] // subsample_factor_sub, axis=1)]
-                    logger.info('Removed %d utterances (for CTC, sub)' % (num_utt_org - len(df_sub)))
+                    logger.info('Original utterance num (sub): %d' % len(df_sub1))
+                    num_utt_org = len(df_sub1)
+                    df_sub1 = df_sub1[df_sub1.apply(lambda x: x['y_len'] <= x['x_len'] //
+                                                    subsample_factor_sub1, axis=1)]
+                    logger.info('Removed %d utterances (for CTC, sub)' % (num_utt_org - len(df_sub1)))
 
                 # Make up the number
-                if len(df) != len(df_sub):
-                    df = df.drop(df.index.difference(df_sub.index))
-                    df_sub = df_sub.drop(df_sub.index.difference(df.index))
+                if len(df) != len(df_sub1):
+                    df = df.drop(df.index.difference(df_sub1.index))
+                    df_sub1 = df_sub1.drop(df_sub1.index.difference(df.index))
 
         # Sort csv records
         if sort_by_input_length:
@@ -180,7 +181,7 @@ class Dataset(Base):
                 df = df.sort_values(by='utt_id', ascending=True)
 
         self.df = df
-        self.df_sub = df_sub
+        self.df_sub1 = df_sub1
         self.rest = set(list(df.index))
         self.input_dim = kaldi_io.read_mat(self.df['feat_path'][0]).shape[-1]
 
@@ -195,8 +196,8 @@ class Dataset(Base):
                 x_lens (list):
                 ys (list): target labels in the main task of size `[B, L]`
                 y_lens (list):
-                ys_sub (list): target labels in the sub task of size `[B, L_sub]`
-                y_lens_sub (list):
+                ys_sub1 (list): target labels in the sub task of size `[B, L_sub]`
+                y_lens_sub1 (list):
                 utt_ids (list): file names of input data of size `[B]`
 
         """
@@ -216,20 +217,20 @@ class Dataset(Base):
         y_lens = [self.df['y_len'][i] for i in utt_indices]
         text = [self.df['text'][i].encode('utf-8') for i in utt_indices]
 
-        if self.df_sub is not None:
+        if self.df_sub1 is not None:
             if self.is_test:
-                ys_sub = [self.df_sub['text'][i].encode('utf-8') for i in utt_indices]
-                # NOTE: ys_sub is a list of text
+                ys_sub1 = [self.df_sub1['text'][i].encode('utf-8') for i in utt_indices]
+                # NOTE: ys_sub1 is a list of text
             else:
-                ys_sub = [list(map(int, self.df_sub['token_id'][i].split())) for i in utt_indices]
-            y_lens_sub = [self.df_sub['y_len'][i] for i in utt_indices]
+                ys_sub1 = [list(map(int, self.df_sub1['token_id'][i].split())) for i in utt_indices]
+            y_lens_sub1 = [self.df_sub1['y_len'][i] for i in utt_indices]
         else:
-            ys_sub, y_lens_sub = [], []
+            ys_sub1, y_lens_sub1 = [], []
 
         utt_ids = [self.df['utt_id'][i].encode('utf-8') for i in utt_indices]
 
         return {'xs': xs, 'x_lens': x_lens,
                 'ys': ys, 'y_lens': y_lens,
-                'ys_sub': ys_sub, 'y_lens_sub': y_lens_sub,
+                'ys_sub1': ys_sub1, 'y_lens_sub1': y_lens_sub1,
                 'utt_ids':  utt_ids, 'text': text,
                 'feat_path': [self.df['feat_path'][i] for i in utt_indices]}

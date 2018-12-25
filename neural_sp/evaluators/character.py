@@ -74,9 +74,9 @@ def eval_char(models, dataset, decode_params, epoch,
     if task_idx == 0:
         task = 'ys'
     elif task_idx == 1:
-        task = 'ys_sub'
+        task = 'ys_sub1'
     elif task_idx == 2:
-        task = 'ys_sub_sub'
+        task = 'ys_sub2'
 
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
