@@ -8,6 +8,7 @@ warp-ctc
 pytorch-ctc
 nohup.out
 .done*
+.nfs*
 
 vocab
 log
