@@ -4,6 +4,7 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
+
 """Plot attention weights & ctc probabilities."""
 
 from __future__ import absolute_import
@@ -14,8 +15,9 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
-plt.style.use('ggplot')
 import seaborn as sns
+
+plt.style.use('ggplot')
 sns.set_style("white")
 blue = '#4682B4'
 orange = '#D2691E'
@@ -25,13 +27,13 @@ green = '#006400'
 sns.set(font='Noto Sans CJK JP')
 
 
-def plot_attention_weights(aw, label_list=[], spectrogram=None, text_ref=None,
+def plot_attention_weights(aw, token_list=[], spectrogram=None, text_ref=None,
                            save_path=None, figsize=(10, 4)):
     """Plot attention weights.
 
     Args:
         aw (np.ndarray): A tensor of size `[L, T]`
-        label_list (list):
+        token_list (list):
         spectrogram (np.ndarray): A tensor of size `[T, feature_dim]`
         text_ref (str):
         save_path (str): path to save a figure of CTC posterior (utterance)
@@ -45,7 +47,7 @@ def plot_attention_weights(aw, label_list=[], spectrogram=None, text_ref=None,
         # Plot attention weights
         sns.heatmap(aw, cmap='viridis',
                     xticklabels=False,
-                    yticklabels=label_list if len(label_list) > 0 else False)
+                    yticklabels=token_list if len(token_list) > 0 else False)
         # cbar_kws={"orientation": "horizontal"}
         plt.ylabel(u'Output labels (←)', fontsize=12)
         plt.yticks(rotation=0)
@@ -54,7 +56,7 @@ def plot_attention_weights(aw, label_list=[], spectrogram=None, text_ref=None,
         plt.subplot(211)
         sns.heatmap(aw, cmap='viridis',
                     xticklabels=False,
-                    yticklabels=label_list if len(label_list) > 0 else False)
+                    yticklabels=token_list if len(token_list) > 0 else False)
         plt.ylabel(u'Output labels (←)', fontsize=12)
         plt.yticks(rotation=0)
 
@@ -73,7 +75,7 @@ def plot_attention_weights(aw, label_list=[], spectrogram=None, text_ref=None,
     plt.close()
 
 
-def plot_hierarchical_attention_weights(aw, aw_sub, label_list=[], label_list_sub=[],
+def plot_hierarchical_attention_weights(aw, aw_sub, token_list=[], label_list_sub=[],
                                         spectrogram=None, text_ref=None,
                                         save_path=None, figsize=(20, 8)):
     """Plot attention weights for the hierarchical model.
@@ -82,7 +84,7 @@ def plot_hierarchical_attention_weights(aw, aw_sub, label_list=[], label_list_su
         spectrogram (np.ndarray): A tensor of size `[T, input_size]`
         aw (np.ndarray): A tensor of size `[L, T]`
         aw_sub (np.ndarray): A tensor of size `[L_sub, T]`
-        label_list (list):
+        token_list (list):
         label_list_sub (list):
         spectrogram (np.ndarray): A tensor of size `[T, feature_dim]`
         text_ref (str):
@@ -98,7 +100,7 @@ def plot_hierarchical_attention_weights(aw, aw_sub, label_list=[], label_list_su
         plt.subplot(211)
         sns.heatmap(aw, cmap='viridis',
                     xticklabels=False,
-                    yticklabels=label_list if len(label_list) > 0 else False)
+                    yticklabels=token_list if len(token_list) > 0 else False)
         plt.ylabel(u'Output labels (main) (←)', fontsize=12)
         plt.yticks(rotation=0)
 
@@ -114,7 +116,7 @@ def plot_hierarchical_attention_weights(aw, aw_sub, label_list=[], label_list_su
         plt.subplot(311)
         sns.heatmap(aw, cmap='viridis',
                     xticklabels=False,
-                    yticklabels=label_list if len(label_list) > 0 else False)
+                    yticklabels=token_list if len(token_list) > 0 else False)
         plt.ylabel(u'Output labels (main) (←)', fontsize=12)
         plt.yticks(rotation=0)
 
@@ -140,13 +142,13 @@ def plot_hierarchical_attention_weights(aw, aw_sub, label_list=[], label_list_su
     plt.close()
 
 
-def plot_nested_attention_weights(aw, label_list=[], label_list_sub=[],
+def plot_nested_attention_weights(aw, token_list=[], label_list_sub=[],
                                   save_path=None, figsize=(10, 4)):
     """Plot attention weights from word-level decoder to character-level decoder.
 
     Args:
         aw (np.ndarray): A tensor of size `[L, T]`
-        label_list (list):
+        token_list (list):
         label_list_sub (list):
         save_path (str): path to save a figure of CTC posterior (utterance)
         figsize (tuple):
@@ -158,7 +160,7 @@ def plot_nested_attention_weights(aw, label_list=[], label_list_sub=[],
     # Plot attention weights
     sns.heatmap(awmap='viridis',
                 xticklabels=label_list_sub,
-                yticklabels=label_list)
+                yticklabels=token_list)
     # cbar_kws={"orientation": "horizontal"}
     plt.ylabel(u'Output characters (→)', fontsize=12)
     plt.ylabel(u'Output words (←)', fontsize=12)
@@ -172,57 +174,62 @@ def plot_nested_attention_weights(aw, label_list=[], label_list_sub=[],
     plt.close()
 
 
-def plot_ctc_probs(probs, frame_num, num_stack, space_index=None, text_hyp='',
-                   spectrogram=None, save_path=None, figsize=(10, 4)):
+def plot_ctc_probs(ctc_probs, indices_topk, nframes, subsample_factor, space_index=None, hyp='',
+                   spectrogram=None, save_path=None, figsize=(10, 4), topk=None):
     """Plot CTC posteriors.
 
     Args:
-        probs (np.ndarray): A tensor of size `[T, num_classes]`
-        frame_num (int):
-        num_stack (int): the number of frames to stack
+        ctc_probs (np.ndarray): A tensor of size `[T, vocab]`
+        nframes (int):
+        subsample_factor (int): the number of frames to stack
         space_index (int):
-        text_hyp (str):
+        hyp (str):
         save_path (str): path to save a figure of CTC posterior (utterance)
         figsize (tuple):
+        topk (int):
 
     """
     plt.clf()
     plt.figure(figsize=figsize)
-    times_probs = np.arange(frame_num) * num_stack / 100
-    if len(text_hyp) > 0:
-        plt.title(text_hyp)
+    times_probs = np.arange(nframes) * subsample_factor / 100
+    if len(hyp) > 0:
+        plt.title(hyp)
+
+    plt.xlim([0, nframes * subsample_factor / 100])
+    plt.ylim([0.05, 1.05])
+    plt.legend(loc="upper right", fontsize=12)
 
     if spectrogram is None:
         # NOTE: index 0 is reserved for blank
-        plt.plot(times_probs, probs[:, 0], ':', label='blank', color='grey')
-        for i in range(1, probs.shape[-1], 1):
-            if space_index is not None and i == space_index:
-                plt.plot(times_probs, probs[:, space_index], label='space', color='black')
+        if 0 not in indices_topk:
+            plt.plot(times_probs, ctc_probs[:, 0], ':', label='<blank>', color='grey')
+        for i in indices_topk:
+            if i == 0:
+                plt.plot(times_probs, ctc_probs[:, 0], ':', label='<blank>', color='grey')
+            elif space_index is not None and i == space_index:
+                plt.plot(times_probs, ctc_probs[:, space_index], label='<space>', color='black')
             else:
-                plt.plot(times_probs, probs[:, i])
+                plt.plot(times_probs, ctc_probs[:, i])
         plt.xlabel(u'Time [sec]', fontsize=12)
         plt.ylabel('Posteriors', fontsize=12)
-        plt.xlim([0, frame_num * num_stack / 100])
-        plt.ylim([0.05, 1.05])
-        plt.xticks(list(range(0, int(frame_num * num_stack / 100) + 1, 1)))
+        plt.xticks(list(range(0, int(nframes * subsample_factor / 100) + 1, 1)))
         plt.yticks(list(range(0, 2, 1)))
-        plt.legend(loc="upper right", fontsize=12)
     else:
         # Plot CTC posteriors
         plt.subplot(211)
-        plt.plot(times_probs, probs[:, 0], ':', label='blank', color='grey')
         # NOTE: index 0 is reserved for blank
-        for i in range(1, probs.shape[-1], 1):
-            if space_index is not None and i == space_index:
-                plt.plot(times_probs, probs[:, space_index], label='space', color='black')
+        if 0 not in indices_topk:
+            plt.plot(times_probs, ctc_probs[:, 0], ':', label='<blank>', color='grey')
+        for i in indices_topk:
+            if i == 0:
+                plt.plot(times_probs, ctc_probs[:, 0], ':', label='<blank>', color='grey')
+            elif space_index is not None and i == space_index:
+                plt.plot(times_probs, ctc_probs[:, space_index], label='<space>', color='black')
             else:
-                plt.plot(times_probs, probs[:, i])
+                plt.plot(times_probs, ctc_probs[:, i])
         plt.ylabel('Posteriors', fontsize=12)
-        plt.xlim([0, frame_num * num_stack / 100])
-        plt.ylim([0.05, 1.05])
         plt.tick_params(labelbottom=False)
         plt.yticks(list(range(0, 2, 1)))
-        plt.legend(loc="upper right", fontsize=12)
 
         # Plot spectrogram
         plt.subplot(212)
@@ -239,16 +246,16 @@ def plot_ctc_probs(probs, frame_num, num_stack, space_index=None, text_hyp='',
     plt.close()
 
 
-def plot_hierarchical_ctc_probs(probs, probs_sub, frame_num, num_stack,
-                                space_index=None, text_hyp='', text_hyp_sub='',
+def plot_hierarchical_ctc_probs(ctc_probs, ctc_probs_sub, nframes, subsample_factor,
+                                space_index=None, hyp='', text_hyp_sub='',
                                 spectrogram=None, save_path=None, figsize=(20, 8)):
     """Plot CTC posteriors for the hierarchical model.
 
     Args:
-        probs (np.ndarray): A tensor of size `[T, num_classes]`
-        probs_sub (np.ndarray): A tensor of size `[T, num_classes_sub]`
-        frame_num (int):
-        num_stack (int):
+        ctc_probs (np.ndarray): A tensor of size `[T, vocab]`
+        ctc_probs_sub (np.ndarray): A tensor of size `[T, num_classes_sub]`
+        nframes (int):
+        subsample_factor (int):
         save_path (str): path to save a figure of CTC posterior (utterance)
         figsize (tuple):
         space_index (int):
@@ -258,41 +265,41 @@ def plot_hierarchical_ctc_probs(probs, probs_sub, frame_num, num_stack,
 
     plt.clf()
     plt.figure(figsize=figsize)
-    times_probs = np.arange(frame_num) * num_stack / 100
-    if len(text_hyp) > 0:
-        plt.title(text_hyp)
+    times_probs = np.arange(nframes) * subsample_factor / 100
+    if len(hyp) > 0:
+        plt.title(hyp)
         # plt.title(text_hyp_sub)
 
     # NOTE: index 0 is reserved for blank
     plt.subplot(211)
-    plt.plot(times_probs, probs[:, 0], ':', label='blank', color='grey')
+    plt.plot(times_probs, ctc_probs[:, 0], ':', label='<blank>', color='grey')
 
     # Plot only top-k
-    # indices = np.argmax(probs[:, 1:], axis=-1)
-    # plt.plot(times_probs, probs[:, indices])
-    # for i in range(1, probs.shape[-1], 1):
+    # indices = np.argmax(ctc_probs[:, 1:], axis=-1)
+    # plt.plot(times_probs, ctc_probs[:, indices])
+    # for i in range(1, ctc_probs.shape[-1], 1):
     for i in range(1, 100, 1):
-        plt.plot(times_probs, probs[:, i])
+        plt.plot(times_probs, ctc_probs[:, i])
 
     plt.ylabel('Posteriors (Word)', fontsize=12)
-    plt.xlim([0, frame_num * num_stack / 100])
+    plt.xlim([0, nframes * subsample_factor / 100])
     plt.ylim([0.05, 1.05])
-    plt.xticks(list(range(0, int(frame_num * num_stack / 100) + 1, 1)))
+    plt.xticks(list(range(0, int(nframes * subsample_factor / 100) + 1, 1)))
     plt.yticks(list(range(0, 2, 1)))
     plt.legend(loc="upper right", fontsize=12)
 
     plt.subplot(212)
-    plt.plot(times_probs, probs_sub[:, 0], ':', label='blank', color='grey')
-    for i in range(1, probs_sub.shape[-1], 1):
+    plt.plot(times_probs, ctc_probs_sub[:, 0], ':', label='<blank>', color='grey')
+    for i in range(1, ctc_probs_sub.shape[-1], 1):
         if space_index is not None and i == space_index:
-            plt.plot(times_probs, probs_sub[:, space_index], label='space', color='black')
+            plt.plot(times_probs, ctc_probs_sub[:, space_index], label='<space>', color='black')
         else:
-            plt.plot(times_probs, probs_sub[:, i])
+            plt.plot(times_probs, ctc_probs_sub[:, i])
     plt.xlabel(u'Time [sec]', fontsize=12)
     plt.ylabel('Posteriors (Char)', fontsize=12)
-    plt.xlim([0, frame_num * num_stack / 100])
+    plt.xlim([0, nframes * subsample_factor / 100])
     plt.ylim([0.05, 1.05])
-    plt.xticks(list(range(0, int(frame_num * num_stack / 100) + 1, 1)))
+    plt.xticks(list(range(0, int(nframes * subsample_factor / 100) + 1, 1)))
     plt.yticks(list(range(0, 2, 1)))
     plt.legend(loc="upper right", fontsize=12)
 

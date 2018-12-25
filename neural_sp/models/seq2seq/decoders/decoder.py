@@ -871,12 +871,7 @@ class Decoder(nn.Module):
             perm_idx (list): A list of length `[B]`
 
         """
-        # Path through the softmax layer
-        bs, enc_time = enc_out.size()[: 2]
-        enc_out = enc_out.view(bs * enc_time, -1).contiguous()
         logits_ctc = self.output_ctc(enc_out)
-        logits_ctc = logits_ctc.view(bs, enc_time, -1)
-
         if beam_width == 1:
             best_hyps = self.decode_ctc_greedy(var2np(logits_ctc), x_lens)
         else:
@@ -885,3 +880,12 @@ class Decoder(nn.Module):
             # TODO(hirofumi): decoding paramters
 
         return best_hyps
+
+    def ctc_posteriors(self, enc_out, x_lens, temperature, topk):
+        # Path through the softmax layer
+        logits_ctc = self.output_ctc(enc_out)
+        ctc_probs = F.softmax(logits_ctc / temperature, dim=-1)
+        if topk is None:
+            topk = ctc_probs.size(-1)
+        _, indices_topk = torch.topk(ctc_probs.sum(1), k=topk, dim=-1, largest=True, sorted=True)
+        return var2np(ctc_probs), var2np(indices_topk)

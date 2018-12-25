@@ -432,6 +432,22 @@ class Seq2seq(ModelBase):
 
         return enc_out, perm_idx
 
+    def get_ctc_posteriors(self, xs, task='ys', temperature=1, topk=None):
+        self.eval()
+        with torch.no_grad():
+            enc_out, perm_idx = self.encode(xs, task=task)
+            dir = 'fwd' if self.fwd_weight >= self.bwd_weight else 'bwd'
+            if task == 'ys_sub1':
+                dir += '_sub1'
+
+            if task == 'ys':
+                assert self.ctc_weight > 0
+            elif task == 'ys_sub1':
+                assert self.ctc_weight_sub1 > 0
+            ctc_probs, indices_topk = getattr(self, 'dec_' + dir).ctc_posteriors(
+                enc_out[task]['xs'], enc_out[task]['x_lens'], temperature, topk)
+            return ctc_probs, indices_topk, enc_out[task]['x_lens']
+
     def decode(self, xs, decode_params, nbest=1, exclude_eos=False,
                idx2token=None, refs=None, ctc=False, task='ys'):
         """Decoding in the inference stage.
