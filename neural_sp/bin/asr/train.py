@@ -51,21 +51,30 @@ parser.add_argument('--job_name', type=str, default='',
 parser.add_argument('--train_set', type=str,
                     help='path to a csv file for the training set')
 parser.add_argument('--train_set_sub1', type=str, default=None,
-                    help='path to a csv file for the training set for th sub tsk')
+                    help='path to a csv file for the training set for the 1st sub task')
+parser.add_argument('--train_set_sub2', type=str, default=None,
+                    help='path to a csv file for the training set for the 2nd sub task')
 parser.add_argument('--dev_set', type=str,
                     help='path to a csv file for the development set')
 parser.add_argument('--dev_set_sub1', type=str, default=None,
-                    help='path to a csv file for the development set for the sub task')
+                    help='path to a csv file for the development set for the 1st sub task')
+parser.add_argument('--dev_set_sub2', type=str, default=None,
+                    help='path to a csv file for the development set for the 2nd sub task')
 parser.add_argument('--eval_sets', type=str, default=[], nargs='+',
                     help='path to csv files for the evaluation sets')
 parser.add_argument('--dict', type=str,
                     help='path to a dictionary file')
 parser.add_argument('--dict_sub1', type=str, default=None,
-                    help='path to a dictionary file for the sub task')
+                    help='path to a dictionary file for the 1st sub task')
+parser.add_argument('--dict_sub2', type=str, default=None,
+                    help='path to a dictionary file for the 2nd sub task')
 parser.add_argument('--unit', type=str, default='word',
                     choices=['word', 'wp', 'char', 'phone', 'word_char'],
                     help='')
 parser.add_argument('--unit_sub1', type=str, default='char',
+                    choices=['wp', 'char', 'phone'],
+                    help='')
+parser.add_argument('--unit_sub2', type=str, default='char',
                     choices=['wp', 'char', 'phone'],
                     help='')
 parser.add_argument('--wp_model', type=str, default=False, nargs='?',
@@ -100,7 +109,7 @@ parser.add_argument('--conv_poolings', type=str, default="", nargs='?',
 parser.add_argument('--conv_batch_norm', type=bool, default=False, nargs='?',
                     help='')
 parser.add_argument('--enc_type', type=str, default='blstm',
-                    choices=['blstm', 'lstm', 'bgru', 'gru'],
+                    choices=['blstm', 'lstm', 'bgru', 'gru', 'cnn'],
                     help='')
 parser.add_argument('--enc_nunits', type=int, default=320,
                     help='The number of units in each encoder RNN layer.')
@@ -109,6 +118,8 @@ parser.add_argument('--enc_nprojs', type=int, default=0,
 parser.add_argument('--enc_nlayers', type=int, default=5,
                     help='The number of encoder RNN layers')
 parser.add_argument('--enc_nlayers_sub1', type=int, default=0,
+                    help='')
+parser.add_argument('--enc_nlayers_sub2', type=int, default=0,
                     help='')
 parser.add_argument('--enc_residual', type=bool, default=False, nargs='?',
                     help='')
@@ -132,6 +143,8 @@ parser.add_argument('--attn_nheads', type=int, default=1,
                     help='')
 parser.add_argument('--attn_nheads_sub1', type=int, default=1,
                     help='')
+parser.add_argument('--attn_nheads_sub2', type=int, default=1,
+                    help='')
 parser.add_argument('--attn_sharpening', type=float, default=1.0,
                     help='')
 parser.add_argument('--attn_sigmoid', type=bool, default=False,
@@ -149,6 +162,8 @@ parser.add_argument('--dec_nlayers', type=int, default=1,
                     help='')
 parser.add_argument('--dec_nlayers_sub1', type=int, default=1,
                     help='')
+parser.add_argument('--dec_nlayers_sub2', type=int, default=1,
+                    help='')
 parser.add_argument('--dec_residual', type=bool, default=False, nargs='?',
                     help='')
 parser.add_argument('--init_with_enc', type=bool, default=False,
@@ -160,6 +175,8 @@ parser.add_argument('--input_feeding', type=bool, default=False,
 parser.add_argument('--ctc_fc_list', type=str, default="", nargs='?',
                     help='')
 parser.add_argument('--ctc_fc_list_sub1', type=str, default="", nargs='?',
+                    help='')
+parser.add_argument('--ctc_fc_list_sub2', type=str, default="", nargs='?',
                     help='')
 # optimization
 parser.add_argument('--batch_size', type=int, default=50,
@@ -240,7 +257,11 @@ parser.add_argument('--ctc_weight', type=float, default=0.0,
                     help='')
 parser.add_argument('--ctc_weight_sub1', type=float, default=0.0,
                     help='')
-parser.add_argument('--main_task_weight', type=float, default=1.0,
+parser.add_argument('--ctc_weight_sub2', type=float, default=0.0,
+                    help='')
+parser.add_argument('--sub1_weight', type=float, default=0.0,
+                    help='')
+parser.add_argument('--sub2_weight', type=float, default=0.0,
                     help='')
 parser.add_argument('--mtl_per_batch', type=bool, default=False, nargs='?',
                     help='If True, change mini-batch per task')
@@ -251,18 +272,24 @@ parser.add_argument('--bwd_weight', type=float, default=0.0,
                     help='')
 parser.add_argument('--bwd_weight_sub1', type=float, default=0.0,
                     help='')
+parser.add_argument('--bwd_weight_sub2', type=float, default=0.0,
+                    help='')
 # cold fusion
 parser.add_argument('--cold_fusion', type=str, default='hidden',
                     choices=['hidden', 'prob'],
                     help='')
 parser.add_argument('--rnnlm_cold_fusion', type=str, default=False,
                     help='RNNLM parameters for cold fusion.')
-# RNNLM init. and MTL
+# RNNLM initialization, objective
 parser.add_argument('--internal_lm', type=bool, default=False,
                     help='')
 parser.add_argument('--rnnlm_init', type=str, default=False,
                     help='')
-parser.add_argument('--rnnlm_task_weight', type=float, default=0.0,
+parser.add_argument('--lmobj_weight', type=float, default=0.0,
+                    help='')
+parser.add_argument('--lmobj_weight_sub1', type=float, default=0.0,
+                    help='')
+parser.add_argument('--lmobj_weight_sub2', type=float, default=0.0,
                     help='')
 parser.add_argument('--share_lm_softmax', type=bool, default=False,
                     help='')
@@ -313,6 +340,7 @@ def main():
 
     subsample_factor = 1
     subsample_factor_sub1 = 1
+    subsample_factor_sub2 = 1
     subsample = [int(s) for s in args.subsample.split('_')]
     if args.conv_poolings:
         for p in args.conv_poolings.split('_'):
@@ -321,6 +349,8 @@ def main():
                 subsample_factor *= p
     if args.train_set_sub1 is not None:
         subsample_factor_sub1 = subsample_factor * np.prod(subsample[:args.enc_nlayers_sub1 - 1])
+    if args.train_set_sub2 is not None:
+        subsample_factor_sub2 = subsample_factor * np.prod(subsample[:args.enc_nlayers_sub2 - 1])
     subsample_factor *= np.prod(subsample)
 
     # Load dataset
@@ -343,6 +373,11 @@ def main():
                         unit_sub1=args.unit_sub1,
                         ctc_sub1=args.ctc_weight_sub1 > 0,
                         subsample_factor_sub1=subsample_factor_sub1,
+                        csv_path_sub2=args.train_set_sub2,
+                        dict_path_sub2=args.dict_sub2,
+                        unit_sub2=args.unit_sub2,
+                        ctc_sub2=args.ctc_weight_sub2 > 0,
+                        subsample_factor_sub2=subsample_factor_sub2,
                         skip_speech=(args.input_type != 'speech'))
     dev_set = Dataset(csv_path=args.dev_set,
                       dict_path=args.dict,
@@ -359,6 +394,11 @@ def main():
                       unit_sub1=args.unit_sub1,
                       ctc_sub1=args.ctc_weight_sub1 > 0,
                       subsample_factor_sub1=subsample_factor_sub1,
+                      csv_path_sub2=args.dev_set_sub2,
+                      dict_path_sub2=args.dict_sub2,
+                      unit_sub2=args.unit_sub2,
+                      ctc_sub2=args.ctc_weight_sub2 > 0,
+                      subsample_factor_sub2=subsample_factor_sub2,
                       skip_speech=(args.input_type != 'speech'))
     eval_sets = []
     for set in args.eval_sets:
@@ -372,6 +412,7 @@ def main():
 
     args.vocab = train_set.vocab
     args.vocab_sub1 = train_set.vocab_sub1
+    args.vocab_sub2 = train_set.vocab_sub2
     args.input_dim = train_set.input_dim
 
     # Load a RNNLM config file for cold fusion & RNNLM initialization
@@ -442,6 +483,22 @@ def main():
             dir_name += '_bwd' + str(args.bwd_weight)
         if args.mtl_per_batch:
             dir_name += '_mtlperbatch'
+            if args.train_set_sub1 is not None:
+                dir_name += '_' + args.unit_sub1
+                if args.ctc_weight_sub1 == 0:
+                    dir_name += 'att'
+                elif args.ctc_weight_sub1 == 1:
+                    dir_name += 'ctc'
+                else:
+                    dir_name += 'attctc'
+            if args.train_set_sub2 is not None:
+                dir_name += '_' + args.unit_sub2
+                if args.ctc_weight_sub2 == 0:
+                    dir_name += 'att'
+                elif args.ctc_weight_sub2 == 1:
+                    dir_name += 'ctc'
+                else:
+                    dir_name += 'attctc'
         elif args.main_task_weight < 1:
             dir_name += '_main' + str(args.main_task_weight)
             if args.ctc_weight_sub1 > 0:
@@ -480,6 +537,8 @@ def main():
         shutil.copy(args.dict, os.path.join(model.save_path, 'dict.txt'))
         if args.dict_sub1 is not None:
             shutil.copy(args.dict_sub1, os.path.join(model.save_path, 'dict_sub1.txt'))
+        if args.dict_sub2 is not None:
+            shutil.copy(args.dict_sub2, os.path.join(model.save_path, 'dict_sub2.txt'))
         if args.unit == 'wp':
             shutil.copy(args.wp_model, os.path.join(model.save_path, 'wp.model'))
 
@@ -584,6 +643,13 @@ def main():
     # Set reporter
     reporter = Reporter(model.module.save_path, tensorboard=True)
 
+    # NOTE: from easier to harder tasks
+    tasks = ['ys']
+    if args.train_set_sub1:
+        tasks = ['ys_sub1'] + tasks
+    if args.train_set_sub2:
+        tasks = ['ys_sub2'] + tasks
+
     start_time_train = time.time()
     start_time_epoch = time.time()
     start_time_step = time.time()
@@ -594,8 +660,7 @@ def main():
         batch_train, is_new_epoch = train_set.next()
         if args.mtl_per_batch:
             # Change tasks depending on task
-            # NOTE: from easier to harder tasks
-            for task in ['ys_sub1', 'ys']:
+            for task in tasks:
                 model.module.optimizer.zero_grad()
                 loss, reporter = model(batch_train['xs'], batch_train[task],
                                        reporter=reporter, task=task)
@@ -637,7 +702,7 @@ def main():
             batch_dev = dev_set.next()[0]
             if args.mtl_per_batch:
                 # Change tasks depending on task
-                for task in ['ys_sub1', 'ys']:
+                for task in tasks:
                     loss, reporter = model(batch_dev['xs'], batch_dev[task],
                                            reporter=reporter, task=task, is_eval=True)
                     loss_dev = loss.item()

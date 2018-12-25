@@ -72,7 +72,7 @@ class Decoder(nn.Module):
             hidden: hidden states of RNNLM
         internal_lm (bool):
         rnnlm_init ():
-        rnnlm_task_weight (float):
+        lmobj_weight (float):
         share_lm_softmax (bool):
 
     """
@@ -104,7 +104,7 @@ class Decoder(nn.Module):
                  cold_fusion='hidden',
                  internal_lm=False,
                  rnnlm_init=False,
-                 rnnlm_task_weight=0.,
+                 lmobj_weight=0.,
                  share_lm_softmax=False,
                  global_weight=1,
                  mtl_per_batch=False):
@@ -135,12 +135,12 @@ class Decoder(nn.Module):
         self.cold_fusion = cold_fusion
         self.internal_lm = internal_lm
         self.rnnlm_init = rnnlm_init
-        self.rnnlm_task_weight = rnnlm_task_weight
+        self.lmobj_weight = lmobj_weight
         self.share_lm_softmax = share_lm_softmax
         self.global_weight = global_weight
         self.mtl_per_batch = mtl_per_batch
 
-        if ctc_weight > 0:
+        if ctc_weight > 0 and not backward:
             # Fully-connected layers for CTC
             if len(ctc_fc_list) > 0:
                 fc_layers = OrderedDict()
@@ -164,7 +164,7 @@ class Decoder(nn.Module):
                 assert rnnlm_init.predictor.nlayers == 1  # TODO(hirofumi): on-the-fly
 
             # for MTL with RNNLM objective
-            if rnnlm_task_weight > 0:
+            if lmobj_weight > 0:
                 assert internal_lm
                 if not share_lm_softmax:
                     self.output_rnnlm = LinearND(nunits, vocab)
@@ -234,7 +234,7 @@ class Decoder(nn.Module):
         bs, _, enc_nunits = enc_out.size()
 
         # Compute the auxiliary CTC loss
-        if self.ctc_weight > 0:
+        if self.ctc_weight > 0 and not self.backward:
             enc_lens_ctc = np2var(np.fromiter(enc_lens, dtype=np.int32), -1).int()
             ys_ctc = [np2var(np.fromiter(y, dtype=np.int64), device_id).long() for y in ys]  # always fwd
             y_lens = np2var(np.fromiter([y.size(0) for y in ys_ctc], dtype=np.int32), -1).int()
@@ -333,7 +333,7 @@ class Decoder(nn.Module):
             logits_att_t = self.output(logits_att_t)
             logits_att.append(logits_att_t)
 
-            if self.rnnlm_task_weight > 0:
+            if self.lmobj_weight > 0:
                 if self.share_lm_softmax:
                     logits_rnnlm_t = self.output(_dec_out)
                 else:
@@ -358,7 +358,7 @@ class Decoder(nn.Module):
             loss += loss_att * (self.global_weight - self.ctc_weight)
 
         # Compute XE loss for RNNLM objective
-        if self.rnnlm_task_weight > 0:
+        if self.lmobj_weight > 0:
             logits_lm = torch.cat(logits_lm, dim=1)
             loss_lm = F.cross_entropy(input=logits_lm.view((-1, logits_lm.size(2))),
                                       target=ys_out_pad[:, 1:].contiguous().view(-1),
@@ -366,7 +366,7 @@ class Decoder(nn.Module):
             if self.mtl_per_batch:
                 loss += loss_lm
             else:
-                loss += loss_lm * self.rnnlm_task_weight
+                loss += loss_lm * self.lmobj_weight
         else:
             loss_lm = Variable(enc_out.new(1,).fill_(0.))
 

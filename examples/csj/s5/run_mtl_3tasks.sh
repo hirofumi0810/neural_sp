@@ -17,7 +17,10 @@ export data=/n/sd8/inaguma/corpus/csj
 unit=word        # or wp or word_char
 vocab_size=12500
 wp_type=unigram  # or bpe (for wordpiece)
-unit_sub1=char
+unit_sub1=wp
+wp_type_sub1=unigram  # or bpe (for wordpiece)
+vocab_size_sub1=8000
+unit_sub2=char
 
 #########################
 # ASR configuration
@@ -34,6 +37,7 @@ enc_nunits=320
 enc_nprojs=0
 enc_nlayers=5
 enc_nlayers_sub1=4
+enc_nlayers_sub2=3
 enc_residual=
 subsample="1_2_2_2_1"
 subsample_type=drop
@@ -45,10 +49,12 @@ dec_nunits=320
 dec_nprojs=0
 dec_nlayers=1
 dec_nlayers_sub1=1
+dec_nlayers_sub2=1
 dec_residual=
 emb_dim=320
 ctc_fc_list="320"
 ctc_fc_list_sub1="320"
+ctc_fc_list_sub2="320"
 
 ### optimization
 batch_size=40
@@ -83,9 +89,11 @@ lsm_prob=0.1
 ### MTL
 ctc_weight=0.0
 ctc_weight_sub1=0.0
+ctc_weight_sub2=0.0
 bwd_weight=0.0
-sub1_weight=0.2
-mtl_per_batch=
+sub1_weight=0.0
+sub2_weight=0.0
+mtl_per_batch=true
 task_specific_layer=
 
 ### path to save the model
@@ -142,7 +150,9 @@ test_set="eval1 eval2 eval3"
 if [ ${unit} != wp ]; then
   wp_type=
 fi
-
+if [ ${unit_sub1} != wp ]; then
+  wp_type_sub1=
+fi
 
 if [ ${stage} -le 0 ] && [ ! -e .done_stage_0_${data_size} ]; then
   echo ============================================================================
@@ -202,9 +212,11 @@ if [ ${stage} -le 1 ] && [ ! -e .done_stage_1_${data_size} ]; then
   touch .done_stage_1_${data_size} && echo "Finish feature extranction (stage: 1)."
 fi
 
-dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt
-dict_sub1=${data}/dict/${train_set}_${unit_sub1}.txt
+dict=${data}/dict/${train_set}_${unit}${vocab_size}.txt
 wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
+dict_sub1=${data}/dict/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.txt
+wp_model_sub1=${data}/dict/${train_set}_${wp_type_sub1}${vocab_size_sub1}
+dict_sub2=${data}/dict/${train_set}_${unit_sub2}.txt
 
 if [ ! -f ${dict} ]; then
   echo "There is no file such as "${dict}
@@ -213,6 +225,11 @@ fi
 
 if [ ! -f ${dict_sub1} ]; then
   echo "There is no file such as "${dict_sub1}
+  exit 1
+fi
+
+if [ ! -f ${dict_sub2} ]; then
+  echo "There is no file such as "${dict_sub2}
   exit 1
 fi
 
@@ -229,16 +246,20 @@ if [ ${stage} -le 4 ]; then
   CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/train.py \
     --ngpus ${ngpus} \
     --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab_size}.csv \
-    --train_set_sub1 ${data}/dataset/${train_set}_${unit_sub1}.csv \
+    --train_set_sub1 ${data}/dataset/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.csv \
+    --train_set_sub2 ${data}/dataset/${train_set}_${unit_sub2}.csv \
     --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab_size}.csv \
-    --dev_set_sub1 ${data}/dataset/${dev_set}_${unit_sub1}.csv \
-    --eval_sets ${data}/dataset/eval1_${data_size}_${unit_sub1}.csv \
+    --dev_set_sub1 ${data}/dataset/${dev_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.csv \
+    --dev_set_sub2 ${data}/dataset/${dev_set}_${unit_sub2}.csv \
+    --eval_sets ${data}/dataset/eval1_${data_size}_${unit_sub2}.csv \
     --dict ${dict} \
     --dict_sub1 ${dict_sub1} \
-    --wp_model ${wp_model}.model \
+    --dict_sub2 ${dict_sub2} \
+    --wp_model ${wp_model_sub1}.model \
     --model ${model}/asr \
     --unit ${unit} \
     --unit_sub1 ${unit_sub1} \
+    --unit_sub2 ${unit_sub2} \
     --conv_in_channel ${conv_in_channel} \
     --conv_channels ${conv_channels} \
     --conv_kernel_sizes ${conv_kernel_sizes} \
@@ -250,6 +271,7 @@ if [ ${stage} -le 4 ]; then
     --enc_nprojs ${enc_nprojs} \
     --enc_nlayers ${enc_nlayers} \
     --enc_nlayers_sub1 ${enc_nlayers_sub1} \
+    --enc_nlayers_sub2 ${enc_nlayers_sub2} \
     --enc_residual ${enc_residual} \
     --subsample ${subsample} \
     --subsample_type ${subsample_type} \
@@ -261,10 +283,12 @@ if [ ${stage} -le 4 ]; then
     --dec_nprojs ${dec_nprojs} \
     --dec_nlayers ${dec_nlayers} \
     --dec_nlayers_sub1 ${dec_nlayers_sub1} \
+    --dec_nlayers_sub2 ${dec_nlayers_sub2} \
     --dec_residual ${dec_residual} \
     --emb_dim ${emb_dim} \
     --ctc_fc_list ${ctc_fc_list} \
     --ctc_fc_list_sub1 ${ctc_fc_list_sub1} \
+    --ctc_fc_list_sub2 ${ctc_fc_list_sub2} \
     --batch_size ${batch_size} \
     --optimizer ${optimizer} \
     --learning_rate ${learning_rate} \
@@ -294,8 +318,10 @@ if [ ${stage} -le 4 ]; then
     --lsm_prob ${lsm_prob} \
     --ctc_weight ${ctc_weight} \
     --ctc_weight_sub1 ${ctc_weight_sub1} \
+    --ctc_weight_sub2 ${ctc_weight_sub2} \
     --bwd_weight ${bwd_weight} \
     --sub1_weight ${sub1_weight} \
+    --sub2_weight ${sub2_weight} \
     --mtl_per_batch ${mtl_per_batch} \
     --task_specific_layer ${task_specific_layer} || exit 1;
     # --resume ${resume} || exit 1;
