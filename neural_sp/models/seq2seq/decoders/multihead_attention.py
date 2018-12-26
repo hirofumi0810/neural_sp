@@ -63,45 +63,47 @@ class MultiheadAttentionMechanism(nn.Module):
 
         # attention dropout applied AFTER the softmax layer
         if dropout > 0:
-            self.dropout = nn.Dropout(p=dropout)
+            self.dropout = nn.ModuleList([nn.Dropout(p=dropout)] * nheads)
         else:
             self.dropout = None
 
         if attn_type == 'add':
-            self.w_enc = LinearND(enc_nunits, attn_dim * nheads)
-            self.w_dec = LinearND(dec_nunits, attn_dim * nheads, bias=False)
-            self.v = LinearND(attn_dim * nheads, 1, bias=False)
+            self.w_enc = nn.ModuleList([LinearND(enc_nunits, attn_dim)] * nheads)
+            self.w_dec = nn.ModuleList([LinearND(dec_nunits, attn_dim, bias=False)] * nheads)
+            self.v = nn.ModuleList([LinearND(attn_dim, 1, bias=False)] * nheads)
 
         elif attn_type == 'location':
-            self.w_enc = LinearND(enc_nunits, attn_dim * nheads)
-            self.w_dec = LinearND(dec_nunits, attn_dim * nheads, bias=False)
-            self.w_conv = LinearND(conv_out_channels, attn_dim * nheads, bias=False)
-            # self.convs = nn.ModuleList([nn.Conv1d(in_channels=1,
+            self.w_enc = nn.ModuleList([LinearND(enc_nunits, attn_dim)] * nheads)
+            self.w_dec = nn.ModuleList([LinearND(dec_nunits, attn_dim, bias=False)] * nheads)
+            self.w_conv = nn.ModuleList([LinearND(conv_out_channels, attn_dim, bias=False)] * nheads)
+            # self.conv = nn.ModuleList([nn.Conv1d(in_channels=1,
             #                                       out_channels=conv_out_channels,
             #                                       kernel_size=conv_kernel_size * 2 + 1,
             #                                       stride=1,
             #                                       padding=conv_kernel_size,
-            #                                       bias=False) for _ in range(nheads)])
-            self.convs = nn.ModuleList([nn.Conv2d(in_channels=1,
-                                                  out_channels=conv_out_channels,
-                                                  kernel_size=(1, conv_kernel_size * 2 + 1),
-                                                  stride=1,
-                                                  padding=(0, conv_kernel_size),
-                                                  bias=False) for _ in range(nheads)])
-            self.v = LinearND(attn_dim * nheads, 1, bias=False)
+            #                                       bias=False) for _ in range(nheads)] * nheads)
+            self.conv = nn.ModuleList([nn.Conv2d(in_channels=1,
+                                                 out_channels=conv_out_channels,
+                                                 kernel_size=(1, conv_kernel_size * 2 + 1),
+                                                 stride=1,
+                                                 padding=(0, conv_kernel_size),
+                                                 bias=False) for _ in range(nheads)] * nheads)
+            self.v = nn.ModuleList([LinearND(attn_dim, 1, bias=False)] * nheads)
 
         elif attn_type == 'dot':
-            self.w_enc = LinearND(enc_nunits, attn_dim * nheads, bias=False)
-            self.w_dec = LinearND(dec_nunits, attn_dim * nheads, bias=False)
+            self.w_enc = nn.ModuleList([LinearND(enc_nunits, attn_dim, bias=False)] * nheads)
+            self.w_dec = nn.ModuleList([LinearND(dec_nunits, attn_dim, bias=False)] * nheads)
 
         elif attn_type == 'luong_dot':
-            raise NotImplementedError()
+            pass
+            # NOTE: no additional parameters
 
         elif attn_type == 'luong_general':
-            raise NotImplementedError()
+            self.w_enc = nn.ModuleList([LinearND(enc_nunits, dec_nunits, bias=False)] * nheads)
 
         elif attn_type == 'luong_concat':
-            raise NotImplementedError()
+            self.w = nn.ModuleList([LinearND(enc_nunits + dec_nunits, attn_dim, bias=False)] * nheads)
+            self.v = nn.ModuleList([LinearND(attn_dim, 1, bias=False)] * nheads)
 
         else:
             raise ValueError(attn_type)
@@ -121,19 +123,19 @@ class MultiheadAttentionMechanism(nn.Module):
             dec_out (FloatTensor): `[B, 1, dec_units]`
             aw_step (FloatTensor): `[B, T, nheads]`
         Returns:
-            context_vec (FloatTensor): `[B, 1, enc_units]`
-            aw_step (FloatTensor): `[B, T, nheads]`
+            context (FloatTensor): `[B, 1, enc_units]`
+            aw_step (FloatTensor): `[nheads, B, T]`
 
         """
         bs, enc_time = enc_out.size()[:2]
 
         if aw_step is None:
-            aw_step = Variable(enc_out.data.new(bs, enc_time, self.nheads).fill_(0.))
+            aw_step = Variable(enc_out.data.new(self.nheads, bs, enc_time).fill_(0.))
 
         # Pre-computation of encoder-side features for computing scores
         if self.enc_out_a is None:
-            self.enc_out_a = self.w_enc(enc_out).view(bs, enc_time, self.nheads, -1)
-            self.enc_out_a = self.enc_out_a.transpose(1, 2)  # `[B, head, T, attn_dim]`
+            if self.attn_type in ['add', 'location', 'dot', 'luong_general']:
+                self.enc_out_a = [self.w_enc[h](enc_out) for h in range(self.nheads)]
 
         # Mask attention distribution
         if self.mask is None:
@@ -141,74 +143,55 @@ class MultiheadAttentionMechanism(nn.Module):
             for b in range(bs):
                 if x_lens[b] < enc_time:
                     self.mask[b, x_lens[b]:] = 0
+            # TODO(hirofumi): prepare mask per attention
 
-        if self.attn_type in ['add', 'location']:
-            dec_out = dec_out.expand_as(torch.zeros((bs, 1, enc_time, dec_out.size(2))))
+        # Compute per head
+        contexts = []
+        aw_steps = []
+        for h in range(self.nheads):
+            if self.attn_type == 'add':
+                dec_out_h = dec_out.expand_as(torch.zeros((bs, enc_time, dec_out.size(2))))
+                energy_h = self.v[h](F.tanh(self.enc_out_a[h] + self.w_dec[h](dec_out_h))).squeeze(2)
 
-        conv_feats = []
-        if self.attn_type == 'location':
-            for h in range(self.nheads):
+            elif self.attn_type == 'location':
+                dec_out_h = dec_out.expand_as(torch.zeros((bs, enc_time, dec_out.size(2))))
                 # For 1D conv
-                conv_feat = self.convs[h](aw_step[:, :, h].contiguous().unsqueeze(1))
+                # conv_feat = self.conv[h](aw_step[h][:, :].contiguous().unsqueeze(1))
                 # For 2D conv
-                conv_feat = self.convs[h](aw_step[:, :, h].contiguous().view(bs, 1, 1, enc_time)).squeeze(2)
-                # `[B, conv_out_channels, T]`
+                conv_feat_h = self.conv[h](aw_step[h].view(bs, 1, 1, enc_time)
+                                           ).squeeze(2)  # `[B, conv_out_channels, T]`
+                conv_feat_h = conv_feat_h.transpose(1, 2).contiguous()  # `[B, T, conv_out_channels]`
+                energy_h = self.v[h](F.tanh(self.enc_out_a[h] + self.w_dec[h]
+                                            (dec_out_h) + self.w_conv[h](conv_feat_h))).squeeze(2)
 
-                conv_feat = conv_feat.transpose(1, 2).contiguous()  # `[B, T, conv_out_channels]`
-                conv_feats.append(conv_feat)
+            elif self.attn_type == 'dot':
+                energy_h = torch.matmul(self.enc_out_a[h], self.w_dec[h](dec_out).transpose(-2, -1)).squeeze(2)
 
-        if self.attn_type == 'add':
-            energy = self.v(F.tanh(self.enc_out_a + self.w_dec(dec_out))).squeeze(3)
-            # `[B, head, T]`
+            elif self.attn_type == 'luong_dot':
+                energy_h = torch.matmul(enc_out, dec_out.transpose(-2, -1)).squeeze(2)
 
-        elif self.attn_type == 'location':
-            # For 1D conv
-            # conv_feat = getattr(self, 'conv_head' + str(h))(
-            #     aw_step[:, :, h].contiguous().unsqueeze(1))
-            # For 2D conv
-            conv_feat = getattr(self, 'conv_head' + str(h))(
-                aw_step[:, :, h].contiguous().view(bs, 1, 1, enc_time)).squeeze(2)
-            # `[B, conv_out_channels, T]`
+            elif self.attn_type == 'luong_general':
+                energy_h = torch.matmul(self.enc_out_a[h], dec_out.transpose(-2, -1)).squeeze(2)
 
-            conv_feat = conv_feat.transpose(1, 2).contiguous()
-            # `[B, T, conv_out_channels]`
+            elif self.attn_type == 'luong_concat':
+                dec_out_h = dec_out.expand_as(torch.zeros((bs, enc_time, dec_out.size(2))))
+                energy_h = self.v[h](F.tanh(self.w[h](torch.cat([enc_out, dec_out_h], dim=-1)))).squeeze(2)
 
-            energy = getattr(self, 'v_head' + str(h))(F.tanh(
-                self.enc_out_a[:, :, :, h] +
-                getattr(self, 'w_dec_head' + str(h))(dec_out) +
-                getattr(self, 'w_conv_head' + str(h))(conv_feat))).squeeze(2)
+            # Compute attention weights
+            energy_h = energy_h.masked_fill_(self.mask == 0, -float('inf'))  # `[B, T]`
+            if self.sigmoid_smoothing:
+                aw_step_h = F.sigmoid(energy_h * self.sharpening_factor)
+                for b in range(bs):
+                    aw_step_h /= aw_step_h.sum()
+            else:
+                aw_step_h = F.softmax(energy_h * self.sharpening_factor, dim=-1)  # `[B, T]`
+            # attention dropout
+            if self.dropout is not None:
+                aw_step_h = self.dropout[h](aw_step_h)
+            aw_steps.append(aw_step_h)
 
-        elif self.attn_type == 'dot':
-            energy = torch.matmul(self.enc_out_a, self.w_dec(dec_out).transpose(-2, -1)).squeeze(3)
+            # Compute context vector (weighted sum of encoder outputs)
+            context = torch.matmul(aw_step[h].unsqueeze(1), enc_out)
+            contexts.append(context)
 
-        elif self.attn_type == 'luong_dot':
-            raise NotImplementedError()
-
-        elif self.attn_type == 'luong_general':
-            raise NotImplementedError()
-
-        elif self.attn_type == 'luong_concat':
-            raise NotImplementedError()
-
-        else:
-            raise NotImplementedError()
-
-        # Compute attention weights
-        energy = energy.masked_fill_(self.mask == 0, -float('inf'))  # `[B, head, T]`
-        if self.sigmoid_smoothing:
-            aw_step = F.sigmoid(energy * self.sharpening_factor)
-            # for b in range(bs):
-            #     aw_step[b] /= aw_step[b].sum()
-        else:
-            aw_step = F.softmax(energy * self.sharpening_factor, dim=-1)
-        # attention dropout
-        if self.dropout is not None:
-            aw_step = self.dropout(aw_step)
-            # NOTE: apply the same dropout mask over multiple heads
-
-        # Compute context vector (weighted sum of encoder outputs)
-        # context_vec = torch.sum(enc_out * aw_step_h.unsqueeze(2), dim=1, keepdim=True)
-        context_vec = torch.matmul(aw_step.unsqueeze(2), enc_out)
-        # `[B, head, 1, T]` * `[B, head, ? , ? ]`
-
-        return self.w_out(context_vec), aw_step
+        return self.w_out(torch.cat(contexts, dim=-1)), torch.stack(aw_steps, dim=0)

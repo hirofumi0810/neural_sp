@@ -539,7 +539,7 @@ class Decoder(nn.Module):
         # Start from <sos> (<eos> in case of the backward decoder)
         y = Variable(enc_out.new(bs, 1).fill_(sos).long())
 
-        _best_hyps, _aws = [], []
+        best_hyps_tmp, aws_tmp = [], []
         y_lens = np.zeros((bs,), dtype=np.int32)
         eos_flags = [False] * bs
         for t in range(int(math.floor(enc_time * max_len_ratio)) + 1):
@@ -572,8 +572,11 @@ class Decoder(nn.Module):
             # Pick up 1-best
             device_id = logits_t.get_device()
             y = np.argmax(logits_t.squeeze(1).detach(), axis=1).cuda(device_id).unsqueeze(1)
-            _best_hyps += [y]
-            _aws += [aw]
+            best_hyps_tmp += [y]
+            if self.score.nheads > 1:
+                aws_tmp += [aw[0]]
+            else:
+                aws_tmp += [aw]
 
             # Count lengths of hypotheses
             for b in range(bs):
@@ -588,25 +591,21 @@ class Decoder(nn.Module):
                 break
 
         # Concatenate in L dimension
-        _best_hyps = torch.cat(_best_hyps, dim=1)
-        _aws = torch.stack(_aws, dim=1)
+        best_hyps_tmp = torch.cat(best_hyps_tmp, dim=1)
+        aws_tmp = torch.stack(aws_tmp, dim=1)
 
         # Convert to numpy
-        _best_hyps = var2np(_best_hyps)
-        _aws = var2np(_aws)
-
-        if self.score.nheads > 1:
-            _aws = _aws[:, :, :, 0]
-            # TODO(hirofumi): fix for MHA
+        best_hyps_tmp = var2np(best_hyps_tmp)
+        aws_tmp = var2np(aws_tmp)
 
         # Truncate by the first <eos> (<sos> in case of the backward decoder)
         if self.backward:
             # Reverse the order
-            best_hyps = [_best_hyps[b, :y_lens[b]][::-1] for b in range(bs)]
-            aws = [_aws[b, :y_lens[b]][::-1] for b in range(bs)]
+            best_hyps = [best_hyps_tmp[b, :y_lens[b]][::-1] for b in range(bs)]
+            aws = [aws_tmp[b, :y_lens[b]][::-1] for b in range(bs)]
         else:
-            best_hyps = [_best_hyps[b, :y_lens[b]] for b in range(bs)]
-            aws = [_aws[b, :y_lens[b]] for b in range(bs)]
+            best_hyps = [best_hyps_tmp[b, :y_lens[b]] for b in range(bs)]
+            aws = [aws_tmp[b, :y_lens[b]] for b in range(bs)]
 
         # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:
@@ -750,16 +749,13 @@ class Decoder(nn.Module):
                         if params['coverage_penalty'] > 0:
                             # Recompute converage penalty in each step
                             score -= beam[i_beam]['prev_cov'] * params['coverage_penalty']
-                            aw_stack = torch.stack(beam[i_beam]['aws'][1:] + [aw], dim=1)
-                            if self.score.nheads > 1:
-                                cov_sum = aw_stack[0, :, :, 0].detach().cpu().numpy()
-                                # TODO(hirofumi): fix for MHA
-                            else:
-                                cov_sum = aw_stack.detach().cpu().numpy()
+                            aw_stack = torch.stack(beam[i_beam]['aws'][1:] + [aw], dim=-1)
+                            cov_sum = aw_stack.detach().cpu().numpy()
                             if params['coverage_threshold'] == 0:
-                                cov_sum = np.sum(cov_sum)
+                                cov_sum = np.sum(cov_sum) / self.score.nheads
                             else:
-                                cov_sum = np.sum(cov_sum[np.where(cov_sum > params['coverage_threshold'])[0]])
+                                cov_sum = np.sum(
+                                    cov_sum[np.where(cov_sum > params['coverage_threshold'])[0]]) / self.score.nheads
                             score += cov_sum * params['coverage_penalty']
                         else:
                             cov_sum = 0
@@ -816,11 +812,17 @@ class Decoder(nn.Module):
             if self.backward:
                 # Reverse the order
                 nbest_hyps += [[np.array(complete[n]['hyp'][1:][::-1]) for n in range(nbest)]]
-                aws += [[complete[n]['aws'][1:][::-1] for n in range(nbest)]]
+                if self.score.nheads > 1:
+                    aws += [[complete[n]['aws'][0, 1:][::-1] for n in range(nbest)]]
+                else:
+                    aws += [[complete[n]['aws'][1:][::-1] for n in range(nbest)]]
                 scores += [[complete[n]['scores'][1:][::-1] for n in range(nbest)]]
             else:
                 nbest_hyps += [[np.array(complete[n]['hyp'][1:]) for n in range(nbest)]]
-                aws += [[complete[n]['aws'][1:] for n in range(nbest)]]
+                if self.score.nheads > 1:
+                    aws += [[complete[n]['aws'][0, 1:] for n in range(nbest)]]
+                else:
+                    aws += [[complete[n]['aws'][1:] for n in range(nbest)]]
                 scores += [[complete[n]['scores'][1:] for n in range(nbest)]]
             # scores += [[complete[n]['score_raw'] for n in range(nbest)]]
 
@@ -843,9 +845,6 @@ class Decoder(nn.Module):
         for b in range(len(aws)):
             for n in range(nbest):
                 aws[b][n] = var2np(torch.stack(aws[b][n], dim=1).squeeze(0))
-                if self.score.nheads > 1:
-                    aws[b][n] = aws[b][n][:, :, 0]
-                    # TODO(hirofumi): fix for MHA
 
         # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:
