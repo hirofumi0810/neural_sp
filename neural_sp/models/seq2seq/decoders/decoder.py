@@ -155,7 +155,7 @@ class Decoder(nn.Module):
             self.decode_ctc_beam = BeamSearchDecoder(blank_index=0)
             self.warpctc_loss = warpctc_pytorch.CTCLoss(size_average=True)
 
-        if ctc_weight < 1:
+        if ctc_weight < global_weight:
             # for decoder initialization with pre-trained RNNLM
             if rnnlm_init:
                 assert internal_lm
@@ -259,7 +259,7 @@ class Decoder(nn.Module):
             loss_ctc = Variable(enc_out.new(1,).fill_(0.))
             loss = Variable(enc_out.new(1,).fill_(0.))
 
-        if self.ctc_weight == 1:
+        if self.ctc_weight == self.global_weight:
             obserbation = {'loss': loss.item(),
                            'loss_att': 0,
                            'loss_ctc': loss_ctc.item(),
