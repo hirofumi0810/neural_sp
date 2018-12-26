@@ -15,7 +15,6 @@ import logging
 import numpy as np
 import six
 import torch
-from torch.autograd import Variable
 
 from neural_sp.models.base import ModelBase
 from neural_sp.models.linear import Embedding
@@ -433,7 +432,7 @@ class Seq2seq(ModelBase):
         ys = [ys[i] for i in perm_idx]
 
         observation = {}
-        loss = Variable(enc_out[task]['xs'].new(1,).fill_(0.))
+        loss = enc_out[task]['xs'].new_ones(1,)
 
         # Compute XE loss for the forward decoder
         if self.fwd_weight > 0 and task == 'ys':
@@ -491,7 +490,7 @@ class Seq2seq(ModelBase):
         """Encode acoustic or text features.
 
         Args:
-            xs (list): A list of length `[B]`, which contains Variables of size `[T, input_dim]`
+            xs (list): A list of length `[B]`, which contains Tensor of size `[T, input_dim]`
             task (str):
         Returns:
             enc_out (dict):

@@ -16,7 +16,6 @@ import math
 import numpy as np
 import random
 import torch
-from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
 try:
@@ -268,8 +267,8 @@ class Decoder(nn.Module):
             else:
                 loss = loss_ctc * self.ctc_weight
         else:
-            loss_ctc = Variable(enc_out.new(1,).fill_(0.))
-            loss = Variable(enc_out.new(1,).fill_(0.))
+            loss_ctc = enc_out.new_zeros(1)
+            loss = enc_out.new_zeros(1)
 
         if self.ctc_weight == self.global_weight:
             obserbation = {'loss': loss.item(),
@@ -280,8 +279,8 @@ class Decoder(nn.Module):
             return loss, obserbation
 
         # Append <sos> and <eos>
-        sos = Variable(enc_out.new(1,).fill_(self.sos).long())
-        eos = Variable(enc_out.new(1,).fill_(self.eos).long())
+        sos = enc_out.new_zeros(1).fill_(self.sos).long()
+        eos = enc_out.new_zeros(1).fill_(self.eos).long()
         if self.backward:
             ys = [np2var(np.fromiter(y[::-1], dtype=np.int64), device_id).long() for y in ys]
             ys_in = [torch.cat([eos, y], dim=0) for y in ys]
@@ -296,7 +295,7 @@ class Decoder(nn.Module):
         # Initialization
         dec_out, dec_state = self.init_dec_state(enc_out, enc_lens, self.nlayers)
         _dec_out, _dec_state = self.init_dec_state(enc_out, enc_lens, 1)  # for internal LM
-        context = Variable(enc_out.new(bs, 1, enc_nunits).fill_(0.))
+        context = enc_out.new_zeros(bs, 1, enc_nunits)
         self.score.reset()
         aw = None
         rnnlm_state = None
@@ -353,7 +352,7 @@ class Decoder(nn.Module):
                         logits_lmobj_t = self.output_rnnlm(_dec_out)
                 elif self.lm_type == 'null_context':
                     # Generate
-                    null_context = Variable(enc_out.new(bs, 1, enc_nunits).fill_(0.))
+                    null_context = enc_out.new_zeros(bs, 1, enc_nunits)
                     logits_lmobj_t = self.generate(null_context, dec_out, None, None)
                     raise NotImplementedError()
                 else:
@@ -396,7 +395,7 @@ class Decoder(nn.Module):
             else:
                 loss += loss_lm * self.lmobj_weight
         else:
-            loss_lm = Variable(enc_out.new(1,).fill_(0.))
+            loss_lm = enc_out.new_zeros(1)
 
         # Compute token-level accuracy in teacher-forcing
         pad_pred = logits_att.view(ys_out_pad.size(0), ys_out_pad.size(1), logits_att.size(-1)).argmax(2)
@@ -444,8 +443,8 @@ class Decoder(nn.Module):
             hx_list = [dec_out.clone().squeeze(1)] * self.nlayers
             cx_list = [dec_out.clone().squeeze(1)] * self.nlayers if self.rnn_type == 'lstm' else None
         else:
-            dec_out = Variable(enc_out.new(bs, 1, self.nunits).fill_(0.))
-            zero_state = Variable(enc_out.new(bs, self.nunits).fill_(0.))
+            dec_out = enc_out.new_zeros(bs, 1, self.nunits)
+            zero_state = enc_out.new_zeros(bs, self.nunits)
             hx_list = [zero_state] * self.nlayers
             cx_list = [zero_state] * self.nlayers if self.rnn_type == 'lstm' else None
 
@@ -554,7 +553,7 @@ class Decoder(nn.Module):
         # Initialization
         dec_out, dec_state = self.init_dec_state(enc_out, enc_lens, self.nlayers)
         _dec_out, _dec_state = self.init_dec_state(enc_out, enc_lens, 1)
-        context = Variable(enc_out.new(bs, 1, enc_nunits).fill_(0.))
+        context = enc_out.new_zeros(bs, 1, enc_nunits)
         self.score.reset()
         aw = None
         rnnlm_state = None
@@ -565,7 +564,7 @@ class Decoder(nn.Module):
             sos, eos = self.sos, self.eos
 
         # Start from <sos> (<eos> in case of the backward decoder)
-        y = Variable(enc_out.new(bs, 1).fill_(sos).long())
+        y = enc_out.new_zeros(bs, 1).fill_(sos).long()
 
         best_hyps_tmp, aws_tmp = [], []
         y_lens = np.zeros((bs,), dtype=np.int32)
@@ -694,7 +693,7 @@ class Decoder(nn.Module):
             # Initialization per utterance
             dec_out, (hx_list, cx_list) = self.init_dec_state(enc_out[b:b + 1], enc_lens[b:b + 1], self.nlayers)
             _dec_out, _dec_state = self.init_dec_state(enc_out[b:b + 1], enc_lens[b:b + 1], 1)
-            context = Variable(enc_out.new(1, 1, enc_nunits).fill_(0.))
+            context = enc_out.new_zeros(1, 1, enc_nunits)
             self.score.reset()
 
             complete = []
@@ -716,7 +715,7 @@ class Decoder(nn.Module):
                 new_beam = []
                 for i_beam in range(len(beam)):
                     # Recurrency
-                    y = Variable(enc_out.new(1, 1).fill_(beam[i_beam]['hyp'][-1]).long())
+                    y = enc_out.new_zeros(1, 1).fill_(beam[i_beam]['hyp'][-1]).long()
                     y_emb = self.embed(y)
                     dec_out, (hx_list, cx_list), _dec_out, _dec_state = self.recurrency(
                         y_emb, beam[i_beam]['context'],
@@ -731,13 +730,13 @@ class Decoder(nn.Module):
 
                     if self.rnnlm_cf:
                         # Update RNNLM states for cold fusion
-                        y_lm = Variable(enc_out.new(1, 1).fill_(beam[i_beam]['hyp'][-1]).long())
+                        y_lm = enc_out.new_zeros(1, 1).fill_(beam[i_beam]['hyp'][-1]).long()
                         y_lm_emb = self.rnnlm_cf.embed(y_lm).squeeze(1)
                         logits_rnnlm_t, rnnlm_out, rnnlm_state = self.rnnlm_cf.predict(
                             y_lm_emb, (beam[i_beam]['rnnlm_hx_list'], beam[i_beam]['rnnlm_cx_list']))
                     elif rnnlm is not None:
                         # Update RNNLM states for shallow fusion
-                        y_lm = Variable(enc_out.new(1, 1).fill_(beam[i_beam]['hyp'][-1]).long())
+                        y_lm = enc_out.new_zeros(1, 1).fill_(beam[i_beam]['hyp'][-1]).long()
                         y_lm_emb = rnnlm.embed(y_lm).squeeze(1)
                         logits_rnnlm_t, rnnlm_out, rnnlm_state = rnnlm.predict(
                             y_lm_emb, (beam[i_beam]['rnnlm_hx_list'], beam[i_beam]['rnnlm_cx_list']))

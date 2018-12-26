@@ -11,7 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 import torch
-from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -130,7 +129,7 @@ class MultiheadAttentionMechanism(nn.Module):
         bs, enc_time = enc_out.size()[:2]
 
         if aw_step is None:
-            aw_step = Variable(enc_out.data.new(self.nheads, bs, enc_time).fill_(0.))
+            aw_step = enc_out.new_ones(self.nheads, bs, enc_time)
 
         # Pre-computation of encoder-side features for computing scores
         if self.enc_out_a is None:
@@ -139,7 +138,7 @@ class MultiheadAttentionMechanism(nn.Module):
 
         # Mask attention distribution
         if self.mask is None:
-            self.mask = Variable(enc_out.new(bs, enc_time).fill_(1.))
+            self.mask = enc_out.new_ones(bs, enc_time)
             for b in range(bs):
                 if x_lens[b] < enc_time:
                     self.mask[b, x_lens[b]:] = 0

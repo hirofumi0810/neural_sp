@@ -13,7 +13,6 @@ from __future__ import print_function
 import numpy as np
 
 import torch
-from torch.autograd import Variable
 import torch.nn.functional as F
 
 
@@ -30,12 +29,11 @@ def cross_entropy_lsm(logits, ys, y_lens, lsm_prob, size_average=False):
         loss (FloatTensor): `[1]`
 
     """
-    bs, ntokens = ys.size()
-    vocab = logits.size(-1)
+    bs, _, vocab = logits.size()
     fill_val = lsm_prob / (vocab - 1)
 
     # Create one-hot vector
-    ys_lsm = Variable(ys.float().new(bs, ntokens, vocab).fill_(fill_val))
+    ys_lsm = torch.zeros_like(logits).fill_(fill_val)
     for b in range(bs):
         for t in range(y_lens[b]):
             ys_lsm[b, t, ys[b, t]] = 1 - lsm_prob
@@ -62,11 +60,10 @@ def focal_loss(logits, ys, y_lens, gamma, size_average=False):
         loss (FloatTensor): `[1]`
 
     """
-    bs, ntokens = ys.size()
-    vocab = logits.size(-1)
+    bs = ys.size(0)
 
     # Create one-hot vector
-    ys_onehot = Variable(ys.float().new(bs, ntokens, vocab).fill_(1))
+    ys_onehot = torch.ones_like(logits)
     for b in range(bs):
         for t in range(y_lens[b]):
             ys_onehot[b, t, ys[b, t]] = 1

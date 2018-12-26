@@ -18,7 +18,7 @@ def tensor2np(x):
     """Convert tensor to np.ndarray.
 
     Args:
-        x (torch.FloatTensor):
+        x (FloatTensor):
     Returns:
         np.ndarray
 
@@ -26,34 +26,32 @@ def tensor2np(x):
     return x.cpu().numpy()
 
 
-def np2var(array, device_id=-1, async=False):
+def np2var(array, device_id=-1):
     """Convert form np.ndarray to Variable.
 
     Args:
         array (np.ndarray): A tensor of any sizes
-        async= (bool):
         device_id (int): ht index of the device
     Returns:
-        var (torch.autograd.Variable):
+        var (Tensor):
 
     """
     # assert isinstance(array, np.ndarray)
-    if async:
-        var = Variable(torch.from_numpy(array).pin_memory(),
-                       requires_grad=False)
-    else:
-        var = Variable(torch.from_numpy(array),
-                       requires_grad=False)
+    # var = Variable(torch.from_numpy(array).pin_memory(),
+    #                requires_grad=False)
+    var = Variable(torch.from_numpy(array),
+                   requires_grad=False)
     if device_id < 0:
         return var
-    return var.cuda(device_id, async=async)
+    # return var.cuda(device_id, async=True)
+    return var.cuda(device_id)
 
 
 def var2np(var):
     """Convert form Variable to np.ndarray.
 
     Args:
-        var (torch.autograd.Variable):
+        var (Tensor):
     Returns:
         np.ndarray
 
@@ -62,20 +60,19 @@ def var2np(var):
 
 
 def pad_list(xs, pad_value=float("nan")):
-    """Convert list of Variables to Variable.
+    """Convert list of Tensors to a single Tensor with padding.
 
     Args:
-        xs (list): A list of length `[B]`, which concains Variables of size
+        xs (list): A list of length `[B]`, which concains Tensors of size
             `[T, input_size]`
-        pad_value (flaot):
+        pad_value (float):
     Returns:
-        xs_pad (torch.autograd.Variable): `[B, T, input_size]`
+        xs_pad (FloatTensor): `[B, T, input_size]`
 
     """
-    # assert isinstance(xs[0], Variable)
-    batch = len(xs)
+    bs = len(xs)
     max_time = max(x.size(0) for x in xs)
-    xs_pad = Variable(xs[0].new(batch, max_time, * xs[0].size()[1:]).zero_() + pad_value)
-    for b in range(batch):
+    xs_pad = xs[0].new_zeros(bs, max_time, * xs[0].size()[1:]).fill_(pad_value)
+    for b in range(bs):
         xs_pad[b, :xs[b].size(0)] = xs[b]
     return xs_pad
