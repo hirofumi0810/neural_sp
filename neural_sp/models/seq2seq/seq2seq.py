@@ -190,6 +190,11 @@ class Seq2seq(ModelBase):
             else:
                 args.rnnlm_cold_fusion = False
 
+            # TODO(hirofumi): remove later
+            if not hasattr(args, 'focal_loss_weight'):
+                args.focal_loss_weight = 0.0
+                args.focal_loss_gamma = 2.0
+
             # Decoder
             dec = Decoder(
                 attention=attn,
@@ -209,6 +214,8 @@ class Seq2seq(ModelBase):
                 ss_prob=args.ss_prob,
                 lsm_prob=args.lsm_prob,
                 layer_norm=args.layer_norm,
+                focal_loss_weight=args.focal_loss_weight,
+                focal_loss_gamma=args.focal_loss_gamma,
                 init_with_enc=args.init_with_enc,
                 ctc_weight=self.ctc_weight if dir == 'fwd' else 0,
                 ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split('_')] if len(args.ctc_fc_list) > 0 else [],
@@ -272,6 +279,8 @@ class Seq2seq(ModelBase):
                 ss_prob=args.ss_prob,
                 lsm_prob=args.lsm_prob,
                 layer_norm=args.layer_norm,
+                focal_loss_weight=args.focal_loss_weight,
+                focal_loss_gamma=args.focal_loss_gamma,
                 init_with_enc=args.init_with_enc,
                 ctc_weight=self.ctc_weight_sub1,
                 ctc_fc_list=[int(fc) for fc in args.ctc_fc_list_sub1.split('_')
@@ -331,6 +340,8 @@ class Seq2seq(ModelBase):
                 ss_prob=args.ss_prob,
                 lsm_prob=args.lsm_prob,
                 layer_norm=args.layer_norm,
+                focal_loss_weight=args.focal_loss_weight,
+                focal_loss_gamma=args.focal_loss_gamma,
                 init_with_enc=args.init_with_enc,
                 ctc_weight=self.ctc_weight_sub2,
                 ctc_fc_list=[int(fc) for fc in args.ctc_fc_list_sub2.split('_')

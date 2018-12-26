@@ -25,6 +25,7 @@ except:
     raise ImportError('Install warpctc_pytorch.')
 
 from neural_sp.models.criterion import cross_entropy_lsm
+from neural_sp.models.criterion import focal_loss
 from neural_sp.models.linear import Embedding
 from neural_sp.models.linear import LinearND
 from neural_sp.models.seq2seq.decoders.attention import AttentionMechanism
@@ -95,6 +96,8 @@ class Decoder(nn.Module):
                  ss_prob,
                  lsm_prob,
                  layer_norm,
+                 focal_loss_weight,
+                 focal_loss_gamma,
                  init_with_enc=False,
                  ctc_weight=0.,
                  ctc_fc_list=[],
@@ -107,7 +110,7 @@ class Decoder(nn.Module):
                  lmobj_weight=0.,
                  lm_type='lower_layer',  # or null_context
                  share_lm_softmax=False,
-                 global_weight=1,
+                 global_weight=1.0,
                  mtl_per_batch=False):
 
         super(Decoder, self).__init__()
@@ -128,6 +131,8 @@ class Decoder(nn.Module):
         self.ss_prob = ss_prob
         self.lsm_prob = lsm_prob
         self.layer_norm = layer_norm
+        self.focal_loss_weight = focal_loss_weight
+        self.focal_loss_gamma = focal_loss_gamma
         self.init_with_enc = init_with_enc
         self.ctc_weight = ctc_weight
         self.ctc_fc_list = ctc_fc_list
@@ -367,6 +372,14 @@ class Decoder(nn.Module):
             loss_att = F.cross_entropy(input=logits_att.view((-1, logits_att.size(2))),
                                        target=ys_out_pad.view(-1),  # long
                                        ignore_index=-1, size_average=False) / len(enc_out)
+
+        # Focal loss
+        if self.focal_loss_weight > 0:
+            y_lens = [y.size(0) for y in ys_out]
+            fl = focal_loss(logits_att, ys=ys_out_pad, y_lens=y_lens,
+                            gamma=self.focal_loss_gamma, size_average=True)
+            loss_att += fl * self.focal_loss_weight
+
         if self.mtl_per_batch:
             loss += loss_att
         else:

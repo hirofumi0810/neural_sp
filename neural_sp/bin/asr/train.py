@@ -252,6 +252,10 @@ parser.add_argument('--lsm_prob', type=float, default=0.0,
                     help='')
 parser.add_argument('--layer_norm', default=False,
                     help='If true, apply layer normalization (see https://arxiv.org/abs/1607.06450).')
+parser.add_argument('--focal_loss_weight', type=float, default=0.0,
+                    help='')
+parser.add_argument('--focal_loss_gamma', type=float, default=2.0,
+                    help='')
 # MTL
 parser.add_argument('--ctc_weight', type=float, default=0.0,
                     help='')
@@ -478,6 +482,8 @@ def main():
         dir_name += '_ls' + str(args.lsm_prob)
         if args.layer_norm:
             dir_name += '_layernorm'
+        if args.focal_loss_weight > 0:
+            dir_name += '_fl' + str(args.focal_loss_weight)
         if args.ctc_weight > 0:
             dir_name += '_ctc' + str(args.ctc_weight)
         if args.bwd_weight > 0:
@@ -509,7 +515,8 @@ def main():
                 elif args.ctc_weight_sub1 == 0:
                     dir_name += '_attsub1' + str(args.sub1_weight)
                 else:
-                    dir_name += '_ctcsub1' + str(args.ctc_weight_sub1) + 'attsub1' + str(args.sub1_weight - args.ctc_weight_sub1)
+                    dir_name += '_ctcsub1' + str(args.ctc_weight_sub1) + 'attsub1' + \
+                        str(args.sub1_weight - args.ctc_weight_sub1)
                 if args.sub2_weight > 0:
                     dir_name += '_main' + str(args.sub2_weight)
                     if args.ctc_weight_sub2 == args.sub2_weight:
@@ -517,14 +524,15 @@ def main():
                     elif args.ctc_weight_sub2 == 0:
                         dir_name += '_attsub2' + str(args.sub2_weight)
                     else:
-                        dir_name += '_ctcsub2' + str(args.ctc_weight_sub2) + 'attsub2' + str(args.sub2_weight - args.ctc_weight_sub2)
+                        dir_name += '_ctcsub2' + str(args.ctc_weight_sub2) + 'attsub2' + \
+                            str(args.sub2_weight - args.ctc_weight_sub2)
         if args.task_specific_layer:
             dir_name += '_tsl'
         # Pre-training
         if args.pretrained_model and os.path.isdir(args.pretrained_model):
             # Load a config file
             config_pre = load_config(os.path.join(args.pretrained_model, 'config.yml'))
-            dir_name += '_' +config_pre['unit']+'pt'
+            dir_name += '_' + config_pre['unit'] + 'pt'
 
     if args.resume is None:
         # Load pre-trained RNNLM
@@ -584,7 +592,7 @@ def main():
             model_pre.load_checkpoint(args.pretrained_model, epoch=-1)
 
             # Overwrite parameters
-            param_dict =dict(model_pre.named_parameters())
+            param_dict = dict(model_pre.named_parameters())
             for n, p in model.named_parameters():
                 if n in param_dict.keys() and p.size() == param_dict[n].size():
                     p.data = param_dict[n].data
@@ -655,7 +663,10 @@ def main():
     logger.info('USERNAME: %s' % os.uname()[1])
 
     # Set process name
-    # setproctitle(args.job_name)
+    # if args.job_name:
+    #     setproctitle(args.job_name)
+    # else:
+    #     setproctitle(dir_name)
 
     # Set learning rate controller
     lr_controller = Controller(learning_rate_init=learning_rate,
@@ -706,7 +717,7 @@ def main():
         else:
             model.module.optimizer.zero_grad()
             loss, reporter = model(batch_train['xs'], batch_train['ys'], batch_train['ys_sub1'],
-                                       reporter=reporter)
+                                   reporter=reporter)
             if len(model.device_ids) > 1:
                 loss.backward(torch.ones(len(model.device_ids)))
             else:
