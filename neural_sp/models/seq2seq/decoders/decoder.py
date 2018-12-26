@@ -226,7 +226,7 @@ class Decoder(nn.Module):
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
         Returns:
             logits (FloatTensor): `[B, L, vocab]`
-            aw (FloatTensor): `[B, L, T, nheads]`
+            aw (FloatTensor): `[B, L, T]` or `[nheads, B, L, T]`
             logits_lm (FloatTensor): `[B, L, vocab]`
 
         """

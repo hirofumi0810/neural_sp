@@ -256,7 +256,7 @@ class RNNEncoder(nn.Module):
         Args:
             xs (FloatTensor): `[B, T, input_dim]`
             x_lens (list): `[B]`
-            task (str):
+            task (str): all or ys or ys_sub1 or ys_sub2
         Returns:
             output (dict):
                 xs (FloatTensor): `[B, T // prod(subsample), nunits (* ndirs)]`
@@ -270,13 +270,16 @@ class RNNEncoder(nn.Module):
         # Dropout for inputs-hidden connection
         xs = self.dropout_in(xs)
 
+        output = {'ys': {'xs': None, 'x_lens': None},
+                  'ys_sub1': {'xs': None, 'x_lens': None},
+                  'ys_sub2': {'xs': None, 'x_lens': None}}
+
         # Path through CNN layers before RNN layers
         if self.conv is not None:
             xs, x_lens = self.conv(xs, x_lens)
             if self.rnn_type == 'cnn':
-                output = {'ys': {'xs': xs, 'x_lens': x_lens},
-                          'ys_sub1': {'xs': None, 'x_lens': None},
-                          'ys_sub2': {'xs': None, 'x_lens': None}}
+                output['ys']['xs'] = xs
+                output['ys']['x_lens'] = x_lens
                 return output
 
         if self.fast_impl:
@@ -387,13 +390,13 @@ class RNNEncoder(nn.Module):
                                 res_outputs = [xs]
                     # NOTE: Exclude residual connection from the raw inputs
 
-        output = {'ys': {'xs': xs, 'x_lens': x_lens},
-                  'ys_sub1': {'xs': None, 'x_lens': None},
-                  'ys_sub2': {'xs': None, 'x_lens': None}}
-        if self.nlayers_sub1 >= 1 and task == 'all':
+        if task in ['all', 'ys']:
+            output['ys']['xs'] = xs
+            output['ys']['x_lens'] = x_lens
+        if self.nlayers_sub1 >= 1 and task in ['all', 'ys_sub1']:
             output['ys_sub1']['xs'] = xs_sub1
             output['ys_sub1']['x_lens'] = x_lens_sub1
-        elif self.nlayers_sub2 >= 1 and task == 'all':
+        if self.nlayers_sub2 >= 1 and task in ['all', 'ys_sub2']:
             output['ys_sub2']['xs'] = xs_sub2
             output['ys_sub2']['x_lens'] = x_lens_sub2
 

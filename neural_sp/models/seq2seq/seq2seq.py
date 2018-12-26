@@ -130,10 +130,22 @@ class Seq2seq(ModelBase):
         if args.enc_type == 'cnn':
             self.bridge = LinearND(self.enc.conv.output_dim, args.dec_nunits,
                                    dropout=args.dropout_enc)
+            if self.sub1_weight > 0:
+                self.bridge_sub1 = LinearND(self.enc.conv.output_dim, args.dec_nunits,
+                                            dropout=args.dropout_enc)
+            if self.sub2_weight > 0:
+                self.bridge_sub2 = LinearND(self.enc.conv.output_dim, args.dec_nunits,
+                                            dropout=args.dropout_enc)
             self.enc_nunits = args.dec_nunits
         elif args.bridge_layer:
             self.bridge = LinearND(self.enc_nunits, args.dec_nunits,
                                    dropout=args.dropout_enc)
+            if self.sub1_weight > 0:
+                self.bridge_sub1 = LinearND(self.enc_nunits, args.dec_nunits,
+                                            dropout=args.dropout_enc)
+            if self.sub2_weight > 0:
+                self.bridge_sub2 = LinearND(self.enc_nunits, args.dec_nunits,
+                                            dropout=args.dropout_enc)
             self.enc_nunits = args.dec_nunits
 
         # MAIN TASK
@@ -502,18 +514,19 @@ class Seq2seq(ModelBase):
 
         enc_out = self.enc(xs, x_lens, task)
 
-        if self.main_weight < 1:
-            if self.enc_type == 'cnn':
-                enc_out['ys_sub1']['xs'] = xs.clone()
-                enc_out['ys_sub1']['x_lens'] = copy.deepcopy(x_lens)
-                # TODO(hirofumi): ys_sub2
+        if self.main_weight < 1 and self.enc_type == 'cnn':
+            enc_out['ys_sub1']['xs'] = enc_out['ys']['xs'].clone()
+            enc_out['ys_sub2']['xs'] = enc_out['ys']['xs'].clone()
+            enc_out['ys_sub1']['x_lens'] = copy.deepcopy(enc_out['ys']['x_lens'])
+            enc_out['ys_sub2']['x_lens'] = copy.deepcopy(enc_out['ys']['x_lens'])
 
         # Bridge between the encoder and decoder
-        if self.enc_type == 'cnn' or self.bridge_layer:
+        if self.main_weight > 0 and (self.enc_type == 'cnn' or self.bridge_layer) and (task in ['all', 'ys']):
             enc_out['ys']['xs'] = self.bridge(enc_out['ys']['xs'])
-            if self.main_weight < 1 and (self.enc_type == 'cnn' or self.bridge_layer):
-                enc_out['ys_sub1']['xs'] = self.bridge_sub(enc_out['ys_sub1']['xs'])
-            # TODO(hirofumi): ys_sub2
+        if self.sub1_weight > 0 and (self.enc_type == 'cnn' or self.bridge_layer) and (task in ['all', 'ys_sub1']):
+            enc_out['ys_sub1']['xs'] = self.bridge_sub1(enc_out['ys_sub1']['xs'])
+        if self.sub2_weight > 0 and (self.enc_type == 'cnn' or self.bridge_layer)and (task in ['all', 'ys_sub2']):
+            enc_out['ys_sub2']['xs'] = self.bridge_sub2(enc_out['ys_sub2']['xs'])
 
         return enc_out, perm_idx
 
@@ -589,19 +602,19 @@ class Seq2seq(ModelBase):
             else:
                 if decode_params['beam_width'] == 1 and not decode_params['fwd_bwd_attention']:
                     best_hyps, aws = getattr(self, 'dec_' + dir).greedy(
-                        enc_out['ys']['xs'], enc_out['ys']['x_lens'],
+                        enc_out[task]['xs'], enc_out[task]['x_lens'],
                         decode_params['max_len_ratio'], exclude_eos)
                 else:
                     if decode_params['fwd_bwd_attention']:
                         rnnlm_fwd = None
                         nbest_hyps_fwd, aws_fwd, scores_fwd = self.dec_fwd.beam_search(
-                            enc_out['ys']['xs'], enc_out['ys']['x_lens'],
+                            enc_out[task]['xs'], enc_out[task]['x_lens'],
                             decode_params, rnnlm_fwd,
                             decode_params['beam_width'], False, idx2token, refs)
 
                         rnnlm_bwd = None
                         nbest_hyps_bwd, aws_bwd, scores_bwd = self.dec_bwd.beam_search(
-                            enc_out['ys']['xs'], enc_out['ys']['x_lens'],
+                            enc_out[task]['xs'], enc_out[task]['x_lens'],
                             decode_params, rnnlm_bwd,
                             decode_params['beam_width'], False, idx2token, refs)
                         best_hyps = fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
@@ -616,7 +629,7 @@ class Seq2seq(ModelBase):
                         else:
                             rnnlm = None
                         nbest_hyps, aws, scores = getattr(self, 'dec_' + dir).beam_search(
-                            enc_out['ys']['xs'], enc_out['ys']['x_lens'],
+                            enc_out[task]['xs'], enc_out[task]['x_lens'],
                             decode_params, rnnlm,
                             nbest, exclude_eos, idx2token, refs)
 

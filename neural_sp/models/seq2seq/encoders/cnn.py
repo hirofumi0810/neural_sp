@@ -59,8 +59,6 @@ class CNNEncoder(nn.Module):
         assert len(kernel_sizes) == len(strides)
         assert len(strides) == len(poolings)
 
-        # Dropout for input-hidden connection
-
         layers = OrderedDict()
         in_ch = self.in_channel
         in_freq = self.input_freq
@@ -95,7 +93,6 @@ class CNNEncoder(nn.Module):
             if len(poolings[l]) > 0 and poolings[l][0] * poolings[l][1] > 1:
                 pool = nn.MaxPool2d(kernel_size=tuple(poolings[l]),
                                     stride=tuple(poolings[l]),
-                                    # padding=(1, 1),
                                     padding=(0, 0),  # default
                                     ceil_mode=not first_max_pool)
                 layers['pool_' + str(l)] = pool
@@ -142,7 +139,10 @@ class CNNEncoder(nn.Module):
         # assert input_dim == self.input_freq * self.in_channel
 
         # Reshape to 4D tensor `[B, in_ch, max_time, freq // in_ch]`
-        xs = xs.view(batch_size, max_time, self.in_channel, input_dim // self.in_channel)
+        # xs = xs.view(batch_size, max_time, self.in_channel, input_dim // self.in_channel)
+        # xs = xs.transpose(1, 2).contiguous()
+        xs = xs.view(batch_size, max_time, input_dim // self.in_channel, self.in_channel)
+        xs = xs.transpose(2, 3).contiguous()
         xs = xs.transpose(1, 2).contiguous()
 
         xs = self.layers(xs)
@@ -152,7 +152,7 @@ class CNNEncoder(nn.Module):
         out_ch, time, freq = xs.size()[1:]
         xs = xs.transpose(1, 2).contiguous()
         xs = xs.view(batch_size, time, freq * out_ch)
-        # NOTE: xs: `[B, new_time, out_ch * new_freq]`
+        # NOTE: xs: `[B, new_time, new_freq * out_ch]`
 
         # Update x_lens
         x_lens = [self.get_conv_out_size(x_len, 1) for x_len in x_lens]
