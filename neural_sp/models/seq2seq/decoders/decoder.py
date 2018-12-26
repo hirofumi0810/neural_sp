@@ -105,6 +105,7 @@ class Decoder(nn.Module):
                  internal_lm=False,
                  rnnlm_init=False,
                  lmobj_weight=0.,
+                 lm_type='lower_layer',  # or null_context
                  share_lm_softmax=False,
                  global_weight=1,
                  mtl_per_batch=False):
@@ -136,6 +137,7 @@ class Decoder(nn.Module):
         self.internal_lm = internal_lm
         self.rnnlm_init = rnnlm_init
         self.lmobj_weight = lmobj_weight
+        self.lm_type = lm_type
         self.share_lm_softmax = share_lm_softmax
         self.global_weight = global_weight
         self.mtl_per_batch = mtl_per_batch
@@ -165,9 +167,14 @@ class Decoder(nn.Module):
 
             # for MTL with RNNLM objective
             if lmobj_weight > 0:
-                assert internal_lm
-                if not share_lm_softmax:
-                    self.output_rnnlm = LinearND(nunits, vocab)
+                if lm_type == 'lower_layer':
+                    assert internal_lm
+                    if not share_lm_softmax:
+                        self.output_rnnlm = LinearND(nunits, vocab)
+                elif lm_type == 'null_context':
+                    pass
+                else:
+                    raise NotImplementedError()
 
             # Attention
             assert isinstance(attention, AttentionMechanism) or isinstance(attention, MultiheadAttentionMechanism)
@@ -227,7 +234,7 @@ class Decoder(nn.Module):
         Returns:
             logits (FloatTensor): `[B, L, vocab]`
             aw (FloatTensor): `[B, L, T]` or `[nheads, B, L, T]`
-            logits_lm (FloatTensor): `[B, L, vocab]`
+            logits_lmobj (FloatTensor): `[B, L, vocab]`
 
         """
         device_id = enc_out.get_device()
@@ -297,7 +304,7 @@ class Decoder(nn.Module):
             #              for t in range(ys_in_pad.size(1))]
             # ys_lm_emb = torch.cat(ys_lm_emb, dim=1)
 
-        logits_att, logits_lm = [], []
+        logits_att, logits_lmobj = [], []
         for t in range(ys_in_pad.size(1)):
             # Sample for scheduled sampling
             is_sample = t > 0 and self.ss_prob > 0 and random.random() < self.ss_prob
@@ -334,11 +341,19 @@ class Decoder(nn.Module):
             logits_att.append(logits_att_t)
 
             if self.lmobj_weight > 0:
-                if self.share_lm_softmax:
-                    logits_rnnlm_t = self.output(_dec_out)
+                if self.lm_type == 'lower_layer':
+                    if self.share_lm_softmax:
+                        logits_lmobj_t = self.output(_dec_out)
+                    else:
+                        logits_lmobj_t = self.output_rnnlm(_dec_out)
+                elif self.lm_type == 'null_context':
+                    # Generate
+                    null_context = Variable(enc_out.new(bs, 1, enc_nunits).fill_(0.))
+                    logits_lmobj_t = self.generate(null_context, dec_out, None, None)
+                    raise NotImplementedError()
                 else:
-                    logits_rnnlm_t = self.output_rnnlm(_dec_out)
-                logits_lm.append(logits_rnnlm_t)
+                    raise NotImplementedError()
+                logits_lmobj.append(logits_lmobj_t)
 
         logits_att = torch.cat(logits_att, dim=1) / self.logits_temp
 
@@ -359,8 +374,8 @@ class Decoder(nn.Module):
 
         # Compute XE loss for RNNLM objective
         if self.lmobj_weight > 0:
-            logits_lm = torch.cat(logits_lm, dim=1)
-            loss_lm = F.cross_entropy(input=logits_lm.view((-1, logits_lm.size(2))),
+            logits_lmobj = torch.cat(logits_lmobj, dim=1)
+            loss_lm = F.cross_entropy(input=logits_lmobj.view((-1, logits_lmobj.size(2))),
                                       target=ys_out_pad[:, 1:].contiguous().view(-1),
                                       ignore_index=-1, size_average=True)
             if self.mtl_per_batch:
