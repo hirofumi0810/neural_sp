@@ -93,13 +93,15 @@ class AttentionMechanism(nn.Module):
             self.w_dec = LinearND(dec_nunits, attn_dim, bias=False)
 
         elif attn_type == 'luong_dot':
-            raise NotImplementedError()
+            pass
+            # NOTE: no additional parameters
 
         elif attn_type == 'luong_general':
-            raise NotImplementedError()
+            self.w_enc = LinearND(enc_nunits, dec_nunits, bias=False)
 
         elif attn_type == 'luong_concat':
-            raise NotImplementedError()
+            self.w = LinearND(enc_nunits + dec_nunits, attn_dim, bias=False)
+            self.v = LinearND(attn_dim, 1, bias=False)
 
         else:
             raise ValueError(attn_type)
@@ -112,13 +114,13 @@ class AttentionMechanism(nn.Module):
         """Forward computation.
 
         Args:
-            enc_out (torch.autograd.Variable, float): `[B, T, enc_units]`
+            enc_out (FloatTensor): `[B, T, enc_units]`
             x_lens (list): A list of length `[B]`
-            dec_out (torch.autograd.Variable, float): `[B, 1, dec_units]`
-            aw_step (torch.autograd.Variable, float): `[B, T]`
+            dec_out (FloatTensor): `[B, 1, dec_units]`
+            aw_step (FloatTensor): `[B, T]`
         Returns:
-            context (torch.autograd.Variable, float): `[B, 1, enc_units]`
-            aw_step (torch.autograd.Variable, float): `[B, T]`
+            context (FloatTensor): `[B, 1, enc_units]`
+            aw_step (FloatTensor): `[B, T]`
 
         """
         bs, enc_time = enc_out.size()[:2]
@@ -128,7 +130,8 @@ class AttentionMechanism(nn.Module):
 
         # Pre-computation of encoder-side features for computing scores
         if self.enc_out_a is None:
-            self.enc_out_a = self.w_enc(enc_out)
+            if self.attn_type in ['add', 'location', 'dot', 'luong_general']:
+                self.enc_out_a = self.w_enc(enc_out)
 
         # Mask attention distribution
         if self.mask is None:
@@ -137,13 +140,12 @@ class AttentionMechanism(nn.Module):
                 if x_lens[b] < enc_time:
                     self.mask[b, x_lens[b]:] = 0
 
-        if self.attn_type in ['add', 'location']:
-            dec_out = dec_out.expand_as(torch.zeros((bs, enc_time, dec_out.size(2))))
-
         if self.attn_type == 'add':
+            dec_out = dec_out.expand_as(torch.zeros((bs, enc_time, dec_out.size(2))))
             energy = self.v(F.tanh(self.enc_out_a + self.w_dec(dec_out))).squeeze(2)
 
         elif self.attn_type == 'location':
+            dec_out = dec_out.expand_as(torch.zeros((bs, enc_time, dec_out.size(2))))
             # For 1D conv
             # conv_feat = self.conv(aw_step[:, :].contiguous().unsqueeze(1))
             # For 2D conv
@@ -155,20 +157,21 @@ class AttentionMechanism(nn.Module):
             energy = torch.matmul(self.enc_out_a, self.w_dec(dec_out).transpose(-2, -1)).squeeze(2)
 
         elif self.attn_type == 'luong_dot':
-            raise NotImplementedError()
+            energy = torch.matmul(enc_out, dec_out.transpose(-2, -1)).squeeze(2)
 
         elif self.attn_type == 'luong_general':
-            raise NotImplementedError()
+            energy = torch.matmul(self.enc_out_a, dec_out.transpose(-2, -1)).squeeze(2)
 
         elif self.attn_type == 'luong_concat':
-            raise NotImplementedError()
+            dec_out = dec_out.expand_as(torch.zeros((bs, enc_time, dec_out.size(2))))
+            energy = self.v(F.tanh(self.w(torch.cat([enc_out, dec_out], dim=-1)))).squeeze(2)
 
         # Compute attention weights
         energy = energy.masked_fill_(self.mask == 0, -float('inf'))  # `[B, T]`
         if self.sigmoid_smoothing:
             aw_step = F.sigmoid(energy * self.sharpening_factor)
-            # for b in range(bs):
-            #     aw_step[b] /= aw_step[b].sum()
+            for b in range(bs):
+                aw_step[b] /= aw_step[b].sum()
         else:
             aw_step = F.softmax(energy * self.sharpening_factor, dim=-1)  # `[B, T]`
         # attention dropout
@@ -176,7 +179,6 @@ class AttentionMechanism(nn.Module):
             aw_step = self.dropout(aw_step)
 
         # Compute context vector (weighted sum of encoder outputs)
-        # context = torch.sum(enc_out * aw_step.unsqueeze(2), dim=1, keepdim=True)
         context = torch.matmul(aw_step.unsqueeze(1), enc_out)
 
         return context, aw_step
