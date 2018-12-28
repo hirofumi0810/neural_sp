@@ -330,7 +330,7 @@ class Seq2seq(ModelBase):
         if args.rnnlm_cold_fusion:
             self.init_weights(-1, dist='constant', keys=['cf_linear_lm_gate.fc.bias'])
 
-    def forward(self, batch, reporter=None, task='ys', is_eval=False):
+    def forward(self, batch, reporter=None, task='all', is_eval=False):
         """Forward computation.
 
         Args:
@@ -341,7 +341,7 @@ class Seq2seq(ModelBase):
                 ys_sub2 (list): A list of lenght `[B]`, which contains arrays of size `[L_sub2]`
                 ys_sub3 (list): A list of lenght `[B]`, which contains arrays of size `[L_sub3]`
             reporter ():
-            task (str): ys or ys_sub1 or ys_sub2
+            task (str): all or ys or ys_sub1 or ys_sub2
             is_eval (bool): the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
@@ -374,13 +374,16 @@ class Seq2seq(ModelBase):
                 enc_out, perm_idx = self.encode(batch['xs'], 'all', flip)
         else:
             enc_out, perm_idx = self.encode(batch['ys_sub1'])
-        ys = [batch['ys'][i] for i in perm_idx]
 
         observation = {}
-        loss = enc_out[task]['xs'].new_ones(1)
+        if task == 'all':
+            loss = enc_out['ys']['xs'].new_ones(1)
+        else:
+            loss = enc_out[task]['xs'].new_ones(1)
 
         # Compute XE loss for the forward decoder
-        if self.fwd_weight > 0 and task == 'ys':
+        if self.fwd_weight > 0 and task in ['all', 'ys']:
+            ys = [batch['ys'][i] for i in perm_idx]
             loss_fwd, obs_fwd = self.dec_fwd(enc_out['ys']['xs'], enc_out['ys']['x_lens'], ys)
             loss += loss_fwd
             observation['loss.att'] = obs_fwd['loss_att']
@@ -389,24 +392,21 @@ class Seq2seq(ModelBase):
             observation['acc.main'] = obs_fwd['acc']
 
         # Compute XE loss for the backward decoder
-        if self.bwd_weight > 0:
+        if self.bwd_weight > 0 and task in ['all', 'ys.bwd']:
+            ys = [batch['ys'][i] for i in perm_idx]
             loss_bwd, obs_bwd = self.dec_bwd(enc_out['ys']['xs'], enc_out['ys']['x_lens'], ys)
             loss += loss_bwd
             observation['loss.att-bwd'] = obs_bwd['loss_att']
             observation['loss.ctc-bwd'] = obs_bwd['loss_ctc']
             observation['loss.lm-bwd'] = obs_bwd['loss_lm']
             observation['acc.bwd'] = obs_bwd['acc']
-            # TODO(hirofumi): mtl_per_batch
 
+        # only fwd for sub tasks
         for sub in ['sub1', 'sub2']:
-            if (getattr(self, sub + '_weight') > 0 and not self.mtl_per_batch) or (self.mtl_per_batch and task == 'ys_' + sub):
-                if self.mtl_per_batch:
-                    loss_sub, obs_sub = getattr(self, 'dec_fwd_' + sub)(
-                        enc_out['ys_' + sub]['xs'], enc_out['ys_' + sub]['x_lens'], ys)
-                else:
-                    ys_sub1 = [batch['ys_' + sub][i] for i in perm_idx]
-                    loss_sub, obs_sub = getattr(self, 'dec_fwd_' + sub)(
-                        enc_out['ys_' + sub]['xs'], enc_out['ys_' + sub]['x_lens'], ys_sub1)
+            if getattr(self, sub + '_weight') > 0 and task in ['all', 'ys_' + sub]:
+                ys_sub = [batch['ys_' + sub][i] for i in perm_idx]
+                loss_sub, obs_sub = getattr(self, 'dec_fwd_' + sub)(
+                    enc_out['ys_' + sub]['xs'], enc_out['ys_' + sub]['x_lens'], ys_sub)
                 loss += loss_sub
                 observation['loss.att-' + sub] = obs_sub['loss_att']
                 observation['loss.ctc-' + sub] = obs_sub['loss_ctc']

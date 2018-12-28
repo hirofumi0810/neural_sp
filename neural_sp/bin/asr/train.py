@@ -690,8 +690,8 @@ def main():
         tasks = ['ys']
         if 0 < args.bwd_weight < 1:
             tasks = ['ys.bwd'] + tasks
-        if 0 < args.ctc_weight < 1:
-            tasks = ['ys.ctc'] + tasks
+        # if 0 < args.ctc_weight < 1:
+        #     tasks = ['ys.ctc'] + tasks
         if args.train_set_sub1:
             tasks = ['ys_sub1'] + tasks
         if args.train_set_sub2:
