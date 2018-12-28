@@ -367,9 +367,11 @@ class Seq2seq(ModelBase):
         # Encode input features
         if self.input_type == 'speech':
             if self.mtl_per_batch:
-                enc_out, perm_idx = self.encode(batch['xs'], task=task)
+                flip = True if 'bwd' in task else False
+                enc_out, perm_idx = self.encode(batch['xs'], task, flip)
             else:
-                enc_out, perm_idx = self.encode(batch['xs'], task='all')
+                flip = True if self.bwd_weight == 1 else False
+                enc_out, perm_idx = self.encode(batch['xs'], 'all', flip)
         else:
             enc_out, perm_idx = self.encode(batch['ys_sub1'])
         ys = [batch['ys'][i] for i in perm_idx]
@@ -413,12 +415,13 @@ class Seq2seq(ModelBase):
 
         return loss, observation
 
-    def encode(self, xs, task='all'):
+    def encode(self, xs, task='all', flip=False):
         """Encode acoustic or text features.
 
         Args:
             xs (list): A list of length `[B]`, which contains Tensor of size `[T, input_dim]`
-            task (str):
+            task (str): all or ys or ys_sub*
+            flip (bool): if True, flip acoustic features in the time-dimension
         Returns:
             enc_out (dict):
             perm_idx ():
@@ -440,7 +443,7 @@ class Seq2seq(ModelBase):
                 xs = [splice(x, self.nsplices, self.nstacks) for x in xs]
 
             x_lens = [len(x) for x in xs]
-            if self.bwd_weight == 1:
+            if flip:
                 xs = [torch.from_numpy(np.flip(x, axis=0).copy()).float().cuda(self.device_id) for x in xs]
             else:
                 xs = [np2var(x, self.device_id).float() for x in xs]
@@ -472,7 +475,7 @@ class Seq2seq(ModelBase):
     def get_ctc_posteriors(self, xs, task='ys', temperature=1, topk=None):
         self.eval()
         with torch.no_grad():
-            enc_out, perm_idx = self.encode(xs, task=task)
+            enc_out, perm_idx = self.encode(xs, task)
             dir = 'fwd' if self.fwd_weight >= self.bwd_weight else 'bwd'
             if task == 'ys_sub1':
                 dir += '_sub1'
@@ -519,7 +522,7 @@ class Seq2seq(ModelBase):
         """
         self.eval()
         with torch.no_grad():
-            enc_out, perm_idx = self.encode(xs, task=task)
+            enc_out, perm_idx = self.encode(xs, task)
             dir = 'fwd' if self.fwd_weight >= self.bwd_weight else 'bwd'
             if task == 'ys_sub1':
                 dir += '_sub1'
