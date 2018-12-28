@@ -686,14 +686,18 @@ def main():
     reporter = Reporter(model.module.save_path, tensorboard=True)
 
     if args.mtl_per_batch:
-        tasks = ['all']
-    else:
         # NOTE: from easier to harder tasks
         tasks = ['ys']
+        if 0 < args.bwd_weight < 1:
+            tasks = ['ys.bwd'] + tasks
+        if 0 < args.ctc_weight < 1:
+            tasks = ['ys.ctc'] + tasks
         if args.train_set_sub1:
             tasks = ['ys_sub1'] + tasks
         if args.train_set_sub2:
             tasks = ['ys_sub2'] + tasks
+    else:
+        tasks = ['all']
 
     start_time_train = time.time()
     start_time_epoch = time.time()
