@@ -168,9 +168,7 @@ class AttentionMechanism(nn.Module):
         # Compute attention weights
         energy = energy.masked_fill_(self.mask == 0, -float('inf'))  # `[B, T]`
         if self.sigmoid_smoothing:
-            aw_step = F.sigmoid(energy * self.sharpening_factor)
-            for b in range(bs):
-                aw_step[b] /= aw_step[b].sum()
+            aw_step = F.sigmoid(energy) / F.sigmoid(energy).sum(-1).unsqueeze(-1)
         else:
             aw_step = F.softmax(energy * self.sharpening_factor, dim=-1)  # `[B, T]`
         # attention dropout

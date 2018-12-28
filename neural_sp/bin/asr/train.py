@@ -147,7 +147,7 @@ parser.add_argument('--attn_nheads_sub2', type=int, default=1,
                     help='')
 parser.add_argument('--attn_sharpening', type=float, default=1.0,
                     help='')
-parser.add_argument('--attn_sigmoid', type=bool, default=False,
+parser.add_argument('--attn_sigmoid', type=bool, default=False, nargs='?',
                     help='')
 parser.add_argument('--bridge_layer', type=bool, default=False,
                     help='')
@@ -475,6 +475,8 @@ def main():
         dir_name += '_' + args.attn_type
         if args.attn_nheads > 1:
             dir_name += '_head' + str(args.attn_nheads)
+        if args.attn_sigmoid:
+            dir_name += '_sig'
         dir_name += '_' + args.optimizer
         dir_name += '_lr' + str(args.learning_rate)
         dir_name += '_bs' + str(args.batch_size)
@@ -683,12 +685,15 @@ def main():
     # Set reporter
     reporter = Reporter(model.module.save_path, tensorboard=True)
 
-    # NOTE: from easier to harder tasks
-    tasks = ['ys']
-    if args.train_set_sub1:
-        tasks = ['ys_sub1'] + tasks
-    if args.train_set_sub2:
-        tasks = ['ys_sub2'] + tasks
+    if args.mtl_per_batch:
+        tasks = ['all']
+    else:
+        # NOTE: from easier to harder tasks
+        tasks = ['ys']
+        if args.train_set_sub1:
+            tasks = ['ys_sub1'] + tasks
+        if args.train_set_sub2:
+            tasks = ['ys_sub2'] + tasks
 
     start_time_train = time.time()
     start_time_epoch = time.time()
@@ -698,26 +703,11 @@ def main():
     while True:
         # Compute loss in the training set
         batch_train, is_new_epoch = train_set.next()
-        if args.mtl_per_batch:
-            # Change tasks depending on task
-            for task in tasks:
-                model.module.optimizer.zero_grad()
-                loss, reporter = model(batch_train['xs'], batch_train[task],
-                                       reporter=reporter, task=task)
-                if len(model.device_ids) > 1:
-                    loss.backward(torch.ones(len(model.device_ids)))
-                else:
-                    loss.backward()
-                loss.detach()  # Trancate the graph
-                if args.clip_grad_norm > 0:
-                    torch.nn.utils.clip_grad_norm_(model.module.parameters(), args.clip_grad_norm)
-                model.module.optimizer.step()
-                loss_train = loss.item()
-                del loss
-        else:
+
+        # Change tasks depending on task
+        for task in tasks:
             model.module.optimizer.zero_grad()
-            loss, reporter = model(batch_train['xs'], batch_train['ys'], batch_train['ys_sub1'],
-                                   reporter=reporter)
+            loss, reporter = model(batch_train, reporter=reporter, task=task)
             if len(model.device_ids) > 1:
                 loss.backward(torch.ones(len(model.device_ids)))
             else:
@@ -740,16 +730,10 @@ def main():
         if step % args.print_step == 0:
             # Compute loss in the dev set
             batch_dev = dev_set.next()[0]
-            if args.mtl_per_batch:
-                # Change tasks depending on task
-                for task in tasks:
-                    loss, reporter = model(batch_dev['xs'], batch_dev[task],
-                                           reporter=reporter, task=task, is_eval=True)
-                    loss_dev = loss.item()
-                    del loss
-            else:
-                loss, reporter = model(batch_dev['xs'], batch_dev['ys'], batch_dev['ys_sub1'],
-                                       reporter=reporter, is_eval=True)
+            # Change tasks depending on task
+            for task in tasks:
+                loss, reporter = model(batch_dev, reporter=reporter, task=task,
+                                       is_eval=True)
                 loss_dev = loss.item()
                 del loss
             reporter.step(is_eval=True)

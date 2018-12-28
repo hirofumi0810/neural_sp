@@ -179,9 +179,7 @@ class MultiheadAttentionMechanism(nn.Module):
             # Compute attention weights
             energy_h = energy_h.masked_fill_(self.mask == 0, -float('inf'))  # `[B, T]`
             if self.sigmoid_smoothing:
-                aw_step_h = F.sigmoid(energy_h * self.sharpening_factor)
-                for b in range(bs):
-                    aw_step_h /= aw_step_h.sum()
+                aw_step_h = F.sigmoid(energy_h) / F.sigmoid(energy_h).sum(-1).unsqueeze(-1)
             else:
                 aw_step_h = F.softmax(energy_h * self.sharpening_factor, dim=-1)  # `[B, T]`
             # attention dropout

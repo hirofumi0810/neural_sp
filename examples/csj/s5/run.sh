@@ -14,7 +14,7 @@ gpu=
 export data=/n/sd8/inaguma/corpus/csj
 
 ### vocabulary
-unit=word        # or wp or char
+unit=word        # or wp or char or word_char
 vocab_size=12500
 wp_type=unigram  # or bpe (for wordpiece)
 
@@ -22,6 +22,18 @@ wp_type=unigram  # or bpe (for wordpiece)
 # ASR configuration
 #########################
 ### topology
+# conv_channels="64_64_128_128"
+# conv_kernel_sizes="(3,3)_(3,3)_(3,3)_(3,3)"
+# conv_strides="(1,1)_(1,1)_(1,1)_(1,1)"
+# conv_poolings="(1,1)_(2,2)_(1,1)_(2,2)"
+# conv_batch_norm=
+
+conv_in_channel=1
+conv_channels=
+conv_kernel_sizes=
+conv_strides=
+conv_poolings=
+conv_batch_norm=
 enc_type=blstm
 enc_nunits=320
 enc_nprojs=0
@@ -32,6 +44,7 @@ subsample_type=drop
 attn_type=location
 attn_dim=320
 attn_nheads=1
+attn_sigmoid=
 dec_type=lstm
 dec_nunits=320
 dec_nprojs=0
@@ -39,7 +52,6 @@ dec_nlayers=1
 dec_residual=
 emb_dim=320
 ctc_fc_list="320"
-
 ### optimization
 batch_size=50
 optimizer=adam
@@ -51,17 +63,16 @@ decay_start_epoch=10
 decay_rate=0.9
 decay_patient_epoch=0
 not_improved_patient_epoch=5
-eval_start_epoch=5
+eval_start_epoch=1
 warmup_start_learning_rate=1e-4
 warmup_step=0
 warmup_epoch=0
-
 ### initialization
 param_init=0.1
 param_init_dist=uniform
 pretrained_model=
-
 ### regularization
+clip_grad_norm=5.0
 dropout_in=0.0
 dropout_enc=0.2
 dropout_dec=0.2
@@ -71,14 +82,46 @@ weight_decay=1e-6
 ss_prob=0.2
 ss_type=constant
 lsm_prob=0.1
-
+focal_loss=0.0
 ### MTL
-ctc_weight=0.2
+ctc_weight=0.0
 bwd_weight=0.0
 
 #########################
 # RNNLM configuration
 #########################
+# topology
+lm_rnn_type=lstm
+lm_nunits=1024
+lm_nprojs=0
+lm_nlayers=2
+lm_emb_dim=1024
+lm_tie_weights=true
+lm_residual=true
+# optimization
+lm_batch_size=256
+lm_bptt=100
+lm_optimizer=adam
+lm_learning_rate=1e-3
+lm_nepochs=50
+lm_convert_to_sgd_epoch=50
+lm_print_step=20
+lm_decay_start_epoch=10
+lm_decay_rate=0.9
+lm_decay_patient_epoch=0
+lm_not_improved_patient_epoch=10
+lm_eval_start_epoch=1
+# initialization
+lm_param_init=0.1
+lm_param_init_dist=uniform
+lm_pretrained_model=
+# regularization
+lm_clip_grad_norm=5.0
+lm_dropout_hidden=0.5
+lm_dropout_out=0.0
+lm_dropout_emb=0.2
+lm_weight_decay=1e-6
+# lm_backward=
 
 ### path to save the model
 model=/n/sd8/inaguma/result/csj
@@ -100,11 +143,11 @@ CSJVER=dvd  ## Set your CSJ format (dvd or usb).
             ## Case merl :MERL setup. Neccesary directory is WAV and sdb
 
 ### data size
-export data_size=aps_other
-# export data_size=aps
-# export data_size=sps
-# export data_size=all_except_dialog
-# export data_size=all
+data_size=aps_other
+# data_size=aps
+# data_size=sps
+# data_size=all_except_dialog
+# data_size=all
 # NOTE: aps_other=default using "Academic lecture" and "other" data,
 #       aps=using "Academic lecture" data,
 #       sps=using "Academic lecture" data,
@@ -216,11 +259,11 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${data_size}_${unit}${wp_type}${vo
   if [ ${unit} = wp ]; then
     cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
     spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_size} --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
-    spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict}
+    spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict}
   else
     text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} \
       --wp_type ${wp_type} --wp_model ${wp_model} | \
-      sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict} || exit 1;
+      sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
   fi
   echo "vocab size:" `cat ${dict} | wc -l`
 
@@ -238,17 +281,17 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${data_size}_${unit}${wp_type}${vo
   fi
 
   # Make datset csv files
-  mkdir -p ${data}/dataset_csv
+  mkdir -p ${data}/dataset
   for x in ${train_set} ${dev_set}; do
     echo "Making a csv file for ${x}..."
     dump_dir=${data}/dump/${x}
-    make_dataset_csv.sh --feat ${dump_dir}/feats.scp --unit ${unit} --wp_model ${wp_model} \
-      ${data}/${x} ${dict} > ${data}/dataset_csv/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
+    make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --wp_model ${wp_model} \
+      ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
   done
   for x in ${test_set}; do
     dump_dir=${data}/dump/${x}_${data_size}
-    make_dataset_csv.sh --is_test true --feat ${dump_dir}/feats.scp --unit ${unit} \
-      ${data}/${x} ${dict} > ${data}/dataset_csv/${x}_${data_size}_${unit}${wp_type}${vocab_size}.csv || exit 1;
+    make_dataset.sh --is_test true --feat ${dump_dir}/feats.scp --unit ${unit} \
+      ${data}/${x} ${dict} > ${data}/dataset/${x}_${data_size}_${unit}${wp_type}${vocab_size}.csv || exit 1;
   done
 
   touch .done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset (stage: 2)."
@@ -265,13 +308,40 @@ if [ ${stage} -le 3 ]; then
   # NOTE: support only a single GPU for RNNLM training
   CUDA_VISIBLE_DEVICES=${rnnlm_gpu} ../../../neural_sp/bin/lm/train.py \
     --ngpus 1 \
-    --train_set ${data}/dataset_csv/${train_set}_${unit}${wp_type}${vocab_size}.csv \
-    --dev_set ${data}/dataset_csv/${dev_set}_${unit}${wp_type}${vocab_size}.csv \
+    --train_text ${data}/${train_set}/text \
+    --dev_text ${data}/${dev_set}/text \
     --dict ${dict} \
     --wp_model ${wp_model}.model \
-    --config ${rnnlm_config} \
     --model ${model}/rnnlm \
-    --label_type ${unit} || exit 1;
+    --unit ${unit} \
+    --rnn_type ${lm_rnn_type} \
+    --nunits ${lm_nunits} \
+    --nprojs ${lm_nprojs} \
+    --nlayers ${lm_nlayers} \
+    --emb_dim ${lm_emb_dim} \
+    --tie_weights ${lm_tie_weights} \
+    --residual ${lm_residual} \
+    --batch_size ${lm_batch_size} \
+    --bptt ${lm_bptt} \
+    --optimizer ${lm_optimizer} \
+    --learning_rate ${lm_learning_rate} \
+    --nepochs ${lm_nepochs} \
+    --convert_to_sgd_epoch ${lm_convert_to_sgd_epoch} \
+    --print_step ${lm_print_step} \
+    --decay_start_epoch ${lm_decay_start_epoch} \
+    --decay_rate ${lm_decay_rate} \
+    --decay_patient_epoch ${lm_decay_patient_epoch} \
+    --not_improved_patient_epoch ${lm_not_improved_patient_epoch} \
+    --eval_start_epoch ${lm_eval_start_epoch} \
+    --param_init ${lm_param_init} \
+    --param_init_dist ${lm_param_init_dist} \
+    --pretrained_model ${lm_pretrained_model} \
+    --clip_grad_norm ${lm_clip_grad_norm} \
+    --dropout_hidden ${lm_dropout_hidden} \
+    --dropout_out ${lm_dropout_out} \
+    --dropout_emb ${lm_dropout_emb} \
+    --weight_decay ${lm_weight_decay} || exit 1;
+    # --backward
     # --resume ${rnnlm_resume} || exit 1;
 
   echo "Finish RNNLM training (stage: 3)."
@@ -286,13 +356,19 @@ if [ ${stage} -le 4 ]; then
 
   CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/train.py \
     --ngpus ${ngpus} \
-    --train_set ${data}/dataset_csv/${train_set}_${unit}${wp_type}${vocab_size}.csv \
-    --dev_set ${data}/dataset_csv/${dev_set}_${unit}${wp_type}${vocab_size}.csv \
-    --eval_sets ${data}/dataset_csv/eval1_${data_size}_${unit}${wp_type}${vocab_size}.csv \
+    --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab_size}.csv \
+    --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab_size}.csv \
+    --eval_sets ${data}/dataset/eval1_${data_size}_${unit}${wp_type}${vocab_size}.csv \
     --dict ${dict} \
     --wp_model ${wp_model}.model \
     --model ${model}/asr \
-    --label_type ${unit} \
+    --unit ${unit} \
+    --conv_in_channel ${conv_in_channel} \
+    --conv_channels ${conv_channels} \
+    --conv_kernel_sizes ${conv_kernel_sizes} \
+    --conv_strides ${conv_strides} \
+    --conv_poolings ${conv_poolings} \
+    --conv_batch_norm ${conv_batch_norm} \
     --enc_type ${enc_type} \
     --enc_nunits ${enc_nunits} \
     --enc_nprojs ${enc_nprojs} \
@@ -303,6 +379,7 @@ if [ ${stage} -le 4 ]; then
     --attn_type ${attn_type} \
     --attn_dim ${attn_dim} \
     --attn_nheads ${attn_nheads} \
+    --attn_sigmoid ${attn_sigmoid} \
     --dec_type ${dec_type} \
     --dec_nunits ${dec_nunits} \
     --dec_nprojs ${dec_nprojs} \
@@ -327,6 +404,7 @@ if [ ${stage} -le 4 ]; then
     --param_init ${param_init} \
     --param_init_dist ${param_init_dist} \
     --pretrained_model ${pretrained_model} \
+    --clip_grad_norm ${clip_grad_norm} \
     --dropout_in ${dropout_in} \
     --dropout_enc ${dropout_enc} \
     --dropout_dec ${dropout_dec} \
@@ -336,6 +414,7 @@ if [ ${stage} -le 4 ]; then
     --ss_prob ${ss_prob} \
     --ss_type ${ss_type} \
     --lsm_prob ${lsm_prob} \
+    --focal_loss_weight ${focal_loss} \
     --ctc_weight ${ctc_weight} \
     --bwd_weight ${bwd_weight} || exit 1;
     # --resume ${resume} || exit 1;
