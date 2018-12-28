@@ -230,126 +230,68 @@ class Seq2seq(ModelBase):
                 mtl_per_batch=args.mtl_per_batch)
             setattr(self, 'dec_' + dir, dec)
 
-        # 1st sub task (only for fwd)
-        if self.sub1_weight > 0 or (args.mtl_per_batch and args.dict_sub1):
-            if self.ctc_weight_sub1 < args.sub1_weight:
-                # Attention layer
-                if args.attn_nheads_sub1 > 1:
-                    attn_sub1 = MultiheadAttentionMechanism(
-                        enc_nunits=self.enc_nunits,
-                        dec_nunits=args.dec_nunits,
-                        attn_type=args.attn_type,
-                        attn_dim=args.attn_dim,
-                        sharpening_factor=args.attn_sharpening,
-                        sigmoid_smoothing=args.attn_sigmoid,
-                        conv_out_channels=args.attn_conv_nchannels,
-                        conv_kernel_size=args.attn_conv_width,
-                        nheads=args.attn_nheads_sub1)
+        # sub task (only for fwd)
+        for sub in ['sub1', 'sub2']:
+            if getattr(self, sub + '_weight') > 0 or (args.mtl_per_batch and (args, 'dict_' + sub)):
+                if getattr(self, 'ctc_weight_' + sub) < args.sub1_weight:
+                    # Attention layer
+                    if getattr(args, 'attn_nheads_' + sub) > 1:
+                        attn_sub = MultiheadAttentionMechanism(
+                            enc_nunits=self.enc_nunits,
+                            dec_nunits=args.dec_nunits,
+                            attn_type=args.attn_type,
+                            attn_dim=args.attn_dim,
+                            sharpening_factor=args.attn_sharpening,
+                            sigmoid_smoothing=args.attn_sigmoid,
+                            conv_out_channels=args.attn_conv_nchannels,
+                            conv_kernel_size=args.attn_conv_width,
+                            nheads=getattr(args, 'attn_nheads_' + sub))
+                    else:
+                        attn_sub = AttentionMechanism(
+                            enc_nunits=self.enc_nunits,
+                            dec_nunits=args.dec_nunits,
+                            attn_type=args.attn_type,
+                            attn_dim=args.attn_dim,
+                            sharpening_factor=args.attn_sharpening,
+                            sigmoid_smoothing=args.attn_sigmoid,
+                            conv_out_channels=args.attn_conv_nchannels,
+                            conv_kernel_size=args.attn_conv_width,
+                            dropout=args.dropout_att)
                 else:
-                    attn_sub1 = AttentionMechanism(
-                        enc_nunits=self.enc_nunits,
-                        dec_nunits=args.dec_nunits,
-                        attn_type=args.attn_type,
-                        attn_dim=args.attn_dim,
-                        sharpening_factor=args.attn_sharpening,
-                        sigmoid_smoothing=args.attn_sigmoid,
-                        conv_out_channels=args.attn_conv_nchannels,
-                        conv_kernel_size=args.attn_conv_width,
-                        dropout=args.dropout_att)
-            else:
-                attn_sub1 = None
+                    attn_sub = None
 
-            # Decoder
-            self.dec_fwd_sub1 = Decoder(
-                attention=attn_sub1,
-                sos=self.sos,
-                eos=self.eos,
-                pad=self.pad,
-                enc_nunits=self.enc_nunits,
-                rnn_type=args.dec_type,
-                nunits=args.dec_nunits,
-                nlayers=args.dec_nlayers,
-                residual=args.dec_residual,
-                emb_dim=args.emb_dim,
-                vocab=self.vocab_sub1,
-                logits_temp=args.logits_temp,
-                dropout=args.dropout_dec,
-                dropout_emb=args.dropout_emb,
-                ss_prob=args.ss_prob,
-                lsm_prob=args.lsm_prob,
-                layer_norm=args.layer_norm,
-                focal_loss_weight=args.focal_loss_weight,
-                focal_loss_gamma=args.focal_loss_gamma,
-                init_with_enc=args.init_with_enc,
-                ctc_weight=self.ctc_weight_sub1,
-                ctc_fc_list=[int(fc) for fc in args.ctc_fc_list_sub1.split('_')
-                             ] if len(args.ctc_fc_list_sub1) > 0 else [],
-                input_feeding=args.input_feeding,
-                internal_lm=args.internal_lm,
-                lmobj_weight=args.lmobj_weight_sub1,
-                share_lm_softmax=args.share_lm_softmax,
-                global_weight=self.sub1_weight,
-                mtl_per_batch=args.mtl_per_batch)
-
-        # 2nd sub task (only for fwd)
-        if self.sub2_weight > 1 or (args.mtl_per_batch and args.dict_sub2):
-            if self.ctc_weight_sub2 < args.sub2_weight:
-                # Attention layer
-                if args.attn_nheads_sub2 > 1:
-                    attn_sub2 = MultiheadAttentionMechanism(
-                        enc_nunits=self.enc_nunits,
-                        dec_nunits=args.dec_nunits,
-                        attn_type=args.attn_type,
-                        attn_dim=args.attn_dim,
-                        sharpening_factor=args.attn_sharpening,
-                        sigmoid_smoothing=args.attn_sigmoid,
-                        conv_out_channels=args.attn_conv_nchannels,
-                        conv_kernel_size=args.attn_conv_width,
-                        nheads=args.attn_nheads_sub2)
-                else:
-                    attn_sub2 = AttentionMechanism(
-                        enc_nunits=self.enc_nunits,
-                        dec_nunits=args.dec_nunits,
-                        attn_type=args.attn_type,
-                        attn_dim=args.attn_dim,
-                        sharpening_factor=args.attn_sharpening,
-                        sigmoid_smoothing=args.attn_sigmoid,
-                        conv_out_channels=args.attn_conv_nchannels,
-                        conv_kernel_size=args.attn_conv_width,
-                        dropout=args.dropout_att)
-            else:
-                attn_sub2 = None
-
-            # Decoder
-            self.dec_fwd_sub2 = Decoder(
-                attention=attn_sub2,
-                sos=self.sos,
-                eos=self.eos,
-                pad=self.pad,
-                enc_nunits=self.enc_nunits,
-                rnn_type=args.dec_type,
-                nunits=args.dec_nunits,
-                nlayers=args.dec_nlayers,
-                residual=args.dec_residual,
-                emb_dim=args.emb_dim,
-                vocab=self.vocab_sub2,
-                logits_temp=args.logits_temp,
-                dropout=args.dropout_dec,
-                dropout_emb=args.dropout_emb,
-                ss_prob=args.ss_prob,
-                lsm_prob=args.lsm_prob,
-                layer_norm=args.layer_norm,
-                focal_loss_weight=args.focal_loss_weight,
-                focal_loss_gamma=args.focal_loss_gamma,
-                init_with_enc=args.init_with_enc,
-                ctc_weight=self.ctc_weight_sub2,
-                ctc_fc_list=[int(fc) for fc in args.ctc_fc_list_sub2.split('_')
-                             ] if len(args.ctc_fc_list_sub2) > 0 else [],
-                input_feeding=args.input_feeding,
-                internal_lm=args.internal_lm,
-                lmobj_weight=args.lmobj_weight_sub1,
-                global_weight=self.sub2_weight,
-                mtl_per_batch=args.mtl_per_batch)
+                # Decoder
+                dec_fwd_sub = Decoder(
+                    attention=attn_sub,
+                    sos=self.sos,
+                    eos=self.eos,
+                    pad=self.pad,
+                    enc_nunits=self.enc_nunits,
+                    rnn_type=args.dec_type,
+                    nunits=args.dec_nunits,
+                    nlayers=args.dec_nlayers,
+                    residual=args.dec_residual,
+                    emb_dim=args.emb_dim,
+                    vocab=getattr(self, 'vocab_' + sub),
+                    logits_temp=args.logits_temp,
+                    dropout=args.dropout_dec,
+                    dropout_emb=args.dropout_emb,
+                    ss_prob=args.ss_prob,
+                    lsm_prob=args.lsm_prob,
+                    layer_norm=args.layer_norm,
+                    focal_loss_weight=args.focal_loss_weight,
+                    focal_loss_gamma=args.focal_loss_gamma,
+                    init_with_enc=args.init_with_enc,
+                    ctc_weight=getattr(self, 'ctc_weight_' + sub),
+                    ctc_fc_list=[int(fc) for fc in getattr(args, 'ctc_fc_list_' + sub).split('_')
+                                 ] if len(getattr(args, 'ctc_fc_list_' + sub)) > 0 else [],
+                    input_feeding=args.input_feeding,
+                    internal_lm=args.internal_lm,
+                    lmobj_weight=getattr(args, 'lmobj_weight_' + sub),
+                    share_lm_softmax=args.share_lm_softmax,
+                    global_weight=getattr(self, sub + '_weight'),
+                    mtl_per_batch=args.mtl_per_batch)
+                setattr(self, 'dec_fwd_' + sub, dec_fwd_sub)
 
         if args.input_type == 'text':
             if args.vocab == args.vocab_sub1:
@@ -388,15 +330,16 @@ class Seq2seq(ModelBase):
         if args.rnnlm_cold_fusion:
             self.init_weights(-1, dist='constant', keys=['cf_linear_lm_gate.fc.bias'])
 
-    def forward(self, xs, ys, ys_sub1=None, ys_sub2=None, reporter=None,
-                task='ys', is_eval=False):
+    def forward(self, batch, reporter=None, task='ys', is_eval=False):
         """Forward computation.
 
         Args:
-            xs (list): A list of length `[B]`, which contains arrays of size `[T, input_dim]`
-            ys (list): A list of length `[B]`, which contains arrays of size `[L]`
-            ys_sub1 (list): A list of lenght `[B]`, which contains arrays of size `[L_sub1]`
-            ys_sub2 (list): A list of lenght `[B]`, which contains arrays of size `[L_sub2]`
+            batch (dict):
+                xs (list): A list of length `[B]`, which contains arrays of size `[T, input_dim]`
+                ys (list): A list of length `[B]`, which contains arrays of size `[L]`
+                ys_sub1 (list): A list of lenght `[B]`, which contains arrays of size `[L_sub1]`
+                ys_sub2 (list): A list of lenght `[B]`, which contains arrays of size `[L_sub2]`
+                ys_sub3 (list): A list of lenght `[B]`, which contains arrays of size `[L_sub3]`
             reporter ():
             task (str): ys or ys_sub1 or ys_sub2
             is_eval (bool): the history will not be saved.
@@ -409,10 +352,10 @@ class Seq2seq(ModelBase):
         if is_eval:
             self.eval()
             with torch.no_grad():
-                loss, observation = self._forward(xs, ys, ys_sub1, ys_sub2, task)
+                loss, observation = self._forward(batch, task)
         else:
             self.train()
-            loss, observation = self._forward(xs, ys, ys_sub1, ys_sub2, task)
+            loss, observation = self._forward(batch, task)
 
         # Report here
         if reporter is not None:
@@ -420,19 +363,19 @@ class Seq2seq(ModelBase):
 
         return loss, reporter
 
-    def _forward(self, xs, ys, ys_sub1, ys_sub2, task):
+    def _forward(self, batch, task):
         # Encode input features
         if self.input_type == 'speech':
             if self.mtl_per_batch:
-                enc_out, perm_idx = self.encode(xs, task=task)
+                enc_out, perm_idx = self.encode(batch['xs'], task=task)
             else:
-                enc_out, perm_idx = self.encode(xs, task='all')
+                enc_out, perm_idx = self.encode(batch['xs'], task='all')
         else:
-            enc_out, perm_idx = self.encode(ys_sub1)
-        ys = [ys[i] for i in perm_idx]
+            enc_out, perm_idx = self.encode(batch['ys_sub1'])
+        ys = [batch['ys'][i] for i in perm_idx]
 
         observation = {}
-        loss = enc_out[task]['xs'].new_ones(1,)
+        loss = enc_out[task]['xs'].new_ones(1)
 
         # Compute XE loss for the forward decoder
         if self.fwd_weight > 0 and task == 'ys':
@@ -453,36 +396,20 @@ class Seq2seq(ModelBase):
             observation['acc.bwd'] = obs_bwd['acc']
             # TODO(hirofumi): mtl_per_batch
 
-        # for the 1st sub task
-        if (self.sub1_weight > 0 and not self.mtl_per_batch) or (self.mtl_per_batch and task == 'ys_sub1'):
-            if self.mtl_per_batch:
-                loss_sub1, obs_sub1 = self.dec_fwd_sub1(
-                    enc_out['ys_sub1']['xs'], enc_out['ys_sub1']['x_lens'], ys)
-            else:
-                ys_sub1 = [ys_sub1[i] for i in perm_idx]
-                loss_sub1, obs_sub1 = self.dec_fwd_sub1(
-                    enc_out['ys_sub1']['xs'], enc_out['ys_sub1']['x_lens'], ys_sub1)
-            loss += loss_sub1
-            observation['loss.att-sub1'] = obs_sub1['loss_att']
-            observation['loss.ctc-sub1'] = obs_sub1['loss_ctc']
-            observation['loss.lm-sub1'] = obs_sub1['loss_lm']
-            observation['acc.sub1'] = obs_sub1['acc']
-
-        # for the 2nd sub task
-        if (self.sub2_weight > 0 and not self.mtl_per_batch) or (self.mtl_per_batch and task == 'ys_sub2'):
-            if self.mtl_per_batch:
-                loss_sub2, obs_sub2 = self.dec_fwd_sub2(
-                    enc_out['ys_sub2']['xs'], enc_out['ys_sub2']['x_lens'], ys)
-            else:
-                ys_sub2 = [ys_sub2[i] for i in perm_idx]
-                loss_sub2, obs_sub2 = self.dec_fwd_sub2(
-                    enc_out['ys_sub2']['xs'], enc_out['ys_sub2']['x_lens'], ys_sub2)
-            loss += loss_sub2
-            observation['loss.att-sub2'] = obs_sub2['loss_att']
-            observation['loss.ctc-sub2'] = obs_sub2['loss_ctc']
-            observation['loss.lm-sub2'] = obs_sub2['loss_lm']
-            observation['acc.sub2'] = obs_sub2['acc']
-        # TODO(hirofumi): add sub_sub_task_weight
+        for sub in ['sub1', 'sub2']:
+            if (getattr(self, sub + '_weight') > 0 and not self.mtl_per_batch) or (self.mtl_per_batch and task == 'ys_' + sub):
+                if self.mtl_per_batch:
+                    loss_sub, obs_sub = getattr(self, 'dec_fwd_' + sub)(
+                        enc_out['ys_' + sub]['xs'], enc_out['ys_' + sub]['x_lens'], ys)
+                else:
+                    ys_sub1 = [batch['ys_' + sub][i] for i in perm_idx]
+                    loss_sub, obs_sub = getattr(self, 'dec_fwd_' + sub)(
+                        enc_out['ys_' + sub]['xs'], enc_out['ys_' + sub]['x_lens'], ys_sub1)
+                loss += loss_sub
+                observation['loss.att-' + sub] = obs_sub['loss_att']
+                observation['loss.ctc-' + sub] = obs_sub['loss_ctc']
+                observation['loss.lm-' + sub] = obs_sub['loss_lm']
+                observation['acc.' + sub] = obs_sub['acc']
 
         return loss, observation
 
@@ -513,7 +440,10 @@ class Seq2seq(ModelBase):
                 xs = [splice(x, self.nsplices, self.nstacks) for x in xs]
 
             x_lens = [len(x) for x in xs]
-            xs = [np2var(x, self.device_id).float() for x in xs]
+            if self.bwd_weight == 1:
+                xs = [torch.from_numpy(np.flip(x, axis=0).copy()).float().cuda(self.device_id) for x in xs]
+            else:
+                xs = [np2var(x, self.device_id).float() for x in xs]
             xs = pad_list(xs)
 
         elif self.input_type == 'text':
@@ -525,10 +455,9 @@ class Seq2seq(ModelBase):
         enc_out = self.enc(xs, x_lens, task)
 
         if self.main_weight < 1 and self.enc_type == 'cnn':
-            enc_out['ys_sub1']['xs'] = enc_out['ys']['xs'].clone()
-            enc_out['ys_sub2']['xs'] = enc_out['ys']['xs'].clone()
-            enc_out['ys_sub1']['x_lens'] = copy.deepcopy(enc_out['ys']['x_lens'])
-            enc_out['ys_sub2']['x_lens'] = copy.deepcopy(enc_out['ys']['x_lens'])
+            for sub in ['sub1', 'sub2']:
+                enc_out['ys_' + sub]['xs'] = enc_out['ys']['xs'].clone()
+                enc_out['ys_' + sub]['x_lens'] = copy.deepcopy(enc_out['ys']['x_lens'])
 
         # Bridge between the encoder and decoder
         if self.main_weight > 0 and (self.enc_type == 'cnn' or self.bridge_layer) and (task in ['all', 'ys']):
