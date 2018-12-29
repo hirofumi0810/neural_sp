@@ -25,6 +25,7 @@ except:
 
 from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.criterion import focal_loss
+from neural_sp.models.criterion import kldiv_lsm_ctc
 from neural_sp.models.linear import Embedding
 from neural_sp.models.linear import LinearND
 from neural_sp.models.seq2seq.decoders.attention import AttentionMechanism
@@ -228,13 +229,14 @@ class Decoder(nn.Module):
                                    dropout=dropout_emb,
                                    ignore_index=pad)
 
-    def forward(self, enc_out, enc_lens, ys):
+    def forward(self, enc_out, enc_lens, ys, task='all'):
         """Compute XE loss.
 
         Args:
             enc_out (FloatTensor): `[B, T, dec_units]`
             enc_lens (list): A list of length `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
+            task (str): all or att or ctc or lmobj
         Returns:
             logits (FloatTensor): `[B, L, vocab]`
             aw (FloatTensor): `[B, L, T]` or `[nheads, B, L, T]`
@@ -255,7 +257,8 @@ class Decoder(nn.Module):
             ys_ctc = torch.cat(ys_ctc, dim=0).int()
 
             # Compute CTC loss
-            loss_ctc = self.warpctc_loss(self.output_ctc(enc_out).transpose(0, 1).cpu(),  # time-major
+            logits_ctc = self.output_ctc(enc_out)
+            loss_ctc = self.warpctc_loss(logits_ctc.transpose(0, 1).cpu(),  # time-major
                                          ys_ctc.cpu(), enc_lens_ctc, y_lens)
             # NOTE: ctc loss has already been normalized by bs
             # NOTE: index 0 is reserved for blank in warpctc_pytorch
@@ -266,11 +269,17 @@ class Decoder(nn.Module):
                 loss = loss_ctc
             else:
                 loss = loss_ctc * self.ctc_weight
+
+            # Label smoothing
+            if self.lsm_prob > 0:
+                loss_ctc = loss_ctc * (1 - self.lsm_prob) + kldiv_lsm_ctc(
+                    logits_ctc, y_lens=enc_lens,
+                    lsm_prob=self.lsm_prob, size_average=True) * self.lsm_prob
         else:
             loss_ctc = enc_out.new_zeros(1)
             loss = enc_out.new_zeros(1)
 
-        if self.ctc_weight == self.global_weight:
+        if self.ctc_weight >= self.global_weight:
             obserbation = {'loss': loss.item(),
                            'loss_att': 0,
                            'loss_ctc': loss_ctc.item(),
@@ -365,12 +374,14 @@ class Decoder(nn.Module):
         if self.lsm_prob > 0:
             # Label smoothing
             y_lens = [y.size(0) for y in ys_out]
-            loss_att = cross_entropy_lsm(logits_att, ys=ys_out_pad, y_lens=y_lens,
-                                         lsm_prob=self.lsm_prob, size_average=True)
+            loss_att = cross_entropy_lsm(
+                logits_att, ys=ys_out_pad, y_lens=y_lens,
+                lsm_prob=self.lsm_prob, size_average=True)
         else:
-            loss_att = F.cross_entropy(input=logits_att.view((-1, logits_att.size(2))),
-                                       target=ys_out_pad.view(-1),  # long
-                                       ignore_index=-1, size_average=False) / len(enc_out)
+            loss_att = F.cross_entropy(
+                logits_att.view((-1, logits_att.size(2))),
+                ys_out_pad.view(-1),  # long
+                ignore_index=-1, size_average=False) / len(enc_out)
 
         # Focal loss
         if self.focal_loss_weight > 0:
@@ -387,9 +398,10 @@ class Decoder(nn.Module):
         # Compute XE loss for RNNLM objective
         if self.lmobj_weight > 0:
             logits_lmobj = torch.cat(logits_lmobj, dim=1)
-            loss_lm = F.cross_entropy(input=logits_lmobj.view((-1, logits_lmobj.size(2))),
-                                      target=ys_out_pad[:, 1:].contiguous().view(-1),
-                                      ignore_index=-1, size_average=True)
+            loss_lm = F.cross_entropy(
+                input=logits_lmobj.view((-1, logits_lmobj.size(2))),
+                target=ys_out_pad[:, 1:].contiguous().view(-1),
+                ignore_index=-1, size_average=True)
             if self.mtl_per_batch:
                 loss += loss_lm
             else:

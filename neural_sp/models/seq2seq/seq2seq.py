@@ -367,19 +367,23 @@ class Seq2seq(ModelBase):
         # Encode input features
         if self.input_type == 'speech':
             if self.mtl_per_batch:
-                flip = True if 'bwd' in task else False
-                enc_out, perm_idx = self.encode(batch['xs'], task, flip)
+                if 'bwd' in task:
+                    enc_out, perm_idx = self.encode(batch['xs'], 'ys', flip=True)
+                else:
+                    enc_out, perm_idx = self.encode(batch['xs'], task, flip=False)
             else:
                 flip = True if self.bwd_weight == 1 else False
-                enc_out, perm_idx = self.encode(batch['xs'], 'all', flip)
+                enc_out, perm_idx = self.encode(batch['xs'], 'all', flip=flip)
         else:
             enc_out, perm_idx = self.encode(batch['ys_sub1'])
 
         observation = {}
         if task == 'all':
-            loss = enc_out['ys']['xs'].new_ones(1)
+            loss = enc_out['ys']['xs'].new_zeros(1)
+        elif task == 'ys.bwd':
+            loss = enc_out['ys']['xs'].new_zeros(1)
         else:
-            loss = enc_out[task]['xs'].new_ones(1)
+            loss = enc_out[task]['xs'].new_zeros(1)
 
         # Compute XE loss for the forward decoder
         if self.fwd_weight > 0 and task in ['all', 'ys']:

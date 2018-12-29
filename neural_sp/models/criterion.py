@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import math
 import numpy as np
 
 import torch
@@ -17,7 +18,7 @@ import torch.nn.functional as F
 
 
 def cross_entropy_lsm(logits, ys, y_lens, lsm_prob, size_average=False):
-    """Compute cross entropy loss for label smoothing.
+    """Compute cross entropy loss for label smoothing of sequence-to-sequence models.
 
     Args:
         logits (FloatTensor): `[B, T, vocab]`
@@ -42,6 +43,33 @@ def cross_entropy_lsm(logits, ys, y_lens, lsm_prob, size_average=False):
     log_probs = F.log_softmax(logits, dim=-1)
     loss = np.sum([(- ys_lsm[b, :y_lens[b]] * log_probs[b, :y_lens[b]]).sum()
                    for b in range(bs)])
+    if size_average:
+        loss /= bs
+    return loss
+
+
+def kldiv_lsm_ctc(logits, y_lens, lsm_prob, size_average=False):
+    """Compute KL divergence loss for label smoothing of CTC models.
+
+    Args:
+        logits (FloatTensor): `[B, T, vocab]`
+        y_lens (list): A list of length `[B]`
+        lsm_prob (float):
+        size_average (bool):
+    Returns:
+        loss (FloatTensor): `[1]`
+
+    """
+    bs, _, vocab = logits.size()
+
+    # Create uniform distribution
+    log_uniform = torch.zeros_like(logits).fill_(math.log(lsm_prob))
+
+    # Compute XE for label smoothing
+    probs = F.softmax(logits, dim=-1)
+    log_probs = F.log_softmax(logits, dim=-1)
+    kl_div = torch.mul(probs, log_probs) - torch.mul(probs, log_uniform)
+    loss = np.sum([kl_div[b, :y_lens[b]].sum() for b in range(bs)])
     if size_average:
         loss /= bs
     return loss
