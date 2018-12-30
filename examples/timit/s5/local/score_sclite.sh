@@ -23,5 +23,4 @@ sed -e "s/<eos>/ /g" ${decode_dir}/ref.trn.filt > ${decode_dir}/ref.trn.filt.cle
 sed -e "s/<eos>/ /g" ${decode_dir}/hyp.trn.filt > ${decode_dir}/hyp.trn.filt.clean
 
 sclite -r ${decode_dir}/ref.trn trn -h ${decode_dir}/hyp.trn trn -i rm -o all stdout > ${decode_dir}/result.txt
-grep -e Avg -e SPKR -m 2 ${decode_dir}/result.txt > ${decode_dir}/RESULTS
-cat ${decode_dir}/RESULTS
+grep -e Avg -e SPKR -m 2 ${decode_dir}/result.txt

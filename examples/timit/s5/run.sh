@@ -17,6 +17,14 @@ export data=/n/sd8/inaguma/corpus/timit
 # ASR configuration
 #########################
 ### topology
+conv_in_channel=1
+conv_channels=
+conv_kernel_sizes=
+conv_strides=
+conv_poolings=
+conv_batch_norm=
+enc_type=blstm
+enc_nunits=320
 enc_type=bgru
 enc_nunits=256
 enc_nprojs=0
@@ -27,6 +35,7 @@ subsample_type=concat
 attn_type=location
 attn_dim=256
 attn_nheads=1
+attn_sigmoid=
 dec_type=gru
 dec_nunits=256
 dec_nprojs=0
@@ -50,13 +59,12 @@ eval_start_epoch=20
 warmup_start_learning_rate=1e-4
 warmup_step=0
 warmup_epoch=0
-
 ### initialization
 param_init=0.1
 param_init_dist=uniform
 pretrained_model=
-
 ### regularization
+clip_grad_norm=5.0
 dropout_in=0.2
 dropout_enc=0.5
 dropout_dec=0.2
@@ -152,17 +160,17 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2 ]; then
   echo "vocab size:" `cat ${dict} | wc -l`
 
   # Make datset csv files
-  mkdir -p ${data}/dataset_csv
+  mkdir -p ${data}/dataset
   for x in ${train_set} ${dev_set}; do
     echo "Making a csv file for ${x}..."
     dump_dir=${data}/dump/${x}
-    make_dataset_csv.sh --feat ${dump_dir}/feats.scp --unit phone \
-      ${data}/${x} ${dict} > ${data}/dataset_csv/${x}.csv || exit 1;
+    make_dataset.sh --feat ${dump_dir}/feats.scp --unit phone \
+      ${data}/${x} ${dict} > ${data}/dataset/${x}.csv || exit 1;
   done
   for x in ${test_set}; do
     dump_dir=${data}/dump/${x}
-    make_dataset_csv.sh --is_test true --feat ${dump_dir}/feats.scp --unit phone \
-      ${data}/${x} ${dict} > ${data}/dataset_csv/${x}.csv || exit 1;
+    make_dataset.sh --is_test true --feat ${dump_dir}/feats.scp --unit phone \
+      ${data}/${x} ${dict} > ${data}/dataset/${x}.csv || exit 1;
   done
 
   touch .done_stage_2 && echo "Finish creating dataset (stage: 2)."
@@ -176,16 +184,20 @@ if [ ${stage} -le 4 ]; then
   echo "                       ASR Training stage (stage:4)                        "
   echo ============================================================================
 
-  echo "Start ASR training..."
-
   CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/train.py \
     --ngpus ${ngpus} \
-    --train_set ${data}/dataset_csv/${train_set}.csv \
-    --dev_set ${data}/dataset_csv/${dev_set}.csv \
-    --eval_sets ${data}/dataset_csv/${test_set}.csv \
+    --train_set ${data}/dataset/${train_set}.csv \
+    --dev_set ${data}/dataset/${dev_set}.csv \
+    --eval_sets ${data}/dataset/${test_set}.csv \
     --dict ${dict} \
     --model ${model}/asr \
-    --label_type phone \
+    --unit phone \
+    --conv_in_channel ${conv_in_channel} \
+    --conv_channels ${conv_channels} \
+    --conv_kernel_sizes ${conv_kernel_sizes} \
+    --conv_strides ${conv_strides} \
+    --conv_poolings ${conv_poolings} \
+    --conv_batch_norm ${conv_batch_norm} \
     --enc_type ${enc_type} \
     --enc_nunits ${enc_nunits} \
     --enc_nprojs ${enc_nprojs} \
@@ -196,6 +208,7 @@ if [ ${stage} -le 4 ]; then
     --attn_type ${attn_type} \
     --attn_dim ${attn_dim} \
     --attn_nheads ${attn_nheads} \
+    --attn_sigmoid ${attn_sigmoid} \
     --dec_type ${dec_type} \
     --dec_nunits ${dec_nunits} \
     --dec_nprojs ${dec_nprojs} \
@@ -220,6 +233,7 @@ if [ ${stage} -le 4 ]; then
     --param_init ${param_init} \
     --param_init_dist ${param_init_dist} \
     --pretrained_model ${pretrained_model} \
+    --clip_grad_norm ${clip_grad_norm} \
     --dropout_in ${dropout_in} \
     --dropout_enc ${dropout_enc} \
     --dropout_dec ${dropout_dec} \

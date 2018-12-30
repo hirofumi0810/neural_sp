@@ -33,12 +33,12 @@ if [ -z ${gpu} ]; then
 fi
 gpu=`echo ${gpu} | cut -d "," -f 1`
 
-for eval_set in dev test; do
-  decode_dir=${model}/decode_${eval_set}_ep${epoch}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
+for set in dev test; do
+  decode_dir=${model}/decode_${set}_ep${epoch}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
   mkdir -p ${decode_dir}
 
   CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/eval.py \
-    --eval_sets ${data}/dataset_csv/${eval_set}.csv \
+    --eval_sets ${data}/dataset/${set}.csv \
     --model ${model} \
     --epoch ${epoch} \
     --batch_size ${batch_size} \
@@ -50,5 +50,7 @@ for eval_set in dev test; do
     --coverage_threshold ${coverage_threshold} \
     --decode_dir ${decode_dir} || exit 1;
 
-  local/score_sclite.sh ${decode_dir}
+  echo ${set}
+  local/score_sclite.sh ${decode_dir} > ${decode_dir}/RESULTS
+  cat ${decode_dir}/RESULTS
 done
