@@ -11,7 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 import torch
-from torch.autograd import Variable
 
 
 def tensor2np(x):
@@ -37,10 +36,8 @@ def np2var(array, device_id=-1):
 
     """
     # assert isinstance(array, np.ndarray)
-    # var = Variable(torch.from_numpy(array).pin_memory(),
-    #                requires_grad=False)
-    var = Variable(torch.from_numpy(array),
-                   requires_grad=False)
+    # var = torch.from_numpy(array).pin_memory())
+    var = torch.from_numpy(array)
     if device_id < 0:
         return var
     # return var.cuda(device_id, async=True)

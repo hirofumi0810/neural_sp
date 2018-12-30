@@ -296,16 +296,13 @@ class ModelBase(nn.Module):
 
         logger.info("=> Saved checkpoint (epoch:%d): %s" % (epoch, model_path))
 
-    def load_checkpoint(self, save_path, epoch=-1, restart=False,
-                        load_pretrained_model=False):
+    def load_checkpoint(self, save_path, epoch=-1, restart=False):
         """Load checkpoint.
 
         Args:
             save_path (str): path to the saved models
             epoch (int): if -1 means the last saved model
             restart (bool): if True, restore the save optimizer
-            load_pretrained_model (bool): if True, load all parameters
-                which match those of the new model's parameters
         Returns:
             epoch (int): the currnet epoch
             step (int): the current step
@@ -325,31 +322,13 @@ class ModelBase(nn.Module):
 
         checkpoint_path = os.path.join(save_path, 'model.epoch-' + str(epoch))
 
-        try:
+        if os.path.isfile(checkpoint_path):
             checkpoint = torch.load(checkpoint_path, map_location=lambda storage, loc: storage)
-        except:
+        else:
             raise ValueError("No checkpoint found at %s" % checkpoint_path)
 
         # Restore parameters
-        if load_pretrained_model:
-            logger.info("=> Loading pre-trained checkpoint (epoch:%d): %s" % (epoch, checkpoint_path))
-
-            pretrained_dict = checkpoint['state_dict']
-            model_dict = self.state_dict()
-
-            # 1. filter out unnecessary keys and params which do not match size
-            pretrained_dict = {k: v for k, v in pretrained_dict.items()
-                               if k in model_dict.keys() and v.size() == model_dict[k].size()}
-            # 2. overwrite entries in the existing state dict
-            model_dict.update(pretrained_dict)
-            # 3. load the new state dict
-            self.load_state_dict(model_dict)
-
-            for k in pretrained_dict.keys():
-                logger.info(k)
-            logger.info('=> Finished loading.')
-        else:
-            self.load_state_dict(checkpoint['state_dict'])
+        self.load_state_dict(checkpoint['state_dict'])
 
         # Restore optimizer
         if restart:
