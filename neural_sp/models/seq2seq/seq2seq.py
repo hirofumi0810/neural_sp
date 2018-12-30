@@ -20,9 +20,7 @@ from neural_sp.models.base import ModelBase
 from neural_sp.models.linear import Embedding
 from neural_sp.models.linear import LinearND
 from neural_sp.models.rnnlm.rnnlm import RNNLM
-from neural_sp.models.seq2seq.decoders.attention import AttentionMechanism
 from neural_sp.models.seq2seq.decoders.decoder import Decoder
-from neural_sp.models.seq2seq.decoders.multihead_attention import MultiheadAttentionMechanism
 from neural_sp.models.seq2seq.encoders.frame_stacking import stack_frame
 from neural_sp.models.seq2seq.encoders.rnn import RNNEncoder
 from neural_sp.models.seq2seq.encoders.splicing import splice
@@ -154,33 +152,6 @@ class Seq2seq(ModelBase):
         if self.bwd_weight > 0:
             directions.append('bwd')
         for dir in directions:
-            if (dir == 'fwd' and args.ctc_weight < 1) or dir == 'bwd':
-                # Attention layer
-                if args.attn_nheads > 1:
-                    attn = MultiheadAttentionMechanism(
-                        enc_nunits=self.enc_nunits,
-                        dec_nunits=args.dec_nunits,
-                        attn_type=args.attn_type,
-                        attn_dim=args.attn_dim,
-                        sharpening_factor=args.attn_sharpening,
-                        sigmoid_smoothing=args.attn_sigmoid,
-                        conv_out_channels=args.attn_conv_nchannels,
-                        conv_kernel_size=args.attn_conv_width,
-                        nheads=args.attn_nheads)
-                else:
-                    attn = AttentionMechanism(
-                        enc_nunits=self.enc_nunits,
-                        dec_nunits=args.dec_nunits,
-                        attn_type=args.attn_type,
-                        attn_dim=args.attn_dim,
-                        sharpening_factor=args.attn_sharpening,
-                        sigmoid_smoothing=args.attn_sigmoid,
-                        conv_out_channels=args.attn_conv_nchannels,
-                        conv_kernel_size=args.attn_conv_width,
-                        dropout=args.dropout_att)
-            else:
-                attn = None
-
             # Cold fusion
             if args.rnnlm_cold_fusion and dir == 'fwd':
                 logger.inof('cold fusion')
@@ -196,11 +167,18 @@ class Seq2seq(ModelBase):
 
             # Decoder
             dec = Decoder(
-                attention=attn,
                 sos=self.sos,
                 eos=self.eos,
                 pad=self.pad,
                 enc_nunits=self.enc_nunits,
+                attn_type=args.attn_type,
+                attn_dim=args.attn_dim,
+                attn_sharpening_factor=args.attn_sharpening,
+                attn_sigmoid_smoothing=args.attn_sigmoid,
+                attn_conv_out_channels=args.attn_conv_nchannels,
+                attn_conv_kernel_size=args.attn_conv_width,
+                attn_nheads=args.attn_nheads,
+                dropout_att=args.dropout_att,
                 rnn_type=args.dec_type,
                 nunits=args.dec_nunits,
                 nlayers=args.dec_nlayers,
@@ -233,40 +211,20 @@ class Seq2seq(ModelBase):
         # sub task (only for fwd)
         for sub in ['sub1', 'sub2']:
             if getattr(self, sub + '_weight') > 0 or (args.mtl_per_batch and (args, 'dict_' + sub)):
-                if getattr(self, 'ctc_weight_' + sub) < args.sub1_weight:
-                    # Attention layer
-                    if getattr(args, 'attn_nheads_' + sub) > 1:
-                        attn_sub = MultiheadAttentionMechanism(
-                            enc_nunits=self.enc_nunits,
-                            dec_nunits=args.dec_nunits,
-                            attn_type=args.attn_type,
-                            attn_dim=args.attn_dim,
-                            sharpening_factor=args.attn_sharpening,
-                            sigmoid_smoothing=args.attn_sigmoid,
-                            conv_out_channels=args.attn_conv_nchannels,
-                            conv_kernel_size=args.attn_conv_width,
-                            nheads=getattr(args, 'attn_nheads_' + sub))
-                    else:
-                        attn_sub = AttentionMechanism(
-                            enc_nunits=self.enc_nunits,
-                            dec_nunits=args.dec_nunits,
-                            attn_type=args.attn_type,
-                            attn_dim=args.attn_dim,
-                            sharpening_factor=args.attn_sharpening,
-                            sigmoid_smoothing=args.attn_sigmoid,
-                            conv_out_channels=args.attn_conv_nchannels,
-                            conv_kernel_size=args.attn_conv_width,
-                            dropout=args.dropout_att)
-                else:
-                    attn_sub = None
-
                 # Decoder
                 dec_fwd_sub = Decoder(
-                    attention=attn_sub,
                     sos=self.sos,
                     eos=self.eos,
                     pad=self.pad,
                     enc_nunits=self.enc_nunits,
+                    attn_type=args.attn_type,
+                    attn_dim=args.attn_dim,
+                    attn_sharpening_factor=args.attn_sharpening,
+                    attn_sigmoid_smoothing=args.attn_sigmoid,
+                    attn_conv_out_channels=args.attn_conv_nchannels,
+                    attn_conv_kernel_size=args.attn_conv_width,
+                    attn_nheads=getattr(args, 'attn_nheads_' + sub),
+                    dropout_attn=args.dropout_attn,
                     rnn_type=args.dec_type,
                     nunits=args.dec_nunits,
                     nlayers=args.dec_nlayers,
@@ -346,7 +304,7 @@ class Seq2seq(ModelBase):
                 This should be used in inference model for memory efficiency.
         Returns:
             loss (FloatTensor): `[1]`
-            acc (float): Token-level accuracy in teacher-forcing
+            reporter ():
 
         """
         if is_eval:

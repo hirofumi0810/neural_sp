@@ -45,11 +45,19 @@ class Decoder(nn.Module):
     """RNN decoder.
 
     Args:
-        attention (torch.nn.Module):
+        enc_nunits (int):
         sos (int): index for <sos>
         eos (int): index for <eos>
         pad (int): index for <pad>
         enc_nunits (int):
+        attn_type ():
+        attn_dim ():
+        attn_sharpening_factor ():
+        attn_sigmoid_smoothing ():
+        attn_conv_out_channels ():
+        attn_conv_kernel_size ():
+        attn_nheads ():
+        dropout_att ():
         rnn_type (str): lstm or gru
         nunits (int): the number of units in each RNN layer
         nlayers (int): the number of RNN layers
@@ -79,11 +87,18 @@ class Decoder(nn.Module):
     """
 
     def __init__(self,
-                 attention,
                  sos,
                  eos,
                  pad,
                  enc_nunits,
+                 attn_type,
+                 attn_dim,
+                 attn_sharpening_factor,
+                 attn_sigmoid_smoothing,
+                 attn_conv_out_channels,
+                 attn_conv_kernel_size,
+                 attn_nheads,
+                 dropout_att,
                  rnn_type,
                  nunits,
                  nlayers,
@@ -115,7 +130,6 @@ class Decoder(nn.Module):
 
         super(Decoder, self).__init__()
 
-        self.score = attention
         self.sos = sos
         self.eos = eos
         self.pad = pad
@@ -163,6 +177,31 @@ class Decoder(nn.Module):
             self.warpctc_loss = warpctc_pytorch.CTCLoss(size_average=True)
 
         if ctc_weight < global_weight:
+            # Attention layer
+            if attn_nheads > 1:
+                self.score = MultiheadAttentionMechanism(
+                    enc_nunits=self.enc_nunits,
+                    dec_nunits=nunits,
+                    attn_type=attn_type,
+                    attn_dim=attn_dim,
+                    sharpening_factor=attn_sharpening_factor,
+                    sigmoid_smoothing=attn_sigmoid_smoothing,
+                    conv_out_channels=attn_conv_out_channels,
+                    conv_kernel_size=attn_conv_kernel_size,
+                    nheads=attn_nheads,
+                    dropout=dropout_att)
+            else:
+                self.score = AttentionMechanism(
+                    enc_nunits=self.enc_nunits,
+                    dec_nunits=nunits,
+                    attn_type=attn_type,
+                    attn_dim=attn_dim,
+                    sharpening_factor=attn_sharpening_factor,
+                    sigmoid_smoothing=attn_sigmoid_smoothing,
+                    conv_out_channels=attn_conv_out_channels,
+                    conv_kernel_size=attn_conv_kernel_size,
+                    dropout=dropout_att)
+
             # for decoder initialization with pre-trained RNNLM
             if rnnlm_init:
                 assert internal_lm
@@ -180,9 +219,6 @@ class Decoder(nn.Module):
                     pass
                 else:
                     raise NotImplementedError()
-
-            # Attention
-            assert isinstance(attention, AttentionMechanism) or isinstance(attention, MultiheadAttentionMechanism)
 
             # Decoder
             self.rnn = torch.nn.ModuleList()
