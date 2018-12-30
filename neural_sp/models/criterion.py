@@ -91,7 +91,7 @@ def focal_loss(logits, ys, y_lens, gamma, size_average=False):
     bs = ys.size(0)
 
     # Create one-hot vector
-    ys_onehot = torch.ones_like(logits)
+    ys_onehot = torch.zeros_like(logits)
     for b in range(bs):
         for t in range(y_lens[b]):
             ys_onehot[b, t, ys[b, t]] = 1
@@ -99,10 +99,8 @@ def focal_loss(logits, ys, y_lens, gamma, size_average=False):
     # Compute focal loss
     log_probs = F.log_softmax(logits, dim=-1)
     probs = F.softmax(logits, dim=-1)
-    # probs = logits.exp() / logits.exp().sum(-1).unsqueeze(-1)
     ones = torch.ones_like(log_probs)
-    # print(probs[0, y_lens[0] - 1])
-    loss = np.sum([(- ys_onehot[b, :y_lens[b]] * torch.pow(ones[b, :y_lens[b]] - probs[b, :y_lens[b]], gamma) * log_probs[b, :y_lens[b]]).sum()
+    loss = np.sum([(- ys_onehot[b, :y_lens[b]] * log_probs[b, :y_lens[b]] * torch.pow(ones[b, :y_lens[b]] - probs[b, :y_lens[b]], gamma)).sum()
                    for b in range(bs)])
     if size_average:
         loss /= bs

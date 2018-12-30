@@ -388,7 +388,7 @@ class Decoder(nn.Module):
             y_lens = [y.size(0) for y in ys_out]
             fl = focal_loss(logits_att, ys=ys_out_pad, y_lens=y_lens,
                             gamma=self.focal_loss_gamma, size_average=True)
-            loss_att += fl * self.focal_loss_weight
+            loss_att = loss_att * (1 - self.focal_loss_weight) + fl * self.focal_loss_weight
 
         if self.mtl_per_batch:
             loss += loss_att
@@ -399,8 +399,8 @@ class Decoder(nn.Module):
         if self.lmobj_weight > 0:
             logits_lmobj = torch.cat(logits_lmobj, dim=1)
             loss_lm = F.cross_entropy(
-                input=logits_lmobj.view((-1, logits_lmobj.size(2))),
-                target=ys_out_pad[:, 1:].contiguous().view(-1),
+                logits_lmobj.view((-1, logits_lmobj.size(2))),
+                ys_out_pad[:, 1:].contiguous().view(-1),
                 ignore_index=-1, size_average=True)
             if self.mtl_per_batch:
                 loss += loss_lm
