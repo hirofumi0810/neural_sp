@@ -10,11 +10,9 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import math
 import numpy as np
-import six
-
 import torch
-from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -23,7 +21,6 @@ from neural_sp.models.linear import Embedding
 from neural_sp.models.linear import LinearND
 from neural_sp.models.torch_utils import np2var
 from neural_sp.models.torch_utils import pad_list
-from neural_sp.models.torch_utils import var2np
 
 
 class RNNLM(ModelBase):
@@ -36,42 +33,70 @@ class RNNLM(ModelBase):
         self.emb_dim = args.emb_dim
         self.rnn_type = args.rnn_type
         assert args.rnn_type in ['lstm', 'gru']
-        self.num_units = args.num_units
-        self.num_layers = args.num_layers
+        self.nunits = args.nunits
+        self.nlayers = args.num_layers
         self.tie_weights = args.tie_weights
         self.residual = args.residual
         self.backward = args.backward
 
-        self.num_classes = args.num_classes
-        self.sos = 2
+        self.vocab = args.vocab
+        self.sos = 2   # NOTE: the same as <eos>
         self.eos = 2
         self.pad = 3
         # NOTE: reserved in advance
 
-        self.embed = Embedding(num_classes=self.num_classes,
+        self.embed = Embedding(vocab=self.vocab,
                                emb_dim=args.emb_dim,
                                dropout=args.dropout_emb,
                                ignore_index=self.pad)
 
-        for i_l in six.moves.range(args.num_layers):
-            if i_l == 0:
-                enc_in_size = args.emb_dim
+        self.fast_impl = False
+        if args.nprojs == 0 and not args.residual:
+            self.fast_impl = True
+            if 'lstm' in args.rnn_type:
+                rnn = nn.LSTM
+            elif 'gru' in args.rnn_type:
+                rnn = nn.GRU
             else:
-                enc_in_size = args.num_units
+                raise ValueError('rnn_type must be "(b)lstm" or "(b)gru".')
 
-            if args.rnn_type == 'lstm':
-                rnn_i = nn.LSTMCell
-            elif args.rnn_type == 'gru':
-                rnn_i = nn.GRUCell
+            self.rnn = rnn(args.emb_dim, args.nunits, args.nlayers,
+                           bias=True,
+                           batch_first=True,
+                           dropout=args.dropout_hidden,
+                           bidirectional=self.bidirectional)
+            # NOTE: pytorch introduces a dropout layer on the outputs of each layer EXCEPT the last layer
+            self.dropout_top = nn.Dropout(p=args.dropout_hidden)
+        else:
+            self.rnn = torch.nn.ModuleList()
+            self.dropout = torch.nn.ModuleList()
+            if args.nprojs > 0:
+                self.proj = torch.nn.ModuleList()
+            for l in range(args.nlayers):
+                if l == 0:
+                    rnn_idim = args.emb_dim
+                elif args.nprojs > 0:
+                    rnn_idim = args.nprojs
+                else:
+                    rnn_idim = args.nunits
 
-            setattr(self, args.rnn_type + '_l' + str(i_l), rnn_i(input_size=enc_in_size,
-                                                                 hidden_size=args.num_units,
-                                                                 bias=True))
+                if args.rnn_type == 'lstm':
+                    rnn_i = nn.LSTM
+                elif args.rnn_type == 'gru':
+                    rnn_i = nn.GRU
 
-            # Dropout for hidden-hidden or hidden-output connection
-            setattr(self, 'dropout_l' + str(i_l), nn.Dropout(p=args.dropout_hidden))
+                self.rnn += [rnn_i(rnn_idim, args.nunits, 1,
+                                   bias=True,
+                                   batch_first=True,
+                                   dropout=0,
+                                   bidirectional=False)]
+                self.dropout += [nn.Dropout(p=args.dropout_hidden)]
 
-        self.output = LinearND(args.num_units, self.num_classes,
+                if l != self.nlayers - 1 and args.nprojs > 0:
+                    self.proj += [LinearND(args.nunits * self.ndirs, args.nprojs)]
+
+        self.output = LinearND(args.nprojs if args.nprojs > 0 else args.nunits,
+                               self.vocab,
                                dropout=args.dropout_out)
 
         # Optionally tie weights as in:
@@ -81,8 +106,8 @@ class RNNLM(ModelBase):
         # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
         # https://arxiv.org/abs/1611.01462
         if args.tie_weights:
-            if args.num_units != args.emb_dim:
-                raise ValueError('When using the tied flag, num_units must be equal to emb_dim.')
+            if args.nunits != args.emb_dim:
+                raise ValueError('When using the tied flag, nunits must be equal to emb_dim.')
             self.output.fc.weight = self.embed.embed.weight
 
         # Initialize weight matrices
@@ -99,26 +124,40 @@ class RNNLM(ModelBase):
         # Initialize bias in forget gate with 1
         self.init_forget_gate_bias_with_one()
 
-    def forward(self, ys, state, is_eval=False):
+    def forward(self, ys, state, reporter=None, is_eval=False):
         """Forward computation.
 
         Args:
             ys (np.array): A tensor of of size `[B, 2]`
             state (list): list of (hx_list, cx_list)
-                hx_list (list of torch.autograd.Variable(float)):
-                cx_list (list of torch.autograd.Variable(float)):
+                hx_list (list of FloatTensor):
+                cx_list (list of FloatTensor):
+            reporter ():
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (torch.autograd.Variable(float)): A tensor of size `[1]`
-            acc (float): Token-level accuracy in teacher-forcing
+            loss (FloatTensor): `[1]`
+            state (list): list of (hx_list, cx_list)
+                hx_list (list of FloatTensor):
+                cx_list (list of FloatTensor):
+            reporter ():
 
         """
         if is_eval:
             self.eval()
+            with torch.no_grad():
+                loss, observation = self._forward(ys, state)
         else:
             self.train()
+            loss, observation = self._forward(ys, state)
 
+        # Report here
+        if reporter is not None:
+            reporter.add(observation, is_eval)
+
+        return loss, observation
+
+    def _forward(self, ys, state):
         if self.backward:
             raise NotImplementedError()
             # TODO(hirofumi): reverse the order out of the model
@@ -133,40 +172,45 @@ class RNNLM(ModelBase):
         ys_in = self.embed(ys_in)
 
         if state is None:
-            hx_list, cx_list = self.initialize_hidden(batch_size=ys.shape[0])
+            hx_list, cx_list = self.initialize_hidden(bs=ys.shape[0])
         else:
             hx_list, cx_list = state
 
         # Path through RNN
-        res_out_prev = None
-        for i_l in six.moves.range(self.num_layers):
-            name = self.rnn_type + '_l' + str(i_l)
+        if self.fast_impl:
             if self.rnn_type == 'lstm':
-                if i_l == 0:
-                    hx_list[0], cx_list[0] = getattr(self, name)(
-                        ys_in, (hx_list[0], cx_list[0]))
-                else:
-                    hx_list[i_l], cx_list[i_l] = getattr(self, name)(
-                        hx_list[i_l - 1], (hx_list[i_l], cx_list[i_l]))
+                hx_list[-1], cx_list[-1] = self.rnn(
+                    ys_in, (hx_list[0], cx_list[0]))
             elif self.rnn_type == 'gru':
-                if i_l == 0:
-                    hx_list[0] = getattr(self, name)(ys_in, hx_list[0])
-                else:
-                    hx_list[i_l] = getattr(self, name)(hx_list[i_l - 1], hx_list[i_l])
+                hx_list[-1] = self.rnn(ys_in, hx_list[0])
+            hx_list[-1] = self.dropout_top(hx_list[-1])
+        else:
+            xs_lower = None
+            for l in range(self.nlayers):
+                if self.rnn_type == 'lstm':
+                    if l == 0:
+                        hx_list[0], cx_list[0] = self.rnn[l](
+                            ys_in, (hx_list[0], cx_list[0]))
+                    else:
+                        hx_list[l], cx_list[l] = self.rnn[l](
+                            hx_list[l - 1], (hx_list[l], cx_list[l]))
+                elif self.rnn_type == 'gru':
+                    if l == 0:
+                        hx_list[0] = self.rnn[l](ys_in, hx_list[0])
+                    else:
+                        hx_list[l] = self.rnn[l](hx_list[l - 1], hx_list[l])
+                hx_list[l] = self.dropout[l](hx_list[l])
 
-            # Dropout for hidden-hidden or hidden-output connection
-            hx_list[i_l] = getattr(self, 'dropout_l' + str(i_l))(hx_list[i_l])
-
-            # Residual connection
-            if self.residual and res_out_prev is not None:
-                hx_list[i_l] += res_out_prev
-            res_out_prev = hx_list[i_l]
+                # Residual connection
+                if self.residual and l > 0:
+                    hx_list[l] += xs_lower
+                    xs_lower = hx_list[l]
 
         logits = self.output(hx_list[-1].unsqueeze(1))
 
         # Compute XE sequence loss
-        loss = F.cross_entropy(input=logits.view((-1, logits.size(2))),
-                               target=ys_out.contiguous().view(-1),
+        loss = F.cross_entropy(logits.view((-1, logits.size(2))),
+                               ys_out.contiguous().view(-1),
                                ignore_index=self.pad, size_average=True)
 
         # Compute token-level accuracy in teacher-forcing
@@ -174,79 +218,80 @@ class RNNLM(ModelBase):
         mask = ys_out != self.pad
         numerator = torch.sum(pad_pred.masked_select(mask) == ys_out.masked_select(mask))
         denominator = torch.sum(mask)
-        acc = float(numerator) / float(denominator)
+        acc = float(numerator) * 100 / float(denominator)
 
-        return loss, acc, (hx_list, cx_list)
+        observation = {'loss.rnnlm': loss.item(),
+                       'acc.rnnlm': acc,
+                       'ppl': math.exp(loss.item())}
+
+        return loss, (hx_list, cx_list), observation
 
     def predict(self, y, state):
         """
 
         Args:
-            y (): A tensor of size `[B, emb_dim]`
+            y (): `[B, emb_dim]`
             state (list):
         Returns:
             logits_step ():
             out ():
             state (): A tuple of (hx_list, cx_list)
-                hx_list (list of torch.autograd.Variable(float)):
-                cx_list (list of torch.autograd.Variable(float)):
+                hx_list (list of FloatTensor):
+                cx_list (list of FloatTensor):
 
         """
         if state[0] is None:
-            hx_list, cx_list = self.initialize_hidden(batch_size=1)
+            hx_list, cx_list = self.initialize_hidden(bs=1)
         else:
             hx_list, cx_list = state
 
         # Path through RNN
-        res_out_prev = None
-        for i_l in six.moves.range(self.num_layers):
-            name = self.rnn_type + '_l' + str(i_l)
+        xs_lower = None
+        for l in range(self.nlayers):
             if self.rnn_type == 'lstm':
-                if i_l == 0:
-                    hx_list[0], cx_list[0] = getattr(self, name)(
+                if l == 0:
+                    hx_list[0], cx_list[0] = self.rnn[l](
                         y, (hx_list[0], cx_list[0]))
                 else:
-                    hx_list[i_l], cx_list[i_l] = getattr(self, name)(
-                        hx_list[i_l - 1], (hx_list[i_l], cx_list[i_l]))
+                    hx_list[l], cx_list[l] = self.rnn[l](
+                        hx_list[l - 1], (hx_list[l], cx_list[l]))
             elif self.rnn_type == 'gru':
-                if i_l == 0:
-                    hx_list[0] = getattr(self, name)(y, hx_list[0])
+                if l == 0:
+                    hx_list[0] = self.rnn[l](y, hx_list[0])
                 else:
-                    hx_list[i_l] = getattr(self, name)(hx_list[i_l - 1], hx_list[i_l])
+                    hx_list[l] = self.rnn[l](hx_list[l - 1], hx_list[l])
 
             # Dropout for hidden-hidden or hidden-output connection
-            hx_list[i_l] = getattr(self, 'dropout_l' + str(i_l))(hx_list[i_l])
+            hx_list[l] = self.dropout[l](hx_list[l])
 
             # Residual connection
-            if self.residual and res_out_prev is not None:
-                hx_list[i_l] += res_out_prev
-            res_out_prev = hx_list[i_l]
+            if self.residual and xs_lower is not None:
+                hx_list[l] += xs_lower
+            xs_lower = hx_list[l]
 
         logits_step = self.output(hx_list[-1].unsqueeze(1))
 
         return logits_step, y, (hx_list, cx_list)
 
-    def initialize_hidden(self, batch_size):
+    def initialize_hidden(self, bs):
         """Initialize hidden states.
 
         Args:
-            batch_size (int): the size of mini-batch
+            bs (int): the size of mini-batch
         Returns:
-            hx_list (list of torch.autograd.Variable(float)):
-            cx_list (list of torch.autograd.Variable(float)):
+            hx_list (list of FloatTensor):
+            cx_list (list of FloatTensor):
 
         """
-        zero_state = Variable(torch.zeros(batch_size, self.num_units),
-                              volatile=not self.training).float()
-
+        zero_state = torch.zeros(bs, self.nunits).float()
         if self.device_id >= 0:
             zero_state = zero_state.cuda(self.device_id)
 
         if self.rnn_type == 'lstm':
-            hx_list = [zero_state] * self.num_layers
-            cx_list = [zero_state] * self.num_layers
+            hx_list = [zero_state] * self.nlayers
+            cx_list = [zero_state] * self.nlayers
         elif self.rnn_type == 'gru':
-            hx_list = [zero_state] * self.num_layers
+            hx_list = [zero_state] * self.nlayers
             cx_list = None
 
         return hx_list, cx_list
@@ -256,12 +301,12 @@ class RNNLM(ModelBase):
 
         Args:
             state (list):
-                hx_list (list of torch.autograd.Variable(float)):
-                cx_list (list of torch.autograd.Variable(float)):
+                hx_list (list of FloatTensor):
+                cx_list (list of FloatTensor):
         Returns:
             state (list):
-                hx_list (list of torch.autograd.Variable(float)):
-                cx_list (list of torch.autograd.Variable(float)):
+                hx_list (list of FloatTensor):
+                cx_list (list of FloatTensor):
 
         """
         hx_list, cx_list = state
@@ -279,11 +324,10 @@ class RNNLM(ModelBase):
             rnnlm ():
 
         """
-        for i_l in six.moves.range(self.num_layers):
-            name = self.rnn_type + '_l' + str(i_l)
-            getattr(self, name).weight_ih.data = getattr(rnnlm, name).weight_ih_l0.data
-            getattr(self, name).weight_hh.data = getattr(rnnlm, name).weight_hh_l0.data
-            getattr(self, name).bias_ih.data = getattr(rnnlm, name).bias_ih_l0.data
-            getattr(self, name).bias_hh.data = getattr(rnnlm, name).bias_hh_l0.data
+        for l in range(self.nlayers):
+            self.rnn[l].weight_ih.data = rnnlm.rnn[l].weight_ih_l0.data
+            self.rnn[l].weight_hh.data = rnnlm.rnn[l].weight_hh_l0.data
+            self.rnn[l].bias_ih.data = rnnlm.rnn[l].bias_ih_l0.data
+            self.rnn[l].bias_hh.data = rnnlm.rnn[l].bias_hh_l0.data
         self.output.fc.weight.data = rnnlm.output.fc.weight.data
         self.output.fc.bias.data = rnnlm.output.fc.bias.data

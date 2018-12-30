@@ -10,11 +10,10 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import math
 import numpy as np
-import six
 
 import torch
-from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -35,46 +34,70 @@ class SeqRNNLM(ModelBase):
         self.emb_dim = args.emb_dim
         self.rnn_type = args.rnn_type
         assert args.rnn_type in ['lstm', 'gru']
-        self.num_units = args.num_units
-        self.num_layers = args.num_layers
+        self.nunits = args.nunits
+        self.nlayers = args.nlayers
         self.tie_weights = args.tie_weights
         self.residual = args.residual
         self.backward = args.backward
 
-        self.num_classes = args.num_classes
-        self.sos = 2
+        self.vocab = args.vocab
+        self.sos = 2   # NOTE: the same as <eos>
         self.eos = 2
         self.pad = 3
         # NOTE: reserved in advance
 
-        self.embed = Embedding(num_classes=self.num_classes,
+        self.embed = Embedding(vocab=self.vocab,
                                emb_dim=args.emb_dim,
                                dropout=args.dropout_emb,
                                ignore_index=self.pad)
 
-        for i_l in six.moves.range(args.num_layers):
-            if i_l == 0:
-                enc_in_size = args.emb_dim
+        self.fast_impl = False
+        if args.nprojs == 0 and not args.residual:
+            self.fast_impl = True
+            if 'lstm' in args.rnn_type:
+                rnn = nn.LSTM
+            elif 'gru' in args.rnn_type:
+                rnn = nn.GRU
             else:
-                enc_in_size = args.num_units
+                raise ValueError('rnn_type must be "(b)lstm" or "(b)gru".')
 
-            if args.rnn_type == 'lstm':
-                rnn_i = nn.LSTM
-            elif args.rnn_type == 'gru':
-                rnn_i = nn.GRU
+            self.rnn = rnn(args.emb_dim, args.nunits, args.nlayers,
+                           bias=True,
+                           batch_first=True,
+                           dropout=args.dropout_hidden,
+                           bidirectional=self.bidirectional)
+            # NOTE: pytorch introduces a dropout layer on the outputs of each layer EXCEPT the last layer
+            self.dropout_top = nn.Dropout(p=args.dropout_hidden)
+        else:
+            self.rnn = torch.nn.ModuleList()
+            self.dropout = torch.nn.ModuleList()
+            if args.nprojs > 0:
+                self.proj = torch.nn.ModuleList()
+            for l in range(args.nlayers):
+                if l == 0:
+                    rnn_idim = args.emb_dim
+                elif args.nprojs > 0:
+                    rnn_idim = args.nprojs
+                else:
+                    rnn_idim = args.nunits
 
-            setattr(self, args.rnn_type + '_l' + str(i_l), rnn_i(enc_in_size,
-                                                                 hidden_size=args.num_units,
-                                                                 num_layers=1,
-                                                                 bias=True,
-                                                                 batch_first=True,
-                                                                 dropout=0,
-                                                                 bidirectional=False))
+                if args.rnn_type == 'lstm':
+                    rnn_i = nn.LSTM
+                elif args.rnn_type == 'gru':
+                    rnn_i = nn.GRU
 
-            # Dropout for hidden-hidden or hidden-output connection
-            setattr(self, 'dropout_l' + str(i_l), nn.Dropout(p=args.dropout_hidden))
+                self.rnn += [rnn_i(rnn_idim, args.nunits, 1,
+                                   bias=True,
+                                   batch_first=True,
+                                   dropout=0,
+                                   bidirectional=False)]
+                self.dropout += [nn.Dropout(p=args.dropout_hidden)]
 
-        self.output = LinearND(args.num_units, self.num_classes,
+                if l != self.nlayers - 1 and args.nprojs > 0:
+                    self.proj += [LinearND(args.nunits * self.ndirs, args.nprojs)]
+
+        self.output = LinearND(args.nprojs if args.nprojs > 0 else args.nunits,
+                               self.vocab,
                                dropout=args.dropout_out)
 
         # Optionally tie weights as in:
@@ -84,8 +107,8 @@ class SeqRNNLM(ModelBase):
         # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
         # https://arxiv.org/abs/1611.01462
         if args.tie_weights:
-            if args.num_units != args.emb_dim:
-                raise ValueError('When using the tied flag, num_units must be equal to emb_dim.')
+            if args.nunits != args.emb_dim:
+                raise ValueError('When using the tied flag, nunits must be equal to emb_dim.')
             self.output.fc.weight = self.embed.embed.weight
 
         # Initialize weight matrices
@@ -102,55 +125,67 @@ class SeqRNNLM(ModelBase):
         # Initialize bias in forget gate with 1
         self.init_forget_gate_bias_with_one()
 
-    def forward(self, ys, is_eval=False):
+    def forward(self, ys, reporter=None, is_eval=False):
         """Forward computation.
 
         Args:
-            ys (np.array): A tensor of of size `[B, T]`
+            ys (np.array): `[B, T]`
+            reporter ():
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
-            loss (torch.autograd.Variable(float)): A tensor of size `[1]`
-            acc (float): Token-level accuracy in teacher-forcing
+            loss (FloatTensor): `[1]`
+            reporter ():
 
         """
         if is_eval:
             self.eval()
+            with torch.no_grad():
+                loss, observation = self._forward(ys)
         else:
             self.train()
+            loss, observation = self._forward(ys)
 
+        # Report here
+        if reporter is not None:
+            reporter.add(observation, is_eval)
+
+        return loss, observation
+
+    def _forward(self, ys):
         if self.backward:
-            raise NotImplementedError()
-            # TODO(hirofumi): reverse the order out of the model
+            ys = [np2var(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long() for y in ys]
         else:
             ys = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
-            ys = pad_list(ys, self.pad)
-            # NOTE: padding is not necessary in fact
 
-            ys_in = ys[:, :-1]
-            ys_out = ys[:, 1:]
+        ys = pad_list(ys, self.pad)
+        ys_in = ys[:, :-1]
+        ys_out = ys[:, 1:]
 
         # Path through embedding
         ys_in = self.embed(ys_in)
 
-        res_out_prev = None
-        for i_l in six.moves.range(self.num_layers):
-            # Path through RNN
-            ys_in, _ = getattr(self, self.rnn_type + '_l' + str(i_l))(ys_in, hx=None)
+        if self.fast_impl:
+            ys_in, _ = self.rnn(ys_in, hx=None)
+            ys_in = self.dropout_top(ys_in)
+        else:
+            xs_lower = None
+            for l in range(self.nlayers):
+                # Path through RNN
+                ys_in, _ = self.rnn[l](ys_in, hx=None)
+                ys_in = self.dropout[l](ys_in)
 
-            # Dropout for hidden-hidden or hidden-output connection
-            ys_in = getattr(self, 'dropout_l' + str(i_l))(ys_in)
-
-            # Residual connection
-            if self.residual and res_out_prev is not None:
-                ys_in += res_out_prev
-            res_out_prev = ys_in
+                # Residual connection
+                if self.residual and l > 0:
+                    ys_in += xs_lower
+                    xs_lower = ys_in
+                # NOTE: Exclude residual connection from the raw inputs
 
         logits = self.output(ys_in)
 
         # Compute XE sequence loss
-        loss = F.cross_entropy(input=logits.view((-1, logits.size(2))),
-                               target=ys_out.contiguous().view(-1),
+        loss = F.cross_entropy(logits.view((-1, logits.size(2))),
+                               ys_out.contiguous().view(-1),
                                ignore_index=self.pad, size_average=True)
 
         # Compute token-level accuracy in teacher-forcing
@@ -158,15 +193,19 @@ class SeqRNNLM(ModelBase):
         mask = ys_out != self.pad
         numerator = torch.sum(pad_pred.masked_select(mask) == ys_out.masked_select(mask))
         denominator = torch.sum(mask)
-        acc = float(numerator) / float(denominator)
+        acc = float(numerator) * 100 / float(denominator)
 
-        return loss, acc
+        observation = {'loss.rnnlm': loss.item(),
+                       'acc.rnnlm': acc,
+                       'ppl': math.exp(loss.item())}
+
+        return loss, observation
 
     def predict(self, y, state):
-        """
+        """Predict a token per step for ASR decoding.
 
         Args:
-            y (): A tensor of size `[B, emb_dim]`
+            y (): `[B, emb_dim]`
             state (list):
         Returns:
             logits_step ():
@@ -175,46 +214,42 @@ class SeqRNNLM(ModelBase):
 
         """
         if state is None:
-            state = [None] * self.num_layers
+            state = [None] * self.nlayers
 
         # Path through RNN
-        res_out_prev = None
-        for i_l in six.moves.range(self.num_layers):
-            y, state[i_l] = getattr(self, self.rnn_type + '_l' + str(i_l))(y, hx=state[i_l])
-
-            # Dropout for hidden-hidden or hidden-output connection
-            y = getattr(self, 'dropout_l' + str(i_l))(y)
+        xs_lower = None
+        for l in range(self.nlayers):
+            y, state[l] = self.rnn[l](y, hx=state[l])
+            y = self.dropout[l](y)
 
             # Residual connection
-            if self.residual and res_out_prev is not None:
-                y += res_out_prev
-            res_out_prev = y
+            if self.residual and l > 0:
+                y += xs_lower
+                xs_lower = y
 
         logits_step = self.output(y)
 
         return logits_step, y, state
 
-    def initialize_hidden(self, batch_size):
+    def initialize_hidden(self, bs):
         """Initialize hidden states.
 
         Args:
-            batch_size (int): the size of mini-batch
+            bs (int): the size of mini-batch
         Returns:
-            hx_list (list of torch.autograd.Variable(float)):
-            cx_list (list of torch.autograd.Variable(float)):
+            hx_list (list of FloatTensor):
+            cx_list (list of FloatTensor):
 
         """
-        zero_state = Variable(torch.zeros(batch_size, self.num_units),
-                              volatile=not self.training).float()
-
+        zero_state = torch.zeros(bs, self.nunits).float()
         if self.device_id >= 0:
             zero_state = zero_state.cuda(self.device_id)
 
         if self.rnn_type == 'lstm':
-            hx_list = [zero_state] * self.num_layers
-            cx_list = [zero_state] * self.num_layers
+            hx_list = [zero_state] * self.nlayers
+            cx_list = [zero_state] * self.nlayers
         elif self.rnn_type == 'gru':
-            hx_list = [zero_state] * self.num_layers
+            hx_list = [zero_state] * self.nlayers
             cx_list = None
 
         return hx_list, cx_list
